@@ -10,6 +10,7 @@ use tauri::State;
 
 use super::manager::{AcpEvent, AcpLaunch, AcpManager, ReopenPurpose, StartedSession};
 use super::probe::ProbedAgent;
+use super::qwen_log::{self, QwenApiError};
 use super::session_list::ListedSessions;
 use super::terminal_auth::{is_sign_in_terminal_id, CANCELLED_MESSAGE};
 use crate::env_resolver::cached_user_env;
@@ -448,6 +449,19 @@ pub fn acp_set_config_option(
     value: String,
 ) -> Result<Value, String> {
     manager.set_config_option(&session_id, &config_id, &value)
+}
+
+/// The newest API error Qwen Code logged for the session since `since` (Unix
+/// ms), read from Qwen's own log: it reports a failed request over ACP without
+/// the error. `None` when the session is not running or the log has nothing.
+#[tauri::command(async)]
+pub fn acp_qwen_last_api_error(
+    manager: State<'_, AcpManager>,
+    session_id: String,
+    since: Option<u64>,
+) -> Option<QwenApiError> {
+    let acp_session_id = manager.acp_session_id(&session_id)?;
+    qwen_log::last_api_error(&acp_session_id, since.unwrap_or(0))
 }
 
 #[tauri::command(async)]

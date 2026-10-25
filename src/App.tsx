@@ -544,6 +544,7 @@ export default function App() {
       isBusy: isSessionBusy(sessionId),
       isWaiting: isSessionWaiting(sessionId),
       contextUsage: acp.info[sessionId]?.usage,
+      failures: acp.failuresOf(sessionId),
     }),
     agentCatalog: { agents, settings: state.settings, addAgent: catalogActions.addAgent },
     onAction: (sessionId, action) => {
@@ -691,6 +692,8 @@ export default function App() {
                   onAnswerElicitation={(key, answer) => acp.answerElicitation(activeSessionId, key, answer)}
                   onReopenElicitationUrl={(key) => acp.reopenElicitationUrl(activeSessionId, key)}
                   isWorking={isSessionBusy(activeSessionId) && !isAwaitingUser(currentMessages)}
+                  failures={acp.failuresOf(activeSessionId)}
+                  onStop={() => handleInterrupt(activeSessionId)}
                 />
               ) : isNewSessionDraft ? (
                 <NewSessionView

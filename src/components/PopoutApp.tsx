@@ -104,6 +104,8 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
             onAnswerElicitation={(key, answer) => forward({ kind: "answer-elicitation", key, answer })}
             onReopenElicitationUrl={(key) => forward({ kind: "reopen-elicitation-url", key })}
             isWorking={status.isBusy && !status.isWaiting}
+            failures={status.failures}
+            onStop={() => forward({ kind: "stop" })}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center text-sm text-fg-subtle">

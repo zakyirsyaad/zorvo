@@ -432,6 +432,12 @@ impl AcpManager {
         Ok(response["configOptions"].clone())
     }
 
+    /// The agent's own id for a running session, e.g. to find the agent's log of it.
+    pub fn acp_session_id(&self, app_session_id: &str) -> Option<String> {
+        self.with_entry(app_session_id, |e| e.acp_session_id.clone())
+            .ok()
+    }
+
     /// The app session ids of every running session, in no particular order.
     pub fn session_ids(&self) -> Vec<String> {
         self.routes

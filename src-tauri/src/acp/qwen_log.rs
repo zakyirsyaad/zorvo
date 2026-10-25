@@ -159,6 +159,9 @@ fn parse_iso_ms(text: &str) -> Option<u64> {
     let seconds = parts.next()?;
     let (whole, fraction) = seconds.split_once('.').unwrap_or((seconds, ""));
     let second: i64 = whole.parse().ok()?;
+    if !fraction.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
     let millis: i64 = format!("{fraction:0<3}")[..3].parse().ok()?;
     let secs = days_from_civil(year, month, day) * 86_400 + hour * 3600 + minute * 60 + second
         - offset_min * 60;
@@ -236,6 +239,13 @@ mod tests {
         assert_eq!(parse_iso_ms("2026-10-16T17:08:40.443Z"), Some(AT_MS));
         assert_eq!(parse_iso_ms("2026-10-16T18:08:40+01:00"), Some(AT_MS - 443));
         assert_eq!(parse_iso_ms("yesterday"), None);
+    }
+
+    #[test]
+    fn rejects_a_timestamp_whose_fraction_is_not_digits_without_panicking() {
+        assert_eq!(parse_iso_ms("2026-10-16T17:08:40.\u{e9}1Z"), None);
+        assert_eq!(parse_iso_ms("2026-10-16T17:08:40.4x3Z"), None);
+        assert_eq!(parse_iso_ms("2026-10-16T17:08:40.443999Z"), Some(AT_MS));
     }
 
     #[test]

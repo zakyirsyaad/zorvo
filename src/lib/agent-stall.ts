@@ -63,6 +63,11 @@ export function nextFailures(prev: AgentFailures | undefined, report: FailureRep
   };
 }
 
+/** The agent's own words, closed with a full stop when they have no end punctuation. */
+function asSentence(text: string): string {
+  return /[.!?…]$/.test(text) ? text : `${text}.`;
+}
+
 export interface StallState {
   failures?: AgentFailures;
   silentForMs: number;
@@ -72,7 +77,7 @@ export interface StallState {
 export function stallNoticeText(agentName: string, { failures, silentForMs }: StallState): string | null {
   if (failures && failures.count >= STALL_MIN_FAILURES) {
     const target = failures.model ? ` to ${failures.model}` : '';
-    const last = failures.detail ? ` Last error: ${failures.detail}` : '';
+    const last = failures.detail ? ` Last error: ${asSentence(failures.detail)}` : '';
     return `${agentName}'s requests${target} failed ${failures.count} times in a row.${last}`;
   }
   if (silentForMs < STALL_SILENCE_MS) return null;
@@ -108,14 +113,18 @@ export function activityKeyOf(messages: readonly ChatMessage[]): string {
   ].join('|');
 }
 
-const NEWS_UPDATES = new Set(['agent_thought_chunk', 'tool_call', 'tool_call_update', 'plan']);
+const NEWS_UPDATES = new Set(['tool_call', 'tool_call_update', 'plan']);
+const CHUNK_UPDATES = new Set(['agent_message_chunk', 'agent_thought_chunk']);
 
-/** True when an update shows the agent got through: text, reasoning, a tool or a plan. Empty chunks (Qwen's lifecycle notes) are not news. */
+/**
+ * True when an update shows the agent got through: text, reasoning, a tool or a
+ * plan. Empty chunks (Qwen's lifecycle notes) are not news, as the chat ignores them too.
+ */
 export function isNewsUpdate(update: unknown): boolean {
   const record = recordOf(update);
   const kind = record?.sessionUpdate;
   if (typeof kind !== 'string') return false;
   if (NEWS_UPDATES.has(kind)) return true;
-  if (kind !== 'agent_message_chunk') return false;
+  if (!CHUNK_UPDATES.has(kind)) return false;
   return textOf(recordOf(record?.content)?.text) !== undefined;
 }

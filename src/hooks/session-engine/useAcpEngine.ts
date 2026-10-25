@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import {
   applyAcpUpdate,
   applyPermissionRequest,
@@ -19,6 +18,7 @@ import { toCommands, useAcpSessions, type AcpSessionInfo, type TurnResult } from
 import { useLatest } from '../useLatest';
 import { useBatchedUpdates } from '../useBatchedUpdates';
 import { useAgentFailures } from '../useAgentFailures';
+import { qwenErrorDetail } from '../../lib/qwen-api-error';
 import type { AgentProfile, ChatMessage, ElicitationCard, Session } from '../../types';
 import { parseAuthRequired, type AuthMethod } from '../../lib/acp-auth';
 import { isUnknownSessionError } from '../../lib/acp-load-error';
@@ -32,20 +32,6 @@ function turnEndNotice(stopReason: string | undefined, error: string | undefined
   if (error) return `The agent's turn failed: ${error}`;
   if (stopReason && NOT_ENDED_NORMALLY.has(stopReason)) return `The agent stopped early (${stopReason}).`;
   return null;
-}
-
-/** The last API error Qwen Code logged since the turn began, as "<status> <message>". */
-async function qwenErrorDetail(sessionId: string, since: number | undefined): Promise<string | undefined> {
-  try {
-    const error = await invoke<{ statusCode?: number | null; message: string } | null>('acp_qwen_last_api_error', {
-      sessionId,
-      since: since ?? 0,
-    });
-    if (!error?.message) return undefined;
-    return error.statusCode ? `${error.statusCode} ${error.message}` : error.message;
-  } catch {
-    return undefined;
-  }
 }
 
 function isCommandsUpdate(update: unknown): update is { availableCommands: unknown } {

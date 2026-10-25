@@ -3,6 +3,7 @@ import {
   activityKeyOf,
   failureReportOf,
   hasRunningTool,
+  isNewsUpdate,
   nextFailures,
   stallNoticeText,
   STALL_MIN_FAILURES,
@@ -101,7 +102,23 @@ describe("nextFailures", () => {
   });
 });
 
+describe("isNewsUpdate", () => {
+  it("counts text, reasoning, tools and plans, but not empty chunks", () => {
+    expect(isNewsUpdate({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "O" } })).toBe(true);
+    expect(isNewsUpdate({ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "hm" } })).toBe(true);
+    expect(isNewsUpdate({ sessionUpdate: "tool_call", toolCallId: "t" })).toBe(true);
+    expect(isNewsUpdate({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "" } })).toBe(false);
+    expect(isNewsUpdate({ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "" } })).toBe(false);
+  });
+});
+
 describe("stallNoticeText", () => {
+  it("ends the agent's error with a full stop when it has none", () => {
+    expect(
+      stallNoticeText("Codex", { failures: { count: 2, source: "codex", detail: "stream disconnected" }, silentForMs: 0 }),
+    ).toBe("Codex's requests failed 2 times in a row. Last error: stream disconnected.");
+  });
+
   it("names the agent, the model, the count and the error it reported", () => {
     expect(
       stallNoticeText("Qwen Code", {

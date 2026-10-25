@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { failureReportOf, isNewsUpdate, nextFailures, type AgentFailures } from '../lib/agent-stall';
+import { failureReportOf, isNewsUpdate, nextFailures, STALL_MIN_FAILURES, type AgentFailures } from '../lib/agent-stall';
 
 function sameFailures(a: AgentFailures | undefined, b: AgentFailures | undefined): boolean {
   return a === b || (!!a && !!b && a.count === b.count && a.source === b.source && a.model === b.model && a.detail === b.detail);
@@ -20,12 +20,16 @@ export function useAgentFailures() {
     setFailures(current.current);
   };
 
-  /** Folds a live (not replayed) update in; true when it reports a failed Qwen Code request. */
+  /**
+   * Folds a live (not replayed) update in; true when it reports a failed Qwen
+   * Code request the notice shows, so its error is worth reading from Qwen's log.
+   */
   const observe = (sessionId: string, update: unknown): boolean => {
     const report = failureReportOf(update);
     if (report) {
-      set(sessionId, nextFailures(current.current[sessionId], report));
-      return report.kind === 'failed' && report.source === 'qwen-lifecycle';
+      const next = nextFailures(current.current[sessionId], report);
+      set(sessionId, next);
+      return report.kind === 'failed' && report.source === 'qwen-lifecycle' && (next?.count ?? 0) >= STALL_MIN_FAILURES;
     }
     if (isNewsUpdate(update)) set(sessionId, undefined);
     return false;

@@ -9,15 +9,16 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
       { label: "Agents", href: "#agents" },
       { label: "Features", href: "#features" },
       { label: "Privacy", href: "#privacy" },
+      { label: "Download", href: LINKS.download },
     ],
   },
   {
-    title: "Project",
+    title: "Docs",
     links: [
-      { label: "GitHub", href: LINKS.repo },
-      { label: "Releases", href: LINKS.releases },
+      { label: "Install", href: LINKS.installGuide },
+      { label: "Supported agents", href: LINKS.agentsGuide },
+      { label: "Troubleshooting", href: LINKS.troubleshooting },
       { label: "Changelog", href: LINKS.changelog },
-      { label: "Security", href: LINKS.security },
     ],
   },
 ];
@@ -53,7 +54,7 @@ export function SiteFooter() {
         <div className="flex flex-wrap justify-between gap-3 border-t border-border pt-5">
           <p className="t-caption m-0">© 2026 Zorvo. All rights reserved.</p>
           <p className="t-caption m-0 max-w-[560px]">
-            Claude Code, Codex and Qwen Code belong to their makers. Zorvo works
+            Claude Code, Codex, Qwen Code and other agent names belong to their makers. Zorvo works
             with them and is not endorsed by them.
           </p>
         </div>

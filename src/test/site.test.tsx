@@ -129,6 +129,29 @@ describe("landing page", () => {
     }
   });
 
+  it("links the docs from the header and says agents come from the ACP registry", () => {
+    const header = document.querySelector("header")!;
+    expect([...header.querySelectorAll("a")].map((link) => link.textContent)).toContain("Docs");
+    expect(copy).toContain("ACP registry");
+    expect(copy).not.toMatch(/Aider|Oh-My-Pi/);
+  });
+
+  it("lists the nine features and the registry's three agent states", () => {
+    const features = document.querySelectorAll("#features ul > li");
+    expect(features).toHaveLength(9);
+    expect(copy).toContain("Install agents from Zorvo");
+    expect(copy).toContain("A terminal where the agent works");
+    const registry = document.querySelector('#agents [role="img"]');
+    expect(registry?.textContent).toMatch(/Update available.*Installing….*In the registry/s);
+  });
+
+  it("shows the plan with one step done and the next waiting on the user", () => {
+    const picture = document.querySelector('#control [role="img"]');
+    expect(picture?.textContent).toMatch(/Plan\s*1\/4/);
+    expect(picture?.textContent).toContain("Waiting on you");
+    expect(picture?.textContent).not.toContain("Session cost");
+  });
+
   it("points every in-page link at an element that exists", () => {
     for (const link of document.querySelectorAll('a[href^="#"]')) {
       const id = link.getAttribute("href")!.slice(1);

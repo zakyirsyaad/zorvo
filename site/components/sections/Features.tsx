@@ -10,14 +10,35 @@ const FEATURES: { icon: IconName; title: string; body: ReactNode }[] = [
     body: "Its real modes and models, permission requests with its own choices, slash commands and context usage. Sessions resume after a restart.",
   },
   {
-    icon: "square-terminal",
+    icon: "download",
+    title: "Install agents from Zorvo",
+    body: "Pick an agent and click Install. Zorvo brings Node.js or uv when it needs them, and you can write your first message while it installs.",
+  },
+  {
+    icon: "key-round",
     title: "Sign in from inside Zorvo",
     body: "An agent's own login runs in a terminal in the app. Your message is sent once you are signed in.",
   },
   {
     icon: "folder",
     title: "Workspaces and sessions",
-    body: "Sessions group by folder and title themselves from the first message. Rename, pin and archive them. An unread mark shows which agent finished while you were away.",
+    body: "Sessions group by folder and title themselves from the first message. Rename, pin and archive them, or continue one you started in the agent's own CLI.",
+  },
+  {
+    icon: "square-terminal",
+    title: "A terminal where the agent works",
+    body: "Open a shell in the session's folder, or its worktree, in a drawer under the chat. Each folder keeps its own tabs.",
+  },
+  {
+    icon: "git-branch",
+    title: "Branches and worktrees",
+    body: (
+      <>
+        Pick the branch a session starts from. Or give it its own worktree on an{" "}
+        <Chip isCode>agent/&lt;title&gt;</Chip> branch, so agents in one repository never edit the
+        same files.
+      </>
+    ),
   },
   {
     icon: "rotate-ccw",
@@ -25,14 +46,9 @@ const FEATURES: { icon: IconName; title: string; body: ReactNode }[] = [
     body: "Fork any reply into a new session. Or rewind to before one of your messages and send it again, edited.",
   },
   {
-    icon: "git-branch",
-    title: "Worktrees",
-    body: (
-      <>
-        Run a session in its own git worktree on an <Chip isCode>agent/&lt;title&gt;</Chip> branch,
-        so agents in one repository never edit the same files.
-      </>
-    ),
+    icon: "image",
+    title: "The composer",
+    body: "Mention files with @, drop files and pictures onto the window, and see an attached image as a thumbnail before you send it.",
   },
   {
     icon: "git-pull-request",
@@ -58,7 +74,7 @@ export function Features() {
           id="features-title"
           eyebrow="features"
           title="One app. Each agent as it really is."
-          lead="Sessions, worktrees, diffs and pull requests sit around the agent, never in its way."
+          lead="Sessions, worktrees, a terminal, diffs and pull requests sit around the agent, never in its way."
           className="max-w-[640px]"
         />
         {/* Hairline grid: the list draws the top and left edges, each cell its right and bottom. */}

@@ -14,7 +14,7 @@ export function Hero() {
       >
         {/* The release line reads the app's own version, so it moves with each release. */}
         <a
-          href={LINKS.releases}
+          href={LINKS.changelog}
           className="focus-ring inline-flex items-center gap-2 rounded-sm font-mono text-xs leading-4 text-fg-muted no-underline transition-colors duration-150 hover:text-fg"
         >
           <span aria-hidden="true" className="text-fg-subtle">&gt;</span>
@@ -27,17 +27,17 @@ export function Hero() {
           One desktop.
         </h1>
         <p className="t-lead m-0 max-w-[560px]">
-          Claude Code, Codex and Qwen Code in one native app. Bring the agent you already use. No
-          lock-in, no API keys.
+          Claude Code, Codex and Qwen Code in one native app. Bring the agent you already use, or
+          install one from Zorvo. No lock-in, no API keys.
         </p>
         <div className="flex flex-wrap justify-center gap-3">
-          <ButtonLink href={LINKS.releases} variant="primary" size="lg">
+          <ButtonLink href={LINKS.download} variant="primary" size="lg">
             <Icon name="download" size={16} />
             Download for Mac
           </ButtonLink>
-          <ButtonLink href={LINKS.repo} variant="outline" size="lg">
-            View on GitHub
-            <Icon name="arrow-up-right" size={16} />
+          <ButtonLink href={LINKS.docs} variant="outline" size="lg">
+            Read the docs
+            <Icon name="arrow-right" size={16} />
           </ButtonLink>
         </div>
         <p className="t-caption m-0">

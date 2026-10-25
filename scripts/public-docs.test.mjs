@@ -79,24 +79,36 @@ describe("releaseNotes", () => {
   });
 });
 
-describe("the public user guide", () => {
-  const readme = sectionsOf(readFileSync(join(ROOT, "README.md"), "utf8"));
-  const guide = sectionsOf(readFileSync(join(ROOT, "docs/releases-repo/README.md"), "utf8"));
+/** GitHub's anchor for a heading: lower case, punctuation dropped, spaces to dashes. */
+function anchorOf(heading) {
+  return heading.toLowerCase().replace(/[^a-z0-9 -]/g, "").replace(/ /g, "-");
+}
 
-  it.each(["Highlights", "Supported agents", "Requirements", "Getting started", "Privacy and your data", "Troubleshooting"])(
-    "repeats the README's %s section word for word",
-    (name) => {
-      expect(guide.get(name)).toBeDefined();
-      expect(guide.get(name)).toBe(readme.get(name));
+describe("the public user guide", () => {
+  const guide = readFileSync(join(ROOT, "docs/releases-repo/README.md"), "utf8");
+  const anchors = new Set([...guide.matchAll(/^#{2,3} (.+)$/gm)].map((m) => anchorOf(m[1])));
+
+  // The site, the release notes, the issue forms and SECURITY.md link these.
+  it.each(["install", "supported-agents", "troubleshooting", "check-your-download", "open-zorvo-the-first-time"])(
+    "keeps the #%s section others link to",
+    (anchor) => {
+      expect(anchors.has(anchor)).toBe(true);
     },
   );
 
-  it("repeats the README's Install section, linking the public releases", () => {
-    const install = readme.get("Install")?.replace(`${PRIVATE}-releases/releases/latest`, "RELEASES");
-    expect(guide.get("Install")?.replace(`${PRIVATE}-releases/releases/latest`, "RELEASES")).toBe(install);
+  it("links only to sections it has", () => {
+    for (const [, anchor] of guide.matchAll(/\]\(#([a-z0-9-]+)\)/g)) {
+      expect(anchors.has(anchor), anchor).toBe(true);
+    }
   });
 
   it("links nothing in the private repository", () => {
-    expect([...guide.values()].join("\n")).not.toMatch(new RegExp(`${PRIVATE}[/#)]`));
+    expect(guide).not.toMatch(new RegExp(`${PRIVATE}[/#)"]`));
+  });
+
+  it("is the one copy: this repository's README points at it", () => {
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    expect(readme).toContain("docs/releases-repo/README.md");
+    expect(sectionsOf(readme).has("Install")).toBe(false);
   });
 });

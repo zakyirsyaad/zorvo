@@ -28,6 +28,10 @@ struct SessionHandle {
     /// submission order, and callers never block on a full PTY input buffer.
     input_tx: std::sync::mpsc::Sender<Vec<u8>>,
     child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
+    /// The process id, read once at spawn. The reader thread holds `child`'s
+    /// lock while it waits for the process to end, so asking `child` for it
+    /// later could block.
+    pid: Option<u32>,
 }
 
 /// Rejects a working directory that is relative or does not exist.
@@ -140,6 +144,7 @@ impl PtySessionManager {
             .try_clone_reader()
             .map_err(|e| format!("Failed to clone PTY reader: {}", e))?;
 
+        let pid = child.process_id();
         let shared_child = Arc::new(Mutex::new(child));
 
         // One writer thread per session owns the PTY writer. `write_stdin` only
@@ -167,6 +172,7 @@ impl PtySessionManager {
             master: pair.master,
             input_tx,
             child: Arc::clone(&shared_child),
+            pid,
         };
 
         {
@@ -174,6 +180,17 @@ impl PtySessionManager {
                 .sessions
                 .lock()
                 .map_err(|e| format!("Lock poisoned: {}", e))?;
+            // Checked under the same lock as the insert: replacing a running
+            // session would orphan its process.
+            if sessions.contains_key(session_id) {
+                drop(sessions);
+                if let Ok(mut child) = shared_child.lock() {
+                    let _ = child.kill();
+                    // No reader thread waits on this one: reap it here.
+                    let _ = child.wait();
+                }
+                return Err(format!("Session '{}' is already running", session_id));
+            }
             sessions.insert(session_id.to_string(), handle);
         }
 
@@ -259,7 +276,11 @@ impl PtySessionManager {
                     }
                 }
 
-                // Process exited or reader stream closed
+                // Process exited or reader stream closed. The end of the output is
+                // enough to know a shell exited even when a job it started still
+                // holds the terminal: the child leads the PTY's session, and macOS
+                // revokes a session's terminal when its leader exits (see
+                // `a_shell_that_exits_while_a_job_holds_its_terminal_reports_its_exit_once`).
                 let exit_code = match child_for_wait.lock() {
                     Ok(mut ch) => match ch.wait() {
                         Ok(status) => status.exit_code(),
@@ -345,38 +366,41 @@ impl PtySessionManager {
             .count()
     }
 
-    /// Each running session's process id, by session id. A process that has
-    /// exited is left out: its pid may already belong to another process.
-    pub fn root_pids(&self) -> Vec<(String, u32)> {
-        // Copy the handles out first: a child's lock can be held by its wait
-        // thread, and waiting for it must not hold up every other session.
-        let children: Vec<_> = self
-            .sessions
+    /// The pid of a running session's process, if it has one.
+    pub fn pid_of(&self, session_id: &str) -> Option<u32> {
+        let sessions = self.sessions.lock().ok()?;
+        sessions.get(session_id)?.pid
+    }
+
+    /// The ids of the running sessions, in no particular order.
+    pub fn session_ids(&self) -> Vec<String> {
+        self.sessions
             .lock()
-            .map(|sessions| {
-                sessions
-                    .iter()
-                    .map(|(id, handle)| (id.clone(), Arc::clone(&handle.child)))
-                    .collect()
-            })
-            .unwrap_or_default();
-        // A child whose lock is taken is being waited on: it has ended.
-        let mut roots: Vec<(String, u32)> = children
-            .into_iter()
-            .filter_map(|(id, child)| {
-                let mut child = child.try_lock().ok()?;
-                match child.try_wait() {
-                    Ok(None) => Some((id, child.process_id()?)),
-                    _ => None,
-                }
-            })
-            .collect();
-        roots.sort();
-        roots
+            .map(|sessions| sessions.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Whether a session with this id is running.
+    pub fn has_session(&self, session_id: &str) -> bool {
+        self.sessions
+            .lock()
+            .map(|sessions| sessions.contains_key(session_id))
+            .unwrap_or(false)
     }
 
     /// Kills the running child process and cleans up the session.
     pub fn kill_session(&self, session_id: &str) -> Result<(), String> {
+        if self.kill_session_if_present(session_id)? {
+            Ok(())
+        } else {
+            Err(format!("Session '{}' not found", session_id))
+        }
+    }
+
+    /// Like `kill_session`, but a session that is already gone (its process
+    /// exited and the reader thread removed it) is `Ok(false)`, not an error.
+    /// `Err` means the kill could not run at all.
+    pub fn kill_session_if_present(&self, session_id: &str) -> Result<bool, String> {
         let handle = {
             let mut sessions = self
                 .sessions
@@ -385,13 +409,164 @@ impl PtySessionManager {
             sessions.remove(session_id)
         };
 
-        if let Some(handle) = handle {
-            if let Ok(mut child) = handle.child.lock() {
-                let _ = child.kill();
+        let Some(handle) = handle else {
+            return Ok(false);
+        };
+        // A panic elsewhere must not leave the process running while this
+        // reports it killed: the lock only guards the handle, not its state.
+        let mut child = handle
+            .child
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _ = child.kill();
+        Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PtySessionManager;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    /// A session that is already gone is not an error to `kill_session_if_present`:
+    /// `Ok(false)` tells it apart from a kill that could not run at all.
+    #[test]
+    fn kill_session_if_present_tells_a_gone_session_from_a_failure() {
+        let manager = PtySessionManager::default_manager();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        manager
+            .start_session("present", &cwd, "/bin/cat", &[], &[])
+            .expect("start");
+
+        assert_eq!(manager.kill_session_if_present("present"), Ok(true));
+        assert!(!manager.has_session("present"));
+        assert_eq!(manager.kill_session_if_present("present"), Ok(false));
+    }
+
+    /// A panic that poisoned a child's lock must not leave its process running
+    /// while the kill reports success.
+    #[test]
+    fn a_poisoned_child_lock_still_kills_the_process() {
+        let manager = PtySessionManager::default_manager();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        manager
+            .start_session("poisoned-child", &cwd, "/bin/cat", &[], &[])
+            .expect("start");
+        let pid = manager.pid_of("poisoned-child").expect("pid");
+        let child = manager.sessions.lock().unwrap()["poisoned-child"]
+            .child
+            .clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = child.lock().unwrap();
+            panic!("poison the child lock");
+        })
+        .join();
+
+        assert_eq!(manager.kill_session_if_present("poisoned-child"), Ok(true));
+        assert!(
+            wait_until_gone(pid, Duration::from_secs(5)),
+            "the process kept running after a kill that reported success"
+        );
+        // The reader reaps it too: a poisoned lock must not leave a zombie behind.
+        assert!(
+            wait_until_reaped(pid, Duration::from_secs(5)),
+            "the killed process was never reaped"
+        );
+    }
+
+    /// Whether `pid` leaves the process table (a zombie still has an entry) within `timeout`.
+    fn wait_until_reaped(pid: u32, timeout: Duration) -> bool {
+        let deadline = std::time::Instant::now() + timeout;
+        while std::time::Instant::now() < deadline {
+            let listed = std::process::Command::new("/bin/ps")
+                .args(["-o", "stat=", "-p", &pid.to_string()])
+                .output()
+                .map(|out| !String::from_utf8_lossy(&out.stdout).trim().is_empty())
+                .unwrap_or(false);
+            if !listed {
+                return true;
             }
-            Ok(())
-        } else {
-            Err(format!("Session '{}' not found", session_id))
+            std::thread::sleep(Duration::from_millis(50));
         }
+        false
+    }
+
+    /// Whether `pid` stops running within `timeout`.
+    fn wait_until_gone(pid: u32, timeout: Duration) -> bool {
+        let deadline = std::time::Instant::now() + timeout;
+        while std::time::Instant::now() < deadline {
+            let alive = std::process::Command::new("/bin/kill")
+                .args(["-0", &pid.to_string()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false);
+            if !alive {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        false
+    }
+
+    /// A poisoned sessions lock is a real failure: closing a workspace shell
+    /// reports it instead of saying the shell was closed.
+    #[test]
+    fn closing_a_shell_reports_a_poisoned_sessions_lock() {
+        let manager = PtySessionManager::default_manager();
+        let poisoner = manager.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.sessions.lock().unwrap();
+            panic!("poison the sessions lock");
+        })
+        .join();
+
+        assert!(manager.kill_session_if_present("shell-1").is_err());
+        assert!(crate::workspace_terminal::close(&manager, "shell-1").is_err());
+    }
+
+    /// The reader thread holds a child's lock while it waits for the process to
+    /// end; `pid_of` must not queue behind it, because it holds the sessions
+    /// lock that every other session call needs.
+    #[test]
+    fn pid_of_does_not_wait_for_the_child_lock() {
+        let manager = PtySessionManager::default_manager();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        manager
+            .start_session("pid-lock", &cwd, "/bin/cat", &[], &[])
+            .expect("start");
+        let child = manager.sessions.lock().unwrap()["pid-lock"].child.clone();
+        let (held_tx, held_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let holder = std::thread::spawn(move || {
+            let _waiting = child.lock().unwrap();
+            held_tx.send(()).unwrap();
+            let _ = release_rx.recv_timeout(Duration::from_secs(5));
+        });
+        held_rx.recv().unwrap();
+
+        let (tx, rx) = mpsc::channel();
+        let asking = manager.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(asking.pid_of("pid-lock"));
+        });
+        let pid = rx.recv_timeout(Duration::from_secs(1));
+
+        release_tx.send(()).unwrap();
+        holder.join().unwrap();
+        manager.kill_session("pid-lock").expect("kill");
+        assert!(pid
+            .expect("pid_of blocked on the child's lock")
+            .is_some_and(|pid| pid > 0));
     }
 }

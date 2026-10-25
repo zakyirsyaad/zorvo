@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
-import { ComposerDock } from "../components/ComposerDock";
+import { createRef } from "react";
+import { ComposerDock, type ComposerHandle } from "../components/ComposerDock";
 import type { ComposerControls } from "../lib/composer-controls";
+import type { BranchControl } from "../components/composer/FolderPicker";
 
 function prompt(): HTMLTextAreaElement {
   return screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement;
@@ -38,6 +40,15 @@ describe("ComposerDock", () => {
     expect(screen.queryByRole("button", { name: /voice dictation/i })).toBeNull();
   });
 
+  it("turns off macOS smart substitutions and autocorrection in the prompt", () => {
+    render(<ComposerDock controls={controls()} onSendMessage={() => {}} />);
+    const box = prompt();
+
+    expect(box.getAttribute("autocorrect")).toBe("off");
+    expect(box.getAttribute("autocapitalize")).toBe("off");
+    expect(box.getAttribute("spellcheck")).toBe("false");
+  });
+
   describe("sending", () => {
     it("submits on Enter without Shift and clears the input", () => {
       const onSendMessage = vi.fn();
@@ -71,6 +82,20 @@ describe("ComposerDock", () => {
       fireEvent.change(prompt(), { target: { value: "run tests" } });
       fireEvent.click(screen.getByRole("button", { name: "Send message" }));
       expect(onSendMessage).toHaveBeenCalledWith("run tests");
+    });
+
+    it("with sendDisabled, keeps the prompt and attach usable but does not send", () => {
+      const onSendMessage = vi.fn();
+      render(<ComposerDock onSendMessage={onSendMessage} onAttach={async () => []} sendDisabled />);
+
+      expect(prompt().disabled).toBe(false);
+      expect((screen.getByRole("button", { name: "Add attachment" }) as HTMLButtonElement).disabled).toBe(false);
+      fireEvent.change(prompt(), { target: { value: "fix the build" } });
+      expect((screen.getByRole("button", { name: "Send message" }) as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.keyDown(prompt(), { key: "Enter" });
+
+      expect(onSendMessage).not.toHaveBeenCalled();
+      expect(prompt().value).toBe("fix the build");
     });
   });
 
@@ -115,14 +140,6 @@ describe("ComposerDock", () => {
       expect(screen.queryByRole("button", { name: /permission mode/i })).toBeNull();
       expect(screen.queryByRole("button", { name: /^effort:/i })).toBeNull();
       expect(screen.getByRole("button", { name: /^model:/i })).toBeDefined();
-    });
-
-    it("locks the controls with an explanation when asked", () => {
-      render(<ComposerDock controls={controls()} optionsLocked onSendMessage={() => {}} />);
-
-      const model = screen.getByRole("button", { name: /^model:/i }) as HTMLButtonElement;
-      expect(model.disabled).toBe(true);
-      expect(model.title).toMatch(/new session/i);
     });
   });
 
@@ -211,6 +228,107 @@ describe("ComposerDock", () => {
     expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["api", "web"]);
   });
 
+  describe("branch picker", () => {
+    const folders = [{ name: "api", path: "/w/api" }];
+    const branchControl = (overrides: Partial<BranchControl> = {}): BranchControl => ({
+      current: "main",
+      branches: ["feature/login", "main", "release"],
+      onOpen: vi.fn(),
+      onPick: vi.fn(),
+      ...overrides,
+    });
+    const renderWith = (branch?: BranchControl) =>
+      render(
+        <ComposerDock onSendMessage={() => {}} folder={{ folders, selectedPath: "/w/api", onSelect: () => {}, branch }} />,
+      );
+    const openFolderList = () => fireEvent.click(screen.getByRole("button", { name: "Folder: api" }));
+
+    it("has no Branch row outside a repository", () => {
+      renderWith(undefined);
+      openFolderList();
+
+      expect(screen.queryByRole("button", { name: /^Branch/ })).toBeNull();
+    });
+
+    it("names the current branch and lists the branches when opened", () => {
+      const branch = branchControl();
+      renderWith(branch);
+      openFolderList();
+
+      fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
+
+      expect(branch.onOpen).toHaveBeenCalled();
+      const options = screen.getAllByRole("option", { name: /feature|main|release/ });
+      expect(options.map((o) => o.textContent)).toEqual(["feature/login", "main", "release"]);
+      expect(screen.getByRole("option", { name: "main" }).getAttribute("aria-selected")).toBe("true");
+    });
+
+    it("says the branches are loading until they arrive", () => {
+      renderWith(branchControl({ branches: null }));
+      openFolderList();
+
+      fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
+
+      expect(screen.getByText("Loading branches…")).toBeDefined();
+    });
+
+    it("filters the branches as you type and picks the first match with Enter", () => {
+      const branch = branchControl();
+      renderWith(branch);
+      openFolderList();
+      fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
+
+      const search = screen.getByRole("textbox", { name: "Search branches" });
+      fireEvent.change(search, { target: { value: "rel" } });
+      expect(screen.getAllByRole("option", { name: /feature|main|release/ }).map((o) => o.textContent)).toEqual([
+        "release",
+      ]);
+      fireEvent.keyDown(search, { key: "Enter" });
+
+      expect(branch.onPick).toHaveBeenCalledWith("release");
+      expect(screen.queryByRole("dialog", { name: "Choose a folder" })).toBeNull();
+    });
+
+    it("picks a branch by clicking it and closes the list", () => {
+      const branch = branchControl();
+      renderWith(branch);
+      openFolderList();
+      fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
+
+      fireEvent.click(screen.getByRole("option", { name: "feature/login" }));
+
+      expect(branch.onPick).toHaveBeenCalledWith("feature/login");
+      expect(screen.queryByRole("dialog", { name: "Choose a folder" })).toBeNull();
+    });
+
+    it("says when no branch matches", () => {
+      renderWith(branchControl());
+      openFolderList();
+      fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
+
+      fireEvent.change(screen.getByRole("textbox", { name: "Search branches" }), { target: { value: "zzz" } });
+
+      expect(screen.getByText("No branch matches.")).toBeDefined();
+    });
+  });
+
+  it("marks a worktree in place of the folder icon, so the chip keeps its width", () => {
+    const folder = (isOn: boolean) => ({
+      folders: [{ name: "api", path: "/w/api" }],
+      selectedPath: "/w/api",
+      onSelect: () => {},
+      worktree: { isOn, onChange: () => {} },
+    });
+    const { rerender } = render(<ComposerDock onSendMessage={() => {}} folder={folder(false)} />);
+    const chip = () => screen.getByRole("button", { name: "Folder: api" });
+    const iconCountOff = chip().querySelectorAll("svg").length;
+
+    rerender(<ComposerDock onSendMessage={() => {}} folder={folder(true)} />);
+
+    expect(chip().querySelectorAll("svg").length).toBe(iconCountOff);
+    expect(chip().querySelector('[aria-label="in a new worktree"]')).not.toBeNull();
+  });
+
   it("closes an open dropdown with Escape", () => {
     render(<ComposerDock onSendMessage={() => {}} controls={controls()} />);
 
@@ -243,5 +361,33 @@ describe("ComposerDock", () => {
     expect(chip.getAttribute("title")).toBe("[ModelStudio Token Plan] qwen3.8-max");
     fireEvent.click(chip);
     expect(screen.getByRole("option", { name: "[ModelStudio Token Plan] qwen3-coder" })).toBeDefined();
+  });
+});
+
+describe("ComposerDock restored message", () => {
+  function renderWithHandle() {
+    const handle = createRef<ComposerHandle>();
+    render(<ComposerDock handleRef={handle} onSendMessage={() => {}} />);
+    return handle;
+  }
+
+  it("holds the restored message until the user changes it", () => {
+    const handle = renderWithHandle();
+
+    act(() => handle.current?.restore("hi"));
+    expect(handle.current?.holdsRestored()).toBe(true);
+
+    fireEvent.change(prompt(), { target: { value: "hi!" } });
+    expect(handle.current?.holdsRestored()).toBe(false);
+  });
+
+  it("is emptied by clear and then holds nothing restored", () => {
+    const handle = renderWithHandle();
+    act(() => handle.current?.restore("hi"));
+
+    act(() => handle.current?.clear());
+
+    expect(prompt().value).toBe("");
+    expect(handle.current?.holdsRestored()).toBe(false);
   });
 });

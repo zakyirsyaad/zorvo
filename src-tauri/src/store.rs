@@ -5,17 +5,18 @@
 //! through a temporary file and a rename so an interrupted write cannot leave a
 //! half-written `state.json` behind to break the next launch.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// The schema version written to `state.json`, bumped when the shape changes.
-pub const STATE_VERSION: u32 = 1;
+pub const STATE_VERSION: u32 = 2;
 
 /// The state file inside the store root.
 pub(crate) const STATE_FILE: &str = "state.json";
@@ -78,6 +79,30 @@ pub struct Settings {
     pub onboarding_completed: bool,
     /// `system`, `light` or `dark`; anything else follows the system.
     pub appearance: String,
+    /// The agent ids the user uses, or `None` when the list was never set.
+    pub enabled_agents: Option<Vec<String>>,
+    /// Agent ids the user removed, which are never enabled again automatically.
+    pub removed_agents: Vec<String>,
+    /// The registry version in use for each agent id.
+    pub agent_versions: BTreeMap<String, String>,
+    /// The update version already announced for each agent id.
+    pub notified_updates: BTreeMap<String, String>,
+}
+
+/// The registry agents in use until the user changes the list; matches
+/// `DEFAULT_ENABLED_AGENTS` in `src/lib/enabled-agents.ts`.
+pub const DEFAULT_ENABLED_AGENTS: [&str; 3] = ["claude-acp", "codex-acp", "qwen-code"];
+
+impl Settings {
+    /// The agent ids in use: the stored list, else [`DEFAULT_ENABLED_AGENTS`].
+    pub fn enabled_agent_ids(&self) -> Vec<String> {
+        self.enabled_agents.clone().unwrap_or_else(|| {
+            DEFAULT_ENABLED_AGENTS
+                .iter()
+                .map(ToString::to_string)
+                .collect()
+        })
+    }
 }
 
 /// A folder the user opened an agent in.
@@ -153,6 +178,18 @@ pub struct SessionWorktreeRecord {
     pub branch: String,
 }
 
+/// Where the app keeps its data: the platform app-data dir, or a sibling
+/// `<identifier>.dev` folder for a dev build. Dev and release builds share an
+/// identifier, and two processes writing one data dir can lose sessions.
+pub fn data_dir_for(app_data_dir: &Path, is_dev_build: bool) -> PathBuf {
+    if !is_dev_build {
+        return app_data_dir.to_path_buf();
+    }
+    let mut name = app_data_dir.file_name().unwrap_or_default().to_os_string();
+    name.push(".dev");
+    app_data_dir.with_file_name(name)
+}
+
 /// A repository over the app's state directory.
 ///
 /// Constructed once during setup and shared with the commands through Tauri's
@@ -163,6 +200,12 @@ pub struct AppStore {
     /// loaded on first use and kept current by `save_state` and
     /// `remember_workspace`, so the Files panel never re-reads the state file.
     known_workspaces: Mutex<Option<HashSet<PathBuf>>>,
+    /// Held for each write of the state file: two saves run on separate
+    /// threads would otherwise share `state.json.tmp` and could interleave.
+    state_write: Mutex<()>,
+    /// Held for each transcript write, so a throttled save and an immediate
+    /// one of the same session never interleave.
+    transcript_write: Mutex<()>,
     /// The worktrees folder of the pre-rename data dir, whose worktrees saved
     /// sessions still use in place and may need to remove.
     legacy_worktrees_root: Option<PathBuf>,
@@ -218,6 +261,8 @@ impl AppStore {
         Self {
             root,
             known_workspaces: Mutex::new(None),
+            state_write: Mutex::new(()),
+            transcript_write: Mutex::new(()),
             legacy_worktrees_root: None,
         }
     }
@@ -306,12 +351,18 @@ impl AppStore {
     }
 
     /// Writes the state as pretty JSON, replacing any previous file atomically.
+    /// Saves run one at a time, so two writes never mix in the scratch file.
     pub fn save_state(&self, state: &PersistedState) -> Result<(), String> {
         self.ensure_dir(&self.root)?;
 
         let json = serde_json::to_string_pretty(state)
             .map_err(|e| format!("Failed to serialize app state: {}", e))?;
 
+        // A writer that panicked left no lock-protected data behind, only a file the next write replaces.
+        let _writing = self
+            .state_write
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         atomic_write(
             &self.root.join(STATE_FILE),
             &self.root.join(STATE_TMP_FILE),
@@ -359,9 +410,15 @@ impl AppStore {
         let json = serde_json::to_string(messages)
             .map_err(|e| format!("Failed to serialize transcript '{}': {}", session_id, e))?;
 
+        // Recovered like `state_write`: the lock only orders writes and guards
+        // no data, so a panic in another save must not stop this one.
+        let _guard = self
+            .transcript_write
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         atomic_write(
             &self.transcript_path(session_id),
-            &dir.join(format!("{}.json.tmp", session_id)),
+            &dir.join(unique_tmp_name(session_id)),
             json.as_bytes(),
         )
     }
@@ -433,13 +490,31 @@ fn validate_session_id(session_id: &str) -> Result<(), String> {
     }
 }
 
+/// A temp file name no other write uses, not even one from a second app
+/// process sharing the data dir: a shared name lets one write rename the
+/// other's file away before it is renamed itself.
+fn unique_tmp_name(session_id: &str) -> String {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    format!("{}.{}.{}.json.tmp", session_id, std::process::id(), n)
+}
+
 /// Writes `contents` to `tmp` then renames it over `path`.
 ///
 /// The rename is the only visible step, so a reader sees either the old file or
 /// the complete new one, never a partial write.
 pub(crate) fn atomic_write(path: &Path, tmp: &Path, contents: &[u8]) -> Result<(), String> {
-    fs::write(tmp, contents).map_err(|e| format!("Failed to write {}: {}", tmp.display(), e))?;
-    fs::rename(tmp, path).map_err(|e| format!("Failed to replace {}: {}", path.display(), e))
+    let written = fs::write(tmp, contents)
+        .map_err(|e| format!("Failed to write {}: {}", tmp.display(), e))
+        .and_then(|()| {
+            fs::rename(tmp, path)
+                .map_err(|e| format!("Failed to replace {}: {}", path.display(), e))
+        });
+    if written.is_err() {
+        // Best effort: a failed write must not leave its scratch file behind.
+        let _ = fs::remove_file(tmp);
+    }
+    written
 }
 
 /// Marks every non-terminated session as terminated, leaving `ended_at` alone.
@@ -458,4 +533,37 @@ fn unix_millis_now() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| elapsed.as_millis() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A panic while a save holds the lock must not stop every later save:
+    /// the lock only orders writes, it guards no data a panic could leave half-done.
+    #[test]
+    fn a_poisoned_transcript_lock_still_lets_saves_through() {
+        let root = std::env::temp_dir().join(format!(
+            "zorvo-store-poison-{}-{}",
+            std::process::id(),
+            unix_millis_now()
+        ));
+        let store = std::sync::Arc::new(AppStore::new(root.clone()));
+        let poisoner = store.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.transcript_write.lock().unwrap();
+            panic!("poison the transcript lock");
+        })
+        .join();
+        assert!(store.transcript_write.is_poisoned());
+
+        store
+            .save_transcript(
+                "s-1",
+                &[serde_json::json!({ "role": "user", "content": "hi" })],
+            )
+            .expect("a save after the poison");
+
+        fs::remove_dir_all(root).ok();
+    }
 }

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { ActionCard } from "../components/ActionCard";
+import { ActionCard, NO_OPTIONS_MESSAGE } from "../components/ActionCard";
 import { ChatCanvas, type ChatMessage } from "../components/ChatCanvas";
+import { HistoryElsewhereNote } from "../components/chat/HistoryElsewhereNote";
 import type { ActionCard as ActionCardType } from "../types";
 import {
   installSpeechMock,
@@ -13,115 +14,59 @@ describe("ActionCard Component", () => {
   const mockCard: ActionCardType = {
     id: "card-1",
     sessionId: "session-1",
-    title: "⚠️ Agent Action Approval Required",
+    title: "Permission requested",
     prompt: "Agent wants to edit file `src/main.ts`",
     commandSnippet: "npm run build",
     toolName: "Bash",
     status: "pending",
-    approvalKey: "y\n",
-    rejectKey: "n\n",
     timestamp: Date.now(),
+    requestId: "perm-1",
+    options: [
+      { optionId: "allow", name: "Allow", kind: "allow_once" },
+      { optionId: "reject", name: "Reject", kind: "reject_once" },
+    ],
   };
 
   it("renders card title, prompt description, and command snippet", () => {
-    render(
-      <ActionCard
-        card={mockCard}
-        onApprove={() => {}}
-        onReject={() => {}}
-      />
-    );
+    render(<ActionCard card={mockCard} />);
 
-    expect(screen.getByText("⚠️ Agent Action Approval Required")).toBeDefined();
+    expect(screen.getByText("Permission requested")).toBeDefined();
     expect(screen.getByText(/Agent wants to edit file/i)).toBeDefined();
     expect(screen.getByText("npm run build")).toBeDefined();
     expect(screen.getByText(/Tool: Bash/i)).toBeDefined();
   });
 
-  it("calls onApprove with approvalKey ('y\\n') when Approve button is clicked", () => {
-    const onApprove = vi.fn();
-    const onReject = vi.fn();
+  it("calls onChoose with the option the user picked", () => {
+    const onChoose = vi.fn();
+    render(<ActionCard card={mockCard} onChoose={onChoose} />);
 
-    render(
-      <ActionCard
-        card={mockCard}
-        onApprove={onApprove}
-        onReject={onReject}
-      />
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
 
-    const approveBtn = screen.getByRole("button", { name: /approve/i });
-    expect(approveBtn).toBeDefined();
-    fireEvent.click(approveBtn);
-
-    expect(onApprove).toHaveBeenCalledWith("y\n");
-    expect(onReject).not.toHaveBeenCalled();
+    expect(onChoose).toHaveBeenCalledWith("reject");
   });
 
-  it("offers no in-place command editing, so approval always targets the agent's original command", () => {
-    // Typing an edited command into a y/n prompt can approve the ORIGINAL command
-    // (e.g. "yarn clean" starts with "y"), so the card must not offer editing.
-    render(
-      <ActionCard
-        card={mockCard}
-        onApprove={() => {}}
-        onReject={() => {}}
-      />
-    );
+  it("disables the choices when the disabled prop is set, and shows the pick once answered", () => {
+    const { rerender } = render(<ActionCard card={mockCard} onChoose={() => {}} disabled />);
 
-    expect(screen.queryByRole("button", { name: /edit/i })).toBeNull();
-    expect(screen.queryByLabelText(/edit command/i)).toBeNull();
+    expect((screen.getByRole("button", { name: "Allow" }) as HTMLButtonElement).disabled).toBe(true);
+
+    rerender(<ActionCard card={{ ...mockCard, status: "approved", chosenOptionId: "allow" }} onChoose={() => {}} />);
+
+    expect(screen.queryByRole("button", { name: "Allow" })).toBeNull();
+    expect(screen.getByText("You chose: Allow")).toBeDefined();
   });
 
-  it("calls onReject with rejectKey ('n\\n') when Reject button is clicked", () => {
-    const onApprove = vi.fn();
-    const onReject = vi.fn();
+  it("says how to continue when a pending request has no options to pick", () => {
+    render(<ActionCard card={{ ...mockCard, options: [] }} onChoose={() => {}} />);
 
-    render(
-      <ActionCard
-        card={mockCard}
-        onApprove={onApprove}
-        onReject={onReject}
-      />
-    );
-
-    const rejectBtn = screen.getByRole("button", { name: /reject/i });
-    expect(rejectBtn).toBeDefined();
-    fireEvent.click(rejectBtn);
-
-    expect(onReject).toHaveBeenCalledWith("n\n");
-    expect(onApprove).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByText(NO_OPTIONS_MESSAGE)).toBeDefined();
   });
 
-  it("disables buttons when status is approved or rejected or disabled prop is set", () => {
-    const approvedCard: ActionCardType = {
-      ...mockCard,
-      status: "approved",
-    };
+  it("says a request was not answered when it ended without a pick", () => {
+    render(<ActionCard card={{ ...mockCard, status: "rejected" }} />);
 
-    const { rerender } = render(
-      <ActionCard
-        card={approvedCard}
-        onApprove={() => {}}
-        onReject={() => {}}
-      />
-    );
-
-    const approveBtn = screen.getByRole("button", { name: /approved/i });
-    expect((approveBtn as HTMLButtonElement).disabled).toBe(true);
-
-    // Test with disabled prop
-    rerender(
-      <ActionCard
-        card={mockCard}
-        onApprove={() => {}}
-        onReject={() => {}}
-        disabled={true}
-      />
-    );
-
-    const pendingApproveBtn = screen.getByRole("button", { name: /approve/i });
-    expect((pendingApproveBtn as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("This request was not answered.")).toBeDefined();
   });
 });
 
@@ -156,27 +101,29 @@ All systems ready for compilation.`,
         {
           id: "t-1",
           name: "Edit",
-          args: 'file_path: "src/App.tsx"',
           status: "completed",
         },
         {
           id: "t-2",
           name: "Bash",
-          args: "pnpm test",
           status: "running",
         },
       ],
       actionCard: {
         id: "card-act-1",
         sessionId: "s-1",
-        title: "⚠️ Agent Action Approval Required",
+        title: "Permission requested",
         prompt: "Run command `pnpm test` in background?",
         commandSnippet: "pnpm test",
         toolName: "Bash",
-        status: "pending",
-        approvalKey: "y\n",
-        rejectKey: "n\n",
+        status: "approved",
+        chosenOptionId: "allow",
         timestamp: Date.now() - 30000,
+        requestId: "perm-1",
+        options: [
+          { optionId: "allow", name: "Allow", kind: "allow_once" },
+          { optionId: "reject", name: "Reject", kind: "reject_once" },
+        ],
       },
     },
   ];
@@ -212,7 +159,6 @@ All systems ready for compilation.`,
     render(
       <ChatCanvas
         messages={mockMessages}
-        onSendPtyInput={() => {}}
       />
     );
 
@@ -238,7 +184,6 @@ All systems ready for compilation.`,
     render(
       <ChatCanvas
         messages={mockMessages}
-        onSendPtyInput={() => {}}
       />
     );
 
@@ -249,64 +194,45 @@ All systems ready for compilation.`,
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith("pnpm install && pnpm build");
   });
 
-  it("renders tool execution chips with completed and running statuses", () => {
+  it("shows a running tool on the collapsed summary row and reveals the rest on click", () => {
     render(
       <ChatCanvas
         messages={mockMessages}
-        onSendPtyInput={() => {}}
       />
     );
 
-    // Tool chip 1: completed
-    expect(screen.getByText(/Edit\(file_path:\s*"src\/App\.tsx"\)/i)).toBeDefined();
-    expect(screen.getByText(/Completed/i)).toBeDefined();
+    const summary = screen.getByRole("button", { name: /Bash/ });
+    expect(summary.textContent).toContain("Running");
+    expect(screen.queryByText("Edit")).toBeNull();
 
-    // Tool chip 2: running
-    expect(screen.getByText(/Bash\(pnpm test\)/i)).toBeDefined();
-    expect(screen.getByText(/Running/i)).toBeDefined();
+    fireEvent.click(summary);
+
+    expect(screen.getByText("Edit")).toBeDefined();
+    expect(screen.getByText(/Completed/i)).toBeDefined();
   });
 
-  it("renders ActionCard when message has an approval_request actionCard", () => {
-    const onSendPtyInput = vi.fn();
-
-    render(
-      <ChatCanvas
-        messages={mockMessages}
-        onSendPtyInput={onSendPtyInput}
-      />
+  it("renders the ActionCard of a message with a permission request and reports the pick with its card", () => {
+    const onChooseOption = vi.fn();
+    const waiting = mockMessages.map((message) =>
+      message.actionCard
+        ? { ...message, actionCard: { ...message.actionCard, status: "pending" as const, chosenOptionId: undefined } }
+        : message,
     );
 
-    expect(screen.getByText("⚠️ Agent Action Approval Required")).toBeDefined();
+    render(<ChatCanvas messages={waiting} onChooseOption={onChooseOption} />);
+
+    expect(screen.getByText("Permission requested")).toBeDefined();
     expect(screen.getByText("Run command `pnpm test` in background?")).toBeDefined();
 
-    const approveBtn = screen.getByRole("button", { name: /approve/i });
-    fireEvent.click(approveBtn);
+    fireEvent.click(screen.getByRole("button", { name: "Allow" }));
 
-    expect(onSendPtyInput).toHaveBeenCalledWith("y\n");
-  });
-
-  it("does not expose an Edit control on action cards, so only approval/rejection keys reach the PTY", () => {
-    const onApproveAction = vi.fn();
-
-    render(
-      <ChatCanvas
-        messages={mockMessages}
-        onSendPtyInput={() => {}}
-        onApproveAction={onApproveAction}
-      />
-    );
-
-    expect(screen.queryByRole("button", { name: /^edit$/i })).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: /approve/i }));
-    expect(onApproveAction).toHaveBeenCalledWith("y\n", expect.any(String));
+    expect(onChooseOption).toHaveBeenCalledWith("card-act-1", "allow");
   });
 
   it("renders message action bar (Copy, Fork, Audio, timestamp)", () => {
     render(
       <ChatCanvas
         messages={mockMessages}
-        onSendPtyInput={() => {}}
         onForkBranch={() => {}}
       />
     );
@@ -322,12 +248,11 @@ All systems ready for compilation.`,
     render(
       <ChatCanvas
         messages={mockMessages}
-        onSendPtyInput={() => {}}
-        agentName="Aider"
+        agentName="Codex"
       />
     );
 
-    expect(screen.getByText("Aider")).toBeDefined();
+    expect(screen.getByText("Codex")).toBeDefined();
     expect(screen.queryByText("Claude Code")).toBeNull();
   });
 
@@ -335,7 +260,6 @@ All systems ready for compilation.`,
     render(
       <ChatCanvas
         messages={mockMessages}
-        onSendPtyInput={() => {}}
       />
     );
 
@@ -347,7 +271,6 @@ All systems ready for compilation.`,
     render(
       <ChatCanvas
         messages={mockMessages}
-        onSendPtyInput={() => {}}
       />
     );
 
@@ -360,7 +283,6 @@ All systems ready for compilation.`,
     render(
       <ChatCanvas
         messages={mockMessages}
-        onSendPtyInput={() => {}}
         onForkBranch={onForkBranch}
       />
     );
@@ -375,7 +297,6 @@ All systems ready for compilation.`,
     render(
       <ChatCanvas
         messages={mockMessages}
-        onSendPtyInput={() => {}}
       />
     );
 
@@ -394,7 +315,6 @@ All systems ready for compilation.`,
     render(
       <ChatCanvas
         messages={mockMessages}
-        onSendPtyInput={() => {}}
       />
     );
 
@@ -412,7 +332,6 @@ All systems ready for compilation.`,
     render(
       <ChatCanvas
         messages={mockMessages}
-        onSendPtyInput={() => {}}
       />
     );
 
@@ -431,7 +350,6 @@ All systems ready for compilation.`,
     render(
       <ChatCanvas
         messages={twoAgentMessages}
-        onSendPtyInput={() => {}}
       />
     );
 
@@ -450,7 +368,6 @@ All systems ready for compilation.`,
     render(
       <ChatCanvas
         messages={twoAgentMessages}
-        onSendPtyInput={() => {}}
       />
     );
 
@@ -473,7 +390,6 @@ All systems ready for compilation.`,
     render(
       <ChatCanvas
         messages={mockMessages}
-        onSendPtyInput={() => {}}
       />
     );
 
@@ -494,7 +410,6 @@ All systems ready for compilation.`,
     render(
       <ChatCanvas
         messages={mockMessages}
-        onSendPtyInput={() => {}}
       />
     );
 
@@ -507,7 +422,6 @@ All systems ready for compilation.`,
     const { unmount } = render(
       <ChatCanvas
         messages={mockMessages}
-        onSendPtyInput={() => {}}
       />
     );
 
@@ -523,7 +437,6 @@ All systems ready for compilation.`,
     const { unmount } = render(
       <ChatCanvas
         messages={mockMessages}
-        onSendPtyInput={() => {}}
       />
     );
 
@@ -542,8 +455,6 @@ describe("ACP chat content", () => {
     prompt: "Run rm -rf build",
     toolName: "execute",
     status: "pending",
-    approvalKey: "",
-    rejectKey: "",
     timestamp: 1,
     requestId: "perm-1",
     options: [
@@ -558,7 +469,6 @@ describe("ACP chat content", () => {
     render(
       <ChatCanvas
         messages={[{ id: "m-1", role: "agent", content: "", timestamp: 1, actionCard: permissionCard }]}
-        onSendPtyInput={() => {}}
         onChooseOption={onChooseOption}
       />
     );
@@ -581,7 +491,6 @@ describe("ACP chat content", () => {
             actionCard: { ...permissionCard, status: "approved", chosenOptionId: "always" },
           },
         ]}
-        onSendPtyInput={() => {}}
         onChooseOption={() => {}}
       />
     );
@@ -590,7 +499,19 @@ describe("ACP chat content", () => {
     expect(screen.getByText(/Always allow/)).toBeDefined();
   });
 
-  it("renders the agent's thinking collapsed and its plan with statuses", () => {
+  it("says a waiting card was asked before the mode changed", () => {
+    render(
+      <ChatCanvas
+        messages={[{ id: "m-1", role: "agent", content: "", timestamp: 1, actionCard: { ...permissionCard, modeChanged: true } }]}
+        onChooseOption={() => {}}
+      />,
+    );
+
+    expect(screen.getByText(/before the switch/)).toBeDefined();
+    expect(screen.getByRole("button", { name: "Allow" })).toBeDefined();
+  });
+
+  it("renders the agent's thinking collapsed and its plan as one updated line", () => {
     render(
       <ChatCanvas
         messages={[
@@ -606,15 +527,22 @@ describe("ACP chat content", () => {
             ],
           },
         ]}
-        onSendPtyInput={() => {}}
       />
     );
 
     expect(screen.getByText("Thinking")).toBeDefined();
     expect(screen.getByText("First I will read the parser")).toBeDefined();
-    const plan = screen.getByRole("list", { name: "Plan" });
-    expect(within(plan).getAllByRole("listitem")).toHaveLength(2);
-    expect(within(plan).getByText("Split it in two")).toBeDefined();
+    // The current steps live in the top bar's plan menu; the reply keeps one line.
+    const row = screen.getByRole("button", { name: "Updated the plan" });
+    expect(row.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("list", { name: "Plan" })).toBeNull();
+    expect(screen.queryByText("Split it in two")).toBeNull();
+
+    // An earlier plan stays readable: the line opens that reply's own steps.
+    fireEvent.click(row);
+    expect(row.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("list", { name: "Plan" })).toBeDefined();
+    expect(screen.getByText("Split it in two")).toBeDefined();
   });
 
   it("shows an ACP tool call by its title, without empty parentheses", () => {
@@ -626,15 +554,175 @@ describe("ACP chat content", () => {
             role: "agent",
             content: "",
             timestamp: 1,
-            tools: [{ id: "t-1", name: "Read src/App.tsx", args: "", status: "completed", kind: "read" }],
+            tools: [{ id: "t-1", name: "Read src/App.tsx", status: "completed", kind: "read" }],
           },
         ]}
-        onSendPtyInput={() => {}}
       />
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Read a file" }));
+
     expect(screen.getByText("Read src/App.tsx")).toBeDefined();
     expect(screen.queryByText(/\(\)/)).toBeNull();
+  });
+
+  it("renders a reply's text and tools in the order they happened", () => {
+    render(
+      <ChatCanvas
+        messages={[
+          {
+            id: "m-1",
+            role: "agent",
+            content: "Before\n\nAfter",
+            timestamp: 1,
+            tools: [
+              { id: "t-1", name: "pnpm test", status: "completed", kind: "execute" },
+              { id: "t-2", name: "Read src/App.tsx", status: "completed", kind: "read" },
+            ],
+            parts: [
+              { kind: "text", text: "Before" },
+              { kind: "tools", toolIds: ["t-1", "t-2"] },
+              { kind: "text", text: "After" },
+            ],
+          },
+        ]}
+      />
+    );
+
+    const row = screen.getByTestId("chat-message-m-1");
+    const text = row.textContent ?? "";
+    expect(text.indexOf("Before")).toBeLessThan(text.indexOf("Ran a command"));
+    expect(text.indexOf("Ran a command")).toBeLessThan(text.indexOf("After"));
+  });
+
+  it("shows a tools part as one summary row, collapsed", () => {
+    render(
+      <ChatCanvas
+        messages={[
+          {
+            id: "m-1",
+            role: "agent",
+            content: "",
+            timestamp: 1,
+            tools: [
+              { id: "t-1", name: "pnpm test", status: "completed", kind: "execute" },
+              { id: "t-2", name: "Read src/App.tsx", status: "completed", kind: "read" },
+            ],
+            parts: [{ kind: "tools", toolIds: ["t-1", "t-2"] }],
+          },
+        ]}
+      />
+    );
+
+    const summary = screen.getByRole("button", { name: "Ran a command, read a file" });
+    expect(summary.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("pnpm test")).toBeNull();
+  });
+
+  it("shows the tools when a summary row is expanded", () => {
+    render(
+      <ChatCanvas
+        messages={[
+          {
+            id: "m-1",
+            role: "agent",
+            content: "",
+            timestamp: 1,
+            tools: [
+              { id: "t-1", name: "pnpm test", status: "completed", kind: "execute" },
+              { id: "t-2", name: "Read src/App.tsx", status: "completed", kind: "read" },
+            ],
+            parts: [{ kind: "tools", toolIds: ["t-1", "t-2"] }],
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Ran a command, read a file" }));
+
+    expect(screen.getByRole("button", { name: "Ran a command, read a file" }).getAttribute("aria-expanded")).toBe(
+      "true"
+    );
+    expect(screen.getByText("pnpm test")).toBeTruthy();
+    expect(screen.getByText("Read src/App.tsx")).toBeTruthy();
+  });
+
+  it("opens a tools part with a diff without a click", () => {
+    render(
+      <ChatCanvas
+        messages={[
+          {
+            id: "m-1",
+            role: "agent",
+            content: "",
+            timestamp: 1,
+            tools: [
+              {
+                id: "t-1",
+                name: "Edit src/app.ts",
+                status: "completed",
+                kind: "edit",
+                details: [{ kind: "diff", path: "src/app.ts", oldText: "a", newText: "b" }],
+              },
+            ],
+            parts: [{ kind: "tools", toolIds: ["t-1"] }],
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "Edited a file" }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("src/app.ts")).toBeTruthy();
+  });
+
+  it("shows a running tool's title and state on its summary row", () => {
+    render(
+      <ChatCanvas
+        messages={[
+          {
+            id: "m-1",
+            role: "agent",
+            content: "",
+            timestamp: 1,
+            tools: [{ id: "t-1", name: "pnpm test", status: "running", kind: "execute" }],
+            parts: [{ kind: "tools", toolIds: ["t-1"] }],
+          },
+        ]}
+      />
+    );
+
+    const summary = screen.getByRole("button", { name: /pnpm test/ });
+    expect(summary.textContent).toContain("Running");
+    expect(summary.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("gives a message saved without parts the same compact tool rows", () => {
+    render(
+      <ChatCanvas
+        messages={[
+          {
+            id: "m-1",
+            role: "agent",
+            content: "The answer.",
+            timestamp: 1,
+            tools: [{ id: "t-1", name: "Read src/App.tsx", status: "completed", kind: "read" }],
+          },
+        ]}
+      />
+    );
+
+    const message = screen.getByTestId("chat-message-m-1");
+    const row = within(message);
+    expect(row.getByRole("button", { name: "Read a file" })).toBeDefined();
+    expect(row.getByText("The answer.")).toBeDefined();
+    expect(row.queryByText("Read src/App.tsx")).toBeNull();
+
+    const text = message.textContent ?? "";
+    expect(text.indexOf("Read a file")).toBeLessThan(text.indexOf("The answer."));
+
+    fireEvent.click(row.getByRole("button", { name: "Read a file" }));
+
+    expect(row.getByText("Read src/App.tsx")).toBeDefined();
   });
 
   it("does not show an agent reply that has nothing in it", () => {
@@ -645,7 +733,6 @@ describe("ACP chat content", () => {
           { id: "a-1", role: "agent", content: "ok", timestamp: 2 },
           { id: "a-2", role: "agent", content: "", timestamp: 3 },
         ]}
-        onSendPtyInput={() => {}}
       />
     );
 
@@ -655,23 +742,64 @@ describe("ACP chat content", () => {
 
   it("shows the reasoning as a collapsed 'Thinking' row while the reply streams, and 'Thought' once done", () => {
     const reply = { id: "a-1", role: "agent" as const, content: "ok", timestamp: 1, thinking: "Let me check" };
-    const { rerender } = render(<ChatCanvas messages={[reply]} onSendPtyInput={() => {}} />);
+    const { rerender } = render(<ChatCanvas messages={[reply]} />);
 
     const summary = screen.getByText("Thinking");
     expect(summary.closest("details")?.open).toBe(false);
 
-    rerender(<ChatCanvas messages={[{ ...reply, isComplete: true }]} onSendPtyInput={() => {}} />);
+    rerender(<ChatCanvas messages={[{ ...reply, isComplete: true }]} />);
     expect(screen.getByText("Thought")).toBeDefined();
   });
 
   it("shows the agent working at the end of the conversation", () => {
     const messages = [{ id: "u-1", role: "user" as const, content: "go", timestamp: 1 }];
-    const { rerender } = render(<ChatCanvas messages={messages} onSendPtyInput={() => {}} isWorking />);
+    const { rerender } = render(<ChatCanvas messages={messages} isWorking />);
 
     expect(screen.getByTestId("agent-working").textContent).toMatch(/working/i);
 
-    rerender(<ChatCanvas messages={messages} onSendPtyInput={() => {}} />);
+    rerender(<ChatCanvas messages={messages} />);
     expect(screen.queryByTestId("agent-working")).toBeNull();
+  });
+
+  it("keeps the reply actions off the turn that is still running", () => {
+    const messages: ChatMessage[] = [
+      { id: "u-1", role: "user", content: "first", timestamp: 1 },
+      { id: "a-1", role: "agent", content: "finished reply", timestamp: 2, isComplete: true },
+      { id: "u-2", role: "user", content: "follow-up", timestamp: 3 },
+      { id: "a-2", role: "agent", content: "still working", timestamp: 4 },
+    ];
+    const { rerender } = render(<ChatCanvas messages={messages} isWorking onForkBranch={() => {}} />);
+
+    const finished = within(screen.getByTestId("chat-message-a-1"));
+    expect(finished.getByRole("button", { name: "Copy message" })).toBeDefined();
+    expect(finished.getByRole("button", { name: "Fork branch" })).toBeDefined();
+
+    const running = within(screen.getByTestId("chat-message-a-2"));
+    expect(running.queryByRole("button", { name: "Copy message" })).toBeNull();
+    expect(running.queryByRole("button", { name: "Fork branch" })).toBeNull();
+    expect(running.queryByRole("button", { name: "Read aloud" })).toBeNull();
+    expect(running.queryByText(/ago/i)).toBeNull();
+
+    rerender(<ChatCanvas messages={messages} isWorking={false} onForkBranch={() => {}} />);
+
+    const ended = within(screen.getByTestId("chat-message-a-2"));
+    expect(ended.getByRole("button", { name: "Copy message" })).toBeDefined();
+    expect(ended.getByRole("button", { name: "Fork branch" })).toBeDefined();
+  });
+
+  it("keeps reply actions off a turn that waits for a permission answer", () => {
+    const messages: ChatMessage[] = [
+      { id: "u-1", role: "user", content: "first", timestamp: 1 },
+      { id: "a-1", role: "agent", content: "finished reply", timestamp: 2, isComplete: true },
+      { id: "u-2", role: "user", content: "run it", timestamp: 3 },
+      { id: "a-2", role: "agent", content: "half an answer", timestamp: 4 },
+      { id: "a-3", role: "agent", content: "", timestamp: 5, actionCard: permissionCard },
+    ];
+    render(<ChatCanvas messages={messages} isWorking={false} onForkBranch={() => {}} />);
+
+    expect(within(screen.getByTestId("chat-message-a-1")).getByRole("button", { name: "Copy message" })).toBeDefined();
+    expect(within(screen.getByTestId("chat-message-a-2")).queryByRole("button", { name: "Copy message" })).toBeNull();
+    expect(within(screen.getByTestId("chat-message-a-3")).queryByRole("button", { name: "Copy message" })).toBeNull();
   });
 
   it("marks reasoning done once a later message follows, even without isComplete", () => {
@@ -681,7 +809,6 @@ describe("ACP chat content", () => {
           { id: "a-1", role: "agent", content: "first part", timestamp: 1, thinking: "plan" },
           { id: "a-2", role: "agent", content: "second part", timestamp: 2, thinking: "more" },
         ]}
-        onSendPtyInput={() => {}}
       />
     );
 
@@ -691,23 +818,23 @@ describe("ACP chat content", () => {
 
   it("follows new output to the bottom, unless the user scrolled up to read", () => {
     const first = [{ id: "u-1", role: "user" as const, content: "go", timestamp: 1 }];
-    const { rerender } = render(<ChatCanvas messages={first} onSendPtyInput={() => {}} />);
+    const { rerender } = render(<ChatCanvas messages={first} />);
     const container = screen.getByTestId("chat-canvas-container");
     Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1000 });
     Object.defineProperty(container, "clientHeight", { configurable: true, value: 400 });
 
-    rerender(<ChatCanvas messages={first} onSendPtyInput={() => {}} isWorking />);
+    rerender(<ChatCanvas messages={first} isWorking />);
     expect(container.scrollTop).toBe(1000);
 
     container.scrollTop = 100;
     fireEvent.scroll(container);
-    rerender(<ChatCanvas messages={[...first, { id: "a-1", role: "agent", content: "hi", timestamp: 2 }]} onSendPtyInput={() => {}} isWorking />);
+    rerender(<ChatCanvas messages={[...first, { id: "a-1", role: "agent", content: "hi", timestamp: 2 }]} isWorking />);
     expect(container.scrollTop).toBe(100);
   });
 
   it("jumps to the bottom when the user sends, even if they had scrolled up", () => {
     const first = [{ id: "a-0", role: "agent" as const, content: "earlier answer", timestamp: 1 }];
-    const { rerender } = render(<ChatCanvas messages={first} onSendPtyInput={() => {}} />);
+    const { rerender } = render(<ChatCanvas messages={first} />);
     const container = screen.getByTestId("chat-canvas-container");
     Object.defineProperty(container, "scrollHeight", { configurable: true, value: 2000 });
     Object.defineProperty(container, "clientHeight", { configurable: true, value: 400 });
@@ -715,10 +842,145 @@ describe("ACP chat content", () => {
     fireEvent.scroll(container);
 
     rerender(
-      <ChatCanvas messages={[...first, { id: "u-1", role: "user", content: "follow-up", timestamp: 2 }]} onSendPtyInput={() => {}} />
+      <ChatCanvas messages={[...first, { id: "u-1", role: "user", content: "follow-up", timestamp: 2 }]} />
     );
 
     expect(container.scrollTop).toBe(2000);
+  });
+
+  it("stops following on a small upward wheel, even while still near the bottom", () => {
+    const first = [{ id: "u-1", role: "user" as const, content: "go", timestamp: 1 }];
+    const { rerender } = render(<ChatCanvas messages={first} />);
+    const container = screen.getByTestId("chat-canvas-container");
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(container, "clientHeight", { configurable: true, value: 400 });
+    rerender(<ChatCanvas messages={first} isWorking />);
+    expect(container.scrollTop).toBe(1000);
+
+    fireEvent.wheel(container, { deltaY: -8 });
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1200 });
+    rerender(
+      <ChatCanvas messages={[...first, { id: "a-1", role: "agent", content: "a longer reply", timestamp: 2 }]} isWorking />
+    );
+
+    expect(container.scrollTop).toBe(1000);
+  });
+
+  it("keeps following when an upward wheel cannot move the view", () => {
+    const first = [{ id: "u-1", role: "user" as const, content: "go", timestamp: 1 }];
+    const { rerender } = render(<ChatCanvas messages={first} />);
+    const container = screen.getByTestId("chat-canvas-container");
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(container, "clientHeight", { configurable: true, value: 400 });
+    rerender(<ChatCanvas messages={first} isWorking />);
+
+    // A real browser clamps the earlier scroll to 0 while the list is still
+    // short; the wheel then has nowhere to go.
+    container.scrollTop = 0;
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 400 });
+    fireEvent.wheel(container, { deltaY: -8 });
+
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 800 });
+    rerender(
+      <ChatCanvas messages={[...first, { id: "a-1", role: "agent", content: "a longer reply", timestamp: 2 }]} isWorking />
+    );
+
+    expect(container.scrollTop).toBe(800);
+  });
+
+  it("keeps following when keys move up while the view cannot", () => {
+    const first = [{ id: "u-1", role: "user" as const, content: "go", timestamp: 1 }];
+    const { rerender } = render(<ChatCanvas messages={first} />);
+    const container = screen.getByTestId("chat-canvas-container");
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(container, "clientHeight", { configurable: true, value: 400 });
+    rerender(<ChatCanvas messages={first} isWorking />);
+
+    container.scrollTop = 0;
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 400 });
+    fireEvent.keyDown(container, { key: "PageUp" });
+
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 800 });
+    rerender(
+      <ChatCanvas messages={[...first, { id: "a-1", role: "agent", content: "a longer reply", timestamp: 2 }]} isWorking />
+    );
+
+    expect(container.scrollTop).toBe(800);
+  });
+
+  it("stops following when keys move the view up", () => {
+    const first = [{ id: "u-1", role: "user" as const, content: "go", timestamp: 1 }];
+    const { rerender } = render(<ChatCanvas messages={first} />);
+    const container = screen.getByTestId("chat-canvas-container");
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(container, "clientHeight", { configurable: true, value: 400 });
+    rerender(<ChatCanvas messages={first} isWorking />);
+
+    fireEvent.keyDown(container, { key: "PageUp" });
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1200 });
+    rerender(
+      <ChatCanvas messages={[...first, { id: "a-1", role: "agent", content: "a longer reply", timestamp: 2 }]} isWorking />
+    );
+
+    expect(container.scrollTop).toBe(1000);
+  });
+
+  it("stops following when a touch drag moves the view up", () => {
+    const first = [{ id: "u-1", role: "user" as const, content: "go", timestamp: 1 }];
+    const { rerender } = render(<ChatCanvas messages={first} />);
+    const container = screen.getByTestId("chat-canvas-container");
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(container, "clientHeight", { configurable: true, value: 400 });
+    rerender(<ChatCanvas messages={first} isWorking />);
+
+    fireEvent.touchStart(container, { touches: [{ clientY: 100 }] });
+    fireEvent.touchMove(container, { touches: [{ clientY: 140 }] });
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1200 });
+    rerender(
+      <ChatCanvas messages={[...first, { id: "a-1", role: "agent", content: "a longer reply", timestamp: 2 }]} isWorking />
+    );
+
+    expect(container.scrollTop).toBe(1000);
+  });
+
+  it("follows again once the user scrolls back to the bottom", () => {
+    const first = [{ id: "u-1", role: "user" as const, content: "go", timestamp: 1 }];
+    const { rerender } = render(<ChatCanvas messages={first} />);
+    const container = screen.getByTestId("chat-canvas-container");
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(container, "clientHeight", { configurable: true, value: 400 });
+    rerender(<ChatCanvas messages={first} isWorking />);
+
+    fireEvent.wheel(container, { deltaY: -8 });
+    container.scrollTop = 1200;
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1200 });
+    fireEvent.scroll(container);
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1400 });
+    rerender(
+      <ChatCanvas messages={[...first, { id: "a-1", role: "agent", content: "a longer reply", timestamp: 2 }]} isWorking />
+    );
+
+    expect(container.scrollTop).toBe(1400);
+  });
+
+  it("keeps following when its own scroll reports after the content grew", () => {
+    const first = [{ id: "u-1", role: "user" as const, content: "go", timestamp: 1 }];
+    const { rerender } = render(<ChatCanvas messages={first} />);
+    const container = screen.getByTestId("chat-canvas-container");
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(container, "clientHeight", { configurable: true, value: 400 });
+    rerender(<ChatCanvas messages={first} isWorking />);
+
+    // The streamed chunk grows the list before the scroll event for our own
+    // assignment arrives; that event must not count as the user leaving.
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1600 });
+    fireEvent.scroll(container);
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1800 });
+    rerender(
+      <ChatCanvas messages={[...first, { id: "a-1", role: "agent", content: "a longer reply", timestamp: 2 }]} isWorking />
+    );
+
+    expect(container.scrollTop).toBe(1800);
   });
 });
 
@@ -731,7 +993,7 @@ describe("ChatCanvas: your messages and the session's header", () => {
 
   it("puts the time, Copy and Rewind under your message, and Rewind names the message", () => {
     const onRewind = vi.fn();
-    render(<ChatCanvas messages={messages} onSendPtyInput={() => {}} onRewind={onRewind} />);
+    render(<ChatCanvas messages={messages} onRewind={onRewind} />);
     const yours = within(screen.getByTestId("chat-message-u-1"));
 
     expect(yours.getByText("2 minutes ago")).toBeDefined();
@@ -744,10 +1006,33 @@ describe("ChatCanvas: your messages and the session's header", () => {
     expect(onRewind).toHaveBeenCalledWith("u-1");
   });
 
+  it("shows no time under a message replayed without one", () => {
+    const replayed: ChatMessage[] = [
+      { id: "u-2", role: "user", content: "earlier", timestamp: Date.now(), hasKnownTime: false },
+      {
+        id: "a-2",
+        role: "agent",
+        content: "reply",
+        timestamp: Date.now(),
+        isComplete: true,
+        hasKnownTime: false,
+      },
+    ];
+
+    render(<ChatCanvas messages={replayed} />);
+
+    const yours = within(screen.getByTestId("chat-message-u-2"));
+    expect(yours.queryByText("Just now")).toBeNull();
+    expect(yours.getByRole("button", { name: "Copy message" })).toBeDefined();
+    const reply = within(screen.getByTestId("chat-message-a-2"));
+    expect(reply.queryByText("Just now")).toBeNull();
+    expect(reply.getByRole("button", { name: "Copy message" })).toBeDefined();
+  });
+
   it("turns a Rewind left unconfirmed back by itself", () => {
     vi.useFakeTimers();
     try {
-      render(<ChatCanvas messages={messages} onSendPtyInput={() => {}} onRewind={() => {}} />);
+      render(<ChatCanvas messages={messages} onRewind={() => {}} />);
       const yours = within(screen.getByTestId("chat-message-u-1"));
       fireEvent.click(yours.getByRole("button", { name: "Rewind to here" }));
 
@@ -764,11 +1049,27 @@ describe("ChatCanvas: your messages and the session's header", () => {
 
   it("offers no Rewind when the host cannot rewind, and shows the header above the conversation", () => {
     render(
-      <ChatCanvas messages={messages} onSendPtyInput={() => {}} header={<p>agent-desktop · ~/developer</p>} />
+      <ChatCanvas messages={messages} header={<p>zorvo · ~/developer</p>} />
     );
 
     expect(screen.queryByRole("button", { name: "Rewind to here" })).toBeNull();
     const container = screen.getByTestId("chat-canvas-container");
-    expect(container.firstElementChild?.textContent).toContain("agent-desktop · ~/developer");
+    expect(container.firstElementChild?.textContent).toContain("zorvo · ~/developer");
+  });
+
+  it("shows a note naming the agent when the header carries one", () => {
+    render(
+      <ChatCanvas messages={messages} header={<HistoryElsewhereNote agentName="Claude Code" />} />
+    );
+
+    const note = screen.getByRole("note");
+    expect(note.textContent).toBe("Earlier messages stay in Claude Code. They are not shown here.");
+    expect(note.className).toContain("text-fg-muted");
+  });
+
+  it("shows no note when there is no history to explain", () => {
+    render(<ChatCanvas messages={messages} header={<p>zorvo · ~/developer</p>} />);
+
+    expect(screen.queryByRole("note")).toBeNull();
   });
 });

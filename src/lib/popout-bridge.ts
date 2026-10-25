@@ -1,4 +1,5 @@
-import type { ActionCard, ChatMessage, ContextUsage, Session } from '../types';
+import type { AgentFailures } from './agent-stall';
+import type { ChatMessage, ContextUsage, ElicitationAnswer, Session } from '../types';
 
 /**
  * Events between the main window and session popouts.
@@ -22,6 +23,8 @@ export interface SessionLiveStatus {
   isBusy: boolean;
   isWaiting: boolean;
   contextUsage?: ContextUsage;
+  /** Failed requests in a row the agent reported. */
+  failures?: AgentFailures;
 }
 
 export const IDLE_STATUS: SessionLiveStatus = { isBusy: false, isWaiting: false };
@@ -31,13 +34,17 @@ export interface SessionSnapshotPayload {
   session: Session | null;
   messages: ChatMessage[];
   status: SessionLiveStatus;
+  /** The session's agent when it was removed from use: the popout offers to add it again instead of a composer. */
+  removedAgentName: string | null;
 }
 
 export type PopoutAction =
   | { kind: 'send'; text: string }
-  | { kind: 'resolve-card'; cardId?: string; key: string; status: ActionCard['status'] }
   | { kind: 'choose-option'; cardId: string; optionId: string }
-  | { kind: 'stop' };
+  | { kind: 'answer-elicitation'; key: string; answer: ElicitationAnswer }
+  | { kind: 'reopen-elicitation-url'; key: string }
+  | { kind: 'stop' }
+  | { kind: 'add-agent' };
 
 export interface PopoutActionPayload {
   sessionId: string;
@@ -49,11 +56,13 @@ export function buildSessionSnapshot(
   sessions: readonly Session[],
   transcripts: Record<string, ChatMessage[]>,
   status: SessionLiveStatus = IDLE_STATUS,
+  removedAgentName: string | null = null,
 ): SessionSnapshotPayload {
   return {
     sessionId,
     session: sessions.find((s) => s.id === sessionId) ?? null,
     messages: transcripts[sessionId] ?? [],
     status,
+    removedAgentName,
   };
 }

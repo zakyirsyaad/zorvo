@@ -18,7 +18,6 @@ import type { ContextUsage, SlashCommand } from "../types";
 const MAX_PROMPT_HEIGHT_PX = 180;
 const PLACEHOLDER = "Prompt the agent...";
 const PLACEHOLDER_WITH_COMMANDS = "Type / for commands, or prompt the agent...";
-const LOCKED_OPTIONS_TITLE = "Applies to the next new session: CLI flags are set when an agent starts.";
 
 /** Keys that only move the caret; the menu's own keys (Escape, Enter, up and down) are not among them. */
 const CARET_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
@@ -31,19 +30,25 @@ export interface ComposerHandle {
   insertPaths: (paths: readonly string[]) => void;
   /** Puts back a message that could not be sent, so it need not be typed again. */
   restore: (text: string, attachments?: readonly string[]) => void;
+  /** True while the prompt and attachments are exactly what the last `restore` left: nothing typed, sent or cleared since. */
+  holdsRestored: () => boolean;
+  /** Empties the prompt and its attachments. */
+  clear: () => void;
+  /** Puts the cursor in the prompt. */
+  focus: () => void;
 }
 
 export interface ComposerDockProps {
   /** Dropdowns to show; each is omitted when the agent offers no real choice. */
   controls?: ComposerControls;
-  /** True for a running terminal session: its flags were fixed when it started. */
-  optionsLocked?: boolean;
   /** True while the agent is working on a turn. */
   isThinking?: boolean;
   /** Interrupts the agent's current turn; shown in place of Send while it works. */
   onStop?: () => void;
   placeholder?: string;
   disabled?: boolean;
+  /** True when only sending must wait (e.g. for the agent's install): the prompt can still be written. */
+  sendDisabled?: boolean;
   /** `attachments` are file paths, given only when `attachAsFiles` is set. */
   onSendMessage: (message: string, attachments?: string[]) => void;
   /** Opens a file picker and resolves with the chosen paths; hidden when absent. */
@@ -71,11 +76,11 @@ export interface ComposerDockProps {
 
 export function ComposerDock({
   controls = {},
-  optionsLocked = false,
   isThinking = false,
   onStop,
   placeholder,
   disabled = false,
+  sendDisabled = false,
   onSendMessage,
   onAttach,
   handleRef,
@@ -92,24 +97,16 @@ export function ComposerDock({
   const [highlighted, setHighlighted] = useState(0);
   const [isMenuDismissed, setIsMenuDismissed] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<OpenDropdown>(null);
-  const [wasAttachingAsFiles, setWasAttachingAsFiles] = useState(attachAsFiles);
-  // A terminal agent only takes text, so files attached for an ACP agent move
-  // into the prompt as paths when the agent changes to a terminal one.
-  if (wasAttachingAsFiles !== attachAsFiles) {
-    setWasAttachingAsFiles(attachAsFiles);
-    if (!attachAsFiles && attachments.length > 0) {
-      setText((current) => appendAttachments(current, attachments));
-      setAttachments([]);
-    }
-  }
   const containerRef = useRef<HTMLElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // What the last restore left in the composer, until the user sends or clears it.
+  const restoredRef = useRef<{ text: string; attachments: readonly string[] } | null>(null);
 
   useDismiss(containerRef, openDropdown !== null, () => setOpenDropdown(null));
 
   const toggle = (name: Exclude<OpenDropdown, null>) =>
     setOpenDropdown((current) => (current === name ? null : name));
-  const dropdownProps = (name: Exclude<OpenDropdown, null>, control: ComposerControl, isLockable = true) => ({
+  const dropdownProps = (name: Exclude<OpenDropdown, null>, control: ComposerControl) => ({
     options: control.options,
     selected: control.selected,
     isOpen: openDropdown === name,
@@ -118,18 +115,17 @@ export function ComposerDock({
       control.onChange(value);
       setOpenDropdown(null);
     },
-    disabled: isLockable && optionsLocked,
-    disabledTitle: LOCKED_OPTIONS_TITLE,
   });
 
   // While the agent works, Stop takes Send's place; the draft waits for the turn to end.
-  const canSend = !disabled && !(isThinking && onStop);
+  const canSend = !disabled && !sendDisabled && !(isThinking && onStop);
 
   const handleSend = () => {
     const trimmed = text.trim();
     if ((!trimmed && attachments.length === 0) || !canSend) return;
     if (attachAsFiles) onSendMessage(trimmed, attachments);
     else onSendMessage(trimmed);
+    restoredRef.current = null;
     setText("");
     setAttachments([]);
     mentionMenu.close();
@@ -217,8 +213,25 @@ export function ComposerDock({
       setText(restoredText);
       mentionMenu.close();
       if (attachAsFiles) setAttachments([...restoredAttachments]);
+      restoredRef.current = { text: restoredText, attachments: attachAsFiles ? [...restoredAttachments] : attachments };
       textareaRef.current?.focus();
     },
+    holdsRestored: () => {
+      const restored = restoredRef.current;
+      return (
+        restored !== null &&
+        restored.text === text &&
+        restored.attachments.length === attachments.length &&
+        restored.attachments.every((path, index) => path === attachments[index])
+      );
+    },
+    clear: () => {
+      restoredRef.current = null;
+      setText("");
+      setAttachments([]);
+      mentionMenu.close();
+    },
+    focus: () => textareaRef.current?.focus(),
   }));
 
   const handleAttach = async () => {
@@ -262,6 +275,9 @@ export function ComposerDock({
           disabled={disabled}
           placeholder={placeholder ?? (commands.length > 0 ? PLACEHOLDER_WITH_COMMANDS : PLACEHOLDER)}
           aria-label="Prompt"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
           className="w-full bg-transparent text-sm text-fg-secondary placeholder-fg-subtle outline-none resize-none leading-relaxed min-h-[26px] max-h-[180px]"
         />
 
@@ -290,7 +306,7 @@ export function ComposerDock({
                 label="Agent"
                 align="left"
                 icon={<Bot size={12} className="text-fg-muted" />}
-                {...dropdownProps("agent", agent, false)}
+                {...dropdownProps("agent", agent)}
               />
             )}
 
@@ -343,7 +359,7 @@ export function ComposerDock({
                 variant="primary"
                 label="Send message"
                 onClick={handleSend}
-                disabled={(!text.trim() && attachments.length === 0) || disabled}
+                disabled={(!text.trim() && attachments.length === 0) || !canSend}
               >
                 <CornerDownLeft size={14} />
               </IconButton>

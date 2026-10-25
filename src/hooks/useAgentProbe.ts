@@ -4,17 +4,25 @@ import { useLatest } from './useLatest';
 import { toCommands, toConfigOptions, toModes } from './useAcpSessions';
 import { parseAuthRequired, type AuthMethod } from '../lib/acp-auth';
 import type { ProbedOptions } from '../lib/acp-draft';
-import { TRANSPORT_ACP, type AgentProfile } from '../types';
+import type { AgentProfile } from '../types';
+
+/** What a probe answer says beyond the agent's options. */
+export interface ProbeFacts {
+  /** The agent showed someone is signed in, rather than saying nothing either way. */
+  signInChecked: boolean;
+  /** The agent can list its other sessions. */
+  canListSessions: boolean;
+}
 
 export interface AgentProbeDeps {
-  /** The agent the next message starts; only an ACP agent is asked. */
+  /** The agent the next message starts. */
   agent: AgentProfile | undefined;
   /** The folder it would start in; nothing is asked before one is chosen. */
   cwd: string | undefined;
   /** Whether the agent's options are remembered: then the backend opens a session only to check the sign-in. */
   isKnown: (profileId: string) => boolean;
-  /** `signInChecked`: the agent showed someone is signed in, rather than saying nothing either way. */
-  onProbed: (profileId: string, options: ProbedOptions, signInChecked: boolean) => void;
+  /** `facts`: whether the agent showed a sign-in and whether it can list its sessions. */
+  onProbed: (profileId: string, options: ProbedOptions, facts: ProbeFacts) => void;
   onAuthRequired: (profileId: string, cwd: string, methods: AuthMethod[]) => void;
 }
 
@@ -35,7 +43,7 @@ export function useAgentProbe({ agent, cwd, isKnown, onProbed, onAuthRequired }:
   // Bumped by `reprobe`, so the agent in view is asked again.
   const [round, setRound] = useState(0);
   const callbacksRef = useLatest({ isKnown, onProbed, onAuthRequired });
-  const agentId = agent?.transport === TRANSPORT_ACP ? agent.id : undefined;
+  const agentId = agent?.id;
   // The agent picked now: a sign-in is asked for only while it still is.
   const currentRef = useLatest(agentId);
 
@@ -50,14 +58,24 @@ export function useAgentProbe({ agent, cwd, isKnown, onProbed, onAuthRequired }:
       .then((raw) => {
         // No answer to read: keep what is remembered rather than wipe it.
         if (typeof raw !== 'object' || raw === null) return;
-        const probed = raw as { modes?: unknown; configOptions?: unknown; commands?: unknown; signInChecked?: unknown };
+        const probed = raw as {
+          modes?: unknown;
+          configOptions?: unknown;
+          commands?: unknown;
+          signInChecked?: unknown;
+          canListSessions?: unknown;
+        };
         probedRef.current.add(agentId);
         const options = {
           modes: toModes(probed.modes),
           configOptions: toConfigOptions(probed.configOptions),
           commands: toCommands(probed.commands),
         };
-        callbacksRef.current.onProbed(agentId, options, probed.signInChecked === true);
+        const facts: ProbeFacts = {
+          signInChecked: probed.signInChecked === true,
+          canListSessions: probed.canListSessions === true,
+        };
+        callbacksRef.current.onProbed(agentId, options, facts);
       })
       .catch((error: unknown) => {
         const methods = parseAuthRequired(error);

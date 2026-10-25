@@ -110,7 +110,7 @@ describe("landing page", () => {
   });
 
   it("names every agent and says it is not endorsed by them", () => {
-    for (const agent of ["Claude Code", "Codex", "Qwen Code", "Aider", "Oh-My-Pi"]) {
+    for (const agent of ["Claude Code", "Codex", "Qwen Code"]) {
       expect(text).toContain(agent);
     }
     expect(text).toContain("not endorsed by them");
@@ -135,7 +135,7 @@ describe("landing page", () => {
     for (const link of links) {
       const href = link.getAttribute("href") ?? "";
       expect(link.className, href).toContain("focus-ring");
-      expect(href, link.textContent ?? "").toMatch(/^(#[a-z]+|https:\/\/github\.com\/zakyirsyaad\/agent-desktop\b)/);
+      expect(href, link.textContent ?? "").toMatch(/^(#[a-z]+|https:\/\/github\.com\/zakyirsyaad\/zorvo\b)/);
     }
   });
 

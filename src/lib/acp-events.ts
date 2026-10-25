@@ -1,11 +1,13 @@
 import type {
   ActionCard,
   ChatMessage,
+  ChatMessagePart,
   PermissionChoice,
   PlanEntry,
   ToolDetail,
   ToolExecution,
 } from '../types';
+import { fileNameOf } from './attachments';
 
 /**
  * Folds Agent Client Protocol session updates into chat messages.
@@ -18,6 +20,8 @@ export interface AcpReducerContext {
   sessionId: string;
   now: number;
   createId: (prefix: string) => string;
+  /** False while folding a replay: the agent gives no per-message time. */
+  hasKnownTime?: boolean;
 }
 
 export interface PermissionRequestPayload {
@@ -36,6 +40,13 @@ function str(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+/** The time fields for a new message: a replay's messages carry no known time. */
+function messageTime(ctx: AcpReducerContext): Pick<ChatMessage, 'timestamp' | 'hasKnownTime'> {
+  return ctx.hasKnownTime === false
+    ? { timestamp: ctx.now, hasKnownTime: false }
+    : { timestamp: ctx.now };
+}
+
 /** The text of a content block, or undefined for images, audio and the like. */
 function textOf(content: unknown): string | undefined {
   return isObject(content) && content.type === 'text' ? str(content.text) : undefined;
@@ -49,15 +60,18 @@ function toToolStatus(status: unknown): ToolExecution['status'] | undefined {
 }
 
 /** The reply new agent output belongs to: the last agent message, unless it is finished. */
-function openReplyIndex(messages: readonly ChatMessage[]): number {
+export function openReplyIndex(messages: readonly ChatMessage[]): number {
   const last = messages[messages.length - 1];
   const isOpen =
-    last?.role === 'agent' && !last.isComplete && (!last.actionCard || last.actionCard.status === 'pending');
+    last?.role === 'agent' &&
+    !last.isComplete &&
+    (!last.actionCard || last.actionCard.status === 'pending') &&
+    (!last.elicitation || last.elicitation.status === 'pending');
   return isOpen ? messages.length - 1 : -1;
 }
 
 /** Applies `change` to the open reply, creating one when needed. */
-function withOpenReply(
+export function withOpenReply(
   messages: readonly ChatMessage[],
   ctx: AcpReducerContext,
   change: (reply: ChatMessage) => ChatMessage,
@@ -66,8 +80,47 @@ function withOpenReply(
   if (index >= 0) {
     return messages.map((m, i) => (i === index ? change(m) : m));
   }
-  const fresh: ChatMessage = { id: ctx.createId('msg'), role: 'agent', content: '', timestamp: ctx.now };
+  const fresh: ChatMessage = { id: ctx.createId('msg'), role: 'agent', content: '', ...messageTime(ctx) };
   return [...messages, change(fresh)];
+}
+
+/** The reply's text parts joined by a blank line, the way `content` holds them. */
+function textOfParts(parts: readonly ChatMessagePart[]): string {
+  return parts
+    .filter((part): part is Extract<ChatMessagePart, { kind: 'text' }> => part.kind === 'text')
+    .map((part) => part.text)
+    .join('\n\n');
+}
+
+/** A reply's parts, treating a message saved before parts as its tools, then its text. */
+export function partsOf(reply: ChatMessage): ChatMessagePart[] {
+  if (reply.parts?.length) return reply.parts;
+  const parts: ChatMessagePart[] = [];
+  if (reply.tools?.length) parts.push({ kind: 'tools', toolIds: reply.tools.map((tool) => tool.id) });
+  if (reply.content) parts.push({ kind: 'text', text: reply.content });
+  return parts;
+}
+
+/** Appends a text chunk; a chunk after tools starts a new text part. */
+function appendText(reply: ChatMessage, chunk: string): ChatMessage {
+  const parts = partsOf(reply);
+  const last = parts[parts.length - 1];
+  const next: ChatMessagePart[] =
+    last?.kind === 'text'
+      ? [...parts.slice(0, -1), { kind: 'text', text: last.text + chunk }]
+      : [...parts, { kind: 'text', text: chunk }];
+  return { ...reply, parts: next, content: textOfParts(next) };
+}
+
+/** Appends a tool call to the reply and to the open tools part, or starts one. */
+function appendTool(reply: ChatMessage, tool: ToolExecution): ChatMessage {
+  const parts = partsOf(reply);
+  const last = parts[parts.length - 1];
+  const next: ChatMessagePart[] =
+    last?.kind === 'tools'
+      ? [...parts.slice(0, -1), { kind: 'tools', toolIds: [...last.toolIds, tool.id] }]
+      : [...parts, { kind: 'tools', toolIds: [tool.id] }];
+  return { ...reply, tools: [...(reply.tools ?? []), tool], parts: next };
 }
 
 /** Tool output is kept in memory and in the saved transcript, so it is bounded. */
@@ -111,19 +164,27 @@ function toLocations(locations: unknown): string[] | undefined {
   });
 }
 
+/** The tool's own name from the adapter's metadata: Claude nests it, Qwen sends it at the top. */
+function providerToolNameOf(meta: unknown): string | undefined {
+  if (!isObject(meta)) return undefined;
+  const claude = isObject(meta.claudeCode) ? str(meta.claudeCode.toolName) : undefined;
+  return claude ?? str(meta.toolName);
+}
+
 function addToolCall(messages: readonly ChatMessage[], update: Json, ctx: AcpReducerContext): ChatMessage[] {
   const id = str(update.toolCallId);
   if (!id) return [...messages];
   const tool: ToolExecution = {
     id,
     name: str(update.title) ?? 'Tool',
-    args: '',
     status: toToolStatus(update.status) ?? 'running',
     kind: str(update.kind),
+    providerToolName: providerToolNameOf(update._meta),
+    startedAt: ctx.now,
     details: toDetails(update.content),
     locations: toLocations(update.locations),
   };
-  return withOpenReply(messages, ctx, (reply) => ({ ...reply, tools: [...(reply.tools ?? []), tool] }));
+  return withOpenReply(messages, ctx, (reply) => appendTool(reply, tool));
 }
 
 /** Applies a tool_call_update: fields it carries replace the old ones (content as a whole), the rest stay. */
@@ -133,6 +194,7 @@ function updateToolCall(messages: readonly ChatMessage[], update: Json): ChatMes
   const title = str(update.title);
   const details = toDetails(update.content);
   const locations = toLocations(update.locations);
+  const providerToolName = providerToolNameOf(update._meta);
   return messages.map((message) => {
     if (!message.tools?.some((t) => t.id === id)) return message;
     return {
@@ -143,6 +205,7 @@ function updateToolCall(messages: readonly ChatMessage[], update: Json): ChatMes
               ...tool,
               status: status ?? tool.status,
               name: title ?? tool.name,
+              providerToolName: providerToolName ?? tool.providerToolName,
               details: details ?? tool.details,
               locations: locations ?? tool.locations,
             }
@@ -174,7 +237,7 @@ export function applyAcpUpdate(
       // Agents send stray empty chunks (Qwen Code does after a turn); they must not open a blank reply.
       const chunk = textOf(update.content);
       if (!chunk) return messages;
-      return withOpenReply(messages, ctx, (reply) => ({ ...reply, content: reply.content + chunk }));
+      return withOpenReply(messages, ctx, (reply) => appendText(reply, chunk));
     }
     case 'agent_thought_chunk': {
       const chunk = textOf(update.content);
@@ -192,6 +255,53 @@ export function applyAcpUpdate(
   }
 }
 
+/** What a replayed user block shows: its text, or the file name of a block that has a URI. */
+function replayContentOf(content: unknown): string | undefined {
+  const text = textOf(content);
+  if (text !== undefined) return text;
+  const uri = isObject(content) ? str(content.uri) : undefined;
+  return uri ? fileNameOf(uri) : undefined;
+}
+
+/**
+ * Applies one `session/update` from a `session/load` replay. A user chunk ends
+ * the agent's open reply and starts (or continues) the user's message; every
+ * other update goes to the normal reducer.
+ */
+export function applyReplayUpdate(
+  messages: ChatMessage[],
+  update: unknown,
+  ctx: AcpReducerContext,
+): ChatMessage[] {
+  // A replay carries no per-message time, so nothing it adds gets one.
+  const replayCtx: AcpReducerContext = { ...ctx, hasKnownTime: false };
+  if (!isObject(update) || update.sessionUpdate !== 'user_message_chunk') {
+    return applyAcpUpdate(messages, update, replayCtx);
+  }
+  const chunk = replayContentOf(update.content);
+  if (!chunk) return messages;
+  const messageId = str(update.messageId);
+  const lastIndex = messages.length - 1;
+  const last = messages[lastIndex];
+  // Chunks the agent gave a messageId continue that message; without one, adjacent chunks do.
+  if (last?.role === 'user' && last.replayId === messageId) {
+    return messages.map((m, i) => (i === lastIndex ? { ...m, content: m.content + chunk } : m));
+  }
+  const closed = messages.map((m, i) =>
+    i === lastIndex && m.role === 'agent' && !m.isComplete ? { ...m, isComplete: true } : m,
+  );
+  return [
+    ...closed,
+    {
+      id: ctx.createId('msg'),
+      role: 'user',
+      content: chunk,
+      ...messageTime(replayCtx),
+      ...(messageId === undefined ? {} : { replayId: messageId }),
+    },
+  ];
+}
+
 function toChoices(options: unknown): PermissionChoice[] {
   if (!Array.isArray(options)) return [];
   return options.filter(isObject).flatMap((option) => {
@@ -207,6 +317,17 @@ export function applyPermissionRequest(
   payload: PermissionRequestPayload,
   ctx: AcpReducerContext,
 ): ChatMessage[] {
+  // A replayed or duplicated request is the same question, not a new one:
+  // one request renders one card. Only a card still waiting in this turn can
+  // be its duplicate: JSON-RPC ids restart with each agent process, so a
+  // reopened session reuses the ids of answered cards. A request without an
+  // id cannot be matched.
+  if (
+    payload.requestId !== undefined &&
+    pendingCardsInTurn(messages).some((card) => card.requestId === payload.requestId)
+  ) {
+    return messages;
+  }
   const toolCall = isObject(payload.toolCall) ? payload.toolCall : {};
   const rawInput = isObject(toolCall.rawInput) ? toolCall.rawInput : {};
   const title = str(toolCall.title) ?? 'The agent asks for permission';
@@ -218,8 +339,6 @@ export function applyPermissionRequest(
     commandSnippet: str(rawInput.command),
     toolName: str(toolCall.kind),
     status: 'pending',
-    approvalKey: '',
-    rejectKey: '',
     timestamp: ctx.now,
     options: toChoices(payload.options),
     requestId: payload.requestId,
@@ -228,7 +347,7 @@ export function applyPermissionRequest(
   // A reply holds one card: a second request while the first waits gets its own message.
   const open = messages[openReplyIndex(messages)];
   if (open?.actionCard) {
-    return [...messages, withCard({ id: ctx.createId('msg'), role: 'agent', content: '', timestamp: ctx.now })];
+    return [...messages, withCard({ id: ctx.createId('msg'), role: 'agent', content: '', ...messageTime(ctx) })];
   }
   return withOpenReply(messages, ctx, withCard);
 }
@@ -236,31 +355,23 @@ export function applyPermissionRequest(
 const isPendingRequest = (card: ActionCard | undefined): card is ActionCard =>
   card?.status === 'pending' && card.requestId !== undefined;
 
-export interface PendingCardOptions {
-  /** Also count a terminal agent's approval prompts (cards without a request id). */
-  includeTerminal?: boolean;
-}
-
 /**
  * The unanswered cards of the current turn (after the last user message),
  * oldest first: only that turn can hold one, so the walk stops there instead
  * of scanning the whole transcript.
  */
-export function pendingCardsInTurn(
-  messages: readonly ChatMessage[],
-  { includeTerminal = false }: PendingCardOptions = {},
-): ActionCard[] {
+export function pendingCardsInTurn(messages: readonly ChatMessage[]): ActionCard[] {
   const cards: ActionCard[] = [];
   for (let i = messages.length - 1; i >= 0 && messages[i].role !== 'user'; i--) {
     const card = messages[i].actionCard;
-    if (card?.status === 'pending' && (includeTerminal || card.requestId !== undefined)) cards.unshift(card);
+    if (isPendingRequest(card)) cards.unshift(card);
   }
   return cards;
 }
 
 /** Whether the agent waits on the user to answer a request in the current turn. */
-export function isAwaitingPermission(messages: readonly ChatMessage[], options?: PendingCardOptions): boolean {
-  return pendingCardsInTurn(messages, options).length > 0;
+export function isAwaitingPermission(messages: readonly ChatMessage[]): boolean {
+  return pendingCardsInTurn(messages).length > 0;
 }
 
 /** Records the option the user picked on a permission card. */
@@ -288,8 +399,39 @@ export function reopenPermissionCard(messages: ChatMessage[], cardId: string): C
 }
 
 /**
- * Ends the agent's turn: the last reply is complete, and permission requests
+ * A mode change after a request was made: the agent had already asked, so the
+ * waiting card is still the right one to answer. Marking it says why it did
+ * not go away. Only the cards in `askedBefore` (waiting when the change was
+ * sent) are marked: one asked while the change was in flight is in the new
+ * mode. A card already answered is left alone.
+ */
+export function noteModeChange(messages: ChatMessage[], askedBefore: ReadonlySet<string>): ChatMessage[] {
+  let changed = false;
+  const next = messages.map((message) => {
+    const card = message.actionCard;
+    if (card?.status !== 'pending' || card.modeChanged || !askedBefore.has(card.id)) return message;
+    changed = true;
+    return { ...message, actionCard: { ...card, modeChanged: true } };
+  });
+  return changed ? next : messages;
+}
+
+/**
+ * Tools still running when an imported turn ended: a replay carries no terminal
+ * update for a tool that was running when the agent stopped, so the tool never
+ * reported success and is shown as failed rather than running forever.
+ */
+function settleTools(tools: ToolExecution[] | undefined): ToolExecution[] | undefined {
+  if (!tools?.some((tool) => tool.status === 'running')) return tools;
+  return tools.map((tool) => (tool.status === 'running' ? { ...tool, status: 'failed' } : tool));
+}
+
+/**
+ * Ends the agent's turn: the last reply is complete and permission requests
  * that were never answered can no longer be (the agent stopped waiting).
+ *
+ * Tools still running keep their real state: a live turn can end while one is
+ * genuinely running (the user stopped it, or it runs in the background).
  */
 export function closeTurn(messages: ChatMessage[]): ChatMessage[] {
   const lastIndex = messages.length - 1;
@@ -299,6 +441,21 @@ export function closeTurn(messages: ChatMessage[]): ChatMessage[] {
       : message.actionCard;
     const isLastReply = index === lastIndex && message.role === 'agent';
     if (card === message.actionCard && !isLastReply) return message;
-    return { ...message, actionCard: card, ...(isLastReply ? { isComplete: true } : {}) };
+    return {
+      ...message,
+      actionCard: card,
+      ...(isLastReply ? { isComplete: true } : {}),
+    };
+  });
+}
+
+/**
+ * Ends a turn folded from a `session/load` replay: like `closeTurn`, and tools
+ * the replay left running are settled as failed — nothing is running now.
+ */
+export function closeImportedTurn(messages: ChatMessage[]): ChatMessage[] {
+  return closeTurn(messages).map((message) => {
+    const tools = settleTools(message.tools);
+    return tools === message.tools ? message : { ...message, tools };
   });
 }

@@ -6,13 +6,15 @@ import {
   GitCompare,
   ExternalLink,
   MoreHorizontal,
-  Terminal
+  SquareTerminal,
 } from "lucide-react";
 import { IconButton } from "./ui/IconButton";
 import { DiffStatChip } from "./changes/DiffStatChip";
 import { BackgroundTasksMenu, type BackgroundTasksMenuProps } from "./topbar/BackgroundTasksMenu";
+import { PlanMenu } from "./topbar/PlanMenu";
 import { PullRequestChip } from "./topbar/PullRequestChip";
 import type { PullRequestStatus } from "../hooks/usePullRequest";
+import type { PlanEntry } from "../types";
 
 /**
  * Left inset reserved for the native macOS traffic lights.
@@ -35,9 +37,6 @@ export interface TopBarProps {
   /** The branch's pull request, with a chip that opens it; none when absent. */
   pullRequest?: PullRequestStatus | null;
   onOpenPullRequest?: (url: string) => void;
-  isTerminalOpen?: boolean;
-  /** Shows or hides the terminal drawer; the button is hidden when absent. */
-  onToggleTerminal?: () => void;
   canGoBack?: boolean;
   canGoForward?: boolean;
   onBack?: () => void;
@@ -47,6 +46,9 @@ export interface TopBarProps {
   /** Shows or hides the workspace's files; the button is hidden when absent. */
   onToggleFiles?: () => void;
   isFilesOpen?: boolean;
+  /** Shows or hides the terminal drawer; the button is hidden when absent. */
+  onToggleTerminal?: () => void;
+  isTerminalOpen?: boolean;
   /** Shows or hides the session's uncommitted changes; the button is hidden when absent. */
   onToggleChanges?: () => void;
   isChangesOpen?: boolean;
@@ -57,6 +59,8 @@ export interface TopBarProps {
   onOpenSettings?: () => void;
   /** What is running in the background; the menu is hidden when absent. */
   backgroundTasks?: BackgroundTasksMenuProps;
+  /** The session's current plan; the menu is hidden when it has none. */
+  plan?: readonly PlanEntry[];
 }
 
 export function TopBar({
@@ -66,8 +70,6 @@ export function TopBar({
   branch,
   pullRequest,
   onOpenPullRequest,
-  isTerminalOpen = false,
-  onToggleTerminal,
   canGoBack = false,
   canGoForward = false,
   onBack,
@@ -75,12 +77,15 @@ export function TopBar({
   onPopout,
   onToggleFiles,
   isFilesOpen = false,
+  onToggleTerminal,
+  isTerminalOpen = false,
   onToggleChanges,
   isChangesOpen = false,
   diffStats,
   onOpenDiff,
   onOpenSettings,
   backgroundTasks,
+  plan,
 }: TopBarProps) {
   return (
     <header
@@ -152,29 +157,11 @@ export function TopBar({
         )}
       </div>
 
-      {/* Right: Actions (Terminal toggle, popout, folder, overflow) */}
+      {/* Right: Actions (popout, folder, overflow) */}
       <div className="flex items-center space-x-1 text-fg-muted">
-        {backgroundTasks && <BackgroundTasksMenu {...backgroundTasks} />}
+        {plan && plan.length > 0 && <PlanMenu plan={plan} />}
 
-        {onToggleTerminal && (
-          <button
-            type="button"
-            onClick={onToggleTerminal}
-            aria-label="Toggle terminal drawer"
-            aria-pressed={isTerminalOpen}
-            className={`flex items-center rounded-md p-1.5 transition-all focus-ring ${
-              isTerminalOpen
-                ? "bg-surface-hover border border-border-strong text-fg"
-                : "bg-surface-2 border border-border text-fg-secondary hover:bg-surface-hover hover:text-fg"
-            }`}
-          >
-            <Terminal
-              size={14}
-              aria-hidden="true"
-              className={isTerminalOpen ? "text-fg" : "text-fg-muted"}
-            />
-          </button>
-        )}
+        {backgroundTasks && <BackgroundTasksMenu {...backgroundTasks} />}
 
         {onToggleChanges && diffStats && onOpenDiff && (
           <DiffStatChip added={diffStats.added} removed={diffStats.removed} onOpen={onOpenDiff} />
@@ -201,6 +188,17 @@ export function TopBar({
             title="Files"
           >
             <Folder size={14} className={isFilesOpen ? "text-fg" : undefined} />
+          </IconButton>
+        )}
+
+        {onToggleTerminal && (
+          <IconButton
+            label="Terminal"
+            onClick={onToggleTerminal}
+            aria-pressed={isTerminalOpen}
+            title="Terminal"
+          >
+            <SquareTerminal size={14} className={isTerminalOpen ? "text-fg" : undefined} />
           </IconButton>
         )}
 

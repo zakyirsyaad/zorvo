@@ -12,6 +12,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 import { useAcpSessions, type AcpHandlers } from "../hooks/useAcpSessions";
+import { sweepOrphans } from "../lib/orphan-sweep";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
 
@@ -55,7 +56,14 @@ function stubInvoke(overrides: Record<string, (args?: Record<string, unknown>) =
 }
 
 function handlers(): AcpHandlers {
-  return { onUpdate: vi.fn(), onPermission: vi.fn(), onTurnEnd: vi.fn(), onExit: vi.fn() };
+  return {
+    onUpdate: vi.fn(),
+    onPermission: vi.fn(),
+    onElicitation: vi.fn(),
+    onElicitationComplete: vi.fn(),
+    onTurnEnd: vi.fn(),
+    onExit: vi.fn(),
+  };
 }
 
 async function emit(payload: unknown) {
@@ -84,6 +92,36 @@ describe("useAcpSessions", () => {
     expect(result.current.info["s-1"].modes?.currentModeId).toBe("yolo");
     expect(result.current.info["s-1"].configOptions?.[0].currentValue).toBe("qwen-max");
     expect(result.current.canFork("s-1")).toBe(true);
+  });
+
+  it("starts, reopens, imports and forks a session at once, even while the startup orphan sweep runs", async () => {
+    // The sweep ends only the sessions it listed when the window loaded, so a start need not wait for it.
+    let finishSweep = () => {};
+    const spy = stubInvoke({
+      end_orphaned_sessions: () => new Promise((resolve) => (finishSweep = () => resolve(0))),
+      acp_start_session: () => Promise.resolve(STARTED),
+      acp_reopen_session: () => Promise.resolve(STARTED),
+      acp_import_session: () => Promise.resolve(STARTED),
+      acp_fork_session: () => Promise.resolve(STARTED),
+    });
+    const sweep = sweepOrphans();
+    const { result } = renderHook(() => useAcpSessions(handlers()));
+
+    await act(async () => {
+      await Promise.all([
+        result.current.start("s-1", "/w", "qwen"),
+        result.current.reopen("s-2", "/w", "qwen", "acp-2"),
+        result.current.importSession("s-3", "/w", "qwen", "acp-3"),
+        result.current.fork("s-1", "s-4", "/w"),
+      ]);
+    });
+    const started = spy.mock.calls
+      .map(([cmd]) => cmd)
+      .filter((cmd) => ["acp_start_session", "acp_reopen_session", "acp_import_session", "acp_fork_session"].includes(cmd));
+    expect(started.sort()).toEqual(["acp_fork_session", "acp_import_session", "acp_reopen_session", "acp_start_session"]);
+
+    finishSweep();
+    await sweep;
   });
 
   it("is busy from prompt until the turn ends, and forwards the turn result", async () => {
@@ -202,5 +240,79 @@ describe("useAcpSessions", () => {
     expect(result.current.info["s-1"].modes).toBeNull();
     expect(result.current.info["s-1"].configOptions).toEqual([]);
     expect(result.current.canFork("s-1")).toBe(false);
+  });
+
+  it("reports whether the agent can reopen a session", async () => {
+    stubInvoke({
+      acp_start_session: (args) =>
+        Promise.resolve({
+          acpSessionId: `acp-${(args as { sessionId: string }).sessionId}`,
+          agentCapabilities:
+            (args as { sessionId: string }).sessionId === "load"
+              ? { loadSession: true }
+              : (args as { sessionId: string }).sessionId === "resume"
+                ? { sessionCapabilities: { resume: {} } }
+                : {},
+        }),
+    });
+    const { result } = renderHook(() => useAcpSessions(handlers()));
+
+    await act(async () => {
+      await result.current.start("load", "/w", "qwen");
+      await result.current.start("resume", "/w", "qwen");
+      await result.current.start("none", "/w", "qwen");
+    });
+
+    expect(result.current.info["load"].canReopen).toBe(true);
+    expect(result.current.info["resume"].canReopen).toBe(true);
+    expect(result.current.info["none"].canReopen).toBe(false);
+  });
+
+  it("keeps how the backend reopened a session", async () => {
+    stubInvoke({
+      acp_reopen_session: () =>
+        Promise.resolve({
+          acpSessionId: "acp-1",
+          agentCapabilities: { sessionCapabilities: { resume: {} } },
+          reopenedWith: "resume",
+        }),
+    });
+    const { result } = renderHook(() => useAcpSessions(handlers()));
+
+    await act(async () => {
+      await result.current.reopen("s-1", "/w", "qwen", "acp-1");
+    });
+
+    expect(result.current.info["s-1"].reopenedWith).toBe("resume");
+  });
+
+  it("reopens, imports and lists through the backend commands", async () => {
+    const spy = stubInvoke({
+      acp_reopen_session: () => Promise.resolve(STARTED),
+      acp_import_session: () => Promise.resolve(STARTED),
+      acp_list_sessions: () =>
+        Promise.resolve({ sessions: [{ acpSessionId: "acp-9" }, { title: "no id" }], truncated: false, incomplete: true }),
+    });
+    const { result } = renderHook(() => useAcpSessions(handlers()));
+
+    let listed: unknown;
+    await act(async () => {
+      await result.current.reopen("s-1", "/w", "qwen", "acp-1");
+      await result.current.importSession("s-2", "/w", "qwen", "acp-2");
+      listed = await result.current.listSessions("qwen", "/w");
+    });
+
+    expect(spy).toHaveBeenCalledWith(
+      "acp_reopen_session",
+      { sessionId: "s-1", cwd: "/w", profileId: "qwen", acpSessionId: "acp-1" },
+      undefined,
+    );
+    expect(spy).toHaveBeenCalledWith(
+      "acp_import_session",
+      { sessionId: "s-2", cwd: "/w", profileId: "qwen", acpSessionId: "acp-2" },
+      undefined,
+    );
+    expect(spy).toHaveBeenCalledWith("acp_list_sessions", { profileId: "qwen", cwd: "/w" }, undefined);
+    expect(listed).toEqual({ sessions: [{ acpSessionId: "acp-9" }], truncated: false, incomplete: true });
   });
 });

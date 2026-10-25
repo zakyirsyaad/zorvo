@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, Bot, Check } from "lucide-react";
-import { readyAgents, resolveDefaultAgentId, type AgentSummary } from "../lib/agent-readiness";
+import { isAgentUsable, resolveUsableAgentId } from "../lib/agent-readiness";
+import { isInUse, type EnabledSettings } from "../lib/enabled-agents";
+import type { AgentProfile } from "../types";
 import { Button } from "./ui/Button";
 import { AgentsStep } from "./onboarding/AgentsStep";
 import { DefaultAgentStep } from "./onboarding/DefaultAgentStep";
@@ -10,10 +12,13 @@ import { toFolderOption, type FolderOption, type OnboardingResult } from "./onbo
 export type { FolderOption, OnboardingResult } from "./onboarding/types";
 
 export interface OnboardingProps {
-  agents: readonly AgentSummary[];
+  agents: readonly AgentProfile[];
+  /** Decides which registry agents are in use; the defaults apply when absent. */
+  settings?: EnabledSettings;
   recentFolders: readonly FolderOption[];
   suggestedFolders: readonly FolderOption[];
-  onRecheckAgents: () => void | Promise<void>;
+  /** The agent catalog for the Agents step. */
+  agentsPanel: ReactNode;
   onPickFolder: () => Promise<FolderOption | null>;
   onComplete: (result: OnboardingResult) => void;
 }
@@ -22,7 +27,7 @@ const STEPS = [
   {
     label: "Agents",
     title: "Check your agents",
-    description: "Zorvo drives coding agents installed on this machine.",
+    description: "Zorvo drives coding agents. Add the ones you use and install them here.",
   },
   {
     label: "Folder",
@@ -42,7 +47,7 @@ const GATE_HINT_ID = "onboarding-gate-hint";
 const GATE_MESSAGES = [
   "Install at least one agent to continue.",
   "Choose a folder to continue.",
-  "No ready agent to start with.",
+  "No agent to start with.",
 ] as const;
 
 function StepIndicator({ current }: { current: number }) {
@@ -98,10 +103,11 @@ function NavButton({ onClick, disabled, primary, describedBy, children }: NavBut
 }
 
 export function Onboarding({
-  agents,
+  agents: allAgents,
+  settings = {},
   recentFolders,
   suggestedFolders,
-  onRecheckAgents,
+  agentsPanel,
   onPickFolder,
   onComplete,
 }: OnboardingProps) {
@@ -109,8 +115,10 @@ export function Onboarding({
   const [folder, setFolder] = useState<FolderOption | null>(null);
   const [preferredAgentId, setPreferredAgentId] = useState<string | null>(null);
 
-  const defaultAgentId = resolveDefaultAgentId(agents, preferredAgentId);
-  const canAdvance = [readyAgents(agents).length > 0, folder !== null, defaultAgentId !== null][step];
+  const agents = allAgents.filter((agent) => isInUse(agent, settings));
+  // An agent Zorvo can install counts: a new Mac without Node.js installs it from the first session.
+  const defaultAgentId = resolveUsableAgentId(agents, preferredAgentId);
+  const canAdvance = [agents.some(isAgentUsable), folder !== null, defaultAgentId !== null][step];
   const current = STEPS[step];
 
   const handleSelectFolder = (selected: FolderOption) => setFolder(toFolderOption(selected));
@@ -137,7 +145,7 @@ export function Onboarding({
             <h2 className="text-base font-semibold text-fg">{current.title}</h2>
             <p className="mt-1 text-xs text-fg-subtle">{current.description}</p>
           </div>
-          {step === 0 && <AgentsStep agents={agents} onRecheckAgents={onRecheckAgents} />}
+          {step === 0 && <AgentsStep agentsPanel={agentsPanel} />}
           {step === 1 && (
             <FolderStep
               recentFolders={recentFolders}

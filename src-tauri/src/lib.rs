@@ -1,6 +1,8 @@
 pub mod acp;
 pub mod appearance;
+pub mod attachments;
 pub mod background_processes;
+pub mod branches;
 pub mod changes;
 pub mod data_migration;
 pub mod diff_stats;
@@ -8,14 +10,16 @@ pub mod env_resolver;
 pub mod files;
 pub mod fork_handoff;
 pub mod git_info;
+pub mod installer;
 pub mod profiles;
 pub mod pty_session;
 pub mod pull_requests;
-pub mod spawn_plan;
+pub mod registry;
 pub mod store;
 pub mod user_profile;
 pub mod windows;
 pub mod workspace_files;
+pub mod workspace_terminal;
 pub mod workspaces;
 pub mod worktrees;
 
@@ -24,10 +28,14 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use acp::commands::{event_payload, ACP_EVENT};
 use acp::manager::AcpManager;
-use profiles::{get_available_agent_profiles, AgentProfile};
+use acp::terminal_auth::{sign_in_event_payload, SIGN_IN_TERMINAL_EVENT};
+use installer::commands::{clean_up_at_start, versions_in_use, AppInstaller};
+use installer::layout::ToolsDir;
+use profiles::{agent_profiles, AgentProfile};
 use pty_session::{PtyEvent, PtySessionManager};
-use spawn_plan::{build_spawn_plan, SpawnOptions};
+use registry::{Catalog, AGENT_PROFILES_CHANGED};
 use store::{AppStore, PersistedState};
+use workspace_terminal::{event_payload as workspace_terminal_payload, pty_event_route, PtyRoute};
 use workspaces::{default_workspace_root, list_workspaces_in, Workspace};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -36,42 +44,12 @@ use workspaces::{default_workspace_root, list_workspaces_in, Workspace};
 // resolve the login-shell environment or wait on a child process are marked
 // `async` so they run on the async runtime and cannot freeze the window.
 //
-// `send_input` stays sync deliberately. It only enqueues bytes to the session's
-// writer thread, which owns the PTY and drains the queue in order, so it never
-// blocks on a full PTY input buffer. Marking it `async` would run keystrokes on
-// a thread pool, where concurrent calls could reach the PTY out of order.
-
-/// Starts an agent session for a known profile.
-///
-/// The webview picks a `profile_id` plus [`SpawnOptions`]; it never supplies a
-/// command or raw args. The backend resolves the profile, builds a validated
-/// plan, and spawns that — so an unknown profile, an undetected CLI, or an
-/// option the CLI does not support all fail here instead of reaching a shell.
-#[tauri::command(async)]
-fn spawn_session(
-    _app: AppHandle,
-    state: State<'_, PtySessionManager>,
-    session_id: String,
-    cwd: String,
-    profile_id: String,
-    options: SpawnOptions,
-) -> Result<(), String> {
-    let profile = get_available_agent_profiles()
-        .into_iter()
-        .find(|profile| profile.id == profile_id)
-        .ok_or_else(|| format!("Unknown agent profile '{}'", profile_id))?;
-
-    if !profile.detected {
-        return Err(format!(
-            "{} is not installed ('{}' was not found on PATH)",
-            profile.name, profile.command
-        ));
-    }
-
-    let plan = build_spawn_plan(&profile, &options)?;
-
-    state.start_session(&session_id, &cwd, &plan.command, &plan.args, &plan.env)
-}
+// `send_input` stays sync deliberately. It carries the keystrokes of a sign-in
+// terminal and of a workspace shell, where typing order matters most. It only
+// enqueues them to the PTY's writer thread, which drains the queue in order, so
+// it never blocks on a full PTY input buffer. Marking it `async` would run
+// keystrokes on a thread pool, where concurrent calls could reach the PTY out
+// of order.
 
 #[tauri::command]
 fn send_input(
@@ -92,15 +70,62 @@ fn resize_session(
     state.resize(&session_id, cols, rows)
 }
 
-/// Detects the installed agents. With `refresh`, the login shell's PATH is read
-/// afresh first, so an agent installed while the app runs is found.
+/// The agents the app can run, at the versions the user has in use. With
+/// `refresh`, the login shell's PATH and the global npm packages are read
+/// afresh and the registry is refetched, so an agent installed or published
+/// while the app runs is found. A failed fetch keeps the cached catalog.
 #[tauri::command(async)]
-fn get_agent_profiles(refresh: Option<bool>) -> Result<Vec<AgentProfile>, String> {
+fn get_agent_profiles(
+    store: State<'_, AppStore>,
+    refresh: Option<bool>,
+) -> Result<Vec<AgentProfile>, String> {
     if refresh.unwrap_or(false) {
         // A failed re-read leaves detection on the process PATH; it is not fatal.
-        let _ = env_resolver::refresh_user_env();
+        let env = env_resolver::refresh_user_env().unwrap_or_else(|error| {
+            eprintln!("Could not re-read the login shell environment: {error}");
+            Default::default()
+        });
+        registry::refresh_catalog(registry::catalog(), &env, true);
     }
-    Ok(get_available_agent_profiles())
+    Ok(agent_profiles(&versions_in_use(&store)))
+}
+
+/// Every agent in the registry with where it stands on this Mac, for the
+/// catalog screen. Unlike the profiles it includes agents that are waiting out
+/// the seven-day wait or have no build for this Mac.
+#[tauri::command(async)]
+fn get_agent_catalog(
+    store: State<'_, AppStore>,
+) -> Result<registry::catalog_view::AgentCatalog, String> {
+    let versions = versions_in_use(&store);
+    Ok(profiles::with_system_tools(|catalog, tools| {
+        catalog.catalog_view(tools, &versions, registry::unix_now())
+    }))
+}
+
+/// The agents' logos as `{id: data URL}` (SVG). The webview makes no network
+/// requests, so the backend caches them from the registry CDN and ships a copy.
+#[tauri::command(async)]
+fn get_agent_icons() -> std::collections::BTreeMap<String, String> {
+    registry::catalog().icon_data_urls()
+}
+
+/// Reads the global npm packages and, when the last fetch is a day old,
+/// the registry, on its own thread so startup never waits on `npm` or the
+/// network. The UI is told to reload its profiles only when they changed.
+/// Then deletes the installs no enabled agent uses any more.
+fn refresh_catalog_in_background(app: AppHandle) {
+    std::thread::spawn(move || {
+        // Also warms the login-shell environment for the first session spawn.
+        let env = env_resolver::cached_user_env().unwrap_or_else(|error| {
+            eprintln!("Could not read the login shell environment: {error}");
+            Default::default()
+        });
+        if registry::refresh_catalog(registry::catalog(), &env, false) {
+            let _ = app.emit(AGENT_PROFILES_CHANGED, ());
+        }
+        clean_up_at_start(&app);
+    });
 }
 
 /// Lists the project folders under `$HOME/developer` the UI can spawn into.
@@ -124,16 +149,36 @@ fn terminate_session(
 
 /// Loads the persisted app state, or the default state on a first launch.
 ///
-/// Ends every agent the backend still runs. The UI calls this when it loads:
-/// a webview reload leaves the backend (and its agents) running, but the new
-/// UI knows none of them and shows their sessions as ended, so they would
-/// only linger, holding sessions the UI may resume in a new process.
+/// Ends every agent and terminal a previous UI left running. The UI calls this
+/// when it loads: a webview reload leaves the backend (and its agents) running,
+/// but the new UI knows none of them and shows their sessions as ended, so they
+/// would only linger, holding sessions the UI may resume in a new process.
+/// Workspace shells go with the processes under them: the new UI has no tabs
+/// for them. Returns how many sessions are being ended.
+///
+/// Sync on purpose, like `send_input`: sync commands run on the main thread in
+/// the order the webview sent them, so the list is taken before any session
+/// the new UI starts later is registered, and only the listed ones are ended.
+/// The ending itself (`ps`, kills) runs on its own thread, off the main one.
 #[tauri::command]
 fn end_orphaned_sessions(
+    app: AppHandle,
     pty: State<'_, PtySessionManager>,
     acp: State<'_, acp::manager::AcpManager>,
 ) -> usize {
-    pty.kill_all() + acp.stop_all()
+    let terminals = pty.session_ids();
+    // Agent sessions are taken off the routes here, not just listed: the new UI
+    // reopens a saved session under the same app session id, and that one
+    // must not be what the thread below ends. (PTY ids are never reused.)
+    let agents: Vec<_> = acp.session_ids().iter().map(|id| acp.detach(id)).collect();
+    let count = terminals.len() + agents.len();
+    std::thread::spawn(move || {
+        workspace_terminal::end_sessions(&app.state::<PtySessionManager>(), &terminals);
+        agents
+            .into_iter()
+            .for_each(acp::manager::DetachedSession::end);
+    });
+    count
 }
 
 /// Reads the state file from disk, so it stays off the main thread.
@@ -182,14 +227,18 @@ fn write_fork_handoff(
     handoff_id: String,
     content: String,
 ) -> Result<String, String> {
-    let root = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Cannot locate the app data dir: {e}"))?;
+    let root = app_data_dir(&app).map_err(|e| format!("Cannot locate the app data dir: {e}"))?;
     let path = fork_handoff::write_handoff(&root, &handoff_id, &content)?;
     path.into_os_string()
         .into_string()
         .map_err(|p| format!("Handoff path is not valid UTF-8: {}", p.to_string_lossy()))
+}
+
+/// The app's data dir; a debug build (`pnpm tauri dev`) gets its own, so
+/// testing never writes the installed app's sessions.
+fn app_data_dir(app: &AppHandle) -> tauri::Result<std::path::PathBuf> {
+    let base = app.path().app_data_dir()?;
+    Ok(store::data_dir_for(&base, cfg!(debug_assertions)))
 }
 
 /// Tells the user that their Agent Desktop sessions were not brought over.
@@ -210,8 +259,45 @@ fn report_migration_failure(app: &AppHandle, error: &str) {
         .show(|_| {});
 }
 
+/// WKWebView turns `--flag` into an en dash and straight quotes into curly
+/// ones unless the app's defaults say otherwise.
+#[cfg(target_os = "macos")]
+const WEB_TEXT_SUBSTITUTION_KEYS: [&str; 4] = [
+    "WebAutomaticDashSubstitutionEnabled",
+    "WebAutomaticQuoteSubstitutionEnabled",
+    "WebAutomaticTextReplacementEnabled",
+    "WebAutomaticSpellingCorrectionEnabled",
+];
+
+/// Registers the WebView text-substitution defaults as off for the whole app.
+#[cfg(target_os = "macos")]
+fn disable_web_text_substitutions() {
+    use objc2::rc::Retained;
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{NSDictionary, NSNumber, NSString, NSUserDefaults};
+
+    let keys: Vec<Retained<NSString>> = WEB_TEXT_SUBSTITUTION_KEYS
+        .iter()
+        .map(|key| NSString::from_str(key))
+        .collect();
+    let values: Vec<Retained<AnyObject>> = keys
+        .iter()
+        .map(|_| Retained::from(NSNumber::new_bool(false)))
+        .collect();
+    let key_refs: Vec<&NSString> = keys.iter().map(|key| &**key).collect();
+    let value_refs: Vec<&AnyObject> = values.iter().map(|value| &**value).collect();
+    let registration = NSDictionary::<NSString, AnyObject>::from_slices(&key_refs, &value_refs);
+
+    // SAFETY: the dictionary is keyed by NSString and holds objects, as the
+    // method requires; registered values are never written to the user's defaults.
+    unsafe { NSUserDefaults::standardUserDefaults().registerDefaults(&registration) };
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "macos")]
+    disable_web_text_substitutions();
+
     let app_handle_holder: Arc<std::sync::Mutex<Option<AppHandle>>> =
         Arc::new(std::sync::Mutex::new(None));
     let holder_clone = Arc::clone(&app_handle_holder);
@@ -219,31 +305,24 @@ pub fn run() {
     let manager = PtySessionManager::new(Box::new(move |event| {
         if let Ok(guard) = holder_clone.lock() {
             if let Some(app) = guard.as_ref() {
-                match event {
-                    PtyEvent::Output { session_id, data } => {
-                        // Emit to session-specific event channel and global channel
-                        let _ = app.emit(&format!("pty-output-{}", session_id), &data);
+                let session_id = match &event {
+                    PtyEvent::Output { session_id, .. } | PtyEvent::Exit { session_id, .. } => {
+                        session_id
+                    }
+                };
+                // Only sign-in terminals and workspace shells start a PTY; any
+                // other id has no listener.
+                match pty_event_route(session_id) {
+                    Some(PtyRoute::SignIn) => {
+                        let _ = app.emit(SIGN_IN_TERMINAL_EVENT, sign_in_event_payload(&event));
+                    }
+                    Some(PtyRoute::Workspace) => {
                         let _ = app.emit(
-                            "pty-output",
-                            serde_json::json!({
-                                "session_id": session_id,
-                                "data": data,
-                            }),
+                            workspace_terminal::EVENT,
+                            workspace_terminal_payload(&event),
                         );
                     }
-                    PtyEvent::Exit {
-                        session_id,
-                        exit_code,
-                    } => {
-                        let _ = app.emit(&format!("pty-exit-{}", session_id), exit_code);
-                        let _ = app.emit(
-                            "pty-exit",
-                            serde_json::json!({
-                                "session_id": session_id,
-                                "exit_code": exit_code,
-                            }),
-                        );
-                    }
+                    None => {}
                 }
             }
         }
@@ -268,12 +347,17 @@ pub fn run() {
 
             // Persistence lives in the platform app-data directory, which only
             // exists once the app handle does, so the store is built here.
-            let data_dir = app.path().app_data_dir().map_err(|e| {
+            let data_dir = app_data_dir(app.handle()).map_err(|e| {
                 format!(
                     "Failed to resolve the app data directory for persisted state: {}",
                     e
                 )
             })?;
+            // Before anything resolves a profile, so Zorvo's installs are seen.
+            installer::set_tools_dir(ToolsDir::new(&data_dir));
+            app.manage(AppInstaller::new(ToolsDir::new(&data_dir)));
+            // Reads two small files; fetching and `npm` wait for the thread below.
+            registry::install(Catalog::open(data_dir.clone(), registry::BUNDLED_HISTORY));
             let (store, migration) = data_migration::open_store(data_dir);
             app.manage(store);
             if let Err(error) = migration {
@@ -287,18 +371,17 @@ pub fn run() {
                     .set_theme(appearance::theme_for(&state.settings.appearance));
             }
 
-            // Warm the login-shell environment off the main thread so the first
-            // session spawn and profile scan do not pay for it.
-            std::thread::spawn(|| {
-                let _ = env_resolver::cached_user_env();
-            });
+            refresh_catalog_in_background(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_agent_profiles,
+            get_agent_catalog,
+            get_agent_icons,
             list_workspaces,
-            spawn_session,
             send_input,
+            workspace_terminal::workspace_terminal_open,
+            workspace_terminal::workspace_terminal_close,
             resize_session,
             terminate_session,
             end_orphaned_sessions,
@@ -315,8 +398,11 @@ pub fn run() {
             files::list_directory,
             files::open_path,
             files::remember_workspace,
+            attachments::attachment_preview,
             workspace_files::workspace_files,
             git_info::workspace_details,
+            branches::list_branches,
+            branches::switch_branch,
             pull_requests::session_pull_request,
             pull_requests::repo_pull_requests,
             changes::session_changes,
@@ -329,17 +415,57 @@ pub fn run() {
             user_profile::get_user_profile,
             write_fork_handoff,
             acp::commands::acp_start_session,
-            acp::commands::acp_load_session,
+            acp::commands::acp_reopen_session,
+            acp::commands::acp_import_session,
+            acp::commands::acp_list_sessions,
             acp::commands::acp_authenticate,
             acp::commands::acp_probe_agent,
             acp::commands::acp_fork_session,
+            acp::commands::acp_start_terminal_sign_in,
+            acp::commands::acp_cancel_terminal_sign_in,
             acp::commands::acp_prompt,
             acp::commands::acp_cancel,
             acp::commands::acp_respond_permission,
+            acp::commands::acp_respond_elicitation,
+            acp::commands::acp_reopen_elicitation_url,
             acp::commands::acp_set_mode,
             acp::commands::acp_set_config_option,
-            acp::commands::acp_stop_session
+            acp::commands::acp_qwen_last_api_error,
+            acp::commands::acp_stop_session,
+            installer::commands::install_agent,
+            installer::commands::update_agent,
+            installer::commands::install_runtime,
+            installer::commands::cancel_agent_install,
+            installer::commands::remove_agent_install
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // Workspace shells go with their whole process tree, so a `nohup`ed
+            // job they started does not outlive Zorvo; other sessions are only killed.
+            if let tauri::RunEvent::Exit = event {
+                let pty = app.state::<PtySessionManager>();
+                workspace_terminal::end_all_sessions(&pty);
+            }
+        });
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::{disable_web_text_substitutions, WEB_TEXT_SUBSTITUTION_KEYS};
+    use objc2_foundation::{NSNumber, NSString, NSUserDefaults};
+
+    #[test]
+    fn web_view_text_substitutions_are_registered_off() {
+        disable_web_text_substitutions();
+
+        let defaults = NSUserDefaults::standardUserDefaults();
+        for key in WEB_TEXT_SUBSTITUTION_KEYS {
+            let value = defaults.objectForKey(&NSString::from_str(key));
+            let is_false = value
+                .and_then(|value| value.downcast::<NSNumber>().ok())
+                .map(|number| number.boolValue());
+            assert_eq!(is_false, Some(false), "{key} should be registered as false");
+        }
+    }
 }

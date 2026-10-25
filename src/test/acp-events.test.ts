@@ -2,13 +2,16 @@ import { describe, it, expect } from "vitest";
 import {
   applyAcpUpdate,
   applyPermissionRequest,
+  applyReplayUpdate,
+  closeImportedTurn,
   closeTurn,
   isAwaitingPermission,
+  noteModeChange,
   pendingCardsInTurn,
   resolvePermissionCard,
   type AcpReducerContext,
 } from "../lib/acp-events";
-import type { ChatMessage } from "../types";
+import type { ChatMessage, ToolExecution } from "../types";
 
 function ctx(): AcpReducerContext {
   let n = 0;
@@ -74,8 +77,8 @@ describe("applyAcpUpdate", () => {
       c,
     );
 
-    expect(started[0].tools).toEqual([
-      { id: "t-1", name: "Read src/App.tsx", args: "", status: "running", kind: "read" },
+    expect(started[0].tools).toMatchObject([
+      { id: "t-1", name: "Read src/App.tsx", status: "running", kind: "read", startedAt: 1000 },
     ]);
     expect(finished[0].tools?.[0].status).toBe("completed");
   });
@@ -122,6 +125,90 @@ describe("applyAcpUpdate", () => {
       messages,
     );
     expect(applyAcpUpdate(messages, null, c)).toBe(messages);
+  });
+});
+
+describe("reply parts", () => {
+  const toolCall = (id: string, kind = "read", title = `Tool ${id}`) => ({
+    sessionUpdate: "tool_call",
+    toolCallId: id,
+    title,
+    kind,
+    status: "pending",
+  });
+
+  it("keeps text and tools in the order they happened", () => {
+    const c = ctx();
+    let messages = applyAcpUpdate([], text("Let me look."), c);
+    messages = applyAcpUpdate(messages, toolCall("t-1"), c);
+    messages = applyAcpUpdate(messages, text("Found it."), c);
+    messages = applyAcpUpdate(messages, toolCall("t-2"), c);
+
+    expect(messages[0].parts).toEqual([
+      { kind: "text", text: "Let me look." },
+      { kind: "tools", toolIds: ["t-1"] },
+      { kind: "text", text: "Found it." },
+      { kind: "tools", toolIds: ["t-2"] },
+    ]);
+  });
+
+  it("keeps two text chunks in a row as one text part", () => {
+    const c = ctx();
+    const messages = applyAcpUpdate(applyAcpUpdate([], text("Hello "), c), text("world"), c);
+
+    expect(messages[0].parts).toEqual([{ kind: "text", text: "Hello world" }]);
+  });
+
+  it("keeps consecutive tool calls in one tools part", () => {
+    const c = ctx();
+    const once = applyAcpUpdate([], toolCall("t-1"), c);
+    const messages = applyAcpUpdate(once, toolCall("t-2"), c);
+
+    expect(messages[0].parts).toEqual([{ kind: "tools", toolIds: ["t-1", "t-2"] }]);
+  });
+
+  it("joins separate text parts with a blank line in content", () => {
+    const c = ctx();
+    let messages = applyAcpUpdate([], text("files"), c);
+    messages = applyAcpUpdate(messages, toolCall("t-1"), c);
+    messages = applyAcpUpdate(messages, text("Let me"), c);
+
+    expect(messages[0].content).toBe("files\n\nLet me");
+  });
+
+  it("keeps a saved reply's tools when new text arrives", () => {
+    const c = ctx();
+    const old = {
+      id: "m-1",
+      role: "agent" as const,
+      content: "Before",
+      timestamp: 1,
+      isComplete: false,
+      tools: [{ id: "t-0", name: "Read", status: "completed" as const, kind: "read" }],
+    };
+
+    const messages = applyAcpUpdate([old], text("After"), c);
+
+    expect(messages[0].parts).toEqual([
+      { kind: "tools", toolIds: ["t-0"] },
+      { kind: "text", text: "BeforeAfter" },
+    ]);
+    expect(messages[0].content).toBe("BeforeAfter");
+  });
+
+  it("keeps the order in a replay", () => {
+    const c = ctx();
+    let messages = applyReplayUpdate([], userChunk("go", "m-1"), c);
+    messages = applyReplayUpdate(messages, text("Reading."), c);
+    messages = applyReplayUpdate(messages, toolCall("t-1"), c);
+    messages = applyReplayUpdate(messages, text("Done."), c);
+
+    expect(messages[1].parts).toEqual([
+      { kind: "text", text: "Reading." },
+      { kind: "tools", toolIds: ["t-1"] },
+      { kind: "text", text: "Done." },
+    ]);
+    expect(messages[1].content).toBe("Reading.\n\nDone.");
   });
 });
 
@@ -271,6 +358,53 @@ describe("permission requests", () => {
     expect(pendingCardsInTurn(both).map((card) => card.requestId)).toEqual(["perm-1", "perm-2"]);
   });
 
+  it("shows one card when the same request arrives twice", () => {
+    const c = ctx();
+    const once = applyPermissionRequest([], request, c);
+    const twice = applyPermissionRequest(once, request, c);
+
+    expect(twice).toHaveLength(1);
+    expect(twice[0].actionCard?.requestId).toBe("perm-1");
+    expect(pendingCardsInTurn(twice)).toHaveLength(1);
+  });
+
+  it("shows a new card when a reopened agent reuses an answered request's id", () => {
+    // JSON-RPC ids restart with each agent process, so an id seen in an
+    // earlier, answered turn says nothing about a request now.
+    const c = ctx();
+    const answered = applyPermissionRequest([], request, c).map((m) =>
+      m.actionCard ? { ...m, actionCard: { ...m.actionCard, status: "approved" as const } } : m,
+    );
+    const user: ChatMessage = { id: "u-2", role: "user", content: "go on", timestamp: 2 };
+
+    const messages = applyPermissionRequest([...answered, user], request, c);
+
+    expect(pendingCardsInTurn(messages).map((card) => card.requestId)).toEqual(["perm-1"]);
+  });
+
+  it("notes on a waiting card that the mode changed after it was asked", () => {
+    const c = ctx();
+    const withCard = applyPermissionRequest([], request, c);
+    const answered = resolvePermissionCard(withCard, withCard[0].actionCard!.id, "allow");
+
+    const askedBefore = new Set([withCard[0].actionCard!.id]);
+
+    expect(noteModeChange(withCard, askedBefore)[0].actionCard?.modeChanged).toBe(true);
+    expect(noteModeChange(answered, askedBefore)[0].actionCard?.modeChanged).toBeUndefined();
+  });
+
+  it("leaves a card asked after the mode change unmarked", () => {
+    // The agent may ask while set_mode is in flight: that request is in the new mode.
+    const c = ctx();
+    const first = applyPermissionRequest([], request, c);
+    const askedBefore = new Set([first[0].actionCard!.id]);
+    const both = applyPermissionRequest(first, { ...request, requestId: "perm-2" }, c);
+
+    const noted = noteModeChange(both, askedBefore);
+
+    expect(noted.map((m) => m.actionCard?.modeChanged)).toEqual([true, undefined]);
+  });
+
   it("closing a turn closes every unanswered request, not only the last one", () => {
     const c = ctx();
     const both = applyPermissionRequest(applyPermissionRequest([], request, c), { ...request, requestId: "perm-2" }, c);
@@ -281,23 +415,198 @@ describe("permission requests", () => {
     expect(pendingCardsInTurn(closed)).toEqual([]);
   });
 
-  it("finds only the current turn's unanswered cards, terminal ones on request", () => {
+  it("finds only the current turn's unanswered cards", () => {
     const c = ctx();
     const earlier = applyPermissionRequest([], request, c);
     const user: ChatMessage = { id: "u-2", role: "user", content: "next", timestamp: 2 };
-    const terminalCard = {
-      id: "card-t", sessionId: "s-1", title: "Approval", prompt: "Allow this action? [y/n]",
-      status: "pending" as const, approvalKey: "y\n", rejectKey: "n\n", timestamp: 3,
-    };
-    const messages: ChatMessage[] = [
-      ...earlier,
-      user,
-      { id: "a-3", role: "agent", content: "", timestamp: 3, actionCard: terminalCard },
-    ];
+    const messages = applyPermissionRequest([...earlier, user], { ...request, requestId: "perm-2" }, c);
 
-    expect(pendingCardsInTurn(messages)).toEqual([]);
-    expect(pendingCardsInTurn(messages, { includeTerminal: true }).map((card) => card.id)).toEqual(["card-t"]);
-    expect(isAwaitingPermission(messages, { includeTerminal: true })).toBe(true);
+    expect(pendingCardsInTurn(messages).map((card) => card.requestId)).toEqual(["perm-2"]);
+    expect(isAwaitingPermission(messages)).toBe(true);
+    expect(isAwaitingPermission([...earlier, user])).toBe(false);
   });
 });
 
+describe("closeTurn", () => {
+  const tool = (id: string, status: ToolExecution["status"]): ToolExecution => ({ id, name: id, status });
+  const reply = (id: string, tools: ToolExecution[]): ChatMessage => ({
+    id,
+    role: "agent",
+    content: "",
+    timestamp: 1,
+    tools,
+  });
+
+  it("leaves a running tool running, rejects an unanswered card and completes the last reply", () => {
+    const messages: ChatMessage[] = [
+      reply("a-1", [tool("t-done", "completed"), tool("t-running", "running")]),
+      {
+        ...reply("a-2", [tool("t-failed", "failed"), tool("t-running-2", "running")]),
+        actionCard: {
+          id: "act-1",
+          sessionId: "s-1",
+          title: "Permission requested",
+          prompt: "Run the tests",
+          status: "pending",
+          timestamp: 1,
+          options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
+          requestId: "perm-1",
+        },
+      },
+    ];
+
+    const closed = closeTurn(messages);
+
+    expect(closed.flatMap((m) => m.tools?.map((t) => [t.id, t.status]) ?? [])).toEqual([
+      ["t-done", "completed"],
+      ["t-running", "running"],
+      ["t-failed", "failed"],
+      ["t-running-2", "running"],
+    ]);
+    expect(closed[0].isComplete).toBeUndefined();
+    expect(closed[1].actionCard?.status).toBe("rejected");
+    expect(closed[1].isComplete).toBe(true);
+    expect(messages[0].tools?.map((t) => t.status)).toEqual(["completed", "running"]);
+  });
+});
+
+describe("closeImportedTurn", () => {
+  const tool = (id: string, status: ToolExecution["status"]): ToolExecution => ({ id, name: id, status });
+  const reply = (id: string, tools: ToolExecution[]): ChatMessage => ({
+    id,
+    role: "agent",
+    content: "",
+    timestamp: 1,
+    tools,
+  });
+
+  it("settles the last turn of a replay whose tool call and request never finished", () => {
+    const c = ctx();
+    let messages = applyReplayUpdate([], userChunk("run the tests", "m-1"), c);
+    messages = applyReplayUpdate(
+      messages,
+      { sessionUpdate: "tool_call", toolCallId: "t-1", title: "pnpm test", status: "in_progress" },
+      c,
+    );
+    messages = applyPermissionRequest(
+      messages,
+      {
+        requestId: "perm-1",
+        toolCall: { toolCallId: "t-1", title: "Run the tests", kind: "execute" },
+        options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
+      },
+      c,
+    );
+
+    const closed = closeImportedTurn(messages);
+    const last = closed[closed.length - 1];
+
+    expect(last.isComplete).toBe(true);
+    expect(last.actionCard?.status).toBe("rejected");
+    expect(last.tools?.map((t) => t.status)).toEqual(["failed"]);
+    expect(pendingCardsInTurn(closed)).toEqual([]);
+    expect(messages[messages.length - 1].tools?.map((t) => t.status)).toEqual(["running"]);
+  });
+
+  it("settles running tools as failed and leaves settled ones alone", () => {
+    const messages = [
+      reply("a-1", [tool("t-done", "completed"), tool("t-running", "running")]),
+      reply("a-2", [tool("t-failed", "failed"), tool("t-running-2", "running")]),
+    ];
+
+    const closed = closeImportedTurn(messages);
+
+    expect(closed.flatMap((m) => m.tools?.map((t) => [t.id, t.status]) ?? [])).toEqual([
+      ["t-done", "completed"],
+      ["t-running", "failed"],
+      ["t-failed", "failed"],
+      ["t-running-2", "failed"],
+    ]);
+    expect(messages[0].tools?.map((t) => t.status)).toEqual(["completed", "running"]);
+  });
+});
+
+const userChunk = (t: string, messageId?: string) => ({
+  sessionUpdate: "user_message_chunk",
+  content: { type: "text", text: t },
+  ...(messageId === undefined ? {} : { messageId }),
+});
+
+describe("applyReplayUpdate", () => {
+  it("splits a replayed conversation into user and agent turns", () => {
+    const c = ctx();
+    let messages = applyReplayUpdate([], userChunk("first"), c);
+    messages = applyReplayUpdate(messages, text("one"), c);
+    messages = applyReplayUpdate(messages, userChunk("second"), c);
+    messages = applyReplayUpdate(messages, text("two"), c);
+
+    expect(messages.map((m) => [m.role, m.content])).toEqual([
+      ["user", "first"],
+      ["agent", "one"],
+      ["user", "second"],
+      ["agent", "two"],
+    ]);
+    expect(messages.map((m) => m.isComplete)).toEqual([undefined, true, undefined, undefined]);
+  });
+
+  it("joins user chunks that share a messageId", () => {
+    const c = ctx();
+    const first = applyReplayUpdate([], userChunk("Hello", "m-1"), c);
+    const result = applyReplayUpdate(first, userChunk(" world", "m-1"), c);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ role: "user", content: "Hello world", replayId: "m-1" });
+  });
+
+  it("keeps user chunks with different messageIds apart", () => {
+    const c = ctx();
+    const first = applyReplayUpdate([], userChunk("one", "m-1"), c);
+    const result = applyReplayUpdate(first, userChunk("two", "m-2"), c);
+
+    expect(result.map((m) => m.content)).toEqual(["one", "two"]);
+    expect(result.map((m) => m.replayId)).toEqual(["m-1", "m-2"]);
+  });
+
+  it("changes nothing for an empty user chunk, not even a closing reply", () => {
+    const c = ctx();
+    const messages = applyAcpUpdate([], text("still going"), c);
+
+    expect(applyReplayUpdate(messages, userChunk(""), c)).toBe(messages);
+  });
+
+  it("shows a non-text block as its file's name", () => {
+    const result = applyReplayUpdate(
+      [],
+      { sessionUpdate: "user_message_chunk", content: { type: "resource_link", uri: "file:///repo/docs/design.md" } },
+      ctx(),
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ role: "user", content: "design.md" });
+  });
+
+  it("hands agent text and tool calls to the normal reducer", () => {
+    const base: ChatMessage[] = [{ id: "u-1", role: "user", content: "go", timestamp: 1 }];
+    const toolCall = { sessionUpdate: "tool_call", toolCallId: "t-1", title: "Read", status: "in_progress" };
+    // The replay's missing time is its only difference: the rest is the normal reducer's work.
+    const withoutTime = (messages: ChatMessage[]) =>
+      messages.map(({ hasKnownTime: _hasKnownTime, ...message }) => message);
+
+    expect(withoutTime(applyReplayUpdate(base, text("Done"), ctx()))).toEqual(applyAcpUpdate(base, text("Done"), ctx()));
+    expect(withoutTime(applyReplayUpdate(base, toolCall, ctx()))).toEqual(applyAcpUpdate(base, toolCall, ctx()));
+  });
+
+  it("marks replayed messages as having no known time", () => {
+    const c = ctx();
+    const user = applyReplayUpdate([], userChunk("first"), c);
+    const messages = applyReplayUpdate(user, text("one"), c);
+
+    expect(messages.map((m) => m.hasKnownTime)).toEqual([false, false]);
+  });
+
+  it("leaves a live message's time known", () => {
+    const message = applyAcpUpdate([], text("live"), ctx())[0];
+
+    expect(message.hasKnownTime).toBeUndefined();
+  });
+});

@@ -1,10 +1,9 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { AcpEngine } from './session-engine/useAcpEngine';
-import type { PtyEngine } from './session-engine/usePtyEngine';
 import type { NavigationHistory } from './useNavigationHistory';
 import { useLatest } from './useLatest';
 import { closeTurn } from '../lib/acp-events';
-import { isAcpSession, isListed, mostRecentSessionId, removeSessionFrom } from '../lib/session-helpers';
+import { isListed, mostRecentSessionId, removeSessionFrom } from '../lib/session-helpers';
 import { removeSessionWorktree } from '../lib/session-worktree';
 import type { ChatMessage, PersistedState, Session } from '../types';
 
@@ -17,27 +16,29 @@ export interface SessionActionsDeps {
   removeTranscript: (sessionId: string) => void;
   navigation: Pick<NavigationHistory, 'remove'>;
   acp: Pick<AcpEngine, 'stop'>;
-  pty: Pick<PtyEngine, 'stop' | 'forget'>;
+  /** Ends the shells open in a folder; called once a session's worktree is removed. */
+  closeTerminals?: (folderPath: string) => void;
   onNotice: (message: string) => void;
 }
 
 export interface SessionActions {
   deleteSession: (sessionId: string) => void;
+  discardSession: (sessionId: string) => void;
   renameSession: (sessionId: string, name: string) => void;
   pinSession: (sessionId: string, isPinned: boolean) => void;
   archiveSession: (sessionId: string, isArchived: boolean) => Promise<void>;
 }
 
-/** What the sidebar's session rows can do to a session: delete, rename, pin and archive. */
+/** What can be done to a session: the sidebar's delete, rename, pin and archive, and an import's discard. */
 export function useSessionActions(deps: SessionActionsDeps): SessionActions {
-  const { sessions, setActiveSessionId, patchSession, acp, pty, onNotice } = deps;
+  const { sessions, setActiveSessionId, patchSession, acp, onNotice } = deps;
   const sessionsRef = useLatest(sessions);
   const sessionById = (sessionId: string) => sessions.find((s) => s.id === sessionId);
 
   /** Ends a session's agent when it runs; resolves with whether it is stopped. */
   const stopAgent = (session: Session | undefined): Promise<boolean> => {
     if (session?.status !== 'running') return Promise.resolve(true);
-    return isAcpSession(session) ? acp.stop(session.id) : pty.stop(session.id);
+    return acp.stop(session.id);
   };
 
   /**
@@ -55,14 +56,28 @@ export function useSessionActions(deps: SessionActionsDeps): SessionActions {
   const deleteSession = (sessionId: string) => {
     const session = sessionById(sessionId);
     const stopped = stopAgent(session);
-    pty.forget(sessionId);
     deps.navigation.remove(sessionId);
     deps.updateState((prev) => removeSessionFrom(prev, sessionId));
     deps.removeTranscript(sessionId);
     if (session) {
-      void removeSessionWorktree(session, sessions, stopped).then((kept) => kept && onNotice(kept));
+      void removeSessionWorktree(session, sessions, stopped, (path) => {
+        deps.closeTerminals?.(path);
+        // A session can run in a folder inside its worktree; that folder's shells go too.
+        if (session.cwd !== path) deps.closeTerminals?.(session.cwd);
+      }).then((kept) => kept && onNotice(kept));
     }
     selectNextAfter(sessionId);
+  };
+
+  /**
+   * Removes a session an import made and then failed: its record, its history
+   * and its transcript. Nothing was started for it, so no agent is stopped and
+   * the session open now does not change.
+   */
+  const discardSession = (sessionId: string) => {
+    deps.navigation.remove(sessionId);
+    deps.updateState((prev) => removeSessionFrom(prev, sessionId));
+    deps.removeTranscript(sessionId);
   };
 
   const renameSession = (sessionId: string, name: string) => patchSession(sessionId, { name, namedByUser: true });
@@ -71,7 +86,7 @@ export function useSessionActions(deps: SessionActionsDeps): SessionActions {
 
   /**
    * Archiving hides a session and ends its agent; its conversation and pin
-   * stay, and an ACP session can be continued after unarchiving it. A session
+   * stay, and the session can be continued after unarchiving it. A session
    * whose agent cannot be stopped stays listed, so nothing runs out of sight.
    */
   const archiveSession = async (sessionId: string, isArchived: boolean) => {
@@ -92,5 +107,5 @@ export function useSessionActions(deps: SessionActionsDeps): SessionActions {
     selectNextAfter(sessionId);
   };
 
-  return { deleteSession, renameSession, pinSession, archiveSession };
+  return { deleteSession, discardSession, renameSession, pinSession, archiveSession };
 }

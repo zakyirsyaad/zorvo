@@ -11,9 +11,8 @@ function tauriInternals(): TauriInternals {
 }
 
 const agent = (id: string) => fakeProfiles.find((a) => a.id === id) as AgentProfile;
-const QWEN = agent("qwen");
-const TERMINAL_AGENT = agent("omp");
-const CWD = "/Users/test/developer/agent-desktop";
+const QWEN = agent("qwen-code");
+const CWD = "/Users/test/developer/zorvo";
 
 const PROBED = {
   modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default" }] },
@@ -29,15 +28,16 @@ const PROBED = {
   ],
   commands: [{ name: "review", description: "Review the changes" }],
   signInChecked: true,
+  canListSessions: true,
 };
 
 function probeCalls(spy: { mock: { calls: unknown[][] } }) {
   return spy.mock.calls.filter(([cmd]) => cmd === "acp_probe_agent");
 }
 
-function deps(overrides: { agent?: AgentProfile; cwd?: string; isKnown?: (id: string) => boolean } = {}) {
+function deps(overrides: { agent?: AgentProfile | undefined; cwd?: string; isKnown?: (id: string) => boolean } = {}) {
   return {
-    agent: QWEN,
+    agent: QWEN as AgentProfile | undefined,
     cwd: CWD as string | undefined,
     isKnown: (_id: string) => false,
     onProbed: vi.fn(),
@@ -56,14 +56,27 @@ describe("useAgentProbe", () => {
     const { result } = renderHook(() => useAgentProbe(props));
 
     await waitFor(() => expect(props.onProbed).toHaveBeenCalledTimes(1));
-    expect(probeCalls(spy)[0][1]).toEqual({ profileId: "qwen", cwd: CWD, needsOptions: true });
-    const [profileId, options, signInChecked] = props.onProbed.mock.calls[0];
-    expect(signInChecked).toBe(true);
-    expect(profileId).toBe("qwen");
+    expect(probeCalls(spy)[0][1]).toEqual({ profileId: "qwen-code", cwd: CWD, needsOptions: true });
+    const [profileId, options, facts] = props.onProbed.mock.calls[0];
+    expect(facts).toEqual({ signInChecked: true, canListSessions: true });
+    expect(profileId).toBe("qwen-code");
     expect(options.modes?.currentModeId).toBe("default");
     expect(options.configOptions[0].id).toBe("model");
     expect(options.commands).toEqual([{ name: "review", description: "Review the changes" }]);
-    expect(result.current.isProbing("qwen")).toBe(false);
+    expect(result.current.isProbing("qwen-code")).toBe(false);
+  });
+
+  it("reports no session list when the probe answer does not say the agent has one", async () => {
+    const answer: Record<string, unknown> = { ...structuredClone(PROBED) };
+    delete answer.canListSessions;
+    vi.spyOn(tauriInternals(), "invoke").mockResolvedValue(answer);
+    const props = deps();
+
+    renderHook(() => useAgentProbe(props));
+
+    await waitFor(() => expect(props.onProbed).toHaveBeenCalledTimes(1));
+    const [, , facts] = props.onProbed.mock.calls[0];
+    expect(facts).toEqual({ signInChecked: true, canListSessions: false });
   });
 
   it("says which agent it is asking while it waits", async () => {
@@ -72,9 +85,9 @@ describe("useAgentProbe", () => {
 
     const { result } = renderHook(() => useAgentProbe(deps()));
 
-    await waitFor(() => expect(result.current.isProbing("qwen")).toBe(true));
+    await waitFor(() => expect(result.current.isProbing("qwen-code")).toBe(true));
     answer(structuredClone(PROBED));
-    await waitFor(() => expect(result.current.isProbing("qwen")).toBe(false));
+    await waitFor(() => expect(result.current.isProbing("qwen-code")).toBe(false));
   });
 
   it("asks the user to sign in before the first message when the agent needs it", async () => {
@@ -86,9 +99,9 @@ describe("useAgentProbe", () => {
 
     await waitFor(() => expect(props.onAuthRequired).toHaveBeenCalledTimes(1));
     expect(props.onAuthRequired.mock.calls[0]).toEqual([
-      "qwen",
+      "qwen-code",
       CWD,
-      [{ id: "browser", name: "Sign in with a browser", needsSecret: false }],
+      [{ id: "browser", name: "Sign in with a browser", kind: "agent" }],
     ]);
     expect(props.onProbed).not.toHaveBeenCalled();
   });
@@ -99,7 +112,7 @@ describe("useAgentProbe", () => {
 
     const { result } = renderHook(() => useAgentProbe(props));
 
-    await waitFor(() => expect(result.current.isProbing("qwen")).toBe(false));
+    await waitFor(() => expect(result.current.isProbing("qwen-code")).toBe(false));
     expect(props.onAuthRequired).not.toHaveBeenCalled();
     expect(props.onProbed).not.toHaveBeenCalled();
   });
@@ -110,16 +123,16 @@ describe("useAgentProbe", () => {
     const { rerender } = renderHook((p) => useAgentProbe(p), { initialProps: props });
     await waitFor(() => expect(props.onProbed).toHaveBeenCalledTimes(1));
 
-    rerender({ ...props, agent: TERMINAL_AGENT });
+    rerender({ ...props, agent: undefined });
     rerender({ ...props, agent: QWEN });
 
     expect(probeCalls(spy)).toHaveLength(1);
   });
 
-  it("does not ask a terminal agent, or any agent before a folder is chosen", async () => {
+  it("does not ask when no agent is picked, or before a folder is chosen", async () => {
     const spy = vi.spyOn(tauriInternals(), "invoke").mockResolvedValue(structuredClone(PROBED));
 
-    renderHook(() => useAgentProbe(deps({ agent: TERMINAL_AGENT })));
+    renderHook(() => useAgentProbe(deps({ agent: undefined })));
     renderHook(() => useAgentProbe(deps({ cwd: undefined })));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -136,7 +149,7 @@ describe("useAgentProbe", () => {
     const { result } = renderHook(() => useAgentProbe(props));
     await waitFor(() => expect(props.onAuthRequired).toHaveBeenCalledTimes(1));
 
-    await act(async () => result.current.reprobe("qwen"));
+    await act(async () => result.current.reprobe("qwen-code"));
 
     await waitFor(() => expect(props.onProbed).toHaveBeenCalledTimes(1));
     expect(probeCalls(spy)).toHaveLength(2);
@@ -147,26 +160,26 @@ describe("useAgentProbe", () => {
     vi.spyOn(tauriInternals(), "invoke").mockImplementation(
       (_cmd, args) => new Promise((resolve) => answers.set(String(args?.profileId), resolve)),
     );
-    const OTHER_ACP = { ...QWEN, id: "codex", name: "Codex" };
+    const OTHER_ACP = { ...QWEN, id: "codex-acp", name: "Codex" };
     const props = deps();
     const { result, rerender } = renderHook((p) => useAgentProbe(p), { initialProps: props });
-    await waitFor(() => expect(answers.has("qwen")).toBe(true));
+    await waitFor(() => expect(answers.has("qwen-code")).toBe(true));
     rerender({ ...props, agent: OTHER_ACP });
-    await waitFor(() => expect(answers.has("codex")).toBe(true));
+    await waitFor(() => expect(answers.has("codex-acp")).toBe(true));
 
-    await act(async () => answers.get("codex")?.(structuredClone(PROBED)));
+    await act(async () => answers.get("codex-acp")?.(structuredClone(PROBED)));
 
-    expect(result.current.isProbing("codex")).toBe(false);
-    expect(result.current.isProbing("qwen")).toBe(true);
+    expect(result.current.isProbing("codex-acp")).toBe(false);
+    expect(result.current.isProbing("qwen-code")).toBe(true);
   });
 
   it("tells the backend when the agent's options are already known, so it need not open a session for them", async () => {
     const spy = vi.spyOn(tauriInternals(), "invoke").mockResolvedValue(structuredClone(PROBED));
-    const props = deps({ isKnown: (id) => id === "qwen" });
+    const props = deps({ isKnown: (id) => id === "qwen-code" });
 
     renderHook(() => useAgentProbe(props));
 
     await waitFor(() => expect(props.onProbed).toHaveBeenCalledTimes(1));
-    expect(probeCalls(spy)[0][1]).toEqual({ profileId: "qwen", cwd: CWD, needsOptions: false });
+    expect(probeCalls(spy)[0][1]).toEqual({ profileId: "qwen-code", cwd: CWD, needsOptions: false });
   });
 });

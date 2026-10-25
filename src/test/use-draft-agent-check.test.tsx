@@ -11,12 +11,12 @@ function tauriInternals(): TauriInternals {
   return (window as unknown as { __TAURI_INTERNALS__: TauriInternals }).__TAURI_INTERNALS__;
 }
 
-const QWEN = fakeProfiles.find((a) => a.id === "qwen") as AgentProfile;
-const CWD = "/Users/test/developer/agent-desktop";
+const QWEN = fakeProfiles.find((a) => a.id === "qwen-code") as AgentProfile;
+const CWD = "/Users/test/developer/zorvo";
 
 /** A sign-in panel already up for Qwen Code, waiting for the user. */
 const pendingSignIn: AgentAuth = {
-  authRequest: { profileId: "qwen", cwd: CWD, methods: [], status: "idle" },
+  authRequest: { profileId: "qwen-code", cwd: CWD, methods: [], status: "idle" },
   requestSignIn: () => {},
   signIn: () => {},
   dismiss: () => {},
@@ -46,5 +46,18 @@ describe("useDraftAgentCheck", () => {
     await waitFor(() => expect(probeCalls(spy)).toHaveLength(2));
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(probeCalls(spy)).toHaveLength(2);
+  });
+
+  it("remembers that the agent can list its sessions, from its probe answer", async () => {
+    vi.spyOn(tauriInternals(), "invoke").mockResolvedValue({ signInChecked: true, canListSessions: true });
+
+    const { result } = renderHook(() =>
+      useDraftAgentCheck({ agent: QWEN, cwd: CWD, agentOptions: undefined, rememberProbed: () => {}, auth: pendingSignIn }),
+    );
+
+    expect(result.current.canListSessions("qwen-code")).toBe(false);
+
+    await waitFor(() => expect(result.current.canListSessions("qwen-code")).toBe(true));
+    expect(result.current.canListSessions("codex-acp")).toBe(false);
   });
 });

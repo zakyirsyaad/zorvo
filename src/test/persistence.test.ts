@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizePersistedState } from "../lib/persistence";
+import { canonicalAgentId, dropTerminalSessions, loadTranscript, normalizePersistedState } from "../lib/persistence";
 
 const base = { id: "s-1", name: "Fix login", profileId: "claude-code", cwd: "/w/api", status: "terminated", createdAt: 1 };
 
@@ -31,6 +31,19 @@ describe("normalizePersistedState", () => {
     expect(state.sessions[0]).not.toHaveProperty("hasUnread");
   });
 
+  it("keeps a true historyElsewhere flag", () => {
+    const state = normalizePersistedState({ sessions: [{ ...base, historyElsewhere: true }] });
+
+    expect(state.sessions[0].historyElsewhere).toBe(true);
+  });
+
+  it("drops a historyElsewhere that is not a boolean but keeps the session", () => {
+    const state = normalizePersistedState({ sessions: [{ ...base, historyElsewhere: "yes" }] });
+
+    expect(state.sessions).toHaveLength(1);
+    expect(state.sessions[0]).not.toHaveProperty("historyElsewhere");
+  });
+
   it("keeps the model picked last for each agent, dropping malformed picks", () => {
     const state = normalizePersistedState({
       agentOptions: {
@@ -39,8 +52,97 @@ describe("normalizePersistedState", () => {
       },
     });
 
-    expect(state.agentOptions?.qwen.preferredConfig).toEqual({ model: "qwen3-max" });
-    expect(state.agentOptions?.codex.preferredConfig).toBeUndefined();
+    expect(state.agentOptions?.["qwen-code"].preferredConfig).toEqual({ model: "qwen3-max" });
+    expect(state.agentOptions?.["codex-acp"].preferredConfig).toBeUndefined();
+  });
+});
+
+describe("normalizePersistedState - legacy agent ids", () => {
+  it("rewrites legacy agent ids in sessions and the default agent", () => {
+    const state = normalizePersistedState({
+      settings: { defaultAgentId: "qwen" },
+      sessions: [
+        base,
+        { ...base, id: "s-2", profileId: "qwen" },
+        { ...base, id: "s-3", profileId: "codex" },
+        { ...base, id: "s-4", profileId: "omp" },
+      ],
+    });
+
+    expect(state.settings.defaultAgentId).toBe("qwen-code");
+    expect(state.sessions.map((s) => s.profileId)).toEqual(["claude-acp", "qwen-code", "codex-acp", "omp"]);
+  });
+
+  it("moves legacy agentOptions keys, keeping the new key when both exist", () => {
+    const options = (model: string) => ({ modes: null, configOptions: [], preferredConfig: { model } });
+
+    const state = normalizePersistedState({
+      agentOptions: { qwen: options("old"), "qwen-code": options("new"), "claude-code": options("claude") },
+    });
+
+    expect(Object.keys(state.agentOptions ?? {}).sort()).toEqual(["claude-acp", "qwen-code"]);
+    expect(state.agentOptions?.["qwen-code"].preferredConfig).toEqual({ model: "new" });
+    expect(state.agentOptions?.["claude-acp"].preferredConfig).toEqual({ model: "claude" });
+  });
+
+  it("canonicalAgentId leaves unknown and current ids alone", () => {
+    expect(canonicalAgentId("claude-code")).toBe("claude-acp");
+    expect(canonicalAgentId("claude-acp")).toBe("claude-acp");
+    expect(canonicalAgentId("aider")).toBe("aider");
+  });
+});
+
+describe("normalizePersistedState - catalog settings", () => {
+  it("keeps the new settings fields and defaults them when missing", () => {
+    const empty = normalizePersistedState({ settings: {} }).settings;
+    expect(empty.enabledAgents).toBeUndefined();
+    expect(empty.removedAgents).toEqual([]);
+    expect(empty.agentVersions).toEqual({});
+
+    const { settings } = normalizePersistedState({
+      settings: { enabledAgents: ["gemini"], removedAgents: ["goose"], agentVersions: { "codex-acp": "1.2.0" } },
+    });
+    expect(settings.enabledAgents).toEqual(["gemini"]);
+    expect(settings.removedAgents).toEqual(["goose"]);
+    expect(settings.agentVersions).toEqual({ "codex-acp": "1.2.0" });
+  });
+
+  it("rewrites legacy ids inside the lists and version keys, deduplicating with the new key winning", () => {
+    const { settings } = normalizePersistedState({
+      settings: {
+        enabledAgents: ["claude-code", "claude-acp", "qwen", "gemini"],
+        removedAgents: ["codex", "codex-acp"],
+        agentVersions: { qwen: "0.1.0", "qwen-code": "0.2.0", codex: "1.0.0" },
+      },
+    });
+
+    expect(settings.enabledAgents).toEqual(["claude-acp", "qwen-code", "gemini"]);
+    expect(settings.removedAgents).toEqual(["codex-acp"]);
+    expect(settings.agentVersions).toEqual({ "qwen-code": "0.2.0", "codex-acp": "1.0.0" });
+  });
+
+  it("drops malformed settings values", () => {
+    const { settings } = normalizePersistedState({
+      settings: { enabledAgents: "omp", removedAgents: ["aider", 3], agentVersions: { a: "1", b: 2 } },
+    });
+
+    expect(settings.enabledAgents).toBeUndefined();
+    expect(settings.removedAgents).toEqual([]);
+    expect(settings.agentVersions).toEqual({});
+  });
+});
+
+describe("normalizePersistedState - notified updates", () => {
+  it("keeps string pairs and drops non-string values", () => {
+    const { settings } = normalizePersistedState({
+      settings: { notifiedUpdates: { "claude-code": "1.1.0", "codex-acp": 2 } },
+    });
+    expect(settings.notifiedUpdates).toEqual({ "claude-acp": "1.1.0" });
+  });
+
+  it("defaults to none when missing or malformed", () => {
+    expect(normalizePersistedState({ settings: {} }).settings.notifiedUpdates).toEqual({});
+    expect(normalizePersistedState({ settings: { notifiedUpdates: ["x"] } }).settings.notifiedUpdates).toEqual({});
   });
 });
 
@@ -55,5 +157,135 @@ describe("normalizePersistedState — appearance", () => {
 
   it.each(["sepia", 42])("treats %j as system", (appearance) => {
     expect(normalizePersistedState({ settings: { appearance } }).settings.appearance).toBe("system");
+  });
+});
+
+describe("dropTerminalSessions", () => {
+  const session = (overrides: Record<string, unknown>) => ({ ...base, ...overrides });
+
+  it("drops pty and transport-less sessions and keeps acp ones", () => {
+    const state = normalizePersistedState({
+      sessions: [
+        session({ id: "a", transport: "acp" }),
+        session({ id: "p", transport: "pty" }),
+        session({ id: "old" }), // saved before ACP: no transport
+      ],
+    });
+
+    const { state: cleaned, droppedSessionIds } = dropTerminalSessions(state);
+
+    expect(cleaned.sessions.map((s) => s.id)).toEqual(["a"]);
+    expect(droppedSessionIds).toEqual(["p", "old"]);
+  });
+
+  it("returns the same state when there is no terminal session", () => {
+    const state = normalizePersistedState({ sessions: [session({ id: "a", transport: "acp" })] });
+
+    expect(dropTerminalSessions(state)).toEqual({ state, droppedSessionIds: [] });
+    expect(dropTerminalSessions(state).state).toBe(state);
+  });
+});
+
+describe("normalizePersistedState - removed agents", () => {
+  it("cleans omp and aider out of the settings and agent options", () => {
+    const state = normalizePersistedState({
+      version: 1,
+      settings: {
+        defaultAgentId: "omp",
+        enabledAgents: ["omp", "claude-acp", "aider"],
+        removedAgents: ["aider", "gemini"],
+        agentVersions: { omp: "1.0.0", "claude-acp": "0.5.0" },
+      },
+      agentOptions: { omp: { preferredConfig: { model: "opus" } }, "claude-acp": {} },
+    });
+
+    expect(state.version).toBe(2);
+    expect(state.settings.defaultAgentId).toBeNull();
+    expect(state.settings.enabledAgents).toEqual(["claude-acp"]);
+    expect(state.settings.removedAgents).toEqual(["gemini"]);
+    expect(state.settings.agentVersions).toEqual({ "claude-acp": "0.5.0" });
+    expect(Object.keys(state.agentOptions ?? {})).toEqual(["claude-acp"]);
+  });
+});
+
+describe("loadTranscript", () => {
+  const store = () =>
+    (window as unknown as { __FAKE_TAURI_STORE__: { transcripts: Record<string, unknown[]> } }).__FAKE_TAURI_STORE__;
+
+  it("keeps a valid parts list and loads a message saved without one", async () => {
+    store().transcripts["s-1"] = [
+      { id: "old", role: "agent", content: "one\n\ntwo", timestamp: 1 },
+      {
+        id: "new",
+        role: "agent",
+        content: "one\n\ntwo",
+        timestamp: 2,
+        tools: [{ id: "t-1", name: "Read src/app.ts", status: "completed", kind: "read" }],
+        parts: [
+          { kind: "text", text: "one" },
+          { kind: "tools", toolIds: ["t-1"] },
+          { kind: "text", text: "two" },
+        ],
+      },
+    ];
+
+    const messages = await loadTranscript("s-1");
+
+    expect(messages[0].parts).toBeUndefined();
+    expect(messages[0].content).toBe("one\n\ntwo");
+    expect(messages[1].parts).toEqual([
+      { kind: "text", text: "one" },
+      { kind: "tools", toolIds: ["t-1"] },
+      { kind: "text", text: "two" },
+    ]);
+    expect(messages[1].tools).toHaveLength(1);
+  });
+
+  it("drops a malformed parts list but keeps the rest of the message", async () => {
+    store().transcripts["s-1"] = [
+      { id: "a", role: "agent", content: "a", timestamp: 1, parts: "nope" },
+      { id: "b", role: "agent", content: "b", timestamp: 2, parts: [{ kind: "text" }] },
+      { id: "c", role: "agent", content: "c", timestamp: 3, parts: [{ kind: "tools", toolIds: [1] }] },
+      { id: "d", role: "agent", content: "d", timestamp: 4, parts: [{ kind: "unknown" }] },
+      { id: "e", role: "agent", content: "e", timestamp: 5, parts: [] },
+    ];
+
+    const messages = await loadTranscript("s-1");
+
+    expect(messages.map((m) => m.id)).toEqual(["a", "b", "c", "d", "e"]);
+    expect(messages.map((m) => m.parts)).toEqual([undefined, undefined, undefined, undefined, undefined]);
+    expect(messages.map((m) => m.content)).toEqual(["a", "b", "c", "d", "e"]);
+  });
+
+  it("drops an entry that is not a message", async () => {
+    store().transcripts["s-1"] = [
+      null,
+      { id: "a", role: "agent", content: "a", timestamp: 1 },
+      { id: "b", role: "agent", content: "b" },
+      { id: "c", role: "system", content: "c", timestamp: 3 },
+      "nope",
+    ];
+
+    const messages = await loadTranscript("s-1");
+
+    expect(messages.map((m) => m.id)).toEqual(["a"]);
+  });
+
+  it("settles open elicitations", async () => {
+    const card = { sessionId: "s-1", message: "m", timestamp: 1, host: "example.com" };
+    store().transcripts["s-1"] = [
+      { id: "a", role: "agent", content: "", timestamp: 1, elicitation: { ...card, key: "k1", mode: "form", status: "pending", fields: [{ name: "x", required: false, kind: { type: "boolean" } }], errors: { x: "bad" } } },
+      { id: "b", role: "agent", content: "", timestamp: 1, elicitation: { ...card, key: "k2", mode: "url", status: "opened", url: "https://example.com/auth" } },
+    ];
+
+    const messages = await loadTranscript("s-1");
+
+    for (const message of messages) {
+      expect(message.elicitation?.status).toBe("unanswered");
+      expect(message.elicitation).not.toHaveProperty("fields");
+      expect(message.elicitation).not.toHaveProperty("url");
+      expect(message.elicitation).not.toHaveProperty("errors");
+      expect(message.elicitation?.host).toBe("example.com");
+    }
   });
 });

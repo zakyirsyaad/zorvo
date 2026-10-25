@@ -3,11 +3,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
 import { ChatCanvas } from "./components/ChatCanvas";
+import { HistoryElsewhereNote } from "./components/chat/HistoryElsewhereNote";
 import { ComposerDock, type ComposerHandle } from "./components/ComposerDock";
+import { RemovedAgentPanel } from "./components/RemovedAgentPanel";
 import { FilesPanel } from "./components/FilesPanel";
 import { EmptySessionState, FileDropOverlay, NoticeBanner } from "./components/AppPlaceholders";
-import { AuthPanel } from "./components/AuthPanel";
-import { TerminalView } from "./components/TerminalView";
+import { SignInLayer } from "./components/SignInLayer";
+import { AgentInstallPanel } from "./components/AgentInstallPanel";
+import { pickerLabelOf } from "./lib/install-plan";
+import { installPanelAgentOf } from "./lib/install-panel";
 import { NewSessionView } from "./components/workspace/NewSessionView";
 import { WorkspaceSummary } from "./components/workspace/WorkspaceSummary";
 import { ChangesPanel } from "./components/changes/ChangesPanel";
@@ -16,24 +20,22 @@ import { totalsOf } from "./lib/diff-stats";
 import { useSidePanel } from "./hooks/useSidePanel";
 import { useTurnsEnded } from "./hooks/useTurnsEnded";
 import { usePullRequest } from "./hooks/usePullRequest";
+import { currentPlan } from "./lib/plan";
 import { useRepoPullRequests } from "./hooks/useRepoPullRequests";
-import { useAgentAuth } from "./hooks/useAgentAuth";
+import { useAgentSignIn } from "./hooks/useAgentSignIn";
 import { useDraftAgentCheck } from "./hooks/useDraftAgentCheck";
 import { useLatest } from "./hooks/useLatest";
 import { createSessionWorktree } from "./lib/session-worktree";
+import { sweepOrphans } from "./lib/orphan-sweep";
 import {
-  EMPTY_DRAFT,
   isWaitingForAnswer,
   newSessionRecord,
-  spawnOptionsFor,
   titleFor,
   type SessionSpec,
 } from "./lib/session-start";
-import { createPtyOutputStore } from "./lib/pty-output-store";
-import { isAwaitingPermission } from "./lib/acp-events";
+import { isAwaitingUser } from "./lib/acp-elicitation";
 import {
   folderNameOf,
-  isAcpSession as isAcp,
   isListed,
   isAutoName,
   workspacePathOf,
@@ -46,28 +48,39 @@ import { usePersistedState } from "./hooks/usePersistedState";
 import { useBackgroundTasks } from "./hooks/useBackgroundTasks";
 import { useTranscripts } from "./hooks/useTranscripts";
 import { useAgentProfiles, useSuggestedFolders } from "./hooks/useDiscovery";
+import { useDraftInstall } from "./hooks/useDraftInstall";
 import { useWorkspaceSelection } from "./hooks/useWorkspaceSelection";
+import { AgentCatalogPanel } from "./components/agents/AgentCatalogPanel";
 import { Onboarding, type OnboardingResult } from "./components/Onboarding";
-import { SettingsPanel } from "./components/SettingsPanel";
+import { AppSettingsDialog, type SettingsTab } from "./components/AppSettingsDialog";
+import { useAgentCatalog } from "./hooks/useAgentCatalog";
+import { useAgentCatalogActions } from "./hooks/useAgentCatalogActions";
+import { useAutoEnabledAgents } from "./hooks/useAutoEnabledAgents";
+import { useShellActions } from "./hooks/useShellActions";
+import { useAgentUpdates } from "./hooks/useAgentUpdates";
+import { UpdateNotice } from "./components/UpdateNotice";
 import { ProfileFooter } from "./components/ProfileFooter";
 import { useNavigationHistory } from "./hooks/useNavigationHistory";
 import { useUserProfile } from "./hooks/useUserProfile";
 import { useWorkspaceDetails } from "./hooks/useWorkspaceDetails";
+import { useBranchPicker } from "./hooks/useBranchPicker";
 import { usePopoutHost } from "./hooks/usePopoutHost";
 import { useSessionActions } from "./hooks/useSessionActions";
+import { useWorkspaceTerminals } from "./hooks/useWorkspaceTerminals";
+import { useTerminalDrawer } from "./hooks/useTerminalDrawer";
+import { TerminalDrawer } from "./components/terminal/TerminalDrawer";
+import { useDraftSessionList } from "./hooks/useDraftSessionList";
+import type { OpenNewSessionOptions } from "./hooks/useSessionImport";
 import { useSessionFork } from "./hooks/useSessionFork";
 import { useSessionRewind } from "./hooks/useSessionRewind";
 import { useUnreadMarks } from "./hooks/useUnreadMarks";
-import type { PopoutAction } from "./lib/popout-bridge";
-import { usePtyEngine } from "./hooks/session-engine/usePtyEngine";
 import { useAcpEngine, type AttentionReason, type FirstMessage } from "./hooks/session-engine/useAcpEngine";
 import type { AcpConfigOption } from "./hooks/useAcpSessions";
 import { attentionBody, notifyIfAway } from "./lib/notify";
 import { pickFiles } from "./lib/file-picker";
-import { formatAttachmentPath } from "./lib/attachments";
 import { useFileDrop } from "./hooks/useFileDrop";
-import { resolveDefaultAgentId } from "./lib/agent-readiness";
-import type { SessionDraft } from "./lib/composer-controls";
+import { isAgentReady, isAgentRunnable, noAgentNotice, resolveDraftAgentId } from "./lib/agent-readiness";
+import { isInUse, removedAgentNameFor } from "./lib/enabled-agents";
 import { composerCommandsFor, composerPlaceholder, composerStateFor } from "./lib/composer-state";
 import {
   NO_CHOICES,
@@ -79,11 +92,8 @@ import {
   type AgentOptions,
 } from "./lib/acp-draft";
 import type { Session, SessionWorktree, Settings } from "./types";
-import { TRANSPORT_ACP } from "./types";
 
 const NO_FOLDER_NOTICE = "Open a project folder first: use the Open folder button next to Workspaces.";
-const NO_AGENT_NOTICE =
-  "No supported agent is installed. Install Claude Code, Qwen Code, Codex, Aider or omp, then check again in Settings.";
 
 // eslint-disable-next-line no-control-regex -- matching control characters is the point.
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
@@ -91,7 +101,6 @@ const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
 export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState("");
-  const [draft, setDraft] = useState<SessionDraft>(EMPTY_DRAFT);
   /** The agent picked for the next new session; null means the default from Settings. */
   const [pickedAgentId, setPickedAgentId] = useState<string | null>(null);
   /** Whether the next new session runs in its own worktree (a git repository only). */
@@ -100,17 +109,18 @@ export default function App() {
   /** Bumped after each of the active agent's turns, so its folder's branch is read again. */
   const [branchCheck, setBranchCheck] = useState(0);
   const [acpChoices, setAcpChoices] = useState<AcpChoices>(NO_CHOICES);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const composerRef = useRef<ComposerHandle>(null);
-  const [ptyOutput] = useState(createPtyOutputStore);
-  const agentAuth = useAgentAuth();
-  const { authRequest, requestSignIn, signIn, dismiss: dismissSignIn } = agentAuth;
 
   const reportError = useCallback((message: string) => setNotice(message), []);
-  const { state, isLoaded, updateState } = usePersistedState(reportError);
+  const { state, isLoaded, updateState, saveNow } = usePersistedState(reportError);
   useAppearance(state.settings.appearance, isLoaded, reportError);
   const { transcripts, ensureLoaded, updateMessages, removeTranscript } = useTranscripts(reportError);
-  const { agents, refresh: refreshAgents } = useAgentProfiles(reportError);
+  const { agents, isLoaded: areAgentsLoaded, refresh: refreshAgents, reload: reloadAgents } = useAgentProfiles(reportError);
+  const agentCatalog = useAgentCatalog();
+  const shell = useShellActions(setNotice);
+  const agentUpdates = useAgentUpdates({ catalog: agentCatalog.catalog, settings: state.settings, isLoaded, updateState });
+  useAutoEnabledAgents(agents, isLoaded, updateState);
   const suggestedFolders = useSuggestedFolders();
   const userProfile = useUserProfile();
   const navigation = useNavigationHistory();
@@ -128,9 +138,14 @@ export default function App() {
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const activeAgent = agents.find((a) => a.id === activeSession?.profileId);
   const isActiveRunning = activeSession?.status === "running";
-  const defaultAgentId = resolveDefaultAgentId(agents, state.settings.defaultAgentId);
-  const newSessionAgentId =
-    agents.find((a) => a.id === pickedAgentId && a.detected)?.id ?? defaultAgentId;
+  // Only the agents in use are offered: the defaults and installed ones.
+  const agentsInUse = agents.filter((agent) => isInUse(agent, state.settings));
+  // A saved session of a removed agent stays readable; once it stops, its composer offers to add the agent again.
+  const activeAgentRemoved = removedAgentNameFor(activeSession, agents, state.settings);
+  // An agent not installed yet is offered too: picking it shows its Install panel.
+  const pickableAgents = agentsInUse;
+  const defaultAgentId = resolveDraftAgentId(agentsInUse, state.settings.defaultAgentId, pickableAgents);
+  const newSessionAgentId = pickableAgents.find((a) => a.id === pickedAgentId)?.id ?? defaultAgentId;
   const newSessionAgent = agents.find((a) => a.id === newSessionAgentId);
   // No session is selected: the window shows a new one, not started until its first message.
   const isNewSessionDraft = !activeSession;
@@ -141,6 +156,13 @@ export default function App() {
   // every saved session's folder, so one gone from the recents keeps them.
   const isRepository = Boolean(workspaceDetails?.branch);
   const canUseWorktree = isNewSessionDraft && isRepository;
+  const branchPicker = useBranchPicker({
+    folderPath: isNewSessionDraft ? activeWorkspacePath : undefined,
+    checkedOut: workspaceDetails?.branch ?? undefined,
+    isWorktreeOn: isWorktreeOn && canUseWorktree,
+    onSwitched: () => setBranchCheck((n) => n + 1),
+    onNotice: setNotice,
+  });
   const filesFolder =
     workspaces.find((ws) => ws.path === shownFolderPath) ??
     (activeSession ? { name: folderNameOf(activeSession.cwd), path: activeSession.cwd } : undefined);
@@ -148,18 +170,19 @@ export default function App() {
   // An ended ACP session continues with its own agent: in the agent's own
   // session when it has one, else (rewound) in a fresh one handed the conversation.
   const isResumable =
-    isAcp(activeSession) && activeSession?.status !== "running" && activeAgent?.detected === true;
+    Boolean(activeSession) && activeSession?.status !== "running" && activeAgent?.detected === true;
   const draftAgent = isResumable ? activeAgent : newSessionAgent;
+  const isDraftAgentReady = draftAgent ? isAgentRunnable(draftAgent) : false;
+  const installPanelAgent = installPanelAgentOf(activeSession, activeAgent, newSessionAgent);
+  const draftNeedsInstall = useDraftInstall(agents, installPanelAgent, draftAgent);
 
-  // A model or effort chosen for one agent means nothing to another one.
-  useEffect(() => setDraft(EMPTY_DRAFT), [newSessionAgentId]);
   useEffect(() => setAcpChoices(NO_CHOICES), [draftAgent?.id]);
 
   // Agents a previous UI left running (a webview reload keeps the backend
   // alive) are unknown to this one, which shows their sessions as ended;
   // end them so a resume does not collide with a still-open session.
   useEffect(() => {
-    invoke("end_orphaned_sessions").catch((error) => {
+    sweepOrphans().catch((error) => {
       setNotice(`Could not stop agents left from before: ${String(error)}`);
     });
   }, []);
@@ -198,9 +221,25 @@ export default function App() {
     rememberAgentOptions(profileId, { preferredConfig, ...(reported?.length ? { configOptions: reported } : {}) });
   };
 
+  // The user may have opened another session meanwhile: the message goes back
+  // into the session it was written for, not that one's composer.
+  const restoreMessage = (sessionId: string, text: string, attachments?: readonly string[]) => {
+    setActiveSessionId(sessionId);
+    composerRef.current?.restore(text, attachments);
+  };
+  // Read when an agent answers, seconds after the closure that waits for it was made.
+  const activeSessionIdRef = useLatest(activeSessionId);
+  const signIn = useAgentSignIn({
+    agents,
+    composerRef,
+    activeSessionIdRef,
+    retryAfterSignIn: (sessionId, message) => acp.retryAfterSignIn(sessionId, message),
+    onRestore: restoreMessage,
+  });
+
   // A draft asks its ACP agent what it offers, and whether it needs a sign-in, before the first message.
   const agentCheck = useDraftAgentCheck({
-    agent: isActiveRunning ? undefined : draftAgent,
+    agent: isActiveRunning || !isDraftAgentReady ? undefined : draftAgent,
     cwd: shownFolderPath ?? undefined,
     agentOptions: state.agentOptions,
     rememberProbed: (profileId, probed) =>
@@ -208,22 +247,20 @@ export default function App() {
         ...prev,
         agentOptions: { ...prev.agentOptions, [profileId]: withProbed(prev.agentOptions?.[profileId], probed) },
       })),
-    auth: agentAuth,
+    auth: signIn.auth,
   });
 
-  // Read when an agent answers, seconds after the closure that waits for it was made.
-  const activeSessionIdRef = useLatest(activeSessionId);
   const engineDeps = { sessions, agents, updateMessages, patchSession, reportError };
-  const pty = usePtyEngine({ ...engineDeps, output: ptyOutput });
   const acp = useAcpEngine({
     ...engineDeps,
+    transcripts,
     rememberOptions: rememberAgentOptions,
     onAttention: (sessionId, reason) => notifyAttention(sessionId, reason),
-    onAuthRequired: (session, methods, unsent) => {
-      requestSignIn(session.profileId, session.cwd, methods);
-      // The composer on screen may be another session's by now: the message goes back only into its own.
-      if (unsent && session.id === activeSessionIdRef.current) composerRef.current?.restore(unsent.text, unsent.attachments);
-    },
+    onAuthRequired: signIn.handBack,
+  });
+  // The one instance of Add, Update and Remove: Settings, saved sessions of a removed agent and popouts use it.
+  const catalogActions = useAgentCatalogActions({
+    updateState, saveNow, agents, sessions, stopSession: acp.stop, reloadAgents, catalog: agentCatalog,
   });
 
   /** Tells a user who is away that a session needs them or is done. */
@@ -241,17 +278,11 @@ export default function App() {
     acp,
     patchSession,
     updateMessages,
-    // The user may have opened another session meanwhile: the message goes back
-    // into the session it was written for, not that one's composer.
-    onRestore: (sessionId, text, attachments) => {
-      setActiveSessionId(sessionId);
-      composerRef.current?.restore(text, attachments);
-    },
+    onRestore: restoreMessage,
     onNotice: setNotice,
   });
 
-  const isSessionBusy = (sessionId: string) =>
-    isAcp(sessionById(sessionId)) ? acp.isBusy(sessionId) || isRestarting(sessionId) : pty.isBusy(sessionId);
+  const isSessionBusy = (sessionId: string) => acp.isBusy(sessionId) || isRestarting(sessionId);
 
   // What a new or resumed session starts with: the picks made for it, else the
   // model picked last; a rewound session's fresh agent, the model and effort it
@@ -260,22 +291,14 @@ export default function App() {
   const agentOptions = withRewound(state.agentOptions, draftAgent?.id, rewound);
   const startChoices = draftAgent ? withPreferred(acpChoices, agentOptions?.[draftAgent.id]) : acpChoices;
 
-  /**
-   * Dropped files: typed into a live terminal agent, otherwise added to the
-   * message. A name with control characters is left out: a terminal would
-   * take them as keys (Enter, Ctrl-C), not as part of a path.
-   */
+  /** Dropped files are added to the message; a name with control characters is left out. */
   const handleDroppedFiles = (dropped: string[]) => {
     const paths = dropped.filter((path) => !CONTROL_CHARACTER.test(path));
     if (paths.length < dropped.length) {
       setNotice("Left out a dropped file whose name has control characters.");
     }
     if (paths.length === 0) return;
-    if (activeSession?.status === "running" && !isAcp(activeSession)) {
-      void pty.sendRaw(activeSession.id, `${paths.map(formatAttachmentPath).join(" ")} `);
-    } else {
-      composerRef.current?.insertPaths(paths);
-    }
+    composerRef.current?.insertPaths(paths);
   };
   const isDraggingFiles = useFileDrop(handleDroppedFiles, reportError);
 
@@ -294,7 +317,6 @@ export default function App() {
     isRepository ? shownFolderPath : undefined,
     workspaceDetails?.branch ?? undefined,
     turnsEnded,
-    reportError,
   );
   // Read only while the Changes panel shows them.
   const repoPullRequests = useRepoPullRequests(
@@ -320,11 +342,9 @@ export default function App() {
     return session;
   };
 
-  /** A terminal agent gets only the text: its files are already typed into it. */
   const startSession = (spec: SessionSpec, first?: FirstMessage) => {
     const session = recordSession(spec);
-    if (isAcp(session)) void acp.start(session, first, startChoices);
-    else pty.start(session, spec.options ?? spawnOptionsFor(spec.agent, draft), first?.text);
+    void acp.start(session, first, startChoices);
     // The picks went with the session; a later draft starts from the model picked last.
     setAcpChoices(NO_CHOICES);
   };
@@ -340,7 +360,7 @@ export default function App() {
       return;
     }
     if (!newSessionAgent) {
-      setNotice(NO_AGENT_NOTICE);
+      setNotice(noAgentNotice(agentsInUse));
       return;
     }
     rememberFolder(activeWorkspace);
@@ -350,7 +370,7 @@ export default function App() {
     if (isWorktreeOn && canUseWorktree) {
       setIsCreatingWorktree(true);
       try {
-        ({ worktree, cwd } = await createSessionWorktree(activeWorkspace.path, name));
+        ({ worktree, cwd } = await createSessionWorktree(activeWorkspace.path, name, branchPicker.baseBranch));
       } catch (error) {
         setNotice(`Could not create a worktree: ${String(error)}`);
         // The user may have opened another session meanwhile: the message goes
@@ -364,6 +384,8 @@ export default function App() {
     }
     setPickedAgentId(null);
     startSession({ agent: newSessionAgent, cwd, name, worktree }, first);
+    // The base was this session's: the next draft starts from the folder's own branch.
+    if (worktree) branchPicker.reset();
   };
 
   /** Makes `path` the active workspace; a folder only old sessions still use is added back to the recents. */
@@ -376,11 +398,12 @@ export default function App() {
    * Shows a new, empty session: the folder and agent can still be changed in
    * the composer, and the agent starts with the first message.
    */
-  const openNewSession = (path?: string, agentId?: string) => {
+  const openNewSession = (path?: string, agentId?: string, options?: OpenNewSessionOptions) => {
     if (path) chooseFolder(path);
     setPickedAgentId(agentId ?? null);
     // A fresh draft: picks left from an earlier one would override the model picked last.
-    setAcpChoices(NO_CHOICES);
+    // A failed import returns to the draft it started from, so its picks stay: it did not open.
+    if (!options?.keepChoices) setAcpChoices(NO_CHOICES);
     setActiveSessionId("");
   };
 
@@ -407,16 +430,15 @@ export default function App() {
   const handleInterrupt = (sessionId: string) => {
     // A rewound session's fresh agent has not started yet: only its start is called off.
     if (isRestarting(sessionId)) cancelRestart(sessionId);
-    else if (isAcp(sessionById(sessionId))) acp.interrupt(sessionId, transcripts[sessionId]);
-    else pty.interrupt(sessionId);
+    else acp.interrupt(sessionId, transcripts[sessionId]);
   };
 
   const backgroundTasks = useBackgroundTasks({
     sessions,
-    isAcp,
+    transcripts,
     isBusy: acp.isBusy,
     busySince: acp.busySinceOf,
-    needsApproval: (id) => isAwaitingPermission(transcripts[id] ?? []),
+    needsApproval: (id) => isAwaitingUser(transcripts[id] ?? []),
     onOpenSession: handleSelectSession,
     stopAgent: handleInterrupt,
     onError: reportError,
@@ -424,27 +446,6 @@ export default function App() {
 
   const navigateTo = (sessionId: string | null) => {
     if (sessionId) handleSelectSession(sessionId);
-  };
-
-  /** A workspace's files for @-mentions; a failure is reported and offers none. */
-  const loadWorkspaceFiles = (root: string): Promise<string[]> =>
-    invoke<string[]>("workspace_files", { root }).catch((error) => {
-      setNotice(`Could not list the files to mention: ${String(error)}`);
-      return [];
-    });
-
-  const handleRevealFolder = () => {
-    if (!filesFolder) return;
-    invoke("reveal_in_finder", { path: filesFolder.path }).catch((error) => {
-      setNotice(`Could not open the folder: ${String(error)}`);
-    });
-  };
-
-  const handlePopout = () => {
-    if (!activeSession) return;
-    invoke("open_session_window", { sessionId: activeSession.id }).catch((error) => {
-      setNotice(`Could not open a new window: ${String(error)}`);
-    });
   };
 
   const updateSettings = (patch: Partial<Settings>) =>
@@ -456,11 +457,25 @@ export default function App() {
   };
 
   const handleRunOnboarding = () => {
-    setIsSettingsOpen(false);
+    setSettingsTab(null);
     updateSettings({ onboardingCompleted: false });
   };
 
   useUnreadMarks(sessions, activeSessionId, isSessionBusy, patchSession);
+
+  // A removed session may still have a streamed change queued: drop it before
+  // the transcript is deleted, so a late frame cannot write it back.
+  const { forgetQueued } = acp;
+  const forgetTranscript = useCallback(
+    (sessionId: string) => {
+      forgetQueued(sessionId);
+      removeTranscript(sessionId);
+    },
+    [forgetQueued, removeTranscript],
+  );
+
+  const terminals = useWorkspaceTerminals(setNotice);
+  const terminalDrawer = useTerminalDrawer(filesFolder?.path, terminals);
 
   const sessionActions = useSessionActions({
     sessions,
@@ -468,20 +483,27 @@ export default function App() {
     patchSession,
     updateState,
     updateMessages,
-    removeTranscript,
+    removeTranscript: forgetTranscript,
     navigation,
     acp,
-    pty,
+    closeTerminals: terminals.closeFolder,
     onNotice: setNotice,
+  });
+
+  // The draft's list of the agent's own sessions, and the import each row starts.
+  const draftSessionList = useDraftSessionList({
+    agent: isNewSessionDraft ? newSessionAgent : undefined, cwd: activeWorkspace?.path, sessions,
+    activeSessionId,
+    isShown: Boolean(isNewSessionDraft && newSessionAgent && agentCheck.canListSessions(newSessionAgent.id) && !(isWorktreeOn && canUseWorktree)),
+    listSessions: acp.listSessions, acp, choices: startChoices, onChoicesUsed: () => setAcpChoices(NO_CHOICES),
+    recordSession, openSession: handleSelectSession, discardSession: sessionActions.discardSession, openNewSession, requestSignIn: signIn.auth.requestSignIn,
   });
 
   const sendTo = async (sessionId: string, message: FirstMessage) => {
     const session = sessionById(sessionId);
     // A numbered session takes its title from the first thing the user asks.
     const isFirstMessage = !(transcripts[sessionId]?.some((m) => m.role === "user") ?? false);
-    const sent = await (isAcp(session)
-      ? acp.send(sessionId, message.text, message.attachments)
-      : pty.send(sessionId, message.text));
+    const sent = await acp.send(sessionId, message.text, message.attachments);
     if (sent && session && isFirstMessage && isAutoName(session.name) && !session.namedByUser) {
       patchSession(sessionId, { name: titleFor(message) });
     }
@@ -521,13 +543,16 @@ export default function App() {
     statusOf: (sessionId) => ({
       isBusy: isSessionBusy(sessionId),
       isWaiting: isSessionWaiting(sessionId),
-      contextUsage: isAcp(sessionById(sessionId)) ? acp.info[sessionId]?.usage : undefined,
+      contextUsage: acp.info[sessionId]?.usage,
+      failures: acp.failuresOf(sessionId),
     }),
-    onAction: (sessionId: string, action: PopoutAction) => {
+    agentCatalog: { agents, settings: state.settings, addAgent: catalogActions.addAgent },
+    onAction: (sessionId, action) => {
       if (action.kind === "send") void sendTo(sessionId, { text: action.text });
       else if (action.kind === "stop") handleInterrupt(sessionId);
-      else if (action.kind === "choose-option") chooseOption(sessionId, action.cardId, action.optionId);
-      else pty.resolveCard(sessionId, action.key, action.cardId, action.status);
+      else if (action.kind === "answer-elicitation") acp.answerElicitation(sessionId, action.key, action.answer);
+      else if (action.kind === "reopen-elicitation-url") acp.reopenElicitationUrl(sessionId, action.key);
+      else chooseOption(sessionId, action.cardId, action.optionId);
     },
   });
 
@@ -536,25 +561,18 @@ export default function App() {
   const canGoBack = isNewSessionDraft ? lastViewedSessionId !== null : navigation.canGoBack;
 
   const currentMessages = transcripts[activeSessionId] ?? [];
+  const sessionPlan = currentPlan(currentMessages);
   const canStartSession = Boolean(activeWorkspacePath && newSessionAgent);
   const composer = composerStateFor({
     session: activeSession,
-    sessionAgent: activeAgent,
     draftAgent,
-    draft,
-    setDraft,
     acpChoices: startChoices,
     setAcpChoices,
     agentOptions,
     acp,
     onPick: rememberPick,
   });
-  const isActiveTerminal = isActiveRunning && !isAcp(activeSession);
-  // A terminal agent shows its real screen: live, or the last one while it is still in memory.
-  const showsTerminal =
-    Boolean(activeSession) && !isAcp(activeSession) && (isActiveRunning || ptyOutput.has(activeSessionId));
   const composerCommands = composerCommandsFor({
-    session: activeSession,
     isRunning: isActiveRunning,
     liveCommands: acp.info[activeSessionId]?.commands,
     draftAgent,
@@ -565,9 +583,10 @@ export default function App() {
     return (
       <Onboarding
         agents={agents}
+        settings={state.settings}
         recentFolders={workspaces}
         suggestedFolders={suggestedFolders}
-        onRecheckAgents={refreshAgents}
+        agentsPanel={<AgentCatalogPanel agents={agents} settings={state.settings} refreshAgents={refreshAgents} catalog={agentCatalog} actions={catalogActions} />}
         onPickFolder={openFolder}
         onComplete={handleOnboardingComplete}
       />
@@ -589,12 +608,14 @@ export default function App() {
         onForward={() => navigateTo(navigation.forward())}
         onToggleFiles={filesFolder ? () => sidePanel.toggle("files") : undefined}
         isFilesOpen={sidePanel.open === "files" && Boolean(filesFolder)}
+        onToggleTerminal={filesFolder ? terminalDrawer.toggle : undefined}
+        isTerminalOpen={terminalDrawer.isOpen}
         onToggleChanges={filesFolder && isRepository ? () => sidePanel.toggle("changes") : undefined}
         isChangesOpen={sidePanel.open === "changes" && Boolean(filesFolder) && isRepository}
         diffStats={diffStats}
         onOpenDiff={() => sidePanel.show("diff")}
-        onPopout={activeSession ? handlePopout : undefined}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        onPopout={activeSession ? () => shell.popout(activeSession.id) : undefined}
+        onOpenSettings={() => setSettingsTab("general")}
         backgroundTasks={{
           tasks: backgroundTasks.tasks,
           isOpen: backgroundTasks.isMenuOpen,
@@ -602,6 +623,7 @@ export default function App() {
           onOpenTask: backgroundTasks.open,
           onStopTask: backgroundTasks.stop,
         }}
+        plan={sessionPlan}
       />
 
       <section className="flex flex-1 overflow-hidden">
@@ -611,6 +633,7 @@ export default function App() {
           sessions={sessions}
           activeSessionId={activeSessionId}
           agents={agents}
+          settings={state.settings}
           onNewSession={() => openNewSession()}
           onSelectSession={handleSelectSession}
           onNewSessionIn={openNewSession}
@@ -628,166 +651,186 @@ export default function App() {
               name={userProfile.name}
               email={userProfile.email}
               version={userProfile.version}
-              onOpenSettings={() => setIsSettingsOpen(true)}
+              updateCount={agentUpdates.updateCount}
+              onOpenSettings={() => setSettingsTab("general")}
             />
           }
         />
 
-        <article className={`${isDiffOpen && isDiffExpanded ? "hidden" : "flex"} flex-1 flex-col bg-bg relative overflow-hidden`}>
-          {isDraggingFiles && <FileDropOverlay />}
-          {notice && <NoticeBanner message={notice} onDismiss={() => setNotice(null)} />}
-          {authRequest && (
-            <AuthPanel
-              agentName={agents.find((a) => a.id === authRequest.profileId)?.name ?? authRequest.profileId}
-              methods={authRequest.methods}
-              status={authRequest.status}
-              error={authRequest.error}
-              onSignIn={signIn}
-              onDismiss={dismissSignIn}
-            />
-          )}
-          {showsTerminal ? (
-            <TerminalView
-              sessionId={activeSessionId}
-              output={ptyOutput}
-              isLive={isActiveTerminal}
-              onInput={(data) => void pty.sendRaw(activeSessionId, data)}
-              onResize={(cols, rows) => pty.resize(activeSessionId, cols, rows)}
-            />
-          ) : activeSession && (currentMessages.length > 0 || isSessionBusy(activeSessionId)) ? (
-            <ChatCanvas
-              conversationId={activeSessionId}
-              messages={currentMessages}
-              agentName={activeAgent?.name}
-              onForkBranch={(messageId) => void forkSession(messageId)}
-              onRewind={isAcp(activeSession) ? (messageId) => void rewind(activeSession, messageId) : undefined}
-              header={
-                <div className="rounded-xl border border-border bg-surface-1 px-4 py-3">
-                  <WorkspaceSummary
-                    name={folderNameOf(workspacePathOf(activeSession))}
-                    path={shownFolderPath ?? activeSession.cwd}
-                    details={workspaceDetails}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1">
+            <article className={`${isDiffOpen && isDiffExpanded ? "hidden" : "flex"} flex-1 flex-col bg-bg relative overflow-hidden`}>
+              {isDraggingFiles && <FileDropOverlay />}
+              {notice && <NoticeBanner message={notice} onDismiss={() => setNotice(null)} />}
+              <UpdateNotice
+                agents={agentUpdates.unnotified}
+                onShow={() => { agentUpdates.acknowledge(); setSettingsTab("agents"); }}
+                onDismiss={agentUpdates.acknowledge}
+              />
+              <SignInLayer signIn={signIn} agents={agents} agentId={activeSession?.profileId ?? newSessionAgent?.id} />
+              {installPanelAgent ? <AgentInstallPanel agent={installPanelAgent} /> : null}
+              {activeSession && (currentMessages.length > 0 || isSessionBusy(activeSessionId) || activeSession.historyElsewhere) ? (
+                <ChatCanvas
+                  conversationId={activeSessionId}
+                  messages={currentMessages}
+                  agentName={activeAgent?.name}
+                  onForkBranch={(messageId) => void forkSession(messageId)}
+                  onRewind={(messageId) => void rewind(activeSession, messageId)}
+                  header={
+                    <div className="space-y-3 rounded-xl border border-border bg-surface-1 px-4 py-3">
+                      {activeSession.historyElsewhere && (
+                        <HistoryElsewhereNote agentName={activeAgent?.name ?? "the agent"} />
+                      )}
+                      <WorkspaceSummary
+                        name={folderNameOf(workspacePathOf(activeSession))}
+                        path={shownFolderPath ?? activeSession.cwd}
+                        details={workspaceDetails}
+                      />
+                    </div>
+                  }
+                  onChooseOption={(cardId, optionId) => chooseOption(activeSessionId, cardId, optionId)}
+                  onAnswerElicitation={(key, answer) => acp.answerElicitation(activeSessionId, key, answer)}
+                  onReopenElicitationUrl={(key) => acp.reopenElicitationUrl(activeSessionId, key)}
+                  isWorking={isSessionBusy(activeSessionId) && !isAwaitingUser(currentMessages)}
+                  failures={acp.failuresOf(activeSessionId)}
+                  onStop={() => handleInterrupt(activeSessionId)}
+                />
+              ) : isNewSessionDraft ? (
+                <NewSessionView
+                  workspace={activeWorkspace}
+                  details={workspaceDetails}
+                  agentName={newSessionAgent?.name}
+                  unavailableReason={areAgentsLoaded && !agentsInUse.some(isAgentReady) ? noAgentNotice(agentsInUse) : undefined}
+                  worktreeBaseBranch={isWorktreeOn && canUseWorktree ? branchPicker.baseBranch : undefined}
+                  sessionList={draftSessionList.sessionList}
+                />
+              ) : (
+                <EmptySessionState />
+              )}
+
+              <div className="p-4 flex justify-center">
+                {activeAgentRemoved ? (
+                  <RemovedAgentPanel agentName={activeAgentRemoved} onAdd={() => activeAgent && catalogActions.addAgent(activeAgent.id)} />
+                ) : (
+                  <ComposerDock
+                    controls={composer.controls}
+                    isThinking={Boolean(activeSession) && isSessionBusy(activeSessionId)}
+                    onStop={activeSession ? () => handleInterrupt(activeSessionId) : undefined}
+                    disabled={
+                      isCreatingWorktree ||
+                      (!isActiveRunning && ((!isDraftAgentReady && !draftNeedsInstall) || (!isResumable && !canStartSession)))
+                    }
+                    sendDisabled={draftNeedsInstall}
+                    placeholder={composerPlaceholder({
+                      isRunning: isActiveRunning,
+                      isCreatingWorktree,
+                      isResumable,
+                      canStartSession,
+                      agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
+                      isEndedSession: Boolean(activeSession),
+                    })}
+                    onSendMessage={handleSendMessage}
+                    attachAsFiles
+                    onAttach={pickFiles}
+                    handleRef={composerRef}
+                    commands={composerCommands}
+                    note={
+                      !isActiveRunning && draftAgent && agentCheck.isProbing(draftAgent.id)
+                        ? `Loading ${draftAgent.name}'s models and commands…`
+                        : undefined
+                    }
+                    contextUsage={isActiveRunning ? acp.info[activeSessionId]?.usage : undefined}
+                    mentions={filesFolder ? { root: filesFolder.path, loadFiles: () => shell.loadWorkspaceFiles(filesFolder.path) } : undefined}
+                    folder={
+                      isNewSessionDraft
+                        ? {
+                            folders: workspaces,
+                            selectedPath: activeWorkspacePath,
+                            onSelect: chooseFolder,
+                            onOpenFolder: () => void openFolder(),
+                            worktree: canUseWorktree ? { isOn: isWorktreeOn, onChange: setIsWorktreeOn } : undefined,
+                            branch: branchPicker.control,
+                          }
+                        : undefined
+                    }
+                    agent={
+                      isNewSessionDraft && newSessionAgent
+                        ? {
+                            options: pickableAgents.map((a) => ({ value: a.id, label: pickerLabelOf(a) })),
+                            selected: newSessionAgent.id,
+                            onChange: (agentId) => setPickedAgentId(agentId ?? null),
+                          }
+                        : undefined
+                    }
                   />
-                </div>
-              }
-              onSendPtyInput={(input) => void pty.sendRaw(activeSessionId, input)}
-              onApproveAction={(key, cardId) => pty.resolveCard(activeSessionId, key, cardId, "approved")}
-              onRejectAction={(key, cardId) => pty.resolveCard(activeSessionId, key, cardId, "rejected")}
-              onChooseOption={(cardId, optionId) => chooseOption(activeSessionId, cardId, optionId)}
-              isWorking={isSessionBusy(activeSessionId) && !isAwaitingPermission(currentMessages)}
-            />
-          ) : isNewSessionDraft ? (
-            <NewSessionView
-              workspace={activeWorkspace}
-              details={workspaceDetails}
-              agentName={newSessionAgent?.name}
-            />
-          ) : (
-            <EmptySessionState />
-          )}
+                )}
+              </div>
 
-          {/* A live terminal agent takes input in its own screen. */}
-          <div className={isActiveTerminal ? "hidden" : "p-4 flex justify-center"}>
-            <ComposerDock
-              controls={composer.controls}
-              optionsLocked={composer.locked}
-              isThinking={Boolean(activeSession) && isSessionBusy(activeSessionId)}
-              onStop={activeSession ? () => handleInterrupt(activeSessionId) : undefined}
-              disabled={isCreatingWorktree || (!isActiveRunning && !isResumable && !canStartSession)}
-              placeholder={composerPlaceholder({
-                isRunning: isActiveRunning,
-                isCreatingWorktree,
-                isResumable,
-                canStartSession,
-              })}
-              onSendMessage={handleSendMessage}
-              attachAsFiles={isActiveRunning ? isAcp(activeSession) : draftAgent?.transport === TRANSPORT_ACP}
-              onAttach={pickFiles}
-              handleRef={composerRef}
-              commands={composerCommands}
-              note={
-                !isActiveRunning && draftAgent && agentCheck.isProbing(draftAgent.id)
-                  ? `Loading ${draftAgent.name}'s models and commands…`
-                  : undefined
-              }
-              contextUsage={isActiveRunning && isAcp(activeSession) ? acp.info[activeSessionId]?.usage : undefined}
-              mentions={filesFolder ? { root: filesFolder.path, loadFiles: () => loadWorkspaceFiles(filesFolder.path) } : undefined}
-              folder={
-                isNewSessionDraft
-                  ? {
-                      folders: workspaces,
-                      selectedPath: activeWorkspacePath,
-                      onSelect: chooseFolder,
-                      onOpenFolder: () => void openFolder(),
-                      worktree: canUseWorktree ? { isOn: isWorktreeOn, onChange: setIsWorktreeOn } : undefined,
-                    }
-                  : undefined
-              }
-              agent={
-                isNewSessionDraft && newSessionAgent
-                  ? {
-                      options: agents.filter((a) => a.detected).map((a) => ({ value: a.id, label: a.name })),
-                      selected: newSessionAgent.id,
-                      onChange: (agentId) => setPickedAgentId(agentId ?? null),
-                    }
-                  : undefined
-              }
-            />
+            </article>
+            {sidePanel.open === "changes" && filesFolder && isRepository && (
+              <ChangesPanel
+                key={filesFolder.path}
+                rootPath={filesFolder.path}
+                rootName={filesFolder.name}
+                branch={workspaceDetails?.branch ?? undefined}
+                changes={sidePanel.changes.changes}
+                version={sidePanel.changes.version}
+                onReload={sidePanel.changes.reload}
+                onClose={sidePanel.close}
+                pullRequests={repoPullRequests}
+                onOpenPullRequest={openPullRequest}
+                diffStats={diffStats}
+                onOpenDiff={() => sidePanel.show("diff")}
+              />
+            )}
+            {isDiffOpen && filesFolder && (
+              <DiffView
+                key={filesFolder.path}
+                rootPath={filesFolder.path}
+                version={sidePanel.changes.version}
+                isExpanded={isDiffExpanded}
+                onToggleExpanded={() => setExpandedDiffFolder(isDiffExpanded ? null : filesFolder.path)}
+                onClose={sidePanel.close}
+                onError={reportError}
+              />
+            )}
+            {sidePanel.open === "files" && filesFolder && (
+              <FilesPanel
+                key={filesFolder.path}
+                rootPath={filesFolder.path}
+                rootName={filesFolder.name}
+                onClose={sidePanel.close}
+                onInsertPath={(path) => composerRef.current?.insertPaths([path])}
+                onRevealRoot={() => filesFolder && shell.revealFolder(filesFolder.path)}
+              />
+            )}
           </div>
-
-        </article>
-        {sidePanel.open === "changes" && filesFolder && isRepository && (
-          <ChangesPanel
-            key={filesFolder.path}
-            rootPath={filesFolder.path}
-            rootName={filesFolder.name}
-            branch={workspaceDetails?.branch ?? undefined}
-            changes={sidePanel.changes.changes}
-            version={sidePanel.changes.version}
-            onReload={sidePanel.changes.reload}
-            onClose={sidePanel.close}
-            pullRequests={repoPullRequests}
-            onOpenPullRequest={openPullRequest}
-            diffStats={diffStats}
-            onOpenDiff={() => sidePanel.show("diff")}
-          />
-        )}
-        {isDiffOpen && filesFolder && (
-          <DiffView
-            key={filesFolder.path}
-            rootPath={filesFolder.path}
-            version={sidePanel.changes.version}
-            isExpanded={isDiffExpanded}
-            onToggleExpanded={() => setExpandedDiffFolder(isDiffExpanded ? null : filesFolder.path)}
-            onClose={sidePanel.close}
-            onError={reportError}
-          />
-        )}
-        {sidePanel.open === "files" && filesFolder && (
-          <FilesPanel
-            key={filesFolder.path}
-            rootPath={filesFolder.path}
-            rootName={filesFolder.name}
-            onClose={sidePanel.close}
-            onInsertPath={(path) => composerRef.current?.insertPaths([path])}
-            onRevealRoot={handleRevealFolder}
-          />
-        )}
+          {terminalDrawer.isOpen && filesFolder && (
+            <TerminalDrawer
+              folderPath={filesFolder.path}
+              folderName={filesFolder.name}
+              branch={workspaceDetails?.branch ?? undefined}
+              terminals={terminals}
+              startingFor={terminalDrawer.startingFor}
+              onStartShell={terminalDrawer.startShell}
+              onHide={terminalDrawer.hide}
+            />
+          )}
+        </div>
       </section>
-      {isSettingsOpen && (
-        <SettingsPanel
-          appearance={state.settings.appearance}
-          onChangeAppearance={(appearance) => updateSettings({ appearance })}
-          agents={agents}
-          defaultAgentId={state.settings.defaultAgentId}
-          recentFolders={workspaces}
-          onChangeDefaultAgent={(defaultAgentId) => updateSettings({ defaultAgentId })}
-          onRemoveRecentFolder={removeFolder}
-          onRunOnboarding={handleRunOnboarding}
-          onRecheckAgents={refreshAgents}
-          onClose={() => setIsSettingsOpen(false)}
-        />
-      )}
+      <AppSettingsDialog
+        isOpen={settingsTab !== null}
+        initialTab={settingsTab ?? undefined}
+        persisted={{ state, updateState }}
+        agents={agents}
+        refreshAgents={refreshAgents}
+        catalog={agentCatalog}
+        actions={catalogActions}
+        recentFolders={workspaces}
+        onRemoveRecentFolder={removeFolder}
+        onRunOnboarding={handleRunOnboarding}
+        onClose={() => setSettingsTab(null)}
+      />
     </main>
   );
 }

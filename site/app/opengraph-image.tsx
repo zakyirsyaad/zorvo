@@ -51,7 +51,7 @@ export default async function OpenGraphImage() {
             <span>One desktop.</span>
           </div>
           <span style={{ fontSize: 30, fontWeight: 500, color: COLOR["fg-muted"] }}>
-            Claude Code, Codex, Qwen and Aider in one native app.
+            Claude Code, Codex and Qwen Code in one native app.
           </span>
         </div>
         <div

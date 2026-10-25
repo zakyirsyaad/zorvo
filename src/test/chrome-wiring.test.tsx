@@ -15,8 +15,8 @@ function fakeStore(): FakeTauriStore {
 
 function seedSessions() {
   fakeStore().state.sessions = [
-    { id: "s-a", name: "Alpha work", profileId: "claude-code", cwd: "/Users/test/developer/agent-desktop", status: "terminated", createdAt: 1 },
-    { id: "s-b", name: "Beta work", profileId: "claude-code", cwd: "/Users/test/developer/agent-desktop", status: "terminated", createdAt: 2 },
+    { id: "s-a", name: "Alpha work", profileId: "claude-code", cwd: "/Users/test/developer/zorvo", status: "terminated", createdAt: 1, transport: "acp" },
+    { id: "s-b", name: "Beta work", profileId: "claude-code", cwd: "/Users/test/developer/zorvo", status: "terminated", createdAt: 2, transport: "acp" },
   ];
 }
 
@@ -59,7 +59,7 @@ describe("Window chrome wiring", () => {
     await renderApp();
 
     expect(header().getByText("Beta work")).toBeDefined();
-    expect(header().getByText("agent-desktop")).toBeDefined();
+    expect(header().getByText("zorvo")).toBeDefined();
     expect(await header().findByLabelText("Branch main")).toBeDefined();
   });
 
@@ -72,17 +72,17 @@ describe("Window chrome wiring", () => {
 
     await click(header().getByRole("button", { name: "Toggle files panel" }));
 
-    expect(header().getByText("agent-desktop")).toBeDefined();
+    expect(header().getByText("zorvo")).toBeDefined();
     expect(spy).toHaveBeenCalledWith(
       "list_directory",
-      expect.objectContaining({ root: "/Users/test/developer/agent-desktop" }),
+      expect.objectContaining({ root: "/Users/test/developer/zorvo" }),
       undefined,
     );
   });
 
   it("keeps Files for a session whose folder has left the recents", async () => {
     fakeStore().state.sessions = [
-      { id: "s-old", name: "Old work", profileId: "claude-code", cwd: "/Users/test/developer/old-project", status: "terminated", createdAt: 1 },
+      { id: "s-old", name: "Old work", profileId: "claude-code", cwd: "/Users/test/developer/old-project", status: "terminated", createdAt: 1, transport: "acp" },
     ];
     const spy = vi.spyOn(tauriInternals(), "invoke");
     await renderApp();
@@ -195,7 +195,7 @@ describe("Window chrome wiring", () => {
       if (cmd === "session_changes") return Promise.resolve([]);
       if (cmd === "repo_pull_requests") {
         return Promise.resolve([
-          { number: 14, title: "Show PR status", url: "https://github.com/o/agent-desktop/pull/14", state: "merged", isDraft: false },
+          { number: 14, title: "Show PR status", url: "https://github.com/o/zorvo/pull/14", state: "merged", isDraft: false },
         ]);
       }
       if (cmd === "open_external_url") return Promise.resolve(undefined);
@@ -207,13 +207,13 @@ describe("Window chrome wiring", () => {
     await click(await header().findByRole("button", { name: "Toggle changes panel" }));
     const panel = within(screen.getByRole("complementary", { name: "Changes panel" }));
     const list = within(await panel.findByRole("list", { name: "Pull requests" }));
-    expect(spy).toHaveBeenCalledWith("repo_pull_requests", { path: "/Users/test/developer/agent-desktop" }, undefined);
-    expect(list.getByText("agent-desktop #14")).toBeDefined();
+    expect(spy).toHaveBeenCalledWith("repo_pull_requests", { path: "/Users/test/developer/zorvo" }, undefined);
+    expect(list.getByText("zorvo #14")).toBeDefined();
     await click(list.getByRole("button", { name: /Show PR status/ }));
 
     expect(spy).toHaveBeenCalledWith(
       "open_external_url",
-      { url: "https://github.com/o/agent-desktop/pull/14" },
+      { url: "https://github.com/o/zorvo/pull/14" },
       undefined,
     );
   });
@@ -249,7 +249,7 @@ describe("Window chrome wiring", () => {
     const chip = await header().findByRole("button", { name: "Pull request #7, open, checks passing" });
     expect(spy).toHaveBeenCalledWith(
       "session_pull_request",
-      { path: "/Users/test/developer/agent-desktop" },
+      { path: "/Users/test/developer/zorvo" },
       undefined,
     );
     await click(chip);
@@ -279,11 +279,11 @@ describe("Window chrome wiring", () => {
     const panel = within(screen.getByRole("complementary", { name: "Files panel" }));
     expect(spy).toHaveBeenCalledWith(
       "list_directory",
-      expect.objectContaining({ root: "/Users/test/developer/agent-desktop" }),
+      expect.objectContaining({ root: "/Users/test/developer/zorvo" }),
       undefined,
     );
     await click(panel.getByRole("button", { name: "Reveal in Finder" }));
-    expect(spy).toHaveBeenCalledWith("reveal_in_finder", { path: "/Users/test/developer/agent-desktop" }, undefined);
+    expect(spy).toHaveBeenCalledWith("reveal_in_finder", { path: "/Users/test/developer/zorvo" }, undefined);
 
     await click(header().getByRole("button", { name: "Toggle files panel" }));
     expect(screen.queryByRole("complementary", { name: "Files panel" })).toBeNull();
@@ -292,7 +292,7 @@ describe("Window chrome wiring", () => {
     expect(spy).toHaveBeenCalledWith("open_session_window", { sessionId: "s-b" }, undefined);
   });
 
-  it("adds a file from the files panel to the prompt", async () => {
+  it("attaches a file from the files panel to the message", async () => {
     vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) =>
       cmd === "list_directory"
         ? Promise.resolve([{ name: "README.md", relativePath: "README.md", isDir: false }])
@@ -303,8 +303,8 @@ describe("Window chrome wiring", () => {
     await click(header().getByRole("button", { name: "Toggle files panel" }));
     await click(await screen.findByRole("button", { name: "Add README.md to prompt" }));
 
-    const prompt = screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement;
-    expect(prompt.value).toContain("/Users/test/developer/ai-perpetual-trading/README.md");
+    const attachments = within(screen.getByRole("list", { name: "Attachments" }));
+    expect(attachments.getByRole("listitem").getAttribute("title")).toBe("/Users/test/developer/ai-perpetual-trading/README.md");
   });
 
   it("shows the user's git identity and app version, and opens settings from the profile", async () => {
@@ -313,7 +313,7 @@ describe("Window chrome wiring", () => {
 
     expect(sidebar.getByText("Test User")).toBeDefined();
     expect(sidebar.getByText(/0\.1\.0/)).toBeDefined();
-    await click(sidebar.getByRole("button", { name: "Settings" }));
+    await click(sidebar.getByRole("button", { name: /^Settings/ }));
     expect(screen.getByRole("dialog")).toBeDefined();
   });
 });

@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, waitFor } from "@testing-library/react";
-import type { FakeTauriStore } from "./setup";
 
 type Listener = (event: { payload: unknown }) => void;
 const listeners = new Map<string, Listener[]>();
 const emitted: { event: string; payload: unknown }[] = [];
+/** Events sent to one window by label, and events broadcast to every window. */
+const sentTo: { target: string; event: string }[] = [];
+const broadcast: string[] = [];
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: (event: string, cb: Listener) => {
@@ -15,6 +17,12 @@ vi.mock("@tauri-apps/api/event", () => ({
   },
   emit: (event: string, payload: unknown) => {
     emitted.push({ event, payload });
+    broadcast.push(event);
+    return Promise.resolve();
+  },
+  emitTo: (target: string, event: string, payload: unknown) => {
+    emitted.push({ event, payload });
+    sentTo.push({ target, event });
     return Promise.resolve();
   },
 }));
@@ -29,30 +37,45 @@ function tauriInternals(): TauriInternals {
   return (window as unknown as { __TAURI_INTERNALS__: TauriInternals }).__TAURI_INTERNALS__;
 }
 
-function fakeStore(): FakeTauriStore {
-  return (window as unknown as { __FAKE_TAURI_STORE__: FakeTauriStore }).__FAKE_TAURI_STORE__;
-}
-
 async function deliver(event: string, payload: unknown) {
   await act(async () => {
     (listeners.get(event) ?? []).forEach((cb) => cb({ payload }));
+    // Stream updates apply once a frame; let that frame land inside act.
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
 
 const runningSession = {
   id: "s-1",
   name: "Fix login",
-  profileId: "claude-code",
-  cwd: "/Users/test/developer/agent-desktop",
+  profileId: "claude-acp",
+  cwd: "/Users/test/developer/zorvo",
   status: "running",
   createdAt: 1,
+  transport: "acp",
 };
+
+/** Starts a session in the main window with its first message; resolves with its id. */
+async function startSessionInMainWindow(spy: { mock: { calls: unknown[][] } }): Promise<string> {
+  await act(async () => {
+    render(<App />);
+  });
+  const prompt = screen.getByRole("textbox", { name: "Prompt" });
+  await act(async () => {
+    fireEvent.change(prompt, { target: { value: "get started" } });
+    fireEvent.keyDown(prompt, { key: "Enter" });
+  });
+  const start = spy.mock.calls.find(([cmd]) => cmd === "acp_start_session");
+  return (start?.[1] as { sessionId: string }).sessionId;
+}
 
 describe("Popout windows", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     listeners.clear();
     emitted.length = 0;
+    sentTo.length = 0;
+    broadcast.length = 0;
   });
 
   it("reads the popout session from the window URL and rejects unsafe ids", () => {
@@ -87,20 +110,72 @@ describe("Popout windows", () => {
     });
   });
 
-  it("main window answers a popout and performs the actions it forwards", async () => {
-    fakeStore().state.sessions = [runningSession];
-    const spy = vi.spyOn(tauriInternals(), "invoke");
+  it("shows the session's plan from the snapshot it is sent", async () => {
     await act(async () => {
-      render(<App />);
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", {
+      sessionId: "s-1",
+      session: runningSession,
+      messages: [
+        {
+          id: "m-1",
+          role: "agent",
+          content: "Working on it",
+          timestamp: 1,
+          plan: [
+            { content: "Read the parser", status: "completed" },
+            { content: "Run the tests", status: "in_progress" },
+          ],
+        },
+      ],
     });
 
-    await deliver("popout-ready", { sessionId: "s-1" });
-    const snapshot = emitted.find((e) => e.event === "session-snapshot")?.payload as { sessionId: string };
-    expect(snapshot.sessionId).toBe("s-1");
+    expect(screen.getByRole("button", { name: "Plan (1 of 2 done)" })).toBeDefined();
+  });
 
-    await deliver("popout-action", { sessionId: "s-1", action: { kind: "send", text: "hello" } });
-    expect(spy).toHaveBeenCalledWith("send_input", { sessionId: "s-1", data: "hello" }, undefined);
-    await waitFor(() => expect(spy).toHaveBeenCalledWith("send_input", { sessionId: "s-1", data: "\r" }, undefined));
+  it("shows the history note for a resumed import with no messages", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", {
+      sessionId: "s-1",
+      session: { ...runningSession, historyElsewhere: true },
+      messages: [],
+    });
+
+    expect(
+      await screen.findByText("Earlier messages stay in Claude Code. They are not shown here."),
+    ).toBeDefined();
+    expect(screen.queryByText("No messages yet.")).toBeNull();
+  });
+
+  it("shows no history note for a session whose history is here", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", {
+      sessionId: "s-1",
+      session: runningSession,
+      messages: [{ id: "m-1", role: "agent", content: "Ready when you are", timestamp: 1 }],
+    });
+
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+
+  it("main window answers a popout and performs the actions it forwards", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const sessionId = await startSessionInMainWindow(spy);
+    await deliver("acp-event", { sessionId, kind: "turn-end", stopReason: "end_turn" });
+
+    await deliver("popout-ready", { sessionId });
+    const snapshot = emitted.find((e) => e.event === "session-snapshot")?.payload as { sessionId: string };
+    expect(snapshot.sessionId).toBe(sessionId);
+
+    await deliver("popout-action", { sessionId, action: { kind: "send", text: "hello" } });
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith("acp_prompt", expect.objectContaining({ sessionId, text: "hello" }), undefined),
+    );
   });
 
   it("forwards the option picked on an agent's permission request", async () => {
@@ -109,7 +184,7 @@ describe("Popout windows", () => {
     });
     await deliver("session-snapshot", {
       sessionId: "s-1",
-      session: { ...runningSession, profileId: "qwen", transport: "acp" },
+      session: { ...runningSession, profileId: "qwen-code" },
       messages: [
         {
           id: "m-1",
@@ -122,8 +197,6 @@ describe("Popout windows", () => {
             title: "Permission requested",
             prompt: "Run tests",
             status: "pending",
-            approvalKey: "",
-            rejectKey: "",
             timestamp: 1,
             requestId: 3,
             options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
@@ -140,6 +213,75 @@ describe("Popout windows", () => {
       event: "popout-action",
       payload: { sessionId: "s-1", action: { kind: "choose-option", cardId: "act-1", optionId: "allow" } },
     });
+  });
+
+  it("forwards an answer to an agent's form request", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", {
+      sessionId: "s-1",
+      session: runningSession,
+      messages: [
+        {
+          id: "m-1",
+          role: "agent",
+          content: "",
+          timestamp: 1,
+          elicitation: {
+            key: "el-1",
+            sessionId: "s-1",
+            mode: "form",
+            message: "What is your name?",
+            status: "pending",
+            timestamp: 1,
+            fields: [{ name: "name", title: "Name", required: true, kind: { type: "text" } }],
+          },
+        },
+      ],
+    });
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Name/), { target: { value: "Ada" } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    });
+
+    expect(emitted).toContainEqual({
+      event: "popout-action",
+      payload: {
+        sessionId: "s-1",
+        action: { kind: "answer-elicitation", key: "el-1", answer: { action: "accept", content: { name: "Ada" } } },
+      },
+    });
+    // What the user typed goes to the main window only, never to the other popouts.
+    expect(sentTo).toContainEqual({ target: "main", event: "popout-action" });
+    expect(broadcast).not.toContain("popout-action");
+  });
+
+  it("main window answers an agent's request when its popout asks", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const sessionId = await startSessionInMainWindow(spy);
+    await deliver("acp-event", {
+      sessionId,
+      kind: "elicitation",
+      key: "el-1",
+      request: { mode: "url", message: "Sign in", url: "https://acme.example/login", host: "acme.example" },
+    });
+
+    await deliver("popout-action", {
+      sessionId,
+      action: { kind: "answer-elicitation", key: "el-1", answer: { action: "accept" } },
+    });
+    await deliver("popout-action", { sessionId, action: { kind: "reopen-elicitation-url", key: "el-1" } });
+
+    expect(spy).toHaveBeenCalledWith(
+      "acp_respond_elicitation",
+      { sessionId, key: "el-1", action: "accept", content: null },
+      undefined,
+    );
+    expect(spy).toHaveBeenCalledWith("acp_reopen_elicitation_url", { sessionId, key: "el-1" }, undefined);
   });
 
   it("shows the agent working and stops it from the popout", async () => {
@@ -163,15 +305,12 @@ describe("Popout windows", () => {
   });
 
   it("main window stops a session's turn when its popout asks", async () => {
-    fakeStore().state.sessions = [runningSession];
     const spy = vi.spyOn(tauriInternals(), "invoke");
-    await act(async () => {
-      render(<App />);
-    });
+    const sessionId = await startSessionInMainWindow(spy);
 
-    await deliver("popout-action", { sessionId: "s-1", action: { kind: "stop" } });
+    await deliver("popout-action", { sessionId, action: { kind: "stop" } });
 
-    expect(spy).toHaveBeenCalledWith("send_input", { sessionId: "s-1", data: "\x03" }, undefined);
+    expect(spy).toHaveBeenCalledWith("acp_cancel", { sessionId }, undefined);
   });
 });
 

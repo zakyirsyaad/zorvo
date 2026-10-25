@@ -1,14 +1,19 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Session, SessionWorktree } from '../types';
 
-/** A new session's worktree of `repoPath`, and the folder its agent runs in. */
+/**
+ * A new session's worktree of `repoPath`, and the folder its agent runs in.
+ * It starts from the local branch `baseBranch`, or from the folder's HEAD.
+ */
 export async function createSessionWorktree(
   repoPath: string,
   title: string,
+  baseBranch?: string,
 ): Promise<{ worktree: SessionWorktree; cwd: string }> {
   const created = await invoke<{ path: string; cwd: string; branch: string }>('create_session_worktree', {
     repoPath,
     title,
+    ...(baseBranch ? { baseBranch } : {}),
   });
   return { worktree: { repoPath, path: created.path, branch: created.branch }, cwd: created.cwd };
 }
@@ -17,12 +22,14 @@ export async function createSessionWorktree(
  * Removes a deleted session's worktree when no other session runs in it,
  * once its agent has stopped: never from under a running agent. The backend
  * keeps one with uncommitted changes, and its branch always. Resolves with a
- * notice for the user when the worktree was kept, or null.
+ * notice for the user when the worktree was kept, or null. `onRemoved` runs
+ * once the worktree is gone, never for a kept one, so shells in a kept worktree live on.
  */
 export async function removeSessionWorktree(
   session: Session,
   otherSessions: readonly Session[],
   stopped: Promise<boolean>,
+  onRemoved?: (path: string) => void,
 ): Promise<string | null> {
   const worktree = session.worktree;
   if (!worktree) return null;
@@ -30,8 +37,9 @@ export async function removeSessionWorktree(
   if (!(await stopped)) return `Kept the worktree of "${session.name}": its agent could not be stopped.`;
   try {
     await invoke('remove_session_worktree', { repoPath: worktree.repoPath, path: worktree.path });
-    return null;
   } catch (error) {
     return `Kept the worktree of "${session.name}": ${String(error)}`;
   }
+  onRemoved?.(worktree.path);
+  return null;
 }

@@ -3,7 +3,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLatest } from './useLatest';
 import type { PermissionRequestPayload } from '../lib/acp-events';
-import type { ContextUsage, SlashCommand } from '../types';
+import { toElicitationCard } from '../lib/acp-elicitation';
+import { toListedSessions, type ListedSessions } from '../lib/session-list';
+import type { ContextUsage, ElicitationAnswer, ElicitationCard, SlashCommand } from '../types';
 
 /** The one event channel the backend emits ACP traffic on. */
 export const ACP_EVENT = 'acp-event';
@@ -37,6 +39,10 @@ export interface AcpSessionInfo {
   /** Context window use, from the agent's latest usage_update. */
   usage?: ContextUsage;
   canFork: boolean;
+  /** The agent can reopen a session of its own (session/resume or session/load). */
+  canReopen: boolean;
+  /** How the backend reopened an earlier session; absent for a start or a fork. */
+  reopenedWith?: 'resume' | 'load';
   isBusy: boolean;
 }
 
@@ -48,6 +54,10 @@ export interface TurnResult {
 export interface AcpHandlers {
   onUpdate: (sessionId: string, update: unknown) => void;
   onPermission: (sessionId: string, request: PermissionRequestPayload) => void;
+  /** The agent asks the user for input, or to open a page; a malformed request is never passed on. */
+  onElicitation: (sessionId: string, card: ElicitationCard) => void;
+  /** The agent reports a page it sent the user to as done. */
+  onElicitationComplete: (sessionId: string, key: string) => void;
   onTurnEnd: (sessionId: string, result: TurnResult) => void;
   onExit: (sessionId: string, code: number | null) => void;
   /** Failures that would otherwise go unnoticed, e.g. not being able to listen for agent events. */
@@ -102,12 +112,16 @@ function toInfo(raw: unknown): AcpSessionInfo {
   const started = isObject(raw) ? raw : {};
   const capabilities = isObject(started.agentCapabilities) ? started.agentCapabilities : {};
   const sessionCaps = isObject(capabilities.sessionCapabilities) ? capabilities.sessionCapabilities : {};
+  const reopenedWith =
+    started.reopenedWith === 'resume' || started.reopenedWith === 'load' ? started.reopenedWith : undefined;
   return {
     acpSessionId: isString(started.acpSessionId) ? started.acpSessionId : '',
     modes: toModes(started.modes),
     configOptions: toConfigOptions(started.configOptions),
     commands: [],
     canFork: isObject(sessionCaps.fork),
+    canReopen: capabilities.loadSession === true || isObject(sessionCaps.resume),
+    ...(reopenedWith ? { reopenedWith } : {}),
     isBusy: false,
   };
 }
@@ -184,6 +198,14 @@ export function useAcpSessions(handlers: AcpHandlers) {
             options: payload.options,
           });
           break;
+        case 'elicitation': {
+          const card = toElicitationCard(sessionId, payload.key, payload.request, Date.now());
+          if (card) h.onElicitation(sessionId, card);
+          break;
+        }
+        case 'elicitation-complete':
+          if (isString(payload.key)) h.onElicitationComplete(sessionId, payload.key);
+          break;
         case 'turn-end':
           setBusy(sessionId, false);
           h.onTurnEnd(
@@ -229,10 +251,23 @@ export function useAcpSessions(handlers: AcpHandlers) {
     [remember],
   );
 
-  const load = useCallback(
+  const reopen = useCallback(
     async (sessionId: string, cwd: string, profileId: string, acpSessionId: string) =>
-      remember(sessionId, await invoke('acp_load_session', { sessionId, cwd, profileId, acpSessionId })),
+      remember(sessionId, await invoke('acp_reopen_session', { sessionId, cwd, profileId, acpSessionId })),
     [remember],
+  );
+
+  const importSession = useCallback(
+    async (sessionId: string, cwd: string, profileId: string, acpSessionId: string) =>
+      remember(sessionId, await invoke('acp_import_session', { sessionId, cwd, profileId, acpSessionId })),
+    [remember],
+  );
+
+  /** The agent's sessions in `cwd`, as the backend validated them. */
+  const listSessions = useCallback(
+    async (profileId: string, cwd: string): Promise<ListedSessions> =>
+      toListedSessions(await invoke('acp_list_sessions', { profileId, cwd })),
+    [],
   );
 
   const fork = useCallback(
@@ -254,11 +289,32 @@ export function useAcpSessions(handlers: AcpHandlers) {
     [setBusy],
   );
 
-  const cancel = useCallback((sessionId: string) => invoke<void>('acp_cancel', { sessionId }), []);
+  /** Resolves with the keys of the elicitations the backend answered `cancel`. */
+  const cancel = useCallback(
+    async (sessionId: string) => (await invoke<string[] | null>('acp_cancel', { sessionId })) ?? [],
+    [],
+  );
 
   const respondPermission = useCallback(
     (sessionId: string, requestId: string | number, optionId: string | null) =>
       invoke<void>('acp_respond_permission', { sessionId, requestId, optionId }),
+    [],
+  );
+
+  /** Only the answer's action and content go out; nothing of it is kept here. */
+  const respondElicitation = useCallback(
+    (sessionId: string, key: string, answer: ElicitationAnswer) =>
+      invoke<void>('acp_respond_elicitation', {
+        sessionId,
+        key,
+        action: answer.action,
+        content: answer.action === 'accept' ? (answer.content ?? null) : null,
+      }),
+    [],
+  );
+
+  const reopenElicitationUrl = useCallback(
+    (sessionId: string, key: string) => invoke<void>('acp_reopen_elicitation_url', { sessionId, key }),
     [],
   );
 
@@ -294,5 +350,23 @@ export function useAcpSessions(handlers: AcpHandlers) {
   const busySinceOf = useCallback((sessionId: string): number | undefined => busySince[sessionId], [busySince]);
   const canFork = useCallback((sessionId: string) => info[sessionId]?.canFork ?? false, [info]);
 
-  return { info, start, load, fork, prompt, cancel, respondPermission, setMode, setConfigOption, stop, isBusy, busySinceOf, canFork };
+  return {
+    info,
+    start,
+    reopen,
+    importSession,
+    listSessions,
+    fork,
+    prompt,
+    cancel,
+    respondPermission,
+    respondElicitation,
+    reopenElicitationUrl,
+    setMode,
+    setConfigOption,
+    stop,
+    isBusy,
+    busySinceOf,
+    canFork,
+  };
 }

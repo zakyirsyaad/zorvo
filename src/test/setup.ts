@@ -2,6 +2,7 @@
 
 import { afterEach } from "vitest";
 import { fakeProfiles } from "./fixtures/agents";
+import { fakeCatalog } from "./fixtures/catalog";
 
 /**
  * In-memory stand-in for the backend store commands. Tests seed it through
@@ -25,12 +26,12 @@ export interface FakeTauriStore {
 function emptyFakeStore(): FakeTauriStore {
   return {
     state: {
-      version: 1,
+      version: 2,
       settings: { defaultAgentId: null, onboardingCompleted: true },
       recentFolders: [
         { name: "ai-perpetual-trading", path: "/Users/test/developer/ai-perpetual-trading", lastOpenedAt: 3000 },
         { name: "titan-investment", path: "/Users/test/developer/titan-investment", lastOpenedAt: 2000 },
-        { name: "agent-desktop", path: "/Users/test/developer/agent-desktop", lastOpenedAt: 1000 },
+        { name: "zorvo", path: "/Users/test/developer/zorvo", lastOpenedAt: 1000 },
       ],
       sessions: [],
     },
@@ -58,7 +59,8 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
       return Promise.resolve(undefined);
     case "acp_start_session":
     case "acp_fork_session":
-    case "acp_load_session":
+    case "acp_reopen_session":
+    case "acp_import_session":
       // Shaped like Qwen Code's real answer; it starts in YOLO like the user's own config.
       return Promise.resolve({
         acpSessionId:
@@ -74,11 +76,20 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
         models: null,
         configOptions: [],
       });
+    case "acp_list_sessions": {
+      const fake = (window as unknown as { __FAKE_ACP_LIST__?: unknown }).__FAKE_ACP_LIST__;
+      return Promise.resolve(structuredClone(fake ?? { sessions: [], truncated: false, incomplete: false }));
+    }
     case "acp_set_config_option":
       return Promise.resolve([]);
-    case "acp_prompt":
     case "acp_cancel":
+      return Promise.resolve([]);
+    case "acp_qwen_last_api_error":
+      return Promise.resolve(null);
+    case "acp_prompt":
     case "acp_respond_permission":
+    case "acp_respond_elicitation":
+    case "acp_reopen_elicitation_url":
     case "acp_set_mode":
     case "acp_stop_session":
       return Promise.resolve(undefined);
@@ -98,10 +109,12 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
     case "open_session_window":
     case "reveal_in_finder":
     case "terminate_session":
-    case "spawn_session":
     case "send_input":
     case "resize_session":
+    case "install_agent":
       return Promise.resolve(undefined);
+    case "cancel_agent_install":
+      return Promise.resolve(false);
     default:
       return null;
   }
@@ -109,9 +122,18 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
 
 if (typeof window !== "undefined") {
   (window as unknown as { __FAKE_TAURI_STORE__: FakeTauriStore }).__FAKE_TAURI_STORE__ = emptyFakeStore();
-  afterEach(() => {
+  afterEach(async () => {
+    // Imported here, not at the top: a static import would load the module before a test file's vi.mock applies.
+    (await import("../lib/agent-icons")).resetAgentIcons();
+    (await import("../lib/attachment-previews")).clearAttachmentPreviews();
     (window as unknown as { __FAKE_TAURI_STORE__: FakeTauriStore }).__FAKE_TAURI_STORE__ = emptyFakeStore();
+    delete (window as unknown as { __FAKE_ACP_LIST__?: unknown }).__FAKE_ACP_LIST__;
   });
+}
+
+/** Tauri's asset URL for a file, as the macOS webview builds it with `convertFileSrc`. */
+export function fakeConvertFileSrc(filePath: string, protocol = "asset"): string {
+  return `${protocol}://localhost/${encodeURIComponent(filePath)}`;
 }
 
 /**
@@ -120,6 +142,7 @@ if (typeof window !== "undefined") {
  * `invoke` it read before spying: that may already be a spy, and Vitest
  * hands back the same spy, so calling it would recurse.
  */
+
 export function fakeTauriInvoke(cmd: string, args?: unknown): Promise<unknown> {
   const storeResult = handleStoreCommand(cmd, args as StoreArgs | undefined);
   if (storeResult) {
@@ -129,14 +152,30 @@ export function fakeTauriInvoke(cmd: string, args?: unknown): Promise<unknown> {
     return Promise.resolve([
       { name: "ai-perpetual-trading", path: "/Users/test/developer/ai-perpetual-trading" },
       { name: "titan-investment", path: "/Users/test/developer/titan-investment" },
-      { name: "agent-desktop", path: "/Users/test/developer/agent-desktop" },
+      { name: "zorvo", path: "/Users/test/developer/zorvo" },
     ]);
   }
   if (cmd === "get_agent_profiles") {
     return Promise.resolve(structuredClone(fakeProfiles));
   }
+  if (cmd === "get_agent_catalog") {
+    return Promise.resolve({ lastChecked: null, agents: structuredClone(fakeCatalog) });
+  }
+  if (cmd === "get_agent_icons") {
+    return Promise.resolve({});
+  }
+  if (cmd === "update_agent") {
+    const agentId = (args as { agentId?: string } | undefined)?.agentId;
+    return Promise.resolve(fakeCatalog.find((a) => a.id === agentId)?.updateVersion ?? null);
+  }
+  if (cmd === "remove_agent_install") {
+    return Promise.resolve(undefined);
+  }
   if (cmd === "workspace_details") {
     return Promise.resolve({ location: "~/developer", branch: "main" });
+  }
+  if (cmd === "attachment_preview") {
+    return Promise.resolve(undefined);
   }
   return Promise.resolve(undefined);
 }
@@ -147,6 +186,7 @@ if (typeof window !== "undefined") {
   const win = window as unknown as {
     __TAURI_INTERNALS__?: {
       invoke: (cmd: string, args?: unknown) => Promise<unknown>;
+      convertFileSrc?: (filePath: string, protocol?: string) => string;
       transformCallback?: (callback: unknown, once?: boolean) => number;
       unregisterCallbackAction?: (id: number) => void;
     };
@@ -158,6 +198,7 @@ if (typeof window !== "undefined") {
   if (!win.__TAURI_INTERNALS__) {
     win.__TAURI_INTERNALS__ = {
       invoke: fakeTauriInvoke,
+      convertFileSrc: fakeConvertFileSrc,
       transformCallback: (_cb: unknown, _once?: boolean) => nextCallbackId++,
       unregisterCallbackAction: (_id: number) => {},
     };

@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, Weak};
 use std::thread;
 use std::time::Duration;
 
@@ -40,6 +40,10 @@ type ResponseHandler = Box<dyn FnOnce(Result<Value, Value>) + Send>;
 
 /// A spawned agent speaking newline-delimited JSON-RPC on stdin/stdout.
 pub struct AcpConnection {
+    /// The program the agent was started with, as given.
+    program: String,
+    /// The `PATH` entries of its launch env; empty when it inherited ours.
+    path_entries: Vec<String>,
     stdin: Mutex<ChildStdin>,
     /// Shared with the reader thread, which reaps the process once it exits.
     child: Arc<Mutex<Child>>,
@@ -50,13 +54,16 @@ pub struct AcpConnection {
 
 impl AcpConnection {
     /// Starts the agent. Its stdout is read on a background thread; every
-    /// message that is not a response to us goes to `sink`.
+    /// message that is not a response to us goes to the sink `make_sink`
+    /// builds. It gets the connection before the first message can arrive, so
+    /// the sink can answer every request; held weakly, it never keeps the
+    /// agent alive.
     pub fn spawn(
         program: &str,
         args: &[String],
         cwd: &str,
         env: &[(String, String)],
-        sink: EventSink,
+        make_sink: impl FnOnce(Weak<Self>) -> EventSink,
     ) -> Result<Arc<Self>, String> {
         let mut child = Command::new(program)
             .args(args)
@@ -82,6 +89,8 @@ impl AcpConnection {
             .ok_or("Failed to open the agent's stderr")?;
 
         let connection = Arc::new(Self {
+            program: program.to_string(),
+            path_entries: path_entries_of(env),
             stdin: Mutex::new(stdin),
             child: Arc::new(Mutex::new(child)),
             next_id: AtomicU64::new(1),
@@ -89,6 +98,7 @@ impl AcpConnection {
             stderr_tail: Arc::new(Mutex::new(VecDeque::new())),
         });
 
+        let sink = make_sink(Arc::downgrade(&connection));
         connection.spawn_stderr_reader(stderr);
         connection.spawn_stdout_reader(stdout, sink);
         Ok(connection)
@@ -209,7 +219,19 @@ impl AcpConnection {
 
     /// Sends a request and blocks until the agent answers or `timeout` passes.
     pub fn request(&self, method: &str, params: Value, timeout: Duration) -> Result<Value, String> {
-        self.request_raw(method, params, timeout)?
+        self.request_with(method, params, timeout, |_| {})
+    }
+
+    /// Like [`request`](Self::request); `on_answer` gets a successful answer
+    /// on the reader thread, before the agent's next message is read.
+    pub fn request_with(
+        &self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+        on_answer: impl FnOnce(&Value) + Send + 'static,
+    ) -> Result<Value, String> {
+        self.request_raw_with(method, params, timeout, on_answer)?
             .map_err(|error| format!("{} failed: {}", method, error_message(&error)))
     }
 
@@ -221,11 +243,26 @@ impl AcpConnection {
         params: Value,
         timeout: Duration,
     ) -> Result<Result<Value, Value>, String> {
+        self.request_raw_with(method, params, timeout, |_| {})
+    }
+
+    /// Like [`request_raw`](Self::request_raw), with the `on_answer` of
+    /// [`request_with`](Self::request_with).
+    pub fn request_raw_with(
+        &self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+        on_answer: impl FnOnce(&Value) + Send + 'static,
+    ) -> Result<Result<Value, Value>, String> {
         let (tx, rx) = mpsc::channel();
         let id = self.send_request_with_id(
             method,
             params,
             Box::new(move |result| {
+                if let Ok(answer) = &result {
+                    on_answer(answer);
+                }
                 let _ = tx.send(result);
             }),
         )?;
@@ -254,6 +291,17 @@ impl AcpConnection {
             .lock()
             .map(|tail| tail.iter().cloned().collect::<Vec<_>>().join("\n"))
             .unwrap_or_default()
+    }
+
+    /// The program the agent was started with.
+    pub fn program(&self) -> &str {
+        &self.program
+    }
+
+    /// The dirs on the `PATH` it was started with, through which it can run
+    /// other installed tools (a prerequisite, Zorvo's uv or Node).
+    pub fn path_entries(&self) -> &[String] {
+        &self.path_entries
     }
 
     /// The agent's pid while it runs; none once it has exited, when the pid
@@ -290,4 +338,14 @@ pub fn error_message(error: &Value) -> String {
         Some(details) => format!("{} ({})", message, details),
         None => message.to_string(),
     }
+}
+
+/// The non-empty entries of the `PATH` in `env`.
+fn path_entries_of(env: &[(String, String)]) -> Vec<String> {
+    env.iter()
+        .filter(|(key, _)| key == "PATH")
+        .flat_map(|(_, value)| value.split(':'))
+        .filter(|entry| !entry.is_empty())
+        .map(str::to_string)
+        .collect()
 }

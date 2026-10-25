@@ -4,7 +4,7 @@ import { LINKS } from "./links";
 export const SITE_NAME = "Zorvo";
 export const SITE_TITLE = "Zorvo — every coding agent, one desktop";
 export const SITE_DESCRIPTION =
-  "Claude Code, Codex, Qwen and Aider in one native app. Bring the agent you already use. No lock-in, no API keys.";
+  "Claude Code, Codex and Qwen Code in one native app. Bring the agent you already use, or install one from Zorvo. No lock-in, no API keys.";
 
 const LOCAL_URL = "http://localhost:3100/";
 

@@ -2,8 +2,8 @@
  * Builds the Markdown handoff document used to fork a conversation into a new
  * agent session, plus the one-line prompt that points the new agent at it.
  *
- * The prompt must stay on one line: text typed into an agent TUI through a PTY
- * is submitted at the first newline.
+ * The prompt stays on one line: it becomes the new session's first message,
+ * and a line break in the handoff path must not split it into extra text.
  */
 import type { ChatMessage } from "../types";
 
@@ -35,7 +35,7 @@ function buildHeader(meta: ForkHandoffMeta): string {
 
 function buildActivityLines(message: ChatMessage): string[] {
   const toolLines = (message.tools ?? []).map(
-    (tool) => `- Tool: ${tool.name}(${tool.args})`,
+    (tool) => `- Tool: ${tool.name}`,
   );
   const card = message.actionCard;
   const cardLines = card
@@ -103,15 +103,29 @@ export function buildForkHandoff(
 }
 
 /**
- * One-line first prompt for the forked session. Never contains a newline. The
- * path is quoted because app data dirs often contain spaces
+ * The fork's first visible message. The read-this-file instruction goes to the
+ * agent as hidden context instead, so the chat does not show an app data path.
+ * A fork exists to take the conversation somewhere new, so this stays neutral:
+ * the hidden context is what tells the agent to wait.
+ */
+export const FORK_FIRST_MESSAGE = "Pick up from the previous session.";
+
+/**
+ * Hidden context for the forked session: the conversation so far is in the
+ * handoff file. It is sent ahead of `FORK_FIRST_MESSAGE` and never shown.
+ * One line, because it goes out with the prompt as one block. The path is
+ * quoted because app data dirs often contain spaces
  * (e.g. "~/Library/Application Support/...").
+ *
+ * The agent must load the context and stop: a fork is the user's opening move,
+ * so resuming the previous task on its own would act without being asked.
  */
 export function buildForkPrompt(handoffPath: string): string {
   const safePath = handoffPath.replace(LINE_BREAK_PATTERN, " ");
   return (
-    `Read the file "${safePath}" for the context of a previous session, ` +
-    "then continue from where it left off. Reply briefly that you are ready."
+    `Read the file "${safePath}" for the context of a previous session. ` +
+    "Do not mention the file. Do not continue any task or make changes yet: " +
+    "reply briefly that you are ready and wait for my next message."
   );
 }
 

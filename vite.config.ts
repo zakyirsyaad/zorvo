@@ -11,16 +11,13 @@ export default defineConfig({
     strictPort: true,
   },
   envPrefix: ["VITE_", "TAURI_ENV_*"],
-  // xterm 6 ships minified code whose `||=` esbuild's syntax minifier breaks while
-  // lowering it for the build target: the first terminal mode query then throws
-  // and the terminal stops drawing (xtermjs/xterm.js#5800). Whitespace and
-  // identifiers are still minified.
-  esbuild: {
-    minifySyntax: false,
-  },
+  // xterm 6 ships minified code whose `||=` esbuild's syntax minifier broke while
+  // lowering it for the target (xtermjs/xterm.js#5800). Vite 8 lowers and minifies
+  // with Oxc, which keeps it working; xterm-release-build.test.ts checks the release
+  // build, so run it after changing the minifier or the target.
   build: {
     target: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari13",
-    minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
+    minify: !process.env.TAURI_ENV_DEBUG,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
   },
 });

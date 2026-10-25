@@ -48,18 +48,18 @@ describe("First run and project folders", () => {
     await click(screen.getByRole("button", { name: "Continue" }));
     await click(
       within(screen.getByRole("list", { name: "Suggested folders" })).getByRole("button", {
-        name: /agent-desktop/,
+        name: /zorvo/,
       })
     );
     await click(screen.getByRole("button", { name: "Continue" }));
     await click(screen.getByRole("button", { name: "Start" }));
 
-    expect(sidebar().getByText("agent-desktop")).toBeDefined();
+    expect(sidebar().getByText("zorvo")).toBeDefined();
     await waitFor(() => {
       const { settings, recentFolders } = fakeStore().state;
       expect(settings.onboardingCompleted).toBe(true);
-      expect(settings.defaultAgentId).toBe("claude-code");
-      expect((recentFolders as { path: string }[])[0].path).toBe("/Users/test/developer/agent-desktop");
+      expect(settings.defaultAgentId).toBe("claude-acp");
+      expect((recentFolders as { path: string }[])[0].path).toBe("/Users/test/developer/zorvo");
     });
   });
 
@@ -84,7 +84,7 @@ describe("First run and project folders", () => {
       fireEvent.keyDown(screen.getByRole("textbox", { name: "Prompt" }), { key: "Enter" });
     });
 
-    const args = invokeSpy.mock.calls.find(([cmd]) => cmd === "spawn_session")?.[1] as { cwd: string };
+    const args = invokeSpy.mock.calls.find(([cmd]) => cmd === "acp_start_session")?.[1] as { cwd: string };
     expect(args.cwd).toBe("/Users/test/code/new-project");
   });
 
@@ -117,9 +117,9 @@ describe("First run and project folders", () => {
     await click(screen.getByRole("button", { name: "More options" }));
     const dialog = within(screen.getByRole("dialog"));
     await act(async () => {
-      fireEvent.change(dialog.getByLabelText("Default agent"), { target: { value: "omp" } });
+      fireEvent.change(dialog.getByLabelText("Default agent"), { target: { value: "qwen-code" } });
     });
-    await waitFor(() => expect(fakeStore().state.settings.defaultAgentId).toBe("omp"));
+    await waitFor(() => expect(fakeStore().state.settings.defaultAgentId).toBe("qwen-code"));
 
     await click(dialog.getByRole("button", { name: "Run setup again" }));
     expect(screen.getByRole("heading", { name: "Check your agents" })).toBeDefined();

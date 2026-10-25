@@ -33,6 +33,8 @@ function callsTo(spy: { mock: { calls: unknown[][] } }, cmd: string) {
 async function acpEvent(payload: Record<string, unknown>) {
   await act(async () => {
     listeners.get("acp-event")?.({ payload });
+    // Stream updates apply once a frame; let that frame land inside act.
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
 
@@ -90,8 +92,7 @@ describe("ACP sessions in the app", () => {
     const sessionId = await startQwenSession(spy);
 
     const [, startArgs] = callsTo(spy, "acp_start_session")[0];
-    expect(startArgs).toMatchObject({ profileId: "qwen", cwd: "/Users/test/developer/ai-perpetual-trading" });
-    expect(callsTo(spy, "spawn_session")).toHaveLength(0);
+    expect(startArgs).toMatchObject({ profileId: "qwen-code", cwd: "/Users/test/developer/ai-perpetual-trading" });
     // The fake agent reports "yolo" as its current mode.
     await waitFor(() =>
       expect(callsTo(spy, "acp_set_mode").map(([, a]) => a)).toContainEqual({ sessionId, modeId: "default" })
@@ -124,6 +125,32 @@ describe("ACP sessions in the app", () => {
 
     expect(screen.getByText("Hello from Qwen")).toBeDefined();
     expect(screen.queryByTestId("agent-working")).toBeNull();
+  });
+
+  it("applies a streamed chunk before the turn end that closes it", async () => {
+    const spy = await renderWithQwen();
+    const sessionId = await startQwenSession(spy);
+    await send("hi");
+
+    // No yield between the two events: the chunk is still queued when the
+    // turn end flushes the queue, which is the production ordering path.
+    await act(async () => {
+      listeners.get("acp-event")?.({
+        payload: {
+          sessionId,
+          kind: "update",
+          update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "One frame" } },
+        },
+      });
+      listeners.get("acp-event")?.({ payload: { sessionId, kind: "turn-end", stopReason: "end_turn" } });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(screen.getByText("One frame")).toBeDefined();
+    expect(screen.queryByTestId("agent-working")).toBeNull();
+    // The turn ended with the chunk in it: the reply now offers its actions.
+    const reply = screen.getByText("One frame").closest('[data-testid^="chat-message-"]') as HTMLElement;
+    expect(within(reply).getByRole("button", { name: "Copy message" })).toBeDefined();
   });
 
   it("answers a permission request with the option the user picks", async () => {
@@ -180,6 +207,33 @@ describe("ACP sessions in the app", () => {
     expect(callsTo(spy, "acp_set_mode").map(([, a]) => a)).toContainEqual({ sessionId, modeId: "yolo" });
   });
 
+  it("sends a mode change at once and says a waiting request was asked before it", async () => {
+    const spy = await renderWithQwen();
+    const sessionId = await startQwenSession(spy);
+    await send("clean up");
+    await acpEvent({
+      sessionId,
+      kind: "permission",
+      requestId: "perm-8",
+      toolCall: { title: "Run rm -rf build", kind: "execute" },
+      options: [
+        { optionId: "proceed_once", name: "Allow", kind: "allow_once" },
+        { optionId: "cancel", name: "Reject", kind: "reject_once" },
+      ],
+    });
+    expect(screen.getByText("Run rm -rf build")).toBeDefined();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /permission mode: default/i }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("option", { name: "YOLO" }));
+    });
+
+    expect(callsTo(spy, "acp_set_mode").map(([, a]) => a)).toContainEqual({ sessionId, modeId: "yolo" });
+    expect(await screen.findByText(/before the switch/)).toBeDefined();
+  });
+
   it("marks the session ended when the agent exits", async () => {
     const spy = await renderWithQwen();
     const sessionId = await startQwenSession(spy);
@@ -213,6 +267,27 @@ describe("ACP sessions in the app", () => {
 
     expect(screen.getByRole("alert").textContent).toContain("model overloaded");
     expect(screen.queryByTestId("agent-working")).toBeNull();
+  });
+
+  it("tells the user when the agent reports failed requests in a row, until the turn ends", async () => {
+    const spy = await renderWithQwen();
+    const sessionId = await startQwenSession(spy);
+    await send("hi");
+    const failedRequest = {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "" },
+      _meta: { executionLifecycle: { v: 1, kind: "request", model: "qwen-max", phase: "ended", outcome: "error" } },
+    };
+
+    await acpEvent({ sessionId, kind: "update", update: failedRequest });
+    expect(screen.queryByText(/failed \d+ times in a row/)).toBeNull();
+    await acpEvent({ sessionId, kind: "update", update: failedRequest });
+
+    expect(screen.getByText("Qwen Code's requests to qwen-max failed 2 times in a row.")).toBeDefined();
+    expect(callsTo(spy, "acp_qwen_last_api_error")[0][1]).toMatchObject({ sessionId });
+
+    await acpEvent({ sessionId, kind: "turn-end", stopReason: "end_turn" });
+    expect(screen.queryByText(/failed \d+ times in a row/)).toBeNull();
   });
 
   it("forks a live ACP session natively from its latest reply", async () => {
@@ -368,9 +443,10 @@ describe("ACP sessions in the app", () => {
       finishStart();
     });
 
-    await waitFor(() =>
-      expect(callsTo(spy, "acp_stop_session").map(([, a]) => a)).toContainEqual({ sessionId })
-    );
+    // Stop ends the agent it knows; the open answer then ends the one the
+    // backend registered after that stop, which only the post-open branch can do.
+    await waitFor(() => expect(callsTo(spy, "acp_stop_session")).toHaveLength(2));
+    expect(callsTo(spy, "acp_stop_session").map(([, a]) => a)).toEqual([{ sessionId }, { sessionId }]);
     expect(callsTo(spy, "acp_prompt")).toHaveLength(0);
     expect(callsTo(spy, "acp_set_mode")).toHaveLength(0);
   });
@@ -387,20 +463,13 @@ describe("ACP sessions in the app", () => {
     expect((screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement).value).toBe("second");
   });
 
-  it("offers no terminal drawer in the main window: terminal agents show their screen as the main view", async () => {
-    const spy = await renderWithQwen();
-    await startQwenSession(spy);
-
-    expect(screen.queryByRole("button", { name: "Toggle terminal drawer" })).toBeNull();
-  });
-
   it("remembers the options an agent reported, for the composer before the next session", async () => {
     const spy = await renderWithQwen();
     await startQwenSession(spy);
 
     await waitFor(() => {
       const options = fakeStore().state.agentOptions as Record<string, { modes?: { availableModes: unknown[] } }>;
-      expect(options?.qwen?.modes?.availableModes).toHaveLength(2);
+      expect(options?.["qwen-code"]?.modes?.availableModes).toHaveLength(2);
     });
   });
 
@@ -559,9 +628,9 @@ describe("ACP sessions in the app", () => {
     await send("next step");
 
     await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
-    expect(callsTo(spy, "acp_load_session")[0][1]).toMatchObject({
+    expect(callsTo(spy, "acp_reopen_session")[0][1]).toMatchObject({
       sessionId: "s-old",
-      profileId: "qwen",
+      profileId: "qwen-code",
       cwd: "/Users/test/developer/ai-perpetual-trading",
       acpSessionId: "qwen-old",
     });
@@ -595,7 +664,7 @@ describe("ACP sessions in the app", () => {
 
     await send("next step");
 
-    await waitFor(() => expect(callsTo(spy, "acp_load_session")).toHaveLength(1));
+    await waitFor(() => expect(callsTo(spy, "acp_reopen_session")).toHaveLength(1));
     expect(within(sidebar.getByRole("list", { name: /^Sessions in/ })).getByText("Old parser work")).toBeDefined();
     expect(sidebar.queryByRole("button", { name: /^Archived/ })).toBeNull();
   });
@@ -640,7 +709,7 @@ describe("ACP sessions in the app", () => {
     ];
     const spy = await renderWithQwen();
     spy.mockImplementation((cmd, args) =>
-      cmd === "acp_load_session" ? Promise.reject("session not found") : realInvoke(cmd, args)
+      cmd === "acp_reopen_session" ? Promise.reject("session not found") : realInvoke(cmd, args)
     );
 
     await send("next step");
@@ -672,7 +741,7 @@ describe("ACP sessions in the app", () => {
     expect(screen.getAllByRole("option").map((o) => o.getAttribute("data-command"))).toEqual(["init", "compress"]);
     await waitFor(() => {
       const options = fakeStore().state.agentOptions as Record<string, { commands?: { name: string; hint?: string }[] }>;
-      expect(options?.qwen?.commands).toEqual([
+      expect(options?.["qwen-code"]?.commands).toEqual([
         { name: "init", description: "Create a QWEN.md" },
         { name: "compress", description: "Compress the context", hint: "optional focus" },
       ]);
@@ -718,10 +787,11 @@ describe("ACP sessions in the app", () => {
       { id: "api-key", name: "API Key", description: "Use an API key to authenticate", _meta: { "api-key": {} } },
       { id: "chat-gpt", name: "ChatGPT", description: "Use ChatGPT to authenticate" },
     ];
+    let starts = 0;
     spy.mockImplementation((cmd, args) =>
-      cmd === "acp_start_session"
+      cmd === "acp_start_session" && starts++ === 0
         ? Promise.reject(`ACP_AUTH_REQUIRED:${JSON.stringify(methods)}`)
-        : cmd === "acp_authenticate"
+        : cmd === "acp_authenticate" || cmd === "acp_probe_agent"
           ? Promise.resolve(undefined)
           : realInvoke(cmd, args)
     );
@@ -738,11 +808,12 @@ describe("ACP sessions in the app", () => {
     });
 
     expect(callsTo(spy, "acp_authenticate")[0][1]).toEqual({
-      profileId: "qwen",
+      profileId: "qwen-code",
       cwd: "/Users/test/developer/ai-perpetual-trading",
       methodId: "chat-gpt",
     });
-    expect(await screen.findByText(/Signed in to Qwen Code/)).toBeDefined();
+    // Signed in, the refused message goes out by itself.
+    await waitFor(() => expect(callsTo(spy, "acp_start_session")).toHaveLength(2));
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -796,7 +867,8 @@ describe("ACP sessions in the app", () => {
       attachments: ["/Users/test/shot.png"],
     });
     const chat = within(screen.getByTestId("chat-canvas-container"));
-    expect(chat.getByText("shot.png")).toBeDefined();
+    // An attached image shows as its thumbnail, named by its file.
+    expect(await chat.findByRole("img", { name: "shot.png" })).toBeDefined();
   });
 
   it("keeps slash commands the agent announced before its session finished starting", async () => {
@@ -1374,7 +1446,7 @@ describe("ACP sessions in the app", () => {
       expect(setIndex).toBeLessThan(later.findIndex(([cmd]) => cmd === "acp_prompt"));
       await waitFor(() =>
         // As Qwen settled it: the model picked, and the effort it kept.
-        expect((fakeStore().state as { agentOptions?: Record<string, { preferredConfig?: unknown }> }).agentOptions?.qwen?.preferredConfig).toEqual({
+        expect((fakeStore().state as { agentOptions?: Record<string, { preferredConfig?: unknown }> }).agentOptions?.["qwen-code"]?.preferredConfig).toEqual({
           model: "qwen3-max(openai)",
           reasoning_effort: "low",
         })

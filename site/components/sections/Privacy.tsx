@@ -9,8 +9,8 @@ const PROMISES: { icon: IconName; title: string; body: string }[] = [
   },
   {
     icon: "wifi-off",
-    title: "No traffic of its own",
-    body: "No telemetry and no network requests from the app. Your agents talk to their own services, as they always do.",
+    title: "Few hosts, all named",
+    body: "Zorvo reads the ACP registry, and only when you install an agent does it fetch that agent's hash-checked download, plus Node.js or uv if it needs them. No telemetry, and no requests from the window.",
   },
   {
     icon: "hard-drive",

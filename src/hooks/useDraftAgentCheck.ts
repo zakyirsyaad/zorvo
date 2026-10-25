@@ -19,6 +19,8 @@ export interface DraftAgentCheckDeps {
   /** Remembers what the probe learned about an agent's options. */
   rememberProbed: (profileId: string, probed: ProbedOptions) => void;
   auth: AgentAuth;
+  /** The probe saw someone signed in to the agent. */
+  onSignedIn?: (profileId: string) => void;
 }
 
 /**
@@ -28,7 +30,7 @@ export interface DraftAgentCheckDeps {
  * someone signed in (in the app or in a terminal), and the agent is asked
  * again after a sign-in and whenever the user comes back to the window.
  */
-export function useDraftAgentCheck({ agent, cwd, agentOptions, rememberProbed, auth }: DraftAgentCheckDeps) {
+export function useDraftAgentCheck({ agent, cwd, agentOptions, rememberProbed, auth, onSignedIn }: DraftAgentCheckDeps) {
   const { authRequest, requestSignIn, dismiss } = auth;
   // Memory only: what an agent last said it can list can change with its version, so it is never saved with the options.
   const [canListByAgent, setCanListByAgent] = useState<Readonly<Record<string, boolean>>>({});
@@ -42,6 +44,7 @@ export function useDraftAgentCheck({ agent, cwd, agentOptions, rememberProbed, a
         prev[profileId] === facts.canListSessions ? prev : { ...prev, [profileId]: facts.canListSessions },
       );
       // Only an answer that shows someone signed in closes the panel; silence proves nothing.
+      if (facts.signInChecked) onSignedIn?.(profileId);
       if (facts.signInChecked && authRequest?.profileId === profileId && authRequest.status !== 'signing-in') dismiss();
     },
     onAuthRequired: (profileId, probeCwd, methods) => {

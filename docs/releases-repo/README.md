@@ -65,8 +65,10 @@
 - **An agent catalog.** Settings → Agents lists every agent in the ACP
   registry. Add, install, update and remove agents there.
 - **Sign in without leaving the app.** An agent's own login runs in a terminal
-  inside Zorvo. When an agent needs an answer from you, it can show a form in
-  the chat, or send you to a web page.
+  inside Zorvo. The sidebar shows which agents are **Ready**, which need you to
+  **Sign in** and which are **Not checked** yet, and a new session shows the
+  sign-in panel before you type. When an agent needs an answer from you, it can
+  show a form in the chat, or send you to a web page.
 - **Pick up where you left off.** Continue a session you started in an agent's
   own CLI, and sessions resume after a restart.
 
@@ -246,7 +248,7 @@ before it edits files or runs commands. Pick another mode in the composer.
 |---|---|
 | macOS blocks Zorvo on first open | See [Open Zorvo the first time](#open-zorvo-the-first-time). |
 | An agent shows as not installed | Click **Install** next to it in Settings → Agents, or pick it in a new session's agent list and click **Install**. Zorvo brings Node.js or `uv` when the agent needs them. Then click **Check again**. |
-| "Sign in to *agent*" | Use a sign-in method the panel offers, or sign in once in a terminal (see [Requirements](#requirements)), then send your message again. |
+| "Sign in to *agent*" | Use a sign-in method the panel offers, or sign in once in a terminal (see [Requirements](#requirements)). If you set a key outside Zorvo, click **Check again** in the panel, then send your message. |
 | An agent takes a while to start the first time | Its first start downloads the agent's package. Later starts are quick. |
 | The agent stays on **Working…** | If Zorvo shows that the agent's requests failed, the cause is usually the agent's account, such as a used-up quota. Check it in the agent's own CLI, then click **Stop** and send your message again. |
 | No pull request status | Install `gh` and run `gh auth login`. A repository without a GitHub remote has none to show. |

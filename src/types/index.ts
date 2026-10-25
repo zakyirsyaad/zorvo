@@ -140,6 +140,8 @@ export interface Settings {
   agentVersions?: Record<string, string>;
   /** The update version already announced for each agent, by agent id. */
   notifiedUpdates?: Record<string, string>;
+  /** Agents last seen signed in, by agent id: what lets the sidebar say Ready without asking again. */
+  signedInAgents?: string[];
 }
 
 export interface RecentFolder {

@@ -206,6 +206,53 @@ describe("signing in to an ACP agent from the app", () => {
     expect(callsTo(spy, "acp_prompt")).toHaveLength(0);
   });
 
+  it("Check again sends the refused message once a key was set up outside the app", async () => {
+    const keyMethods = [{ id: "api-key", name: "API Key", _meta: { "api-key": { provider: "x" } } }];
+    const { spy, panel } = await sendRefused({ methods: keyMethods });
+    expect(panel.queryByRole("button", { name: /^Sign in with / })).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(panel.getByRole("button", { name: "Check again" }));
+    });
+
+    await waitFor(() => expect(promptedTexts(spy)).toEqual(["hello"]));
+    expect(callsTo(spy, "acp_authenticate")).toHaveLength(0);
+    expect(screen.queryByRole("region", { name: "Sign in to Qwen Code" })).toBeNull();
+  });
+
+  it("Check again says the agent still is signed out when it says so", async () => {
+    const keyMethods = [{ id: "api-key", name: "API Key", _meta: { "api-key": { provider: "x" } } }];
+    const { spy, panel } = await sendRefused({
+      methods: keyMethods,
+      overrides: {
+        acp_probe_agent: (args) => (isRecheck(args) ? Promise.reject("ACP_AUTH_REQUIRED:[]") : realInvoke("acp_probe_agent", args)),
+      },
+    });
+
+    await act(async () => {
+      fireEvent.click(panel.getByRole("button", { name: "Check again" }));
+    });
+
+    expect(await screen.findByText("Sign-in failed: Qwen Code still says you are signed out")).toBeDefined();
+    expect(callsTo(spy, "acp_start_session")).toHaveLength(1);
+    expect(prompt().value).toBe("hello");
+  });
+
+  it("marks the agent as needing a sign-in in the sidebar, then Ready once it is signed in", async () => {
+    const { spy, panel } = await sendRefused();
+    const agents = () => within(screen.getByRole("list", { name: "Detected agents" }));
+
+    expect(agents().getByRole("button", { name: "Sign in to Qwen Code" })).toBeDefined();
+
+    await signInInTerminal(spy, panel);
+
+    await waitFor(() => expect(agents().queryByRole("button", { name: "Sign in to Qwen Code" })).toBeNull());
+    expect(agents().getAllByText("Ready").length).toBeGreaterThan(0);
+    await waitFor(() =>
+      expect((fakeStore().state.settings as { signedInAgents?: string[] }).signedInAgents).toContain("qwen-code"),
+    );
+  });
+
   it("cancelling stops the login and leaves the message", async () => {
     const { spy, panel } = await sendRefused();
     const { dialog, terminalId } = await startTerminalSignIn(spy, panel);

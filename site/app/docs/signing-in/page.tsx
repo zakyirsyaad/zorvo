@@ -6,6 +6,7 @@ import { docsMetadata } from "../../../lib/docs-metadata";
 export const metadata = docsMetadata("/docs/signing-in");
 
 const TOC: TocEntry[] = [
+  { id: "status", label: "Where each agent stands" },
   { id: "in-zorvo", label: "In Zorvo" },
   { id: "in-terminal", label: "In your terminal" },
   { id: "keys", label: "Keys and tokens" },
@@ -19,10 +20,18 @@ export default function SigningInPage() {
       lead="Agents sign in with their own tools. When one needs you to, the panel says so as soon as you pick it."
       toc={TOC}
     >
+      <H2 id="status">Where each agent stands</H2>
+      <P>
+        Detected agents in the sidebar show whether you can use them. <B>Ready</B> means Zorvo saw you signed in.{" "}
+        <B>Sign in</B> means the agent asked for it. <B>Not checked</B> means it is installed but Zorvo has not asked it
+        yet. Click one that is not ready to start a new session with it: Zorvo checks it and shows the sign-in panel
+        before you type, and the message box waits until you are signed in.
+      </P>
       <H2 id="in-zorvo">In Zorvo</H2>
       <P>
         An agent that offers its own login, such as Claude Code&apos;s Claude subscription, runs it in a terminal inside
-        Zorvo. Your message is sent once you are signed in.
+        Zorvo. Your message is sent once you are signed in. Where an agent offers a key instead (Gemini CLI&apos;s API
+        key, for example), the panel explains it and you set it up outside Zorvo, then click <B>Check again</B>.
       </P>
       <H2 id="in-terminal">In your terminal</H2>
       <P>Sign in once in a terminal, then send your message again.</P>

@@ -423,6 +423,8 @@ fn recognizes_a_sign_in_request_however_the_agent_phrases_it() {
         "Not logged in. Run `codex login`",
         "You must be signed in",
         "log-in required",
+        "Gemini API key is missing or not configured.",
+        "No credentials found",
     ] {
         let (manager, _rx) = manager();
         let mut launch = fake_agent();

@@ -639,9 +639,22 @@ impl AcpManager {
     }
 }
 
+/// Words that make a `-32000` message one about signing in, once everything but
+/// letters is dropped: "Not logged in", "log-in", "signed in", "API key is
+/// missing" (Gemini CLI) and "No credentials" all match.
+const SIGN_IN_WORDS: [&str; 7] = [
+    "auth",
+    "login",
+    "loggedin",
+    "signin",
+    "signedin",
+    "apikey",
+    "credential",
+];
+
 /// `-32000` is also JSON-RPC's generic server error, so the message must say it is about signing in.
 fn is_auth_required(error: &Value) -> bool {
-    // Letters only, so "Not logged in", "log-in" and "signed in" all match.
+    // Letters only, so spacing and punctuation do not matter.
     let message: String = error["message"]
         .as_str()
         .unwrap_or_default()
@@ -650,9 +663,7 @@ fn is_auth_required(error: &Value) -> bool {
         .collect::<String>()
         .to_ascii_lowercase();
     error["code"].as_i64() == Some(AUTH_REQUIRED)
-        && ["auth", "login", "loggedin", "signin", "signedin"]
-            .iter()
-            .any(|word| message.contains(word))
+        && SIGN_IN_WORDS.iter().any(|word| message.contains(word))
 }
 
 /// Opens a session; an "authentication required" answer becomes an error

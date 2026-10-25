@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Search, Plus, FolderPlus, ChevronRight } from "lucide-react";
 import { AgentLogo } from "./AgentLogo";
 import { isInUse, type EnabledSettings } from "../lib/enabled-agents";
+import { SIGN_IN_LABELS, type SignInState } from "../lib/agent-sign-in";
 import type { AgentProfile, Session, Workspace } from "../types";
 import { NewSessionMenu } from "./sidebar/NewSessionMenu";
 import { SessionTree, type SessionListContext } from "./sidebar/SessionList";
@@ -23,6 +24,10 @@ export interface SidebarProps {
   agents: AgentProfile[];
   /** Decides which registry agents are in use; the defaults apply when absent. */
   settings?: EnabledSettings;
+  /** Where each agent stands on signing in; every agent reads Ready when absent. */
+  signInStateOf?: (profileId: string) => SignInState;
+  /** Starts a new session with an agent that is not ready, which asks it and shows its sign-in. */
+  onSetUpAgent?: (profileId: string) => void;
   onNewSession: () => void;
   onSelectSession: (sessionId: string) => void;
   /** Opens a new session in that folder with that agent; each workspace's + button is hidden when absent. */
@@ -102,7 +107,46 @@ function WorkspaceGroup({ group, isActive, isExpanded, onToggle, newSessionMenu,
  * Installed agents, pinned above the footer; renders nothing when none are detected.
  * The header folds the list away to leave more room for the sessions.
  */
-function DetectedAgents({ agents, settings }: { agents: AgentProfile[]; settings: EnabledSettings }) {
+const CHIP_STYLES: Record<SignInState, { text: string; dot: string }> = {
+  ready: { text: "text-status-running", dot: "bg-status-running" },
+  needed: { text: "text-status-attention", dot: "bg-status-attention" },
+  unchecked: { text: "text-fg-muted", dot: "bg-fg-subtle" },
+};
+
+/** An agent's sign-in state; one that is not ready opens a new session with it, where the sign-in is checked and shown. */
+function SignInChip({ agentName, state, onSetUp }: { agentName: string; state: SignInState; onSetUp?: () => void }) {
+  const style = CHIP_STYLES[state];
+  const content = (
+    <>
+      <span className={`h-1.5 w-1.5 rounded-full ${style.dot} inline-block`} />
+      {SIGN_IN_LABELS[state]}
+    </>
+  );
+  const className = `flex shrink-0 items-center gap-1 text-[10px] font-medium ${style.text}`;
+  if (state === "ready" || !onSetUp) return <span className={className}>{content}</span>;
+  return (
+    <button
+      type="button"
+      onClick={onSetUp}
+      aria-label={state === "needed" ? `Sign in to ${agentName}` : `Check ${agentName}`}
+      className={`${className} rounded px-1 hover:bg-surface-2 focus-ring`}
+    >
+      {content}
+    </button>
+  );
+}
+
+function DetectedAgents({
+  agents,
+  settings,
+  signInStateOf,
+  onSetUpAgent,
+}: {
+  agents: AgentProfile[];
+  settings: EnabledSettings;
+  signInStateOf?: (profileId: string) => SignInState;
+  onSetUpAgent?: (profileId: string) => void;
+}) {
   const [isExpanded, setIsExpanded] = useState(true);
   const detected = agents.filter((agent) => agent.detected && isInUse(agent, settings));
   if (detected.length === 0) return null;
@@ -142,10 +186,11 @@ function DetectedAgents({ agents, settings }: { agents: AgentProfile[]; settings
                 <AgentLogo profileId={agent.id} name={agent.name} />
                 <span className="truncate">{agent.name}</span>
               </div>
-              <span className="flex items-center gap-1 text-[10px] text-status-running font-medium">
-                <span className="h-1.5 w-1.5 rounded-full bg-status-running inline-block" />
-                Ready
-              </span>
+              <SignInChip
+                agentName={agent.name}
+                state={signInStateOf?.(agent.id) ?? "ready"}
+                onSetUp={onSetUpAgent ? () => onSetUpAgent(agent.id) : undefined}
+              />
             </li>
           ))}
         </ul>
@@ -183,6 +228,8 @@ export function Sidebar({
   activeSessionId,
   agents,
   settings = {},
+  signInStateOf,
+  onSetUpAgent,
   onNewSession,
   onSelectSession,
   onNewSessionIn,
@@ -341,7 +388,7 @@ export function Sidebar({
         )}
       </div>
 
-      <DetectedAgents agents={agents} settings={settings} />
+      <DetectedAgents agents={agents} settings={settings} signInStateOf={signInStateOf} onSetUpAgent={onSetUpAgent} />
       {footer && <div className="border-t border-border bg-bg">{footer}</div>}
     </aside>
   );

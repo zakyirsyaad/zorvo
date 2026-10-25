@@ -4,6 +4,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-25
+
 ### Added
 
 - **A notice when an agent seems stuck.** Under "Working…", Zorvo says when an agent reports failed requests in a row (with the error Qwen Code logged) or has sent nothing for a minute, with a Stop button. It states only what the agent reported.
@@ -138,7 +140,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.2.0...v0.3.0

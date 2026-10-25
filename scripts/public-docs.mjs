@@ -4,6 +4,7 @@
 // Unreleased section and every link into it.
 //
 //   node scripts/public-docs.mjs changelog CHANGELOG.md > public/CHANGELOG.md
+//   node scripts/public-docs.mjs notes CHANGELOG.md v1.2.3 > notes.md
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -43,6 +44,16 @@ export function publicChangelog(text) {
   return out.replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
 }
 
+/** One version's public notes, without its heading; empty when the changelog does not list it. */
+export function releaseNotes(text, version) {
+  const wanted = version.replace(/^v/, "");
+  const heading = new RegExp(`^${escapeRegExp(wanted)}(\\s|$)`);
+  for (const [name, body] of sectionsOf(publicChangelog(text))) {
+    if (heading.test(name)) return body.replace(/^\[[^\]]+\]:\s*\S+$/gm, "").trim();
+  }
+  return "";
+}
+
 /** A Markdown document's `## ` sections, by heading, each trimmed. */
 export function sectionsOf(text) {
   const sections = new Map();
@@ -55,10 +66,19 @@ export function sectionsOf(text) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const [kind, file] = process.argv.slice(2);
-  if (kind !== "changelog" || !file) {
-    console.error("Usage: node scripts/public-docs.mjs changelog <CHANGELOG.md>");
+  const [kind, file, version] = process.argv.slice(2);
+  const text = file ? readFileSync(file, "utf8") : "";
+  if (kind === "changelog" && file) {
+    process.stdout.write(publicChangelog(text));
+  } else if (kind === "notes" && file && version) {
+    const notes = releaseNotes(text, version);
+    if (!notes) {
+      console.error(`CHANGELOG.md has no section for ${version}.`);
+      process.exit(1);
+    }
+    process.stdout.write(notes + "\n");
+  } else {
+    console.error("Usage: node scripts/public-docs.mjs changelog <CHANGELOG.md> | notes <CHANGELOG.md> <version>");
     process.exit(2);
   }
-  process.stdout.write(publicChangelog(readFileSync(file, "utf8")));
 }

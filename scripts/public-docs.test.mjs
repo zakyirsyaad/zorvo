@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { publicChangelog, sectionsOf } from "./public-docs.mjs";
+import { publicChangelog, releaseNotes, sectionsOf } from "./public-docs.mjs";
 
 const PRIVATE = "https://github.com/zakyirsyaad/zorvo";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -57,6 +57,25 @@ describe("publicChangelog", () => {
 
   it("keeps links to public pages", () => {
     expect(out).toContain("[ACP]: https://agentclientprotocol.com");
+  });
+});
+
+describe("releaseNotes", () => {
+  it("gives a version's public notes, without its heading", () => {
+    const notes = releaseNotes(changelog, "v0.5.0");
+    expect(notes).toContain("### Added");
+    expect(notes).toContain("**A notice when an agent seems stuck** (#85)");
+    expect(notes).not.toContain("## 0.5.0");
+    expect(notes).not.toContain("The drawer scrolls");
+    expect(notes).not.toContain(PRIVATE + "/");
+  });
+
+  it("accepts the version with or without its leading v", () => {
+    expect(releaseNotes(changelog, "0.4.1")).toBe(releaseNotes(changelog, "v0.4.1"));
+  });
+
+  it("gives nothing for a version the changelog does not list", () => {
+    expect(releaseNotes(changelog, "v9.9.9")).toBe("");
   });
 });
 

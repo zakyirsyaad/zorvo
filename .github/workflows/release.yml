@@ -3,9 +3,10 @@ name: Release
 # Builds the macOS app for a version tag (v1.2.3) and attaches it to a draft
 # release in the public zakyirsyaad/zorvo-releases repository, since this one
 # is private and its releases cannot be downloaded. It also uploads the DMG as
-# Zorvo-mac.dmg, the stable name the site's Download link uses, and copies the
-# user guide (docs/releases-repo/README.md) and the released part of
-# CHANGELOG.md there (scripts/public-docs.mjs).
+# Zorvo-mac.dmg, the stable name the site's Download link uses, adds
+# SHA256SUMS.txt, writes the notes from the version's changelog section, and
+# copies docs/releases-repo/ (the user guide, issue templates, security policy)
+# and the released part of CHANGELOG.md there (scripts/public-docs.mjs).
 #
 # Needs the RELEASES_TOKEN secret: a fine-grained token with Contents read and
 # write on zorvo-releases only. With the Apple secrets set (see README,
@@ -70,6 +71,19 @@ jobs:
               { echo "$name<<$delimiter"; echo "$value"; echo "$delimiter"; } >> "$GITHUB_ENV"
             fi
           done
+      # The release's notes are the version's section of the public changelog.
+      - name: Write the release notes
+        id: notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          {
+            node scripts/public-docs.mjs notes CHANGELOG.md "$TAG"
+            echo
+            echo "Download **Zorvo-mac.dmg** (Apple Silicon and Intel). See the [user guide](https://github.com/$RELEASES_REPO#install) to install it, and SHA256SUMS.txt to check the download."
+          } > "$RUNNER_TEMP/notes.md"
+          delimiter="EOF_$(openssl rand -hex 8)"
+          { echo "body<<$delimiter"; cat "$RUNNER_TEMP/notes.md"; echo "$delimiter"; } >> "$GITHUB_OUTPUT"
       - id: tauri
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
@@ -81,7 +95,7 @@ jobs:
           releaseCommitish: main
           tagName: ${{ github.ref_name }}
           releaseName: Zorvo ${{ github.ref_name }}
-          releaseBody: See the README for requirements, and for opening an unsigned build (System Settings → Privacy & Security → Open Anyway).
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           args: --target universal-apple-darwin
       # The site links to releases/latest/download/Zorvo-mac.dmg, so every
@@ -99,17 +113,42 @@ jobs:
           fi
           cp "$dmg" "$RUNNER_TEMP/Zorvo-mac.dmg"
           gh release upload "$TAG" "$RUNNER_TEMP/Zorvo-mac.dmg" --repo "$RELEASES_REPO" --clobber
+      # Lets anyone check a download: shasum -a 256 -c SHA256SUMS.txt
+      - name: Upload the checksums
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          ARTIFACTS: ${{ steps.tauri.outputs.artifactPaths }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/sums"
+          cp "$RUNNER_TEMP/Zorvo-mac.dmg" "$RUNNER_TEMP/sums/"
+          jq -r '.[] | select(endswith(".dmg") or endswith(".tar.gz"))' <<<"$ARTIFACTS" | while read -r file; do
+            cp "$file" "$RUNNER_TEMP/sums/"
+          done
+          (cd "$RUNNER_TEMP/sums" && shasum -a 256 -- * > ../SHA256SUMS.txt)
+          gh release upload "$TAG" "$RUNNER_TEMP/SHA256SUMS.txt" --repo "$RELEASES_REPO" --clobber
       - name: Copy the user guide and changelog to the releases repository
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          # The public changelog has no Unreleased section and no links into this private repository.
+          # Everything under docs/releases-repo/ goes to the same path there. The
+          # public changelog has no Unreleased section and no links into this
+          # private repository.
           node scripts/public-docs.mjs changelog CHANGELOG.md > "$RUNNER_TEMP/CHANGELOG.md"
-          for pair in "docs/releases-repo/README.md:README.md" "$RUNNER_TEMP/CHANGELOG.md:CHANGELOG.md"; do
+          pairs=("$RUNNER_TEMP/CHANGELOG.md:CHANGELOG.md")
+          while IFS= read -r file; do
+            pairs+=("$file:${file#docs/releases-repo/}")
+          done < <(find docs/releases-repo -type f | sort)
+          for pair in "${pairs[@]}"; do
             src="${pair%%:*}"
             dest="${pair##*:}"
-            sha=$(gh api "repos/$RELEASES_REPO/contents/$dest" --jq .sha 2>/dev/null || true)
+            # Unchanged files are skipped, so the history shows only real updates.
+            remote=$(gh api "repos/$RELEASES_REPO/contents/$dest" 2>/dev/null || true)
+            sha=$(jq -r '.sha // empty' <<<"$remote" 2>/dev/null || true)
+            if [ -n "$sha" ] && [ "$(jq -r '.content' <<<"$remote" | base64 --decode 2>/dev/null)" = "$(cat "$src")" ]; then
+              continue
+            fi
             args=(-f message="docs: update $dest for $TAG" -f content="$(base64 < "$src" | tr -d '\n')" -f branch=main)
             if [ -n "$sha" ]; then args+=(-f sha="$sha"); fi
             gh api --method PUT "repos/$RELEASES_REPO/contents/$dest" "${args[@]}" --silent

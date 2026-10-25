@@ -1,4 +1,12 @@
+<p align="center">
+  <img src="assets/zorvo-icon.png" alt="Zorvo" width="96" height="96">
+</p>
+
 # Zorvo
+
+[![Latest release](https://img.shields.io/github/v/release/zakyirsyaad/zorvo-releases)](https://github.com/zakyirsyaad/zorvo-releases/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/zakyirsyaad/zorvo-releases/total)](https://github.com/zakyirsyaad/zorvo-releases/releases)
+![macOS](https://img.shields.io/badge/platform-macOS-lightgrey)
 
 **Every coding agent. One desktop.**
 
@@ -17,9 +25,12 @@ not public.
 - [Supported agents](#supported-agents)
 - [Requirements](#requirements)
 - [Install](#install)
+- [Check your download](#check-your-download)
 - [Getting started](#getting-started)
 - [Privacy and your data](#privacy-and-your-data)
 - [Troubleshooting](#troubleshooting)
+- [Feedback](#feedback)
+- [Security](#security)
 
 ## Highlights
 
@@ -148,6 +159,18 @@ deleting a session in one removes its worktree for the other. macOS asks
 again for notification and folder permissions, since they belong to the app's
 identifier.
 
+## Check your download
+
+Every release lists the SHA-256 checksum of each file in `SHA256SUMS.txt`.
+Download it next to the DMG and run, in that folder:
+
+```bash
+shasum -a 256 -c SHA256SUMS.txt --ignore-missing
+```
+
+`Zorvo-mac.dmg: OK` means the file is the one the release published. Only
+download Zorvo from this repository's [releases](https://github.com/zakyirsyaad/zorvo-releases/releases).
+
 ## Getting started
 
 1. **Onboarding.** The first run checks which agents are installed, lets you
@@ -221,7 +244,17 @@ before it edits files or runs commands. Pick another mode in the composer.
 
 ## Feedback
 
-Found a problem or have an idea? Open an issue in this repository.
+Found a problem or have an idea? [Open an issue](https://github.com/zakyirsyaad/zorvo-releases/issues/new/choose).
+The bug form asks for your Zorvo and macOS versions and the agent you used.
+Never paste API keys, tokens or other secrets into an issue.
+
+The files in this repository are published from Zorvo's private source with
+each release, so pull requests here cannot be merged.
+
+## Security
+
+Please report a security problem privately, as described in
+[SECURITY.md](SECURITY.md), not in a public issue.
 
 ## License
 

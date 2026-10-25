@@ -291,10 +291,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose a change,
 3. The **Release** workflow builds a universal macOS app and attaches it to a
    draft release in the public
    [zorvo-releases](https://github.com/zakyirsyaad/zorvo-releases) repository
-   (this one is private, so its releases cannot be downloaded). It also
-   uploads the DMG as `Zorvo-mac.dmg`, the name the site's Download link uses,
-   and copies the user guide (`docs/releases-repo/README.md`) and
-   `CHANGELOG.md` there. Publish the draft when it looks right.
+   (this one is private, so its releases cannot be downloaded). It writes the
+   release notes from the version's changelog section, uploads the DMG again
+   as `Zorvo-mac.dmg` (the name the site's Download link uses) with a
+   `SHA256SUMS.txt`, and copies `docs/releases-repo/` (the user guide, issue
+   forms and security policy) and the released part of `CHANGELOG.md` there.
+   Publish the draft when it looks right: releases there are immutable once
+   published.
 
 The workflow needs the `RELEASES_TOKEN` secret: a fine-grained personal access
 token with **Contents: Read and write** on `zorvo-releases` only. Keep

@@ -399,7 +399,7 @@ describe("Navigation and Layout Components", () => {
       fireEvent.click(toggle);
       expect(toggle.getAttribute("aria-expanded")).toBe("false");
       expect(screen.queryByRole("list", { name: "Detected agents" })).toBeNull();
-      expect(screen.getByRole("region", { name: "Detected agents" }).textContent).toContain("1");
+      expect(within(toggle).getByText("1")).toBeDefined();
 
       fireEvent.click(toggle);
       expect(screen.getByRole("list", { name: "Detected agents" })).toBeDefined();

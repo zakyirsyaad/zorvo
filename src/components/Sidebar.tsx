@@ -46,8 +46,9 @@ export interface SidebarProps {
   footer?: ReactNode;
 }
 
-const SECTION_HEADER =
-  "flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-fg-subtle mb-1.5 px-1";
+const SECTION_HEADER_TEXT =
+  "flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-fg-subtle px-1";
+const SECTION_HEADER = `${SECTION_HEADER_TEXT} mb-1.5`;
 
 function matches(query: string, ...values: string[]): boolean {
   return query === "" || values.some((v) => v.toLowerCase().includes(query));
@@ -111,8 +112,8 @@ function DetectedAgents({ agents, settings }: { agents: AgentProfile[]; settings
         type="button"
         onClick={() => setIsExpanded((expanded) => !expanded)}
         aria-expanded={isExpanded}
-        className={`${SECTION_HEADER} group/agents w-full rounded transition-colors hover:text-fg-secondary focus-ring ${
-          isExpanded ? "" : "mb-0"
+        className={`${SECTION_HEADER_TEXT} group/agents w-full rounded transition-colors hover:text-fg-secondary focus-ring ${
+          isExpanded ? "mb-1.5" : ""
         }`}
       >
         <span className="flex items-center gap-1">
@@ -121,7 +122,9 @@ function DetectedAgents({ agents, settings }: { agents: AgentProfile[]; settings
             size={12}
             aria-hidden="true"
             className={`shrink-0 transition-transform ${
-              isExpanded ? "rotate-90 opacity-0 group-hover/agents:opacity-100" : ""
+              isExpanded
+                ? "rotate-90 opacity-0 group-hover/agents:opacity-100 group-focus-visible/agents:opacity-100"
+                : ""
             }`}
           />
         </span>

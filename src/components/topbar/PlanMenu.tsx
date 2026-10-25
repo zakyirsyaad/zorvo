@@ -19,9 +19,12 @@ export function PlanMenu({ plan }: PlanMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const { done, total } = planProgress(plan);
   useDismiss(ref, isOpen, () => setIsOpen(false));
+  const count = `${done}/${total}`;
 
+  // The badge starts at the icon's middle and grows to the right, so it never
+  // covers the icon; the margin keeps it off the next button.
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className={`relative ${count.length > 3 ? "mr-5" : "mr-2.5"}`}>
       <IconButton
         label={`Plan (${done} of ${total} done)`}
         aria-haspopup="dialog"
@@ -32,9 +35,9 @@ export function PlanMenu({ plan }: PlanMenuProps) {
         <ListTodo size={14} aria-hidden="true" className={isOpen ? "text-fg" : undefined} />
         <span
           aria-hidden="true"
-          className="absolute -right-1.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-surface-hover px-1 text-[9px] font-medium tabular-nums text-fg-secondary"
+          className="absolute left-1/2 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-surface-3 px-1 text-[9px] font-medium tabular-nums text-fg-secondary ring-1 ring-border"
         >
-          {done}/{total}
+          {count}
         </span>
       </IconButton>
 

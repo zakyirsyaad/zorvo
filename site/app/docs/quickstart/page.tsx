@@ -13,7 +13,6 @@ export default function QuickstartPage() {
   return (
     <DocsShell
       current="/docs/quickstart"
-      crumb={["Get started", "Quickstart"]}
       title="Quickstart"
       lead="From a fresh install to a first message: choose a folder, a branch and an agent."
       toc={TOC}

@@ -25,7 +25,6 @@ export default function DocsHome() {
   return (
     <DocsShell
       current="/docs"
-      crumb={["Get started", "Introduction"]}
       title="Zorvo docs"
       lead="Install Zorvo and the agents you use, sign in to them, and work with sessions, worktrees, terminals and changes in one desktop."
     >

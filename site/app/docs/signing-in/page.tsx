@@ -15,7 +15,6 @@ export default function SigningInPage() {
   return (
     <DocsShell
       current="/docs/signing-in"
-      crumb={["Agents", "Signing in"]}
       title="Signing in"
       lead="Agents sign in with their own tools. When one needs you to, the panel says so as soon as you pick it."
       toc={TOC}

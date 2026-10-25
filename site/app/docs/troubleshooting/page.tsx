@@ -19,7 +19,6 @@ export default function TroubleshootingPage() {
   return (
     <DocsShell
       current="/docs/troubleshooting"
-      crumb={["Reference", "Troubleshooting"]}
       title="Troubleshooting"
       lead="Most problems are an agent that is not installed yet, or one that needs you to sign in."
       toc={TOC}

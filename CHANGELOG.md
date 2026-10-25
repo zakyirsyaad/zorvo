@@ -10,7 +10,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Changed
 
-- **The landing page shows Zorvo 0.4.** It now covers installing agents from the ACP registry, signing in and the terminal inside the app, branches, the composer, and the plan in the top bar. Its docs links point at the README until the docs pages exist.
+- **The landing page shows Zorvo 0.4.** It now covers installing agents from the ACP registry, signing in and the terminal inside the app, branches, the composer, and the plan in the top bar.
 
 ## [0.5.0] - 2026-10-25
 

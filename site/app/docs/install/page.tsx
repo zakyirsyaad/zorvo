@@ -20,7 +20,6 @@ export default function InstallPage() {
   return (
     <DocsShell
       current="/docs/install"
-      crumb={["Get started", "Install"]}
       title="Install Zorvo"
       lead="Zorvo is a native app for macOS. It installs the agents you pick, and Node.js or uv when they need them."
       toc={TOC}

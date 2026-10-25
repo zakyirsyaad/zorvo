@@ -32,7 +32,6 @@ export default function AgentsPage() {
   return (
     <DocsShell
       current="/docs/agents"
-      crumb={["Agents", "Supported agents"]}
       title="Supported agents"
       lead="Zorvo runs the agents in the official ACP agent registry, each as a chat. Claude Code, Codex and Qwen Code are there by default. Add any other registry agent from Settings, Agents."
       toc={TOC}

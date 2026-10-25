@@ -126,10 +126,8 @@ function Toc({ entries }: { entries: TocEntry[] }) {
 }
 
 interface DocsShellProps {
-  /** The page's path, which marks it in the sidebar and sets the pager. */
+  /** The page's path, which marks it in the sidebar and sets the pager and breadcrumb. */
   current: string;
-  /** The group and page names for the breadcrumb. */
-  crumb: [group: string, page: string];
   title: string;
   lead: string;
   toc?: TocEntry[];
@@ -137,7 +135,10 @@ interface DocsShellProps {
 }
 
 /** A docs article: sidebar, prose column and "On this page" list. The home page and the topic pages share it. */
-export function DocsShell({ current, crumb, title, lead, toc = [], children }: DocsShellProps) {
+export function DocsShell({ current, title, lead, toc = [], children }: DocsShellProps) {
+  const group = DOCS_NAV.find((entry) => entry.pages.some((page) => page.href === current));
+  const page = group?.pages.find((entry) => entry.href === current);
+  if (!group || !page) throw new Error(`${current} is not in DOCS_NAV`);
   return (
     <>
       <a
@@ -167,7 +168,7 @@ export function DocsShell({ current, crumb, title, lead, toc = [], children }: D
         </nav>
         <main id="main" className="flex min-w-0 max-w-[720px] flex-1 flex-col gap-4">
           <p className="t-ui m-0 text-fg-subtle">
-            {crumb[0]} <span aria-hidden="true">/</span> {crumb[1]}
+            {group.title} <span aria-hidden="true">/</span> {page.label}
           </p>
           <h1 className="t-headline m-0">{title}</h1>
           <p className="t-lead m-0">{lead}</p>

@@ -13,7 +13,6 @@ export default function TerminalPage() {
   return (
     <DocsShell
       current="/docs/terminal"
-      crumb={["Using Zorvo", "Terminal"]}
       title="Terminal"
       lead="The Terminal button in the top bar opens a shell in the folder the session works in."
       toc={TOC}

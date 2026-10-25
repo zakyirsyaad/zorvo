@@ -9,7 +9,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return [
     { url: base.href, changeFrequency: "monthly", priority: 1 },
     ...DOCS_PAGES.map(({ href }) => ({
-      url: new URL(href.slice(1), base).href,
+      url: new URL(`${href.slice(1)}/`, base).href,
       changeFrequency: "monthly" as const,
       priority: href === "/docs" ? 0.8 : 0.6,
     })),

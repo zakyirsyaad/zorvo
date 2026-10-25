@@ -16,7 +16,6 @@ export default function PrivacyPage() {
   return (
     <DocsShell
       current="/docs/privacy"
-      crumb={["Reference", "Privacy and your data"]}
       title="Privacy and your data"
       lead="Zorvo sends no telemetry, never stores your keys, and says which hosts it contacts."
       toc={TOC}

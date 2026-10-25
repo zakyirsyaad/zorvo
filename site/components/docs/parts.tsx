@@ -51,7 +51,7 @@ export function Callout({ tone = "note", children }: CalloutProps) {
   );
 }
 
-/** A command to run. There is no Copy button: the site ships no JavaScript, so the text is there to select. */
+/** A command to run. There is no Copy button: the docs have no client components, so the text is there to select. */
 export function CodeBlock({ label, children }: { label: string; children: string }) {
   return (
     <div className="overflow-hidden rounded-xl border border-terminal-border bg-terminal-bg">

@@ -53,7 +53,7 @@ export function PermissionCard({ title, body, command }: PermissionCardProps) {
         {title}
       </div>
       {body && <p className="m-0 text-xs leading-[18px] text-fg-secondary">{body}</p>}
-      <pre className="m-0 overflow-hidden rounded-lg border border-border bg-bg p-2.5 font-mono text-xs leading-[18px] text-fg-secondary">
+      <pre className="m-0 rounded-lg border break-all whitespace-pre-wrap border-border bg-bg p-2.5 font-mono text-xs leading-[18px] text-fg-secondary">
         {command}
       </pre>
       <div className="flex flex-wrap gap-2 border-t border-border pt-2.5">
@@ -103,13 +103,14 @@ export function DiffCard({ path, added, removed, lines }: DiffCardProps) {
           <span className="text-danger">−{removed}</span>
         </span>
       </div>
-      <div className="overflow-hidden py-1.5 font-mono text-xs leading-[18px] text-fg-secondary">
+      {/* No scroll region inside a picture: a long line wraps on a narrow screen instead. */}
+      <div className="py-1.5 font-mono text-xs leading-[18px] text-fg-secondary">
         {lines.map((line, index) => (
-          <div key={index} className={`flex min-w-max ${LINE_BG[line.kind]}`}>
+          <div key={index} className={`flex ${LINE_BG[line.kind]}`}>
             {hasGutter && (
               <span className="w-10 flex-none pr-2.5 text-right text-fg-muted">{line.number}</span>
             )}
-            <span className="pr-3 pl-3 whitespace-pre">
+            <span className="min-w-0 pr-3 pl-3 break-all whitespace-pre-wrap">
               {LINE_MARK[line.kind]}
               {line.text}
             </span>

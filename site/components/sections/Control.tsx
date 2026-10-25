@@ -74,7 +74,7 @@ const PLAN_TEXT: Record<PlanState, string> = {
 function PlanPopover() {
   const done = PLAN.filter(({ state }) => state === "done").length;
   return (
-    <div className="flex min-w-[280px] flex-col gap-2 self-end rounded-lg border border-border bg-surface-3 p-3 shadow-popover">
+    <div className="flex w-full max-w-[280px] flex-col gap-2 self-end rounded-lg border border-border bg-surface-3 p-3 shadow-popover">
       <div className="flex items-center justify-between">
         <span className="text-xs leading-4 font-medium text-fg">Plan</span>
         <span className="font-mono text-[11px] leading-4 text-fg-muted">

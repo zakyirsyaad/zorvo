@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { publicChangelog, sectionsOf } from "./public-docs.mjs";
+import { publicChangelog, releaseNotes, sectionsOf } from "./public-docs.mjs";
 
 const PRIVATE = "https://github.com/zakyirsyaad/zorvo";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -60,24 +60,62 @@ describe("publicChangelog", () => {
   });
 });
 
-describe("the public user guide", () => {
-  const readme = sectionsOf(readFileSync(join(ROOT, "README.md"), "utf8"));
-  const guide = sectionsOf(readFileSync(join(ROOT, "docs/releases-repo/README.md"), "utf8"));
+describe("releaseNotes", () => {
+  it("gives a version's public notes, without its heading", () => {
+    const notes = releaseNotes(changelog, "v0.5.0");
+    expect(notes).toContain("### Added");
+    expect(notes).toContain("**A notice when an agent seems stuck** (#85)");
+    expect(notes).not.toContain("## 0.5.0");
+    expect(notes).not.toContain("The drawer scrolls");
+    expect(notes).not.toContain(PRIVATE + "/");
+  });
 
-  it.each(["Highlights", "Supported agents", "Requirements", "Getting started", "Privacy and your data", "Troubleshooting"])(
-    "repeats the README's %s section word for word",
-    (name) => {
-      expect(guide.get(name)).toBeDefined();
-      expect(guide.get(name)).toBe(readme.get(name));
+  it("accepts the version with or without its leading v", () => {
+    expect(releaseNotes(changelog, "0.4.1")).toBe(releaseNotes(changelog, "v0.4.1"));
+  });
+
+  it("keeps the public links its notes use, which the changelog defines at its end", () => {
+    const withPublicLink = changelog.replace("- **The drawer scrolls.**", "- **The drawer scrolls**, as the [ACP] spec allows.");
+    const notes = releaseNotes(withPublicLink, "v0.4.1");
+    expect(notes).toContain("[ACP]: https://agentclientprotocol.com");
+    expect(releaseNotes(withPublicLink, "v0.5.0")).not.toContain("[ACP]:");
+  });
+
+  it("gives nothing for a version the changelog does not list", () => {
+    expect(releaseNotes(changelog, "v9.9.9")).toBe("");
+  });
+});
+
+/** GitHub's anchor for a heading: lower case, punctuation dropped, spaces to dashes. */
+function anchorOf(heading) {
+  return heading.toLowerCase().replace(/[^a-z0-9 -]/g, "").replace(/ /g, "-");
+}
+
+describe("the public user guide", () => {
+  const guide = readFileSync(join(ROOT, "docs/releases-repo/README.md"), "utf8");
+  const anchors = new Set([...guide.matchAll(/^#{2,3} (.+)$/gm)].map((m) => anchorOf(m[1])));
+
+  // The release notes, the issue forms and SECURITY.md link these.
+  it.each(["install", "supported-agents", "troubleshooting", "check-your-download", "open-zorvo-the-first-time"])(
+    "keeps the #%s section others link to",
+    (anchor) => {
+      expect(anchors.has(anchor)).toBe(true);
     },
   );
 
-  it("repeats the README's Install section, linking the public releases", () => {
-    const install = readme.get("Install")?.replace(`${PRIVATE}-releases/releases/latest`, "RELEASES");
-    expect(guide.get("Install")?.replace(`${PRIVATE}-releases/releases/latest`, "RELEASES")).toBe(install);
+  it("links only to sections it has", () => {
+    for (const [, anchor] of guide.matchAll(/\]\(#([a-z0-9-]+)\)/g)) {
+      expect(anchors.has(anchor), anchor).toBe(true);
+    }
   });
 
   it("links nothing in the private repository", () => {
-    expect([...guide.values()].join("\n")).not.toMatch(new RegExp(`${PRIVATE}[/#)]`));
+    expect(guide).not.toMatch(new RegExp(`${PRIVATE}[/#)"]`));
+  });
+
+  it("is the one copy: this repository's README points at it", () => {
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+    expect(readme).toContain("docs/releases-repo/README.md");
+    expect(sectionsOf(readme).has("Install")).toBe(false);
   });
 });

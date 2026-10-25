@@ -1,15 +1,17 @@
 /**
- * Every place the site sends people. The design's docs pages and download page do not exist
- * yet, so `docs` and its topics point at the README and `download` at the GitHub releases;
- * swap these once those pages ship, and every link on the page follows.
+ * Every place the site sends people. The app's source is private, so downloads and the user
+ * guide live in the public releases repository: its README is `docs/releases-repo/README.md`,
+ * copied there by the Release workflow. `download` fetches the newest published DMG under the
+ * stable name the workflow uploads. Swap these once the site's own docs pages ship, and every
+ * link on the page follows.
  */
-const REPO = "https://github.com/zakyirsyaad/zorvo";
+const RELEASES = "https://github.com/zakyirsyaad/zorvo-releases";
 
 export const LINKS = {
-  download: `${REPO}/releases`,
-  docs: `${REPO}#readme`,
-  installGuide: `${REPO}#install`,
-  agentsGuide: `${REPO}#supported-agents`,
-  troubleshooting: `${REPO}#troubleshooting`,
-  changelog: `${REPO}/blob/main/CHANGELOG.md`,
+  download: `${RELEASES}/releases/latest/download/Zorvo-mac.dmg`,
+  docs: `${RELEASES}#readme`,
+  installGuide: `${RELEASES}#install`,
+  agentsGuide: `${RELEASES}#supported-agents`,
+  troubleshooting: `${RELEASES}#troubleshooting`,
+  changelog: `${RELEASES}/blob/main/CHANGELOG.md`,
 } as const;

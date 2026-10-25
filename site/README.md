@@ -13,9 +13,10 @@ SITE_URL=https://zorvo.xyz pnpm --filter zorvo-site build   # writes site/out/
 
 `out/` is plain files: any static host serves it. Next.js telemetry is off in
 both scripts. The page makes no requests to other sites. Every link comes from
-`lib/links.ts`: until the docs and download pages exist, the docs links point at
-the repository's README and the downloads at its GitHub releases, and changing
-that one file moves them all.
+`lib/links.ts`: the docs links point at the pages under `app/docs/` and the
+downloads at the repository's GitHub releases, and changing that one file moves
+them all. The docs pages are listed in `lib/docs-nav.ts`, which the sidebar, the
+pager, the docs home and the sitemap all read.
 
 ## Deploying on Vercel
 

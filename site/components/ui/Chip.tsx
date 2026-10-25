@@ -8,7 +8,7 @@ interface ChipProps {
 
 export function Chip({ children, isCode = false }: ChipProps) {
   const look = isCode
-    ? "rounded-sm font-mono text-fg-muted"
+    ? "max-w-full rounded-sm font-mono [overflow-wrap:anywhere] text-fg-muted"
     : "rounded-md font-sans text-fg-secondary";
   return (
     <span

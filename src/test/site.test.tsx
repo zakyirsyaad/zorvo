@@ -3,6 +3,16 @@ import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Home from "../../site/app/page";
+import DocsHome from "../../site/app/docs/page";
+import AgentsDocs from "../../site/app/docs/agents/page";
+import InstallDocs from "../../site/app/docs/install/page";
+import PrivacyDocs from "../../site/app/docs/privacy/page";
+import QuickstartDocs from "../../site/app/docs/quickstart/page";
+import SigningInDocs from "../../site/app/docs/signing-in/page";
+import TerminalDocs from "../../site/app/docs/terminal/page";
+import TroubleshootingDocs from "../../site/app/docs/troubleshooting/page";
+import { DOCS_PAGES } from "../../site/lib/docs-nav";
+import { LINKS } from "../../site/lib/links";
 import robots from "../../site/app/robots";
 import sitemap from "../../site/app/sitemap";
 import { OG_COLORS } from "../../site/lib/og-colors";
@@ -135,7 +145,7 @@ describe("landing page", () => {
     for (const link of links) {
       const href = link.getAttribute("href") ?? "";
       expect(link.className, href).toContain("focus-ring");
-      expect(href, link.textContent ?? "").toMatch(/^(#[a-z]+|https:\/\/github\.com\/zakyirsyaad\/zorvo\b)/);
+      expect(href, link.textContent ?? "").toMatch(/^(#[a-z]+|\/docs(\/[a-z-]+)?|https:\/\/github\.com\/zakyirsyaad\/zorvo\b)/);
     }
   });
 
@@ -198,7 +208,7 @@ describe("search engines", () => {
   it("lets crawlers in and points them at a sitemap of the page", () => {
     const base = siteUrl().href;
     expect(robots()).toMatchObject({ rules: { userAgent: "*", allow: "/" }, sitemap: `${base}sitemap.xml` });
-    expect(sitemap().map((entry) => entry.url)).toEqual([base]);
+    expect(sitemap().map((entry) => entry.url)).toEqual([base, ...DOCS_PAGES.map((page) => `${base}${page.href.slice(1)}`)]);
   });
 
   it("describes Zorvo as a free macOS app in structured data", () => {
@@ -212,5 +222,87 @@ describe("search engines", () => {
       operatingSystem: "macOS",
       offers: { price: "0" },
     });
+  });
+});
+
+describe("docs pages", () => {
+  const PAGES: Record<string, () => React.JSX.Element> = {
+    "/docs": DocsHome,
+    "/docs/install": InstallDocs,
+    "/docs/quickstart": QuickstartDocs,
+    "/docs/agents": AgentsDocs,
+    "/docs/signing-in": SigningInDocs,
+    "/docs/terminal": TerminalDocs,
+    "/docs/privacy": PrivacyDocs,
+    "/docs/troubleshooting": TroubleshootingDocs,
+  };
+  const parse = (href: string) =>
+    new DOMParser().parseFromString(renderToStaticMarkup(PAGES[href]()), "text/html");
+  /** The anchors on a docs page, with the fragment each internal link points at. */
+  const idsOf = (href: string) => new Set([...parse(href).querySelectorAll("[id]")].map((el) => el.id));
+
+  it("has a page for every entry in the docs list, and the list for every page", () => {
+    expect(Object.keys(PAGES).sort()).toEqual(DOCS_PAGES.map((page) => page.href).sort());
+  });
+
+  it("points the landing page's docs links at the new pages and keeps downloads on GitHub", () => {
+    expect(LINKS.docs).toBe("/docs");
+    expect(LINKS.installGuide).toBe("/docs/install");
+    expect(LINKS.agentsGuide).toBe("/docs/agents");
+    expect(LINKS.download).toMatch(/^https:\/\/github\.com\/zakyirsyaad\/zorvo\/releases$/);
+  });
+
+  for (const href of Object.keys(PAGES)) {
+    describe(href, () => {
+      const document = parse(href);
+      const text = document.body.textContent ?? "";
+
+      it("has one h1, a skip link target and a current page in the sidebar", () => {
+        expect(document.querySelectorAll("h1")).toHaveLength(1);
+        expect(document.getElementById("main")).not.toBeNull();
+        expect(document.querySelector(`nav[aria-label="Docs"] a[aria-current="page"]`)?.getAttribute("href")).toBe(href);
+      });
+
+      it("resolves every in-page and internal link", () => {
+        for (const link of document.querySelectorAll("a")) {
+          const target = link.getAttribute("href") ?? "";
+          if (target.startsWith("https://")) continue;
+          const [path, hash] = target.split("#");
+          const page = path === "" ? href : path;
+          expect(Object.keys(PAGES).concat("/"), target).toContain(page);
+          if (hash) expect(page === "/" ? new Set<string>() : idsOf(page), target).toContain(hash);
+        }
+      });
+
+      it("gives every link the focus ring, sends nothing to other sites and ships no search field", () => {
+        for (const link of document.querySelectorAll("a")) {
+          expect(link.className, link.getAttribute("href") ?? "").toContain("focus-ring");
+        }
+        expect(document.querySelectorAll("input, script")).toHaveLength(0);
+        expect(text).not.toMatch(/Aider|Oh-My-Pi|pricing|per month/i);
+        expect(text).not.toContain("!");
+        expect(text).not.toMatch(/\p{Emoji_Presentation}/u);
+      });
+
+      it("gives every image alt text and every picture a description", () => {
+        for (const image of document.querySelectorAll("img")) expect(image.hasAttribute("alt")).toBe(true);
+        for (const picture of document.querySelectorAll('[role="img"]')) {
+          expect(picture.getAttribute("aria-label")).toBeTruthy();
+          expect(picture.querySelectorAll("a, button, input")).toHaveLength(0);
+        }
+      });
+    });
+  }
+
+  it("covers the 0.5.0 stuck-agent notice in troubleshooting", () => {
+    const text = parse("/docs/troubleshooting").body.textContent ?? "";
+    expect(text).toContain("An agent seems stuck");
+    expect(text).toContain("sent nothing for a minute");
+  });
+
+  it("names the default agents and says they do not endorse Zorvo", () => {
+    const text = parse("/docs/agents").body.textContent ?? "";
+    for (const agent of ["Claude Code", "Codex", "Qwen Code"]) expect(text).toContain(agent);
+    expect(text).toContain("not endorsed by them");
   });
 });

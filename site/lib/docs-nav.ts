@@ -1,0 +1,77 @@
+export interface DocsPage {
+  href: string;
+  label: string;
+  /** One sentence for the docs home card and the page's meta description. */
+  summary: string;
+}
+
+export interface DocsGroup {
+  title: string;
+  pages: DocsPage[];
+}
+
+/** The docs, in reading order. The sidebar, the pager, the home page and the sitemap all read this list. */
+export const DOCS_NAV: DocsGroup[] = [
+  {
+    title: "Get started",
+    pages: [
+      {
+        href: "/docs",
+        label: "Introduction",
+        summary: "Install Zorvo and the agents you use, sign in to them, and work with sessions, worktrees and terminals in one desktop.",
+      },
+      {
+        href: "/docs/install",
+        label: "Install",
+        summary: "Download Zorvo, open it the first time and install your first agent from inside the app.",
+      },
+      {
+        href: "/docs/quickstart",
+        label: "Quickstart",
+        summary: "Pick a folder, a branch and an agent, and send your first message.",
+      },
+    ],
+  },
+  {
+    title: "Agents",
+    pages: [
+      {
+        href: "/docs/agents",
+        label: "Supported agents",
+        summary: "Agents from the ACP registry, and how to add, install, update and sign in to them.",
+      },
+      {
+        href: "/docs/signing-in",
+        label: "Signing in",
+        summary: "Agents sign in with their own tools. Zorvo never asks for or stores your keys.",
+      },
+    ],
+  },
+  {
+    title: "Using Zorvo",
+    pages: [
+      {
+        href: "/docs/terminal",
+        label: "Terminal",
+        summary: "A shell in the folder a session works in, in a drawer under the chat.",
+      },
+    ],
+  },
+  {
+    title: "Reference",
+    pages: [
+      {
+        href: "/docs/privacy",
+        label: "Privacy and your data",
+        summary: "Which hosts Zorvo contacts, what it never stores, and where your sessions live on disk.",
+      },
+      {
+        href: "/docs/troubleshooting",
+        label: "Troubleshooting",
+        summary: "What to try when an agent is not installed, needs you to sign in, seems stuck or will not start.",
+      },
+    ],
+  },
+];
+
+export const DOCS_PAGES: DocsPage[] = DOCS_NAV.flatMap((group) => group.pages);

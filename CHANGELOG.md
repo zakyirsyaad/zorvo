@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- **Docs on the landing site.** `/docs` and seven topic pages (install, quickstart, supported agents, signing in, terminal, privacy, troubleshooting) are written from the README, with the 0.5.0 stuck-agent notice in Troubleshooting. The landing page's docs links now point at them instead of the README.
+
 ### Changed
 
 - **The landing page shows Zorvo 0.4.** It now covers installing agents from the ACP registry, signing in and the terminal inside the app, branches, the composer, and the plan in the top bar. Its docs links point at the README until the docs pages exist.

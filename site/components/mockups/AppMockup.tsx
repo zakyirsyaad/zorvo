@@ -1,4 +1,5 @@
-import { AGENT_LOGOS, type AgentName } from "../../lib/agent-logos";
+import type { AgentName } from "../../lib/agent-logos";
+import { AgentLogo } from "../ui/AgentLogo";
 import { Chip } from "../ui/Chip";
 import { Icon, type IconName } from "../ui/Icon";
 import { DiffCard, PermissionCard, StatusDot, type DiffLine } from "./parts";
@@ -36,11 +37,6 @@ const WORKSPACES: { folder: string; sessions: SessionRow[] }[] = [
 function SessionMeta({ meta }: { meta: SessionRow["meta"] }) {
   if (meta === "running" || meta === "attention" || meta === "unread") return <StatusDot status={meta} />;
   return <>{meta}</>;
-}
-
-function AgentLogo({ agent, size }: { agent: AgentName; size: number }) {
-  // The session title or picker label beside it names the agent, so the logo is decorative.
-  return <img src={AGENT_LOGOS[agent]} alt="" width={size} height={size} className="flex-none rounded-[3px]" />;
 }
 
 function Sidebar() {

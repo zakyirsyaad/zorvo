@@ -1,5 +1,6 @@
-import { AGENT_LOGOS, type AgentName } from "../../lib/agent-logos";
+import type { AgentName } from "../../lib/agent-logos";
 import { FakeButton, StatusDot } from "../mockups/parts";
+import { AgentLogo } from "../ui/AgentLogo";
 import { Chip } from "../ui/Chip";
 import { Icon } from "../ui/Icon";
 import { SectionIntro } from "../ui/SectionIntro";
@@ -30,8 +31,7 @@ function ChatPanel() {
             key={name}
             className="flex items-center gap-3.5 border-t border-border px-5 py-[18px] sm:px-7"
           >
-            {/* The name beside it says which agent this is, so the logo itself is decorative. */}
-            <img src={AGENT_LOGOS[name]} alt="" width={28} height={28} className="size-7 flex-none rounded-md" />
+            <AgentLogo agent={name} size={28} className="rounded-md" />
             <span className="text-xl leading-[26px] font-medium tracking-[-0.025em] text-fg sm:text-2xl sm:leading-[30px]">
               {name}
             </span>
@@ -67,13 +67,13 @@ function CatalogPicture() {
         <span className="text-xs leading-4">Search agents</span>
       </div>
       <div className={`${ROW} border-b border-border`}>
-        <img src={AGENT_LOGOS.Codex} alt="" width={18} height={18} className="size-[18px] rounded-[4px]" />
+        <AgentLogo agent="Codex" size={18} className="rounded-[4px]" />
         <span className="flex-1 text-[13px] leading-4 text-fg">Codex</span>
         <span className="text-[11px] leading-4 text-fg-muted">Update available</span>
         <FakeButton variant="outline">Update</FakeButton>
       </div>
       <div className={`${ROW} border-b border-border`}>
-        <img src={AGENT_LOGOS["Qwen Code"]} alt="" width={18} height={18} className="size-[18px] rounded-[4px]" />
+        <AgentLogo agent="Qwen Code" size={18} className="rounded-[4px]" />
         <span className="flex-1 text-[13px] leading-4 text-fg">Qwen Code</span>
         <span className="inline-flex items-center gap-1.5 text-[11px] leading-4 text-fg-subtle">
           <StatusDot status="running" />

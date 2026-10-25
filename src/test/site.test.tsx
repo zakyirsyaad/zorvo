@@ -147,7 +147,7 @@ describe("landing page", () => {
 
   it("shows the plan with one step done and the next waiting on the user", () => {
     const picture = document.querySelector('#control [role="img"]');
-    expect(picture?.textContent).toMatch(/Plan1\/4/);
+    expect(picture?.textContent).toMatch(/Plan\s*1\/4/);
     expect(picture?.textContent).toContain("Waiting on you");
     expect(picture?.textContent).not.toContain("Session cost");
   });

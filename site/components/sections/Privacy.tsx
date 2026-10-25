@@ -40,7 +40,8 @@ function DataFolderTerminal() {
         <span className="ml-2 font-mono text-[11px] leading-4 text-terminal-fg-subtle">zsh</span>
       </div>
       <div className="flex flex-col gap-0.5 overflow-hidden px-5 py-[18px] font-mono text-xs leading-[18px] text-terminal-fg">
-        <div className="whitespace-nowrap">
+        {/* The picture has no scrollbar, so the path wraps on a narrow screen instead of being cut off. */}
+        <div className="break-all">
           <span className="text-terminal-fg-subtle">~ %</span> ls ~/Library/Application\ Support/xyz.zorvo.desktop
         </div>
         {DATA_FOLDER.map((entry, index) => (

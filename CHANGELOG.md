@@ -12,7 +12,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Fixed
 
-- **Gemini CLI without a key showed a red error.** "API key is missing or not configured" is now recognised as a sign-in request, so the sign-in panel opens (for any agent that words it that way) instead of an error banner. Methods Zorvo cannot run, such as an API key, Vertex AI or a gateway, are explained instead of getting a button that fails.
+- **Gemini CLI without a key showed a red error.** "API key is missing or not configured" is now recognised as a sign-in request, so the sign-in panel opens instead of an error banner. Any `-32000` refusal to open a session or take a prompt from an agent that offers ways to sign in is treated as a sign-in request, since that is the code the protocol uses for it. Methods Zorvo cannot run, such as an API key, Vertex AI or a gateway, are explained instead of getting a button that fails.
 
 ## [0.5.1] - 2026-10-25
 

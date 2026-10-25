@@ -103,10 +103,6 @@ function WorkspaceGroup({ group, isActive, isExpanded, onToggle, newSessionMenu,
   );
 }
 
-/**
- * Installed agents, pinned above the footer; renders nothing when none are detected.
- * The header folds the list away to leave more room for the sessions.
- */
 const CHIP_STYLES: Record<SignInState, { text: string; dot: string }> = {
   ready: { text: "text-status-running", dot: "bg-status-running" },
   needed: { text: "text-status-attention", dot: "bg-status-attention" },
@@ -136,6 +132,10 @@ function SignInChip({ agentName, state, onSetUp }: { agentName: string; state: S
   );
 }
 
+/**
+ * Installed agents, pinned above the footer; renders nothing when none are detected.
+ * The header folds the list away to leave more room for the sessions.
+ */
 function DetectedAgents({
   agents,
   settings,

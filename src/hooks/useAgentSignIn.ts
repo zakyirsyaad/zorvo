@@ -127,21 +127,24 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
     }
 
     if (method.kind === 'terminal') terminal.showChecking();
-    const signedIn = (await checkSignIn(request.profileId, request.cwd)) === 'signed-in';
+    const check = await checkSignIn(request.profileId, request.cwd);
     if (!isCurrent()) return;
     attemptRef.current = null;
-    if (!signedIn) {
+    if (check === 'signed-out') {
       const reason = `${agentName} still says you are signed out`;
       if (method.kind === 'terminal') terminal.fail(reason);
       setStatus('failed', reason);
       return;
     }
-    finishSignedIn(request);
+    finishSignedIn(request, check === 'signed-in');
   };
 
-  /** The agent shows someone signed in: remembers it, closes the login and sends the refused message again. */
-  const finishSignedIn = (request: AuthRequest) => {
-    depsRef.current.onSignedIn?.(request.profileId);
+  /**
+   * The sign-in is taken as done: closes the login and sends the refused message again. The agent is
+   * remembered as signed in only when it showed someone (`isSeen`), not when it just could not be asked.
+   */
+  const finishSignedIn = (request: AuthRequest, isSeen: boolean) => {
+    if (isSeen) depsRef.current.onSignedIn?.(request.profileId);
     terminal.close();
     // The composer takes focus: the dialog's opener, the panel's button, is gone by now.
     depsRef.current.composerRef.current?.focus();
@@ -155,15 +158,18 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
     const attempt = {};
     attemptRef.current = attempt;
     setStatus('checking');
-    const isSignedIn = (await checkSignIn(request.profileId, request.cwd)) === 'signed-in';
+    const check = await checkSignIn(request.profileId, request.cwd);
     if (attemptRef.current !== attempt) return;
     attemptRef.current = null;
-    if (isSignedIn) {
-      finishSignedIn(request);
+    if (check === 'signed-in') {
+      finishSignedIn(request, true);
       return;
     }
     const agentName = depsRef.current.agents.find((a) => a.id === request.profileId)?.name ?? request.profileId;
-    setStatus('failed', `${agentName} still says you are signed out`);
+    setStatus(
+      'failed',
+      check === 'signed-out' ? `${agentName} still says you are signed out` : `Could not ask ${agentName} whether you are signed in`,
+    );
   };
 
   const auth: AgentAuth = {

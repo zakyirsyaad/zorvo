@@ -645,7 +645,11 @@ export default function App() {
           agents={agents}
           settings={state.settings}
           signInStateOf={signInStatus.stateOf}
-          onSetUpAgent={(profileId) => openNewSession(undefined, profileId)}
+          onSetUpAgent={(profileId) => {
+            openNewSession(undefined, profileId);
+            // Asks again even when this agent is already the draft's: its panel may have been dismissed.
+            agentCheck.reprobe(profileId);
+          }}
           onNewSession={() => openNewSession()}
           onSelectSession={handleSelectSession}
           onNewSessionIn={openNewSession}

@@ -82,5 +82,5 @@ export function useDraftAgentCheck({ agent, cwd, agentOptions, rememberProbed, a
   /** Whether the agent last said it can list its other sessions. */
   const canListSessions = useCallback((profileId: string) => canListByAgent[profileId] === true, [canListByAgent]);
 
-  return { isProbing: probe.isProbing, canListSessions };
+  return { isProbing: probe.isProbing, canListSessions, reprobe };
 }

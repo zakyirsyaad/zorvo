@@ -1,3 +1,4 @@
+import type { AgentFailures } from './agent-stall';
 import type { ChatMessage, ContextUsage, ElicitationAnswer, Session } from '../types';
 
 /**
@@ -22,6 +23,8 @@ export interface SessionLiveStatus {
   isBusy: boolean;
   isWaiting: boolean;
   contextUsage?: ContextUsage;
+  /** Failed requests in a row the agent reported. */
+  failures?: AgentFailures;
 }
 
 export const IDLE_STATUS: SessionLiveStatus = { isBusy: false, isWaiting: false };

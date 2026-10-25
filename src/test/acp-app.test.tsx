@@ -269,6 +269,27 @@ describe("ACP sessions in the app", () => {
     expect(screen.queryByTestId("agent-working")).toBeNull();
   });
 
+  it("tells the user when the agent reports failed requests in a row, until the turn ends", async () => {
+    const spy = await renderWithQwen();
+    const sessionId = await startQwenSession(spy);
+    await send("hi");
+    const failedRequest = {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "" },
+      _meta: { executionLifecycle: { v: 1, kind: "request", model: "qwen-max", phase: "ended", outcome: "error" } },
+    };
+
+    await acpEvent({ sessionId, kind: "update", update: failedRequest });
+    expect(screen.queryByText(/failed \d+ times in a row/)).toBeNull();
+    await acpEvent({ sessionId, kind: "update", update: failedRequest });
+
+    expect(screen.getByText("Qwen Code's requests to qwen-max failed 2 times in a row.")).toBeDefined();
+    expect(callsTo(spy, "acp_qwen_last_api_error")[0][1]).toMatchObject({ sessionId });
+
+    await acpEvent({ sessionId, kind: "turn-end", stopReason: "end_turn" });
+    expect(screen.queryByText(/failed \d+ times in a row/)).toBeNull();
+  });
+
   it("forks a live ACP session natively from its latest reply", async () => {
     const spy = await renderWithQwen();
     const sessionId = await startQwenSession(spy);

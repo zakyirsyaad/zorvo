@@ -84,6 +84,8 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
       return Promise.resolve([]);
     case "acp_cancel":
       return Promise.resolve([]);
+    case "acp_qwen_last_api_error":
+      return Promise.resolve(null);
     case "acp_prompt":
     case "acp_respond_permission":
     case "acp_respond_elicitation":

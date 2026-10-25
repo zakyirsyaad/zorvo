@@ -59,6 +59,8 @@ import { useAutoEnabledAgents } from "./hooks/useAutoEnabledAgents";
 import { useShellActions } from "./hooks/useShellActions";
 import { useAgentUpdates } from "./hooks/useAgentUpdates";
 import { UpdateNotice } from "./components/UpdateNotice";
+import { AppUpdateNotice } from "./components/AppUpdateNotice";
+import { useAppUpdate } from "./hooks/useAppUpdate";
 import { ProfileFooter } from "./components/ProfileFooter";
 import { useNavigationHistory } from "./hooks/useNavigationHistory";
 import { useUserProfile } from "./hooks/useUserProfile";
@@ -119,6 +121,7 @@ export default function App() {
   const { agents, isLoaded: areAgentsLoaded, refresh: refreshAgents, reload: reloadAgents } = useAgentProfiles(reportError);
   const agentCatalog = useAgentCatalog();
   const shell = useShellActions(setNotice);
+  const appUpdate = useAppUpdate(reportError);
   const agentUpdates = useAgentUpdates({ catalog: agentCatalog.catalog, settings: state.settings, isLoaded, updateState });
   useAutoEnabledAgents(agents, isLoaded, updateState);
   const suggestedFolders = useSuggestedFolders();
@@ -662,6 +665,13 @@ export default function App() {
             <article className={`${isDiffOpen && isDiffExpanded ? "hidden" : "flex"} flex-1 flex-col bg-bg relative overflow-hidden`}>
               {isDraggingFiles && <FileDropOverlay />}
               {notice && <NoticeBanner message={notice} onDismiss={() => setNotice(null)} />}
+              <AppUpdateNotice
+                update={appUpdate.update}
+                isInstalling={appUpdate.isInstalling}
+                progress={appUpdate.progress}
+                onInstall={() => void appUpdate.install()}
+                onLater={appUpdate.dismiss}
+              />
               <UpdateNotice
                 agents={agentUpdates.unnotified}
                 onShow={() => { agentUpdates.acknowledge(); setSettingsTab("agents"); }}

@@ -1,4 +1,5 @@
 pub mod acp;
+pub mod app_update;
 pub mod appearance;
 pub mod attachments;
 pub mod background_processes;
@@ -338,8 +339,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(manager)
         .manage(acp_manager)
+        .manage(app_update::PendingAppUpdate::default())
         .setup(move |app| {
             if let Ok(mut guard) = app_handle_holder.lock() {
                 *guard = Some(app.handle().clone());
@@ -375,6 +378,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            app_update::app_update_check,
+            app_update::app_update_install,
             get_agent_profiles,
             get_agent_catalog,
             get_agent_icons,

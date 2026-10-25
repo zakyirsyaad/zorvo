@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { build, type Rollup } from "vite";
+import { build, type Rolldown } from "vite";
 import { describe, expect, it } from "vitest";
 
 const ROOT = join(__dirname, "..", "..");
@@ -30,10 +30,10 @@ async function releaseXterm(): Promise<XtermModule> {
     logLevel: "silent",
     build: {
       write: false,
-      rollupOptions: { input: entry, preserveEntrySignatures: "strict", output: { format: "es" } },
+      rolldownOptions: { input: entry, preserveEntrySignatures: "strict", output: { format: "es" } },
     },
-  })) as Rollup.RollupOutput;
-  const chunk = result.output.find((file): file is Rollup.OutputChunk => file.type === "chunk" && file.isEntry);
+  })) as Rolldown.RolldownOutput;
+  const chunk = result.output.find((file): file is Rolldown.OutputChunk => file.type === "chunk" && file.isEntry);
   if (!chunk) throw new Error("the build produced no entry chunk");
   const file = join(dir, "built.mjs");
   writeFileSync(file, chunk.code);
@@ -57,9 +57,10 @@ async function answerToModeQuery({ Terminal }: XtermModule): Promise<string> {
 }
 
 describe("xterm in a release build", () => {
-  // xtermjs/xterm.js#5800: esbuild's syntax minifier, lowering xterm's `||=`
-  // for an older target, drops a variable that DECRQM needs. The first mode query
-  // (a sign-in program can send one at start) then throws, and the terminal stops drawing.
+  // xtermjs/xterm.js#5800: esbuild's syntax minifier (Vite 6), lowering xterm's `||=`
+  // for an older target, dropped a variable that DECRQM needs. The first mode query
+  // (a sign-in program can send one at start) then threw, and the terminal stopped
+  // drawing. Vite 8's Oxc minifier does not; this keeps any future minifier honest.
   it(
     "still answers a terminal mode query",
     async () => {

@@ -91,4 +91,4 @@ The Rust ACP tests spawn `src-tauri/tests/fixtures/fake_acp_agent.mjs` with Node
 - Prefer a focused hook in `src/hooks/` or a helper in `src/lib/` over growing `App.tsx`.
 - Conventional Commits (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`, `ci:`); branches `feat/…`, `fix/…`, `chore/…`. Add a line under `Unreleased` in `CHANGELOG.md` for user-visible changes.
 - Release: bump the version in `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`, roll the changelog, then push a `vX.Y.Z` tag; the Release workflow builds a universal macOS app into a draft release.
-- xterm 6 breaks under esbuild's syntax minifier, so `vite.config.ts` sets `esbuild.minifySyntax: false`; `xterm-release-build.test.ts` guards it. Don't remove it.
+- xterm 6 broke under esbuild's syntax minifier (Vite 6). Vite 8 builds with Oxc, which keeps it working; `xterm-release-build.test.ts` builds xterm as the release does and checks the terminal still answers. Don't remove it, and run it after changing the minifier or the build target.

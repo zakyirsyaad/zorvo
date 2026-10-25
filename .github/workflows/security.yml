@@ -1,8 +1,10 @@
 name: Security
 
-# Code scanning for the frontend and the workflows, and the dependencies
-# checked against known advisories: on pull requests, on main, and weekly so
-# a new advisory for an unchanged lockfile still shows up.
+# The dependencies checked against known advisories: on pull requests, on
+# main, and weekly so a new advisory for an unchanged lockfile still shows up.
+# CodeQL code scanning was removed when the repository went private: on a
+# private repository it needs GitHub Code Security. Add it back if the
+# repository is made public again.
 on:
   push:
     branches: [main]
@@ -18,29 +20,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  codeql:
-    name: CodeQL (${{ matrix.language }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      security-events: write
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [javascript-typescript, actions]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
-        with:
-          languages: ${{ matrix.language }}
-          build-mode: none
-      - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
-        with:
-          category: /language:${{ matrix.language }}
-
   audit:
     name: Dependency audit
     runs-on: ubuntu-latest

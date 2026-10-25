@@ -48,6 +48,8 @@ flowchart LR
     agents you use;
   - `installer/`: installing agents, Node.js and `uv`, every download checked
     against a pinned hash;
+  - `app_update.rs`: Zorvo's own updates, checked against `latest.json` in
+    zorvo-releases and verified with the updater public key;
   - `profiles.rs`: the agent profiles and how agents are found;
   - `store.rs`: state and transcripts;
   - `changes.rs`, `worktrees.rs` and `branches.rs`: git;
@@ -119,10 +121,32 @@ these repository secrets from an Apple Developer account:
 
 Without them, the build is unsigned.
 
+Zorvo updates itself from these releases, so every release must also be signed
+with the updater key (not the Apple one). Make it once, on your own machine:
+
+```bash
+pnpm tauri signer generate -w ~/.tauri/zorvo-updater.key
+```
+
+Put the **public** key it prints in `plugins.updater.pubkey` in
+`src-tauri/tauri.conf.json`, and add the **private** key and its password as the
+repository secrets `TAURI_SIGNING_PRIVATE_KEY` and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The workflow stops early if either is
+missing or the placeholder public key is still in place. Back the private key up
+somewhere safe: a build signed with another key is refused by every Zorvo
+already installed, so losing it means those installs can never update
+themselves again.
+
+The workflow also uploads `latest.json`, the `.app.tar.gz` and its `.sig`, and
+checks that `latest.json` lists both `darwin-aarch64` and `darwin-x86_64`.
+Publishing the draft is what makes it the "latest" release installed copies see.
+A local `pnpm tauri build` signs the update package too, so it needs
+`TAURI_SIGNING_PRIVATE_KEY` (and the password) in the environment; add
+`--config '{"bundle":{"createUpdaterArtifacts":false}}'` to build without them.
+
 ## Roadmap
 
 - A signed and notarized build, so macOS opens it without a warning.
-- Updates inside the app.
 - Windows and Linux builds.
 - Undoing an agent's file changes along with a rewind.
 - End-to-end tests of the built app.

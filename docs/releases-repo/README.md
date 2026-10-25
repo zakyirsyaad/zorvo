@@ -175,9 +175,15 @@ download Zorvo from this repository's
 
 ### Update
 
-Zorvo does not update itself yet. To update, download the newest DMG and
-replace Zorvo in Applications. Your sessions are kept: they are stored outside
-the app.
+From 0.6.0 on, Zorvo tells you when a newer version exists: a notice at the top
+of the window says "Zorvo X.Y.Z is available." Click **Update & restart** and
+Zorvo downloads the update, checks its signature, installs it and opens again.
+**Later** hides the notice until you next start Zorvo. Agents that are working
+stop when Zorvo restarts, so update when they are idle. Your sessions are kept:
+they are stored outside the app.
+
+Copies older than 0.6.0 cannot update themselves. Update those once by hand:
+download the newest DMG and replace Zorvo in Applications.
 
 ### Uninstall
 
@@ -229,10 +235,16 @@ before it edits files or runs commands. Pick another mode in the composer.
   - `nodejs.org`, when you install an agent that needs Node.js and yours is
     missing or older than 22;
   - `uv`'s releases on GitHub, when you install an agent that runs with `uvx`
-    and you have no `uvx`.
+    and you have no `uvx`;
+  - this repository's releases on GitHub (`github.com/zakyirsyaad/zorvo-releases`),
+    to ask whether a newer Zorvo exists (shortly after Zorvo starts, then about
+    once a day) and, when you click **Update & restart**, to download it. The
+    check sends no information about you or your work.
 
-  Nothing downloads until you click **Install**, and every download is checked
-  against a SHA-256 hash pinned in advance. Your agents, and the `npm`, `npx`
+  No agent, runtime or Zorvo update downloads until you click **Install** or
+  **Update & restart**. Agent and runtime downloads are checked against a
+  SHA-256 hash pinned in advance; a Zorvo update is checked against the
+  signature of the key built into Zorvo, and is refused if it does not match. Your agents, and the `npm`, `npx`
   and `uvx` they run with, make their own requests to their own services.
 - **Your data stays on your Mac.** Sessions and transcripts are stored in
   `~/Library/Application Support/xyz.zorvo.desktop/`, and session worktrees in

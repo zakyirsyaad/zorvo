@@ -430,6 +430,7 @@ pub fn run() {
             acp::commands::acp_reopen_elicitation_url,
             acp::commands::acp_set_mode,
             acp::commands::acp_set_config_option,
+            acp::commands::acp_qwen_last_api_error,
             acp::commands::acp_stop_session,
             installer::commands::install_agent,
             installer::commands::update_agent,

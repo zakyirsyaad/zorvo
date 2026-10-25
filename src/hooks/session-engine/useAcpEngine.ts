@@ -17,6 +17,8 @@ import { createId } from '../../lib/ids';
 import { toCommands, useAcpSessions, type AcpSessionInfo, type TurnResult } from '../useAcpSessions';
 import { useLatest } from '../useLatest';
 import { useBatchedUpdates } from '../useBatchedUpdates';
+import { useAgentFailures } from '../useAgentFailures';
+import { qwenErrorDetail } from '../../lib/qwen-api-error';
 import type { AgentProfile, ChatMessage, ElicitationCard, Session } from '../../types';
 import { parseAuthRequired, type AuthMethod } from '../../lib/acp-auth';
 import { isUnknownSessionError } from '../../lib/acp-load-error';
@@ -106,6 +108,7 @@ export function useAcpEngine({
   transcripts,
 }: AcpEngineDeps) {
   const [starting, setStarting] = useState<ReadonlySet<string>>(new Set());
+  const agentFailures = useAgentFailures();
   // An agent streams many updates per second: they apply once a frame, still in order.
   const queued = useBatchedUpdates(updateMessages);
   /**
@@ -166,6 +169,11 @@ export function useAcpEngine({
         if (profileId) rememberOptions(profileId, { commands: toCommands(update.availableCommands) });
         return;
       }
+      if (!replayingRef.current.has(sessionId) && agentFailures.observe(sessionId, update)) {
+        void qwenErrorDetail(sessionId, acp.busySinceOf(sessionId)).then((detail) => {
+          if (detail && !isStopped(sessionId)) agentFailures.addDetail(sessionId, detail);
+        });
+      }
       queued.update(sessionId, (prev) =>
         replayingRef.current.has(sessionId)
           ? applyReplayUpdate(prev, update, ctx(sessionId))
@@ -184,6 +192,7 @@ export function useAcpEngine({
       updateNow(sessionId, (prev) => completeElicitation(prev, key));
     }),
     onTurnEnd: unlessStopped((sessionId, { stopReason, error }: TurnResult) => {
+      agentFailures.clear(sessionId);
       updateNow(sessionId, closeTurn);
       const authMethods = parseAuthRequired(error);
       if (authMethods) {
@@ -197,6 +206,7 @@ export function useAcpEngine({
       if (stopReason !== 'cancelled') onAttention?.(sessionId, notice ? 'failed' : 'finished');
     }),
     onExit: unlessStopped((sessionId, code: number | null) => {
+      agentFailures.clear(sessionId);
       updateNow(sessionId, closeTurn);
       // The agent leaves no more updates: the cards it showed are the ones marked unanswered.
       elicitations.abandon(sessionId);
@@ -555,6 +565,7 @@ export function useAcpEngine({
     // What the agent already sent belongs before anything this stop makes:
     // a deleted session's transcript goes away after these land, not before.
     queued.flush();
+    agentFailures.clear(sessionId);
     // The backend cancels the open requests, and the agent's later events (its exit) are ignored.
     elicitations.abandon(sessionId);
     stoppedRef.current.add(sessionId);
@@ -590,6 +601,7 @@ export function useAcpEngine({
       patchSession(sessionId, { status: 'terminated', endedAt: Date.now() });
       return;
     }
+    agentFailures.clear(sessionId);
     for (const card of pendingCardsInTurn(messages ?? [])) {
       if (card.requestId === undefined) continue;
       acp.respondPermission(sessionId, card.requestId, null).catch(reportFailure('Could not answer the agent'));
@@ -644,6 +656,8 @@ export function useAcpEngine({
     forgetQueued: queued.forget,
     isBusy,
     busySinceOf: acp.busySinceOf,
+    /** The failed requests in a row the session's agent reported, if any. */
+    failuresOf: (sessionId: string) => agentFailures.failures[sessionId],
     canFork: acp.canFork,
   };
 }

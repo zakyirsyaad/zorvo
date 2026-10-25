@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- **A notice when an agent seems stuck.** Under "Working…", Zorvo says when an agent reports failed requests in a row (with the error Qwen Code logged) or has sent nothing for a minute, with a Stop button. It states only what the agent reported.
+
 ### Changed
 
 - **Detected agents folds away.** Click its header in the sidebar to hide or show the list.

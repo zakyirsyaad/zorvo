@@ -1,6 +1,8 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MessageRow } from "./chat/MessageRow";
 import { WorkingIndicator } from "./chat/ReplyExtras";
+import { AgentStallNotice } from "./chat/AgentStallNotice";
+import type { AgentFailures } from "../lib/agent-stall";
 import { useLatest } from "../hooks/useLatest";
 import { useReadAloud } from "../hooks/useReadAloud";
 import { useStickToBottom } from "../hooks/useStickToBottom";
@@ -34,6 +36,10 @@ export interface ChatCanvasProps {
   onReopenElicitationUrl?: (key: string) => void;
   /** True while the agent works on its turn: shown under the last message. */
   isWorking?: boolean;
+  /** Failed requests in a row the agent reported while it works. */
+  failures?: AgentFailures;
+  /** Stops the turn; offered in the notice shown when the agent seems stuck. */
+  onStop?: () => void;
   /** Which conversation is shown; switching starts at its newest output. */
   conversationId?: string;
   /** Starts again from before one of your messages; Rewind is offered only when given. */
@@ -50,6 +56,8 @@ export function ChatCanvas({
   onAnswerElicitation,
   onReopenElicitationUrl,
   isWorking = false,
+  failures,
+  onStop,
   conversationId,
   onRewind,
   header,
@@ -162,6 +170,14 @@ export function ChatCanvas({
         />
       ))}
       {isWorking && <WorkingIndicator />}
+      {isWorking && (
+        <AgentStallNotice
+          agentName={agentName === DEFAULT_AGENT_NAME ? "The agent" : agentName}
+          messages={messages}
+          failures={failures}
+          onStop={onStop}
+        />
+      )}
     </div>
   );
 }

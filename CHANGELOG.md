@@ -6,6 +6,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Added
 
+- **Check what you downloaded.** Each release in [zorvo-releases](https://github.com/zakyirsyaad/zorvo-releases) lists its files' SHA-256 checksums in `SHA256SUMS.txt`, and its notes are this changelog's section for that version. The repository also has a rewritten user guide, bug and idea forms, and a security policy for reporting problems privately.
 - **Docs on the landing site.** `/docs` and seven topic pages (install, quickstart, supported agents, signing in, terminal, privacy, troubleshooting) are written from the README, with the 0.5.0 stuck-agent notice in Troubleshooting. The landing page's docs links now point at them instead of a README on GitHub.
 
 ## [0.5.1] - 2026-10-25

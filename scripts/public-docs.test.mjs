@@ -74,6 +74,13 @@ describe("releaseNotes", () => {
     expect(releaseNotes(changelog, "0.4.1")).toBe(releaseNotes(changelog, "v0.4.1"));
   });
 
+  it("keeps the public links its notes use, which the changelog defines at its end", () => {
+    const withPublicLink = changelog.replace("- **The drawer scrolls.**", "- **The drawer scrolls**, as the [ACP] spec allows.");
+    const notes = releaseNotes(withPublicLink, "v0.4.1");
+    expect(notes).toContain("[ACP]: https://agentclientprotocol.com");
+    expect(releaseNotes(withPublicLink, "v0.5.0")).not.toContain("[ACP]:");
+  });
+
   it("gives nothing for a version the changelog does not list", () => {
     expect(releaseNotes(changelog, "v9.9.9")).toBe("");
   });
@@ -88,7 +95,7 @@ describe("the public user guide", () => {
   const guide = readFileSync(join(ROOT, "docs/releases-repo/README.md"), "utf8");
   const anchors = new Set([...guide.matchAll(/^#{2,3} (.+)$/gm)].map((m) => anchorOf(m[1])));
 
-  // The site, the release notes, the issue forms and SECURITY.md link these.
+  // The release notes, the issue forms and SECURITY.md link these.
   it.each(["install", "supported-agents", "troubleshooting", "check-your-download", "open-zorvo-the-first-time"])(
     "keeps the #%s section others link to",
     (anchor) => {

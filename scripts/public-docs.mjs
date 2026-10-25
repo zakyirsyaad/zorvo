@@ -48,8 +48,14 @@ export function publicChangelog(text) {
 export function releaseNotes(text, version) {
   const wanted = version.replace(/^v/, "");
   const heading = new RegExp(`^${escapeRegExp(wanted)}(\\s|$)`);
-  for (const [name, body] of sectionsOf(publicChangelog(text))) {
-    if (heading.test(name)) return body.replace(/^\[[^\]]+\]:\s*\S+$/gm, "").trim();
+  const changelog = publicChangelog(text);
+  // Link definitions sit at the end of the changelog, after the last version.
+  const definitions = [...changelog.matchAll(/^\[([^\]]+)\]:\s*\S+$/gm)];
+  for (const [name, body] of sectionsOf(changelog)) {
+    if (!heading.test(name)) continue;
+    const notes = body.replace(/^\[[^\]]+\]:\s*\S+$/gm, "").trim();
+    const used = definitions.filter(([, label]) => notes.includes(`[${label}]`)).map(([line]) => line);
+    return used.length ? `${notes}\n\n${used.join("\n")}` : notes;
   }
   return "";
 }

@@ -144,9 +144,10 @@ jobs:
             src="${pair%%:*}"
             dest="${pair##*:}"
             # Unchanged files are skipped, so the history shows only real updates.
-            remote=$(gh api "repos/$RELEASES_REPO/contents/$dest" 2>/dev/null || true)
-            sha=$(jq -r '.sha // empty' <<<"$remote" 2>/dev/null || true)
-            if [ -n "$sha" ] && [ "$(jq -r '.content' <<<"$remote" | base64 --decode 2>/dev/null)" = "$(cat "$src")" ]; then
+            # The API's sha is the git blob hash, so comparing it is exact for
+            # any file, the icon included.
+            sha=$(gh api "repos/$RELEASES_REPO/contents/$dest" --jq .sha 2>/dev/null || true)
+            if [ -n "$sha" ] && [ "$sha" = "$(git hash-object "$src")" ]; then
               continue
             fi
             args=(-f message="docs: update $dest for $TAG" -f content="$(base64 < "$src" | tr -d '\n')" -f branch=main)

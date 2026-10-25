@@ -5,32 +5,32 @@ const PROMISES: { icon: IconName; title: string; body: string }[] = [
   {
     icon: "key-round",
     title: "Sign-in stays with the agents",
-    body: "Zorvo never asks for or stores API keys or tokens. Agents sign in with their own tools.",
+    body: "Zorvo never asks for or stores API keys or tokens. Agents sign in with their own tools, even when the login runs inside Zorvo.",
   },
   {
-    icon: "wifi-off",
+    icon: "globe",
     title: "Few hosts, all named",
-    body: "Zorvo reads the ACP registry, and only when you install an agent does it fetch that agent's hash-checked download, plus Node.js or uv if it needs them. No telemetry, and no requests from the window.",
+    body: "Zorvo reads the ACP registry. Only when you click Install does it fetch that agent's hash-checked download, plus Node.js or uv if it needs them. No telemetry, and no requests from the window.",
   },
   {
     icon: "hard-drive",
     title: "Your data, on your Mac",
-    body: "Sessions, transcripts and worktrees live in one folder you can open in Finder.",
+    body: "Sessions, transcripts, worktrees and installed agents live in one folder you can open in Finder.",
   },
   {
     icon: "lock",
     title: "Only the folders you open",
-    body: "The backend reads and runs only in folders you opened in the app.",
+    body: "The backend reads and runs only in folders you opened in the app. What you type in an agent's form is never saved.",
   },
 ];
 
-const DATA_FOLDER = ["state.json", "transcripts/", "worktrees/"];
+const DATA_FOLDER = ["state.json", "tools/", "transcripts/", "worktrees/"];
 
 function DataFolderTerminal() {
   return (
     <div
       role="img"
-      aria-label="The folder where Zorvo keeps its data: state.json, transcripts and worktrees"
+      aria-label="The folder where Zorvo keeps its data: state.json, tools, transcripts and worktrees"
       className="min-w-0 flex-[1_1_380px] overflow-hidden rounded-xl border border-terminal-border bg-terminal-bg"
     >
       <div className="flex h-9 items-center gap-2 border-b border-terminal-border px-3.5">
@@ -39,7 +39,7 @@ function DataFolderTerminal() {
         <span className="size-2.5 rounded-full bg-terminal-border" />
         <span className="ml-2 font-mono text-[11px] leading-4 text-terminal-fg-subtle">zsh</span>
       </div>
-      <div className="flex flex-col gap-0.5 overflow-x-auto px-5 py-[18px] font-mono text-xs leading-[18px] text-terminal-fg">
+      <div className="flex flex-col gap-0.5 overflow-hidden px-5 py-[18px] font-mono text-xs leading-[18px] text-terminal-fg">
         <div className="whitespace-nowrap">
           <span className="text-terminal-fg-subtle">~ %</span> ls ~/Library/Application\ Support/xyz.zorvo.desktop
         </div>

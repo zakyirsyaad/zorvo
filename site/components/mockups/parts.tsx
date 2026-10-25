@@ -27,7 +27,7 @@ const FAKE_BUTTON: Record<FakeButtonVariant, string> = {
   danger: "border-transparent bg-danger-surface text-danger",
 };
 
-function FakeButton({ variant, icon, children }: { variant: FakeButtonVariant; icon?: IconName; children: ReactNode }) {
+export function FakeButton({ variant, icon, children }: { variant: FakeButtonVariant; icon?: IconName; children: ReactNode }) {
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs leading-4 font-medium ${FAKE_BUTTON[variant]}`}
@@ -53,7 +53,7 @@ export function PermissionCard({ title, body, command }: PermissionCardProps) {
         {title}
       </div>
       {body && <p className="m-0 text-xs leading-[18px] text-fg-secondary">{body}</p>}
-      <pre className="m-0 overflow-x-auto rounded-lg border border-border bg-bg p-2.5 font-mono text-xs leading-[18px] text-fg-secondary">
+      <pre className="m-0 overflow-hidden rounded-lg border border-border bg-bg p-2.5 font-mono text-xs leading-[18px] text-fg-secondary">
         {command}
       </pre>
       <div className="flex flex-wrap gap-2 border-t border-border pt-2.5">
@@ -103,7 +103,7 @@ export function DiffCard({ path, added, removed, lines }: DiffCardProps) {
           <span className="text-danger">−{removed}</span>
         </span>
       </div>
-      <div className="overflow-x-auto py-1.5 font-mono text-xs leading-[18px] text-fg-secondary">
+      <div className="overflow-hidden py-1.5 font-mono text-xs leading-[18px] text-fg-secondary">
         {lines.map((line, index) => (
           <div key={index} className={`flex min-w-max ${LINE_BG[line.kind]}`}>
             {hasGutter && (
@@ -116,16 +116,6 @@ export function DiffCard({ path, added, removed, lines }: DiffCardProps) {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-/** A label and a value inside the app's popover menu. */
-export function MenuRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 text-xs leading-4 text-fg-secondary">
-      <span>{label}</span>
-      <span className="text-[11px] text-fg-subtle">{value}</span>
     </div>
   );
 }

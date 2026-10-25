@@ -8,7 +8,7 @@ use std::time::Duration;
 use zorvo_lib::acp::manager::{AcpEvent, AcpLaunch, AcpManager};
 
 /// How long a test waits for an event from the agent.
-const WAIT: Duration = Duration::from_secs(10);
+pub const WAIT: Duration = Duration::from_secs(10);
 
 /// The fake ACP agent, with the capabilities it advertises by default.
 pub fn fake_agent() -> AcpLaunch {

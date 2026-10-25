@@ -74,7 +74,7 @@ The Rust ACP tests spawn `src-tauri/tests/fixtures/fake_acp_agent.mjs` with Node
 ## Testing conventions
 
 - Frontend tests live in `src/test/` (Vitest + Testing Library, jsdom). `src/test/setup.ts` fakes Tauri `invoke`, including an in-memory store seeded via `window.__FAKE_TAURI_STORE__` and canned ACP responses; agent profile fixtures are in `src/test/fixtures/agents.ts`.
-- Rust tests are in `#[cfg(test)]` modules and `src-tauri/tests/`.
+- Rust tests are in `#[cfg(test)]` modules and `src-tauri/tests/it/` (one binary; a new file needs a `mod` line in `main.rs`, which a test checks).
 - Agent worktrees under `.claude/` contain copies of the repo; Vitest and ESLint both exclude `.claude/**`.
 - Each worktree under `.claude/worktrees/` builds its own `src-tauri/target` (a few GB). Run `pnpm clean:rust` there once its PR has merged or its session is done.
 

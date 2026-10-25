@@ -11,54 +11,7 @@ use zorvo_lib::acp::manager::{
 };
 use zorvo_lib::acp::terminal_auth::SignInAttempts;
 
-const WAIT: Duration = Duration::from_secs(10);
-
-fn fake_agent() -> AcpLaunch {
-    AcpLaunch {
-        program: "node".to_string(),
-        args: vec![format!(
-            "{}/tests/fixtures/fake_acp_agent.mjs",
-            env!("CARGO_MANIFEST_DIR")
-        )],
-        env: vec![],
-    }
-}
-
-fn cwd() -> String {
-    std::env::current_dir()
-        .unwrap()
-        .to_string_lossy()
-        .to_string()
-}
-
-fn manager() -> (Arc<AcpManager>, Receiver<AcpEvent>) {
-    let (tx, rx) = mpsc::channel();
-    let manager = AcpManager::new(Box::new(move |event| {
-        let _ = tx.send(event);
-    }));
-    (Arc::new(manager), rx)
-}
-
-/// Waits for the first event matching `predicate`, skipping others.
-fn wait_for(rx: &Receiver<AcpEvent>, predicate: impl Fn(&AcpEvent) -> bool) -> AcpEvent {
-    loop {
-        let event = rx
-            .recv_timeout(WAIT)
-            .expect("timed out waiting for an ACP event");
-        if predicate(&event) {
-            return event;
-        }
-    }
-}
-
-fn agent_text(event: &AcpEvent) -> Option<String> {
-    match event {
-        AcpEvent::Update { update, .. } if update["sessionUpdate"] == "agent_message_chunk" => {
-            update["content"]["text"].as_str().map(str::to_string)
-        }
-        _ => None,
-    }
-}
+use crate::common::{agent_text, cwd, fake_agent, manager, wait_for, WAIT};
 
 #[test]
 fn starts_a_session_and_reports_its_modes() {

@@ -4,6 +4,11 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- **Detected agents folds away.** Click its header in the sidebar to hide or show the list.
+- **The plan button matches the others in the top bar.** Its done count ("4/4") is now a small badge on the corner of the icon, like the count on Background tasks.
+
 ## [0.4.1] - 2026-10-24
 
 ### Fixed

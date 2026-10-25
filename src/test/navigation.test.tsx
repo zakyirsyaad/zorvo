@@ -390,6 +390,21 @@ describe("Navigation and Layout Components", () => {
       expect(section.nextElementSibling?.contains(footer)).toBe(true);
     });
 
+    it("collapses and expands the detected agents list from its header", () => {
+      renderWithAgents([makeProfile({ id: "claude-acp", name: "Claude Code", detected: true })]);
+
+      const toggle = screen.getByRole("button", { name: /Detected Agents/i });
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+      fireEvent.click(toggle);
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(screen.queryByRole("list", { name: "Detected agents" })).toBeNull();
+      expect(within(toggle).getByText("1")).toBeDefined();
+
+      fireEvent.click(toggle);
+      expect(screen.getByRole("list", { name: "Detected agents" })).toBeDefined();
+    });
+
     it("hides the agents section when no agent is detected", () => {
       renderWithAgents([makeProfile({ id: "codex-acp", name: "Codex", detected: false })]);
 

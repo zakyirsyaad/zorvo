@@ -97,34 +97,56 @@ function WorkspaceGroup({ group, isActive, isExpanded, onToggle, newSessionMenu,
   );
 }
 
-/** Installed agents, pinned above the footer; renders nothing when none are detected. */
+/**
+ * Installed agents, pinned above the footer; renders nothing when none are detected.
+ * The header folds the list away to leave more room for the sessions.
+ */
 function DetectedAgents({ agents, settings }: { agents: AgentProfile[]; settings: EnabledSettings }) {
+  const [isExpanded, setIsExpanded] = useState(true);
   const detected = agents.filter((agent) => agent.detected && isInUse(agent, settings));
   if (detected.length === 0) return null;
   return (
     <section aria-label="Detected agents" className="border-t border-border px-3 pt-2.5 pb-2">
-      <div className={SECTION_HEADER}>
-        <span>Detected Agents</span>
+      <button
+        type="button"
+        onClick={() => setIsExpanded((expanded) => !expanded)}
+        aria-expanded={isExpanded}
+        className={`${SECTION_HEADER} group/agents w-full rounded transition-colors hover:text-fg-secondary focus-ring ${
+          isExpanded ? "" : "mb-0"
+        }`}
+      >
+        <span className="flex items-center gap-1">
+          Detected Agents
+          <ChevronRight
+            size={12}
+            aria-hidden="true"
+            className={`shrink-0 transition-transform ${
+              isExpanded ? "rotate-90 opacity-0 group-hover/agents:opacity-100" : ""
+            }`}
+          />
+        </span>
         <span className="text-[10px] text-fg-subtle">{detected.length}</span>
-      </div>
-      <ul aria-label="Detected agents" className="space-y-0.5">
-        {detected.map((agent) => (
-          <li
-            key={agent.id}
-            title={agent.detected_path ?? undefined}
-            className="flex items-center justify-between rounded-md px-2 py-1 text-fg-secondary hover:bg-surface-hover"
-          >
-            <div className="flex items-center gap-2 truncate">
-              <AgentLogo profileId={agent.id} name={agent.name} />
-              <span className="truncate">{agent.name}</span>
-            </div>
-            <span className="flex items-center gap-1 text-[10px] text-status-running font-medium">
-              <span className="h-1.5 w-1.5 rounded-full bg-status-running inline-block" />
-              Ready
-            </span>
-          </li>
-        ))}
-      </ul>
+      </button>
+      {isExpanded && (
+        <ul aria-label="Detected agents" className="space-y-0.5">
+          {detected.map((agent) => (
+            <li
+              key={agent.id}
+              title={agent.detected_path ?? undefined}
+              className="flex items-center justify-between rounded-md px-2 py-1 text-fg-secondary hover:bg-surface-hover"
+            >
+              <div className="flex items-center gap-2 truncate">
+                <AgentLogo profileId={agent.id} name={agent.name} />
+                <span className="truncate">{agent.name}</span>
+              </div>
+              <span className="flex items-center gap-1 text-[10px] text-status-running font-medium">
+                <span className="h-1.5 w-1.5 rounded-full bg-status-running inline-block" />
+                Ready
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

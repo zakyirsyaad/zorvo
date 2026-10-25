@@ -15,10 +15,10 @@ export function Download() {
           Every agent, one prompt.
         </h2>
         <p className="t-lead m-0 max-w-[480px]">
-          Download Zorvo, open a folder and pick the agent you already use.
+          Download Zorvo, open a folder and pick the agent you already use. Zorvo installs the rest.
         </p>
         <div className="flex flex-wrap justify-center gap-3 pt-2">
-          <ButtonLink href={LINKS.releases} variant="primary" size="lg">
+          <ButtonLink href={LINKS.download} variant="primary" size="lg">
             <Icon name="download" size={16} />
             Download for Mac
           </ButtonLink>

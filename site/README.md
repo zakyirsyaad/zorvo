@@ -11,7 +11,11 @@ pnpm --filter zorvo-site dev      # http://localhost:3100
 SITE_URL=https://zorvo.xyz pnpm --filter zorvo-site build   # writes site/out/
 ```
 
-`out/` is plain files: any static host serves it.
+`out/` is plain files: any static host serves it. Next.js telemetry is off in
+both scripts. The page makes no requests to other sites. Every link comes from
+`lib/links.ts`: until the docs and download pages exist, the docs links point at
+the repository's README and the downloads at its GitHub releases, and changing
+that one file moves them all.
 
 ## Deploying on Vercel
 
@@ -29,9 +33,7 @@ build fails instead of publishing localhost links.
 The CSP allows only the site's own origin, so it also blocks the Vercel
 Toolbar that Vercel injects into preview deployments. Turn the toolbar off
 for this project (Settings → General → Vercel Toolbar) so previews show the
-same clean console as production. Next.js telemetry is off in
-both scripts. The page makes no requests to other sites; downloads link to
-the GitHub releases.
+same clean console as production.
 
 - Sections live in `components/sections/`, in page order in `app/page.tsx`.
 - The pictures of the app (`components/mockups/`) are `role="img"` with a

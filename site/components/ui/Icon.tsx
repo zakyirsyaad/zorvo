@@ -9,12 +9,6 @@ const PATHS = {
       <path d="m7 10 5 5 5-5" />
     </>
   ),
-  "arrow-up-right": (
-    <>
-      <path d="M7 7h10v10" />
-      <path d="M7 17 17 7" />
-    </>
-  ),
   "arrow-up": (
     <>
       <path d="m5 12 7-7 7 7" />
@@ -126,17 +120,6 @@ const PATHS = {
       <circle cx="16.5" cy="7.5" r=".5" fill="currentColor" />
     </>
   ),
-  "wifi-off": (
-    <>
-      <path d="M12 20h.01" />
-      <path d="M8.5 16.429a5 5 0 0 1 7 0" />
-      <path d="M5 12.859a10 10 0 0 1 5.17-2.69" />
-      <path d="M19 12.859a10 10 0 0 0-2.007-1.523" />
-      <path d="M2 8.82a15 15 0 0 1 4.177-2.643" />
-      <path d="M22 8.82a15 15 0 0 0-11.288-3.764" />
-      <path d="m2 2 20 20" />
-    </>
-  ),
   "hard-drive": (
     <>
       <line x1="22" x2="2" y1="12" y2="12" />
@@ -149,6 +132,39 @@ const PATHS = {
     <>
       <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </>
+  ),
+  "arrow-right": (
+    <>
+      <path d="M5 12h14" />
+      <path d="m12 5 7 7-7 7" />
+    </>
+  ),
+  "chevron-right": <path d="m9 18 6-6-6-6" />,
+  "square-check": (
+    <>
+      <path d="M9 11l3 3L22 4" />
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+    </>
+  ),
+  image: (
+    <>
+      <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+      <circle cx="9" cy="9" r="2" />
+      <path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21" />
+    </>
+  ),
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+      <path d="M2 12h20" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
     </>
   ),
 } satisfies Record<string, ReactNode>;

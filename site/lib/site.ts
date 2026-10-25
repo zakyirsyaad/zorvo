@@ -40,7 +40,7 @@ export function softwareApplication(url: URL = siteUrl()) {
     applicationCategory: "DeveloperApplication",
     operatingSystem: "macOS",
     softwareVersion: appPackage.version,
-    downloadUrl: LINKS.releases,
+    downloadUrl: LINKS.download,
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
   };
 }

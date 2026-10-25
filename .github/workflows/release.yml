@@ -1,15 +1,25 @@
 name: Release
 
 # Builds the macOS app for a version tag (v1.2.3) and attaches it to a draft
-# GitHub release. With the Apple secrets set (see README, "Releasing"), the
-# app is signed and notarized; without them it is built unsigned. Only tags
-# trigger it: the release is named after the tag that started the run.
+# release in the public zakyirsyaad/zorvo-releases repository, since this one
+# is private and its releases cannot be downloaded. It also uploads the DMG as
+# Zorvo-mac.dmg, the stable name the site's Download link uses, and copies the
+# user guide (docs/releases-repo/README.md) and the released part of
+# CHANGELOG.md there (scripts/public-docs.mjs).
+#
+# Needs the RELEASES_TOKEN secret: a fine-grained token with Contents read and
+# write on zorvo-releases only. With the Apple secrets set (see README,
+# "Releasing"), the app is signed and notarized; without them it is built
+# unsigned. Only tags trigger it: the release is named after the tag.
 on:
   push:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  RELEASES_REPO: zakyirsyaad/zorvo-releases
 
 jobs:
   macos:
@@ -17,6 +27,14 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
+      - name: Check the releases token is set
+        env:
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          if [ -z "$RELEASES_TOKEN" ]; then
+            echo "::error::Set the RELEASES_TOKEN secret: a fine-grained token with Contents read and write on $RELEASES_REPO."
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -52,12 +70,47 @@ jobs:
               { echo "$name<<$delimiter"; echo "$value"; echo "$delimiter"; } >> "$GITHUB_ENV"
             fi
           done
-      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+      - id: tauri
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         with:
+          owner: zakyirsyaad
+          repo: zorvo-releases
+          # The tag is made in zorvo-releases, whose history does not have this commit.
+          releaseCommitish: main
           tagName: ${{ github.ref_name }}
           releaseName: Zorvo ${{ github.ref_name }}
           releaseBody: See the README for requirements, and for opening an unsigned build (System Settings → Privacy & Security → Open Anyway).
           releaseDraft: true
           args: --target universal-apple-darwin
+      # The site links to releases/latest/download/Zorvo-mac.dmg, so every
+      # release also carries its DMG under that one name.
+      - name: Upload the DMG under its stable name
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          ARTIFACTS: ${{ steps.tauri.outputs.artifactPaths }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          dmg=$(jq -r '.[] | select(endswith(".dmg"))' <<<"$ARTIFACTS" | head -n 1)
+          if [ -z "$dmg" ]; then
+            echo "::error::The build made no DMG."
+            exit 1
+          fi
+          cp "$dmg" "$RUNNER_TEMP/Zorvo-mac.dmg"
+          gh release upload "$TAG" "$RUNNER_TEMP/Zorvo-mac.dmg" --repo "$RELEASES_REPO" --clobber
+      - name: Copy the user guide and changelog to the releases repository
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # The public changelog has no Unreleased section and no links into this private repository.
+          node scripts/public-docs.mjs changelog CHANGELOG.md > "$RUNNER_TEMP/CHANGELOG.md"
+          for pair in "docs/releases-repo/README.md:README.md" "$RUNNER_TEMP/CHANGELOG.md:CHANGELOG.md"; do
+            src="${pair%%:*}"
+            dest="${pair##*:}"
+            sha=$(gh api "repos/$RELEASES_REPO/contents/$dest" --jq .sha 2>/dev/null || true)
+            args=(-f message="docs: update $dest for $TAG" -f content="$(base64 < "$src" | tr -d '\n')" -f branch=main)
+            if [ -n "$sha" ]; then args+=(-f sha="$sha"); fi
+            gh api --method PUT "repos/$RELEASES_REPO/contents/$dest" "${args[@]}" --silent
+          done

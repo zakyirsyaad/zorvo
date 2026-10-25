@@ -45,7 +45,7 @@ export default function InstallPage() {
 
       <H2 id="download">Download and open</H2>
       <OL>
-        <li>Download the <Chip isCode>.dmg</Chip> from the <DocLink href={LINKS.download}>latest release</DocLink>.</li>
+        <li>Download <DocLink href={LINKS.download}>the latest <Chip isCode>.dmg</Chip></DocLink>.</li>
         <li>Drag <B>Zorvo</B> into Applications.</li>
         <li>Open it. Onboarding lists the agents, lets you pick a default and asks for a project folder.</li>
       </OL>

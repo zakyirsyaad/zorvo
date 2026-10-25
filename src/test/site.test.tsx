@@ -245,11 +245,11 @@ describe("docs pages", () => {
     expect(Object.keys(PAGES).sort()).toEqual(DOCS_PAGES.map((page) => page.href).sort());
   });
 
-  it("points the landing page's docs links at the new pages and keeps downloads on GitHub", () => {
+  it("points the landing page's docs links at the new pages and keeps downloads on the public releases repository", () => {
     expect(LINKS.docs).toBe("/docs");
     expect(LINKS.installGuide).toBe("/docs/install");
     expect(LINKS.agentsGuide).toBe("/docs/agents");
-    expect(LINKS.download).toMatch(/^https:\/\/github\.com\/zakyirsyaad\/zorvo\/releases$/);
+    expect(LINKS.download).toBe("https://github.com/zakyirsyaad/zorvo-releases/releases/latest/download/Zorvo-mac.dmg");
   });
 
   for (const href of Object.keys(PAGES)) {

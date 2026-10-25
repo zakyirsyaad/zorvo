@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/zakyirsyaad/zorvo/actions/workflows/ci.yml/badge.svg)](https://github.com/zakyirsyaad/zorvo/actions/workflows/ci.yml)
 [![Security](https://github.com/zakyirsyaad/zorvo/actions/workflows/security.yml/badge.svg)](https://github.com/zakyirsyaad/zorvo/actions/workflows/security.yml)
-[![Release](https://img.shields.io/github/v/release/zakyirsyaad/zorvo?include_prereleases)](https://github.com/zakyirsyaad/zorvo/releases)
+[![Release](https://img.shields.io/github/v/release/zakyirsyaad/zorvo-releases?include_prereleases)](https://github.com/zakyirsyaad/zorvo-releases/releases)
 ![macOS](https://img.shields.io/badge/platform-macOS-lightgrey)
 
 **Every coding agent. One desktop.**
@@ -133,7 +133,7 @@ in Settings → Agents.
 ## Install
 
 Download the `.dmg` from the
-[latest release](https://github.com/zakyirsyaad/zorvo/releases) and
+[latest release](https://github.com/zakyirsyaad/zorvo-releases/releases/latest) and
 drag Zorvo into Applications.
 
 The build is not yet signed, so macOS blocks it the first time you open it.
@@ -267,9 +267,11 @@ pnpm tauri dev
 To run the fast checks before each commit (types, ESLint, `cargo fmt`), opt in
 with `pnpm lefthook install`.
 
-On every pull request, CI runs the types, ESLint, the tests and the Rust lint.
-It also runs CodeQL and a dependency audit (`pnpm audit`, `cargo audit`), and
-Dependabot proposes updates weekly.
+On every pull request, CI runs the types, ESLint and the frontend tests. The
+Rust lint and tests run on a macOS runner, so they run on every push to `main`
+and on a pull request only when it changes `src-tauri/` or the build inputs.
+CI also runs a dependency audit (`pnpm audit`, `cargo audit`), and Dependabot
+proposes updates weekly.
 
 CI does not build the release bundle. Before a release, run
 `pnpm tauri build` and open the app: the production build is the only one that
@@ -287,7 +289,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose a change,
    empty `Unreleased` section.
 2. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 3. The **Release** workflow builds a universal macOS app and attaches it to a
-   draft GitHub release. Publish the draft when it looks right.
+   draft release in the public
+   [zorvo-releases](https://github.com/zakyirsyaad/zorvo-releases) repository
+   (this one is private, so its releases cannot be downloaded). It also
+   uploads the DMG as `Zorvo-mac.dmg`, the name the site's Download link uses,
+   and copies the user guide (`docs/releases-repo/README.md`) and
+   `CHANGELOG.md` there. Publish the draft when it looks right.
+
+The workflow needs the `RELEASES_TOKEN` secret: a fine-grained personal access
+token with **Contents: Read and write** on `zorvo-releases` only. Keep
+`docs/releases-repo/README.md` in step with the user-facing sections of this
+README.
 
 To sign and notarize the app, so Gatekeeper opens it without a warning, add
 these repository secrets from an Apple Developer account:

@@ -56,36 +56,3 @@ jobs:
         env:
           # A production build needs the address it will be served from; CI only checks it builds.
           SITE_URL: http://localhost:3100
-
-  rust:
-    name: Rust (clippy, test)
-    # The app targets macOS; its runner also needs no webkit packages for Tauri.
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          version: 12
-      # Node runs the fake ACP agent in the tests; the frontend build gives
-      # Tauri the dist folder it embeds at compile time.
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: src-tauri
-      - name: Clippy
-        working-directory: src-tauri
-        run: cargo clippy --all-targets -- -D warnings
-      - name: Test
-        working-directory: src-tauri
-        run: cargo test

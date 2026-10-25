@@ -267,9 +267,11 @@ pnpm tauri dev
 To run the fast checks before each commit (types, ESLint, `cargo fmt`), opt in
 with `pnpm lefthook install`.
 
-On every pull request, CI runs the types, ESLint, the tests and the Rust lint.
-It also runs CodeQL and a dependency audit (`pnpm audit`, `cargo audit`), and
-Dependabot proposes updates weekly.
+On every pull request, CI runs the types, ESLint and the frontend tests. The
+Rust lint and tests run on a macOS runner, so they run on every push to `main`
+and on a pull request only when it changes `src-tauri/` or the build inputs.
+CI also runs a dependency audit (`pnpm audit`, `cargo audit`), and Dependabot
+proposes updates weekly.
 
 CI does not build the release bundle. Before a release, run
 `pnpm tauri build` and open the app: the production build is the only one that

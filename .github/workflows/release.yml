@@ -4,7 +4,8 @@ name: Release
 # release in the public zakyirsyaad/zorvo-releases repository, since this one
 # is private and its releases cannot be downloaded. It also uploads the DMG as
 # Zorvo-mac.dmg, the stable name the site's Download link uses, and copies the
-# user guide (docs/releases-repo/README.md) and CHANGELOG.md there.
+# user guide (docs/releases-repo/README.md) and the released part of
+# CHANGELOG.md there (scripts/public-docs.mjs).
 #
 # Needs the RELEASES_TOKEN secret: a fine-grained token with Contents read and
 # write on zorvo-releases only. With the Apple secrets set (see README,
@@ -103,7 +104,9 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          for pair in "docs/releases-repo/README.md:README.md" "CHANGELOG.md:CHANGELOG.md"; do
+          # The public changelog has no Unreleased section and no links into this private repository.
+          node scripts/public-docs.mjs changelog CHANGELOG.md > "$RUNNER_TEMP/CHANGELOG.md"
+          for pair in "docs/releases-repo/README.md:README.md" "$RUNNER_TEMP/CHANGELOG.md:CHANGELOG.md"; do
             src="${pair%%:*}"
             dest="${pair##*:}"
             sha=$(gh api "repos/$RELEASES_REPO/contents/$dest" --jq .sha 2>/dev/null || true)

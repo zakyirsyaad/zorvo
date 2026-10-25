@@ -40,3 +40,45 @@ mod workspace_files_test;
 mod workspace_terminal_test;
 mod workspaces_test;
 mod worktrees_test;
+
+/// Test files that are binaries of their own, directly in `tests/`.
+const OWN_BINARIES: &[&str] = &["installer_state_test.rs"];
+
+/// The `.rs` file names directly in `dir`.
+fn rust_files_in(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap_or_else(|error| panic!("read {}: {error}", dir.display()))
+        .map(|entry| entry.expect("read a dir entry").path())
+        .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "rs"))
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+// A file here without a `mod` line would never be compiled or run, and a new
+// file in `tests/` would link everything again as a binary of its own.
+#[test]
+fn every_integration_test_file_is_a_module_of_this_binary() {
+    let tests = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let declared = include_str!("main.rs");
+
+    let missing: Vec<String> = rust_files_in(&tests.join("it"))
+        .into_iter()
+        .filter(|name| name != "main.rs")
+        .filter(|name| !declared.contains(&format!("\nmod {};", name.trim_end_matches(".rs"))))
+        .collect();
+    let stray: Vec<String> = rust_files_in(&tests)
+        .into_iter()
+        .filter(|name| !OWN_BINARIES.contains(&name.as_str()))
+        .collect();
+
+    assert!(
+        missing.is_empty(),
+        "add `mod` lines to tests/it/main.rs for {missing:?}"
+    );
+    assert!(
+        stray.is_empty(),
+        "move {stray:?} into tests/it/ (or list it in OWN_BINARIES if it sets process-wide state)"
+    );
+}

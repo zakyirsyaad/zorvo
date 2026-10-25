@@ -1663,5 +1663,117 @@ describe("ACP sessions in the app", () => {
     expect(screen.getByTestId("chat-canvas-container")).toBe(view);
     expect(view.scrollTop).toBe(2000);
   });
-});
+  describe("choosing a model the agent reports in `models`", () => {
+    // Shaped like Gemini's answer: no config options, a model state of its own.
+    const models = (currentModelId: string) => ({
+      currentModelId,
+      availableModels: [
+        { modelId: "auto", name: "Auto" },
+        { modelId: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+      ],
+    });
+    const current = { model: "auto" };
+    function withGeminiModels() {
+      current.model = "auto";
+      realInvoke = tauriInternals().invoke;
+      return vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
+        const a = args as { sessionId?: string; modelId?: string } | undefined;
+        if (cmd === "acp_probe_agent") {
+          return Promise.resolve({ modes: null, models: models("auto"), configOptions: [], commands: [], signInChecked: true });
+        }
+        if (cmd === "acp_start_session") {
+          current.model = "auto";
+          return Promise.resolve({
+            acpSessionId: `acp-${a?.sessionId}`,
+            agentCapabilities: {},
+            modes: null,
+            models: models("auto"),
+            configOptions: [],
+          });
+        }
+        if (cmd === "acp_set_model") {
+          current.model = String(a?.modelId);
+          return Promise.resolve(undefined);
+        }
+        return realInvoke(cmd, args);
+      });
+    }
 
+    async function renderDraft() {
+      fakeStore().state.settings.defaultAgentId = "qwen";
+      const spy = withGeminiModels();
+      await act(async () => {
+        render(<App />);
+      });
+      return spy;
+    }
+
+    async function pickModel(name: string) {
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("option", { name }));
+      });
+    }
+
+    it("shows the model chip in a draft, and sets the pick before the first prompt", async () => {
+      const spy = await renderDraft();
+      expect(await screen.findByRole("button", { name: "Model: Auto" })).toBeDefined();
+
+      await pickModel("Gemini 2.5 Flash");
+      expect(callsTo(spy, "acp_set_model")).toHaveLength(0);
+      await send(FIRST_MESSAGE);
+      await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
+
+      const order = (spy.mock.calls as unknown as InvokeCall[]).map(([cmd]) => cmd);
+      expect(callsTo(spy, "acp_set_model").map(([, a]) => a)).toEqual([
+        { sessionId: expect.any(String), modelId: "gemini-2.5-flash" },
+      ]);
+      expect(order.indexOf("acp_set_model")).toBeLessThan(order.indexOf("acp_prompt"));
+    });
+
+    it("switches the model of a running session and shows the new one", async () => {
+      const spy = await renderDraft();
+      await screen.findByRole("button", { name: "Model: Auto" });
+      const sessionId = await startQwenSession(spy);
+
+      await pickModel("Gemini 2.5 Flash");
+
+      expect(callsTo(spy, "acp_set_model").at(-1)?.[1]).toEqual({ sessionId, modelId: "gemini-2.5-flash" });
+      expect(screen.getByRole("button", { name: "Model: Gemini 2.5 Flash" })).toBeDefined();
+    });
+
+    it("starts the next session on the model picked last", async () => {
+      const spy = await renderDraft();
+      const first = await startQwenSession(spy);
+      await pickModel("Gemini 2.5 Flash");
+      await waitFor(() => expect(callsTo(spy, "acp_set_model")).toHaveLength(1));
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      });
+      expect(await screen.findByRole("button", { name: "Model: Gemini 2.5 Flash" })).toBeDefined();
+      await send("next task");
+      await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(2));
+
+      const models = callsTo(spy, "acp_set_model").map(([, a]) => a);
+      expect(models).toHaveLength(2);
+      expect(models[1]).toEqual({ sessionId: expect.not.stringMatching(first), modelId: "gemini-2.5-flash" });
+    });
+
+    it("tells the user when the agent refuses the model and keeps the one it runs", async () => {
+      const spy = await renderDraft();
+      await screen.findByRole("button", { name: "Model: Auto" });
+      await startQwenSession(spy);
+      spy.mockImplementation((cmd, args) =>
+        cmd === "acp_set_model" ? Promise.reject("Unknown model") : realInvoke(cmd, args),
+      );
+
+      await pickModel("Gemini 2.5 Flash");
+
+      expect(await screen.findByText(/Could not change the model/)).toBeDefined();
+      expect(screen.getByRole("button", { name: "Model: Auto" })).toBeDefined();
+    });
+  });
+});

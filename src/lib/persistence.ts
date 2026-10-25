@@ -3,7 +3,7 @@ import { TRANSPORT_ACP, type ChatMessage, type ChatMessagePart, type PersistedSt
 import { markElicitationsUnanswered } from './acp-elicitation';
 import { normalizeAppearance } from './appearance';
 import type { AgentOptions } from './acp-draft';
-import { toCommands, toConfigOptions, toModes } from '../hooks/useAcpSessions';
+import { toCommands, toConfigOptions, toModels, toModes } from '../hooks/useAcpSessions';
 
 export const STATE_VERSION = 2;
 
@@ -95,21 +95,30 @@ function withCanonicalKeys<T>(record: Record<string, T>): Record<string, T> {
   );
 }
 
+/** The model picked last, when it is a string. */
+function toPreferredModelId(raw: unknown): Pick<AgentOptions, 'preferredModelId'> {
+  return typeof raw === 'string' ? { preferredModelId: raw } : {};
+}
+
+function toOneAgentOptions(options: Record<string, unknown>): AgentOptions {
+  const models = toModels(options.models);
+  return {
+    modes: toModes(options.modes),
+    ...(models ? { models } : {}),
+    configOptions: toConfigOptions(options.configOptions),
+    commands: toCommands(options.commands),
+    ...toPreferredConfig(options.preferredConfig),
+    ...toPreferredModelId(options.preferredModelId),
+  };
+}
+
 function toAgentOptions(raw: unknown): Record<string, AgentOptions> {
   if (!isObject(raw)) return {};
   return withCanonicalKeys(
     Object.fromEntries(
       Object.entries(raw)
         .filter((entry): entry is [string, Record<string, unknown>] => isObject(entry[1]))
-        .map(([profileId, options]) => [
-          profileId,
-          {
-            modes: toModes(options.modes),
-            configOptions: toConfigOptions(options.configOptions),
-            commands: toCommands(options.commands),
-            ...toPreferredConfig(options.preferredConfig),
-          },
-        ]),
+        .map(([profileId, options]) => [profileId, toOneAgentOptions(options)]),
     ),
   );
 }

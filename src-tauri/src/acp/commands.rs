@@ -442,6 +442,15 @@ pub fn acp_set_mode(
 }
 
 #[tauri::command(async)]
+pub fn acp_set_model(
+    manager: State<'_, AcpManager>,
+    session_id: String,
+    model_id: String,
+) -> Result<(), String> {
+    manager.set_model(&session_id, &model_id)
+}
+
+#[tauri::command(async)]
 pub fn acp_set_config_option(
     manager: State<'_, AcpManager>,
     session_id: String,

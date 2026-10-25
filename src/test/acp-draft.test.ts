@@ -10,6 +10,18 @@ import {
   type AgentOptions,
 } from "../lib/acp-draft";
 
+const gemini: AgentOptions = {
+  modes: null,
+  configOptions: [],
+  models: {
+    currentModelId: "auto",
+    availableModels: [
+      { modelId: "auto", name: "Auto" },
+      { modelId: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+    ],
+  },
+};
+
 const qwen: AgentOptions = {
   modes: {
     currentModeId: "yolo",
@@ -45,6 +57,49 @@ describe("draftInfo", () => {
 
     expect(info.modes?.currentModeId).toBe("yolo");
     expect(info.configOptions[0].currentValue).toBe("qwen3-max");
+  });
+});
+
+describe("models an agent reports", () => {
+  it("shows the model the user picked in the draft", () => {
+    expect(draftInfo(gemini, NO_CHOICES).models?.currentModelId).toBe("auto");
+    expect(draftInfo(gemini, { config: {}, modelId: "gemini-2.5-flash" }).models?.currentModelId).toBe("gemini-2.5-flash");
+    expect(draftInfo(qwen, NO_CHOICES).models).toBeNull();
+  });
+
+  it("sets the picked model once the agent is up, before the other settings", () => {
+    const both: AgentOptions = { ...gemini, configOptions: qwen.configOptions };
+    const choices = { config: { model: "qwen3-max" }, modelId: "gemini-2.5-flash" };
+
+    expect(changesToApply(both, choices, false)).toEqual([
+      { kind: "model", modelId: "gemini-2.5-flash" },
+      { kind: "config", configId: "model", value: "qwen3-max" },
+    ]);
+  });
+
+  it("skips a model that holds already or that the agent no longer offers", () => {
+    expect(changesToApply(gemini, { config: {}, modelId: "auto" }, false)).toEqual([]);
+    expect(changesToApply(gemini, { config: {}, modelId: "gone" }, false)).toEqual([]);
+    expect(changesToApply(qwen, { config: {}, modelId: "gemini-2.5-flash" }, false)).toEqual([]);
+  });
+
+  it("starts the next session with the model picked last while it is still offered", () => {
+    const remembered = { ...gemini, preferredModelId: "gemini-2.5-flash" };
+
+    expect(withPreferred(NO_CHOICES, remembered).modelId).toBe("gemini-2.5-flash");
+    expect(withPreferred({ config: {}, modelId: "auto" }, remembered).modelId).toBe("auto");
+    expect(withPreferred(NO_CHOICES, { ...gemini, preferredModelId: "gone" })).toBe(NO_CHOICES);
+    expect(withPreferred(NO_CHOICES, gemini)).toBe(NO_CHOICES);
+  });
+
+  it("counts models as reported options and fills them in from a probe", () => {
+    expect(hasReportedOptions(gemini)).toBe(true);
+    const probed = { modes: null, configOptions: [], commands: [], models: gemini.models };
+
+    expect(withProbed(undefined, probed).models).toBe(gemini.models);
+    expect(withProbed({ modes: null, configOptions: [] }, probed).models).toBe(gemini.models);
+    const known = { ...gemini, models: { currentModelId: "x", availableModels: [] } };
+    expect(withProbed(known, probed).models).toBe(known.models);
   });
 });
 

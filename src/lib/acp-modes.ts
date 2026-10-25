@@ -1,4 +1,4 @@
-import type { AcpSessionInfo } from '../hooks/useAcpSessions';
+import type { AcpOptions } from '../hooks/useAcpSessions';
 import { isRiskyMode } from './composer-controls';
 
 /** Mode ids that mean "ask before acting", in order of preference. */
@@ -24,7 +24,7 @@ function safeIdAmong(current: string, available: readonly string[]): string | un
  * the agent offers it, whether it reports modes or a "mode" config option.
  * The user can still pick the risky mode in the composer.
  */
-export function safeModeToApply(info: Pick<AcpSessionInfo, 'modes' | 'configOptions'>): SafeModeChange | undefined {
+export function safeModeToApply(info: AcpOptions): SafeModeChange | undefined {
   if (info.modes) {
     const modeId = safeIdAmong(
       info.modes.currentModeId,

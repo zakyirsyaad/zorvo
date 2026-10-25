@@ -91,6 +91,7 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
     case "acp_respond_elicitation":
     case "acp_reopen_elicitation_url":
     case "acp_set_mode":
+    case "acp_set_model":
     case "acp_stop_session":
       return Promise.resolve(undefined);
     case "write_fork_handoff":

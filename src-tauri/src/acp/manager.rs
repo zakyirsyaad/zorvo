@@ -416,6 +416,20 @@ impl AcpManager {
             .map(|_| ())
     }
 
+    /// Sets the model of a session whose agent reported `models` (the unstable
+    /// `session/set_model`; agents that moved to a model config option use
+    /// `set_config_option` instead). An agent that does not know the model refuses it.
+    pub fn set_model(&self, app_session_id: &str, model_id: &str) -> Result<(), String> {
+        let (connection, acp_id) = self.connection_for(app_session_id)?;
+        connection
+            .request(
+                "session/set_model",
+                json!({ "sessionId": acp_id, "modelId": model_id }),
+                SESSION_REQUEST_TIMEOUT,
+            )
+            .map(|_| ())
+    }
+
     /// Sets a session config option (e.g. the model); returns the agent's updated options.
     pub fn set_config_option(
         &self,

@@ -1,4 +1,4 @@
-import type { AcpSessionInfo } from '../hooks/useAcpSessions';
+import type { AcpOptions } from '../hooks/useAcpSessions';
 import type { DropdownOption } from '../components/composer/OptionDropdown';
 
 /** One composer dropdown: the choices, the current one, and what picking does. */
@@ -28,12 +28,13 @@ function controlIf(options: DropdownOption[], minimum: number, rest: Omit<Compos
 
 export interface AcpControlActions {
   setMode: (modeId: string) => void;
+  setModel: (modelId: string) => void;
   setConfigOption: (configId: string, value: string) => void;
 }
 
 /** Controls for an ACP session: exactly what its agent reported, applied live. */
 export function acpControls(
-  info: Pick<AcpSessionInfo, 'modes' | 'configOptions'>,
+  info: AcpOptions,
   actions: AcpControlActions,
 ): ComposerControls {
   const byCategory = (category: string) => info.configOptions.find((o) => o.category === category);
@@ -55,5 +56,15 @@ export function acpControls(
       )
     : fromConfig('mode');
 
-  return { permission, model: fromConfig('model'), effort: fromConfig('thought_level') };
+  // A model config option is the agent's newer way to offer models; `models` is the older one.
+  const fromModels = (): ComposerControl | undefined =>
+    info.models
+      ? controlIf(
+          info.models.availableModels.map((m) => ({ value: m.modelId, label: m.name })),
+          1,
+          { selected: info.models.currentModelId, onChange: (value) => value && actions.setModel(value) },
+        )
+      : undefined;
+
+  return { permission, model: fromConfig('model') ?? fromModels(), effort: fromConfig('thought_level') };
 }

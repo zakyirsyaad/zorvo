@@ -221,6 +221,10 @@ export default function App() {
     rememberAgentOptions(profileId, { preferredConfig, ...(reported?.length ? { configOptions: reported } : {}) });
   };
 
+  /** Keeps a model pick among an agent's `models`, so the agent's next session starts with it too. */
+  const rememberModelPick = (profileId: string, preferredModelId: string) =>
+    rememberAgentOptions(profileId, { preferredModelId });
+
   // The user may have opened another session meanwhile: the message goes back
   // into the session it was written for, not that one's composer.
   const restoreMessage = (sessionId: string, text: string, attachments?: readonly string[]) => {
@@ -571,6 +575,7 @@ export default function App() {
     agentOptions,
     acp,
     onPick: rememberPick,
+    onPickModel: rememberModelPick,
   });
   const composerCommands = composerCommandsFor({
     isRunning: isActiveRunning,

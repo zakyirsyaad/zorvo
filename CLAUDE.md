@@ -18,7 +18,7 @@ pnpm vitest run src/test/persistence.test.ts -t "name" # one test
 pnpm design-system          # local design-system reference on :5180
 pnpm registry:update        # refresh the bundled ACP registry history (src-tauri/resources/registry-history.json)
 pnpm tauri build            # production bundle (the only build that applies the CSP)
-pnpm clean:rust             # cargo clean for src-tauri
+pnpm clean:rust             # cargo clean for src-tauri (empties the shared target, see "Working in worktrees")
 ```
 
 Rust (from `src-tauri/`; `pnpm build` must have produced `dist/` first, since Tauri embeds it at compile time):
@@ -83,12 +83,12 @@ The Rust ACP tests spawn `src-tauri/tests/fixtures/fake_acp_agent.mjs` with Node
 
 ## Working in worktrees and keeping disk use down
 
-Sessions run in parallel, each in its own git worktree under `.claude/worktrees/`. `node_modules` costs almost no disk there (pnpm clones its store's files on APFS, so `du` overstates it); the Rust `target` folder is what costs real disk (about 1.5 GB) and build time.
+Parallel sessions each work in their own git worktree under `.claude/worktrees/`; two sessions in the main checkout share its files and its current branch. `node_modules` costs almost no disk there (pnpm clones its store's files on APFS, so `du` overstates it); the Rust `target` folder is what costs real disk (about 1.5 GB) and build time.
 
-- **One shared Rust target.** On the maintainer's Mac an untracked `.cargo/config.toml` at the repo root (hidden through `.git/info/exclude`) sets `build.target-dir` to `~/Library/Caches/zorvo-target`, as an absolute path. Cargo reads it from every worktree below that folder, so a new worktree compiles only the `zorvo` crate (about 35 s) instead of every dependency (a cold build took about 9 minutes). Leave the file alone. Builds from several sessions queue on cargo's file lock, and `pnpm clean:rust` empties the shared folder for all of them, so don't run it while another session builds. Deleting the folder is safe: the next build recreates it. Without the file (CI, another machine) each checkout builds its own `target`, and `pnpm clean:rust` there is the cleanup.
-- **Run only what the change needs.** `pnpm lint` and `pnpm test` for anything under `src/`. Add `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` only when `src-tauri/**` changed (CI also runs them for `package.json`, `pnpm-lock.yaml` and `.nvmrc`). A docs, site or copy change needs no cargo and no new worktree: use a branch in the main checkout.
+- **One shared Rust target.** On the maintainer's Mac an untracked `.cargo/config.toml` at the repo root (hidden through `.git/info/exclude`) holds `[build] target-dir = "/Users/mac/Library/Caches/zorvo-target"`. Write the absolute path: cargo does not expand `~`, and would build into a folder literally named `~` inside the repo. Cargo reads the file from every worktree below the repo folder, so a new worktree compiles only the `zorvo` crate (about 35 s) instead of every dependency (a cold build took about 9 minutes). Leave the file alone: `git clean -x` would remove it, and every worktree would silently go back to its own `target`. Builds from several sessions queue on cargo's file lock, and `pnpm clean:rust` empties the shared folder for all of them, so don't run it while another session builds. Deleting the folder is safe: the next build recreates it. Without the file (CI, another machine, a worktree outside the repo folder) each checkout builds its own `target`; run `pnpm clean:rust` there once its PR has merged or its session is done.
+- **Run only what the change needs.** `pnpm lint` and `pnpm test` for anything under `src/`. Add `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` only when `src-tauri/**` changed (CI also runs them for `package.json`, `pnpm-lock.yaml` and `.nvmrc`). A docs, site or copy change needs no cargo, and no new worktree either when no other session works in the main checkout: use a branch there.
 - **Review before the push.** Review the diff and fix what it finds before pushing (Claude Code: `/code-review --fix`), so CI runs once on a reviewed change. The Rust job runs on a macOS runner, which a private repository pays for at ten times the minutes.
-- **After a merge,** update local `main`. With the app's auto-archive on PR close (on for the maintainer) the session is archived when its PR merges and a clean worktree goes with it. Remove by hand any worktree made with `git worktree add`, and keep none for a merged branch.
+- **After a merge,** update local `main` and run `git worktree list`: `git worktree remove` any worktree left for a merged branch. The app's auto-archive on PR close (on for the maintainer) archives the session and, per the app, removes the worktree it made unless that holds uncommitted changes. A worktree made with `git worktree add` is yours to remove.
 
 ## Design system rules (enforced by tests)
 

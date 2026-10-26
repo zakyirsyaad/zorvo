@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useLatest } from './useLatest';
-import { toCommands, toConfigOptions, toModes } from './useAcpSessions';
+import { toCommands, toConfigOptions, toModels, toModes } from './useAcpSessions';
 import { parseAuthRequired, type AuthMethod } from '../lib/acp-auth';
 import type { ProbedOptions } from '../lib/acp-draft';
 import type { AgentProfile } from '../types';
@@ -60,6 +60,7 @@ export function useAgentProbe({ agent, cwd, isKnown, onProbed, onAuthRequired }:
         if (typeof raw !== 'object' || raw === null) return;
         const probed = raw as {
           modes?: unknown;
+          models?: unknown;
           configOptions?: unknown;
           commands?: unknown;
           signInChecked?: unknown;
@@ -68,6 +69,7 @@ export function useAgentProbe({ agent, cwd, isKnown, onProbed, onAuthRequired }:
         probedRef.current.add(agentId);
         const options = {
           modes: toModes(probed.modes),
+          models: toModels(probed.models),
           configOptions: toConfigOptions(probed.configOptions),
           commands: toCommands(probed.commands),
         };

@@ -36,6 +36,7 @@ export function SignInLayer({ signIn, agents, agentId }: SignInLayerProps) {
           status={authRequest.status}
           error={authRequest.error}
           onSignIn={signInWith}
+          onCheckAgain={auth.recheck}
           onDismiss={auth.dismiss}
         />
       )}

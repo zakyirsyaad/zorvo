@@ -14,7 +14,7 @@ import {
 import { changesToApply, NO_CHOICES, type AcpChange, type AcpChoices, type AgentOptions } from '../../lib/acp-draft';
 import { findCard, titleFromPrompt, userMessage, withoutMessage } from '../../lib/session-helpers';
 import { createId } from '../../lib/ids';
-import { toCommands, useAcpSessions, type AcpSessionInfo, type TurnResult } from '../useAcpSessions';
+import { toCommands, useAcpSessions, type AcpOptions, type AcpSessionInfo, type TurnResult } from '../useAcpSessions';
 import { useLatest } from '../useLatest';
 import { useBatchedUpdates } from '../useBatchedUpdates';
 import { useAgentFailures } from '../useAgentFailures';
@@ -291,10 +291,11 @@ export function useAcpEngine({
     sessionId: string,
     info: AcpSessionInfo,
     options: LaunchOptions,
-  ): Promise<Pick<AcpSessionInfo, 'modes' | 'configOptions'>> => {
-    let current: Pick<AcpSessionInfo, 'modes' | 'configOptions'> = info;
+  ): Promise<AcpOptions> => {
+    let current: AcpOptions = info;
     const done = new Set<string>();
-    const keyOf = (change: AcpChange) => (change.kind === 'mode' ? 'mode' : `config:${change.configId}`);
+    const keyOf = (change: AcpChange) =>
+      change.kind === 'config' ? `config:${change.configId}` : change.kind;
     // One change at a time, each checked against the agent's latest state: what
     // is on offer can depend on what was just set (an effort on its model).
     for (;;) {
@@ -303,6 +304,7 @@ export function useAcpEngine({
       done.add(keyOf(change));
       try {
         if (change.kind === 'mode') await acp.setMode(sessionId, change.modeId);
+        else if (change.kind === 'model') await acp.setModel(sessionId, change.modelId);
         else {
           const reported = await acp.setConfigOption(sessionId, change.configId, change.value);
           if (reported.length > 0) current = { ...current, configOptions: reported };
@@ -374,7 +376,12 @@ export function useAcpEngine({
         if (message) updateNow(session.id, (prev) => withoutMessage(prev, message.id));
         return true;
       }
-      rememberOptions(session.profileId, { modes: info.modes, configOptions: info.configOptions });
+      // A reopened session may not repeat the models: what is remembered stays then.
+      rememberOptions(session.profileId, {
+        modes: info.modes,
+        configOptions: info.configOptions,
+        ...(info.models ? { models: info.models } : {}),
+      });
       if (info.acpSessionId) patchSession(session.id, { acpSessionId: info.acpSessionId });
       const settled = await applyChanges(session.id, info, options);
       // Superseded while the picks were applied: a newer launch owns the session.
@@ -627,6 +634,16 @@ export function useAcpEngine({
       .catch(reportFailure('Could not change the mode'));
   };
 
+  /** Resolves to whether the agent took the model; a refusal is reported and leaves the model as it was. */
+  const setModel = (sessionId: string, modelId: string) =>
+    acp.setModel(sessionId, modelId).then(
+      () => true,
+      (error: unknown) => {
+        reportFailure('Could not change the model')(error);
+        return false;
+      },
+    );
+
   /** Resolves with the options the agent reports after the change, or null when it failed (reported). */
   const setConfigOption = (sessionId: string, configId: string, value: string) =>
     acp.setConfigOption(sessionId, configId, value).catch((error: unknown) => {
@@ -650,6 +667,7 @@ export function useAcpEngine({
     reopenElicitationUrl: elicitations.reopen,
     interrupt,
     setMode,
+    setModel,
     setConfigOption,
     stop,
     /** Drops a removed session's queued transcript changes before its transcript is deleted. */

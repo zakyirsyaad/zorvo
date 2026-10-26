@@ -21,6 +21,19 @@ export interface AcpModes {
   availableModes: AcpMode[];
 }
 
+/** One model an agent offers through the `models` field of a session (not a config option). */
+export interface AcpModel {
+  modelId: string;
+  name: string;
+  description?: string;
+}
+
+/** The models of a session whose agent reports them; a model is set with `session/set_model`. */
+export interface AcpModels {
+  currentModelId: string;
+  availableModels: AcpModel[];
+}
+
 export interface AcpConfigOption {
   id: string;
   name: string;
@@ -33,6 +46,8 @@ export interface AcpConfigOption {
 export interface AcpSessionInfo {
   acpSessionId: string;
   modes: AcpModes | null;
+  /** Null when the agent reports no `models` (or, when a session is reopened, did not repeat them). */
+  models: AcpModels | null;
   configOptions: AcpConfigOption[];
   /** The agent's slash commands, from its latest available_commands_update. */
   commands: SlashCommand[];
@@ -45,6 +60,10 @@ export interface AcpSessionInfo {
   reopenedWith?: 'resume' | 'load';
   isBusy: boolean;
 }
+
+/** What an agent reports for a session that the composer offers a choice of. */
+export type AcpOptions = Pick<AcpSessionInfo, 'modes' | 'configOptions'> &
+  Partial<Pick<AcpSessionInfo, 'models' | 'reopenedWith'>>;
 
 export interface TurnResult {
   stopReason?: string;
@@ -76,6 +95,20 @@ export function toModes(raw: unknown): AcpModes | null {
     .filter((m) => isString(m.id) && isString(m.name))
     .map((m) => ({ id: m.id as string, name: m.name as string, description: isString(m.description) ? m.description : undefined }));
   return { currentModeId: raw.currentModeId, availableModes };
+}
+
+/** Validates models an agent reported; null when malformed. */
+export function toModels(raw: unknown): AcpModels | null {
+  if (!isObject(raw) || !isString(raw.currentModelId) || !Array.isArray(raw.availableModels)) return null;
+  const availableModels = raw.availableModels
+    .filter(isObject)
+    .filter((m) => isString(m.modelId) && isString(m.name))
+    .map((m) => ({
+      modelId: m.modelId as string,
+      name: m.name as string,
+      description: isString(m.description) ? m.description : undefined,
+    }));
+  return { currentModelId: raw.currentModelId, availableModels };
 }
 
 /** Validates config options an agent reported, dropping malformed ones. */
@@ -117,6 +150,7 @@ function toInfo(raw: unknown): AcpSessionInfo {
   return {
     acpSessionId: isString(started.acpSessionId) ? started.acpSessionId : '',
     modes: toModes(started.modes),
+    models: toModels(started.models),
     configOptions: toConfigOptions(started.configOptions),
     commands: [],
     canFork: isObject(sessionCaps.fork),
@@ -326,6 +360,15 @@ export function useAcpSessions(handlers: AcpHandlers) {
     [patch],
   );
 
+  /** Rejects when the agent refuses the model; the one it runs is kept. */
+  const setModel = useCallback(
+    async (sessionId: string, modelId: string) => {
+      await invoke('acp_set_model', { sessionId, modelId });
+      patch(sessionId, (c) => (c.models ? { ...c, models: { ...c.models, currentModelId: modelId } } : c));
+    },
+    [patch],
+  );
+
   const setConfigOption = useCallback(
     /** Resolves with the options the agent reports after the change, which may be none. */
     async (sessionId: string, configId: string, value: string): Promise<AcpConfigOption[]> => {
@@ -363,6 +406,7 @@ export function useAcpSessions(handlers: AcpHandlers) {
     respondElicitation,
     reopenElicitationUrl,
     setMode,
+    setModel,
     setConfigOption,
     stop,
     isBusy,

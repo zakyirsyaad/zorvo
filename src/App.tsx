@@ -23,6 +23,7 @@ import { usePullRequest } from "./hooks/usePullRequest";
 import { currentPlan } from "./lib/plan";
 import { useRepoPullRequests } from "./hooks/useRepoPullRequests";
 import { useAgentSignIn } from "./hooks/useAgentSignIn";
+import { useAgentSignInStatus } from "./hooks/useAgentSignInStatus";
 import { useDraftAgentCheck } from "./hooks/useDraftAgentCheck";
 import { useLatest } from "./hooks/useLatest";
 import { createSessionWorktree } from "./lib/session-worktree";
@@ -224,6 +225,10 @@ export default function App() {
     rememberAgentOptions(profileId, { preferredConfig, ...(reported?.length ? { configOptions: reported } : {}) });
   };
 
+  /** Keeps a model pick among an agent's `models`, so the agent's next session starts with it too. */
+  const rememberModelPick = (profileId: string, preferredModelId: string) =>
+    rememberAgentOptions(profileId, { preferredModelId });
+
   // The user may have opened another session meanwhile: the message goes back
   // into the session it was written for, not that one's composer.
   const restoreMessage = (sessionId: string, text: string, attachments?: readonly string[]) => {
@@ -232,7 +237,10 @@ export default function App() {
   };
   // Read when an agent answers, seconds after the closure that waits for it was made.
   const activeSessionIdRef = useLatest(activeSessionId);
+  const signInStatus = useAgentSignInStatus({ settings: state.settings, updateState });
   const signIn = useAgentSignIn({
+    onSignInNeeded: signInStatus.markNeeded,
+    onSignedIn: signInStatus.markSignedIn,
     agents,
     composerRef,
     activeSessionIdRef,
@@ -251,7 +259,13 @@ export default function App() {
         agentOptions: { ...prev.agentOptions, [profileId]: withProbed(prev.agentOptions?.[profileId], probed) },
       })),
     auth: signIn.auth,
+    onSignedIn: signInStatus.markSignedIn,
   });
+  // Its sign-in panel is open (and not yet done): a message would only be refused.
+  const draftNeedsSignIn =
+    draftAgent !== undefined &&
+    signIn.auth.authRequest?.profileId === draftAgent.id &&
+    signIn.auth.authRequest.status !== "signed-in";
 
   const engineDeps = { sessions, agents, updateMessages, patchSession, reportError };
   const acp = useAcpEngine({
@@ -574,6 +588,7 @@ export default function App() {
     agentOptions,
     acp,
     onPick: rememberPick,
+    onPickModel: rememberModelPick,
   });
   const composerCommands = composerCommandsFor({
     isRunning: isActiveRunning,
@@ -637,6 +652,12 @@ export default function App() {
           activeSessionId={activeSessionId}
           agents={agents}
           settings={state.settings}
+          signInStateOf={signInStatus.stateOf}
+          onSetUpAgent={(profileId) => {
+            openNewSession(undefined, profileId);
+            // Asks again even when this agent is already the draft's: its panel may have been dismissed.
+            agentCheck.reprobe(profileId);
+          }}
           onNewSession={() => openNewSession()}
           onSelectSession={handleSelectSession}
           onNewSessionIn={openNewSession}
@@ -730,13 +751,14 @@ export default function App() {
                       isCreatingWorktree ||
                       (!isActiveRunning && ((!isDraftAgentReady && !draftNeedsInstall) || (!isResumable && !canStartSession)))
                     }
-                    sendDisabled={draftNeedsInstall}
+                    sendDisabled={draftNeedsInstall || draftNeedsSignIn}
                     placeholder={composerPlaceholder({
                       isRunning: isActiveRunning,
                       isCreatingWorktree,
                       isResumable,
                       canStartSession,
                       agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
+                      agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
                       isEndedSession: Boolean(activeSession),
                     })}
                     onSendMessage={handleSendMessage}

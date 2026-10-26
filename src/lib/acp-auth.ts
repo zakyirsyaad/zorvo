@@ -24,7 +24,10 @@ function methodKind(method: Json): AuthMethodKind {
   // Any other type the app does not run (env_var needs a secret it never asks for).
   if (method.type !== undefined && method.type !== 'agent') return 'explain';
   const meta = isObject(method._meta) ? method._meta : {};
-  if (meta.type === 'terminal' || 'api-key' in meta || /api.?key/i.test(String(method.id))) return 'explain';
+  // Keys, Vertex AI and a gateway need settings or a secret the app never asks for.
+  if (meta.type === 'terminal' || 'api-key' in meta || 'gateway' in meta || /api.?key|vertex|gateway/i.test(String(method.id))) {
+    return 'explain';
+  }
   return 'agent';
 }
 

@@ -19,6 +19,7 @@ const pendingSignIn: AgentAuth = {
   authRequest: { profileId: "qwen-code", cwd: CWD, methods: [], status: "idle" },
   requestSignIn: () => {},
   signIn: () => {},
+  recheck: () => {},
   dismiss: () => {},
 };
 

@@ -677,6 +677,7 @@ fn settings_keep_enabled_removed_and_versioned_agents() {
         BTreeMap::from([("claude-acp".to_string(), "0.89.1".to_string())]);
     state.settings.notified_updates =
         BTreeMap::from([("claude-acp".to_string(), "0.90.0".to_string())]);
+    state.settings.signed_in_agents = vec!["claude-acp".to_string()];
 
     store.save_state(&state).expect("save state");
     let loaded = store.load_state().expect("load state");
@@ -688,6 +689,7 @@ fn settings_keep_enabled_removed_and_versioned_agents() {
         "\"removedAgents\"",
         "\"agentVersions\"",
         "\"notifiedUpdates\"",
+        "\"signedInAgents\"",
     ] {
         assert!(raw.contains(key), "{key} is saved in camelCase: {raw}");
     }
@@ -709,6 +711,7 @@ fn settings_keep_enabled_removed_and_versioned_agents() {
     assert!(old.settings.removed_agents.is_empty());
     assert!(old.settings.agent_versions.is_empty());
     assert!(old.settings.notified_updates.is_empty());
+    assert!(old.settings.signed_in_agents.is_empty());
     fs::remove_dir_all(&old_root).ok();
 }
 

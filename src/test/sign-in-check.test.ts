@@ -34,9 +34,17 @@ describe("checkSignIn", () => {
     await expect(checkSignIn("qwen-code", "/work")).resolves.toBe("signed-out");
   });
 
-  it("trusts the sign-in when the agent cannot be asked for another reason", async () => {
+  it("is unknown, not signed in, when the agent cannot be asked for another reason", async () => {
     mockProbe(() => Promise.reject("npx not found"));
 
-    await expect(checkSignIn("qwen-code", "/work")).resolves.toBe("signed-in");
+    await expect(checkSignIn("qwen-code", "/work")).resolves.toBe("unknown");
+  });
+
+  it("is unknown when the agent answers without showing anyone signed in", async () => {
+    mockProbe(() => Promise.resolve({ signInChecked: false }));
+    await expect(checkSignIn("qwen-code", "/work")).resolves.toBe("unknown");
+
+    mockProbe(() => Promise.resolve(null));
+    await expect(checkSignIn("qwen-code", "/work")).resolves.toBe("unknown");
   });
 });

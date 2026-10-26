@@ -86,7 +86,7 @@ export default function InstallPage() {
       </Picture>
       <UL>
         <li>Zorvo downloads the agent, and Node.js or uv when you need them.</li>
-        <li>Every download is checked against its SHA-256 hash, and nothing downloads until you click <B>Install</B>.</li>
+        <li>Every agent, Node.js and uv download is checked against its SHA-256 hash, and none starts until you click <B>Install</B>.</li>
         <li>Then sign in. The sign-in panel offers the agent&apos;s own login, which runs in a terminal inside Zorvo. See <DocLink href="/docs/signing-in">Signing in</DocLink>.</li>
       </UL>
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../types';
+import { errorMessage } from '../lib/files';
 import { deleteTranscript, loadTranscript, saveTranscript } from '../lib/persistence';
 import { useLatest } from './useLatest';
 
@@ -16,6 +17,8 @@ export interface TranscriptsHandle {
   ensureLoaded: (sessionId: string) => void;
   updateMessages: (sessionId: string, updater: (prev: ChatMessage[]) => ChatMessage[]) => void;
   removeTranscript: (sessionId: string) => void;
+  /** Writes every transcript still waiting for its timer, and resolves once those writes are done. */
+  flush: () => Promise<void>;
 }
 
 function omitKey(record: Transcripts, key: string): Transcripts {
@@ -44,21 +47,48 @@ export function useTranscripts(onError: (message: string) => void): TranscriptsH
     return () => timers.forEach((timer) => clearTimeout(timer));
   }, []);
 
-  /** Writes the transcript now, unless its file is still loading (retry later) or unreadable. */
+  // Writes in progress, so a flush can wait for the ones a timer started a moment ago.
+  const writesRef = useRef(new Set<Promise<void>>());
+  // Sessions whose latest write failed: their timer is gone, so a flush writes them again.
+  const unwrittenRef = useRef(new Set<string>());
+  // How many writes each session has started, so that only the latest one decides whether the
+  // session counts as unwritten (an older write that ends late must not clear a newer failure).
+  const writeCountRef = useRef(new Map<string, number>());
+
+  /** Writes the transcript now (never an unreadable one) and rejects when the write fails. */
+  const write = useCallback(
+    (sessionId: string): Promise<void> => {
+      if (unreadableRef.current.has(sessionId)) return Promise.resolve();
+      const count = (writeCountRef.current.get(sessionId) ?? 0) + 1;
+      writeCountRef.current.set(sessionId, count);
+      const writing = saveTranscript(sessionId, transcriptsRef.current[sessionId] ?? []);
+      writesRef.current.add(writing);
+      const settle = (written: boolean) => {
+        writesRef.current.delete(writing);
+        if (writeCountRef.current.get(sessionId) !== count) return;
+        if (written) unwrittenRef.current.delete(sessionId);
+        else unwrittenRef.current.add(sessionId);
+      };
+      writing.then(() => settle(true), () => settle(false));
+      return writing;
+    },
+    [transcriptsRef],
+  );
+
+  /** Writes the transcript now, unless its file is still loading (retry later). A failure is reported. */
   const save = useCallback(
     (sessionId: string) => {
       if (loadingRef.current.has(sessionId)) {
         scheduleSaveRef.current(sessionId);
         return;
       }
-      if (unreadableRef.current.has(sessionId)) return;
-      saveTranscript(sessionId, transcriptsRef.current[sessionId] ?? []).catch((error) => {
+      write(sessionId).catch((error) => {
         onErrorRef.current(`Failed to save the conversation: ${String(error)}`);
       });
     },
     // scheduleSaveRef is a ref declared below (save and scheduleSave call each other): stable, and not readable here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [transcriptsRef, onErrorRef],
+    [write, onErrorRef],
   );
 
   /** A throttle, not a debounce: a save already due writes the latest messages, so it is not pushed back. */
@@ -78,19 +108,42 @@ export function useTranscripts(onError: (message: string) => void): TranscriptsH
   );
   const scheduleSaveRef = useLatest(scheduleSave);
 
-  // Write what is still pending when the window goes away.
+  /**
+   * Writes what is still waiting for its timer, and what an earlier write failed to write,
+   * now, and resolves once every write is done, also the ones a timer started a moment ago.
+   * It rejects when a write failed (the session stays marked, so the next flush tries it
+   * again), or when a transcript is still being read: its history is not in yet, so it is not
+   * written over it and its normal save, which waits for the read, stays in charge.
+   */
+  const flush = useCallback(async (): Promise<void> => {
+    const timers = timersRef.current;
+    const waiting = [...new Set([...timers.keys(), ...unwrittenRef.current])];
+    timers.forEach((timer) => clearTimeout(timer));
+    timers.clear();
+    const loading = waiting.filter((sessionId) => loadingRef.current.has(sessionId));
+    loading.forEach((sessionId) => scheduleSaveRef.current(sessionId));
+    waiting
+      .filter((sessionId) => !loading.includes(sessionId))
+      .forEach((sessionId) => void write(sessionId).catch(() => undefined));
+    const results = await Promise.allSettled([...writesRef.current]);
+    const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failed) throw new Error(String(failed.reason));
+    if (loading.length > 0) {
+      throw new Error('a conversation is still loading, so what it just received is not saved yet');
+    }
+  }, [write, scheduleSaveRef]);
+
+  // Write what is still pending when the window goes away. A restart from the backend does not
+  // close the window, so it calls `flush` itself and learns whether it worked.
   useEffect(() => {
-    const flush = () => {
-      const timers = timersRef.current;
-      timers.forEach((timer, sessionId) => {
-        clearTimeout(timer);
-        timers.delete(sessionId);
-        save(sessionId);
+    const onPageHide = () => {
+      flush().catch((error) => {
+        onErrorRef.current(`Failed to save the conversation: ${errorMessage(error)}`);
       });
     };
-    window.addEventListener('pagehide', flush);
-    return () => window.removeEventListener('pagehide', flush);
-  }, [save]);
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, [flush, onErrorRef]);
 
   const ensureLoaded = useCallback(
     (sessionId: string) => {
@@ -129,6 +182,8 @@ export function useTranscripts(onError: (message: string) => void): TranscriptsH
     (sessionId: string) => {
       clearTimeout(timersRef.current.get(sessionId));
       timersRef.current.delete(sessionId);
+      unwrittenRef.current.delete(sessionId);
+      writeCountRef.current.delete(sessionId);
       requestedRef.current.delete(sessionId);
       setTranscripts((prev) => omitKey(prev, sessionId));
       deleteTranscript(sessionId).catch((error) => {
@@ -138,5 +193,5 @@ export function useTranscripts(onError: (message: string) => void): TranscriptsH
     [onErrorRef],
   );
 
-  return { transcripts, ensureLoaded, updateMessages, removeTranscript };
+  return { transcripts, ensureLoaded, updateMessages, removeTranscript, flush };
 }

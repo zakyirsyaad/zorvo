@@ -380,6 +380,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_update::app_update_check,
             app_update::app_update_install,
+            app_update::app_update_restart,
             get_agent_profiles,
             get_agent_catalog,
             get_agent_icons,

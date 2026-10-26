@@ -82,7 +82,10 @@ proposes updates weekly.
 
 CI does not build the release bundle. Before a release, run
 `pnpm tauri build` and open the app: the production build is the only one that
-applies the Content Security Policy.
+applies the Content Security Policy. A build also signs the update package, so
+it needs the updater key in the environment; to build without it, add
+`--config '{"bundle":{"createUpdaterArtifacts":false}}'` (see
+[Releasing](#releasing)).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose a change,
 [SECURITY.md](SECURITY.md) for how to report a vulnerability, and
@@ -94,7 +97,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose a change,
    `src-tauri/tauri.conf.json`. In `CHANGELOG.md`, rename `Unreleased` to the
    new version with its release date, add its compare link, and start a new
    empty `Unreleased` section.
-2. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+2. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`. The workflow
+   stops before it builds if the tag is not `vMAJOR.MINOR.PATCH` (or
+   `vMAJOR.MINOR.PATCH-rc.1`) or does not match the version in those three
+   files.
 3. The **Release** workflow builds a universal macOS app and attaches it to a
    draft release in the public
    [zorvo-releases](https://github.com/zakyirsyaad/zorvo-releases) repository
@@ -131,18 +137,36 @@ pnpm tauri signer generate -w ~/.tauri/zorvo-updater.key
 Put the **public** key it prints in `plugins.updater.pubkey` in
 `src-tauri/tauri.conf.json`, and add the **private** key and its password as the
 repository secrets `TAURI_SIGNING_PRIVATE_KEY` and
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The workflow stops early if either is
-missing or the placeholder public key is still in place. Back the private key up
-somewhere safe: a build signed with another key is refused by every Zorvo
-already installed, so losing it means those installs can never update
-themselves again.
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Before it builds, the workflow signs a
+test file with them (`scripts/check-updater-signing.mjs key`) and stops if a
+secret is missing, the password is wrong or the key is not the one that belongs
+to the public key: the Tauri CLI only warns about that last case and reports a
+wrong password after the whole build. To run the same check on your machine
+before you tag (zsh, the macOS default; the password is typed hidden):
+
+```bash
+read -rs "pw?Updater key password> " && echo && TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/zorvo-updater.key)" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$pw" node scripts/check-updater-signing.mjs key src-tauri/tauri.conf.json; unset pw
+```
+
+Back the private key up somewhere safe: a build signed with another key is
+refused by every Zorvo already installed, so losing it means those installs can
+never update themselves again.
+
+Releases are signed by `tauri build`, which the workflow runs, never by hand:
+installed copies require the update's signature to record the version it was
+made for (`requireSignedVersion`), and `tauri signer sign` without
+`--app-version` does not.
 
 The workflow also uploads `latest.json`, the `.app.tar.gz` and its `.sig`, and
-checks that `latest.json` lists both `darwin-aarch64` and `darwin-x86_64`.
-Publishing the draft is what makes it the "latest" release installed copies see.
-A local `pnpm tauri build` signs the update package too, so it needs
-`TAURI_SIGNING_PRIVATE_KEY` (and the password) in the environment; add
-`--config '{"bundle":{"createUpdaterArtifacts":false}}'` to build without them.
+then checks `latest.json` (`check-updater-signing.mjs manifest`): it lists both
+`darwin-aarch64` and `darwin-x86_64`, every download URL is inside the releases
+repository, and every signature is the public key's and records this release's
+version. Publishing the draft is what makes it the "latest" release installed
+copies see; a tag with a pre-release part (`v0.7.0-rc.1`) is made a
+pre-release, which never is. A local `pnpm tauri build` signs the update
+package too, so it needs `TAURI_SIGNING_PRIVATE_KEY` (and the password) in the
+environment; add `--config '{"bundle":{"createUpdaterArtifacts":false}}'` to
+build without them.
 
 ## Roadmap
 

@@ -97,3 +97,234 @@ describe("useTranscripts", () => {
   });
 });
 
+
+describe("useTranscripts flush", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** Makes every save_transcript wait until the test settles it. */
+  function controlSaves() {
+    const real = tauriInternals().invoke;
+    const saves: Array<{
+      sessionId: unknown;
+      messages: ChatMessage[];
+      resolve: () => void;
+      reject: (reason: unknown) => void;
+    }> = [];
+    vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
+      if (cmd !== "save_transcript") return real(cmd, args);
+      return new Promise<void>((resolve, reject) =>
+        saves.push({ sessionId: args?.sessionId, messages: args?.messages as ChatMessage[], resolve, reject }),
+      );
+    });
+    return saves;
+  }
+
+  /** "pending" until the promise settles, looked at after the microtasks have run. */
+  async function stateOf(promise: Promise<unknown>): Promise<"pending" | "resolved" | "rejected"> {
+    let state: "pending" | "resolved" | "rejected" = "pending";
+    promise.then(
+      () => { state = "resolved"; },
+      () => { state = "rejected"; },
+    );
+    await act(async () => {
+      for (let turn = 0; turn < 5; turn += 1) await Promise.resolve();
+    });
+    return state;
+  }
+
+  it("resolves only once every pending write is done", async () => {
+    const saves = controlSaves();
+    const { result } = renderHook(() => useTranscripts(() => {}));
+    act(() => result.current.updateMessages("s-1", (prev) => [...prev, live]));
+    act(() => result.current.updateMessages("s-2", (prev) => [...prev, live]));
+
+    const flushing = result.current.flush();
+    expect(saves.map((save) => save.sessionId)).toEqual(["s-1", "s-2"]);
+    expect(await stateOf(flushing)).toBe("pending");
+    saves[0].resolve();
+    expect(await stateOf(flushing)).toBe("pending");
+    saves[1].resolve();
+    expect(await stateOf(flushing)).toBe("resolved");
+  });
+
+  it("rejects when a write fails, so a restart can be called off", async () => {
+    const saves = controlSaves();
+    const { result } = renderHook(() => useTranscripts(() => {}));
+    act(() => result.current.updateMessages("s-1", (prev) => [...prev, live]));
+
+    const flushing = result.current.flush();
+    saves[0].reject("No space left on device");
+
+    await expect(flushing).rejects.toThrow("No space left on device");
+  });
+
+  it("writes a transcript again at the next flush when its write failed", async () => {
+    const saves = controlSaves();
+    const { result } = renderHook(() => useTranscripts(() => {}));
+    act(() => result.current.updateMessages("s-1", (prev) => [...prev, live]));
+
+    const first = result.current.flush();
+    saves[0].reject("No space left on device");
+    await expect(first).rejects.toThrow("No space left on device");
+
+    // Nothing was forgotten: the second flush writes it again, and only then does it succeed.
+    const second = result.current.flush();
+    expect(saves).toHaveLength(2);
+    saves[1].resolve();
+    await expect(second).resolves.toBeUndefined();
+
+    await result.current.flush();
+    expect(saves).toHaveLength(2);
+  });
+
+  it("also writes again what a timer could not write", async () => {
+    vi.useFakeTimers();
+    const saves = controlSaves();
+    const onError = vi.fn();
+    const { result } = renderHook(() => useTranscripts(onError));
+    act(() => result.current.updateMessages("s-1", (prev) => [...prev, live]));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    saves[0].reject("disk full");
+    await stateOf(Promise.resolve());
+    expect(onError).toHaveBeenCalledTimes(1);
+
+    const flushing = result.current.flush();
+    expect(saves).toHaveLength(2);
+    saves[1].resolve();
+    await expect(flushing).resolves.toBeUndefined();
+  });
+
+  it("keeps a failed write marked when an older write of the same transcript ends later", async () => {
+    vi.useFakeTimers();
+    const saves = controlSaves();
+    const { result } = renderHook(() => useTranscripts(() => {}));
+    act(() => result.current.updateMessages("s-1", (prev) => [...prev, live]));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(saves).toHaveLength(1);
+    // A newer message, written by a flush while the first write is still on its way.
+    act(() => result.current.updateMessages("s-1", (prev) => [...prev, { ...live, id: "m-later" }]));
+    const flushing = result.current.flush();
+    expect(saves).toHaveLength(2);
+
+    // The newer write fails first and the older one ends afterwards (the pause lets the failure be noted).
+    saves[1].reject("No space left on device");
+    await stateOf(Promise.resolve());
+    saves[0].resolve();
+    await expect(flushing).rejects.toThrow("No space left on device");
+
+    // The older write succeeded, but it does not hold the newer message: it is still to be written.
+    const again = result.current.flush();
+    expect(saves).toHaveLength(3);
+    saves[2].resolve();
+    await expect(again).resolves.toBeUndefined();
+  });
+
+  it("waits for a write its timer started a moment ago", async () => {
+    vi.useFakeTimers();
+    const saves = controlSaves();
+    const { result } = renderHook(() => useTranscripts(() => {}));
+    act(() => result.current.updateMessages("s-1", (prev) => [...prev, live]));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(saves).toHaveLength(1);
+
+    const flushing = result.current.flush();
+    expect(saves).toHaveLength(1);
+    expect(await stateOf(flushing)).toBe("pending");
+    saves[0].resolve();
+    expect(await stateOf(flushing)).toBe("resolved");
+  });
+
+  it("does not write over a transcript that is still loading, and says so", async () => {
+    vi.useFakeTimers();
+    const real = tauriInternals().invoke;
+    let finishLoad: (messages: ChatMessage[]) => void = () => {};
+    const saves: Array<{ sessionId: unknown; messages: ChatMessage[] }> = [];
+    vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
+      if (cmd === "load_transcript") {
+        return new Promise((resolve) => {
+          finishLoad = resolve as (messages: ChatMessage[]) => void;
+        });
+      }
+      if (cmd === "save_transcript") {
+        saves.push({ sessionId: args?.sessionId, messages: args?.messages as ChatMessage[] });
+        return Promise.resolve();
+      }
+      return real(cmd, args);
+    });
+    const { result } = renderHook(() => useTranscripts(() => {}));
+    act(() => {
+      result.current.ensureLoaded("s-1");
+      result.current.updateMessages("s-1", (prev) => [...prev, live]);
+    });
+
+    await expect(result.current.flush()).rejects.toThrow(/still loading/);
+    expect(saves).toEqual([]);
+
+    // Its normal save stays due: once the history is in, history and message are written together.
+    // (Two steps: React renders the loaded history when the first act ends.)
+    await act(async () => {
+      finishLoad([saved]);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(saves.map((save) => save.messages.map((m) => m.id))).toEqual([["m-old", "m-new"]]);
+  });
+
+  it("still saves a message that arrives after a flush", async () => {
+    vi.useFakeTimers();
+    const saves = controlSaves();
+    const { result } = renderHook(() => useTranscripts(() => {}));
+    act(() => result.current.updateMessages("s-1", (prev) => [...prev, live]));
+    const flushing = result.current.flush();
+    saves[0].resolve();
+    await flushing;
+
+    act(() => result.current.updateMessages("s-1", (prev) => [...prev, { ...live, id: "m-later" }]));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(saves).toHaveLength(2);
+    expect(saves[1].messages.map((m) => m.id)).toEqual(["m-new", "m-later"]);
+  });
+
+  it("reports a failed write when the window goes away", async () => {
+    const saves = controlSaves();
+    const onError = vi.fn();
+    const { result } = renderHook(() => useTranscripts(onError));
+    act(() => result.current.updateMessages("s-1", (prev) => [...prev, live]));
+
+    window.dispatchEvent(new Event("pagehide"));
+    saves[0].reject("disk full");
+    await stateOf(Promise.resolve());
+
+    expect(onError).toHaveBeenCalledWith("Failed to save the conversation: disk full");
+  });
+
+  it("reports a failed write that a timer started", async () => {
+    vi.useFakeTimers();
+    const saves = controlSaves();
+    const onError = vi.fn();
+    const { result } = renderHook(() => useTranscripts(onError));
+    act(() => result.current.updateMessages("s-1", (prev) => [...prev, live]));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    saves[0].reject("disk full");
+    await stateOf(Promise.resolve());
+
+    expect(onError).toHaveBeenCalledWith("Failed to save the conversation: disk full");
+  });
+});

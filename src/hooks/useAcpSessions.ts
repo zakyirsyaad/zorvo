@@ -62,7 +62,8 @@ export interface AcpSessionInfo {
 }
 
 /** What an agent reports for a session that the composer offers a choice of. */
-export type AcpOptions = Pick<AcpSessionInfo, 'modes' | 'configOptions'> & Partial<Pick<AcpSessionInfo, 'models'>>;
+export type AcpOptions = Pick<AcpSessionInfo, 'modes' | 'configOptions'> &
+  Partial<Pick<AcpSessionInfo, 'models' | 'reopenedWith'>>;
 
 export interface TurnResult {
   stopReason?: string;

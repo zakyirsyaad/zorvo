@@ -1677,9 +1677,20 @@ describe("ACP sessions in the app", () => {
       current.model = "auto";
       realInvoke = tauriInternals().invoke;
       return vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
-        const a = args as { sessionId?: string; modelId?: string } | undefined;
+        const a = args as { sessionId?: string; acpSessionId?: string; modelId?: string } | undefined;
         if (cmd === "acp_probe_agent") {
           return Promise.resolve({ modes: null, models: models("auto"), configOptions: [], commands: [], signInChecked: true });
+        }
+        if (cmd === "acp_reopen_session") {
+          // Gemini's session/load reports the models but answers with its default, whatever the session ran on.
+          current.model = "auto";
+          return Promise.resolve({
+            acpSessionId: a?.acpSessionId,
+            agentCapabilities: {},
+            modes: null,
+            models: models("auto"),
+            configOptions: [],
+          });
         }
         if (cmd === "acp_start_session") {
           current.model = "auto";
@@ -1774,6 +1785,191 @@ describe("ACP sessions in the app", () => {
 
       expect(await screen.findByText(/Could not change the model/)).toBeDefined();
       expect(screen.getByRole("button", { name: "Model: Auto" })).toBeDefined();
+    });
+
+    it("continues an ended session on the model picked last, since the agent loads it on its default", async () => {
+      fakeStore().state.sessions = [
+        {
+          id: "s-old",
+          name: "Session #4",
+          profileId: "qwen",
+          cwd: "/Users/test/developer/ai-perpetual-trading",
+          status: "terminated",
+          createdAt: 1,
+          transport: "acp",
+          acpSessionId: "gemini-old",
+        },
+      ];
+      (fakeStore().state as { agentOptions?: unknown }).agentOptions = {
+        "qwen-code": { modes: null, configOptions: [], models: models("auto"), preferredModelId: "gemini-2.5-flash" },
+      };
+      const spy = await renderDraft();
+      expect(screen.getByPlaceholderText(/continue this session/i)).toBeDefined();
+
+      await send("next step");
+      await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
+
+      const order = (spy.mock.calls as unknown as InvokeCall[]).map(([cmd]) => cmd);
+      expect(callsTo(spy, "acp_set_model").map(([, a]) => a)).toEqual([{ sessionId: "s-old", modelId: "gemini-2.5-flash" }]);
+      expect(order.indexOf("acp_reopen_session")).toBeLessThan(order.indexOf("acp_set_model"));
+      expect(order.indexOf("acp_set_model")).toBeLessThan(order.indexOf("acp_prompt"));
+    });
+
+    it("restarts a rewound session on the model it ran with among `models`, not the one picked last elsewhere", async () => {
+      const spy = await renderDraft();
+      await startQwenSession(spy);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      });
+      await send("other task");
+      await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(2));
+      // The second session runs on Flash, which is now the model picked last.
+      await pickModel("Gemini 2.5 Flash");
+      await act(async () => {
+        fireEvent.click(within(screen.getByRole("complementary")).getByText(FIRST_MESSAGE));
+      });
+      const first = screen.getByText(FIRST_MESSAGE, { selector: "p" }).closest("[data-testid^='chat-message-']") as HTMLElement;
+      await act(async () => {
+        fireEvent.click(within(first).getByRole("button", { name: "Rewind to here" }));
+      });
+      await act(async () => {
+        fireEvent.click(within(first).getByRole("button", { name: "Confirm rewind" }));
+      });
+
+      // The first session ran on Auto, and its fresh agent starts there.
+      expect(screen.getByRole("button", { name: "Model: Auto" })).toBeDefined();
+      const before = (spy.mock.calls as unknown as InvokeCall[]).length;
+      await send("start over");
+      await waitFor(() => expect(callsTo(spy, "acp_start_session")).toHaveLength(3));
+      await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(3));
+
+      const afterRewind = (spy.mock.calls as unknown as InvokeCall[]).slice(before).filter(([cmd]) => cmd === "acp_set_model");
+      expect(afterRewind).toHaveLength(0);
+    });
+
+    it("does not remember a model the agent refused", async () => {
+      const spy = await renderDraft();
+      await screen.findByRole("button", { name: "Model: Auto" });
+      await startQwenSession(spy);
+      const answer = spy.getMockImplementation() as (cmd: string, args?: unknown) => Promise<unknown>;
+      spy.mockImplementation((cmd, args) => (cmd === "acp_set_model" ? Promise.reject("Unknown model") : answer(cmd, args)));
+
+      await pickModel("Gemini 2.5 Flash");
+      expect(await screen.findByText(/Could not change the model/)).toBeDefined();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      });
+
+      // The next session offers the model the agent runs, not the one it turned down.
+      expect(await screen.findByRole("button", { name: "Model: Auto" })).toBeDefined();
+    });
+
+    it("continues an ended session whose answer reports no models: the pick still goes out and the remembered models stay", async () => {
+      fakeStore().state.sessions = [
+        {
+          id: "s-old",
+          name: "Session #4",
+          profileId: "qwen",
+          cwd: "/Users/test/developer/ai-perpetual-trading",
+          status: "terminated",
+          createdAt: 1,
+          transport: "acp",
+          acpSessionId: "gemini-old",
+        },
+      ];
+      (fakeStore().state as { agentOptions?: unknown }).agentOptions = {
+        "qwen-code": { modes: null, configOptions: [], models: models("auto"), preferredModelId: "gemini-2.5-flash" },
+      };
+      const spy = await renderDraft();
+      const answer = spy.getMockImplementation() as (cmd: string, args?: unknown) => Promise<unknown>;
+      spy.mockImplementation((cmd, args) => {
+        // A session/resume answer carries no models, and a probe has none to learn either.
+        if (cmd === "acp_reopen_session") {
+          return Promise.resolve({ acpSessionId: "gemini-old", agentCapabilities: {}, modes: null, models: null, configOptions: [], reopenedWith: "resume" });
+        }
+        if (cmd === "acp_probe_agent") return Promise.resolve({ modes: null, models: null, configOptions: [], commands: [], signInChecked: true });
+        return answer(cmd, args);
+      });
+
+      await send("next step");
+      await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
+
+      expect(callsTo(spy, "acp_set_model").map(([, a]) => a)).toEqual([{ sessionId: "s-old", modelId: "gemini-2.5-flash" }]);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      });
+      expect(await screen.findByRole("button", { name: /^Model:/ })).toBeDefined();
+    });
+
+    describe("for an agent that reports `models` and a model config option, as Codex and Qwen Code do", () => {
+      const configModel = (value: string) => ({
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: value,
+        options: [
+          { value: "auto", name: "Auto" },
+          { value: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+        ],
+      });
+      // A fresh session starts on the model used last, which only an option pick or `session/set_model` changes.
+      const lastUsed = { model: "auto" };
+      function withModelsAndConfig() {
+        lastUsed.model = "auto";
+        realInvoke = tauriInternals().invoke;
+        return vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
+          const a = args as { sessionId?: string; value?: string; modelId?: string } | undefined;
+          if (cmd === "acp_probe_agent") {
+            return Promise.resolve({ modes: null, models: models(lastUsed.model), configOptions: [configModel(lastUsed.model)], commands: [], signInChecked: true });
+          }
+          if (cmd === "acp_start_session") {
+            return Promise.resolve({
+              acpSessionId: `acp-${a?.sessionId}`,
+              agentCapabilities: {},
+              modes: null,
+              models: models(lastUsed.model),
+              configOptions: [configModel(lastUsed.model)],
+            });
+          }
+          if (cmd === "acp_set_config_option") {
+            lastUsed.model = String(a?.value);
+            return Promise.resolve([configModel(lastUsed.model)]);
+          }
+          if (cmd === "acp_set_model") {
+            lastUsed.model = String(a?.modelId);
+            return Promise.resolve(undefined);
+          }
+          return realInvoke(cmd, args);
+        });
+      }
+
+      it("restarts a rewound session on its config model, not on the `models` it started with", async () => {
+        fakeStore().state.settings.defaultAgentId = "qwen";
+        const spy = withModelsAndConfig();
+        await act(async () => {
+          render(<App />);
+        });
+        await startQwenSession(spy);
+        // The chip is the option's: the pick goes through it, and `models` keeps the model the session started with.
+        await pickModel("Gemini 2.5 Flash");
+        await waitFor(() => expect(callsTo(spy, "acp_set_config_option")).toHaveLength(1));
+        const first = screen.getByText(FIRST_MESSAGE, { selector: "p" }).closest("[data-testid^='chat-message-']") as HTMLElement;
+        await act(async () => {
+          fireEvent.click(within(first).getByRole("button", { name: "Rewind to here" }));
+        });
+        await act(async () => {
+          fireEvent.click(within(first).getByRole("button", { name: "Confirm rewind" }));
+        });
+
+        await send("start over");
+        await waitFor(() => expect(callsTo(spy, "acp_start_session")).toHaveLength(2));
+        await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(2));
+
+        // The fresh agent already runs on Flash; sending the model it started with would undo that.
+        expect(callsTo(spy, "acp_set_model")).toHaveLength(0);
+        expect(screen.getByRole("button", { name: "Model: Gemini 2.5 Flash" })).toBeDefined();
+      });
     });
   });
 });

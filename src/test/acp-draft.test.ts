@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   changesToApply,
   draftInfo,
+  hasModelConfig,
   hasReportedOptions,
   NO_CHOICES,
   rememberedChoice,
@@ -68,13 +69,52 @@ describe("models an agent reports", () => {
   });
 
   it("sets the picked model once the agent is up, before the other settings", () => {
-    const both: AgentOptions = { ...gemini, configOptions: qwen.configOptions };
-    const choices = { config: { model: "qwen3-max" }, modelId: "gemini-2.5-flash" };
+    const withEffort: AgentOptions = {
+      ...gemini,
+      configOptions: [
+        {
+          id: "effort",
+          name: "Effort",
+          category: "thought_level",
+          currentValue: "low",
+          options: [
+            { value: "low", name: "Low" },
+            { value: "high", name: "High" },
+          ],
+        },
+      ],
+    };
+    const choices = { config: { effort: "high" }, modelId: "gemini-2.5-flash" };
 
-    expect(changesToApply(both, choices, false)).toEqual([
+    expect(changesToApply(withEffort, choices, false)).toEqual([
       { kind: "model", modelId: "gemini-2.5-flash" },
+      { kind: "config", configId: "effort", value: "high" },
+    ]);
+  });
+
+  it("leaves the model to its config option when an agent reports both, as Codex and Qwen Code do", () => {
+    const both: AgentOptions = { ...gemini, configOptions: qwen.configOptions };
+
+    expect(hasModelConfig(both.configOptions)).toBe(true);
+    expect(changesToApply(both, { config: {}, modelId: "gemini-2.5-flash" }, false)).toEqual([]);
+    expect(changesToApply(both, { config: { model: "qwen3-max" }, modelId: "gemini-2.5-flash" }, false)).toEqual([
       { kind: "config", configId: "model", value: "qwen3-max" },
     ]);
+  });
+
+  it("takes only a model config option that offers something as the agent's model", () => {
+    expect(hasModelConfig(gemini.configOptions)).toBe(false);
+    expect(hasModelConfig([{ ...qwen.configOptions[0], options: [] }])).toBe(false);
+  });
+
+  it("sends a pick as it is when a reopened session's answer reports no models", () => {
+    const choices = { config: {}, modelId: "gemini-2.5-flash" };
+
+    expect(changesToApply({ modes: null, configOptions: [], reopenedWith: "resume" }, choices, false)).toEqual([
+      { kind: "model", modelId: "gemini-2.5-flash" },
+    ]);
+    // A new session that reports none has none to offer, so nothing is sent.
+    expect(changesToApply({ modes: null, configOptions: [] }, choices, false)).toEqual([]);
   });
 
   it("skips a model that holds already or that the agent no longer offers", () => {

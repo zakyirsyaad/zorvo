@@ -18,7 +18,7 @@ export interface AgentOptions {
 /** What the user picked in the composer before the agent runs: a mode, a model and config values by id. */
 export interface AcpChoices {
   modeId?: string;
-  /** A model among the agent's `models`. */
+  /** A model among the agent's `models`; only for an agent without a model config option (`hasModelConfig`). */
   modelId?: string;
   config: Readonly<Record<string, string>>;
 }
@@ -32,6 +32,15 @@ const REMEMBERED_CATEGORIES = new Set(['model', 'thought_level']);
 
 const isKept = (option: AcpConfigOption | undefined) =>
   option?.category !== undefined && REMEMBERED_CATEGORIES.has(option.category);
+
+/**
+ * Whether the agent's model is a config option, which is then the composer's model chip (`acpControls`)
+ * and carries the picks. Codex and Qwen Code report `models` as well; a `models` pick only counts for
+ * an agent without one.
+ */
+export function hasModelConfig(configOptions: readonly AcpConfigOption[]): boolean {
+  return configOptions.some((o) => o.category === 'model' && o.options.length > 0);
+}
 
 /** The model and effort a session runs with now, by config id. */
 export function keptConfigOf(configOptions: readonly AcpConfigOption[]): Record<string, string> {
@@ -111,9 +120,14 @@ export function changesToApply(
 ): AcpChange[] {
   const changes: AcpChange[] = [];
   const pickedModel = choices.modelId;
-  if (pickedModel && info.models) {
-    const offered = info.models.availableModels.some((m) => m.modelId === pickedModel);
-    if (offered && pickedModel !== info.models.currentModelId) changes.push({ kind: 'model', modelId: pickedModel });
+  if (pickedModel && !hasModelConfig(info.configOptions)) {
+    if (info.models) {
+      const offered = info.models.availableModels.some((m) => m.modelId === pickedModel);
+      if (offered && pickedModel !== info.models.currentModelId) changes.push({ kind: 'model', modelId: pickedModel });
+    } else if (info.reopenedWith) {
+      // A resume answer carries no models, so the pick goes out as it is and the agent refuses a model it does not know.
+      changes.push({ kind: 'model', modelId: pickedModel });
+    }
   }
   const pickedMode = choices.modeId;
   if (pickedMode && info.modes) {

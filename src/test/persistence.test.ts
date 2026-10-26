@@ -57,6 +57,28 @@ describe("normalizePersistedState", () => {
   });
 });
 
+describe("normalizePersistedState - models", () => {
+  it("keeps the models an agent reported and the model picked last, dropping malformed ones", () => {
+    const models = { currentModelId: "auto", availableModels: [{ modelId: "auto", name: "Auto" }, { modelId: 3 }] };
+    const state = normalizePersistedState({
+      agentOptions: {
+        "gemini-cli": { modes: null, configOptions: [], models, preferredModelId: "auto" },
+        qwen: { modes: null, configOptions: [], models: "nope", preferredModelId: 4 },
+      },
+    });
+
+    const gemini = state.agentOptions?.["gemini-cli"];
+    expect(gemini?.models).toEqual({
+      currentModelId: "auto",
+      availableModels: [{ modelId: "auto", name: "Auto", description: undefined }],
+    });
+    expect(gemini?.preferredModelId).toBe("auto");
+    const qwen = state.agentOptions?.["qwen-code"];
+    expect(qwen).not.toHaveProperty("models");
+    expect(qwen).not.toHaveProperty("preferredModelId");
+  });
+});
+
 describe("normalizePersistedState - legacy agent ids", () => {
   it("rewrites legacy agent ids in sessions and the default agent", () => {
     const state = normalizePersistedState({

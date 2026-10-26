@@ -8,6 +8,7 @@ const info: AcpSessionInfo = {
   canFork: false,
   canReopen: false,
   commands: [],
+  models: null,
   modes: {
     currentModeId: "default",
     availableModes: [
@@ -42,7 +43,7 @@ describe("composer controls", () => {
   it("builds ACP controls from what the agent reported, changeable live", () => {
     const setMode = vi.fn();
     const setConfig = vi.fn();
-    const controls = acpControls(info, { setMode, setConfigOption: setConfig });
+    const controls = acpControls(info, { setMode, setConfigOption: setConfig, setModel: vi.fn() });
 
     expect(controls.permission?.options.map((o) => o.label)).toEqual(["Default", "YOLO"]);
     expect(controls.permission?.selected).toBe("default");
@@ -56,6 +57,50 @@ describe("composer controls", () => {
     expect(setConfig).toHaveBeenCalledWith("model", "qwen-flash");
   });
 
+  it("builds the model control from the models an agent reports, changeable live", () => {
+    const setModel = vi.fn();
+    const gemini: AcpSessionInfo = {
+      ...info,
+      configOptions: [],
+      models: {
+        currentModelId: "auto",
+        availableModels: [
+          { modelId: "auto", name: "Auto" },
+          { modelId: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+        ],
+      },
+    };
+
+    const controls = acpControls(gemini, { setMode: vi.fn(), setConfigOption: vi.fn(), setModel });
+
+    expect(controls.model?.options).toEqual([
+      { value: "auto", label: "Auto" },
+      { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+    ]);
+    expect(controls.model?.selected).toBe("auto");
+    controls.model?.onChange("gemini-2.5-flash");
+    expect(setModel).toHaveBeenCalledWith("gemini-2.5-flash");
+  });
+
+  it("prefers a model config option over models when an agent reports both", () => {
+    const both: AcpSessionInfo = { ...info, models: { currentModelId: "m", availableModels: [{ modelId: "m", name: "M" }] } };
+    const setModel = vi.fn();
+    const setConfig = vi.fn();
+
+    const controls = acpControls(both, { setMode: vi.fn(), setConfigOption: setConfig, setModel });
+
+    expect(controls.model?.options.map((o) => o.label)).toEqual(["Qwen Max", "Qwen Flash"]);
+    controls.model?.onChange("qwen-flash");
+    expect(setConfig).toHaveBeenCalledWith("model", "qwen-flash");
+    expect(setModel).not.toHaveBeenCalled();
+  });
+
+  it("offers no model control when the agent reports no models", () => {
+    const none: AcpSessionInfo = { ...info, configOptions: [], models: { currentModelId: "m", availableModels: [] } };
+
+    expect(acpControls(none, { setMode: vi.fn(), setConfigOption: vi.fn(), setModel: vi.fn() }).model).toBeUndefined();
+  });
+
   it("falls back to a mode config option when the agent reports no modes", () => {
     const withModeOption: AcpSessionInfo = {
       ...info,
@@ -66,7 +111,7 @@ describe("composer controls", () => {
     };
     const setConfig = vi.fn();
 
-    const controls = acpControls(withModeOption, { setMode: vi.fn(), setConfigOption: setConfig });
+    const controls = acpControls(withModeOption, { setMode: vi.fn(), setConfigOption: setConfig, setModel: vi.fn() });
     controls.permission?.onChange("ask");
 
     expect(controls.permission?.selected).toBe("ask");

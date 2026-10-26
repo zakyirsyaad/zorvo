@@ -1,4 +1,4 @@
-import type { AcpConfigOption, AcpModes, AcpSessionInfo } from '../hooks/useAcpSessions';
+import type { AcpConfigOption, AcpModels, AcpModes, AcpOptions } from '../hooks/useAcpSessions';
 import { safeModeToApply, type SafeModeChange } from './acp-modes';
 import type { SlashCommand } from '../types';
 
@@ -6,26 +6,41 @@ import type { SlashCommand } from '../types';
 export interface AgentOptions {
   modes: AcpModes | null;
   configOptions: AcpConfigOption[];
+  /** The models the agent reports in `models`, for an agent that has no model config option. */
+  models?: AcpModels | null;
   commands?: SlashCommand[];
   /** The model the user picked last, by config id, to start the next session with. */
   preferredConfig?: Readonly<Record<string, string>>;
+  /** The model the user picked last among `models`, to start the next session with. */
+  preferredModelId?: string;
 }
 
-/** What the user picked in the composer before the agent runs: a mode and config values by id. */
+/** What the user picked in the composer before the agent runs: a mode, a model and config values by id. */
 export interface AcpChoices {
   modeId?: string;
+  /** A model among the agent's `models`; only for an agent without a model config option (`hasModelConfig`). */
+  modelId?: string;
   config: Readonly<Record<string, string>>;
 }
 
 export const NO_CHOICES: AcpChoices = { config: {} };
 
-export type AcpChange = SafeModeChange;
+export type AcpChange = SafeModeChange | { kind: 'model'; modelId: string };
 
 /** The settings a pick of is kept for the next session: the model and the reasoning effort. */
 const REMEMBERED_CATEGORIES = new Set(['model', 'thought_level']);
 
 const isKept = (option: AcpConfigOption | undefined) =>
   option?.category !== undefined && REMEMBERED_CATEGORIES.has(option.category);
+
+/**
+ * Whether the agent's model is a config option, which is then the composer's model chip (`acpControls`)
+ * and carries the picks. Codex and Qwen Code report `models` as well; a `models` pick only counts for
+ * an agent without one.
+ */
+export function hasModelConfig(configOptions: readonly AcpConfigOption[]): boolean {
+  return configOptions.some((o) => o.category === 'model' && o.options.length > 0);
+}
 
 /** The model and effort a session runs with now, by config id. */
 export function keptConfigOf(configOptions: readonly AcpConfigOption[]): Record<string, string> {
@@ -41,8 +56,17 @@ export function withPreferred(choices: AcpChoices, options: AgentOptions | undef
   const preferred = Object.entries(options?.preferredConfig ?? {}).filter(([configId, value]) =>
     options?.configOptions.find((o) => o.id === configId)?.options.some((c) => c.value === value),
   );
-  if (preferred.length === 0) return choices;
-  return { ...choices, config: { ...Object.fromEntries(preferred), ...choices.config } };
+  const preferredModel = options?.preferredModelId;
+  const modelId =
+    choices.modelId === undefined && preferredModel && options?.models?.availableModels.some((m) => m.modelId === preferredModel)
+      ? preferredModel
+      : undefined;
+  if (preferred.length === 0 && modelId === undefined) return choices;
+  return {
+    ...choices,
+    ...(modelId !== undefined ? { modelId } : {}),
+    config: { ...Object.fromEntries(preferred), ...choices.config },
+  };
 }
 
 /**
@@ -68,7 +92,7 @@ export function rememberedChoice(
  * last time, with the user's picks, and the safe mode the session will be
  * switched to when the user picked none.
  */
-export function draftInfo(options: AgentOptions, choices: AcpChoices): Pick<AcpSessionInfo, 'modes' | 'configOptions'> {
+export function draftInfo(options: AgentOptions, choices: AcpChoices): AcpOptions & { models: AcpModels | null } {
   const safe = safeModeToApply(options);
   const modes = options.modes && {
     ...options.modes,
@@ -78,7 +102,10 @@ export function draftInfo(options: AgentOptions, choices: AcpChoices): Pick<AcpS
     const safeValue = safe?.kind === 'config' && safe.configId === option.id ? safe.value : undefined;
     return { ...option, currentValue: choices.config[option.id] ?? safeValue ?? option.currentValue };
   });
-  return { modes, configOptions };
+  const models = options.models
+    ? { ...options.models, currentModelId: choices.modelId ?? options.models.currentModelId }
+    : null;
+  return { modes, models, configOptions };
 }
 
 /**
@@ -87,11 +114,21 @@ export function draftInfo(options: AgentOptions, choices: AcpChoices): Pick<AcpS
  * that already hold are skipped.
  */
 export function changesToApply(
-  info: Pick<AcpSessionInfo, 'modes' | 'configOptions'>,
+  info: AcpOptions,
   choices: AcpChoices,
   applySafeMode: boolean,
 ): AcpChange[] {
   const changes: AcpChange[] = [];
+  const pickedModel = choices.modelId;
+  if (pickedModel && !hasModelConfig(info.configOptions)) {
+    if (info.models) {
+      const offered = info.models.availableModels.some((m) => m.modelId === pickedModel);
+      if (offered && pickedModel !== info.models.currentModelId) changes.push({ kind: 'model', modelId: pickedModel });
+    } else if (info.reopenedWith) {
+      // A resume answer carries no models, so the pick goes out as it is and the agent refuses a model it does not know.
+      changes.push({ kind: 'model', modelId: pickedModel });
+    }
+  }
   const pickedMode = choices.modeId;
   if (pickedMode && info.modes) {
     const offered = info.modes.availableModes.some((m) => m.id === pickedMode);
@@ -114,7 +151,8 @@ export function changesToApply(
 }
 
 /** A rewound session's model and effort, and the lists they came from (an effort list follows its model). */
-export type RewoundOptions = Required<Pick<AgentOptions, 'configOptions' | 'preferredConfig'>>;
+export type RewoundOptions = Required<Pick<AgentOptions, 'configOptions' | 'preferredConfig'>> &
+  Pick<AgentOptions, 'preferredModelId'>;
 
 /**
  * The remembered options, with a rewound session's own picks and lists in
@@ -132,11 +170,12 @@ export function withRewound(
 
 /** Whether an agent ever reported what it offers, so a probe need not open a session to learn it. */
 export function hasReportedOptions(options: AgentOptions | undefined): boolean {
-  return Boolean(options && (options.modes || options.configOptions.length > 0 || options.commands?.length));
+  return Boolean(options && (options.modes || options.models || options.configOptions.length > 0 || options.commands?.length));
 }
 
 /** What a probe learned about an agent: its modes, config options and slash commands. */
-export type ProbedOptions = Required<Pick<AgentOptions, 'modes' | 'configOptions' | 'commands'>>;
+export type ProbedOptions = Required<Pick<AgentOptions, 'modes' | 'configOptions' | 'commands'>> &
+  Pick<AgentOptions, 'models'>;
 
 /**
  * The remembered options with what a probe learned filled in where nothing
@@ -149,6 +188,7 @@ export function withProbed(known: AgentOptions | undefined, probed: ProbedOption
   return {
     ...known,
     modes: known.modes ?? probed.modes,
+    models: known.models ?? probed.models,
     configOptions: known.configOptions.length > 0 ? known.configOptions : probed.configOptions,
     commands: known.commands?.length ? known.commands : probed.commands,
   };

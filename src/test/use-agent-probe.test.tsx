@@ -66,6 +66,24 @@ describe("useAgentProbe", () => {
     expect(result.current.isProbing("qwen-code")).toBe(false);
   });
 
+  it("learns the models an agent reports, and none from one that does not", async () => {
+    const models = { currentModelId: "auto", availableModels: [{ modelId: "auto", name: "Auto" }] };
+    vi.spyOn(tauriInternals(), "invoke").mockResolvedValue({ ...structuredClone(PROBED), models });
+    const props = deps();
+    renderHook(() => useAgentProbe(props));
+    await waitFor(() => expect(props.onProbed).toHaveBeenCalledTimes(1));
+    expect(props.onProbed.mock.calls[0][1].models).toEqual({
+      currentModelId: "auto",
+      availableModels: [{ modelId: "auto", name: "Auto", description: undefined }],
+    });
+
+    vi.spyOn(tauriInternals(), "invoke").mockResolvedValue(structuredClone(PROBED));
+    const plain = deps({ agent: { ...QWEN, id: "other" } as AgentProfile });
+    renderHook(() => useAgentProbe(plain));
+    await waitFor(() => expect(plain.onProbed).toHaveBeenCalledTimes(1));
+    expect(plain.onProbed.mock.calls[0][1].models).toBeNull();
+  });
+
   it("reports no session list when the probe answer does not say the agent has one", async () => {
     const answer: Record<string, unknown> = { ...structuredClone(PROBED) };
     delete answer.canListSessions;

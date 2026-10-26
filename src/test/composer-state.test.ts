@@ -109,6 +109,57 @@ describe("composerStateFor", () => {
     expect(setMode).toHaveBeenCalledWith("s-1", "plan");
   });
 
+  describe("models", () => {
+    const models = {
+      currentModelId: "auto",
+      availableModels: [
+        { modelId: "auto", name: "Auto" },
+        { modelId: "flash", name: "Flash" },
+      ],
+    };
+    const gemini = { id: "gemini" } as AgentProfile;
+
+    it("switches a running session's model and tells which agent it was for once the agent took it", async () => {
+      const setModel = vi.fn().mockResolvedValue(true);
+      const onPickModel = vi.fn();
+      const live = { info: { "s-1": { modes: null, configOptions: [], models } }, setModel } as unknown as ComposerInputs["acp"];
+      const session = { ...running(TRANSPORT_ACP), profileId: "gemini" } as Session;
+
+      const state = composerStateFor(inputs({ session, acp: live, onPickModel }));
+      state.controls.model?.onChange("flash");
+
+      expect(setModel).toHaveBeenCalledWith("s-1", "flash");
+      await vi.waitFor(() => expect(onPickModel).toHaveBeenCalledWith("gemini", "flash"));
+    });
+
+    it("does not remember a model the agent refused", async () => {
+      const setModel = vi.fn().mockResolvedValue(false);
+      const onPickModel = vi.fn();
+      const live = { info: { "s-1": { modes: null, configOptions: [], models } }, setModel } as unknown as ComposerInputs["acp"];
+      const session = { ...running(TRANSPORT_ACP), profileId: "gemini" } as Session;
+
+      composerStateFor(inputs({ session, acp: live, onPickModel })).controls.model?.onChange("flash");
+      await Promise.resolve();
+
+      expect(setModel).toHaveBeenCalled();
+      expect(onPickModel).not.toHaveBeenCalled();
+    });
+
+    it("keeps a draft's model pick and remembers it for the agent", () => {
+      const setAcpChoices = vi.fn();
+      const onPickModel = vi.fn();
+
+      const state = composerStateFor(
+        inputs({ draftAgent: gemini, agentOptions: { gemini: { modes: null, configOptions: [], models } }, setAcpChoices, onPickModel }),
+      );
+      expect(state.controls.model?.selected).toBe("auto");
+      state.controls.model?.onChange("flash");
+
+      expect(setAcpChoices).toHaveBeenCalledWith({ config: {}, modelId: "flash" });
+      expect(onPickModel).toHaveBeenCalledWith("gemini", "flash");
+    });
+  });
+
   it("offers no controls while a running ACP session has reported nothing", () => {
     const state = composerStateFor(inputs({ session: running(TRANSPORT_ACP), acp: { ...acp, info: {} } as ComposerInputs["acp"] }));
 

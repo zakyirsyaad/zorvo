@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   changesToApply,
   draftInfo,
+  hasModelConfig,
   hasReportedOptions,
   NO_CHOICES,
   rememberedChoice,
@@ -9,6 +10,18 @@ import {
   withProbed,
   type AgentOptions,
 } from "../lib/acp-draft";
+
+const gemini: AgentOptions = {
+  modes: null,
+  configOptions: [],
+  models: {
+    currentModelId: "auto",
+    availableModels: [
+      { modelId: "auto", name: "Auto" },
+      { modelId: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+    ],
+  },
+};
 
 const qwen: AgentOptions = {
   modes: {
@@ -45,6 +58,88 @@ describe("draftInfo", () => {
 
     expect(info.modes?.currentModeId).toBe("yolo");
     expect(info.configOptions[0].currentValue).toBe("qwen3-max");
+  });
+});
+
+describe("models an agent reports", () => {
+  it("shows the model the user picked in the draft", () => {
+    expect(draftInfo(gemini, NO_CHOICES).models?.currentModelId).toBe("auto");
+    expect(draftInfo(gemini, { config: {}, modelId: "gemini-2.5-flash" }).models?.currentModelId).toBe("gemini-2.5-flash");
+    expect(draftInfo(qwen, NO_CHOICES).models).toBeNull();
+  });
+
+  it("sets the picked model once the agent is up, before the other settings", () => {
+    const withEffort: AgentOptions = {
+      ...gemini,
+      configOptions: [
+        {
+          id: "effort",
+          name: "Effort",
+          category: "thought_level",
+          currentValue: "low",
+          options: [
+            { value: "low", name: "Low" },
+            { value: "high", name: "High" },
+          ],
+        },
+      ],
+    };
+    const choices = { config: { effort: "high" }, modelId: "gemini-2.5-flash" };
+
+    expect(changesToApply(withEffort, choices, false)).toEqual([
+      { kind: "model", modelId: "gemini-2.5-flash" },
+      { kind: "config", configId: "effort", value: "high" },
+    ]);
+  });
+
+  it("leaves the model to its config option when an agent reports both, as Codex and Qwen Code do", () => {
+    const both: AgentOptions = { ...gemini, configOptions: qwen.configOptions };
+
+    expect(hasModelConfig(both.configOptions)).toBe(true);
+    expect(changesToApply(both, { config: {}, modelId: "gemini-2.5-flash" }, false)).toEqual([]);
+    expect(changesToApply(both, { config: { model: "qwen3-max" }, modelId: "gemini-2.5-flash" }, false)).toEqual([
+      { kind: "config", configId: "model", value: "qwen3-max" },
+    ]);
+  });
+
+  it("takes only a model config option that offers something as the agent's model", () => {
+    expect(hasModelConfig(gemini.configOptions)).toBe(false);
+    expect(hasModelConfig([{ ...qwen.configOptions[0], options: [] }])).toBe(false);
+  });
+
+  it("sends a pick as it is when a reopened session's answer reports no models", () => {
+    const choices = { config: {}, modelId: "gemini-2.5-flash" };
+
+    expect(changesToApply({ modes: null, configOptions: [], reopenedWith: "resume" }, choices, false)).toEqual([
+      { kind: "model", modelId: "gemini-2.5-flash" },
+    ]);
+    // A new session that reports none has none to offer, so nothing is sent.
+    expect(changesToApply({ modes: null, configOptions: [] }, choices, false)).toEqual([]);
+  });
+
+  it("skips a model that holds already or that the agent no longer offers", () => {
+    expect(changesToApply(gemini, { config: {}, modelId: "auto" }, false)).toEqual([]);
+    expect(changesToApply(gemini, { config: {}, modelId: "gone" }, false)).toEqual([]);
+    expect(changesToApply(qwen, { config: {}, modelId: "gemini-2.5-flash" }, false)).toEqual([]);
+  });
+
+  it("starts the next session with the model picked last while it is still offered", () => {
+    const remembered = { ...gemini, preferredModelId: "gemini-2.5-flash" };
+
+    expect(withPreferred(NO_CHOICES, remembered).modelId).toBe("gemini-2.5-flash");
+    expect(withPreferred({ config: {}, modelId: "auto" }, remembered).modelId).toBe("auto");
+    expect(withPreferred(NO_CHOICES, { ...gemini, preferredModelId: "gone" })).toBe(NO_CHOICES);
+    expect(withPreferred(NO_CHOICES, gemini)).toBe(NO_CHOICES);
+  });
+
+  it("counts models as reported options and fills them in from a probe", () => {
+    expect(hasReportedOptions(gemini)).toBe(true);
+    const probed = { modes: null, configOptions: [], commands: [], models: gemini.models };
+
+    expect(withProbed(undefined, probed).models).toBe(gemini.models);
+    expect(withProbed({ modes: null, configOptions: [] }, probed).models).toBe(gemini.models);
+    const known = { ...gemini, models: { currentModelId: "x", availableModels: [] } };
+    expect(withProbed(known, probed).models).toBe(known.models);
   });
 });
 

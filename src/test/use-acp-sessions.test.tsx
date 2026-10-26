@@ -11,7 +11,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   },
 }));
 
-import { useAcpSessions, type AcpHandlers } from "../hooks/useAcpSessions";
+import { toModels, useAcpSessions, type AcpHandlers } from "../hooks/useAcpSessions";
 import { sweepOrphans } from "../lib/orphan-sweep";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
@@ -71,6 +71,34 @@ async function emit(payload: unknown) {
     listeners.get("acp-event")?.({ payload });
   });
 }
+
+describe("toModels", () => {
+  it("keeps the models an agent reported and drops malformed ones", () => {
+    expect(
+      toModels({
+        currentModelId: "auto",
+        availableModels: [
+          { modelId: "auto", name: "Auto", description: "Picks for you" },
+          { modelId: "flash", name: "Flash" },
+          { modelId: "no-name" },
+          "junk",
+        ],
+      }),
+    ).toEqual({
+      currentModelId: "auto",
+      availableModels: [
+        { modelId: "auto", name: "Auto", description: "Picks for you" },
+        { modelId: "flash", name: "Flash", description: undefined },
+      ],
+    });
+  });
+
+  it("is null for anything that is not a model state with a list", () => {
+    for (const raw of [null, undefined, "auto", [], {}, { currentModelId: "a" }, { availableModels: [] }, { currentModelId: 1, availableModels: [] }]) {
+      expect(toModels(raw)).toBeNull();
+    }
+  });
+});
 
 describe("useAcpSessions", () => {
   afterEach(() => {
@@ -206,6 +234,50 @@ describe("useAcpSessions", () => {
 
     await emit({ sessionId: "s-1", kind: "update", update: { sessionUpdate: "current_mode_update", currentModeId: "yolo" } });
     expect(result.current.info["s-1"].modes?.currentModeId).toBe("yolo");
+  });
+
+  it("reports the models of a session and switches them", async () => {
+    const models = {
+      currentModelId: "auto",
+      availableModels: [
+        { modelId: "auto", name: "Auto" },
+        { modelId: "flash", name: "Flash" },
+      ],
+    };
+    const spy = stubInvoke({
+      acp_start_session: () => Promise.resolve({ ...STARTED, modes: null, configOptions: [], models }),
+      acp_set_model: () => Promise.resolve(undefined),
+    });
+    const { result } = renderHook(() => useAcpSessions(handlers()));
+    await act(async () => {
+      await result.current.start("s-1", "/work", "gemini");
+    });
+    expect(result.current.info["s-1"].models?.currentModelId).toBe("auto");
+
+    await act(async () => {
+      await result.current.setModel("s-1", "flash");
+    });
+
+    expect(spy).toHaveBeenCalledWith("acp_set_model", { sessionId: "s-1", modelId: "flash" }, undefined);
+    expect(result.current.info["s-1"].models?.currentModelId).toBe("flash");
+  });
+
+  it("keeps the model when the agent refuses the switch", async () => {
+    const models = { currentModelId: "auto", availableModels: [{ modelId: "auto", name: "Auto" }] };
+    stubInvoke({
+      acp_start_session: () => Promise.resolve({ ...STARTED, models }),
+      acp_set_model: () => Promise.reject("Unknown model"),
+    });
+    const { result } = renderHook(() => useAcpSessions(handlers()));
+    await act(async () => {
+      await result.current.start("s-1", "/work", "gemini");
+    });
+
+    await act(async () => {
+      await expect(result.current.setModel("s-1", "flash")).rejects.toBe("Unknown model");
+    });
+
+    expect(result.current.info["s-1"].models?.currentModelId).toBe("auto");
   });
 
   it("applies the config options the agent returns after a change", async () => {

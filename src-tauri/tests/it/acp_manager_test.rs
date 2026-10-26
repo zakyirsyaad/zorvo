@@ -269,6 +269,46 @@ fn sets_the_session_mode() {
 }
 
 #[test]
+fn reports_the_models_an_agent_offers_and_sets_the_session_model() {
+    let (manager, rx) = manager();
+    let launch = with_env(fake_agent(), "FAKE_ACP_MODELS", "1");
+    let started = manager.start("s-1", &cwd(), &launch).expect("start");
+    assert_eq!(started.models["currentModelId"], "auto");
+    assert_eq!(started.models["availableModels"][1]["modelId"], "flash");
+
+    manager.set_model("s-1", "flash").unwrap();
+
+    // The fake agent says the model it now runs, so the test sees what it was sent.
+    let chunk = wait_for(&rx, |e| agent_text(e).is_some());
+    assert_eq!(agent_text(&chunk).as_deref(), Some("model:flash"));
+    manager.stop("s-1");
+}
+
+#[test]
+fn a_model_the_agent_refuses_is_an_error() {
+    let (manager, _rx) = manager();
+    let launch = with_env(fake_agent(), "FAKE_ACP_MODELS", "1");
+    manager.start("s-1", &cwd(), &launch).unwrap();
+
+    let error = manager.set_model("s-1", "nope").unwrap_err();
+
+    assert!(error.contains("Unknown model"), "{error}");
+    manager.stop("s-1");
+}
+
+#[test]
+fn probe_reports_the_models_an_agent_offers() {
+    let (manager, _rx) = manager();
+    let launch = with_env(fake_agent(), "FAKE_ACP_MODELS", "1");
+
+    let probed = manager.probe(&cwd(), &launch, true).expect("probe");
+
+    assert_eq!(probed.models["currentModelId"], "auto");
+    let plain = manager.probe(&cwd(), &fake_agent(), true).expect("probe");
+    assert!(plain.models.is_null());
+}
+
+#[test]
 fn rejects_bad_starts_and_unknown_sessions() {
     let (manager, _rx) = manager();
 

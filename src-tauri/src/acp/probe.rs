@@ -45,6 +45,8 @@ const SIGNED_OUT: &str = "none";
 #[serde(rename_all = "camelCase")]
 pub struct ProbedAgent {
     pub modes: Value,
+    /// The models of an agent that reports `models` (null otherwise).
+    pub models: Value,
     pub config_options: Value,
     /// The slash commands, as the agent's `available_commands_update` lists them.
     pub commands: Value,
@@ -114,6 +116,7 @@ impl AcpManager {
                     let auth_kind = settle(&rx, &awaited).1;
                     let probed = ProbedAgent {
                         modes: Value::Null,
+                        models: Value::Null,
                         config_options: Value::Array(Vec::new()),
                         commands: Value::Array(Vec::new()),
                         sign_in_checked: auth_kind.is_some(),
@@ -138,6 +141,7 @@ impl AcpManager {
                 let (commands, auth_kind) = settle(&rx, &awaited);
                 let probed = ProbedAgent {
                     modes: session["modes"].clone(),
+                    models: session["models"].clone(),
                     config_options: session["configOptions"].clone(),
                     commands: commands.unwrap_or_else(|| Value::Array(Vec::new())),
                     // An agent that reports its sign-in may open sessions signed out

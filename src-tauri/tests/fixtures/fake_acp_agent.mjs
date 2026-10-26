@@ -30,6 +30,8 @@
 //   FAKE_ACP_SLOW_INIT=<ms> -> answers initialize only after that many milliseconds
 //                         (ten seconds when set without a delay)
 //   FAKE_ACP_SLOW_REPLAY -> session/load sends another chunk three seconds later, then answers
+//   FAKE_ACP_MODELS   -> session/new reports models ("auto", "flash", "pro"; "auto" current) and
+//                         answers session/set_model, saying "model:<id>" or refusing an unknown id
 // (each other FAKE_ACP_* flag is documented where it is read below)
 import { appendFileSync, closeSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
@@ -58,6 +60,13 @@ const defaultModes = () => ({
     { id: "default", name: "Default" },
     { id: "yolo", name: "YOLO" },
   ],
+});
+
+// The models a FAKE_ACP_MODELS agent reports, like Gemini's.
+const MODEL_IDS = ["auto", "flash", "pro"];
+const defaultModels = () => ({
+  currentModelId: "auto",
+  availableModels: MODEL_IDS.map((modelId) => ({ modelId, name: modelId.toUpperCase() })),
 });
 
 const nameForm = (target) => ({
@@ -309,6 +318,7 @@ const handlers = {
     reply(id, {
       sessionId,
       modes: defaultModes(),
+      ...(process.env.FAKE_ACP_MODELS ? { models: defaultModels() } : {}),
       configOptions: [
         {
           id: "model",
@@ -338,6 +348,14 @@ const handlers = {
     askAfterOpen(sessionId);
   },
   "session/prompt": handlePrompt,
+  "session/set_model": (id, params) => {
+    if (!process.env.FAKE_ACP_MODELS || !MODEL_IDS.includes(params.modelId)) {
+      send({ id, error: { code: -32602, message: `Unknown model ${params.modelId}` } });
+      return;
+    }
+    say(params.sessionId, `model:${params.modelId}`);
+    reply(id, {});
+  },
   "session/set_mode": (id, params) => {
     update(params.sessionId, { sessionUpdate: "current_mode_update", currentModeId: params.modeId });
     reply(id, {});

@@ -22,6 +22,8 @@ export interface ComposerInputs {
    * a session at once, during one once the agent took it, with what it reports.
    */
   onPick?: (profileId: string, configId: string, value: string, reported?: AcpConfigOption[]) => void;
+  /** Called for every model the user picks among the agent's `models`, with the agent it is for; in a running session once the agent took it. */
+  onPickModel?: (profileId: string, modelId: string) => void;
 }
 
 /**
@@ -36,6 +38,11 @@ export function composerStateFor(inputs: ComposerInputs): ComposerState {
     const controls = info
       ? acpControls(info, {
           setMode: (modeId) => acp.setMode(session.id, modeId),
+          setModel: (modelId) => {
+            void acp.setModel(session.id, modelId).then((isTaken) => {
+              if (isTaken) inputs.onPickModel?.(session.profileId, modelId);
+            });
+          },
           setConfigOption: (configId, value) => {
             void acp.setConfigOption(session.id, configId, value).then((reported) => {
               if (reported) inputs.onPick?.(session.profileId, configId, value, reported);
@@ -51,6 +58,10 @@ export function composerStateFor(inputs: ComposerInputs): ComposerState {
   const { acpChoices: choices, setAcpChoices } = inputs;
   const controls = acpControls(draftInfo(options, choices), {
     setMode: (modeId) => setAcpChoices({ ...choices, modeId }),
+    setModel: (modelId) => {
+      setAcpChoices({ ...choices, modelId });
+      inputs.onPickModel?.(draftAgent.id, modelId);
+    },
     setConfigOption: (configId, value) => {
       setAcpChoices({ ...choices, config: { ...choices.config, [configId]: value } });
       inputs.onPick?.(draftAgent.id, configId, value);

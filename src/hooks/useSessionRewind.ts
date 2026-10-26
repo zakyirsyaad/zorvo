@@ -69,8 +69,13 @@ export function useSessionRewind(deps: SessionRewindDeps): SessionRewind {
     // back into its own composer. The old agent's late events are ignored.
     const configOptions = acp.info[session.id]?.configOptions ?? [];
     const preferredConfig = keptConfigOf(configOptions);
-    if (Object.keys(preferredConfig).length > 0) {
-      rewoundOptionsRef.current.set(session.id, { configOptions, preferredConfig });
+    const preferredModelId = acp.info[session.id]?.models?.currentModelId;
+    if (Object.keys(preferredConfig).length > 0 || preferredModelId) {
+      rewoundOptionsRef.current.set(session.id, {
+        configOptions,
+        preferredConfig,
+        ...(preferredModelId ? { preferredModelId } : {}),
+      });
     }
     if (session.status === 'running') {
       const stopped = acp.stop(session.id);

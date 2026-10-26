@@ -166,6 +166,7 @@ export function normalizePersistedState(raw: unknown): PersistedState {
       removedAgents: toAgentIdList(settings.removedAgents) ?? [],
       agentVersions: toAgentVersions(settings.agentVersions),
       notifiedUpdates: toNotifiedUpdates(settings.notifiedUpdates),
+      signedInAgents: toAgentIdList(settings.signedInAgents) ?? [],
     },
     recentFolders: Array.isArray(raw.recentFolders)
       ? raw.recentFolders.filter(

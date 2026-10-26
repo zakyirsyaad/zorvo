@@ -450,11 +450,33 @@ fn reports_a_generic_server_error_as_is_rather_than_as_a_sign_in() {
     launch
         .env
         .push(("FAKE_ACP_SERVER_ERROR".to_string(), "1".to_string()));
+    launch
+        .env
+        .push(("FAKE_ACP_NO_AUTH_METHODS".to_string(), "1".to_string()));
 
     let error = manager.start("s-1", &cwd(), &launch).unwrap_err();
 
     assert!(!error.starts_with(zorvo_lib::acp::manager::AUTH_REQUIRED_PREFIX));
     assert!(error.contains("disk full"), "unexpected error: {error}");
+}
+
+/// ACP's `-32000` means "authentication required" and does not fix the message, so an
+/// agent that offers ways to sign in and refuses to open a session with it is asking
+/// for one, however it words that.
+#[test]
+fn treats_a_32000_refusal_to_open_a_session_as_a_sign_in_when_the_agent_offers_methods() {
+    let (manager, _rx) = manager();
+    let mut launch = fake_agent();
+    launch
+        .env
+        .push(("FAKE_ACP_SERVER_ERROR".to_string(), "1".to_string()));
+
+    let error = manager.start("s-1", &cwd(), &launch).unwrap_err();
+
+    assert!(
+        error.starts_with(zorvo_lib::acp::manager::AUTH_REQUIRED_PREFIX),
+        "unexpected error: {error}"
+    );
 }
 
 #[test]
@@ -463,6 +485,8 @@ fn recognizes_a_sign_in_request_however_the_agent_phrases_it() {
         "Not logged in. Run `codex login`",
         "You must be signed in",
         "log-in required",
+        "Gemini API key is missing or not configured.",
+        "No credentials found",
     ] {
         let (manager, _rx) = manager();
         let mut launch = fake_agent();
@@ -520,6 +544,9 @@ fn reports_an_agent_error_without_its_stderr_noise() {
     launch
         .env
         .push(("FAKE_ACP_SERVER_ERROR".to_string(), "1".to_string()));
+    launch
+        .env
+        .push(("FAKE_ACP_NO_AUTH_METHODS".to_string(), "1".to_string()));
     launch
         .env
         .push(("FAKE_ACP_STDERR".to_string(), "1".to_string()));

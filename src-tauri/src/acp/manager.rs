@@ -367,7 +367,7 @@ impl AcpManager {
                 let stop_reason = result
                     .map(|r| r["stopReason"].as_str().unwrap_or("end_turn").to_string())
                     .map_err(|e| {
-                        if is_auth_required(&e) {
+                        if is_auth_required(&e, offers_sign_in(&auth_methods)) {
                             auth_required_error(&auth_methods)
                         } else {
                             error_message(&e)
@@ -653,9 +653,30 @@ impl AcpManager {
     }
 }
 
-/// `-32000` is also JSON-RPC's generic server error, so the message must say it is about signing in.
-fn is_auth_required(error: &Value) -> bool {
-    // Letters only, so "Not logged in", "log-in" and "signed in" all match.
+/// Words that make a `-32000` message one about signing in, once everything but
+/// letters is dropped: "Not logged in", "log-in", "signed in", "API key is
+/// missing" (Gemini CLI) and "No credentials" all match.
+const SIGN_IN_WORDS: [&str; 7] = [
+    "auth",
+    "login",
+    "loggedin",
+    "signin",
+    "signedin",
+    "apikey",
+    "credential",
+];
+
+/// Whether an agent's refusal says it needs a sign-in. ACP's code for that is `-32000`
+/// ("Authentication required"), but it does not fix the message, and the code is also
+/// JSON-RPC's generic server error. So an answer counts when its message is about
+/// signing in, or when the agent offers sign-in methods (`offers_sign_in`) and the
+/// refusal is of a request ACP says may fail for want of one: a session that cannot
+/// open, or a prompt. Gemini CLI, for one, words it "API key is missing".
+fn is_auth_required(error: &Value, offers_sign_in: bool) -> bool {
+    if error["code"].as_i64() != Some(AUTH_REQUIRED) {
+        return false;
+    }
+    // Letters only, so spacing and punctuation do not matter.
     let message: String = error["message"]
         .as_str()
         .unwrap_or_default()
@@ -663,10 +684,14 @@ fn is_auth_required(error: &Value) -> bool {
         .filter(char::is_ascii_alphabetic)
         .collect::<String>()
         .to_ascii_lowercase();
-    error["code"].as_i64() == Some(AUTH_REQUIRED)
-        && ["auth", "login", "loggedin", "signin", "signedin"]
-            .iter()
-            .any(|word| message.contains(word))
+    offers_sign_in || SIGN_IN_WORDS.iter().any(|word| message.contains(word))
+}
+
+/// Whether `auth_methods` (from `initialize`) lists at least one way to sign in.
+fn offers_sign_in(auth_methods: &Value) -> bool {
+    auth_methods
+        .as_array()
+        .is_some_and(|methods| !methods.is_empty())
 }
 
 /// Opens a session; an "authentication required" answer becomes an error
@@ -691,8 +716,11 @@ pub(super) fn open_request(
 /// The error a request the agent refused reads as: the sign-in error the UI
 /// parses when it is about signing in, else `<method> failed: <its message>`.
 pub(super) fn agent_error(method: &str, init: &Value, error: &Value) -> String {
-    if is_auth_required(error) {
-        auth_required_error(&auth_methods_of(init))
+    let auth_methods = auth_methods_of(init);
+    // Only a request that opens a session may be refused for want of a sign-in on its code alone.
+    let may_need_sign_in = matches!(method, "session/new" | "session/load" | "session/resume");
+    if is_auth_required(error, may_need_sign_in && offers_sign_in(&auth_methods)) {
+        auth_required_error(&auth_methods)
     } else {
         format!("{} failed: {}", method, error_message(error))
     }

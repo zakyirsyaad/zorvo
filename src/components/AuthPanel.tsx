@@ -2,7 +2,7 @@ import { KeyRound, LogIn, X } from "lucide-react";
 import { Button } from "./ui/Button";
 import type { AuthMethod } from "../lib/acp-auth";
 
-export type AuthStatus = "idle" | "signing-in" | "signed-in" | "failed";
+export type AuthStatus = "idle" | "signing-in" | "checking" | "signed-in" | "failed";
 
 export interface AuthPanelProps {
   agentName: string;
@@ -10,6 +10,8 @@ export interface AuthPanelProps {
   status: AuthStatus;
   error?: string;
   onSignIn: (methodId: string) => void;
+  /** Asks the agent again whether someone is signed in, e.g. after setting a key outside the app. */
+  onCheckAgain: () => void;
   onDismiss: () => void;
 }
 
@@ -18,8 +20,10 @@ export interface AuthPanelProps {
  * in the agent (a browser sign-in) or in a terminal get a button; methods that
  * need a secret are only explained, since the app never asks for API keys.
  */
-export function AuthPanel({ agentName, methods, status, error, onSignIn, onDismiss }: AuthPanelProps) {
+export function AuthPanel({ agentName, methods, status, error, onSignIn, onCheckAgain, onDismiss }: AuthPanelProps) {
   const hasButton = methods.some((method) => method.kind !== "explain");
+  const hasExplained = methods.some((method) => method.kind === "explain");
+  const isBusy = status === "signing-in" || status === "checking";
   const title = `Sign in to ${agentName}`;
   return (
     <section
@@ -47,7 +51,13 @@ export function AuthPanel({ agentName, methods, status, error, onSignIn, onDismi
         <>
           <p className="mt-1.5 text-fg-muted">{agentName} needs you to sign in before it can start.</p>
           {!hasButton && (
-            <p className="mt-2 text-fg-secondary">Sign in with {agentName}&apos;s own command line tool, then try again.</p>
+            <p className="mt-2 text-fg-secondary">Sign in with {agentName}&apos;s own command line tool, then check again.</p>
+          )}
+          {hasExplained && (
+            <p className="mt-2 text-fg-muted">
+              Zorvo never stores keys. To use a key or another account setting, set it up in {agentName} or your shell
+              (for example in ~/.zshrc), then check again.
+            </p>
           )}
           <ul className="mt-2 space-y-1.5">
             {methods.map((method) => (
@@ -59,7 +69,7 @@ export function AuthPanel({ agentName, methods, status, error, onSignIn, onDismi
                 {method.kind !== "explain" && (
                   <Button
                     variant="primary"
-                    disabled={status === "signing-in"}
+                    disabled={isBusy}
                     onClick={() => onSignIn(method.id)}
                     icon={<LogIn size={12} />}
                     className="shrink-0"
@@ -71,7 +81,11 @@ export function AuthPanel({ agentName, methods, status, error, onSignIn, onDismi
             ))}
           </ul>
           {status === "signing-in" && <p className="mt-2 text-fg-muted">Finish signing in in the window that opened…</p>}
+          {status === "checking" && <p className="mt-2 text-fg-muted">Checking whether you are signed in…</p>}
           {status === "failed" && <p className="mt-2 text-danger">Sign-in failed: {error}</p>}
+          <Button variant="outline" disabled={isBusy} onClick={onCheckAgain} className="mt-2">
+            Check again
+          </Button>
         </>
       )}
     </section>

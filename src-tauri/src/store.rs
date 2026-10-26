@@ -87,6 +87,9 @@ pub struct Settings {
     pub agent_versions: BTreeMap<String, String>,
     /// The update version already announced for each agent id.
     pub notified_updates: BTreeMap<String, String>,
+    /// Agent ids that were seen signed in, so Settings and the sidebar can say
+    /// "Ready" without asking the agent again. Opaque to the backend.
+    pub signed_in_agents: Vec<String>,
 }
 
 /// The registry agents in use until the user changes the list; matches

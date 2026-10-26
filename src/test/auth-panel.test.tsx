@@ -10,7 +10,7 @@ const explain: AuthMethod = { id: "api-key", name: "API Key", description: "Use 
 function renderPanel(props: Partial<AuthPanelProps> = {}) {
   const onSignIn = vi.fn();
   render(
-    <AuthPanel agentName="Claude Code" methods={[terminal]} status="idle" onSignIn={onSignIn} onDismiss={vi.fn()} {...props} />,
+    <AuthPanel agentName="Claude Code" methods={[terminal]} status="idle" onSignIn={onSignIn} onCheckAgain={vi.fn()} onDismiss={vi.fn()} {...props} />,
   );
   return { onSignIn };
 }
@@ -34,7 +34,7 @@ describe("AuthPanel", () => {
   it("points to the command line tool when no method has a button", () => {
     renderPanel({ methods: [explain] });
 
-    expect(screen.getByText("Sign in with Claude Code's own command line tool, then try again.")).toBeTruthy();
+    expect(screen.getByText("Sign in with Claude Code's own command line tool, then check again.")).toBeTruthy();
   });
 
   it("hides the command line hint when a method has a button", () => {

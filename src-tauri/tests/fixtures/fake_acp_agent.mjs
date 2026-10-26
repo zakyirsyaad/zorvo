@@ -202,7 +202,8 @@ const handlers = {
         },
         ...(authStatus ? { _meta: { authStatus: {} } } : {}),
       },
-      authMethods: [
+      // FAKE_ACP_NO_AUTH_METHODS: offers no way to sign in.
+      authMethods: process.env.FAKE_ACP_NO_AUTH_METHODS ? [] : [
         { id: "browser", name: "Sign in with a browser" },
         { id: "api-key", name: "API key", description: "Set FAKE_API_KEY" },
         ...(params?.clientCapabilities?.auth?.terminal === true

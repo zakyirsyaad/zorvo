@@ -4,7 +4,12 @@
 version: 2
 updates:
   - package-ecosystem: npm
-    directory: /
+    # The second folder pins the Tauri CLI the Release workflow's signing job installs
+    # alone (see .github/updater-signer). One group, so both move in one pull request:
+    # scripts/updater-signer.test.mjs fails while they differ.
+    directories:
+      - /
+      - /.github/updater-signer
     schedule:
       interval: weekly
     cooldown:

@@ -1,19 +1,20 @@
 #!/usr/bin/env node
-// Checks the updater signing setup before and after a release build.
+// Checks the updater signing setup: the key before you tag, latest.json before the Release workflow uploads it.
 //
 //   node scripts/check-updater-signing.mjs key <tauri.conf.json>
 //   node scripts/check-updater-signing.mjs manifest <tauri.conf.json> <latest.json> <tag> [<update.app.tar.gz>]
 //
-// `key` runs after `pnpm install` and before the build. It signs a one-byte probe with
-// `pnpm tauri signer sign`, using TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD (the
-// variables the build reads), and fails when the password is wrong or the signature was not made by the
-// key in plugins.updater.pubkey. The Tauri CLI only warns about that mismatch, and reports a wrong
-// password after the whole build.
+// `key` is the check to run on your machine before you tag (see the README, "Releasing"). It signs a one-byte
+// probe with `pnpm tauri signer sign`, using TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD (the
+// variables the CLI reads), and fails when the password is wrong or the signature was not made by the key in
+// plugins.updater.pubkey. The Tauri CLI only warns about that mismatch, and reports a wrong password after a whole
+// build. The Release workflow does not run it: its signing job holds the key in one step that runs only the Tauri
+// CLI, and `manifest` then checks the signature that step made.
 //
-// `manifest` runs after the build, on the latest.json that was uploaded. Every platform entry must carry
-// a signature made by the pubkey's key that records the version being released, which is what a client
-// with `requireSignedVersion` compares with the version latest.json announces. With the update package
-// (the .app.tar.gz) it also checks the Mac signatures the way a client does.
+// `manifest` runs in that job, on the latest.json it is about to upload. Every platform entry must carry a
+// signature made by the pubkey's key that records the version being released, which is what a client with
+// `requireSignedVersion` compares with the version latest.json announces. With the update package (the
+// .app.tar.gz) it also checks the Mac signatures the way a client does.
 //
 // Exit codes: 0 passed, 1 a check failed, 2 wrong usage.
 

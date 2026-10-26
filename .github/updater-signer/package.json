@@ -1,0 +1,8 @@
+{
+  "name": "zorvo-updater-signer",
+  "private": true,
+  "description": "Only the Tauri CLI, pinned, for the Release workflow's signing job. That job holds the updater key and runs none of the project's own dependencies.",
+  "dependencies": {
+    "@tauri-apps/cli": "2.12.3"
+  }
+}

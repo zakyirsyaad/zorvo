@@ -10,7 +10,7 @@ const PROMISES: { icon: IconName; title: string; body: string }[] = [
   {
     icon: "globe",
     title: "Few hosts, all named",
-    body: "Zorvo reads the ACP registry. Only when you click Install does it fetch that agent's hash-checked download, plus Node.js or uv if it needs them. No telemetry, and no requests from the window.",
+    body: "Zorvo reads the ACP registry and, shortly after it starts and then about once a day, asks GitHub whether a newer Zorvo exists. Only when you click Install does it fetch that agent's hash-checked download, plus Node.js or uv if it needs them, and only when you click Update & restart does it download a signature-checked update. No telemetry, and no requests from the window.",
   },
   {
     icon: "hard-drive",

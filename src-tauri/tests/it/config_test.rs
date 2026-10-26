@@ -68,3 +68,37 @@ fn the_asset_protocol_starts_with_an_empty_scope() {
     assert_eq!(asset["enable"], true, "{asset}");
     assert_eq!(asset["scope"], serde_json::json!([]), "{asset}");
 }
+
+/// An update must prove it was signed for the version `latest.json` announces, or an older
+/// signed release could be offered under a newer number. A plugin that does not know the key
+/// ignores it without a word, so a typo here would switch the protection off.
+#[test]
+fn an_update_must_record_the_version_it_was_signed_for() {
+    let config = tauri_config();
+    let updater = &config["plugins"]["updater"];
+
+    assert_eq!(
+        updater["requireSignedVersion"],
+        Value::Bool(true),
+        "{updater}"
+    );
+    assert!(
+        updater["pubkey"]
+            .as_str()
+            .is_some_and(|key| !key.is_empty() && !key.contains("REPLACE_WITH")),
+        "a real public key: {updater}"
+    );
+}
+
+/// The updater runs from Rust only (`app_update.rs`), so the window sends no URL, proxy or
+/// header of its own. Granting it the plugin's permissions would let it.
+#[test]
+fn the_window_has_no_permission_to_drive_the_updater_itself() {
+    let raw = std::fs::read_to_string(format!(
+        "{}/capabilities/default.json",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .expect("read capabilities/default.json");
+
+    assert!(!raw.contains("updater"), "{raw}");
+}

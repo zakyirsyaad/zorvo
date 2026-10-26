@@ -34,6 +34,7 @@ function fakeTerminals(tabs: WorkspaceTerminalTab[], overrides: Partial<Workspac
   return {
     output: createPtyOutputStore(),
     tabsFor: (folderPath) => tabs.filter((t) => t.folderPath === folderPath),
+    liveCount: tabs.filter((t) => t.status === "live").length,
     open: vi.fn(async () => null),
     close: vi.fn(),
     closeFolder: vi.fn(),

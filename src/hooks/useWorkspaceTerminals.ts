@@ -17,6 +17,8 @@ export interface WorkspaceTerminals {
   output: PtyOutputStore;
   /** A folder's tabs, oldest first. */
   tabsFor: (folderPath: string) => WorkspaceTerminalTab[];
+  /** Shells still running in any folder: what an app restart would end. */
+  liveCount: number;
   /** The new tab's id, or null when the shell could not be opened (the user was told). */
   open: (folderPath: string) => Promise<string | null>;
   close: (id: string) => void;
@@ -154,8 +156,10 @@ export function useWorkspaceTerminals(onNotice: (message: string) => void): Work
     void invoke('resize_session', { sessionId: id, cols, rows }).catch(() => {});
   }, []);
 
+  const liveCount = useMemo(() => tabs.filter((tab) => tab.status === 'live').length, [tabs]);
+
   return useMemo(
-    () => ({ output, tabsFor, open, close, closeFolder, send, resize }),
-    [output, tabsFor, open, close, closeFolder, send, resize],
+    () => ({ output, tabsFor, liveCount, open, close, closeFolder, send, resize }),
+    [output, tabsFor, liveCount, open, close, closeFolder, send, resize],
   );
 }

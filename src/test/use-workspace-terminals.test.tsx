@@ -284,6 +284,20 @@ describe("useWorkspaceTerminals", () => {
     ]);
   });
 
+  it("counts the shells still running in every folder", async () => {
+    const { result } = await setup();
+    expect(result.current.liveCount).toBe(0);
+    await open(result, "/w/a");
+    await open(result, "/w/b");
+    expect(result.current.liveCount).toBe(2);
+
+    await emitAct({ terminalId: "shell-1", kind: "exit", exitCode: 0 });
+    expect(result.current.liveCount).toBe(1);
+
+    act(() => result.current.closeFolder("/w/b"));
+    expect(result.current.liveCount).toBe(0);
+  });
+
   it("keeps each folder's tabs apart", async () => {
     const { result } = await setup();
     await open(result, "/w/a");

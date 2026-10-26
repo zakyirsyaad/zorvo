@@ -164,7 +164,7 @@ xattr -dr com.apple.quarantine "/Applications/Zorvo.app"
 
 ### Check your download
 
-Each release lists the SHA-256 checksum of its files in `SHA256SUMS.txt`.
+Each release lists the SHA-256 checksum of its DMG in `SHA256SUMS.txt`.
 Download it into the folder with the DMG, then run this in that folder:
 
 ```bash
@@ -177,9 +177,21 @@ download Zorvo from this repository's
 
 ### Update
 
-Zorvo does not update itself yet. To update, download the newest DMG and
-replace Zorvo in Applications. Your sessions are kept: they are stored outside
-the app.
+From 0.6.0 on, Zorvo tells you when a newer version exists: a notice at the top
+of the window says "Zorvo X.Y.Z is available." Click **Update & restart** and
+Zorvo downloads the update, checks its signature, installs it and opens again.
+**Later** hides the notice until you next start Zorvo. Agents that are working
+stop, and open terminals end, when Zorvo restarts, so update when the agents
+are idle and nothing runs in a terminal. Your sessions are kept: they are
+stored outside the app.
+
+A copy that runs from the disk image, or from any other read-only place, cannot
+update itself there: drag Zorvo into Applications, open it from there, and
+update again.
+
+Copies older than 0.6.0 cannot update themselves. Update those once by hand:
+download the newest DMG and replace Zorvo in Applications. The same works if an
+update ever fails and you would rather not retry.
 
 ### Uninstall
 
@@ -231,11 +243,22 @@ before it edits files or runs commands. Pick another mode in the composer.
   - `nodejs.org`, when you install an agent that needs Node.js and yours is
     missing or older than 22;
   - `uv`'s releases on GitHub, when you install an agent that runs with `uvx`
-    and you have no `uvx`.
+    and you have no `uvx`;
+  - this repository's releases on GitHub, to ask whether a newer Zorvo exists
+    (`github.com/zakyirsyaad/zorvo-releases`, shortly after Zorvo starts, then
+    about once a day) and, when you click **Update & restart**, to download it
+    (`api.github.com`). GitHub sends both requests on to its download host,
+    today `release-assets.githubusercontent.com`. The check sends no
+    information about you or your work.
 
-  Nothing downloads until you click **Install**, and every download is checked
-  against a SHA-256 hash pinned in advance. Your agents, and the `npm`, `npx`
-  and `uvx` they run with, make their own requests to their own services.
+  No agent, runtime or Zorvo update downloads until you click **Install** or
+  **Update & restart**. Agent and runtime downloads are checked against a
+  SHA-256 hash pinned in advance. A Zorvo update must come from this
+  repository's releases and is installed only if its signature matches the key
+  built into Zorvo.
+
+  Your agents, and the `npm`, `npx` and `uvx` they run with, make their own
+  requests to their own services.
 - **Your data stays on your Mac.** Sessions and transcripts are stored in
   `~/Library/Application Support/xyz.zorvo.desktop/`, and session worktrees in
   `worktrees/` there.
@@ -249,6 +272,7 @@ before it edits files or runs commands. Pick another mode in the composer.
 | macOS blocks Zorvo on first open | See [Open Zorvo the first time](#open-zorvo-the-first-time). |
 | An agent shows as not installed | Click **Install** next to it in Settings → Agents, or pick it in a new session's agent list and click **Install**. Zorvo brings Node.js or `uv` when the agent needs them. Then click **Check again**. |
 | "Sign in to *agent*" | Use a sign-in method the panel offers, or sign in once in a terminal (see [Requirements](#requirements)). If you set a key outside Zorvo, click **Check again** in the panel, then send your message. |
+| **Update & restart** fails with a read-only message | A copy that runs from the disk image cannot update itself: drag it into Applications and open it from there. Or download the newest DMG from [releases](https://github.com/zakyirsyaad/zorvo-releases/releases) and replace Zorvo in Applications. |
 | An agent takes a while to start the first time | Its first start downloads the agent's package. Later starts are quick. |
 | The agent stays on **Working…** | If Zorvo shows that the agent's requests failed, the cause is usually the agent's account, such as a used-up quota. Check it in the agent's own CLI, then click **Stop** and send your message again. |
 | No pull request status | Install `gh` and run `gh auth login`. A repository without a GitHub remote has none to show. |

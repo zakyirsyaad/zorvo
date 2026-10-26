@@ -60,6 +60,8 @@ import { useAutoEnabledAgents } from "./hooks/useAutoEnabledAgents";
 import { useShellActions } from "./hooks/useShellActions";
 import { useAgentUpdates } from "./hooks/useAgentUpdates";
 import { UpdateNotice } from "./components/UpdateNotice";
+import { AppUpdateNotice } from "./components/AppUpdateNotice";
+import { useAppUpdate } from "./hooks/useAppUpdate";
 import { ProfileFooter } from "./components/ProfileFooter";
 import { useNavigationHistory } from "./hooks/useNavigationHistory";
 import { useUserProfile } from "./hooks/useUserProfile";
@@ -116,10 +118,16 @@ export default function App() {
   const reportError = useCallback((message: string) => setNotice(message), []);
   const { state, isLoaded, updateState, saveNow } = usePersistedState(reportError);
   useAppearance(state.settings.appearance, isLoaded, reportError);
-  const { transcripts, ensureLoaded, updateMessages, removeTranscript } = useTranscripts(reportError);
+  const { transcripts, ensureLoaded, updateMessages, removeTranscript, flush: flushTranscripts } = useTranscripts(reportError);
   const { agents, isLoaded: areAgentsLoaded, refresh: refreshAgents, reload: reloadAgents } = useAgentProfiles(reportError);
   const agentCatalog = useAgentCatalog();
   const shell = useShellActions(setNotice);
+  // An update restarts Zorvo without closing the page, so its exit handlers never write what is still waiting for a timer.
+  const writePendingBeforeRestart = useCallback(
+    () => Promise.all([saveNow(), flushTranscripts()]).then(() => undefined),
+    [saveNow, flushTranscripts],
+  );
+  const appUpdate = useAppUpdate(reportError, writePendingBeforeRestart);
   const agentUpdates = useAgentUpdates({ catalog: agentCatalog.catalog, settings: state.settings, isLoaded, updateState });
   useAutoEnabledAgents(agents, isLoaded, updateState);
   const suggestedFolders = useSuggestedFolders();
@@ -683,6 +691,15 @@ export default function App() {
             <article className={`${isDiffOpen && isDiffExpanded ? "hidden" : "flex"} flex-1 flex-col bg-bg relative overflow-hidden`}>
               {isDraggingFiles && <FileDropOverlay />}
               {notice && <NoticeBanner message={notice} onDismiss={() => setNotice(null)} />}
+              <AppUpdateNotice
+                update={appUpdate.update}
+                busyCount={sessions.filter((session) => isSessionBusy(session.id)).length}
+                terminalCount={terminals.liveCount}
+                isInstalling={appUpdate.isInstalling}
+                progress={appUpdate.progress}
+                onInstall={() => void appUpdate.install()}
+                onLater={appUpdate.dismiss}
+              />
               <UpdateNotice
                 agents={agentUpdates.unnotified}
                 onShow={() => { agentUpdates.acknowledge(); setSettingsTab("agents"); }}

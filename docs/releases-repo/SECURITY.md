@@ -25,6 +25,9 @@ Only the latest release gets security fixes. Update to it before reporting.
 - The Zorvo app: its backend, its window, and how it starts, stops and talks
   to agents.
 - Agent installs: Zorvo checks every download against a pinned SHA-256 hash.
+- Zorvo updates: Zorvo downloads an update only from this repository's
+  releases on GitHub, and installs it only if its signature matches the public
+  key built into the app.
 - Anything that lets a folder, an agent or a web page reach files, commands or
   data that Zorvo should not give it.
 

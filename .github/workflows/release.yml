@@ -9,9 +9,13 @@ name: Release
 # and the released part of CHANGELOG.md there (scripts/public-docs.mjs).
 #
 # Needs the RELEASES_TOKEN secret: a fine-grained token with Contents read and
-# write on zorvo-releases only. With the Apple secrets set (see README,
-# "Releasing"), the app is signed and notarized; without them it is built
-# unsigned. Only tags trigger it: the release is named after the tag.
+# write on zorvo-releases only. It also needs TAURI_SIGNING_PRIVATE_KEY and
+# TAURI_SIGNING_PRIVATE_KEY_PASSWORD, the updater key that signs the update
+# package (its public half is in tauri.conf.json); the release adds latest.json,
+# the .app.tar.gz and its .sig, which installed copies of Zorvo update from.
+# With the Apple secrets set (see README, "Releasing"), the app is signed and
+# notarized; without them it is built unsigned. Only tags trigger it: the
+# release is named after the tag.
 on:
   push:
     tags: ["v*"]
@@ -39,6 +43,29 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # A tag that does not match the app would build a whole universal release under the
+      # wrong version, and leave stale assets in the draft when it is run again. Failing
+      # here costs seconds instead of the build's macOS minutes.
+      - name: Check the tag matches the app version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::The tag $TAG must be vMAJOR.MINOR.PATCH, or vMAJOR.MINOR.PATCH-rc.1 for a pre-release."
+            exit 1
+          fi
+          version="${TAG#v}"
+          cargo_version=$(awk '/^\[package\]/{p=1;next} /^\[/{p=0} p && /^version[[:space:]]*=/{gsub(/^[^"]*"|".*$/,""); print; exit}' src-tauri/Cargo.toml)
+          status=0
+          for entry in "package.json|$(jq -r '.version // ""' package.json)" "src-tauri/tauri.conf.json|$(jq -r '.version // ""' src-tauri/tauri.conf.json)" "src-tauri/Cargo.toml|$cargo_version"; do
+            file="${entry%%|*}"
+            found="${entry#*|}"
+            if [ "$found" != "$version" ]; then
+              echo "::error file=$file::$file says \"$found\" but the tag is $TAG. Bump package.json, src-tauri/Cargo.toml and src-tauri/tauri.conf.json, then tag again."
+              status=1
+            fi
+          done
+          exit $status
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 12
@@ -47,6 +74,16 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The updater key signs every update, and installed copies accept only the key whose
+      # public half is in tauri.conf.json. The Tauri CLI merely warns when the two differ and
+      # reports a wrong password after the whole universal build, so a bad key would publish
+      # updates no installed Zorvo accepts. A probe signed here, with the key and password the
+      # build will use, fails in seconds instead.
+      - name: Check the updater signing key
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: node scripts/check-updater-signing.mjs key src-tauri/tauri.conf.json
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
@@ -88,6 +125,10 @@ jobs:
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          # Signs the update package; tauri-action uploads it as .app.tar.gz.sig
+          # and writes latest.json (uploadUpdaterJson is on by default).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           owner: zakyirsyaad
           repo: zorvo-releases
@@ -97,7 +138,42 @@ jobs:
           releaseName: Zorvo ${{ github.ref_name }}
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
+          # A tag with a pre-release part (v0.7.0-rc.1) must never become the "latest" release
+          # that installed copies read their updates from.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           args: --target universal-apple-darwin
+      # What installed copies of Zorvo will read once the draft is published. The universal
+      # build must be offered to both Macs (the updater looks up darwin-aarch64 or
+      # darwin-x86_64, so a latest.json without either leaves that Mac on its old version
+      # with no error). Every entry must download from this releases repository, be signed
+      # by the key in tauri.conf.json, and record the version being released, which a client
+      # with requireSignedVersion compares with the version latest.json announces.
+      - name: Check latest.json
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          ARTIFACTS: ${{ steps.tauri.outputs.artifactPaths }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/updater"
+          gh release download "$TAG" --repo "$RELEASES_REPO" --pattern latest.json --dir "$RUNNER_TEMP/updater" --clobber
+          package=$(jq -r '.[] | select(endswith(".app.tar.gz"))' <<<"$ARTIFACTS" | head -n 1)
+          if [ -z "$package" ]; then
+            echo "::error::The build made no .app.tar.gz update package."
+            exit 1
+          fi
+          # Installed copies ask the repository named in plugins.updater.endpoints, and accept a download only from
+          # the one in ALLOWED_DOWNLOADS (src-tauri/src/app_update.rs; a unit test ties that list to the endpoint).
+          # This workflow publishes to RELEASES_REPO: if the three drift apart, no installed Zorvo would update.
+          if ! jq -e --arg repo "$RELEASES_REPO" '($repo | ascii_downcase) as $r | .plugins.updater.endpoints | (length > 0) and all(.[]; ascii_downcase | startswith("https://github.com/" + $r + "/"))' src-tauri/tauri.conf.json >/dev/null; then
+            echo "::error::plugins.updater.endpoints in src-tauri/tauri.conf.json is not inside https://github.com/$RELEASES_REPO, where this workflow publishes."
+            exit 1
+          fi
+          # The same places the app accepts a download from.
+          if ! jq -e --arg repo "$RELEASES_REPO" '($repo | ascii_downcase) as $r | (.platforms | to_entries) | (length > 0) and all(.[]; ((.value.url // "") | ascii_downcase) as $url | ($url | startswith("https://api.github.com/repos/" + $r + "/")) or ($url | startswith("https://github.com/" + $r + "/")))' "$RUNNER_TEMP/updater/latest.json" >/dev/null; then
+            echo "::error::A download URL in latest.json is not inside https://github.com/$RELEASES_REPO, so installed copies of Zorvo would refuse it."
+            exit 1
+          fi
+          node scripts/check-updater-signing.mjs manifest src-tauri/tauri.conf.json "$RUNNER_TEMP/updater/latest.json" "$TAG" "$package"
       # The site links to releases/latest/download/Zorvo-mac.dmg, so every
       # release also carries its DMG under that one name.
       - name: Upload the DMG under its stable name
@@ -113,7 +189,9 @@ jobs:
           fi
           cp "$dmg" "$RUNNER_TEMP/Zorvo-mac.dmg"
           gh release upload "$TAG" "$RUNNER_TEMP/Zorvo-mac.dmg" --repo "$RELEASES_REPO" --clobber
-      # Lets anyone check a download: shasum -a 256 -c SHA256SUMS.txt
+      # Lets anyone check a download: shasum -a 256 -c SHA256SUMS.txt. Only the DMGs: the
+      # update package is uploaded under another name than the bundler gives it, and it is
+      # protected by its signature.
       - name: Upload the checksums
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
@@ -122,7 +200,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/sums"
           cp "$RUNNER_TEMP/Zorvo-mac.dmg" "$RUNNER_TEMP/sums/"
-          jq -r '.[] | select(endswith(".dmg") or endswith(".tar.gz"))' <<<"$ARTIFACTS" | while read -r file; do
+          jq -r '.[] | select(endswith(".dmg"))' <<<"$ARTIFACTS" | while read -r file; do
             cp "$file" "$RUNNER_TEMP/sums/"
           done
           (cd "$RUNNER_TEMP/sums" && shasum -a 256 -- * > ../SHA256SUMS.txt)

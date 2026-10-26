@@ -17,6 +17,10 @@ export interface AgentSignInDeps {
   retryAfterSignIn: (sessionId: string, message: FirstMessage) => Promise<boolean>;
   /** Puts a message back in the composer of the session it was written for. */
   onRestore: (sessionId: string, text: string, attachments?: readonly string[]) => void;
+  /** The agent said it needs a sign-in. */
+  onSignInNeeded?: (profileId: string) => void;
+  /** Someone was seen signed in to the agent. */
+  onSignedIn?: (profileId: string) => void;
 }
 
 /**
@@ -37,11 +41,12 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
   const requestSignIn = useCallback<AgentAuth['requestSignIn']>(
     (profileId, cwd, methods, pending) => {
       attemptRef.current = null;
+      depsRef.current.onSignInNeeded?.(profileId);
       // A login of the request this one replaces ends with it, and so does its dialog.
       closeTerminal();
       openPanel(profileId, cwd, methods, pending);
     },
-    [closeTerminal, openPanel],
+    [closeTerminal, openPanel, depsRef],
   );
 
   const dismiss = useCallback(() => {
@@ -122,25 +127,56 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
     }
 
     if (method.kind === 'terminal') terminal.showChecking();
-    const signedIn = (await checkSignIn(request.profileId, request.cwd)) === 'signed-in';
+    const check = await checkSignIn(request.profileId, request.cwd);
     if (!isCurrent()) return;
     attemptRef.current = null;
-    if (!signedIn) {
+    if (check === 'signed-out') {
       const reason = `${agentName} still says you are signed out`;
       if (method.kind === 'terminal') terminal.fail(reason);
       setStatus('failed', reason);
       return;
     }
+    finishSignedIn(request, check === 'signed-in');
+  };
+
+  /**
+   * The sign-in is taken as done: closes the login and sends the refused message again. The agent is
+   * remembered as signed in only when it showed someone (`isSeen`), not when it just could not be asked.
+   */
+  const finishSignedIn = (request: AuthRequest, isSeen: boolean) => {
+    if (isSeen) depsRef.current.onSignedIn?.(request.profileId);
     terminal.close();
     // The composer takes focus: the dialog's opener, the panel's button, is gone by now.
     depsRef.current.composerRef.current?.focus();
     if (!sendRefused(request.pending)) setStatus('signed-in');
   };
 
+  /** Asks the agent again, for a sign-in made outside the app (a key in the shell, a terminal). */
+  const recheck = async () => {
+    const request = authRequest;
+    if (!request) return;
+    const attempt = {};
+    attemptRef.current = attempt;
+    setStatus('checking');
+    const check = await checkSignIn(request.profileId, request.cwd);
+    if (attemptRef.current !== attempt) return;
+    attemptRef.current = null;
+    if (check === 'signed-in') {
+      finishSignedIn(request, true);
+      return;
+    }
+    const agentName = depsRef.current.agents.find((a) => a.id === request.profileId)?.name ?? request.profileId;
+    setStatus(
+      'failed',
+      check === 'signed-out' ? `${agentName} still says you are signed out` : `Could not ask ${agentName} whether you are signed in`,
+    );
+  };
+
   const auth: AgentAuth = {
     authRequest,
     requestSignIn,
     signIn: (methodId) => void signInWith(methodId),
+    recheck: () => void recheck(),
     dismiss,
   };
 

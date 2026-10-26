@@ -28,6 +28,7 @@ export function AgentInstallPanel({ agent }: AgentInstallPanelProps) {
       <p className="mt-1.5 text-fg-muted">
         {agent.name} needs {describePlan(agent.install_plan ?? [])} before it can start.
       </p>
+      <p className="mt-1 text-fg-muted">Once it is installed, Zorvo checks whether you are signed in.</p>
 
       {status === "installing" && <InstallProgressLine progress={progress} onCancel={cancel} />}
       {status === "idle" && (

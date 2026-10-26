@@ -3,6 +3,7 @@ import { draftInfo, type AcpChoices, type AgentOptions } from './acp-draft';
 import type { AcpConfigOption } from '../hooks/useAcpSessions';
 import type { AcpEngine } from '../hooks/session-engine/useAcpEngine';
 import type { AgentProfile, Session, SlashCommand } from '../types';
+import { signInPlaceholder } from './agent-sign-in';
 
 export interface ComposerState {
   controls: ComposerControls;
@@ -76,6 +77,8 @@ export function composerPlaceholder(state: {
   canStartSession: boolean;
   /** The draft agent's name while it must be installed before a message can be sent. */
   agentToInstall?: string;
+  /** The draft agent's name while its sign-in panel is open: a message cannot go out before it. */
+  agentToSignIn?: string;
   /** An ended session is shown: once its agent is installed, the next message continues it. */
   isEndedSession?: boolean;
 }): string | undefined {
@@ -83,6 +86,7 @@ export function composerPlaceholder(state: {
   if (state.isCreatingWorktree) return COMPOSER_PLACEHOLDERS.creatingWorktree;
   if (!state.isResumable && !state.canStartSession) return COMPOSER_PLACEHOLDERS.noWorkspace;
   if (state.agentToInstall) return installPlaceholder(state.agentToInstall, state.isResumable || Boolean(state.isEndedSession));
+  if (state.agentToSignIn) return signInPlaceholder(state.agentToSignIn, state.isResumable || Boolean(state.isEndedSession));
   return state.isResumable ? COMPOSER_PLACEHOLDERS.resume : COMPOSER_PLACEHOLDERS.newSession;
 }
 

@@ -1,17 +1,23 @@
 import { invoke } from '@tauri-apps/api/core';
 import { parseAuthRequired } from './acp-auth';
 
+/** What asking an agent showed: someone signed in, still nobody, or no answer either way. */
+export type SignInCheck = 'signed-in' | 'signed-out' | 'unknown';
+
 /**
  * Asks an agent, after a sign-in, whether it now has one. Only an agent that
- * still asks for a sign-in says no; one that cannot be asked for another
- * reason (a missing npx, a crash) is trusted, and a later refusal opens the
- * sign-in again.
+ * shows someone signed in says `signed-in`, and only one that still asks for a
+ * sign-in says `signed-out`. One that cannot be asked, or says nothing either
+ * way (a missing npx, a crash, no account reported), is `unknown`: a sign-in
+ * flow carries on as if signed in, and a later refusal opens the sign-in
+ * again, but nothing treats it as seen signed in.
  */
-export async function checkSignIn(profileId: string, cwd: string): Promise<'signed-in' | 'signed-out'> {
+export async function checkSignIn(profileId: string, cwd: string): Promise<SignInCheck> {
   try {
-    await invoke('acp_probe_agent', { profileId, cwd, needsOptions: false });
-    return 'signed-in';
+    const answer: unknown = await invoke('acp_probe_agent', { profileId, cwd, needsOptions: false });
+    const isSeen = typeof answer === 'object' && answer !== null && (answer as { signInChecked?: unknown }).signInChecked === true;
+    return isSeen ? 'signed-in' : 'unknown';
   } catch (error) {
-    return parseAuthRequired(error) ? 'signed-out' : 'signed-in';
+    return parseAuthRequired(error) ? 'signed-out' : 'unknown';
   }
 }

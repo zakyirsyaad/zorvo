@@ -25,6 +25,8 @@ export interface AgentAuth {
   ) => void;
   /** Signs in with one of the agent's methods, checks it took, and sends the refused message again. */
   signIn: (methodId: string) => void;
+  /** Asks the agent again whether someone is signed in. */
+  recheck: () => void;
   dismiss: () => void;
 }
 

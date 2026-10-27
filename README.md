@@ -99,24 +99,60 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose a change,
    empty `Unreleased` section.
 2. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`. The workflow
    stops before it builds if the tag is not `vMAJOR.MINOR.PATCH` (or
-   `vMAJOR.MINOR.PATCH-rc.1`) or does not match the version in those three
-   files.
-3. The **Release** workflow builds a universal macOS app and attaches it to a
-   draft release in the public
-   [zorvo-releases](https://github.com/zakyirsyaad/zorvo-releases) repository
-   (this one is private, so its releases cannot be downloaded). It writes the
-   release notes from the version's changelog section, uploads the DMG again
-   as `Zorvo-mac.dmg` (the name the site's Download link uses) with a
-   `SHA256SUMS.txt`, and copies `docs/releases-repo/` (the user guide, issue
-   forms and security policy) and the released part of `CHANGELOG.md` there.
-   Publish the draft when it looks right: releases there are immutable once
-   published.
+   `vMAJOR.MINOR.PATCH-rc.1`), does not match the version in those three
+   files, or has no section in `CHANGELOG.md`.
+3. The **Release** workflow builds a universal macOS app and keeps the DMG and
+   the update package as a workflow artifact for 30 days. It holds no secret of
+   the release and publishes nothing (see "Why signing happens on your Mac").
+4. When the run is green, sign and publish the draft from your Mac, in a clean
+   checkout of the tag:
 
-The workflow needs the `RELEASES_TOKEN` secret: a fine-grained personal access
-token with **Contents: Read and write** on `zorvo-releases` only.
+   ```bash
+   git fetch --tags
+   git switch --detach vX.Y.Z
+   node scripts/sign-release.mjs vX.Y.Z
+   ```
+
+   Run it with `node`, not as a package script: `pnpm run` puts the project's
+   `node_modules/.bin` first on PATH. The script proves that HEAD, the tag on
+   GitHub and the commit the run built are the same, then downloads the
+   artifact from that run with your own `gh` login (which needs access to this
+   repository and to
+   [zorvo-releases](https://github.com/zakyirsyaad/zorvo-releases)) and checks
+   it. It shows what changed since the last release in the dependencies, the
+   workflow and the scripts, and asks you to go on. Then it asks for the key's
+   password (typed hidden, and never read from the environment), signs the
+   update package, and makes a draft release in zorvo-releases (this
+   repository is private, so its releases cannot be downloaded). The draft gets
+   the release notes from the version's changelog section, the DMG (also as
+   `Zorvo-mac.dmg`, the name the site's Download link uses), `SHA256SUMS.txt`,
+   the update package with its `.sig`, and `latest.json`. The script also
+   copies `docs/releases-repo/` (the user guide, issue forms and security
+   policy, as git tracks them) and the released part of `CHANGELOG.md` there.
+   `--dry-run` does everything except write to GitHub. The key is read from
+   `~/.tauri/zorvo-updater.key`; use `--key <path>` or
+   `TAURI_SIGNING_PRIVATE_KEY_PATH` if it is elsewhere. If it stops partway,
+   run it again: it fills the same draft.
+5. Publish the draft when it looks right: releases there are immutable once
+   published. Publishing is what makes it the "latest" release installed
+   copies see; a tag with a pre-release part (`v0.7.0-rc.1`) makes a
+   pre-release, which never is.
+
+### Why signing happens on your Mac
+
+Every installed Zorvo trusts one updater key and installs whatever it signs, so
+whoever can read the private key can push an update to all of them. The
+workflow runs the project's own dependencies (Vite, every crate's `build.rs`,
+all dev-dependency code), and any repository secret can also be read by any
+workflow in the repository, a changed one on a branch included. So the updater
+key, its password and a token that can publish to zorvo-releases are not in
+GitHub at all, and no GitHub secret by those names should exist. The workflow
+needs only the optional Apple ones.
 
 To sign and notarize the app, so Gatekeeper opens it without a warning, add
-these repository secrets from an Apple Developer account:
+these repository secrets from an Apple Developer account. They stay repository
+secrets because the app is signed and notarized while it is built, so, unlike
+the updater key, they reach the build job:
 
 - `APPLE_CERTIFICATE` (a base64 `.p12`)
 - `APPLE_CERTIFICATE_PASSWORD`
@@ -127,22 +163,19 @@ these repository secrets from an Apple Developer account:
 
 Without them, the build is unsigned.
 
-Zorvo updates itself from these releases, so every release must also be signed
-with the updater key (not the Apple one). Make it once, on your own machine:
+### The updater key
+
+Make it once, on your own machine (not the Apple key):
 
 ```bash
 pnpm tauri signer generate -w ~/.tauri/zorvo-updater.key
 ```
 
 Put the **public** key it prints in `plugins.updater.pubkey` in
-`src-tauri/tauri.conf.json`, and add the **private** key and its password as the
-repository secrets `TAURI_SIGNING_PRIVATE_KEY` and
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Before it builds, the workflow signs a
-test file with them (`scripts/check-updater-signing.mjs key`) and stops if a
-secret is missing, the password is wrong or the key is not the one that belongs
-to the public key: the Tauri CLI only warns about that last case and reports a
-wrong password after the whole build. To run the same check on your machine
-before you tag (zsh, the macOS default; the password is typed hidden):
+`src-tauri/tauri.conf.json`. The private key stays in that file. To check, on
+your machine, that the password is right and the key is the one that belongs to
+the public key (the Tauri CLI only warns about that last case), run this (zsh,
+the macOS default; the password is typed hidden):
 
 ```bash
 read -rs "pw?Updater key password> " && echo && TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/zorvo-updater.key)" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$pw" node scripts/check-updater-signing.mjs key src-tauri/tauri.conf.json; unset pw
@@ -152,21 +185,59 @@ Back the private key up somewhere safe: a build signed with another key is
 refused by every Zorvo already installed, so losing it means those installs can
 never update themselves again.
 
-Releases are signed by `tauri build`, which the workflow runs, never by hand:
-installed copies require the update's signature to record the version it was
-made for (`requireSignedVersion`), and `tauri signer sign` without
-`--app-version` does not.
+### How `scripts/sign-release.mjs` signs
 
-The workflow also uploads `latest.json`, the `.app.tar.gz` and its `.sig`, and
-then checks `latest.json` (`check-updater-signing.mjs manifest`): it lists both
+Installed copies require the update's signature to record the version it was
+made for (`requireSignedVersion`), and `tauri signer sign` without
+`--app-version` does not, so releases are signed by the script, never by hand.
+It uses the Tauri CLI pinned in `scripts/updater-signer` (the root lockfile's
+version, which a test keeps equal), installed every time with
+`npm ci --ignore-scripts` and run by `node` itself, so none of the project's
+dependencies run next to the key's password and no PATH lookup decides which
+program gets it. It hands the CLI the key's path and never reads the file, and
+the password goes only into the CLI's own environment. It also drops the
+project's folders from PATH, and the key's variables from the environment of
+everything else it starts. `node scripts/check-updater-signing.mjs key
+src-tauri/tauri.conf.json` checks a key the same way, with the pinned CLI.
+
+Before it signs it checks that nothing changed in the checkout (tracked files
+only), that HEAD is the commit the tag has on GitHub and the commit the newest
+successful run built, and that the build is data it can accept: exactly the DMG
+and the package, a package that holds only `Zorvo.app` (no hard links, no links
+out of it), and an app that holds the public key of `tauri.conf.json` as text,
+so a build cannot quietly ship an app that trusts another key. The checkout is
+read once at the start and checked again before it signs and before it
+uploads. After signing, and before it touches GitHub, it writes `latest.json`
+and checks it (`check-updater-signing.mjs manifest`): it lists both
 `darwin-aarch64` and `darwin-x86_64`, every download URL is inside the releases
-repository, and every signature is the public key's and records this release's
-version. Publishing the draft is what makes it the "latest" release installed
-copies see; a tag with a pre-release part (`v0.7.0-rc.1`) is made a
-pre-release, which never is. A local `pnpm tauri build` signs the update
-package too, so it needs `TAURI_SIGNING_PRIVATE_KEY` (and the password) in the
-environment; add `--config '{"bundle":{"createUpdaterArtifacts":false}}'` to
-build without them.
+repository, and every signature is the public key's, verifies the update
+package and records this release's version.
+
+The build job is given a one-off key made on the runner, because `tauri build`
+refuses to run without a key while update packages are on and `--no-sign` would
+also turn off Apple code signing; the signature it makes is thrown away. A
+local `pnpm tauri build` signs the update package too, so it needs
+`TAURI_SIGNING_PRIVATE_KEY` (and the password) in the environment; add
+`--config '{"bundle":{"createUpdaterArtifacts":false}}'` to build without them.
+
+### What this does not protect against
+
+- **A build that is compromised during a release you sign.** The build job runs
+  the project's dependencies, and what it makes is signed. The checks above are
+  a sanity check and a tripwire, not a boundary. The list of changes the script
+  shows before it asks is there for this: read the lockfile changes.
+- **The DMG.** Only the package is signed by your key and checked for the app
+  inside. The DMG, which new installs and the site's Download link use, is as
+  trustworthy as the build; `SHA256SUMS.txt` is made from the same file. With
+  the Apple secrets set, the DMG is signed and notarized, which a person can
+  check with `spctl`.
+- **Other code running as you on your Mac.** The project's dependencies also run
+  there (`pnpm test`, `pnpm tauri dev`), as you, and could read
+  `~/.tauri/zorvo-updater.key`. Only the password protects the key then. Keep
+  the password strong, and keep the file at mode 600 (the script warns if it
+  is not).
+- **A tag moved by someone with push access.** The script would run that tag's
+  code. Read what changed (the list above includes `scripts` and `.github`).
 
 ## Roadmap
 

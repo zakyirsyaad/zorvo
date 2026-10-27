@@ -4,7 +4,12 @@
 version: 2
 updates:
   - package-ecosystem: npm
-    directory: /
+    # The second folder pins the Tauri CLI that scripts/sign-release.mjs signs with, on its
+    # own, away from the project's dependencies. One group, so both move in one pull
+    # request: scripts/updater-signer.test.mjs fails while they differ.
+    directories:
+      - /
+      - /scripts/updater-signer
     schedule:
       interval: weekly
     cooldown:

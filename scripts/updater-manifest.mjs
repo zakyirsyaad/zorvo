@@ -3,11 +3,13 @@
 //
 //   node scripts/updater-manifest.mjs <tag> <notes.md> <package-url> <package.sig> <latest.json>
 //
-// The Release workflow's signing job runs it once the update package is signed and uploaded to the draft release
-// (the URL names the uploaded asset). It makes the file `tauri-action` used to make, with the same entries, so the
-// updater reads it the same way: one universal `.app.tar.gz` offered to both Macs. The signature is the text of the
-// `.sig` file, which `tauri signer sign --app-version` wrote, so it records the version being released.
-// `check-updater-signing.mjs manifest` then checks the result before it is uploaded.
+// scripts/sign-release.mjs calls `buildManifest` once the update package is signed: first with a placeholder URL, to
+// check everything before it touches GitHub, then with the URL of the asset it uploaded (the URL names the uploaded
+// asset, so it exists only after the upload). The command line above makes the same file by hand. It is the file
+// `tauri-action` used to make, with the same entries, so the updater reads it the same way: one universal
+// `.app.tar.gz` offered to both Macs. The signature is the text of the `.sig` file, which `tauri signer sign
+// --app-version` wrote, so it records the version being released. `check-updater-signing.mjs manifest` then checks
+// the result before it is uploaded.
 //
 // Exit codes: 0 written, 1 a check failed, 2 wrong usage.
 

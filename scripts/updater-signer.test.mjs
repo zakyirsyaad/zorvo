@@ -20,7 +20,7 @@ function rootCliVersion() {
   return match[1];
 }
 
-describe("the signing job's Tauri CLI", () => {
+describe("the Tauri CLI that scripts/sign-release.mjs signs with", () => {
   it("is pinned to one exact version, not a range", () => {
     expect(Object.keys(signerPackage.dependencies)).toEqual(["@tauri-apps/cli"]);
     expect(signerPackage.dependencies["@tauri-apps/cli"]).toMatch(/^\d+\.\d+\.\d+$/);

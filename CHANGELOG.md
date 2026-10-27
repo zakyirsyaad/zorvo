@@ -4,6 +4,12 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-27
+
+### Changed
+
+- **Updates are signed on the maintainer's Mac, not in GitHub.** The key that signs Zorvo's updates, its password and the token that publishes releases are no longer GitHub secrets, so the code that builds Zorvo cannot read them. The release workflow only builds the app; a script on the maintainer's Mac checks the build, signs the update and fills the draft release. The app itself is unchanged, and the update key is the same, so installed copies still accept updates.
+
 ## [0.6.0] - 2026-10-26
 
 ### Added
@@ -161,7 +167,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.4.1...v0.5.0

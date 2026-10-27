@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -77,6 +77,86 @@ describe("downloadBuild", () => {
   it("fails naming the run when the artifact is gone", () => {
     const gh = fakeGh([[/^run download/, { status: 1, stderr: "no artifact matches any of the names or patterns provided\n" }]]);
     expect(() => downloadBuild(gh, { repo: "zakyirsyaad/zorvo", runId: 2, dir: "/tmp/x" })).toThrow(/run 2.*no artifact matches/s);
+  });
+
+  describe("when the connection breaks", () => {
+    const RESET = "error writing zip archive: read tcp 192.168.1.5:50123->20.205.243.166:443: read: connection reset by peer\n";
+    /** A `gh run download` that answers with each of `answers` in turn (the last one again after that). */
+    function flakyGh(answers) {
+      let attempt = 0;
+      return fakeGh([[/^run download/, () => answers[Math.min(attempt++, answers.length - 1)]]]);
+    }
+    const download = (gh) => {
+      const pauses = [];
+      const messages = [];
+      const options = { repo: "zakyirsyaad/zorvo", runId: 2, dir, sleep: (ms) => pauses.push(ms), log: (message) => messages.push(message) };
+      return { run: () => downloadBuild(gh, options), pauses, messages };
+    };
+
+    it("tries again and succeeds on the second try, saying so", () => {
+      const gh = flakyGh([{ status: 1, stderr: RESET }, { status: 0 }]);
+      const { run, pauses, messages } = download(gh);
+      run();
+      expect(gh.calls).toHaveLength(2);
+      expect(messages).toEqual(["Download failed (connection reset); trying again, 2 of 3..."]);
+      expect(pauses).toHaveLength(1);
+      expect(pauses[0]).toBeGreaterThan(0);
+    });
+
+    it("gives up after the third try with what the last try said", () => {
+      const gh = flakyGh([
+        { status: 1, stderr: RESET },
+        { status: 1, stderr: 'Get "https://pipelines.actions.githubusercontent.com/x": net/http: TLS handshake timeout\n' },
+        { status: 1, stderr: "error writing zip archive: unexpected EOF\n" },
+      ]);
+      const { run, pauses, messages } = download(gh);
+      expect(run).toThrow(/Downloading the build of run 2 failed: error writing zip archive: unexpected EOF/);
+      expect(gh.calls).toHaveLength(3);
+      expect(messages).toEqual(["Download failed (connection reset); trying again, 2 of 3...", "Download failed (timeout); trying again, 3 of 3..."]);
+      expect(pauses).toHaveLength(2);
+      expect(pauses[1]).toBeGreaterThan(pauses[0]);
+    });
+
+    it.each([
+      ["a server error", "HTTP 502: Bad Gateway (https://api.github.com/repos/zakyirsyaad/zorvo/actions/artifacts/1/zip)\n"],
+      ["an unexpected EOF", "error writing zip archive: unexpected EOF\n"],
+      ["a timeout", 'Get "https://api.github.com/x": context deadline exceeded (Client.Timeout exceeded while awaiting headers)\n'],
+    ])("counts %s as worth another try", (_name, stderr) => {
+      const gh = flakyGh([{ status: 1, stderr }, { status: 0 }]);
+      download(gh).run();
+      expect(gh.calls).toHaveLength(2);
+    });
+
+    it.each([
+      ["a missing artifact", "no artifact matches any of the names or patterns provided\n"],
+      ["a refused login", "HTTP 401: Bad credentials (https://api.github.com/repos/zakyirsyaad/zorvo/actions/runs/2/artifacts)\n"],
+      ["a missing repository", "HTTP 404: Not Found (https://api.github.com/repos/zakyirsyaad/zorvo/actions/runs/2/artifacts)\n"],
+      ["a gh that cannot start", "Could not run gh: spawnSync gh ENOENT\n"],
+    ])("does not try again after %s", (_name, stderr) => {
+      const gh = flakyGh([{ status: 1, stderr }, { status: 0 }]);
+      const { run, pauses, messages } = download(gh);
+      expect(run).toThrow(/Downloading the build of run 2 failed/);
+      expect(gh.calls).toHaveLength(1);
+      expect(pauses).toEqual([]);
+      expect(messages).toEqual([]);
+    });
+
+    it("empties the directory between tries, so a half-written file is not left behind", () => {
+      const seen = [];
+      const gh = fakeGh([
+        [
+          /^run download/,
+          () => {
+            seen.push(readdirSync(dir));
+            if (seen.length > 1) return { status: 0 };
+            writeFileSync(join(dir, "Zorvo-mac.dmg"), "half a dmg");
+            return { status: 1, stderr: RESET };
+          },
+        ],
+      ]);
+      download(gh).run();
+      expect(seen).toEqual([[], []]);
+    });
   });
 });
 

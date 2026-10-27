@@ -7,6 +7,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { mkdirSync, rmSync } from "node:fs";
 import { fail } from "./release-checks.mjs";
 
 export const SOURCE_REPO = "zakyirsyaad/zorvo";
@@ -49,9 +50,49 @@ export function remoteTagCommit(gh, { repo, tag }) {
   return output(gh(["api", `repos/${repo}/commits/refs/tags/${tag}`, "--jq", ".sha"]), `Looking up the tag ${tag} on GitHub`).trim();
 }
 
-/** Downloads the DMG and the update package a run kept, into `dir`. */
-export function downloadBuild(gh, { repo, runId, dir }) {
-  output(gh(["run", "download", String(runId), "--repo", repo, "--name", BUILD_ARTIFACT, "--dir", dir]), `Downloading the build of run ${runId}`);
+const DOWNLOAD_ATTEMPTS = 3;
+/** The pause before try n + 1 is n times this: 5 s, then 10 s. */
+const DOWNLOAD_PAUSE_MS = 5000;
+
+/**
+ * What a broken connection looks like in `gh`'s message, with the short name the retry line gives it. A permanent
+ * failure (no such artifact, a login that is refused, HTTP 404) matches none of these and is not tried again.
+ */
+const TRANSIENT_DOWNLOAD_ERRORS = [
+  [/connection reset|reset by peer|broken pipe/i, "connection reset"],
+  [/timed? ?out|timeout|deadline exceeded/i, "timeout"],
+  [/\bEOF\b/, "connection closed early"],
+  [/HTTP 5\d\d|bad gateway|service unavailable|gateway time-?out|internal server error/i, "server error"],
+  [/temporary failure in name resolution/i, "network unreachable"],
+];
+
+const transientReason = (stderr) => TRANSIENT_DOWNLOAD_ERRORS.find(([pattern]) => pattern.test(stderr))?.[1];
+
+/** Blocks for `ms`. The script has nothing else to do while it waits, and `gh` is run with spawnSync already. */
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Downloads the DMG and the update package a run kept, into `dir`. A download that breaks halfway (a reset
+ * connection, a timeout, a 5xx) is tried again, up to three tries in all, from an empty `dir`; any other failure,
+ * and the last try's, is the error. `sleep(ms)` and `log(message)` are there for the tests and the screen.
+ */
+export function downloadBuild(gh, { repo, runId, dir, sleep = sleepSync, log = () => {} }) {
+  const args = ["run", "download", String(runId), "--repo", repo, "--name", BUILD_ARTIFACT, "--dir", dir];
+  for (let attempt = 1; ; attempt += 1) {
+    const run = gh(args);
+    const reason = run.status === 0 ? undefined : transientReason(String(run.stderr));
+    if (!reason || attempt === DOWNLOAD_ATTEMPTS) {
+      output(run, `Downloading the build of run ${runId}`);
+      return;
+    }
+    log(`Download failed (${reason}); trying again, ${attempt + 1} of ${DOWNLOAD_ATTEMPTS}...`);
+    sleep(DOWNLOAD_PAUSE_MS * attempt);
+    // A half-written zip or file from the try that broke must not be taken for part of the next one.
+    rmSync(dir, { recursive: true, force: true });
+    mkdirSync(dir, { recursive: true });
+  }
 }
 
 /** Whether `tag` has no release yet, a draft, or a published release. */

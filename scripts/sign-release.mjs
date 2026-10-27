@@ -224,7 +224,7 @@ export async function signRelease({ tag, keyPath, dryRun = false, root = ROOT, d
     const names = assetNames(version);
     const buildDir = join(work, "build");
     log(`Downloading the build of run ${run.id}...`);
-    downloadBuild(gh, { repo: SOURCE_REPO, runId: run.id, dir: buildDir });
+    downloadBuild(gh, { repo: SOURCE_REPO, runId: run.id, dir: buildDir, log });
     checkArtifact({ dir: buildDir, tag, pubkey: config.pubkey });
     log("The build is the DMG and a package that holds only Zorvo.app, with the updater public key inside.");
 

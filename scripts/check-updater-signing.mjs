@@ -1,20 +1,19 @@
 #!/usr/bin/env node
-// Checks the updater signing setup: the key before you tag, latest.json before the Release workflow uploads it.
+// Checks the updater signing setup: the key before you tag, latest.json before scripts/sign-release.mjs uploads it.
 //
 //   node scripts/check-updater-signing.mjs key <tauri.conf.json>
 //   node scripts/check-updater-signing.mjs manifest <tauri.conf.json> <latest.json> <tag> [<update.app.tar.gz>]
 //
 // `key` is the check to run on your machine before you tag (see the README, "Releasing"). It signs a one-byte
-// probe with `pnpm tauri signer sign`, using TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD (the
-// variables the CLI reads), and fails when the password is wrong or the signature was not made by the key in
-// plugins.updater.pubkey. The Tauri CLI only warns about that mismatch, and reports a wrong password after a whole
-// build. The Release workflow does not run it: its signing job holds the key in one step that runs only the Tauri
-// CLI, and `manifest` then checks the signature that step made.
+// probe with the Tauri CLI pinned in scripts/updater-signer (not the project's own copy), using
+// TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD (the variables the CLI reads), and fails when
+// the password is wrong or the signature was not made by the key in plugins.updater.pubkey. The Tauri CLI only
+// warns about that mismatch. The Release workflow does not run it: it holds no key.
 //
-// `manifest` runs in that job, on the latest.json it is about to upload. Every platform entry must carry a
-// signature made by the pubkey's key that records the version being released, which is what a client with
-// `requireSignedVersion` compares with the version latest.json announces. With the update package (the
-// .app.tar.gz) it also checks the Mac signatures the way a client does.
+// `manifest` runs in scripts/sign-release.mjs, on the latest.json it is about to upload. Every platform entry
+// must carry a signature made by the pubkey's key that records the version being released, which is what a
+// client with `requireSignedVersion` compares with the version latest.json announces. With the update package
+// (the .app.tar.gz) it also checks the Mac signatures the way a client does.
 //
 // Exit codes: 0 passed, 1 a check failed, 2 wrong usage.
 
@@ -22,9 +21,12 @@ import { spawnSync } from "node:child_process";
 import { createHash, createPublicKey, verify } from "node:crypto";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ReleaseError } from "./release-checks.mjs";
+import { ensureSignerCli } from "./signer-cli.mjs";
 
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const TRUSTED_PREFIX = "trusted comment: ";
 /** DER prefix that turns a raw 32-byte Ed25519 public key into the SPKI form Node reads. */
@@ -36,7 +38,7 @@ const FALLBACK_VERSION = "0.0.0";
 const MAC_TARGETS = ["darwin-aarch64", "darwin-x86_64"];
 
 /** A check that failed; reported as a message, without a stack. */
-class CheckError extends Error {}
+export class CheckError extends Error {}
 
 function fail(message) {
   throw new CheckError(message);
@@ -138,9 +140,9 @@ function readConfig(path) {
   return { pubkey: parsePublicKey(pubkey), version };
 }
 
-/** Why `pnpm tauri signer sign` failed, in words that name the secret to fix. */
+/** Why the pinned CLI's `tauri signer sign` failed, in words that name the variable to fix. */
 function signFailure(run) {
-  if (run.error) return `Could not run 'pnpm tauri signer sign': ${run.error.message}`;
+  if (run.error) return `Could not run the pinned Tauri CLI: ${run.error.message}`;
   const output = `${run.stderr}\n${run.stdout}`;
   if (/incorrect updater private key password/i.test(output)) {
     return "TAURI_SIGNING_PRIVATE_KEY_PASSWORD is not the password of TAURI_SIGNING_PRIVATE_KEY. 'tauri build' would only fail on this after the whole build.";
@@ -153,7 +155,7 @@ function signFailure(run) {
   }
   const lines = output.split("\n").map((line) => line.trim()).filter((line) => line && !line.startsWith("$ "));
   const reason = lines.find((line) => /^error\s+\S/i.test(line)) ?? lines.slice(0, 2).join(" ");
-  return `'pnpm tauri signer sign' failed: ${(reason || `exit code ${run.status}`).slice(0, 300)}`;
+  return `'tauri signer sign' failed: ${(reason || `exit code ${run.status}`).slice(0, 300)}`;
 }
 
 /** Signs a one-byte probe the way the build signs the update package and returns the `.sig` text. */
@@ -162,9 +164,22 @@ function signProbe(version, env) {
   try {
     const probe = join(dir, "probe.bin");
     writeFileSync(probe, PROBE_BYTES);
-    // The build ignores TAURI_SIGNING_PRIVATE_KEY_PATH, and the CLI refuses it next to the key itself.
-    const signingEnv = Object.fromEntries(Object.entries(env).filter(([name]) => name !== "TAURI_SIGNING_PRIVATE_KEY_PATH"));
-    const run = spawnSync("pnpm", ["tauri", "signer", "sign", "--app-version", version, probe], {
+    // The pinned CLI of scripts/updater-signer, run by node itself, gets the key and its password and nothing else
+    // of this environment: none of the project's dependencies may run next to them.
+    let entry;
+    try {
+      entry = ensureSignerCli(ROOT, (message) => console.error(message));
+    } catch (error) {
+      if (error instanceof ReleaseError) fail(error.message);
+      throw error;
+    }
+    const signingEnv = {
+      PATH: env.PATH ?? "",
+      HOME: env.HOME ?? "",
+      TAURI_SIGNING_PRIVATE_KEY: env.TAURI_SIGNING_PRIVATE_KEY ?? "",
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ?? "",
+    };
+    const run = spawnSync(process.execPath, [entry, "signer", "sign", "--app-version", version, probe], {
       env: signingEnv,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
@@ -190,7 +205,7 @@ function requireKeyId(publicKey, signature, where) {
 /** The `key` command. Returns the line to print when the signing key is usable. */
 export function checkKey(configPath, env = process.env, sign = signProbe) {
   if (!env.TAURI_SIGNING_PRIVATE_KEY) {
-    fail("TAURI_SIGNING_PRIVATE_KEY is not set. Set the secret to the private key made with 'pnpm tauri signer generate'.");
+    fail("TAURI_SIGNING_PRIVATE_KEY is not set. Set it to the private key made with 'pnpm tauri signer generate'.");
   }
   const { pubkey, version } = readConfig(configPath);
   const signature = parseSignature(sign(version, env));

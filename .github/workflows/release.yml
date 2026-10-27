@@ -1,40 +1,30 @@
 name: Release
 
-# Builds the macOS app for a version tag (v1.2.3) and attaches it to a draft
-# release in the public zakyirsyaad/zorvo-releases repository, since this one
-# is private and its releases cannot be downloaded. It also uploads the DMG as
-# Zorvo-mac.dmg, the stable name the site's Download link uses, adds
-# SHA256SUMS.txt, writes the notes from the version's changelog section, and
-# copies docs/releases-repo/ (the user guide, issue templates, security policy)
-# and the released part of CHANGELOG.md there (scripts/public-docs.mjs).
+# Builds the macOS app for a version tag (v1.2.3) and keeps the DMG and the update
+# package as the workflow artifact `release-build`. That is all it does: it holds no
+# secret but the optional Apple ones and publishes nothing.
 #
-# Two jobs, so that nothing the project's own build runs can read the updater
-# key. Every installed Zorvo trusts that key (its public half is in
-# tauri.conf.json), so whoever holds it can push an update to all of them.
-#   macos  builds the universal app: the project's dependencies, Vite and every
-#          crate's build.rs run here, so it holds no secret but the optional
-#          Apple ones. It hands the DMG and the update package on as a workflow
-#          artifact.
-#   sign   waits for a reviewer to approve the `release` environment, then signs
-#          the update package, makes latest.json and fills the draft release.
-#          It installs only the pinned Tauri CLI (.github/updater-signer) and
-#          runs no dependency of the project. The secrets RELEASES_TOKEN,
-#          TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD
-#          belong to that environment, never to the repository, so no other
-#          job receives them. scripts/release-workflow.test.mjs keeps it so.
-# The Apple secrets (see README, "Releasing") are optional: without them the app
-# is built unsigned. Only tags trigger the workflow: the release is named after
-# the tag. If the signing job fails (a wrong password, say), re-run only that
-# job: it reuses the build's artifact, so nothing is built twice.
+# Every installed Zorvo trusts one updater key (its public half is in tauri.conf.json)
+# and installs whatever it signs, so whoever can read the private key can push an update
+# to all of them. This job runs the project's own dependencies (Vite, every crate's
+# build.rs, all dev-dependency code), so the key, its password and the token that
+# publishes to the releases repository stay out of GitHub altogether. When the run is
+# green, `node scripts/sign-release.mjs vX.Y.Z` runs on the maintainer's Mac, from a
+# clean checkout of the tag: it downloads the artifact, checks it, signs the update
+# package with the key there, makes the draft release in zakyirsyaad/zorvo-releases,
+# uploads the DMG (also as Zorvo-mac.dmg, the name the site's Download link uses),
+# SHA256SUMS.txt, the package, its signature and latest.json, and copies
+# docs/releases-repo/ and the released part of CHANGELOG.md there. Publishing the draft
+# is the last step, by hand.
+#
+# With the Apple secrets set (see README, "Releasing"), the app is signed and notarized;
+# without them it is built unsigned. Only tags trigger it.
 on:
   push:
     tags: ["v*"]
 
 permissions:
   contents: read
-
-env:
-  RELEASES_REPO: zakyirsyaad/zorvo-releases
 
 jobs:
   macos:
@@ -75,8 +65,8 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      # The sign job writes the release notes from this section, after the build. A tag whose
-      # version has none would fail there, so it fails here, in seconds, instead.
+      # scripts/sign-release.mjs writes the release notes from this section, after the build. A tag
+      # whose version has none would fail there, so it fails here, in seconds, instead.
       - name: Check the changelog has a section for this version
         env:
           TAG: ${{ github.ref_name }}
@@ -109,7 +99,7 @@ jobs:
       # `tauri build` refuses to run while update packages are on (createUpdaterArtifacts) and no
       # signing key is set, and `--no-sign` would also skip the Apple code signing. So the build is
       # given a key made here, for this run only. It signs a package nobody uses: the real key
-      # exists only in the sign job, which signs the package again.
+      # never leaves the maintainer's Mac, where scripts/sign-release.mjs signs the package again.
       - name: Make a one-off key, so the build runs without the real one
         run: pnpm tauri signer generate --ci --write-keys "$RUNNER_TEMP/one-off.key"
       # Builds only: with no tagName the action uploads nothing, and no token is given to it. It
@@ -121,7 +111,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           args: --target universal-apple-darwin
-      # The names the sign job expects, made from the tag. The sign job takes nothing else from the
+      # The names scripts/sign-release.mjs expects, made from the tag. It takes nothing else from the
       # artifact, since this job runs code it does not control.
       - name: Collect the DMG and the update package
         env:
@@ -149,266 +139,6 @@ jobs:
           if-no-files-found: error
           # "Re-run all jobs" builds again; the name must not be taken by the first attempt's artifact.
           overwrite: true
-          # Long enough to re-run a failed sign job; the files are the DMG and the package.
-          retention-days: 7
+          # Long enough to sign a release when it suits you; the files are the DMG and the package.
+          retention-days: 30
           compression-level: 0
-
-  sign:
-    name: Sign and fill the draft release
-    needs: macos
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    # Waits for a reviewer. The environment holds the three secrets listed at the top.
-    environment: release
-    steps:
-      - name: Check the releases token is set
-        env:
-          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
-        run: |
-          if [ -z "$RELEASES_TOKEN" ]; then
-            echo "::error::Set the RELEASES_TOKEN secret on the release environment: a fine-grained token with Contents read and write on $RELEASES_REPO."
-            exit 1
-          fi
-      - name: Check the updater key is set
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: |
-          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-            echo "::error::Set the TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD secrets on the release environment: the private key made with 'tauri signer generate', and its password."
-            exit 1
-          fi
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .nvmrc
-      # Only the Tauri CLI, at the version and hashes in that folder's lockfile, and no install
-      # scripts: the project's own dependencies are never installed in this job.
-      - name: Install the Tauri CLI
-        working-directory: .github/updater-signer
-        run: npm ci --ignore-scripts --no-audit --no-fund
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: release-build
-          path: ${{ runner.temp }}/release-build
-      # The artifact comes from the job that runs the project's build, so it is data: exactly the
-      # two files that job was meant to make, as plain files, and a package that holds only the app,
-      # without hard links or links that point out of it. This is a sanity check, not a boundary: a
-      # build that is compromised can still make a package that passes it. The last check is a
-      # tripwire for the worst such case, an app that trusts another updater key: the key in
-      # tauri.conf.json must appear in the app's binary (the CLI embeds it as text).
-      - name: Check the build this job was handed
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          dir="$RUNNER_TEMP/release-build"
-          version="${TAG#v}"
-          package="Zorvo_${version}_universal.app.tar.gz"
-          dmg="Zorvo_${version}_universal.dmg"
-          shopt -s dotglob nullglob
-          found=()
-          for path in "$dir"/*; do
-            found+=("${path##*/}")
-          done
-          listing=$(printf '%s\n' "${found[@]}" | LC_ALL=C sort)
-          expected=$(printf '%s\n%s\n' "$dmg" "$package" | LC_ALL=C sort)
-          if [ "$listing" != "$expected" ]; then
-            echo "::error::The build artifact must hold exactly $package and $dmg, and it holds: $(printf '%s ' "${found[@]}" | tr -c 'A-Za-z0-9._ -' '?')"
-            exit 1
-          fi
-          for name in "$package" "$dmg"; do
-            if [ ! -f "$dir/$name" ] || [ -L "$dir/$name" ] || [ ! -s "$dir/$name" ]; then
-              echo "::error::$name is not a plain, non-empty file."
-              exit 1
-            fi
-          done
-          tar -tzf "$dir/$package" > "$RUNNER_TEMP/package.list"
-          if ! grep -q '^Zorvo\.app/Contents/' "$RUNNER_TEMP/package.list" || grep -Eqv '^Zorvo\.app(/|$)' "$RUNNER_TEMP/package.list" || grep -Eq '(^|/)\.\.(/|$)' "$RUNNER_TEMP/package.list"; then
-            echo "::error::The update package must hold Zorvo.app and nothing outside it."
-            exit 1
-          fi
-          tar -tvzf "$dir/$package" > "$RUNNER_TEMP/package.long"
-          if grep -q '^h' "$RUNNER_TEMP/package.long" || grep '^l' "$RUNNER_TEMP/package.long" | grep -Eq -- ' -> (/|.*\.\.)'; then
-            echo "::error::The update package holds a hard link, or a link that points outside Zorvo.app."
-            exit 1
-          fi
-          pubkey=$(jq -r '.plugins.updater.pubkey' src-tauri/tauri.conf.json)
-          tar -xzOf "$dir/$package" Zorvo.app/Contents/MacOS/zorvo > "$RUNNER_TEMP/zorvo.bin"
-          if [ -z "$pubkey" ] || ! grep -aqF -- "$pubkey" "$RUNNER_TEMP/zorvo.bin"; then
-            echo "::error::The app in the update package does not hold the updater public key of src-tauri/tauri.conf.json, so installed copies that update to it would trust another key."
-            exit 1
-          fi
-      # What goes to the release, under the names it has there.
-      - name: Stage the release files
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          dir="$RUNNER_TEMP/release-build"
-          upload="$RUNNER_TEMP/upload"
-          version="${TAG#v}"
-          mkdir -p "$upload" "$RUNNER_TEMP/sums"
-          cp "$dir/Zorvo_${version}_universal.app.tar.gz" "$dir/Zorvo_${version}_universal.dmg" "$upload/"
-          # The site links to releases/latest/download/Zorvo-mac.dmg, so every
-          # release also carries its DMG under that one name.
-          cp "$dir/Zorvo_${version}_universal.dmg" "$upload/Zorvo-mac.dmg"
-          # Lets anyone check a download: shasum -a 256 -c SHA256SUMS.txt. Only the DMGs: the
-          # update package is protected by its signature.
-          cp "$upload/Zorvo-mac.dmg" "$upload/Zorvo_${version}_universal.dmg" "$RUNNER_TEMP/sums/"
-          (cd "$RUNNER_TEMP/sums" && shasum -a 256 -- * > "$upload/SHA256SUMS.txt")
-      # The release's notes are the version's section of the public changelog.
-      - name: Write the release notes
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          {
-            node scripts/public-docs.mjs notes CHANGELOG.md "$TAG"
-            echo
-            echo "Download **Zorvo-mac.dmg** (Apple Silicon and Intel). See the [user guide](https://github.com/$RELEASES_REPO#install) to install it, and SHA256SUMS.txt to check the download."
-          } > "$RUNNER_TEMP/notes.md"
-      # The only step that sees the key. It runs the Tauri CLI and nothing else. Installed copies
-      # require a signature to record the version it was made for (requireSignedVersion), which a
-      # plain `tauri signer sign` does not do, hence --app-version. The CLI reads the key and its
-      # password from these variables, so neither is ever on a command line.
-      - name: Sign the update package
-        env:
-          TAG: ${{ github.ref_name }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          version="${TAG#v}"
-          package="$RUNNER_TEMP/upload/Zorvo_${version}_universal.app.tar.gz"
-          tauri="$GITHUB_WORKSPACE/.github/updater-signer/node_modules/.bin/tauri"
-          if ! "$tauri" signer sign --app-version "$version" "$package" > "$RUNNER_TEMP/sign.log" 2>&1; then
-            # The CLI words a key it cannot read as a wrong password too, with the cause after the colon.
-            if grep -qiE 'missing comment in secret key|failed to decode secret key|not a valid' "$RUNNER_TEMP/sign.log"; then
-              echo "::error::TAURI_SIGNING_PRIVATE_KEY is not a Tauri updater private key. Use the private key printed by 'tauri signer generate', as text."
-            elif grep -qi 'incorrect updater private key password' "$RUNNER_TEMP/sign.log"; then
-              echo "::error::TAURI_SIGNING_PRIVATE_KEY_PASSWORD is not the password of TAURI_SIGNING_PRIVATE_KEY. Fix the secret on the release environment, then re-run this job."
-            else
-              echo "::error::'tauri signer sign' failed: $(grep -m 1 -iE '^[[:space:]]*error' "$RUNNER_TEMP/sign.log" | cut -c 1-300)"
-            fi
-            exit 1
-          fi
-          if [ ! -s "$package.sig" ]; then
-            echo "::error::The Tauri CLI wrote no signature."
-            exit 1
-          fi
-      # The draft is made first because latest.json names the uploaded package by its asset URL
-      # (the API URL, as tauri-action wrote it), which exists only once the package is uploaded.
-      # Run again for the same tag, this fills the draft it made; a published release cannot change.
-      - name: Make the draft release and upload the build
-        id: draft
-        env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          upload="$RUNNER_TEMP/upload"
-          version="${TAG#v}"
-          package="Zorvo_${version}_universal.app.tar.gz"
-          # A tag with a pre-release part (v0.7.0-rc.1) must never become the "latest" release
-          # that installed copies read their updates from.
-          case "$TAG" in
-            *-*) prerelease=true ;;
-            *) prerelease=false ;;
-          esac
-          if state=$(gh release view "$TAG" --repo "$RELEASES_REPO" --json isDraft --jq .isDraft 2> "$RUNNER_TEMP/view.err"); then
-            if [ "$state" != true ]; then
-              echo "::error::$TAG is already published in $RELEASES_REPO, and a published release cannot be changed. Tag a new version."
-              exit 1
-            fi
-            gh release edit "$TAG" --repo "$RELEASES_REPO" --title "Zorvo $TAG" --notes-file "$RUNNER_TEMP/notes.md" --prerelease="$prerelease"
-          elif grep -q 'release not found' "$RUNNER_TEMP/view.err"; then
-            args=(--repo "$RELEASES_REPO" --draft --target main --title "Zorvo $TAG" --notes-file "$RUNNER_TEMP/notes.md")
-            if [ "$prerelease" = true ]; then
-              args+=(--prerelease)
-            fi
-            gh release create "$TAG" "${args[@]}"
-          else
-            cat "$RUNNER_TEMP/view.err"
-            exit 1
-          fi
-          # A draft filled before holds a latest.json that names the package this upload replaces.
-          # It must not outlive that package, so it goes first and the checked one is uploaded last.
-          if gh release view "$TAG" --repo "$RELEASES_REPO" --json assets | jq -e '.assets[] | select(.name == "latest.json")' > /dev/null; then
-            gh release delete-asset "$TAG" latest.json --repo "$RELEASES_REPO" --yes
-          fi
-          gh release upload "$TAG" --repo "$RELEASES_REPO" --clobber \
-            "$upload/$package" "$upload/$package.sig" "$upload/Zorvo_${version}_universal.dmg" "$upload/Zorvo-mac.dmg" "$upload/SHA256SUMS.txt"
-          url=$(gh release view "$TAG" --repo "$RELEASES_REPO" --json assets | jq -r --arg name "$package" '[.assets[] | select(.name == $name) | .apiUrl][0] // empty')
-          if [ -z "$url" ]; then
-            echo "::error::The draft release has no $package asset after the upload."
-            exit 1
-          fi
-          echo "package_url=$url" >> "$GITHUB_OUTPUT"
-      - name: Write latest.json
-        env:
-          TAG: ${{ github.ref_name }}
-          PACKAGE_URL: ${{ steps.draft.outputs.package_url }}
-        run: |
-          version="${TAG#v}"
-          upload="$RUNNER_TEMP/upload"
-          node scripts/updater-manifest.mjs "$TAG" "$RUNNER_TEMP/notes.md" "$PACKAGE_URL" "$upload/Zorvo_${version}_universal.app.tar.gz.sig" "$upload/latest.json"
-      # What installed copies of Zorvo will read once the draft is published. The universal
-      # build must be offered to both Macs (the updater looks up darwin-aarch64 or
-      # darwin-x86_64, so a latest.json without either leaves that Mac on its old version
-      # with no error). Every entry must download from this releases repository, be signed
-      # by the key in tauri.conf.json, and record the version being released, which a client
-      # with requireSignedVersion compares with the version latest.json announces. Checked
-      # before it is uploaded, so the draft never holds a latest.json that fails this.
-      - name: Check latest.json
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          version="${TAG#v}"
-          upload="$RUNNER_TEMP/upload"
-          package="$upload/Zorvo_${version}_universal.app.tar.gz"
-          # Installed copies ask the repository named in plugins.updater.endpoints, and accept a download only from
-          # the one in ALLOWED_DOWNLOADS (src-tauri/src/app_update.rs; a unit test ties that list to the endpoint).
-          # This workflow publishes to RELEASES_REPO: if the three drift apart, no installed Zorvo would update.
-          if ! jq -e --arg repo "$RELEASES_REPO" '($repo | ascii_downcase) as $r | .plugins.updater.endpoints | (length > 0) and all(.[]; ascii_downcase | startswith("https://github.com/" + $r + "/"))' src-tauri/tauri.conf.json >/dev/null; then
-            echo "::error::plugins.updater.endpoints in src-tauri/tauri.conf.json is not inside https://github.com/$RELEASES_REPO, where this workflow publishes."
-            exit 1
-          fi
-          # The same places the app accepts a download from.
-          if ! jq -e --arg repo "$RELEASES_REPO" '($repo | ascii_downcase) as $r | (.platforms | to_entries) | (length > 0) and all(.[]; ((.value.url // "") | ascii_downcase) as $url | ($url | startswith("https://api.github.com/repos/" + $r + "/")) or ($url | startswith("https://github.com/" + $r + "/")))' "$upload/latest.json" >/dev/null; then
-            echo "::error::A download URL in latest.json is not inside https://github.com/$RELEASES_REPO, so installed copies of Zorvo would refuse it."
-            exit 1
-          fi
-          node scripts/check-updater-signing.mjs manifest src-tauri/tauri.conf.json "$upload/latest.json" "$TAG" "$package"
-      - name: Upload latest.json
-        env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
-          TAG: ${{ github.ref_name }}
-        run: gh release upload "$TAG" "$RUNNER_TEMP/upload/latest.json" --repo "$RELEASES_REPO" --clobber
-      # The public changelog has no Unreleased section and no links into this
-      # private repository.
-      - name: Write the public changelog
-        run: node scripts/public-docs.mjs changelog CHANGELOG.md > "$RUNNER_TEMP/CHANGELOG.md"
-      - name: Copy the user guide and changelog to the releases repository
-        env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          # Everything under docs/releases-repo/ goes to the same path there, with
-          # the public changelog written above.
-          pairs=("$RUNNER_TEMP/CHANGELOG.md:CHANGELOG.md")
-          while IFS= read -r file; do
-            pairs+=("$file:${file#docs/releases-repo/}")
-          done < <(find docs/releases-repo -type f | sort)
-          for pair in "${pairs[@]}"; do
-            src="${pair%%:*}"
-            dest="${pair##*:}"
-            # Unchanged files are skipped, so the history shows only real updates.
-            # The API's sha is the git blob hash, so comparing it is exact for
-            # any file, the icon included.
-            sha=$(gh api "repos/$RELEASES_REPO/contents/$dest" --jq .sha 2>/dev/null || true)
-            if [ -n "$sha" ] && [ "$sha" = "$(git hash-object "$src")" ]; then
-              continue
-            fi
-            # The file goes in a JSON body: Linux limits a single argument to 128 KiB.
-            base64 < "$src" | tr -d '\n' > "$RUNNER_TEMP/content.b64"
-            jq -n --arg message "docs: update $dest for $TAG" --rawfile content "$RUNNER_TEMP/content.b64" --arg sha "$sha" \
-              '{message: $message, content: $content, branch: "main"} + (if $sha == "" then {} else {sha: $sha} end)' > "$RUNNER_TEMP/body.json"
-            gh api --method PUT "repos/$RELEASES_REPO/contents/$dest" --input "$RUNNER_TEMP/body.json" --silent
-          done

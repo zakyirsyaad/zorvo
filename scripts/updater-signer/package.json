@@ -1,0 +1,8 @@
+{
+  "name": "zorvo-updater-signer",
+  "private": true,
+  "description": "Only the Tauri CLI, pinned, that scripts/sign-release.mjs signs with. It is installed on its own so none of the project's dependencies run next to the updater key and its password.",
+  "dependencies": {
+    "@tauri-apps/cli": "2.12.3"
+  }
+}

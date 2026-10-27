@@ -3,15 +3,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-// The Release workflow's signing job installs the Tauri CLI alone, from .github/updater-signer, so none of the
-// project's dependencies run next to the updater key. The build uses the CLI from the root lockfile; these tests
-// keep the two on one version, and keep the signer folder's install free of scripts.
+// scripts/sign-release.mjs signs with the Tauri CLI installed alone, from scripts/updater-signer, so none of the
+// project's dependencies run next to the updater key and its password. The build uses the CLI from the root
+// lockfile; these tests keep the two on one version, and keep the signer folder's install free of scripts.
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (path) => readFileSync(join(ROOT, path), "utf8");
 
-const signerPackage = JSON.parse(read(".github/updater-signer/package.json"));
-const signerLock = JSON.parse(read(".github/updater-signer/package-lock.json"));
+const signerPackage = JSON.parse(read("scripts/updater-signer/package.json"));
+const signerLock = JSON.parse(read("scripts/updater-signer/package-lock.json"));
 
 /** The version pnpm resolved for the root package's @tauri-apps/cli. */
 function rootCliVersion() {
@@ -46,13 +46,13 @@ describe("the signing job's Tauri CLI", () => {
     for (const [path, entry] of Object.entries(signerLock.packages)) expect(entry.hasInstallScript, path).toBeUndefined();
   });
 
-  it("is built for macOS 2.12.0 or newer, which can bind a signature to the app version", () => {
+  it("is 2.12.0 or newer, which can bind a signature to the app version", () => {
     const [major, minor] = signerPackage.dependencies["@tauri-apps/cli"].split(".").map(Number);
     expect(major === 2 && minor >= 12).toBe(true);
   });
 
   it("is watched by dependabot together with the root, so the two move in one pull request", () => {
     const dependabot = read(".github/dependabot.yml");
-    expect(dependabot).toMatch(/directories:\n\s+- \/\n\s+- \/\.github\/updater-signer\n/);
+    expect(dependabot).toMatch(/directories:\n\s+- \/\n\s+- \/scripts\/updater-signer\n/);
   });
 });

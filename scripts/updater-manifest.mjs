@@ -31,7 +31,7 @@ export const PLATFORM_ENTRIES = [
 ];
 
 /** A check that failed; reported as a message, without a stack. */
-class ManifestError extends Error {}
+export class ManifestError extends Error {}
 
 function fail(message) {
   throw new ManifestError(message);

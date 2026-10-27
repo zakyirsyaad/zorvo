@@ -2,19 +2,20 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { assetNames } from "./release-checks.mjs";
+import { BUILD_ARTIFACT } from "./release-github.mjs";
 
-// The Release workflow keeps the updater key out of reach of the project's build code. These tests read the YAML as
-// text (the workflow is plain enough, and no YAML parser is a dependency) and fail when a change would put the key,
-// its password or the releases token back where a build dependency could read them.
+// The Release workflow only builds. The updater key, its password and the token that publishes to the releases
+// repository are not in GitHub at all: scripts/sign-release.mjs uses them on the maintainer's Mac. These tests read
+// the YAML as text (it is plain enough, and no YAML parser is a dependency) and fail when a change would give the
+// build job, which runs the project's own dependencies, a secret or a way to publish.
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const WORKFLOW = readFileSync(join(ROOT, ".github/workflows/release.yml"), "utf8");
 
-const KEY_SECRETS = ["TAURI_SIGNING_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY_PASSWORD"];
-const PUBLISH_SECRETS = [...KEY_SECRETS, "RELEASES_TOKEN"];
-
 /** The workflow text without comment lines, so a word in a comment never counts as code. */
 const withoutComments = (text) => text.replace(/^[ \t]*#.*$/gm, "");
+const code = withoutComments(WORKFLOW);
 
 /** `jobs:` split into `{ id: text }`, by the two-space keys under it. */
 function jobsOf(text) {
@@ -29,133 +30,95 @@ function jobsOf(text) {
 const stepsOf = (job) => job.split(/^ {6}- /m).slice(1).map((step) => `- ${step}`);
 
 const jobs = jobsOf(WORKFLOW);
-const secretsIn = (text) => [...withoutComments(text).matchAll(/secrets\.([A-Z0-9_]+)/g)].map((match) => match[1]);
-/** What a step runs from the project or its dependencies. The signer CLI and `gh` are not that. */
-const RUNS_PROJECT_CODE = /\b(?:node|pnpm|npm|npx|yarn|cargo|bash|sh|python3?|deno|bun)\b|(?:^|\s)\.{1,2}\//m;
+const secrets = [...code.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((match) => match[1]);
 
-describe("the jobs", () => {
-  it("builds in one job and signs in another", () => {
-    expect(Object.keys(jobs)).toEqual(["macos", "sign"]);
+describe("the workflow's job", () => {
+  it("is one job, which builds", () => {
+    expect(Object.keys(jobs)).toEqual(["macos"]);
   });
 
-  it("makes the signing job wait for the build and for a reviewer", () => {
-    expect(withoutComments(jobs.sign)).toMatch(/^\s+needs: macos\s*$/m);
-    expect(withoutComments(jobs.sign)).toMatch(/^\s+environment: release\s*$/m);
+  it("asks nobody for approval and publishes nothing, since a second job would need a secret", () => {
+    expect(code).not.toMatch(/^\s+(?:needs|environment):/m);
   });
 
-  it("does not gate the build itself, which would ask for approval before the macOS minutes are spent", () => {
-    expect(withoutComments(jobs.macos)).not.toMatch(/environment:/);
+  it("may only read this repository", () => {
+    expect(code).toMatch(/^permissions:\n {2}contents: read\n/m);
+    expect(code).not.toMatch(/^\s+[a-z-]+: (?:write|admin)\s*$/m);
   });
 });
 
 describe("secrets", () => {
-  it("keeps the key, its password and the releases token out of the build job and the workflow header", () => {
-    const outsideSign = withoutComments(WORKFLOW.replace(jobs.sign, ""));
-    for (const name of PUBLISH_SECRETS) expect(outsideSign).not.toContain(`secrets.${name}`);
+  it("has only the Apple ones, which signing and notarizing the app needs while it is built", () => {
+    expect(secrets.length).toBeGreaterThan(0);
+    for (const name of secrets) expect(name).toMatch(/^APPLE_/);
   });
 
-  it("gives the build job only the Apple secrets", () => {
-    const names = secretsIn(jobs.macos);
-    expect(names.length).toBeGreaterThan(0);
-    for (const name of names) expect(name).toMatch(/^APPLE_/);
-  });
-
-  it("does not let the build upload anything to a release", () => {
-    const build = withoutComments(jobs.macos);
-    expect(build).not.toMatch(/\b(?:tagName|releaseId|releaseDraft|uploadUpdaterJson|GITHUB_TOKEN)\b/);
-    expect(build).not.toMatch(/\bgh (?:release|api)\b/);
-  });
-
-  it("never puts the key or its password in a step that runs a script or a package manager", () => {
-    const keySteps = stepsOf(jobs.sign).filter((step) => KEY_SECRETS.some((name) => secretsIn(step).includes(name)));
-    expect(keySteps.length).toBeGreaterThan(0);
-    for (const step of keySteps) expect(withoutComments(step)).not.toMatch(RUNS_PROJECT_CODE);
-  });
-
-  it("never puts the releases token in a step that runs a script or a package manager", () => {
-    const tokenSteps = stepsOf(jobs.sign).filter((step) => secretsIn(step).includes("RELEASES_TOKEN"));
-    expect(tokenSteps.length).toBeGreaterThan(0);
-    for (const step of tokenSteps) expect(withoutComments(step)).not.toMatch(RUNS_PROJECT_CODE);
-  });
-
-  it("keeps the key and the releases token in different steps", () => {
-    for (const step of stepsOf(jobs.sign)) {
-      const names = secretsIn(step);
-      expect(names.includes("RELEASES_TOKEN") && names.some((name) => KEY_SECRETS.includes(name))).toBe(false);
-    }
-  });
-
-  it("lets no step change the environment or the path of the steps after it", () => {
-    // A step before the key step could otherwise set NODE_OPTIONS, or put its own `tauri` first in PATH.
-    expect(withoutComments(jobs.sign)).not.toMatch(/GITHUB_ENV|GITHUB_PATH/);
-  });
-
-  it("gives the key's password to one step, the one that signs with the Tauri CLI", () => {
-    const withPassword = stepsOf(jobs.sign).filter((step) => secretsIn(step).includes("TAURI_SIGNING_PRIVATE_KEY_PASSWORD"));
-    expect(withPassword).toHaveLength(1);
-    expect(withPassword[0]).toContain("signer sign --app-version");
-  });
-
-  it("gives the key itself only to that step and to a check that it is set", () => {
-    const withKey = stepsOf(jobs.sign).filter((step) => secretsIn(step).includes("TAURI_SIGNING_PRIVATE_KEY"));
-    expect(withKey).toHaveLength(2);
-    const [check, signing] = withKey;
-    expect(check).toContain("Check the updater key is set");
-    expect(withoutComments(check)).not.toMatch(RUNS_PROJECT_CODE);
-    expect(check).not.toContain("signer sign");
-    expect(signing).toContain("signer sign --app-version");
+  it("never mentions the updater key, its password or the releases token as a secret", () => {
+    expect(code).not.toMatch(/secrets\.(?:TAURI_SIGNING_PRIVATE_KEY|RELEASES_TOKEN)/);
   });
 
   it("reads secrets only by name, never as a whole", () => {
-    const code = withoutComments(WORKFLOW);
     expect(code).not.toMatch(/secrets\[|toJSON\(\s*secrets|secrets:\s*inherit/);
   });
 
-  it("never hands the one-off key on in the artifact", () => {
-    const upload = stepsOf(jobs.macos).find((step) => step.includes("actions/upload-artifact"));
-    expect(upload).toContain("path: ${{ runner.temp }}/release-build/");
-    expect(withoutComments(jobs.macos)).toContain('"$RUNNER_TEMP/one-off.key"');
-    expect(withoutComments(jobs.macos).split("one-off.key").length - 1).toBe(2);
+  it("gives the build no token and no way to publish a release", () => {
+    expect(code).not.toMatch(/\b(?:tagName|releaseId|releaseDraft|uploadUpdaterJson|GITHUB_TOKEN|GH_TOKEN)\b/);
+    expect(code).not.toMatch(/\bgh (?:release|api|run)\b/);
   });
 });
 
-describe("the signing job's code", () => {
-  const sign = withoutComments(jobs.sign);
-
-  it("installs only the pinned Tauri CLI, without install scripts", () => {
-    expect(sign).toContain("working-directory: .github/updater-signer");
-    expect(sign).toContain("npm ci --ignore-scripts");
-    expect(sign).not.toMatch(/pnpm install|pnpm\/action-setup/);
+describe("the one-off key", () => {
+  it("is made on the runner and used by the build, so `tauri build` runs without the real key", () => {
+    expect(code).toContain('pnpm tauri signer generate --ci --write-keys "$RUNNER_TEMP/one-off.key"');
+    expect(code).toContain("TAURI_SIGNING_PRIVATE_KEY: ${{ runner.temp }}/one-off.key");
   });
 
-  it("signs the update package bound to the version being released", () => {
-    expect(sign).toMatch(/signer sign --app-version "\$version"/);
+  it("is not handed on in the artifact", () => {
+    const upload = stepsOf(jobs.macos).find((step) => step.includes("actions/upload-artifact"));
+    expect(upload).toContain("path: ${{ runner.temp }}/release-build/");
+    expect(code.split("one-off.key").length - 1).toBe(2);
+  });
+});
+
+describe("what it hands on", () => {
+  const upload = withoutComments(stepsOf(jobs.macos).find((step) => step.includes("actions/upload-artifact")));
+
+  it("is the artifact scripts/sign-release.mjs downloads, and a new run may replace the one of an earlier try", () => {
+    expect(upload).toContain(`name: ${BUILD_ARTIFACT}`);
+    expect(upload).toContain("overwrite: true");
+    expect(upload).toContain("if-no-files-found: error");
   });
 
-  it("checks latest.json with the package before uploading it", () => {
-    const steps = stepsOf(jobs.sign).map(withoutComments);
-    const checked = steps.findIndex((step) => step.includes("check-updater-signing.mjs manifest"));
-    const uploaded = steps.findIndex((step) => step.startsWith("- name: Upload latest.json"));
-    expect(checked).toBeGreaterThan(-1);
-    expect(uploaded).toBeGreaterThan(checked);
-    expect(steps[checked]).toContain('manifest src-tauri/tauri.conf.json "$upload/latest.json" "$TAG" "$package"');
-    expect(steps[checked]).toContain('package="$upload/Zorvo_${version}_universal.app.tar.gz"');
+  it("holds the DMG and the package under the names scripts/release-checks.mjs expects", () => {
+    const names = assetNames("${version}");
+    expect(code).toContain(`"$RUNNER_TEMP/release-build/${names.package}"`);
+    expect(code).toContain(`"$RUNNER_TEMP/release-build/${names.dmg}"`);
   });
 
-  it("keeps the tag check, the checksums, the docs sync and the pre-release rule", () => {
-    expect(withoutComments(jobs.macos)).toContain("Check the tag matches the app version");
-    // The notes are written after the build, so a version with no changelog section must fail before it.
-    expect(withoutComments(jobs.macos)).toContain('node scripts/public-docs.mjs notes CHANGELOG.md "$TAG"');
-    expect(sign).toContain("SHA256SUMS.txt");
-    expect(sign).toContain("scripts/public-docs.mjs changelog");
-    expect(sign).toMatch(/\*-\*\)\s*prerelease=true/);
-    expect(sign).toContain("--draft");
+  it("is kept long enough to sign a release when it suits", () => {
+    expect(Number(/retention-days: (\d+)/.exec(upload)?.[1])).toBeGreaterThanOrEqual(14);
+  });
+});
+
+describe("before the build", () => {
+  it("fails in seconds on a tag that does not match the app, or has no changelog section", () => {
+    expect(code).toContain("Check the tag matches the app version");
+    expect(code).toContain('node scripts/public-docs.mjs notes CHANGELOG.md "$TAG"');
+    const steps = stepsOf(jobs.macos).map(withoutComments);
+    const cheap = steps.findIndex((step) => step.includes("public-docs.mjs notes"));
+    const build = steps.findIndex((step) => step.includes("tauri-apps/tauri-action"));
+    expect(cheap).toBeGreaterThan(-1);
+    expect(build).toBeGreaterThan(cheap);
+  });
+
+  it("is named release.yml, which scripts/release-github.mjs looks the run up by", () => {
+    expect(readFileSync(join(ROOT, "scripts/release-github.mjs"), "utf8")).toContain('"release.yml"');
   });
 });
 
 describe("pinning", () => {
   it("pins every action to a commit", () => {
-    const uses = [...withoutComments(WORKFLOW).matchAll(/^\s*(?:- )?uses: (\S+)/gm)].map((match) => match[1]);
+    const uses = [...code.matchAll(/^\s*(?:- )?uses: (\S+)/gm)].map((match) => match[1]);
     expect(uses.length).toBeGreaterThan(0);
     for (const use of uses) expect(use).toMatch(/@[0-9a-f]{40}$/);
   });

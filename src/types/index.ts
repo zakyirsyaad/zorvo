@@ -58,10 +58,23 @@ export interface CatalogAgent {
   location: string | null;
 }
 
+/** Why Zorvo cannot offer an agent the registry lists. */
+export type UnavailableReason = 'no_checksum' | 'invalid_entry';
+
+/** An agent the registry lists but Zorvo cannot offer; it cannot be added or installed. */
+export interface UnavailableAgent {
+  id: string;
+  name: string;
+  description: string | null;
+  reason: UnavailableReason;
+}
+
 export interface AgentCatalog {
   /** Unix seconds of the last registry fetch; null if it never succeeded. */
   lastChecked: number | null;
   agents: CatalogAgent[];
+  /** Registry agents Zorvo cannot offer, not in `agents`. */
+  unavailable: UnavailableAgent[];
 }
 
 export type AgentTransport = 'acp';

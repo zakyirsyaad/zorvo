@@ -134,16 +134,20 @@ fn record(id: &str, version: &str, package: &str) -> String {
 #[test]
 fn skips_invalid_records_and_keeps_the_rest() {
     let json = format!(
-        r#"{{"agents": {{"a": {{ {good}, {unpinned}, {two_kinds} }}}}}}"#,
+        r#"{{"agents": {{"a": {{ {good}, {unpinned}, {two_unpinned}, {two_kinds} }}}}}}"#,
         good = record("a", "1.0.0", "a@1.0.0"),
         unpinned = record("a", "2.0.0", "a"),
-        two_kinds = r#""3.0.0": {"first_seen": 5, "entry": {"id": "a", "name": "a", "version": "3.0.0",
-            "distribution": {"npx": {"package": "a@3.0.0"}, "uvx": {"package": "a@3.0.0"}}}}"#,
+        two_unpinned = r#""3.0.0": {"first_seen": 5, "entry": {"id": "a", "name": "a", "version": "3.0.0",
+            "distribution": {"npx": {"package": "a"}, "uvx": {"package": "a"}}}}"#,
+        two_kinds = r#""4.0.0": {"first_seen": 5, "entry": {"id": "a", "name": "a", "version": "4.0.0",
+            "distribution": {"npx": {"package": "a@4.0.0"}, "uvx": {"package": "a==4.0.0"}}}}"#,
     );
     let h = VersionHistory::from_json(&json).unwrap();
     assert!(h.version("a", "1.0.0").is_some());
     assert!(h.version("a", "2.0.0").is_none());
     assert!(h.version("a", "3.0.0").is_none());
+    // An entry that offers two pinned kinds is kept, as the one kind it runs.
+    assert!(h.version("a", "4.0.0").is_some());
 }
 
 #[test]

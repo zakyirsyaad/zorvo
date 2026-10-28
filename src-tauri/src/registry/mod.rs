@@ -38,7 +38,7 @@ use resolve::{
     install_status, is_supported, planned_steps, registry_env, resolve_profile, InstallStatus,
     SystemTools,
 };
-use schema::{parse_registry, RegistryEntry};
+use schema::{parse_registry_report, RegistryEntry, UnavailableAgent};
 use std::cmp::Ordering;
 
 /// Emitted when a refresh changed the agent profiles; the UI reloads them.
@@ -127,6 +127,23 @@ impl CatalogState {
         self.history
             .first_seen(id, version)
             .is_some_and(|seen| now.saturating_sub(seen) >= MIN_AGE_SECS)
+    }
+
+    /// The agents the last fetch listed that Zorvo cannot offer (stored sorted by
+    /// id). An agent the history has stays a regular row, even when its newest
+    /// registry entry is no longer valid.
+    fn unavailable_agents(&self) -> Vec<UnavailableAgent> {
+        self.cache
+            .as_ref()
+            .and_then(|cache| cache.unavailable.as_ref())
+            .map(|listed| {
+                listed
+                    .iter()
+                    .filter(|agent| self.history.records(&agent.id).next().is_none())
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// The catalog row for `id`, which is in the history.
@@ -266,10 +283,15 @@ impl Catalog {
         }
     }
 
-    /// True before the first fetch and once the last one is a day old (or in the future).
+    /// True before the first fetch, once the last one is a day old (or in the
+    /// future), and when the last one did not record the unavailable agents.
     pub fn needs_refresh(&self, now: u64) -> bool {
-        self.last_fetch()
-            .is_none_or(|last| last > now || now - last >= REFRESH_INTERVAL_SECS)
+        let state = self.read_state();
+        state.cache.as_ref().is_none_or(|cache| {
+            cache.unavailable.is_none()
+                || cache.last_fetch > now
+                || now - cache.last_fetch >= REFRESH_INTERVAL_SECS
+        })
     }
 
     /// Fetches the registry with `fetch`, records versions not seen before at
@@ -280,7 +302,10 @@ impl Catalog {
         fetch: impl Fn() -> Result<String, String>,
         now: u64,
     ) -> Result<bool, String> {
-        let entries = parse_registry(&fetch()?)?;
+        let schema::ParsedRegistry {
+            entries,
+            unavailable,
+        } = parse_registry_report(&fetch()?)?;
         let mut state = self.write_state();
 
         let unseen: Vec<RegistryEntry> = entries
@@ -305,7 +330,15 @@ impl Catalog {
             listed: listed_versions.keys().cloned().collect(),
             listed_versions,
             withdrawn,
+            unavailable: Some(unavailable),
         };
+        let unavailable_changed = state.cache.as_ref().map_or(
+            cache
+                .unavailable
+                .as_ref()
+                .is_some_and(|found| !found.is_empty()),
+            |previous| previous.unavailable != cache.unavailable,
+        );
         if let Some(dir) = &self.data_dir {
             cache::save(dir, &local, &cache)?;
         }
@@ -321,7 +354,7 @@ impl Catalog {
                     != next.offered(id, now).map(|e| &e.version)
         });
         *state = next;
-        Ok(!unseen.is_empty() || withdrawn_changed || profiles_changed)
+        Ok(!unseen.is_empty() || withdrawn_changed || unavailable_changed || profiles_changed)
     }
 
     /// [`Self::refresh`] from the one registry URL the app ever fetches.
@@ -422,6 +455,7 @@ impl Catalog {
                 .ids()
                 .map(|id| state.catalog_agent(id, tools, versions, now))
                 .collect(),
+            unavailable: state.unavailable_agents(),
         }
     }
 

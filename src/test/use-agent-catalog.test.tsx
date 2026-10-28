@@ -58,8 +58,8 @@ describe("useAgentCatalog", () => {
   });
 
   it("keeps the newest catalog when an older load resolves last", async () => {
-    const stale = { lastChecked: 1, agents: [fakeCatalog[0]] };
-    const fresh = { lastChecked: 2, agents: fakeCatalog };
+    const stale = { lastChecked: 1, agents: [fakeCatalog[0]], unavailable: [] };
+    const fresh = { lastChecked: 2, agents: fakeCatalog, unavailable: [] };
     const resolvers: ((value: unknown) => void)[] = [];
     vi.spyOn(internals(), "invoke").mockImplementation(
       () => new Promise((resolve) => resolvers.push(resolve)),

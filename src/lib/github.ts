@@ -9,6 +9,11 @@ export interface GithubStatus {
   name?: string;
   /** Why the state is unknown, in words for the user. */
   message?: string;
+  /**
+   * Whether Connect can put it right; absent means it can. False for a rejected
+   * token in an environment variable: gh refuses to log in while that variable is set.
+   */
+  canConnect?: boolean;
 }
 
 /** What Zorvo shows when the backend could not be asked at all. */
@@ -33,11 +38,12 @@ export function toGithubStatus(value: unknown): GithubStatus {
   const login = text(record.login);
   // Someone signed in always has a login; without one the answer cannot be trusted.
   if (state === 'signed-in' && !login) return GITHUB_CHECK_FAILED;
-  return { state, login, name: text(record.name), message: text(record.message) };
-}
-
-/** The signed-in account's name for the sidebar: its GitHub name, else `@login`; nothing when not signed in. */
-export function githubDisplayName(status: GithubStatus | null): string | undefined {
-  if (status?.state !== 'signed-in') return undefined;
-  return status.name ?? (status.login ? `@${status.login}` : undefined);
+  return {
+    state,
+    login,
+    name: text(record.name),
+    message: text(record.message),
+    // Connect is offered unless the backend says it cannot help.
+    canConnect: record.canConnect !== false,
+  };
 }

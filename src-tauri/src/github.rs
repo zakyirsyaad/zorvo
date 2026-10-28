@@ -27,17 +27,12 @@ const SIGN_IN_ID_PREFIX: &str = "ghlogin-";
 const MAX_ID_SUFFIX: usize = 64;
 
 /// The sign-in command, in full: the webview never supplies any part of it.
-const SIGN_IN_ARGS: [&str; 7] = [
-    "auth",
-    "login",
-    "--hostname",
-    GITHUB_HOST,
-    "--git-protocol",
-    "https",
-    "--web",
-];
-/// Who is signed in and whether it still works. `--json hosts` carries the
-/// login and the state; it has no token field.
+/// No `--git-protocol`: gh applies it to the whole host, so forcing https would
+/// switch a user who works over SSH; gh asks them in the terminal instead.
+const SIGN_IN_ARGS: [&str; 5] = ["auth", "login", "--hostname", GITHUB_HOST, "--web"];
+/// Who is signed in and whether it still works. `--json hosts` names the login,
+/// the state and where the token comes from; gh adds the token itself only for
+/// `--show-token` (`-t`), which Zorvo never passes, and Zorvo reads none of it.
 const STATUS_ARGS: [&str; 6] = [
     "auth",
     "status",
@@ -89,6 +84,9 @@ pub struct GithubStatus {
     pub name: Option<String>,
     /// Why the state is unknown; plain words for the UI.
     pub message: Option<String>,
+    /// Whether Connect can put it right. False for a rejected token in an
+    /// environment variable: gh refuses to log in while that variable is set.
+    pub can_connect: bool,
 }
 
 impl GithubStatus {
@@ -98,6 +96,7 @@ impl GithubStatus {
             login: None,
             name: None,
             message: None,
+            can_connect: true,
         }
     }
 
@@ -105,6 +104,16 @@ impl GithubStatus {
         Self {
             message: Some(message.to_string()),
             ..Self::of(GithubState::Unknown)
+        }
+    }
+
+    /// A token from an environment variable that GitHub turned down.
+    fn rejected_env_token(variable: &str) -> Self {
+        Self {
+            can_connect: false,
+            ..Self::unknown(&format!(
+                "The token in {variable} was rejected by GitHub. Renew or remove it, then check again."
+            ))
         }
     }
 }
@@ -118,25 +127,55 @@ pub enum AuthReading {
     },
     /// An account exists but could not be checked; the text is for the UI.
     Unknown(&'static str),
+    /// The token comes from this environment variable and GitHub rejected it.
+    RejectedEnvToken {
+        variable: &'static str,
+    },
 }
 
+/// A GitHub login: letters, digits and hyphens, and an underscore for an
+/// Enterprise Managed User on github.com (`octocat_acme`).
 fn is_login(text: &str) -> bool {
     !text.is_empty()
         && text.len() <= MAX_LOGIN_LEN
-        && text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+/// The environment variable gh took the token from, when it is one it reads
+/// for github.com.
+fn env_token_variable(token_source: &str) -> Option<&'static str> {
+    match token_source {
+        "GH_TOKEN" => Some("GH_TOKEN"),
+        "GITHUB_TOKEN" => Some("GITHUB_TOKEN"),
+        _ => None,
+    }
+}
+
+fn unexpected(what: &str) -> String {
+    format!("Unexpected answer from gh: {what}")
 }
 
 /// What `gh auth status --hostname github.com --json hosts` printed: the active
-/// account's state. Several accounts are told apart by `active`; an answer
-/// that is not the expected JSON is an error.
+/// account's state. Several accounts are told apart by `active`. Only a
+/// `hosts` object with no github.com entry, or an empty one, means signed out;
+/// JSON of any other shape is an error, so a changed gh never reads as signed out.
 pub fn parse_auth_status(json: &str) -> Result<AuthReading, String> {
-    let parsed: Value =
-        serde_json::from_str(json).map_err(|e| format!("Unexpected answer from gh: {e}"))?;
-    let accounts: &[Value] = parsed
+    let parsed: Value = serde_json::from_str(json).map_err(|e| unexpected(&e.to_string()))?;
+    let hosts = parsed
         .get("hosts")
-        .and_then(|hosts| hosts.get(GITHUB_HOST))
-        .and_then(Value::as_array)
-        .map_or(&[], Vec::as_slice);
+        .and_then(Value::as_object)
+        .ok_or_else(|| unexpected("no hosts object"))?;
+    let accounts: &[Value] = match hosts.get(GITHUB_HOST) {
+        None => &[],
+        Some(list) => list
+            .as_array()
+            .ok_or_else(|| unexpected("the accounts are not a list"))?,
+    };
+    if accounts.iter().any(|account| !account.is_object()) {
+        return Err(unexpected("an account is not an object"));
+    }
     // gh marks one account per host active; with none marked, the first speaks.
     let Some(account) = accounts
         .iter()
@@ -152,7 +191,10 @@ pub fn parse_auth_status(json: &str) -> Result<AuthReading, String> {
         },
         "success" => AuthReading::Unknown(MESSAGE_UNREADABLE),
         "timeout" => AuthReading::Unknown(MESSAGE_TIMED_OUT),
-        _ if is_rejected_token(text("error")) => AuthReading::SignedOut,
+        _ if is_rejected_token(text("error")) => match env_token_variable(text("tokenSource")) {
+            Some(variable) => AuthReading::RejectedEnvToken { variable },
+            None => AuthReading::SignedOut,
+        },
         _ => AuthReading::Unknown(MESSAGE_UNREACHABLE),
     })
 }
@@ -230,6 +272,9 @@ pub fn status_of(gh: Option<&Path>, dir: &Path) -> GithubStatus {
             ..GithubStatus::of(GithubState::SignedIn)
         },
         Ok(AuthReading::Unknown(message)) => GithubStatus::unknown(message),
+        Ok(AuthReading::RejectedEnvToken { variable }) => {
+            GithubStatus::rejected_env_token(variable)
+        }
         Err(_) => GithubStatus::unknown(MESSAGE_UNREADABLE),
     }
 }
@@ -306,8 +351,10 @@ mod tests {
     const SIGNED_IN: &str = r#"{"hosts":{"github.com":[{"active":true,"gitProtocol":"ssh","host":"github.com","login":"octocat","scopes":"gist, read:org, repo","state":"success","tokenSource":"keyring"}]}}"#;
     // Real output with an empty GH_CONFIG_DIR.
     const SIGNED_OUT: &str = r#"{"hosts":{}}"#;
-    // Real output for a token GitHub answered 401 to.
+    // Real output for a token GitHub answered 401 to; it came from GH_TOKEN.
     const REJECTED_TOKEN: &str = r#"{"hosts":{"github.com":[{"state":"error","error":"non-200 OK status code: 401 Unauthorized body: \"{\\r\\n  \\\"message\\\": \\\"Bad credentials\\\",\\r\\n  \\\"status\\\": \\\"401\\\"\\r\\n}\"","active":true,"host":"github.com","login":"","tokenSource":"GH_TOKEN","gitProtocol":"https"}]}}"#;
+    // The same answer for a token stored by gh itself (an expired login).
+    const REJECTED_KEYRING_TOKEN: &str = r#"{"hosts":{"github.com":[{"state":"error","error":"non-200 OK status code: 401 Unauthorized body: \"{\\r\\n  \\\"message\\\": \\\"Bad credentials\\\",\\r\\n  \\\"status\\\": \\\"401\\\"\\r\\n}\"","active":true,"host":"github.com","login":"octocat","tokenSource":"keyring","gitProtocol":"https"}]}}"#;
     // Real output with HTTPS_PROXY pointing at a closed port (no network).
     const NO_NETWORK: &str = r#"{"hosts":{"github.com":[{"active":true,"error":"Get \"https://api.github.com/\": proxyconnect tcp: dial tcp 127.0.0.1:1: connect: connection refused","gitProtocol":"ssh","host":"github.com","login":"octocat","state":"error","tokenSource":"keyring"}]}}"#;
     // The same shape with two accounts on github.com: the active one is second.
@@ -341,10 +388,71 @@ mod tests {
     }
 
     #[test]
-    fn reads_a_token_github_rejected_as_signed_out() {
+    fn reads_a_stored_token_github_rejected_as_signed_out() {
+        assert_eq!(
+            parse_auth_status(REJECTED_KEYRING_TOKEN),
+            Ok(AuthReading::SignedOut)
+        );
+    }
+
+    #[test]
+    fn reads_a_rejected_token_from_an_environment_variable_as_its_own_case() {
         assert_eq!(
             parse_auth_status(REJECTED_TOKEN),
-            Ok(AuthReading::SignedOut)
+            Ok(AuthReading::RejectedEnvToken {
+                variable: "GH_TOKEN"
+            })
+        );
+        let github_token = REJECTED_TOKEN.replace("GH_TOKEN", "GITHUB_TOKEN");
+        assert_eq!(
+            parse_auth_status(&github_token),
+            Ok(AuthReading::RejectedEnvToken {
+                variable: "GITHUB_TOKEN"
+            })
+        );
+    }
+
+    #[test]
+    fn says_which_variable_to_renew_and_offers_no_connect() {
+        let status = GithubStatus::rejected_env_token("GH_TOKEN");
+
+        assert_eq!(status.state, GithubState::Unknown);
+        assert_eq!(
+            status.message.as_deref(),
+            Some("The token in GH_TOKEN was rejected by GitHub. Renew or remove it, then check again.")
+        );
+        assert!(!status.can_connect);
+        assert!(GithubStatus::of(GithubState::SignedOut).can_connect);
+    }
+
+    #[test]
+    fn reads_json_of_any_other_shape_as_an_error_not_as_signed_out() {
+        for json in [
+            "{}",
+            "[]",
+            "null",
+            "0",
+            r#"{"hosts":[]}"#,
+            r#"{"hosts":null}"#,
+            r#"{"hosts":"github.com"}"#,
+            r#"{"hosts":{"github.com":null}}"#,
+            r#"{"hosts":{"github.com":{"login":"octocat","state":"success"}}}"#,
+            r#"{"hosts":{"github.com":["octocat"]}}"#,
+            r#"{"accounts":{}}"#,
+        ] {
+            assert!(parse_auth_status(json).is_err(), "{json}");
+        }
+    }
+
+    #[test]
+    fn accepts_the_login_of_an_enterprise_managed_user() {
+        let json = r#"{"hosts":{"github.com":[{"active":true,"state":"success","login":"octocat_acme"}]}}"#;
+
+        assert_eq!(
+            parse_auth_status(json),
+            Ok(AuthReading::SignedIn {
+                login: "octocat_acme".to_string()
+            })
         );
     }
 
@@ -397,7 +505,7 @@ mod tests {
 
     #[test]
     fn refuses_a_login_that_is_not_one() {
-        for login in ["", "has space", "a/b", "<b>x</b>", &"a".repeat(40)] {
+        for login in ["", "has space", "a/b", "a.b", "<b>x</b>", &"a".repeat(40)] {
             let json = format!(
                 r#"{{"hosts":{{"github.com":[{{"active":true,"state":"success","login":{}}}]}}}}"#,
                 serde_json::to_string(login).expect("quote login")
@@ -458,7 +566,8 @@ mod tests {
         assert_eq!(
             json,
             serde_json::json!({
-                "state": "signed-in", "login": "octocat", "name": "The Octocat", "message": null
+                "state": "signed-in", "login": "octocat", "name": "The Octocat",
+                "message": null, "canConnect": true
             })
         );
         assert_eq!(
@@ -475,12 +584,35 @@ mod tests {
     fn asks_gh_for_no_token() {
         for args in [&STATUS_ARGS[..], &USER_ARGS[..], &SIGN_IN_ARGS[..]] {
             for arg in args {
-                assert!(!arg.contains("token"), "{arg}");
+                // `--show-token` and its short form `-t`.
+                assert!(!arg.contains("token") && *arg != "-t", "{arg}");
             }
         }
+    }
+
+    #[test]
+    fn reads_the_connection_with_exactly_these_commands() {
         assert_eq!(
-            &STATUS_ARGS[..4],
-            &["auth", "status", "--hostname", "github.com"]
+            owned(&STATUS_ARGS),
+            [
+                "auth",
+                "status",
+                "--hostname",
+                "github.com",
+                "--json",
+                "hosts"
+            ]
+        );
+        assert_eq!(
+            owned(&USER_ARGS),
+            [
+                "api",
+                "user",
+                "--hostname",
+                "github.com",
+                "--jq",
+                "{login: .login, name: .name}"
+            ]
         );
     }
 
@@ -488,15 +620,7 @@ mod tests {
     fn signs_in_with_exactly_this_command() {
         assert_eq!(
             owned(&SIGN_IN_ARGS),
-            [
-                "auth",
-                "login",
-                "--hostname",
-                "github.com",
-                "--git-protocol",
-                "https",
-                "--web"
-            ]
+            ["auth", "login", "--hostname", "github.com", "--web"]
         );
     }
 
@@ -583,6 +707,7 @@ mod tests {
                 login: Some("octocat".to_string()),
                 name: Some("The Octocat".to_string()),
                 message: None,
+                can_connect: true,
             }
         );
     }
@@ -605,13 +730,53 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn reads_signed_out_through_gh_without_asking_for_a_name() {
-        let body = format!("case \"$1\" in auth) echo '{SIGNED_OUT}';; api) exit 9;; esac");
+        let calls = std::env::temp_dir().join(format!("gh-calls-{}.txt", std::process::id()));
+        let _ = std::fs::remove_file(&calls);
+        let body = format!(
+            "echo \"$1\" >> '{}'\ncase \"$1\" in auth) echo '{SIGNED_OUT}';; api) exit 9;; esac",
+            calls.display()
+        );
         let (gh, dir) = fake_gh("signed-out", &body);
 
         assert_eq!(
             status_of(Some(&gh), &dir),
             GithubStatus::of(GithubState::SignedOut)
         );
+
+        // Only `gh auth status` ran: `gh api` never did.
+        let recorded = std::fs::read_to_string(&calls).expect("gh recorded its calls");
+        assert_eq!(recorded.lines().collect::<Vec<_>>(), ["auth"]);
+        let _ = std::fs::remove_file(&calls);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn says_to_renew_a_rejected_token_from_the_environment_without_offering_connect() {
+        // printf, not echo: the fixture holds backslash escapes that echo would interpret.
+        let (gh, dir) = fake_gh("env-token", &format!("printf '%s\\n' '{REJECTED_TOKEN}'"));
+
+        let status = status_of(Some(&gh), &dir);
+
+        assert_eq!(status.state, GithubState::Unknown);
+        assert_eq!(
+            status.message.as_deref(),
+            Some("The token in GH_TOKEN was rejected by GitHub. Renew or remove it, then check again.")
+        );
+        assert!(!status.can_connect);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reads_a_rejected_stored_token_as_signed_out_that_connect_can_fix() {
+        let (gh, dir) = fake_gh(
+            "keyring-token",
+            &format!("printf '%s\\n' '{REJECTED_KEYRING_TOKEN}'"),
+        );
+
+        let status = status_of(Some(&gh), &dir);
+
+        assert_eq!(status, GithubStatus::of(GithubState::SignedOut));
+        assert!(status.can_connect);
     }
 
     #[cfg(unix)]
@@ -672,15 +837,7 @@ mod tests {
         };
         assert_eq!(
             recorded.lines().collect::<Vec<_>>(),
-            [
-                "auth",
-                "login",
-                "--hostname",
-                "github.com",
-                "--git-protocol",
-                "https",
-                "--web"
-            ]
+            ["auth", "login", "--hostname", "github.com", "--web"]
         );
         let _ = std::fs::remove_file(&out);
     }

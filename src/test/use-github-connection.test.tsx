@@ -124,6 +124,103 @@ describe("useGithubConnection", () => {
       expect(callsTo(spy, "github_status").length).toBe(readsBefore);
     });
 
+    it("does not start a check while one is still running, however often the window is focused", async () => {
+      // The second check never answers, as on a stalled network.
+      const real = internals().invoke;
+      let release!: (answer: unknown) => void;
+      let reads = 0;
+      vi.spyOn(internals(), "invoke").mockImplementation((cmd, args) => {
+        if (cmd !== "github_status") return real(cmd, args);
+        reads += 1;
+        // The start-up read answers not installed; the next one stalls until released.
+        return reads === 1
+          ? Promise.resolve(NOT_INSTALLED)
+          : new Promise((resolve) => {
+              release = resolve;
+            });
+      });
+      const { result } = renderHook(() => useGithubConnection());
+      await waitFor(() => expect(result.current.status?.state).toBe("not-installed"));
+
+      await act(async () => {
+        window.dispatchEvent(new Event("focus"));
+      });
+      await act(async () => {
+        window.dispatchEvent(new Event("focus"));
+        window.dispatchEvent(new Event("focus"));
+      });
+
+      expect(reads).toBe(2);
+      await act(async () => release(SIGNED_IN));
+      await waitFor(() => expect(result.current.status?.state).toBe("signed-in"));
+    });
+
+    it("shows no progress for a check nobody asked for, so buttons do not flicker and nothing is announced", async () => {
+      const real = internals().invoke;
+      let release!: (answer: unknown) => void;
+      let reads = 0;
+      vi.spyOn(internals(), "invoke").mockImplementation((cmd, args) => {
+        if (cmd !== "github_status") return real(cmd, args);
+        reads += 1;
+        return reads === 1
+          ? Promise.resolve(NOT_INSTALLED)
+          : new Promise((resolve) => {
+              release = resolve;
+            });
+      });
+      const { result } = renderHook(() => useGithubConnection());
+      await waitFor(() => expect(result.current.status?.state).toBe("not-installed"));
+
+      await act(async () => {
+        window.dispatchEvent(new Event("focus"));
+      });
+
+      expect(reads).toBe(2);
+      expect(result.current.isChecking).toBe(false);
+      await act(async () => release(SIGNED_IN));
+      await waitFor(() => expect(result.current.status?.state).toBe("signed-in"));
+    });
+
+    it("shows progress for a check the user asked for", async () => {
+      const real = internals().invoke;
+      let release!: (answer: unknown) => void;
+      let reads = 0;
+      vi.spyOn(internals(), "invoke").mockImplementation((cmd, args) => {
+        if (cmd !== "github_status") return real(cmd, args);
+        reads += 1;
+        return reads === 1
+          ? Promise.resolve(NOT_INSTALLED)
+          : new Promise((resolve) => {
+              release = resolve;
+            });
+      });
+      const { result } = renderHook(() => useGithubConnection());
+      await waitFor(() => expect(result.current.status?.state).toBe("not-installed"));
+
+      act(() => void result.current.check());
+
+      expect(result.current.isChecking).toBe(true);
+      await act(async () => release(SIGNED_IN));
+      await waitFor(() => expect(result.current.isChecking).toBe(false));
+    });
+
+    it("checks again on focus once the earlier check has answered", async () => {
+      const spy = mockGithub([NOT_INSTALLED, NOT_INSTALLED, SIGNED_IN]);
+      const { result } = renderHook(() => useGithubConnection());
+      await waitFor(() => expect(result.current.status?.state).toBe("not-installed"));
+
+      await act(async () => {
+        window.dispatchEvent(new Event("focus"));
+      });
+      await waitFor(() => expect(result.current.isChecking).toBe(false));
+      await act(async () => {
+        window.dispatchEvent(new Event("focus"));
+      });
+
+      await waitFor(() => expect(result.current.status?.state).toBe("signed-in"));
+      expect(callsTo(spy, "github_status").length).toBeGreaterThanOrEqual(3);
+    });
+
     it("leaves a running sign-in to its own exit", async () => {
       const spy = mockGithub([SIGNED_OUT]);
       const { result } = renderHook(() => useGithubConnection());
@@ -182,14 +279,39 @@ describe("useGithubConnection", () => {
       expect(result.current.dialog?.error).toBe("GitHub still says you are signed out");
     });
 
-    it("fails with the exit code and checks nothing", async () => {
-      const { result, spy, terminalId } = await startSignIn([SIGNED_OUT]);
+    it("checks even when the login exits with an error, and shows the exit code when nothing took", async () => {
+      const { result, spy, terminalId } = await startSignIn([SIGNED_OUT, SIGNED_OUT]);
       const readsBefore = callsTo(spy, "github_status").length;
 
       await githubEvent({ terminalId, kind: "exit", exitCode: 1 });
 
-      expect(result.current.dialog).toMatchObject({ phase: "failed", error: "The sign-in ended with code 1" });
-      expect(callsTo(spy, "github_status").length).toBe(readsBefore);
+      await waitFor(() => expect(result.current.dialog?.phase).toBe("failed"));
+      expect(result.current.dialog).toMatchObject({ error: "The sign-in ended with code 1" });
+      expect(callsTo(spy, "github_status").length).toBe(readsBefore + 1);
+    });
+
+    it("says the login was stopped when it ended without an exit code", async () => {
+      const { result, terminalId } = await startSignIn([SIGNED_OUT, SIGNED_OUT]);
+
+      await githubEvent({ terminalId, kind: "exit", exitCode: null });
+
+      await waitFor(() => expect(result.current.dialog?.phase).toBe("failed"));
+      expect(result.current.dialog?.error).toBe("The sign-in was stopped");
+    });
+
+    it("closes the dialog when a login that exited with an error had stored its credentials", async () => {
+      const { result, terminalId } = await startSignIn([SIGNED_OUT, SIGNED_IN]);
+
+      await githubEvent({ terminalId, kind: "exit", exitCode: 1 });
+
+      await waitFor(() => expect(result.current.dialog).toBeNull());
+      expect(result.current.status).toMatchObject({ state: "signed-in", login: "octocat" });
+    });
+
+    it("tells the user what to expect in the terminal: gh asks a few questions", async () => {
+      const { result } = await startSignIn([SIGNED_OUT]);
+
+      expect(result.current.dialog?.note).toMatch(/gh asks a few questions/);
     });
 
     it("shows the start error as text", async () => {
@@ -222,10 +344,21 @@ describe("useGithubConnection", () => {
       expect(result.current.dialog).toBeNull();
     });
 
+    it("checks again when the dialog is closed, for someone who finished in the browser first", async () => {
+      const { result, spy } = await startSignIn([SIGNED_OUT, SIGNED_IN]);
+      const readsBefore = callsTo(spy, "github_status").length;
+
+      await act(async () => result.current.closeDialog());
+
+      await waitFor(() => expect(result.current.status).toMatchObject({ state: "signed-in", login: "octocat" }));
+      expect(callsTo(spy, "github_status").length).toBe(readsBefore + 1);
+    });
+
     it("ignores the exit of a login that was cancelled", async () => {
       const { result, spy, terminalId } = await startSignIn([SIGNED_OUT, SIGNED_IN]);
-      const readsBefore = callsTo(spy, "github_status").length;
       await act(async () => result.current.closeDialog());
+      await waitFor(() => expect(result.current.isChecking).toBe(false));
+      const readsBefore = callsTo(spy, "github_status").length;
 
       await githubEvent({ terminalId, kind: "exit", exitCode: 0 });
 

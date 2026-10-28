@@ -6,7 +6,11 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Added
 
-- **Connect to GitHub, and see that you are.** **Settings → General → GitHub** now shows whether your GitHub CLI is installed and signed in. If `gh` is missing it says so, with `brew install gh` to copy and a link to cli.github.com; if you are signed out, **Connect** opens a terminal where `gh` signs you in through your browser, and Zorvo checks again when it closes. When you are connected, the sidebar shows your GitHub name (or `@login`) with a GitHub mark instead of your git name. Zorvo asks your `gh` only for your login and name, stores neither, never touches a token, and downloads no picture. The Changes panel now says when pull requests need `gh` or a GitHub sign-in, and opens that section.
+- **Connect to GitHub, and see that you are.** **Settings → General → GitHub** now shows whether your GitHub CLI is installed and signed in. If `gh` is missing it says so, with `brew install gh` to copy and a link to cli.github.com; if you are signed out, **Connect** opens a terminal where `gh` signs you in through your browser, and Zorvo checks again when it closes. When you are connected, the sidebar shows your GitHub name (or `@login`) with a GitHub mark instead of your git name. Zorvo asks your `gh` only for your login and name, stores neither, never touches a token, and downloads no picture. The Changes panel now says when pull requests need `gh` or a GitHub sign-in (in a repository with a github.com remote), and opens that section.
+
+### Changed
+
+- **Pull requests now see your shell's GitHub settings.** The top bar's pull request status and the Changes panel's list used to run your GitHub CLI with the bare environment a Finder-launched app gets. They now run it with your login shell's environment, like Zorvo's agents and terminals, so they honour your `GH_TOKEN`, `GITHUB_TOKEN`, `GH_CONFIG_DIR` and proxy settings. A few variables that would change what `gh` prints or which repository it reads (`CLICOLOR_FORCE`, `GH_FORCE_TTY`, `GH_REPO`, `GH_DEBUG`, `DEBUG`) are left out.
 
 ## [0.6.1] - 2026-10-27
 

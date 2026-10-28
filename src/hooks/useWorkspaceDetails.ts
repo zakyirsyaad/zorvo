@@ -6,6 +6,8 @@ import { useLatest } from './useLatest';
 export interface WorkspaceDetails {
   location: string;
   branch: string | null;
+  /** Whether the repository has a remote on github.com, where pull requests and the GitHub CLI matter. */
+  hasGithubRemote?: boolean;
 }
 
 /**

@@ -2,6 +2,7 @@
 //! through the GitHub CLI the user has already signed in to. The app never
 //! asks for or stores a token.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread;
@@ -160,21 +161,52 @@ pub(crate) fn is_timeout_error(error: &str) -> bool {
     error.starts_with("gh did not answer within")
 }
 
-/// Runs gh in `dir` with stdin closed, in the user's login environment (so a
-/// `GH_CONFIG_DIR` set in their shell is the one read), and stops it after
-/// `timeout`. Whether it succeeded is the caller's to read from the output.
+/// Variables of the user's shell that Zorvo must not hand to gh: they colour
+/// its `--json` output, redirect it to another repository, or add debug lines,
+/// and Zorvo parses what gh prints.
+const DROPPED_ENV: [&str; 5] = [
+    "CLICOLOR_FORCE",
+    "GH_FORCE_TTY",
+    "GH_REPO",
+    "GH_DEBUG",
+    "DEBUG",
+];
+
+/// gh as Zorvo runs it: the user's login environment (so their `GH_TOKEN`,
+/// `GITHUB_TOKEN`, `GH_CONFIG_DIR` and proxy settings count), without the
+/// variables in `DROPPED_ENV`, with colour and prompts off.
+fn gh_command(gh: &Path, user_env: &HashMap<String, String>) -> Command {
+    let mut command = Command::new(gh);
+    command.envs(user_env);
+    // After `envs`, and also for what the app itself inherited.
+    for name in DROPPED_ENV {
+        command.env_remove(name);
+    }
+    command.env("NO_COLOR", "1").env("GH_PROMPT_DISABLED", "1");
+    command
+}
+
+/// Runs gh in `dir` with stdin closed, in the user's login environment (see
+/// `gh_command`), and stops it after `timeout`. Whether it succeeded is the
+/// caller's to read from the output.
 pub(crate) fn capture_gh(
     gh: &Path,
     dir: &Path,
     args: &[String],
     timeout: Duration,
 ) -> Result<GhOutput, String> {
-    let mut command = Command::new(gh);
-    if let Ok(user_env) = env_resolver::cached_user_env() {
-        command.envs(user_env);
-    }
-    let mut child = command
-        .env("GH_PROMPT_DISABLED", "1")
+    let user_env = env_resolver::cached_user_env().unwrap_or_default();
+    capture_gh_in(gh, dir, args, timeout, &user_env)
+}
+
+fn capture_gh_in(
+    gh: &Path,
+    dir: &Path,
+    args: &[String],
+    timeout: Duration,
+    user_env: &HashMap<String, String>,
+) -> Result<GhOutput, String> {
+    let mut child = gh_command(gh, user_env)
         .current_dir(dir)
         .args(args)
         .stdin(Stdio::null())
@@ -356,6 +388,87 @@ mod tests {
         std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755))
             .expect("make fake gh runnable");
         gh
+    }
+
+    /// The environment gh really receives: what the user's shell exports, minus
+    /// what would colour its output, redirect it to another repository or add
+    /// debug lines, with colour and prompts off.
+    #[cfg(unix)]
+    #[test]
+    fn runs_gh_in_the_login_environment_without_what_breaks_its_output() {
+        let out = std::env::temp_dir().join(format!("gh-env-{}.txt", std::process::id()));
+        let gh = fake_gh("env", &format!("env > '{}'", out.display()));
+        let user_env: HashMap<String, String> = [
+            ("CLICOLOR_FORCE", "1"),
+            ("GH_FORCE_TTY", "120"),
+            ("GH_REPO", "other/repo"),
+            ("GH_DEBUG", "api"),
+            ("DEBUG", "1"),
+            ("GH_CONFIG_DIR", "/shell/gh"),
+            ("GH_TOKEN", "set-in-the-shell"),
+            ("GITHUB_TOKEN", "also-set-in-the-shell"),
+            ("HTTPS_PROXY", "http://proxy.example:3128"),
+        ]
+        .into_iter()
+        .map(|(name, value)| (name.to_string(), value.to_string()))
+        .collect();
+
+        let output = capture_gh_in(
+            &gh,
+            &std::env::temp_dir(),
+            &[],
+            Duration::from_secs(10),
+            &user_env,
+        )
+        .expect("run gh");
+
+        assert!(output.success);
+        let seen: HashMap<String, String> = std::fs::read_to_string(&out)
+            .expect("gh recorded its environment")
+            .lines()
+            .filter_map(|line| line.split_once('='))
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect();
+        for name in DROPPED_ENV {
+            assert!(!seen.contains_key(name), "{name} reached gh");
+        }
+        assert_eq!(seen.get("NO_COLOR").map(String::as_str), Some("1"));
+        assert_eq!(
+            seen.get("GH_PROMPT_DISABLED").map(String::as_str),
+            Some("1")
+        );
+        // What the user's shell sets for gh itself still counts.
+        assert_eq!(
+            seen.get("GH_CONFIG_DIR").map(String::as_str),
+            Some("/shell/gh")
+        );
+        assert_eq!(
+            seen.get("GH_TOKEN").map(String::as_str),
+            Some("set-in-the-shell")
+        );
+        assert_eq!(
+            seen.get("GITHUB_TOKEN").map(String::as_str),
+            Some("also-set-in-the-shell")
+        );
+        assert_eq!(
+            seen.get("HTTPS_PROXY").map(String::as_str),
+            Some("http://proxy.example:3128")
+        );
+        let _ = std::fs::remove_file(&out);
+    }
+
+    #[test]
+    fn removes_the_dropped_variables_from_what_the_app_itself_inherited() {
+        let command = gh_command(Path::new("gh"), &HashMap::new());
+
+        for name in DROPPED_ENV {
+            assert!(
+                command
+                    .get_envs()
+                    .any(|(key, value)| key == name && value.is_none()),
+                "{name} is not removed"
+            );
+        }
     }
 
     #[cfg(unix)]

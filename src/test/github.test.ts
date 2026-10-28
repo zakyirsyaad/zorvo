@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { githubDisplayName, toGithubStatus, GITHUB_CHECK_FAILED } from "../lib/github";
+import { toGithubStatus, GITHUB_CHECK_FAILED } from "../lib/github";
 
 describe("toGithubStatus", () => {
   it("reads each state the backend can answer", () => {
@@ -8,6 +8,7 @@ describe("toGithubStatus", () => {
       login: undefined,
       name: undefined,
       message: undefined,
+      canConnect: true,
     });
     expect(toGithubStatus({ state: "signed-out" }).state).toBe("signed-out");
     expect(toGithubStatus({ state: "unknown", message: "Could not reach GitHub." })).toMatchObject({
@@ -17,12 +18,24 @@ describe("toGithubStatus", () => {
   });
 
   it("reads the login and the name of a signed-in account, trimmed", () => {
-    expect(toGithubStatus({ state: "signed-in", login: " octocat ", name: " The Octocat ", message: null })).toEqual({
+    expect(
+      toGithubStatus({ state: "signed-in", login: " octocat ", name: " The Octocat ", message: null, canConnect: true }),
+    ).toEqual({
       state: "signed-in",
       login: "octocat",
       name: "The Octocat",
       message: undefined,
+      canConnect: true,
     });
+  });
+
+  it("offers Connect unless the backend says it cannot help", () => {
+    expect(toGithubStatus({ state: "signed-out" }).canConnect).toBe(true);
+    expect(toGithubStatus({ state: "unknown", message: "offline", canConnect: true }).canConnect).toBe(true);
+    expect(
+      toGithubStatus({ state: "unknown", message: "The token in GH_TOKEN was rejected by GitHub.", canConnect: false })
+        .canConnect,
+    ).toBe(false);
   });
 
   it("never reads a malformed answer as signed in", () => {
@@ -32,18 +45,5 @@ describe("toGithubStatus", () => {
     expect(toGithubStatus({ state: "connected" })).toEqual(GITHUB_CHECK_FAILED);
     // Signed in without a login cannot be trusted.
     expect(toGithubStatus({ state: "signed-in", login: "  " })).toEqual(GITHUB_CHECK_FAILED);
-  });
-});
-
-describe("githubDisplayName", () => {
-  it("prefers the GitHub name, then @login", () => {
-    expect(githubDisplayName({ state: "signed-in", login: "octocat", name: "The Octocat" })).toBe("The Octocat");
-    expect(githubDisplayName({ state: "signed-in", login: "octocat" })).toBe("@octocat");
-  });
-
-  it("has no name unless someone is signed in", () => {
-    expect(githubDisplayName(null)).toBeUndefined();
-    expect(githubDisplayName({ state: "signed-out", name: "The Octocat" })).toBeUndefined();
-    expect(githubDisplayName({ state: "unknown", login: "octocat" })).toBeUndefined();
   });
 });

@@ -17,6 +17,8 @@ export interface TerminalSignInState {
   methodName: string;
   phase: SignInPhase;
   error?: string;
+  /** Replaces the usual line shown while the terminal runs, for a login that needs more said about it. */
+  note?: string;
 }
 
 export interface TerminalSignInRequest {

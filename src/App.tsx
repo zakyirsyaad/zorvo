@@ -134,8 +134,8 @@ export default function App() {
   const suggestedFolders = useSuggestedFolders();
   const userProfile = useUserProfile();
   const github = useGithubConnection();
-  // Why pull requests cannot be read, when the GitHub connection explains it.
-  const githubProblem =
+  // What stops pull requests being read, when the GitHub connection explains it.
+  const githubBlocker =
     github.status?.state === "not-installed" || github.status?.state === "signed-out" ? github.status.state : undefined;
   const navigation = useNavigationHistory();
   const {
@@ -166,6 +166,8 @@ export default function App() {
   // A session shows the folder it runs in, even one no longer in the recents.
   const shownFolderPath = activeSession?.cwd ?? activeWorkspacePath;
   const workspaceDetails = useWorkspaceDetails(shownFolderPath, reportError, branchCheck);
+  // Only a repository on github.com has pull requests to miss: the Changes panel says why it shows none, there only.
+  const githubProblem = workspaceDetails?.hasGithubRemote ? githubBlocker : undefined;
   // Files and Reveal act on the folder the top bar names. The backend browses
   // every saved session's folder, so one gone from the recents keeps them.
   const isRepository = Boolean(workspaceDetails?.branch);

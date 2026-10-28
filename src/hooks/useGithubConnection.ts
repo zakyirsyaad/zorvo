@@ -11,6 +11,10 @@ type GithubSignInEvent =
   | { terminalId: string; kind: 'output'; data: string }
   | { terminalId: string; kind: 'exit'; exitCode: number | null };
 
+/** gh asks a few questions (Git protocol, whether to sign in to Git) before and after the browser step. */
+const SIGN_IN_NOTE =
+  "gh asks a few questions: answer them in the terminal, then finish in your browser. Zorvo continues when it closes.";
+
 interface Run {
   terminalId: string;
   isStarted: boolean;
@@ -45,17 +49,24 @@ export function useGithubConnection(): GithubConnection {
   const runRef = useRef<Run | null>(null);
   // An older answer arriving after a newer check began counts for nothing.
   const latestCheck = useRef(0);
+  // gh runs still going, counting the ones a newer check has already replaced: each can take 35 s on a
+  // stalled network, so a background re-check does not start another one on top of them.
+  const runningChecks = useRef(0);
 
-  const check = useCallback(async (): Promise<GithubStatus> => {
-    const read = ++latestCheck.current;
-    setIsChecking(true);
+  /** Reads the connection; `isQuiet` is for a check nobody asked for, which shows no progress. */
+  const read = useCallback(async (isQuiet: boolean): Promise<GithubStatus> => {
+    const id = ++latestCheck.current;
+    runningChecks.current += 1;
+    if (!isQuiet) setIsChecking(true);
     const result = await invoke('github_status').then(toGithubStatus, () => GITHUB_CHECK_FAILED);
-    if (read === latestCheck.current) {
+    runningChecks.current -= 1;
+    if (id === latestCheck.current) {
       setStatus(result);
       setIsChecking(false);
     }
     return result;
   }, []);
+  const check = useCallback(() => read(false), [read]);
 
   useEffect(() => {
     void check();
@@ -70,20 +81,25 @@ export function useGithubConnection(): GithubConnection {
   useEffect(() => {
     const recheck = () => {
       const current = statusRef.current;
-      // Not while the sign-in terminal runs: its exit checks.
-      if (current && current.state !== 'signed-in' && !runRef.current) void check();
+      // Not while the sign-in terminal runs (its exit checks), nor while a check is still running.
+      if (current && current.state !== 'signed-in' && !runRef.current && runningChecks.current === 0) {
+        void read(true);
+      }
     };
     window.addEventListener('focus', recheck);
     return () => window.removeEventListener('focus', recheck);
-  }, [check, statusRef]);
+  }, [read, statusRef]);
 
   const patch = useCallback((terminalId: string, change: Partial<TerminalSignInState>) => {
     setDialog((current) => (current?.terminalId === terminalId ? { ...current, ...change } : current));
   }, []);
 
-  /** The login ended well: asks `gh` whether it took, and closes the dialog when it did. */
+  /**
+   * The login ended, however it ended: a login that stored its credentials can still exit with an error, so
+   * asks `gh` whether it took, and closes the dialog when it did.
+   */
   const finishSignIn = useCallback(
-    async (run: Run) => {
+    async (run: Run, exitCode: number | null) => {
       patch(run.terminalId, { phase: 'checking', error: undefined });
       const result = await check();
       if (run.isCancelled) return;
@@ -93,13 +109,12 @@ export function useGithubConnection(): GithubConnection {
         output.forget(run.terminalId);
         return;
       }
-      patch(run.terminalId, {
-        phase: 'failed',
-        error:
-          result.state === 'signed-out'
-            ? 'GitHub still says you are signed out'
-            : (result.message ?? GITHUB_CHECK_FAILED.message),
-      });
+      let error: string | undefined;
+      if (exitCode === null) error = 'The sign-in was stopped';
+      else if (exitCode !== 0) error = `The sign-in ended with code ${exitCode}`;
+      else if (result.state === 'signed-out') error = 'GitHub still says you are signed out';
+      else error = result.message ?? GITHUB_CHECK_FAILED.message;
+      patch(run.terminalId, { phase: 'failed', error });
     },
     [check, patch, output],
   );
@@ -110,16 +125,14 @@ export function useGithubConnection(): GithubConnection {
       if (!run || payload.terminalId !== run.terminalId || run.isCancelled) return;
       if (payload.kind === 'output') {
         output.append(payload.terminalId, payload.data);
-      } else if (payload.exitCode === 0) {
-        void finishSignIn(run);
       } else {
-        patch(run.terminalId, { phase: 'failed', error: `The sign-in ended with code ${payload.exitCode}` });
+        void finishSignIn(run, payload.exitCode);
       }
     });
     return () => {
       void unlisten.then((stop) => stop());
     };
-  }, [output, finishSignIn, patch]);
+  }, [output, finishSignIn]);
 
   const end = useCallback(
     (run: Run) => {
@@ -134,8 +147,11 @@ export function useGithubConnection(): GithubConnection {
     const run = runRef.current;
     runRef.current = null;
     setDialog(null);
-    if (run) end(run);
-  }, [end]);
+    if (!run) return;
+    end(run);
+    // Someone who finished in the browser and closed the dialog is connected: do not leave the old answer standing.
+    void check();
+  }, [end, check]);
 
   const connect = useCallback(() => {
     // A sign-in under way, or a failed one's dialog, gives way to the new one.
@@ -144,7 +160,13 @@ export function useGithubConnection(): GithubConnection {
     const run: Run = { terminalId, isStarted: false, isCancelled: false };
     output.forget(terminalId);
     runRef.current = run;
-    setDialog({ terminalId, agentName: 'GitHub', methodName: 'GitHub CLI', phase: 'starting' });
+    setDialog({
+      terminalId,
+      agentName: 'GitHub',
+      methodName: 'GitHub CLI',
+      phase: 'starting',
+      note: SIGN_IN_NOTE,
+    });
     invoke('github_start_sign_in', { terminalId }).then(
       () => {
         run.isStarted = true;

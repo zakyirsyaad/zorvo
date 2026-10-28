@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { AgentCatalogPanel } from "./agents/AgentCatalogPanel";
 import { GithubSection } from "./GithubSection";
 import { SettingsPanel, type SettingsTab } from "./SettingsPanel";
@@ -49,6 +50,19 @@ export function AppSettingsDialog({
   github,
   onOpenUrl,
 }: AppSettingsDialogProps) {
+  const githubRef = useRef<HTMLDivElement>(null);
+  const hadSignInDialog = useRef(false);
+  const hasSignInDialog = Boolean(github?.dialog);
+  useEffect(() => {
+    // The dialog gives focus back to the button that opened it. After a sign-in that worked that button is
+    // gone (the card shows the account now), so focus would drop to the page behind Settings.
+    if (hadSignInDialog.current && !hasSignInDialog) {
+      const focused = document.activeElement;
+      if (!focused || focused === document.body) githubRef.current?.focus();
+    }
+    hadSignInDialog.current = hasSignInDialog;
+  }, [hasSignInDialog]);
+
   // The GitHub sign-in's dialog is drawn even when Settings is not: it belongs to a login that is running.
   const signInDialog = github?.dialog ? (
     <TerminalSignInDialog
@@ -84,6 +98,7 @@ export function AppSettingsDialog({
         githubSection={
           github && (
             <GithubSection
+              ref={githubRef}
               status={github.status}
               isChecking={github.isChecking}
               onCheck={() => void github.check()}

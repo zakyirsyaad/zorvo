@@ -86,8 +86,10 @@
   its checks, read with your own `gh`.
 - **Connect to GitHub.** **Settings → General → GitHub** shows whether your
   GitHub CLI is installed and signed in. If it is not signed in, **Connect**
-  opens a terminal where `gh` signs you in through your browser. Once you are
-  connected, the sidebar shows your GitHub name instead of your git name.
+  opens a terminal where `gh` signs you in through your browser; `gh` asks a few
+  questions there, such as which Git protocol you use, and you answer them in
+  the terminal. Once you are connected, the sidebar shows your GitHub name
+  instead of your git name.
 
 ### Keep your work organized
 

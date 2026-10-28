@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, act, fireEvent, within } from "@testing-library/react";
+import { render, screen, act, fireEvent, within, waitFor } from "@testing-library/react";
 import { fakeTauriInvoke } from "./setup";
 import type { TerminalViewProps } from "../components/TerminalView";
 
@@ -43,12 +43,13 @@ function callsTo(spy: Spy, cmd: string) {
     .map(([name, args]) => [name, args] as const);
 }
 
-/** Starts the app; `github_status` answers `answers` in turn (the last repeats). */
-async function renderApp(answers: unknown[]): Promise<Spy> {
+/** Starts the app; `github_status` answers `answers` in turn (the last repeats), and `answersFor` replaces other commands. */
+async function renderApp(answers: unknown[], answersFor: Record<string, unknown> = {}): Promise<Spy> {
   let read = 0;
   const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
     if (cmd === "github_status") return Promise.resolve(answers[Math.min(read++, answers.length - 1)]);
     if (cmd === "github_start_sign_in") return Promise.resolve(undefined);
+    if (cmd in answersFor) return Promise.resolve(answersFor[cmd]);
     return fakeTauriInvoke(cmd, args);
   });
   await act(async () => {
@@ -74,6 +75,75 @@ const footer = () => within(within(screen.getByRole("complementary")).getAllByRo
 afterEach(() => {
   vi.restoreAllMocks();
   listeners.clear();
+});
+
+describe("GitHub and the Changes panel", () => {
+  function seedSession() {
+    (window as unknown as { __FAKE_TAURI_STORE__: { state: { sessions: unknown[] } } }).__FAKE_TAURI_STORE__.state.sessions = [
+      {
+        id: "s-a",
+        name: "Alpha work",
+        profileId: "claude-code",
+        cwd: "/Users/test/developer/zorvo",
+        status: "terminated",
+        createdAt: 1,
+        transport: "acp",
+      },
+    ];
+  }
+
+  const repository = (hasGithubRemote: boolean) => ({
+    workspace_details: { location: "~/developer", branch: "main", hasGithubRemote },
+  });
+
+  async function openChanges() {
+    const header = within(screen.getAllByRole("banner")[0]);
+    await click(await header.findByRole("button", { name: "Toggle changes panel" }));
+    return screen.getByRole("complementary", { name: "Changes panel" });
+  }
+
+  it("says pull requests need a GitHub sign-in, in a repository on github.com, and opens Settings", async () => {
+    seedSession();
+    await renderApp([SIGNED_OUT], repository(true));
+    const panel = await openChanges();
+
+    expect(await within(panel).findByText("Pull requests need you to be connected to GitHub.")).toBeInTheDocument();
+    await click(within(panel).getByRole("button", { name: "Open GitHub settings" }));
+
+    const settings = screen.getByRole("dialog", { name: "Settings" });
+    expect(within(settings).getByRole("button", { name: "Connect" })).toBeInTheDocument();
+  });
+
+  it("says the GitHub CLI is missing, in a repository on github.com", async () => {
+    seedSession();
+    await renderApp([NOT_INSTALLED], repository(true));
+    const panel = await openChanges();
+
+    expect(
+      await within(panel).findByText("Pull requests need the GitHub CLI, which is not installed."),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing about pull requests in a repository that is not on github.com", async () => {
+    seedSession();
+    const spy = await renderApp([SIGNED_OUT], repository(false));
+    const panel = await openChanges();
+    // The connection is known by now: the same answer shows the hint in a repository on github.com.
+    await waitFor(() => expect(callsTo(spy, "github_status").length).toBeGreaterThan(0));
+    await act(async () => {});
+
+    expect(within(panel).queryByText(/Pull requests need/)).toBeNull();
+    expect(within(panel).queryByRole("button", { name: "Open GitHub settings" })).toBeNull();
+  });
+
+  it("says nothing when connected", async () => {
+    seedSession();
+    await renderApp([SIGNED_IN], repository(true));
+    const panel = await openChanges();
+
+    expect(await screen.findByText("The Octocat")).toBeInTheDocument();
+    expect(within(panel).queryByText(/Pull requests need/)).toBeNull();
+  });
 });
 
 describe("GitHub in the app", () => {
@@ -149,6 +219,38 @@ describe("GitHub in the app", () => {
     expect(screen.queryByRole("dialog", { name: "Sign in to GitHub" })).toBeNull();
     expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
     expect(callsTo(spy, "terminate_session")).toEqual([["terminate_session", { sessionId: args?.terminalId }]]);
+  });
+
+  it("says in the sign-in dialog that gh asks a few questions to answer there", async () => {
+    await renderApp([SIGNED_OUT]);
+    const settings = await openSettings();
+
+    await click(within(settings).getByRole("button", { name: "Connect" }));
+
+    expect(within(screen.getByRole("dialog", { name: "Sign in to GitHub" })).getByRole("status")).toHaveTextContent(
+      /gh asks a few questions/,
+    );
+  });
+
+  it("puts focus back in Settings, on the GitHub section, when a sign-in that worked closes the dialog", async () => {
+    const spy = await renderApp([SIGNED_OUT, SIGNED_IN]);
+    const settings = await openSettings();
+    // As in a browser, a click leaves focus on the button: it is the dialog's opener, and it goes when the card changes.
+    const connect = within(settings).getByRole("button", { name: "Connect" });
+    connect.focus();
+    await click(connect);
+    const [[, args]] = callsTo(spy, "github_start_sign_in");
+
+    await act(async () => {
+      listeners.get("github-sign-in-terminal")?.({ payload: { terminalId: args?.terminalId, kind: "exit", exitCode: 0 } });
+    });
+
+    await within(screen.getByRole("dialog", { name: "Settings" })).findByText("Connected to GitHub");
+    expect(screen.queryByRole("dialog", { name: "Sign in to GitHub" })).toBeNull();
+    expect(document.activeElement).not.toBe(document.body);
+    expect(within(screen.getByRole("dialog", { name: "Settings" })).getByRole("region", { name: "GitHub" })).toContainElement(
+      document.activeElement as HTMLElement,
+    );
   });
 
   it("checks again from Settings", async () => {

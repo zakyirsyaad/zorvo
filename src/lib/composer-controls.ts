@@ -8,17 +8,60 @@ export interface ComposerControl {
   onChange: (value: string | undefined) => void;
 }
 
+/** A config option beyond mode, model and effort that the agent offers (Claude's fast mode, Codex's collaboration mode). */
+export interface ExtraControl extends ComposerControl {
+  /** The agent's config option id; also the dropdown's key. */
+  id: string;
+  /** The option's name, e.g. "Fast mode". */
+  label: string;
+  /** What the option does, when the agent says so. */
+  description?: string;
+}
+
 export interface ComposerControls {
   permission?: ComposerControl;
   model?: ComposerControl;
   effort?: ComposerControl;
+  extras?: ExtraControl[];
 }
 
 /** Modes that let the agent act without asking (shown with a warning icon). */
 const RISKY_MODE = /yolo|bypass|dontask|full.?access|danger/i;
 
-export function isRiskyMode(modeId: string | undefined): boolean {
-  return modeId !== undefined && RISKY_MODE.test(modeId);
+/** Whether a mode lets the agent act without asking; agents name theirs in the id, the label or both. */
+export function isRiskyMode(modeId: string | undefined, name?: string): boolean {
+  return (modeId !== undefined && RISKY_MODE.test(modeId)) || (name !== undefined && RISKY_MODE.test(name));
+}
+
+/** Config categories the composer already shows as the mode, model and effort controls. */
+const NAMED_CATEGORIES = new Set(['mode', 'model', 'thought_level']);
+
+/** A description that reads as a model's name: "Opus", "Sonnet 5.5". Anything wordier stays a description. */
+const MODEL_NAME_DESCRIPTION = /^[A-Za-z0-9][A-Za-z0-9.-]*(?: [A-Za-z0-9][A-Za-z0-9.-]*)?$/;
+
+/**
+ * A model called "Default" says nothing about what it is; some agents put the
+ * model in its description (Claude: "Default (recommended)", described "Opus").
+ * Shown as "Default (Opus)", and the description is not repeated.
+ */
+function modelOption(value: string, name: string, description: string | undefined): DropdownOption {
+  const named = description?.trim();
+  if (named && /^default\b/i.test(name) && MODEL_NAME_DESCRIPTION.test(named)) {
+    return { value, label: `${name.replace(/\s*\(.*\)\s*$/, '')} (${named})` };
+  }
+  return { value, label: name, description: named || undefined };
+}
+
+/** A mode (or a choice of any option) with its description, marked when it lets the agent act without asking. */
+function modeOption(value: string, name: string, description: string | undefined): DropdownOption {
+  return { value, label: name, description, ...(isRiskyMode(value, name) ? { risky: true } : {}) };
+}
+
+/** One choice of a config option, in the form its category calls for. */
+function choiceOption(category: string | undefined, choice: { value: string; name: string; description?: string }): DropdownOption {
+  if (category === 'model') return modelOption(choice.value, choice.name, choice.description);
+  if (category === 'mode') return modeOption(choice.value, choice.name, choice.description);
+  return { value: choice.value, label: choice.name, description: choice.description };
 }
 
 /** `undefined` when there is nothing real to choose from. */
@@ -42,7 +85,7 @@ export function acpControls(
     const option = byCategory(category);
     if (!option) return undefined;
     return controlIf(
-      option.options.map((c) => ({ value: c.value, label: c.name })),
+      option.options.map((c) => choiceOption(category, c)),
       1,
       { selected: option.currentValue, onChange: (value) => value && actions.setConfigOption(option.id, value) },
     );
@@ -50,7 +93,7 @@ export function acpControls(
 
   const permission = info.modes
     ? controlIf(
-        info.modes.availableModes.map((m) => ({ value: m.id, label: m.name })),
+        info.modes.availableModes.map((m) => modeOption(m.id, m.name, m.description)),
         1,
         { selected: info.modes.currentModeId, onChange: (value) => value && actions.setMode(value) },
       )
@@ -60,11 +103,27 @@ export function acpControls(
   const fromModels = (): ComposerControl | undefined =>
     info.models
       ? controlIf(
-          info.models.availableModels.map((m) => ({ value: m.modelId, label: m.name })),
+          info.models.availableModels.map((m) => modelOption(m.modelId, m.name, m.description)),
           1,
           { selected: info.models.currentModelId, onChange: (value) => value && actions.setModel(value) },
         )
       : undefined;
 
-  return { permission, model: fromConfig('model') ?? fromModels(), effort: fromConfig('thought_level') };
+  // Every other select option the agent offers; mode, model and effort already have their own control.
+  const extras = info.configOptions.flatMap((option): ExtraControl[] => {
+    if (option.category !== undefined && NAMED_CATEGORIES.has(option.category)) return [];
+    const control = controlIf(
+      option.options.map((c) => choiceOption(option.category, c)),
+      2,
+      { selected: option.currentValue, onChange: (value) => value && actions.setConfigOption(option.id, value) },
+    );
+    return control ? [{ ...control, id: option.id, label: option.name, description: option.description }] : [];
+  });
+
+  return {
+    permission,
+    model: fromConfig('model') ?? fromModels(),
+    effort: fromConfig('thought_level'),
+    ...(extras.length > 0 ? { extras } : {}),
+  };
 }

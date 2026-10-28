@@ -781,6 +781,34 @@ describe("ACP sessions in the app", () => {
     expect(sidebar.queryByText("second question")).toBeNull();
   });
 
+  it("explains a failed turn, keeps the raw error behind Details and sends the prompt again once on Try again", async () => {
+    const spy = await renderWithQwen();
+    const sessionId = await startQwenSession(spy);
+    // The first prompt is the one that started the session.
+    const promptsSent = () => callsTo(spy, "acp_prompt").map(([, args]) => (args as { text: string }).text).slice(1);
+
+    await send("fix the parser");
+    await waitFor(() => expect(promptsSent()).toEqual(["fix the parser"]));
+    await acpEvent({ sessionId, kind: "turn-end", error: "exception TypeError: fetch failed sending request" });
+
+    const banner = await screen.findByRole("alert");
+    expect(banner.textContent).toContain("Qwen Code could not reach the network.");
+    expect(screen.queryByText("exception TypeError: fetch failed sending request")).toBeNull();
+    fireEvent.click(within(banner).getByRole("button", { name: "Details" }));
+    expect(screen.getByText("exception TypeError: fetch failed sending request")).toBeDefined();
+
+    await act(async () => {
+      fireEvent.click(within(banner).getByRole("button", { name: "Try again" }));
+    });
+
+    await waitFor(() => expect(promptsSent()).toEqual(["fix the parser", "fix the parser"]));
+    // The same message, not a second one; and the failure notice is gone while the turn runs.
+    expect(screen.getAllByText("fix the parser", { selector: ":not(textarea)" })).toHaveLength(1);
+    expect(screen.queryByRole("alert")).toBeNull();
+    await acpEvent({ sessionId, kind: "turn-end", stopReason: "end_turn" });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("asks the user to sign in when the agent needs it, and signs in with a method that needs no secret", async () => {
     const spy = await renderWithQwen();
     const methods = [

@@ -4,6 +4,11 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- **A failed turn says what happened and can be tried again.** When an agent's turn fails, the notice now has a **Try again** button that sends your last message once more (it is disabled while a turn runs, and an agent that has exited is reopened first). A network failure such as `fetch failed` reads "<Agent> could not reach the network. Check your connection or proxy, then try again.", with the agent's own error behind **Details**; other errors show their text as before.
+- **Rewind no longer looks like retry.** The control under your message now uses a back-arrow icon, and its tooltip reads **Rewind to here**. It still takes the conversation back to before that message.
+
 ## [0.6.1] - 2026-10-27
 
 ### Changed

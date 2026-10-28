@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, Copy, RotateCcw } from "lucide-react";
+import { Check, Copy, Undo2 } from "lucide-react";
 
 export interface UserMessageBarProps {
   /** Undefined for a replayed message, whose time the agent did not report. */
@@ -49,10 +49,10 @@ function RewindButton({ onRewind }: { onRewind: () => void }) {
       type="button"
       onClick={() => setIsConfirming(true)}
       aria-label="Rewind to here"
-      title="Go back to before this message, with it ready to edit"
+      title="Rewind to here"
       className={ICON_BUTTON}
     >
-      <RotateCcw className="h-3.5 w-3.5" />
+      <Undo2 className="h-3.5 w-3.5" />
     </button>
   );
 }

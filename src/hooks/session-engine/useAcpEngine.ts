@@ -89,6 +89,11 @@ export interface AcpEngineDeps extends EngineDeps {
   rememberOptions: (profileId: string, options: Partial<AgentOptions>) => void;
   /** Each session's conversation: handed to a fresh ACP session that does not have it. */
   transcripts?: Readonly<Record<string, ChatMessage[]>>;
+  /**
+   * A turn ended with the agent's error (an error that no longer applies comes as null, once the user
+   * sends again). Without it the error is reported as a plain notice and there is nothing to try again.
+   */
+  onTurnFailed?: (sessionId: string, error: string | null) => void;
 }
 
 /**
@@ -106,6 +111,7 @@ export function useAcpEngine({
   onAuthRequired,
   onAttention,
   transcripts,
+  onTurnFailed,
 }: AcpEngineDeps) {
   const [starting, setStarting] = useState<ReadonlySet<string>>(new Set());
   const agentFailures = useAgentFailures();
@@ -139,6 +145,8 @@ export function useAcpEngine({
     launchGenRef.current.get(sessionId) === gen;
   // Each session's latest prompt: an agent that refuses it for a sign-in hands it back to the composer.
   const lastPromptRef = useRef(new Map<string, { message: ChatMessage; context?: string }>());
+  // The prompt of each session's last turn that failed with an error: what "Try again" sends.
+  const failedPromptRef = useRef(new Map<string, { message: ChatMessage; context?: string }>());
   // Hidden context a refused prompt carried (a rewound session's conversation): it goes out with the next message.
   const unsentContextRef = useRef(new Map<string, string>());
   // The picks a session was opened with when its agent refused to open it until the user signs in.
@@ -199,9 +207,13 @@ export function useAcpEngine({
         handBackForSignIn(sessionId, authMethods);
         return;
       }
+      const sent = lastPromptRef.current.get(sessionId);
       lastPromptRef.current.delete(sessionId);
+      if (error && sent) failedPromptRef.current.set(sessionId, sent);
+      else failedPromptRef.current.delete(sessionId);
       const notice = turnEndNotice(stopReason, error);
-      if (notice) reportError(notice);
+      if (error && onTurnFailed) onTurnFailed(sessionId, error);
+      else if (notice) reportError(notice);
       // A turn the user cancelled needs no notification: they were there.
       if (stopReason !== 'cancelled') onAttention?.(sessionId, notice ? 'failed' : 'finished');
     }),
@@ -262,6 +274,9 @@ export function useAcpEngine({
   /** Prompts the agent with a message already shown in the chat; removes it if the prompt is refused. */
   const prompt = async (sessionId: string, message: ChatMessage, context?: string): Promise<boolean> => {
     lastPromptRef.current.set(sessionId, { message, context });
+    // A new turn starts: the failure of the last one no longer applies.
+    failedPromptRef.current.delete(sessionId);
+    onTurnFailed?.(sessionId, null);
     try {
       await acp.prompt(sessionId, context ? `${context}\n\n${message.content}` : message.content, message.attachments);
       return true;
@@ -585,6 +600,8 @@ export function useAcpEngine({
     // Stopped while opening: it is no longer starting, so its row can be deleted before the open settles.
     markStarting(sessionId, false);
     lastPromptRef.current.delete(sessionId);
+    failedPromptRef.current.delete(sessionId);
+    onTurnFailed?.(sessionId, null);
     unsentContextRef.current.delete(sessionId);
     refusedChoicesRef.current.delete(sessionId);
     return acp.stop(sessionId).then(
@@ -653,6 +670,36 @@ export function useAcpEngine({
 
   const isBusy = (sessionId: string) => starting.has(sessionId) || acp.isBusy(sessionId);
 
+  /** Whether the session's last turn failed with a prompt that can be sent again. */
+  const hasFailedPrompt = (sessionId: string) => failedPromptRef.current.has(sessionId);
+
+  /**
+   * Sends the prompt of a failed turn again, once. Its message is still in the chat, so a running agent is
+   * prompted in place and nothing is added; an agent that has exited is reopened, which shows the message
+   * anew in place of the old one. A message that does not go out is handed to `giveBack`, as the user left it.
+   * Resolves to whether the agent took the message.
+   */
+  const retryFailedTurn = async (sessionId: string, giveBack?: (message: FirstMessage) => void): Promise<boolean> => {
+    const failed = failedPromptRef.current.get(sessionId);
+    const session = sessions.find((s) => s.id === sessionId);
+    if (!failed || !session || isBusy(sessionId)) return false;
+    failedPromptRef.current.delete(sessionId);
+    const { message, context } = failed;
+    const unsent = { text: message.content, attachments: message.attachments, context };
+    let isTaken: boolean;
+    if (session.status !== 'terminated') {
+      isTaken = await prompt(sessionId, message, context);
+    } else {
+      // Prompting an exited agent would only fail: the session is reopened with the message, which the
+      // reopening shows again, so the old one goes first.
+      onTurnFailed?.(sessionId, null);
+      updateNow(sessionId, (prev) => withoutMessage(prev, message.id));
+      isTaken = await retryAfterSignIn(sessionId, unsent);
+    }
+    if (!isTaken) giveBack?.(unsent);
+    return isTaken;
+  };
+
   return {
     info: acp.info,
     start,
@@ -660,6 +707,8 @@ export function useAcpEngine({
     importSession,
     listSessions: acp.listSessions,
     retryAfterSignIn,
+    hasFailedPrompt,
+    retryFailedTurn,
     fork,
     send,
     chooseOption,

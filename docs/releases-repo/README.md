@@ -102,7 +102,10 @@
 
 ## Supported agents
 
-Zorvo runs every agent in the [ACP registry](https://agentclientprotocol.com).
+Zorvo lists every agent in the [ACP registry](https://agentclientprotocol.com)
+and runs the ones it can verify: a download needs a published SHA-256 checksum,
+and a package must be pinned to one version. Agents that fail that check appear
+under **Not available** in **Settings → Agents**, with the reason.
 **Claude Code, Codex and Qwen Code** are on by default, along with any registry
 agent already installed on your Mac. Add the others, such as Gemini CLI, from
 **Settings → Agents**.

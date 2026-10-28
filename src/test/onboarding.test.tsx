@@ -204,7 +204,7 @@ describe("Onboarding — agent step", () => {
     renderOnboarding({
       agentsPanel: (
         <AgentCatalog
-          catalog={{ lastChecked: null, agents: fakeCatalog }}
+          catalog={{ lastChecked: null, agents: fakeCatalog, unavailable: [] }}
           error={null}
           agents={fakeProfiles}
           enabledIds={["claude-acp"]}

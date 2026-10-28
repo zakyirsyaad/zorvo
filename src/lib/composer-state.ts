@@ -80,24 +80,19 @@ export const COMPOSER_PLACEHOLDERS = {
 const installPlaceholder = (agentName: string, continuesSession: boolean) =>
   `Install ${agentName} to ${continuesSession ? 'continue this session' : 'start a session'}.`;
 
-/** What the empty composer says the next message does; none in a running session. */
+/**
+ * What the empty composer says the next message does; none in a running session. Why Send is
+ * blocked (install, sign-in) is not said here but in `composerNote`, which stays while the user types.
+ */
 export function composerPlaceholder(state: {
   isRunning: boolean;
   isCreatingWorktree: boolean;
   isResumable: boolean;
   canStartSession: boolean;
-  /** The draft agent's name while it must be installed before a message can be sent. */
-  agentToInstall?: string;
-  /** The draft agent's name while its sign-in panel is open: a message cannot go out before it. */
-  agentToSignIn?: string;
-  /** An ended session is shown: once its agent is installed, the next message continues it. */
-  isEndedSession?: boolean;
 }): string | undefined {
   if (state.isRunning) return undefined;
   if (state.isCreatingWorktree) return COMPOSER_PLACEHOLDERS.creatingWorktree;
   if (!state.isResumable && !state.canStartSession) return COMPOSER_PLACEHOLDERS.noWorkspace;
-  if (state.agentToInstall) return installPlaceholder(state.agentToInstall, state.isResumable || Boolean(state.isEndedSession));
-  if (state.agentToSignIn) return signInPlaceholder(state.agentToSignIn, state.isResumable || Boolean(state.isEndedSession));
   return state.isResumable ? COMPOSER_PLACEHOLDERS.resume : COMPOSER_PLACEHOLDERS.newSession;
 }
 

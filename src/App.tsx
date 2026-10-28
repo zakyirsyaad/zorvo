@@ -821,9 +821,6 @@ export default function App() {
                       isCreatingWorktree,
                       isResumable,
                       canStartSession,
-                      agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
-                      agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
-                      isEndedSession: Boolean(activeSession),
                     })}
                     onSendMessage={handleSendMessage}
                     attachAsFiles

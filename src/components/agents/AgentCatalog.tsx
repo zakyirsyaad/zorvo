@@ -1,9 +1,10 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { RefreshCw, Search } from "lucide-react";
 import { AgentCatalogRow } from "./AgentCatalogRow";
+import { UnavailableAgents } from "./UnavailableAgents";
 import { Button } from "../ui/Button";
 import type { AgentCatalogActions } from "../../hooks/useAgentCatalogActions";
-import { catalogSections, formatCheckedAgo } from "../../lib/agent-catalog";
+import { catalogSections, formatCheckedAgo, unavailableSection } from "../../lib/agent-catalog";
 import { RECHECK_ERROR } from "../../lib/agent-readiness";
 import type { AgentCatalog as Catalog, AgentProfile, CatalogAgent } from "../../types";
 
@@ -77,6 +78,7 @@ export function AgentCatalog({ catalog, error, agents, enabledIds, actions, onCh
   const { isChecking, checkError, checkAgain } = useCheckAgain(onCheckAgain);
   const now = useNowSeconds();
   const { inUse, others } = catalogSections(catalog?.agents ?? [], enabledIds, query);
+  const unavailable = unavailableSection(catalog?.unavailable ?? [], query);
   const trimmedQuery = query.trim();
 
   const setRemoveError = (id: string, message: string | null) =>
@@ -154,7 +156,8 @@ export function AgentCatalog({ catalog, error, agents, enabledIds, actions, onCh
 
       <CatalogSection title="In use" agents={inUse} isInUse renderRow={renderRow} />
       <CatalogSection title="All agents" agents={others} isInUse={false} renderRow={renderRow} />
-      {catalog && trimmedQuery !== "" && inUse.length === 0 && others.length === 0 && (
+      <UnavailableAgents agents={unavailable} isSearching={trimmedQuery !== ""} />
+      {catalog && trimmedQuery !== "" && inUse.length === 0 && others.length === 0 && unavailable.length === 0 && (
         <p className="text-fg-subtle">{`No agents match "${trimmedQuery}".`}</p>
       )}
     </div>

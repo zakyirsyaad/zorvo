@@ -9,7 +9,7 @@ use zorvo_lib::installer::runtimes::InstalledRuntime;
 use zorvo_lib::registry::catalog_view::{AgentCatalog, CatalogAgent};
 use zorvo_lib::registry::history::{VersionHistory, MIN_AGE_SECS};
 use zorvo_lib::registry::resolve::SystemTools;
-use zorvo_lib::registry::schema::{BinaryTarget, Distribution, RegistryEntry};
+use zorvo_lib::registry::schema::{BinaryTarget, Distribution, RegistryEntry, UnavailableReason};
 use zorvo_lib::registry::Catalog;
 
 const DAY: u64 = 24 * 60 * 60;
@@ -445,4 +445,212 @@ fn a_new_binary_without_this_macs_target_is_unsupported_not_waiting() {
     assert_eq!(fresh_linux.available_from, None);
     assert_eq!(fresh_linux.distribution, "binary");
     assert_eq!(agent(&result, "fresh-mac").status, "waiting");
+}
+
+// Agents the registry lists but Zorvo cannot offer.
+
+const BUNDLED: &str = include_str!("../../resources/registry-history.json");
+
+fn raw_registry(entries: &[serde_json::Value]) -> String {
+    json!({ "version": "1.0.0", "agents": entries }).to_string()
+}
+
+fn unsigned_binary(id: &str, name: &str) -> serde_json::Value {
+    json!({
+        "id": id,
+        "name": name,
+        "version": "1.0.0",
+        "description": "A binary with no checksum",
+        "distribution": { "binary": { zorvo_lib::registry::schema::current_platform(): {
+            "archive": "https://example.com/agent.tar.gz",
+            "cmd": "./agent",
+            "args": ["acp"],
+        } } },
+    })
+}
+
+fn no_tools_view_at(catalog: &Catalog, now: u64) -> AgentCatalog {
+    let dir = BinDir::new(&[]);
+    let path_var = dir.path_var();
+    let globals = BTreeSet::new();
+    let installed = InstalledTools::none();
+    let tools = SystemTools {
+        path_var: Some(&path_var),
+        npm_globals: &globals,
+        installed: &installed,
+    };
+    catalog.catalog_view(&tools, &BTreeMap::new(), now)
+}
+
+fn no_tools_view(catalog: &Catalog) -> AgentCatalog {
+    no_tools_view_at(catalog, NOW)
+}
+
+#[test]
+fn unavailable_agents_are_reported_after_a_fetch_and_are_not_catalog_rows() {
+    let catalog = Catalog::bundled(&bundle_of(&[(npx_entry("gemini", "1.0.0"), T0)]));
+    assert!(
+        no_tools_view(&catalog).unavailable.is_empty(),
+        "nothing before a fetch"
+    );
+
+    let registry = raw_registry(&[
+        serde_json::to_value(npx_entry("gemini", "1.0.0")).unwrap(),
+        unsigned_binary("zeta", "Zeta"),
+        json!({ "id": "alpha", "name": "Alpha", "version": "1.0.0",
+                "distribution": { "npx": { "package": "alpha@latest" } } }),
+    ]);
+    catalog
+        .refresh(|| Ok(registry.clone()), NOW)
+        .expect("refresh succeeds");
+
+    let result = no_tools_view(&catalog);
+    let reported: Vec<(&str, &str)> = result
+        .unavailable
+        .iter()
+        .map(|a| (a.id.as_str(), a.name.as_str()))
+        .collect();
+    assert_eq!(
+        reported,
+        vec![("alpha", "Alpha"), ("zeta", "Zeta")],
+        "sorted by id"
+    );
+    assert_eq!(
+        serde_json::to_value(&result.unavailable[1]).unwrap(),
+        json!({
+            "id": "zeta",
+            "name": "Zeta",
+            "description": "A binary with no checksum",
+            "reason": "no_checksum",
+        })
+    );
+    assert_eq!(
+        result.unavailable[0].reason,
+        UnavailableReason::InvalidEntry
+    );
+    assert!(
+        result.agents.iter().all(|a| a.id == "gemini"),
+        "no row to add or install"
+    );
+}
+
+#[test]
+fn an_agent_the_history_has_stays_a_row_when_its_newest_entry_is_invalid() {
+    let catalog = Catalog::bundled(&bundle_of(&[(npx_entry("tool", "1.0.0"), T0)]));
+    let registry = raw_registry(&[unsigned_binary("tool", "Tool")]);
+
+    catalog
+        .refresh(|| Ok(registry.clone()), NOW)
+        .expect("refresh succeeds");
+
+    let result = no_tools_view(&catalog);
+    assert!(result.unavailable.is_empty());
+    assert!(
+        !agent(&result, "tool").listed,
+        "the registry no longer offers it"
+    );
+}
+
+#[test]
+fn the_unavailable_agents_survive_a_restart_and_an_old_cache_is_refetched() {
+    let dir = std::env::temp_dir().join(format!("zorvo-unavailable-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let bundle = bundle_of(&[(npx_entry("gemini", "1.0.0"), T0)]);
+    let registry = raw_registry(&[
+        serde_json::to_value(npx_entry("gemini", "1.0.0")).unwrap(),
+        unsigned_binary("zeta", "Zeta"),
+    ]);
+
+    let first = Catalog::open(dir.clone(), &bundle);
+    assert!(first.refresh(|| Ok(registry.clone()), NOW).unwrap());
+    assert!(
+        !first.refresh(|| Ok(registry.clone()), NOW + 1).unwrap(),
+        "nothing changed"
+    );
+    drop(first);
+
+    let reopened = Catalog::open(dir.clone(), &bundle);
+    assert!(!reopened.needs_refresh(NOW + 60));
+    assert_eq!(no_tools_view(&reopened).unavailable.len(), 1);
+
+    // A cache written before the list was recorded counts as stale.
+    std::fs::write(
+        dir.join("registry-cache.json"),
+        format!(r#"{{"last_fetch":{NOW},"listed":["gemini"]}}"#),
+    )
+    .expect("write old cache");
+    let old = Catalog::open(dir.clone(), &bundle);
+    assert!(old.needs_refresh(NOW + 60));
+    assert!(no_tools_view(&old).unavailable.is_empty());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn the_bundled_history_offers_kilo_and_sigit_from_the_start() {
+    // Both publish a binary and an npx package; they were dropped as "two distributions".
+    // They run as the pinned package, so the choice does not depend on this Mac.
+    let catalog = Catalog::bundled(BUNDLED);
+    let generated_at = VersionHistory::from_json(BUNDLED)
+        .unwrap()
+        .agents
+        .values()
+        .flat_map(|versions| versions.values())
+        .map(|record| record.first_seen)
+        .max()
+        .unwrap();
+    let result = no_tools_view_at(&catalog, generated_at + MIN_AGE_SECS);
+
+    for id in ["kilo", "sigit"] {
+        let row = agent(&result, id);
+        assert!(row.version.is_some(), "{id} has a version to run");
+        assert_eq!(row.distribution, "npx", "{id} runs as its package");
+        assert_ne!(
+            row.status, "waiting",
+            "{id} is older than the seven-day wait"
+        );
+        assert_ne!(row.status, "unsupported", "{id} runs on this Mac");
+    }
+}
+
+#[test]
+fn an_unavailable_agent_cannot_be_launched_planned_installed_or_updated() {
+    let catalog = Catalog::bundled(&bundle_of(&[(npx_entry("gemini", "1.0.0"), T0)]));
+    let registry = raw_registry(&[
+        serde_json::to_value(npx_entry("gemini", "1.0.0")).unwrap(),
+        unsigned_binary("zeta", "Zeta"),
+    ]);
+    catalog
+        .refresh(|| Ok(registry.clone()), NOW)
+        .expect("refresh succeeds");
+    assert_eq!(no_tools_view(&catalog).unavailable[0].id, "zeta");
+
+    let dir = BinDir::new(&[]);
+    let path_var = dir.path_var();
+    let globals = BTreeSet::new();
+    let installed = InstalledTools::none();
+    let tools = SystemTools {
+        path_var: Some(&path_var),
+        npm_globals: &globals,
+        installed: &installed,
+    };
+    let versions = BTreeMap::new();
+
+    assert!(catalog.profile("zeta", &tools, &versions, NOW).is_none());
+    assert!(catalog
+        .profiles(&tools, &versions, NOW)
+        .iter()
+        .all(|profile| profile.id != "zeta"));
+    assert!(catalog
+        .planned_steps_for("zeta", &tools, &versions, NOW)
+        .is_none());
+    assert!(catalog.agent_name("zeta", &versions, NOW).is_none());
+    assert!(catalog
+        .unsupported_agent_name("zeta", &versions, NOW)
+        .is_none());
+    assert!(catalog
+        .update_target("zeta", &tools, &versions, NOW)
+        .is_err());
+    assert!(catalog.launch_env("zeta", "1.0.0").is_empty());
 }

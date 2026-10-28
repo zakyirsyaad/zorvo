@@ -25,7 +25,7 @@ const claude = (updateVersion: string | null) =>
   makeCatalogAgent({ id: "claude-acp", name: "Claude Code", version: "1.2.0", updateVersion, status: "by_zorvo" });
 const codex = (updateVersion: string | null) =>
   makeCatalogAgent({ id: "codex-acp", name: "Codex", version: "0.9.0", updateVersion, status: "by_zorvo" });
-const catalogOf = (...agents: ReturnType<typeof claude>[]): AgentCatalog => ({ lastChecked: 1, agents });
+const catalogOf = (...agents: ReturnType<typeof claude>[]): AgentCatalog => ({ lastChecked: 1, agents, unavailable: [] });
 
 describe("UpdateNotice", () => {
   it("names the agent and version for one update", () => {

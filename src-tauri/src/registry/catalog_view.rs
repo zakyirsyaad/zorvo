@@ -1,7 +1,10 @@
 //! The read model behind the agent catalog screen: every agent in the history
-//! with where it stands on this Mac, apart from the profiles the app launches.
+//! with where it stands on this Mac, apart from the profiles the app launches,
+//! and the registry agents Zorvo cannot offer.
 
 use serde::Serialize;
+
+use super::schema::UnavailableAgent;
 
 pub const STATUS_BY_ZORVO: &str = "by_zorvo";
 pub const STATUS_ON_YOUR_MAC: &str = "on_your_mac";
@@ -36,4 +39,7 @@ pub struct CatalogAgent {
 pub struct AgentCatalog {
     pub last_checked: Option<u64>,
     pub agents: Vec<CatalogAgent>,
+    /// Agents the registry lists but Zorvo cannot offer, each with why. They
+    /// are not in `agents` and cannot be added or installed.
+    pub unavailable: Vec<UnavailableAgent>,
 }

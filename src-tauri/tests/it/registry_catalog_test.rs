@@ -852,3 +852,39 @@ fn a_recorded_version_first_seen_7_days_ago_is_used() {
         Some("1.1.0")
     );
 }
+
+#[test]
+fn an_unreadable_unavailable_list_keeps_the_cache_and_its_withdrawn_versions() {
+    for bad in [
+        r#"[{"id":"x","name":"X","description":null,"reason":"some_future_reason"}]"#,
+        r#"[{"id":"x"}]"#,
+        r#""not a list""#,
+    ] {
+        let dir = TempDir::new("bad-unavailable");
+        let bundle = bundle_of(&[
+            (npx_entry("gemini", "1.0.0"), T0),
+            (npx_entry("gemini", "2.0.0"), T0),
+        ]);
+        std::fs::write(
+            dir.path().join("registry-cache.json"),
+            format!(
+                r#"{{"last_fetch":{T0},"listed":["gemini"],"listed_versions":{{"gemini":"1.0.0"}},"withdrawn":{{"gemini":["2.0.0"]}},"unavailable":{bad}}}"#
+            ),
+        )
+        .expect("write cache");
+
+        let catalog = Catalog::open(dir.path().to_path_buf(), &bundle);
+
+        assert_eq!(catalog.last_fetch(), Some(T0), "{bad}");
+        assert!(
+            catalog.needs_refresh(T0 + 60),
+            "a bad list counts as stale: {bad}"
+        );
+        let profiles = no_tools_profiles(&catalog, &BTreeMap::new(), T0 + 30 * DAY);
+        assert_eq!(
+            find(&profiles, "gemini").version.as_deref(),
+            Some("1.0.0"),
+            "2.0.0 stays withdrawn: {bad}"
+        );
+    }
+}

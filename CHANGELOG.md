@@ -6,15 +6,21 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Added
 
+- **See the agents Zorvo cannot offer.** Settings → Agents has a collapsed **Not available** section for registry agents Zorvo does not offer, each with the reason, such as "The registry publishes no usable checksum for this download, so Zorvo cannot verify it." Search covers them. They cannot be added: Zorvo still never runs a download it cannot check against a published SHA-256.
+- **Connect to GitHub, and see that you are.** **Settings → General → GitHub** now shows whether your GitHub CLI is installed and signed in. If `gh` is missing it says so, with `brew install gh` to copy and a link to cli.github.com; if you are signed out, **Connect** opens a terminal where `gh` signs you in through your browser, and Zorvo checks again when it closes. When you are connected, the sidebar shows your GitHub name (or `@login`) with a GitHub mark instead of your git name. Zorvo asks your `gh` only for your login and name, stores neither, never touches a token, and downloads no picture. The Changes panel now says when pull requests need `gh` or a GitHub sign-in (in a repository with a github.com remote), and opens that section.
 - **The composer shows more of what your agent offers.** Permission modes, models and other choices now show the agent's own description under their name, and a mode that lets the agent act without asking (YOLO, bypass, full access) is marked with a shield in the open menu, before you pick it. Other settings an agent offers now get their own chip: Codex's collaboration mode (the way to put Codex in Plan), Claude's fast mode and its agent persona. A long list, like Claude's personas, has a search field.
 
 ### Changed
 
+- **Pull requests now see your shell's GitHub settings.** The top bar's pull request status and the Changes panel's list used to run your GitHub CLI with the bare environment a Finder-launched app gets. They now run it with your login shell's environment, like Zorvo's agents and terminals, so they honour your `GH_TOKEN`, `GITHUB_TOKEN`, `GH_CONFIG_DIR` and proxy settings. A few variables that would change what `gh` prints or which repository it reads (`CLICOLOR_FORCE`, `GH_FORCE_TTY`, `GH_REPO`, `GH_DEBUG`, `DEBUG`) are left out.
+- **A failed turn says what happened and can be tried again.** When an agent's turn fails, the notice now has a **Try again** button that sends your last message once more (it is disabled while a turn runs, and an agent that has exited is reopened first). A network failure such as `fetch failed` reads "<Agent> could not reach the network. Check your connection or proxy, then try again.", with the agent's own error behind **Details**; other errors show their text as before.
+- **Rewind no longer looks like retry.** The control under your message now uses a back-arrow icon, and its tooltip reads **Rewind to here**. It still takes the conversation back to before that message.
 - **Claude's default model says which model it is.** The model chip reads **Default (Opus)** instead of **Default (recommended)**.
 - **The model chip has a sparkle icon.** The old chip icon looked like a settings gear.
 
 ### Fixed
 
+- **Agents that publish more than one way to run were missing.** Kilo and siGit Code, which the registry offers both as a download and as an npm package, are in the catalog now. When an entry offers several ways, Zorvo uses the pinned npm package, then the pinned Python package, then the download for your Mac, and only one that passes the same checks as before. One check is looser: a missing checksum on a platform other than your Mac's no longer drops the whole entry, since only your Mac's download is ever used.
 - **A new Codex session started in Full access moves to Workspace access**, not to Read-only, which stopped the agent from editing. Zorvo also recognises a risky mode by its name, not only its id. Codex's default Auto review is still left as it is.
 
 ## [0.6.1] - 2026-10-27

@@ -18,6 +18,7 @@ use crate::acp::terminal_auth::{is_sign_in_terminal_id, sign_in_event_payload};
 use crate::background_processes::{end_tree, end_trees};
 use crate::env_resolver::cached_user_env;
 use crate::files::{canonical_root, ensure_known_workspace};
+use crate::github::is_github_sign_in_id;
 use crate::pty_session::{PtyEvent, PtySessionManager};
 use crate::store::AppStore;
 
@@ -144,6 +145,8 @@ pub fn event_payload(event: &PtyEvent) -> Value {
 pub enum PtyRoute {
     /// An agent's terminal sign-in, on `SIGN_IN_TERMINAL_EVENT`.
     SignIn,
+    /// The GitHub CLI's sign-in, on `github::SIGN_IN_EVENT`.
+    GithubSignIn,
     /// A workspace shell, on `EVENT`.
     Workspace,
 }
@@ -152,6 +155,8 @@ pub enum PtyRoute {
 pub fn pty_event_route(id: &str) -> Option<PtyRoute> {
     if is_sign_in_terminal_id(id) {
         Some(PtyRoute::SignIn)
+    } else if is_github_sign_in_id(id) {
+        Some(PtyRoute::GithubSignIn)
     } else if is_workspace_terminal_id(id) {
         Some(PtyRoute::Workspace)
     } else {

@@ -84,6 +84,10 @@
   button.
 - **Follow your pull request.** The top bar shows your branch's pull request and
   its checks, read with your own `gh`.
+- **Connect to GitHub.** **Settings → General → GitHub** shows whether your
+  GitHub CLI is installed and signed in. If it is not signed in, **Connect**
+  opens a terminal where `gh` signs you in through your browser. Once you are
+  connected, the sidebar shows your GitHub name instead of your git name.
 
 ### Keep your work organized
 
@@ -132,7 +136,8 @@ sooner, and never one the registry has withdrawn.
   A global install is not needed; it only makes an agent show up as installed
   before you first use it.
 - **Optional: the [GitHub CLI](https://cli.github.com)**, signed in with
-  `gh auth login`, to see pull requests and their checks.
+  `gh auth login` or with **Connect** in **Settings → General**, to see pull
+  requests and their checks and to show your GitHub name in the sidebar.
 
 Zorvo reads your login shell's environment, so it finds whatever your terminal
 finds. If you install an agent while Zorvo runs, click **Check again** in
@@ -234,6 +239,11 @@ before it edits files or runs commands. Pick another mode in the composer.
 - **Your keys stay with the agents.** Zorvo never asks for or stores API keys
   or tokens. Agents sign in with their own tools, and pull request data comes
   from your own `gh` login.
+- **GitHub stays in your `gh`.** Zorvo asks your `gh` whether you are signed in
+  to github.com and reads only your login and name, to show them in the sidebar
+  and in Settings. It stores neither, never reads or keeps a token, and
+  downloads no picture. **Connect** runs `gh auth login` for github.com in a
+  terminal, and you sign in through your browser.
 - **No telemetry.** Zorvo sends nothing about you or your work anywhere.
 - **Only a few hosts, all named.** Zorvo itself contacts only:
   - the ACP registry (`cdn.agentclientprotocol.com`), to list agents, their
@@ -258,7 +268,8 @@ before it edits files or runs commands. Pick another mode in the composer.
   built into Zorvo.
 
   Your agents, and the `npm`, `npx` and `uvx` they run with, make their own
-  requests to their own services.
+  requests to their own services, and so does your `gh`, which Zorvo runs to
+  read your pull requests and your GitHub sign-in.
 - **Your data stays on your Mac.** Sessions and transcripts are stored in
   `~/Library/Application Support/xyz.zorvo.desktop/`, and session worktrees in
   `worktrees/` there.
@@ -275,7 +286,7 @@ before it edits files or runs commands. Pick another mode in the composer.
 | **Update & restart** fails with a read-only message | A copy that runs from the disk image cannot update itself: drag it into Applications and open it from there. Or download the newest DMG from [releases](https://github.com/zakyirsyaad/zorvo-releases/releases) and replace Zorvo in Applications. |
 | An agent takes a while to start the first time | Its first start downloads the agent's package. Later starts are quick. |
 | The agent stays on **Working…** | If Zorvo shows that the agent's requests failed, the cause is usually the agent's account, such as a used-up quota. Check it in the agent's own CLI, then click **Stop** and send your message again. |
-| No pull request status | Install `gh` and run `gh auth login`. A repository without a GitHub remote has none to show. |
+| No pull request status | Open **Settings → General → GitHub**. If `gh` is not installed, install it; if you are not connected, click **Connect**. A repository without a GitHub remote has none to show. |
 | "is not in the last commit, so a worktree would not have it" | A worktree checks out the last commit. Commit the folder first, or start the session without **Worktree**. |
 
 Still stuck? [Open an issue](https://github.com/zakyirsyaad/zorvo-releases/issues/new/choose)

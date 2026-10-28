@@ -122,6 +122,13 @@ fn is_not_on_github(error: &str) -> bool {
 const GH_TIMEOUT: Duration = Duration::from_secs(20);
 const GH_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
+/// What a finished gh run printed.
+pub(crate) struct GhOutput {
+    pub success: bool,
+    pub stdout: String,
+    pub stderr: String,
+}
+
 /// Runs gh in `dir` with stdin closed, stopping it after `GH_TIMEOUT`: its
 /// output, None for a repository that is not on GitHub, or its error.
 fn run_gh(gh: &Path, dir: &Path, args: &[String]) -> Result<Option<String>, String> {
@@ -134,7 +141,40 @@ fn run_gh_within(
     args: &[String],
     timeout: Duration,
 ) -> Result<Option<String>, String> {
-    let mut child = Command::new(gh)
+    let output = capture_gh(gh, dir, args, timeout)?;
+    if !output.success {
+        let error = output.stderr.trim().to_string();
+        // A repository with no GitHub remote has no pull requests: nothing to show, not a failure.
+        return if is_not_on_github(&error) {
+            Ok(None)
+        } else {
+            Err(error)
+        };
+    }
+    Ok(Some(output.stdout))
+}
+
+/// True for the error `capture_gh` returns when it stopped a gh that did not
+/// answer in time; kept here, beside the message it matches.
+pub(crate) fn is_timeout_error(error: &str) -> bool {
+    error.starts_with("gh did not answer within")
+}
+
+/// Runs gh in `dir` with stdin closed, in the user's login environment (so a
+/// `GH_CONFIG_DIR` set in their shell is the one read), and stops it after
+/// `timeout`. Whether it succeeded is the caller's to read from the output.
+pub(crate) fn capture_gh(
+    gh: &Path,
+    dir: &Path,
+    args: &[String],
+    timeout: Duration,
+) -> Result<GhOutput, String> {
+    let mut command = Command::new(gh);
+    if let Ok(user_env) = env_resolver::cached_user_env() {
+        command.envs(user_env);
+    }
+    let mut child = command
+        .env("GH_PROMPT_DISABLED", "1")
         .current_dir(dir)
         .args(args)
         .stdin(Stdio::null())
@@ -172,16 +212,11 @@ fn run_gh_within(
         Some(Ok(bytes)) => String::from_utf8_lossy(&bytes).into_owned(),
         _ => String::new(),
     };
-    if !status.success() {
-        let error = text(&stderr).trim().to_string();
-        // A repository with no GitHub remote has no pull requests: nothing to show, not a failure.
-        return if is_not_on_github(&error) {
-            Ok(None)
-        } else {
-            Err(error)
-        };
-    }
-    Ok(Some(text(&stdout)))
+    Ok(GhOutput {
+        success: status.success(),
+        stdout: text(&stdout),
+        stderr: text(&stderr),
+    })
 }
 
 /// The pull request whose head is `branch` in the repository at `dir`, newest
@@ -331,7 +366,10 @@ mod tests {
 
         let result = run_gh_within(&gh, &std::env::temp_dir(), &[], Duration::from_millis(200));
 
-        assert!(result.expect_err("a timeout").contains("did not answer"));
+        let error = result.expect_err("a timeout");
+        assert!(error.contains("did not answer"));
+        assert!(is_timeout_error(&error));
+        assert!(!is_timeout_error("Could not run gh: not found"));
         assert!(started.elapsed() < Duration::from_secs(5));
     }
 

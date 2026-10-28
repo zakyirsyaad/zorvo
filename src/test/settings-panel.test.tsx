@@ -50,6 +50,8 @@ type SettingsPanelProps = {
   initialTab?: "general" | "agents";
   agentsPanel: ReactNode;
   updateCount: number;
+  githubSection?: ReactNode;
+  isEscapeBlocked?: boolean;
 };
 
 function renderSettings(overrides: Partial<SettingsPanelProps> = {}): SettingsPanelProps {
@@ -300,6 +302,39 @@ describe("SettingsPanel — tabs", () => {
     renderSettings();
 
     expect(screen.queryByRole("button", { name: /Check again/ })).toBeNull();
+  });
+});
+
+describe("SettingsPanel — GitHub", () => {
+  it("shows no GitHub section unless one is given", () => {
+    renderSettings();
+
+    expect(screen.queryByRole("region", { name: "GitHub" })).toBeNull();
+  });
+
+  it("shows the GitHub section first in General", () => {
+    renderSettings({ githubSection: <p>Connected to GitHub</p> });
+
+    const section = screen.getByRole("region", { name: "GitHub" });
+
+    expect(within(section).getByRole("heading", { level: 3, name: "GitHub" })).toBeInTheDocument();
+    expect(within(section).getByText("Connected to GitHub")).toBeInTheDocument();
+    const headings = screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent);
+    expect(headings[0]).toBe("GitHub");
+  });
+
+  it("does not show the GitHub section on the Agents tab", () => {
+    renderSettings({ githubSection: <p>Connected to GitHub</p>, initialTab: "agents" });
+
+    expect(screen.queryByText("Connected to GitHub")).toBeNull();
+  });
+
+  it("leaves Escape to a dialog opened over it", () => {
+    const props = renderSettings({ isEscapeBlocked: true });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(props.onClose).not.toHaveBeenCalled();
   });
 });
 

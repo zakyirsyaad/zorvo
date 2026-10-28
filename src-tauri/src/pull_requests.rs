@@ -2,6 +2,7 @@
 //! through the GitHub CLI the user has already signed in to. The app never
 //! asks for or stores a token.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread;
@@ -122,6 +123,13 @@ fn is_not_on_github(error: &str) -> bool {
 const GH_TIMEOUT: Duration = Duration::from_secs(20);
 const GH_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
+/// What a finished gh run printed.
+pub(crate) struct GhOutput {
+    pub success: bool,
+    pub stdout: String,
+    pub stderr: String,
+}
+
 /// Runs gh in `dir` with stdin closed, stopping it after `GH_TIMEOUT`: its
 /// output, None for a repository that is not on GitHub, or its error.
 fn run_gh(gh: &Path, dir: &Path, args: &[String]) -> Result<Option<String>, String> {
@@ -134,7 +142,71 @@ fn run_gh_within(
     args: &[String],
     timeout: Duration,
 ) -> Result<Option<String>, String> {
-    let mut child = Command::new(gh)
+    let output = capture_gh(gh, dir, args, timeout)?;
+    if !output.success {
+        let error = output.stderr.trim().to_string();
+        // A repository with no GitHub remote has no pull requests: nothing to show, not a failure.
+        return if is_not_on_github(&error) {
+            Ok(None)
+        } else {
+            Err(error)
+        };
+    }
+    Ok(Some(output.stdout))
+}
+
+/// True for the error `capture_gh` returns when it stopped a gh that did not
+/// answer in time; kept here, beside the message it matches.
+pub(crate) fn is_timeout_error(error: &str) -> bool {
+    error.starts_with("gh did not answer within")
+}
+
+/// Variables of the user's shell that Zorvo must not hand to gh: they colour
+/// its `--json` output, redirect it to another repository, or add debug lines,
+/// and Zorvo parses what gh prints.
+const DROPPED_ENV: [&str; 5] = [
+    "CLICOLOR_FORCE",
+    "GH_FORCE_TTY",
+    "GH_REPO",
+    "GH_DEBUG",
+    "DEBUG",
+];
+
+/// gh as Zorvo runs it: the user's login environment (so their `GH_TOKEN`,
+/// `GITHUB_TOKEN`, `GH_CONFIG_DIR` and proxy settings count), without the
+/// variables in `DROPPED_ENV`, with colour and prompts off.
+fn gh_command(gh: &Path, user_env: &HashMap<String, String>) -> Command {
+    let mut command = Command::new(gh);
+    command.envs(user_env);
+    // After `envs`, and also for what the app itself inherited.
+    for name in DROPPED_ENV {
+        command.env_remove(name);
+    }
+    command.env("NO_COLOR", "1").env("GH_PROMPT_DISABLED", "1");
+    command
+}
+
+/// Runs gh in `dir` with stdin closed, in the user's login environment (see
+/// `gh_command`), and stops it after `timeout`. Whether it succeeded is the
+/// caller's to read from the output.
+pub(crate) fn capture_gh(
+    gh: &Path,
+    dir: &Path,
+    args: &[String],
+    timeout: Duration,
+) -> Result<GhOutput, String> {
+    let user_env = env_resolver::cached_user_env().unwrap_or_default();
+    capture_gh_in(gh, dir, args, timeout, &user_env)
+}
+
+fn capture_gh_in(
+    gh: &Path,
+    dir: &Path,
+    args: &[String],
+    timeout: Duration,
+    user_env: &HashMap<String, String>,
+) -> Result<GhOutput, String> {
+    let mut child = gh_command(gh, user_env)
         .current_dir(dir)
         .args(args)
         .stdin(Stdio::null())
@@ -172,16 +244,11 @@ fn run_gh_within(
         Some(Ok(bytes)) => String::from_utf8_lossy(&bytes).into_owned(),
         _ => String::new(),
     };
-    if !status.success() {
-        let error = text(&stderr).trim().to_string();
-        // A repository with no GitHub remote has no pull requests: nothing to show, not a failure.
-        return if is_not_on_github(&error) {
-            Ok(None)
-        } else {
-            Err(error)
-        };
-    }
-    Ok(Some(text(&stdout)))
+    Ok(GhOutput {
+        success: status.success(),
+        stdout: text(&stdout),
+        stderr: text(&stderr),
+    })
 }
 
 /// The pull request whose head is `branch` in the repository at `dir`, newest
@@ -323,6 +390,87 @@ mod tests {
         gh
     }
 
+    /// The environment gh really receives: what the user's shell exports, minus
+    /// what would colour its output, redirect it to another repository or add
+    /// debug lines, with colour and prompts off.
+    #[cfg(unix)]
+    #[test]
+    fn runs_gh_in_the_login_environment_without_what_breaks_its_output() {
+        let out = std::env::temp_dir().join(format!("gh-env-{}.txt", std::process::id()));
+        let gh = fake_gh("env", &format!("env > '{}'", out.display()));
+        let user_env: HashMap<String, String> = [
+            ("CLICOLOR_FORCE", "1"),
+            ("GH_FORCE_TTY", "120"),
+            ("GH_REPO", "other/repo"),
+            ("GH_DEBUG", "api"),
+            ("DEBUG", "1"),
+            ("GH_CONFIG_DIR", "/shell/gh"),
+            ("GH_TOKEN", "set-in-the-shell"),
+            ("GITHUB_TOKEN", "also-set-in-the-shell"),
+            ("HTTPS_PROXY", "http://proxy.example:3128"),
+        ]
+        .into_iter()
+        .map(|(name, value)| (name.to_string(), value.to_string()))
+        .collect();
+
+        let output = capture_gh_in(
+            &gh,
+            &std::env::temp_dir(),
+            &[],
+            Duration::from_secs(10),
+            &user_env,
+        )
+        .expect("run gh");
+
+        assert!(output.success);
+        let seen: HashMap<String, String> = std::fs::read_to_string(&out)
+            .expect("gh recorded its environment")
+            .lines()
+            .filter_map(|line| line.split_once('='))
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect();
+        for name in DROPPED_ENV {
+            assert!(!seen.contains_key(name), "{name} reached gh");
+        }
+        assert_eq!(seen.get("NO_COLOR").map(String::as_str), Some("1"));
+        assert_eq!(
+            seen.get("GH_PROMPT_DISABLED").map(String::as_str),
+            Some("1")
+        );
+        // What the user's shell sets for gh itself still counts.
+        assert_eq!(
+            seen.get("GH_CONFIG_DIR").map(String::as_str),
+            Some("/shell/gh")
+        );
+        assert_eq!(
+            seen.get("GH_TOKEN").map(String::as_str),
+            Some("set-in-the-shell")
+        );
+        assert_eq!(
+            seen.get("GITHUB_TOKEN").map(String::as_str),
+            Some("also-set-in-the-shell")
+        );
+        assert_eq!(
+            seen.get("HTTPS_PROXY").map(String::as_str),
+            Some("http://proxy.example:3128")
+        );
+        let _ = std::fs::remove_file(&out);
+    }
+
+    #[test]
+    fn removes_the_dropped_variables_from_what_the_app_itself_inherited() {
+        let command = gh_command(Path::new("gh"), &HashMap::new());
+
+        for name in DROPPED_ENV {
+            assert!(
+                command
+                    .get_envs()
+                    .any(|(key, value)| key == name && value.is_none()),
+                "{name} is not removed"
+            );
+        }
+    }
+
     #[cfg(unix)]
     #[test]
     fn stops_a_gh_that_does_not_answer_in_time() {
@@ -331,7 +479,10 @@ mod tests {
 
         let result = run_gh_within(&gh, &std::env::temp_dir(), &[], Duration::from_millis(200));
 
-        assert!(result.expect_err("a timeout").contains("did not answer"));
+        let error = result.expect_err("a timeout");
+        assert!(error.contains("did not answer"));
+        assert!(is_timeout_error(&error));
+        assert!(!is_timeout_error("Could not run gh: not found"));
         assert!(started.elapsed() < Duration::from_secs(5));
     }
 

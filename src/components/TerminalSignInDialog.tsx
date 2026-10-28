@@ -17,12 +17,12 @@ export interface TerminalSignInDialogProps {
   onResize: (cols: number, rows: number) => void;
 }
 
-function statusText({ phase, agentName, error }: TerminalSignInState): string {
+function statusText({ phase, agentName, error, note }: TerminalSignInState): string {
   switch (phase) {
     case "starting":
       return `Starting ${agentName}…`;
     case "running":
-      return "Finish signing in in the terminal. Zorvo continues when it closes.";
+      return note ?? "Finish signing in in the terminal. Zorvo continues when it closes.";
     case "checking":
       return "Checking your sign-in…";
     case "failed":

@@ -31,6 +31,9 @@ const SHORT_COMMIT_LEN: usize = 7;
 pub struct WorkspaceDetails {
     pub location: String,
     pub branch: Option<String>,
+    /// Whether the repository has a remote on github.com, which is where pull
+    /// requests and the GitHub CLI matter.
+    pub has_github_remote: bool,
 }
 
 /// The `.git` directory of the repository `dir` is in, following the `.git`
@@ -65,6 +68,56 @@ pub fn branch_of(dir: &Path) -> Option<String> {
     is_commit.then(|| head[..SHORT_COMMIT_LEN].to_string())
 }
 
+/// The host of a git remote URL: `https://github.com/o/r`, `ssh://git@github.com:22/o/r`,
+/// `git@github.com:o/r` and `github.com:o/r` all give `github.com`.
+fn remote_host(url: &str) -> &str {
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    let authority = rest.split('/').next().unwrap_or("");
+    let host_and_port = authority.rsplit('@').next().unwrap_or("");
+    host_and_port.split(':').next().unwrap_or("")
+}
+
+/// Whether a git `config` file has a remote whose URL is on github.com.
+pub fn remotes_include_github(config: &str) -> bool {
+    let mut in_remote = false;
+    for line in config.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_remote = line.starts_with("[remote ");
+        } else if in_remote && !line.starts_with(['#', ';']) {
+            let is_github_url = line.split_once('=').is_some_and(|(key, value)| {
+                key.trim().eq_ignore_ascii_case("url")
+                    && remote_host(value.trim().trim_matches('"'))
+                        .eq_ignore_ascii_case("github.com")
+            });
+            if is_github_url {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// The `config` file of the repository whose `.git` directory is `git_dir`: a
+/// linked worktree's `.git/worktrees/<name>` points to the main one's through
+/// its `commondir` file.
+fn config_path_of(git_dir: &Path) -> PathBuf {
+    let common_dir = fs::read_to_string(git_dir.join("commondir"))
+        .ok()
+        .map_or_else(
+            || git_dir.to_path_buf(),
+            |relative| git_dir.join(relative.trim()),
+        );
+    common_dir.join("config")
+}
+
+/// Whether the repository `dir` is in has a remote on github.com; false outside
+/// a repository. Read from git's `config` file, without running git.
+pub fn has_github_remote(dir: &Path) -> bool {
+    git_dir_of(dir)
+        .and_then(|git_dir| fs::read_to_string(config_path_of(&git_dir)).ok())
+        .is_some_and(|config| remotes_include_github(&config))
+}
+
 /// The folder that holds `path`, with the home folder shown as `~`.
 pub fn display_location(path: &Path, home: Option<&Path>) -> String {
     let parent = path.parent().unwrap_or(path);
@@ -87,5 +140,6 @@ pub fn workspace_details(
     Ok(WorkspaceDetails {
         location: display_location(path, home.as_deref()),
         branch: branch_of(path),
+        has_github_remote: has_github_remote(path),
     })
 }

@@ -25,6 +25,12 @@ export default function PrivacyPage() {
         The app never asks for or stores API keys or tokens. Agents sign in with their own tools, and pull request data
         comes from your own <Chip isCode>gh</Chip> login.
       </P>
+      <P>
+        Zorvo asks your <Chip isCode>gh</Chip> whether you are signed in to github.com and reads only your login and
+        name, to show them in the sidebar and in Settings. It stores neither, never reads or keeps a token, and
+        downloads no picture. <B>Connect</B> runs <Chip isCode>gh auth login</Chip> for github.com in a terminal, and
+        you sign in through your browser.
+      </P>
 
       <H2 id="hosts">A few hosts, all named</H2>
       <P>Zorvo&apos;s backend contacts these hosts, and only these:</P>

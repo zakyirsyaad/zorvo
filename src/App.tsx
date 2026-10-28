@@ -66,6 +66,7 @@ import { useAppUpdate } from "./hooks/useAppUpdate";
 import { ProfileFooter } from "./components/ProfileFooter";
 import { useNavigationHistory } from "./hooks/useNavigationHistory";
 import { useUserProfile } from "./hooks/useUserProfile";
+import { useGithubConnection } from "./hooks/useGithubConnection";
 import { useWorkspaceDetails } from "./hooks/useWorkspaceDetails";
 import { useBranchPicker } from "./hooks/useBranchPicker";
 import { usePopoutHost } from "./hooks/usePopoutHost";
@@ -141,6 +142,10 @@ export default function App() {
   useAutoEnabledAgents(agents, isLoaded, updateState);
   const suggestedFolders = useSuggestedFolders();
   const userProfile = useUserProfile();
+  const github = useGithubConnection();
+  // What stops pull requests being read, when the GitHub connection explains it.
+  const githubBlocker =
+    github.status?.state === "not-installed" || github.status?.state === "signed-out" ? github.status.state : undefined;
   const navigation = useNavigationHistory();
   const {
     workspaces,
@@ -170,6 +175,8 @@ export default function App() {
   // A session shows the folder it runs in, even one no longer in the recents.
   const shownFolderPath = activeSession?.cwd ?? activeWorkspacePath;
   const workspaceDetails = useWorkspaceDetails(shownFolderPath, reportError, branchCheck);
+  // Only a repository on github.com has pull requests to miss: the Changes panel says why it shows none, there only.
+  const githubProblem = workspaceDetails?.hasGithubRemote ? githubBlocker : undefined;
   // Files and Reveal act on the folder the top bar names. The backend browses
   // every saved session's folder, so one gone from the recents keeps them.
   const isRepository = Boolean(workspaceDetails?.branch);
@@ -355,10 +362,14 @@ export default function App() {
   const repoPullRequests = useRepoPullRequests(
     sidePanel.open === "changes" && isRepository ? filesFolder?.path : undefined,
     turnsEnded,
-    reportError,
+    // The panel already says gh is missing or signed out and points to Settings; gh's own error would only repeat it.
+    githubProblem ? () => {} : reportError,
   );
   const openPullRequest = (url: string) => {
     invoke("open_external_url", { url }).catch((error) => setNotice(`Could not open the pull request: ${String(error)}`));
+  };
+  const openLink = (url: string) => {
+    invoke("open_external_url", { url }).catch((error) => setNotice(`Could not open the link: ${String(error)}`));
   };
   // The agent may have checked out another branch: the top bar reads it again after each turn.
   useEffect(() => setBranchCheck(turnsEnded), [turnsEnded]);
@@ -690,6 +701,7 @@ export default function App() {
             <ProfileFooter
               name={userProfile.name}
               email={userProfile.email}
+              github={github.status}
               version={userProfile.version}
               updateCount={agentUpdates.updateCount}
               onOpenSettings={() => setSettingsTab("general")}
@@ -842,6 +854,8 @@ export default function App() {
                 onClose={sidePanel.close}
                 pullRequests={repoPullRequests}
                 onOpenPullRequest={openPullRequest}
+                githubProblem={githubProblem}
+                onOpenGithubSettings={() => setSettingsTab("general")}
                 diffStats={diffStats}
                 onOpenDiff={() => sidePanel.show("diff")}
               />
@@ -893,6 +907,8 @@ export default function App() {
         onRemoveRecentFolder={removeFolder}
         onRunOnboarding={handleRunOnboarding}
         onClose={() => setSettingsTab(null)}
+        github={github}
+        onOpenUrl={openLink}
       />
     </main>
   );

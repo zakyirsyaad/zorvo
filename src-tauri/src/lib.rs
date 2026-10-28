@@ -11,6 +11,7 @@ pub mod env_resolver;
 pub mod files;
 pub mod fork_handoff;
 pub mod git_info;
+pub mod github;
 pub mod installer;
 pub mod profiles;
 pub mod pty_session;
@@ -311,11 +312,14 @@ pub fn run() {
                         session_id
                     }
                 };
-                // Only sign-in terminals and workspace shells start a PTY; any
+                // Only sign-in terminals (an agent's, or GitHub's) and workspace shells start a PTY; any
                 // other id has no listener.
                 match pty_event_route(session_id) {
                     Some(PtyRoute::SignIn) => {
                         let _ = app.emit(SIGN_IN_TERMINAL_EVENT, sign_in_event_payload(&event));
+                    }
+                    Some(PtyRoute::GithubSignIn) => {
+                        let _ = app.emit(github::SIGN_IN_EVENT, sign_in_event_payload(&event));
                     }
                     Some(PtyRoute::Workspace) => {
                         let _ = app.emit(
@@ -419,6 +423,8 @@ pub fn run() {
             worktrees::create_session_worktree,
             worktrees::remove_session_worktree,
             user_profile::get_user_profile,
+            github::github_status,
+            github::github_start_sign_in,
             write_fork_handoff,
             acp::commands::acp_start_session,
             acp::commands::acp_reopen_session,

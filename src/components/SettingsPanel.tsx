@@ -1,4 +1,12 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from "react";
 import { Folder, RotateCcw, Trash2, X } from "lucide-react";
 import { readyAgents, type AgentSummary } from "../lib/agent-readiness";
 import type { Appearance } from "../lib/appearance";
@@ -21,6 +29,10 @@ export interface SettingsPanelProps {
   agentsPanel: ReactNode;
   /** Agents in use with an update, counted on the Agents tab. */
   updateCount: number;
+  /** The GitHub block at the top of General. */
+  githubSection?: ReactNode;
+  /** A dialog is open over Settings (the GitHub sign-in): Escape belongs to it, not to Settings. */
+  isEscapeBlocked?: boolean;
 }
 
 export type SettingsTab = "general" | "agents";
@@ -149,6 +161,7 @@ interface GeneralTabProps {
   onChangeDefaultAgent: (agentId: string) => void;
   onRemoveRecentFolder: (path: string) => void;
   onRunOnboarding: () => void;
+  githubSection?: ReactNode;
 }
 
 function GeneralTab({
@@ -160,12 +173,20 @@ function GeneralTab({
   onChangeDefaultAgent,
   onRemoveRecentFolder,
   onRunOnboarding,
+  githubSection,
 }: GeneralTabProps) {
   const selectId = useId();
   const appearanceId = useId();
   const ready = readyAgents(agents);
   return (
     <div className="flex flex-col gap-5">
+      {githubSection && (
+        <section aria-label="GitHub">
+          <h3 className={SECTION_HEADING}>GitHub</h3>
+          {githubSection}
+        </section>
+      )}
+
       <section>
         <label htmlFor={appearanceId} className={`block ${SECTION_HEADING}`}>
           Appearance
@@ -228,6 +249,7 @@ export function SettingsPanel({
   initialTab = "general",
   agentsPanel,
   updateCount,
+  isEscapeBlocked = false,
   ...general
 }: SettingsPanelProps) {
   const [tab, setTab] = useState<SettingsTab>(initialTab);
@@ -235,7 +257,10 @@ export function SettingsPanel({
   const tabsId = useId();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const idOf = (id: SettingsTab, part: "tab" | "panel") => `${tabsId}-${id}-${part}`;
-  useEscapeKey(onClose);
+  const handleEscape = useCallback(() => {
+    if (!isEscapeBlocked) onClose();
+  }, [isEscapeBlocked, onClose]);
+  useEscapeKey(handleEscape);
 
   // Move keyboard focus into the modal when it opens.
   useEffect(() => {

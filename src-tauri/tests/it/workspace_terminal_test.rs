@@ -198,6 +198,7 @@ fn close_refuses_ids_it_did_not_make() {
 fn pty_events_go_to_their_own_channel() {
     assert_eq!(pty_event_route("shell-3"), Some(PtyRoute::Workspace));
     assert_eq!(pty_event_route("signin-abc"), Some(PtyRoute::SignIn));
+    assert_eq!(pty_event_route("ghlogin-abc"), Some(PtyRoute::GithubSignIn));
     assert_eq!(pty_event_route("other"), None);
     // The channels themselves do not change.
     assert_eq!(EVENT, "workspace-terminal");

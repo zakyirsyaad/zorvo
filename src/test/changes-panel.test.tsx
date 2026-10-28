@@ -44,6 +44,40 @@ describe("ChangesPanel", () => {
     expect(screen.getByRole("button", { name: "Commit 3 files" })).toBeDefined();
   });
 
+  describe("when pull requests cannot be read because of GitHub", () => {
+    it("says the GitHub CLI is missing and opens Settings", () => {
+      const onOpenGithubSettings = vi.fn();
+      renderPanel({ pullRequests: null, onOpenPullRequest: vi.fn(), githubProblem: "not-installed", onOpenGithubSettings });
+
+      expect(screen.getByText("Pull requests need the GitHub CLI, which is not installed.")).toBeDefined();
+      fireEvent.click(screen.getByRole("button", { name: "Open GitHub settings" }));
+      expect(onOpenGithubSettings).toHaveBeenCalledTimes(1);
+    });
+
+    it("says the user is not connected", () => {
+      renderPanel({
+        pullRequests: null,
+        onOpenPullRequest: vi.fn(),
+        githubProblem: "signed-out",
+        onOpenGithubSettings: vi.fn(),
+      });
+
+      expect(screen.getByText("Pull requests need you to be connected to GitHub.")).toBeDefined();
+    });
+
+    it("says nothing when the pull requests were read", () => {
+      renderPanel({ pullRequests: [], onOpenPullRequest: vi.fn(), githubProblem: "signed-out", onOpenGithubSettings: vi.fn() });
+
+      expect(screen.queryByRole("button", { name: "Open GitHub settings" })).toBeNull();
+    });
+
+    it("says nothing without a GitHub problem", () => {
+      renderPanel({ pullRequests: null, onOpenPullRequest: vi.fn(), onOpenGithubSettings: vi.fn() });
+
+      expect(screen.queryByRole("button", { name: "Open GitHub settings" })).toBeNull();
+    });
+  });
+
   it("shows the diff-stat chip under the header and opens the diff from it", () => {
     const onOpenDiff = vi.fn();
     renderPanel({ diffStats: { added: 12, removed: 3 }, onOpenDiff });

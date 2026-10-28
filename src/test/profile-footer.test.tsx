@@ -86,6 +86,47 @@ describe("ProfileFooter", () => {
     });
   });
 
+  describe("GitHub connection", () => {
+    const signedIn = { state: "signed-in", login: "octocat", name: "The Octocat" } as const;
+
+    it("shows the GitHub name over git's, with its initials and a GitHub indicator", () => {
+      render(<ProfileFooter name="Iwang Nurhadi" email="iwang@example.com" github={signedIn} />);
+
+      expect(screen.getByText("The Octocat")).toBeDefined();
+      expect(screen.queryByText("Iwang Nurhadi")).toBeNull();
+      expect(screen.getByText("TO")).toBeDefined();
+      expect(screen.getByRole("img", { name: "Connected to GitHub" })).toBeDefined();
+    });
+
+    it("shows @login, with the login's initial, when GitHub has no name", () => {
+      render(<ProfileFooter name="Iwang Nurhadi" github={{ state: "signed-in", login: "octocat" }} />);
+
+      expect(screen.getByText("@octocat")).toBeDefined();
+      expect(screen.getByText("O")).toBeDefined();
+      expect(screen.getByRole("img", { name: "Connected to GitHub" })).toBeDefined();
+    });
+
+    it("keeps git's name, email and the neutral label, and shows no indicator, when not signed in", () => {
+      const { rerender } = render(<ProfileFooter name="Iwang Nurhadi" github={{ state: "signed-out" }} />);
+      expect(screen.getByText("Iwang Nurhadi")).toBeDefined();
+      expect(screen.queryByRole("img", { name: "Connected to GitHub" })).toBeNull();
+
+      rerender(<ProfileFooter email="iwang@example.com" github={{ state: "unknown", message: "offline" }} />);
+      expect(screen.getByText("iwang@example.com")).toBeDefined();
+
+      rerender(<ProfileFooter github={{ state: "not-installed" }} />);
+      expect(screen.getByText("Local user")).toBeDefined();
+      expect(screen.queryByRole("img", { name: "Connected to GitHub" })).toBeNull();
+    });
+
+    it("behaves as before while the first check has not answered", () => {
+      render(<ProfileFooter name="Iwang Nurhadi" github={null} />);
+
+      expect(screen.getByText("Iwang Nurhadi")).toBeDefined();
+      expect(screen.queryByRole("img", { name: "Connected to GitHub" })).toBeNull();
+    });
+  });
+
   describe("settings button", () => {
     it("calls onOpenSettings when clicked", () => {
       const onOpenSettings = vi.fn();

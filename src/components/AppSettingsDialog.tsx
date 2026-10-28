@@ -1,8 +1,12 @@
+import { useEffect, useRef } from "react";
 import { AgentCatalogPanel } from "./agents/AgentCatalogPanel";
+import { GithubSection } from "./GithubSection";
 import { SettingsPanel, type SettingsTab } from "./SettingsPanel";
+import { TerminalSignInDialog } from "./TerminalSignInDialog";
 import type { FolderOption } from "./onboarding/types";
 import type { AgentCatalogActions } from "../hooks/useAgentCatalogActions";
 import type { AgentCatalogHandle } from "../hooks/useAgentCatalog";
+import type { GithubConnection } from "../hooks/useGithubConnection";
 import type { PersistedStateHandle } from "../hooks/usePersistedState";
 import { pendingUpdates } from "../lib/agent-catalog";
 import { enabledAgentIds, isInUse } from "../lib/enabled-agents";
@@ -24,9 +28,13 @@ export interface AppSettingsDialogProps {
   onRemoveRecentFolder: (path: string) => void;
   onRunOnboarding: () => void;
   onClose: () => void;
+  /** The GitHub connection; General shows no GitHub section without it. */
+  github?: GithubConnection;
+  /** Opens a web link in the user's browser. */
+  onOpenUrl?: (url: string) => void;
 }
 
-/** The app's Settings dialog: General, and the agent catalog with its Add, Update and Remove. */
+/** The app's Settings dialog: General (with the GitHub connection), and the agent catalog with its Add, Update and Remove. */
 export function AppSettingsDialog({
   isOpen,
   initialTab,
@@ -39,35 +47,77 @@ export function AppSettingsDialog({
   onRemoveRecentFolder,
   onRunOnboarding,
   onClose,
+  github,
+  onOpenUrl,
 }: AppSettingsDialogProps) {
-  if (!isOpen) return null;
+  const githubRef = useRef<HTMLDivElement>(null);
+  const hadSignInDialog = useRef(false);
+  const hasSignInDialog = Boolean(github?.dialog);
+  useEffect(() => {
+    // The dialog gives focus back to the button that opened it. After a sign-in that worked that button is
+    // gone (the card shows the account now), so focus would drop to the page behind Settings.
+    if (hadSignInDialog.current && !hasSignInDialog) {
+      const focused = document.activeElement;
+      if (!focused || focused === document.body) githubRef.current?.focus();
+    }
+    hadSignInDialog.current = hasSignInDialog;
+  }, [hasSignInDialog]);
+
+  // The GitHub sign-in's dialog is drawn even when Settings is not: it belongs to a login that is running.
+  const signInDialog = github?.dialog ? (
+    <TerminalSignInDialog
+      state={github.dialog}
+      output={github.output}
+      onClose={github.closeDialog}
+      onTryAgain={github.connect}
+      onInput={github.sendInput}
+      onResize={github.resize}
+    />
+  ) : null;
+  if (!isOpen) return signInDialog;
 
   const { settings } = state;
   const enabledIds = enabledAgentIds(settings);
   const updateSettings = (patch: Partial<Settings>) =>
     updateState((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } }));
   return (
-    <SettingsPanel
-      initialTab={initialTab}
-      appearance={settings.appearance}
-      onChangeAppearance={(appearance) => updateSettings({ appearance })}
-      agents={agents.filter((agent) => isInUse(agent, settings))}
-      defaultAgentId={settings.defaultAgentId}
-      recentFolders={recentFolders}
-      onChangeDefaultAgent={(defaultAgentId) => updateSettings({ defaultAgentId })}
-      onRemoveRecentFolder={onRemoveRecentFolder}
-      onRunOnboarding={onRunOnboarding}
-      onClose={onClose}
-      updateCount={pendingUpdates(catalog.catalog?.agents ?? [], enabledIds).length}
-      agentsPanel={
-        <AgentCatalogPanel
-          agents={agents}
-          settings={settings}
-          refreshAgents={refreshAgents}
-          catalog={catalog}
-          actions={actions}
-        />
-      }
-    />
+    <>
+      <SettingsPanel
+        initialTab={initialTab}
+        appearance={settings.appearance}
+        onChangeAppearance={(appearance) => updateSettings({ appearance })}
+        agents={agents.filter((agent) => isInUse(agent, settings))}
+        defaultAgentId={settings.defaultAgentId}
+        recentFolders={recentFolders}
+        onChangeDefaultAgent={(defaultAgentId) => updateSettings({ defaultAgentId })}
+        onRemoveRecentFolder={onRemoveRecentFolder}
+        onRunOnboarding={onRunOnboarding}
+        onClose={onClose}
+        isEscapeBlocked={signInDialog !== null}
+        updateCount={pendingUpdates(catalog.catalog?.agents ?? [], enabledIds).length}
+        githubSection={
+          github && (
+            <GithubSection
+              ref={githubRef}
+              status={github.status}
+              isChecking={github.isChecking}
+              onCheck={() => void github.check()}
+              onConnect={github.connect}
+              onOpenUrl={(url) => onOpenUrl?.(url)}
+            />
+          )
+        }
+        agentsPanel={
+          <AgentCatalogPanel
+            agents={agents}
+            settings={settings}
+            refreshAgents={refreshAgents}
+            catalog={catalog}
+            actions={actions}
+          />
+        }
+      />
+      {signInDialog}
+    </>
   );
 }

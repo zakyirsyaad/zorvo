@@ -22,6 +22,10 @@ export interface ChangesPanelProps {
   /** The user's pull requests in this repository, newest first; none shown when null (gh missing, not on GitHub). */
   pullRequests?: PullRequestSummary[] | null;
   onOpenPullRequest?: (url: string) => void;
+  /** Why the pull requests cannot be read: the GitHub CLI is missing, or the user is not connected. */
+  githubProblem?: "not-installed" | "signed-out";
+  /** Opens the GitHub section of Settings, where the user fixes `githubProblem`. */
+  onOpenGithubSettings?: () => void;
   /** Lines added and removed against HEAD; a chip that opens the diff view shows when set. */
   diffStats?: { added: number; removed: number };
   onOpenDiff?: () => void;
@@ -92,6 +96,8 @@ export function ChangesPanel({
   onClose,
   pullRequests,
   onOpenPullRequest,
+  githubProblem,
+  onOpenGithubSettings,
   diffStats,
   onOpenDiff,
 }: ChangesPanelProps) {
@@ -168,6 +174,18 @@ export function ChangesPanel({
         <div className="max-h-[45%] shrink-0 overflow-y-auto">
           <PullRequestList pullRequests={pullRequests} onOpen={onOpenPullRequest} />
         </div>
+      )}
+      {!pullRequests && githubProblem && onOpenGithubSettings && (
+        <section aria-label="Pull requests" className="border-b border-border px-3 py-2">
+          <p className="text-[11px] text-fg-subtle">
+            {githubProblem === "not-installed"
+              ? "Pull requests need the GitHub CLI, which is not installed."
+              : "Pull requests need you to be connected to GitHub."}
+          </p>
+          <Button variant="ghost" onClick={onOpenGithubSettings} className="mt-1 px-2 py-1 text-[11px]">
+            Open GitHub settings
+          </Button>
+        </section>
       )}
       <div className="flex-1 overflow-y-auto p-1.5">
         {changes === null && <p className="px-2 py-1.5 text-[11px] text-fg-subtle">Reading the changes…</p>}

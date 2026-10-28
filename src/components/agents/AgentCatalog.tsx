@@ -3,6 +3,7 @@ import { RefreshCw, Search } from "lucide-react";
 import { AgentCatalogRow } from "./AgentCatalogRow";
 import { UnavailableAgents } from "./UnavailableAgents";
 import { Button } from "../ui/Button";
+import type { SettingsSignIn } from "../../hooks/useSettingsSignIn";
 import type { AgentCatalogActions } from "../../hooks/useAgentCatalogActions";
 import { catalogSections, formatCheckedAgo, unavailableSection } from "../../lib/agent-catalog";
 import { RECHECK_ERROR } from "../../lib/agent-readiness";
@@ -15,6 +16,8 @@ export interface AgentCatalogProps {
   agents: readonly AgentProfile[];
   enabledIds: readonly string[];
   actions: AgentCatalogActions;
+  /** Sign-in controls for the agents in use; absent where there is nothing to sign in to (onboarding). */
+  signIn?: SettingsSignIn;
   onCheckAgain: () => Promise<void>;
   onRetryLoad: () => void;
 }
@@ -71,7 +74,7 @@ function CatalogSection({ title, agents, isInUse, renderRow }: CatalogSectionPro
 }
 
 /** Every registry agent: search, Check again, and the agents in use above all the others. */
-export function AgentCatalog({ catalog, error, agents, enabledIds, actions, onCheckAgain, onRetryLoad }: AgentCatalogProps) {
+export function AgentCatalog({ catalog, error, agents, enabledIds, actions, signIn, onCheckAgain, onRetryLoad }: AgentCatalogProps) {
   const [query, setQuery] = useState("");
   // Kept here, not in the row: a removed agent's row moves to the other section and starts afresh.
   const [removeErrors, setRemoveErrors] = useState<Readonly<Record<string, string>>>({});
@@ -100,6 +103,7 @@ export function AgentCatalog({ catalog, error, agents, enabledIds, actions, onCh
       plan={agents.find((profile) => profile.id === agent.id)?.install_plan ?? null}
       runningSessionCount={actions.runningSessionCount(agent.id)}
       removeError={removeErrors[agent.id] ?? null}
+      signIn={signIn}
       onAdd={() => {
         setRemoveError(agent.id, null);
         actions.addAgent(agent.id);

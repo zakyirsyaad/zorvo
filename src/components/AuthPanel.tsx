@@ -1,6 +1,6 @@
 import { KeyRound, LogIn, X } from "lucide-react";
 import { Button } from "./ui/Button";
-import type { AuthMethod } from "../lib/acp-auth";
+import { authCopy, signInButtonLabel, type AuthMethod } from "../lib/acp-auth";
 
 export type AuthStatus = "idle" | "signing-in" | "checking" | "signed-in" | "failed";
 
@@ -21,8 +21,7 @@ export interface AuthPanelProps {
  * need a secret are only explained, since the app never asks for API keys.
  */
 export function AuthPanel({ agentName, methods, status, error, onSignIn, onCheckAgain, onDismiss }: AuthPanelProps) {
-  const hasButton = methods.some((method) => method.kind !== "explain");
-  const hasExplained = methods.some((method) => method.kind === "explain");
+  const copy = authCopy(agentName, methods);
   const isBusy = status === "signing-in" || status === "checking";
   const title = `Sign in to ${agentName}`;
   return (
@@ -49,16 +48,9 @@ export function AuthPanel({ agentName, methods, status, error, onSignIn, onCheck
         <p className="mt-2 text-status-running">Signed in to {agentName}. Send your message again.</p>
       ) : (
         <>
-          <p className="mt-1.5 text-fg-muted">{agentName} needs you to sign in before it can start.</p>
-          {!hasButton && (
-            <p className="mt-2 text-fg-secondary">Sign in with {agentName}&apos;s own command line tool, then check again.</p>
-          )}
-          {hasExplained && (
-            <p className="mt-2 text-fg-muted">
-              Zorvo never stores keys. To use a key or another account setting, set it up in {agentName} or your shell
-              (for example in ~/.zshrc), then check again.
-            </p>
-          )}
+          <p className="mt-1.5 text-fg-muted">{copy.lead}</p>
+          {copy.cliHint && <p className="mt-2 text-fg-secondary">{copy.cliHint}</p>}
+          {copy.keysNote && <p className="mt-2 text-fg-muted">{copy.keysNote}</p>}
           <ul className="mt-2 space-y-1.5">
             {methods.map((method) => (
               <li key={method.id} className="flex items-center justify-between gap-3">
@@ -74,7 +66,7 @@ export function AuthPanel({ agentName, methods, status, error, onSignIn, onCheck
                     icon={<LogIn size={12} />}
                     className="shrink-0"
                   >
-                    Sign in with {method.name}
+                    {signInButtonLabel(method)}
                   </Button>
                 )}
               </li>

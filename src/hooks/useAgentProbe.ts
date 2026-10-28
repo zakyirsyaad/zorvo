@@ -26,6 +26,31 @@ export interface AgentProbeDeps {
   onAuthRequired: (profileId: string, cwd: string, methods: AuthMethod[]) => void;
 }
 
+/** Reads what `acp_probe_agent` answered; null when the answer is not an object. */
+export function parseProbeAnswer(raw: unknown): { options: ProbedOptions; facts: ProbeFacts } | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const probed = raw as {
+    modes?: unknown;
+    models?: unknown;
+    configOptions?: unknown;
+    commands?: unknown;
+    signInChecked?: unknown;
+    canListSessions?: unknown;
+  };
+  return {
+    options: {
+      modes: toModes(probed.modes),
+      models: toModels(probed.models),
+      configOptions: toConfigOptions(probed.configOptions),
+      commands: toCommands(probed.commands),
+    },
+    facts: {
+      signInChecked: probed.signInChecked === true,
+      canListSessions: probed.canListSessions === true,
+    },
+  };
+}
+
 /**
  * Asks an ACP agent, as soon as it is picked for a new session, what it
  * offers (modes, models, efforts, slash commands) and whether it needs a
@@ -56,28 +81,11 @@ export function useAgentProbe({ agent, cwd, isKnown, onProbed, onAuthRequired }:
     const needsOptions = !callbacksRef.current.isKnown(agentId);
     invoke('acp_probe_agent', { profileId: agentId, cwd, needsOptions })
       .then((raw) => {
+        const answer = parseProbeAnswer(raw);
         // No answer to read: keep what is remembered rather than wipe it.
-        if (typeof raw !== 'object' || raw === null) return;
-        const probed = raw as {
-          modes?: unknown;
-          models?: unknown;
-          configOptions?: unknown;
-          commands?: unknown;
-          signInChecked?: unknown;
-          canListSessions?: unknown;
-        };
+        if (!answer) return;
         probedRef.current.add(agentId);
-        const options = {
-          modes: toModes(probed.modes),
-          models: toModels(probed.models),
-          configOptions: toConfigOptions(probed.configOptions),
-          commands: toCommands(probed.commands),
-        };
-        const facts: ProbeFacts = {
-          signInChecked: probed.signInChecked === true,
-          canListSessions: probed.canListSessions === true,
-        };
-        callbacksRef.current.onProbed(agentId, options, facts);
+        callbacksRef.current.onProbed(agentId, answer.options, answer.facts);
       })
       .catch((error: unknown) => {
         const methods = parseAuthRequired(error);

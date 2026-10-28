@@ -27,6 +27,12 @@ export default function SigningInPage() {
         yet. Click one that is not ready to start a new session with it: Zorvo checks it and shows the sign-in panel
         before you type, and the message box waits until you are signed in.
       </P>
+      <P>
+        <B>Settings → Agents</B> shows the same status on each agent in use, with a <B>Check sign-in</B> button. If the
+        agent needs you to sign in, its sign-in methods are listed there too, with the same buttons and explanations as
+        the panel. Gemini CLI and Qwen Code cannot say who is signed in, so checking one opens a session that stays in
+        its history; the button says so before you click it.
+      </P>
       <H2 id="in-zorvo">In Zorvo</H2>
       <P>
         An agent that offers its own login, such as Claude Code&apos;s Claude subscription, runs it in a terminal inside

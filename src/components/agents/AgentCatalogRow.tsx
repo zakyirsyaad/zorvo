@@ -2,7 +2,9 @@ import { useState } from "react";
 import { Download, Plus, RotateCcw } from "lucide-react";
 import { AgentLogo } from "../AgentLogo";
 import { InstallProgressLine } from "../InstallProgressLine";
+import { AgentSignIn } from "./AgentSignIn";
 import { Button } from "../ui/Button";
+import type { SettingsSignIn } from "../../hooks/useSettingsSignIn";
 import { useAgentInstall } from "../../hooks/useAgentInstall";
 import { rowActions, statusLine } from "../../lib/agent-catalog";
 import type { CatalogAgent, InstallStep } from "../../types";
@@ -15,6 +17,8 @@ export interface AgentCatalogRowProps {
   runningSessionCount: number;
   /** Why the last Remove could not delete Zorvo's copy; kept by the list, as the row moves section. */
   removeError: string | null;
+  /** Settings' sign-in controls; the row shows no sign-in without them (onboarding has none). */
+  signIn?: SettingsSignIn;
   onAdd: () => void;
   onUpdate: () => void;
   onRemove: () => void;
@@ -32,6 +36,7 @@ export function AgentCatalogRow({
   plan,
   runningSessionCount,
   removeError,
+  signIn,
   onAdd,
   onUpdate,
   onRemove,
@@ -44,6 +49,8 @@ export function AgentCatalogRow({
   // A failure is about an agent in use; once removed, its Add starts over.
   const hasFailed = job.status === "failed" && isInUse;
   // A program managed outside Zorvo may not be the registry's version.
+  // Only an agent that can start has a sign-in to check.
+  const canCheckSignIn = isInUse && signIn !== undefined && !["not_installed", "unsupported", "waiting"].includes(agent.status);
   const shownVersion = agent.location === null ? agent.version : null;
 
   return (
@@ -58,6 +65,8 @@ export function AgentCatalogRow({
           {statusLine(agent, plan, isInUse, { status: job.status, action: job.action, error: job.error })}
         </p>
         {agent.description && <p className="mt-1 line-clamp-2 text-[11px] text-fg-subtle">{agent.description}</p>}
+
+        {canCheckSignIn && <AgentSignIn agentId={agent.id} agentName={agent.name} signIn={signIn} />}
 
         {isBusy && <InstallProgressLine progress={job.progress} onCancel={job.cancel} action={job.action} />}
         {isBusy && job.error && <p className="mt-2 text-danger">{job.error}</p>}

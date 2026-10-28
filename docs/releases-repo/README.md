@@ -67,7 +67,9 @@
 - **Sign in without leaving the app.** An agent's own login runs in a terminal
   inside Zorvo. The sidebar shows which agents are **Ready**, which need you to
   **Sign in** and which are **Not checked** yet, and a new session shows the
-  sign-in panel before you type. When an agent needs an answer from you, it can
+  sign-in panel before you type. Settings → Agents shows the same status on
+  each agent, with **Check sign-in** and, when an agent needs one, its sign-in
+  methods. When an agent needs an answer from you, it can
   show a form in the chat, or send you to a web page.
 - **Pick up where you left off.** Continue a session you started in an agent's
   own CLI, and sessions resume after a restart.

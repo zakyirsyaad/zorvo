@@ -26,6 +26,7 @@ import { useRepoPullRequests } from "./hooks/useRepoPullRequests";
 import { useAgentSignIn } from "./hooks/useAgentSignIn";
 import { useAgentSignInStatus } from "./hooks/useAgentSignInStatus";
 import { useDraftAgentCheck } from "./hooks/useDraftAgentCheck";
+import { useSettingsSignIn } from "./hooks/useSettingsSignIn";
 import { useLatest } from "./hooks/useLatest";
 import { createSessionWorktree } from "./lib/session-worktree";
 import { sweepOrphans } from "./lib/orphan-sweep";
@@ -95,6 +96,7 @@ import {
   withRewound,
   type AcpChoices,
   type AgentOptions,
+  type ProbedOptions,
 } from "./lib/acp-draft";
 import type { Session, SessionWorktree, Settings } from "./types";
 
@@ -269,16 +271,27 @@ export default function App() {
     onRestore: restoreMessage,
   });
 
+  const rememberProbed = (profileId: string, probed: ProbedOptions) =>
+    updateState((prev) => ({
+      ...prev,
+      agentOptions: { ...prev.agentOptions, [profileId]: withProbed(prev.agentOptions?.[profileId], probed) },
+    }));
+  // Settings → Agents shows the same sign-in state as the sidebar, and checks and fixes it.
+  const settingsSignIn = useSettingsSignIn({
+    cwd: shownFolderPath ?? workspaces[0]?.path,
+    agents,
+    agentOptions: state.agentOptions,
+    rememberProbed,
+    status: signInStatus,
+    signIn,
+  });
+
   // A draft asks its ACP agent what it offers, and whether it needs a sign-in, before the first message.
   const agentCheck = useDraftAgentCheck({
     agent: isActiveRunning || !isDraftAgentReady ? undefined : draftAgent,
     cwd: shownFolderPath ?? undefined,
     agentOptions: state.agentOptions,
-    rememberProbed: (profileId, probed) =>
-      updateState((prev) => ({
-        ...prev,
-        agentOptions: { ...prev.agentOptions, [profileId]: withProbed(prev.agentOptions?.[profileId], probed) },
-      })),
+    rememberProbed,
     auth: signIn.auth,
     onSignedIn: signInStatus.markSignedIn,
   });
@@ -741,7 +754,12 @@ export default function App() {
                 onShow={() => { agentUpdates.acknowledge(); setSettingsTab("agents"); }}
                 onDismiss={agentUpdates.acknowledge}
               />
-              <SignInLayer signIn={signIn} agents={agents} agentId={activeSession?.profileId ?? newSessionAgent?.id} />
+              <SignInLayer
+                signIn={signIn}
+                agents={agents}
+                agentId={activeSession?.profileId ?? newSessionAgent?.id}
+                showTerminal={settingsTab === null}
+              />
               {installPanelAgent ? <AgentInstallPanel agent={installPanelAgent} /> : null}
               {activeSession && (currentMessages.length > 0 || isSessionBusy(activeSessionId) || activeSession.historyElsewhere) ? (
                 <ChatCanvas
@@ -908,6 +926,7 @@ export default function App() {
         onRunOnboarding={handleRunOnboarding}
         onClose={() => setSettingsTab(null)}
         github={github}
+        agentSignIn={settingsSignIn}
         onOpenUrl={openLink}
       />
     </main>

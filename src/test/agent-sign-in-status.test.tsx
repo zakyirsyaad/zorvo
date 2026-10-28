@@ -136,8 +136,8 @@ describe("AuthPanel for agents with several kinds of methods", () => {
   it("offers one sign-in button, for the method the app can run", () => {
     renderPanel();
 
-    expect(screen.getAllByRole("button", { name: /^Sign in with / })).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Sign in with Log in with Google" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^Log in with Google$/ })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Log in with Google" })).toBeInTheDocument();
   });
 
   it("says Zorvo never stores keys and offers Check again", () => {
@@ -153,7 +153,7 @@ describe("AuthPanel for agents with several kinds of methods", () => {
 
     expect(screen.getByText("Checking whether you are signed in…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Check again" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Sign in with Log in with Google" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Log in with Google" })).toBeDisabled();
   });
 });
 

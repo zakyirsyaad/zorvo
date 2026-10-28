@@ -31,10 +31,24 @@ describe("AuthPanel", () => {
     expect(screen.getByText("Use an API key to authenticate")).toBeTruthy();
   });
 
-  it("points to the command line tool when no method has a button", () => {
-    renderPanel({ methods: [explain] });
+  it("points to the command line tool when the agent listed no method", () => {
+    renderPanel({ methods: [] });
 
     expect(screen.getByText("Sign in with Claude Code's own command line tool, then check again.")).toBeTruthy();
+  });
+
+  it("does not tell an agent whose only method is a key to sign in", () => {
+    renderPanel({ methods: [explain] });
+
+    expect(screen.queryByText(/needs you to sign in/)).toBeNull();
+    expect(screen.getByText("Claude Code needs an API key or another account setting before it can start.")).toBeTruthy();
+  });
+
+  it("uses a method's name whole as its button when it starts with a verb", () => {
+    renderPanel({ methods: [{ id: "oauth-personal", name: "Log in with Google", kind: "agent" }] });
+
+    expect(screen.getByRole("button", { name: "Log in with Google" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Sign in with Log in/ })).toBeNull();
   });
 
   it("hides the command line hint when a method has a button", () => {

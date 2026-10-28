@@ -9,10 +9,12 @@ export interface SignInLayerProps {
   agents: AgentProfile[];
   /** The agent of the session or draft on screen: another agent's request waits until it is shown. */
   agentId: string | undefined;
+  /** False while Settings is open: it draws the login's dialog itself, above its own panel. */
+  showTerminal?: boolean;
 }
 
 /** The sign-in panel above the chat, and an agent's terminal login over the app while it runs. */
-export function SignInLayer({ signIn, agents, agentId }: SignInLayerProps) {
+export function SignInLayer({ signIn, agents, agentId, showTerminal = true }: SignInLayerProps) {
   const { auth, cancel, terminal } = signIn;
   const { authRequest } = auth;
   // The method the dialog's Try again runs once more.
@@ -40,7 +42,7 @@ export function SignInLayer({ signIn, agents, agentId }: SignInLayerProps) {
           onDismiss={auth.dismiss}
         />
       )}
-      {terminal.dialog && (
+      {terminal.dialog && showTerminal && (
         <TerminalSignInDialog
           state={terminal.dialog}
           output={terminal.output}

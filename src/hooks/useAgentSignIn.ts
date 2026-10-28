@@ -9,6 +9,9 @@ import type { AuthMethod } from '../lib/acp-auth';
 import { checkSignIn } from '../lib/sign-in-check';
 import type { AgentProfile, Session } from '../types';
 
+/** An agent and the methods it offers, for a sign-in started from outside the draft (Settings). */
+export type SignInStart = Pick<AuthRequest, 'profileId' | 'cwd' | 'methods'>;
+
 export interface AgentSignInDeps {
   agents: AgentProfile[];
   composerRef: RefObject<ComposerHandle | null>;
@@ -108,8 +111,7 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
     return true;
   };
 
-  const signInWith = async (methodId: string) => {
-    const request = authRequest;
+  const signInWith = async (methodId: string, request: AuthRequest | null = authRequest, isQuiet = false) => {
     const method = request?.methods.find((m) => m.id === methodId);
     if (!request || !method || method.kind === 'explain') return;
     const attempt = {};
@@ -136,19 +138,35 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
       setStatus('failed', reason);
       return;
     }
-    finishSignedIn(request, check === 'signed-in');
+    finishSignedIn(request, check === 'signed-in', isQuiet);
   };
 
   /**
    * The sign-in is taken as done: closes the login and sends the refused message again. The agent is
    * remembered as signed in only when it showed someone (`isSeen`), not when it just could not be asked.
    */
-  const finishSignedIn = (request: AuthRequest, isSeen: boolean) => {
+  const finishSignedIn = (request: AuthRequest, isSeen: boolean, isQuiet = false) => {
     if (isSeen) depsRef.current.onSignedIn?.(request.profileId);
     terminal.close();
-    // The composer takes focus: the dialog's opener, the panel's button, is gone by now.
-    depsRef.current.composerRef.current?.focus();
+    // The composer takes focus: the dialog's opener, the panel's button, is gone by now. A sign-in
+    // started in Settings leaves focus there, for the row to take.
+    if (!isQuiet) depsRef.current.composerRef.current?.focus();
     if (!sendRefused(request.pending)) setStatus('signed-in');
+  };
+
+  const lastStartRef = useRef<{ start: SignInStart; methodId: string } | null>(null);
+
+  /** Signs in to an agent from Settings: the same login as the draft's panel, for the methods the row shows. */
+  const startSignIn = (start: SignInStart, methodId: string) => {
+    lastStartRef.current = { start, methodId };
+    requestSignIn(start.profileId, start.cwd, start.methods);
+    void signInWith(methodId, { ...start, status: 'idle' }, true);
+  };
+
+  /** The login dialog's Try again, for a sign-in started with `startSignIn`. */
+  const retryStart = () => {
+    const last = lastStartRef.current;
+    if (last) startSignIn(last.start, last.methodId);
   };
 
   /** Asks the agent again, for a sign-in made outside the app (a key in the shell, a terminal). */
@@ -180,5 +198,5 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
     dismiss,
   };
 
-  return { auth, handBack, cancel, terminal };
+  return { auth, handBack, cancel, terminal, startSignIn, retryStart };
 }

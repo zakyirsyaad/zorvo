@@ -102,6 +102,26 @@ export function composerPlaceholder(state: {
 }
 
 /**
+ * The line under the prompt: why Send is blocked, else that the agent's options are loading. The
+ * reason stays while the user types (the placeholder does not), and outranks the loading line.
+ */
+export function composerNote(state: {
+  /** The draft agent's name while it must be installed before a message can be sent. */
+  agentToInstall?: string;
+  /** The draft agent's name while its sign-in panel is open. */
+  agentToSignIn?: string;
+  /** The next message continues a session rather than starting one. */
+  continuesSession: boolean;
+  /** The draft agent's name while its models and commands are being asked for. */
+  agentLoading?: string;
+}): string | undefined {
+  if (state.agentToInstall) return installPlaceholder(state.agentToInstall, state.continuesSession);
+  if (state.agentToSignIn) return signInPlaceholder(state.agentToSignIn, state.continuesSession);
+  if (state.agentLoading) return `Loading ${state.agentLoading}'s models and commands…`;
+  return undefined;
+}
+
+/**
  * The slash commands the composer offers: a live ACP session's own; before
  * it runs, the ones its agent offered last time.
  */

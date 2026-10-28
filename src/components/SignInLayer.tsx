@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AuthPanel } from "./AuthPanel";
 import { TerminalSignInDialog } from "./TerminalSignInDialog";
+import { authCopy } from "../lib/acp-auth";
 import type { useAgentSignIn } from "../hooks/useAgentSignIn";
 import type { AgentProfile } from "../types";
 
@@ -28,15 +29,22 @@ export function SignInLayer({ signIn, agents, agentId, showTerminal = true }: Si
   const retryId = methodId !== null && authRequest?.methods.some((m) => m.id === methodId) ? methodId : null;
   // The request stays: switching back to its agent shows the panel again.
   const isForVisibleAgent = authRequest !== null && authRequest.profileId === agentId;
+  const agentName = authRequest ? (agents.find((a) => a.id === authRequest.profileId)?.name ?? authRequest.profileId) : "";
+  // Said when the panel appears: a live region that is already there announces what it is given, a new one does not.
+  const appeared = authRequest && isForVisibleAgent && authRequest.status !== "signed-in" ? `Sign-in needed. ${authCopy(agentName, authRequest.methods).lead}` : "";
 
   return (
     <>
+      <p role="status" className="sr-only">
+        {appeared}
+      </p>
       {authRequest && isForVisibleAgent && (
         <AuthPanel
-          agentName={agents.find((a) => a.id === authRequest.profileId)?.name ?? authRequest.profileId}
+          agentName={agentName}
           methods={authRequest.methods}
           status={authRequest.status}
           error={authRequest.error}
+          hasReturnedMessage={authRequest.pending !== undefined}
           onSignIn={signInWith}
           onCheckAgain={auth.recheck}
           onDismiss={auth.dismiss}

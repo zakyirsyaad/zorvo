@@ -21,3 +21,16 @@ export async function checkSignIn(profileId: string, cwd: string): Promise<SignI
     return parseAuthRequired(error) ? 'signed-out' : 'unknown';
   }
 }
+
+/**
+ * Reads the agents and the login shell's environment afresh, so a key exported in the shell's
+ * startup files after Zorvo started is seen by the next check. A refresh that fails (the failure
+ * is reported by the caller's own handler) never stops the check that follows.
+ */
+export async function refreshQuietly(refresh: () => Promise<void>): Promise<void> {
+  try {
+    await refresh();
+  } catch {
+    // The check goes on with the environment it has.
+  }
+}

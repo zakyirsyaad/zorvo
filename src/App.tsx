@@ -87,7 +87,7 @@ import { pickFiles } from "./lib/file-picker";
 import { useFileDrop } from "./hooks/useFileDrop";
 import { isAgentReady, isAgentRunnable, noAgentNotice, resolveDraftAgentId } from "./lib/agent-readiness";
 import { isInUse, removedAgentNameFor } from "./lib/enabled-agents";
-import { composerCommandsFor, composerPlaceholder, composerStateFor } from "./lib/composer-state";
+import { composerCommandsFor, composerNote, composerPlaceholder, composerStateFor } from "./lib/composer-state";
 import {
   NO_CHOICES,
   rememberedChoice,
@@ -265,6 +265,7 @@ export default function App() {
     onSignInNeeded: signInStatus.markNeeded,
     onSignedIn: signInStatus.markSignedIn,
     onSignInBlocked: reportError,
+    refreshAgents,
     agents,
     composerRef,
     activeSessionIdRef,
@@ -285,6 +286,7 @@ export default function App() {
     rememberProbed,
     status: signInStatus,
     signIn,
+    refreshAgents,
   });
 
   // A draft asks its ACP agent what it offers, and whether it needs a sign-in, before the first message.
@@ -828,11 +830,12 @@ export default function App() {
                     onAttach={pickFiles}
                     handleRef={composerRef}
                     commands={composerCommands}
-                    note={
-                      !isActiveRunning && draftAgent && agentCheck.isProbing(draftAgent.id)
-                        ? `Loading ${draftAgent.name}'s models and commands…`
-                        : undefined
-                    }
+                    note={composerNote({
+                      agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
+                      agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
+                      continuesSession: isResumable || Boolean(activeSession),
+                      agentLoading: !isActiveRunning && draftAgent && agentCheck.isProbing(draftAgent.id) ? draftAgent.name : undefined,
+                    })}
                     contextUsage={isActiveRunning ? acp.info[activeSessionId]?.usage : undefined}
                     mentions={filesFolder ? { root: filesFolder.path, loadFiles: () => shell.loadWorkspaceFiles(filesFolder.path) } : undefined}
                     folder={

@@ -160,6 +160,14 @@ describe("signing in to an ACP agent from the app", () => {
     expect(document.activeElement).toBe(prompt());
   });
 
+  it("says in the panel that the refused message is back in the box and is sent again", async () => {
+    const { panel } = await sendRefused();
+
+    expect(
+      panel.getByText("Your message is back in the box below. Zorvo sends it again once you are signed in, unless you change it."),
+    ).toBeDefined();
+  });
+
   it("shows the session running again once the refused message is sent", async () => {
     const { spy, panel } = await sendRefused();
 
@@ -223,6 +231,101 @@ describe("signing in to an ACP agent from the app", () => {
     await waitFor(() => expect(promptedTexts(spy)).toEqual(["hello"]));
     expect(callsTo(spy, "acp_authenticate")).toHaveLength(0);
     expect(screen.queryByRole("region", { name: "Sign in to Qwen Code" })).toBeNull();
+  });
+
+  /** The names of the commands the spy saw, in order, with the refresh and the re-check marked. */
+  const sequenceOf = (spy: { mock: { calls: unknown[][] } }) =>
+    (spy.mock.calls as unknown as InvokeCall[]).flatMap(([name, args]) => {
+      if (name === "get_agent_profiles" && args?.refresh === true) return ["refresh"];
+      if (name === "acp_probe_agent" && isRecheck(args)) return ["probe"];
+      return [];
+    });
+
+  it("Check again reads the login shell's environment afresh before it asks the agent", async () => {
+    const keyMethods = [{ id: "api-key", name: "API Key", _meta: { "api-key": { provider: "x" } } }];
+    const { spy, panel } = await sendRefused({
+      methods: keyMethods,
+      overrides: {
+        acp_probe_agent: (args) => (isRecheck(args) ? Promise.resolve({ signInChecked: true }) : realInvoke("acp_probe_agent", args)),
+      },
+    });
+    expect(sequenceOf(spy)).toEqual([]);
+
+    await act(async () => {
+      fireEvent.click(panel.getByRole("button", { name: "Check again" }));
+    });
+
+    await waitFor(() => expect(promptedTexts(spy)).toEqual(["hello"]));
+    expect(sequenceOf(spy)).toEqual(["refresh", "probe"]);
+  });
+
+  it("Check again shows it is checking while the environment is read", async () => {
+    const refresh = deferred();
+    const keyMethods = [{ id: "api-key", name: "API Key", _meta: { "api-key": { provider: "x" } } }];
+    const { spy, panel } = await sendRefused({
+      methods: keyMethods,
+      overrides: {
+        get_agent_profiles: (args) => (args?.refresh === true ? refresh.promise : realInvoke("get_agent_profiles", args)),
+        acp_probe_agent: (args) => (isRecheck(args) ? Promise.resolve({ signInChecked: true }) : realInvoke("acp_probe_agent", args)),
+      },
+    });
+
+    await act(async () => {
+      fireEvent.click(panel.getByRole("button", { name: "Check again" }));
+    });
+
+    expect(screen.getByText("Checking whether you are signed in…")).toBeDefined();
+    expect((panel.getByRole("button", { name: "Check again" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(sequenceOf(spy)).toEqual(["refresh"]);
+
+    await act(async () => {
+      refresh.resolve([]);
+    });
+    await waitFor(() => expect(sequenceOf(spy)).toEqual(["refresh", "probe"]));
+  });
+
+  it("Check again still asks the agent when reading the environment fails", async () => {
+    const keyMethods = [{ id: "api-key", name: "API Key", _meta: { "api-key": { provider: "x" } } }];
+    const { spy, panel } = await sendRefused({
+      methods: keyMethods,
+      overrides: {
+        get_agent_profiles: (args) => (args?.refresh === true ? Promise.reject("login shell timed out") : realInvoke("get_agent_profiles", args)),
+        acp_probe_agent: (args) => (isRecheck(args) ? Promise.resolve({ signInChecked: true }) : realInvoke("acp_probe_agent", args)),
+      },
+    });
+
+    await act(async () => {
+      fireEvent.click(panel.getByRole("button", { name: "Check again" }));
+    });
+
+    await waitFor(() => expect(promptedTexts(spy)).toEqual(["hello"]));
+    expect(sequenceOf(spy)).toEqual(["refresh", "probe"]);
+  });
+
+  it("a Check again dismissed while the environment is read asks nobody and sends nothing", async () => {
+    const refresh = deferred();
+    const keyMethods = [{ id: "api-key", name: "API Key", _meta: { "api-key": { provider: "x" } } }];
+    const { spy, panel } = await sendRefused({
+      methods: keyMethods,
+      overrides: {
+        get_agent_profiles: (args) => (args?.refresh === true ? refresh.promise : realInvoke("get_agent_profiles", args)),
+        acp_probe_agent: (args) => (isRecheck(args) ? Promise.resolve({ signInChecked: true }) : realInvoke("acp_probe_agent", args)),
+      },
+    });
+    await act(async () => {
+      fireEvent.click(panel.getByRole("button", { name: "Check again" }));
+    });
+    await act(async () => {
+      fireEvent.click(panel.getByRole("button", { name: "Dismiss sign-in" }));
+    });
+
+    await act(async () => {
+      refresh.resolve([]);
+    });
+
+    expect(sequenceOf(spy)).toEqual(["refresh"]);
+    expect(callsTo(spy, "acp_prompt")).toHaveLength(0);
+    expect(prompt().value).toBe("hello");
   });
 
   it("Check again says the agent still is signed out when it says so", async () => {
@@ -444,6 +547,7 @@ describe("signing in to an ACP agent from the app", () => {
         composerRef: { current: null },
         activeSessionIdRef: { current: "session-a" },
         retryAfterSignIn: () => Promise.resolve(true),
+        refreshAgents: () => Promise.resolve(),
         onRestore: () => {},
       }),
     );
@@ -468,6 +572,7 @@ describe("signing in to an ACP agent from the app", () => {
         composerRef: { current: null },
         activeSessionIdRef: { current: "session-a" },
         retryAfterSignIn: () => Promise.resolve(true),
+        refreshAgents: () => Promise.resolve(),
         onRestore: () => {},
         onSignInNeeded,
       }),
@@ -503,6 +608,7 @@ describe("signing in to an ACP agent from the app", () => {
         composerRef: { current: null },
         activeSessionIdRef: { current: "session-a" },
         retryAfterSignIn,
+        refreshAgents: () => Promise.resolve(),
         onRestore: () => {},
       }),
     );

@@ -3,7 +3,8 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { AgentCatalog } from "../components/agents/AgentCatalog";
 import { AgentCatalogPanel } from "../components/agents/AgentCatalogPanel";
-import { AgentSignIn, plainReason, sessionWarning } from "../components/agents/AgentSignIn";
+import { AgentSignIn, sessionWarning } from "../components/agents/AgentSignIn";
+import { plainReason } from "../lib/agent-sign-in";
 import { useAgentSignIn } from "../hooks/useAgentSignIn";
 import { useAgentSignInStatus } from "../hooks/useAgentSignInStatus";
 import { useSettingsSignIn, type AgentCheck, type SettingsSignIn } from "../hooks/useSettingsSignIn";
@@ -134,15 +135,16 @@ describe("the warning before a check", () => {
     renderRow(fakeSignIn({ reportsStatusOf: () => false }), "Gemini CLI");
 
     const warning =
-      "Gemini CLI cannot say who is signed in, so checking opens a session in zorvo that stays in its history. " +
-      "It can run your project's hooks. Signing in checks the same way.";
+      "Gemini CLI cannot say who is signed in, so Zorvo opens a session in the zorvo folder to find out. " +
+      "That session may stay in Gemini CLI's history and may run your project's hooks. After you sign in, Zorvo checks the same way.";
     expect(screen.getByText(warning)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Check sign-in" })).toHaveAccessibleDescription(warning);
   });
 
   it("says a session may open while it is not known whether the agent can report", () => {
     expect(sessionWarning("Claude Agent", undefined, CWD)).toBe(
-      "Checking may open a session in zorvo in Claude Agent's history. It can run your project's hooks. Signing in checks the same way.",
+      "If Claude Agent cannot say who is signed in, Zorvo opens a session in the zorvo folder to find out. " +
+        "That session may stay in Claude Agent's history and may run your project's hooks. After you sign in, Zorvo checks the same way.",
     );
   });
 
@@ -208,7 +210,12 @@ const KNOWN_OPTIONS = { modes: null, configOptions: [], commands: [{ name: "revi
 
 /** The hook over the real sign-in store, so a check's effect on the sidebar's state can be read. */
 function setupHook(
-  overrides: { cwd?: string | undefined; agentOptions?: Record<string, AgentOptions>; authRequest?: AuthRequest } = {},
+  overrides: {
+    cwd?: string | undefined;
+    agentOptions?: Record<string, AgentOptions>;
+    authRequest?: AuthRequest;
+    refreshAgents?: () => Promise<void>;
+  } = {},
 ) {
   let state = { settings: { signedInAgents: [] as string[] } as Settings } as PersistedState;
   const updateState = vi.fn((updater: (prev: PersistedState) => PersistedState) => {
@@ -235,6 +242,7 @@ function setupHook(
         rememberProbed,
         status,
         signIn,
+        refreshAgents: overrides.refreshAgents ?? (() => Promise.resolve()),
       });
       return { status, settingsSignIn };
     },
@@ -267,6 +275,48 @@ describe("Check sign-in", () => {
     // It is not known whether Claude Code reports who is signed in, so nothing is said about who.
     expect(hook.result.current.settingsSignIn.checkOf("claude-acp").message).toBe("Claude Code looks ready.");
     expect(rememberProbed).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the login shell's environment afresh before it asks the agent", async () => {
+    const order: string[] = [];
+    vi.spyOn(internals(), "invoke").mockImplementation((cmd) => {
+      order.push(cmd);
+      return Promise.resolve(structuredClone(PROBED));
+    });
+    const refreshAgents = vi.fn(() => {
+      order.push("refresh");
+      return Promise.resolve();
+    });
+    const { hook } = setupHook({ refreshAgents });
+
+    act(() => hook.result.current.settingsSignIn.check("claude-acp"));
+    // The check shows as running from the click, through the refresh.
+    expect(hook.result.current.settingsSignIn.checkOf("claude-acp").phase).toBe("checking");
+    await waitFor(() => expect(hook.result.current.settingsSignIn.checkOf("claude-acp").phase).toBe("done"));
+
+    expect(order).toEqual(["refresh", "acp_probe_agent"]);
+    expect(refreshAgents).toHaveBeenCalledTimes(1);
+  });
+
+  it("still asks the agent when reading the environment fails", async () => {
+    const spy = vi.spyOn(internals(), "invoke").mockResolvedValue(structuredClone(PROBED));
+    const { hook } = setupHook({ refreshAgents: () => Promise.reject(new Error("login shell timed out")) });
+
+    act(() => hook.result.current.settingsSignIn.check("claude-acp"));
+    await waitFor(() => expect(hook.result.current.settingsSignIn.checkOf("claude-acp").phase).toBe("done"));
+
+    expect(argsOf(spy, "acp_probe_agent")).toHaveLength(1);
+    expect(hook.result.current.settingsSignIn.checkOf("claude-acp").message).toBe("Claude Code looks ready.");
+  });
+
+  it("does not read the environment for the check that runs when Settings opens", async () => {
+    vi.spyOn(internals(), "invoke").mockResolvedValue({ reportsStatus: true, signInChecked: true });
+    const refreshAgents = vi.fn(() => Promise.resolve());
+    const { hook } = setupHook({ agentOptions: { "claude-acp": KNOWN_OPTIONS }, refreshAgents });
+
+    await act(async () => hook.result.current.settingsSignIn.sweep(["claude-acp"]));
+
+    expect(refreshAgents).not.toHaveBeenCalled();
   });
 
   it("only asks about the sign-in when the agent's options are known", async () => {
@@ -674,6 +724,7 @@ describe("a sign-in started from Settings", () => {
         composerRef: { current: { focus } as never },
         activeSessionIdRef: { current: undefined },
         retryAfterSignIn: () => Promise.resolve(true),
+        refreshAgents: () => Promise.resolve(),
         onRestore: vi.fn(),
         onSignInNeeded,
         onSignedIn,
@@ -735,6 +786,7 @@ describe("a sign-in that is running is not cut off", () => {
         composerRef: { current: { focus: vi.fn(), restore } as never },
         activeSessionIdRef: { current: "s2" },
         retryAfterSignIn: () => Promise.resolve(true),
+        refreshAgents: () => Promise.resolve(),
         onRestore: vi.fn(),
         onSignInNeeded,
         onSignInBlocked,
@@ -816,6 +868,7 @@ describe("Try again after a failed login from Settings", () => {
         composerRef: { current: { focus: vi.fn() } as never },
         activeSessionIdRef: { current: undefined },
         retryAfterSignIn: () => Promise.resolve(true),
+        refreshAgents: () => Promise.resolve(),
         onRestore: vi.fn(),
       }),
     );

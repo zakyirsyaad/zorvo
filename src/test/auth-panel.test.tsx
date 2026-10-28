@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { AuthPanel, type AuthPanelProps } from "../components/AuthPanel";
@@ -63,5 +64,53 @@ describe("AuthPanel", () => {
     const buttons = screen.getAllByRole("button", { name: /^Sign in with/ });
     expect(buttons).toHaveLength(2);
     for (const button of buttons) expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("keeps one live region mounted and puts each progress line and result in it", () => {
+    const { rerender } = render(
+      <AuthPanel agentName="Claude Code" methods={[terminal]} status="idle" onSignIn={vi.fn()} onCheckAgain={vi.fn()} onDismiss={vi.fn()} />,
+    );
+    const region = screen.getByRole("status");
+    expect(region).toBeEmptyDOMElement();
+
+    const props = { agentName: "Claude Code", methods: [terminal], onSignIn: vi.fn(), onCheckAgain: vi.fn(), onDismiss: vi.fn() };
+    const lines: [AuthPanelProps["status"], string | undefined, string][] = [
+      ["signing-in", undefined, "Finish signing in in the window that opened…"],
+      ["checking", undefined, "Checking whether you are signed in…"],
+      ["failed", "Claude Code still says you are signed out", "Sign-in failed: Claude Code still says you are signed out"],
+      ["signed-in", undefined, "Signed in to Claude Code. Send your message again."],
+    ];
+    for (const [status, error, text] of lines) {
+      rerender(<AuthPanel {...props} status={status} error={error} />);
+      // The same element throughout: a region that is replaced is not announced.
+      expect(screen.getByRole("status")).toBe(region);
+      expect(region).toHaveTextContent(text);
+    }
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+  });
+
+  it("replaces a failure reason that is long or has a path with a plain sentence", () => {
+    for (const error of ["spawn /Users/test/.npm/_npx/x/bin/claude ENOENT", "x".repeat(200), "line one\nline two", undefined]) {
+      const { unmount } = render(
+        <AuthPanel agentName="Claude Code" methods={[terminal]} status="failed" error={error} onSignIn={vi.fn()} onCheckAgain={vi.fn()} onDismiss={vi.fn()} />,
+      );
+      expect(screen.getByRole("status")).toHaveTextContent("Sign-in failed: Zorvo could not finish the sign-in. Try again.");
+      expect(screen.queryByText(/ENOENT|xxxx/)).toBeNull();
+      unmount();
+    }
+  });
+
+  it("says the refused message is back in the box only when it was put back", () => {
+    const { rerender } = render(
+      <AuthPanel agentName="Claude Code" methods={[terminal]} status="idle" onSignIn={vi.fn()} onCheckAgain={vi.fn()} onDismiss={vi.fn()} />,
+    );
+    expect(screen.queryByText(/Your message is back in the box below/)).toBeNull();
+
+    rerender(
+      <AuthPanel agentName="Claude Code" methods={[terminal]} status="idle" hasReturnedMessage onSignIn={vi.fn()} onCheckAgain={vi.fn()} onDismiss={vi.fn()} />,
+    );
+    expect(
+      screen.getByText("Your message is back in the box below. Zorvo sends it again once you are signed in, unless you change it."),
+    ).toBeTruthy();
   });
 });

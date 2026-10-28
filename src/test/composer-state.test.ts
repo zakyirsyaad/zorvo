@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { COMPOSER_PLACEHOLDERS, composerCommandsFor, composerPlaceholder, composerStateFor, type ComposerInputs } from "../lib/composer-state";
+import { COMPOSER_PLACEHOLDERS, composerCommandsFor, composerNote, composerPlaceholder, composerStateFor, type ComposerInputs } from "../lib/composer-state";
 import { NO_CHOICES, withRewound, type AgentOptions } from "../lib/acp-draft";
 import { TRANSPORT_ACP, type AgentProfile, type Session, type SlashCommand } from "../types";
 
@@ -183,5 +183,25 @@ describe("composerStateFor", () => {
 
   it("offers a draft agent that reported nothing no controls", () => {
     expect(composerStateFor(inputs({ draftAgent, agentOptions: {} }))).toEqual({ controls: {} });
+  });
+});
+
+describe("composerNote", () => {
+  it("says why Send is blocked, in the words of the placeholder", () => {
+    expect(composerNote({ continuesSession: false, agentToInstall: "Qwen Code" })).toBe("Install Qwen Code to start a session.");
+    expect(composerNote({ continuesSession: true, agentToInstall: "Qwen Code" })).toBe("Install Qwen Code to continue this session.");
+    expect(composerNote({ continuesSession: false, agentToSignIn: "Qwen Code" })).toBe("Sign in to Qwen Code to send a message.");
+    expect(composerNote({ continuesSession: true, agentToSignIn: "Qwen Code" })).toBe("Sign in to Qwen Code to continue this session.");
+  });
+
+  it("puts the install or sign-in reason before the loading line, and the loading line before nothing", () => {
+    expect(composerNote({ continuesSession: false, agentToSignIn: "Qwen Code", agentLoading: "Qwen Code" })).toBe(
+      "Sign in to Qwen Code to send a message.",
+    );
+    expect(composerNote({ continuesSession: false, agentToInstall: "Gemini CLI", agentToSignIn: "Qwen Code", agentLoading: "Qwen Code" })).toBe(
+      "Install Gemini CLI to start a session.",
+    );
+    expect(composerNote({ continuesSession: false, agentLoading: "Qwen Code" })).toBe("Loading Qwen Code's models and commands…");
+    expect(composerNote({ continuesSession: false })).toBeUndefined();
   });
 });

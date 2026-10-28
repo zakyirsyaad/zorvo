@@ -1,4 +1,7 @@
-use zorvo_lib::registry::schema::{current_platform, parse_registry, Distribution, RegistryEntry};
+use zorvo_lib::registry::schema::{
+    current_platform, parse_registry, parse_registry_report, Distribution, RegistryEntry,
+    UnavailableAgent, UnavailableReason,
+};
 
 const SHA: &str = "c2d0fecd27acf6e08be02c1f5d384614d07495587766bcc4a6bff3971749bb64";
 
@@ -166,10 +169,9 @@ fn skips_a_cmd_that_is_absolute_or_climbs() {
 }
 
 #[test]
-fn skips_an_entry_with_no_or_two_distributions() {
+fn skips_an_entry_with_no_distribution() {
     let none = r#"{"id":"none","name":"N","version":"1.0.0","distribution":{}}"#;
-    let two = r#"{"id":"two","name":"N","version":"1.0.0","distribution":{"npx":{"package":"a@1.0.0"},"uvx":{"package":"a@1.0.0"}}}"#;
-    let json = doc(&[none.into(), two.into(), npx("ok", "a@1.0.0")]);
+    let json = doc(&[none.into(), npx("ok", "a@1.0.0")]);
     assert_eq!(ids(&parse_registry(&json).unwrap()), vec!["ok"]);
 }
 
@@ -459,4 +461,262 @@ fn keeps_every_binary_agent_in_the_bundled_history() {
         }
     }
     assert!(kept > 0, "the bundle has binary agents this machine keeps");
+}
+
+// Entries that offer several distribution kinds, and agents Zorvo lists but cannot offer.
+
+const LIVE_SAMPLE: &str = include_str!("../fixtures/registry-live-sample.json");
+
+fn live_entry(id: &str) -> RegistryEntry {
+    let entries = parse_registry(LIVE_SAMPLE).unwrap();
+    entries
+        .into_iter()
+        .find(|e| e.id == id)
+        .unwrap_or_else(|| panic!("{id} is offered"))
+}
+
+fn unavailable(json: &str) -> Vec<UnavailableAgent> {
+    parse_registry_report(json).unwrap().unavailable
+}
+
+/// An entry offering a binary for this Mac (`sha`) and an npx package.
+fn binary_and_npx(id: &str, sha: &str, package: &str) -> String {
+    format!(
+        r#"{{"id":"{id}","name":"Both","version":"1.0.0","distribution":{{"npx":{{"package":"{package}","args":["acp"]}},"binary":{{"{platform}":{target}}}}}}}"#,
+        platform = current_platform(),
+        target = target("https://h/o.zip", "./o", sha),
+    )
+}
+
+fn is_binary(entry: &RegistryEntry) -> bool {
+    matches!(entry.distribution, Distribution::Binary { .. })
+}
+
+#[test]
+fn live_kilo_and_sigit_entries_offer_both_kinds_and_are_accepted() {
+    // The registry publishes `binary` and `npx` for both; they used to vanish.
+    for (id, package) in [
+        ("kilo", "@kilocode/cli@7.8.18"),
+        ("sigit", "@smbcloud/sigit@1.7.5"),
+    ] {
+        let entry = live_entry(id);
+        match &entry.distribution {
+            Distribution::Binary { platforms } => {
+                let target = &platforms[current_platform()];
+                assert!(target.archive.starts_with("https://github.com/"));
+                assert_eq!(target.sha256.len(), 64);
+            }
+            Distribution::Npx {
+                package: chosen, ..
+            } => {
+                // A platform the registry has no build for falls back to the package.
+                assert_eq!(chosen, package);
+                assert!(!current_platform().starts_with("darwin"));
+            }
+            other => panic!("{id}: expected binary or npx, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn live_kilo_prefers_the_verified_binary_on_a_mac() {
+    if !current_platform().starts_with("darwin") {
+        return;
+    }
+    assert!(is_binary(&live_entry("kilo")));
+    assert!(is_binary(&live_entry("sigit")));
+}
+
+#[test]
+fn the_chosen_distribution_is_stored_as_one_kind_and_reads_back_the_same() {
+    let entry = live_entry("kilo");
+    let value = serde_json::to_value(&entry).unwrap();
+    let kinds = value["distribution"].as_object().unwrap();
+    assert_eq!(kinds.len(), 1, "only the chosen kind is stored");
+    let back: RegistryEntry = serde_json::from_value(value).unwrap();
+    assert_eq!(back, entry);
+}
+
+#[test]
+fn a_verified_binary_for_this_mac_beats_a_pinned_package() {
+    let json = doc(&[binary_and_npx("both", SHA, "a@1.0.0")]);
+    let entries = parse_registry(&json).unwrap();
+    assert!(is_binary(&entries[0]));
+}
+
+#[test]
+fn falls_back_to_the_pinned_package_when_the_binary_has_no_valid_checksum() {
+    for sha in ["", "abc"] {
+        let json = doc(&[binary_and_npx("both", sha, "a@1.0.0")]);
+        let report = parse_registry_report(&json).unwrap();
+        assert!(report.unavailable.is_empty());
+        assert!(matches!(
+            report.entries[0].distribution,
+            Distribution::Npx { ref package, .. } if package == "a@1.0.0"
+        ));
+    }
+}
+
+#[test]
+fn a_failing_binary_candidate_is_not_weakened_by_the_package_beside_it() {
+    // An unsafe command stays refused; the pinned package is what runs.
+    let both = binary_and_npx("both", SHA, "a@1.0.0").replace("./o", "/bin/sh");
+    let entries = parse_registry(&doc(&[both])).unwrap();
+    assert!(matches!(entries[0].distribution, Distribution::Npx { .. }));
+}
+
+#[test]
+fn a_binary_without_a_build_for_this_mac_yields_to_a_pinned_package() {
+    let json = format!(
+        r#"{{"id":"other","name":"O","version":"1.0.0","distribution":{{"binary":{{"linux-riscv":{t}}},"npx":{{"package":"a@1.0.0"}}}}}}"#,
+        t = target("https://h/o.zip", "./o", SHA),
+    );
+    let entries = parse_registry(&doc(&[json])).unwrap();
+    assert!(matches!(entries[0].distribution, Distribution::Npx { .. }));
+}
+
+#[test]
+fn a_binary_only_entry_without_a_build_for_this_mac_stays_as_before() {
+    // Offered (shown as unsupported by the catalog), never reported as unavailable.
+    let json = doc(&[binary_on(
+        "elsewhere",
+        &[("linux-riscv", target("https://h/o.zip", "./o", SHA))],
+    )]);
+    let report = parse_registry_report(&json).unwrap();
+    assert_eq!(ids(&report.entries), vec!["elsewhere"]);
+    assert!(report.unavailable.is_empty());
+}
+
+#[test]
+fn prefers_npx_over_uvx_when_both_are_pinned() {
+    let json = r#"{"id":"two","name":"N","version":"1.0.0","distribution":{"npx":{"package":"a@1.0.0"},"uvx":{"package":"a==1.0.0"}}}"#;
+    let entries = parse_registry(&doc(&[json.into()])).unwrap();
+    assert!(matches!(entries[0].distribution, Distribution::Npx { .. }));
+}
+
+#[test]
+fn single_kind_entries_parse_exactly_as_before() {
+    let json = doc(&[
+        npx("gemini", "@google/gemini-cli@0.64.0"),
+        binary("opencode", "https://h/o.zip", "./opencode", SHA),
+        npx("loose", "y@latest"),
+        binary("bad-sha", "https://h/o.zip", "./o", "abc"),
+    ]);
+    let report = parse_registry_report(&json).unwrap();
+    assert_eq!(ids(&report.entries), vec!["gemini", "opencode"]);
+    assert_eq!(report.entries, parse_registry(&json).unwrap());
+}
+
+#[test]
+fn live_binaries_without_a_checksum_are_reported_not_offered() {
+    let report = parse_registry_report(LIVE_SAMPLE).unwrap();
+    assert!(report
+        .entries
+        .iter()
+        .all(|e| e.id != "cursor" && e.id != "stakpak"));
+    if !current_platform().starts_with("darwin") {
+        return;
+    }
+    let cursor = report
+        .unavailable
+        .iter()
+        .find(|a| a.id == "cursor")
+        .expect("cursor is reported");
+    assert_eq!(cursor.reason, UnavailableReason::NoChecksum);
+    assert_eq!(cursor.name, "Cursor");
+    assert!(cursor.description.is_some());
+    assert!(report.unavailable.iter().any(|a| a.id == "stakpak"));
+}
+
+#[test]
+fn a_binary_with_no_checksum_is_reported_with_that_reason() {
+    let missing = format!(
+        r#"{{"id":"unsigned","name":"Unsigned","version":"1.0.0","description":"d","distribution":{{"binary":{{"{}":{{"archive":"https://h/o.zip","cmd":"./o"}}}}}}}}"#,
+        current_platform()
+    );
+    let found = unavailable(&doc(&[missing, npx("ok", "a@1.0.0")]));
+    assert_eq!(
+        found,
+        vec![UnavailableAgent {
+            id: "unsigned".into(),
+            name: "Unsigned".into(),
+            description: Some("d".into()),
+            reason: UnavailableReason::NoChecksum,
+        }]
+    );
+}
+
+#[test]
+fn other_failures_are_reported_as_invalid_entries() {
+    let broken = r#"{"id":"broken","name":"Broken","version":"1.0.0","distribution":{"npx":{}}}"#;
+    let no_name = r#"{"id":"nameless","version":"1.0.0","distribution":{}}"#;
+    let json = doc(&[
+        npx("loose", "y@latest"),
+        broken.into(),
+        no_name.into(),
+        binary("bad-cmd", "https://h/o.zip", "/bin/sh", SHA),
+        binary("http-only", "http://h/o.zip", "./o", SHA),
+    ]);
+    let found = unavailable(&json);
+    let reasons: Vec<(&str, UnavailableReason)> =
+        found.iter().map(|a| (a.id.as_str(), a.reason)).collect();
+    assert_eq!(
+        reasons,
+        vec![
+            ("loose", UnavailableReason::InvalidEntry),
+            ("broken", UnavailableReason::InvalidEntry),
+            ("nameless", UnavailableReason::InvalidEntry),
+            ("bad-cmd", UnavailableReason::InvalidEntry),
+            ("http-only", UnavailableReason::InvalidEntry),
+        ]
+    );
+    assert_eq!(
+        found[2].name, "nameless",
+        "the id stands in for a missing name"
+    );
+}
+
+#[test]
+fn an_entry_with_no_usable_id_is_left_out_of_both_lists() {
+    let reserved = npx("aider", "a@1.0.0");
+    let report = parse_registry_report(&doc(&[
+        npx("Bad_Id", "a@1.0.0"),
+        reserved,
+        r#"{"name":"No id"}"#.into(),
+        "42".into(),
+    ]))
+    .unwrap();
+    assert!(report.entries.is_empty());
+    assert!(report.unavailable.is_empty());
+}
+
+#[test]
+fn the_report_keeps_the_registry_order() {
+    let json = doc(&[
+        npx("z-bad", "y@latest"),
+        npx("a-ok", "a@1.0.0"),
+        npx("m-bad", "y@latest"),
+    ]);
+    let report = parse_registry_report(&json).unwrap();
+    assert_eq!(ids(&report.entries), vec!["a-ok"]);
+    let reported: Vec<&str> = report.unavailable.iter().map(|a| a.id.as_str()).collect();
+    assert_eq!(reported, vec!["z-bad", "m-bad"]);
+}
+
+#[test]
+fn a_malformed_kind_does_not_hide_a_valid_one_beside_it() {
+    // The binary map has a target that cannot be read at all (no `cmd`).
+    let json = r#"{"id":"mixed","name":"M","version":"1.0.0","distribution":{"binary":{"windows-x86_64":{"archive":"https://h/o.zip"}},"npx":{"package":"a@1.0.0"}}}"#;
+    let entries = parse_registry(&doc(&[json.into()])).unwrap();
+    assert!(matches!(entries[0].distribution, Distribution::Npx { .. }));
+}
+
+#[test]
+fn a_null_checksum_counts_as_missing() {
+    let json = format!(
+        r#"{{"id":"nulled","name":"N","version":"1.0.0","distribution":{{"binary":{{"{}":{{"archive":"https://h/o.zip","cmd":"./o","sha256":null}}}}}}}}"#,
+        current_platform()
+    );
+    let found = unavailable(&doc(&[json]));
+    assert_eq!(found[0].reason, UnavailableReason::NoChecksum);
 }

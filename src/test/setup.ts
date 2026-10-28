@@ -160,7 +160,7 @@ export function fakeTauriInvoke(cmd: string, args?: unknown): Promise<unknown> {
     return Promise.resolve(structuredClone(fakeProfiles));
   }
   if (cmd === "get_agent_catalog") {
-    return Promise.resolve({ lastChecked: null, agents: structuredClone(fakeCatalog) });
+    return Promise.resolve({ lastChecked: null, agents: structuredClone(fakeCatalog), unavailable: [] });
   }
   if (cmd === "get_agent_icons") {
     return Promise.resolve({});

@@ -9,6 +9,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::history::VersionHistory;
+use super::schema::UnavailableAgent;
 use crate::store::atomic_write;
 
 const HISTORY_FILE: &str = "registry-history.json";
@@ -34,6 +35,11 @@ pub(super) struct RegistryCache {
     /// caches written before it was recorded.
     #[serde(default)]
     pub withdrawn: BTreeMap<String, BTreeSet<String>>,
+    /// The agents the registry listed that Zorvo cannot offer. `None` in caches
+    /// written before it was recorded; such a cache counts as stale, so the
+    /// next start fetches again instead of showing no such agents for a day.
+    #[serde(default)]
+    pub unavailable: Option<Vec<UnavailableAgent>>,
 }
 
 impl RegistryCache {

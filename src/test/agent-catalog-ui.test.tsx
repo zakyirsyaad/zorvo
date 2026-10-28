@@ -63,7 +63,7 @@ const NO_ACTIONS: AgentCatalogActions = {
 
 function renderCatalog(overrides: Partial<Parameters<typeof AgentCatalog>[0]> = {}) {
   const props = {
-    catalog: { lastChecked: null, agents: fakeCatalog } as Catalog | null,
+    catalog: { lastChecked: null, agents: fakeCatalog, unavailable: [] } as Catalog | null,
     error: null,
     agents: fakeProfiles,
     enabledIds: ["claude-acp", "codex-acp", "qwen-code"],
@@ -112,6 +112,7 @@ describe("AgentCatalog", () => {
           }),
           makeCatalogAgent({ id: "goose", name: "Goose", version: "2.0.0", status: "on_your_mac", location: null }),
         ],
+        unavailable: [],
       },
       enabledIds: [],
     });
@@ -119,6 +120,66 @@ describe("AgentCatalog", () => {
     expect(row("OpenCode")).toHaveTextContent("Managed outside Zorvo · /opt/homebrew/bin/opencode");
     expect(row("OpenCode")).not.toHaveTextContent("1.19.3");
     expect(row("Goose")).toHaveTextContent("2.0.0");
+  });
+
+  describe("Not available section", () => {
+    const unavailable: Catalog["unavailable"] = [
+      { id: "cursor", name: "Cursor", description: "Cursor's coding agent", reason: "no_checksum" },
+      { id: "broken", name: "Broken", description: null, reason: "invalid_entry" },
+    ];
+    const withUnavailable = { lastChecked: null, agents: fakeCatalog, unavailable };
+    const notAvailable = (count: number) =>
+      screen.getByRole("button", { name: new RegExp(`^Not available \\(${count}\\)$`) });
+
+    it("is collapsed until opened, then lists each agent with its reason and no buttons", () => {
+      renderCatalog({ catalog: withUnavailable });
+
+      expect(notAvailable(2)).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByRole("listitem", { name: "Cursor" })).not.toBeInTheDocument();
+
+      fireEvent.click(notAvailable(2));
+
+      expect(notAvailable(2)).toHaveAttribute("aria-expanded", "true");
+      expect(row("Cursor")).toHaveTextContent(
+        "The registry publishes no checksum for this download, so Zorvo cannot verify it.",
+      );
+      expect(row("Cursor")).toHaveTextContent("Cursor's coding agent");
+      expect(row("Broken")).toHaveTextContent("cannot run it");
+      expect(within(row("Cursor")).queryByRole("button")).not.toBeInTheDocument();
+
+      fireEvent.click(notAvailable(2));
+      expect(screen.queryByRole("listitem", { name: "Cursor" })).not.toBeInTheDocument();
+    });
+
+    it("is not shown when the registry lists nothing Zorvo cannot offer", () => {
+      renderCatalog();
+
+      expect(screen.queryByRole("button", { name: /^Not available/ })).not.toBeInTheDocument();
+    });
+
+    it("is covered by the search: matches open on their own and the count follows", () => {
+      renderCatalog({ catalog: withUnavailable });
+      const search = screen.getByRole("searchbox", { name: "Search agents" });
+
+      fireEvent.change(search, { target: { value: "cursor" } });
+
+      expect(notAvailable(1)).toHaveAttribute("aria-expanded", "true");
+      expect(row("Cursor")).toBeInTheDocument();
+      expect(screen.queryByRole("listitem", { name: "Broken" })).not.toBeInTheDocument();
+      expect(screen.queryByText(/No agents match/)).not.toBeInTheDocument();
+
+      fireEvent.change(search, { target: { value: "zzz" } });
+
+      expect(screen.queryByRole("button", { name: /^Not available/ })).not.toBeInTheDocument();
+      expect(screen.getByText('No agents match "zzz".')).toBeInTheDocument();
+    });
+
+    it("never offers Add or Install for these agents", () => {
+      renderCatalog({ catalog: withUnavailable });
+      fireEvent.click(notAvailable(2));
+
+      expect(within(section(/^Not available \(2\)$/)).queryByRole("button", { name: /^(Add|Install)$/ })).toBeNull();
+    });
   });
 
   it("filters the rows by the search and says when nothing matches", () => {
@@ -135,7 +196,7 @@ describe("AgentCatalog", () => {
 
   it("says when the registry was last checked", () => {
     const twoHoursAgo = Math.floor(Date.now() / 1000) - 2 * 3600;
-    renderCatalog({ catalog: { lastChecked: twoHoursAgo, agents: fakeCatalog } });
+    renderCatalog({ catalog: { lastChecked: twoHoursAgo, agents: fakeCatalog, unavailable: [] } });
 
     expect(screen.getByText("Registry checked 2 hours ago")).toBeInTheDocument();
   });
@@ -145,7 +206,7 @@ describe("AgentCatalog", () => {
     try {
       const now = Math.floor(Date.now() / 1000);
       const baseline = vi.getTimerCount();
-      renderCatalog({ catalog: { lastChecked: now - 30, agents: fakeCatalog } });
+      renderCatalog({ catalog: { lastChecked: now - 30, agents: fakeCatalog, unavailable: [] } });
       expect(screen.getByText("Registry checked just now")).toBeInTheDocument();
 
       act(() => {
@@ -362,6 +423,7 @@ describe("Catalog actions — Update", () => {
       makeCatalogAgent({ id: "claude-acp", name: "Claude Code", version: "1.0.0", updateVersion: "1.1.0", status: "by_zorvo" }),
       ...fakeCatalog.filter((agent) => agent.id !== "claude-acp"),
     ],
+    unavailable: [],
   };
 
   it("updates the agent, records and saves its version, then reloads profiles and catalog", async () => {

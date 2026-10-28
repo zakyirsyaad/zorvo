@@ -1,4 +1,4 @@
-import type { CatalogAgent, CatalogStatus, InstallStep, Settings } from '../types';
+import type { CatalogAgent, CatalogStatus, InstallStep, Settings, UnavailableAgent, UnavailableReason } from '../types';
 import { describePlan } from './install-plan';
 import type { InstallStatus } from './agent-installs';
 
@@ -7,7 +7,7 @@ const SECONDS_PER_HOUR = 3_600;
 const SECONDS_PER_DAY = 86_400;
 
 /** Case-insensitive match of the trimmed query against name, id and description. */
-export function matchesQuery(agent: CatalogAgent, query: string): boolean {
+export function matchesQuery(agent: Pick<CatalogAgent, 'id' | 'name' | 'description'>, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (needle === '') return true;
   return [agent.name, agent.id, agent.description ?? ''].some((text) => text.toLowerCase().includes(needle));
@@ -38,6 +38,21 @@ export function catalogSections(
     .filter((agent) => !enabledIds.includes(agent.id))
     .sort((a, b) => OTHERS_RANK[a.status] - OTHERS_RANK[b.status] || byName(a, b));
   return { inUse, others };
+}
+
+const UNAVAILABLE_REASONS: Record<UnavailableReason, string> = {
+  no_checksum: 'The registry publishes no checksum for this download, so Zorvo cannot verify it.',
+  invalid_entry: 'The registry entry for this agent is incomplete or fails the safety checks Zorvo applies, so Zorvo cannot run it.',
+};
+
+/** What to tell the user about why an agent the registry lists cannot be added. */
+export function unavailableReasonText(reason: UnavailableReason): string {
+  return UNAVAILABLE_REASONS[reason];
+}
+
+/** The agents Zorvo cannot offer that match `query`, by name. */
+export function unavailableSection(agents: readonly UnavailableAgent[], query: string): UnavailableAgent[] {
+  return agents.filter((agent) => matchesQuery(agent, query)).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** How an agent's install or update is going, for its status line. */

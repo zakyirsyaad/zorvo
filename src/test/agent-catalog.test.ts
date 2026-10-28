@@ -7,11 +7,13 @@ import {
   pendingUpdates,
   rowActions,
   statusLine,
+  unavailableReasonText,
+  unavailableSection,
   withAgentAdded,
   withAgentRemoved,
 } from "../lib/agent-catalog";
 import { makeCatalogAgent } from "./fixtures/catalog";
-import type { InstallStep, Settings } from "../types";
+import type { InstallStep, Settings, UnavailableAgent } from "../types";
 
 const settings: Settings = { appearance: "system", defaultAgentId: null, onboardingCompleted: true };
 const ids = (agents: { id: string }[]) => agents.map((a) => a.id);
@@ -57,6 +59,27 @@ describe("matchesQuery", () => {
     expect(matchesQuery(agent, "   ")).toBe(true);
     expect(matchesQuery(agent, "CODE")).toBe(true);
     expect(matchesQuery(agent, "zzz")).toBe(false);
+  });
+});
+
+describe("unavailable agents", () => {
+  const unavailable: UnavailableAgent[] = [
+    { id: "cursor", name: "Cursor", description: "Cursor's coding agent", reason: "no_checksum" },
+    { id: "broken", name: "Broken", description: null, reason: "invalid_entry" },
+  ];
+
+  it("words each reason", () => {
+    expect(unavailableReasonText("no_checksum")).toBe(
+      "The registry publishes no checksum for this download, so Zorvo cannot verify it.",
+    );
+    expect(unavailableReasonText("invalid_entry")).toContain("cannot run it");
+  });
+
+  it("sorts by name and filters by name, id and description", () => {
+    expect(unavailableSection(unavailable, "").map((agent) => agent.id)).toEqual(["broken", "cursor"]);
+    expect(unavailableSection(unavailable, " CURSOR ").map((agent) => agent.id)).toEqual(["cursor"]);
+    expect(unavailableSection(unavailable, "coding agent").map((agent) => agent.id)).toEqual(["cursor"]);
+    expect(unavailableSection(unavailable, "zzz")).toEqual([]);
   });
 });
 

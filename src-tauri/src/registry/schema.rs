@@ -44,9 +44,17 @@ pub struct BinaryTarget {
     pub cmd: String,
     #[serde(default)]
     pub args: Vec<String>,
+    /// Missing in some registry entries; an empty value never passes
+    /// validation, so such a target is reported instead of run.
+    #[serde(default, deserialize_with = "sha256_or_empty")]
     pub sha256: String,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+}
+
+/// A missing or `null` checksum reads as empty, which never validates.
+fn sha256_or_empty<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[derive(Serialize, Deserialize)]
@@ -58,7 +66,7 @@ struct PackageWire {
     env: BTreeMap<String, String>,
 }
 
-/// The registry's own `distribution` shape: exactly one of the three keys.
+/// The registry's own `distribution` shape: one or more of the three keys.
 #[derive(Serialize, Deserialize)]
 struct DistributionWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -114,24 +122,192 @@ impl From<Distribution> for DistributionWire {
     }
 }
 
+/// Why Zorvo lists a registry agent but cannot offer it. A closed set: the UI
+/// words each one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnavailableReason {
+    /// The download for this Mac publishes no valid SHA-256, so Zorvo cannot
+    /// verify it and never runs it.
+    NoChecksum,
+    /// The entry is malformed or fails a validation rule (unpinned package,
+    /// unsafe command, unsafe environment variable, ...).
+    InvalidEntry,
+}
+
+/// A registry agent that failed validation, with just enough to show it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnavailableAgent {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub reason: UnavailableReason,
+}
+
+/// What a registry document holds: the entries Zorvo can offer, and the agents
+/// it lists but cannot.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ParsedRegistry {
+    pub entries: Vec<RegistryEntry>,
+    pub unavailable: Vec<UnavailableAgent>,
+}
+
 /// Parses a registry document, keeping only the entries that pass validation.
 /// Fails only when the document itself is not a registry.
 pub fn parse_registry(json: &str) -> Result<Vec<RegistryEntry>, String> {
+    parse_registry_report(json).map(|parsed| parsed.entries)
+}
+
+/// [`parse_registry`], also reporting the agents that failed validation. An
+/// entry with no usable id (or an id the app reserves) is left out of both:
+/// there is nothing to show it as.
+pub fn parse_registry_report(json: &str) -> Result<ParsedRegistry, String> {
     let root: Value =
         serde_json::from_str(json).map_err(|e| format!("registry is not valid JSON: {e}"))?;
     let agents = root
         .get("agents")
         .and_then(Value::as_array)
         .ok_or_else(|| "registry has no agents list".to_string())?;
-    Ok(agents.iter().filter_map(parse_entry).collect())
+    let mut parsed = ParsedRegistry::default();
+    for agent in agents {
+        match assess(agent) {
+            Assessment::Offered(entry) => parsed.entries.push(entry),
+            Assessment::Unavailable(unavailable) => parsed.unavailable.push(unavailable),
+            Assessment::Ignored => {}
+        }
+    }
+    Ok(parsed)
 }
 
 /// Deserializes one registry entry and applies the validation rules; `None` when
 /// it is malformed or fails them. Shared by the registry and the version history.
 pub fn parse_entry(value: &Value) -> Option<RegistryEntry> {
-    serde_json::from_value::<RegistryEntry>(value.clone())
-        .ok()
+    match assess(value) {
+        Assessment::Offered(entry) => Some(entry),
+        Assessment::Unavailable(_) | Assessment::Ignored => None,
+    }
+}
+
+enum Assessment {
+    Offered(RegistryEntry),
+    Unavailable(UnavailableAgent),
+    Ignored,
+}
+
+/// An entry as the registry writes it. Its `distribution` may offer several
+/// kinds, each read on its own so one malformed kind cannot hide another.
+#[derive(Deserialize)]
+struct EntryWire {
+    id: String,
+    name: String,
+    version: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    icon: Option<String>,
+    distribution: Value,
+}
+
+fn assess(value: &Value) -> Assessment {
+    let Some(id) = value
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| is_valid_id(id) && !is_reserved_id(id))
+    else {
+        return Assessment::Ignored;
+    };
+    let unavailable = |reason| {
+        Assessment::Unavailable(UnavailableAgent {
+            id: id.to_string(),
+            name: value
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|name| !name.is_empty())
+                .unwrap_or(id)
+                .to_string(),
+            description: value
+                .get("description")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            reason,
+        })
+    };
+    match serde_json::from_value::<EntryWire>(value.clone()) {
+        Err(_) => unavailable(UnavailableReason::InvalidEntry),
+        Ok(wire) => match choose_distribution(wire) {
+            Ok(entry) => Assessment::Offered(entry),
+            Err(reason) => unavailable(reason),
+        },
+    }
+}
+
+/// Picks the one distribution Zorvo runs from those an entry offers, by this
+/// preference (the first that passes [`is_valid_entry`] wins):
+///
+/// 1. a binary with a build for this Mac, whose checksum is valid;
+/// 2. a pinned `npx` package;
+/// 3. a pinned `uvx` package;
+/// 4. a valid binary with no build for this Mac, which the catalog shows as
+///    unsupported, so it is chosen only when nothing runnable is offered.
+///
+/// A candidate that fails validation is never chosen and never weakens a rule:
+/// the choice only decides which valid candidate runs. An entry that offers one
+/// kind behaves exactly as it did before several were accepted.
+fn choose_distribution(wire: EntryWire) -> Result<RegistryEntry, UnavailableReason> {
+    let EntryWire {
+        id,
+        name,
+        version,
+        description,
+        icon,
+        distribution,
+    } = wire;
+    let kind = |name: &str| distribution.get(name).cloned();
+    let binary = kind("binary")
+        .and_then(|raw| serde_json::from_value::<BTreeMap<String, BinaryTarget>>(raw).ok());
+    let checksum_missing = binary
+        .as_ref()
+        .and_then(|platforms| platforms.get(current_platform()))
+        .is_some_and(|target| !is_sha256(&target.sha256));
+    let mut candidates = Vec::new();
+    if let Some(platforms) = binary {
+        candidates.push(Distribution::Binary { platforms });
+    }
+    let package = |name: &str| kind(name).and_then(|raw| serde_json::from_value(raw).ok());
+    if let Some(PackageWire { package, args, env }) = package("npx") {
+        candidates.push(Distribution::Npx { package, args, env });
+    }
+    if let Some(PackageWire { package, args, env }) = package("uvx") {
+        candidates.push(Distribution::Uvx { package, args, env });
+    }
+    candidates
+        .into_iter()
+        .map(|distribution| RegistryEntry {
+            id: id.clone(),
+            name: name.clone(),
+            version: version.clone(),
+            description: description.clone(),
+            icon: icon.clone(),
+            distribution,
+        })
         .filter(is_valid_entry)
+        .min_by_key(preference_rank)
+        .ok_or(if checksum_missing {
+            UnavailableReason::NoChecksum
+        } else {
+            UnavailableReason::InvalidEntry
+        })
+}
+
+/// Lower is preferred; see [`choose_distribution`].
+fn preference_rank(entry: &RegistryEntry) -> u8 {
+    match &entry.distribution {
+        Distribution::Binary { platforms } if platforms.contains_key(current_platform()) => 0,
+        Distribution::Npx { .. } => 1,
+        Distribution::Uvx { .. } => 2,
+        Distribution::Binary { .. } => 3,
+    }
 }
 
 /// The platform key the registry uses for this machine, e.g. `darwin-aarch64`.

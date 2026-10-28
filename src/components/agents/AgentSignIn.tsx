@@ -11,13 +11,25 @@ export interface AgentSignInProps {
   signIn: SettingsSignIn;
 }
 
-/** Said next to Check sign-in, before it runs, when asking can open a session in the agent. */
-export function sessionWarning(agentName: string, reportsStatus: boolean | undefined): string | null {
+/** The last part of a folder path, for words that name the folder a session opens in. */
+function folderNameOf(cwd: string | undefined): string | null {
+  const name = cwd?.split("/").filter(Boolean).pop();
+  return name ?? null;
+}
+
+/**
+ * Said next to Check sign-in, before it runs, when asking can open a session in the agent: where it
+ * opens, that it can run the project's hooks, and that signing in checks the same way.
+ */
+export function sessionWarning(agentName: string, reportsStatus: boolean | undefined, cwd?: string): string | null {
   if (reportsStatus === true) return null;
+  const folder = folderNameOf(cwd);
+  const place = folder ? `a session in ${folder}` : "a session in the open folder";
+  const tail = "It can run your project's hooks. Signing in checks the same way.";
   if (reportsStatus === false) {
-    return `${agentName} cannot say who is signed in, so checking opens a session that stays in its history.`;
+    return `${agentName} cannot say who is signed in, so checking opens ${place} that stays in its history. ${tail}`;
   }
-  return `Checking may open a short session in ${agentName}'s history.`;
+  return `Checking may open ${place} in ${agentName}'s history. ${tail}`;
 }
 
 /** A sign-in's failure reason, when it reads as a plain sentence; the agent's own output (paths, a stack) is not shown. */
@@ -55,7 +67,7 @@ export function AgentSignIn({ agentId, agentName, signIn }: AgentSignInProps) {
   const check = signIn.checkOf(agentId);
   const request = signIn.requestOf(agentId);
   const methods = signIn.methodsOf(agentId);
-  const warning = sessionWarning(agentName, signIn.reportsStatusOf(agentId));
+  const warning = sessionWarning(agentName, signIn.reportsStatusOf(agentId), signIn.cwd);
   const warningId = useId();
   const style = SIGN_IN_CHIP_STYLES[state];
   const isSigningIn = request?.status === "signing-in" || request?.status === "checking";

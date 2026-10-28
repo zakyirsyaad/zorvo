@@ -264,6 +264,7 @@ export default function App() {
   const signIn = useAgentSignIn({
     onSignInNeeded: signInStatus.markNeeded,
     onSignedIn: signInStatus.markSignedIn,
+    onSignInBlocked: reportError,
     agents,
     composerRef,
     activeSessionIdRef,

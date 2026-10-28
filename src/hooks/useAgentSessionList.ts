@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AgentAuth } from './useAgentAuth';
 import { useLatest } from './useLatest';
 import { parseAuthRequired } from '../lib/acp-auth';
+import { SIGN_IN_RUNNING_NOTICE } from '../lib/agent-sign-in';
 import { errorMessage } from '../lib/files';
 import { sessionsToOffer, type ListedSession, type ListedSessions } from '../lib/session-list';
 import type { Session } from '../types';
@@ -94,8 +95,9 @@ export function useAgentSessionList({ profileId, cwd, sessions, listSessions, re
         if (!isCurrent()) return;
         const methods = parseAuthRequired(error);
         if (methods) {
-          requestSignInRef.current(profileId, cwd, methods);
-          setState({ kind: 'idle' });
+          // Refused while another agent signs in: the list says so rather than going quiet.
+          const isOpened = requestSignInRef.current(profileId, cwd, methods);
+          setState(isOpened ? { kind: 'idle' } : { kind: 'failed', message: SIGN_IN_RUNNING_NOTICE });
           return;
         }
         setState({ kind: 'failed', message: errorMessage(error) });

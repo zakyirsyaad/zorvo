@@ -94,9 +94,12 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
     (profileId: string, next: AgentCheck) => setChecks((prev) => ({ ...prev, [profileId]: next })),
     [],
   );
+  const reportsRef = useRef<Readonly<Record<string, boolean>>>({});
   const learnReports = useCallback(
-    (profileId: string, reportsStatus: boolean) =>
-      setReports((prev) => (prev[profileId] === reportsStatus ? prev : { ...prev, [profileId]: reportsStatus })),
+    (profileId: string, reportsStatus: boolean) => {
+      reportsRef.current = { ...reportsRef.current, [profileId]: reportsStatus };
+      setReports((prev) => (prev[profileId] === reportsStatus ? prev : { ...prev, [profileId]: reportsStatus }));
+    },
     [],
   );
   const learnMethods = useCallback(
@@ -115,9 +118,11 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
       }
       inFlightRef.current.add(profileId);
       setCheck(profileId, { phase: 'checking' });
-      // The result of an earlier sign-in (done or failed) gives way to this check's own.
+      // The result of an earlier sign-in (done or failed) gives way to this check's own. A request that
+      // still waits (idle) stays, with the refused message it will send again once signed in.
       const earlier = depsRef.current.signIn.auth.authRequest;
-      if (earlier?.profileId === profileId && earlier.status !== 'signing-in' && earlier.status !== 'checking') {
+      const isFinished = earlier?.status === 'signed-in' || earlier?.status === 'failed';
+      if (earlier?.profileId === profileId && isFinished && earlier.pending === undefined) {
         depsRef.current.signIn.auth.dismiss();
       }
       invoke('acp_probe_agent', { profileId, cwd: folder, needsOptions: !hasReportedOptions(agentOptions?.[profileId]) })
@@ -126,7 +131,15 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
           if (answer) rememberProbed(profileId, answer.options);
           if (answer?.facts.signInChecked) {
             store.markSignedIn(profileId);
-            setCheck(profileId, { phase: 'done', message: `You are signed in to ${name}.` });
+            // Only an agent that reports its sign-in has shown who is signed in; the others just opened a session.
+            const reported = reportsRef.current[profileId];
+            const message =
+              reported === true
+                ? `You are signed in to ${name}.`
+                : reported === false
+                  ? `${name} opened a session, so it looks ready. It cannot confirm who is signed in.`
+                  : `${name} looks ready.`;
+            setCheck(profileId, { phase: 'done', message });
           } else {
             setCheck(profileId, { phase: 'done', message: `${name} did not say whether you are signed in.` });
           }
@@ -151,24 +164,42 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
     [depsRef, setCheck, learnMethods],
   );
 
+  /** The agent's sign-in is running now (from a row or the draft). */
+  const isSigningIn = useCallback(
+    (profileId: string) => {
+      const request = depsRef.current.signIn.auth.authRequest;
+      return request?.profileId === profileId && (request.status === 'signing-in' || request.status === 'checking');
+    },
+    [depsRef],
+  );
+  /** A sign-in of the agent is running or just ended, so an answer asked before it is out of date. */
+  const hasNewerSignIn = useCallback(
+    (profileId: string) => {
+      const request = depsRef.current.signIn.auth.authRequest;
+      return isSigningIn(profileId) || (request?.profileId === profileId && request.status === 'signed-in');
+    },
+    [depsRef, isSigningIn],
+  );
+
   const askWithoutSession = useCallback(
     async (profileId: string, folder: string) => {
       const { status: store } = depsRef.current;
-      // The user's own check of this agent got here first: it owns the agent until it ends.
-      if (inFlightRef.current.has(profileId)) return;
+      // The user's own check of this agent got here first: it owns the agent until it ends. So does a sign-in under way.
+      if (inFlightRef.current.has(profileId) || isSigningIn(profileId)) return;
       inFlightRef.current.add(profileId);
       setCheck(profileId, { phase: 'checking' });
       try {
         const raw = (await invoke('acp_probe_sign_in', { profileId, cwd: folder })) as SignInProbeAnswer | null;
         learnReports(profileId, raw?.reportsStatus === true);
         if (raw?.reportsStatus !== true) cannotReportRef.current.add(profileId);
-        if (raw?.signInChecked === true) store.markSignedIn(profileId);
+        // A sign-in that began or ended while the agent was asked knows better than this answer.
+        if (raw?.signInChecked === true && !hasNewerSignIn(profileId)) store.markSignedIn(profileId);
       } catch (error) {
         const offered = parseAuthRequired(error);
         if (offered) {
           learnReports(profileId, true);
           learnMethods(profileId, offered);
-          store.markNeeded(profileId);
+          if (!hasNewerSignIn(profileId)) store.markNeeded(profileId);
         }
         // Any other failure is left for the user's own Check sign-in, which explains it.
       } finally {
@@ -176,7 +207,7 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
         setCheck(profileId, IDLE);
       }
     },
-    [depsRef, setCheck, learnReports, learnMethods],
+    [depsRef, setCheck, learnReports, learnMethods, isSigningIn, hasNewerSignIn],
   );
 
   const sweep = useCallback(
@@ -229,8 +260,7 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
       const { cwd: folder, signIn: login } = depsRef.current;
       const offered = methodsOf(profileId);
       if (!folder || offered.length === 0) return;
-      startedHereRef.current = profileId;
-      login.startSignIn({ profileId, cwd: folder, methods: [...offered] }, methodId);
+      if (login.startSignIn({ profileId, cwd: folder, methods: [...offered] }, methodId)) startedHereRef.current = profileId;
     },
     [depsRef, methodsOf],
   );

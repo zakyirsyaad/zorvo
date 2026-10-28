@@ -34,6 +34,15 @@ function methodKind(method: Json): AuthMethodKind {
 /** Agents write variable names in Markdown backticks; the UI shows plain text. */
 const withoutBackticks = (text: string) => text.replace(/`/g, '');
 
+/** What an agent writes about its methods is shown, so it is kept short. */
+const MAX_NAME = 80;
+const MAX_DESCRIPTION = 300;
+const limited = (text: string, max: number) => {
+  // By characters, not UTF-16 units, so an emoji is not cut in half.
+  const characters = Array.from(text);
+  return characters.length > max ? `${characters.slice(0, max - 1).join('')}…` : text;
+};
+
 function toAuthMethods(raw: unknown): AuthMethod[] {
   if (!Array.isArray(raw)) return [];
   return raw.filter(isObject).flatMap((method) => {
@@ -41,8 +50,8 @@ function toAuthMethods(raw: unknown): AuthMethod[] {
     return [
       {
         id: method.id,
-        name: method.name,
-        ...(typeof method.description === 'string' ? { description: withoutBackticks(method.description) } : {}),
+        name: limited(method.name, MAX_NAME),
+        ...(typeof method.description === 'string' ? { description: limited(withoutBackticks(method.description), MAX_DESCRIPTION) } : {}),
         kind: methodKind(method),
       },
     ];

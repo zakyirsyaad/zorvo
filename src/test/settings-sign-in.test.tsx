@@ -133,13 +133,21 @@ describe("the warning before a check", () => {
   it("says a session stays in the history of an agent that cannot report who is signed in", () => {
     renderRow(fakeSignIn({ reportsStatusOf: () => false }), "Gemini CLI");
 
-    const warning = "Gemini CLI cannot say who is signed in, so checking opens a session that stays in its history.";
+    const warning =
+      "Gemini CLI cannot say who is signed in, so checking opens a session in zorvo that stays in its history. " +
+      "It can run your project's hooks. Signing in checks the same way.";
     expect(screen.getByText(warning)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Check sign-in" })).toHaveAccessibleDescription(warning);
   });
 
   it("says a session may open while it is not known whether the agent can report", () => {
-    expect(sessionWarning("Claude Agent", undefined)).toBe("Checking may open a short session in Claude Agent's history.");
+    expect(sessionWarning("Claude Agent", undefined, CWD)).toBe(
+      "Checking may open a session in zorvo in Claude Agent's history. It can run your project's hooks. Signing in checks the same way.",
+    );
+  });
+
+  it("names the open folder in general words when there is no path", () => {
+    expect(sessionWarning("Qwen Code", false)).toContain("a session in the open folder");
   });
 
   it("says nothing for an agent that reports its sign-in", () => {
@@ -207,7 +215,7 @@ function setupHook(
     state = updater(state);
   });
   const rememberProbed = vi.fn();
-  const startSignIn = vi.fn();
+  const startSignIn = vi.fn(() => true);
   const dismiss = vi.fn();
   const cancel = vi.fn();
   const signIn = {
@@ -235,7 +243,7 @@ function setupHook(
   // The sidebar reads the same store: what it would show for `id`.
   const sidebarState = (id: string) => hook.result.current.status.stateOf(id);
   const sync = () => hook.rerender({ settings: state.settings });
-  return { hook, sync, sidebarState, rememberProbed, startSignIn, dismiss, cancel };
+  return { hook, sync, sidebarState, rememberProbed, startSignIn, dismiss, cancel, signIn };
 }
 
 const PROBED = { modes: null, models: null, configOptions: [], commands: [], signInChecked: true, canListSessions: false };
@@ -256,7 +264,8 @@ describe("Check sign-in", () => {
     expect(argsOf(spy, "acp_probe_agent")).toEqual([{ profileId: "claude-acp", cwd: CWD, needsOptions: true }]);
     expect(hook.result.current.settingsSignIn.stateOf("claude-acp")).toBe("ready");
     expect(sidebarState("claude-acp")).toBe("ready");
-    expect(hook.result.current.settingsSignIn.checkOf("claude-acp").message).toBe("You are signed in to Claude Code.");
+    // It is not known whether Claude Code reports who is signed in, so nothing is said about who.
+    expect(hook.result.current.settingsSignIn.checkOf("claude-acp").message).toBe("Claude Code looks ready.");
     expect(rememberProbed).toHaveBeenCalledTimes(1);
   });
 
@@ -427,7 +436,7 @@ describe("overlaps and leftovers", () => {
     expect(argsOf(spy, "acp_probe_sign_in")).toEqual([]);
     expect(hook.result.current.settingsSignIn.checkOf("claude-acp").phase).toBe("checking");
     await act(async () => manual.resolve(structuredClone(PROBED)));
-    await waitFor(() => expect(hook.result.current.settingsSignIn.checkOf("claude-acp").message).toBe("You are signed in to Claude Code."));
+    await waitFor(() => expect(hook.result.current.settingsSignIn.checkOf("claude-acp").message).toBe("Claude Code looks ready."));
   });
 
   it("asks the agents a second sweep names once the running sweep ends", async () => {
@@ -486,6 +495,37 @@ describe("overlaps and leftovers", () => {
     expect(hook.result.current.settingsSignIn.busyAgentId).toBe("qwen-code");
   });
 
+  it("keeps a request that still waits, with the message it will send again, when its agent is checked", async () => {
+    vi.spyOn(internals(), "invoke").mockResolvedValue(structuredClone(PROBED));
+    const waiting = {
+      profileId: "claude-acp",
+      cwd: CWD,
+      methods: [],
+      status: "idle",
+      pending: { sessionId: "s1", text: "hello" },
+    } as AuthRequest;
+    const { hook, dismiss } = setupHook({ authRequest: waiting });
+
+    act(() => hook.result.current.settingsSignIn.check("claude-acp"));
+    await waitFor(() => expect(hook.result.current.settingsSignIn.checkOf("claude-acp").phase).toBe("done"));
+
+    expect(dismiss).not.toHaveBeenCalled();
+  });
+
+  it("clears a failed sign-in's result, but not one that carries a refused message", async () => {
+    vi.spyOn(internals(), "invoke").mockResolvedValue(structuredClone(PROBED));
+    const failed = { profileId: "claude-acp", cwd: CWD, methods: [], status: "failed", error: "x" } as AuthRequest;
+    const plain = setupHook({ authRequest: failed });
+    const withMessage = setupHook({ authRequest: { ...failed, pending: { sessionId: "s1", text: "hello" } } });
+
+    act(() => plain.hook.result.current.settingsSignIn.check("claude-acp"));
+    act(() => withMessage.hook.result.current.settingsSignIn.check("claude-acp"));
+    await waitFor(() => expect(plain.hook.result.current.settingsSignIn.checkOf("claude-acp").phase).toBe("done"));
+
+    expect(plain.dismiss).toHaveBeenCalled();
+    expect(withMessage.dismiss).not.toHaveBeenCalled();
+  });
+
   it("clears the request of a sign-in started here when its dialog is cancelled", async () => {
     vi.spyOn(internals(), "invoke").mockRejectedValue(authRequiredError(claudeMethods));
     const { hook, dismiss, cancel } = setupHook();
@@ -506,6 +546,94 @@ describe("overlaps and leftovers", () => {
 
     expect(cancel).toHaveBeenCalled();
     expect(dismiss).not.toHaveBeenCalled();
+  });
+});
+
+describe("what a check may and may not claim", () => {
+  it("says who is signed in only for an agent known to report it", async () => {
+    vi.spyOn(internals(), "invoke").mockImplementation((cmd) =>
+      Promise.resolve(cmd === "acp_probe_sign_in" ? { reportsStatus: true, signInChecked: true } : structuredClone(PROBED)),
+    );
+    const { hook } = setupHook({ agentOptions: { "claude-acp": KNOWN_OPTIONS } });
+    act(() => hook.result.current.settingsSignIn.sweep(["claude-acp"]));
+    await waitFor(() => expect(hook.result.current.settingsSignIn.reportsStatusOf("claude-acp")).toBe(true));
+
+    act(() => hook.result.current.settingsSignIn.check("claude-acp"));
+    await waitFor(() => expect(hook.result.current.settingsSignIn.checkOf("claude-acp").phase).toBe("done"));
+
+    expect(hook.result.current.settingsSignIn.checkOf("claude-acp").message).toBe("You are signed in to Claude Code.");
+  });
+
+  it("does not claim it for an agent that only opened a session", async () => {
+    vi.spyOn(internals(), "invoke").mockImplementation((cmd) =>
+      Promise.resolve(cmd === "acp_probe_sign_in" ? { reportsStatus: false, signInChecked: false } : structuredClone(PROBED)),
+    );
+    const { hook } = setupHook({ agentOptions: { "qwen-code": KNOWN_OPTIONS } });
+    act(() => hook.result.current.settingsSignIn.sweep(["qwen-code"]));
+    await waitFor(() => expect(hook.result.current.settingsSignIn.reportsStatusOf("qwen-code")).toBe(false));
+
+    act(() => hook.result.current.settingsSignIn.check("qwen-code"));
+    await waitFor(() => expect(hook.result.current.settingsSignIn.checkOf("qwen-code").phase).toBe("done"));
+
+    expect(hook.result.current.settingsSignIn.checkOf("qwen-code").message).toBe(
+      "Qwen Code opened a session, so it looks ready. It cannot confirm who is signed in.",
+    );
+  });
+});
+
+describe("a sweep against a sign-in", () => {
+  const running = { profileId: "claude-acp", cwd: CWD, methods: [], status: "signing-in" } as AuthRequest;
+
+  it("skips an agent whose sign-in is running", async () => {
+    const spy = vi.spyOn(internals(), "invoke").mockResolvedValue({ reportsStatus: true, signInChecked: true });
+    const { hook } = setupHook({ agentOptions: { "claude-acp": KNOWN_OPTIONS }, authRequest: running });
+
+    act(() => hook.result.current.settingsSignIn.sweep(["claude-acp"]));
+    await act(async () => {});
+
+    expect(argsOf(spy, "acp_probe_sign_in")).toEqual([]);
+  });
+
+  /** Starts a sweep whose answer the test holds back, and returns the means to change the sign-in meanwhile. */
+  function sweepHeldBack(answerWith: (resolve: (value: unknown) => void, reject: (reason: unknown) => void) => void) {
+    let settle!: () => void;
+    const held = new Promise((resolve, reject) => {
+      settle = () => answerWith(resolve, reject);
+    });
+    vi.spyOn(internals(), "invoke").mockReturnValue(held);
+    const setup = setupHook({ agentOptions: { "claude-acp": KNOWN_OPTIONS } });
+    act(() => setup.hook.result.current.settingsSignIn.sweep(["claude-acp"]));
+    const changeSignIn = (request: AuthRequest) => {
+      (setup.signIn.auth as { authRequest: AuthRequest | null }).authRequest = request;
+    };
+    return { ...setup, changeSignIn, settle };
+  }
+
+  it("drops a signed-in answer when a sign-in began while the agent was asked", async () => {
+    const { hook, sync, sidebarState, changeSignIn, settle } = sweepHeldBack((resolve) =>
+      resolve({ reportsStatus: true, signInChecked: true }),
+    );
+    changeSignIn(running);
+
+    await act(async () => settle());
+    await waitFor(() => expect(hook.result.current.settingsSignIn.reportsStatusOf("claude-acp")).toBe(true));
+    sync();
+
+    // What the agent reported is still learned; only the sign-in state it would have set is dropped.
+    expect(sidebarState("claude-acp")).toBe("unchecked");
+  });
+
+  it("drops a signed-out answer when a sign-in just ended while the agent was asked", async () => {
+    const { hook, sync, sidebarState, changeSignIn, settle } = sweepHeldBack((_resolve, reject) =>
+      reject(authRequiredError(claudeMethods)),
+    );
+    changeSignIn({ ...running, status: "signed-in" });
+
+    await act(async () => settle());
+    await waitFor(() => expect(hook.result.current.settingsSignIn.checkOf("claude-acp").phase).toBe("idle"));
+    sync();
+
+    expect(sidebarState("claude-acp")).toBe("unchecked");
   });
 });
 
@@ -580,5 +708,126 @@ describe("a sign-in started from Settings", () => {
 
     expect(onSignInNeeded).toHaveBeenCalledWith("claude-acp");
     expect(onSignedIn).not.toHaveBeenCalled();
+  });
+});
+
+describe("a sign-in that is running is not cut off", () => {
+  const qwenMethods: AuthMethod[] = [{ id: "qwen-oauth", name: "Qwen login", kind: "agent" }];
+
+  /** A login of Claude Code that never ends, so its request stays `signing-in`. */
+  async function claudeSigningIn() {
+    const spy = vi.spyOn(internals(), "invoke").mockImplementation(() => new Promise(() => {}));
+    const setup = setupSignIn();
+    act(() => {
+      setup.hook.result.current.startSignIn({ profileId: "claude-acp", cwd: CWD, methods: [googleLogin] }, "oauth-personal");
+    });
+    await waitFor(() => expect(setup.hook.result.current.auth.authRequest?.status).toBe("signing-in"));
+    return { ...setup, spy };
+  }
+
+  function setupSignIn() {
+    const onSignInNeeded = vi.fn();
+    const onSignInBlocked = vi.fn();
+    const restore = vi.fn();
+    const hook = renderHook(() =>
+      useAgentSignIn({
+        agents: fakeProfiles,
+        composerRef: { current: { focus: vi.fn(), restore } as never },
+        activeSessionIdRef: { current: "s2" },
+        retryAfterSignIn: () => Promise.resolve(true),
+        onRestore: vi.fn(),
+        onSignInNeeded,
+        onSignInBlocked,
+        onSignedIn: vi.fn(),
+      }),
+    );
+    return { hook, onSignInNeeded, onSignInBlocked, restore };
+  }
+
+  it("refuses another agent's request, but remembers that it needs a sign-in", async () => {
+    const { hook, onSignInNeeded } = await claudeSigningIn();
+
+    let opened = true;
+    act(() => {
+      opened = hook.result.current.auth.requestSignIn("qwen-code", CWD, qwenMethods);
+    });
+
+    expect(opened).toBe(false);
+    expect(hook.result.current.auth.authRequest?.profileId).toBe("claude-acp");
+    expect(hook.result.current.auth.authRequest?.status).toBe("signing-in");
+    expect(onSignInNeeded).toHaveBeenCalledWith("qwen-code");
+  });
+
+  it("keeps the login when a session of another agent hands its refusal back, and tells the user why", async () => {
+    const { hook, onSignInBlocked, restore } = await claudeSigningIn();
+
+    act(() => hook.result.current.handBack({ id: "s2", profileId: "qwen-code", cwd: CWD }, qwenMethods, { text: "hello" }));
+
+    expect(hook.result.current.auth.authRequest?.profileId).toBe("claude-acp");
+    expect(onSignInBlocked).toHaveBeenCalledWith("Another agent's sign-in is running. Finish it, then try again.");
+    // The message is not lost: it is back where the user wrote it.
+    expect(restore).toHaveBeenCalledWith("hello", undefined);
+  });
+
+  it("does not start a Settings login for another agent, and runs no login for it", async () => {
+    const { hook, spy } = await claudeSigningIn();
+    const callsBefore = argsOf(spy, "acp_authenticate").length;
+
+    let started = true;
+    act(() => {
+      started = hook.result.current.startSignIn({ profileId: "qwen-code", cwd: CWD, methods: qwenMethods }, "qwen-oauth");
+    });
+
+    expect(started).toBe(false);
+    expect(argsOf(spy, "acp_authenticate")).toHaveLength(callsBefore);
+    expect(hook.result.current.auth.authRequest?.profileId).toBe("claude-acp");
+  });
+
+  it("still replaces the request of the same agent, and any request that is not running", async () => {
+    const { hook } = await claudeSigningIn();
+
+    let sameAgent = false;
+    act(() => {
+      sameAgent = hook.result.current.auth.requestSignIn("claude-acp", CWD, [claudeLogin]);
+    });
+    expect(sameAgent).toBe(true);
+    expect(hook.result.current.auth.authRequest?.status).toBe("idle");
+
+    let otherAgent = false;
+    act(() => {
+      otherAgent = hook.result.current.auth.requestSignIn("qwen-code", CWD, qwenMethods);
+    });
+    expect(otherAgent).toBe(true);
+    expect(hook.result.current.auth.authRequest?.profileId).toBe("qwen-code");
+  });
+});
+
+describe("Try again after a failed login from Settings", () => {
+  it("runs the same agent and the same method once more", async () => {
+    let attempts = 0;
+    const spy = vi.spyOn(internals(), "invoke").mockImplementation((cmd) => {
+      if (cmd !== "acp_authenticate") return Promise.resolve(structuredClone(PROBED));
+      attempts += 1;
+      return attempts === 1 ? Promise.reject("login refused") : Promise.resolve(undefined);
+    });
+    const hook = renderHook(() =>
+      useAgentSignIn({
+        agents: fakeProfiles,
+        composerRef: { current: { focus: vi.fn() } as never },
+        activeSessionIdRef: { current: undefined },
+        retryAfterSignIn: () => Promise.resolve(true),
+        onRestore: vi.fn(),
+      }),
+    );
+    act(() => {
+      hook.result.current.startSignIn({ profileId: "claude-acp", cwd: CWD, methods: [googleLogin] }, "oauth-personal");
+    });
+    await waitFor(() => expect(hook.result.current.auth.authRequest?.status).toBe("failed"));
+
+    act(() => hook.result.current.retryStart());
+    await waitFor(() => expect(hook.result.current.auth.authRequest?.status).toBe("signed-in"));
+
+    const sent = { profileId: "claude-acp", cwd: CWD, methodId: "oauth-personal" };
+    expect(argsOf(spy, "acp_authenticate")).toEqual([sent, sent]);
   });
 });

@@ -32,3 +32,6 @@ export const SIGN_IN_CHIP_STYLES: Readonly<Record<SignInState, { text: string; d
 export function signInPlaceholder(agentName: string, continuesSession: boolean): string {
   return `Sign in to ${agentName} to ${continuesSession ? 'continue this session' : 'send a message'}.`;
 }
+
+/** Said when a request to sign in to one agent is refused because another agent's sign-in is running. */
+export const SIGN_IN_RUNNING_NOTICE = "Another agent's sign-in is running. Finish it, then try again.";

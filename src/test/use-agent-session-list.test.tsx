@@ -124,13 +124,28 @@ describe("useAgentSessionList", () => {
     const listSessions = vi.fn(async () => {
       throw `ACP_AUTH_REQUIRED:${JSON.stringify([{ id: "browser", name: "Browser" }])}`;
     });
-    const requestSignIn = vi.fn();
+    const requestSignIn = vi.fn(() => true);
     const { result } = renderHook(() => useAgentSessionList(deps({ listSessions, requestSignIn })));
 
     await act(async () => result.current.load());
 
     expect(result.current.state).toEqual({ kind: "idle" });
     expect(requestSignIn).toHaveBeenCalledWith(PROFILE, CWD, [{ id: "browser", name: "Browser", kind: "agent" }]);
+  });
+
+  it("says so, instead of going quiet, when the sign-in cannot open because another agent is signing in", async () => {
+    const listSessions = vi.fn(async () => {
+      throw `ACP_AUTH_REQUIRED:${JSON.stringify([{ id: "browser", name: "Browser" }])}`;
+    });
+    const requestSignIn = vi.fn(() => false);
+    const { result } = renderHook(() => useAgentSessionList(deps({ listSessions, requestSignIn })));
+
+    await act(async () => result.current.load());
+
+    expect(result.current.state).toEqual({
+      kind: "failed",
+      message: "Another agent's sign-in is running. Finish it, then try again.",
+    });
   });
 
   it("ignores a list that arrives after the draft switched to another agent", async () => {

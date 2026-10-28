@@ -436,7 +436,7 @@ describe("signing in to an ACP agent from the app", () => {
     expect(dialog.getByRole("button", { name: "Close" })).toBeDefined();
   });
 
-  it("closes the login's dialog when another sign-in request replaces it", async () => {
+  it("closes the login's dialog when a new request for the same agent replaces it", async () => {
     const spy = vi.spyOn(tauriInternals(), "invoke");
     const { result } = renderHook(() =>
       useAgentSignIn({
@@ -453,10 +453,41 @@ describe("signing in to an ACP agent from the app", () => {
     expect(result.current.terminal.dialog).not.toBeNull();
     const terminalId = result.current.terminal.dialog?.terminalId;
 
-    act(() => result.current.auth.requestSignIn("agent-b", "/work", methods));
+    act(() => result.current.auth.requestSignIn("agent-a", "/work", methods));
 
     expect(result.current.terminal.dialog).toBeNull();
     expect(callsTo(spy, "terminate_session").map(([, args]) => args)).toContainEqual({ sessionId: terminalId });
+  });
+
+  it("does not close another agent's login that is running when a request for this agent comes in", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const onSignInNeeded = vi.fn();
+    const { result } = renderHook(() =>
+      useAgentSignIn({
+        agents: [],
+        composerRef: { current: null },
+        activeSessionIdRef: { current: "session-a" },
+        retryAfterSignIn: () => Promise.resolve(true),
+        onRestore: () => {},
+        onSignInNeeded,
+      }),
+    );
+    const methods = [{ id: "login", name: "Log in", kind: "terminal" as const }];
+    act(() => result.current.auth.requestSignIn("agent-a", "/work", methods));
+    await act(async () => result.current.auth.signIn("login"));
+    const terminalId = result.current.terminal.dialog?.terminalId;
+
+    let opened = true;
+    act(() => {
+      opened = result.current.auth.requestSignIn("agent-b", "/work", methods);
+    });
+
+    expect(opened).toBe(false);
+    expect(result.current.terminal.dialog?.terminalId).toBe(terminalId);
+    expect(result.current.auth.authRequest?.profileId).toBe("agent-a");
+    expect(callsTo(spy, "terminate_session").map(([, args]) => args)).not.toContainEqual({ sessionId: terminalId });
+    // The refusal is not forgotten: agent-b still counts as needing a sign-in.
+    expect(onSignInNeeded).toHaveBeenCalledWith("agent-b");
   });
 
   it("a sign-in that ends after its panel gave way to another agent's leaves that one alone", async () => {

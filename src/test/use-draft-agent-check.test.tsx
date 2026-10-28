@@ -17,7 +17,7 @@ const CWD = "/Users/test/developer/zorvo";
 /** A sign-in panel already up for Qwen Code, waiting for the user. */
 const pendingSignIn: AgentAuth = {
   authRequest: { profileId: "qwen-code", cwd: CWD, methods: [], status: "idle" },
-  requestSignIn: () => {},
+  requestSignIn: () => true,
   signIn: () => {},
   recheck: () => {},
   dismiss: () => {},

@@ -97,3 +97,25 @@ describe("authCopy", () => {
     expect(authCopy("Codex", []).cliHint).toBe("Sign in with Codex's own command line tool, then check again.");
   });
 });
+
+describe("text an agent writes about its methods", () => {
+  it("is cut to a length the UI can show, and the verb rule still applies to the name", () => {
+    const long = [{ id: "m", name: `Log in with ${"x".repeat(200)}`, description: "d".repeat(1000) }];
+
+    const [method] = parseAuthRequired(`ACP_AUTH_REQUIRED:${JSON.stringify(long)}`) ?? [];
+
+    expect(method.name).toHaveLength(80);
+    expect(method.name.endsWith("…")).toBe(true);
+    expect(method.description).toHaveLength(300);
+    expect(signInButtonLabel(method)).toBe(method.name);
+  });
+
+  it("keeps a short name and description whole", () => {
+    const short = [{ id: "m", name: "ChatGPT", description: "Use ChatGPT" }];
+
+    expect(parseAuthRequired(`ACP_AUTH_REQUIRED:${JSON.stringify(short)}`)?.[0]).toMatchObject({
+      name: "ChatGPT",
+      description: "Use ChatGPT",
+    });
+  });
+});

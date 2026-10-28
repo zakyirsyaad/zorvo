@@ -768,3 +768,50 @@ describe("Stopping a launch before its open answers", () => {
     expect(messages.get(STARTING.id)).toEqual([]);
   });
 });
+describe("Importing when the agent needs a sign-in", () => {
+  const CLAUDE = { id: "claude-acp", name: "Claude Code" } as AgentProfile;
+  const CWD = "/Users/test/developer/zorvo";
+  const authError = `ACP_AUTH_REQUIRED:${JSON.stringify([{ id: "browser", name: "Browser" }])}`;
+
+  function importWith(requestSignIn: () => boolean) {
+    const onImportError = vi.fn();
+    const importSession = vi.fn(async (_session: unknown, _choices: unknown, onError: (error: unknown) => void) => {
+      onError(authError);
+      return false;
+    });
+    const { result } = renderHook(() =>
+      useSessionImport({
+        sessions: [],
+        agent: CLAUDE,
+        cwd: CWD,
+        activeSessionId: "",
+        acp: { importSession } as never,
+        choices: NO_CHOICES,
+        onChoicesUsed: vi.fn(),
+        recordSession: (spec) => newSessionRecord(spec),
+        openSession: vi.fn(),
+        discardSession: vi.fn(),
+        openNewSession: vi.fn(),
+        requestSignIn,
+        onImportError,
+      }),
+    );
+    act(() => result.current({ acpSessionId: "listed-1", title: "Fix the login" }));
+    return { onImportError };
+  }
+
+  it("opens the sign-in and shows no error when it opens", () => {
+    const requestSignIn = vi.fn(() => true);
+
+    const { onImportError } = importWith(requestSignIn);
+
+    expect(requestSignIn).toHaveBeenCalled();
+    expect(onImportError).not.toHaveBeenCalled();
+  });
+
+  it("says why nothing opened when another agent's sign-in is running", () => {
+    const { onImportError } = importWith(() => false);
+
+    expect(onImportError).toHaveBeenCalledWith("Another agent's sign-in is running. Finish it, then try again.");
+  });
+});

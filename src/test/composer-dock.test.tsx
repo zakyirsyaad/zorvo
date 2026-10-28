@@ -105,7 +105,7 @@ describe("ComposerDock", () => {
       render(<ComposerDock controls={c} onSendMessage={() => {}} />);
 
       fireEvent.click(screen.getByRole("button", { name: /permission mode: default/i }));
-      fireEvent.click(screen.getByRole("option", { name: "YOLO" }));
+      fireEvent.click(screen.getByRole("option", { name: /YOLO/ }));
 
       expect(c.permission?.onChange).toHaveBeenCalledWith("yolo");
     });

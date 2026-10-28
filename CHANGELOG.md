@@ -4,6 +4,19 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- **The composer shows more of what your agent offers.** Permission modes, models and other choices now show the agent's own description under their name, and a mode that lets the agent act without asking (YOLO, bypass, full access) is marked with a shield in the open menu, before you pick it. Other settings an agent offers now get their own chip: Codex's collaboration mode (the way to put Codex in Plan), Claude's fast mode and its agent persona. A long list, like Claude's personas, has a search field.
+
+### Changed
+
+- **Claude's default model says which model it is.** The model chip reads **Default (Opus)** instead of **Default (recommended)**.
+- **The model chip has a sparkle icon.** The old chip icon looked like a settings gear.
+
+### Fixed
+
+- **A new Codex session started in Full access moves to Workspace access**, not to Read-only, which stopped the agent from editing. Zorvo also recognises a risky mode by its name, not only its id. Codex's default Auto review is still left as it is.
+
 ## [0.6.1] - 2026-10-27
 
 ### Changed

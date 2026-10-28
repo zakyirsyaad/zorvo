@@ -38,6 +38,8 @@ export interface AcpConfigOption {
   id: string;
   name: string;
   category?: string;
+  /** What the option does, when the agent says so. */
+  description?: string;
   currentValue: string;
   options: { value: string; name: string; description?: string }[];
 }
@@ -120,8 +122,21 @@ export function toConfigOptions(raw: unknown): AcpConfigOption[] {
     const choices = option.options
       .filter(isObject)
       .filter((c) => isString(c.value) && isString(c.name))
-      .map((c) => ({ value: c.value as string, name: c.name as string }));
-    return [{ id: option.id, name: option.name, category: isString(option.category) ? option.category : undefined, currentValue: option.currentValue, options: choices }];
+      .map((c) => ({
+        value: c.value as string,
+        name: c.name as string,
+        description: isString(c.description) && c.description ? c.description : undefined,
+      }));
+    return [
+      {
+        id: option.id,
+        name: option.name,
+        category: isString(option.category) ? option.category : undefined,
+        description: isString(option.description) && option.description ? option.description : undefined,
+        currentValue: option.currentValue,
+        options: choices,
+      },
+    ];
   });
 }
 

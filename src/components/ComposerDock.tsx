@@ -1,5 +1,5 @@
 import { useImperativeHandle, useRef, useState, type Ref } from "react";
-import { Plus, CornerDownLeft, Shield, ShieldAlert, Cpu, Gauge, Square, Bot } from "lucide-react";
+import { Plus, CornerDownLeft, Shield, ShieldAlert, Sparkles, Gauge, SlidersHorizontal, Square, Bot } from "lucide-react";
 import { IconButton } from "./ui/IconButton";
 import { OptionDropdown } from "./composer/OptionDropdown";
 import { FolderPicker, type FolderControl } from "./composer/FolderPicker";
@@ -22,7 +22,8 @@ const PLACEHOLDER_WITH_COMMANDS = "Type / for commands, or prompt the agent...";
 /** Keys that only move the caret; the menu's own keys (Escape, Enter, up and down) are not among them. */
 const CARET_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
 
-type OpenDropdown = "folder" | "agent" | "permission" | "model" | "effort" | null;
+/** An agent's extra option is open under its config id: `option:fast`. */
+type OpenDropdown = "folder" | "agent" | "permission" | "model" | "effort" | `option:${string}` | null;
 
 /** What other parts of the window can do to the composer. */
 export interface ComposerHandle {
@@ -239,8 +240,9 @@ export function ComposerDock({
     insertPaths(await onAttach());
   };
 
-  const { permission, model, effort } = controls;
-  const isRiskyPermission = isRiskyMode(permission?.selected);
+  const { permission, model, effort, extras = [] } = controls;
+  const selectedPermission = permission?.options.find((o) => o.value === permission.selected);
+  const isRiskyPermission = selectedPermission?.risky ?? isRiskyMode(permission?.selected);
 
   return (
     <footer ref={containerRef} className="w-full max-w-3xl flex flex-col items-center px-4 select-none">
@@ -332,7 +334,7 @@ export function ComposerDock({
             {model && (
               <OptionDropdown
                 label="Model"
-                icon={<Cpu size={12} className="text-fg-muted" />}
+                icon={<Sparkles size={12} className="text-fg-muted" />}
                 {...dropdownProps("model", model)}
               />
             )}
@@ -344,6 +346,17 @@ export function ComposerDock({
                 {...dropdownProps("effort", effort)}
               />
             )}
+
+            {extras.map((extra) => (
+              <OptionDropdown
+                key={extra.id}
+                label={extra.label}
+                description={extra.description}
+                showLabel
+                icon={<SlidersHorizontal size={12} className="text-fg-muted" />}
+                {...dropdownProps(`option:${extra.id}`, extra)}
+              />
+            ))}
 
             {isThinking && onStop ? (
               <IconButton

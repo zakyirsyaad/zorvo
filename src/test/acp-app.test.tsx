@@ -201,7 +201,7 @@ describe("ACP sessions in the app", () => {
       fireEvent.click(screen.getByRole("button", { name: /permission mode: default/i }));
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("option", { name: "YOLO" }));
+      fireEvent.click(screen.getByRole("option", { name: /YOLO/ }));
     });
 
     expect(callsTo(spy, "acp_set_mode").map(([, a]) => a)).toContainEqual({ sessionId, modeId: "yolo" });
@@ -227,7 +227,7 @@ describe("ACP sessions in the app", () => {
       fireEvent.click(screen.getByRole("button", { name: /permission mode: default/i }));
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("option", { name: "YOLO" }));
+      fireEvent.click(screen.getByRole("option", { name: /YOLO/ }));
     });
 
     expect(callsTo(spy, "acp_set_mode").map(([, a]) => a)).toContainEqual({ sessionId, modeId: "yolo" });
@@ -487,7 +487,7 @@ describe("ACP sessions in the app", () => {
       fireEvent.click(screen.getByRole("button", { name: "Permission mode: Default" }));
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("option", { name: "YOLO" }));
+      fireEvent.click(screen.getByRole("option", { name: /YOLO/ }));
     });
     await send("go");
 

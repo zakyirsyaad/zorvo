@@ -27,8 +27,12 @@ export const NO_CHOICES: AcpChoices = { config: {} };
 
 export type AcpChange = SafeModeChange | { kind: 'model'; modelId: string };
 
-/** The settings a pick of is kept for the next session: the model and the reasoning effort. */
-const REMEMBERED_CATEGORIES = new Set(['model', 'thought_level']);
+/**
+ * The settings a pick of is kept for the next session: the model, the reasoning effort and the model's
+ * own switches (Claude's fast mode). Collaboration mode and the agent persona are about one task, so a
+ * new session starts on the agent's default for them, as it does for the permission mode.
+ */
+const REMEMBERED_CATEGORIES = new Set(['model', 'thought_level', 'model_config']);
 
 const isKept = (option: AcpConfigOption | undefined) =>
   option?.category !== undefined && REMEMBERED_CATEGORIES.has(option.category);

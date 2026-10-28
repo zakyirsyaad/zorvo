@@ -70,7 +70,7 @@ describe("unavailable agents", () => {
 
   it("words each reason", () => {
     expect(unavailableReasonText("no_checksum")).toBe(
-      "The registry publishes no checksum for this download, so Zorvo cannot verify it.",
+      "The registry publishes no usable checksum for this download, so Zorvo cannot verify it.",
     );
     expect(unavailableReasonText("invalid_entry")).toContain("cannot run it");
   });

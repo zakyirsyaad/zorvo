@@ -129,12 +129,11 @@ impl CatalogState {
             .is_some_and(|seen| now.saturating_sub(seen) >= MIN_AGE_SECS)
     }
 
-    /// The agents the last fetch listed that Zorvo cannot offer, sorted by id.
-    /// An agent the history has stays a regular row, even when its newest
+    /// The agents the last fetch listed that Zorvo cannot offer (stored sorted by
+    /// id). An agent the history has stays a regular row, even when its newest
     /// registry entry is no longer valid.
     fn unavailable_agents(&self) -> Vec<UnavailableAgent> {
-        let mut agents: Vec<UnavailableAgent> = self
-            .cache
+        self.cache
             .as_ref()
             .and_then(|cache| cache.unavailable.as_ref())
             .map(|listed| {
@@ -144,9 +143,7 @@ impl CatalogState {
                     .cloned()
                     .collect()
             })
-            .unwrap_or_default();
-        agents.sort_by(|a, b| a.id.cmp(&b.id));
-        agents
+            .unwrap_or_default()
     }
 
     /// The catalog row for `id`, which is in the history.

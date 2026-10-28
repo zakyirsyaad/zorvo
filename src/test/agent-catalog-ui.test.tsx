@@ -141,7 +141,7 @@ describe("AgentCatalog", () => {
 
       expect(notAvailable(2)).toHaveAttribute("aria-expanded", "true");
       expect(row("Cursor")).toHaveTextContent(
-        "The registry publishes no checksum for this download, so Zorvo cannot verify it.",
+        "The registry publishes no usable checksum for this download, so Zorvo cannot verify it.",
       );
       expect(row("Cursor")).toHaveTextContent("Cursor's coding agent");
       expect(row("Broken")).toHaveTextContent("cannot run it");

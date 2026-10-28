@@ -38,8 +38,19 @@ pub(super) struct RegistryCache {
     /// The agents the registry listed that Zorvo cannot offer. `None` in caches
     /// written before it was recorded; such a cache counts as stale, so the
     /// next start fetches again instead of showing no such agents for a day.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_unavailable")]
     pub unavailable: Option<Vec<UnavailableAgent>>,
+}
+
+/// Reads the unavailable list, treating one that does not parse (an unknown
+/// reason, a malformed item) as missing. The file also holds `withdrawn`,
+/// which must never shrink, so a bad list may not make the file unreadable;
+/// the cache then counts as stale and the next start fetches again.
+fn lenient_unavailable<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Vec<UnavailableAgent>>, D::Error> {
+    let raw = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(raw.and_then(|value| serde_json::from_value(value).ok()))
 }
 
 impl RegistryCache {

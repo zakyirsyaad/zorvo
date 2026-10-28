@@ -590,16 +590,67 @@ fn the_unavailable_agents_survive_a_restart_and_an_old_cache_is_refetched() {
 #[test]
 fn the_bundled_history_offers_kilo_and_sigit_from_the_start() {
     // Both publish a binary and an npx package; they were dropped as "two distributions".
+    // They run as the pinned package, so the choice does not depend on this Mac.
     let catalog = Catalog::bundled(BUNDLED);
-    let result = no_tools_view_at(&catalog, 2_000_000_000);
+    let generated_at = VersionHistory::from_json(BUNDLED)
+        .unwrap()
+        .agents
+        .values()
+        .flat_map(|versions| versions.values())
+        .map(|record| record.first_seen)
+        .max()
+        .unwrap();
+    let result = no_tools_view_at(&catalog, generated_at + MIN_AGE_SECS);
 
     for id in ["kilo", "sigit"] {
         let row = agent(&result, id);
         assert!(row.version.is_some(), "{id} has a version to run");
+        assert_eq!(row.distribution, "npx", "{id} runs as its package");
         assert_ne!(
             row.status, "waiting",
             "{id} is older than the seven-day wait"
         );
         assert_ne!(row.status, "unsupported", "{id} runs on this Mac");
     }
+}
+
+#[test]
+fn an_unavailable_agent_cannot_be_launched_planned_installed_or_updated() {
+    let catalog = Catalog::bundled(&bundle_of(&[(npx_entry("gemini", "1.0.0"), T0)]));
+    let registry = raw_registry(&[
+        serde_json::to_value(npx_entry("gemini", "1.0.0")).unwrap(),
+        unsigned_binary("zeta", "Zeta"),
+    ]);
+    catalog
+        .refresh(|| Ok(registry.clone()), NOW)
+        .expect("refresh succeeds");
+    assert_eq!(no_tools_view(&catalog).unavailable[0].id, "zeta");
+
+    let dir = BinDir::new(&[]);
+    let path_var = dir.path_var();
+    let globals = BTreeSet::new();
+    let installed = InstalledTools::none();
+    let tools = SystemTools {
+        path_var: Some(&path_var),
+        npm_globals: &globals,
+        installed: &installed,
+    };
+    let versions = BTreeMap::new();
+
+    assert!(catalog.profile("zeta", &tools, &versions, NOW).is_none());
+    assert!(catalog
+        .profiles(&tools, &versions, NOW)
+        .iter()
+        .all(|profile| profile.id != "zeta"));
+    assert!(catalog
+        .planned_steps_for("zeta", &tools, &versions, NOW)
+        .is_none());
+    assert!(catalog.agent_name("zeta", &versions, NOW).is_none());
+    assert!(catalog
+        .unsupported_agent_name("zeta", &versions, NOW)
+        .is_none());
+    assert!(catalog
+        .update_target("zeta", &tools, &versions, NOW)
+        .is_err());
+    assert!(catalog.launch_env("zeta", "1.0.0").is_empty());
 }

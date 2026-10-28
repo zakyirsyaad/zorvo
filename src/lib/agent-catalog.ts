@@ -41,7 +41,7 @@ export function catalogSections(
 }
 
 const UNAVAILABLE_REASONS: Record<UnavailableReason, string> = {
-  no_checksum: 'The registry publishes no checksum for this download, so Zorvo cannot verify it.',
+  no_checksum: 'The registry publishes no usable checksum for this download, so Zorvo cannot verify it.',
   invalid_entry: 'The registry entry for this agent is incomplete or fails the safety checks Zorvo applies, so Zorvo cannot run it.',
 };
 

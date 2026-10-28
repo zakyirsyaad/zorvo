@@ -8,6 +8,11 @@ use serde_json::Value;
 
 use super::resolve::LEGACY_IDS;
 
+/// One agent at one version, as Zorvo stores and runs it.
+///
+/// The derived `Deserialize` is for Zorvo's own files only. It skips
+/// `choose_distribution` and `is_valid_entry`, so it must never read raw
+/// registry data: use [`parse_registry`] or [`parse_entry`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RegistryEntry {
     pub id: String,
@@ -66,7 +71,9 @@ struct PackageWire {
     env: BTreeMap<String, String>,
 }
 
-/// The registry's own `distribution` shape: one or more of the three keys.
+/// The `distribution` shape of one *stored* entry: exactly one of the three keys
+/// (`TryFrom` rejects zero or several). The registry's own shape, where an entry
+/// may offer several, is read by `EntryWire` and `choose_distribution`.
 #[derive(Serialize, Deserialize)]
 struct DistributionWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -146,7 +153,7 @@ pub struct UnavailableAgent {
 }
 
 /// What a registry document holds: the entries Zorvo can offer, and the agents
-/// it lists but cannot.
+/// it lists but cannot (sorted by id, one per id).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ParsedRegistry {
     pub entries: Vec<RegistryEntry>,
@@ -177,6 +184,11 @@ pub fn parse_registry_report(json: &str) -> Result<ParsedRegistry, String> {
             Assessment::Ignored => {}
         }
     }
+    // The UI keys rows by id, and a registry that only reorders changes nothing.
+    parsed.unavailable.sort_by(|a, b| a.id.cmp(&b.id));
+    parsed
+        .unavailable
+        .dedup_by(|later, first| later.id == first.id);
     Ok(parsed)
 }
 
@@ -245,15 +257,22 @@ fn assess(value: &Value) -> Assessment {
 /// Picks the one distribution Zorvo runs from those an entry offers, by this
 /// preference (the first that passes [`is_valid_entry`] wins):
 ///
-/// 1. a binary with a build for this Mac, whose checksum is valid;
-/// 2. a pinned `npx` package;
-/// 3. a pinned `uvx` package;
+/// 1. a pinned `npx` package;
+/// 2. a pinned `uvx` package;
+/// 3. a binary with a build for this Mac and a valid checksum;
 /// 4. a valid binary with no build for this Mac, which the catalog shows as
 ///    unsupported, so it is chosen only when nothing runnable is offered.
 ///
-/// A candidate that fails validation is never chosen and never weakens a rule:
-/// the choice only decides which valid candidate runs. An entry that offers one
-/// kind behaves exactly as it did before several were accepted.
+/// A package comes first on purpose: it does not depend on this Mac's platform
+/// (so the choice kept in the history is the same on every Mac), a binary is
+/// looked up on `PATH` by its program name before Zorvo's own copy is used (an
+/// unrelated program of that name would run as the agent), and Zorvo may not
+/// be able to unpack a binary's archive format.
+///
+/// A candidate that fails validation is never chosen and never contributes its
+/// args or environment: the choice only decides which valid candidate runs. An
+/// entry that offers one kind behaves exactly as it did before several were
+/// accepted.
 fn choose_distribution(wire: EntryWire) -> Result<RegistryEntry, UnavailableReason> {
     let EntryWire {
         id,
@@ -303,9 +322,9 @@ fn choose_distribution(wire: EntryWire) -> Result<RegistryEntry, UnavailableReas
 /// Lower is preferred; see [`choose_distribution`].
 fn preference_rank(entry: &RegistryEntry) -> u8 {
     match &entry.distribution {
-        Distribution::Binary { platforms } if platforms.contains_key(current_platform()) => 0,
-        Distribution::Npx { .. } => 1,
-        Distribution::Uvx { .. } => 2,
+        Distribution::Npx { .. } => 0,
+        Distribution::Uvx { .. } => 1,
+        Distribution::Binary { platforms } if platforms.contains_key(current_platform()) => 2,
         Distribution::Binary { .. } => 3,
     }
 }

@@ -6,11 +6,11 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Added
 
-- **See the agents Zorvo cannot offer.** Settings → Agents has a collapsed **Not available** section for registry agents Zorvo does not offer, each with the reason, such as "The registry publishes no checksum for this download, so Zorvo cannot verify it." Search covers them. They cannot be added: Zorvo still never runs a download it cannot check against a published SHA-256.
+- **See the agents Zorvo cannot offer.** Settings → Agents has a collapsed **Not available** section for registry agents Zorvo does not offer, each with the reason, such as "The registry publishes no usable checksum for this download, so Zorvo cannot verify it." Search covers them. They cannot be added: Zorvo still never runs a download it cannot check against a published SHA-256.
 
 ### Fixed
 
-- **Agents that publish more than one way to run were missing.** Kilo and siGit Code, which the registry offers both as a download and as an npm package, are in the catalog now. When an entry offers both, Zorvo uses the checked download for your Mac and falls back to the pinned package; the checks on each are the same as before.
+- **Agents that publish more than one way to run were missing.** Kilo and siGit Code, which the registry offers both as a download and as an npm package, are in the catalog now. When an entry offers several ways, Zorvo uses the pinned npm package, then the pinned Python package, then the download for your Mac, and only one that passes the same checks as before. One check is looser: a missing checksum on a platform other than your Mac's no longer drops the whole entry, since only your Mac's download is ever used.
 
 ## [0.6.1] - 2026-10-27
 

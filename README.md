@@ -119,7 +119,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose a change,
    artifact from that run with your own `gh` login (which needs access to this
    repository and to
    [zorvo-releases](https://github.com/zakyirsyaad/zorvo-releases)) and checks
-   it. It shows what changed since the last release in the dependencies, the
+   it. A download that breaks halfway (a reset connection, a timeout, a server
+   error) is tried again on its own, up to three tries in all; any other
+   failure stops it. It shows what changed since the last release in the dependencies, the
    workflow and the scripts, and asks you to go on. Then it asks for the key's
    password (typed hidden, and never read from the environment), signs the
    update package, and makes a draft release in zorvo-releases (this

@@ -8,6 +8,7 @@ import { ComposerDock, type ComposerHandle } from "./components/ComposerDock";
 import { RemovedAgentPanel } from "./components/RemovedAgentPanel";
 import { FilesPanel } from "./components/FilesPanel";
 import { EmptySessionState, FileDropOverlay, NoticeBanner } from "./components/AppPlaceholders";
+import { FailedTurnBanner } from "./components/FailedTurnBanner";
 import { SignInLayer } from "./components/SignInLayer";
 import { AgentInstallPanel } from "./components/AgentInstallPanel";
 import { pickerLabelOf } from "./lib/install-plan";
@@ -103,6 +104,14 @@ const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
 
 export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
+  /** The error each session's last turn failed with, shown with a way to try again while that session is open. */
+  const [failedTurns, setFailedTurns] = useState<Readonly<Record<string, string>>>({});
+  const clearFailedTurn = (sessionId: string) =>
+    setFailedTurns((prev) => {
+      if (!(sessionId in prev)) return prev;
+      const { [sessionId]: _cleared, ...rest } = prev;
+      return rest;
+    });
   const [activeSessionId, setActiveSessionId] = useState("");
   /** The agent picked for the next new session; null means the default from Settings. */
   const [pickedAgentId, setPickedAgentId] = useState<string | null>(null);
@@ -279,6 +288,8 @@ export default function App() {
     rememberOptions: rememberAgentOptions,
     onAttention: (sessionId, reason) => notifyAttention(sessionId, reason),
     onAuthRequired: signIn.handBack,
+    onTurnFailed: (sessionId, error) =>
+      error ? setFailedTurns((prev) => ({ ...prev, [sessionId]: error })) : clearFailedTurn(sessionId),
   });
   // The one instance of Add, Update and Remove: Settings, saved sessions of a removed agent and popouts use it.
   const catalogActions = useAgentCatalogActions({
@@ -691,6 +702,19 @@ export default function App() {
             <article className={`${isDiffOpen && isDiffExpanded ? "hidden" : "flex"} flex-1 flex-col bg-bg relative overflow-hidden`}>
               {isDraggingFiles && <FileDropOverlay />}
               {notice && <NoticeBanner message={notice} onDismiss={() => setNotice(null)} />}
+              {failedTurns[activeSessionId] && (
+                <FailedTurnBanner
+                  agentName={activeAgent?.name}
+                  error={failedTurns[activeSessionId]}
+                  isBusy={isSessionBusy(activeSessionId)}
+                  onRetry={
+                    acp.hasFailedPrompt(activeSessionId)
+                      ? () => void acp.retryFailedTurn(activeSessionId, (unsent) => restoreMessage(activeSessionId, unsent.text, unsent.attachments))
+                      : undefined
+                  }
+                  onDismiss={() => clearFailedTurn(activeSessionId)}
+                />
+              )}
               <AppUpdateNotice
                 update={appUpdate.update}
                 busyCount={sessions.filter((session) => isSessionBusy(session.id)).length}

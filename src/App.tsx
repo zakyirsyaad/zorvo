@@ -265,7 +265,6 @@ export default function App() {
     onSignInNeeded: signInStatus.markNeeded,
     onSignedIn: signInStatus.markSignedIn,
     onSignInBlocked: reportError,
-    refreshAgents,
     agents,
     composerRef,
     activeSessionIdRef,
@@ -286,7 +285,6 @@ export default function App() {
     rememberProbed,
     status: signInStatus,
     signIn,
-    refreshAgents,
   });
 
   // A draft asks its ACP agent what it offers, and whether it needs a sign-in, before the first message.
@@ -821,6 +819,8 @@ export default function App() {
                       isCreatingWorktree,
                       isResumable,
                       canStartSession,
+                      isSendBlocked: draftNeedsInstall || draftNeedsSignIn,
+                      isEndedSession: Boolean(activeSession),
                     })}
                     onSendMessage={handleSendMessage}
                     attachAsFiles

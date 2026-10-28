@@ -23,7 +23,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Fixed
 
-- **Check again sees a key you set in your shell.** Setting an API key in `~/.zshrc` and clicking **Check again** in the sign-in panel (or **Check sign-in** in Settings → Agents) used to keep saying you were signed out, because Zorvo reads your login shell's environment once, at start. Both buttons now read it again first, as Settings → Agents → **Check again** does, and show "Checking…" meanwhile. If reading it fails, the agent is still asked.
+- **Check again sees a key you set in your shell.** Setting an API key in `~/.zshrc` and clicking **Check again** in the sign-in panel (or **Check sign-in** in Settings → Agents) used to keep saying you were signed out, because Zorvo reads your login shell's environment once, at start. Both buttons now read it again first (only that: no registry fetch) and show "Checking…" meanwhile. If reading it fails, the agent is still asked.
 - **Agents that publish more than one way to run were missing.** Kilo and siGit Code, which the registry offers both as a download and as an npm package, are in the catalog now. When an entry offers several ways, Zorvo uses the pinned npm package, then the pinned Python package, then the download for your Mac, and only one that passes the same checks as before. One check is looser: a missing checksum on a platform other than your Mac's no longer drops the whole entry, since only your Mac's download is ever used.
 - **A new Codex session started in Full access moves to Workspace access**, not to Read-only, which stopped the agent from editing. Zorvo also recognises a risky mode by its name, not only its id. Codex's default Auto review is still left as it is.
 

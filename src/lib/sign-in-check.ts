@@ -23,13 +23,13 @@ export async function checkSignIn(profileId: string, cwd: string): Promise<SignI
 }
 
 /**
- * Reads the agents and the login shell's environment afresh, so a key exported in the shell's
- * startup files after Zorvo started is seen by the next check. A refresh that fails (the failure
- * is reported by the caller's own handler) never stops the check that follows.
+ * Re-reads the login shell's environment, so a key exported in the shell's startup files after Zorvo
+ * started is seen by the next check. It does nothing else (no registry fetch, no npm), and a read
+ * that fails never stops the check that follows.
  */
-export async function refreshQuietly(refresh: () => Promise<void>): Promise<void> {
+export async function refreshLoginEnv(): Promise<void> {
   try {
-    await refresh();
+    await invoke('refresh_login_env');
   } catch {
     // The check goes on with the environment it has.
   }

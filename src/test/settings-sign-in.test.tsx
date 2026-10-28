@@ -214,7 +214,6 @@ function setupHook(
     cwd?: string | undefined;
     agentOptions?: Record<string, AgentOptions>;
     authRequest?: AuthRequest;
-    refreshAgents?: () => Promise<void>;
   } = {},
 ) {
   let state = { settings: { signedInAgents: [] as string[] } as Settings } as PersistedState;
@@ -242,7 +241,6 @@ function setupHook(
         rememberProbed,
         status,
         signIn,
-        refreshAgents: overrides.refreshAgents ?? (() => Promise.resolve()),
       });
       return { status, settingsSignIn };
     },
@@ -277,30 +275,28 @@ describe("Check sign-in", () => {
     expect(rememberProbed).toHaveBeenCalledTimes(1);
   });
 
-  it("reads the login shell's environment afresh before it asks the agent", async () => {
+  it("re-reads the login shell's environment, and only that, before it asks the agent", async () => {
     const order: string[] = [];
     vi.spyOn(internals(), "invoke").mockImplementation((cmd) => {
       order.push(cmd);
-      return Promise.resolve(structuredClone(PROBED));
+      return Promise.resolve(cmd === "acp_probe_agent" ? structuredClone(PROBED) : undefined);
     });
-    const refreshAgents = vi.fn(() => {
-      order.push("refresh");
-      return Promise.resolve();
-    });
-    const { hook } = setupHook({ refreshAgents });
+    const { hook } = setupHook();
 
     act(() => hook.result.current.settingsSignIn.check("claude-acp"));
-    // The check shows as running from the click, through the refresh.
+    // The check shows as running from the click, through the re-read.
     expect(hook.result.current.settingsSignIn.checkOf("claude-acp").phase).toBe("checking");
     await waitFor(() => expect(hook.result.current.settingsSignIn.checkOf("claude-acp").phase).toBe("done"));
 
-    expect(order).toEqual(["refresh", "acp_probe_agent"]);
-    expect(refreshAgents).toHaveBeenCalledTimes(1);
+    // No registry fetch, no npm: get_agent_profiles is not called.
+    expect(order).toEqual(["refresh_login_env", "acp_probe_agent"]);
   });
 
   it("still asks the agent when reading the environment fails", async () => {
-    const spy = vi.spyOn(internals(), "invoke").mockResolvedValue(structuredClone(PROBED));
-    const { hook } = setupHook({ refreshAgents: () => Promise.reject(new Error("login shell timed out")) });
+    const spy = vi.spyOn(internals(), "invoke").mockImplementation((cmd) =>
+      cmd === "refresh_login_env" ? Promise.reject("login shell timed out") : Promise.resolve(structuredClone(PROBED)),
+    );
+    const { hook } = setupHook();
 
     act(() => hook.result.current.settingsSignIn.check("claude-acp"));
     await waitFor(() => expect(hook.result.current.settingsSignIn.checkOf("claude-acp").phase).toBe("done"));
@@ -309,14 +305,13 @@ describe("Check sign-in", () => {
     expect(hook.result.current.settingsSignIn.checkOf("claude-acp").message).toBe("Claude Code looks ready.");
   });
 
-  it("does not read the environment for the check that runs when Settings opens", async () => {
-    vi.spyOn(internals(), "invoke").mockResolvedValue({ reportsStatus: true, signInChecked: true });
-    const refreshAgents = vi.fn(() => Promise.resolve());
-    const { hook } = setupHook({ agentOptions: { "claude-acp": KNOWN_OPTIONS }, refreshAgents });
+  it("does not re-read the environment for the check that runs when Settings opens", async () => {
+    const spy = vi.spyOn(internals(), "invoke").mockResolvedValue({ reportsStatus: true, signInChecked: true });
+    const { hook } = setupHook({ agentOptions: { "claude-acp": KNOWN_OPTIONS } });
 
     await act(async () => hook.result.current.settingsSignIn.sweep(["claude-acp"]));
 
-    expect(refreshAgents).not.toHaveBeenCalled();
+    expect(argsOf(spy, "refresh_login_env")).toHaveLength(0);
   });
 
   it("only asks about the sign-in when the agent's options are known", async () => {
@@ -724,7 +719,6 @@ describe("a sign-in started from Settings", () => {
         composerRef: { current: { focus } as never },
         activeSessionIdRef: { current: undefined },
         retryAfterSignIn: () => Promise.resolve(true),
-        refreshAgents: () => Promise.resolve(),
         onRestore: vi.fn(),
         onSignInNeeded,
         onSignedIn,
@@ -786,7 +780,6 @@ describe("a sign-in that is running is not cut off", () => {
         composerRef: { current: { focus: vi.fn(), restore } as never },
         activeSessionIdRef: { current: "s2" },
         retryAfterSignIn: () => Promise.resolve(true),
-        refreshAgents: () => Promise.resolve(),
         onRestore: vi.fn(),
         onSignInNeeded,
         onSignInBlocked,
@@ -868,7 +861,6 @@ describe("Try again after a failed login from Settings", () => {
         composerRef: { current: { focus: vi.fn() } as never },
         activeSessionIdRef: { current: undefined },
         retryAfterSignIn: () => Promise.resolve(true),
-        refreshAgents: () => Promise.resolve(),
         onRestore: vi.fn(),
       }),
     );

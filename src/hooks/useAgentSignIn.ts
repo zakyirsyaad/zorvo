@@ -7,7 +7,7 @@ import type { FirstMessage } from './session-engine/useAcpEngine';
 import type { ComposerHandle } from '../components/ComposerDock';
 import type { AuthMethod } from '../lib/acp-auth';
 import { SIGN_IN_RUNNING_NOTICE } from '../lib/agent-sign-in';
-import { checkSignIn, refreshQuietly } from '../lib/sign-in-check';
+import { checkSignIn, refreshLoginEnv } from '../lib/sign-in-check';
 import type { AgentProfile, Session } from '../types';
 
 /** An agent and the methods it offers, for a sign-in started from outside the draft (Settings). */
@@ -27,8 +27,6 @@ export interface AgentSignInDeps {
   onSignedIn?: (profileId: string) => void;
   /** A refusal could not open its sign-in panel because another agent's sign-in is running. */
   onSignInBlocked?: (message: string) => void;
-  /** Reads the agents and the login shell's environment afresh: Settings' Check again. */
-  refreshAgents: () => Promise<void>;
 }
 
 /**
@@ -196,7 +194,7 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
     const attempt = {};
     attemptRef.current = attempt;
     setStatus('checking');
-    await refreshQuietly(depsRef.current.refreshAgents);
+    await refreshLoginEnv();
     // Dismissed, cancelled or replaced while the environment was read.
     if (attemptRef.current !== attempt) return;
     const check = await checkSignIn(request.profileId, request.cwd);

@@ -92,6 +92,15 @@ fn get_agent_profiles(
     Ok(agent_profiles(&versions_in_use(&store)))
 }
 
+/// Re-reads the login shell's environment and nothing else, so a key exported in the shell's
+/// startup files after Zorvo started reaches the next agent that starts. Unlike
+/// `get_agent_profiles` with `refresh` it fetches no registry and runs no `npm`. The webview
+/// sends nothing and gets nothing back: the environment itself never leaves the backend.
+#[tauri::command(async)]
+fn refresh_login_env() -> Result<(), String> {
+    env_resolver::refresh_user_env().map(drop)
+}
+
 /// Every agent in the registry with where it stands on this Mac, for the
 /// catalog screen. Unlike the profiles it includes agents that are waiting out
 /// the seven-day wait or have no build for this Mac.
@@ -386,6 +395,7 @@ pub fn run() {
             app_update::app_update_install,
             app_update::app_update_restart,
             get_agent_profiles,
+            refresh_login_env,
             get_agent_catalog,
             get_agent_icons,
             list_workspaces,

@@ -16,6 +16,17 @@ describe("composerPlaceholder", () => {
     expect(composerPlaceholder(IDLE)).toBe(COMPOSER_PLACEHOLDERS.noWorkspace);
   });
 
+  it("says an ended session is continued while its agent must be installed, as the note does", () => {
+    // Not resumable (its agent is not installed), yet the next message continues the session.
+    const ended = { ...IDLE, canStartSession: true, isEndedSession: true };
+    expect(composerPlaceholder({ ...ended, isSendBlocked: true })).toBe(COMPOSER_PLACEHOLDERS.resume);
+    expect(composerNote({ continuesSession: true, agentToInstall: "Codex" })).toBe("Install Codex to continue this session.");
+    // Not blocked: today's wording stays.
+    expect(composerPlaceholder(ended)).toBe(COMPOSER_PLACEHOLDERS.newSession);
+    // Blocked, but no session is shown: a new one starts.
+    expect(composerPlaceholder({ ...IDLE, canStartSession: true, isSendBlocked: true })).toBe(COMPOSER_PLACEHOLDERS.newSession);
+  });
+
   it("is not where a blocked Send is explained: that is the note, which stays while typing", () => {
     // An agent to install or sign in to does not change what the empty box says.
     expect(composerPlaceholder({ ...IDLE, canStartSession: true })).toBe(COMPOSER_PLACEHOLDERS.newSession);

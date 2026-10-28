@@ -233,15 +233,16 @@ describe("signing in to an ACP agent from the app", () => {
     expect(screen.queryByRole("region", { name: "Sign in to Qwen Code" })).toBeNull();
   });
 
-  /** The names of the commands the spy saw, in order, with the refresh and the re-check marked. */
+  /** The commands the spy saw, in order: the environment re-read and the re-check; get_agent_profiles must not appear. */
   const sequenceOf = (spy: { mock: { calls: unknown[][] } }) =>
     (spy.mock.calls as unknown as InvokeCall[]).flatMap(([name, args]) => {
-      if (name === "get_agent_profiles" && args?.refresh === true) return ["refresh"];
+      if (name === "refresh_login_env") return ["refresh"];
+      if (name === "get_agent_profiles" && args?.refresh === true) return ["registry-refresh"];
       if (name === "acp_probe_agent" && isRecheck(args)) return ["probe"];
       return [];
     });
 
-  it("Check again reads the login shell's environment afresh before it asks the agent", async () => {
+  it("Check again re-reads the login shell's environment, and only that, before it asks the agent", async () => {
     const keyMethods = [{ id: "api-key", name: "API Key", _meta: { "api-key": { provider: "x" } } }];
     const { spy, panel } = await sendRefused({
       methods: keyMethods,
@@ -265,7 +266,7 @@ describe("signing in to an ACP agent from the app", () => {
     const { spy, panel } = await sendRefused({
       methods: keyMethods,
       overrides: {
-        get_agent_profiles: (args) => (args?.refresh === true ? refresh.promise : realInvoke("get_agent_profiles", args)),
+        refresh_login_env: () => refresh.promise,
         acp_probe_agent: (args) => (isRecheck(args) ? Promise.resolve({ signInChecked: true }) : realInvoke("acp_probe_agent", args)),
       },
     });
@@ -289,7 +290,7 @@ describe("signing in to an ACP agent from the app", () => {
     const { spy, panel } = await sendRefused({
       methods: keyMethods,
       overrides: {
-        get_agent_profiles: (args) => (args?.refresh === true ? Promise.reject("login shell timed out") : realInvoke("get_agent_profiles", args)),
+        refresh_login_env: () => Promise.reject("login shell timed out"),
         acp_probe_agent: (args) => (isRecheck(args) ? Promise.resolve({ signInChecked: true }) : realInvoke("acp_probe_agent", args)),
       },
     });
@@ -308,7 +309,7 @@ describe("signing in to an ACP agent from the app", () => {
     const { spy, panel } = await sendRefused({
       methods: keyMethods,
       overrides: {
-        get_agent_profiles: (args) => (args?.refresh === true ? refresh.promise : realInvoke("get_agent_profiles", args)),
+        refresh_login_env: () => refresh.promise,
         acp_probe_agent: (args) => (isRecheck(args) ? Promise.resolve({ signInChecked: true }) : realInvoke("acp_probe_agent", args)),
       },
     });
@@ -547,7 +548,6 @@ describe("signing in to an ACP agent from the app", () => {
         composerRef: { current: null },
         activeSessionIdRef: { current: "session-a" },
         retryAfterSignIn: () => Promise.resolve(true),
-        refreshAgents: () => Promise.resolve(),
         onRestore: () => {},
       }),
     );
@@ -572,7 +572,6 @@ describe("signing in to an ACP agent from the app", () => {
         composerRef: { current: null },
         activeSessionIdRef: { current: "session-a" },
         retryAfterSignIn: () => Promise.resolve(true),
-        refreshAgents: () => Promise.resolve(),
         onRestore: () => {},
         onSignInNeeded,
       }),
@@ -608,7 +607,6 @@ describe("signing in to an ACP agent from the app", () => {
         composerRef: { current: null },
         activeSessionIdRef: { current: "session-a" },
         retryAfterSignIn,
-        refreshAgents: () => Promise.resolve(),
         onRestore: () => {},
       }),
     );

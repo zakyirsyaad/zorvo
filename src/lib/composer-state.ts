@@ -89,11 +89,18 @@ export function composerPlaceholder(state: {
   isCreatingWorktree: boolean;
   isResumable: boolean;
   canStartSession: boolean;
+  /** Send waits for an install or a sign-in; the note under the box says why. */
+  isSendBlocked?: boolean;
+  /** An ended session is shown: once its agent is ready, the next message continues it. */
+  isEndedSession?: boolean;
 }): string | undefined {
   if (state.isRunning) return undefined;
   if (state.isCreatingWorktree) return COMPOSER_PLACEHOLDERS.creatingWorktree;
   if (!state.isResumable && !state.canStartSession) return COMPOSER_PLACEHOLDERS.noWorkspace;
-  return state.isResumable ? COMPOSER_PLACEHOLDERS.resume : COMPOSER_PLACEHOLDERS.newSession;
+  // An ended session whose agent cannot run yet is not resumable, but the note says the next message
+  // continues it, so the placeholder must not say it starts a new one.
+  const continuesSession = state.isResumable || Boolean(state.isSendBlocked && state.isEndedSession);
+  return continuesSession ? COMPOSER_PLACEHOLDERS.resume : COMPOSER_PLACEHOLDERS.newSession;
 }
 
 /**

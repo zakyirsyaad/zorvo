@@ -3,6 +3,7 @@ import type { AgentAuth } from './useAgentAuth';
 import { useLatest } from './useLatest';
 import { parseAuthRequired } from '../lib/acp-auth';
 import type { AcpChoices } from '../lib/acp-draft';
+import { SIGN_IN_RUNNING_NOTICE } from '../lib/agent-sign-in';
 import { errorMessage } from '../lib/files';
 import { importedSessionSpec, type SessionSpec } from '../lib/session-start';
 import type { ListedSession } from '../lib/session-list';
@@ -77,8 +78,8 @@ export function useSessionImport({
         // the import did not open, so nothing was consumed.
         if (activeSessionIdRef.current === session.id) openNewSession(cwd, agent.id, { keepChoices: true });
         const methods = parseAuthRequired(error);
-        if (methods) requestSignIn(agent.id, cwd, methods);
-        else onImportError(`Could not open the session: ${errorMessage(error)}`);
+        if (!methods) onImportError(`Could not open the session: ${errorMessage(error)}`);
+        else if (!requestSignIn(agent.id, cwd, methods)) onImportError(SIGN_IN_RUNNING_NOTICE);
       })
       // The picks went with the import only once it opened: a failed one returns the draft as it was.
       .then((opened) => {

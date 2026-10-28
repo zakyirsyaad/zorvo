@@ -1809,3 +1809,54 @@ fn drops_requests_when_the_session_stops() {
         Err(ELICITATION_GONE.to_string())
     );
 }
+
+#[test]
+fn sign_in_probe_of_an_agent_that_reports_it_opens_no_session() {
+    let (manager, _rx) = manager();
+    let log = method_log("sign-in-only");
+    let launch = with_env(
+        with_env(fake_agent(), "FAKE_ACP_METHOD_LOG", log.to_str().unwrap()),
+        "FAKE_ACP_AUTH_STATUS",
+        "account",
+    );
+
+    let probed = manager.probe_sign_in(&cwd(), &launch).expect("probe");
+
+    assert_eq!(methods_in(&log), vec!["initialize".to_string()]);
+    assert!(probed.reports_status);
+    assert!(probed.sign_in_checked);
+}
+
+#[test]
+fn sign_in_probe_of_an_agent_that_cannot_report_it_opens_no_session_either() {
+    let (manager, _rx) = manager();
+    let log = method_log("sign-in-silent-agent");
+    let launch = with_env(fake_agent(), "FAKE_ACP_METHOD_LOG", log.to_str().unwrap());
+
+    let probed = manager.probe_sign_in(&cwd(), &launch).expect("probe");
+
+    assert_eq!(methods_in(&log), vec!["initialize".to_string()]);
+    assert!(!probed.reports_status);
+    assert!(!probed.sign_in_checked);
+}
+
+#[test]
+fn sign_in_probe_says_nothing_when_the_agent_reports_no_account() {
+    let (manager, _rx) = manager();
+    let launch = with_env(fake_agent(), "FAKE_ACP_AUTH_STATUS", "silent");
+
+    let probed = manager.probe_sign_in(&cwd(), &launch).expect("probe");
+
+    assert!(probed.reports_status);
+    assert!(!probed.sign_in_checked);
+}
+
+#[test]
+fn sign_in_probe_fails_with_the_sign_in_error_when_nobody_is_signed_in() {
+    let (manager, _rx) = manager();
+    let launch = with_env(fake_agent(), "FAKE_ACP_AUTH_STATUS", "none");
+
+    let error = manager.probe_sign_in(&cwd(), &launch).unwrap_err();
+
+    assert_eq!(auth_methods_in(&error)[0]["id"], "browser");
+}

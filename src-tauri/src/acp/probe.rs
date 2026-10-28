@@ -57,6 +57,17 @@ pub struct ProbedAgent {
     pub can_list_sessions: bool,
 }
 
+/// What a sign-in-only probe saw. It never opens a session in the agent.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignInProbe {
+    /// Whether the agent can say who is signed in (`_meta.authStatus`). When it
+    /// cannot, the only way to learn it is to open a session, which this never does.
+    pub reports_status: bool,
+    /// Whether the agent reported an account.
+    pub sign_in_checked: bool,
+}
+
 /// What the agent pushes on its own while a probe waits.
 enum Pushed {
     Commands(Value),
@@ -109,21 +120,15 @@ impl AcpManager {
                 let reports_auth = init["agentCapabilities"]["_meta"]["authStatus"].is_object();
                 let auth_until = reports_auth.then(|| started + AUTH_STATUS_TIMEOUT);
                 if !needs_options && reports_auth {
-                    let awaited = Awaited {
-                        commands_until: None,
-                        auth_until,
-                    };
-                    let auth_kind = settle(&rx, &awaited).1;
-                    let probed = ProbedAgent {
-                        modes: Value::Null,
-                        models: Value::Null,
-                        config_options: Value::Array(Vec::new()),
-                        commands: Value::Array(Vec::new()),
-                        sign_in_checked: auth_kind.is_some(),
-                        can_list_sessions: init["agentCapabilities"]["sessionCapabilities"]["list"]
-                            .is_object(),
-                    };
-                    let outcome = signed_in(&init, auth_kind.as_deref()).map(|()| probed);
+                    let outcome =
+                        read_reported_sign_in(&rx, &init, started).map(|checked| ProbedAgent {
+                            modes: Value::Null,
+                            models: Value::Null,
+                            config_options: Value::Array(Vec::new()),
+                            commands: Value::Array(Vec::new()),
+                            sign_in_checked: checked,
+                            can_list_sessions: can_list_sessions(&init),
+                        });
                     return Ok((outcome, None));
                 }
                 // Opening a session is also how an agent that cannot report its sign-in refuses it.
@@ -147,8 +152,7 @@ impl AcpManager {
                     // An agent that reports its sign-in may open sessions signed out
                     // (Claude Code): then only a reported account shows one.
                     sign_in_checked: !reports_auth || auth_kind.is_some(),
-                    can_list_sessions: init["agentCapabilities"]["sessionCapabilities"]["list"]
-                        .is_object(),
+                    can_list_sessions: can_list_sessions(&init),
                 };
                 let discard =
                     discard_method(&init).map(|method| (method, session["sessionId"].clone()));
@@ -166,6 +170,72 @@ impl AcpManager {
             Err(error) => Err(failure_message(&connection, error)),
         }
     }
+}
+
+impl AcpManager {
+    /// Asks only who the agent is signed in as, and never opens a session in it:
+    /// an agent that cannot report its sign-in is left unasked (`reports_status`
+    /// false) rather than asked through a session that would stay in its
+    /// history. Fails with the sign-in error the UI parses when the agent says
+    /// nobody is signed in.
+    pub fn probe_sign_in(&self, cwd: &str, launch: &AcpLaunch) -> Result<SignInProbe, String> {
+        validate_cwd(cwd)?;
+        let started = Instant::now();
+        let (tx, rx) = mpsc::channel();
+        let connection = spawn_unrouted(cwd, launch, move |method, params| {
+            if method == AUTH_STATUS_UPDATE {
+                let kind = params["authStatus"]["kind"].as_str().unwrap_or_default();
+                let _ = tx.send(Pushed::AuthStatus(kind.to_string()));
+            }
+        })?;
+        let result = initialize(&connection)
+            .map_err(OpenError::Transport)
+            .and_then(|init| {
+                if !init["agentCapabilities"]["_meta"]["authStatus"].is_object() {
+                    return Ok(SignInProbe {
+                        reports_status: false,
+                        sign_in_checked: false,
+                    });
+                }
+                read_reported_sign_in(&rx, &init, started).map(|checked| SignInProbe {
+                    reports_status: true,
+                    sign_in_checked: checked,
+                })
+            });
+        match result {
+            Ok(probe) => {
+                connection.kill();
+                Ok(probe)
+            }
+            // Signed out is an answer; any other failure may carry the agent's stderr.
+            Err(OpenError::Agent(message)) => {
+                connection.kill();
+                Err(message)
+            }
+            Err(error) => Err(failure_message(&connection, error)),
+        }
+    }
+}
+
+fn can_list_sessions(init: &Value) -> bool {
+    init["agentCapabilities"]["sessionCapabilities"]["list"].is_object()
+}
+
+/// Waits for the sign-in status an agent that declares `_meta.authStatus` pushes.
+/// True when it reported an account, false when it said nothing in time; fails
+/// with the sign-in error when it says nobody is signed in.
+fn read_reported_sign_in(
+    rx: &Receiver<Pushed>,
+    init: &Value,
+    started: Instant,
+) -> Result<bool, OpenError> {
+    let awaited = Awaited {
+        commands_until: None,
+        auth_until: Some(started + AUTH_STATUS_TIMEOUT),
+    };
+    let auth_kind = settle(rx, &awaited).1;
+    signed_in(init, auth_kind.as_deref())?;
+    Ok(auth_kind.is_some())
 }
 
 /// The message of an answer the agent gave itself (the sign-in error the UI parses).

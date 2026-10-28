@@ -6,6 +6,7 @@ import { TerminalSignInDialog } from "./TerminalSignInDialog";
 import type { FolderOption } from "./onboarding/types";
 import type { AgentCatalogActions } from "../hooks/useAgentCatalogActions";
 import type { AgentCatalogHandle } from "../hooks/useAgentCatalog";
+import type { SettingsSignIn } from "../hooks/useSettingsSignIn";
 import type { GithubConnection } from "../hooks/useGithubConnection";
 import type { PersistedStateHandle } from "../hooks/usePersistedState";
 import { pendingUpdates } from "../lib/agent-catalog";
@@ -30,6 +31,8 @@ export interface AppSettingsDialogProps {
   onClose: () => void;
   /** The GitHub connection; General shows no GitHub section without it. */
   github?: GithubConnection;
+  /** Sign-in state and actions for the agents; the Agents tab shows none without it. */
+  agentSignIn?: SettingsSignIn;
   /** Opens a web link in the user's browser. */
   onOpenUrl?: (url: string) => void;
 }
@@ -48,6 +51,7 @@ export function AppSettingsDialog({
   onRunOnboarding,
   onClose,
   github,
+  agentSignIn,
   onOpenUrl,
 }: AppSettingsDialogProps) {
   const githubRef = useRef<HTMLDivElement>(null);
@@ -74,6 +78,18 @@ export function AppSettingsDialog({
       onResize={github.resize}
     />
   ) : null;
+  // An agent's login started here is drawn above Settings, like the GitHub one; once Settings is closed the app's own layer takes it.
+  const agentDialog =
+    agentSignIn?.terminal.dialog && isOpen ? (
+      <TerminalSignInDialog
+        state={agentSignIn.terminal.dialog}
+        output={agentSignIn.terminal.output}
+        onClose={agentSignIn.cancelSignIn}
+        onTryAgain={agentSignIn.retrySignIn}
+        onInput={agentSignIn.terminal.sendInput}
+        onResize={agentSignIn.terminal.resize}
+      />
+    ) : null;
   if (!isOpen) return signInDialog;
 
   const { settings } = state;
@@ -93,7 +109,7 @@ export function AppSettingsDialog({
         onRemoveRecentFolder={onRemoveRecentFolder}
         onRunOnboarding={onRunOnboarding}
         onClose={onClose}
-        isEscapeBlocked={signInDialog !== null}
+        isEscapeBlocked={signInDialog !== null || agentDialog !== null}
         updateCount={pendingUpdates(catalog.catalog?.agents ?? [], enabledIds).length}
         githubSection={
           github && (
@@ -114,10 +130,12 @@ export function AppSettingsDialog({
             refreshAgents={refreshAgents}
             catalog={catalog}
             actions={actions}
+            signIn={agentSignIn}
           />
         }
       />
       {signInDialog}
+      {agentDialog}
     </>
   );
 }

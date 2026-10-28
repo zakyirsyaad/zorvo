@@ -16,13 +16,16 @@ export interface AuthRequest {
 
 export interface AgentAuth {
   authRequest: AuthRequest | null;
-  /** Asks the user to sign in to an agent that refused to start without it. */
+  /**
+   * Asks the user to sign in to an agent that refused to start without it. False when it was not
+   * opened because another agent's sign-in is running: that one is not cut off.
+   */
   requestSignIn: (
     profileId: string,
     cwd: string,
     methods: AuthMethod[],
     pending?: FirstMessage & { sessionId: string },
-  ) => void;
+  ) => boolean;
   /** Signs in with one of the agent's methods, checks it took, and sends the refused message again. */
   signIn: (methodId: string) => void;
   /** Asks the agent again whether someone is signed in. */
@@ -35,8 +38,10 @@ export function useAgentAuth() {
   const [authRequest, setAuthRequest] = useState<AuthRequest | null>(null);
 
   const requestSignIn = useCallback<AgentAuth['requestSignIn']>(
-    (profileId, cwd, methods, pending) =>
-      setAuthRequest({ profileId, cwd, methods, status: 'idle', ...(pending ? { pending } : {}) }),
+    (profileId, cwd, methods, pending) => {
+      setAuthRequest({ profileId, cwd, methods, status: 'idle', ...(pending ? { pending } : {}) });
+      return true;
+    },
     [],
   );
 

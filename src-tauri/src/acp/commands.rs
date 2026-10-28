@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use tauri::State;
 
 use super::manager::{AcpEvent, AcpLaunch, AcpManager, ReopenPurpose, StartedSession};
-use super::probe::ProbedAgent;
+use super::probe::{ProbedAgent, SignInProbe};
 use super::qwen_log::{self, QwenApiError};
 use super::session_list::ListedSessions;
 use super::terminal_auth::{is_sign_in_terminal_id, CANCELLED_MESSAGE};
@@ -217,6 +217,19 @@ pub fn acp_probe_agent(
         &launch_in_workspace(&store, &cwd, &profile_id)?,
         needs_options,
     )
+}
+
+/// Learns whether someone is signed in to an agent without ever opening a
+/// session in it, so it is safe to run on its own (when Settings → Agents opens).
+/// An agent that cannot report its sign-in comes back with `reportsStatus` false.
+#[tauri::command(async)]
+pub fn acp_probe_sign_in(
+    manager: State<'_, AcpManager>,
+    store: State<'_, AppStore>,
+    profile_id: String,
+    cwd: String,
+) -> Result<SignInProbe, String> {
+    manager.probe_sign_in(&cwd, &launch_in_workspace(&store, &cwd, &profile_id)?)
 }
 
 /// Signs in to an agent with one of the auth methods it reported.

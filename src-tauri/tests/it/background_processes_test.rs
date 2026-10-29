@@ -209,10 +209,12 @@ fn lists_a_group_leader_once_and_stops_at_its_subtree() {
 fn lists_a_command_that_replaced_its_shell_in_a_real_tree() {
     // Qwen Code's shell tool starts the command in its own process group and
     // bash execs it; `setsid` and `exec` reproduce that shape with no shell.
+    // perl is a real binary; `/usr/bin/python3` is the Command Line Tools shim,
+    // which can take seconds to start on a cold machine.
     let root = Command::new("/bin/sh")
         .args([
             "-c",
-            "/usr/bin/python3 -c 'import os; os.setsid(); os.execvp(\"sleep\", [\"sleep\", \"30\"])' & wait",
+            "/usr/bin/perl -MPOSIX -e 'POSIX::setsid(); exec q(sleep), q(30)' & wait",
         ])
         .stderr(Stdio::null())
         .spawn()
@@ -221,7 +223,7 @@ fn lists_a_command_that_replaced_its_shell_in_a_real_tree() {
     let roots = [("s1".to_string(), guard.0.id())];
 
     let mut task = None;
-    let found = eventually(Duration::from_secs(5), || {
+    let found = eventually(PROCESS_WAIT, || {
         task = scan(&roots, false)
             .expect("scan")
             .into_iter()
@@ -316,6 +318,12 @@ fn is_alive(pid: u32) -> bool {
         .is_ok_and(|status| status.success())
 }
 
+/// How long a test waits for a real process to start, show up or end. A
+/// passing test returns at once, so the cap only matters on a loaded runner,
+/// where hundreds of tests share the machine. A process the test expects to be
+/// killed sleeps for longer than this, so ending on its own cannot pass for a kill.
+const PROCESS_WAIT: Duration = Duration::from_secs(30);
+
 /// Polls `condition` every 50 ms until it holds or `limit` passes.
 fn eventually(limit: Duration, mut condition: impl FnMut() -> bool) -> bool {
     let deadline = Instant::now() + limit;
@@ -366,7 +374,7 @@ impl Drop for TreeGuard {
 #[test]
 fn stops_a_running_task_and_everything_it_started() {
     let root = Command::new("/bin/sh")
-        .args(["-c", "sleep 4; /bin/sh -c 'sleep 30; :' & wait"])
+        .args(["-c", "sleep 4; /bin/sh -c 'sleep 120; :' & wait"])
         .stderr(Stdio::null())
         .spawn()
         .expect("spawn the root");
@@ -374,14 +382,14 @@ fn stops_a_running_task_and_everything_it_started() {
     let roots = [("s1".to_string(), guard.0.id())];
 
     let mut task = None;
-    let found = eventually(Duration::from_secs(5), || {
+    let found = eventually(PROCESS_WAIT, || {
         task = scan(&roots, false).expect("scan").into_iter().next();
         task.is_some()
     });
     assert!(found, "the inner shell never showed up as a task");
     let task = task.expect("task");
     assert_eq!(task.session_id, "s1");
-    let sleeper = eventually(Duration::from_secs(5), || {
+    let sleeper = eventually(PROCESS_WAIT, || {
         let output = Command::new("/bin/ps")
             .args(["-axo", "pid=,ppid=,pgid=,etime=,command="])
             .output()
@@ -404,8 +412,7 @@ fn stops_a_running_task_and_everything_it_started() {
     stop(&roots, task.pid).expect("stop the task");
 
     assert!(
-        eventually(Duration::from_secs(3), || !is_alive(task.pid)
-            && !is_alive(sleep_pid)),
+        eventually(PROCESS_WAIT, || !is_alive(task.pid) && !is_alive(sleep_pid)),
         "the task or its sleep is still running"
     );
 }
@@ -428,7 +435,7 @@ fn kills_a_task_that_ignores_term_even_when_part_of_it_already_exited() {
     let gone_pid = gone.id();
     // The shell and its sleep both ignore TERM, so only KILL ends them.
     let shell = Command::new("/bin/sh")
-        .args(["-c", "trap '' TERM; sleep 30; :"])
+        .args(["-c", "trap '' TERM; sleep 120; :"])
         .stderr(Stdio::null())
         .spawn()
         .expect("spawn the shell");
@@ -436,7 +443,7 @@ fn kills_a_task_that_ignores_term_even_when_part_of_it_already_exited() {
     let shell_pid = guard.0.id();
 
     let mut rows = Vec::new();
-    let started = eventually(Duration::from_secs(5), || {
+    let started = eventually(PROCESS_WAIT, || {
         rows = ps_rows();
         rows.iter()
             .any(|r| r.ppid == shell_pid && r.command.starts_with("sleep"))
@@ -450,7 +457,7 @@ fn kills_a_task_that_ignores_term_even_when_part_of_it_already_exited() {
     let task = TaskProcess {
         pid: shell_pid,
         session_id: "s1".to_string(),
-        command: "/bin/sh -c trap '' TERM; sleep 30; :".to_string(),
+        command: "/bin/sh -c trap '' TERM; sleep 120; :".to_string(),
         elapsed_secs: 0,
         subtree: vec![gone_pid, sleep_pid, shell_pid],
     };
@@ -458,7 +465,7 @@ fn kills_a_task_that_ignores_term_even_when_part_of_it_already_exited() {
     terminate(&task, &rows).expect("stop the task");
 
     assert!(
-        eventually(Duration::from_secs(5), || {
+        eventually(PROCESS_WAIT, || {
             matches!(guard.0.try_wait(), Ok(Some(_))) && !is_alive(sleep_pid)
         }),
         "the shell or its sleep is still running"
@@ -480,7 +487,7 @@ fn reports_the_port_a_task_listens_on() {
     let guard = TreeGuard(root);
     let roots = [("s1".to_string(), guard.0.id())];
 
-    let listening = eventually(Duration::from_secs(10), || {
+    let listening = eventually(PROCESS_WAIT, || {
         scan(&roots, true)
             .expect("scan")
             .iter()

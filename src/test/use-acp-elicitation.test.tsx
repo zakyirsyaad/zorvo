@@ -38,6 +38,11 @@ function callsTo(spy: Spy, cmd: string) {
   return (spy.mock.calls as unknown as InvokeCall[]).filter(([name]) => name === cmd);
 }
 
+/** How many times the session's transcript has been written so far. */
+function savesOf(spy: Spy, sessionId: string) {
+  return callsTo(spy, "save_transcript").filter(([, a]) => a?.sessionId === sessionId).length;
+}
+
 async function acpEvent(payload: Record<string, unknown>) {
   await act(async () => {
     listeners.get("acp-event")?.({ payload });
@@ -406,6 +411,9 @@ describe("Elicitations in the app", () => {
     await act(async () => {
       fireEvent.click(within(row).getByRole("button", { name: "Delete session" }));
     });
+    // A write while the session still existed is fine: on a slow machine the first one comes
+    // due before the delete. None may follow the delete.
+    const savedBeforeDelete = savesOf(spy, sessionId);
     await act(async () => {
       fireEvent.click(within(row).getByRole("button", { name: "Confirm delete" }));
     });
@@ -414,7 +422,7 @@ describe("Elicitations in the app", () => {
 
     expect(callsTo(spy, "acp_stop_session").map(([, a]) => a)).toContainEqual({ sessionId });
     expect(callsTo(spy, "delete_transcript").map(([, a]) => a)).toContainEqual({ sessionId });
-    expect(callsTo(spy, "save_transcript").filter(([, a]) => a?.sessionId === sessionId)).toHaveLength(0);
+    expect(savesOf(spy, sessionId)).toBe(savedBeforeDelete);
     expect(fakeStore().transcripts[sessionId]).toBeUndefined();
   });
 
@@ -431,6 +439,8 @@ describe("Elicitations in the app", () => {
     await act(async () => {
       fireEvent.click(within(row).getByRole("button", { name: "Delete session" }));
     });
+    // As above: only writes after the delete count.
+    const savedBeforeDelete = savesOf(spy, sessionId);
     await act(async () => {
       fireEvent.click(within(row).getByRole("button", { name: "Confirm delete" }));
     });
@@ -441,7 +451,7 @@ describe("Elicitations in the app", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(callsTo(spy, "delete_transcript").map(([, a]) => a)).toContainEqual({ sessionId });
-    expect(callsTo(spy, "save_transcript").filter(([, a]) => a?.sessionId === sessionId)).toHaveLength(0);
+    expect(savesOf(spy, sessionId)).toBe(savedBeforeDelete);
     expect(fakeStore().transcripts[sessionId]).toBeUndefined();
     expect(screen.queryByText("Could not answer the agent: the pipe broke")).toBeNull();
   });

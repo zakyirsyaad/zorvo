@@ -62,7 +62,7 @@ const FEATURES: { icon: IconName; title: string; body: ReactNode }[] = [
       <>
         Read each changed file&apos;s diff and commit the files you choose. The top bar shows the
         branch&apos;s pull request and its checks, read with your own <Chip isCode>gh</Chip>.
-        Settings shows whether it is connected, and Connect signs you in.
+        Settings shows whether your <Chip isCode>gh</Chip> is signed in, and Connect signs you in.
       </>
     ),
   },

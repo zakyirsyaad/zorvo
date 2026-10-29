@@ -24,7 +24,7 @@ export type SignInState = "ready" | "sign-in" | "not-checked";
 const SIGN_IN_STATE: Record<SignInState, { label: string; text: string; dot: string }> = {
   ready: { label: "Ready", text: "text-status-running", dot: "bg-status-running" },
   "sign-in": { label: "Sign in", text: "text-status-attention", dot: "bg-status-attention" },
-  "not-checked": { label: "Not checked", text: "text-fg-muted", dot: "bg-fg-muted" },
+  "not-checked": { label: "Not checked", text: "text-fg-muted", dot: "bg-fg-subtle" },
 };
 
 /** An agent's sign-in readiness, as the sidebar and Settings show it: a dot and a word. */

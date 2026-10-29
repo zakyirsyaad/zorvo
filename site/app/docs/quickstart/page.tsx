@@ -57,7 +57,7 @@ export default function QuickstartPage() {
       <H2 id="composer">The composer</H2>
       <P>
         The bar under the message box shows what your agent offers. Models, permission modes and other settings each
-        get a chip, and the open menu shows the agent&apos;s own description under every choice. Zorvo shows only the
+        get a chip, and the open menu shows the agent&apos;s own description under each choice that has one. Zorvo shows only the
         choices the agent reports.
       </P>
       <UL>

@@ -374,11 +374,18 @@ describe("Installing an agent from the new-session draft", () => {
     // Only Send waits for the install: the prompt can be written meanwhile.
     const promptBox = screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement;
     expect(promptBox.disabled).toBe(false);
-    expect(promptBox.placeholder).toBe("Install Codex to start a session.");
+    // The reason is the note under the box, which stays while typing; the placeholder is the usual one.
+    expect(screen.getByText("Install Codex to start a session.", { selector: "p" })).toBeDefined();
+    expect(promptBox.placeholder).not.toContain("Install Codex");
     await act(async () => {
       fireEvent.change(promptBox, { target: { value: "hello" } });
     });
     expect((screen.getByRole("button", { name: "Send message" }) as HTMLButtonElement).disabled).toBe(true);
+    // The reason is still there once the user has typed, and the disabled Send points to it.
+    expect(screen.getByText("Install Codex to start a session.", { selector: "p" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Send message" }).getAttribute("aria-describedby")).toBe(
+      screen.getByText("Install Codex to start a session.", { selector: "p" }).id,
+    );
     // Codex is not installed, so there is nothing to ask yet.
     expect(probedAgents()).toEqual(["qwen-code"]);
 

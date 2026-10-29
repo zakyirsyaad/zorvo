@@ -6,7 +6,7 @@ import { Sidebar } from "../components/Sidebar";
 import { useAgentSignInStatus } from "../hooks/useAgentSignInStatus";
 import { parseAuthRequired } from "../lib/acp-auth";
 import { signInPlaceholder, signInStateOf } from "../lib/agent-sign-in";
-import { composerPlaceholder } from "../lib/composer-state";
+import { composerNote } from "../lib/composer-state";
 import { normalizePersistedState } from "../lib/persistence";
 import type { PersistedState, Settings } from "../types";
 import { claudeProfile, qwenProfile } from "./fixtures/agents";
@@ -43,22 +43,20 @@ describe("signInStateOf", () => {
   });
 });
 
-describe("composer placeholder while a sign-in is waiting", () => {
-  const idle = { isRunning: false, isCreatingWorktree: false, isResumable: false, canStartSession: true };
-
-  it("asks to sign in before sending", () => {
-    expect(composerPlaceholder({ ...idle, agentToSignIn: "Gemini CLI" })).toBe(signInPlaceholder("Gemini CLI", false));
-    expect(composerPlaceholder({ ...idle, agentToSignIn: "Gemini CLI" })).toBe("Sign in to Gemini CLI to send a message.");
+describe("the composer's words while a sign-in is waiting", () => {
+  it("asks to sign in before sending, in the note", () => {
+    expect(signInPlaceholder("Gemini CLI", false)).toBe("Sign in to Gemini CLI to send a message.");
+    expect(composerNote({ continuesSession: false, agentToSignIn: "Gemini CLI" })).toBe(signInPlaceholder("Gemini CLI", false));
   });
 
   it("says it continues the session when one is shown", () => {
-    expect(composerPlaceholder({ ...idle, isResumable: true, agentToSignIn: "Gemini CLI" })).toBe(
+    expect(composerNote({ continuesSession: true, agentToSignIn: "Gemini CLI" })).toBe(
       "Sign in to Gemini CLI to continue this session.",
     );
   });
 
   it("puts installing before signing in", () => {
-    expect(composerPlaceholder({ ...idle, agentToInstall: "Gemini CLI", agentToSignIn: "Gemini CLI" })).toBe(
+    expect(composerNote({ continuesSession: false, agentToInstall: "Gemini CLI", agentToSignIn: "Gemini CLI" })).toBe(
       "Install Gemini CLI to start a session.",
     );
   });

@@ -1,4 +1,4 @@
-import { useImperativeHandle, useRef, useState, type Ref } from "react";
+import { useId, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { Plus, CornerDownLeft, Shield, ShieldAlert, Sparkles, Gauge, SlidersHorizontal, Square, Bot } from "lucide-react";
 import { IconButton } from "./ui/IconButton";
 import { OptionDropdown } from "./composer/OptionDropdown";
@@ -65,7 +65,10 @@ export interface ComposerDockProps {
   attachAsFiles?: boolean;
   /** How much of the agent's context window is used; the meter shows once the agent reports it. */
   contextUsage?: ContextUsage;
-  /** A short status under the prompt, e.g. while the agent's options load; a slash command's hint wins. */
+  /**
+   * A short status under the prompt, e.g. while the agent's options load; a slash command's hint wins,
+   * except while `sendDisabled`: then the note says why and the Send button points to it.
+   */
   note?: string;
   /** Before a new session starts: the folder it starts in. */
   folder?: FolderControl;
@@ -165,6 +168,9 @@ export function ComposerDock({
         ? { count: menuCommands.length, pick: (i: number) => pickCommand(menuCommands[i]), dismiss: () => setIsMenuDismissed(true) }
         : null;
   const hint = pendingHint(commands, text);
+  // The reason a blocked Send gives outranks a slash command's hint.
+  const shownNote = sendDisabled && note ? note : (hint ?? note);
+  const noteId = useId();
 
   const pickCommand = (command: SlashCommand) => {
     setText(`/${command.name} `);
@@ -283,7 +289,11 @@ export function ComposerDock({
           className="w-full bg-transparent text-sm text-fg-secondary placeholder-fg-subtle outline-none resize-none leading-relaxed min-h-[26px] max-h-[180px]"
         />
 
-        {(hint ?? note) && <p className="mt-1 text-[11px] text-fg-subtle">{hint ?? note}</p>}
+        {shownNote && (
+          <p id={noteId} className="mt-1 text-[11px] text-fg-subtle">
+            {shownNote}
+          </p>
+        )}
 
         {/* Wraps instead of overflowing: a draft can show folder, agent, mode, model and effort at once. */}
         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-border pt-2 text-xs">
@@ -371,6 +381,7 @@ export function ComposerDock({
               <IconButton
                 variant="primary"
                 label="Send message"
+                aria-describedby={sendDisabled && note ? noteId : undefined}
                 onClick={handleSend}
                 disabled={(!text.trim() && attachments.length === 0) || !canSend}
               >

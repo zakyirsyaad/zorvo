@@ -1,6 +1,7 @@
 import { KeyRound, LogIn, X } from "lucide-react";
 import { Button } from "./ui/Button";
 import { authCopy, signInButtonLabel, type AuthMethod } from "../lib/acp-auth";
+import { plainReason } from "../lib/agent-sign-in";
 
 export type AuthStatus = "idle" | "signing-in" | "checking" | "signed-in" | "failed";
 
@@ -9,10 +10,28 @@ export interface AuthPanelProps {
   methods: AuthMethod[];
   status: AuthStatus;
   error?: string;
+  /** The message the agent refused is back in the composer and is sent again after the sign-in. */
+  hasReturnedMessage?: boolean;
   onSignIn: (methodId: string) => void;
   /** Asks the agent again whether someone is signed in, e.g. after setting a key outside the app. */
   onCheckAgain: () => void;
   onDismiss: () => void;
+}
+
+/** The progress or result line the live region says, with the style it gets; empty while nothing happens. */
+function statusLine(agentName: string, status: AuthStatus, error: string | undefined): { text: string; style: string } {
+  switch (status) {
+    case "signing-in":
+      return { text: "Finish signing in in the window that opened…", style: "mt-2 text-fg-muted" };
+    case "checking":
+      return { text: "Checking whether you are signed in…", style: "mt-2 text-fg-muted" };
+    case "failed":
+      return { text: `Sign-in failed: ${plainReason(error)}`, style: "mt-2 text-danger" };
+    case "signed-in":
+      return { text: `Signed in to ${agentName}. Send your message again.`, style: "mt-2 text-status-running" };
+    default:
+      return { text: "", style: "sr-only" };
+  }
 }
 
 /**
@@ -20,10 +39,12 @@ export interface AuthPanelProps {
  * in the agent (a browser sign-in) or in a terminal get a button; methods that
  * need a secret are only explained, since the app never asks for API keys.
  */
-export function AuthPanel({ agentName, methods, status, error, onSignIn, onCheckAgain, onDismiss }: AuthPanelProps) {
+export function AuthPanel({ agentName, methods, status, error, hasReturnedMessage = false, onSignIn, onCheckAgain, onDismiss }: AuthPanelProps) {
   const copy = authCopy(agentName, methods);
   const isBusy = status === "signing-in" || status === "checking";
   const title = `Sign in to ${agentName}`;
+  const isSignedIn = status === "signed-in";
+  const line = statusLine(agentName, status, error);
   return (
     <section
       aria-label={title}
@@ -44,13 +65,16 @@ export function AuthPanel({ agentName, methods, status, error, onSignIn, onCheck
         </button>
       </header>
 
-      {status === "signed-in" ? (
-        <p className="mt-2 text-status-running">Signed in to {agentName}. Send your message again.</p>
-      ) : (
+      {!isSignedIn && (
         <>
           <p className="mt-1.5 text-fg-muted">{copy.lead}</p>
           {copy.cliHint && <p className="mt-2 text-fg-secondary">{copy.cliHint}</p>}
           {copy.keysNote && <p className="mt-2 text-fg-muted">{copy.keysNote}</p>}
+          {hasReturnedMessage && (
+            <p className="mt-2 text-fg-secondary">
+              Your message is back in the box below. Zorvo sends it again once you are signed in, unless you change it.
+            </p>
+          )}
           <ul className="mt-2 space-y-1.5">
             {methods.map((method) => (
               <li key={method.id} className="flex items-center justify-between gap-3">
@@ -72,13 +96,16 @@ export function AuthPanel({ agentName, methods, status, error, onSignIn, onCheck
               </li>
             ))}
           </ul>
-          {status === "signing-in" && <p className="mt-2 text-fg-muted">Finish signing in in the window that opened…</p>}
-          {status === "checking" && <p className="mt-2 text-fg-muted">Checking whether you are signed in…</p>}
-          {status === "failed" && <p className="mt-2 text-danger">Sign-in failed: {error}</p>}
-          <Button variant="outline" disabled={isBusy} onClick={onCheckAgain} className="mt-2">
-            Check again
-          </Button>
         </>
+      )}
+      {/* Always mounted, so a change of its text is announced. */}
+      <p role="status" className={line.style}>
+        {line.text}
+      </p>
+      {!isSignedIn && (
+        <Button variant="outline" disabled={isBusy} onClick={onCheckAgain} className="mt-2">
+          Check again
+        </Button>
       )}
     </section>
   );

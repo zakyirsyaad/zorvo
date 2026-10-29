@@ -3,7 +3,8 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { AgentCatalog } from "../components/agents/AgentCatalog";
 import { AgentCatalogPanel } from "../components/agents/AgentCatalogPanel";
-import { AgentSignIn, plainReason, sessionWarning } from "../components/agents/AgentSignIn";
+import { AgentSignIn, sessionWarning } from "../components/agents/AgentSignIn";
+import { plainReason } from "../lib/agent-sign-in";
 import { useAgentSignIn } from "../hooks/useAgentSignIn";
 import { useAgentSignInStatus } from "../hooks/useAgentSignInStatus";
 import { useSettingsSignIn, type AgentCheck, type SettingsSignIn } from "../hooks/useSettingsSignIn";
@@ -134,15 +135,16 @@ describe("the warning before a check", () => {
     renderRow(fakeSignIn({ reportsStatusOf: () => false }), "Gemini CLI");
 
     const warning =
-      "Gemini CLI cannot say who is signed in, so checking opens a session in zorvo that stays in its history. " +
-      "It can run your project's hooks. Signing in checks the same way.";
+      "Gemini CLI cannot say who is signed in, so Zorvo opens a session in the zorvo folder to find out. " +
+      "That session may stay in Gemini CLI's history and may run your project's hooks. After you sign in, Zorvo checks the same way.";
     expect(screen.getByText(warning)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Check sign-in" })).toHaveAccessibleDescription(warning);
   });
 
   it("says a session may open while it is not known whether the agent can report", () => {
     expect(sessionWarning("Claude Agent", undefined, CWD)).toBe(
-      "Checking may open a session in zorvo in Claude Agent's history. It can run your project's hooks. Signing in checks the same way.",
+      "If Claude Agent cannot say who is signed in, Zorvo opens a session in the zorvo folder to find out. " +
+        "That session may stay in Claude Agent's history and may run your project's hooks. After you sign in, Zorvo checks the same way.",
     );
   });
 
@@ -208,7 +210,11 @@ const KNOWN_OPTIONS = { modes: null, configOptions: [], commands: [{ name: "revi
 
 /** The hook over the real sign-in store, so a check's effect on the sidebar's state can be read. */
 function setupHook(
-  overrides: { cwd?: string | undefined; agentOptions?: Record<string, AgentOptions>; authRequest?: AuthRequest } = {},
+  overrides: {
+    cwd?: string | undefined;
+    agentOptions?: Record<string, AgentOptions>;
+    authRequest?: AuthRequest;
+  } = {},
 ) {
   let state = { settings: { signedInAgents: [] as string[] } as Settings } as PersistedState;
   const updateState = vi.fn((updater: (prev: PersistedState) => PersistedState) => {
@@ -267,6 +273,45 @@ describe("Check sign-in", () => {
     // It is not known whether Claude Code reports who is signed in, so nothing is said about who.
     expect(hook.result.current.settingsSignIn.checkOf("claude-acp").message).toBe("Claude Code looks ready.");
     expect(rememberProbed).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-reads the login shell's environment, and only that, before it asks the agent", async () => {
+    const order: string[] = [];
+    vi.spyOn(internals(), "invoke").mockImplementation((cmd) => {
+      order.push(cmd);
+      return Promise.resolve(cmd === "acp_probe_agent" ? structuredClone(PROBED) : undefined);
+    });
+    const { hook } = setupHook();
+
+    act(() => hook.result.current.settingsSignIn.check("claude-acp"));
+    // The check shows as running from the click, through the re-read.
+    expect(hook.result.current.settingsSignIn.checkOf("claude-acp").phase).toBe("checking");
+    await waitFor(() => expect(hook.result.current.settingsSignIn.checkOf("claude-acp").phase).toBe("done"));
+
+    // No registry fetch, no npm: get_agent_profiles is not called.
+    expect(order).toEqual(["refresh_login_env", "acp_probe_agent"]);
+  });
+
+  it("still asks the agent when reading the environment fails", async () => {
+    const spy = vi.spyOn(internals(), "invoke").mockImplementation((cmd) =>
+      cmd === "refresh_login_env" ? Promise.reject("login shell timed out") : Promise.resolve(structuredClone(PROBED)),
+    );
+    const { hook } = setupHook();
+
+    act(() => hook.result.current.settingsSignIn.check("claude-acp"));
+    await waitFor(() => expect(hook.result.current.settingsSignIn.checkOf("claude-acp").phase).toBe("done"));
+
+    expect(argsOf(spy, "acp_probe_agent")).toHaveLength(1);
+    expect(hook.result.current.settingsSignIn.checkOf("claude-acp").message).toBe("Claude Code looks ready.");
+  });
+
+  it("does not re-read the environment for the check that runs when Settings opens", async () => {
+    const spy = vi.spyOn(internals(), "invoke").mockResolvedValue({ reportsStatus: true, signInChecked: true });
+    const { hook } = setupHook({ agentOptions: { "claude-acp": KNOWN_OPTIONS } });
+
+    await act(async () => hook.result.current.settingsSignIn.sweep(["claude-acp"]));
+
+    expect(argsOf(spy, "refresh_login_env")).toHaveLength(0);
   });
 
   it("only asks about the sign-in when the agent's options are known", async () => {

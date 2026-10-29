@@ -3,7 +3,7 @@ import { LogIn, RefreshCw } from "lucide-react";
 import { Button } from "../ui/Button";
 import type { SettingsSignIn } from "../../hooks/useSettingsSignIn";
 import { authCopy, signInButtonLabel } from "../../lib/acp-auth";
-import { SIGN_IN_CHIP_STYLES, SIGN_IN_LABELS } from "../../lib/agent-sign-in";
+import { plainReason, SIGN_IN_CHIP_STYLES, SIGN_IN_LABELS } from "../../lib/agent-sign-in";
 
 export interface AgentSignInProps {
   agentId: string;
@@ -19,24 +19,17 @@ function folderNameOf(cwd: string | undefined): string | null {
 
 /**
  * Said next to Check sign-in, before it runs, when asking can open a session in the agent: where it
- * opens, that it can run the project's hooks, and that signing in checks the same way.
+ * opens, that the session can run the project's hooks, and that Zorvo asks the same way after a sign-in.
  */
 export function sessionWarning(agentName: string, reportsStatus: boolean | undefined, cwd?: string): string | null {
   if (reportsStatus === true) return null;
   const folder = folderNameOf(cwd);
-  const place = folder ? `a session in ${folder}` : "a session in the open folder";
-  const tail = "It can run your project's hooks. Signing in checks the same way.";
+  const place = folder ? `the ${folder} folder` : "the open folder";
+  const tail = `That session may stay in ${agentName}'s history and may run your project's hooks. After you sign in, Zorvo checks the same way.`;
   if (reportsStatus === false) {
-    return `${agentName} cannot say who is signed in, so checking opens ${place} that stays in its history. ${tail}`;
+    return `${agentName} cannot say who is signed in, so Zorvo opens a session in ${place} to find out. ${tail}`;
   }
-  return `Checking may open ${place} in ${agentName}'s history. ${tail}`;
-}
-
-/** A sign-in's failure reason, when it reads as a plain sentence; the agent's own output (paths, a stack) is not shown. */
-export function plainReason(reason: string | undefined): string {
-  const text = reason?.trim() ?? "";
-  const isPlain = text !== "" && text.length <= 120 && !/[\n/\\]/.test(text);
-  return isPlain ? text : "Zorvo could not finish the sign-in. Try again.";
+  return `If ${agentName} cannot say who is signed in, Zorvo opens a session in ${place} to find out. ${tail}`;
 }
 
 /** What the live region says: the sign-in under way, else the last check's result. */

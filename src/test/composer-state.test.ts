@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { COMPOSER_PLACEHOLDERS, composerCommandsFor, composerPlaceholder, composerStateFor, type ComposerInputs } from "../lib/composer-state";
+import { COMPOSER_PLACEHOLDERS, composerCommandsFor, composerNote, composerPlaceholder, composerStateFor, type ComposerInputs } from "../lib/composer-state";
 import { NO_CHOICES, withRewound, type AgentOptions } from "../lib/acp-draft";
 import { TRANSPORT_ACP, type AgentProfile, type Session, type SlashCommand } from "../types";
 
@@ -16,21 +16,21 @@ describe("composerPlaceholder", () => {
     expect(composerPlaceholder(IDLE)).toBe(COMPOSER_PLACEHOLDERS.noWorkspace);
   });
 
-  it("asks for the agent's install before a message can start or continue a session", () => {
-    expect(composerPlaceholder({ ...IDLE, canStartSession: true, agentToInstall: "Codex" })).toBe(
-      "Install Codex to start a session.",
-    );
-    expect(composerPlaceholder({ ...IDLE, isResumable: true, canStartSession: true, agentToInstall: "Codex" })).toBe(
-      "Install Codex to continue this session.",
-    );
-    // An ended chat whose agent is not installed continues once it is, though it cannot yet.
-    expect(
-      composerPlaceholder({ ...IDLE, canStartSession: true, isEndedSession: true, agentToInstall: "Codex" }),
-    ).toBe("Install Codex to continue this session.");
-    expect(composerPlaceholder({ ...IDLE, agentToInstall: "Codex" })).toBe(COMPOSER_PLACEHOLDERS.noWorkspace);
-    expect(composerPlaceholder({ ...IDLE, isCreatingWorktree: true, agentToInstall: "Codex" })).toBe(
-      COMPOSER_PLACEHOLDERS.creatingWorktree,
-    );
+  it("says an ended session is continued while its agent must be installed, as the note does", () => {
+    // Not resumable (its agent is not installed), yet the next message continues the session.
+    const ended = { ...IDLE, canStartSession: true, isEndedSession: true };
+    expect(composerPlaceholder({ ...ended, isSendBlocked: true })).toBe(COMPOSER_PLACEHOLDERS.resume);
+    expect(composerNote({ continuesSession: true, agentToInstall: "Codex" })).toBe("Install Codex to continue this session.");
+    // Not blocked: today's wording stays.
+    expect(composerPlaceholder(ended)).toBe(COMPOSER_PLACEHOLDERS.newSession);
+    // Blocked, but no session is shown: a new one starts.
+    expect(composerPlaceholder({ ...IDLE, canStartSession: true, isSendBlocked: true })).toBe(COMPOSER_PLACEHOLDERS.newSession);
+  });
+
+  it("is not where a blocked Send is explained: that is the note, which stays while typing", () => {
+    // An agent to install or sign in to does not change what the empty box says.
+    expect(composerPlaceholder({ ...IDLE, canStartSession: true })).toBe(COMPOSER_PLACEHOLDERS.newSession);
+    expect(composerPlaceholder({ ...IDLE, isResumable: true, canStartSession: true })).toBe(COMPOSER_PLACEHOLDERS.resume);
   });
 });
 
@@ -183,5 +183,25 @@ describe("composerStateFor", () => {
 
   it("offers a draft agent that reported nothing no controls", () => {
     expect(composerStateFor(inputs({ draftAgent, agentOptions: {} }))).toEqual({ controls: {} });
+  });
+});
+
+describe("composerNote", () => {
+  it("says why Send is blocked, in the words of the placeholder", () => {
+    expect(composerNote({ continuesSession: false, agentToInstall: "Qwen Code" })).toBe("Install Qwen Code to start a session.");
+    expect(composerNote({ continuesSession: true, agentToInstall: "Qwen Code" })).toBe("Install Qwen Code to continue this session.");
+    expect(composerNote({ continuesSession: false, agentToSignIn: "Qwen Code" })).toBe("Sign in to Qwen Code to send a message.");
+    expect(composerNote({ continuesSession: true, agentToSignIn: "Qwen Code" })).toBe("Sign in to Qwen Code to continue this session.");
+  });
+
+  it("puts the install or sign-in reason before the loading line, and the loading line before nothing", () => {
+    expect(composerNote({ continuesSession: false, agentToSignIn: "Qwen Code", agentLoading: "Qwen Code" })).toBe(
+      "Sign in to Qwen Code to send a message.",
+    );
+    expect(composerNote({ continuesSession: false, agentToInstall: "Gemini CLI", agentToSignIn: "Qwen Code", agentLoading: "Qwen Code" })).toBe(
+      "Install Gemini CLI to start a session.",
+    );
+    expect(composerNote({ continuesSession: false, agentLoading: "Qwen Code" })).toBe("Loading Qwen Code's models and commands…");
+    expect(composerNote({ continuesSession: false })).toBeUndefined();
   });
 });

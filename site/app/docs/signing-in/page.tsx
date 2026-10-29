@@ -30,14 +30,15 @@ export default function SigningInPage() {
       <P>
         <B>Settings → Agents</B> shows the same status on each agent in use, with a <B>Check sign-in</B> button. If the
         agent needs you to sign in, its sign-in methods are listed there too, with the same buttons and explanations as
-        the panel. Gemini CLI and Qwen Code cannot say who is signed in, so checking one opens a session that stays in
+        the panel. Gemini CLI and Qwen Code cannot say who is signed in, so checking one opens a session that may stay in
         its history; the button says so before you click it.
       </P>
       <H2 id="in-zorvo">In Zorvo</H2>
       <P>
         An agent that offers its own login, such as Claude Code&apos;s Claude subscription, runs it in a terminal inside
         Zorvo. Your message is sent once you are signed in. Where an agent offers a key instead (Gemini CLI&apos;s API
-        key, for example), the panel explains it and you set it up outside Zorvo, then click <B>Check again</B>.
+        key, for example), the panel explains it and you set it up outside Zorvo, then click <B>Check again</B>. Zorvo reads your
+        shell&apos;s settings again before it asks the agent, so a key you just added to <Chip isCode>~/.zshrc</Chip> is found.
       </P>
       <H2 id="in-terminal">In your terminal</H2>
       <P>Sign in once in a terminal, then send your message again.</P>

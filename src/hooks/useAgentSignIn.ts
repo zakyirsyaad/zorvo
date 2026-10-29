@@ -7,7 +7,7 @@ import type { FirstMessage } from './session-engine/useAcpEngine';
 import type { ComposerHandle } from '../components/ComposerDock';
 import type { AuthMethod } from '../lib/acp-auth';
 import { SIGN_IN_RUNNING_NOTICE } from '../lib/agent-sign-in';
-import { checkSignIn } from '../lib/sign-in-check';
+import { checkSignIn, refreshLoginEnv } from '../lib/sign-in-check';
 import type { AgentProfile, Session } from '../types';
 
 /** An agent and the methods it offers, for a sign-in started from outside the draft (Settings). */
@@ -184,13 +184,19 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
     if (last) startSignIn(last.start, last.methodId);
   };
 
-  /** Asks the agent again, for a sign-in made outside the app (a key in the shell, a terminal). */
+  /**
+   * Asks the agent again, for a sign-in made outside the app (a key in the shell, a terminal). The
+   * login shell's environment is read afresh first: a key exported after Zorvo started is only seen then.
+   */
   const recheck = async () => {
     const request = authRequest;
     if (!request) return;
     const attempt = {};
     attemptRef.current = attempt;
     setStatus('checking');
+    await refreshLoginEnv();
+    // Dismissed, cancelled or replaced while the environment was read.
+    if (attemptRef.current !== attempt) return;
     const check = await checkSignIn(request.profileId, request.cwd);
     if (attemptRef.current !== attempt) return;
     attemptRef.current = null;

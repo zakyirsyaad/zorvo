@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { createRef } from "react";
@@ -389,5 +390,47 @@ describe("ComposerDock restored message", () => {
 
     expect(prompt().value).toBe("");
     expect(handle.current?.holdsRestored()).toBe(false);
+  });
+});
+
+describe("why Send is blocked", () => {
+  const reason = "Sign in to Qwen Code to send a message.";
+  const send = () => screen.getByRole("button", { name: "Send message" });
+
+  it("keeps the reason on screen while the user types, and describes the disabled Send with it", () => {
+    render(<ComposerDock onSendMessage={vi.fn()} sendDisabled note={reason} placeholder={reason} />);
+    expect(screen.getByText(reason, { selector: "p" })).toBeInTheDocument();
+
+    fireEvent.change(prompt(), { target: { value: "hello" } });
+
+    // The placeholder is gone with the typed text; the note is not.
+    expect(screen.getByText(reason, { selector: "p" })).toBeInTheDocument();
+    expect(send()).toBeDisabled();
+    expect(send()).toHaveAccessibleDescription(reason);
+  });
+
+  it("does the same for an agent that must be installed first", () => {
+    const install = "Install Qwen Code to start a session.";
+    render(<ComposerDock onSendMessage={vi.fn()} sendDisabled note={install} />);
+    fireEvent.change(prompt(), { target: { value: "hello" } });
+
+    expect(screen.getByText(install)).toBeInTheDocument();
+    expect(send()).toHaveAccessibleDescription(install);
+  });
+
+  it("shows the reason instead of a slash command's hint", () => {
+    render(<ComposerDock onSendMessage={vi.fn()} sendDisabled note={reason} commands={[{ name: "review", description: "Review the changes" }]} />);
+
+    fireEvent.change(prompt(), { target: { value: "/review" } });
+
+    expect(screen.getByText(reason)).toBeInTheDocument();
+    expect(send()).toHaveAccessibleDescription(reason);
+  });
+
+  it("describes nothing while Send is not blocked, and still shows the note", () => {
+    render(<ComposerDock onSendMessage={vi.fn()} note="Loading Qwen Code's models and commands…" />);
+
+    expect(screen.getByText("Loading Qwen Code's models and commands…")).toBeInTheDocument();
+    expect(send()).not.toHaveAttribute("aria-describedby");
   });
 });

@@ -6,6 +6,7 @@ import type { AuthRequest } from './useAgentAuth';
 import type { useAgentSignIn } from './useAgentSignIn';
 import { useLatest } from './useLatest';
 import { parseAuthRequired, type AuthMethod } from '../lib/acp-auth';
+import { refreshLoginEnv } from '../lib/sign-in-check';
 import { hasReportedOptions, type AgentOptions, type ProbedOptions } from '../lib/acp-draft';
 import type { SignInState } from '../lib/agent-sign-in';
 import type { AgentProfile } from '../types';
@@ -125,7 +126,9 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
       if (earlier?.profileId === profileId && isFinished && earlier.pending === undefined) {
         depsRef.current.signIn.auth.dismiss();
       }
-      invoke('acp_probe_agent', { profileId, cwd: folder, needsOptions: !hasReportedOptions(agentOptions?.[profileId]) })
+      // The login shell's environment is read afresh first: a key exported after Zorvo started is only seen then.
+      refreshLoginEnv()
+        .then(() => invoke('acp_probe_agent', { profileId, cwd: folder, needsOptions: !hasReportedOptions(agentOptions?.[profileId]) }))
         .then((raw) => {
           const answer = parseProbeAnswer(raw);
           if (answer) rememberProbed(profileId, answer.options);

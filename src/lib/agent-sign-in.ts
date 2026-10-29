@@ -35,3 +35,13 @@ export function signInPlaceholder(agentName: string, continuesSession: boolean):
 
 /** Said when a request to sign in to one agent is refused because another agent's sign-in is running. */
 export const SIGN_IN_RUNNING_NOTICE = "Another agent's sign-in is running. Finish it, then try again.";
+
+/** What a sign-in's failure says when the reason is not a plain sentence. */
+const SIGN_IN_FAILED_FALLBACK = 'Zorvo could not finish the sign-in. Try again.';
+
+/** A sign-in's failure reason, when it reads as a plain sentence; the agent's own output (paths, a stack) is not shown. */
+export function plainReason(reason: string | undefined): string {
+  const text = reason?.trim() ?? '';
+  const isPlain = text !== '' && text.length <= 120 && !/[\n/\\]/.test(text);
+  return isPlain ? text : SIGN_IN_FAILED_FALLBACK;
+}

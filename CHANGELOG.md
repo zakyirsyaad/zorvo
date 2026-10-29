@@ -4,6 +4,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-29
+
 ### Added
 
 - **See and fix an agent's sign-in in Settings → Agents.** Each agent in use now shows the same **Ready**, **Sign in** or **Not checked** as the sidebar, with a **Check sign-in** button. If the agent needs a sign-in, its methods are listed there: a method Zorvo can run (Claude's subscription login, ChatGPT) has a button that opens the same terminal sign-in as a new session, and Zorvo checks again when it closes; a method that needs a key (an API key, Vertex AI, a gateway) is only explained, since Zorvo never asks for or stores keys. A check that cannot be made says so in plain words. For Gemini CLI and Qwen Code, which cannot say who is signed in, the button warns before it runs that Zorvo opens a session in the open folder to find out, that it may stay in the agent's history and may run your project's hooks, and that Zorvo checks the same way after you sign in, and a successful check of such an agent says it looks ready, not that you are signed in. A sign-in that is running is never cut off by another agent's request. When the Agents tab opens, agents that can report their sign-in (Claude Agent, Codex) are asked in a way that opens no session, so they no longer sit on "Not checked".
@@ -190,7 +192,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.5.0...v0.5.1

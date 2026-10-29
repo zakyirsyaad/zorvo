@@ -156,13 +156,34 @@ describe("landing page", () => {
     expect(copy).not.toMatch(/Aider|Oh-My-Pi/);
   });
 
-  it("lists the nine features and the registry's three agent states", () => {
-    const features = document.querySelectorAll("#features ul > li");
-    expect(features).toHaveLength(9);
+  it("lists the twelve features in order and the registry's three agent states", () => {
+    const features = [...document.querySelectorAll("#features ul > li h3")].map((title) => title.textContent);
+    expect(features).toEqual([
+      "The agent's own data",
+      "Every choice the agent offers",
+      "Install agents from Zorvo",
+      "See which agents are ready",
+      "Workspaces and sessions",
+      "A terminal where the agent works",
+      "Branches and worktrees",
+      "Fork and rewind",
+      "The composer",
+      "Review and commit",
+      "When a turn goes wrong",
+      "Zorvo updates itself",
+    ]);
     expect(copy).toContain("Install agents from Zorvo");
     expect(copy).toContain("A terminal where the agent works");
     const registry = document.querySelector('#agents [role="img"]');
     expect(registry?.textContent).toMatch(/Update available.*Installing….*In the registry/s);
+  });
+
+  it("shows which detected agents are ready in the hero picture, and says the app updates itself", () => {
+    const hero = document.querySelector('#top ~ div [role="img"]');
+    expect(hero?.textContent).toMatch(/Detected agents\s*Claude CodeReady\s*CodexReady\s*Qwen CodeSign in/);
+    expect(copy).toContain("Updates itself");
+    expect(copy).toContain("keeps itself up to date");
+    expect(copy).toContain("a mode that skips approvals carries a shield");
   });
 
   it("shows the plan with one step done and the next waiting on the user", () => {
@@ -298,6 +319,41 @@ describe("docs pages", () => {
     const text = parse("/docs/troubleshooting").body.textContent ?? "";
     expect(text).toContain("An agent seems stuck");
     expect(text).toContain("sent nothing for a minute");
+  });
+
+  it("links the recent additions to sections that exist", () => {
+    const links = [...parse("/docs").querySelectorAll('section[aria-labelledby="recent"] ul a')].map((a) => a.getAttribute("href"));
+    expect(links).toEqual([
+      "/docs/signing-in#status",
+      "/docs/install#requirements",
+      "/docs/quickstart#composer",
+      "/docs/install#update",
+    ]);
+  });
+
+  it("documents the 0.6 and 0.7 additions where the design puts them", () => {
+    const install = parse("/docs/install").body.textContent ?? "";
+    expect(install).toContain("Update Zorvo");
+    expect(install).toContain("Older copies update once by hand");
+    expect(install).toContain("Settings, General, GitHub");
+    expect(idsOf("/docs/install")).toContain("update");
+
+    const agents = parse("/docs/agents");
+    expect(agents.body.textContent).toContain("One way to run each agent");
+    expect(agents.querySelector('[role="img"]')?.textContent).toContain("Not available (2)");
+    expect(idsOf("/docs/agents")).toContain("not-available");
+
+    const signingIn = parse("/docs/signing-in");
+    expect(signingIn.querySelector("#status ~ [role=img]")?.textContent).toMatch(
+      /Claude CodeSign in.*CodexReady.*Qwen CodeNot checked/s,
+    );
+
+    const troubleshooting = idsOf("/docs/troubleshooting");
+    for (const id of ["failed", "gemini", "update"]) expect(troubleshooting).toContain(id);
+
+    const quickstart = parse("/docs/quickstart");
+    expect(quickstart.body.textContent).toContain("Rewind to here");
+    expect(idsOf("/docs/quickstart")).toContain("composer");
   });
 
   it("names the default agents and says they do not endorse Zorvo", () => {

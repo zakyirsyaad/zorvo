@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- **The landing page and docs show Zorvo 0.7.** The hero picture lists the detected agents with Ready or Sign in, and the features cover the composer's choices, failed turns and self-updates. The docs gain an Update Zorvo section, the sign-in status picture, the Not available agents, and The composer in the quickstart, and Troubleshooting covers failed turns, Gemini CLI and updates that do not install.
+
 ## [0.7.0] - 2026-10-29
 
 ### Added

@@ -10,14 +10,19 @@ const FEATURES: { icon: IconName; title: string; body: ReactNode }[] = [
     body: "Its real modes and models, permission requests with its own choices, slash commands and context usage. Sessions resume after a restart.",
   },
   {
+    icon: "sliders-horizontal",
+    title: "Every choice the agent offers",
+    body: "Models, modes and other settings each get a chip with the agent's own description: Codex's Plan mode, Claude's fast mode, Gemini's models. A mode that skips approvals carries a shield.",
+  },
+  {
     icon: "download",
     title: "Install agents from Zorvo",
     body: "Pick an agent and click Install. Zorvo brings Node.js or uv when it needs them, and you can write your first message while it installs.",
   },
   {
     icon: "key-round",
-    title: "Sign in from inside Zorvo",
-    body: "An agent's own login runs in a terminal in the app. Your message is sent once you are signed in.",
+    title: "See which agents are ready",
+    body: "The sidebar and Settings show Ready, Sign in or Not checked for each agent. An agent's own login runs in a terminal in the app, and your message is sent once you are signed in.",
   },
   {
     icon: "folder",
@@ -57,8 +62,19 @@ const FEATURES: { icon: IconName; title: string; body: ReactNode }[] = [
       <>
         Read each changed file&apos;s diff and commit the files you choose. The top bar shows the
         branch&apos;s pull request and its checks, read with your own <Chip isCode>gh</Chip>.
+        Settings shows whether it is connected, and Connect signs you in.
       </>
     ),
+  },
+  {
+    icon: "circle-alert",
+    title: "When a turn goes wrong",
+    body: "A failed turn says what happened in plain words, with Try again to send your message once more. An agent that seems stuck gets a notice with Stop.",
+  },
+  {
+    icon: "refresh-cw",
+    title: "Zorvo updates itself",
+    body: "When a new version is out, a notice offers Update & restart. Zorvo checks the update's signature before it installs it, and tells you first if a restart would stop a working agent.",
   },
 ];
 

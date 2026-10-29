@@ -68,7 +68,7 @@ export const DOCS_NAV: DocsGroup[] = [
       {
         href: "/docs/troubleshooting",
         label: "Troubleshooting",
-        summary: "What to try when an agent is not installed, needs you to sign in, seems stuck or will not start.",
+        summary: "What to try when an agent is not installed, needs you to sign in, a turn fails, an agent seems stuck or an update will not install.",
       },
     ],
   },

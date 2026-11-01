@@ -173,4 +173,24 @@ describe("a compare run in the sidebar", () => {
 
     expect(within(groupButton().closest("div") as HTMLElement).getByRole("status", { name: "Agent working" })).toBeInTheDocument();
   });
+
+  it("counts a run's agents from the run, not from what a search leaves", () => {
+    const fork = session({ id: "fork-1", name: "Hotfix", profileId: "qwen-code", createdAt: 20, forkedFrom: "r-qwen" });
+    renderSidebar([...runSessions(), fork]);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Search workspaces and sessions" }), { target: { value: "hotfix" } });
+
+    expect(screen.getByRole("button", { name: /Fix the login.*3 agents/ })).toBeInTheDocument();
+  });
+
+  it("finds a run's rows by the agent's name", () => {
+    renderSidebar([...runSessions(), session({ id: "alone", name: "Add a README" })]);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Search workspaces and sessions" }), { target: { value: "qwen" } });
+
+    const rows = within(screen.getByRole("list", { name: "Agents in Fix the login" }));
+    expect(rows.getByRole("button", { name: /Qwen Code/ })).toBeInTheDocument();
+    expect(rows.queryByRole("button", { name: /Kimi CLI/ })).toBeNull();
+    expect(screen.queryByTestId("session-row-alone")).toBeNull();
+  });
 });

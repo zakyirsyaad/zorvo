@@ -4,13 +4,16 @@ import type { Session } from '../types';
 /**
  * Marks a session unread when its agent stops working while another session
  * is open, and clears the mark when the session is opened. "Stops working"
- * is an ACP turn ending.
+ * is an ACP turn ending. The sessions of a run whose panel is open
+ * (`openRunMemberIds`) count as open too: they are seen there, so they are
+ * never marked and a mark they had is cleared.
  */
 export function useUnreadMarks(
   sessions: readonly Session[],
   activeSessionId: string,
   isSessionBusy: (sessionId: string) => boolean,
   patchSession: (sessionId: string, patch: Partial<Session>) => void,
+  openRunMemberIds: readonly string[] = [],
 ): void {
   const busyIds = sessions.filter((s) => isSessionBusy(s.id)).map((s) => s.id);
   const busyKey = busyIds.join('\n');
@@ -19,7 +22,9 @@ export function useUnreadMarks(
   useEffect(() => {
     const isBusy = new Set(busyKey ? busyKey.split('\n') : []);
     for (const sessionId of wasBusyRef.current) {
-      if (!isBusy.has(sessionId) && sessionId !== activeSessionId) patchSession(sessionId, { hasUnread: true });
+      if (!isBusy.has(sessionId) && sessionId !== activeSessionId && !openRunMemberIds.includes(sessionId)) {
+        patchSession(sessionId, { hasUnread: true });
+      }
     }
     wasBusyRef.current = isBusy;
     // Only a change in who is working counts, not which session is open.
@@ -30,4 +35,12 @@ export function useUnreadMarks(
   useEffect(() => {
     if (isActiveUnread) patchSession(activeSessionId, { hasUnread: false });
   }, [isActiveUnread, activeSessionId, patchSession]);
+
+  const unreadInOpenRun = sessions.filter((s) => s.hasUnread && openRunMemberIds.includes(s.id)).map((s) => s.id);
+  const unreadInOpenRunKey = unreadInOpenRun.join('\n');
+  useEffect(() => {
+    for (const sessionId of unreadInOpenRunKey ? unreadInOpenRunKey.split('\n') : []) {
+      patchSession(sessionId, { hasUnread: false });
+    }
+  }, [unreadInOpenRunKey, patchSession]);
 }

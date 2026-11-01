@@ -302,7 +302,8 @@ function RunGroupRow({ node, context }: { node: SessionNode; context: SessionLis
     members.some((member) => member.hasUnread),
   );
   const isActive = context.activeRunId === run.id;
-  const countLabel = `${members.length} agents`;
+  // Counted from the run, not from the rows a search leaves.
+  const countLabel = `${run.sessions.length} agents`;
   return (
     <div
       data-testid={`run-group-${run.id}`}

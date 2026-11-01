@@ -582,7 +582,7 @@ export default function App() {
     updateSettings({ onboardingCompleted: false });
   };
 
-  useUnreadMarks(sessions, activeSessionId, isSessionBusy, patchSession);
+  useUnreadMarks(sessions, activeSessionId, isSessionBusy, patchSession, activeRun?.sessions.map((s) => s.id));
 
   // A removed session may still have a streamed change queued: drop it before
   // the transcript is deleted, so a late frame cannot write it back.

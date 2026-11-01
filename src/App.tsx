@@ -445,6 +445,8 @@ export default function App() {
   // The commit this session's worktree began at: the diff can compare with it, and the chip stays for it.
   const startCommit = activeSession?.worktree?.startCommit;
   // The folder whose diff view is expanded: another folder's view starts unexpanded.
+  // An activity entry's message to bring into view.
+  const [chatJump, setChatJump] = useState<{ messageId: string; nonce: number } | null>(null);
   const [expandedDiffFolder, setExpandedDiffFolder] = useState<string | null>(null);
   const isDiffOpen = sidePanel.open === "diff" && Boolean(filesFolder) && isRepository;
   const isDiffExpanded = isDiffOpen && expandedDiffFolder === filesFolder?.path;
@@ -1002,6 +1004,7 @@ export default function App() {
                 <ChatCanvas
                   conversationId={activeSessionId}
                   messages={currentMessages}
+                  jumpTo={chatJump}
                   agentName={activeAgent?.name}
                   onForkBranch={(messageId) => void forkSession(messageId)}
                   onRewind={(messageId) => { compareRun.dropSignIn(activeSessionId); void rewind(activeSession, messageId); }}
@@ -1163,7 +1166,7 @@ export default function App() {
                 version={sidePanel.changes.version}
                 headStats={sidePanel.headStats}
                 headStatsFailed={sidePanel.headStatsFailed}
-                onJump={() => {}}
+                onJump={(messageId) => setChatJump((prev) => ({ messageId, nonce: (prev?.nonce ?? 0) + 1 }))}
                 onOpenDiff={() => sidePanel.show("diff")}
                 onClose={sidePanel.close}
               />

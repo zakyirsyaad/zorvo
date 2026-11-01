@@ -69,8 +69,10 @@ export const MessageRow = memo(function MessageRow({
 
   return (
     <div
+      id={`message-${message.id}`}
+      tabIndex={-1}
       data-testid={`chat-message-${message.id}`}
-      className={`flex flex-col ${isUser ? "items-end" : "items-start"} w-full max-w-3xl mx-auto`}
+      className={`focus-ring flex flex-col ${isUser ? "items-end" : "items-start"} w-full max-w-3xl mx-auto`}
     >
       {/* Header info */}
       <div className="flex items-center gap-2 mb-1.5 px-1">

@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MessageRow } from "./chat/MessageRow";
 import { WorkingIndicator } from "./chat/ReplyExtras";
 import { AgentStallNotice } from "./chat/AgentStallNotice";
@@ -25,6 +25,8 @@ function hasSomethingToShow(msg: ChatMessage): boolean {
 
 export interface ChatCanvasProps {
   messages: ChatMessage[];
+  /** A message to bring into view; a new `nonce` jumps again. */
+  jumpTo?: { messageId: string; nonce: number } | null;
   /** Display name of the agent behind this conversation, e.g. "Claude Code". */
   agentName?: string;
   onForkBranch?: (messageId: string) => void;
@@ -50,6 +52,7 @@ export interface ChatCanvasProps {
 
 export function ChatCanvas({
   messages,
+  jumpTo,
   agentName = DEFAULT_AGENT_NAME,
   onForkBranch,
   onChooseOption,
@@ -86,6 +89,15 @@ export function ChatCanvas({
   // Follow new output to the bottom while the user is there; once they scroll
   // up to read, leave the view alone.
   const stickToBottom = useStickToBottom();
+  const { stopFollowing } = stickToBottom;
+  useEffect(() => {
+    const target = jumpTo ? document.getElementById(`message-${jumpTo.messageId}`) : null;
+    if (!target) return;
+    stopFollowing();
+    target.scrollIntoView({ block: "center" });
+    // The focus ring is the mark: nothing here runs on a timer.
+    target.focus({ preventScroll: true });
+  }, [jumpTo, stopFollowing]);
   // A message the user just sent, or another conversation opened, always
   // brings the view down to the newest output. The view itself stays mounted,
   // so switching conversations does not stop Read aloud.

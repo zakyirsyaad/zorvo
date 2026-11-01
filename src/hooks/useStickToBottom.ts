@@ -23,6 +23,8 @@ export interface StickToBottom {
   scrollToBottom: () => void;
   /** Follows grown content, unless the user scrolled away to read. */
   followNewContent: () => void;
+  /** Leaves the bottom, for a jump to an earlier message. */
+  stopFollowing: () => void;
 }
 
 /**
@@ -55,6 +57,10 @@ export function useStickToBottom(): StickToBottom {
     el.scrollTop = el.scrollHeight;
     ownScrollTopRef.current = el.scrollTop;
     lastScrollTopRef.current = el.scrollTop;
+  }, []);
+
+  const stopFollowing = useCallback(() => {
+    isFollowingRef.current = false;
   }, []);
 
   const onScroll = useCallback(() => {
@@ -122,5 +128,6 @@ export function useStickToBottom(): StickToBottom {
     onTouchMove,
     scrollToBottom,
     followNewContent,
+    stopFollowing,
   };
 }

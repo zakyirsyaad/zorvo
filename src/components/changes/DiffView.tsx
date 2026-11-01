@@ -8,7 +8,7 @@ import { useDiffTargets, useTargetStats } from "../../hooks/useDiffStats";
 import type { ReviewComments } from "../../hooks/useReviewComments";
 import type { AddReview } from "../../hooks/useReviewWiring";
 import { defaultTarget, targetOptions, type DiffTargetId } from "../../lib/diff-stats";
-import { sortComments } from "../../lib/review-comments";
+import { commentStatus, sortComments } from "../../lib/review-comments";
 
 /** Above this many files the sections start collapsed, so a large diff does not read them all. */
 const AUTO_OPEN_LIMIT = 25;
@@ -95,7 +95,12 @@ export function DiffView({
   };
   const comments = useMemo(() => sortComments(review?.comments ?? []), [review?.comments]);
   const { reads, isReading } = useCommentedFileReads(rootPath, comments, target, stats, startCommit, refreshes);
-  const onTarget = useMemo(() => comments.filter((comment) => comment.target === target), [comments, target]);
+  // Each status can scan a whole file's rows, and an agent's every chunk redraws this panel.
+  const checked = useMemo(
+    () => comments.map((comment) => ({ comment, status: commentStatus(comment, target, reads[comment.file]) })),
+    [comments, reads, target],
+  );
+  const onTarget = useMemo(() => checked.filter(({ comment }) => comment.target === target), [checked, target]);
   const panel = useRef<HTMLElement>(null);
   const focusPanel = () => panel.current?.focus({ preventScroll: true });
   const addReasonId = useId();
@@ -113,7 +118,7 @@ export function DiffView({
       review,
       adder,
       target,
-      comments: onTarget.filter((comment) => comment.file === path),
+      checked: onTarget.filter(({ comment }) => comment.file === path),
       read: reads[path],
       onFocusLost: focusPanel,
     };
@@ -177,7 +182,7 @@ export function DiffView({
         <ReviewCommentsBar
           review={review}
           adder={adder}
-          comments={comments}
+          checked={checked}
           target={target}
           targets={targets}
           options={options}

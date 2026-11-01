@@ -40,7 +40,7 @@ export function DiffFileSection({ rootPath, stat, target, startCommit, version, 
           {MINUS}
           {formatLineCount(stat.removed)}
         </span>
-        {review && review.comments.length > 0 && (
+        {review && review.checked.length > 0 && (
           <span className="shrink-0 text-[11px] text-fg-muted">{commentSummary(review)}</span>
         )}
       </button>

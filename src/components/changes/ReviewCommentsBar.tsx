@@ -2,17 +2,17 @@ import { Button } from "../ui/Button";
 import { DraftBox, LineComment, ownAddLabel, type CommentAdder } from "./LineComment";
 import { draftKeyOf, parseDraftKey, type CommentAnchor, type ReviewComments } from "../../hooks/useReviewComments";
 import { targetLabel, type DiffTargetId, type DiffTargets, type FileStat } from "../../lib/diff-stats";
-import { commentStatus, isCounted, type FileRead } from "../../lib/review-comments";
+import { isCounted, type CheckedComment, type FileRead } from "../../lib/review-comments";
 import type { ReviewComment } from "../../types";
 
 const locationOf = ({ file, line }: Pick<ReviewComment, "file" | "line">) => `${file}:${line}`;
 
 /** The session's comments as a whole, and those no section can show: another target's, or a file gone from the diff. */
-export function ReviewCommentsBar({ review, adder, comments, target, targets, options, reads, listed, onTargetChange, onFocusLost }: {
+export function ReviewCommentsBar({ review, adder, checked, target, targets, options, reads, listed, onTargetChange, onFocusLost }: {
   review: ReviewComments;
   adder?: CommentAdder;
-  /** The session's comments, in order. */
-  comments: readonly ReviewComment[];
+  /** The session's comments, in order, with their statuses on `target`. */
+  checked: readonly CheckedComment[];
   target: DiffTargetId;
   targets: DiffTargets;
   options: readonly DiffTargetId[];
@@ -23,8 +23,7 @@ export function ReviewCommentsBar({ review, adder, comments, target, targets, op
   onTargetChange: (target: DiffTargetId) => void;
   onFocusLost: () => void;
 }) {
-  const checked = comments.map((comment) => ({ comment, status: commentStatus(comment, target, reads[comment.file]) }));
-  const hasSent = comments.some((comment) => comment.sentAt !== undefined);
+  const hasSent = checked.some(({ comment }) => comment.sentAt !== undefined);
   const elsewhere = checked.filter(({ status }) => status === "elsewhere");
   const elsewhereTargets = [...new Set(elsewhere.map(({ comment }) => comment.target))];
   const gone = checked.filter(({ comment, status }) => status !== "elsewhere" && reads[comment.file]?.status === "missing");

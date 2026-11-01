@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { isCommentableFile, unifiedDiffRows, type FileChange } from "../../lib/git-changes";
 import type { DiffTargetId } from "../../lib/diff-stats";
 import { DiffRows } from "./DiffRows";
-import { FileComments, rowReviewOf, type FileReview } from "./LineComment";
+import { againstRows, FileComments, rowReviewOf, type FileReview } from "./LineComment";
 import { readFileDiff } from "../../lib/diff-read";
 
 type DiffState = { status: "loading" } | { status: "ready"; diff: string; key: string } | { status: "failed"; error: string; key: string };
@@ -45,7 +45,7 @@ export function FileDiff({ rootPath, change, version, target = "head", startComm
   const isStale = state.status !== "loading" && state.key !== key;
   const shownRows = state.status === "ready" && !isStale ? rows : [];
   // A comment just saved reads against the rows on screen until its own read answers.
-  const fileReview = review && { ...review, read: review.read ?? (shownRows.length > 0 ? { status: "read" as const, rows: shownRows } : undefined) };
+  const fileReview = review && (review.read || shownRows.length === 0 ? review : againstRows(review, shownRows));
   const rowReview = fileReview && takesComments && shownRows.length > 0 && isCommentableFile(shownRows)
     ? rowReviewOf(fileReview, change, shownRows)
     : undefined;

@@ -20,6 +20,18 @@ vi.mock("@tauri-apps/api/event", () => ({
   emitTo: () => Promise.resolve(),
 }));
 
+const countStatuses = vi.hoisted(() => vi.fn());
+vi.mock("../lib/review-comments", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/review-comments")>();
+  return {
+    ...actual,
+    commentStatus: (...args: Parameters<typeof actual.commentStatus>) => {
+      countStatuses();
+      return actual.commentStatus(...args);
+    },
+  };
+});
+
 import App from "../App";
 import { ComposerDock, type ComposerHandle } from "../components/ComposerDock";
 import { useReviewComments, type ReviewComments } from "../hooks/useReviewComments";
@@ -1026,6 +1038,29 @@ describe("A message with comments that comes back", () => {
     act(() => result.current.onComposerRestored("the text"));
 
     expect(result.current.slot).toBeNull();
+  });
+});
+
+describe("While an agent streams", () => {
+  it("checks no comment again on a chunk, since nothing about them changed", async () => {
+    const spy = await renderDiff([alpha([commentOf(), secondComment])]);
+    typeInPrompt("Carry on");
+    await send();
+    await waitFor(() => expect(promptsSent(spy)).toHaveLength(1));
+    await waitFor(() => expect(addButton()).toBeEnabled());
+    countStatuses.mockClear();
+
+    await act(async () => {
+      for (const text of ["one ", "two ", "three"]) {
+        (listeners.get("acp-event") ?? []).forEach((cb) =>
+          cb({ payload: { sessionId: "s-a", kind: "update", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } } }),
+        );
+        await Promise.resolve();
+      }
+    });
+
+    expect(await screen.findByText("one two three")).toBeDefined();
+    expect(countStatuses).not.toHaveBeenCalled();
   });
 });
 

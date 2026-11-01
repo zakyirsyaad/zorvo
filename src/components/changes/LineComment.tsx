@@ -48,8 +48,8 @@ export interface FileReview {
   review: ReviewComments;
   adder?: CommentAdder;
   target: ReviewTarget;
-  /** This file's comments on `target`, in order. */
-  comments: readonly ReviewComment[];
+  /** This file's comments on `target`, in order, with the statuses `DiffView` worked out once. */
+  checked: readonly CheckedComment[];
   /** The file's diff as `commentStatus` reads it; undefined until there is an answer. */
   read: FileRead | undefined;
   /** Takes the focus when what held it, in a list of comments, goes away. */
@@ -242,15 +242,22 @@ export function DraftBox({ review, place, location, onDone }: {
   );
 }
 
+/** `file` read from the rows on screen, which stand in until the file's own read answers. */
+export function againstRows(file: FileReview, rows: readonly UnifiedRow[]): FileReview {
+  const read: FileRead = { status: "read", rows };
+  const checked = file.checked.map(({ comment }) => ({ comment, status: commentStatus(comment, file.target, read) }));
+  return { ...file, read, checked };
+}
+
 /** The comments that read true against `rows`, by line: those are the ones shown under their row. */
-function commentsOnRows(file: FileReview, rows: readonly UnifiedRow[]): ReadonlyMap<string, readonly ReviewComment[]> {
-  const placed = new Map<string, readonly ReviewComment[]>();
-  if (file.comments.length === 0) return placed;
+function commentsOnRows(file: FileReview, rows: readonly UnifiedRow[]): ReadonlyMap<string, readonly CheckedComment[]> {
+  const placed = new Map<string, readonly CheckedComment[]>();
+  if (file.checked.length === 0) return placed;
   const shown = lineIdsOf(rows);
-  for (const comment of file.comments) {
-    const id = lineIdOf(comment);
-    if (commentStatus(comment, file.target, file.read) === "current" && shown.has(id)) {
-      placed.set(id, [...(placed.get(id) ?? []), comment]);
+  for (const checked of file.checked) {
+    const id = lineIdOf(checked.comment);
+    if (checked.status === "current" && shown.has(id)) {
+      placed.set(id, [...(placed.get(id) ?? []), checked]);
     }
   }
   return placed;
@@ -292,9 +299,9 @@ export function rowReviewOf(file: FileReview, change: FileNames, rows: readonly 
       if (comments.length === 0 && boxes.length === 0) return null;
       return (
         <>
-          {comments.map((comment) => (
+          {comments.map(({ comment, status }) => (
             <GridRow key={comment.id}>
-              <LineComment comment={comment} status={commentStatus(comment, target, file.read)} review={review} adder={file.adder} onRemoved={onDone} />
+              <LineComment comment={comment} status={status} review={review} adder={file.adder} onRemoved={onDone} />
             </GridRow>
           ))}
           {boxes.map((place) => (
@@ -315,11 +322,11 @@ export function FileComments({ file, change, rows }: {
   /** The rows comments can sit under. */
   rows: readonly UnifiedRow[];
 }) {
-  const { review, target, read, onFocusLost } = file;
-  if (file.comments.length === 0 && review.draftKeys.length === 0) return null;
+  const { review, target, onFocusLost } = file;
+  if (file.checked.length === 0 && review.draftKeys.length === 0) return null;
   const shown = lineIdsOf(rows);
   const placed = commentsOnRows(file, rows);
-  const listed = file.comments.filter((comment) => !placed.get(lineIdOf(comment))?.includes(comment));
+  const listed = file.checked.filter(({ comment }) => !placed.get(lineIdOf(comment))?.some((shownHere) => shownHere.comment === comment));
   const boxes = review.draftKeys.flatMap((key) => {
     const place = parseDraftKey(key);
     return place && place.file === change.path && place.target === target && !shown.has(lineIdOf(place)) ? [place] : [];
@@ -327,11 +334,11 @@ export function FileComments({ file, change, rows }: {
   if (listed.length === 0 && boxes.length === 0) return null;
   return (
     <div className="mx-1.5 mb-1.5 flex flex-col gap-1">
-      {listed.map((comment) => (
+      {listed.map(({ comment, status }) => (
         <LineComment
           key={comment.id}
           comment={comment}
-          status={commentStatus(comment, target, read)}
+          status={status}
           review={review}
           adder={file.adder}
           location={`Line ${comment.line}`}
@@ -346,8 +353,8 @@ export function FileComments({ file, change, rows }: {
 }
 
 /** What a section's header says about its comments, which holds with the section closed. */
-export function commentSummary({ comments, target, read }: FileReview): string {
-  const outdated = comments.filter((comment) => commentStatus(comment, target, read) === "outdated").length;
-  const count = `${comments.length} ${comments.length === 1 ? "comment" : "comments"}`;
+export function commentSummary({ checked }: FileReview): string {
+  const outdated = checked.filter(({ status }) => status === "outdated").length;
+  const count = `${checked.length} ${checked.length === 1 ? "comment" : "comments"}`;
   return outdated > 0 ? `${count}, ${outdated} outdated` : count;
 }

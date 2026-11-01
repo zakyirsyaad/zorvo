@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- **A worktree session's attachments point into its worktree.** A file attached from the folder you started in now names the same file in the session's worktree, so an agent no longer edits your main checkout. A file the worktree does not have, such as an untracked one, keeps its path.
+
 ### Changed
 
 - **The landing page and docs show Zorvo 0.7.** The hero picture lists the detected agents with Ready or Sign in, and the features cover the composer's choices, failed turns and self-updates. The docs gain an Update Zorvo section, the sign-in status picture, the Not available agents, and The composer in the quickstart, and Troubleshooting covers failed turns, Gemini CLI and updates that do not install.

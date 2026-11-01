@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { createSessionWorktree } from "../lib/session-worktree";
+import { attachmentsFor, createSessionWorktree } from "../lib/session-worktree";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
 
@@ -23,5 +23,24 @@ describe("createSessionWorktree", () => {
 
     expect(worktree).toEqual({ repoPath: "/w/app", path: "/data/worktrees/app/fix", branch: "agent/fix", startCommit });
     expect(cwd).toBe("/data/worktrees/app/fix/web");
+  });
+});
+
+describe("attachmentsFor", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("asks the backend only when there are attachments", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockResolvedValue(["/wt/app/a.txt"]);
+
+    expect(await attachmentsFor("/w/app", "/wt/app", undefined)).toBeUndefined();
+    expect(await attachmentsFor("/w/app", "/wt/app", [])).toEqual([]);
+    expect(spy).not.toHaveBeenCalled();
+
+    expect(await attachmentsFor("/w/app", "/wt/app", ["/w/app/a.txt"])).toEqual(["/wt/app/a.txt"]);
+    expect(spy).toHaveBeenCalledWith(
+      "worktree_attachment_paths",
+      { repoPath: "/w/app", cwd: "/wt/app", paths: ["/w/app/a.txt"] },
+      undefined,
+    );
   });
 });

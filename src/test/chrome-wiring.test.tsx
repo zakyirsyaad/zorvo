@@ -307,6 +307,62 @@ describe("Window chrome wiring", () => {
     expect(attachments.getByRole("listitem").getAttribute("title")).toBe("/Users/test/developer/ai-perpetual-trading/README.md");
   });
 
+  it("a worktree session's attachment points into its worktree", async () => {
+    const invokeSpy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
+      if (cmd === "list_directory") return Promise.resolve([{ name: "README.md", relativePath: "README.md", isDir: false }]);
+      if (cmd === "create_session_worktree") {
+        return Promise.resolve({ path: "/data/worktrees/app/fix", cwd: "/data/worktrees/app/fix", branch: "agent/fix", startCommit: "0".repeat(40) });
+      }
+      if (cmd === "worktree_attachment_paths") return Promise.resolve(["/data/worktrees/app/fix/README.md"]);
+      return fakeTauriInvoke(cmd, args);
+    });
+    await renderApp();
+    await click(header().getByRole("button", { name: "Toggle files panel" }));
+    await click(await screen.findByRole("button", { name: "Add README.md to prompt" }));
+    await click(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" }));
+    await click(await screen.findByRole("switch", { name: "Worktree" }));
+
+    const prompt = screen.getByRole("textbox", { name: "Prompt" });
+    await act(async () => {
+      fireEvent.change(prompt, { target: { value: "fix it" } });
+      fireEvent.keyDown(prompt, { key: "Enter" });
+    });
+
+    expect(invokeSpy.mock.calls.find(([cmd]) => cmd === "worktree_attachment_paths")?.[1]).toEqual({
+      repoPath: "/Users/test/developer/ai-perpetual-trading",
+      cwd: "/data/worktrees/app/fix",
+      paths: ["/Users/test/developer/ai-perpetual-trading/README.md"],
+    });
+    const prompted = invokeSpy.mock.calls.find(([cmd]) => cmd === "acp_prompt")?.[1];
+    expect(prompted).toMatchObject({ attachments: ["/data/worktrees/app/fix/README.md"] });
+  });
+
+  it("keeps the attachments and says so when they cannot be pointed into the worktree", async () => {
+    const invokeSpy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
+      if (cmd === "list_directory") return Promise.resolve([{ name: "README.md", relativePath: "README.md", isDir: false }]);
+      if (cmd === "create_session_worktree") {
+        return Promise.resolve({ path: "/data/worktrees/app/fix", cwd: "/data/worktrees/app/fix", branch: "agent/fix", startCommit: "0".repeat(40) });
+      }
+      if (cmd === "worktree_attachment_paths") return Promise.reject("not a workspace");
+      return fakeTauriInvoke(cmd, args);
+    });
+    await renderApp();
+    await click(header().getByRole("button", { name: "Toggle files panel" }));
+    await click(await screen.findByRole("button", { name: "Add README.md to prompt" }));
+    await click(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" }));
+    await click(await screen.findByRole("switch", { name: "Worktree" }));
+
+    const prompt = screen.getByRole("textbox", { name: "Prompt" });
+    await act(async () => {
+      fireEvent.change(prompt, { target: { value: "fix it" } });
+      fireEvent.keyDown(prompt, { key: "Enter" });
+    });
+
+    expect(screen.getByRole("alert").textContent).toContain("not a workspace");
+    const prompted = invokeSpy.mock.calls.find(([cmd]) => cmd === "acp_prompt")?.[1];
+    expect(prompted).toMatchObject({ attachments: ["/Users/test/developer/ai-perpetual-trading/README.md"] });
+  });
+
   it("shows the user's git identity and app version, and opens settings from the profile", async () => {
     await renderApp();
     const sidebar = within(screen.getByRole("complementary"));

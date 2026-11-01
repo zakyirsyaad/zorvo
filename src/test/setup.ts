@@ -178,6 +178,9 @@ export function fakeTauriInvoke(cmd: string, args?: unknown): Promise<unknown> {
   if (cmd === "workspace_details") {
     return Promise.resolve({ location: "~/developer", branch: "main" });
   }
+  if (cmd === "worktree_attachment_paths") {
+    return Promise.resolve((args as { paths: string[] }).paths);
+  }
   if (cmd === "attachment_preview") {
     return Promise.resolve(undefined);
   }

@@ -22,6 +22,20 @@ export async function createSessionWorktree(
 }
 
 /**
+ * `attachments` with the files of the folder `repoPath` pointed at the same
+ * files in the worktree `cwd`, so an agent never edits the main checkout. The
+ * backend is asked only when there is something to point.
+ */
+export async function attachmentsFor(
+  repoPath: string,
+  cwd: string,
+  attachments: readonly string[] | undefined,
+): Promise<readonly string[] | undefined> {
+  if (!attachments?.length) return attachments;
+  return invoke<string[]>('worktree_attachment_paths', { repoPath, cwd, paths: attachments });
+}
+
+/**
  * Removes a deleted session's worktree when no other session runs in it,
  * once its agent has stopped: never from under a running agent. The backend
  * keeps one with uncommitted changes, and its branch always. Resolves with a

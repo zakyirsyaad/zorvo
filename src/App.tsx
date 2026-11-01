@@ -28,7 +28,7 @@ import { useAgentSignInStatus } from "./hooks/useAgentSignInStatus";
 import { useDraftAgentCheck } from "./hooks/useDraftAgentCheck";
 import { useSettingsSignIn } from "./hooks/useSettingsSignIn";
 import { useLatest } from "./hooks/useLatest";
-import { createSessionWorktree } from "./lib/session-worktree";
+import { attachmentsFor, createSessionWorktree } from "./lib/session-worktree";
 import { sweepOrphans } from "./lib/orphan-sweep";
 import {
   isWaitingForAnswer,
@@ -440,8 +440,17 @@ export default function App() {
         setIsCreatingWorktree(false);
       }
     }
+    let message = first;
+    if (worktree && first?.attachments?.length) {
+      // The composer attached paths in the main folder: the agent gets its worktree's files instead.
+      try {
+        message = { ...first, attachments: await attachmentsFor(activeWorkspace.path, cwd, first.attachments) };
+      } catch (error) {
+        setNotice(`Could not point the attachments into the worktree: ${String(error)}`);
+      }
+    }
     setPickedAgentId(null);
-    startSession({ agent: newSessionAgent, cwd, name, worktree }, first);
+    startSession({ agent: newSessionAgent, cwd, name, worktree }, message);
     // The base was this session's: the next draft starts from the folder's own branch.
     if (worktree) branchPicker.reset();
   };

@@ -1,6 +1,7 @@
 pub mod acp;
 pub mod app_update;
 pub mod appearance;
+pub mod attachment_paths;
 pub mod attachments;
 pub mod background_processes;
 pub mod branches;
@@ -433,6 +434,7 @@ pub fn run() {
             changes::commit_session_changes,
             worktrees::create_session_worktree,
             worktrees::remove_session_worktree,
+            attachment_paths::worktree_attachment_paths,
             user_profile::get_user_profile,
             github::github_status,
             github::github_start_sign_in,

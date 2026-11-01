@@ -6,6 +6,7 @@ import { SIGN_IN_CHIP_STYLES, SIGN_IN_LABELS, type SignInState } from "../lib/ag
 import type { AgentProfile, Session, Workspace } from "../types";
 import { NewSessionMenu } from "./sidebar/NewSessionMenu";
 import { SessionTree, type SessionListContext } from "./sidebar/SessionList";
+import { compareRuns } from "../lib/compare-run";
 import {
   folderNameOf,
   groupSessionsByWorkspace,
@@ -21,6 +22,8 @@ export interface SidebarProps {
   activeWorkspacePath?: string;
   sessions: Session[];
   activeSessionId?: string;
+  /** The compare run whose panel is open. */
+  activeRunId?: string | null;
   agents: AgentProfile[];
   /** Decides which registry agents are in use; the defaults apply when absent. */
   settings?: EnabledSettings;
@@ -30,6 +33,8 @@ export interface SidebarProps {
   onSetUpAgent?: (profileId: string) => void;
   onNewSession: () => void;
   onSelectSession: (sessionId: string) => void;
+  /** Opens a compare run's panel. */
+  onOpenRun?: (runId: string) => void;
   /** Opens a new session in that folder with that agent; each workspace's + button is hidden when absent. */
   onNewSessionIn?: (path: string, agentId: string) => void;
   /** The agent the + menu marks as the default. */
@@ -193,24 +198,36 @@ function DetectedAgents({
   );
 }
 
-/** True when the session or one of its forks matches the search. */
-function nodeMatches(node: SessionNode, query: string): boolean {
-  return matches(query, node.session.name) || node.children.some((child) => nodeMatches(child, query));
+/** Finds a profile id's agent name for the search. */
+type AgentNameOf = (profileId: string) => string | undefined;
+
+/**
+ * True when the session or one of its forks matches the search. A run's rows are
+ * named after their agent, so they match by that name too.
+ */
+function nodeMatches(node: SessionNode, query: string, agentNameOf: AgentNameOf, isRunRow = false): boolean {
+  const { session } = node;
+  const own = isRunRow
+    ? matches(query, session.name, agentNameOf(session.profileId) ?? session.profileId)
+    : matches(query, session.name);
+  return own || node.children.some((child) => nodeMatches(child, query, agentNameOf, Boolean(node.run)));
 }
 
 /** Keeps the sessions that match, with the sources of matching forks so the tree stays readable. */
-function filterNodes(nodes: SessionNode[], query: string): SessionNode[] {
+function filterNodes(nodes: SessionNode[], query: string, agentNameOf: AgentNameOf, isRunRow = false): SessionNode[] {
   return nodes
-    .filter((node) => nodeMatches(node, query))
-    .map((node) => ({ ...node, children: filterNodes(node.children, query) }));
+    .filter((node) => nodeMatches(node, query, agentNameOf, isRunRow))
+    .map((node) => ({ ...node, children: filterNodes(node.children, query, agentNameOf, Boolean(node.run)) }));
 }
 
 /** The groups to show for a search: a folder that matches keeps all its sessions. */
-function searchGroups(groups: SessionGroup[], query: string): SessionGroup[] {
+function searchGroups(groups: SessionGroup[], query: string, agentNameOf: AgentNameOf): SessionGroup[] {
   if (query === "") return groups;
   return groups
     .map((group) =>
-      matches(query, group.name, group.path) ? group : { ...group, sessions: filterNodes(group.sessions, query) },
+      matches(query, group.name, group.path)
+        ? group
+        : { ...group, sessions: filterNodes(group.sessions, query, agentNameOf) },
     )
     .filter((group) => group.sessions.length > 0 || matches(query, group.name, group.path));
 }
@@ -220,12 +237,14 @@ export function Sidebar({
   activeWorkspacePath,
   sessions,
   activeSessionId,
+  activeRunId,
   agents,
   settings = {},
   signInStateOf,
   onSetUpAgent,
   onNewSession,
   onSelectSession,
+  onOpenRun,
   onNewSessionIn,
   defaultAgentId,
   onOpenFolder,
@@ -244,13 +263,17 @@ export function Sidebar({
   const query = searchQuery.trim().toLowerCase();
 
   // Pinned sessions sit on top and archived ones at the bottom, out of their workspace.
-  const listed = sessions.filter((s) => !isArchived(s) && !isShownPinned(s));
-  const groups = searchGroups(groupSessionsByWorkspace(workspaces, listed), query);
+  // A pinned session of a run stays in the run's group instead, so it is not listed twice.
+  const runs = compareRuns(sessions);
+  const runMemberIds = new Set(runs.flatMap((run) => run.sessions.map((s) => s.id)));
+  const listed = sessions.filter((s) => !isArchived(s) && (!isShownPinned(s) || runMemberIds.has(s.id)));
+  const agentNameOf: AgentNameOf = (profileId) => agents.find((agent) => agent.id === profileId)?.name;
+  const groups = searchGroups(groupSessionsByWorkspace(workspaces, listed, runs), query, agentNameOf);
   const asNodes = (list: Session[]) => list.map((session) => ({ session, children: [] }));
   // Like a listed session, one is found by its own name or its project's.
   const isFound = (s: Session) => matches(query, s.name, folderNameOf(workspacePathOf(s)), workspacePathOf(s));
   const pinned = sessions
-    .filter((s) => isShownPinned(s) && isFound(s))
+    .filter((s) => isShownPinned(s) && !runMemberIds.has(s.id) && isFound(s))
     .sort((a, b) => b.createdAt - a.createdAt);
   const archived = sessions
     .filter((s) => isArchived(s) && isFound(s))
@@ -264,10 +287,12 @@ export function Sidebar({
     });
   const context: SessionListContext = {
     activeSessionId,
-    agentNameOf: (profileId) => agents.find((agent) => agent.id === profileId)?.name,
+    activeRunId: activeRunId ?? undefined,
+    agentNameOf,
     isSessionBusy,
     isSessionWaiting,
     onSelectSession,
+    onOpenRun,
     onStopSession,
     onDeleteSession,
     onRenameSession,

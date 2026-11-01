@@ -382,6 +382,24 @@ describe("ComposerDock restored message", () => {
     expect(handle.current?.holdsRestored()).toBe(false);
   });
 
+  it("says whether what it holds is a given message: one composer serves every session", () => {
+    const handle = renderWithHandle();
+    act(() => handle.current?.restore("hi"));
+
+    expect(handle.current?.holdsRestored({ text: "hi" })).toBe(true);
+    expect(handle.current?.holdsRestored({ text: "hello" })).toBe(false);
+  });
+
+  it("tells two messages of the same text apart by their attachments", () => {
+    const handle = createRef<ComposerHandle>();
+    render(<ComposerDock handleRef={handle} onSendMessage={() => {}} attachAsFiles />);
+    act(() => handle.current?.restore("hi", ["/wt/1/a.ts"]));
+
+    expect(handle.current?.holdsRestored({ text: "hi", attachments: ["/wt/1/a.ts"] })).toBe(true);
+    expect(handle.current?.holdsRestored({ text: "hi", attachments: ["/wt/2/a.ts"] })).toBe(false);
+    expect(handle.current?.holdsRestored({ text: "hi" })).toBe(false);
+  });
+
   it("is emptied by clear and then holds nothing restored", () => {
     const handle = renderWithHandle();
     act(() => handle.current?.restore("hi"));

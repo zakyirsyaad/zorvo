@@ -108,6 +108,8 @@ export interface SessionWorktree {
   /** The worktree's root folder. */
   path: string;
   branch: string;
+  /** The commit the worktree was made from; missing on worktrees saved before it was recorded. */
+  startCommit?: string;
 }
 
 export interface Session {
@@ -139,6 +141,8 @@ export interface Session {
   hasUnread?: boolean;
   /** The session was imported where the agent kept it, so its earlier messages are not shown here. */
   historyElsewhere?: boolean;
+  /** The compare run this session belongs to, when it was started from one. */
+  compareRunId?: string | null;
 }
 
 export interface Settings {

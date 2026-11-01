@@ -32,11 +32,17 @@
 //   FAKE_ACP_SLOW_REPLAY -> session/load sends another chunk three seconds later, then answers
 //   FAKE_ACP_MODELS   -> session/new reports models ("auto", "flash", "pro"; "auto" current) and
 //                         answers session/set_model, saying "model:<id>" or refusing an unknown id
+//   FAKE_ACP_WRITE_FILES -> a JSON object of relative paths and contents, written into the
+//                         session's folder when a "permission" prompt is answered "allow",
+//                         and by "crash" just before it exits
 // (each other FAKE_ACP_* flag is documented where it is read below)
-import { appendFileSync, closeSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 
 let nextSession = 1;
+// The folder each session was opened in, by session id.
+const sessionFolders = new Map();
 let pendingPermission = null;
 let pendingSlow = null;
 let pendingStray = null;
@@ -52,6 +58,15 @@ const reply = (id, result) => send({ id, result });
 const update = (sessionId, update) => send({ method: "session/update", params: { sessionId, update } });
 const say = (sessionId, text) =>
   update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
+
+function writeSessionFiles(sessionId) {
+  const files = JSON.parse(process.env.FAKE_ACP_WRITE_FILES ?? "{}");
+  for (const [path, contents] of Object.entries(files)) {
+    const target = join(sessionFolders.get(sessionId), path);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, contents);
+  }
+}
 
 // The modes every answer that opens a session reports.
 const defaultModes = () => ({
@@ -149,7 +164,17 @@ function handlePrompt(id, params) {
     send({ id: "stray", method: "session/request_permission", params: permissionFor("nobody") });
     return;
   }
-  if (text === "crash") process.exit(3);
+  if (text === "crash") {
+    const crash = () => {
+      writeSessionFiles(params.sessionId);
+      process.exit(3);
+    };
+    // FAKE_ACP_CRASH_AFTER: crashes that many milliseconds into the turn, once the client has looked.
+    const delay = Number(process.env.FAKE_ACP_CRASH_AFTER ?? 0);
+    if (delay > 0) setTimeout(crash, delay);
+    else crash();
+    return;
+  }
   if (text === "needs-login") {
     send({ id, error: { code: -32000, message: "Authentication required" } });
     return;
@@ -235,6 +260,7 @@ const handlers = {
       askBeforeTheSessionExists("session/load", id, params);
       return;
     }
+    sessionFolders.set(params.sessionId, params.cwd);
     update(params.sessionId, {
       sessionUpdate: "user_message_chunk",
       content: { type: "text", text: "earlier question" },
@@ -315,6 +341,7 @@ const handlers = {
       return;
     }
     const sessionId = `fake-${nextSession++}`;
+    sessionFolders.set(sessionId, params?.cwd);
     reply(id, {
       sessionId,
       modes: defaultModes(),
@@ -452,6 +479,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   }
   if (message.id === "perm-1" && pendingPermission) {
     const outcome = message.result.outcome;
+    if (outcome.optionId === "allow") writeSessionFiles(pendingPermission.sessionId);
     say(pendingPermission.sessionId, `allowed:${outcome.optionId ?? outcome.outcome}`);
     reply(pendingPermission.promptId, { stopReason: "end_turn" });
     pendingPermission = null;

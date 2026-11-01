@@ -8,6 +8,7 @@ import { ComposerDock, type ComposerHandle } from "./components/ComposerDock";
 import { RemovedAgentPanel } from "./components/RemovedAgentPanel";
 import { FilesPanel } from "./components/FilesPanel";
 import { EmptySessionState, FileDropOverlay, NoticeBanner } from "./components/AppPlaceholders";
+import { CompareRunPanel } from "./components/compare/CompareRunPanel";
 import { FailedTurnBanner } from "./components/FailedTurnBanner";
 import { SignInLayer } from "./components/SignInLayer";
 import { AgentInstallPanel } from "./components/AgentInstallPanel";
@@ -28,13 +29,14 @@ import { useAgentSignInStatus } from "./hooks/useAgentSignInStatus";
 import { useDraftAgentCheck } from "./hooks/useDraftAgentCheck";
 import { useSettingsSignIn } from "./hooks/useSettingsSignIn";
 import { useLatest } from "./hooks/useLatest";
-import { createSessionWorktree } from "./lib/session-worktree";
+import { attachmentsFor, createSessionWorktree } from "./lib/session-worktree";
 import { sweepOrphans } from "./lib/orphan-sweep";
 import {
   isWaitingForAnswer,
   newSessionRecord,
   titleFor,
   type SessionSpec,
+  type StartSessionOptions,
 } from "./lib/session-start";
 import { isAwaitingUser } from "./lib/acp-elicitation";
 import {
@@ -87,6 +89,10 @@ import { pickFiles } from "./lib/file-picker";
 import { useFileDrop } from "./hooks/useFileDrop";
 import { isAgentReady, isAgentRunnable, noAgentNotice, resolveDraftAgentId } from "./lib/agent-readiness";
 import { isInUse, removedAgentNameFor } from "./lib/enabled-agents";
+import { useCompareDraft } from "./hooks/useCompareDraft";
+import { useCompareRun, useCompareRunRows } from "./hooks/useCompareRun";
+import { lastOfRun, runOf } from "./lib/compare-run";
+import { compareAgentOptions } from "./lib/composer-controls";
 import { composerCommandsFor, composerNote, composerPlaceholder, composerStateFor } from "./lib/composer-state";
 import {
   NO_CHOICES,
@@ -115,7 +121,11 @@ export default function App() {
       const { [sessionId]: _cleared, ...rest } = prev;
       return rest;
     });
-  const [activeSessionId, setActiveSessionId] = useState("");
+  const [selectedSessionId, setActiveSessionId] = useState("");
+  /** The compare run a Send opened; set only while no session is selected. */
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  /** Bumped when any turn ends, so an open run's panel reads each agent's changes again. */
+  const [runVersion, setRunVersion] = useState(0);
   /** The agent picked for the next new session; null means the default from Settings. */
   const [pickedAgentId, setPickedAgentId] = useState<string | null>(null);
   /** Whether the next new session runs in its own worktree (a git repository only). */
@@ -128,7 +138,7 @@ export default function App() {
   const composerRef = useRef<ComposerHandle>(null);
 
   const reportError = useCallback((message: string) => setNotice(message), []);
-  const { state, isLoaded, updateState, saveNow } = usePersistedState(reportError);
+  const { state, isLoaded, updateState, getState, saveNow } = usePersistedState(reportError);
   useAppearance(state.settings.appearance, isLoaded, reportError);
   const { transcripts, ensureLoaded, updateMessages, removeTranscript, flush: flushTranscripts } = useTranscripts(reportError);
   const { agents, isLoaded: areAgentsLoaded, refresh: refreshAgents, reload: reloadAgents } = useAgentProfiles(reportError);
@@ -160,6 +170,16 @@ export default function App() {
   } = useWorkspaceSelection(state, isLoaded, updateState, reportError);
 
   const sessions = state.sessions;
+  // An opened run shows its panel in the chat's place, until a session is selected.
+  const activeRun = activeRunId && !selectedSessionId ? runOf(sessions, activeRunId) : null;
+  const activeSessionId = selectedSessionId;
+  // Any selection leaves the run, and so does a run that is gone (archived or deleted away): it does not come back on its own.
+  if (activeRunId && (selectedSessionId || !runOf(sessions, activeRunId))) {
+    setActiveRunId(null);
+    // The agent left takes the panel's place in this same render, so no draft mounts behind it.
+    const last = selectedSessionId ? null : lastOfRun(sessions, activeRunId);
+    if (last) setActiveSessionId(last.id);
+  }
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const activeAgent = agents.find((a) => a.id === activeSession?.profileId);
   const isActiveRunning = activeSession?.status === "running";
@@ -170,10 +190,9 @@ export default function App() {
   // An agent not installed yet is offered too: picking it shows its Install panel.
   const pickableAgents = agentsInUse;
   const defaultAgentId = resolveDraftAgentId(agentsInUse, state.settings.defaultAgentId, pickableAgents);
-  const newSessionAgentId = pickableAgents.find((a) => a.id === pickedAgentId)?.id ?? defaultAgentId;
-  const newSessionAgent = agents.find((a) => a.id === newSessionAgentId);
-  // No session is selected: the window shows a new one, not started until its first message.
-  const isNewSessionDraft = !activeSession;
+  const primaryAgentId = pickableAgents.find((a) => a.id === pickedAgentId)?.id ?? defaultAgentId;
+  // No session is selected and no run is open: the window shows a new one, not started until its first message.
+  const isNewSessionDraft = !activeSession && !activeRun;
   // A session shows the folder it runs in, even one no longer in the recents.
   const shownFolderPath = activeSession?.cwd ?? activeWorkspacePath;
   const workspaceDetails = useWorkspaceDetails(shownFolderPath, reportError, branchCheck);
@@ -183,10 +202,27 @@ export default function App() {
   // every saved session's folder, so one gone from the recents keeps them.
   const isRepository = Boolean(workspaceDetails?.branch);
   const canUseWorktree = isNewSessionDraft && isRepository;
+  // In a repository the Agent chip can tick several agents; the first ticked one is the draft's agent.
+  const signInStatus = useAgentSignInStatus({ settings: state.settings, updateState });
+  const agentChoices = compareAgentOptions(pickableAgents, signInStatus.stateOf);
+  const tickableAgentIds = new Set(agentChoices.filter((c) => !c.disabledReason).map((c) => c.value));
+  // Details are null while a folder loads, which says nothing about it: compare keeps the last known answer until the folder's own arrives.
+  const [lastDetails, setLastDetails] = useState(workspaceDetails);
+  if (isNewSessionDraft && workspaceDetails && workspaceDetails !== lastDetails) setLastDetails(workspaceDetails);
+  const canCompare = isNewSessionDraft && Boolean((workspaceDetails ?? lastDetails)?.branch);
+  const compare = useCompareDraft({
+    primaryAgentId,
+    isRepository: canCompare,
+    isTickable: (agentId) => tickableAgentIds.has(agentId),
+    onSingle: setPickedAgentId,
+  });
+  const newSessionAgent = agents.find((a) => a.id === (compare.agentIds[0] ?? primaryAgentId));
+  // Several agents each run in their own worktree, so Worktree is on whatever it was set to.
+  const isWorktreeActive = canUseWorktree && (isWorktreeOn || compare.isCompare);
   const branchPicker = useBranchPicker({
     folderPath: isNewSessionDraft ? activeWorkspacePath : undefined,
     checkedOut: workspaceDetails?.branch ?? undefined,
-    isWorktreeOn: isWorktreeOn && canUseWorktree,
+    isWorktreeOn: isWorktreeActive,
     onSwitched: () => setBranchCheck((n) => n + 1),
     onNotice: setNotice,
   });
@@ -198,9 +234,10 @@ export default function App() {
   // session when it has one, else (rewound) in a fresh one handed the conversation.
   const isResumable =
     Boolean(activeSession) && activeSession?.status !== "running" && activeAgent?.detected === true;
-  const draftAgent = isResumable ? activeAgent : newSessionAgent;
+  // A run's panel has no draft behind it: no install or sign-in panel, no probe.
+  const draftAgent = activeRun ? undefined : isResumable ? activeAgent : newSessionAgent;
   const isDraftAgentReady = draftAgent ? isAgentRunnable(draftAgent) : false;
-  const installPanelAgent = installPanelAgentOf(activeSession, activeAgent, newSessionAgent);
+  const installPanelAgent = activeRun ? undefined : installPanelAgentOf(activeSession, activeAgent, newSessionAgent);
   const draftNeedsInstall = useDraftInstall(agents, installPanelAgent, draftAgent);
 
   useEffect(() => setAcpChoices(NO_CHOICES), [draftAgent?.id]);
@@ -256,19 +293,24 @@ export default function App() {
   // into the session it was written for, not that one's composer.
   const restoreMessage = (sessionId: string, text: string, attachments?: readonly string[]) => {
     setActiveSessionId(sessionId);
-    composerRef.current?.restore(text, attachments);
+    // A run's panel has no composer: the message waits for the session's to mount.
+    if (composerRef.current) composerRef.current.restore(text, attachments);
+    else pendingRestoreRef.current = { text, attachments };
   };
   // Read when an agent answers, seconds after the closure that waits for it was made.
   const activeSessionIdRef = useLatest(activeSessionId);
-  const signInStatus = useAgentSignInStatus({ settings: state.settings, updateState });
   const signIn = useAgentSignIn({
     onSignInNeeded: signInStatus.markNeeded,
     onSignedIn: signInStatus.markSignedIn,
     onSignInBlocked: reportError,
+    onRefusedMessageChanged: (sessionId) => compareRun.dropSignIn(sessionId),
     agents,
     composerRef,
     activeSessionIdRef,
-    retryAfterSignIn: (sessionId, message) => acp.retryAfterSignIn(sessionId, message),
+    retryAfterSignIn: (sessionId, message) => {
+      compareRun.dropSignIn(sessionId);
+      return acp.retryAfterSignIn(sessionId, message);
+    },
     onRestore: restoreMessage,
   });
 
@@ -289,7 +331,8 @@ export default function App() {
 
   // A draft asks its ACP agent what it offers, and whether it needs a sign-in, before the first message.
   const agentCheck = useDraftAgentCheck({
-    agent: isActiveRunning || !isDraftAgentReady ? undefined : draftAgent,
+    // Several agents are not asked: nothing starts until Send, and the chips they feed are hidden.
+    agent: isActiveRunning || !isDraftAgentReady || compare.isCompare ? undefined : draftAgent,
     cwd: shownFolderPath ?? undefined,
     agentOptions: state.agentOptions,
     rememberProbed,
@@ -307,8 +350,16 @@ export default function App() {
     ...engineDeps,
     transcripts,
     rememberOptions: rememberAgentOptions,
-    onAttention: (sessionId, reason) => notifyAttention(sessionId, reason),
-    onAuthRequired: signIn.handBack,
+    onAttention: (id, reason) => { notifyAttention(id, reason); if (reason !== "needs-answer") setRunVersion((n) => n + 1); },
+    onAuthRequired: (session, methods, unsent) => {
+      if (!compareRun.isInRun(session.id)) {
+        signIn.handBack(session, methods, unsent);
+        return;
+      }
+      // Several agents of a run can be refused at once and its panel has no composer: each waits on its row.
+      signInStatus.markNeeded(session.profileId);
+      compareRun.keepSignIn(session.id, { methods, unsent });
+    },
     onTurnFailed: (sessionId, error) =>
       error ? setFailedTurns((prev) => ({ ...prev, [sessionId]: error })) : clearFailedTurn(sessionId),
   });
@@ -319,6 +370,7 @@ export default function App() {
 
   /** Tells a user who is away that a session needs them or is done. */
   const notifyAttention = (sessionId: string, reason: AttentionReason) => {
+    if (reason === "finished" && compareRun.awaitsRunNotice(sessionId)) return;
     const session = sessionById(sessionId);
     const agentName = agents.find((a) => a.id === session?.profileId)?.name ?? "The agent";
     // A notification that cannot be shown is not worth an error banner: the chat has it all.
@@ -390,21 +442,25 @@ export default function App() {
   const isSessionWaiting = (sessionId: string) =>
     isWaitingForAnswer(sessionById(sessionId), transcripts[sessionId] ?? [], () => isSessionBusy(sessionId));
 
-  /** Records a new session and shows it; the agent is started by its engine. */
-  const recordSession = (spec: SessionSpec): Session => {
+  /** Records a new session and shows it, unless `focus` is false; the agent is started by its engine. */
+  const recordSession = (spec: SessionSpec, options?: { focus?: boolean }): Session => {
     const session = newSessionRecord(spec);
     const { initialMessages } = spec;
     updateState((prev) => ({ ...prev, sessions: [session, ...prev.sessions] }));
     if (initialMessages) updateMessages(session.id, () => initialMessages);
-    setActiveSessionId(session.id);
+    if (options?.focus !== false) setActiveSessionId(session.id);
     return session;
   };
 
-  const startSession = (spec: SessionSpec, first?: FirstMessage) => {
-    const session = recordSession(spec);
-    void acp.start(session, first, startChoices);
+  /**
+   * Starts a session. A compare run passes the `choices` of this session's own agent (the draft's belong to
+   * the draft agent) and clears the draft's once after the whole run, and `focus: false` to leave the view alone.
+   */
+  const startSession = (spec: SessionSpec, first?: FirstMessage, options?: StartSessionOptions) => {
+    const session = recordSession(spec, options);
+    void acp.start(session, first, options?.choices ?? startChoices);
     // The picks went with the session; a later draft starts from the model picked last.
-    setAcpChoices(NO_CHOICES);
+    if (!options?.choices) setAcpChoices(NO_CHOICES);
   };
 
   /**
@@ -425,23 +481,36 @@ export default function App() {
     const name = first ? titleFor(first) : nextSessionName(sessions);
     let worktree: SessionWorktree | null = null;
     let cwd = activeWorkspace.path;
-    if (isWorktreeOn && canUseWorktree) {
-      setIsCreatingWorktree(true);
-      try {
-        ({ worktree, cwd } = await createSessionWorktree(activeWorkspace.path, name, branchPicker.baseBranch));
-      } catch (error) {
-        setNotice(`Could not create a worktree: ${String(error)}`);
-        // The user may have opened another session meanwhile: the message goes
-        // back into the new session it was written for, not that one's composer.
-        openNewSession(activeWorkspace.path, newSessionAgent.id);
-        if (first) composerRef.current?.restore(first.text, first.attachments);
-        return;
-      } finally {
-        setIsCreatingWorktree(false);
+    let message = first;
+    // The composer stays busy until the worktree and its attachments are ready, so a second Send cannot start.
+    if (isWorktreeActive) setIsCreatingWorktree(true);
+    try {
+      if (isWorktreeActive) {
+        try {
+          ({ worktree, cwd } = await createSessionWorktree(activeWorkspace.path, name, branchPicker.baseBranch));
+        } catch (error) {
+          setNotice(`Could not create a worktree: ${String(error)}`);
+          // The user may have opened another session meanwhile: the message goes
+          // back into the new session it was written for, not that one's composer.
+          openNewSession(activeWorkspace.path, newSessionAgent.id);
+          if (first) composerRef.current?.restore(first.text, first.attachments);
+          return;
+        }
       }
+      if (worktree && first?.attachments?.length) {
+        // The composer attached paths in the main folder: the agent gets its worktree's files instead.
+        try {
+          message = { ...first, attachments: await attachmentsFor(activeWorkspace.path, cwd, first.attachments) };
+        } catch (error) {
+          setNotice(`Could not point the attachments into the worktree: ${String(error)}`);
+        }
+      }
+    } finally {
+      setIsCreatingWorktree(false);
     }
     setPickedAgentId(null);
-    startSession({ agent: newSessionAgent, cwd, name, worktree }, first);
+    compare.reset();
+    startSession({ agent: newSessionAgent, cwd, name, worktree }, message);
     // The base was this session's: the next draft starts from the folder's own branch.
     if (worktree) branchPicker.reset();
   };
@@ -459,10 +528,12 @@ export default function App() {
   const openNewSession = (path?: string, agentId?: string, options?: OpenNewSessionOptions) => {
     if (path) chooseFolder(path);
     setPickedAgentId(agentId ?? null);
+    compare.reset();
     // A fresh draft: picks left from an earlier one would override the model picked last.
     // A failed import returns to the draft it started from, so its picks stay: it did not open.
     if (!options?.keepChoices) setAcpChoices(NO_CHOICES);
     setActiveSessionId("");
+    setActiveRunId(null);
   };
 
   const forkSession = useSessionFork({
@@ -479,8 +550,20 @@ export default function App() {
     setActiveSessionId(sessionId);
     // An agent picked for a new session that was never started is forgotten.
     setPickedAgentId(null);
+    compare.reset();
     const selected = sessionById(sessionId);
     const workspacePath = selected && workspacePathOf(selected);
+    if (workspacePath && workspaces.some((ws) => ws.path === workspacePath)) selectWorkspace(workspacePath);
+  };
+
+  /** Shows a run's panel in the chat's place; no session stays selected, or the panel would not show. */
+  const openRun = (runId: string) => {
+    setActiveSessionId("");
+    setPickedAgentId(null);
+    compare.reset();
+    setActiveRunId(runId);
+    const run = runOf(sessions, runId);
+    const workspacePath = run && workspacePathOf(run.sessions[0]);
     if (workspacePath && workspaces.some((ws) => ws.path === workspacePath)) selectWorkspace(workspacePath);
   };
 
@@ -519,7 +602,7 @@ export default function App() {
     updateSettings({ onboardingCompleted: false });
   };
 
-  useUnreadMarks(sessions, activeSessionId, isSessionBusy, patchSession);
+  useUnreadMarks(sessions, activeSessionId, isSessionBusy, patchSession, activeRun?.sessions.map((s) => s.id));
 
   // A removed session may still have a streamed change queued: drop it before
   // the transcript is deleted, so a late frame cannot write it back.
@@ -552,12 +635,13 @@ export default function App() {
   const draftSessionList = useDraftSessionList({
     agent: isNewSessionDraft ? newSessionAgent : undefined, cwd: activeWorkspace?.path, sessions,
     activeSessionId,
-    isShown: Boolean(isNewSessionDraft && newSessionAgent && agentCheck.canListSessions(newSessionAgent.id) && !(isWorktreeOn && canUseWorktree)),
+    isShown: Boolean(isNewSessionDraft && newSessionAgent && agentCheck.canListSessions(newSessionAgent.id) && !isWorktreeActive),
     listSessions: acp.listSessions, acp, choices: startChoices, onChoicesUsed: () => setAcpChoices(NO_CHOICES),
     recordSession, openSession: handleSelectSession, discardSession: sessionActions.discardSession, openNewSession, requestSignIn: signIn.auth.requestSignIn,
   });
 
   const sendTo = async (sessionId: string, message: FirstMessage) => {
+    compareRun.dropSignIn(sessionId);
     const session = sessionById(sessionId);
     // A numbered session takes its title from the first thing the user asks.
     const isFirstMessage = !(transcripts[sessionId]?.some((m) => m.role === "user") ?? false);
@@ -572,6 +656,7 @@ export default function App() {
    * the message. A rewound one has no agent session left to load.
    */
   const resumeSession = (session: Session, message: FirstMessage) => {
+    compareRun.dropSignIn(session.id);
     if (!session.acpSessionId) {
       void restart(session, message, startChoices);
       setAcpChoices(NO_CHOICES);
@@ -583,11 +668,73 @@ export default function App() {
     setAcpChoices(NO_CHOICES);
   };
 
-  /** Sends to the active session, continues it when it can be resumed, or starts a new one. */
+  // Read when a run's worktrees are done, seconds after the click: an empty session id also means a run's panel.
+  const isDraftRef = useLatest(isNewSessionDraft);
+  const pendingRestoreRef = useRef<FirstMessage | null>(null);
+  useEffect(() => {
+    const pending = pendingRestoreRef.current;
+    if (!pending || !composerRef.current) return;
+    pendingRestoreRef.current = null;
+    composerRef.current.restore(pending.text, pending.attachments);
+  });
+  const rowSources = { isBusy: isSessionBusy, transcripts, failedTurns };
+  const compareRun = useCompareRun({
+    repoPath: activeWorkspace?.path ?? "",
+    baseBranch: branchPicker.baseBranch,
+    agentOptions: state.agentOptions,
+    startSession,
+    isOnDraft: () => isDraftRef.current,
+    openRun: setActiveRunId,
+    setIsBusy: setIsCreatingWorktree,
+    // The user may have opened another session meanwhile: the message goes back into the new session it was written for.
+    restoreMessage: (message, agentId) => {
+      if (!isDraftRef.current || !activeWorkspace) openNewSession(activeWorkspace?.path, agentId);
+      // A run's panel has no composer: the message waits for the new draft's one to mount.
+      if (composerRef.current) composerRef.current.restore(message.text, message.attachments);
+      else pendingRestoreRef.current = message;
+    },
+    onStarted: () => {
+      setPickedAgentId(null);
+      compare.reset();
+      setAcpChoices(NO_CHOICES);
+      branchPicker.reset();
+    },
+    onNotice: setNotice,
+    archiveSession: sessionActions.archiveSession,
+    readSessions: () => getState().sessions,
+    openSession: setActiveSessionId,
+    agentName: (profileId) => agents.find((a) => a.id === profileId)?.name ?? "The agent",
+    sessions,
+    sources: rowSources,
+    askSignIn: signIn.handBackKept,
+    // A notification that cannot be shown is not worth an error banner: the panel has it all.
+    notifyRun: (notice) => void notifyIfAway(notice).catch(() => {}),
+  });
+  // However a session comes on screen, its refusal is taken up there: only now does its composer exist.
+  const { takeSignIn } = compareRun;
+  const refusedHere = compareRun.signInNeeded.get(activeSessionId);
+  useEffect(() => {
+    if (refusedHere) takeSignIn(activeSessionId);
+  }, [activeSessionId, refusedHere, takeSignIn]);
+
+  const runRows = useCompareRunRows(activeRun, { ...rowSources, signInNeeded: compareRun.signInNeeded, ensureLoaded });
+  /** Starts the ticked agents on one prompt, each in its own worktree. */
+  const handleNewRun = (message: FirstMessage) => {
+    if (!activeWorkspace) {
+      setNotice(NO_FOLDER_NOTICE);
+      return;
+    }
+    rememberFolder(activeWorkspace);
+    const picked = compare.agentIds.flatMap((id) => agents.filter((a) => a.id === id));
+    void compareRun.startRun(picked, message);
+  };
+
+  /** Sends to the active session, continues it when it can be resumed, or starts a new one (or a run). */
   const handleSendMessage = (text: string, attachments?: string[]) => {
     const message = { text, attachments };
     if (activeSession && isActiveRunning) void sendTo(activeSession.id, message);
     else if (activeSession && isResumable) resumeSession(activeSession, message);
+    else if (compare.isCompare) handleNewRun(message);
     else void handleNewSession(message);
   };
 
@@ -616,7 +763,7 @@ export default function App() {
 
   // A new session is not in the history: Back from it returns to the session viewed last.
   const lastViewedSessionId = navigation.current && sessionById(navigation.current) ? navigation.current : null;
-  const canGoBack = isNewSessionDraft ? lastViewedSessionId !== null : navigation.canGoBack;
+  const canGoBack = !activeSession ? lastViewedSessionId !== null : navigation.canGoBack;
 
   const currentMessages = transcripts[activeSessionId] ?? [];
   const sessionPlan = currentPlan(currentMessages);
@@ -631,6 +778,9 @@ export default function App() {
     onPick: rememberPick,
     onPickModel: rememberModelPick,
   });
+  // Several agents are not asked and nothing is picked for them yet: Send only waits for the single agent's install or sign-in.
+  // The note promises one worktree each, so while the folder is not known to be a repository (still loading, or unreadable) Send waits too.
+  const isSendBlocked = compare.isCompare ? !canUseWorktree : draftNeedsInstall || draftNeedsSignIn;
   const composerCommands = composerCommandsFor({
     isRunning: isActiveRunning,
     liveCommands: acp.info[activeSessionId]?.commands,
@@ -655,7 +805,7 @@ export default function App() {
   return (
     <main className="flex h-screen w-screen flex-col bg-bg text-fg-secondary">
       <TopBar
-        sessionName={activeSession?.name}
+        sessionName={activeSession?.name ?? activeRun?.name}
         workspaceName={activeSession ? folderNameOf(workspacePathOf(activeSession)) : activeWorkspace?.name}
         workspacePath={shownFolderPath}
         branch={workspaceDetails?.branch ?? undefined}
@@ -663,7 +813,7 @@ export default function App() {
         onOpenPullRequest={openPullRequest}
         canGoBack={canGoBack}
         canGoForward={navigation.canGoForward}
-        onBack={() => navigateTo(isNewSessionDraft ? lastViewedSessionId : navigation.back())}
+        onBack={() => navigateTo(!activeSession ? lastViewedSessionId : navigation.back())}
         onForward={() => navigateTo(navigation.forward())}
         onToggleFiles={filesFolder ? () => sidePanel.toggle("files") : undefined}
         isFilesOpen={sidePanel.open === "files" && Boolean(filesFolder)}
@@ -691,6 +841,7 @@ export default function App() {
           activeWorkspacePath={activeWorkspacePath}
           sessions={sessions}
           activeSessionId={activeSessionId}
+          activeRunId={activeRun?.id}
           agents={agents}
           settings={state.settings}
           signInStateOf={signInStatus.stateOf}
@@ -701,6 +852,7 @@ export default function App() {
           }}
           onNewSession={() => openNewSession()}
           onSelectSession={handleSelectSession}
+          onOpenRun={openRun}
           onNewSessionIn={openNewSession}
           defaultAgentId={defaultAgentId ?? undefined}
           onOpenFolder={() => void openFolder()}
@@ -758,17 +910,27 @@ export default function App() {
               <SignInLayer
                 signIn={signIn}
                 agents={agents}
-                agentId={activeSession?.profileId ?? newSessionAgent?.id}
+                agentId={activeSession?.profileId ?? (activeRun ? undefined : newSessionAgent?.id)}
                 showTerminal={settingsTab === null}
               />
               {installPanelAgent ? <AgentInstallPanel agent={installPanelAgent} /> : null}
-              {activeSession && (currentMessages.length > 0 || isSessionBusy(activeSessionId) || activeSession.historyElsewhere) ? (
+              {activeRun ? (
+                <CompareRunPanel
+                  run={activeRun}
+                  rows={runRows}
+                  version={runVersion}
+                  agentName={(profileId) => agents.find((a) => a.id === profileId)?.name ?? profileId}
+                  onOpen={handleSelectSession}
+                  onChoose={chooseOption}
+                  onPick={(winnerId) => compareRun.pick(activeRun, winnerId)}
+                />
+              ) : activeSession && (currentMessages.length > 0 || isSessionBusy(activeSessionId) || activeSession.historyElsewhere) ? (
                 <ChatCanvas
                   conversationId={activeSessionId}
                   messages={currentMessages}
                   agentName={activeAgent?.name}
                   onForkBranch={(messageId) => void forkSession(messageId)}
-                  onRewind={(messageId) => void rewind(activeSession, messageId)}
+                  onRewind={(messageId) => { compareRun.dropSignIn(activeSessionId); void rewind(activeSession, messageId); }}
                   header={
                     <div className="space-y-3 rounded-xl border border-border bg-surface-1 px-4 py-3">
                       {activeSession.historyElsewhere && (
@@ -794,40 +956,41 @@ export default function App() {
                   details={workspaceDetails}
                   agentName={newSessionAgent?.name}
                   unavailableReason={areAgentsLoaded && !agentsInUse.some(isAgentReady) ? noAgentNotice(agentsInUse) : undefined}
-                  worktreeBaseBranch={isWorktreeOn && canUseWorktree ? branchPicker.baseBranch : undefined}
+                  worktreeBaseBranch={isWorktreeActive ? branchPicker.baseBranch : undefined}
                   sessionList={draftSessionList.sessionList}
                 />
               ) : (
                 <EmptySessionState />
               )}
 
-              <div className="p-4 flex justify-center">
-                {activeAgentRemoved ? (
+              <div className="p-4 flex justify-center empty:hidden">
+                {activeRun ? null : activeAgentRemoved ? (
                   <RemovedAgentPanel agentName={activeAgentRemoved} onAdd={() => activeAgent && catalogActions.addAgent(activeAgent.id)} />
                 ) : (
                   <ComposerDock
-                    controls={composer.controls}
+                    controls={compare.isCompare ? {} : composer.controls}
                     isThinking={Boolean(activeSession) && isSessionBusy(activeSessionId)}
                     onStop={activeSession ? () => handleInterrupt(activeSessionId) : undefined}
                     disabled={
                       isCreatingWorktree ||
                       (!isActiveRunning && ((!isDraftAgentReady && !draftNeedsInstall) || (!isResumable && !canStartSession)))
                     }
-                    sendDisabled={draftNeedsInstall || draftNeedsSignIn}
+                    sendDisabled={isSendBlocked}
                     placeholder={composerPlaceholder({
                       isRunning: isActiveRunning,
                       isCreatingWorktree,
                       isResumable,
                       canStartSession,
-                      isSendBlocked: draftNeedsInstall || draftNeedsSignIn,
+                      isSendBlocked,
                       isEndedSession: Boolean(activeSession),
                     })}
                     onSendMessage={handleSendMessage}
                     attachAsFiles
                     onAttach={pickFiles}
                     handleRef={composerRef}
-                    commands={composerCommands}
+                    commands={compare.isCompare ? [] : composerCommands}
                     note={composerNote({
+                      compareCount: compare.agentIds.length,
                       agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
                       agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
                       continuesSession: isResumable || Boolean(activeSession),
@@ -842,17 +1005,36 @@ export default function App() {
                             selectedPath: activeWorkspacePath,
                             onSelect: chooseFolder,
                             onOpenFolder: () => void openFolder(),
-                            worktree: canUseWorktree ? { isOn: isWorktreeOn, onChange: setIsWorktreeOn } : undefined,
+                            worktree: canUseWorktree
+                              ? {
+                                  isOn: isWorktreeActive,
+                                  onChange: setIsWorktreeOn,
+                                  lockedReason: compare.isCompare ? "Each agent runs in its own worktree." : undefined,
+                                }
+                              : undefined,
                             branch: branchPicker.control,
                           }
                         : undefined
                     }
                     agent={
-                      isNewSessionDraft && newSessionAgent
+                      isNewSessionDraft && newSessionAgent && !canCompare
                         ? {
                             options: pickableAgents.map((a) => ({ value: a.id, label: pickerLabelOf(a) })),
                             selected: newSessionAgent.id,
                             onChange: (agentId) => setPickedAgentId(agentId ?? null),
+                          }
+                        : undefined
+                    }
+                    agents={
+                      isNewSessionDraft && newSessionAgent && canCompare
+                        ? {
+                            options: agentChoices,
+                            selected: compare.agentIds,
+                            onChange: compare.toggle,
+                            onPick: (agentId) => {
+                              compare.reset();
+                              setPickedAgentId(agentId);
+                            },
                           }
                         : undefined
                     }

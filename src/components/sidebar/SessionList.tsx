@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Archive, ArchiveRestore, GitBranch, MoreHorizontal, Pencil, Pin, PinOff, Square, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, GitBranch, GitCompare, MoreHorizontal, Pencil, Pin, PinOff, Square, Trash2 } from "lucide-react";
 import type { Session } from "../../types";
 import type { SessionNode } from "../../lib/session-helpers";
 import { useDismiss } from "../../hooks/useDismiss";
@@ -13,10 +13,14 @@ const MENU_ITEM =
 /** What every session row needs besides its own session. */
 export interface SessionListContext {
   activeSessionId?: string;
+  /** The compare run whose panel is open. */
+  activeRunId?: string;
   agentNameOf: (profileId: string) => string | undefined;
   isSessionBusy: (sessionId: string) => boolean;
   isSessionWaiting: (sessionId: string) => boolean;
   onSelectSession: (sessionId: string) => void;
+  /** Opens a compare run's panel; a run's group is a plain label when absent. */
+  onOpenRun?: (runId: string) => void;
   onStopSession?: (sessionId: string) => void;
   onDeleteSession?: (sessionId: string) => void;
   onRenameSession?: (sessionId: string, name: string) => void;
@@ -66,8 +70,10 @@ function DeleteButton({ onDelete }: { onDelete: () => void }) {
 }
 
 /** A session's ⋯ menu: rename, pin and archive. */
-function SessionMenu({ session, onRename, context }: {
+function SessionMenu({ session, label, onRename, context }: {
   session: Session;
+  /** What the menu calls the session; defaults to its name. */
+  label: string;
   onRename?: () => void;
   context: SessionListContext;
 }) {
@@ -88,7 +94,7 @@ function SessionMenu({ session, onRename, context }: {
     <div ref={containerRef} className="relative">
       <button
         type="button"
-        aria-label={`More actions for ${session.name}`}
+        aria-label={`More actions for ${label}`}
         aria-haspopup="menu"
         aria-expanded={isOpen}
         onClick={() => setIsOpen((open) => !open)}
@@ -99,7 +105,7 @@ function SessionMenu({ session, onRename, context }: {
       {isOpen && (
         <div
           role="menu"
-          aria-label={`Actions for ${session.name}`}
+          aria-label={`Actions for ${label}`}
           className="absolute right-0 top-full z-50 mt-1 w-40 rounded-lg border border-border bg-surface-3 p-1 shadow-popover"
         >
           {onRename && (
@@ -162,35 +168,51 @@ function RenameField({ session, onDone }: { session: Session; onDone: (name: str
   );
 }
 
-function SessionRow({ session, context }: { session: Session; context: SessionListContext }) {
+interface RowStatus {
+  label: string;
+  title: string;
+  dot: string;
+  pulse: boolean;
+}
+
+/** The dot a row (or a group) shows: waiting for an answer, working, or new activity. */
+function statusOf(isWaiting: boolean, isBusy: boolean, hasUnread: boolean): RowStatus | null {
+  if (isWaiting) {
+    return {
+      label: "Waiting for your answer",
+      title: "The agent waits for your answer",
+      dot: "bg-status-attention",
+      pulse: false,
+    };
+  }
+  if (isBusy) {
+    return { label: "Agent working", title: "The agent is working", dot: "bg-status-running", pulse: true };
+  }
+  if (hasUnread) {
+    return {
+      label: "New activity",
+      title: "The agent finished while you were in another session",
+      dot: "bg-status-unread",
+      pulse: false,
+    };
+  }
+  return null;
+}
+
+function SessionRow({ session, context, isInRun = false }: {
+  session: Session;
+  context: SessionListContext;
+  /** A row of a run's group: it shows the agent's name, since every session of a run shares one title. */
+  isInRun?: boolean;
+}) {
   const [isRenaming, setIsRenaming] = useState(false);
   const { onStopSession, onDeleteSession, onRenameSession } = context;
   const isActive = session.id === context.activeSessionId;
   const isBusy = context.isSessionBusy(session.id);
   const isWaiting = context.isSessionWaiting(session.id);
   const agentName = context.agentNameOf(session.profileId);
-  const status = isWaiting
-    ? {
-        label: "Waiting for your answer",
-        title: "The agent waits for your answer",
-        dot: "bg-status-attention",
-        pulse: false,
-      }
-    : isBusy
-      ? {
-          label: "Agent working",
-          title: "The agent is working",
-          dot: "bg-status-running",
-          pulse: true,
-        }
-      : session.hasUnread
-        ? {
-            label: "New activity",
-            title: "The agent finished while you were in another session",
-            dot: "bg-status-unread",
-            pulse: false,
-          }
-        : null;
+  const status = statusOf(isWaiting, isBusy, Boolean(session.hasUnread));
+  const label = isInRun ? (agentName ?? session.profileId) : session.name;
 
   if (isRenaming) {
     return (
@@ -228,7 +250,7 @@ function SessionRow({ session, context }: { session: Session; context: SessionLi
             <GitBranch size={11} aria-label="In its own worktree" className="shrink-0 text-fg-muted" />
           )}
           <span className={`truncate ${session.hasUnread && !isBusy ? "font-medium text-fg" : ""}`}>
-            {session.name}
+            {label}
           </span>
         </span>
       </button>
@@ -246,7 +268,9 @@ function SessionRow({ session, context }: { session: Session; context: SessionLi
         <div className="absolute inset-y-0 right-0 flex items-center">
           <SessionMenu
             session={session}
-            onRename={onRenameSession ? () => setIsRenaming(true) : undefined}
+            label={label}
+            // A rename would not show: the row names the agent, not the session.
+            onRename={onRenameSession && !isInRun ? () => setIsRenaming(true) : undefined}
             context={context}
           />
           {isBusy && onStopSession && (
@@ -267,26 +291,87 @@ function SessionRow({ session, context }: { session: Session; context: SessionLi
   );
 }
 
+/** A run's heading: opens the run's panel, and shows the run's busiest state. */
+function RunGroupRow({ node, context }: { node: SessionNode; context: SessionListContext }) {
+  const run = node.run;
+  if (!run) return null;
+  const members = node.children.map((child) => child.session);
+  const status = statusOf(
+    members.some((member) => context.isSessionWaiting(member.id)),
+    members.some((member) => context.isSessionBusy(member.id)),
+    members.some((member) => member.hasUnread),
+  );
+  const isActive = context.activeRunId === run.id;
+  // Counted from the run, not from the rows a search leaves.
+  const countLabel = `${run.sessions.length} agents`;
+  return (
+    <div
+      data-testid={`run-group-${run.id}`}
+      className={`relative flex items-center rounded-md transition-colors ${
+        isActive
+          ? "bg-surface-hover text-fg font-medium"
+          : "text-fg-muted hover:bg-surface-hover hover:text-fg-secondary"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => context.onOpenRun?.(run.id)}
+        aria-current={isActive ? "true" : undefined}
+        title={[run.name, countLabel, status?.title].filter(Boolean).join(" · ")}
+        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 pr-6 text-left focus-ring"
+      >
+        <GitCompare size={12} aria-hidden="true" className="shrink-0" />
+        <span className="truncate">{run.name}</span>
+        <span className="shrink-0 text-[10px] text-fg-subtle">{countLabel}</span>
+      </button>
+      {status && (
+        <span
+          role="status"
+          aria-label={status.label}
+          className={`pointer-events-none absolute right-2.5 h-1.5 w-1.5 shrink-0 rounded-full ${status.dot} ${
+            status.pulse ? "animate-pulse motion-reduce:animate-none" : ""
+          }`}
+        />
+      )}
+    </div>
+  );
+}
+
 /** Sessions with their forks nested beneath them, joined by a guide line. */
-export function SessionTree({ nodes, label, context, isNested = false }: {
+export function SessionTree({ nodes, label, context, isNested = false, isInRun = false }: {
   nodes: SessionNode[];
   label: string;
   context: SessionListContext;
   isNested?: boolean;
+  /** The nodes are a run's sessions: their rows name the agent. */
+  isInRun?: boolean;
 }) {
   return (
     <ul
       aria-label={label}
       className={isNested ? "ml-3 mt-0.5 space-y-0.5 border-l border-border pl-1.5" : "space-y-0.5"}
     >
-      {nodes.map(({ session, children }) => (
-        <li key={session.id}>
-          <SessionRow session={session} context={context} />
-          {children.length > 0 && (
-            <SessionTree nodes={children} label={`Forks of ${session.name}`} context={context} isNested />
-          )}
-        </li>
-      ))}
+      {nodes.map((node) => {
+        const { session, children, run } = node;
+        if (run) {
+          return (
+            <li key={`run-${run.id}`}>
+              <RunGroupRow node={node} context={context} />
+              {children.length > 0 && (
+                <SessionTree nodes={children} label={`Agents in ${run.name}`} context={context} isNested isInRun />
+              )}
+            </li>
+          );
+        }
+        return (
+          <li key={session.id}>
+            <SessionRow session={session} context={context} isInRun={isInRun} />
+            {children.length > 0 && (
+              <SessionTree nodes={children} label={`Forks of ${session.name}`} context={context} isNested />
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

@@ -10,12 +10,29 @@ export async function createSessionWorktree(
   title: string,
   baseBranch?: string,
 ): Promise<{ worktree: SessionWorktree; cwd: string }> {
-  const created = await invoke<{ path: string; cwd: string; branch: string }>('create_session_worktree', {
+  const created = await invoke<{ path: string; cwd: string; branch: string; startCommit: string }>('create_session_worktree', {
     repoPath,
     title,
     ...(baseBranch ? { baseBranch } : {}),
   });
-  return { worktree: { repoPath, path: created.path, branch: created.branch }, cwd: created.cwd };
+  return {
+    worktree: { repoPath, path: created.path, branch: created.branch, startCommit: created.startCommit },
+    cwd: created.cwd,
+  };
+}
+
+/**
+ * `attachments` with the files of the folder `repoPath` pointed at the same
+ * files in the worktree `cwd`, so an agent never edits the main checkout. The
+ * backend is asked only when there is something to point.
+ */
+export async function attachmentsFor(
+  repoPath: string,
+  cwd: string,
+  attachments: readonly string[] | undefined,
+): Promise<readonly string[] | undefined> {
+  if (!attachments?.length) return attachments;
+  return invoke<string[]>('worktree_attachment_paths', { repoPath, cwd, paths: attachments });
 }
 
 /**

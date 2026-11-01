@@ -307,3 +307,24 @@ describe("usePersistedState saveNow", () => {
     expect(onError).toHaveBeenCalledWith("Failed to save sessions: disk full");
   });
 });
+
+describe("usePersistedState - getState", () => {
+  it("returns the loaded state, and the newest one right after updateState, before any render", async () => {
+    seedSessions([{ id: "a", transport: "acp" }]);
+    const { result } = renderHook(() => usePersistedState(vi.fn()));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    expect(result.current.getState().sessions.map((s) => s.id)).toEqual(["a"]);
+
+    let seenInTheSameTick: string[] = [];
+    let renderedInTheSameTick: string[] = [];
+    act(() => {
+      result.current.updateState((prev) => ({ ...prev, sessions: prev.sessions.map((s) => ({ ...s, archivedAt: 5 })) }));
+      seenInTheSameTick = result.current.getState().sessions.map((s) => String(s.archivedAt));
+      renderedInTheSameTick = result.current.state.sessions.map((s) => String(s.archivedAt));
+    });
+
+    expect(seenInTheSameTick).toEqual(["5"]);
+    expect(renderedInTheSameTick).toEqual(["undefined"]);
+    expect(result.current.getState()).toBe(result.current.state);
+  });
+});

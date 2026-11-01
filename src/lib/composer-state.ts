@@ -103,11 +103,16 @@ export function composerPlaceholder(state: {
   return continuesSession ? COMPOSER_PLACEHOLDERS.resume : COMPOSER_PLACEHOLDERS.newSession;
 }
 
+/** What a compare run costs, said under the prompt while several agents are ticked. */
+export const compareNote = (count: number) => `Runs in ${count} worktrees. Each agent uses its own quota.`;
+
 /**
  * The line under the prompt: why Send is blocked, else that the agent's options are loading. The
  * reason stays while the user types (the placeholder does not), and outranks the loading line.
  */
 export function composerNote(state: {
+  /** Agents ticked for a compare run; two or more replace every other note. */
+  compareCount?: number;
   /** The draft agent's name while it must be installed before a message can be sent. */
   agentToInstall?: string;
   /** The draft agent's name while its sign-in panel is open. */
@@ -117,6 +122,7 @@ export function composerNote(state: {
   /** The draft agent's name while its models and commands are being asked for. */
   agentLoading?: string;
 }): string | undefined {
+  if (state.compareCount !== undefined && state.compareCount >= 2) return compareNote(state.compareCount);
   if (state.agentToInstall) return installPlaceholder(state.agentToInstall, state.continuesSession);
   if (state.agentToSignIn) return signInPlaceholder(state.agentToSignIn, state.continuesSession);
   if (state.agentLoading) return `Loading ${state.agentLoading}'s models and commands…`;

@@ -60,17 +60,24 @@ function isWorktree(value: unknown): value is SessionWorktree {
   );
 }
 
+/** A worktree without a startCommit that is not a string; old worktrees have none. */
+function withValidStartCommit(worktree: SessionWorktree): SessionWorktree {
+  const { startCommit, ...rest } = worktree;
+  return typeof startCommit === 'string' ? { ...rest, startCommit } : rest;
+}
+
 /** A session keeps everything else when one of its optional fields is malformed. */
 function withValidFields(session: Session): Session {
-  const { worktree, pinned, archivedAt, namedByUser, hasUnread, historyElsewhere, ...rest } = session;
+  const { worktree, pinned, archivedAt, namedByUser, hasUnread, historyElsewhere, compareRunId, ...rest } = session;
   return {
     ...rest,
-    ...(worktree == null || isWorktree(worktree) ? { worktree } : {}),
+    ...(worktree == null ? { worktree } : isWorktree(worktree) ? { worktree: withValidStartCommit(worktree) } : {}),
     ...(typeof pinned === 'boolean' ? { pinned } : {}),
     ...(archivedAt == null || typeof archivedAt === 'number' ? { archivedAt } : {}),
     ...(typeof namedByUser === 'boolean' ? { namedByUser } : {}),
     ...(typeof hasUnread === 'boolean' ? { hasUnread } : {}),
     ...(typeof historyElsewhere === 'boolean' ? { historyElsewhere } : {}),
+    ...(compareRunId == null || typeof compareRunId === 'string' ? { compareRunId } : {}),
   };
 }
 

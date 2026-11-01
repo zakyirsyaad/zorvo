@@ -72,6 +72,7 @@ fn session(id: &str, status: &str) -> SessionRecord {
         archived_at: None,
         named_by_user: false,
         has_unread: false,
+        compare_run_id: None,
     }
 }
 
@@ -486,6 +487,7 @@ fn keeps_a_sessions_worktree_through_a_save() {
         repo_path: "/Users/dev/developer/zorvo".to_string(),
         path: "/data/worktrees/zorvo/fix-login".to_string(),
         branch: "agent/fix-login".to_string(),
+        start_commit: None,
     });
 
     store.save_state(&state).expect("save state");
@@ -527,6 +529,94 @@ fn drops_a_malformed_worktree_but_keeps_the_saved_sessions() {
 }
 
 #[test]
+fn session_record_keeps_compare_run_id_and_start_commit() {
+    let mut record = session("s-1", "terminated");
+    record.compare_run_id = Some("run-1".to_string());
+    record.worktree = Some(SessionWorktreeRecord {
+        repo_path: "/Users/dev/developer/zorvo".to_string(),
+        path: "/data/worktrees/zorvo/fix-login".to_string(),
+        branch: "agent/fix-login".to_string(),
+        start_commit: Some("abc123".to_string()),
+    });
+
+    let value = serde_json::to_value(&record).expect("serialize");
+    let back: SessionRecord = serde_json::from_value(value.clone()).expect("deserialize");
+
+    assert_eq!(back, record);
+    assert_eq!(value["compareRunId"], "run-1");
+    assert_eq!(value["worktree"]["startCommit"], "abc123");
+}
+
+#[test]
+fn a_bad_compare_run_id_drops_the_field_not_the_session() {
+    let record: SessionRecord = serde_json::from_value(json!({
+        "id": "s-1",
+        "name": "Fix login",
+        "profileId": "claude",
+        "cwd": "/tmp/project",
+        "status": "terminated",
+        "createdAt": 1,
+        "compareRunId": 7
+    }))
+    .expect("a bad compareRunId must not fail the record");
+
+    assert_eq!(record.compare_run_id, None);
+    assert_eq!(record.id, "s-1");
+    assert_eq!(record.name, "Fix login");
+}
+
+#[test]
+fn a_worktree_saved_before_start_commit_loads() {
+    let record: SessionRecord = serde_json::from_value(json!({
+        "id": "s-1",
+        "name": "Fix login",
+        "profileId": "claude",
+        "cwd": "/tmp/project",
+        "status": "terminated",
+        "createdAt": 1,
+        "worktree": {
+            "repoPath": "/w/api",
+            "path": "/data/worktrees/api/fix",
+            "branch": "agent/fix"
+        }
+    }))
+    .expect("deserialize");
+
+    let worktree = record.worktree.expect("the worktree survives");
+    assert_eq!(worktree.start_commit, None);
+    assert_eq!(worktree.branch, "agent/fix");
+    let saved = serde_json::to_value(&worktree).expect("serialize");
+    assert!(
+        saved.get("startCommit").is_none(),
+        "no startCommit key is written when there is none: {saved}"
+    );
+}
+
+#[test]
+fn a_bad_start_commit_drops_the_field_not_the_worktree() {
+    let record: SessionRecord = serde_json::from_value(json!({
+        "id": "s-1",
+        "name": "Fix login",
+        "profileId": "claude",
+        "cwd": "/tmp/project",
+        "status": "terminated",
+        "createdAt": 1,
+        "worktree": {
+            "repoPath": "/w/api",
+            "path": "/data/worktrees/api/fix",
+            "branch": "agent/fix",
+            "startCommit": 42
+        }
+    }))
+    .expect("deserialize");
+
+    let worktree = record.worktree.expect("the worktree survives");
+    assert_eq!(worktree.start_commit, None);
+    assert_eq!(worktree.branch, "agent/fix");
+    assert_eq!(worktree.path, "/data/worktrees/api/fix");
+}
+
+#[test]
 fn knows_the_folder_a_saved_worktree_was_made_from() {
     let root = unique_temp_root("worktree-source");
     let source = root.join("my-app");
@@ -543,6 +633,7 @@ fn knows_the_folder_a_saved_worktree_was_made_from() {
             .to_string_lossy()
             .to_string(),
         branch: "agent/fix".to_string(),
+        start_commit: None,
     });
     store.save_state(&state).expect("save state");
 

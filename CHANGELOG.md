@@ -4,9 +4,9 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- **A worktree that cannot be made no longer leaves a branch behind.** When Zorvo could not create a session's worktree (a worktrees folder you cannot write to, for example), the new `agent/<title>` branch stayed in your repository and the next try got a numbered name. Zorvo now removes the branch it just made, and never one that was there before.
+- **Compare agents.** In a git repository, tick up to four agents on a new session's Agent chip and send one prompt to all of them. Each agent works in its own worktree and uses its own quota. One panel shows each agent's state and what it changed, you answer permissions there, and **Pick** keeps one: the others stop and are archived, and their worktrees stay.
 
 ### Changed
 
@@ -16,6 +16,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Fixed
 
+- **A worktree session's attachments point into its worktree.** A file attached from the folder you started in now names the same file in the session's worktree, so an agent no longer edits your main checkout. A file the worktree does not have, such as an untracked one, keeps its path.
+- **A worktree that cannot be made no longer leaves a branch behind.** When Zorvo could not create a session's worktree (a worktrees folder you cannot write to, for example), the new `agent/<title>` branch stayed in your repository and the next try got a numbered name. Zorvo now removes the branch it just made, and never one that was there before.
 - **A permission request left over from before a restart no longer offers Allow and Reject.** The chat shows it as "This request was not answered." instead of buttons that fail with the agent's session id. If an agent ends just as you answer, the card is settled the same way and the notice asks you to send a message to continue.
 
 ## [0.7.0] - 2026-10-29

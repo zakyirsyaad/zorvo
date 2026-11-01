@@ -75,6 +75,10 @@
   show a form in the chat, or send you to a web page.
 - **Pick up where you left off.** Continue a session you started in an agent's
   own CLI, and sessions resume after a restart.
+- **Compare agents.** In a git repository, tick up to four agents on the Agent
+  chip and send one prompt to all of them. Each agent works in its own worktree
+  and uses its own quota. You see what each one changed, then **Pick** the one
+  to keep. The others stop and are archived, and their worktrees stay.
 
 ### Stay in control
 

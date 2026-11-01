@@ -169,11 +169,17 @@ export function fakeTauriInvoke(cmd: string, args?: unknown): Promise<unknown> {
     const agentId = (args as { agentId?: string } | undefined)?.agentId;
     return Promise.resolve(fakeCatalog.find((a) => a.id === agentId)?.updateVersion ?? null);
   }
+  if (cmd === "session_diff_stats_since") {
+    return Promise.resolve([]);
+  }
   if (cmd === "remove_agent_install") {
     return Promise.resolve(undefined);
   }
   if (cmd === "workspace_details") {
     return Promise.resolve({ location: "~/developer", branch: "main" });
+  }
+  if (cmd === "worktree_attachment_paths") {
+    return Promise.resolve((args as { paths: string[] }).paths);
   }
   if (cmd === "attachment_preview") {
     return Promise.resolve(undefined);

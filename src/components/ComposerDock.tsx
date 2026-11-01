@@ -2,6 +2,7 @@ import { useId, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { Plus, CornerDownLeft, Shield, ShieldAlert, Sparkles, Gauge, SlidersHorizontal, Square, Bot } from "lucide-react";
 import { IconButton } from "./ui/IconButton";
 import { OptionDropdown } from "./composer/OptionDropdown";
+import { AgentMultiPicker, type AgentMultiPickerProps } from "./composer/AgentMultiPicker";
 import { FolderPicker, type FolderControl } from "./composer/FolderPicker";
 import { appendAttachments, formatAttachmentPath, withAttachments } from "../lib/attachments";
 import { joinWorkspacePath } from "../lib/files";
@@ -31,8 +32,11 @@ export interface ComposerHandle {
   insertPaths: (paths: readonly string[]) => void;
   /** Puts back a message that could not be sent, so it need not be typed again. */
   restore: (text: string, attachments?: readonly string[]) => void;
-  /** True while the prompt and attachments are exactly what the last `restore` left: nothing typed, sent or cleared since. */
-  holdsRestored: () => boolean;
+  /**
+   * True while the prompt and attachments are exactly what the last `restore` left: nothing typed, sent or
+   * cleared since. With `message`, only when that is this message: one composer serves every session.
+   */
+  holdsRestored: (message?: { text: string; attachments?: readonly string[] }) => boolean;
   /** Empties the prompt and its attachments. */
   clear: () => void;
   /** Puts the cursor in the prompt. */
@@ -74,6 +78,8 @@ export interface ComposerDockProps {
   folder?: FolderControl;
   /** Before a new session starts: the agent it runs. */
   agent?: ComposerControl;
+  /** Before a new session starts, in a git repository: the agent chip with a checkbox to tick several; replaces `agent`. */
+  agents?: Omit<AgentMultiPickerProps, "isOpen" | "onToggle">;
   /** The workspace whose files `@` lists; mentions are off when absent. */
   mentions?: MentionSource;
 }
@@ -94,6 +100,7 @@ export function ComposerDock({
   note,
   folder,
   agent,
+  agents,
   mentions,
 }: ComposerDockProps) {
   const [text, setText] = useState("");
@@ -223,13 +230,15 @@ export function ComposerDock({
       restoredRef.current = { text: restoredText, attachments: attachAsFiles ? [...restoredAttachments] : attachments };
       textareaRef.current?.focus();
     },
-    holdsRestored: () => {
+    holdsRestored: (message) => {
       const restored = restoredRef.current;
+      const holds = (expected: readonly string[]) =>
+        expected.length === attachments.length && expected.every((path, index) => path === attachments[index]);
       return (
         restored !== null &&
         restored.text === text &&
-        restored.attachments.length === attachments.length &&
-        restored.attachments.every((path, index) => path === attachments[index])
+        holds(restored.attachments) &&
+        (message === undefined || (message.text === text && holds(message.attachments ?? [])))
       );
     },
     clear: () => {
@@ -313,7 +322,19 @@ export function ComposerDock({
               <FolderPicker {...folder} isOpen={openDropdown === "folder"} onToggle={() => toggle("folder")} />
             )}
 
-            {agent && (
+            {agents && (
+              <AgentMultiPicker
+                {...agents}
+                isOpen={openDropdown === "agent"}
+                onToggle={() => toggle("agent")}
+                onPick={(agentId) => {
+                  agents.onPick(agentId);
+                  setOpenDropdown(null);
+                }}
+              />
+            )}
+
+            {!agents && agent && (
               <OptionDropdown
                 label="Agent"
                 align="left"

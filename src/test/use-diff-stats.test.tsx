@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
-import { useDiffStats, useDiffTargets } from "../hooks/useDiffStats";
+import { useDiffStats, useDiffStatsSince, useDiffTargets } from "../hooks/useDiffStats";
 import type { FileStat } from "../lib/diff-stats";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
@@ -66,6 +66,44 @@ describe("useDiffStats", () => {
 
     expect(result.current.stats).toBeNull();
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+const COMMIT = "0123456789abcdef0123456789abcdef01234567";
+
+describe("useDiffStatsSince", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("reads session_diff_stats_since with the commit", async () => {
+    const spy = vi
+      .spyOn(tauriInternals(), "invoke")
+      .mockImplementation((cmd) => Promise.resolve(cmd === "session_diff_stats_since" ? [STAT] : undefined));
+    const { result } = renderHook(() => useDiffStatsSince("/w", COMMIT, 1, () => {}));
+
+    await waitFor(() => expect(result.current.stats).toEqual([STAT]));
+    expect(spy).toHaveBeenCalledWith("session_diff_stats_since", { path: "/w", commit: COMMIT }, undefined);
+  });
+
+  it("reads nothing without a commit", () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const { result } = renderHook(() => useDiffStatsSince("/w", undefined, 1, () => {}));
+
+    expect(result.current.stats).toBeNull();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("reports a failure once per folder", async () => {
+    vi.spyOn(tauriInternals(), "invoke").mockRejectedValue("boom");
+    const onError = vi.fn();
+    const { rerender } = renderHook(({ version }) => useDiffStatsSince("/w", COMMIT, version, onError), {
+      initialProps: { version: 1 },
+    });
+    await waitFor(() => expect(onError).toHaveBeenCalledOnce());
+    expect(onError.mock.calls[0][0]).toContain("/w");
+
+    rerender({ version: 2 });
+    await act(async () => {});
+    expect(onError).toHaveBeenCalledOnce();
   });
 });
 

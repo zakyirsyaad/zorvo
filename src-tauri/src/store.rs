@@ -183,7 +183,11 @@ pub struct SessionWorktreeRecord {
     pub path: String,
     pub branch: String,
     /// The commit the worktree was made from; missing on worktrees saved before it was recorded.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "lenient_string",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub start_commit: Option<String>,
 }
 

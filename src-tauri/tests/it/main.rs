@@ -14,6 +14,7 @@ mod branches_test;
 mod changes_test;
 mod config_test;
 mod data_migration_test;
+mod diff_since_test;
 mod diff_stats_test;
 mod e2e_integration_test;
 mod env_resolver_test;

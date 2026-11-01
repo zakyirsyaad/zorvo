@@ -458,21 +458,54 @@ fn untracked_stats(
 pub fn diff_stats(git: &Path, dir: &Path, target: DiffTarget) -> Result<Vec<FileStat>, String> {
     let toplevel = toplevel_of(git, dir)?;
     let base = base_commit(git, &toplevel, target)?;
-    let mut stats = tracked_stats(git, &toplevel, &base)?;
-    stats.extend(untracked_stats(git, &toplevel, target)?);
+    stats_against(git, &toplevel, &base, target)
+}
+
+/// Whether `text` is a full commit id: 40 hex digits (SHA-1) or 64 (SHA-256).
+/// Nothing else, so it can never be read by git as an option or a revision.
+fn is_commit_id(text: &str) -> bool {
+    matches!(text.len(), 40 | 64) && text.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// The changed files in the repository `dir` is in since `commit`, committed
+/// or not, with the lines each adds and removes, sorted by path.
+pub fn diff_stats_since(git: &Path, dir: &Path, commit: &str) -> Result<Vec<FileStat>, String> {
+    if !is_commit_id(commit) {
+        return Err("The start commit must be a full commit id".to_string());
+    }
+    let toplevel = toplevel_of(git, dir)?;
+    run_git(
+        git,
+        &toplevel,
+        &["cat-file", "-e", &format!("{commit}^{{commit}}")],
+    )
+    .map_err(|_| "This repository does not have the start commit".to_string())?;
+    // Untracked files count once, as for HEAD.
+    stats_against(git, &toplevel, commit, DiffTarget::Head)
+}
+
+/// The working tree against `base`, with `target` choosing which files count as untracked.
+fn stats_against(
+    git: &Path,
+    toplevel: &Path,
+    base: &str,
+    target: DiffTarget,
+) -> Result<Vec<FileStat>, String> {
+    let mut stats = tracked_stats(git, toplevel, base)?;
+    stats.extend(untracked_stats(git, toplevel, target)?);
     stats.sort_by(|a, b| a.path.cmp(&b.path));
     // The base target's base is already a commit id; HEAD is resolved, so a
     // new commit changes every fingerprint.
     let base_id = match target {
-        DiffTarget::Base => base,
-        DiffTarget::Head => run_git(git, &toplevel, &["rev-parse", &base])
+        DiffTarget::Base => base.to_string(),
+        DiffTarget::Head => run_git(git, toplevel, &["rev-parse", base])
             .map(|id| id.trim().to_string())
-            .unwrap_or(base),
+            .unwrap_or_else(|_| base.to_string()),
     };
     Ok(stats
         .into_iter()
         .map(|stat| FileStat {
-            fingerprint: fingerprint(&toplevel, &base_id, &stat.path),
+            fingerprint: fingerprint(toplevel, &base_id, &stat.path),
             ..stat
         })
         .collect())
@@ -519,6 +552,17 @@ pub fn session_diff_stats(
 ) -> Result<Vec<FileStat>, String> {
     ensure_known_workspace(&path, |p| store.is_known_workspace(p))?;
     diff_stats(&git_binary(), Path::new(&path), target)
+}
+
+/// Per-file line counts of a session's changes since `commit`.
+#[tauri::command(async)]
+pub fn session_diff_stats_since(
+    store: State<'_, AppStore>,
+    path: String,
+    commit: String,
+) -> Result<Vec<FileStat>, String> {
+    ensure_known_workspace(&path, |p| store.is_known_workspace(p))?;
+    diff_stats_since(&git_binary(), Path::new(&path), &commit)
 }
 
 #[cfg(test)]

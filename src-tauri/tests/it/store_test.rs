@@ -593,6 +593,30 @@ fn a_worktree_saved_before_start_commit_loads() {
 }
 
 #[test]
+fn a_bad_start_commit_drops_the_field_not_the_worktree() {
+    let record: SessionRecord = serde_json::from_value(json!({
+        "id": "s-1",
+        "name": "Fix login",
+        "profileId": "claude",
+        "cwd": "/tmp/project",
+        "status": "terminated",
+        "createdAt": 1,
+        "worktree": {
+            "repoPath": "/w/api",
+            "path": "/data/worktrees/api/fix",
+            "branch": "agent/fix",
+            "startCommit": 42
+        }
+    }))
+    .expect("deserialize");
+
+    let worktree = record.worktree.expect("the worktree survives");
+    assert_eq!(worktree.start_commit, None);
+    assert_eq!(worktree.branch, "agent/fix");
+    assert_eq!(worktree.path, "/data/worktrees/api/fix");
+}
+
+#[test]
 fn knows_the_folder_a_saved_worktree_was_made_from() {
     let root = unique_temp_root("worktree-source");
     let source = root.join("my-app");

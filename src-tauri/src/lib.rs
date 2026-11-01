@@ -429,6 +429,7 @@ pub fn run() {
             changes::session_file_diff,
             diff_stats::session_diff_targets,
             diff_stats::session_diff_stats,
+            diff_stats::session_diff_stats_since,
             changes::commit_session_changes,
             worktrees::create_session_worktree,
             worktrees::remove_session_worktree,

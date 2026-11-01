@@ -33,6 +33,8 @@ pub struct SessionWorktree {
     /// Where the agent runs: the root, or the subfolder the workspace was.
     pub cwd: String,
     pub branch: String,
+    /// The commit the worktree was made from: what its changes are counted against.
+    pub start_commit: String,
 }
 
 /// A branch-safe name from a session title: lowercase ASCII words joined by dashes.
@@ -199,11 +201,26 @@ pub fn create_worktree_from(
     } else {
         path.join(&subfolder)
     };
-    Ok(SessionWorktree {
+    let mut worktree = SessionWorktree {
         path: path_arg,
         cwd: cwd.to_string_lossy().to_string(),
         branch,
-    })
+        start_commit: String::new(),
+    };
+    match run_git(git, &path, &["rev-parse", "HEAD"]) {
+        Ok(commit) => {
+            worktree.start_commit = commit;
+            Ok(worktree)
+        }
+        // No session will own it, so it is undone rather than left behind.
+        Err(error) => Err(match discard_worktree(git, &toplevel, &worktree) {
+            Ok(()) => format!("Could not read the worktree's commit: {error}"),
+            Err(undo) => format!(
+                "Could not read the worktree's commit: {error}; the worktree at {} was left behind: {undo}",
+                worktree.path
+            ),
+        }),
+    }
 }
 
 /// Removes a session worktree that has no uncommitted changes; its branch,

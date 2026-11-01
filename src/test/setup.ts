@@ -169,6 +169,9 @@ export function fakeTauriInvoke(cmd: string, args?: unknown): Promise<unknown> {
     const agentId = (args as { agentId?: string } | undefined)?.agentId;
     return Promise.resolve(fakeCatalog.find((a) => a.id === agentId)?.updateVersion ?? null);
   }
+  if (cmd === "session_diff_stats_since") {
+    return Promise.resolve([]);
+  }
   if (cmd === "remove_agent_install") {
     return Promise.resolve(undefined);
   }

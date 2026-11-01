@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- **Zorvo is licensed under the Apache License 2.0.** The license does not cover the Zorvo name or logo.
+
 ## [0.7.0] - 2026-10-29
 
 ### Added

@@ -52,7 +52,7 @@ export function SiteFooter() {
           </div>
         </div>
         <div className="flex flex-wrap justify-between gap-3 border-t border-border pt-5">
-          <p className="t-caption m-0">© 2026 Zorvo. All rights reserved.</p>
+          <p className="t-caption m-0">© 2026 Zorvo.</p>
           <p className="t-caption m-0 max-w-[560px]">
             Claude Code, Codex, Qwen Code and other agent names belong to their makers. Zorvo works
             with them and is not endorsed by them.

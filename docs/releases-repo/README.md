@@ -306,8 +306,9 @@ and Zorvo never asks for or stores keys or tokens.
 
 **Does it work on Windows or Linux?** Not yet. Zorvo is a Mac app for now.
 
-**Is the source code available?** No. This repository holds Zorvo's releases
-and this guide.
+**Is the source code available?** Yes. It is at
+[zakyirsyaad/zorvo](https://github.com/zakyirsyaad/zorvo), under the Apache
+License 2.0. This repository holds Zorvo's releases and this guide.
 
 **Which agent should I start with?** The one you already use. Zorvo shows each
 agent's own models and modes, so it works the way that agent does, next to the
@@ -321,9 +322,12 @@ others.
 - **Found a security problem?** Report it privately, as described in
   [SECURITY.md](SECURITY.md), not in a public issue.
 
-The files here are published from Zorvo's private source with each release, so
-pull requests to this repository cannot be merged.
+The files here are published from
+[Zorvo's source](https://github.com/zakyirsyaad/zorvo) with each release, so
+send pull requests there, not here.
 
 ## License
 
-Zorvo is not open source. All rights are reserved by the author.
+Zorvo is open source under the
+[Apache License 2.0](https://github.com/zakyirsyaad/zorvo/blob/main/LICENSE).
+The license does not cover the Zorvo name or logo.

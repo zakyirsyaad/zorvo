@@ -1,8 +1,8 @@
 name: Rust
 
-# The Rust job needs a macOS runner, which a private repository pays for at
-# ten times the minutes of a Linux one. It runs on every push to main, and on
-# a pull request only when the backend, its build inputs or this file change.
+# The Rust job needs a macOS runner and is the slowest check. It runs on every
+# push to main, and on a pull request only when the backend, its build inputs
+# or this file change.
 # (A path-filtered workflow reports no status when it is skipped, so it cannot
 # be a required check; re-check that if branch protection is turned back on.)
 on:

@@ -23,10 +23,10 @@ like Claude Code Desktop, but for whichever agent you have.
 
 The guide for people who use Zorvo (features, supported agents,
 requirements, install, privacy, troubleshooting) is
-[`docs/releases-repo/README.md`](docs/releases-repo/README.md). This repository
-is private, so the Release workflow publishes that file as the README of the
-public [zorvo-releases](https://github.com/zakyirsyaad/zorvo-releases)
-repository, next to the downloads. Change user-facing documentation there.
+[`docs/releases-repo/README.md`](docs/releases-repo/README.md). Each release
+publishes that file as the README of the
+[zorvo-releases](https://github.com/zakyirsyaad/zorvo-releases) repository,
+next to the downloads. Change user-facing documentation there.
 
 ## How it works
 
@@ -124,8 +124,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose a change,
    failure stops it. It shows what changed since the last release in the dependencies, the
    workflow and the scripts, and asks you to go on. Then it asks for the key's
    password (typed hidden, and never read from the environment), signs the
-   update package, and makes a draft release in zorvo-releases (this
-   repository is private, so its releases cannot be downloaded). The draft gets
+   update package, and makes a draft release in zorvo-releases, the repository
+   installed copies update from. The draft gets
    the release notes from the version's changelog section, the DMG (also as
    `Zorvo-mac.dmg`, the name the site's Download link uses), `SHA256SUMS.txt`,
    the update package with its `.sig`, and `latest.json`. The script also

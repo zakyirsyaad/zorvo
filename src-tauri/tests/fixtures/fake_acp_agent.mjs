@@ -33,7 +33,8 @@
 //   FAKE_ACP_MODELS   -> session/new reports models ("auto", "flash", "pro"; "auto" current) and
 //                         answers session/set_model, saying "model:<id>" or refusing an unknown id
 //   FAKE_ACP_WRITE_FILES -> a JSON object of relative paths and contents, written into the
-//                         session's folder when a "permission" prompt is answered "allow"
+//                         session's folder when a "permission" prompt is answered "allow",
+//                         and by "crash" just before it exits
 // (each other FAKE_ACP_* flag is documented where it is read below)
 import { appendFileSync, closeSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -163,7 +164,17 @@ function handlePrompt(id, params) {
     send({ id: "stray", method: "session/request_permission", params: permissionFor("nobody") });
     return;
   }
-  if (text === "crash") process.exit(3);
+  if (text === "crash") {
+    const crash = () => {
+      writeSessionFiles(params.sessionId);
+      process.exit(3);
+    };
+    // FAKE_ACP_CRASH_AFTER: crashes that many milliseconds into the turn, once the client has looked.
+    const delay = Number(process.env.FAKE_ACP_CRASH_AFTER ?? 0);
+    if (delay > 0) setTimeout(crash, delay);
+    else crash();
+    return;
+  }
   if (text === "needs-login") {
     send({ id, error: { code: -32000, message: "Authentication required" } });
     return;

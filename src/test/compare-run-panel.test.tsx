@@ -169,6 +169,24 @@ describe("CompareRunPanel", () => {
     expect(within(rowOf("Claude Code")).getByText("Done")).toBeInTheDocument();
   });
 
+  it.each<[string, Partial<RowFacts>, Partial<Session>]>([
+    ["Failed", { failed: true }, { status: "terminated", exitCode: 3 }],
+    ["Stopped", {}, { status: "terminated" }],
+    ["Done", {}, {}],
+  ])("reads the numbers again when a row goes from Working to %s, with no new version", async (label, rowChange, sessionChange) => {
+    const answers = { "/wt/1": [stat("a.ts", 1, 0)] };
+    answerDiffs(answers);
+    const { rerender } = await renderPanel(props([facts(1, { isBusy: true }), facts(2)]));
+    await waitFor(() => expect(within(rowOf("Claude Code")).getByText("+1")).toBeInTheDocument());
+
+    answers["/wt/1"] = [stat("a.ts", 7, 2), stat("b.ts", 1, 0)];
+    rerender(<CompareRunPanel {...props([facts(1, rowChange, sessionChange), facts(2)])} />);
+
+    expect(within(rowOf("Claude Code")).getByText(label)).toBeInTheDocument();
+    await waitFor(() => expect(within(rowOf("Claude Code")).getByText("+8")).toBeInTheDocument());
+    expect(within(rowOf("Claude Code")).getByText("2 files")).toBeInTheDocument();
+  });
+
   it("reads the numbers again when the version changes", async () => {
     const spy = answerDiffs({ "/wt/1": [stat("a.ts", 1, 0)] });
     const rows = [facts(1), facts(2)];

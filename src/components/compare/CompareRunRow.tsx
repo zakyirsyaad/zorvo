@@ -29,11 +29,12 @@ const STATUS_STYLES: Record<RunRowStatus, string> = {
 };
 
 /** What the agent changed in its worktree since the run began, or — when that cannot be read. */
-function Changes({ facts, version }: { facts: RowFacts; version: number }) {
+function Changes({ facts, version, status }: { facts: RowFacts; version: number; status: RunRowStatus }) {
   const { cwd, worktree } = facts.session;
   const [error, setError] = useState<string | null>(null);
   // Read through the agent's folder: from a subfolder it is the known workspace, not the worktree's root.
-  const { stats } = useDiffStatsSince(cwd, worktree?.startCommit, version, setError);
+  // A status change reads again too: a Stop or an exit between turns brings no turn end to bump `version`.
+  const { stats } = useDiffStatsSince(cwd, worktree?.startCommit, `${version}:${status}`, setError);
   if (!stats) {
     return (
       <span className="text-xs text-fg-muted" title={error ?? undefined}>
@@ -72,7 +73,7 @@ export function CompareRunRow({ facts, agentName, version, isPickDisabled, onOpe
         </Button>
         <span className={`text-xs font-medium ${STATUS_STYLES[status]}`}>{statusLabel(status)}</span>
         <div className="ml-auto flex items-center gap-3">
-          <Changes facts={facts} version={version} />
+          <Changes facts={facts} version={version} status={status} />
           <Button aria-label={`Pick ${agentName}`} variant="primary" disabled={isPickDisabled} onClick={() => onPick(session.id)}>
             Pick
           </Button>

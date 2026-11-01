@@ -69,7 +69,7 @@ function useStatsRead(
   path: string | undefined,
   request: StatsRequest | null,
   key: string,
-  version: number,
+  version: number | string,
   onError: (message: string) => void,
 ): DiffStats {
   const [state, setState] = useState<{ key: string; stats: FileStat[] } | null>(null);
@@ -129,7 +129,7 @@ export function useDiffStats(
 export function useDiffStatsSince(
   path: string | undefined,
   commit: string | undefined,
-  version: number,
+  version: number | string,
   onError: (message: string) => void,
 ): DiffStats {
   const request = commit ? { command: 'session_diff_stats_since' as const, args: { path, commit } } : null;

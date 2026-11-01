@@ -238,16 +238,43 @@ describe("starting a compare run", () => {
     }
   });
 
-  it("opens the first session's chat and stays there", async () => {
+  it("opens the run's panel in the chat's place, with no composer and no draft behind it", async () => {
     await renderApp();
     await tickAgents("Qwen Code");
     await send("fix the login");
 
-    await waitFor(() => expect(screen.queryByRole("button", { name: /^Folder:/ })).toBeNull());
+    const panel = await screen.findByRole("region", { name: "Compare run" });
     await act(async () => {});
-    // The message shows in the chat of the first session, and the top bar names it.
-    expect((await screen.findAllByText("fix the login")).length).toBeGreaterThanOrEqual(2);
+    expect(within(panel).getAllByRole("listitem").map((row) => row.getAttribute("aria-label"))).toEqual(["Claude Code", "Qwen Code"]);
+    expect(screen.queryByRole("textbox", { name: "Prompt" })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Folder:/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Agent: / })).toBeNull();
+  });
+
+  it("opens one agent's chat from its row, and leaves the panel", async () => {
+    await renderApp();
+    await tickAgents("Qwen Code");
+    await send("fix the login");
+    await click(await screen.findByRole("button", { name: "Open Qwen Code" }));
+
+    expect(screen.queryByRole("region", { name: "Compare run" })).toBeNull();
+    expect(await screen.findByRole("textbox", { name: "Prompt" })).toBeInTheDocument();
+  });
+
+  it("Pick keeps one agent: the other is stopped and archived, and the keeper's chat opens", async () => {
+    const spy = await renderApp();
+    await tickAgents("Qwen Code");
+    await send("fix the login");
+    await click(await screen.findByRole("button", { name: "Pick Claude Code" }));
+    // The fake agents may still be mid-turn: then the panel asks before it stops one.
+    const confirm = screen.queryByRole("button", { name: "Stop and pick" });
+    if (confirm) await click(confirm);
+
+    expect(await screen.findByRole("textbox", { name: "Prompt" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Compare run" })).toBeNull();
+    await waitFor(() => expect(savedSessions().filter((s) => s.archivedAt)).toHaveLength(1));
+    expect(savedSessions().find((s) => s.archivedAt)?.profileId).toBe("qwen-code");
+    expect(calls(spy, "acp_stop_session")).toHaveLength(1);
   });
 
   it("opens the draft again from + New session while a run is open", async () => {
@@ -388,6 +415,10 @@ describe("the run's start failing unexpectedly", () => {
       restoreMessage: vi.fn(),
       onStarted: vi.fn(),
       onNotice: vi.fn(),
+      archiveSession: vi.fn(),
+      readSessions: () => [],
+      openSession: vi.fn(),
+      agentName: (profileId: string) => profileId,
     };
   }
 

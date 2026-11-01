@@ -8,6 +8,7 @@ import { ComposerDock, type ComposerHandle } from "./components/ComposerDock";
 import { RemovedAgentPanel } from "./components/RemovedAgentPanel";
 import { FilesPanel } from "./components/FilesPanel";
 import { EmptySessionState, FileDropOverlay, NoticeBanner } from "./components/AppPlaceholders";
+import { CompareRunPanel } from "./components/compare/CompareRunPanel";
 import { FailedTurnBanner } from "./components/FailedTurnBanner";
 import { SignInLayer } from "./components/SignInLayer";
 import { AgentInstallPanel } from "./components/AgentInstallPanel";
@@ -89,7 +90,7 @@ import { useFileDrop } from "./hooks/useFileDrop";
 import { isAgentReady, isAgentRunnable, noAgentNotice, resolveDraftAgentId } from "./lib/agent-readiness";
 import { isInUse, removedAgentNameFor } from "./lib/enabled-agents";
 import { useCompareDraft } from "./hooks/useCompareDraft";
-import { useCompareRun } from "./hooks/useCompareRun";
+import { useCompareRun, useCompareRunRows } from "./hooks/useCompareRun";
 import { runOf } from "./lib/compare-run";
 import { compareAgentOptions } from "./lib/composer-controls";
 import { composerCommandsFor, composerNote, composerPlaceholder, composerStateFor } from "./lib/composer-state";
@@ -123,6 +124,8 @@ export default function App() {
   const [selectedSessionId, setActiveSessionId] = useState("");
   /** The compare run a Send opened; set only while no session is selected. */
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  /** Bumped when any turn ends, so an open run's panel reads each agent's changes again. */
+  const [runVersion, setRunVersion] = useState(0);
   /** The agent picked for the next new session; null means the default from Settings. */
   const [pickedAgentId, setPickedAgentId] = useState<string | null>(null);
   /** Whether the next new session runs in its own worktree (a git repository only). */
@@ -135,7 +138,7 @@ export default function App() {
   const composerRef = useRef<ComposerHandle>(null);
 
   const reportError = useCallback((message: string) => setNotice(message), []);
-  const { state, isLoaded, updateState, saveNow } = usePersistedState(reportError);
+  const { state, isLoaded, updateState, getState, saveNow } = usePersistedState(reportError);
   useAppearance(state.settings.appearance, isLoaded, reportError);
   const { transcripts, ensureLoaded, updateMessages, removeTranscript, flush: flushTranscripts } = useTranscripts(reportError);
   const { agents, isLoaded: areAgentsLoaded, refresh: refreshAgents, reload: reloadAgents } = useAgentProfiles(reportError);
@@ -167,9 +170,9 @@ export default function App() {
   } = useWorkspaceSelection(state, isLoaded, updateState, reportError);
 
   const sessions = state.sessions;
-  // Task 7 replaces this with the run's panel: until then an opened run shows its first session's chat.
+  // An opened run shows its panel in the chat's place, until a session is selected.
   const activeRun = activeRunId && !selectedSessionId ? runOf(sessions, activeRunId) : null;
-  const activeSessionId = selectedSessionId || (activeRun?.sessions[0].id ?? "");
+  const activeSessionId = selectedSessionId;
   // Any selection leaves the run, and so does a run that is gone (archived or deleted away): it does not come back on its own.
   if (activeRunId && (selectedSessionId || !runOf(sessions, activeRunId))) setActiveRunId(null);
   const activeSession = sessions.find((s) => s.id === activeSessionId);
@@ -183,8 +186,8 @@ export default function App() {
   const pickableAgents = agentsInUse;
   const defaultAgentId = resolveDraftAgentId(agentsInUse, state.settings.defaultAgentId, pickableAgents);
   const primaryAgentId = pickableAgents.find((a) => a.id === pickedAgentId)?.id ?? defaultAgentId;
-  // No session is selected: the window shows a new one, not started until its first message.
-  const isNewSessionDraft = !activeSession;
+  // No session is selected and no run is open: the window shows a new one, not started until its first message.
+  const isNewSessionDraft = !activeSession && !activeRun;
   // A session shows the folder it runs in, even one no longer in the recents.
   const shownFolderPath = activeSession?.cwd ?? activeWorkspacePath;
   const workspaceDetails = useWorkspaceDetails(shownFolderPath, reportError, branchCheck);
@@ -226,9 +229,10 @@ export default function App() {
   // session when it has one, else (rewound) in a fresh one handed the conversation.
   const isResumable =
     Boolean(activeSession) && activeSession?.status !== "running" && activeAgent?.detected === true;
-  const draftAgent = isResumable ? activeAgent : newSessionAgent;
+  // A run's panel has no draft behind it: no install or sign-in panel, no probe.
+  const draftAgent = activeRun ? undefined : isResumable ? activeAgent : newSessionAgent;
   const isDraftAgentReady = draftAgent ? isAgentRunnable(draftAgent) : false;
-  const installPanelAgent = installPanelAgentOf(activeSession, activeAgent, newSessionAgent);
+  const installPanelAgent = activeRun ? undefined : installPanelAgentOf(activeSession, activeAgent, newSessionAgent);
   const draftNeedsInstall = useDraftInstall(agents, installPanelAgent, draftAgent);
 
   useEffect(() => setAcpChoices(NO_CHOICES), [draftAgent?.id]);
@@ -335,7 +339,7 @@ export default function App() {
     ...engineDeps,
     transcripts,
     rememberOptions: rememberAgentOptions,
-    onAttention: (sessionId, reason) => notifyAttention(sessionId, reason),
+    onAttention: (id, reason) => { notifyAttention(id, reason); if (reason !== "needs-answer") setRunVersion((n) => n + 1); },
     onAuthRequired: signIn.handBack,
     onTurnFailed: (sessionId, error) =>
       error ? setFailedTurns((prev) => ({ ...prev, [sessionId]: error })) : clearFailedTurn(sessionId),
@@ -651,8 +655,13 @@ export default function App() {
       branchPicker.reset();
     },
     onNotice: setNotice,
+    archiveSession: sessionActions.archiveSession,
+    readSessions: () => getState().sessions,
+    openSession: setActiveSessionId,
+    agentName: (profileId) => agents.find((a) => a.id === profileId)?.name ?? "The agent",
   });
 
+  const runRows = useCompareRunRows(activeRun, { isBusy: isSessionBusy, transcripts, failedTurns, ensureLoaded });
   /** Starts the ticked agents on one prompt, each in its own worktree. */
   const handleNewRun = (message: FirstMessage) => {
     if (!activeWorkspace) {
@@ -698,7 +707,7 @@ export default function App() {
 
   // A new session is not in the history: Back from it returns to the session viewed last.
   const lastViewedSessionId = navigation.current && sessionById(navigation.current) ? navigation.current : null;
-  const canGoBack = isNewSessionDraft ? lastViewedSessionId !== null : navigation.canGoBack;
+  const canGoBack = !activeSession ? lastViewedSessionId !== null : navigation.canGoBack;
 
   const currentMessages = transcripts[activeSessionId] ?? [];
   const sessionPlan = currentPlan(currentMessages);
@@ -740,7 +749,7 @@ export default function App() {
   return (
     <main className="flex h-screen w-screen flex-col bg-bg text-fg-secondary">
       <TopBar
-        sessionName={activeSession?.name}
+        sessionName={activeSession?.name ?? activeRun?.name}
         workspaceName={activeSession ? folderNameOf(workspacePathOf(activeSession)) : activeWorkspace?.name}
         workspacePath={shownFolderPath}
         branch={workspaceDetails?.branch ?? undefined}
@@ -748,7 +757,7 @@ export default function App() {
         onOpenPullRequest={openPullRequest}
         canGoBack={canGoBack}
         canGoForward={navigation.canGoForward}
-        onBack={() => navigateTo(isNewSessionDraft ? lastViewedSessionId : navigation.back())}
+        onBack={() => navigateTo(!activeSession ? lastViewedSessionId : navigation.back())}
         onForward={() => navigateTo(navigation.forward())}
         onToggleFiles={filesFolder ? () => sidePanel.toggle("files") : undefined}
         isFilesOpen={sidePanel.open === "files" && Boolean(filesFolder)}
@@ -843,11 +852,21 @@ export default function App() {
               <SignInLayer
                 signIn={signIn}
                 agents={agents}
-                agentId={activeSession?.profileId ?? newSessionAgent?.id}
+                agentId={activeSession?.profileId ?? (activeRun ? undefined : newSessionAgent?.id)}
                 showTerminal={settingsTab === null}
               />
               {installPanelAgent ? <AgentInstallPanel agent={installPanelAgent} /> : null}
-              {activeSession && (currentMessages.length > 0 || isSessionBusy(activeSessionId) || activeSession.historyElsewhere) ? (
+              {activeRun ? (
+                <CompareRunPanel
+                  run={activeRun}
+                  rows={runRows}
+                  version={runVersion}
+                  agentName={(profileId) => agents.find((a) => a.id === profileId)?.name ?? profileId}
+                  onOpen={handleSelectSession}
+                  onChoose={chooseOption}
+                  onPick={(winnerId) => compareRun.pick(activeRun, winnerId)}
+                />
+              ) : activeSession && (currentMessages.length > 0 || isSessionBusy(activeSessionId) || activeSession.historyElsewhere) ? (
                 <ChatCanvas
                   conversationId={activeSessionId}
                   messages={currentMessages}
@@ -886,8 +905,8 @@ export default function App() {
                 <EmptySessionState />
               )}
 
-              <div className="p-4 flex justify-center">
-                {activeAgentRemoved ? (
+              <div className="p-4 flex justify-center empty:hidden">
+                {activeRun ? null : activeAgentRemoved ? (
                   <RemovedAgentPanel agentName={activeAgentRemoved} onAdd={() => activeAgent && catalogActions.addAgent(activeAgent.id)} />
                 ) : (
                   <ComposerDock

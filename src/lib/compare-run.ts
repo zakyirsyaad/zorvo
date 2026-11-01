@@ -1,5 +1,6 @@
 import type { ActionCard, ChatMessage, Session } from '../types';
 import { pendingCardsInTurn } from './acp-events';
+import { hasPendingElicitation } from './acp-elicitation';
 import { isListed } from './session-helpers';
 
 /** Most agents one compare run can start. */
@@ -92,4 +93,34 @@ export function pendingPermission(messages: readonly ChatMessage[]): ActionCard 
 export function pickableAgentIds(selected: readonly string[], agentId: string): string[] {
   if (selected.includes(agentId)) return selected.filter((id) => id !== agentId);
   return selected.length >= MAX_COMPARE_AGENTS ? [...selected] : [...selected, agentId];
+}
+
+/** What `rowFactsOf` reads besides the run itself. */
+export interface RowSources {
+  isBusy: (sessionId: string) => boolean;
+  /** Every loaded chat by session id: a run's sessions other than the open one are in here too. */
+  transcripts: Readonly<Record<string, readonly ChatMessage[] | undefined>>;
+  /** The error each session's last turn failed with. */
+  failedTurns: Readonly<Record<string, string>>;
+}
+
+/**
+ * The facts `rowStatus` needs for every session of `run`. A session fails when its
+ * last turn did, or when its agent ended with a non-zero exit code. Sign-in is not
+ * read yet: `needsSignIn` stays false.
+ */
+export function rowFactsOf(run: CompareRun, { isBusy, transcripts, failedTurns }: RowSources): RowFacts[] {
+  return run.sessions.map((session) => {
+    const messages = transcripts[session.id] ?? [];
+    const exitedBadly = session.status === 'terminated' && Boolean(session.exitCode);
+    return {
+      session,
+      isBusy: isBusy(session.id),
+      hasStarted: Boolean(session.acpSessionId) || messages.some((message) => message.role === 'agent'),
+      pendingCard: pendingPermission(messages),
+      hasOpenForm: hasPendingElicitation(messages),
+      needsSignIn: false,
+      failed: session.id in failedTurns || exitedBadly,
+    };
+  });
 }

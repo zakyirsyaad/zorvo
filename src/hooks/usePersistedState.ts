@@ -10,6 +10,8 @@ export interface PersistedStateHandle {
   state: PersistedState;
   isLoaded: boolean;
   updateState: (updater: (prev: PersistedState) => PersistedState) => void;
+  /** The newest state, including updates a render has not shown yet. */
+  getState: () => PersistedState;
   /**
    * Writes the latest state now instead of after the debounce; resolves once it is on disk
    * and rejects when the write failed, so a caller can say so where the user acted.
@@ -115,5 +117,7 @@ export function usePersistedState(onError: (message: string) => void): Persisted
     [],
   );
 
-  return { state, isLoaded, updateState, saveNow };
+  const getState = useCallback(() => latestStateRef.current, []);
+
+  return { state, isLoaded, updateState, getState, saveNow };
 }

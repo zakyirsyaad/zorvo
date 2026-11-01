@@ -1,10 +1,12 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import type { FirstMessage } from './session-engine/useAcpEngine';
 import { createId } from '../lib/ids';
 import { NO_CHOICES, withPreferred, type AgentOptions } from '../lib/acp-draft';
 import { attachmentsFor, createSessionWorktree } from '../lib/session-worktree';
 import { titleFor, type SessionSpec, type StartSessionOptions } from '../lib/session-start';
-import type { AgentProfile, SessionWorktree } from '../types';
+import { rowFactsOf, type CompareRun, type RowFacts, type RowSources } from '../lib/compare-run';
+import { isListed } from '../lib/session-helpers';
+import type { AgentProfile, Session, SessionWorktree } from '../types';
 
 export interface CompareRunDeps {
   /** The folder the run's worktrees are made from. */
@@ -23,6 +25,12 @@ export interface CompareRunDeps {
   /** The draft's picks went with the run (or the only session that started). */
   onStarted: () => void;
   onNotice: (message: string) => void;
+  /** Stops the session's agent and hides it; one whose agent cannot be stopped stays listed, with its own notice. */
+  archiveSession: (sessionId: string, isArchived: boolean) => Promise<void>;
+  /** The sessions as they are now: an archive that just finished may not have rendered yet. */
+  readSessions: () => readonly Session[];
+  openSession: (sessionId: string) => void;
+  agentName: (profileId: string) => string;
 }
 
 interface Prepared {
@@ -109,5 +117,42 @@ export function useCompareRun(deps: CompareRunDeps) {
     }
   };
 
-  return { startRun };
+  /** Keeps `winnerId`: archives the run's other sessions one at a time, then opens it. */
+  const pick = async (run: CompareRun, winnerId: string): Promise<void> => {
+    try {
+      for (const session of run.sessions) {
+        if (session.id !== winnerId) await deps.archiveSession(session.id, true);
+      }
+      const stayed = deps
+        .readSessions()
+        .filter((session) => session.compareRunId === run.id && session.id !== winnerId && isListed(session));
+      if (stayed.length > 0) {
+        // The run stays open on its panel, so the user can stop that agent and pick again.
+        const names = stayed.map((session) => deps.agentName(session.profileId));
+        const verb = names.length === 1 ? 'it is' : 'they are';
+        deps.onNotice(`${names.join(' and ')} could not be stopped, so ${verb} still in the run.`);
+        return;
+      }
+      deps.openSession(winnerId);
+    } catch (error) {
+      deps.onNotice(`Could not pick this agent: ${String(error)}`);
+    }
+  };
+
+  return { startRun, pick };
+}
+
+export interface RunRowDeps extends RowSources {
+  /** Reads a session's saved chat; only the open session's is loaded on its own. */
+  ensureLoaded: (sessionId: string) => void;
+}
+
+/** What the open run's panel shows for each agent; empty while no run is open. */
+export function useCompareRunRows(run: CompareRun | null, deps: RunRowDeps): RowFacts[] {
+  const { ensureLoaded } = deps;
+  const sessionIds = run?.sessions.map((session) => session.id).join(',') ?? '';
+  useEffect(() => {
+    for (const id of sessionIds ? sessionIds.split(',') : []) ensureLoaded(id);
+  }, [sessionIds, ensureLoaded]);
+  return run ? rowFactsOf(run, deps) : [];
 }

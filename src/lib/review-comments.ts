@@ -168,7 +168,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** One saved comment, or null when it is not one. A wrong `oldFile` or `sentAt` is dropped alone. */
+/**
+ * One saved comment, or null when it is not one. A wrong `oldFile` or `sentAt` is dropped alone.
+ * Numbers must be integers: the backend reads them as `i64`, so another one would be lost on the next save.
+ */
 function toReviewComment(raw: unknown): ReviewComment | null {
   if (!isObject(raw)) return null;
   const { id, file, oldFile, side, line, lineHash: hash, quote, target, body, createdAt, sentAt } = raw;
@@ -183,7 +186,7 @@ function toReviewComment(raw: unknown): ReviewComment | null {
     !TARGETS.includes(target as ReviewTarget) ||
     typeof body !== 'string' ||
     typeof createdAt !== 'number' ||
-    !Number.isFinite(createdAt)
+    !Number.isInteger(createdAt)
   ) {
     return null;
   }
@@ -198,7 +201,7 @@ function toReviewComment(raw: unknown): ReviewComment | null {
     target: target as ReviewTarget,
     body: body.slice(0, MAX_COMMENT_LENGTH),
     createdAt,
-    ...(typeof sentAt === 'number' && Number.isFinite(sentAt) ? { sentAt } : {}),
+    ...(typeof sentAt === 'number' && Number.isInteger(sentAt) ? { sentAt } : {}),
   };
 }
 

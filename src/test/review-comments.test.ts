@@ -343,6 +343,17 @@ describe("reviewMessage", () => {
 });
 
 describe("validReviewComments", () => {
+  it.each([
+    ["createdAt", { createdAt: 1.5 }],
+    ["line", { line: 2.5 }],
+  ])("drops an item whose %s the backend's integer cannot read, so it does not vanish on the next save", (_name, change) => {
+    expect(validReviewComments([{ ...comment(), ...change }])).toEqual([]);
+  });
+
+  it("drops a sentAt that is not an integer alone, as it does a wrong one", () => {
+    expect(validReviewComments([{ ...comment(), sentAt: 1.5 }])).toEqual([comment()]);
+  });
+
   it("gives an empty list for anything that is not an array", () => {
     expect(validReviewComments(undefined)).toEqual([]);
     expect(validReviewComments(null)).toEqual([]);

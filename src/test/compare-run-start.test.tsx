@@ -139,6 +139,37 @@ function deferred<T>() {
 
 const savedSessions = () => fakeStore().state.sessions as Array<Session & { compareRunId?: string | null }>;
 
+/** Only a session between turns can be archived. */
+async function endTurns(spy: { mock: { calls: unknown[][] } }) {
+  await waitFor(() => expect(calls(spy, "acp_prompt")).toHaveLength(2));
+  for (const { sessionId } of calls(spy, "acp_prompt")) {
+    await act(async () => {
+      listeners.get("acp-event")?.({ payload: { sessionId, kind: "turn-end", stopReason: "end_turn" } });
+    });
+  }
+}
+
+/** Counts every new-session draft mounted from now on, even one gone by the next render. */
+function watchForDrafts(): () => number {
+  const DRAFT_ONLY = 'button[aria-label^="Folder:"]';
+  let mounted = 0;
+  const count = (records: MutationRecord[]) => {
+    for (const node of records.flatMap((record) => [...record.addedNodes])) {
+      if (node instanceof Element && (node.matches(DRAFT_ONLY) || node.querySelector(DRAFT_ONLY))) mounted += 1;
+    }
+  };
+  const observer = new MutationObserver(count);
+  observer.observe(document.body, { childList: true, subtree: true });
+  return () => {
+    count(observer.takeRecords());
+    observer.disconnect();
+    return mounted;
+  };
+}
+
+const draftQuestions = (spy: { mock: { calls: unknown[][] } }) =>
+  [...calls(spy, "acp_probe_agent"), ...calls(spy, "acp_list_sessions")].length;
+
 describe("starting a compare run", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -280,6 +311,45 @@ describe("starting a compare run", () => {
     expect(calls(spy, "acp_stop_session")).toHaveLength(1);
   });
 
+  it("goes from Pick straight to the keeper's chat: no draft mounts and no agent is asked anything", async () => {
+    const spy = await renderApp();
+    await tickAgents("Qwen Code");
+    await send("fix the login");
+    await endTurns(spy);
+    const panel = await screen.findByRole("region", { name: "Compare run" });
+    const asked = draftQuestions(spy);
+    const draftsMounted = watchForDrafts();
+
+    await click(within(panel).getByRole("button", { name: "Pick Claude Code" }));
+    await waitFor(() => expect(savedSessions().filter((s) => s.archivedAt)).toHaveLength(1));
+    await act(async () => {});
+
+    expect(draftsMounted()).toBe(0);
+    expect(draftQuestions(spy)).toBe(asked);
+    expect(screen.queryByRole("region", { name: "Compare run" })).toBeNull();
+    expect(prompt()).not.toHaveAttribute("placeholder", expect.stringContaining("start a new session"));
+  });
+
+  it("opens the agent left when one is archived by hand with the panel open, and no draft mounts", async () => {
+    const spy = await renderApp();
+    await tickAgents("Qwen Code");
+    await send("fix the login");
+    await endTurns(spy);
+    await screen.findByRole("region", { name: "Compare run" });
+    const asked = draftQuestions(spy);
+    const draftsMounted = watchForDrafts();
+    const sidebar = within(screen.getByRole("complementary"));
+
+    await click(sidebar.getAllByRole("button", { name: /^More actions for (Claude|Qwen)/ })[0]);
+    await click(screen.getByRole("menuitem", { name: "Archive" }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Compare run" })).toBeNull());
+    await act(async () => {});
+
+    expect(draftsMounted()).toBe(0);
+    expect(draftQuestions(spy)).toBe(asked);
+    expect(prompt()).not.toHaveAttribute("placeholder", expect.stringContaining("start a new session"));
+  });
+
   it("opens the draft again from + New session while a run is open", async () => {
     await renderApp();
     await tickAgents("Qwen Code");
@@ -300,26 +370,20 @@ describe("starting a compare run", () => {
     await tickAgents("Qwen Code");
     await send("fix the login");
     await waitFor(() => expect(screen.queryByRole("button", { name: /^Folder:/ })).toBeNull());
-    // Only a session between turns can be archived.
-    await waitFor(() => expect(calls(spy, "acp_prompt")).toHaveLength(2));
-    for (const { sessionId } of calls(spy, "acp_prompt")) {
-      await act(async () => {
-        listeners.get("acp-event")?.({ payload: { sessionId, kind: "turn-end", stopReason: "end_turn" } });
-      });
-    }
+    await endTurns(spy);
     const sidebar = within(screen.getByRole("complementary"));
 
     await click(sidebar.getAllByRole("button", { name: /^More actions for (Claude|Qwen)/ })[0]);
     await click(screen.getByRole("menuitem", { name: "Archive" }));
-    // One listed session is no run: the draft shows.
-    expect(await screen.findByRole("button", { name: /^Folder:/ })).toBeInTheDocument();
+    // One listed session is no run: its chat shows.
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Compare run" })).toBeNull());
 
     await click(await sidebar.findByRole("button", { name: "Archived (1)" }));
     await click(sidebar.getAllByRole("button", { name: "More actions for fix the login" }).at(-1) as HTMLElement);
     await click(screen.getByRole("menuitem", { name: "Unarchive" }));
 
     await act(async () => {});
-    expect(screen.getByRole("button", { name: /^Folder:/ })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Compare run" })).toBeNull();
   });
 
   it("keeps the session the user opened meanwhile", async () => {

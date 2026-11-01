@@ -91,7 +91,7 @@ import { isAgentReady, isAgentRunnable, noAgentNotice, resolveDraftAgentId } fro
 import { isInUse, removedAgentNameFor } from "./lib/enabled-agents";
 import { useCompareDraft } from "./hooks/useCompareDraft";
 import { useCompareRun, useCompareRunRows } from "./hooks/useCompareRun";
-import { runOf } from "./lib/compare-run";
+import { lastOfRun, runOf } from "./lib/compare-run";
 import { compareAgentOptions } from "./lib/composer-controls";
 import { composerCommandsFor, composerNote, composerPlaceholder, composerStateFor } from "./lib/composer-state";
 import {
@@ -174,7 +174,12 @@ export default function App() {
   const activeRun = activeRunId && !selectedSessionId ? runOf(sessions, activeRunId) : null;
   const activeSessionId = selectedSessionId;
   // Any selection leaves the run, and so does a run that is gone (archived or deleted away): it does not come back on its own.
-  if (activeRunId && (selectedSessionId || !runOf(sessions, activeRunId))) setActiveRunId(null);
+  if (activeRunId && (selectedSessionId || !runOf(sessions, activeRunId))) {
+    setActiveRunId(null);
+    // The agent left takes the panel's place in this same render, so no draft mounts behind it.
+    const last = selectedSessionId ? null : lastOfRun(sessions, activeRunId);
+    if (last) setActiveSessionId(last.id);
+  }
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const activeAgent = agents.find((a) => a.id === activeSession?.profileId);
   const isActiveRunning = activeSession?.status === "running";

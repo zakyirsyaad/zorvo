@@ -3,6 +3,7 @@ import {
   MAX_COMPARE_AGENTS,
   compareRuns,
   isRunSettled,
+  lastOfRun,
   othersToStop,
   pendingPermission,
   pickableAgentIds,
@@ -109,6 +110,20 @@ describe("runOf", () => {
 
     expect(runOf(sessions, "run-1")?.sessions).toHaveLength(2);
     expect(runOf(sessions, "run-9")).toBeNull();
+  });
+});
+
+describe("lastOfRun", () => {
+  const member = (id: string, overrides: Partial<Session> = {}) => session({ id, compareRunId: "run-1", ...overrides });
+
+  it("finds the one listed session a run leaves", () => {
+    const sessions = [member("a", { archivedAt: 1 }), member("b"), session({ id: "other" })];
+    expect(lastOfRun(sessions, "run-1")?.id).toBe("b");
+  });
+
+  it("is null when none is left, or when the run still has two", () => {
+    expect(lastOfRun([member("a", { archivedAt: 1 })], "run-1")).toBeNull();
+    expect(lastOfRun([member("a"), member("b")], "run-1")).toBeNull();
   });
 });
 

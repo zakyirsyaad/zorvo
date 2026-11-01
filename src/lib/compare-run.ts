@@ -64,6 +64,12 @@ export function runOfSession(sessions: readonly Session[], sessionId: string): C
   return runId ? runOf(sessions, runId) : null;
 }
 
+/** The session a run that went away leaves behind, as a Pick's winner is; null unless exactly one is listed. */
+export function lastOfRun(sessions: readonly Session[], runId: string): Session | null {
+  const left = sessions.filter((session) => session.compareRunId === runId && isListed(session));
+  return left.length === 1 ? left[0] : null;
+}
+
 /** Highest first: sign-in, a permission or form, failed, starting, working, then done or stopped. */
 export function rowStatus(facts: RowFacts): RunRowStatus {
   if (facts.needsSignIn) return 'needs-sign-in';

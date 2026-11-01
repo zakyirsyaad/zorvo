@@ -48,6 +48,7 @@ function card(overrides: Partial<ActionCard> = {}): ActionCard {
     prompt: "Run ls?",
     status: "pending",
     timestamp: 1,
+    requestId: 1,
     options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
     ...overrides,
   };
@@ -55,6 +56,10 @@ function card(overrides: Partial<ActionCard> = {}): ActionCard {
 
 function message(id: string, actionCard?: ActionCard): ChatMessage {
   return { id, role: "agent", content: "", timestamp: 1, actionCard };
+}
+
+function userMessage(id: string): ChatMessage {
+  return { id, role: "user", content: "Go on", timestamp: 1 };
 }
 
 describe("compareRuns", () => {
@@ -189,6 +194,16 @@ describe("pendingPermission", () => {
 
     expect(pendingPermission(messages)?.id).toBe("first");
     expect(pendingPermission([...messages, message("4", card({ id: "last" }))])?.id).toBe("last");
+  });
+
+  it("ignores a pending card without a request id, which nothing closes", () => {
+    const { requestId: _requestId, ...withoutRequest } = card();
+
+    expect(pendingPermission([message("1", withoutRequest)])).toBeNull();
+  });
+
+  it("ignores a pending card from before the last user message", () => {
+    expect(pendingPermission([message("1", card()), userMessage("2")])).toBeNull();
   });
 
   it("is null when no card waits", () => {

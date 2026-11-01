@@ -1,4 +1,5 @@
 import type { ActionCard, ChatMessage, Session } from '../types';
+import { pendingCardsInTurn } from './acp-events';
 import { isListed } from './session-helpers';
 
 /** Most agents one compare run can start. */
@@ -82,13 +83,9 @@ export function othersToStop(run: CompareRun, winnerId: string, isBusy: (id: str
   );
 }
 
-/** The newest permission card still waiting for an answer. */
+/** The newest permission request of the current turn still waiting for an answer. */
 export function pendingPermission(messages: readonly ChatMessage[]): ActionCard | null {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const card = messages[i].actionCard;
-    if (card?.status === 'pending') return card;
-  }
-  return null;
+  return pendingCardsInTurn(messages).at(-1) ?? null;
 }
 
 /** Toggles `agentId` in the selection. Adding stops at MAX_COMPARE_AGENTS; removing always works. */

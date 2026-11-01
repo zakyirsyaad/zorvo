@@ -326,6 +326,21 @@ describe("loadTranscript", () => {
     expect(messages.map((m) => m.id)).toEqual(["a"]);
   });
 
+  it("settles a permission request that was waiting when the app closed", async () => {
+    const options = [{ optionId: "allow", name: "Allow", kind: "allow_once" }];
+    const card = { sessionId: "s-1", title: "Permission requested", prompt: "Run ls", timestamp: 1, options };
+    store().transcripts["s-1"] = [
+      { id: "a", role: "agent", content: "", timestamp: 1, actionCard: { ...card, id: "act-1", status: "pending", requestId: 4 } },
+      { id: "b", role: "agent", content: "", timestamp: 2, actionCard: { ...card, id: "act-2", status: "approved", chosenOptionId: "allow", requestId: 5 } },
+    ];
+
+    const messages = await loadTranscript("s-1");
+
+    expect(messages[0].actionCard).toMatchObject({ status: "rejected" });
+    expect(messages[0].actionCard?.chosenOptionId).toBeUndefined();
+    expect(messages[1].actionCard).toMatchObject({ status: "approved", chosenOptionId: "allow" });
+  });
+
   it("settles open elicitations", async () => {
     const card = { sessionId: "s-1", message: "m", timestamp: 1, host: "example.com" };
     store().transcripts["s-1"] = [

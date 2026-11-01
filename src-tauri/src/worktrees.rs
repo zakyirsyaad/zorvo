@@ -189,12 +189,19 @@ pub fn create_worktree_from(
     fs::create_dir_all(path.parent().unwrap_or(root))
         .map_err(|e| format!("Could not create {}: {e}", root.display()))?;
     let path_arg = path.to_string_lossy().to_string();
-    run_git(
-        git,
-        &toplevel,
-        &["worktree", "add", "-b", &branch, &path_arg, start],
-    )
-    .map_err(|e| format!("Could not create the worktree: {e}"))?;
+    // The branch is made on its own first, so a failure here means it was not
+    // ours (the name was taken in the meantime) and nothing is deleted. Once
+    // it is made, it is ours to remove if the worktree cannot be added:
+    // `worktree add -b` leaves its new branch behind when it fails.
+    run_git(git, &toplevel, &["branch", "--no-track", &branch, start])
+        .map_err(|e| format!("Could not create the worktree: {e}"))?;
+    if let Err(error) = run_git(git, &toplevel, &["worktree", "add", &path_arg, &branch]) {
+        let error = format!("Could not create the worktree: {error}");
+        return Err(match run_git(git, &toplevel, &["branch", "-D", &branch]) {
+            Ok(_) => error,
+            Err(undo) => format!("{error}; the branch {branch} was left behind: {undo}"),
+        });
+    }
 
     let cwd = if subfolder.as_os_str().is_empty() {
         path.clone()

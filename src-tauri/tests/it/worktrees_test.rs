@@ -302,3 +302,55 @@ fn refuses_a_base_that_is_not_a_local_branch() {
     );
     fs::remove_dir_all(base).ok();
 }
+
+/// Makes `dir` read-only so nothing can be created in it, and restores it on drop.
+#[cfg(unix)]
+struct ReadOnly(PathBuf);
+
+#[cfg(unix)]
+impl ReadOnly {
+    fn new(dir: &Path) -> Self {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o555)).expect("make read-only");
+        Self(dir.to_path_buf())
+    }
+}
+
+#[cfg(unix)]
+impl Drop for ReadOnly {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755)).ok();
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn leaves_no_new_branch_behind_when_the_worktree_cannot_be_made() {
+    let (base, repo, root) = repo("failed-add");
+    // A branch that exists before the call, with a name the call comes close to.
+    git(&repo, &["branch", "agent/fix-login"]);
+    fs::create_dir_all(root.join("my-app")).expect("create worktrees folder");
+    let read_only = ReadOnly::new(&root.join("my-app"));
+    // A directory that is not writable cannot be tested as root.
+    if fs::write(root.join("my-app/probe"), "").is_ok() {
+        drop(read_only);
+        fs::remove_dir_all(base).ok();
+        return;
+    }
+
+    let error = create_worktree(&git_path(), &repo, &root, "Fix login")
+        .expect_err("a read-only folder cannot hold a worktree");
+
+    assert!(
+        error.starts_with("Could not create the worktree"),
+        "the original error is kept: {error}"
+    );
+    assert_eq!(
+        git(&repo, &["branch", "--list", "agent/*"]),
+        "agent/fix-login",
+        "only the branch that existed before is left"
+    );
+    drop(read_only);
+    fs::remove_dir_all(base).ok();
+}

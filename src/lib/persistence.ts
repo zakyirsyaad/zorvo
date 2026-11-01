@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { TRANSPORT_ACP, type ChatMessage, type ChatMessagePart, type PersistedState, type Session, type SessionWorktree } from '../types';
 import { markElicitationsUnanswered } from './acp-elicitation';
+import { settlePermissionCards } from './acp-events';
 import { normalizeAppearance } from './appearance';
 import type { AgentOptions } from './acp-draft';
 import { toCommands, toConfigOptions, toModels, toModes } from '../hooks/useAcpSessions';
@@ -256,7 +257,8 @@ export function normalizeTranscript(raw: unknown): ChatMessage[] {
 
 export async function loadTranscript(sessionId: string): Promise<ChatMessage[]> {
   const messages = await invoke<unknown>('load_transcript', { sessionId });
-  return markElicitationsUnanswered(normalizeTranscript(messages));
+  // Nothing runs after a restart, so no request saved as waiting can be answered.
+  return settlePermissionCards(markElicitationsUnanswered(normalizeTranscript(messages)));
 }
 
 export function saveTranscript(sessionId: string, messages: ChatMessage[]): Promise<void> {

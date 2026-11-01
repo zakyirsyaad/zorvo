@@ -1,11 +1,12 @@
-import { useMemo, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { DiffFileSection } from "./DiffFileSection";
 import { DiffViewHeader } from "./DiffViewHeader";
-import type { FileReview } from "./LineComment";
+import type { CommentAdder, FileReview } from "./LineComment";
 import { ReviewCommentsBar } from "./ReviewCommentsBar";
 import { useCommentedFileReads } from "../../hooks/useCommentedFileReads";
 import { useDiffTargets, useTargetStats } from "../../hooks/useDiffStats";
 import type { ReviewComments } from "../../hooks/useReviewComments";
+import type { AddReview } from "../../hooks/useReviewWiring";
 import { defaultTarget, targetOptions, type DiffTargetId } from "../../lib/diff-stats";
 import { sortComments } from "../../lib/review-comments";
 
@@ -36,6 +37,8 @@ export interface DiffViewProps {
   prefersStart?: boolean;
   /** The comments of the session on screen. Without one (a draft, a compare run's panel) no comments are offered. */
   review?: ReviewComments;
+  /** Puts this session's comments in the message; the composer stays behind it. */
+  addReview?: AddReview;
 }
 
 /** A whole repository's diff: one collapsible section per changed file. */
@@ -49,6 +52,7 @@ export function DiffView({
   startCommit,
   prefersStart = false,
   review,
+  addReview,
 }: DiffViewProps) {
   const { targets, isLoaded: areTargetsLoaded } = useDiffTargets(rootPath, true, version, onError);
   const [chosen, setChosen] = useState<DiffTargetId | null>(null);
@@ -83,13 +87,24 @@ export function DiffView({
     reload();
   };
   const comments = useMemo(() => sortComments(review?.comments ?? []), [review?.comments]);
-  const { reads } = useCommentedFileReads(rootPath, comments, target, stats, startCommit, refreshes);
+  const { reads, isReading } = useCommentedFileReads(rootPath, comments, target, stats, startCommit, refreshes);
   const onTarget = useMemo(() => comments.filter((comment) => comment.target === target), [comments, target]);
   const panel = useRef<HTMLElement>(null);
   const focusPanel = () => panel.current?.focus({ preventScroll: true });
+  const addReasonId = useId();
+  const adder: CommentAdder | undefined = addReview && {
+    inMessage: addReview.inMessage,
+    blockedReason: addReview.blockedReason,
+    reasonId: addReasonId,
+    // Until the root is known (loading, or the targets failed) a path cannot be worded from the agent's folder.
+    isWaiting: isReading || targets.root === "",
+    add: (checked) =>
+      addReview.add(checked, target, { root: targets.root, prefix: targets.prefix, baseName: targets.base?.name ?? null }),
+  };
   const fileReviewOf = (path: string): FileReview | undefined =>
     review && {
       review,
+      adder,
       target,
       comments: onTarget.filter((comment) => comment.file === path),
       read: reads[path],
@@ -154,6 +169,7 @@ export function DiffView({
       {review && (
         <ReviewCommentsBar
           review={review}
+          adder={adder}
           comments={comments}
           target={target}
           targets={targets}

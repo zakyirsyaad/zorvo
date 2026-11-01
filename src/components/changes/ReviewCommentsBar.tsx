@@ -1,15 +1,16 @@
 import { Button } from "../ui/Button";
-import { DraftBox, LineComment } from "./LineComment";
+import { DraftBox, LineComment, ownAddLabel, type CommentAdder } from "./LineComment";
 import { draftKeyOf, parseDraftKey, type CommentAnchor, type ReviewComments } from "../../hooks/useReviewComments";
 import { targetLabel, type DiffTargetId, type DiffTargets, type FileStat } from "../../lib/diff-stats";
-import { commentStatus, type FileRead } from "../../lib/review-comments";
+import { commentStatus, isCounted, type FileRead } from "../../lib/review-comments";
 import type { ReviewComment } from "../../types";
 
 const locationOf = ({ file, line }: Pick<ReviewComment, "file" | "line">) => `${file}:${line}`;
 
 /** The session's comments as a whole, and those no section can show: another target's, or a file gone from the diff. */
-export function ReviewCommentsBar({ review, comments, target, targets, options, reads, listed, onTargetChange, onFocusLost }: {
+export function ReviewCommentsBar({ review, adder, comments, target, targets, options, reads, listed, onTargetChange, onFocusLost }: {
   review: ReviewComments;
+  adder?: CommentAdder;
   /** The session's comments, in order. */
   comments: readonly ReviewComment[];
   target: DiffTargetId;
@@ -32,15 +33,37 @@ export function ReviewCommentsBar({ review, comments, target, targets, options, 
     const isGone = place?.target === target && listed?.every((stat) => stat.path !== place.file);
     return place && isGone ? [place] : [];
   });
-  if (!hasSent && elsewhere.length === 0 && gone.length === 0 && goneBoxes.length === 0) return null;
+  const inMessage = adder?.inMessage ?? new Set<string>();
+  const counted = adder ? checked.filter(({ comment, status }) => isCounted(comment, status, inMessage)) : [];
+  // A comment's own Add points here too, so the reason shows for it with nothing to count.
+  const hasOwnAdd = adder !== undefined && checked.some(({ comment, status }) => ownAddLabel(comment, status, inMessage) !== null);
+  const reason = counted.length > 0 || hasOwnAdd ? adder?.blockedReason : undefined;
+  if (!hasSent && !reason && counted.length === 0 && elsewhere.length === 0 && gone.length === 0 && goneBoxes.length === 0) return null;
 
   return (
     <section aria-label="Review comments" className="flex max-h-64 shrink-0 flex-col gap-1.5 overflow-y-auto border-b border-border p-2 text-xs">
-      {hasSent && (
-        <div className="flex justify-end">
-          <Button variant="ghost" className="px-2 py-1" onClick={review.clearSent}>
-            Clear sent
-          </Button>
+      {(hasSent || reason || counted.length > 0) && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {reason && (
+            <p id={adder?.reasonId} className="min-w-0 flex-1 text-[11px] text-fg-subtle">
+              {reason}
+            </p>
+          )}
+          {hasSent && (
+            <Button variant="ghost" className="px-2 py-1" onClick={review.clearSent}>
+              Clear sent
+            </Button>
+          )}
+          {adder && counted.length > 0 && (
+            <Button
+              className="px-2 py-1"
+              disabled={adder.isWaiting || reason !== undefined}
+              aria-describedby={reason ? adder.reasonId : undefined}
+              onClick={() => adder.add(counted)}
+            >
+              Add {counted.length} {counted.length === 1 ? "comment" : "comments"} to message
+            </Button>
+          )}
         </div>
       )}
       {gone.map(({ comment, status }) => (
@@ -49,6 +72,7 @@ export function ReviewCommentsBar({ review, comments, target, targets, options, 
           comment={comment}
           status={status}
           review={review}
+          adder={adder}
           location={locationOf(comment)}
           onRemoved={onFocusLost}
         />
@@ -73,6 +97,7 @@ export function ReviewCommentsBar({ review, comments, target, targets, options, 
                 comment={comment}
                 status={status}
                 review={review}
+                adder={adder}
                 location={locationOf(comment)}
                 onRemoved={onFocusLost}
               />

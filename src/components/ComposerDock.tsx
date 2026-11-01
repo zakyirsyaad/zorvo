@@ -1,4 +1,4 @@
-import { useId, useImperativeHandle, useRef, useState, type Ref } from "react";
+import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from "react";
 import { Plus, CornerDownLeft, Shield, ShieldAlert, Sparkles, Gauge, SlidersHorizontal, Square, Bot } from "lucide-react";
 import { IconButton } from "./ui/IconButton";
 import { OptionDropdown } from "./composer/OptionDropdown";
@@ -14,6 +14,7 @@ import { isRiskyMode, type ComposerControl, type ComposerControls } from "../lib
 import { matchingCommands, pendingHint, slashQuery } from "../lib/slash-commands";
 import { SlashCommandMenu } from "./composer/SlashCommandMenu";
 import { useDismiss } from "../hooks/useDismiss";
+import { useLatest } from "../hooks/useLatest";
 import type { ContextUsage, SlashCommand } from "../types";
 
 const MAX_PROMPT_HEIGHT_PX = 180;
@@ -26,10 +27,17 @@ const CARET_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
 /** An agent's extra option is open under its config id: `option:fast`. */
 type OpenDropdown = "folder" | "agent" | "permission" | "model" | "effort" | `option:${string}` | null;
 
+function fitToText(field: HTMLTextAreaElement) {
+  field.style.height = "auto";
+  field.style.height = `${Math.min(field.scrollHeight, MAX_PROMPT_HEIGHT_PX)}px`;
+}
+
 /** What other parts of the window can do to the composer. */
 export interface ComposerHandle {
   /** Adds paths to the prompt (quoted when needed) and focuses it. */
   insertPaths: (paths: readonly string[]) => void;
+  /** Adds text after what is there, past a blank line, grows the box to fit, and focuses it. */
+  insertText: (text: string) => void;
   /** Puts back a message that could not be sent, so it need not be typed again. */
   restore: (text: string, attachments?: readonly string[]) => void;
   /**
@@ -82,6 +90,13 @@ export interface ComposerDockProps {
   agents?: Omit<AgentMultiPickerProps, "isOpen" | "onToggle">;
   /** The workspace whose files `@` lists; mentions are off when absent. */
   mentions?: MentionSource;
+  /**
+   * The prompt's text, after every change and once on mount: `clear`, `restore` and Send too, since the
+   * parent does not redraw on typing. A mount reports empty, because a composer that went away took its text along.
+   */
+  onTextChange?: (text: string) => void;
+  /** Every time `restore` runs, even with the text already there. */
+  onRestored?: () => void;
 }
 
 export function ComposerDock({
@@ -102,6 +117,8 @@ export function ComposerDock({
   agent,
   agents,
   mentions,
+  onTextChange,
+  onRestored,
 }: ComposerDockProps) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
@@ -112,8 +129,21 @@ export function ComposerDock({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // What the last restore left in the composer, until the user sends or clears it.
   const restoredRef = useRef<{ text: string; attachments: readonly string[] } | null>(null);
+  // Set by `insertText`: the box can only be measured once the text is in it.
+  const shouldFitRef = useRef(false);
+  const onTextChangeRef = useLatest(onTextChange);
 
   useDismiss(containerRef, openDropdown !== null, () => setOpenDropdown(null));
+
+  useLayoutEffect(() => {
+    if (!shouldFitRef.current || !textareaRef.current) return;
+    shouldFitRef.current = false;
+    fitToText(textareaRef.current);
+  }, [text]);
+
+  useEffect(() => {
+    onTextChangeRef.current?.(text);
+  }, [text, onTextChangeRef]);
 
   const toggle = (name: Exclude<OpenDropdown, null>) =>
     setOpenDropdown((current) => (current === name ? null : name));
@@ -211,8 +241,7 @@ export function ComposerDock({
     setHighlighted(0);
     setIsMenuDismissed(false);
     mentionMenu.update(e.target.value, e.target.selectionStart ?? e.target.value.length);
-    e.target.style.height = "auto";
-    e.target.style.height = `${Math.min(e.target.scrollHeight, MAX_PROMPT_HEIGHT_PX)}px`;
+    fitToText(e.target);
   };
 
   const insertPaths = (paths: readonly string[]) => {
@@ -223,12 +252,19 @@ export function ComposerDock({
 
   useImperativeHandle(handleRef, () => ({
     insertPaths,
+    insertText: (inserted) => {
+      shouldFitRef.current = true;
+      setText((current) => (current.trim() ? `${current.trimEnd()}\n\n${inserted}` : inserted));
+      mentionMenu.close();
+      textareaRef.current?.focus();
+    },
     restore: (restoredText, restoredAttachments = []) => {
       setText(restoredText);
       mentionMenu.close();
       if (attachAsFiles) setAttachments([...restoredAttachments]);
       restoredRef.current = { text: restoredText, attachments: attachAsFiles ? [...restoredAttachments] : attachments };
       textareaRef.current?.focus();
+      onRestored?.();
     },
     holdsRestored: (message) => {
       const restored = restoredRef.current;

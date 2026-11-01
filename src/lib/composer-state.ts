@@ -106,12 +106,28 @@ export function composerPlaceholder(state: {
 /** What a compare run costs, said under the prompt while several agents are ticked. */
 export const compareNote = (count: number) => `Runs in ${count} worktrees. Each agent uses its own quota.`;
 
+/** The session review comments in the composer are for, when Send is blocked for them. */
+export interface ReviewOwner {
+  /** Its name; null once it is deleted. */
+  title: string | null;
+  isArchived: boolean;
+}
+
+function reviewOwnerNote({ title, isArchived }: ReviewOwner): string {
+  if (title === null) return 'These review comments are for another session. Clear the message to send here.';
+  return isArchived
+    ? `These review comments are for ${title}, which is archived. Open it from the archive, or clear the message.`
+    : `These review comments are for ${title}. Go back to that session, or clear the message.`;
+}
+
 /**
  * The line under the prompt: why Send is blocked, else that the agent's options are loading. The
  * reason stays while the user types (the placeholder does not), and outranks the loading line.
  */
 export function composerNote(state: {
-  /** Agents ticked for a compare run; two or more replace every other note. */
+  /** Whom the comments in the composer are for, while that keeps them from going out here; outranks every other note. */
+  reviewOwner?: ReviewOwner;
+  /** Agents ticked for a compare run; two or more replace every note but the review one. */
   compareCount?: number;
   /** The draft agent's name while it must be installed before a message can be sent. */
   agentToInstall?: string;
@@ -122,6 +138,7 @@ export function composerNote(state: {
   /** The draft agent's name while its models and commands are being asked for. */
   agentLoading?: string;
 }): string | undefined {
+  if (state.reviewOwner) return reviewOwnerNote(state.reviewOwner);
   if (state.compareCount !== undefined && state.compareCount >= 2) return compareNote(state.compareCount);
   if (state.agentToInstall) return installPlaceholder(state.agentToInstall, state.continuesSession);
   if (state.agentToSignIn) return signInPlaceholder(state.agentToSignIn, state.continuesSession);

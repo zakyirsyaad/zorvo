@@ -95,6 +95,18 @@ export function commentStatus(
   return reached ? 'outdated' : 'unknown';
 }
 
+/** A comment with the status it goes into the message with. */
+export interface CheckedComment {
+  comment: ReviewComment;
+  status: CommentStatus;
+}
+
+/** The same comment, plain again: not marked Sent. */
+export function asUnsent(comment: ReviewComment): ReviewComment {
+  const { sentAt: _sentAt, ...plain } = comment;
+  return plain;
+}
+
 /** Whether "Add N comments" counts it: checked or unverifiable, and neither sent nor already in the message. */
 export function isCounted(comment: ReviewComment, status: CommentStatus, inMessage: ReadonlySet<string>): boolean {
   return (status === 'current' || status === 'unknown') && comment.sentAt === undefined && !inMessage.has(comment.id);
@@ -142,7 +154,7 @@ export function commentBlock(comment: ReviewComment, status: CommentStatus, cont
 
 /** The text of a send: blocks joined by a blank line, with the heading unless the last send had it. */
 export function reviewMessage(
-  comments: readonly { comment: ReviewComment; status: CommentStatus }[],
+  comments: readonly CheckedComment[],
   target: ReviewTarget,
   context: MessageContext,
   withHeading: boolean,

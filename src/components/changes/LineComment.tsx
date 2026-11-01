@@ -6,6 +6,7 @@ import { isCommentableRow, type FileChange, type UnifiedRow } from "../../lib/gi
 import {
   commentStatus,
   MAX_COMMENTS_PER_SESSION,
+  type CheckedComment,
   type CommentStatus,
   type FileRead,
 } from "../../lib/review-comments";
@@ -24,9 +25,28 @@ const STATUS_LABEL: Partial<Record<CommentStatus, string>> = { outdated: "Outdat
 /** How long Delete waits for its confirming second click. */
 const CONFIRM_DELETE_MS = 4000;
 
+/** Puts comments in the message. Absent, no comment says In message or offers to add. */
+export interface CommentAdder {
+  inMessage: ReadonlySet<string>;
+  /** Why nothing can be added now, shown beside the header's Add under `reasonId`. */
+  blockedReason: string | undefined;
+  reasonId: string;
+  /** A status, or a path, is still being read: a message now would word it wrongly. */
+  isWaiting: boolean;
+  add: (comments: readonly CheckedComment[]) => void;
+}
+
+/** A button of a comment that the header's Add leaves out: an Outdated one's Add, a Sent one's Add again. */
+export function ownAddLabel(comment: ReviewComment, status: CommentStatus, inMessage: ReadonlySet<string>): string | null {
+  if (status === "elsewhere" || inMessage.has(comment.id)) return null;
+  if (comment.sentAt !== undefined) return "Add again";
+  return status === "outdated" ? "Add" : null;
+}
+
 /** What one file's section needs to show its comments. */
 export interface FileReview {
   review: ReviewComments;
+  adder?: CommentAdder;
   target: ReviewTarget;
   /** This file's comments on `target`, in order. */
   comments: readonly ReviewComment[];
@@ -99,10 +119,11 @@ function DeleteButton({ onDelete }: { onDelete: () => void }) {
 }
 
 /** One saved comment: under its row, or with `location` and its quote in a list, where no row explains it. */
-export function LineComment({ comment, status, review, location, onRemoved }: {
+export function LineComment({ comment, status, review, adder, location, onRemoved }: {
   comment: ReviewComment;
   status: CommentStatus;
   review: ReviewComments;
+  adder?: CommentAdder;
   location?: string;
   onRemoved: () => void;
 }) {
@@ -110,6 +131,8 @@ export function LineComment({ comment, status, review, location, onRemoved }: {
   const edit = review.draftFor(editKey);
   const isEditing = edit !== undefined;
   const isSent = comment.sentAt !== undefined;
+  const isInMessage = adder?.inMessage.has(comment.id) ?? false;
+  const addLabel = adder ? ownAddLabel(comment, status, adder.inMessage) : null;
   const statusLabel = STATUS_LABEL[status];
   const editButton = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -144,10 +167,11 @@ export function LineComment({ comment, status, review, location, onRemoved }: {
   return (
     <div className="flex items-start gap-2 rounded-md border border-border bg-surface-2 px-2 py-1.5 font-sans text-xs">
       <div className={`min-w-0 flex-1 ${isSent ? "opacity-60" : ""}`}>
-        {(location || statusLabel || isSent) && (
+        {(location || statusLabel || isSent || isInMessage) && (
           <p className="flex flex-wrap items-center gap-x-1.5 text-[11px] text-fg-muted">
             {location && <span className="min-w-0 truncate font-mono">{location}</span>}
             {statusLabel && <span className={status === "outdated" ? "font-medium text-status-attention" : "font-medium"}>{statusLabel}</span>}
+            {isInMessage && <span className="font-medium">In message</span>}
             {isSent && <span className="font-medium">Sent</span>}
           </p>
         )}
@@ -155,6 +179,17 @@ export function LineComment({ comment, status, review, location, onRemoved }: {
         {status === "outdated" && <p className="text-[11px] text-fg-subtle">{GONE_NOTE}</p>}
         <p className="whitespace-pre-wrap break-words text-fg-secondary">{comment.body}</p>
       </div>
+      {adder && addLabel && (
+        <Button
+          variant="ghost"
+          className="shrink-0 px-2 py-1"
+          disabled={adder.isWaiting || adder.blockedReason !== undefined}
+          aria-describedby={adder.blockedReason ? adder.reasonId : undefined}
+          onClick={() => adder.add([{ comment, status }])}
+        >
+          {addLabel}
+        </Button>
+      )}
       <Button
         ref={editButton}
         variant="ghost"
@@ -259,7 +294,7 @@ export function rowReviewOf(file: FileReview, change: FileNames, rows: readonly 
         <>
           {comments.map((comment) => (
             <GridRow key={comment.id}>
-              <LineComment comment={comment} status={commentStatus(comment, target, file.read)} review={review} onRemoved={onDone} />
+              <LineComment comment={comment} status={commentStatus(comment, target, file.read)} review={review} adder={file.adder} onRemoved={onDone} />
             </GridRow>
           ))}
           {boxes.map((place) => (
@@ -298,6 +333,7 @@ export function FileComments({ file, change, rows }: {
           comment={comment}
           status={commentStatus(comment, target, read)}
           review={review}
+          adder={file.adder}
           location={`Line ${comment.line}`}
           onRemoved={onFocusLost}
         />

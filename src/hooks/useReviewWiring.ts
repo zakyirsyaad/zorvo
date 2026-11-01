@@ -1,0 +1,103 @@
+import type { RefObject } from 'react';
+import { flushSync } from 'react-dom';
+import type { ComposerHandle } from '../components/ComposerDock';
+import type { ReviewOwner } from '../lib/composer-state';
+import { asUnsent, reviewMessage, type CheckedComment, type MessageContext } from '../lib/review-comments';
+import type { ReviewComment, ReviewTarget, Session } from '../types';
+import type { ReviewComments } from './useReviewComments';
+import { useReviewMessage } from './useReviewMessage';
+
+const NO_COMPOSER = 'There is no message box for this session, so comments cannot be added.';
+const COMPOSER_DISABLED = 'The message box is not available right now.';
+const SLOT_ELSEWHERE = 'The message holds comments for another session. Go back to it, or clear the message.';
+
+/** What the diff panel needs to put comments in the message. */
+export interface AddReview {
+  inMessage: ReadonlySet<string>;
+  /** Why nothing can be added now; undefined when it can. */
+  blockedReason: string | undefined;
+  add: (comments: readonly CheckedComment[], target: ReviewTarget, context: MessageContext) => void;
+}
+
+export interface ReviewWiring {
+  /** The comments, with Edit and Delete also taking a comment out of the message. */
+  review: ReviewComments;
+  addReview: AddReview;
+  /** The session the composer's comments are for, while that blocks Send here. */
+  reviewOwner: ReviewOwner | undefined;
+  blocksSend: boolean;
+  sendFrom: (sessionId: string) => void;
+  onComposerText: (text: string) => void;
+  onComposerRestored: () => void;
+}
+
+/** What `App` joins: the session's comments, the composer, and the slot that says whom its comments are for. */
+export function useReviewWiring({
+  session,
+  sessions,
+  comments,
+  updateComments,
+  composerRef,
+  hasComposer,
+  isComposerDisabled,
+  collapseDiff,
+}: {
+  /** The session on screen. */
+  session: Session | undefined;
+  sessions: readonly Session[];
+  comments: ReviewComments;
+  updateComments: (sessionId: string, change: (prev: ReviewComment[]) => ReviewComment[]) => void;
+  composerRef: RefObject<ComposerHandle | null>;
+  /** False where a panel stands in the composer's place. */
+  hasComposer: boolean;
+  isComposerDisabled: boolean;
+  /** Ends an expanded diff, which hides the composer. */
+  collapseDiff: () => void;
+}): ReviewWiring {
+  const change = (sessionId: string, ids: readonly string[], changed: (comment: ReviewComment) => ReviewComment) =>
+    updateComments(sessionId, (prev) => prev.map((comment) => (ids.includes(comment.id) ? changed(comment) : comment)));
+  const message = useReviewMessage({
+    activeSessionId: session?.id,
+    markSent: (sessionId, ids) => {
+      const sentAt = Date.now();
+      change(sessionId, ids, (comment) => ({ ...comment, sentAt }));
+    },
+  });
+  const { slot, inMessage, blocksSend, sendFrom, onComposerText, onComposerRestored } = message;
+
+  const blockedReason = !hasComposer ? NO_COMPOSER : isComposerDisabled ? COMPOSER_DISABLED : blocksSend ? SLOT_ELSEWHERE : undefined;
+
+  const add: AddReview['add'] = (checked, target, context) => {
+    const composer = composerRef.current;
+    if (!session || !composer || blockedReason) return;
+    // The composer takes the focus below, so it has to be on screen first.
+    flushSync(collapseDiff);
+    const withHeading = message.needsHeading(session.id, target);
+    composer.insertText(reviewMessage(checked, target, context, withHeading));
+    const ids = checked.map(({ comment }) => comment.id);
+    change(session.id, ids, asUnsent);
+    message.add(session.id, ids, target);
+  };
+
+  const owner = blocksSend && slot ? sessions.find((candidate) => candidate.id === slot.sessionId) : undefined;
+
+  return {
+    review: {
+      ...comments,
+      editComment: (id, body) => {
+        message.forget([id]);
+        comments.editComment(id, body);
+      },
+      deleteComment: (id) => {
+        message.forget([id]);
+        comments.deleteComment(id);
+      },
+    },
+    addReview: { inMessage, blockedReason, add },
+    reviewOwner: blocksSend ? { title: owner?.name || null, isArchived: Boolean(owner?.archivedAt) } : undefined,
+    blocksSend,
+    sendFrom,
+    onComposerText,
+    onComposerRestored,
+  };
+}

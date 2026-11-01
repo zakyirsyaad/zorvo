@@ -21,6 +21,7 @@ import { DiffView } from "./components/changes/DiffView";
 import { totalsOf } from "./lib/diff-stats";
 import { useSidePanel } from "./hooks/useSidePanel";
 import { useReviewComments } from "./hooks/useReviewComments";
+import { useReviewWiring } from "./hooks/useReviewWiring";
 import { useTurnsEnded } from "./hooks/useTurnsEnded";
 import { usePullRequest } from "./hooks/usePullRequest";
 import { currentPlan } from "./lib/plan";
@@ -743,12 +744,31 @@ export default function App() {
     void compareRun.startRun(picked, message);
   };
 
+  const canStartSession = Boolean(activeWorkspacePath && newSessionAgent);
+  const isComposerDisabled =
+    isCreatingWorktree ||
+    (!isActiveRunning && ((!isDraftAgentReady && !draftNeedsInstall) || (!isResumable && !canStartSession)));
+  const review = useReviewWiring({
+    session: activeSession,
+    sessions,
+    comments: reviewComments,
+    updateComments: updateReviewComments,
+    composerRef,
+    hasComposer: activeAgentRemoved === null,
+    isComposerDisabled,
+    collapseDiff: () => setExpandedDiffFolder(null),
+  });
+
   /** Sends to the active session, continues it when it can be resumed, or starts a new one (or a run). */
   const handleSendMessage = (text: string, attachments?: string[]) => {
     const message = { text, attachments };
-    if (activeSession && isActiveRunning) void sendTo(activeSession.id, message);
-    else if (activeSession && isResumable) resumeSession(activeSession, message);
-    else if (compare.isCompare) handleNewRun(message);
+    if (activeSession && isActiveRunning) {
+      review.sendFrom(activeSession.id);
+      void sendTo(activeSession.id, message);
+    } else if (activeSession && isResumable) {
+      review.sendFrom(activeSession.id);
+      resumeSession(activeSession, message);
+    } else if (compare.isCompare) handleNewRun(message);
     else void handleNewSession(message);
   };
 
@@ -781,7 +801,6 @@ export default function App() {
 
   const currentMessages = transcripts[activeSessionId] ?? [];
   const sessionPlan = currentPlan(currentMessages);
-  const canStartSession = Boolean(activeWorkspacePath && newSessionAgent);
   const composer = composerStateFor({
     session: activeSession,
     draftAgent,
@@ -794,7 +813,8 @@ export default function App() {
   });
   // Several agents are not asked and nothing is picked for them yet: Send only waits for the single agent's install or sign-in.
   // The note promises one worktree each, so while the folder is not known to be a repository (still loading, or unreadable) Send waits too.
-  const isSendBlocked = compare.isCompare ? !canUseWorktree : draftNeedsInstall || draftNeedsSignIn;
+  const isSendWaiting = compare.isCompare ? !canUseWorktree : draftNeedsInstall || draftNeedsSignIn;
+  const isSendBlocked = isSendWaiting || review.blocksSend;
   const composerCommands = composerCommandsFor({
     isRunning: isActiveRunning,
     liveCommands: acp.info[activeSessionId]?.commands,
@@ -987,25 +1007,26 @@ export default function App() {
                     controls={compare.isCompare ? {} : composer.controls}
                     isThinking={Boolean(activeSession) && isSessionBusy(activeSessionId)}
                     onStop={activeSession ? () => handleInterrupt(activeSessionId) : undefined}
-                    disabled={
-                      isCreatingWorktree ||
-                      (!isActiveRunning && ((!isDraftAgentReady && !draftNeedsInstall) || (!isResumable && !canStartSession)))
-                    }
+                    disabled={isComposerDisabled}
                     sendDisabled={isSendBlocked}
                     placeholder={composerPlaceholder({
                       isRunning: isActiveRunning,
                       isCreatingWorktree,
                       isResumable,
                       canStartSession,
-                      isSendBlocked,
+                      // Comments held for another session say nothing about whether this one can continue.
+                      isSendBlocked: isSendWaiting,
                       isEndedSession: Boolean(activeSession),
                     })}
                     onSendMessage={handleSendMessage}
                     attachAsFiles
                     onAttach={pickFiles}
                     handleRef={composerRef}
+                    onTextChange={review.onComposerText}
+                    onRestored={review.onComposerRestored}
                     commands={compare.isCompare ? [] : composerCommands}
                     note={composerNote({
+                      reviewOwner: review.reviewOwner,
                       compareCount: compare.agentIds.length,
                       agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
                       agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
@@ -1083,7 +1104,8 @@ export default function App() {
                 rootPath={filesFolder.path}
                 startCommit={startCommit}
                 prefersStart={Boolean(activeSession?.compareRunId)}
-                review={activeSession ? reviewComments : undefined}
+                review={activeSession ? review.review : undefined}
+                addReview={activeSession ? review.addReview : undefined}
                 version={sidePanel.changes.version}
                 isExpanded={isDiffExpanded}
                 onToggleExpanded={() => setExpandedDiffFolder(isDiffExpanded ? null : filesFolder.path)}

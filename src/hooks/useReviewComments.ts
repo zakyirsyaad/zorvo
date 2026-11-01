@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { createId } from '../lib/ids';
 import type { UnifiedRow } from '../lib/git-changes';
-import { lineHash, MAX_COMMENT_LENGTH, MAX_COMMENTS_PER_SESSION, quoteOf } from '../lib/review-comments';
+import { asUnsent, lineHash, MAX_COMMENT_LENGTH, MAX_COMMENTS_PER_SESSION, quoteOf } from '../lib/review-comments';
 import type { ReviewComment, ReviewTarget } from '../types';
 
 /**
@@ -122,11 +122,9 @@ export function useReviewComments(
     },
     editComment: (id, body) => {
       change((prev) =>
-        prev.map((comment) => {
-          if (comment.id !== id) return comment;
-          const { sentAt: _sentAt, ...plain } = comment;
-          return { ...plain, body: body.slice(0, MAX_COMMENT_LENGTH) };
-        }),
+        prev.map((comment) =>
+          comment.id === id ? { ...asUnsent(comment), body: body.slice(0, MAX_COMMENT_LENGTH) } : comment,
+        ),
       );
       closeDraft(editDraftKeyOf(id));
     },

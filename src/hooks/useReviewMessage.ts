@@ -22,10 +22,10 @@ export interface ReviewMessage {
   forget: (ids: readonly string[]) => void;
   /** Lifts the slot when no text is left: `handleSend` sends nothing for spaces, so they count as empty. */
   onComposerText: (text: string) => void;
-  /** Lifts the slot: restored text replaced the comments. */
-  onComposerRestored: () => void;
-  /** Marks the slot's comments Sent and clears it, when the message went to the slot's session. */
-  sendFrom: (sessionId: string) => void;
+  /** Restored text replaced the comments, which lifts the slot, unless it is the text they just went out in. */
+  onComposerRestored: (text: string) => void;
+  /** Marks the slot's comments Sent and clears it, when `text` went to the slot's session. */
+  sendFrom: (sessionId: string, text: string) => void;
 }
 
 /**
@@ -39,6 +39,8 @@ export function useReviewMessage({ activeSessionId, markSent }: {
   const [slot, setSlot] = useState<ReviewSlot | null>(null);
   // Read only for the heading, which says quoted lines are not instructions: replacing the text keeps the slot.
   const composerText = useRef('');
+  // A refused message comes back holding its comments, already marked Sent: this says whom it is still for.
+  const lastSend = useRef<(Pick<ReviewSlot, 'sessionId' | 'lastTarget'> & { text: string }) | null>(null);
   const isActiveSessions = slot !== null && slot.sessionId === activeSessionId;
 
   return {
@@ -58,10 +60,14 @@ export function useReviewMessage({ activeSessionId, markSent }: {
       composerText.current = text;
       if (text.trim() === '') setSlot(null);
     },
-    onComposerRestored: () => setSlot(null),
-    sendFrom: (sessionId) => {
+    onComposerRestored: (text) => {
+      const sent = lastSend.current;
+      setSlot(sent?.text === text ? { sessionId: sent.sessionId, commentIds: [], lastTarget: sent.lastTarget } : null);
+    },
+    sendFrom: (sessionId, text) => {
       if (slot?.sessionId !== sessionId) return;
       markSent(sessionId, slot.commentIds);
+      lastSend.current = { sessionId, text, lastTarget: slot.lastTarget };
       setSlot(null);
     },
   };

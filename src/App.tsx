@@ -771,10 +771,10 @@ export default function App() {
   const handleSendMessage = (text: string, attachments?: string[]) => {
     const message = { text, attachments };
     if (activeSession && isActiveRunning) {
-      review.sendFrom(activeSession.id);
+      review.sendFrom(activeSession.id, text);
       void sendTo(activeSession.id, message);
     } else if (activeSession && isResumable) {
-      review.sendFrom(activeSession.id);
+      review.sendFrom(activeSession.id, text);
       resumeSession(activeSession, message);
     } else if (compare.isCompare) handleNewRun(message);
     else void handleNewSession(message);

@@ -178,9 +178,15 @@ A new hook, `useReviewMessage`, holds one slot, in memory only:
   the text still holds that heading, since the heading is what says quoted lines are not
   instructions. Replacing the text keeps the slot.
 - **Lifting it.** The slot clears when the composer becomes empty, and whenever
-  `ComposerHandle.restore` runs, through `onRestored`, since a rewind, a retry and a sign-in hand-back
-  all replace the text, several of them by calling it directly. Its comments go back to plain
-  comments, nothing is lost.
+  `ComposerHandle.restore` puts in other text, through `onRestored`, since a rewind, a retry and a
+  sign-in hand-back all replace the text, several of them by calling it directly. Its comments go
+  back to plain comments, nothing is lost.
+- **A message that comes back.** Restored text with comments keeps its owner, or it would be the one
+  way comments reach the wrong session. `useReviewMessage` keeps the session and text of the last send
+  that held comments, with its target, so `sendFrom` takes the text and `onRestored` passes the
+  restored text. When they match, a refusal has put back what was just sent, and the slot re-arms for
+  that session with no comment ids: Send stays blocked everywhere else, and Send there marks nothing
+  new, as those comments already read Sent. An empty composer clears it as usual.
 - **A session that is gone.** A deleted session has no title, so the note says "another session". An
   archived one says so. Clearing the composer lifts the block either way.
 
@@ -205,7 +211,7 @@ reasons differ per agent, and matching text in an editable box breaks on a singl
    agent fixed reads Outdated, which helps the user check the work.
 3. **Clear sent** in the header removes all of a session's Sent comments at once.
 4. If the send fails, the comments still read Sent. The message comes back to the composer through
-   the failed-send fix, and **Add again** is there if it does not.
+   the failed-send fix, still for its session, and **Add again** is there if it does not.
 
 The failure this allows is a Sent comment that did not reach the agent. It is on screen with its
 button, so nothing is lost, and the words on it say Send was pressed, not that the agent acted.

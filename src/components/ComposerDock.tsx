@@ -96,7 +96,7 @@ export interface ComposerDockProps {
    */
   onTextChange?: (text: string) => void;
   /** Every time `restore` runs, even with the text already there. */
-  onRestored?: () => void;
+  onRestored?: (text: string) => void;
 }
 
 export function ComposerDock({
@@ -265,7 +265,7 @@ export function ComposerDock({
       if (attachAsFiles) setAttachments([...restoredAttachments]);
       restoredRef.current = { text: restoredText, attachments: attachAsFiles ? [...restoredAttachments] : attachments };
       textareaRef.current?.focus();
-      onRestored?.();
+      onRestored?.(restoredText);
     },
     holdsRestored: (message) => {
       const restored = restoredRef.current;

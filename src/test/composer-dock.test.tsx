@@ -524,6 +524,7 @@ describe("ComposerDock review comments", () => {
     act(() => handle.current?.restore("same"));
 
     expect(onRestored).toHaveBeenCalledTimes(1);
+    expect(onRestored).toHaveBeenCalledWith("same");
   });
 
   it("does not call onRestored on clear or insertText", () => {

@@ -28,9 +28,9 @@ export interface ReviewWiring {
   reviewOwner: ReviewOwner | undefined;
   /** Send would take the composer's comments somewhere other than their session. */
   blocksSend: boolean;
-  sendFrom: (sessionId: string) => void;
+  sendFrom: (sessionId: string, text: string) => void;
   onComposerText: (text: string) => void;
-  onComposerRestored: () => void;
+  onComposerRestored: (text: string) => void;
 }
 
 /** What `App` joins: the session's comments, the composer, and the slot that says whom its comments are for. */

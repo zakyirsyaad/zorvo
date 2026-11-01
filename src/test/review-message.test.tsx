@@ -783,7 +783,7 @@ function WiredComposer({ handle, comments, onWired }: {
     <>
       <ComposerDock
         handleRef={handle}
-        onSendMessage={() => wiring.sendFrom("s-a")}
+        onSendMessage={(text) => wiring.sendFrom("s-a", text)}
         onTextChange={wiring.onComposerText}
         onRestored={wiring.onComposerRestored}
       />
@@ -831,7 +831,7 @@ describe("Lifting the slot", () => {
     const { result } = renderHook(() => useReviewMessage({ activeSessionId: "s-b", markSent }));
     act(() => result.current.add("s-a", ["c-1"], "head"));
 
-    act(() => result.current.sendFrom("s-b"));
+    act(() => result.current.sendFrom("s-b", "text"));
 
     expect(markSent).not.toHaveBeenCalled();
     expect(result.current.slot?.sessionId).toBe("s-a");
@@ -903,6 +903,129 @@ describe("Lifting the slot", () => {
     await send();
     await waitFor(() => expect(promptsSent(spy).length + startedSessions(spy).length).toBeGreaterThan(0));
     expect((await savedComments("s-a"))[0].sentAt).toBeUndefined();
+  });
+});
+
+describe("A message with comments that comes back", () => {
+  const REFUSAL = `ACP_AUTH_REQUIRED:${JSON.stringify([{ id: "login", name: "Browser" }])}`;
+
+  /** Add, Send, and the agent refuses it, so the same text is restored. Returns that text. */
+  async function sendAndRefuse(spy: { mock: { calls: unknown[][] } }) {
+    typeInPrompt("Carry on");
+    await send();
+    await waitFor(() => expect(promptsSent(spy)).toHaveLength(1));
+    await endTurn("s-a");
+    await addAll();
+    const written = prompt().value;
+    await send();
+    await waitFor(() => expect(promptsSent(spy)).toHaveLength(2));
+    await act(async () => {
+      (listeners.get("acp-event") ?? []).forEach((cb) => cb({ payload: { sessionId: "s-a", kind: "turn-end", error: REFUSAL } }));
+    });
+    await waitFor(() => expect(prompt().value).toBe(written));
+    return written;
+  }
+
+  it("keeps its owner: Send stays blocked everywhere else, with the note", async () => {
+    const spy = await renderDiff([alpha(), beta()]);
+    await sendAndRefuse(spy);
+
+    await openSession("Beta work");
+
+    expect(screen.getByText(NOTE_FOR_ALPHA)).toBeDefined();
+    expect(sendButton()).toBeDisabled();
+    fireEvent.keyDown(prompt(), { key: "Enter" });
+    await act(async () => {});
+    expect(promptsSent(spy)).toHaveLength(2);
+  });
+
+  it("goes out from its own session, and marks nothing new", async () => {
+    const spy = await renderDiff([alpha(), beta()]);
+    const written = await sendAndRefuse(spy);
+    const { sentAt } = (await savedComments("s-a"))[0];
+    await openSession("Beta work");
+
+    await openSession("Alpha work");
+    expect(screen.queryByText(NOTE_FOR_ALPHA)).toBeNull();
+    expect(prompt().value).toBe(written);
+    await press("Dismiss sign-in");
+    await send();
+
+    await waitFor(() => expect(promptsSent(spy)).toHaveLength(3));
+    expect((await savedComments("s-a"))[0].sentAt).toBe(sentAt);
+    expect(within(panel()).queryByText("In message")).toBeNull();
+  });
+
+  /** The slot's hook on its own, with the session on screen as a prop. */
+  function renderMessage() {
+    const markSent = vi.fn();
+    const view = renderHook(({ activeSessionId }) => useReviewMessage({ activeSessionId, markSent }), {
+      initialProps: { activeSessionId: "s-a" },
+    });
+    act(() => {
+      view.result.current.add("s-a", ["c-1"], "head");
+    });
+    act(() => {
+      view.result.current.sendFrom("s-a", "the text");
+    });
+    return { ...view, markSent };
+  }
+
+  it("arms the slot with no comments, so nothing is marked twice", () => {
+    const { result, rerender, markSent } = renderMessage();
+
+    act(() => result.current.onComposerRestored("the text"));
+    expect(result.current.slot).toEqual({ sessionId: "s-a", commentIds: [], lastTarget: "head" });
+    rerender({ activeSessionId: "s-b" });
+    expect(result.current.blocksSend).toBe(true);
+
+    rerender({ activeSessionId: "s-a" });
+    act(() => result.current.sendFrom("s-a", "the text"));
+
+    expect(markSent).toHaveBeenLastCalledWith("s-a", []);
+    expect(result.current.slot).toBeNull();
+  });
+
+  it("is held again when it comes back a second time", () => {
+    const { result, rerender } = renderMessage();
+    act(() => result.current.onComposerRestored("the text"));
+    act(() => result.current.sendFrom("s-a", "the text"));
+
+    act(() => result.current.onComposerRestored("the text"));
+    rerender({ activeSessionId: "s-b" });
+
+    expect(result.current.blocksSend).toBe(true);
+  });
+
+  it("lifts the block when other text is restored", () => {
+    const { result, rerender } = renderMessage();
+    act(() => result.current.onComposerRestored("the text"));
+    rerender({ activeSessionId: "s-b" });
+    expect(result.current.blocksSend).toBe(true);
+
+    act(() => result.current.onComposerRestored("other text"));
+
+    expect(result.current.slot).toBeNull();
+    expect(result.current.blocksSend).toBe(false);
+  });
+
+  it("lifts the block when the composer is emptied", () => {
+    const { result, rerender } = renderMessage();
+    act(() => result.current.onComposerRestored("the text"));
+    rerender({ activeSessionId: "s-b" });
+
+    act(() => result.current.onComposerText(""));
+
+    expect(result.current.blocksSend).toBe(false);
+  });
+
+  it("holds nothing for text that came back from a send without comments", () => {
+    const { result } = renderHook(() => useReviewMessage({ activeSessionId: "s-a", markSent: vi.fn() }));
+
+    act(() => result.current.sendFrom("s-a", "the text"));
+    act(() => result.current.onComposerRestored("the text"));
+
+    expect(result.current.slot).toBeNull();
   });
 });
 

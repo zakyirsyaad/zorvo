@@ -1,6 +1,6 @@
 import { AgentLogo } from "../../../components/ui/AgentLogo";
 import { Chip } from "../../../components/ui/Chip";
-import { StatusDot } from "../../../components/mockups/parts";
+import { FakeButton, StatusDot } from "../../../components/mockups/parts";
 import { DocsShell, type TocEntry } from "../../../components/docs/DocsShell";
 import { B, Callout, CodeBlock, DocLink, H2, H3, OL, P, Picture, PictureRow, Table, UL } from "../../../components/docs/parts";
 import { docsMetadata } from "../../../lib/docs-metadata";
@@ -13,6 +13,7 @@ const TOC: TocEntry[] = [
   { id: "download", label: "Download and open" },
   { id: "first-agent", label: "Install your first agent" },
   { id: "already", label: "Already installed in a terminal?", isNested: true },
+  { id: "update", label: "Update Zorvo" },
   { id: "upgrade", label: "Upgrade from Agent Desktop" },
 ];
 
@@ -38,8 +39,8 @@ export default function InstallPage() {
           you already have.
         </li>
         <li>
-          <B>Optional:</B> the GitHub CLI, signed in with <Chip isCode>gh auth login</Chip>,
-          for pull request status. Without it, that part is hidden.
+          <B>Optional:</B> the GitHub CLI, <Chip isCode>gh</Chip>, for pull request status. Settings, General, GitHub
+          shows whether it is installed and signed in, and <B>Connect</B> signs you in through your browser.
         </li>
       </UL>
 
@@ -107,6 +108,38 @@ export default function InstallPage() {
       <Callout>
         Zorvo reads your login shell&apos;s environment, so anything your terminal finds, it finds too. If you install an
         agent while the app runs, click <B>Check again</B> in Settings, Agents.
+      </Callout>
+
+      <H2 id="update">Update Zorvo</H2>
+      <P>
+        From 0.6.0 on, Zorvo checks for a new version a few seconds after it starts, then about once a day. When there
+        is one, a notice at the top of the window says so.
+      </P>
+      <Picture label="The update notice at the top of the window: a new Zorvo version is available, agents that are working stop when Zorvo restarts, with Update and restart and Later buttons">
+        <div className="flex flex-wrap items-center gap-3 border-b border-border bg-surface-2 px-3.5 py-2.5">
+          <span className="min-w-[240px] flex-1 text-[13px] leading-5 text-fg-secondary">
+            Zorvo X.Y.Z is available. Agents that are working stop when Zorvo restarts.
+          </span>
+          <span className="flex gap-2">
+            <FakeButton variant="primary">Update &amp; restart</FakeButton>
+            <FakeButton variant="ghost">Later</FakeButton>
+          </span>
+        </div>
+        <div aria-hidden="true" className="flex flex-col gap-2 bg-bg px-3.5 pt-[18px] pb-[22px]">
+          <span className="h-2 w-[46%] rounded-full bg-surface-2" />
+          <span className="h-2 w-[68%] rounded-full bg-surface-2" />
+          <span className="h-2 w-[38%] rounded-full bg-surface-2" />
+        </div>
+      </Picture>
+      <UL>
+        <li><B>Update &amp; restart</B> downloads the update, checks its signature against the key built into Zorvo, installs it and opens Zorvo again.</li>
+        <li><B>Later</B> hides the notice until you next start Zorvo.</li>
+        <li>Agents that are working stop, and open terminals end, when Zorvo restarts. Your sessions are kept, since they are stored outside the app.</li>
+      </UL>
+      <Callout>
+        <B>Older copies update once by hand.</B> A copy older than 0.6.0 cannot update itself: download the newest{" "}
+        <Chip isCode>.dmg</Chip> and replace Zorvo in Applications. A copy opened from the disk image cannot update
+        either, so drag it into Applications first.
       </Callout>
 
       <H2 id="upgrade">Upgrade from Agent Desktop</H2>

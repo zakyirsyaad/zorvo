@@ -16,9 +16,10 @@ const START: { href: string; label: string; icon: IconName; text: string }[] = [
 ];
 
 const RECENT: { href: string; label: string; version: string; icon: IconName; text: string }[] = [
-  { href: "/docs/troubleshooting#stuck", label: "A notice when an agent seems stuck", version: "0.5", icon: "triangle-alert", text: "Under Working…, Zorvo says when an agent reports failed requests in a row or has sent nothing for a minute." },
-  { href: "/docs/terminal", label: "A terminal for the session's folder", version: "0.4", icon: "square-terminal", text: "A shell in a drawer under the chat, with tabs kept per folder." },
-  { href: "/docs/install#first-agent", label: "Install agents from Zorvo", version: "0.3", icon: "download", text: "Choose an agent that is not installed and click Install. Zorvo installs what it needs." },
+  { href: "/docs/signing-in#status", label: "Sign-in status in Settings", version: "0.7", icon: "key-round", text: "Each agent shows Ready, Sign in or Not checked, with Check sign-in and the ways it can sign in." },
+  { href: "/docs/install#requirements", label: "Connect to GitHub", version: "0.7", icon: "git-pull-request", text: "Settings, General shows whether your gh is signed in. Connect signs you in through your browser." },
+  { href: "/docs/quickstart#composer", label: "More composer choices", version: "0.7", icon: "sliders-horizontal", text: "Codex's Plan mode, Claude's fast mode and personas get chips, and a risky mode carries a shield." },
+  { href: "/docs/install#update", label: "Zorvo updates itself", version: "0.6", icon: "refresh-cw", text: "A notice offers Update & restart when a new version is out, and checks its signature first." },
 ];
 
 export default function DocsHome() {

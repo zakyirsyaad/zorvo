@@ -642,7 +642,8 @@ describe("a sign-in inside a compare run", () => {
 
     expect(promptsTo(spy, rowSession)).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Sign in with Browser" })).toBeEnabled();
-    expect(prompt().value).toBe("fix the login");
+    // The other session's message stays too: the run's panel no longer wipes the composer.
+    expect(prompt().value).toBe("fix the login\n\nhello");
   });
 
   it("a rewind replaces what the row kept: coming back does not restore the older message", async () => {
@@ -749,7 +750,7 @@ describe("a sign-in inside a compare run", () => {
     expect(signInPanel("Qwen Code")).toBeNull();
   });
 
-  it("a message that cannot go out comes back to its session, even from the run's panel", async () => {
+  it("a message that cannot go out waits for its session when the user is in the run's panel", async () => {
     const retry = deferred();
     let starts = 0;
     const spy = await startedRun({
@@ -765,7 +766,11 @@ describe("a sign-in inside a compare run", () => {
 
     await act(async () => retry.reject("spawn failed"));
 
-    await waitFor(() => expect(screen.queryByRole("region", { name: "Compare run" })).toBeNull());
+    // The panel has no composer and the user is not pulled out of it: the message waits for its session.
+    await settle();
+    expect(screen.getByRole("region", { name: "Compare run" })).toBeInTheDocument();
+
+    await openRow("Qwen Code");
     await waitFor(() => expect(prompt().value).toBe("fix the login"));
   });
 

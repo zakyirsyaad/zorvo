@@ -773,11 +773,11 @@ describe("a sign-in that is running is not cut off", () => {
   function setupSignIn() {
     const onSignInNeeded = vi.fn();
     const onSignInBlocked = vi.fn();
-    const restore = vi.fn();
+    const giveBack = vi.fn();
     const hook = renderHook(() =>
       useAgentSignIn({
         agents: fakeProfiles,
-        composerRef: { current: { focus: vi.fn(), restore } as never },
+        composerRef: { current: { focus: vi.fn(), giveBack } as never },
         activeSessionIdRef: { current: "s2" },
         retryAfterSignIn: () => Promise.resolve(true),
         onRestore: vi.fn(),
@@ -786,7 +786,7 @@ describe("a sign-in that is running is not cut off", () => {
         onSignedIn: vi.fn(),
       }),
     );
-    return { hook, onSignInNeeded, onSignInBlocked, restore };
+    return { hook, onSignInNeeded, onSignInBlocked, giveBack };
   }
 
   it("refuses another agent's request, but remembers that it needs a sign-in", async () => {
@@ -804,14 +804,14 @@ describe("a sign-in that is running is not cut off", () => {
   });
 
   it("keeps the login when a session of another agent hands its refusal back, and tells the user why", async () => {
-    const { hook, onSignInBlocked, restore } = await claudeSigningIn();
+    const { hook, onSignInBlocked, giveBack } = await claudeSigningIn();
 
     act(() => hook.result.current.handBack({ id: "s2", profileId: "qwen-code", cwd: CWD }, qwenMethods, { text: "hello" }));
 
     expect(hook.result.current.auth.authRequest?.profileId).toBe("claude-acp");
     expect(onSignInBlocked).toHaveBeenCalledWith("Another agent's sign-in is running. Finish it, then try again.");
     // The message is not lost: it is back where the user wrote it.
-    expect(restore).toHaveBeenCalledWith("hello", undefined);
+    expect(giveBack).toHaveBeenCalledWith("hello", undefined);
   });
 
   it("does not start a Settings login for another agent, and runs no login for it", async () => {

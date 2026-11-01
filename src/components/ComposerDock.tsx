@@ -38,8 +38,13 @@ export interface ComposerHandle {
   insertPaths: (paths: readonly string[]) => void;
   /** Adds text after what is there, past a blank line, grows the box to fit, and focuses it. */
   insertText: (text: string) => void;
-  /** Puts back a message that could not be sent, so it need not be typed again. */
+  /** Puts a message in the prompt in place of what is there (a rewound message, to edit and send again). */
   restore: (text: string, attachments?: readonly string[]) => void;
+  /**
+   * Returns a message that did not reach the agent, so it need not be typed again. Anything typed or
+   * attached meanwhile stays, after the returned message.
+   */
+  giveBack: (text: string, attachments?: readonly string[]) => void;
   /**
    * True while the prompt and attachments are exactly what the last `restore` left: nothing typed, sent or
    * cleared since. With `message`, only when that is this message: one composer serves every session.
@@ -266,6 +271,18 @@ export function ComposerDock({
       restoredRef.current = { text: restoredText, attachments: attachAsFiles ? [...restoredAttachments] : attachments };
       textareaRef.current?.focus();
       onRestored?.(restoredText);
+    },
+    giveBack: (returnedText, returnedAttachments = []) => {
+      // What the user typed since stays, after the returned message: a failed send never wipes a new draft.
+      const isTyped = text.trim() !== "" && text !== returnedText;
+      // A message of files only has no text to put the draft after.
+      const nextText = !isTyped ? returnedText : returnedText === "" ? text : `${returnedText}\n\n${text}`;
+      const nextAttachments = attachAsFiles ? withAttachments(returnedAttachments, attachments) : attachments;
+      setText(nextText);
+      mentionMenu.close();
+      if (attachAsFiles) setAttachments(nextAttachments);
+      restoredRef.current = { text: nextText, attachments: nextAttachments };
+      textareaRef.current?.focus();
     },
     holdsRestored: (message) => {
       const restored = restoredRef.current;

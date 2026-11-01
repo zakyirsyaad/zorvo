@@ -41,7 +41,7 @@ export function Hero() {
           </ButtonLink>
         </div>
         <p className="t-caption m-0">
-          Free · macOS, Apple silicon and Intel · Brings Node.js when an agent needs it
+          Free · macOS, Apple silicon and Intel · Updates itself · Brings Node.js when an agent needs it
         </p>
       </section>
       <div className="site-wrap">

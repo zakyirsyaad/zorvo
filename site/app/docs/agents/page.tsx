@@ -12,6 +12,7 @@ export const metadata = docsMetadata("/docs/agents");
 const TOC: TocEntry[] = [
   { id: "glance", label: "At a glance" },
   { id: "catalog", label: "The agent catalog" },
+  { id: "not-available", label: "Agents Zorvo cannot offer", isNested: true },
   { id: "versions", label: "Versions and updates", isNested: true },
   { id: "elicitation", label: "When an agent asks you" },
   { id: "resume", label: "Resume and fork" },
@@ -72,7 +73,7 @@ export default function AgentsPage() {
         Settings, Agents lists every agent in the registry, with search and logos. Add, install, update and remove
         agents there. Onboarding uses the same list.
       </P>
-      <Picture label="Settings, Agents: a search field and four agents, Claude Code installed, Codex with an update, Qwen Code not installed and Pi in the registry">
+      <Picture label="Settings, Agents: a search field and four agents, Claude Code installed, Codex with an update, Qwen Code not installed and Pi not added, then a collapsed list of two agents that are not available">
         <PictureRow>
           <span className="text-xs leading-4 font-medium text-fg">Agents</span>
           <span className="ml-auto inline-flex items-center gap-2 text-fg-subtle">
@@ -97,12 +98,16 @@ export default function AgentsPage() {
           <span className="t-caption">Not installed</span>
           <FakeButton variant="outline">Install</FakeButton>
         </PictureRow>
-        <PictureRow last>
+        <PictureRow>
           <Icon name="bot" size={18} className="text-fg-muted" />
           <span className="flex-1 text-[13px] leading-4 text-fg">Pi</span>
           <span className="t-caption">In the registry</span>
           <FakeButton variant="outline">Add</FakeButton>
         </PictureRow>
+        <div className="flex items-center gap-2 bg-surface-2 px-3.5 py-2.5 text-xs leading-4 text-fg-muted">
+          <Icon name="chevron-right" />
+          Not available (2)
+        </div>
       </Picture>
       <UL>
         <li>
@@ -118,7 +123,19 @@ export default function AgentsPage() {
           <B>Installed by Zorvo.</B> See <DocLink href="/docs/install#first-agent">Install your first agent</DocLink>.
           Every download is checked against a SHA-256 hash.
         </li>
+        <li>
+          <B>One way to run each agent.</B> When the registry offers an agent both as a download and as a package, as
+          it does for Kilo, Zorvo uses the pinned package.
+        </li>
       </UL>
+
+      <H3 id="not-available">Agents Zorvo cannot offer</H3>
+      <P>
+        Registry agents that Zorvo cannot run sit in a collapsed <B>Not available</B> list under the others, each with
+        the reason, such as &quot;The registry publishes no usable checksum for this download, so Zorvo cannot verify
+        it.&quot; Search covers them, but they cannot be added: Zorvo never runs a download it cannot check against a
+        published SHA-256.
+      </P>
 
       <H3 id="versions">Versions and updates</H3>
       <P>

@@ -7,7 +7,7 @@ const POINTS: { icon: IconName; title: string; body: ReactNode }[] = [
   {
     icon: "shield-check",
     title: "Approvals in the chat",
-    body: "Allow once, always allow or deny, as the agent offers. Each session starts in the safest mode its agent has.",
+    body: "Allow once, always allow or deny, as the agent offers. Each session starts in the safest mode its agent has, and a mode that skips approvals carries a shield.",
   },
   {
     icon: "file-code",

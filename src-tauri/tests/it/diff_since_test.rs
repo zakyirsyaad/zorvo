@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use zorvo_lib::changes::ChangeKind;
-use zorvo_lib::diff_stats::diff_stats_since;
+use zorvo_lib::changes::{file_diff, file_diff_since, ChangeKind};
+use zorvo_lib::diff_stats::{diff_stats_since, diff_targets, DiffTarget};
 use zorvo_lib::worktrees::create_worktree_from;
 
 fn git(dir: &Path, args: &[&str]) -> String {
@@ -151,5 +151,93 @@ fn create_worktree_reports_the_commit_it_started_from() {
     assert_eq!(from_branch.start_commit, main_tip);
     assert_eq!(from_head.start_commit, feature_tip);
     assert_eq!(from_head.start_commit.len(), 40);
+    fs::remove_dir_all(&base).ok();
+}
+
+/// A repository with a start commit, one more commit after it that changes
+/// `main.txt`, and an uncommitted edit plus an untracked file.
+fn repo_with_work_after_the_start() -> (PathBuf, PathBuf, String) {
+    let (base, repo) = repo_on_a_feature_branch("since-work");
+    let start = git(&repo, &["rev-parse", "HEAD"]);
+    fs::write(repo.join("main.txt"), "main\nCOMMITTED\n").expect("write");
+    git(&repo, &["commit", "-q", "-am", "agent commit"]);
+    fs::write(repo.join("feature.txt"), "feature\nUNCOMMITTED\n").expect("write");
+    fs::write(repo.join("new.txt"), "UNTRACKED\n").expect("write");
+    (base, repo, start)
+}
+
+#[test]
+fn file_diff_since_shows_a_committed_change() {
+    let (base, repo, start) = repo_with_work_after_the_start();
+
+    let diff = file_diff_since(&git_path(), &repo, "main.txt", &start).expect("diff since");
+
+    assert!(diff.contains("+COMMITTED"), "{diff}");
+    let error = file_diff(&git_path(), &repo, "main.txt", DiffTarget::Head)
+        .expect_err("HEAD does not list a committed file");
+    assert!(error.contains("not a changed file"), "{error}");
+    fs::remove_dir_all(&base).ok();
+}
+
+#[test]
+fn file_diff_since_shows_uncommitted_and_untracked_files() {
+    let (base, repo, start) = repo_with_work_after_the_start();
+
+    let modified = file_diff_since(&git_path(), &repo, "feature.txt", &start).expect("modified");
+    let untracked = file_diff_since(&git_path(), &repo, "new.txt", &start).expect("untracked");
+
+    assert!(modified.contains("+UNCOMMITTED"), "{modified}");
+    assert!(untracked.contains("+UNTRACKED"), "{untracked}");
+    fs::remove_dir_all(&base).ok();
+}
+
+#[test]
+fn file_diff_since_lists_what_diff_stats_since_lists() {
+    let (base, repo, start) = repo_with_work_after_the_start();
+
+    let stats = diff_stats_since(&git_path(), &repo, &start).expect("stats");
+
+    assert_eq!(stats.len(), 3, "{stats:?}");
+    for stat in &stats {
+        file_diff_since(&git_path(), &repo, &stat.path, &start)
+            .unwrap_or_else(|e| panic!("{} must read: {e}", stat.path));
+    }
+    let error = file_diff_since(&git_path(), &repo, "nowhere.txt", &start)
+        .expect_err("an unchanged path is refused");
+    assert!(error.contains("not a changed file"), "{error}");
+    fs::remove_dir_all(&base).ok();
+}
+
+#[test]
+fn file_diff_since_refuses_a_bad_commit() {
+    let (base, repo, _) = repo_with_work_after_the_start();
+
+    for bad in ["HEAD", "--output=x"] {
+        let error = file_diff_since(&git_path(), &repo, "main.txt", bad)
+            .expect_err(&format!("{bad:?} must be refused"));
+        assert_eq!(
+            error, "The start commit must be a full commit id",
+            "{bad:?}"
+        );
+    }
+    assert!(!repo.join("x").exists());
+    let missing = "0123456789abcdef0123456789abcdef01234567";
+    let error = file_diff_since(&git_path(), &repo, "main.txt", missing).expect_err("missing");
+    assert_eq!(error, "This repository does not have the start commit");
+    fs::remove_dir_all(&base).ok();
+}
+
+#[test]
+fn diff_targets_reports_root_and_prefix_from_a_subfolder() {
+    let (base, repo) = repo_on_a_feature_branch("prefix");
+    fs::create_dir_all(repo.join("sub")).expect("create sub");
+
+    let from_sub = diff_targets(&git_path(), &repo.join("sub")).expect("targets");
+    let from_root = diff_targets(&git_path(), &repo).expect("targets");
+
+    assert_eq!(from_sub.prefix, "sub/");
+    assert_eq!(Path::new(&from_sub.root), repo);
+    assert_eq!(from_root.prefix, "");
+    assert_eq!(Path::new(&from_root.root), repo);
     fs::remove_dir_all(&base).ok();
 }

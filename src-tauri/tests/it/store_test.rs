@@ -73,6 +73,7 @@ fn session(id: &str, status: &str) -> SessionRecord {
         named_by_user: false,
         has_unread: false,
         compare_run_id: None,
+        review_comments: Vec::new(),
     }
 }
 

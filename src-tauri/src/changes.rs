@@ -12,7 +12,7 @@ use std::thread;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::diff_stats::{base_commit, changes_since, DiffTarget};
+use crate::diff_stats::{base_commit, changes_since, checked_commit, DiffTarget};
 use crate::files::ensure_known_workspace;
 use crate::git_info::git_binary;
 use crate::store::AppStore;
@@ -226,7 +226,28 @@ pub(crate) fn resolves_inside(toplevel: &Path, path: &str) -> bool {
 pub fn file_diff(git: &Path, dir: &Path, path: &str, target: DiffTarget) -> Result<String, String> {
     let toplevel = toplevel_of(git, dir)?;
     let base = base_commit(git, &toplevel, target)?;
-    let change = changes_for(git, &toplevel, target, &base)?
+    let changes = changes_for(git, &toplevel, target, &base)?;
+    diff_of_change(git, &toplevel, path, &base, changes)
+}
+
+/// A changed file's unified diff since `commit`, committed or not, on the same
+/// rules as [`file_diff`].
+pub fn file_diff_since(git: &Path, dir: &Path, path: &str, commit: &str) -> Result<String, String> {
+    let toplevel = toplevel_of(git, dir)?;
+    checked_commit(git, &toplevel, commit)?;
+    let changes = changes_since(git, &toplevel, commit)?;
+    diff_of_change(git, &toplevel, path, commit, changes)
+}
+
+/// The diff of `path` against `base`, when `changes` lists it.
+fn diff_of_change(
+    git: &Path,
+    toplevel: &Path,
+    path: &str,
+    base: &str,
+    changes: Vec<FileChange>,
+) -> Result<String, String> {
+    let change = changes
         .into_iter()
         .find(|change| change.path == path)
         .ok_or_else(|| format!("{path} is not a changed file in this repository"))?;
@@ -234,10 +255,10 @@ pub fn file_diff(git: &Path, dir: &Path, path: &str, target: DiffTarget) -> Resu
         ChangeKind::Untracked => {
             // A new link shows where it points, as git stores it; its target,
             // which may be missing or outside the repository, is never opened.
-            if let Some(target) = link_target(&toplevel, &change.path) {
+            if let Some(target) = link_target(toplevel, &change.path) {
                 return Ok(format!("@@ -0,0 +1 @@\n+{target}\n\\ Symbolic link: where it points, not what is there\n"));
             }
-            if !resolves_inside(&toplevel, &change.path) {
+            if !resolves_inside(toplevel, &change.path) {
                 return Err(format!(
                     "{path} points outside the repository, so it is not shown"
                 ));
@@ -245,7 +266,7 @@ pub fn file_diff(git: &Path, dir: &Path, path: &str, target: DiffTarget) -> Resu
             // `--no-index` exits with 1 when the files differ, which they always do here.
             run_git_bounded(
                 git,
-                &toplevel,
+                toplevel,
                 &[
                     "diff",
                     "--no-color",
@@ -258,12 +279,12 @@ pub fn file_diff(git: &Path, dir: &Path, path: &str, target: DiffTarget) -> Resu
             )?
         }
         _ => {
-            let mut args = vec!["diff", "--no-color", "-M", base.as_str(), "--"];
+            let mut args = vec!["diff", "--no-color", "-M", base, "--"];
             if let Some(old) = &change.old_path {
                 args.push(old);
             }
             args.push(&change.path);
-            run_git_bounded(git, &toplevel, &args, &[0])?
+            run_git_bounded(git, toplevel, &args, &[0])?
         }
     };
     Ok(bounded(diff, is_cut))
@@ -363,10 +384,15 @@ pub fn session_file_diff(
     path: String,
     file: String,
     target: Option<DiffTarget>,
+    since: Option<String>,
 ) -> Result<String, String> {
     ensure_known_workspace(&path, |p| store.is_known_workspace(p))?;
     if !is_inside(&file) {
         return Err(format!("{file} is not a file in this repository"));
+    }
+    // A start commit wins over `target`: the UI's target has no variant for it.
+    if let Some(commit) = since {
+        return file_diff_since(&git_binary(), Path::new(&path), &file, &commit);
     }
     file_diff(
         &git_binary(),

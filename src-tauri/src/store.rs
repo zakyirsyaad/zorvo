@@ -173,6 +173,43 @@ pub struct SessionRecord {
     /// The compare run this session belongs to, when it was started from one.
     #[serde(deserialize_with = "lenient_string")]
     pub compare_run_id: Option<String>,
+    /// Comments the user wrote on lines of the session's diff.
+    #[serde(
+        deserialize_with = "lenient_review_comments",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub review_comments: Vec<ReviewCommentRecord>,
+}
+
+/// One comment on a line of a session's diff. The UI checks the values of
+/// `side` and `target` and keeps the limits; here only the shape matters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewCommentRecord {
+    pub id: String,
+    /// The path from the repository's root, as the diff lists it.
+    pub file: String,
+    /// The path before a rename, for a comment on a removed line.
+    #[serde(
+        default,
+        deserialize_with = "lenient_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub old_file: Option<String>,
+    pub side: String,
+    pub line: i64,
+    pub line_hash: String,
+    pub quote: String,
+    pub target: String,
+    pub body: String,
+    pub created_at: i64,
+    /// When a message holding this comment was sent.
+    #[serde(
+        default,
+        deserialize_with = "lenient_time",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub sent_at: Option<i64>,
 }
 
 /// A session's worktree: the workspace it was made from, its root and branch.
@@ -231,6 +268,21 @@ fn lenient_worktree<'de, D: Deserializer<'de>>(
 ) -> Result<Option<SessionWorktreeRecord>, D::Error> {
     let value = Option::<serde_json::Value>::deserialize(deserializer)?;
     Ok(value.and_then(|value| serde_json::from_value(value).ok()))
+}
+
+/// The saved review comments, each read on its own: a field that is not a
+/// list is empty and a bad item is dropped, since either would otherwise make
+/// the whole state file unreadable.
+fn lenient_review_comments<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<ReviewCommentRecord>, D::Error> {
+    Ok(match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::Array(items) => items
+            .into_iter()
+            .filter_map(|item| serde_json::from_value(item).ok())
+            .collect(),
+        _ => Vec::new(),
+    })
 }
 
 /// A flag, or false when it is not a boolean; like a bad worktree, a bad
@@ -586,5 +638,101 @@ mod tests {
             .expect("a save after the poison");
 
         fs::remove_dir_all(root).ok();
+    }
+
+    fn session_json(extra: serde_json::Value) -> serde_json::Value {
+        let mut value = serde_json::json!({
+            "id": "s-1",
+            "name": "Fix login",
+            "profileId": "claude",
+            "cwd": "/tmp/project",
+            "status": "terminated",
+            "createdAt": 1
+        });
+        value
+            .as_object_mut()
+            .expect("object")
+            .extend(extra.as_object().expect("object").clone());
+        value
+    }
+
+    fn comment_json(id: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": id,
+            "file": "src/app.ts",
+            "side": "new",
+            "line": 12,
+            "lineHash": "811c9dc5",
+            "quote": "const a = 1;",
+            "target": "head",
+            "body": "Why not let?",
+            "createdAt": 1_700_000_000_000_i64
+        })
+    }
+
+    #[test]
+    fn a_review_comments_field_of_the_wrong_type_loads_empty() {
+        let record: SessionRecord =
+            serde_json::from_value(session_json(serde_json::json!({ "reviewComments": 5 })))
+                .expect("a bad reviewComments must not fail the record");
+
+        assert!(record.review_comments.is_empty());
+        assert_eq!(record.id, "s-1");
+        assert_eq!(record.name, "Fix login");
+    }
+
+    #[test]
+    fn a_bad_review_comment_is_dropped_and_the_good_one_kept() {
+        let mut no_body = comment_json("c-2");
+        no_body.as_object_mut().expect("object").remove("body");
+        let record: SessionRecord = serde_json::from_value(session_json(serde_json::json!({
+            "reviewComments": [no_body, "text", comment_json("c-1")]
+        })))
+        .expect("deserialize");
+
+        let ids: Vec<&str> = record
+            .review_comments
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
+        assert_eq!(ids, ["c-1"]);
+    }
+
+    #[test]
+    fn review_comments_survive_a_save() {
+        let record = SessionRecord {
+            id: "s-1".to_string(),
+            review_comments: vec![ReviewCommentRecord {
+                id: "c-1".to_string(),
+                file: "src/new.ts".to_string(),
+                old_file: Some("src/old.ts".to_string()),
+                side: "old".to_string(),
+                line: 3,
+                line_hash: "deadbeef".to_string(),
+                quote: "gone".to_string(),
+                target: "start".to_string(),
+                body: "Keep this".to_string(),
+                created_at: 10,
+                sent_at: Some(20),
+            }],
+            ..SessionRecord::default()
+        };
+
+        let value = serde_json::to_value(&record).expect("serialize");
+        let back: SessionRecord = serde_json::from_value(value.clone()).expect("deserialize");
+
+        assert_eq!(back, record);
+        let saved = &value["reviewComments"][0];
+        assert_eq!(saved["oldFile"], "src/old.ts");
+        assert_eq!(saved["sentAt"], 20);
+        assert_eq!(saved["lineHash"], "deadbeef");
+        assert_eq!(saved["createdAt"], 10);
+    }
+
+    #[test]
+    fn an_empty_review_comments_list_is_not_written() {
+        let value = serde_json::to_value(SessionRecord::default()).expect("serialize");
+
+        assert!(value.get("reviewComments").is_none(), "{value}");
     }
 }

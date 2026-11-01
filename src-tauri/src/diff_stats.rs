@@ -42,6 +42,10 @@ pub struct BaseBranch {
 #[serde(rename_all = "camelCase")]
 pub struct DiffTargets {
     pub base: Option<BaseBranch>,
+    /// The repository's root, canonical. Paths in a diff are relative to it.
+    pub root: String,
+    /// The folder asked about, relative to `root`, with a trailing `/`; empty at the root.
+    pub prefix: String,
 }
 
 /// One changed file and the lines it adds and removes.
@@ -138,8 +142,14 @@ fn base_branch(git: &Path, toplevel: &Path) -> Option<BaseRef> {
 
 pub fn diff_targets(git: &Path, dir: &Path) -> Result<DiffTargets, String> {
     let toplevel = toplevel_of(git, dir)?;
+    let prefix = run_git(git, dir, &["rev-parse", "--show-prefix"])?
+        .trim_end_matches(['\n', '\r'])
+        .to_string();
+    let root = toplevel.canonicalize().unwrap_or(toplevel.clone());
     Ok(DiffTargets {
         base: base_branch(git, &toplevel).map(|base| BaseBranch { name: base.name }),
+        root: root.to_string_lossy().into_owned(),
+        prefix,
     })
 }
 
@@ -467,19 +477,25 @@ fn is_commit_id(text: &str) -> bool {
     matches!(text.len(), 40 | 64) && text.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-/// The changed files in the repository `dir` is in since `commit`, committed
-/// or not, with the lines each adds and removes, sorted by path.
-pub fn diff_stats_since(git: &Path, dir: &Path, commit: &str) -> Result<Vec<FileStat>, String> {
+/// Ok when `commit` is a full commit id that the repository at `toplevel` has.
+pub(crate) fn checked_commit(git: &Path, toplevel: &Path, commit: &str) -> Result<(), String> {
     if !is_commit_id(commit) {
         return Err("The start commit must be a full commit id".to_string());
     }
-    let toplevel = toplevel_of(git, dir)?;
     run_git(
         git,
-        &toplevel,
+        toplevel,
         &["cat-file", "-e", &format!("{commit}^{{commit}}")],
     )
-    .map_err(|_| "This repository does not have the start commit".to_string())?;
+    .map(|_| ())
+    .map_err(|_| "This repository does not have the start commit".to_string())
+}
+
+/// The changed files in the repository `dir` is in since `commit`, committed
+/// or not, with the lines each adds and removes, sorted by path.
+pub fn diff_stats_since(git: &Path, dir: &Path, commit: &str) -> Result<Vec<FileStat>, String> {
+    let toplevel = toplevel_of(git, dir)?;
+    checked_commit(git, &toplevel, commit)?;
     // Untracked files count once, as for HEAD.
     stats_against(git, &toplevel, commit, DiffTarget::Head)
 }

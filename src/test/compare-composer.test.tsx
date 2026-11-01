@@ -262,9 +262,12 @@ describe("comparing agents in the composer", () => {
     await openAgentMenu();
 
     expect(screen.getByRole("checkbox", { name: /^Compare Qwen Code/ })).toBeDisabled();
-    expect(screen.getByRole("checkbox", { name: /^Compare Qwen Code/ })).toHaveAttribute("title", "Set up the selected agent first.");
-    expect(screen.getByRole("checkbox", { name: /^Compare Qwen Code/ })).toHaveAccessibleDescription("You need to install it first.");
+    // The reason names the blocked agent, so it is not read as Qwen Code's own.
+    expect(screen.getByRole("checkbox", { name: /^Compare Qwen Code/ })).toHaveAccessibleDescription("Set up Claude Code first.");
     expect(screen.getByText("Install Claude Code to start a session.", { selector: "p" })).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.change(prompt(), { target: { value: "go" } });
+    });
     expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
     expect(screen.queryByText(QUOTA_NOTE)).toBeNull();
   });
@@ -277,8 +280,26 @@ describe("comparing agents in the composer", () => {
 
     await waitFor(() => expect(screen.getByRole("checkbox", { name: /^Compare Qwen Code/ })).toBeDisabled());
     expect(screen.getByText("You need to sign in first.", { selector: "p" })).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: /^Compare Qwen Code/ })).toHaveAccessibleDescription("You need to sign in first.");
+    expect(screen.getByRole("checkbox", { name: /^Compare Qwen Code/ })).toHaveAccessibleDescription("Set up Claude Code first.");
     expect(screen.queryByText(QUOTA_NOTE)).toBeNull();
+    // With something to send, Send still waits for the sign-in.
+    await act(async () => {
+      fireEvent.change(prompt(), { target: { value: "go" } });
+    });
+    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+  });
+
+  it("keeps the ticks when the folder changes to another repository", async () => {
+    await renderDraft();
+    await openAgentMenu();
+    await tick("Qwen Code");
+    expect(screen.getByText(QUOTA_NOTE)).toBeInTheDocument();
+
+    await chooseFolder("titan-investment");
+
+    await act(async () => {});
+    expect(screen.getByText(QUOTA_NOTE)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Agent: 2 agents" })).toBeInTheDocument();
   });
 
   it("outside a repository the chip stays single-choice", async () => {
@@ -307,14 +328,14 @@ describe("compareAgentOptions", () => {
   it("an uninstalled agent says to install it, and keeps its not-installed name", () => {
     const codexOption = compareAgentOptions(ALL, stateOf({})).find((o) => o.value === "codex-acp");
 
-    expect(codexOption).toEqual({ value: "codex-acp", label: "Codex (not installed)", disabledReason: "You need to install it first." });
+    expect(codexOption).toEqual({ value: "codex-acp", label: "Codex (not installed)", name: "Codex", disabledReason: "You need to install it first." });
   });
 });
 
 describe("AgentMultiPicker", () => {
   const options = [
-    { value: "a", label: "Alpha" },
-    { value: "b", label: "Beta", disabledReason: "You need to sign in first." },
+    { value: "a", label: "Alpha", name: "Alpha" },
+    { value: "b", label: "Beta", name: "Beta", disabledReason: "You need to sign in first." },
   ];
 
   it("ticks with a checkbox, picks one with the name, and closes on a pick", () => {
@@ -332,7 +353,7 @@ describe("AgentMultiPicker", () => {
   it("moves between its buttons with the arrow keys", () => {
     render(
       <AgentMultiPicker
-        options={[{ value: "a", label: "Alpha" }, { value: "b", label: "Beta" }]}
+        options={[{ value: "a", label: "Alpha", name: "Alpha" }, { value: "b", label: "Beta", name: "Beta" }]}
         selected={["a"]}
         isOpen
         onToggle={() => {}}

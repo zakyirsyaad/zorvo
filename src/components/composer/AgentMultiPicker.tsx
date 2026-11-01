@@ -15,7 +15,6 @@ export interface AgentMultiPickerProps {
   onPick: (agentId: string) => void;
 }
 
-const SET_UP_FIRST_REASON = "Set up the selected agent first.";
 const LIMIT_REASON = `You can compare up to ${MAX_COMPARE_AGENTS} agents.`;
 
 /** The chip's words: the agent's name, or how many are ticked. */
@@ -73,10 +72,11 @@ export function AgentMultiPicker({ options, selected, isOpen, onToggle, onChange
           {options.map((option) => {
             const isTicked = selected.includes(option.value);
             const isOnly = isTicked && selected.length === 1;
-            // The blocked agent's own row says what it needs; the other rows point to it rather than repeat it.
-            const reason = option.disabledReason ?? (isTicked || isOnlyBlocked || !isFull ? undefined : LIMIT_REASON);
-            const reasonId = `agent-reason-${option.value}`;
             const isHeldBack = !isTicked && isOnlyBlocked;
+            const reason =
+              option.disabledReason ??
+              (isHeldBack ? `Set up ${onlyAgent?.name} first.` : !isTicked && isFull ? LIMIT_REASON : undefined);
+            const reasonId = `agent-reason-${option.value}`;
             return (
               <div key={option.value} role="presentation" className="rounded px-1 py-0.5">
                 <div role="presentation" className="flex items-center gap-1">
@@ -96,9 +96,9 @@ export function AgentMultiPicker({ options, selected, isOpen, onToggle, onChange
                     role="checkbox"
                     aria-checked={isTicked}
                     aria-label={`Compare ${option.label}`}
-                    aria-describedby={isHeldBack ? `agent-reason-${onlyAgent?.value}` : reason ? reasonId : undefined}
+                    aria-describedby={reason ? reasonId : undefined}
                     disabled={isOnly || isHeldBack || (!isTicked && reason !== undefined)}
-                    title={isOnly ? "Keep at least one agent" : isHeldBack ? SET_UP_FIRST_REASON : undefined}
+                    title={isOnly ? "Keep at least one agent" : undefined}
                     onClick={() => onChange(option.value)}
                     className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-border-strong text-fg transition-colors cursor-pointer focus-ring disabled:cursor-default disabled:opacity-50"
                   >

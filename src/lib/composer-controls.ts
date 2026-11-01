@@ -135,7 +135,10 @@ export function acpControls(
 /** One agent in the composer's multi-choice picker; a `disabledReason` means it cannot be ticked, and says why. */
 export interface AgentChoice {
   value: string;
+  /** The picker's words for the agent: its name, with "(not installed)" while it cannot start. */
   label: string;
+  /** The agent's plain name, for sentences about it. */
+  name: string;
   disabledReason?: string;
 }
 
@@ -156,6 +159,6 @@ export function compareAgentOptions(
       : signInStateOf(agent.id) === 'needed'
         ? NEEDS_SIGN_IN_REASON
         : undefined;
-    return { value: agent.id, label: pickerLabelOf(agent), ...(disabledReason ? { disabledReason } : {}) };
+    return { value: agent.id, label: pickerLabelOf(agent), name: agent.name, ...(disabledReason ? { disabledReason } : {}) };
   });
 }

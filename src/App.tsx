@@ -188,9 +188,13 @@ export default function App() {
   const signInStatus = useAgentSignInStatus({ settings: state.settings, updateState });
   const agentChoices = compareAgentOptions(pickableAgents, signInStatus.stateOf);
   const tickableAgentIds = new Set(agentChoices.filter((c) => !c.disabledReason).map((c) => c.value));
+  // Details are null while a folder loads, which says nothing about it: compare keeps the last known answer until the folder's own arrives.
+  const [lastDetails, setLastDetails] = useState(workspaceDetails);
+  if (workspaceDetails && workspaceDetails !== lastDetails) setLastDetails(workspaceDetails);
+  const canCompare = isNewSessionDraft && Boolean((workspaceDetails ?? lastDetails)?.branch);
   const compare = useCompareDraft({
     primaryAgentId,
-    isRepository: canUseWorktree,
+    isRepository: canCompare,
     isTickable: (agentId) => tickableAgentIds.has(agentId),
     onSingle: setPickedAgentId,
   });
@@ -883,7 +887,7 @@ export default function App() {
                         : undefined
                     }
                     agent={
-                      isNewSessionDraft && newSessionAgent && !canUseWorktree
+                      isNewSessionDraft && newSessionAgent && !canCompare
                         ? {
                             options: pickableAgents.map((a) => ({ value: a.id, label: pickerLabelOf(a) })),
                             selected: newSessionAgent.id,
@@ -892,7 +896,7 @@ export default function App() {
                         : undefined
                     }
                     agents={
-                      isNewSessionDraft && newSessionAgent && canUseWorktree
+                      isNewSessionDraft && newSessionAgent && canCompare
                         ? {
                             options: agentChoices,
                             selected: compare.agentIds,

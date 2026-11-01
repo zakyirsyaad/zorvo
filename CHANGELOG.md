@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- **Compare agents.** In a git repository, tick up to four agents on a new session's Agent chip and send one prompt to all of them. Each agent works in its own worktree and uses its own quota. One panel shows each agent's state and what it changed, you answer permissions there, and **Pick** keeps one: the others stop and are archived, and their worktrees stay.
+
 ### Fixed
 
 - **A worktree session's attachments point into its worktree.** A file attached from the folder you started in now names the same file in the session's worktree, so an agent no longer edits your main checkout. A file the worktree does not have, such as an untracked one, keeps its path.

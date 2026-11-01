@@ -14,8 +14,15 @@ const STATUS_STYLES: Record<string, string> = {
   Running: "text-status-running",
 };
 
-const textOf = (entry: ActivityEntry) =>
-  entry.kind === "file" ? entry.path : entry.kind === "command" ? entry.command : entry.prompt;
+/** How much of a row's text names it to a screen reader. */
+const MAX_LABEL_LENGTH = 80;
+
+function textOf(entry: ActivityEntry): string {
+  if (entry.kind === "file") return entry.isNamed ? entry.path : `${entry.path} (no file named)`;
+  return entry.kind === "command" ? entry.command : entry.prompt;
+}
+
+const clockOf = (time: number) => new Date(time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 /** Escaped line by line, so a command keeps its lines and a hidden character shows. */
 function linesOf(text: string): string[] {
@@ -50,7 +57,7 @@ export const ActivityEntryRow = memo(function ActivityEntryRow({ entry, isBusy, 
 }) {
   const word = statusWord(entry, isBusy);
   const text = textOf(entry);
-  const label = `${escapeVisible(text)}, ${word}. Show in the chat`;
+  const label = `${escapeVisible(text.split("\n")[0].slice(0, MAX_LABEL_LENGTH))}, ${word}. Show in the chat`;
   return (
     <li className="border-b border-border px-3 py-1.5 last:border-b-0">
       <div className="flex items-start gap-2">
@@ -59,6 +66,11 @@ export const ActivityEntryRow = memo(function ActivityEntryRow({ entry, isBusy, 
           {entry.kind === "permission" && entry.command && <Detail text={entry.command} />}
           {entry.kind === "permission" && entry.choice && (
             <span className="block text-[11px] text-fg-muted">{escapeVisible(entry.choice)}</span>
+          )}
+          {entry.time !== null && (
+            <time dateTime={new Date(entry.time).toISOString()} className="block text-[10px] text-fg-subtle">
+              {clockOf(entry.time)}
+            </time>
           )}
         </div>
         <button

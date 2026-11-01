@@ -46,3 +46,23 @@ describe("jumping to a message", () => {
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
 });
+
+describe("the mark on a jumped message", () => {
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it("marks the message until focus leaves it, however the jump was pressed", () => {
+    render(<ChatCanvas conversationId="s-1" messages={MESSAGES} jumpTo={{ messageId: "m-1", nonce: 1 }} />);
+    const target = document.getElementById("message-m-1") as HTMLElement;
+    expect(target.dataset.jumped).toBe("true");
+    act(() => target.blur());
+    expect(target.dataset.jumped).toBeUndefined();
+  });
+
+  it("says it has jumped, so a later mount does not jump again", () => {
+    const onJumped = vi.fn();
+    render(<ChatCanvas conversationId="s-1" messages={MESSAGES} jumpTo={{ messageId: "m-1", nonce: 1 }} onJumped={onJumped} />);
+    expect(onJumped).toHaveBeenCalledOnce();
+  });
+});

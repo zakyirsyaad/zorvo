@@ -64,7 +64,7 @@ describe("activityOf", () => {
   });
 
   it("gives an edit naming no file an entry from its name", () => {
-    expect(entriesOf([{ kind: "edit", name: "Edit something" }])[0]).toMatchObject({ kind: "file", path: "Edit something", action: "changed" });
+    expect(entriesOf([{ kind: "edit", name: "Edit something" }])[0]).toMatchObject({ kind: "file", path: "Edit something", action: "changed", isNamed: false });
   });
 
   it("gives an execute tool a command entry and touched files", () => {
@@ -127,7 +127,7 @@ describe("activityOf", () => {
 });
 
 describe("statusWord", () => {
-  const file = (status: ToolExecution["status"]): ActivityEntry => ({ kind: "file", path: "a", action: "changed", status, messageId: "m", time: null });
+  const file = (status: ToolExecution["status"]): ActivityEntry => ({ kind: "file", path: "a", isNamed: true, action: "changed", status, messageId: "m", time: null });
 
   it("reads Changed only for a completed tool", () => {
     expect(statusWord(file("completed"), false)).toBe("Changed");
@@ -189,6 +189,10 @@ describe("unreportedFiles", () => {
 
   it("lists a file a command changed without naming it", () => {
     expect(unreported([{ kind: "execute", command: "sed -i a.ts" }], [stat("a.ts")])).toEqual(["a.ts"]);
+  });
+
+  it("does not treat a tool's name as a reported file", () => {
+    expect(unreported([{ kind: "edit", name: "a.ts" }], [stat("a.ts")])).toEqual(["a.ts"]);
   });
 
   it("matches a rename on its old path", () => {

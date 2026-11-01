@@ -27,6 +27,8 @@ export interface ChatCanvasProps {
   messages: ChatMessage[];
   /** A message to bring into view; a new `nonce` jumps again. */
   jumpTo?: { messageId: string; nonce: number } | null;
+  /** The jump was made: a later mount must not make it again. */
+  onJumped?: () => void;
   /** Display name of the agent behind this conversation, e.g. "Claude Code". */
   agentName?: string;
   onForkBranch?: (messageId: string) => void;
@@ -53,6 +55,7 @@ export interface ChatCanvasProps {
 export function ChatCanvas({
   messages,
   jumpTo,
+  onJumped,
   agentName = DEFAULT_AGENT_NAME,
   onForkBranch,
   onChooseOption,
@@ -90,14 +93,18 @@ export function ChatCanvas({
   // up to read, leave the view alone.
   const stickToBottom = useStickToBottom();
   const { stopFollowing } = stickToBottom;
+  const onJumpedRef = useLatest(onJumped);
   useEffect(() => {
     const target = jumpTo ? document.getElementById(`message-${jumpTo.messageId}`) : null;
     if (!target) return;
     stopFollowing();
     target.scrollIntoView({ block: "center" });
-    // The focus ring is the mark: nothing here runs on a timer.
+    // A press does not count as keyboard focus, so the mark is its own, and it leaves with the focus.
+    target.dataset.jumped = "true";
+    target.addEventListener("blur", () => delete target.dataset.jumped, { once: true });
     target.focus({ preventScroll: true });
-  }, [jumpTo, stopFollowing]);
+    onJumpedRef.current?.();
+  }, [jumpTo, stopFollowing, onJumpedRef]);
   // A message the user just sent, or another conversation opened, always
   // brings the view down to the newest output. The view itself stays mounted,
   // so switching conversations does not stop Read aloud.

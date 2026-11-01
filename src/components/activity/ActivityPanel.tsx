@@ -23,8 +23,9 @@ const FILTERS: { id: Filter; label: string }[] = [
 const ignoreError = () => {};
 
 export interface ActivityPanelProps {
-  /** Undefined while the transcript loads. */
   messages: readonly ChatMessage[] | undefined;
+  /** Live messages can arrive before the saved history: only `ready` means the whole transcript. */
+  transcript: "loading" | "ready" | "failed";
   session: Session;
   isRepository: boolean;
   isBusy: boolean;
@@ -73,11 +74,11 @@ function Unreported({ files, compared, onOpenDiff }: { files: readonly string[];
 }
 
 /** What the agent reported doing in this session, and what git shows that it did not report. */
-export function ActivityPanel({ messages, session, isRepository, isBusy, version, headStats, headStatsFailed, onJump, onOpenDiff, onClose }: ActivityPanelProps) {
+export function ActivityPanel({ messages, transcript, session, isRepository, isBusy, version, headStats, headStatsFailed, onJump, onOpenDiff, onClose }: ActivityPanelProps) {
   const [filter, setFilter] = useState<Filter>("all");
   const startCommit = session.worktree?.startCommit;
   const deferredMessages = useDeferredValue(messages);
-  const list = useMemo(() => (deferredMessages ? activityOf(deferredMessages) : null), [deferredMessages]);
+  const list = useMemo(() => (transcript === "ready" ? activityOf(deferredMessages ?? []) : null), [deferredMessages, transcript]);
 
   const { targets, isLoaded, hasFailed: targetsFailed } = useDiffTargets(session.cwd, isRepository, version, ignoreError);
   const since = useDiffStatsSince(isRepository ? session.cwd : undefined, startCommit, version, ignoreError);
@@ -119,7 +120,9 @@ export function ActivityPanel({ messages, session, isRepository, isBusy, version
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {list === null ? (
-          <p className="px-3 py-3 text-fg-muted">Reading the activity…</p>
+          <p className="px-3 py-3 text-fg-muted">
+            {transcript === "failed" ? "This conversation could not be read, so its activity is not shown." : "Reading the activity…"}
+          </p>
         ) : (
           <>
             {showsFiles && session.historyElsewhere && (
@@ -148,7 +151,9 @@ export function ActivityPanel({ messages, session, isRepository, isBusy, version
               <p className="px-3 py-2 text-[11px] text-fg-muted">{matching.length - shown.length} older entries are not shown.</p>
             )}
             {filter === "all" && list.otherTools > 0 && (
-              <p className="px-3 py-2 text-[11px] text-fg-muted">{list.otherTools} other tool calls are not listed.</p>
+              <p className="px-3 py-2 text-[11px] text-fg-muted">
+                {list.otherTools === 1 ? "1 other tool call is not listed." : `${list.otherTools} other tool calls are not listed.`}
+              </p>
             )}
           </>
         )}

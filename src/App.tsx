@@ -144,7 +144,7 @@ export default function App() {
   const reportError = useCallback((message: string) => setNotice(message), []);
   const { state, isLoaded, updateState, getState, saveNow } = usePersistedState(reportError);
   useAppearance(state.settings.appearance, isLoaded, reportError);
-  const { transcripts, ensureLoaded, updateMessages, removeTranscript, flush: flushTranscripts } = useTranscripts(reportError);
+  const { transcripts, transcriptStatus, ensureLoaded, updateMessages, removeTranscript, flush: flushTranscripts } = useTranscripts(reportError);
   const { agents, isLoaded: areAgentsLoaded, refresh: refreshAgents, reload: reloadAgents } = useAgentProfiles(reportError);
   const agentCatalog = useAgentCatalog();
   const shell = useShellActions(setNotice);
@@ -1005,6 +1005,7 @@ export default function App() {
                   conversationId={activeSessionId}
                   messages={currentMessages}
                   jumpTo={chatJump}
+                  onJumped={() => setChatJump(null)}
                   agentName={activeAgent?.name}
                   onForkBranch={(messageId) => void forkSession(messageId)}
                   onRewind={(messageId) => { compareRun.dropSignIn(activeSessionId); void rewind(activeSession, messageId); }}
@@ -1160,6 +1161,7 @@ export default function App() {
               <ActivityPanel
                 key={activeSession.id}
                 messages={transcripts[activeSession.id]}
+                transcript={transcriptStatus[activeSession.id] ?? "loading"}
                 session={activeSession}
                 isRepository={isRepository}
                 isBusy={isSessionBusy(activeSession.id)}

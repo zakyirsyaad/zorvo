@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, act, within } from "@testing-library/react";
+import { render, screen, fireEvent, act, within, cleanup } from "@testing-library/react";
 import { ActivityPanel } from "../components/activity/ActivityPanel";
 import type { FileStat } from "../lib/diff-stats";
 import type { ChatMessage, Session, ToolExecution } from "../types";
@@ -34,6 +34,7 @@ async function show(props: Partial<Parameters<typeof ActivityPanel>[0]> = {}) {
     render(
       <ActivityPanel
         messages={[]}
+        transcript="ready"
         session={SESSION}
         isRepository
         isBusy={false}
@@ -60,10 +61,53 @@ describe("ActivityPanel", () => {
 
   it("does not read as empty while the transcript loads", async () => {
     stubBackend();
-    await show({ messages: undefined, headStats: [stat("a.ts")] });
+    await show({ messages: undefined, transcript: "loading", headStats: [stat("a.ts")] });
     expect(screen.getByText("Reading the activity…")).toBeDefined();
     expect(screen.queryByText("Not reported by the agent")).toBeNull();
     expect(screen.queryByText(/^Nothing yet/)).toBeNull();
+  });
+
+  it("does not check a transcript that holds only live messages while it loads", async () => {
+    stubBackend();
+    await show({ messages: [reply([{ kind: "execute", command: "ls" }])], transcript: "loading", headStats: [stat("a.ts")] });
+    expect(screen.getByText("Reading the activity…")).toBeDefined();
+    expect(screen.queryByRole("region", { name: "Not reported by the agent" })).toBeNull();
+  });
+
+  it("says when the conversation could not be read", async () => {
+    stubBackend();
+    await show({ messages: undefined, transcript: "failed" });
+    expect(screen.getByText("This conversation could not be read, so its activity is not shown.")).toBeDefined();
+    expect(screen.queryByText("Reading the activity…")).toBeNull();
+  });
+
+  it("says a tool's name is not a file", async () => {
+    stubBackend();
+    await show({ messages: [reply([{ kind: "edit", name: "Write" }])] });
+    expect(screen.getByText("Write (no file named)")).toBeDefined();
+  });
+
+  it("shows when an entry happened, and nothing for a replayed one", async () => {
+    stubBackend();
+    await show({ messages: [reply([{ kind: "execute", command: "ls", startedAt: 1000 }])] });
+    expect(document.querySelector("time")).not.toBeNull();
+    cleanup();
+    await show({ messages: [reply([{ kind: "execute", command: "ls" }], { hasKnownTime: false })] });
+    expect(document.querySelector("time")).toBeNull();
+  });
+
+  it("names a row by its first line, kept short", async () => {
+    stubBackend();
+    await show({ messages: [reply([{ kind: "execute", command: `${"x".repeat(200)}\nsecond` }])] });
+    const button = screen.getByRole("button", { name: /Show in the chat/ });
+    expect(button.getAttribute("aria-label")).not.toContain("u000A");
+    expect((button.getAttribute("aria-label") ?? "").length).toBeLessThan(140);
+  });
+
+  it("says one tool call in the singular", async () => {
+    stubBackend();
+    await show({ messages: [reply([{ kind: "fetch" }])] });
+    expect(screen.getByText("1 other tool call is not listed.")).toBeDefined();
   });
 
   it("reads an empty session as empty", async () => {
@@ -153,8 +197,8 @@ describe("ActivityPanel", () => {
 
   it("says how many tools it does not list", async () => {
     stubBackend();
-    await show({ messages: [reply([{ kind: "fetch" }])] });
-    expect(screen.getByText("1 other tool calls are not listed.")).toBeDefined();
+    await show({ messages: [reply([{ kind: "fetch" }, { kind: "fetch" }])] });
+    expect(screen.getByText("2 other tool calls are not listed.")).toBeDefined();
   });
 
   it("shows a bidi control in a command as text", async () => {

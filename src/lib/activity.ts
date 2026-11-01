@@ -9,7 +9,14 @@ interface EntryBase {
 
 export type ActivityEntry = EntryBase &
   (
-    | { kind: 'file'; path: string; action: 'read' | 'changed' | 'touched'; status: ToolExecution['status'] }
+    | {
+        kind: 'file';
+        /** The file, or the tool's name when it named none: then `isNamed` is false. */
+        path: string;
+        isNamed: boolean;
+        action: 'read' | 'changed' | 'touched';
+        status: ToolExecution['status'];
+      }
     | { kind: 'command'; command: string; status: ToolExecution['status'] }
     | {
         kind: 'permission';
@@ -54,10 +61,13 @@ function entriesOfTool(tool: ToolExecution, message: ChatMessage): ActivityEntry
     : [];
   const action = actionOf(tool);
   const paths = pathsOf(tool);
+  const files = paths.map((path): ActivityEntry => ({ ...base, kind: 'file', path, isNamed: true, action, status: tool.status }));
   // A change that names no file is still a change: it must not vanish from the list.
-  const named = paths.length === 0 && CHANGING_KINDS.has(tool.kind ?? '') ? [tool.name] : paths;
-  const files = named.map((path): ActivityEntry => ({ ...base, kind: 'file', path, action, status: tool.status }));
-  return [...command, ...files];
+  const unnamed: ActivityEntry[] =
+    paths.length === 0 && CHANGING_KINDS.has(tool.kind ?? '')
+      ? [{ ...base, kind: 'file', path: tool.name, isNamed: false, action, status: tool.status }]
+      : [];
+  return [...command, ...files, ...unnamed];
 }
 
 function answerOf(card: ActionCard): Extract<ActivityEntry, { kind: 'permission' }>['answer'] {
@@ -127,7 +137,7 @@ export function unreportedFiles(
 ): string[] {
   const reported = new Set(
     entries.flatMap((entry) => {
-      if (entry.kind !== 'file' || entry.status !== 'completed' || entry.action === 'read') return [];
+      if (entry.kind !== 'file' || !entry.isNamed || entry.status !== 'completed' || entry.action === 'read') return [];
       const path = reportedPath(entry.path, cwd, targets);
       return path === null ? [] : [path];
     }),

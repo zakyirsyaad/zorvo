@@ -1,6 +1,8 @@
 import { DocsShell, type TocEntry } from "../../../components/docs/DocsShell";
 import { B, DocLink, H2, P, UL } from "../../../components/docs/parts";
+import { FakeButton } from "../../../components/mockups/parts";
 import { Chip } from "../../../components/ui/Chip";
+import { Icon } from "../../../components/ui/Icon";
 import { docsMetadata } from "../../../lib/docs-metadata";
 
 export const metadata = docsMetadata("/docs/troubleshooting");
@@ -8,9 +10,12 @@ export const metadata = docsMetadata("/docs/troubleshooting");
 const TOC: TocEntry[] = [
   { id: "not-installed", label: "An agent shows as not installed" },
   { id: "sign-in", label: "An agent needs you to sign in" },
-  { id: "start", label: "An agent does not start" },
+  { id: "failed", label: "A turn failed" },
   { id: "stuck", label: "An agent seems stuck" },
+  { id: "gemini", label: "Gemini CLI does not answer" },
+  { id: "start", label: "An agent does not start" },
   { id: "pull-requests", label: "No pull request status" },
+  { id: "update", label: "An update does not install" },
   { id: "worktree", label: "A worktree would not have it" },
   { id: "blocked", label: "The app is blocked on first open" },
 ];
@@ -36,8 +41,52 @@ export default function TroubleshootingPage() {
 
       <H2 id="sign-in">An agent needs you to sign in</H2>
       <P>
-        Use a sign-in method the panel offers, or sign in once in a terminal, then send your message again. See{" "}
-        <DocLink href="/docs/signing-in">Signing in</DocLink>.
+        Its status reads <B>Sign in</B> in the sidebar and in Settings, Agents. Use a sign-in method the panel offers,
+        or sign in once in a terminal, then click <B>Check again</B>. Zorvo reads your shell&apos;s settings again first,
+        so a key you just added to <Chip isCode>~/.zshrc</Chip> is found. Your message is sent once you are signed in.
+        See <DocLink href="/docs/signing-in">Signing in</DocLink>.
+      </P>
+
+      <H2 id="failed">A turn failed</H2>
+      <P>
+        The notice under the chat says what happened. When the agent could not reach the network, it says so in plain
+        words and keeps the agent&apos;s own error behind <B>Details</B>.
+      </P>
+      <div
+        role="img"
+        aria-label="A failed turn: Qwen Code could not reach the network, check your connection or proxy, then try again, with Try again and Details under the message and a close button"
+        className="flex items-start gap-3 rounded-xl bg-danger-surface px-3.5 py-3 text-danger"
+      >
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <p className="m-0 text-[13px] leading-5 text-danger">
+            Qwen Code could not reach the network. Check your connection or proxy, then try again.
+          </p>
+          <span className="flex items-center gap-2">
+            <FakeButton variant="outline">Try again</FakeButton>
+            <span className="px-1 text-xs leading-4 text-danger underline underline-offset-2">Details</span>
+          </span>
+        </div>
+        <Icon name="x" className="mt-[3px] text-danger" />
+      </div>
+      <UL>
+        <li>
+          <B>Try again</B> sends your last message once more. It is off while a turn runs, and an agent that has exited
+          is reopened first.
+        </li>
+        <li>Other errors show the agent&apos;s own text.</li>
+      </UL>
+
+      <H2 id="stuck">An agent seems stuck</H2>
+      <P>
+        Under Working…, Zorvo shows a notice with a <B>Stop</B> button when the agent reports failed requests in a row
+        (for Qwen Code, with the error it logged), or has sent nothing for a minute while no tool is running. Click{" "}
+        <B>Stop</B> to end the turn, or wait if the agent is working on something long.
+      </P>
+
+      <H2 id="gemini">Gemini CLI does not answer</H2>
+      <P>
+        Gemini&apos;s default model, <Chip isCode>auto</Chip>, can hang without an answer. Pick another model in the
+        composer&apos;s model chip. Zorvo sets it before your first message, and your next session starts with it.
       </P>
 
       <H2 id="start">An agent does not start</H2>
@@ -46,22 +95,25 @@ export default function TroubleshootingPage() {
         Code, Codex and Qwen Code. The first start downloads the agent&apos;s pinned package, so it can take a moment.
       </P>
 
-      <H2 id="stuck">An agent seems stuck</H2>
-      <P>
-        Under Working…, Zorvo shows a notice with a <B>Stop</B> button in two cases. It states only what the agent
-        reported.
-      </P>
-      <UL>
-        <li>The agent reports failed requests in a row. For Qwen Code, the notice includes the error it logged.</li>
-        <li>The agent has sent nothing for a minute while no tool is running.</li>
-      </UL>
-      <P>The notice belongs to the current turn and is not saved. Click <B>Stop</B> to end the turn, or wait if the agent is working on something long.</P>
-
       <H2 id="pull-requests">No pull request status</H2>
       <P>
-        Install <Chip isCode>gh</Chip> and run <Chip isCode>gh auth login</Chip>. A repository without a GitHub remote
-        has none to show.
+        Open Settings, General, GitHub. It says when the GitHub CLI is missing, with <Chip isCode>brew install gh</Chip>{" "}
+        to copy. When you are signed out, <B>Connect</B> opens a terminal where <Chip isCode>gh</Chip> signs you in
+        through your browser. The Changes panel links there too. A repository without a GitHub remote has no pull
+        requests to show.
       </P>
+
+      <H2 id="update">An update does not install</H2>
+      <UL>
+        <li>
+          <B>Opened from the disk image.</B> A copy in a read-only place cannot update itself. Drag Zorvo into
+          Applications, open it from there and update again.
+        </li>
+        <li>
+          <B>Older than 0.6.0.</B> Update once by hand: download the newest <Chip isCode>.dmg</Chip> and replace Zorvo
+          in Applications. See <DocLink href="/docs/install#update">Update Zorvo</DocLink>.
+        </li>
+      </UL>
 
       <H2 id="worktree">A worktree would not have it</H2>
       <P>

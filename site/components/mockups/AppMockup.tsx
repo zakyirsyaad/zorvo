@@ -2,7 +2,7 @@ import type { AgentName } from "../../lib/agent-logos";
 import { AgentLogo } from "../ui/AgentLogo";
 import { Chip } from "../ui/Chip";
 import { Icon, type IconName } from "../ui/Icon";
-import { DiffCard, PermissionCard, StatusDot, type DiffLine } from "./parts";
+import { DiffCard, PermissionCard, SignInBadge, StatusDot, type DiffLine, type SignInState } from "./parts";
 
 const DRAWER_DIFF: DiffLine[] = [
   { kind: "removed", text: "  return null;" },
@@ -32,6 +32,13 @@ const WORKSPACES: { folder: string; sessions: SessionRow[] }[] = [
     folder: "site",
     sessions: [{ title: "Draft the docs pages", agent: "Qwen Code", meta: "5d" }],
   },
+];
+
+/** Sign-in readiness, as the sidebar's detected agents show it. */
+const DETECTED_AGENTS: { agent: AgentName; state: SignInState }[] = [
+  { agent: "Claude Code", state: "ready" },
+  { agent: "Codex", state: "ready" },
+  { agent: "Qwen Code", state: "sign-in" },
 ];
 
 function SessionMeta({ meta }: { meta: SessionRow["meta"] }) {
@@ -66,6 +73,22 @@ function Sidebar() {
           ))}
         </div>
       ))}
+      <div className="flex items-center gap-1.5 px-2 pt-3.5 pb-1.5 text-[11px] leading-4 text-fg-subtle">
+        <Icon name="chevron-down" />
+        Detected agents
+      </div>
+      {DETECTED_AGENTS.map(({ agent, state }) => (
+        <div
+          key={agent}
+          className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs leading-4 text-fg-muted"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <AgentLogo agent={agent} size={13} />
+            <span className="truncate">{agent}</span>
+          </span>
+          <SignInBadge state={state} />
+        </div>
+      ))}
     </div>
   );
 }
@@ -85,10 +108,11 @@ function TopBarIcon({ name, isActive, badge }: { name: IconName; isActive?: bool
   );
 }
 
-function FakeSelect({ label, agent }: { label: string; agent?: AgentName }) {
+function FakeSelect({ label, agent, icon }: { label: string; agent?: AgentName; icon?: IconName }) {
   return (
     <span className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-xs leading-4 whitespace-nowrap text-fg-secondary">
       {agent && <AgentLogo agent={agent} size={12} />}
+      {icon && <Icon name={icon} />}
       {label}
       <Icon name="chevron-down" />
     </span>
@@ -107,7 +131,7 @@ function Composer() {
             <Icon name="plus" />
           </span>
           <FakeSelect label="Claude Code" agent="Claude Code" />
-          <span className="hidden sm:inline-flex"><FakeSelect label="Sonnet 5.5" /></span>
+          <span className="hidden sm:inline-flex"><FakeSelect label="Sonnet 5.5" icon="sparkles" /></span>
           <span className="hidden sm:inline-flex"><FakeSelect label="Default" /></span>
         </div>
         <span className="inline-flex size-7 flex-none items-center justify-center rounded-lg bg-primary text-on-primary">

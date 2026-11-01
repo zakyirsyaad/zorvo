@@ -6,6 +6,7 @@ export const metadata = docsMetadata("/docs/quickstart");
 
 const TOC: TocEntry[] = [
   { id: "steps", label: "Your first session" },
+  { id: "composer", label: "The composer" },
   { id: "mode", label: "Permission modes" },
 ];
 
@@ -42,7 +43,7 @@ export default function QuickstartPage() {
           <UL>
             <li><B>Fork</B> under any reply starts a new session from there.</li>
             <li>
-              <B>Rewind</B> under one of your messages takes the conversation back to before it and puts the message in
+              <B>Rewind to here</B> under one of your messages takes the conversation back to before it and puts the message in
               the composer to edit. It needs a confirming second click, and files the agent changed stay as they are.
             </li>
           </UL>
@@ -52,6 +53,26 @@ export default function QuickstartPage() {
         The composer also lets you mention files with <B>@</B>, drop files onto the window, and click the context meter
         to see tokens used, tokens left and cost.
       </P>
+
+      <H2 id="composer">The composer</H2>
+      <P>
+        The bar under the message box shows what your agent offers. Models, permission modes and other settings each
+        get a chip, and the open menu shows the agent&apos;s own description under each choice that has one. Zorvo shows only the
+        choices the agent reports.
+      </P>
+      <UL>
+        <li><B>Codex</B> has a collaboration mode chip, which is where you put Codex in Plan.</li>
+        <li><B>Claude Code</B> has a fast mode chip and one for its agent persona.</li>
+        <li>
+          <B>Gemini CLI</B> and other agents that list their models only through ACP get a model chip too. Your pick
+          is set before your first message, and the next session starts with it.
+        </li>
+        <li>A long list, like Claude&apos;s personas, has a search field.</li>
+        <li>
+          A mode that lets the agent act without asking (YOLO, bypass, full access) is marked with a shield in the
+          open menu, before you pick it.
+        </li>
+      </UL>
 
       <H2 id="mode">Permission modes</H2>
       <P>

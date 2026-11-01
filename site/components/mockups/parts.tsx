@@ -19,11 +19,31 @@ export function StatusDot({ status }: { status: Status }) {
   return <span className={`inline-block size-1.5 flex-none rounded-full ${DOT[status]}`} />;
 }
 
-type FakeButtonVariant = "primary" | "outline" | "danger";
+export type SignInState = "ready" | "sign-in" | "not-checked";
+
+const SIGN_IN_STATE: Record<SignInState, { label: string; text: string; dot: string }> = {
+  ready: { label: "Ready", text: "text-status-running", dot: "bg-status-running" },
+  "sign-in": { label: "Sign in", text: "text-status-attention", dot: "bg-status-attention" },
+  "not-checked": { label: "Not checked", text: "text-fg-muted", dot: "bg-fg-subtle" },
+};
+
+/** An agent's sign-in readiness, as the sidebar and Settings show it: a dot and a word. */
+export function SignInBadge({ state }: { state: SignInState }) {
+  const { label, text, dot } = SIGN_IN_STATE[state];
+  return (
+    <span className={`inline-flex flex-none items-center gap-[5px] text-[11px] leading-4 ${text}`}>
+      <span className={`size-1.5 rounded-full ${dot}`} />
+      {label}
+    </span>
+  );
+}
+
+type FakeButtonVariant = "primary" | "outline" | "ghost" | "danger";
 
 const FAKE_BUTTON: Record<FakeButtonVariant, string> = {
   primary: "border-transparent bg-primary text-on-primary",
   outline: "border-border-strong text-fg-secondary",
+  ghost: "border-transparent text-fg-secondary",
   danger: "border-transparent bg-danger-surface text-danger",
 };
 

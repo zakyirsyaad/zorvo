@@ -1,8 +1,13 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { DiffFileSection } from "./DiffFileSection";
 import { DiffViewHeader } from "./DiffViewHeader";
+import type { FileReview } from "./LineComment";
+import { ReviewCommentsBar } from "./ReviewCommentsBar";
+import { useCommentedFileReads } from "../../hooks/useCommentedFileReads";
 import { useDiffTargets, useTargetStats } from "../../hooks/useDiffStats";
+import type { ReviewComments } from "../../hooks/useReviewComments";
 import { defaultTarget, targetOptions, type DiffTargetId } from "../../lib/diff-stats";
+import { sortComments } from "../../lib/review-comments";
 
 /** Above this many files the sections start collapsed, so a large diff does not read them all. */
 const AUTO_OPEN_LIMIT = 25;
@@ -29,6 +34,8 @@ export interface DiffViewProps {
   startCommit?: string;
   /** Opens on the start of the worktree rather than the base (a session in a compare run). */
   prefersStart?: boolean;
+  /** The comments of the session on screen. Without one (a draft, a compare run's panel) no comments are offered. */
+  review?: ReviewComments;
 }
 
 /** A whole repository's diff: one collapsible section per changed file. */
@@ -41,6 +48,7 @@ export function DiffView({
   onError,
   startCommit,
   prefersStart = false,
+  review,
 }: DiffViewProps) {
   const { targets, isLoaded: areTargetsLoaded } = useDiffTargets(rootPath, true, version, onError);
   const [chosen, setChosen] = useState<DiffTargetId | null>(null);
@@ -74,6 +82,19 @@ export function DiffView({
     setRefreshes((n) => n + 1);
     reload();
   };
+  const comments = useMemo(() => sortComments(review?.comments ?? []), [review?.comments]);
+  const { reads } = useCommentedFileReads(rootPath, comments, target, stats, startCommit, refreshes);
+  const onTarget = useMemo(() => comments.filter((comment) => comment.target === target), [comments, target]);
+  const panel = useRef<HTMLElement>(null);
+  const focusPanel = () => panel.current?.focus({ preventScroll: true });
+  const fileReviewOf = (path: string): FileReview | undefined =>
+    review && {
+      review,
+      target,
+      comments: onTarget.filter((comment) => comment.file === path),
+      read: reads[path],
+      onFocusLost: focusPanel,
+    };
   const [isSearching, setIsSearching] = useState(false);
   const [search, setSearch] = useState("");
   // Each target's first list decides what starts open; after that the user's
@@ -109,8 +130,10 @@ export function DiffView({
 
   return (
     <aside
+      ref={panel}
       aria-label="Diff view"
-      className={`flex h-full flex-col border-l border-border bg-surface-1 ${isExpanded ? "flex-1" : "w-1/2 min-w-[480px] shrink-0"}`}
+      tabIndex={review ? -1 : undefined}
+      className={`flex h-full flex-col border-l border-border bg-surface-1 ${isExpanded ? "flex-1" : "w-1/2 min-w-[480px] shrink-0"}${review ? " focus-ring" : ""}`}
     >
       <DiffViewHeader
         target={target}
@@ -128,6 +151,18 @@ export function DiffView({
         onToggleExpanded={onToggleExpanded}
         onClose={onClose}
       />
+      {review && (
+        <ReviewCommentsBar
+          review={review}
+          comments={comments}
+          target={target}
+          targets={targets}
+          options={options}
+          listed={stats}
+          onTargetChange={setChosen}
+          onFocusLost={focusPanel}
+        />
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto p-2 text-xs">
         {stats === null ? (
           <p className="px-2 py-3 text-fg-subtle">Reading the changes…</p>
@@ -146,6 +181,7 @@ export function DiffView({
               version={`${refreshes}:${stat.fingerprint}`}
               isOpen={openPaths?.has(stat.path) ?? false}
               onToggle={() => toggle(stat.path)}
+              review={fileReviewOf(stat.path)}
             />
           ))
         )}

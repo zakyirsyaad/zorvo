@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { unifiedDiffRows, type FileChange } from "../../lib/git-changes";
+import { isCommentableFile, unifiedDiffRows, type FileChange } from "../../lib/git-changes";
 import type { DiffTargetId } from "../../lib/diff-stats";
 import { DiffRows } from "./DiffRows";
+import { FileComments, rowReviewOf, type FileReview } from "./LineComment";
 import { readFileDiff } from "../../lib/diff-read";
 
 type DiffState = { status: "loading" } | { status: "ready"; diff: string; key: string } | { status: "failed"; error: string; key: string };
 
 /** One changed file's diff against `target` (the last commit unless told otherwise), read when it is opened. */
-export function FileDiff({ rootPath, change, version, target = "head", startCommit }: {
+export function FileDiff({ rootPath, change, version, target = "head", startCommit, review, takesComments = false }: {
   rootPath: string;
   change: FileChange;
   /** The diff is read again whenever this changes. */
@@ -15,6 +16,10 @@ export function FileDiff({ rootPath, change, version, target = "head", startComm
   target?: DiffTargetId;
   /** What the "start" target is measured from. */
   startCommit?: string;
+  /** The file's comments. Only the diff view passes it, and the Changes panel shows none. */
+  review?: FileReview;
+  /** Whether its lines can take a new comment; a nested repository's cannot. */
+  takesComments?: boolean;
 }) {
   const [state, setState] = useState<DiffState>({ status: "loading" });
 
@@ -38,14 +43,29 @@ export function FileDiff({ rootPath, change, version, target = "head", startComm
 
   // The effect has not yet reset a state left over from another file or target.
   const isStale = state.status !== "loading" && state.key !== key;
-  if (state.status === "loading" || isStale) return <p className="px-3 py-1.5 text-[11px] text-fg-subtle">Loading the diff…</p>;
-  if (state.status === "failed") {
-    return (
-      <p role="alert" className="px-3 py-1.5 text-[11px] text-danger">
-        Could not show the diff: {state.error}
-      </p>
-    );
-  }
-  if (rows.length === 0) return <p className="px-3 py-1.5 text-[11px] text-fg-subtle">No text changes.</p>;
-  return <DiffRows rows={rows} label={`Diff of ${change.path}`} />;
+  const shownRows = state.status === "ready" && !isStale ? rows : [];
+  // A comment just saved reads against the rows on screen until its own read answers.
+  const fileReview = review && { ...review, read: review.read ?? (shownRows.length > 0 ? { status: "read" as const, rows: shownRows } : undefined) };
+  const rowReview = fileReview && takesComments && shownRows.length > 0 && isCommentableFile(shownRows)
+    ? rowReviewOf(fileReview, change, shownRows)
+    : undefined;
+
+  const body = () => {
+    if (state.status === "loading" || isStale) return <p className="px-3 py-1.5 text-[11px] text-fg-subtle">Loading the diff…</p>;
+    if (state.status === "failed") {
+      return (
+        <p role="alert" className="px-3 py-1.5 text-[11px] text-danger">
+          Could not show the diff: {state.error}
+        </p>
+      );
+    }
+    if (rows.length === 0) return <p className="px-3 py-1.5 text-[11px] text-fg-subtle">No text changes.</p>;
+    return <DiffRows rows={rows} label={`Diff of ${change.path}`} review={rowReview} />;
+  };
+  return (
+    <>
+      {fileReview && <FileComments file={fileReview} change={change} rows={rowReview ? shownRows : []} />}
+      {body()}
+    </>
+  );
 }

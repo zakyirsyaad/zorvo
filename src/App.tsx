@@ -20,6 +20,7 @@ import { ChangesPanel } from "./components/changes/ChangesPanel";
 import { DiffView } from "./components/changes/DiffView";
 import { totalsOf } from "./lib/diff-stats";
 import { useSidePanel } from "./hooks/useSidePanel";
+import { useReviewComments } from "./hooks/useReviewComments";
 import { useTurnsEnded } from "./hooks/useTurnsEnded";
 import { usePullRequest } from "./hooks/usePullRequest";
 import { currentPlan } from "./lib/plan";
@@ -104,7 +105,7 @@ import {
   type AgentOptions,
   type ProbedOptions,
 } from "./lib/acp-draft";
-import type { Session, SessionWorktree, Settings } from "./types";
+import type { ReviewComment, Session, SessionWorktree, Settings } from "./types";
 
 const NO_FOLDER_NOTICE = "Open a project folder first: use the Open folder button next to Workspaces.";
 
@@ -270,6 +271,17 @@ export default function App() {
       updateState((prev) => patchSessionIn(prev, sessionId, patch)),
     [updateState],
   );
+
+  const updateReviewComments = useCallback(
+    (sessionId: string, change: (prev: ReviewComment[]) => ReviewComment[]) =>
+      updateState((prev) => ({
+        ...prev,
+        sessions: prev.sessions.map((s) => (s.id === sessionId ? { ...s, reviewComments: change(s.reviewComments ?? []) } : s)),
+      })),
+    [updateState],
+  );
+  const reviewComments = useReviewComments(activeSession?.id, activeSession?.reviewComments, updateReviewComments);
+  const unsentCommentCount = reviewComments.comments.filter((comment) => comment.sentAt === undefined).length;
 
   const rememberAgentOptions = (profileId: string, options: Partial<AgentOptions>) =>
     updateState((prev) => {
@@ -824,7 +836,8 @@ export default function App() {
         onToggleChanges={filesFolder && isRepository ? () => sidePanel.toggle("changes") : undefined}
         isChangesOpen={sidePanel.open === "changes" && Boolean(filesFolder) && isRepository}
         diffStats={diffStats}
-        isDiffAlwaysShown={Boolean(startCommit)}
+        isDiffAlwaysShown={Boolean(startCommit) || reviewComments.comments.length > 0}
+        diffCommentCount={unsentCommentCount}
         onOpenDiff={() => sidePanel.show("diff")}
         onPopout={activeSession ? () => shell.popout(activeSession.id) : undefined}
         onOpenSettings={() => setSettingsTab("general")}
@@ -1070,6 +1083,7 @@ export default function App() {
                 rootPath={filesFolder.path}
                 startCommit={startCommit}
                 prefersStart={Boolean(activeSession?.compareRunId)}
+                review={activeSession ? reviewComments : undefined}
                 version={sidePanel.changes.version}
                 isExpanded={isDiffExpanded}
                 onToggleExpanded={() => setExpandedDiffFolder(isDiffExpanded ? null : filesFolder.path)}

@@ -31,6 +31,30 @@ describe("normalizePersistedState", () => {
     expect(state.sessions[0]).not.toHaveProperty("hasUnread");
   });
 
+  it("keeps a session's review comments and drops the bad ones", () => {
+    const good = {
+      id: "c-1", file: "a.ts", side: "new", line: 3, lineHash: "deadbeef", quote: "x", target: "head", body: "Fix", createdAt: 1,
+    };
+
+    const state = normalizePersistedState({ sessions: [{ ...base, reviewComments: [good, { ...good, id: 2 }] }] });
+
+    expect(state.sessions[0].reviewComments).toEqual([good]);
+  });
+
+  it("keeps a session whose review comments are malformed", () => {
+    const state = normalizePersistedState({ sessions: [{ ...base, reviewComments: "oops" }] });
+
+    expect(state.sessions).toHaveLength(1);
+    expect(state.sessions[0]).not.toHaveProperty("reviewComments");
+  });
+
+  it("omits an empty review comments list", () => {
+    const state = normalizePersistedState({ sessions: [{ ...base, reviewComments: [] }, { ...base, id: "s-2", reviewComments: [null] }] });
+
+    expect(state.sessions[0]).not.toHaveProperty("reviewComments");
+    expect(state.sessions[1]).not.toHaveProperty("reviewComments");
+  });
+
   it("keeps a session's compareRunId and worktree startCommit", () => {
     const worktree = { repoPath: "/w/api", path: "/data/worktrees/api/fix", branch: "agent/fix", startCommit: "abc123" };
 

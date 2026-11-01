@@ -143,6 +143,33 @@ export interface Session {
   historyElsewhere?: boolean;
   /** The compare run this session belongs to, when it was started from one. */
   compareRunId?: string | null;
+  /** Comments written on lines of the session's diff; absent when there are none. */
+  reviewComments?: ReviewComment[];
+}
+
+/** What a diff is compared with: the last commit, the base branch, or where the worktree started. */
+export type ReviewTarget = 'head' | 'base' | 'start';
+
+/** A comment on one line of a session's diff. A comment never moves: it is checked, not rebased. */
+export interface ReviewComment {
+  id: string;
+  /** The path from the repository's root, as the diff lists it. */
+  file: string;
+  /** The path before a rename, for a comment on a removed line. */
+  oldFile?: string;
+  side: 'new' | 'old';
+  /** Line number in that side's file, when the comment was written. */
+  line: number;
+  /** FNV-1a (32-bit, hex) of the row's raw text, so a long line needs no full copy. */
+  lineHash: string;
+  /** The line as written, cut to `MAX_QUOTE_LENGTH`. */
+  quote: string;
+  /** What the diff was compared with. A removed line's number depends on it. */
+  target: ReviewTarget;
+  body: string;
+  createdAt: number;
+  /** When a message holding this comment was sent. It says Send was pressed, not that the agent acted. */
+  sentAt?: number;
 }
 
 export interface Settings {

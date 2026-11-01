@@ -55,6 +55,22 @@ export function unifiedDiffRows(diff: string): UnifiedRow[] {
   return [...rows.slice(0, MAX_ROWS), { kind: 'note', text: `${left} more lines not shown` }];
 }
 
+/** The diff ends in a cut note: the backend's size limit or this file's row limit. */
+export function isCutDiff(rows: readonly UnifiedRow[]): boolean {
+  const last = rows[rows.length - 1];
+  return last?.kind === 'note' && (last.text.startsWith('… diff cut') || last.text.endsWith('more lines not shown'));
+}
+
+/** A symbolic link's diff shows the link's target, not lines of code, so it takes no comments. */
+export function isCommentableFile(rows: readonly UnifiedRow[]): boolean {
+  return !rows.some((row) => row.kind === 'note' && row.text.startsWith('\\ Symbolic link'));
+}
+
+/** Added, removed and context rows have a line to comment on; hunk headers and notes do not. */
+export function isCommentableRow(row: UnifiedRow): boolean {
+  return row.kind === 'added' || row.kind === 'removed' || row.kind === 'context';
+}
+
 /** The paths a commit of these changes takes: a rename's old path too. */
 export function commitPathsOf(changes: readonly FileChange[]): string[] {
   return changes.flatMap((change) => (change.oldPath ? [change.path, change.oldPath] : [change.path]));

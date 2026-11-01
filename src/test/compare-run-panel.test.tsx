@@ -149,6 +149,17 @@ describe("CompareRunPanel", () => {
     expect(spy).toHaveBeenCalledWith("session_diff_stats_since", { path: "/wt/1", commit: "1".repeat(40) }, undefined);
   });
 
+  it("reads the numbers from the agent's folder, the one the backend knows, in a run started from a subfolder", async () => {
+    answerDiffs({
+      "/wt/1": new Error("/wt/1 is not one of your workspaces"),
+      "/wt/1/packages/app": [stat("packages/app/a.ts", 3, 1)],
+    });
+    await renderPanel(props([facts(1, {}, { cwd: "/wt/1/packages/app" })]));
+
+    await waitFor(() => expect(within(rowOf("Claude Code")).getByText("1 file")).toBeInTheDocument());
+    expect(within(rowOf("Claude Code")).getByText("+3")).toBeInTheDocument();
+  });
+
   it("shows — when the diff cannot be read and keeps the other rows", async () => {
     answerDiffs({ "/wt/1": new Error("not a repository"), "/wt/2": [stat("c.ts", 4, 1)] });
     await renderPanel(props([facts(1), facts(2)]));

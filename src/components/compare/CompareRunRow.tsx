@@ -30,9 +30,10 @@ const STATUS_STYLES: Record<RunRowStatus, string> = {
 
 /** What the agent changed in its worktree since the run began, or — when that cannot be read. */
 function Changes({ facts, version }: { facts: RowFacts; version: number }) {
-  const { worktree } = facts.session;
+  const { cwd, worktree } = facts.session;
   const [error, setError] = useState<string | null>(null);
-  const { stats } = useDiffStatsSince(worktree?.path, worktree?.startCommit, version, setError);
+  // Read through the agent's folder: from a subfolder it is the known workspace, not the worktree's root.
+  const { stats } = useDiffStatsSince(cwd, worktree?.startCommit, version, setError);
   if (!stats) {
     return (
       <span className="text-xs text-fg-muted" title={error ?? undefined}>

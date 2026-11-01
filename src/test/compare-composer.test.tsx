@@ -43,6 +43,8 @@ interface DraftOptions {
   isRepository?: boolean;
   /** Only this folder is a plain folder. */
   plainFolder?: string;
+  /** Reading this folder's details never finishes. */
+  loadingFolder?: string;
   profiles?: AgentProfile[];
   /** Answers `acp_probe_agent`; the default answers nothing. */
   probe?: (profileId: string) => Promise<unknown>;
@@ -65,6 +67,7 @@ async function renderDraft(options: DraftOptions = {}) {
     if (cmd === "get_agent_profiles") return Promise.resolve(structuredClone(options.profiles ?? ALL));
     if (cmd === "workspace_details") {
       const path = (args as { path?: string } | undefined)?.path;
+      if (path !== undefined && path === options.loadingFolder) return new Promise(() => {});
       if (options.isRepository === false || path === options.plainFolder) {
         return Promise.resolve({ location: "~/developer", branch: null });
       }
@@ -300,6 +303,24 @@ describe("comparing agents in the composer", () => {
     await act(async () => {});
     expect(screen.getByText(QUOTA_NOTE)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Agent: 2 agents" })).toBeInTheDocument();
+  });
+
+  it("Send is blocked while a compare draft's folder is loading", async () => {
+    const spy = await renderDraft({ loadingFolder: "/Users/test/developer/titan-investment" });
+    await openAgentMenu();
+    await tick("Qwen Code");
+    await chooseFolder("titan-investment");
+    await act(async () => {
+      fireEvent.change(prompt(), { target: { value: "go" } });
+    });
+
+    // The ticks and the note stay, but nothing may start outside a worktree.
+    expect(screen.getByText(QUOTA_NOTE)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+    await act(async () => {
+      fireEvent.keyDown(prompt(), { key: "Enter" });
+    });
+    expect(spy.mock.calls.filter(([cmd]) => cmd === "acp_start_session")).toHaveLength(0);
   });
 
   it("outside a repository the chip stays single-choice", async () => {

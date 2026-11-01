@@ -190,7 +190,7 @@ export default function App() {
   const tickableAgentIds = new Set(agentChoices.filter((c) => !c.disabledReason).map((c) => c.value));
   // Details are null while a folder loads, which says nothing about it: compare keeps the last known answer until the folder's own arrives.
   const [lastDetails, setLastDetails] = useState(workspaceDetails);
-  if (workspaceDetails && workspaceDetails !== lastDetails) setLastDetails(workspaceDetails);
+  if (isNewSessionDraft && workspaceDetails && workspaceDetails !== lastDetails) setLastDetails(workspaceDetails);
   const canCompare = isNewSessionDraft && Boolean((workspaceDetails ?? lastDetails)?.branch);
   const compare = useCompareDraft({
     primaryAgentId,
@@ -662,7 +662,8 @@ export default function App() {
     onPickModel: rememberModelPick,
   });
   // Several agents are not asked and nothing is picked for them yet: Send only waits for the single agent's install or sign-in.
-  const isSendBlocked = !compare.isCompare && (draftNeedsInstall || draftNeedsSignIn);
+  // The note promises one worktree each, so while the folder is not known to be a repository (still loading, or unreadable) Send waits too.
+  const isSendBlocked = compare.isCompare ? !canUseWorktree : draftNeedsInstall || draftNeedsSignIn;
   const composerCommands = composerCommandsFor({
     isRunning: isActiveRunning,
     liveCommands: acp.info[activeSessionId]?.commands,

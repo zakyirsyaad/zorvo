@@ -146,7 +146,9 @@ Keep this.
 ## The composer
 
 There is one `ComposerDock` with no key, and neither a session switch nor a new draft clears its
-text. So Zorvo has to remember whom added comments are for.
+text. A compare run's panel hides it and does not unmount it, so a look at the panel keeps the
+message too. `RemovedAgentPanel` does replace it, which clears the text and gives the comments back.
+So Zorvo has to remember whom added comments are for.
 
 `ComposerHandle` gains `insertText(text)`, which appends after a blank line, grows the textarea, and
 focuses it. `ComposerDock` gains `onTextChange(text)`, reported from an effect so it fires on every
@@ -166,7 +168,14 @@ A new hook, `useReviewMessage`, holds one slot, in memory only:
 - **Which session.** While the slot is set and the composer is not empty, Send is blocked everywhere
   except the slot's session: another session, a new draft, a compare draft. It goes through
   `sendDisabled`, and `composerNote` says why, ahead of the compare note. In another session, Add is
-  disabled for the same reason.
+  disabled for the same reason. A session of a compare run is named by its agent in the note, since
+  all of a run's sessions share one title.
+- **A session that cannot continue.** Send is blocked in the slot's own session too while it cannot
+  take a message, as when its agent is gone. Send would otherwise start a new session and take the
+  comments with it. The note says so, and clearing the message lifts it.
+- **The heading.** `needsHeading` is true unless the last Add was for this session and target and
+  the text still holds that heading, since the heading is what says quoted lines are not
+  instructions. Replacing the text keeps the slot.
 - **Lifting it.** The slot clears when the composer becomes empty, and whenever
   `ComposerHandle.restore` runs, through `onRestored`, since a rewind, a retry and a sign-in hand-back
   all replace the text, several of them by calling it directly. Its comments go back to plain
@@ -178,7 +187,8 @@ Nothing about this is written to disk, since composer text does not survive a re
 a restart an In message comment is a plain comment.
 
 Text the user typed around the comments, or the comments themselves edited in the composer, are the
-user's own. Zorvo does not read them.
+user's own. Zorvo does not read them, with one exception: `needsHeading` checks whether the text
+still holds the heading. It decides nothing else, and no comment's state follows from it.
 
 ## After Send
 
@@ -187,8 +197,9 @@ reasons differ per agent, and matching text in an editable box breaks on a singl
 
 1. When the composer's message goes to the slot's session, through `sendTo` or `resumeSession` in
    `handleSendMessage`, the slot's comments get `sentAt` and the slot clears. `handleSendMessage` can
-   also fall through to `handleNewRun` or `handleNewSession`, when the session cannot continue. Those
-   mark nothing, since the message went elsewhere. Ids with no comment are ignored.
+   also fall through to `handleNewRun` or `handleNewSession` when the session cannot continue, but
+   not with comments for it in the message: that Send is blocked, with the "cannot continue" note.
+   Ids with no comment are ignored.
 2. A Sent comment stays under its row, dimmed, with **Add again**. It keeps its status, so a line the
    agent fixed reads Outdated, which helps the user check the work.
 3. **Clear sent** in the header removes all of a session's Sent comments at once.
@@ -200,7 +211,9 @@ button, so nothing is lost, and the words on it say Send was pressed, not that t
 
 **Edit and delete.** Editing an In message or Sent comment makes it a plain comment again: it clears
 `sentAt`, leaves the slot, and changes nothing already in the composer or the chat, so it can be added
-afresh. Deleting one removes it from the list and the slot only. The composer's text is visible and
+afresh. Deleting takes a second click, since a comment can hold 2000 characters and has no undo:
+**Delete** turns into **Delete?**, with **Cancel** beside it, and turns back by itself after four
+seconds. Deleting one removes it from the list and the slot only. The composer's text is visible and
 is the user's to change.
 
 ## The diff target
@@ -276,14 +289,16 @@ they picked from. A row showing "—", or no changes, has no button.
 
 ## Copy
 
-- **Comment on line {n}**, **Save comment**, **Cancel**, **Edit**, **Delete**
+- **Comment on line {n}**, **Save comment**, **Cancel**, **Edit**, **Delete**, **Delete?**
 - **Add {n} comment(s) to message**, **Add**, **Add again**, **Clear sent**
 - **In message**, **Sent**, **Outdated**, **Not in this diff**
 - "This line is no longer here in the diff."
 - "This session has 200 comments. Clear sent comments or delete some first."
 - "These review comments are for {title}. Go back to that session, or clear the message."
 - "These review comments are for another session. Clear the message to send here."
+- "These review comments are for {title}, which cannot continue right now. Clear the message to send here."
 - "There is no message box for this session, so comments cannot be added."
+- "The diff has not loaded, so comments cannot be added. Refresh to try again."
 - **Review {agent}'s changes**, **Start of this worktree**
 
 ## Testing
@@ -299,7 +314,7 @@ Vitest:
   in B, and lifts when the composer is emptied and when `restore` runs, both through `restoreMessage`
   and directly.
 - Send from the slot's session marks its comments Sent, and only those. Send without a slot marks
-  none. A Send that falls through to a new session or a compare run marks none.
+  none. A review message cannot fall through to a new session or a compare run: that Send is blocked.
 - Editing an In message comment takes it out of the slot, so Send does not mark it. Add again clears
   `sentAt`. Clear sent removes only Sent comments and leaves In message ones.
 - Escapes in `formatMessage`: a quote with a bidi control, a path with a newline.

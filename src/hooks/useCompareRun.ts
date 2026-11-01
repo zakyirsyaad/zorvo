@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import type { FirstMessage } from './session-engine/useAcpEngine';
+import { createId } from '../lib/ids';
 import { NO_CHOICES, withPreferred, type AgentOptions } from '../lib/acp-draft';
 import { attachmentsFor, createSessionWorktree } from '../lib/session-worktree';
 import { titleFor, type SessionSpec, type StartSessionOptions } from '../lib/session-start';
@@ -58,11 +59,12 @@ export function useCompareRun(deps: CompareRunDeps) {
     isStarting.current = true;
     deps.setIsBusy(true);
     const notices: string[] = [];
-    const ready: Array<Prepared & { message: FirstMessage }> = [];
-    const name = titleFor(first);
+    let hasStartedSession = false;
     try {
+      const name = titleFor(first);
       const { made, failures } = await makeWorktrees(agents, deps, name);
       notices.push(...failures);
+      const ready: Array<Prepared & { message: FirstMessage }> = [];
       for (const item of made) {
         let message = first;
         try {
@@ -73,34 +75,38 @@ export function useCompareRun(deps: CompareRunDeps) {
         }
         ready.push({ ...item, message });
       }
+
+      if (ready.length === 0) {
+        deps.restoreMessage(first, agents[0].id);
+        return;
+      }
+      // A run that ends with one session is a normal session: no run id, so no group.
+      const runId = ready.length >= 2 ? createId('run') : undefined;
+      const isOnDraft = deps.isOnDraft();
+      const startedAt = Date.now();
+      for (const [index, { agent, worktree, cwd, message }] of ready.entries()) {
+        deps.startSession(
+          { agent, cwd, name, worktree, createdAt: startedAt + index, ...(runId ? { compareRunId: runId } : {}) },
+          message,
+          {
+            choices: withPreferred(NO_CHOICES, deps.agentOptions?.[agent.id]),
+            // A run opens as a whole below, never one session at a time; a lone session opens like any other.
+            focus: !runId && isOnDraft,
+          },
+        );
+        hasStartedSession = true;
+      }
+      deps.onStarted();
+      if (runId && isOnDraft) deps.openRun(runId);
+    } catch (error) {
+      // Nothing here may reject: the caller does not wait for the run. Worktrees already made stay on disk.
+      notices.push(`Could not start the run: ${String(error)}`);
+      if (!hasStartedSession) deps.restoreMessage(first, agents[0].id);
     } finally {
+      if (notices.length > 0) deps.onNotice(notices.join('; '));
       deps.setIsBusy(false);
       isStarting.current = false;
     }
-
-    if (notices.length > 0) deps.onNotice(notices.join('; '));
-    if (ready.length === 0) {
-      deps.restoreMessage(first, agents[0].id);
-      return;
-    }
-
-    // A run that ends with one session is a normal session: no run id, so no group.
-    const runId = ready.length >= 2 ? crypto.randomUUID() : undefined;
-    const isOnDraft = deps.isOnDraft();
-    const startedAt = Date.now();
-    ready.forEach(({ agent, worktree, cwd, message }, index) => {
-      deps.startSession(
-        { agent, cwd, name, worktree, createdAt: startedAt + index, ...(runId ? { compareRunId: runId } : {}) },
-        message,
-        {
-          choices: withPreferred(NO_CHOICES, deps.agentOptions?.[agent.id]),
-          // A run opens as a whole below, never one session at a time; a lone session opens like any other.
-          focus: !runId && isOnDraft,
-        },
-      );
-    });
-    deps.onStarted();
-    if (runId && isOnDraft) deps.openRun(runId);
   };
 
   return { startRun };

@@ -170,8 +170,8 @@ export default function App() {
   // Task 7 replaces this with the run's panel: until then an opened run shows its first session's chat.
   const activeRun = activeRunId && !selectedSessionId ? runOf(sessions, activeRunId) : null;
   const activeSessionId = selectedSessionId || (activeRun?.sessions[0].id ?? "");
-  // Any selection leaves the run.
-  if (selectedSessionId && activeRunId) setActiveRunId(null);
+  // Any selection leaves the run, and so does a run that is gone (archived or deleted away): it does not come back on its own.
+  if (activeRunId && (selectedSessionId || !runOf(sessions, activeRunId))) setActiveRunId(null);
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const activeAgent = agents.find((a) => a.id === activeSession?.profileId);
   const isActiveRunning = activeSession?.status === "running";
@@ -509,6 +509,7 @@ export default function App() {
     // A failed import returns to the draft it started from, so its picks stay: it did not open.
     if (!options?.keepChoices) setAcpChoices(NO_CHOICES);
     setActiveSessionId("");
+    setActiveRunId(null);
   };
 
   const forkSession = useSessionFork({

@@ -1,12 +1,24 @@
 import "@testing-library/jest-dom/vitest";
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, act, fireEvent, renderHook, waitFor, within } from "@testing-library/react";
 import { fakeTauriInvoke, type FakeTauriStore } from "./setup";
 import { makeProfile } from "./fixtures/agents";
 import App from "../App";
+import { useCompareRun, type CompareRunDeps } from "../hooks/useCompareRun";
 import { useSessionFork } from "../hooks/useSessionFork";
 import type { AgentOptions } from "../lib/acp-draft";
 import type { ChatMessage, Session } from "../types";
+
+type Listener = (event: { payload: unknown }) => void;
+const listeners = new Map<string, Listener>();
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: (event: string, cb: Listener) => {
+    listeners.set(event, cb);
+    return Promise.resolve(() => listeners.delete(event));
+  },
+  emit: () => Promise.resolve(),
+}));
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
 
@@ -128,7 +140,10 @@ function deferred<T>() {
 const savedSessions = () => fakeStore().state.sessions as Array<Session & { compareRunId?: string | null }>;
 
 describe("starting a compare run", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    listeners.clear();
+  });
 
   it("makes one worktree and one session per agent, one at a time", async () => {
     const first = deferred<Worktree>();
@@ -174,7 +189,7 @@ describe("starting a compare run", () => {
     const sessions = savedSessions();
     const runIds = new Set(sessions.map((s) => s.compareRunId));
     expect(runIds.size).toBe(1);
-    expect([...runIds][0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect([...runIds][0]).toMatch(/^run-/);
     expect(sessions.map((s) => [s.profileId, s.worktree?.startCommit]).sort()).toEqual([
       ["claude-acp", "1".repeat(40)],
       ["kimi", "3".repeat(40)],
@@ -233,6 +248,48 @@ describe("starting a compare run", () => {
     // The message shows in the chat of the first session, and the top bar names it.
     expect((await screen.findAllByText("fix the login")).length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByRole("button", { name: /^Folder:/ })).toBeNull();
+  });
+
+  it("opens the draft again from + New session while a run is open", async () => {
+    await renderApp();
+    await tickAgents("Qwen Code");
+    await send("fix the login");
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^Folder:/ })).toBeNull());
+
+    await click(screen.getByRole("button", { name: "+ New session" }));
+
+    expect(await screen.findByRole("button", { name: /^Folder:/ })).toBeInTheDocument();
+    expect(prompt()).toHaveAttribute("placeholder", expect.stringContaining("start a new session"));
+    // Nor does the run come back on its own.
+    await act(async () => {});
+    expect(screen.getByRole("button", { name: /^Folder:/ })).toBeInTheDocument();
+  });
+
+  it("does not jump back into a run that was archived away and brought back", async () => {
+    const spy = await renderApp();
+    await tickAgents("Qwen Code");
+    await send("fix the login");
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^Folder:/ })).toBeNull());
+    // Only a session between turns can be archived.
+    await waitFor(() => expect(calls(spy, "acp_prompt")).toHaveLength(2));
+    for (const { sessionId } of calls(spy, "acp_prompt")) {
+      await act(async () => {
+        listeners.get("acp-event")?.({ payload: { sessionId, kind: "turn-end", stopReason: "end_turn" } });
+      });
+    }
+    const sidebar = within(screen.getByRole("complementary"));
+
+    await click(sidebar.getAllByRole("button", { name: "More actions for fix the login" })[0]);
+    await click(screen.getByRole("menuitem", { name: "Archive" }));
+    // One listed session is no run: the draft shows.
+    expect(await screen.findByRole("button", { name: /^Folder:/ })).toBeInTheDocument();
+
+    await click(await sidebar.findByRole("button", { name: "Archived (1)" }));
+    await click(sidebar.getAllByRole("button", { name: "More actions for fix the login" }).at(-1) as HTMLElement);
+    await click(screen.getByRole("menuitem", { name: "Unarchive" }));
+
+    await act(async () => {});
+    expect(screen.getByRole("button", { name: /^Folder:/ })).toBeInTheDocument();
   });
 
   it("keeps the session the user opened meanwhile", async () => {
@@ -315,6 +372,74 @@ describe("starting a compare run", () => {
     expect(prompt()).toBeDisabled();
     await act(async () => paths.resolve([`${worktreeNumber(1).cwd}/README.md`]));
     await waitFor(() => expect(calls(spy, "acp_start_session")).toHaveLength(1));
+  });
+});
+
+describe("the run's start failing unexpectedly", () => {
+  function runDeps(startSession: CompareRunDeps["startSession"]) {
+    return {
+      repoPath: "/w",
+      baseBranch: undefined,
+      agentOptions: undefined,
+      startSession,
+      isOnDraft: () => true,
+      openRun: vi.fn(),
+      setIsBusy: vi.fn(),
+      restoreMessage: vi.fn(),
+      onStarted: vi.fn(),
+      onNotice: vi.fn(),
+    };
+  }
+
+  beforeEach(() => {
+    vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) =>
+      cmd === "create_session_worktree" ? Promise.resolve(worktreeNumber(1)) : fakeTauriInvoke(cmd, args),
+    );
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("gives the message back and says so when nothing started", async () => {
+    const deps = runDeps(() => {
+      throw new Error("state is gone");
+    });
+    const { result } = renderHook(() => useCompareRun(deps));
+
+    await act(async () => result.current.startRun(ALL.slice(0, 2), { text: "go" }));
+
+    expect(deps.restoreMessage).toHaveBeenCalledWith({ text: "go" }, "claude-acp");
+    expect(deps.onNotice).toHaveBeenCalledWith(expect.stringContaining("state is gone"));
+    expect(deps.setIsBusy).toHaveBeenLastCalledWith(false);
+    expect(deps.openRun).not.toHaveBeenCalled();
+  });
+
+  it("does not put the message back once a session has started", async () => {
+    let calls = 0;
+    const deps = runDeps(() => {
+      calls += 1;
+      if (calls === 2) throw new Error("state is gone");
+    });
+    const { result } = renderHook(() => useCompareRun(deps));
+
+    await act(async () => result.current.startRun(ALL.slice(0, 2), { text: "go" }));
+
+    expect(deps.restoreMessage).not.toHaveBeenCalled();
+    expect(deps.onNotice).toHaveBeenCalledWith(expect.stringContaining("state is gone"));
+    expect(deps.setIsBusy).toHaveBeenLastCalledWith(false);
+  });
+
+  it("can start another run after a failed one", async () => {
+    let fail = true;
+    const startSession = vi.fn(() => {
+      if (fail) throw new Error("once");
+    });
+    const deps = runDeps(startSession);
+    const { result } = renderHook(() => useCompareRun(deps));
+    await act(async () => result.current.startRun(ALL.slice(0, 2), { text: "go" }));
+    fail = false;
+
+    await act(async () => result.current.startRun(ALL.slice(0, 2), { text: "go" }));
+
+    expect(deps.openRun).toHaveBeenCalledTimes(1);
   });
 });
 

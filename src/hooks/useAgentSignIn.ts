@@ -85,7 +85,9 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
       const composer = composerRef.current;
       // The composer on screen may be another session's by now: the message goes back only into its own.
       const isRestored = unsent !== undefined && composer !== null && session.id === activeSessionIdRef.current;
-      if (isRestored) composer.restore(unsent.text, unsent.attachments);
+      if (isRestored) composer.giveBack(unsent.text, unsent.attachments);
+      // Not on screen: the message waits for its session, and is not sent on its own after the sign-in.
+      else if (unsent) depsRef.current.onRestore(session.id, unsent.text, unsent.attachments);
       const pending = isRestored
         ? { sessionId: session.id, text: unsent.text, attachments: unsent.attachments }
         : undefined;
@@ -124,7 +126,7 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
       if (composer?.holdsRestored(unsent)) composer.clear();
       resend(session.id, unsent);
     } else if (request?.status === 'signing-in' || request?.status === 'checking') {
-      if (unsent) depsRef.current.composerRef.current?.restore(unsent.text, unsent.attachments);
+      if (unsent) depsRef.current.composerRef.current?.giveBack(unsent.text, unsent.attachments);
     } else {
       handBack(session, methods, unsent);
     }

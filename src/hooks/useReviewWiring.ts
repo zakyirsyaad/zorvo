@@ -1,6 +1,7 @@
 import type { RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import type { ComposerHandle } from '../components/ComposerDock';
+import { runOfSession } from '../lib/compare-run';
 import type { ReviewOwner } from '../lib/composer-state';
 import { asUnsent, reviewHeading, reviewMessage, type CheckedComment, type MessageContext } from '../lib/review-comments';
 import type { ReviewComment, ReviewTarget, Session } from '../types';
@@ -94,8 +95,10 @@ export function useReviewWiring({
   };
 
   const owner = blocksSend && slot ? sessions.find((candidate) => candidate.id === slot.sessionId) : undefined;
-  // The sessions of a compare run share one title: only the agent tells them apart.
-  const ownerTitle = owner?.compareRunId ? agentNameOf(owner.profileId) : owner?.name;
+  // A run's sessions share one title, so only the agent tells them apart: in the run, and once archived out of it.
+  // A Pick's winner keeps its id, but it is a plain session again and the sidebar lists it by title.
+  const isRunMember = owner?.compareRunId && (owner.archivedAt || runOfSession(sessions, owner.id));
+  const ownerTitle = owner && isRunMember ? agentNameOf(owner.profileId) : owner?.name;
 
   return {
     review: {

@@ -707,6 +707,38 @@ describe("Which session the message is for", () => {
     expect(sendButton()).toBeDisabled();
   });
 
+  it("names a Pick's winner by its title: it is a plain session again", async () => {
+    await renderDiff([
+      alpha([commentOf()], { compareRunId: "run-1" }),
+      sessionOf("s-b", "Beta work", []),
+      sessionOf("s-c", "Alpha work", [], { profileId: "qwen-code", compareRunId: "run-1", archivedAt: 1 }),
+    ]);
+    await addAll();
+
+    await openSession("Beta work");
+
+    expect(screen.getByText(NOTE_FOR_ALPHA)).toBeDefined();
+  });
+
+  it("names the agent of a run's session that was archived, as its title still says nothing", async () => {
+    await renderDiff([
+      alpha([commentOf()], { compareRunId: "run-1" }),
+      sessionOf("s-b", "Beta work", []),
+      sessionOf("s-c", "Alpha work", [], { profileId: "qwen-code", compareRunId: "run-1" }),
+    ]);
+    await addAll();
+    await openSession("Beta work");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "More actions for Claude Code" }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: "Archive" }));
+    });
+
+    expect(await screen.findByText("These review comments are for Claude Code, which is archived. Open it from the archive, or clear the message.")).toBeDefined();
+  });
+
   it("a composer that was taken away gives its comments back", async () => {
     const removed = makeProfile({ id: "gemini", name: "Gemini CLI", detected: true });
     const settings = fakeStore().state.settings as Partial<Settings>;

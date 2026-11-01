@@ -667,6 +667,33 @@ describe("a sign-in inside a compare run", () => {
     expect(prompt().value).toBe("fix the login");
   });
 
+  it.each([
+    ["pressed after the rewind", false],
+    ["already running at the rewind", true],
+  ])("a sign-in %s sends no old message and leaves the rewound text", async (_when, isRunning) => {
+    const { held, overrides } = heldLogin();
+    const spy = await startedRun({ overrides });
+    const sessionId = sessionOf(spy, "qwen-code");
+    await finish(spy, "qwen-code");
+    await openRow("Qwen Code");
+    await sendMessage("and the logout");
+    await waitFor(() => expect(promptsTo(spy, sessionId)).toHaveLength(2));
+    await refuse(spy, ["qwen-code"]);
+    expect(prompt().value).toBe("and the logout");
+    if (isRunning) await pressSignIn("Qwen Code");
+
+    const first = screen.getByText("fix the login", { selector: "p" }).closest("[data-testid^='chat-message-']") as HTMLElement;
+    await click(within(first).getByRole("button", { name: "Rewind to here" }));
+    await click(within(first).getByRole("button", { name: "Confirm rewind" }));
+    await waitFor(() => expect(prompt().value).toBe("fix the login"));
+    if (!isRunning) await pressSignIn("Qwen Code");
+    await act(async () => held.resolve(null));
+    await settle();
+
+    expect(promptsTo(spy, sessionId)).toHaveLength(2);
+    expect(prompt().value).toBe("fix the login");
+  });
+
   it("a message the user changed is left as it is", async () => {
     const spy = await startedRun();
     await refuse(spy, ["qwen-code"]);

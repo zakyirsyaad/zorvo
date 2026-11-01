@@ -111,18 +111,18 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
    */
   const handBackKept = (session: Pick<Session, 'id' | 'profileId' | 'cwd'>, methods: AuthMethod[], unsent?: FirstMessage) => {
     const current = currentRequestRef.current;
-    const status = current?.profileId === session.profileId ? current.status : undefined;
+    const request = current?.profileId === session.profileId ? current : null;
     // Refused again since: this sign-in did not hold for the session, and sending once more would never end.
-    const wasResentOnIt = current !== null && resentOnRef.current.get(session.id) === current;
-    if (status === 'signed-in' && unsent && !wasResentOnIt) {
+    const wasResentOnIt = resentOnRef.current.get(session.id) === request;
+    if (request?.status === 'signed-in' && unsent && !wasResentOnIt) {
       // The slot may be waiting on another session's message: that request stays.
-      if (!current?.pending || current.pending.sessionId === session.id) dismiss();
-      else resentOnRef.current.set(session.id, current);
+      if (!request.pending || request.pending.sessionId === session.id) dismiss();
+      else resentOnRef.current.set(session.id, request);
       const composer = depsRef.current.composerRef.current;
       // One composer stays up across a sidebar switch, so it may hold another session's text: only this message goes.
       if (composer?.holdsRestored(unsent)) composer.clear();
       resend(session.id, unsent);
-    } else if (status === 'signing-in' || status === 'checking') {
+    } else if (request?.status === 'signing-in' || request?.status === 'checking') {
       if (unsent) depsRef.current.composerRef.current?.restore(unsent.text, unsent.attachments);
     } else {
       handBack(session, methods, unsent);
@@ -149,7 +149,7 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
   const sendRefused = (pending: AuthRequest['pending']) => {
     const { composerRef, activeSessionIdRef } = depsRef.current;
     const composer = composerRef.current;
-    if (!pending || activeSessionIdRef.current !== pending.sessionId || !composer?.holdsRestored()) return false;
+    if (!pending || activeSessionIdRef.current !== pending.sessionId || !composer?.holdsRestored(pending)) return false;
     composer.clear();
     dismiss();
     resend(pending.sessionId, pending);

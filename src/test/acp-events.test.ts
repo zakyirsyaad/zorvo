@@ -5,6 +5,7 @@ import {
   applyReplayUpdate,
   closeImportedTurn,
   closeTurn,
+  settlePermissionCards,
   isAwaitingPermission,
   noteModeChange,
   pendingCardsInTurn,
@@ -347,6 +348,29 @@ describe("permission requests", () => {
     const withCard = applyPermissionRequest([], request, ctx());
 
     expect(closeTurn(withCard)[0].actionCard?.status).toBe("rejected");
+  });
+
+  it("settling the permission cards leaves a request that was never answered unanswered, wherever it sits", () => {
+    const user: ChatMessage = { id: "u", role: "user", content: "hi", timestamp: 1 };
+    const withCard = applyPermissionRequest([user], request, ctx());
+    const older = applyPermissionRequest(
+      [...withCard, { id: "u2", role: "user", content: "next", timestamp: 2 }],
+      { ...request, requestId: "other-request" },
+      ctx(),
+    );
+
+    const settled = settlePermissionCards(older);
+
+    expect(settled.flatMap((m) => (m.actionCard ? [m.actionCard.status] : []))).toEqual(["rejected", "rejected"]);
+    expect(settled.flatMap((m) => (m.actionCard ? [m.actionCard.chosenOptionId] : []))).toEqual([undefined, undefined]);
+  });
+
+  it("settling the permission cards keeps answered cards and returns the same list when none waits", () => {
+    const withCard = applyPermissionRequest([], request, ctx());
+    const answered = resolvePermissionCard(withCard, withCard[0].actionCard!.id, "allow");
+
+    expect(settlePermissionCards(answered)).toBe(answered);
+    expect(settlePermissionCards(answered)[0].actionCard).toMatchObject({ status: "approved", chosenOptionId: "allow" });
   });
 
   it("keeps an earlier unanswered request when the agent asks again", () => {

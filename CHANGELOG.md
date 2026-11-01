@@ -10,6 +10,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **Zorvo is open source.** The source is at [zakyirsyaad/zorvo](https://github.com/zakyirsyaad/zorvo), under the Apache License 2.0. The license does not cover the Zorvo name or logo.
 - **Releases moved to [zakyirsyaad/zorvo](https://github.com/zakyirsyaad/zorvo).** Downloads, updates, the user guide and issues now live there, not in zorvo-releases. Copies up to 0.7.0 get this version through zorvo-releases as usual, and update from the new place after that.
 
+### Fixed
+
+- **A permission request left over from before a restart no longer offers Allow and Reject.** The chat shows it as "This request was not answered." instead of buttons that fail with the agent's session id. If an agent ends just as you answer, the card is settled the same way and the notice asks you to send a message to continue.
+
 ## [0.7.0] - 2026-10-29
 
 ### Added

@@ -406,6 +406,34 @@ describe("ACP sessions in the app", () => {
     expect(screen.getByRole("button", { name: "Allow" })).toBeDefined();
   });
 
+  it("settles the card without showing the session id when the backend no longer has the session", async () => {
+    const spy = await renderWithQwen();
+    const sessionId = await startQwenSession(spy);
+    await send("clean up");
+    await acpEvent({
+      sessionId,
+      kind: "permission",
+      requestId: 13,
+      toolCall: { title: "Delete build" },
+      options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
+    });
+    const original = realInvoke;
+    spy.mockImplementation((cmd, args) =>
+      cmd === "acp_respond_permission"
+        ? Promise.reject(`Session '${sessionId}' not found`)
+        : original(cmd, args)
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Allow" }));
+    });
+
+    expect(screen.queryByRole("button", { name: "Allow" })).toBeNull();
+    expect(screen.getByText("This request was not answered.")).toBeDefined();
+    expect(screen.getByRole("alert").textContent).not.toContain(sessionId);
+    expect(screen.getByRole("alert").textContent).toContain("agent is no longer running");
+  });
+
   it("keeps a session running and sends the first prompt when the safe-mode switch fails", async () => {
     const spy = await renderWithQwen();
     const original = realInvoke;

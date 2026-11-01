@@ -15,3 +15,8 @@ export function isUnknownSessionError(error: unknown): boolean {
     /not found/i.test(error)
   );
 }
+
+/** True when the backend says it has no such session: its agent is gone (the backend words it `Session '<id>' not found`). */
+export function isSessionGoneError(error: unknown): boolean {
+  return typeof error === 'string' && /^Session '[^']*' not found/.test(error);
+}

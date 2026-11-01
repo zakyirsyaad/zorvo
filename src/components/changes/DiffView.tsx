@@ -8,6 +8,8 @@ import { defaultTarget, targetOptions, type DiffTargetId } from "../../lib/diff-
 const AUTO_OPEN_LIMIT = 25;
 
 const START_LOST = "The start of this worktree is no longer in this repository.";
+/** What the backend says (`checked_commit`) when git does not have the start commit; any other failure is not that. */
+const BACKEND_START_LOST = "This repository does not have the start commit";
 
 /** The empty-diff line for `target`. */
 function noChangesText(target: DiffTargetId, baseName: string | undefined): string {
@@ -56,12 +58,14 @@ export function DiffView({
     target,
     startCommit,
     version,
-    // A start that cannot be read says so below; the generic notice would only repeat it.
-    (message) => target !== "start" && onError(message),
-    () => {
-      if (target !== "start") return;
+    onError,
+    // Only a start commit git no longer has drops the start. Any other failure
+    // (a git lock, a timeout) is reported as usual and Refresh tries it again.
+    (error) => {
+      if (target !== "start" || !String(error).includes(BACKEND_START_LOST)) return false;
       setIsStartLost(true);
       onError(START_LOST);
+      return true;
     },
   );
   // Refresh reads every open diff again; otherwise a diff is read again only when its file changed.

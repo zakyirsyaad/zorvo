@@ -464,6 +464,8 @@ describe("DiffView", () => {
 
 const START = "abc123def456";
 const LOST_START = "The start of this worktree is no longer in this repository.";
+const BACKEND_LOST = "This repository does not have the start commit";
+const onErrorOnce = vi.fn();
 const START_LABEL = "Start of this worktree → working tree";
 
 function mockSession(options: { base: { name: string } | null; since?: FileStat[] | "lost"; stats?: FileStat[] }) {
@@ -471,7 +473,7 @@ function mockSession(options: { base: { name: string } | null; since?: FileStat[
     if (cmd === "session_diff_targets") return Promise.resolve({ base: options.base, root: "/w", prefix: "" });
     if (cmd === "session_diff_stats") return Promise.resolve(options.stats ?? THREE);
     if (cmd === "session_diff_stats_since") {
-      return options.since === "lost" ? Promise.reject("not a commit") : Promise.resolve(options.since ?? THREE);
+      return options.since === "lost" ? Promise.reject(BACKEND_LOST) : Promise.resolve(options.since ?? THREE);
     }
     if (cmd === "session_file_diff") return Promise.resolve(DIFF);
     return Promise.resolve("");
@@ -480,7 +482,10 @@ function mockSession(options: { base: { name: string } | null; since?: FileStat[
 const callsOf = (spy: { mock: { calls: unknown[][] } }, cmd: string) => spy.mock.calls.filter((c) => c[0] === cmd);
 
 describe("DiffView with the start of the worktree", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    onErrorOnce.mockClear();
+  });
 
   it("a_session_in_a_compare_run_opens_on_the_start_of_its_worktree", async () => {
     const spy = mockSession({ base: { name: "main" }, since: [STAT] });
@@ -548,6 +553,86 @@ describe("DiffView with the start of the worktree", () => {
     expect(callsOf(spy, "session_diff_stats").map((c) => c[1])).toEqual([{ path: "/w", target: "base" }]);
     fireEvent.click(screen.getByRole("button", { name: "Diff target: main → working tree" }));
     expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["main → working tree", "HEAD → working tree"]);
+  });
+
+  it("a_lost_start_does_not_use_up_the_report_for_a_later_failed_read", async () => {
+    vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd) => {
+      if (cmd === "session_diff_targets") return Promise.resolve({ base: { name: "main" }, root: "/w", prefix: "" });
+      if (cmd === "session_diff_stats_since") return Promise.reject(BACKEND_LOST);
+      if (cmd === "session_diff_stats") return Promise.reject("base is gone too");
+      return Promise.resolve("");
+    });
+    const { onError } = await renderView({ startCommit: START, prefersStart: true });
+
+    expect(onError.mock.calls.map((c) => c[0])).toEqual([LOST_START, expect.stringContaining("base is gone too")]);
+  });
+
+  it("a_transient_failure_stays_on_start_and_reports_it", async () => {
+    let isGitBusy = true;
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd) => {
+      if (cmd === "session_diff_targets") return Promise.resolve({ base: { name: "main" }, root: "/w", prefix: "" });
+      if (cmd === "session_diff_stats_since") return isGitBusy ? Promise.reject("git failed") : Promise.resolve(THREE);
+      return Promise.resolve("");
+    });
+    const { onError } = await renderView({ startCommit: START, prefersStart: true });
+
+    expect(screen.getByRole("button", { name: `Diff target: ${START_LABEL}` })).toBeDefined();
+    expect(onError).toHaveBeenCalledOnce();
+    expect(onError.mock.calls[0][0]).toContain("git failed");
+    expect(onError).not.toHaveBeenCalledWith(LOST_START);
+    expect(callsOf(spy, "session_diff_stats")).toHaveLength(0);
+
+    isGitBusy = false;
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: "Refresh" }));
+    });
+    expect(screen.getByText("app.ts")).toBeDefined();
+    expect(screen.getByRole("button", { name: `Diff target: ${START_LABEL}` })).toBeDefined();
+  });
+
+  it("the_lost_notice_fires_once", async () => {
+    mockSession({ base: { name: "main" }, since: "lost" });
+    const view = render(
+      <DiffView rootPath="/w" version={1} isExpanded={false} onToggleExpanded={() => {}} onClose={() => {}} onError={onErrorOnce} startCommit={START} prefersStart />,
+    );
+    await act(async () => {});
+    await act(async () =>
+      view.rerender(
+        <DiffView rootPath="/w" version={2} isExpanded={false} onToggleExpanded={() => {}} onClose={() => {}} onError={onErrorOnce} startCommit={START} prefersStart />,
+      ),
+    );
+
+    expect(onErrorOnce.mock.calls.filter((c) => c[0] === LOST_START)).toHaveLength(1);
+  });
+
+  it("an_answer_for_the_old_target_is_ignored_after_a_switch", async () => {
+    let settleStart: (outcome: "answer" | "lost") => void = () => {};
+    vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd) => {
+      if (cmd === "session_diff_targets") return Promise.resolve({ base: { name: "main" }, root: "/w", prefix: "" });
+      if (cmd === "session_diff_stats_since") {
+        return new Promise((resolve, reject) => {
+          settleStart = (outcome) => (outcome === "answer" ? resolve([statOf("from-start.ts")]) : reject(BACKEND_LOST));
+        });
+      }
+      if (cmd === "session_diff_stats") return Promise.resolve([statOf("from-head.ts")]);
+      return Promise.resolve("");
+    });
+    const { onError } = await renderView({ startCommit: START, prefersStart: true });
+    expect(screen.getByText("Reading the changes…")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: `Diff target: ${START_LABEL}` }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("option", { name: "main → working tree" }));
+    });
+    expect(screen.getByText("from-head.ts")).toBeDefined();
+
+    await act(async () => settleStart("answer"));
+    expect(screen.getByText("from-head.ts")).toBeDefined();
+    expect(screen.queryByText("from-start.ts")).toBeNull();
+    await act(async () => settleStart("lost"));
+    expect(onError).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Diff target: main → working tree" })).toBeDefined();
   });
 
   it("falls to HEAD when a lost start leaves no base", async () => {

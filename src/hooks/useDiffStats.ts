@@ -63,8 +63,9 @@ interface StatsRequest {
 /**
  * The body both stats hooks share: runs `request` for `path` and keeps the
  * answer for `key` (what the read is for) only. Read again when `version` or
- * `key` changes, and on `reload`. A failure is reported once per folder, and
- * `onFailed` hears about every one.
+ * `key` changes, and on `reload`. A failure is reported once per folder, unless
+ * `onFailed`, which hears about every one, says it handled it (returns true):
+ * a handled failure is neither reported nor counted as the folder's report.
  */
 function useStatsRead(
   path: string | undefined,
@@ -72,7 +73,7 @@ function useStatsRead(
   key: string,
   version: number | string,
   onError: (message: string) => void,
-  onFailed?: () => void,
+  onFailed?: (error: unknown) => boolean,
 ): DiffStats {
   const [state, setState] = useState<{ key: string; stats: FileStat[] } | null>(null);
   const [reloads, setReloads] = useState(0);
@@ -94,7 +95,7 @@ function useStatsRead(
       })
       .catch((error) => {
         if (isCancelled) return;
-        onFailedRef.current?.();
+        if (onFailedRef.current?.(error)) return;
         if (reportedPath.current === path) return;
         reportedPath.current = path;
         onErrorRef.current(`Could not read the diff in ${path}: ${String(error)}`);
@@ -145,9 +146,9 @@ export function useDiffStatsSince(
  * Per-file line counts of the changes in `path`'s repository against `target`:
  * since `startCommit` for the start of the worktree, else against HEAD or the
  * base as `useDiffStats` reads them. Nothing is read while `isEnabled` is false,
- * or for the start without a commit. A failure is reported once per folder, and
- * `onFailed` fires on every failed read, so a caller can drop a target that git
- * cannot read.
+ * or for the start without a commit. A failure is reported once per folder.
+ * `onFailed` hears about every failed read and returns true for one it handles
+ * itself, which then is not reported.
  */
 export function useTargetStats(
   path: string | undefined,
@@ -156,7 +157,7 @@ export function useTargetStats(
   startCommit: string | undefined,
   version: number,
   onError: (message: string) => void,
-  onFailed?: () => void,
+  onFailed?: (error: unknown) => boolean,
 ): DiffStats {
   const isStart = target === 'start';
   const request: StatsRequest | null = !isEnabled

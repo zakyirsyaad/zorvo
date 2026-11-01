@@ -58,6 +58,12 @@ export function runOf(sessions: readonly Session[], runId: string): CompareRun |
   return compareRuns(sessions).find((run) => run.id === runId) ?? null;
 }
 
+/** The run a session is part of now; null once it is the last one left, as a Pick's winner is. */
+export function runOfSession(sessions: readonly Session[], sessionId: string): CompareRun | null {
+  const runId = sessions.find((session) => session.id === sessionId)?.compareRunId;
+  return runId ? runOf(sessions, runId) : null;
+}
+
 /** Highest first: sign-in, a permission or form, failed, starting, working, then done or stopped. */
 export function rowStatus(facts: RowFacts): RunRowStatus {
   if (facts.needsSignIn) return 'needs-sign-in';
@@ -75,6 +81,11 @@ export function statusLabel(status: RunRowStatus): string {
 /** True when no row is still starting, working or waiting for the user. */
 export function isRunSettled(statuses: readonly RunRowStatus[]): boolean {
   return statuses.every((status) => status !== 'starting' && status !== 'working' && status !== 'needs-you');
+}
+
+/** What the notification says once a run has settled. */
+export function runFinishedBody(doneCount: number): string {
+  return `Compare finished: ${doneCount} ${doneCount === 1 ? "agent is" : "agents are"} done.`;
 }
 
 /** The sessions to stop when `winnerId` is kept: every other one that has not already ended. */
@@ -102,14 +113,15 @@ export interface RowSources {
   transcripts: Readonly<Record<string, readonly ChatMessage[] | undefined>>;
   /** The error each session's last turn failed with. */
   failedTurns: Readonly<Record<string, string>>;
+  /** The sessions whose agent refused until the user signs in, by id. */
+  signInNeeded: ReadonlyMap<string, unknown>;
 }
 
 /**
  * The facts `rowStatus` needs for every session of `run`. A session fails when its
- * last turn did, or when its agent ended with a non-zero exit code. Sign-in is not
- * read yet: `needsSignIn` stays false.
+ * last turn did, or when its agent ended with a non-zero exit code.
  */
-export function rowFactsOf(run: CompareRun, { isBusy, transcripts, failedTurns }: RowSources): RowFacts[] {
+export function rowFactsOf(run: CompareRun, { isBusy, transcripts, failedTurns, signInNeeded }: RowSources): RowFacts[] {
   return run.sessions.map((session) => {
     const messages = transcripts[session.id] ?? [];
     const isBusyNow = isBusy(session.id);
@@ -122,7 +134,7 @@ export function rowFactsOf(run: CompareRun, { isBusy, transcripts, failedTurns }
       hasStarted: Boolean(session.acpSessionId) || messages.some((message) => message.role === 'agent'),
       pendingCard: isLive && isBusyNow ? pendingPermission(messages) : null,
       hasOpenForm: isLive && hasPendingElicitation(messages),
-      needsSignIn: false,
+      needsSignIn: signInNeeded.has(session.id),
       failed: session.id in failedTurns || exitedBadly,
     };
   });

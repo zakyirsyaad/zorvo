@@ -288,7 +288,9 @@ export default function App() {
   // into the session it was written for, not that one's composer.
   const restoreMessage = (sessionId: string, text: string, attachments?: readonly string[]) => {
     setActiveSessionId(sessionId);
-    composerRef.current?.restore(text, attachments);
+    // A run's panel has no composer: the message waits for the session's to mount.
+    if (composerRef.current) composerRef.current.restore(text, attachments);
+    else pendingRestoreRef.current = { text, attachments };
   };
   // Read when an agent answers, seconds after the closure that waits for it was made.
   const activeSessionIdRef = useLatest(activeSessionId);
@@ -299,7 +301,10 @@ export default function App() {
     agents,
     composerRef,
     activeSessionIdRef,
-    retryAfterSignIn: (sessionId, message) => acp.retryAfterSignIn(sessionId, message),
+    retryAfterSignIn: (sessionId, message) => {
+      compareRun.dropSignIn(sessionId);
+      return acp.retryAfterSignIn(sessionId, message);
+    },
     onRestore: restoreMessage,
   });
 
@@ -340,7 +345,15 @@ export default function App() {
     transcripts,
     rememberOptions: rememberAgentOptions,
     onAttention: (id, reason) => { notifyAttention(id, reason); if (reason !== "needs-answer") setRunVersion((n) => n + 1); },
-    onAuthRequired: signIn.handBack,
+    onAuthRequired: (session, methods, unsent) => {
+      if (!compareRun.isInRun(session.id)) {
+        signIn.handBack(session, methods, unsent);
+        return;
+      }
+      // Several agents of a run can be refused at once and its panel has no composer: each waits on its row.
+      signInStatus.markNeeded(session.profileId);
+      compareRun.keepSignIn(session.id, { methods, unsent });
+    },
     onTurnFailed: (sessionId, error) =>
       error ? setFailedTurns((prev) => ({ ...prev, [sessionId]: error })) : clearFailedTurn(sessionId),
   });
@@ -351,6 +364,7 @@ export default function App() {
 
   /** Tells a user who is away that a session needs them or is done. */
   const notifyAttention = (sessionId: string, reason: AttentionReason) => {
+    if (reason === "finished" && compareRun.awaitsRunNotice(sessionId)) return;
     const session = sessionById(sessionId);
     const agentName = agents.find((a) => a.id === session?.profileId)?.name ?? "The agent";
     // A notification that cannot be shown is not worth an error banner: the chat has it all.
@@ -621,6 +635,7 @@ export default function App() {
   });
 
   const sendTo = async (sessionId: string, message: FirstMessage) => {
+    compareRun.dropSignIn(sessionId);
     const session = sessionById(sessionId);
     // A numbered session takes its title from the first thing the user asks.
     const isFirstMessage = !(transcripts[sessionId]?.some((m) => m.role === "user") ?? false);
@@ -635,6 +650,7 @@ export default function App() {
    * the message. A rewound one has no agent session left to load.
    */
   const resumeSession = (session: Session, message: FirstMessage) => {
+    compareRun.dropSignIn(session.id);
     if (!session.acpSessionId) {
       void restart(session, message, startChoices);
       setAcpChoices(NO_CHOICES);
@@ -655,6 +671,7 @@ export default function App() {
     pendingRestoreRef.current = null;
     composerRef.current.restore(pending.text, pending.attachments);
   });
+  const rowSources = { isBusy: isSessionBusy, transcripts, failedTurns };
   const compareRun = useCompareRun({
     repoPath: activeWorkspace?.path ?? "",
     baseBranch: branchPicker.baseBranch,
@@ -681,9 +698,20 @@ export default function App() {
     readSessions: () => getState().sessions,
     openSession: setActiveSessionId,
     agentName: (profileId) => agents.find((a) => a.id === profileId)?.name ?? "The agent",
+    sessions,
+    sources: rowSources,
+    askSignIn: signIn.handBackKept,
+    // A notification that cannot be shown is not worth an error banner: the panel has it all.
+    notifyRun: (notice) => void notifyIfAway(notice).catch(() => {}),
   });
+  // However a session comes on screen, its refusal is taken up there: only now does its composer exist.
+  const { takeSignIn } = compareRun;
+  const refusedHere = compareRun.signInNeeded.get(activeSessionId);
+  useEffect(() => {
+    if (refusedHere) takeSignIn(activeSessionId);
+  }, [activeSessionId, refusedHere, takeSignIn]);
 
-  const runRows = useCompareRunRows(activeRun, { isBusy: isSessionBusy, transcripts, failedTurns, ensureLoaded });
+  const runRows = useCompareRunRows(activeRun, { ...rowSources, signInNeeded: compareRun.signInNeeded, ensureLoaded });
   /** Starts the ticked agents on one prompt, each in its own worktree. */
   const handleNewRun = (message: FirstMessage) => {
     if (!activeWorkspace) {

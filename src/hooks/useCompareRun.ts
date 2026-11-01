@@ -1,10 +1,23 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FirstMessage } from './session-engine/useAcpEngine';
+import { useLatest } from './useLatest';
+import type { AuthMethod } from '../lib/acp-auth';
 import { createId } from '../lib/ids';
 import { NO_CHOICES, withPreferred, type AgentOptions } from '../lib/acp-draft';
 import { attachmentsFor, createSessionWorktree } from '../lib/session-worktree';
 import { titleFor, type SessionSpec, type StartSessionOptions } from '../lib/session-start';
-import { rowFactsOf, type CompareRun, type RowFacts, type RowSources } from '../lib/compare-run';
+import {
+  compareRuns,
+  isRunSettled,
+  rowFactsOf,
+  rowStatus,
+  runFinishedBody,
+  runOfSession,
+  type CompareRun,
+  type RowFacts,
+  type RowSources,
+} from '../lib/compare-run';
+import type { AttentionNotice } from '../lib/notify';
 import { isListed } from '../lib/session-helpers';
 import type { AgentProfile, Session, SessionWorktree } from '../types';
 
@@ -31,6 +44,18 @@ export interface CompareRunDeps {
   readSessions: () => readonly Session[];
   openSession: (sessionId: string) => void;
   agentName: (profileId: string) => string;
+  /** The sessions as last rendered: what the rows are read from. */
+  sessions: readonly Session[];
+  sources: Omit<RowSources, 'signInNeeded'>;
+  /** Asks for the sign-in of a session on screen, with the message its agent refused. */
+  askSignIn: (session: Session, methods: AuthMethod[], unsent?: FirstMessage) => void;
+  notifyRun: (notice: AttentionNotice) => void;
+}
+
+/** An agent's refusal, kept on its row: memory only, so after a restart the row reads Stopped. */
+export interface RefusedSignIn {
+  methods: AuthMethod[];
+  unsent?: FirstMessage;
 }
 
 interface Prepared {
@@ -63,6 +88,70 @@ export function useCompareRun(deps: CompareRunDeps) {
   const isStarting = useRef(false);
   // Pick is asked from a panel that can remount: the guard cannot live there.
   const isPicking = useRef(false);
+  /** Runs started here that have not settled yet: the only ones that notify, so a restored run never does. */
+  const watchedRuns = useRef(new Set<string>());
+  const [signInNeeded, setSignInNeeded] = useState<ReadonlyMap<string, RefusedSignIn>>(new Map());
+  // An engine calls back from the render that started it: these read the newest one.
+  const latest = useLatest({ deps, signInNeeded });
+
+  const { sessions } = deps;
+  // An archived or deleted session asks for nothing more; the last one of a run stays, and its chat asks.
+  useEffect(() => {
+    setSignInNeeded((prev) => {
+      const kept = [...prev].filter(([id]) => sessions.some((session) => session.id === id && isListed(session)));
+      return kept.length === prev.size ? prev : new Map(kept);
+    });
+  }, [sessions]);
+
+  useEffect(() => {
+    if (watchedRuns.current.size === 0) return;
+    for (const run of compareRuns(sessions)) {
+      if (!watchedRuns.current.has(run.id)) continue;
+      const statuses = rowFactsOf(run, { ...deps.sources, signInNeeded }).map(rowStatus);
+      if (!isRunSettled(statuses)) continue;
+      watchedRuns.current.delete(run.id);
+      deps.notifyRun({ title: run.name, body: runFinishedBody(statuses.filter((status) => status === 'done').length) });
+    }
+  });
+
+  /** Whether the session is part of a run: its agents can be refused together, and its panel has no composer. */
+  const isInRun = useCallback(
+    (sessionId: string) => runOfSession(latest.current.deps.readSessions(), sessionId) !== null,
+    [latest],
+  );
+
+  /** Whether the session's end of a turn is left to its run's one notice, which is still to come. */
+  const awaitsRunNotice = useCallback(
+    (sessionId: string) => {
+      const run = runOfSession(latest.current.deps.readSessions(), sessionId);
+      return run !== null && watchedRuns.current.has(run.id);
+    },
+    [latest],
+  );
+
+  const keepSignIn = useCallback((sessionId: string, refused: RefusedSignIn) => {
+    setSignInNeeded((prev) => new Map(prev).set(sessionId, refused));
+  }, []);
+
+  /** The message went out, so the row no longer waits and cannot send it again. */
+  const dropSignIn = useCallback((sessionId: string) => {
+    setSignInNeeded((prev) => {
+      if (!prev.has(sessionId)) return prev;
+      const next = new Map(prev);
+      next.delete(sessionId);
+      return next;
+    });
+  }, []);
+
+  /** Asks for the session's sign-in. The refusal stays until the message goes out: a sign-in can fail, or be blocked or left. */
+  const takeSignIn = useCallback(
+    (sessionId: string) => {
+      const refused = latest.current.signInNeeded.get(sessionId);
+      const session = latest.current.deps.readSessions().find((s) => s.id === sessionId);
+      if (refused && session) latest.current.deps.askSignIn(session, refused.methods, refused.unsent);
+    },
+    [latest],
+  );
 
   const startRun = async (agents: readonly AgentProfile[], first: FirstMessage): Promise<void> => {
     if (isStarting.current || agents.length === 0) return;
@@ -92,6 +181,7 @@ export function useCompareRun(deps: CompareRunDeps) {
       }
       // A run that ends with one session is a normal session: no run id, so no group.
       const runId = ready.length >= 2 ? createId('run') : undefined;
+      if (runId) watchedRuns.current.add(runId);
       const isOnDraft = deps.isOnDraft();
       const startedAt = Date.now();
       for (const [index, { agent, worktree, cwd, message }] of ready.entries()) {
@@ -123,6 +213,8 @@ export function useCompareRun(deps: CompareRunDeps) {
   const pick = async (run: CompareRun, winnerId: string): Promise<void> => {
     if (isPicking.current) return;
     isPicking.current = true;
+    // The user has answered the run: agents stopped for it must not read as a run that finished.
+    watchedRuns.current.delete(run.id);
     try {
       for (const session of run.sessions) {
         if (session.id !== winnerId) await deps.archiveSession(session.id, true);
@@ -145,7 +237,7 @@ export function useCompareRun(deps: CompareRunDeps) {
     }
   };
 
-  return { startRun, pick };
+  return { startRun, pick, signInNeeded, isInRun, awaitsRunNotice, keepSignIn, dropSignIn, takeSignIn };
 }
 
 export interface RunRowDeps extends RowSources {

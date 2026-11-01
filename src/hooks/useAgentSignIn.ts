@@ -93,6 +93,29 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
     [depsRef, requestSignIn],
   );
 
+  /** Sends a refused message in a fresh agent; one that does not go out comes back to its session. */
+  const resend = (sessionId: string, { text, attachments }: FirstMessage) => {
+    void depsRef.current.retryAfterSignIn(sessionId, { text, attachments }).then((isHandled) => {
+      if (!isHandled) depsRef.current.onRestore(sessionId, text, attachments);
+    });
+  };
+
+  /**
+   * A refusal kept away from the composer, now that its session is on screen. The agent's own sign-in
+   * may have gone on meanwhile: one that took sends the message, and one still running is not started over.
+   */
+  const handBackKept = (session: Pick<Session, 'id' | 'profileId' | 'cwd'>, methods: AuthMethod[], unsent?: FirstMessage) => {
+    const current = currentRequestRef.current;
+    const status = current?.profileId === session.profileId ? current.status : undefined;
+    if (status === 'signed-in' && unsent) {
+      dismiss();
+      resend(session.id, unsent);
+    } else if (status === 'signing-in' || status === 'checking') {
+      if (unsent) depsRef.current.composerRef.current?.restore(unsent.text, unsent.attachments);
+    } else {
+      handBack(session, methods, unsent);
+    }
+  };
 
   /** Runs the method in the agent, or its login in a terminal. */
   const runMethod = async ({ profileId, cwd }: AuthRequest, method: AuthMethod, agentName: string) => {
@@ -112,15 +135,12 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
    * the user left it. A message that still does not go out comes back.
    */
   const sendRefused = (pending: AuthRequest['pending']) => {
-    const { composerRef, activeSessionIdRef, retryAfterSignIn } = depsRef.current;
+    const { composerRef, activeSessionIdRef } = depsRef.current;
     const composer = composerRef.current;
     if (!pending || activeSessionIdRef.current !== pending.sessionId || !composer?.holdsRestored()) return false;
-    const { sessionId, text, attachments } = pending;
     composer.clear();
     dismiss();
-    void retryAfterSignIn(sessionId, { text, attachments }).then((isHandled) => {
-      if (!isHandled) depsRef.current.onRestore(sessionId, text, attachments);
-    });
+    resend(pending.sessionId, pending);
     return true;
   };
 
@@ -219,5 +239,5 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
     dismiss,
   };
 
-  return { auth, handBack, cancel, terminal, startSignIn, retryStart };
+  return { auth, handBack, handBackKept, cancel, terminal, startSignIn, retryStart };
 }

@@ -299,6 +299,7 @@ describe("rowFactsOf", () => {
     isBusy: () => false,
     transcripts: {},
     failedTurns: {},
+    signInNeeded: new Map<string, unknown>(),
     ...overrides,
   });
   const agentMessage = (content: string, extra: Partial<ChatMessage> = {}): ChatMessage => ({
@@ -307,6 +308,14 @@ describe("rowFactsOf", () => {
     content,
     timestamp: 1,
     ...extra,
+  });
+
+  it("reads the refusals it is handed, for those sessions only", () => {
+    const run = runOf([facts(1), facts(2)]);
+
+    const rows = rowFactsOf(run, sources({ signInNeeded: new Map([["s-2", {}]]) }));
+
+    expect(rows.map((row) => row.needsSignIn)).toEqual([false, true]);
   });
 
   it("reads each session's own transcript, not the active one", () => {
@@ -404,6 +413,10 @@ describe("useCompareRun pick", () => {
       openSession: (id: string) => opened.push(id),
       agentName: (profileId: string) => NAMES[profileId] ?? profileId,
       onNotice: (message: string) => notices.push(message),
+      sessions: listed,
+      sources: { isBusy: () => false, transcripts: {}, failedTurns: {} },
+      askSignIn: vi.fn(),
+      notifyRun: vi.fn(),
     };
     const { result } = renderHook(() => useCompareRun(deps));
     return { pick: result.current.pick, archive, notices, opened, log };

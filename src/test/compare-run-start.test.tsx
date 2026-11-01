@@ -485,6 +485,10 @@ describe("the run's start failing unexpectedly", () => {
       readSessions: () => [],
       openSession: vi.fn(),
       agentName: (profileId: string) => profileId,
+      sessions: [],
+      sources: { isBusy: () => false, transcripts: {}, failedTurns: {} },
+      askSignIn: vi.fn(),
+      notifyRun: vi.fn(),
     };
   }
 

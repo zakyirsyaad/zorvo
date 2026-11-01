@@ -15,27 +15,29 @@ use crate::files::{canonical_root, ensure_known_workspace};
 use crate::store::AppStore;
 
 /// `path` inside `cwd` when it lies in `repo` and the worktree has that file,
-/// else `path` itself. Compares path components, so `/w/repo-two/a` is not in `/w/repo`.
-fn re_root(repo: &Path, cwd: &Path, path: &Path) -> PathBuf {
-    match path.strip_prefix(repo) {
-        Ok(relative) if cwd.join(relative).exists() => cwd.join(relative),
-        _ => path.to_path_buf(),
-    }
+/// else None. Compares path components, so `/w/repo-two/a` is not in `/w/repo`.
+fn re_root(repo: &Path, cwd: &Path, path: &Path) -> Option<PathBuf> {
+    let relative = path.strip_prefix(repo).ok()?;
+    let in_worktree = cwd.join(relative);
+    in_worktree.exists().then_some(in_worktree)
 }
 
 /// One attachment: a path that resolves is compared canonically (so `..` and
-/// symlinks cannot slip a file into or out of the folder), any other is kept.
+/// symlinks cannot slip a file into or out of the folder). Only a re-rooted
+/// path changes; any other stays exactly as sent, name and spelling included.
 fn re_root_one(repo: &Path, cwd: &Path, path: &str) -> String {
     let candidate = Path::new(path);
     if !candidate.is_absolute() {
         return path.to_string();
     }
-    match candidate.canonicalize() {
-        Ok(canonical) => re_root(repo, cwd, &canonical)
-            .to_string_lossy()
-            .into_owned(),
-        Err(_) => path.to_string(),
-    }
+    candidate
+        .canonicalize()
+        .ok()
+        .and_then(|canonical| re_root(repo, cwd, &canonical))
+        .map_or_else(
+            || path.to_string(),
+            |moved| moved.to_string_lossy().into_owned(),
+        )
 }
 
 fn re_root_all(
@@ -107,7 +109,7 @@ mod tests {
         let in_repo = repo.file("src/a.txt");
         let in_tree = tree.file("src/a.txt");
 
-        assert_eq!(re_root(&repo.0, &tree.0, &in_repo), in_tree);
+        assert_eq!(re_root(&repo.0, &tree.0, &in_repo), Some(in_tree));
     }
 
     #[test]
@@ -118,7 +120,7 @@ mod tests {
         let outside = elsewhere.file("a.txt");
         tree.file("a.txt");
 
-        assert_eq!(re_root(&repo.0, &tree.0, &outside), outside);
+        assert_eq!(re_root(&repo.0, &tree.0, &outside), None);
     }
 
     #[test]
@@ -127,7 +129,7 @@ mod tests {
         let tree = Temp::new("tree");
         let untracked = repo.file("notes.txt");
 
-        assert_eq!(re_root(&repo.0, &tree.0, &untracked), untracked);
+        assert_eq!(re_root(&repo.0, &tree.0, &untracked), None);
     }
 
     #[test]
@@ -139,7 +141,7 @@ mod tests {
         let tree_cwd = tree.0.join("web");
         let in_tree = tree.file("web/src/a.txt");
 
-        assert_eq!(re_root(&workspace, &tree_cwd, &in_repo), in_tree);
+        assert_eq!(re_root(&workspace, &tree_cwd, &in_repo), Some(in_tree));
     }
 
     #[test]
@@ -152,7 +154,35 @@ mod tests {
         tree.file("-two/a");
         tree.file("a");
 
-        assert_eq!(re_root(&repo, &tree.0, &sibling), sibling);
+        assert_eq!(re_root(&repo, &tree.0, &sibling), None);
+    }
+
+    #[test]
+    fn keeps_a_symlink_outside_the_repository_as_sent() {
+        let repo = Temp::new("repo");
+        let tree = Temp::new("tree");
+        let elsewhere = Temp::new("else");
+        let target = elsewhere.file("build-123.bin");
+        let link = elsewhere.0.join("latest.bin");
+        std::os::unix::fs::symlink(&target, &link).expect("create symlink");
+        let sent = link.to_string_lossy().into_owned();
+
+        assert_eq!(re_root_one(&repo.0, &tree.0, &sent), sent);
+    }
+
+    #[test]
+    fn keeps_a_non_canonical_untracked_file_in_the_repository_as_sent() {
+        let repo = Temp::new("repo");
+        let tree = Temp::new("tree");
+        repo.file("notes.txt");
+        fs::create_dir_all(repo.0.join("sub")).expect("create dir");
+        let sent = repo
+            .0
+            .join("sub/../notes.txt")
+            .to_string_lossy()
+            .into_owned();
+
+        assert_eq!(re_root_one(&repo.0, &tree.0, &sent), sent);
     }
 
     #[test]

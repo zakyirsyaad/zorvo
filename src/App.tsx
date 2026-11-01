@@ -185,7 +185,15 @@ export default function App() {
   const isRepository = Boolean(workspaceDetails?.branch);
   const canUseWorktree = isNewSessionDraft && isRepository;
   // In a repository the Agent chip can tick several agents; the first ticked one is the draft's agent.
-  const compare = useCompareDraft({ primaryAgentId, isRepository: canUseWorktree });
+  const signInStatus = useAgentSignInStatus({ settings: state.settings, updateState });
+  const agentChoices = compareAgentOptions(pickableAgents, signInStatus.stateOf);
+  const tickableAgentIds = new Set(agentChoices.filter((c) => !c.disabledReason).map((c) => c.value));
+  const compare = useCompareDraft({
+    primaryAgentId,
+    isRepository: canUseWorktree,
+    isTickable: (agentId) => tickableAgentIds.has(agentId),
+    onSingle: setPickedAgentId,
+  });
   const newSessionAgent = agents.find((a) => a.id === (compare.agentIds[0] ?? primaryAgentId));
   // Several agents each run in their own worktree, so Worktree is on whatever it was set to.
   const isWorktreeActive = canUseWorktree && (isWorktreeOn || compare.isCompare);
@@ -266,7 +274,6 @@ export default function App() {
   };
   // Read when an agent answers, seconds after the closure that waits for it was made.
   const activeSessionIdRef = useLatest(activeSessionId);
-  const signInStatus = useAgentSignInStatus({ settings: state.settings, updateState });
   const signIn = useAgentSignIn({
     onSignInNeeded: signInStatus.markNeeded,
     onSignedIn: signInStatus.markSignedIn,
@@ -887,7 +894,7 @@ export default function App() {
                     agents={
                       isNewSessionDraft && newSessionAgent && canUseWorktree
                         ? {
-                            options: compareAgentOptions(pickableAgents, signInStatus.stateOf),
+                            options: agentChoices,
                             selected: compare.agentIds,
                             onChange: compare.toggle,
                             onPick: (agentId) => {

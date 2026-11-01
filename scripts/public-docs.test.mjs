@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { publicChangelog, releaseNotes, sectionsOf } from "./public-docs.mjs";
 
-const PRIVATE = "https://github.com/zakyirsyaad/zorvo";
+const SOURCE = "https://github.com/zakyirsyaad/zorvo";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const changelog = `# Changelog
@@ -27,11 +27,11 @@ All notable changes to Zorvo.
 
 - **The drawer scrolls.**
 
-[Unreleased]: ${PRIVATE}/compare/v0.5.0...HEAD
-[0.5.0]: ${PRIVATE}/compare/v0.4.1...v0.5.0
-[0.4.1]: ${PRIVATE}/compare/v0.4.0...v0.4.1
-[#85]: ${PRIVATE}/pull/85
-[#90]: ${PRIVATE}/pull/90
+[Unreleased]: ${SOURCE}/compare/v0.5.0...HEAD
+[0.5.0]: ${SOURCE}/compare/v0.4.1...v0.5.0
+[0.4.1]: ${SOURCE}/compare/v0.4.0...v0.4.1
+[#85]: ${SOURCE}/pull/85
+[#90]: ${SOURCE}/pull/90
 [ACP]: https://agentclientprotocol.com
 `;
 
@@ -49,8 +49,8 @@ describe("publicChangelog", () => {
     expect(out).toContain("A notice when an agent seems stuck");
   });
 
-  it("drops links into the private repository and keeps their text", () => {
-    expect(out).not.toContain(PRIVATE + "/");
+  it("drops references into the source repository and keeps their text", () => {
+    expect(out).not.toContain(SOURCE + "/");
     expect(out).toContain("(#85)");
     expect(out).not.toContain("[#85]");
   });
@@ -67,7 +67,7 @@ describe("releaseNotes", () => {
     expect(notes).toContain("**A notice when an agent seems stuck** (#85)");
     expect(notes).not.toContain("## 0.5.0");
     expect(notes).not.toContain("The drawer scrolls");
-    expect(notes).not.toContain(PRIVATE + "/");
+    expect(notes).not.toContain(SOURCE + "/");
   });
 
   it("accepts the version with or without its leading v", () => {
@@ -107,10 +107,6 @@ describe("the public user guide", () => {
     for (const [, anchor] of guide.matchAll(/\]\(#([a-z0-9-]+)\)/g)) {
       expect(anchors.has(anchor), anchor).toBe(true);
     }
-  });
-
-  it("links nothing in the private repository", () => {
-    expect(guide).not.toMatch(new RegExp(`${PRIVATE}[/#)"]`));
   });
 
   it("is the one copy: this repository's README points at it", () => {

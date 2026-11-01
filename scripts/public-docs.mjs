@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // What the Release workflow publishes in the public zorvo-releases repository.
-// The source repository is private, so the public changelog leaves out the
-// Unreleased section and every link into it.
+// The public changelog leaves out the Unreleased section, and references into
+// the source repository become plain text.
 //
 //   node scripts/public-docs.mjs changelog CHANGELOG.md > public/CHANGELOG.md
 //   node scripts/public-docs.mjs notes CHANGELOG.md v1.2.3 > notes.md
@@ -9,36 +9,36 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const PRIVATE_REPO = "https://github.com/zakyirsyaad/zorvo";
+const SOURCE_REPO = "https://github.com/zakyirsyaad/zorvo";
 
-/** True for a link into the private repository (not into zorvo-releases). */
-function isPrivateLink(url) {
-  return url === PRIVATE_REPO || /^https:\/\/github\.com\/zakyirsyaad\/zorvo[/#]/.test(url);
+/** True for a link into the source repository (not into zorvo-releases). */
+function isSourceLink(url) {
+  return url === SOURCE_REPO || /^https:\/\/github\.com\/zakyirsyaad\/zorvo[/#]/.test(url);
 }
 
 function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** The changelog as the public may read it: released versions only, no links into the private repository. */
+/** The changelog for zorvo-releases: released versions only, no references into the source repository. */
 export function publicChangelog(text) {
   const lines = text.split("\n");
-  const privateLabels = [];
+  const sourceLabels = [];
   const kept = [];
   let inUnreleased = false;
   for (const line of lines) {
     if (/^## /.test(line)) inUnreleased = /^## \[Unreleased\]/i.test(line);
     if (inUnreleased) continue;
     const reference = /^\[([^\]]+)\]:\s*(\S+)/.exec(line);
-    if (reference && isPrivateLink(reference[2])) {
-      privateLabels.push(reference[1]);
+    if (reference && isSourceLink(reference[2])) {
+      sourceLabels.push(reference[1]);
       continue;
     }
     kept.push(line);
   }
   let out = kept.join("\n");
   // A reference whose link was dropped keeps its text: "[#85]" becomes "#85".
-  for (const label of privateLabels) {
+  for (const label of sourceLabels) {
     out = out.replace(new RegExp(`\\[${escapeRegExp(label)}\\](?![(:\\[])`, "g"), label);
   }
   return out.replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";

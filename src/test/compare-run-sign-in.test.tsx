@@ -46,6 +46,7 @@ vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit() {} } }));
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
 import App from "../App";
+import { useAgentSignIn } from "../hooks/useAgentSignIn";
 import { useCompareRun, type CompareRunDeps } from "../hooks/useCompareRun";
 import { SIGN_IN_RUNNING_NOTICE } from "../lib/agent-sign-in";
 import { runFinishedBody } from "../lib/compare-run";
@@ -181,6 +182,9 @@ async function finish(spy: Spy, profileId: string) {
 const rowOf = (name: string) => screen.getByRole("listitem", { name });
 
 const openRow = (name: string) => click(screen.getByRole("button", { name: `Open ${name}` }));
+
+/** The session's button in the sidebar: it changes the session without leaving the composer, as a run's panel does. */
+const sidebarRow = (sessionId: string) => within(screen.getByTestId(`session-row-${sessionId}`)).getAllByRole("button")[0];
 
 const signInPanel = (name: string) => screen.queryByRole("region", { name: `Sign in to ${name}` });
 
@@ -486,6 +490,183 @@ describe("a sign-in inside a compare run", () => {
     expect(screen.getByRole("checkbox", { name: /^Compare Kimi CLI/ })).toBeEnabled();
   });
 
+  it("a message the user changed before the sign-in ended is not sent when its row opens again", async () => {
+    const spy = await startedRun();
+    await refuse(spy, ["qwen-code"]);
+    await openRow("Qwen Code");
+    await act(async () => {
+      fireEvent.change(prompt(), { target: { value: "fix the logout" } });
+    });
+    await pressSignIn("Qwen Code");
+    await settle();
+    expect(promptsTo(spy, sessionOf(spy, "qwen-code"))).toHaveLength(1);
+
+    await backToRun();
+    await openRow("Qwen Code");
+    await settle();
+
+    expect(promptsTo(spy, sessionOf(spy, "qwen-code"))).toHaveLength(1);
+  });
+
+  it.each([
+    ["changed", "fix the logout"],
+    ["cleared", ""],
+  ])("a message the user %s frees its row once the sign-in ends", async (_how, text) => {
+    const spy = await startedRun();
+    await refuse(spy, ["qwen-code"]);
+    await openRow("Qwen Code");
+    await act(async () => {
+      fireEvent.change(prompt(), { target: { value: text } });
+    });
+
+    await pressSignIn("Qwen Code");
+    await settle();
+
+    await backToRun();
+    expect(within(rowOf("Qwen Code")).queryByText("Needs sign-in")).toBeNull();
+    await openRow("Qwen Code");
+    await settle();
+    expect(promptsTo(spy, sessionOf(spy, "qwen-code"))).toHaveLength(1);
+  });
+
+  it("a message sent on coming back leaves the composer empty, so Enter cannot send it again", async () => {
+    const { held, overrides } = heldLogin();
+    const spy = await startedRun({ overrides });
+    await refuse(spy, ["qwen-code"]);
+    const sessionId = sessionOf(spy, "qwen-code");
+    await openRow("Qwen Code");
+    await pressSignIn("Qwen Code");
+    await click(sidebarRow(sessionOf(spy, "claude-acp")));
+    await act(async () => held.resolve(null));
+    await settle();
+
+    await click(sidebarRow(sessionId));
+
+    await waitFor(() => expect(promptsTo(spy, sessionId)).toHaveLength(2));
+    expect(prompt().value).toBe("");
+  });
+
+  it("text typed in another session stays in the composer when the message goes out", async () => {
+    const { held, overrides } = heldLogin();
+    const spy = await startedRun({ overrides });
+    await refuse(spy, ["qwen-code"]);
+    const sessionId = sessionOf(spy, "qwen-code");
+    await openRow("Qwen Code");
+    await pressSignIn("Qwen Code");
+    await click(sidebarRow(sessionOf(spy, "claude-acp")));
+    await act(async () => {
+      fireEvent.change(prompt(), { target: { value: "a note for Claude Code" } });
+    });
+    await act(async () => held.resolve(null));
+    await settle();
+
+    await click(sidebarRow(sessionId));
+
+    await waitFor(() => expect(promptsTo(spy, sessionId)).toHaveLength(2));
+    expect(prompt().value).toBe("a note for Claude Code");
+  });
+
+  it("another session's refused message stays in the composer when the row's goes out", async () => {
+    const { held, overrides } = heldLogin();
+    const spy = await startedRun({ overrides });
+    await refuse(spy, ["qwen-code"]);
+    const sessionId = sessionOf(spy, "qwen-code");
+    await openRow("Qwen Code");
+    await pressSignIn("Qwen Code");
+    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(await screen.findByRole("button", { name: /^Agent: / }));
+    await click(screen.getByRole("option", { name: "Kimi CLI" }));
+    await sendMessage("hello");
+    await waitFor(() => expect(promptsTo(spy, sessionOf(spy, "kimi"))).toHaveLength(1));
+    await refuse(spy, ["kimi"]);
+    expect(prompt().value).toBe("hello");
+    await act(async () => held.resolve(null));
+    await settle();
+
+    await click(sidebarRow(sessionId));
+
+    await waitFor(() => expect(promptsTo(spy, sessionId)).toHaveLength(2));
+    expect(prompt().value).toBe("hello");
+  });
+
+  it("a sign-in that belongs to another session of the agent is left in the slot when the row's message goes out", async () => {
+    const { held, overrides } = heldLogin();
+    const spy = await startedRun({ overrides });
+    await refuse(spy, ["qwen-code"]);
+    const rowSession = sessionOf(spy, "qwen-code");
+    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(await screen.findByRole("button", { name: /^Agent: / }));
+    await click(screen.getByRole("option", { name: "Qwen Code" }));
+    await sendMessage("hello");
+    await waitFor(() => expect(calls(spy, "acp_prompt")).toHaveLength(3));
+    const otherSession = String(calls(spy, "acp_start_session").at(-1)?.sessionId);
+    await act(async () => {
+      acpEvent({ sessionId: otherSession, kind: "turn-end", error: AUTH_ERROR });
+    });
+    await pressSignIn("Qwen Code");
+    await backToRun();
+    await act(async () => held.resolve(null));
+    await settle();
+
+    await openRow("Qwen Code");
+    await waitFor(() => expect(promptsTo(spy, rowSession)).toHaveLength(2));
+
+    await click(sidebarRow(otherSession));
+    expect(await screen.findByRole("region", { name: "Sign in to Qwen Code" })).toBeInTheDocument();
+    expect(screen.getByText("Signed in to Qwen Code. Send your message again.")).toBeInTheDocument();
+  });
+
+  it("a row refused again under another session's finished sign-in stops and asks", async () => {
+    const { held, overrides } = heldLogin();
+    const spy = await startedRun({ overrides });
+    await refuse(spy, ["qwen-code"]);
+    const rowSession = sessionOf(spy, "qwen-code");
+    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(await screen.findByRole("button", { name: /^Agent: / }));
+    await click(screen.getByRole("option", { name: "Qwen Code" }));
+    await sendMessage("hello");
+    await waitFor(() => expect(calls(spy, "acp_prompt")).toHaveLength(3));
+    const otherSession = String(calls(spy, "acp_start_session").at(-1)?.sessionId);
+    await act(async () => {
+      acpEvent({ sessionId: otherSession, kind: "turn-end", error: AUTH_ERROR });
+    });
+    await pressSignIn("Qwen Code");
+    await backToRun();
+    await act(async () => held.resolve(null));
+    await settle();
+    await openRow("Qwen Code");
+    await waitFor(() => expect(promptsTo(spy, rowSession)).toHaveLength(2));
+
+    await refuse(spy, ["qwen-code"]);
+    await settle();
+
+    expect(promptsTo(spy, rowSession)).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Sign in with Browser" })).toBeEnabled();
+    expect(prompt().value).toBe("fix the login");
+  });
+
+  it("a rewind replaces what the row kept: coming back does not restore the older message", async () => {
+    const spy = await startedRun();
+    const sessionId = sessionOf(spy, "qwen-code");
+    await finish(spy, "qwen-code");
+    await openRow("Qwen Code");
+    await sendMessage("and the logout");
+    await waitFor(() => expect(promptsTo(spy, sessionId)).toHaveLength(2));
+    await refuse(spy, ["qwen-code"]);
+    expect(prompt().value).toBe("and the logout");
+
+    const first = screen.getByText("fix the login", { selector: "p" }).closest("[data-testid^='chat-message-']") as HTMLElement;
+    await click(within(first).getByRole("button", { name: "Rewind to here" }));
+    await click(within(first).getByRole("button", { name: "Confirm rewind" }));
+    await waitFor(() => expect(prompt().value).toBe("fix the login"));
+
+    await click(sidebarRow(sessionOf(spy, "claude-acp")));
+    await click(sidebarRow(sessionId));
+    await settle();
+
+    expect(prompt().value).toBe("fix the login");
+  });
+
   it("a message the user changed is left as it is", async () => {
     const spy = await startedRun();
     await refuse(spy, ["qwen-code"]);
@@ -749,6 +930,64 @@ describe("notifications of a compare run", () => {
     await finish(spy, "claude-acp");
 
     await waitFor(() => expect(notifications.sent.map((notice) => notice.body)).toEqual(["Claude Code finished."]));
+  });
+});
+
+describe("handBackKept with the slot of another session", () => {
+  const methods = [{ id: "login", name: "Browser", kind: "agent" as const }];
+  const session = { id: "s-run", profileId: "qwen-code", cwd: "/wt/1" };
+
+  async function signedInSlot(pending?: { sessionId: string; text: string }) {
+    const retryAfterSignIn = vi.fn(() => Promise.resolve(true));
+    const { result } = renderHook(() =>
+      useAgentSignIn({
+        agents: [],
+        composerRef: { current: null },
+        activeSessionIdRef: { current: "" },
+        retryAfterSignIn,
+        onRestore: () => {},
+      }),
+    );
+    act(() => {
+      result.current.auth.requestSignIn("qwen-code", "/wt/1", methods, pending);
+    });
+    await act(async () => result.current.auth.signIn("login"));
+    await waitFor(() => expect(result.current.auth.authRequest?.status).toBe("signed-in"));
+    return { result, retryAfterSignIn };
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("sends the row's message and leaves the slot and its pending untouched", async () => {
+    const pending = { sessionId: "s-other", text: "hello" };
+    const { result, retryAfterSignIn } = await signedInSlot(pending);
+
+    act(() => result.current.handBackKept(session, methods, { text: "fix the login" }));
+
+    expect(retryAfterSignIn).toHaveBeenCalledWith("s-run", { text: "fix the login" });
+    expect(result.current.auth.authRequest).toMatchObject({ status: "signed-in", pending });
+  });
+
+  it("a session refused again after that send asks for a sign-in instead of sending once more", async () => {
+    const { result, retryAfterSignIn } = await signedInSlot({ sessionId: "s-other", text: "hello" });
+    act(() => result.current.handBackKept(session, methods, { text: "fix the login" }));
+
+    act(() => result.current.handBackKept(session, methods, { text: "fix the login" }));
+
+    expect(retryAfterSignIn).toHaveBeenCalledTimes(1);
+    expect(result.current.auth.authRequest?.status).toBe("idle");
+  });
+
+  it.each([
+    ["holds no pending", undefined],
+    ["holds this session's", { sessionId: "s-run", text: "fix the login" }],
+  ])("closes the slot when it %s", async (_how, pending) => {
+    const { result, retryAfterSignIn } = await signedInSlot(pending);
+
+    act(() => result.current.handBackKept(session, methods, { text: "fix the login" }));
+
+    expect(retryAfterSignIn).toHaveBeenCalledTimes(1);
+    expect(result.current.auth.authRequest).toBeNull();
   });
 });
 

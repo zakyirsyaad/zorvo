@@ -32,8 +32,11 @@ export interface ComposerHandle {
   insertPaths: (paths: readonly string[]) => void;
   /** Puts back a message that could not be sent, so it need not be typed again. */
   restore: (text: string, attachments?: readonly string[]) => void;
-  /** True while the prompt and attachments are exactly what the last `restore` left: nothing typed, sent or cleared since. */
-  holdsRestored: () => boolean;
+  /**
+   * True while the prompt and attachments are exactly what the last `restore` left: nothing typed, sent or
+   * cleared since. With `message`, only when that is this message: one composer serves every session.
+   */
+  holdsRestored: (message?: { text: string; attachments?: readonly string[] }) => boolean;
   /** Empties the prompt and its attachments. */
   clear: () => void;
   /** Puts the cursor in the prompt. */
@@ -227,13 +230,15 @@ export function ComposerDock({
       restoredRef.current = { text: restoredText, attachments: attachAsFiles ? [...restoredAttachments] : attachments };
       textareaRef.current?.focus();
     },
-    holdsRestored: () => {
+    holdsRestored: (message) => {
       const restored = restoredRef.current;
+      const holds = (expected: readonly string[]) =>
+        expected.length === attachments.length && expected.every((path, index) => path === attachments[index]);
       return (
         restored !== null &&
         restored.text === text &&
-        restored.attachments.length === attachments.length &&
-        restored.attachments.every((path, index) => path === attachments[index])
+        holds(restored.attachments) &&
+        (message === undefined || (message.text === text && holds(message.attachments ?? [])))
       );
     },
     clear: () => {

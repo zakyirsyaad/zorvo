@@ -298,6 +298,7 @@ export default function App() {
     onSignInNeeded: signInStatus.markNeeded,
     onSignedIn: signInStatus.markSignedIn,
     onSignInBlocked: reportError,
+    onRefusedMessageChanged: (sessionId) => compareRun.dropSignIn(sessionId),
     agents,
     composerRef,
     activeSessionIdRef,
@@ -924,7 +925,7 @@ export default function App() {
                   messages={currentMessages}
                   agentName={activeAgent?.name}
                   onForkBranch={(messageId) => void forkSession(messageId)}
-                  onRewind={(messageId) => void rewind(activeSession, messageId)}
+                  onRewind={(messageId) => { compareRun.dropSignIn(activeSessionId); void rewind(activeSession, messageId); }}
                   header={
                     <div className="space-y-3 rounded-xl border border-border bg-surface-1 px-4 py-3">
                       {activeSession.historyElsewhere && (

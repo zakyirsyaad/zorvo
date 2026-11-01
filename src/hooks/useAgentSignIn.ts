@@ -27,6 +27,8 @@ export interface AgentSignInDeps {
   onSignedIn?: (profileId: string) => void;
   /** A refusal could not open its sign-in panel because another agent's sign-in is running. */
   onSignInBlocked?: (message: string) => void;
+  /** A sign-in ended with the session on screen and its composer no longer holding the refused message: it is the user's now. */
+  onRefusedMessageChanged?: (sessionId: string) => void;
 }
 
 /**
@@ -100,6 +102,9 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
     });
   };
 
+  // The request a session's message went out on while that request, another session's, stayed in the slot.
+  const resentOnRef = useRef(new Map<string, AuthRequest>());
+
   /**
    * A refusal kept away from the composer, now that its session is on screen. The agent's own sign-in
    * may have gone on meanwhile: one that took sends the message, and one still running is not started over.
@@ -107,8 +112,15 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
   const handBackKept = (session: Pick<Session, 'id' | 'profileId' | 'cwd'>, methods: AuthMethod[], unsent?: FirstMessage) => {
     const current = currentRequestRef.current;
     const status = current?.profileId === session.profileId ? current.status : undefined;
-    if (status === 'signed-in' && unsent) {
-      dismiss();
+    // Refused again since: this sign-in did not hold for the session, and sending once more would never end.
+    const wasResentOnIt = current !== null && resentOnRef.current.get(session.id) === current;
+    if (status === 'signed-in' && unsent && !wasResentOnIt) {
+      // The slot may be waiting on another session's message: that request stays.
+      if (!current?.pending || current.pending.sessionId === session.id) dismiss();
+      else resentOnRef.current.set(session.id, current);
+      const composer = depsRef.current.composerRef.current;
+      // One composer stays up across a sidebar switch, so it may hold another session's text: only this message goes.
+      if (composer?.holdsRestored(unsent)) composer.clear();
       resend(session.id, unsent);
     } else if (status === 'signing-in' || status === 'checking') {
       if (unsent) depsRef.current.composerRef.current?.restore(unsent.text, unsent.attachments);
@@ -184,7 +196,11 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
     // The composer takes focus: the dialog's opener, the panel's button, is gone by now. A sign-in
     // started in Settings leaves focus there, for the row to take.
     if (!isQuiet) depsRef.current.composerRef.current?.focus();
-    if (!sendRefused(request.pending)) setStatus('signed-in');
+    if (sendRefused(request.pending)) return;
+    setStatus('signed-in');
+    const { composerRef, activeSessionIdRef, onRefusedMessageChanged } = depsRef.current;
+    const { pending } = request;
+    if (pending && pending.sessionId === activeSessionIdRef.current && composerRef.current) onRefusedMessageChanged?.(pending.sessionId);
   };
 
   const lastStartRef = useRef<{ start: SignInStart; methodId: string } | null>(null);

@@ -382,6 +382,14 @@ describe("ComposerDock restored message", () => {
     expect(handle.current?.holdsRestored()).toBe(false);
   });
 
+  it("says whether what it holds is a given message: one composer serves every session", () => {
+    const handle = renderWithHandle();
+    act(() => handle.current?.restore("hi"));
+
+    expect(handle.current?.holdsRestored({ text: "hi" })).toBe(true);
+    expect(handle.current?.holdsRestored({ text: "hello" })).toBe(false);
+  });
+
   it("is emptied by clear and then holds nothing restored", () => {
     const handle = renderWithHandle();
     act(() => handle.current?.restore("hi"));

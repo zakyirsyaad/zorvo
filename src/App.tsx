@@ -370,7 +370,7 @@ export default function App() {
         signIn.handBack(session, methods, unsent);
         return;
       }
-      // Several agents of a run can be refused at once and its panel has no composer: each waits on its row.
+      // Several agents of a run can be refused at once and its panel hides the composer: each waits on its row.
       signInStatus.markNeeded(session.profileId);
       compareRun.keepSignIn(session.id, { methods, unsent });
     },
@@ -731,7 +731,7 @@ export default function App() {
     // A notification that cannot be shown is not worth an error banner: the panel has it all.
     notifyRun: (notice) => void notifyIfAway(notice).catch(() => {}),
   });
-  // However a session comes on screen, its refusal is taken up there: only now does its composer exist.
+  // However a session comes on screen, its refusal is taken up there: only now does its composer show.
   const { takeSignIn } = compareRun;
   const refusedHere = compareRun.signInNeeded.get(activeSessionId);
   useEffect(() => {

@@ -114,7 +114,7 @@ export function useCompareRun(deps: CompareRunDeps) {
     }
   });
 
-  /** Whether the session is part of a run: its agents can be refused together, and its panel has no composer. */
+  /** Whether the session is part of a run: its agents can be refused together, and its panel hides the composer. */
   const isInRun = useCallback(
     (sessionId: string) => runOfSession(latest.current.deps.readSessions(), sessionId) !== null,
     [latest],

@@ -60,14 +60,18 @@ export function CompareRunRow({ facts, agentName, version, isPickDisabled, onOpe
   return (
     <li aria-label={agentName} className="border-b border-border px-4 py-3 last:border-b-0">
       <div className="flex flex-wrap items-center gap-3">
-        <AgentLogo profileId={session.profileId} name="" size={14} />
-        <span className="text-sm font-medium text-fg">{agentName}</span>
+        <Button
+          variant="ghost"
+          aria-label={`Open ${agentName}`}
+          icon={<AgentLogo profileId={session.profileId} name="" size={14} />}
+          className="-ml-3"
+          onClick={() => onOpen(session.id)}
+        >
+          {agentName}
+        </Button>
         <span className={`text-xs font-medium ${STATUS_STYLES[status]}`}>{statusLabel(status)}</span>
         <div className="ml-auto flex items-center gap-3">
           <Changes facts={facts} version={version} />
-          <Button aria-label={`Open ${agentName}`} onClick={() => onOpen(session.id)}>
-            Open
-          </Button>
           <Button aria-label={`Pick ${agentName}`} variant="primary" disabled={isPickDisabled} onClick={() => onPick(session.id)}>
             Pick
           </Button>

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, renderHook, waitFor, within } from "@testing-library/react";
 import { CompareRunPanel, type CompareRunPanelProps } from "../components/compare/CompareRunPanel";
 import { useCompareRun, type CompareRunDeps } from "../hooks/useCompareRun";
-import { rowFactsOf, type CompareRun, type RowFacts } from "../lib/compare-run";
+import { rowFactsOf, rowStatus, type CompareRun, type RowFacts } from "../lib/compare-run";
 import type { ActionCard, ChatMessage, Session } from "../types";
 
 type Listener = (event: { payload: unknown }) => void;
@@ -202,6 +202,18 @@ describe("CompareRunPanel", () => {
     expect(within(rowOf("Claude Code")).getByText("Working")).toBeInTheDocument();
   });
 
+  it("the agent's name opens its chat, and the row holds no nested buttons", async () => {
+    answerDiffs({});
+    const p = props([facts(1, { pendingCard: card() }), facts(2)]);
+    await renderPanel(p);
+
+    fireEvent.click(within(rowOf("Qwen Code")).getByRole("button", { name: "Open Qwen Code" }));
+
+    expect(p.onOpen).toHaveBeenCalledWith("s-2");
+    expect(screen.queryByRole("button", { name: "Open" })).toBeNull();
+    expect(document.querySelectorAll("button button")).toHaveLength(0);
+  });
+
   it("a form reads Needs you and the row opens the chat", async () => {
     answerDiffs({});
     const p = props([facts(1, { hasOpenForm: true }), facts(2)]);
@@ -247,6 +259,23 @@ describe("CompareRunPanel", () => {
     expect(screen.getByText("Stop 1 agent and keep Claude Code's work?")).toBeInTheDocument();
   });
 
+  it("drops the question when the working agents finish, and Pick then needs one more press", async () => {
+    answerDiffs({});
+    const rows = [facts(1), facts(2, { isBusy: true })];
+    const p = props(rows);
+    const { rerender } = await renderPanel(p);
+    fireEvent.click(screen.getByRole("button", { name: "Pick Claude Code" }));
+    expect(screen.getByText("Stop 1 agent and keep Claude Code's work?")).toBeInTheDocument();
+
+    rerender(<CompareRunPanel {...props([facts(1), facts(2)], { onPick: p.onPick })} />);
+
+    expect(screen.queryByText(/and keep/)).toBeNull();
+    expect(screen.queryByText(/Stop 0/)).toBeNull();
+    expect(p.onPick).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Pick Claude Code" }));
+    expect(p.onPick).toHaveBeenCalledWith("s-1");
+  });
+
   it("Stop and pick calls onPick once and keeps the buttons off until it is done", async () => {
     answerDiffs({});
     let finish!: () => void;
@@ -283,6 +312,7 @@ describe("rowFactsOf", () => {
   it("reads each session's own transcript, not the active one", () => {
     const run = runOf([facts(1), facts(2)]);
     const [first, second] = rowFactsOf(run, sources({
+      isBusy: (id) => id === "s-2",
       transcripts: { "s-2": [agentMessage("", { actionCard: card({ sessionId: "s-2" }) })] },
     }));
 
@@ -312,12 +342,32 @@ describe("rowFactsOf", () => {
     expect(rows.map((r) => r.failed)).toEqual([true, true, false]);
   });
 
+  it("reads Stopped, not Needs you, for a saved request whose agent is gone", () => {
+    const saved = [agentMessage("", { actionCard: card({ sessionId: "s-1" }) })];
+    const form = agentMessage("", {
+      elicitation: { key: "e", status: "pending" } as unknown as NonNullable<ChatMessage["elicitation"]>,
+    });
+    const run = runOf([
+      facts(1, {}, { status: "terminated" }),
+      facts(2, {}, { status: "terminated" }),
+      facts(3, {}, { status: "running" }),
+    ]);
+    const rows = rowFactsOf(run, sources({
+      isBusy: () => false,
+      transcripts: { "s-1": saved, "s-2": [form], "s-3": saved },
+    }));
+
+    expect(rows.map((r) => rowStatus(r))).toEqual(["stopped", "stopped", "done"]);
+    expect(rows.map((r) => [r.pendingCard, r.hasOpenForm])).toEqual([[null, false], [null, false], [null, false]]);
+  });
+
   it("marks an open form and the busy ones", () => {
     const run = runOf([facts(1), facts(2)]);
     const form = agentMessage("", {
       elicitation: { key: "e", status: "pending" } as unknown as NonNullable<ChatMessage["elicitation"]>,
     });
     const rows = rowFactsOf(run, sources({ isBusy: (id) => id === "s-2", transcripts: { "s-1": [form] } }));
+    // facts() sessions are running, so the form of s-1 is live.
 
     expect(rows.map((r) => [r.hasOpenForm, r.isBusy])).toEqual([[true, false], [false, true]]);
   });
@@ -379,6 +429,32 @@ describe("useCompareRun pick", () => {
 
     expect(opened).toEqual([]);
     expect(notices.at(-1)).toBe("Kimi CLI could not be stopped, so it is still in the run.");
+  });
+
+  it("a second pick while one runs does nothing, even from another panel", async () => {
+    const { pick, archive, opened } = setup(three);
+    let release!: () => void;
+    const archiveNormally = archive.getMockImplementation()!;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    archive.mockImplementationOnce(async (id, isArchived) => {
+      await gate;
+      await archiveNormally(id, isArchived);
+    });
+
+    let first!: Promise<void>;
+    await act(async () => {
+      first = pick(run(three), "s-1");
+      await pick(run(three), "s-3");
+    });
+    expect(archive).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      release();
+      await first;
+    });
+
+    // Only the first pick's archives ran: the second would have archived s-1.
+    expect(archive.mock.calls.map(([id]) => id)).toEqual(["s-2", "s-3"]);
+    expect(opened).toEqual(["s-1"]);
   });
 
   it("a failed agent can be picked and archived", async () => {

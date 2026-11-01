@@ -635,17 +635,19 @@ export default function App() {
     setAcpChoices(NO_CHOICES);
   };
 
+  // Read when a run's worktrees are done, seconds after the click: an empty session id also means a run's panel.
+  const isDraftRef = useLatest(isNewSessionDraft);
   const compareRun = useCompareRun({
     repoPath: activeWorkspace?.path ?? "",
     baseBranch: branchPicker.baseBranch,
     agentOptions: state.agentOptions,
     startSession,
-    isOnDraft: () => activeSessionIdRef.current === "",
+    isOnDraft: () => isDraftRef.current,
     openRun: setActiveRunId,
     setIsBusy: setIsCreatingWorktree,
     // The user may have opened another session meanwhile: the message goes back into the new session it was written for.
     restoreMessage: (message, agentId) => {
-      if (activeSessionIdRef.current !== "" || !activeWorkspace) openNewSession(activeWorkspace?.path, agentId);
+      if (!isDraftRef.current || !activeWorkspace) openNewSession(activeWorkspace?.path, agentId);
       composerRef.current?.restore(message.text, message.attachments);
     },
     onStarted: () => {

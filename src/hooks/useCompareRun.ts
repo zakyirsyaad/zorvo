@@ -61,6 +61,8 @@ async function makeWorktrees(
 export function useCompareRun(deps: CompareRunDeps) {
   // A second Send before the first run has its sessions would make a second set of worktrees.
   const isStarting = useRef(false);
+  // Pick is asked from a panel that can remount: the guard cannot live there.
+  const isPicking = useRef(false);
 
   const startRun = async (agents: readonly AgentProfile[], first: FirstMessage): Promise<void> => {
     if (isStarting.current || agents.length === 0) return;
@@ -119,6 +121,8 @@ export function useCompareRun(deps: CompareRunDeps) {
 
   /** Keeps `winnerId`: archives the run's other sessions one at a time, then opens it. */
   const pick = async (run: CompareRun, winnerId: string): Promise<void> => {
+    if (isPicking.current) return;
+    isPicking.current = true;
     try {
       for (const session of run.sessions) {
         if (session.id !== winnerId) await deps.archiveSession(session.id, true);
@@ -136,6 +140,8 @@ export function useCompareRun(deps: CompareRunDeps) {
       deps.openSession(winnerId);
     } catch (error) {
       deps.onNotice(`Could not pick this agent: ${String(error)}`);
+    } finally {
+      isPicking.current = false;
     }
   };
 

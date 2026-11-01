@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../ui/Button";
 import { CompareRunRow } from "./CompareRunRow";
 import { othersToStop, type CompareRun, type RowFacts } from "../../lib/compare-run";
@@ -26,6 +26,12 @@ export function CompareRunPanel({ run, rows, version, agentName, onOpen, onChoos
   const [isPicking, setIsPicking] = useState(false);
   const isBusy = (sessionId: string) => rows.find((row) => row.session.id === sessionId)?.isBusy ?? false;
   const confirmedRow = rows.find((row) => row.session.id === confirming);
+  const workingOthers = (winnerId: string) => othersToStop(run, winnerId, isBusy).filter((s) => isBusy(s.id));
+  const workingCount = confirmedRow ? workingOthers(confirmedRow.session.id).length : 0;
+  // The agents finished while the question was open: there is nothing left to stop, so it goes and Pick needs one more press.
+  useEffect(() => {
+    if (confirming !== null && workingCount === 0) setConfirming(null);
+  }, [confirming, workingCount]);
 
   const pick = async (winnerId: string) => {
     setConfirming(null);
@@ -39,14 +45,9 @@ export function CompareRunPanel({ run, rows, version, agentName, onOpen, onChoos
 
   // Idle agents are archived without asking; only ones that are working are cut off mid-turn.
   const handlePick = (winnerId: string) => {
-    const working = othersToStop(run, winnerId, isBusy).filter((session) => isBusy(session.id));
-    if (working.length === 0) void pick(winnerId);
+    if (workingOthers(winnerId).length === 0) void pick(winnerId);
     else setConfirming(winnerId);
   };
-
-  const workingCount = confirmedRow
-    ? othersToStop(run, confirmedRow.session.id, isBusy).filter((session) => isBusy(session.id)).length
-    : 0;
 
   return (
     <section aria-label="Compare run" className="flex flex-1 flex-col overflow-y-auto px-6 py-8">
@@ -69,7 +70,7 @@ export function CompareRunPanel({ run, rows, version, agentName, onOpen, onChoos
             />
           ))}
         </ul>
-        {confirmedRow && (
+        {confirmedRow && workingCount > 0 && (
           <div
             role="group"
             aria-label="Confirm pick"

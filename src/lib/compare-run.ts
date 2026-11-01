@@ -112,13 +112,16 @@ export interface RowSources {
 export function rowFactsOf(run: CompareRun, { isBusy, transcripts, failedTurns }: RowSources): RowFacts[] {
   return run.sessions.map((session) => {
     const messages = transcripts[session.id] ?? [];
+    const isBusyNow = isBusy(session.id);
+    // A saved request outlives its agent: only a live agent still waits for an answer (as `isWaitingForAnswer` reads it).
+    const isLive = session.status === 'running';
     const exitedBadly = session.status === 'terminated' && Boolean(session.exitCode);
     return {
       session,
-      isBusy: isBusy(session.id),
+      isBusy: isBusyNow,
       hasStarted: Boolean(session.acpSessionId) || messages.some((message) => message.role === 'agent'),
-      pendingCard: pendingPermission(messages),
-      hasOpenForm: hasPendingElicitation(messages),
+      pendingCard: isLive && isBusyNow ? pendingPermission(messages) : null,
+      hasOpenForm: isLive && hasPendingElicitation(messages),
       needsSignIn: false,
       failed: session.id in failedTurns || exitedBadly,
     };

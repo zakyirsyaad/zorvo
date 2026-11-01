@@ -261,17 +261,20 @@ describe("starting a compare run", () => {
     expect(await screen.findByRole("textbox", { name: "Prompt" })).toBeInTheDocument();
   });
 
-  it("Pick keeps one agent: the other is stopped and archived, and the keeper's chat opens", async () => {
+  it("Pick keeps one agent: asks first, stops and archives the other, and opens the keeper's chat", async () => {
     const spy = await renderApp();
     await tickAgents("Qwen Code");
     await send("fix the login");
     await click(await screen.findByRole("button", { name: "Pick Claude Code" }));
-    // The fake agents may still be mid-turn: then the panel asks before it stops one.
-    const confirm = screen.queryByRole("button", { name: "Stop and pick" });
-    if (confirm) await click(confirm);
 
-    expect(await screen.findByRole("textbox", { name: "Prompt" })).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Compare run" })).toBeNull();
+    expect(await screen.findByText("Stop 1 agent and keep Claude Code's work?")).toBeInTheDocument();
+    expect(calls(spy, "acp_stop_session")).toHaveLength(0);
+    await click(screen.getByRole("button", { name: "Stop and pick" }));
+
+    // The keeper's own chat: not the panel, and not the new-session draft the view falls to when the run is gone.
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Compare run" })).toBeNull());
+    expect(screen.queryByRole("button", { name: /^Folder:/ })).toBeNull();
+    expect(prompt()).not.toHaveAttribute("placeholder", expect.stringContaining("start a new session"));
     await waitFor(() => expect(savedSessions().filter((s) => s.archivedAt)).toHaveLength(1));
     expect(savedSessions().find((s) => s.archivedAt)?.profileId).toBe("qwen-code");
     expect(calls(spy, "acp_stop_session")).toHaveLength(1);
@@ -337,6 +340,26 @@ describe("starting a compare run", () => {
     await act(async () => {});
 
     expect(within(screen.getAllByRole("banner")[0]).getByText("Older work")).toBeInTheDocument();
+  });
+
+  it("opens a new draft with the message when no worktree could be made and the user is elsewhere", async () => {
+    const first = deferred<Worktree>();
+    await renderApp({
+      worktree: (call) => (call === 1 ? first.promise : Promise.reject("no space")),
+      sessions: [
+        { id: "s-old", name: "Older work", profileId: "claude-acp", cwd: DRAFT_FOLDER, status: "terminated", createdAt: 1, transport: "acp" },
+      ],
+    });
+    await click(screen.getByRole("button", { name: "+ New session" }));
+    await tickAgents("Qwen Code");
+    await send("fix the login");
+    await click(within(screen.getByRole("complementary")).getByText("Older work"));
+
+    await act(async () => first.reject("no space"));
+    await act(async () => {});
+
+    expect(await screen.findByRole("button", { name: /^Folder:/ })).toBeInTheDocument();
+    expect(prompt()).toHaveValue("fix the login");
   });
 
   it("skips an agent whose worktree cannot be made and names it", async () => {

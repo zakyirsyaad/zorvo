@@ -1123,7 +1123,7 @@ describe("ACP sessions in the app", () => {
     expect(screen.queryByRole("button", { name: "Stop agent" })).toBeNull();
   });
 
-  it("puts an unsent message back in its own session when the handoff fails after the user moved on", async () => {
+  it("keeps an unsent message for its own session when the handoff fails after the user moved on", async () => {
     const spy = await renderWithQwen();
     const sessionId = await startQwenSession(spy);
     await send("plan the parser");
@@ -1146,7 +1146,13 @@ describe("ACP sessions in the app", () => {
       failHandoff("disk full");
     });
 
-    expect(screen.queryByRole("heading", { name: "New session" })).toBeNull();
+    // The user stays where they went: the message is not pulled into the new session's box.
+    expect(screen.getByRole("heading", { name: "New session" })).toBeDefined();
+    expect(prompt().value).toBe("");
+
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole("complementary")).getByText(FIRST_MESSAGE));
+    });
     expect(within(screen.getByTestId("chat-canvas-container")).getByText(FIRST_MESSAGE, { selector: "p" })).toBeDefined();
     expect(prompt().value).toBe("plan the lexer");
   });

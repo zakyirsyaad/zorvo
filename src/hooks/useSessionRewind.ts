@@ -10,8 +10,10 @@ export interface SessionRewindDeps {
   acp: Pick<AcpEngine, 'info' | 'start' | 'stop'>;
   patchSession: (sessionId: string, patch: Partial<Session>) => void;
   updateMessages: (sessionId: string, updater: (prev: ChatMessage[]) => ChatMessage[]) => void;
-  /** Puts a message back in the composer of the session it was written for. */
+  /** Puts a rewound message in the composer in place of what is there. */
   onRestore: (sessionId: string, text: string, attachments?: readonly string[]) => void;
+  /** Gives a message that did not reach the agent back to the composer of the session it was written for. */
+  onGiveBack: (sessionId: string, text: string, attachments?: readonly string[]) => void;
   onNotice: (message: string) => void;
 }
 
@@ -44,7 +46,7 @@ const before = (messages: readonly ChatMessage[], messageId: string): ChatMessag
  * conversation in a file. Files the agent changed stay as they are.
  */
 export function useSessionRewind(deps: SessionRewindDeps): SessionRewind {
-  const { agents, transcripts, acp, patchSession, updateMessages, onRestore, onNotice } = deps;
+  const { agents, transcripts, acp, patchSession, updateMessages, onRestore, onGiveBack, onNotice } = deps;
   // A fresh agent for a session waits until its old one is gone: a late stop would end the new one.
   const stopsRef = useRef(new Map<string, Promise<boolean>>());
   // Read and written at once, so a second send cannot start a second agent.
@@ -112,7 +114,7 @@ export function useSessionRewind(deps: SessionRewindDeps): SessionRewind {
         // Stopped meanwhile: the message is back already, and the failure is moot.
         if (cancelledRef.current.delete(session.id)) return;
         onNotice(`Could not continue the session: ${String(error)}`);
-        onRestore(session.id, message.text, message.attachments);
+        onGiveBack(session.id, message.text, message.attachments);
         return;
       }
       await stopsRef.current.get(session.id);
@@ -121,7 +123,9 @@ export function useSessionRewind(deps: SessionRewindDeps): SessionRewind {
       // Continuing an archived session brings it back into the list.
       patchSession(session.id, { status: 'running', endedAt: null, exitCode: null, archivedAt: null });
       // The engine marks the session as starting before this returns, so it stays busy throughout.
-      void acp.start(session, { ...message, context }, choices);
+      void acp.start(session, { ...message, context }, choices).then((isTaken) => {
+        if (!isTaken) onGiveBack(session.id, message.text, message.attachments);
+      });
     } finally {
       pendingRef.current.delete(session.id);
       markRestarting(session.id, false);
@@ -133,7 +137,7 @@ export function useSessionRewind(deps: SessionRewindDeps): SessionRewind {
     const message = pendingRef.current.get(sessionId);
     if (!message || cancelledRef.current.has(sessionId)) return;
     cancelledRef.current.add(sessionId);
-    onRestore(sessionId, message.text, message.attachments);
+    onGiveBack(sessionId, message.text, message.attachments);
   };
 
   return {

@@ -212,7 +212,9 @@ describe("Session lifecycle", () => {
     });
 
     expect(screen.getByRole("alert").textContent).toContain("Failed to send the message");
-    expect(screen.queryByText("please run the tests")).toBeNull();
+    // Not shown in the chat as if the agent had it, but back in the box to send again.
+    expect(screen.queryAllByText("please run the tests").filter((el) => el.tagName !== "TEXTAREA")).toHaveLength(0);
+    expect((composer as HTMLTextAreaElement).value).toBe("please run the tests");
   });
 
   it("removes a deleted session's worktree, unless another session still runs in it", async () => {

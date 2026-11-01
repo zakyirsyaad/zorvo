@@ -400,6 +400,55 @@ describe("ComposerDock restored message", () => {
     expect(handle.current?.holdsRestored({ text: "hi" })).toBe(false);
   });
 
+  it("replaces what was typed when a message is restored, as a rewind does", () => {
+    const handle = renderWithHandle();
+    fireEvent.change(prompt(), { target: { value: "a stale draft" } });
+
+    act(() => handle.current?.restore("fix the login"));
+
+    expect(prompt().value).toBe("fix the login");
+  });
+
+  it("keeps what was typed after a message that is given back, so a failed send never wipes a new draft", () => {
+    const handle = renderWithHandle();
+    fireEvent.change(prompt(), { target: { value: "and then the linter" } });
+
+    act(() => handle.current?.giveBack("please run the tests"));
+
+    expect(prompt().value).toBe("please run the tests\n\nand then the linter");
+  });
+
+  it("keeps the files already attached and adds the given back ones once", () => {
+    const handle = createRef<ComposerHandle>();
+    const onSendMessage = vi.fn();
+    render(<ComposerDock handleRef={handle} onSendMessage={onSendMessage} attachAsFiles />);
+    act(() => handle.current?.insertPaths(["/a/new.png", "/a/shared.md"]));
+
+    act(() => handle.current?.giveBack("look", ["/a/shared.md", "/a/old.ts"]));
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    expect(onSendMessage).toHaveBeenCalledWith("look", ["/a/shared.md", "/a/old.ts", "/a/new.png"]);
+  });
+
+  it("adds no blank lines before what was typed when only files are given back", () => {
+    const handle = createRef<ComposerHandle>();
+    render(<ComposerDock handleRef={handle} onSendMessage={() => {}} attachAsFiles />);
+    fireEvent.change(prompt(), { target: { value: "a note" } });
+
+    act(() => handle.current?.giveBack("", ["/a/shot.png"]));
+
+    expect(prompt().value).toBe("a note");
+  });
+
+  it("does not repeat a message it already holds", () => {
+    const handle = renderWithHandle();
+    act(() => handle.current?.giveBack("hi"));
+
+    act(() => handle.current?.giveBack("hi"));
+
+    expect(prompt().value).toBe("hi");
+  });
+
   it("is emptied by clear and then holds nothing restored", () => {
     const handle = renderWithHandle();
     act(() => handle.current?.restore("hi"));

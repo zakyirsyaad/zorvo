@@ -29,6 +29,7 @@ import { useAgentSignInStatus } from "./hooks/useAgentSignInStatus";
 import { useDraftAgentCheck } from "./hooks/useDraftAgentCheck";
 import { useSettingsSignIn } from "./hooks/useSettingsSignIn";
 import { useLatest } from "./hooks/useLatest";
+import { useUnsentMessages } from "./hooks/useUnsentMessages";
 import { attachmentsFor, createSessionWorktree } from "./lib/session-worktree";
 import { sweepOrphans } from "./lib/orphan-sweep";
 import {
@@ -289,14 +290,21 @@ export default function App() {
   const rememberModelPick = (profileId: string, preferredModelId: string) =>
     rememberAgentOptions(profileId, { preferredModelId });
 
-  // The user may have opened another session meanwhile: the message goes back
-  // into the session it was written for, not that one's composer.
+  // A rewound message replaces the box, in the session the user is rewinding.
   const restoreMessage = (sessionId: string, text: string, attachments?: readonly string[]) => {
     setActiveSessionId(sessionId);
     // A run's panel has no composer: the message waits for the session's to mount.
     if (composerRef.current) composerRef.current.restore(text, attachments);
     else pendingRestoreRef.current = { text, attachments };
   };
+  // A message that did not reach the agent: the user may have opened another session meanwhile, so it goes
+  // back into the composer of the session it was written for, after what is typed there, and waits for
+  // that session to be on screen rather than pulling the user there.
+  const { giveBack: giveBackMessage } = useUnsentMessages({
+    composerRef,
+    activeSessionId,
+    sessionIds: sessions.map((s) => s.id),
+  });
   // Read when an agent answers, seconds after the closure that waits for it was made.
   const activeSessionIdRef = useLatest(activeSessionId);
   const signIn = useAgentSignIn({
@@ -311,7 +319,7 @@ export default function App() {
       compareRun.dropSignIn(sessionId);
       return acp.retryAfterSignIn(sessionId, message);
     },
-    onRestore: restoreMessage,
+    onRestore: giveBackMessage,
   });
 
   const rememberProbed = (profileId: string, probed: ProbedOptions) =>
@@ -385,6 +393,7 @@ export default function App() {
     patchSession,
     updateMessages,
     onRestore: restoreMessage,
+    onGiveBack: giveBackMessage,
     onNotice: setNotice,
   });
 
@@ -458,7 +467,9 @@ export default function App() {
    */
   const startSession = (spec: SessionSpec, first?: FirstMessage, options?: StartSessionOptions) => {
     const session = recordSession(spec, options);
-    void acp.start(session, first, options?.choices ?? startChoices);
+    void acp.start(session, first, options?.choices ?? startChoices).then((isTaken) => {
+      if (!isTaken && first) giveBackMessage(session.id, first.text, first.attachments);
+    });
     // The picks went with the session; a later draft starts from the model picked last.
     if (!options?.choices) setAcpChoices(NO_CHOICES);
   };
@@ -640,6 +651,7 @@ export default function App() {
     recordSession, openSession: handleSelectSession, discardSession: sessionActions.discardSession, openNewSession, requestSignIn: signIn.auth.requestSignIn,
   });
 
+  /** Resolves to whether the agent took the message. */
   const sendTo = async (sessionId: string, message: FirstMessage) => {
     compareRun.dropSignIn(sessionId);
     const session = sessionById(sessionId);
@@ -649,7 +661,14 @@ export default function App() {
     if (sent && session && isFirstMessage && isAutoName(session.name) && !session.namedByUser) {
       patchSession(sessionId, { name: titleFor(message) });
     }
+    return sent;
   };
+
+  /** Sends what the composer held; a message the agent did not take goes back to its session's composer. */
+  const sendFromComposer = (sessionId: string, message: FirstMessage) =>
+    void sendTo(sessionId, message).then((isTaken) => {
+      if (!isTaken) giveBackMessage(sessionId, message.text, message.attachments);
+    });
 
   /**
    * Continues an ended ACP session: a fresh agent process loads it, then gets
@@ -664,7 +683,9 @@ export default function App() {
     }
     // Continuing an archived session brings it back into the list.
     patchSession(session.id, { status: "running", endedAt: null, exitCode: null, archivedAt: null });
-    void acp.resume(session, session.acpSessionId, message, startChoices);
+    void acp.resume(session, session.acpSessionId, message, startChoices).then((isTaken) => {
+      if (!isTaken) giveBackMessage(session.id, message.text, message.attachments);
+    });
     setAcpChoices(NO_CHOICES);
   };
 
@@ -732,7 +753,7 @@ export default function App() {
   /** Sends to the active session, continues it when it can be resumed, or starts a new one (or a run). */
   const handleSendMessage = (text: string, attachments?: string[]) => {
     const message = { text, attachments };
-    if (activeSession && isActiveRunning) void sendTo(activeSession.id, message);
+    if (activeSession && isActiveRunning) sendFromComposer(activeSession.id, message);
     else if (activeSession && isResumable) resumeSession(activeSession, message);
     else if (compare.isCompare) handleNewRun(message);
     else void handleNewSession(message);
@@ -887,7 +908,7 @@ export default function App() {
                   isBusy={isSessionBusy(activeSessionId)}
                   onRetry={
                     acp.hasFailedPrompt(activeSessionId)
-                      ? () => void acp.retryFailedTurn(activeSessionId, (unsent) => restoreMessage(activeSessionId, unsent.text, unsent.attachments))
+                      ? () => void acp.retryFailedTurn(activeSessionId, (unsent) => giveBackMessage(activeSessionId, unsent.text, unsent.attachments))
                       : undefined
                   }
                   onDismiss={() => clearFailedTurn(activeSessionId)}

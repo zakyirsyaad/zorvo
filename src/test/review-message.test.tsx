@@ -696,6 +696,17 @@ describe("Which session the message is for", () => {
     expect(within(panel()).getByText("In message")).toBeDefined();
   });
 
+  it("names the agent of a compare run, whose sessions share one title", async () => {
+    await renderDiff(runOfTwo());
+    await addAll();
+
+    await press(/Fix the login.*2 agents/);
+    await press("Open Qwen Code");
+
+    expect(screen.getByText("These review comments are for Claude Code. Go back to that session, or clear the message.")).toBeDefined();
+    expect(sendButton()).toBeDisabled();
+  });
+
   it("a composer that was taken away gives its comments back", async () => {
     const removed = makeProfile({ id: "gemini", name: "Gemini CLI", detected: true });
     const settings = fakeStore().state.settings as Partial<Settings>;
@@ -733,6 +744,7 @@ function WiredComposer({ handle, comments, onWired }: {
     hasComposer: true,
     isComposerDisabled: false,
     collapseDiff: () => {},
+    agentNameOf: (profileId) => profileId,
   });
   onWired(wiring);
   return (
@@ -837,6 +849,7 @@ describe("Lifting the slot", () => {
         hasComposer: true,
         isComposerDisabled: false,
         collapseDiff: () => {},
+        agentNameOf: (profileId) => profileId,
       }),
     );
 

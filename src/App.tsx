@@ -764,6 +764,7 @@ export default function App() {
     hasComposer: activeAgentRemoved === null,
     isComposerDisabled,
     collapseDiff: () => setExpandedDiffFolder(null),
+    agentNameOf: (profileId) => agents.find((a) => a.id === profileId)?.name ?? profileId,
   });
 
   /** Sends to the active session, continues it when it can be resumed, or starts a new one (or a run). */

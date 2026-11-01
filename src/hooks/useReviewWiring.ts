@@ -43,6 +43,7 @@ export function useReviewWiring({
   hasComposer,
   isComposerDisabled,
   collapseDiff,
+  agentNameOf,
 }: {
   /** The session on screen. */
   session: Session | undefined;
@@ -57,6 +58,7 @@ export function useReviewWiring({
   isComposerDisabled: boolean;
   /** Ends an expanded diff, which hides the composer. */
   collapseDiff: () => void;
+  agentNameOf: (profileId: string) => string;
 }): ReviewWiring {
   const change = (sessionId: string, ids: readonly string[], changed: (comment: ReviewComment) => ReviewComment) =>
     updateComments(sessionId, (prev) => prev.map((comment) => (ids.includes(comment.id) ? changed(comment) : comment)));
@@ -92,6 +94,8 @@ export function useReviewWiring({
   };
 
   const owner = blocksSend && slot ? sessions.find((candidate) => candidate.id === slot.sessionId) : undefined;
+  // The sessions of a compare run share one title: only the agent tells them apart.
+  const ownerTitle = owner?.compareRunId ? agentNameOf(owner.profileId) : owner?.name;
 
   return {
     review: {
@@ -107,7 +111,7 @@ export function useReviewWiring({
     },
     addReview: { inMessage, blockedReason, add },
     reviewOwner: blocksSend
-      ? { title: owner?.name || null, isArchived: Boolean(owner?.archivedAt), cannotContinue: isOwnSessionStuck }
+      ? { title: ownerTitle || null, isArchived: Boolean(owner?.archivedAt), cannotContinue: isOwnSessionStuck }
       : undefined,
     blocksSend,
     sendFrom,

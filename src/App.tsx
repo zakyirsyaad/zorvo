@@ -313,11 +313,12 @@ export default function App() {
   };
   // A message that did not reach the agent: the user may have opened another session meanwhile, so it goes
   // back into the composer of the session it was written for, after what is typed there, and waits for
-  // that session to be on screen rather than pulling the user there.
+  // that session to be on screen rather than pulling the user there, and for any other session's comments to leave the composer.
   const { giveBack: giveBackMessage } = useUnsentMessages({
     composerRef,
     activeSessionId,
     sessionIds: sessions.map((s) => s.id),
+    isHeldFor: (sessionId) => review.isHeldFor(sessionId),
   });
   // Read when an agent answers, seconds after the closure that waits for it was made.
   const activeSessionIdRef = useLatest(activeSessionId);
@@ -334,6 +335,7 @@ export default function App() {
       return acp.retryAfterSignIn(sessionId, message);
     },
     onRestore: giveBackMessage,
+    isHeldFor: (sessionId) => review.isHeldFor(sessionId),
   });
 
   const rememberProbed = (profileId: string, probed: ProbedOptions) =>

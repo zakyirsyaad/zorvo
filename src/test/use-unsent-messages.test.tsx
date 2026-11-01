@@ -12,12 +12,18 @@ interface Props {
   activeSessionId: string;
   sessionIds: readonly string[];
   composer: ComposerHandle | null;
+  heldFor?: string;
 }
 
 function setup(initial: Props) {
   return renderHook(
     (props: Props) =>
-      useUnsentMessages({ composerRef: { current: props.composer }, activeSessionId: props.activeSessionId, sessionIds: props.sessionIds }),
+      useUnsentMessages({
+        composerRef: { current: props.composer },
+        activeSessionId: props.activeSessionId,
+        sessionIds: props.sessionIds,
+        isHeldFor: (sessionId) => sessionId === props.heldFor,
+      }),
     { initialProps: initial },
   );
 }
@@ -55,6 +61,17 @@ describe("useUnsentMessages", () => {
     expect(restore).not.toHaveBeenCalled();
 
     rerender({ activeSessionId: "a", sessionIds: ["a"], composer: handle });
+    expect(restore).toHaveBeenCalledExactlyOnceWith("hello", []);
+  });
+
+  it("holds a message while its session is held, and gives it back on the render after", () => {
+    const { restore, handle } = fakeComposer();
+    const { result, rerender } = setup({ activeSessionId: "a", sessionIds: ["a", "b"], composer: handle, heldFor: "a" });
+
+    act(() => result.current.giveBack("a", "hello"));
+    expect(restore).not.toHaveBeenCalled();
+
+    rerender({ activeSessionId: "a", sessionIds: ["a", "b"], composer: handle });
     expect(restore).toHaveBeenCalledExactlyOnceWith("hello", []);
   });
 

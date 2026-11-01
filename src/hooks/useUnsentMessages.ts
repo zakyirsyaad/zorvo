@@ -13,6 +13,8 @@ export interface UnsentMessagesDeps {
   activeSessionId: string;
   /** Every session that still exists: what is kept for any other is dropped. */
   sessionIds: readonly string[];
+  /** The composer holds another session's comments: a message of this session waits, or it would go out with them. */
+  isHeldFor: (sessionId: string) => boolean;
 }
 
 /** Several messages that came back together read as one, in the order they were written. */
@@ -30,21 +32,22 @@ function combined(messages: readonly Unsent[]): Unsent {
  * Gives a message that did not reach its agent back to the composer of the session it was written for.
  * One composer serves every session, so a message for a session that is not on screen waits (in memory)
  * until that session is, and goes into no other session's composer. What the user typed meanwhile stays.
+ * It also waits while the composer holds another session's comments, which it must not join.
  */
 export function useUnsentMessages(deps: UnsentMessagesDeps) {
   const kept = useRef(new Map<string, Unsent[]>());
   const latest = useLatest(deps);
 
-  const deliver = useCallback(({ composerRef, activeSessionId }: UnsentMessagesDeps) => {
+  const deliver = useCallback(({ composerRef, activeSessionId, isHeldFor }: UnsentMessagesDeps) => {
     const waiting = kept.current.get(activeSessionId);
     // A run's panel shows no session (its id is empty) and hides the composer: the message waits for its row to open.
-    if (!waiting || !composerRef.current) return;
+    if (!waiting || !composerRef.current || isHeldFor(activeSessionId)) return;
     kept.current.delete(activeSessionId);
     const { text, attachments } = combined(waiting);
     composerRef.current.giveBack(text, attachments);
   }, []);
 
-  // After every render: the composer may have mounted, or the session come on screen, since the message was kept.
+  // After every render: the composer may have mounted, the session come on screen, or a hold lifted, since the message was kept.
   useEffect(() => {
     for (const sessionId of kept.current.keys()) {
       if (!deps.sessionIds.includes(sessionId)) kept.current.delete(sessionId);

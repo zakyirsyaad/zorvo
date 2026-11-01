@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReviewTarget } from '../types';
 
 /** Which session the comments added to the composer are for. */
@@ -14,6 +14,8 @@ export interface ReviewMessage {
   inMessage: ReadonlySet<string>;
   /** The composer holds comments for another session, or none is on screen. */
   blocksSend: boolean;
+  /** The composer holds another session's comments, so nothing of `sessionId`'s may join them. */
+  isHeldFor: (sessionId: string) => boolean;
   /** Call it after the text went into the composer, so a composer that took nothing leaves no slot. */
   add: (sessionId: string, ids: readonly string[], target: ReviewTarget) => void;
   /** The composer's text already has `heading` only after an add for this session and target, and only while it still holds it. */
@@ -37,21 +39,31 @@ const holdsBlock = (text: string, block: string) => `\n\n${text}\n\n`.includes(`
  * One composer serves every session and keeps its text across a switch, so this remembers whom
  * added comments are for. In memory only, as composer text is: after a restart they are plain comments.
  */
-export function useReviewMessage({ activeSessionId, markSent }: {
+export function useReviewMessage({ activeSessionId, markSent, sessionIds }: {
   activeSessionId: string | undefined;
   markSent: (sessionId: string, ids: readonly string[]) => void;
+  /** Every session that still exists: what is kept for any other is dropped. */
+  sessionIds: readonly string[];
 }): ReviewMessage {
   const [slot, setSlot] = useState<ReviewSlot | null>(null);
   // Read only for the heading, which says quoted lines are not instructions: replacing the text keeps the slot.
   const composerText = useRef('');
-  // A message that did not reach the agent comes back holding its comments, already marked Sent: this says whom it is still for.
-  const lastSend = useRef<(Pick<ReviewSlot, 'sessionId' | 'lastTarget'> & { text: string }) | null>(null);
+  // A message that did not reach the agent comes back holding its comments, already marked Sent: this says
+  // whom it is still for. By session, as one may wait in memory while another session sends.
+  const lastSends = useRef(new Map<string, Pick<ReviewSlot, 'lastTarget'> & { text: string }>());
   const isActiveSessions = slot !== null && slot.sessionId === activeSessionId;
+
+  useEffect(() => {
+    for (const sessionId of lastSends.current.keys()) {
+      if (!sessionIds.includes(sessionId)) lastSends.current.delete(sessionId);
+    }
+  });
 
   return {
     slot,
     inMessage: new Set(isActiveSessions ? slot.commentIds : []),
     blocksSend: slot !== null && !isActiveSessions,
+    isHeldFor: (sessionId) => slot !== null && slot.sessionId !== sessionId,
     add: (sessionId, ids, target) =>
       setSlot((prev) => ({
         sessionId,
@@ -66,19 +78,26 @@ export function useReviewMessage({ activeSessionId, markSent }: {
       if (text.trim() === '') setSlot(null);
     },
     onComposerRestored: (text) => {
-      const sent = lastSend.current;
-      setSlot(sent?.text === text ? { sessionId: sent.sessionId, commentIds: [], lastTarget: sent.lastTarget } : null);
+      const owner = [...lastSends.current].find(([, sent]) => sent.text === text);
+      if (!owner) {
+        setSlot(null);
+        return;
+      }
+      const [sessionId, { lastTarget }] = owner;
+      lastSends.current.delete(sessionId);
+      setSlot({ sessionId, commentIds: [], lastTarget });
     },
     onComposerGivenBack: (sessionId, text) => {
-      const sent = lastSend.current;
-      if (!sent?.text || sent.sessionId !== sessionId || !holdsBlock(text, sent.text)) return;
-      // A slot here keeps its comments; one for another session already blocks Send here.
+      const sent = lastSends.current.get(sessionId);
+      if (!sent?.text || !holdsBlock(text, sent.text)) return;
+      lastSends.current.delete(sessionId);
+      // A slot here keeps its comments.
       setSlot((prev) => prev ?? { sessionId, commentIds: [], lastTarget: sent.lastTarget });
     },
     sendFrom: (sessionId, text) => {
       if (slot?.sessionId !== sessionId) return;
       markSent(sessionId, slot.commentIds);
-      lastSend.current = { sessionId, text, lastTarget: slot.lastTarget };
+      lastSends.current.set(sessionId, { text, lastTarget: slot.lastTarget });
       setSlot(null);
     },
   };

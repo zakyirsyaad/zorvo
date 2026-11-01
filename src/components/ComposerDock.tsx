@@ -46,8 +46,8 @@ export interface ComposerHandle {
    */
   giveBack: (text: string, attachments?: readonly string[]) => void;
   /**
-   * True while the prompt and attachments are exactly what the last `restore` left: nothing typed, sent or
-   * cleared since. With `message`, only when that is this message: one composer serves every session.
+   * True while the prompt and attachments are exactly what the last `restore` or `giveBack` left: nothing typed,
+   * sent or cleared since. With `message`, only when that is this message: one composer serves every session.
    */
   holdsRestored: (message?: { text: string; attachments?: readonly string[] }) => boolean;
   /** Empties the prompt and its attachments. */

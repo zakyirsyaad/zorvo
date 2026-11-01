@@ -28,6 +28,8 @@ export interface ReviewWiring {
   reviewOwner: ReviewOwner | undefined;
   /** Send would take the composer's comments somewhere other than their session. */
   blocksSend: boolean;
+  /** The composer holds another session's comments, so nothing of `sessionId`'s may join them. */
+  isHeldFor: (sessionId: string) => boolean;
   sendFrom: (sessionId: string, text: string) => void;
   onComposerText: (text: string) => void;
   onComposerRestored: (text: string) => void;
@@ -66,6 +68,7 @@ export function useReviewWiring({
     updateComments(sessionId, (prev) => prev.map((comment) => (ids.includes(comment.id) ? changed(comment) : comment)));
   const message = useReviewMessage({
     activeSessionId: session?.id,
+    sessionIds: sessions.map((candidate) => candidate.id),
     markSent: (sessionId, ids) => {
       const sentAt = Date.now();
       change(sessionId, ids, (comment) => ({ ...comment, sentAt }));
@@ -118,6 +121,7 @@ export function useReviewWiring({
       ? { title: ownerTitle || null, isArchived: Boolean(owner?.archivedAt), cannotContinue: isOwnSessionStuck }
       : undefined,
     blocksSend,
+    isHeldFor: message.isHeldFor,
     sendFrom,
     onComposerText,
     onComposerRestored,

@@ -720,6 +720,7 @@ describe("a sign-in started from Settings", () => {
         activeSessionIdRef: { current: undefined },
         retryAfterSignIn: () => Promise.resolve(true),
         onRestore: vi.fn(),
+        isHeldFor: () => false,
         onSignInNeeded,
         onSignedIn,
       }),
@@ -781,6 +782,7 @@ describe("a sign-in that is running is not cut off", () => {
         activeSessionIdRef: { current: "s2" },
         retryAfterSignIn: () => Promise.resolve(true),
         onRestore: vi.fn(),
+        isHeldFor: () => false,
         onSignInNeeded,
         onSignInBlocked,
         onSignedIn: vi.fn(),
@@ -862,6 +864,7 @@ describe("Try again after a failed login from Settings", () => {
         activeSessionIdRef: { current: undefined },
         retryAfterSignIn: () => Promise.resolve(true),
         onRestore: vi.fn(),
+        isHeldFor: () => false,
       }),
     );
     act(() => {

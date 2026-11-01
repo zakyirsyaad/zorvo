@@ -46,6 +46,7 @@ vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit() {} } }));
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
 import App from "../App";
+import type { ComposerHandle } from "../components/ComposerDock";
 import { useAgentSignIn } from "../hooks/useAgentSignIn";
 import { useCompareRun, type CompareRunDeps } from "../hooks/useCompareRun";
 import { SIGN_IN_RUNNING_NOTICE } from "../lib/agent-sign-in";
@@ -978,6 +979,7 @@ describe("handBackKept with the slot of another session", () => {
         activeSessionIdRef: { current: "" },
         retryAfterSignIn,
         onRestore: () => {},
+        isHeldFor: () => false,
       }),
     );
     act(() => {
@@ -989,6 +991,36 @@ describe("handBackKept with the slot of another session", () => {
   }
 
   afterEach(() => vi.restoreAllMocks());
+
+  it("leaves a message to the gate while a sign-in runs, so it cannot join another session's comments", async () => {
+    const giveBack = vi.fn();
+    const onRestore = vi.fn();
+    vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) =>
+      cmd === "acp_authenticate" ? new Promise(() => {}) : fakeTauriInvoke(cmd, args),
+    );
+    const { result } = renderHook(() =>
+      useAgentSignIn({
+        agents: [],
+        composerRef: { current: { giveBack } as unknown as ComposerHandle },
+        activeSessionIdRef: { current: "s-run" },
+        retryAfterSignIn: vi.fn(),
+        onRestore,
+        isHeldFor: () => true,
+      }),
+    );
+    act(() => {
+      result.current.auth.requestSignIn("qwen-code", "/wt/1", methods);
+    });
+    act(() => {
+      void result.current.auth.signIn("login");
+    });
+    await waitFor(() => expect(result.current.auth.authRequest?.status).toBe("signing-in"));
+
+    act(() => result.current.handBackKept(session, methods, { text: "fix the login" }));
+
+    expect(giveBack).not.toHaveBeenCalled();
+    expect(onRestore).toHaveBeenCalledWith("s-run", "fix the login", undefined);
+  });
 
   it("sends the row's message and leaves the slot and its pending untouched", async () => {
     const pending = { sessionId: "s-other", text: "hello" };

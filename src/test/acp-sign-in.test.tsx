@@ -549,6 +549,7 @@ describe("signing in to an ACP agent from the app", () => {
         activeSessionIdRef: { current: "session-a" },
         retryAfterSignIn: () => Promise.resolve(true),
         onRestore: () => {},
+        isHeldFor: () => false,
       }),
     );
     const methods = [{ id: "login", name: "Log in", kind: "terminal" as const }];
@@ -573,6 +574,7 @@ describe("signing in to an ACP agent from the app", () => {
         activeSessionIdRef: { current: "session-a" },
         retryAfterSignIn: () => Promise.resolve(true),
         onRestore: () => {},
+        isHeldFor: () => false,
         onSignInNeeded,
       }),
     );
@@ -608,6 +610,7 @@ describe("signing in to an ACP agent from the app", () => {
         activeSessionIdRef: { current: "session-a" },
         retryAfterSignIn,
         onRestore: () => {},
+        isHeldFor: () => false,
       }),
     );
     const methods = [{ id: "chat-gpt", name: "ChatGPT", kind: "agent" as const }];

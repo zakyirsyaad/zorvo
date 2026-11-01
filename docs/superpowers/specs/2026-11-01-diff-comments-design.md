@@ -179,20 +179,27 @@ A new hook, `useReviewMessage`, holds one slot, in memory only:
   the text still holds that heading, since the heading is what says quoted lines are not
   instructions. Replacing the text keeps the slot.
 - **Lifting it.** The slot clears when the composer becomes empty, and whenever
-  `ComposerHandle.restore` puts in other text, through `onRestored`. Only a rewind does that now, and
-  it replaces the comments' text, so they go back to plain comments and nothing is lost.
+  `ComposerHandle.restore` puts in other text, through `onRestored`. A rewind does that, and so does a
+  worktree or a run that failed to start. It replaces the comments' text, so they go back to plain
+  comments and nothing is lost.
   `ComposerHandle.giveBack`, which returns a message that did not reach the agent, keeps what the
   composer holds, so it never lifts a slot: comments added meanwhile are still in the text.
 - **A message that comes back.** Text with comments that comes back keeps its owner, or it would be
-  the one way comments reach the wrong session. `useReviewMessage` keeps the session and text of the
-  last send that held comments, with its target, so `sendFrom` takes the text. `restore` of exactly
-  that text re-arms the slot for that session with no comment ids. `giveBack` does the same, through
-  `onComposerGivenBack`, when the returned text holds that message as a whole block between blank
-  lines or at either end, since `useUnsentMessages` joins messages that came back together. A slot
-  already set for the session keeps its comment ids, and one for another session stays, as Send is
-  blocked there anyway. So a failed send, a failed resume and a sign-in refusal all leave Send blocked
-  everywhere else, and Send there marks nothing new, as those comments already read Sent. An empty
-  composer clears it as usual.
+  the one way comments reach the wrong session. `useReviewMessage` keeps, per session, the text and
+  target of its last send that held comments, so `sendFrom` takes the text. It is per session because
+  one message may wait in memory while another session sends. An entry goes when its text arrives
+  and when its session goes away. `restore` of exactly that text re-arms the slot for that session
+  with no comment ids. `giveBack` does the same, through `onComposerGivenBack`, when the returned text
+  holds that message as a whole block between blank lines or at either end, since `useUnsentMessages`
+  joins messages that came back together. A slot already set for the session keeps its comment ids.
+  So a failed send, a failed resume and a sign-in refusal all leave Send blocked everywhere else, and
+  Send there marks nothing new, as those comments already read Sent. An empty composer clears it as
+  usual.
+- **The hold.** While the composer holds another session's comments, nothing is given back to the
+  session on screen, or A's text would join B's comments, whose note points to B, and go to B's agent.
+  `useUnsentMessages` keeps the message and delivers it on the render after the slot lifts, still
+  owned by its session. `useAgentSignIn` goes through the same gate, so a refusal held this way opens
+  no pending message and is not sent again on its own after the sign-in.
 - **A session that is gone.** A deleted session has no title, so the note says "another session". An
   archived one says so. Clearing the composer lifts the block either way.
 

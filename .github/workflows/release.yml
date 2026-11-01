@@ -11,13 +11,11 @@ name: Release
 # publishes to the releases repository stay out of GitHub altogether. When the run is
 # green, `node scripts/sign-release.mjs vX.Y.Z` runs on the maintainer's Mac, from a
 # clean checkout of the tag: it downloads the artifact, checks it, signs the update
-# package with the key there, makes the draft release in zakyirsyaad/zorvo-releases,
-# uploads the DMG (also as Zorvo-mac.dmg, the name the site's Download link uses),
-# SHA256SUMS.txt, the package, its signature and latest.json, and copies
-# docs/releases-repo/ and the released part of CHANGELOG.md there. Publishing the draft
-# is the last step, by hand.
+# package with the key there, makes the draft release, and uploads the DMG (also as
+# Zorvo-mac.dmg, the name the site's Download link uses), SHA256SUMS.txt, the package,
+# its signature and latest.json. Publishing the draft is the last step, by hand.
 #
-# With the Apple secrets set (see README, "Releasing"), the app is signed and notarized;
+# With the Apple secrets set (see docs/development.md, "Releasing"), the app is signed and notarized;
 # without them it is built unsigned. Only tags trigger it.
 on:
   push:

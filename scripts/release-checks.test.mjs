@@ -8,7 +8,7 @@ import { ReleaseError, assetNames, checkArtifact, checkDownloadPolicy, readConfi
 const PUBKEY = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhBRTQwMUE3MERBOEI4OUY=";
 const TAG = "v0.6.1";
 const NAMES = assetNames("0.6.1");
-const REPO = "zakyirsyaad/zorvo-releases";
+const REPO = "zakyirsyaad/zorvo";
 
 let dir;
 beforeEach(() => {

@@ -1,33 +1,42 @@
 # Security policy
 
-## Reporting a vulnerability
+## Reporting a problem
 
-Please do not open a public issue for a security problem. Report it privately
-with GitHub's
-[private vulnerability reporting](https://github.com/zakyirsyaad/zorvo/security/advisories/new).
+Please report a security problem privately: open this repository's
+[Security tab](https://github.com/zakyirsyaad/zorvo/security) and
+choose **Report a vulnerability**. Only the maintainer can read the report.
+Do not open a public issue for it.
 
-Please include:
+Tell us:
 
-- what an attacker could do;
-- the steps or a proof of concept;
-- the app version.
+- the Zorvo version (shown at the bottom of the sidebar) and your macOS version;
+- what an attacker could do, and what they need for it;
+- the steps to reproduce it.
 
-You will get an answer within a week. Once a fix is released, it is credited
-to you unless you would rather not be named.
+You will get a reply as soon as possible. Once a fix ships, the release notes say
+so, and you are credited unless you ask not to be.
 
 ## Supported versions
 
-Only the latest release gets security fixes.
+Only the latest release gets security fixes. Update to it before reporting.
 
-## Scope
+## What is in scope
 
-Zorvo runs coding agents on your machine with your permissions. These
-are in scope:
+- The Zorvo app: its backend, its window, and how it starts, stops and talks
+  to agents.
+- Agent installs: Zorvo checks every download against a pinned SHA-256 hash.
+- Zorvo updates: Zorvo downloads an update only from this repository's
+  releases on GitHub, and installs it only if its signature matches the public
+  key built into the app.
+- Anything that lets a folder, an agent or a web page reach files, commands or
+  data that Zorvo should not give it.
 
-- the app reading or running anything outside the folders you opened in it;
-- a permission request answered without you;
-- secrets leaking from the app;
-- the web view running content it should not.
+The agents themselves (Claude Code, Codex, Qwen Code, Gemini CLI and others)
+are separate products: report their problems to their makers.
 
-How an agent itself behaves (for example Qwen Code, Claude Code or Codex)
-is a matter for that agent's own project.
+## Check what you downloaded
+
+Download Zorvo only from this repository's
+[releases](https://github.com/zakyirsyaad/zorvo/releases), and check
+the file against the release's `SHA256SUMS.txt` (see
+[Check your download](README.md#check-your-download)).

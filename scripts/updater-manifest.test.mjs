@@ -10,7 +10,7 @@ import { PLATFORM_ENTRIES, buildManifest, main } from "./updater-manifest.mjs";
 // writes can be put through the same check the Release workflow runs on it.
 
 const PACKAGE = Buffer.from("the update package");
-const URL = "https://api.github.com/repos/zakyirsyaad/zorvo-releases/releases/assets/678935071";
+const URL = "https://api.github.com/repos/zakyirsyaad/zorvo/releases/assets/678935071";
 
 function makeKey() {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");

@@ -270,7 +270,7 @@ describe("docs pages", () => {
     expect(LINKS.docs).toBe("/docs");
     expect(LINKS.installGuide).toBe("/docs/install");
     expect(LINKS.agentsGuide).toBe("/docs/agents");
-    expect(LINKS.download).toBe("https://github.com/zakyirsyaad/zorvo-releases/releases/latest/download/Zorvo-mac.dmg");
+    expect(LINKS.download).toBe("https://github.com/zakyirsyaad/zorvo/releases/latest/download/Zorvo-mac.dmg");
   });
 
   for (const href of Object.keys(PAGES)) {

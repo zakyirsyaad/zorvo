@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { publicChangelog, releaseNotes, sectionsOf } from "./public-docs.mjs";
+import { publicChangelog, releaseNotes } from "./public-docs.mjs";
 
 const SOURCE = "https://github.com/zakyirsyaad/zorvo";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -92,7 +92,7 @@ function anchorOf(heading) {
 }
 
 describe("the public user guide", () => {
-  const guide = readFileSync(join(ROOT, "docs/releases-repo/README.md"), "utf8");
+  const guide = readFileSync(join(ROOT, "README.md"), "utf8");
   const anchors = new Set([...guide.matchAll(/^#{2,3} (.+)$/gm)].map((m) => anchorOf(m[1])));
 
   // The release notes, the issue forms and SECURITY.md link these.
@@ -107,11 +107,5 @@ describe("the public user guide", () => {
     for (const [, anchor] of guide.matchAll(/\]\(#([a-z0-9-]+)\)/g)) {
       expect(anchors.has(anchor), anchor).toBe(true);
     }
-  });
-
-  it("is the one copy: this repository's README points at it", () => {
-    const readme = readFileSync(join(ROOT, "README.md"), "utf8");
-    expect(readme).toContain("docs/releases-repo/README.md");
-    expect(sectionsOf(readme).has("Install")).toBe(false);
   });
 });

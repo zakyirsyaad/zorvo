@@ -4,7 +4,7 @@
 //   node scripts/check-updater-signing.mjs key <tauri.conf.json>
 //   node scripts/check-updater-signing.mjs manifest <tauri.conf.json> <latest.json> <tag> [<update.app.tar.gz>]
 //
-// `key` is the check to run on your machine before you tag (see the README, "Releasing"). It signs a one-byte
+// `key` is the check to run on your machine before you tag (see docs/development.md, "Releasing"). It signs a one-byte
 // probe with the Tauri CLI pinned in scripts/updater-signer (not the project's own copy), using
 // TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD (the variables the CLI reads), and fails when
 // the password is wrong or the signature was not made by the key in plugins.updater.pubkey. The Tauri CLI only

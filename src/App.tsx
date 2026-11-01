@@ -35,6 +35,7 @@ import {
   newSessionRecord,
   titleFor,
   type SessionSpec,
+  type StartSessionOptions,
 } from "./lib/session-start";
 import { isAwaitingUser } from "./lib/acp-elicitation";
 import {
@@ -88,6 +89,8 @@ import { useFileDrop } from "./hooks/useFileDrop";
 import { isAgentReady, isAgentRunnable, noAgentNotice, resolveDraftAgentId } from "./lib/agent-readiness";
 import { isInUse, removedAgentNameFor } from "./lib/enabled-agents";
 import { useCompareDraft } from "./hooks/useCompareDraft";
+import { useCompareRun } from "./hooks/useCompareRun";
+import { runOf } from "./lib/compare-run";
 import { compareAgentOptions } from "./lib/composer-controls";
 import { composerCommandsFor, composerNote, composerPlaceholder, composerStateFor } from "./lib/composer-state";
 import {
@@ -117,7 +120,9 @@ export default function App() {
       const { [sessionId]: _cleared, ...rest } = prev;
       return rest;
     });
-  const [activeSessionId, setActiveSessionId] = useState("");
+  const [selectedSessionId, setActiveSessionId] = useState("");
+  /** The compare run a Send opened; set only while no session is selected. */
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
   /** The agent picked for the next new session; null means the default from Settings. */
   const [pickedAgentId, setPickedAgentId] = useState<string | null>(null);
   /** Whether the next new session runs in its own worktree (a git repository only). */
@@ -162,6 +167,11 @@ export default function App() {
   } = useWorkspaceSelection(state, isLoaded, updateState, reportError);
 
   const sessions = state.sessions;
+  // Task 7 replaces this with the run's panel: until then an opened run shows its first session's chat.
+  const activeRun = activeRunId && !selectedSessionId ? runOf(sessions, activeRunId) : null;
+  const activeSessionId = selectedSessionId || (activeRun?.sessions[0].id ?? "");
+  // Any selection leaves the run.
+  if (selectedSessionId && activeRunId) setActiveRunId(null);
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const activeAgent = agents.find((a) => a.id === activeSession?.profileId);
   const isActiveRunning = activeSession?.status === "running";
@@ -408,21 +418,25 @@ export default function App() {
   const isSessionWaiting = (sessionId: string) =>
     isWaitingForAnswer(sessionById(sessionId), transcripts[sessionId] ?? [], () => isSessionBusy(sessionId));
 
-  /** Records a new session and shows it; the agent is started by its engine. */
-  const recordSession = (spec: SessionSpec): Session => {
+  /** Records a new session and shows it, unless `focus` is false; the agent is started by its engine. */
+  const recordSession = (spec: SessionSpec, options?: { focus?: boolean }): Session => {
     const session = newSessionRecord(spec);
     const { initialMessages } = spec;
     updateState((prev) => ({ ...prev, sessions: [session, ...prev.sessions] }));
     if (initialMessages) updateMessages(session.id, () => initialMessages);
-    setActiveSessionId(session.id);
+    if (options?.focus !== false) setActiveSessionId(session.id);
     return session;
   };
 
-  const startSession = (spec: SessionSpec, first?: FirstMessage) => {
-    const session = recordSession(spec);
-    void acp.start(session, first, startChoices);
+  /**
+   * Starts a session. A compare run passes the `choices` of this session's own agent (the draft's belong to
+   * the draft agent) and clears the draft's once after the whole run, and `focus: false` to leave the view alone.
+   */
+  const startSession = (spec: SessionSpec, first?: FirstMessage, options?: StartSessionOptions) => {
+    const session = recordSession(spec, options);
+    void acp.start(session, first, options?.choices ?? startChoices);
     // The picks went with the session; a later draft starts from the model picked last.
-    setAcpChoices(NO_CHOICES);
+    if (!options?.choices) setAcpChoices(NO_CHOICES);
   };
 
   /**
@@ -443,29 +457,32 @@ export default function App() {
     const name = first ? titleFor(first) : nextSessionName(sessions);
     let worktree: SessionWorktree | null = null;
     let cwd = activeWorkspace.path;
-    if (isWorktreeActive) {
-      setIsCreatingWorktree(true);
-      try {
-        ({ worktree, cwd } = await createSessionWorktree(activeWorkspace.path, name, branchPicker.baseBranch));
-      } catch (error) {
-        setNotice(`Could not create a worktree: ${String(error)}`);
-        // The user may have opened another session meanwhile: the message goes
-        // back into the new session it was written for, not that one's composer.
-        openNewSession(activeWorkspace.path, newSessionAgent.id);
-        if (first) composerRef.current?.restore(first.text, first.attachments);
-        return;
-      } finally {
-        setIsCreatingWorktree(false);
-      }
-    }
     let message = first;
-    if (worktree && first?.attachments?.length) {
-      // The composer attached paths in the main folder: the agent gets its worktree's files instead.
-      try {
-        message = { ...first, attachments: await attachmentsFor(activeWorkspace.path, cwd, first.attachments) };
-      } catch (error) {
-        setNotice(`Could not point the attachments into the worktree: ${String(error)}`);
+    // The composer stays busy until the worktree and its attachments are ready, so a second Send cannot start.
+    if (isWorktreeActive) setIsCreatingWorktree(true);
+    try {
+      if (isWorktreeActive) {
+        try {
+          ({ worktree, cwd } = await createSessionWorktree(activeWorkspace.path, name, branchPicker.baseBranch));
+        } catch (error) {
+          setNotice(`Could not create a worktree: ${String(error)}`);
+          // The user may have opened another session meanwhile: the message goes
+          // back into the new session it was written for, not that one's composer.
+          openNewSession(activeWorkspace.path, newSessionAgent.id);
+          if (first) composerRef.current?.restore(first.text, first.attachments);
+          return;
+        }
       }
+      if (worktree && first?.attachments?.length) {
+        // The composer attached paths in the main folder: the agent gets its worktree's files instead.
+        try {
+          message = { ...first, attachments: await attachmentsFor(activeWorkspace.path, cwd, first.attachments) };
+        } catch (error) {
+          setNotice(`Could not point the attachments into the worktree: ${String(error)}`);
+        }
+      }
+    } finally {
+      setIsCreatingWorktree(false);
     }
     setPickedAgentId(null);
     compare.reset();
@@ -613,11 +630,45 @@ export default function App() {
     setAcpChoices(NO_CHOICES);
   };
 
-  /** Sends to the active session, continues it when it can be resumed, or starts a new one. */
+  const compareRun = useCompareRun({
+    repoPath: activeWorkspace?.path ?? "",
+    baseBranch: branchPicker.baseBranch,
+    agentOptions: state.agentOptions,
+    startSession,
+    isOnDraft: () => activeSessionIdRef.current === "",
+    openRun: setActiveRunId,
+    setIsBusy: setIsCreatingWorktree,
+    // The user may have opened another session meanwhile: the message goes back into the new session it was written for.
+    restoreMessage: (message, agentId) => {
+      if (activeSessionIdRef.current !== "" || !activeWorkspace) openNewSession(activeWorkspace?.path, agentId);
+      composerRef.current?.restore(message.text, message.attachments);
+    },
+    onStarted: () => {
+      setPickedAgentId(null);
+      compare.reset();
+      setAcpChoices(NO_CHOICES);
+      branchPicker.reset();
+    },
+    onNotice: setNotice,
+  });
+
+  /** Starts the ticked agents on one prompt, each in its own worktree. */
+  const handleNewRun = (message: FirstMessage) => {
+    if (!activeWorkspace) {
+      setNotice(NO_FOLDER_NOTICE);
+      return;
+    }
+    rememberFolder(activeWorkspace);
+    const picked = compare.agentIds.flatMap((id) => agents.filter((a) => a.id === id));
+    void compareRun.startRun(picked, message);
+  };
+
+  /** Sends to the active session, continues it when it can be resumed, or starts a new one (or a run). */
   const handleSendMessage = (text: string, attachments?: string[]) => {
     const message = { text, attachments };
     if (activeSession && isActiveRunning) void sendTo(activeSession.id, message);
     else if (activeSession && isResumable) resumeSession(activeSession, message);
+    else if (compare.isCompare) handleNewRun(message);
     else void handleNewSession(message);
   };
 

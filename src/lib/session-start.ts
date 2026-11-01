@@ -5,6 +5,7 @@ import type { FirstMessage } from '../hooks/session-engine/useAcpEngine';
 import { hasPendingElicitation } from './acp-elicitation';
 import { isAwaitingPermission } from './acp-events';
 import { createId } from './ids';
+import type { AcpChoices } from './acp-draft';
 import {
   TRANSPORT_ACP,
   type AgentProfile,
@@ -31,10 +32,20 @@ export interface SessionSpec {
   acpSessionId?: string;
   /** The compare run this session belongs to. */
   compareRunId?: string | null;
+  /** When the session was made; a run gives its sessions successive times, so they keep the order of its agents. */
+  createdAt?: number;
+}
+
+/** How a session is started beyond its spec. */
+export interface StartSessionOptions {
+  /** What the session starts with, for a caller whose agent is not the draft's. */
+  choices?: AcpChoices;
+  /** Whether the session opens in the window; true when absent. */
+  focus?: boolean;
 }
 
 /** The record of a session about to start: running, with the spec's agent and folder. */
-export function newSessionRecord(spec: SessionSpec, createdAt: number = Date.now()): Session {
+export function newSessionRecord(spec: SessionSpec, createdAt: number = spec.createdAt ?? Date.now()): Session {
   const { id, agent, cwd, name, forkedFrom, worktree, acpSessionId, compareRunId } = spec;
   return {
     id: id ?? createId('s'),

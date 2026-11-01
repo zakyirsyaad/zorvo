@@ -20,6 +20,8 @@ import { ChangesPanel } from "./components/changes/ChangesPanel";
 import { DiffView } from "./components/changes/DiffView";
 import { totalsOf } from "./lib/diff-stats";
 import { useSidePanel } from "./hooks/useSidePanel";
+import { useReviewComments } from "./hooks/useReviewComments";
+import { useReviewWiring } from "./hooks/useReviewWiring";
 import { useTurnsEnded } from "./hooks/useTurnsEnded";
 import { usePullRequest } from "./hooks/usePullRequest";
 import { currentPlan } from "./lib/plan";
@@ -105,7 +107,7 @@ import {
   type AgentOptions,
   type ProbedOptions,
 } from "./lib/acp-draft";
-import type { Session, SessionWorktree, Settings } from "./types";
+import type { ReviewComment, Session, SessionWorktree, Settings } from "./types";
 
 const NO_FOLDER_NOTICE = "Open a project folder first: use the Open folder button next to Workspaces.";
 
@@ -272,6 +274,17 @@ export default function App() {
     [updateState],
   );
 
+  const updateReviewComments = useCallback(
+    (sessionId: string, change: (prev: ReviewComment[]) => ReviewComment[]) =>
+      updateState((prev) => ({
+        ...prev,
+        sessions: prev.sessions.map((s) => (s.id === sessionId ? { ...s, reviewComments: change(s.reviewComments ?? []) } : s)),
+      })),
+    [updateState],
+  );
+  const reviewComments = useReviewComments(activeSession?.id, activeSession?.reviewComments, updateReviewComments);
+  const unsentCommentCount = reviewComments.comments.filter((comment) => comment.sentAt === undefined).length;
+
   const rememberAgentOptions = (profileId: string, options: Partial<AgentOptions>) =>
     updateState((prev) => {
       const known = prev.agentOptions?.[profileId] ?? { modes: null, configOptions: [] };
@@ -290,20 +303,22 @@ export default function App() {
   const rememberModelPick = (profileId: string, preferredModelId: string) =>
     rememberAgentOptions(profileId, { preferredModelId });
 
+  const isRunPanelRef = useLatest(Boolean(activeRun));
   // A rewound message replaces the box, in the session the user is rewinding.
   const restoreMessage = (sessionId: string, text: string, attachments?: readonly string[]) => {
     setActiveSessionId(sessionId);
-    // A run's panel has no composer: the message waits for the session's to mount.
-    if (composerRef.current) composerRef.current.restore(text, attachments);
+    // A run's panel hides the composer: the message waits for it to show, where it can take the focus.
+    if (composerRef.current && !isRunPanelRef.current) composerRef.current.restore(text, attachments);
     else pendingRestoreRef.current = { text, attachments };
   };
   // A message that did not reach the agent: the user may have opened another session meanwhile, so it goes
   // back into the composer of the session it was written for, after what is typed there, and waits for
-  // that session to be on screen rather than pulling the user there.
+  // that session to be on screen rather than pulling the user there, and for any other session's comments to leave the composer.
   const { giveBack: giveBackMessage } = useUnsentMessages({
     composerRef,
     activeSessionId,
     sessionIds: sessions.map((s) => s.id),
+    isHeldFor: (sessionId) => review.isHeldFor(sessionId),
   });
   // Read when an agent answers, seconds after the closure that waits for it was made.
   const activeSessionIdRef = useLatest(activeSessionId);
@@ -320,6 +335,7 @@ export default function App() {
       return acp.retryAfterSignIn(sessionId, message);
     },
     onRestore: giveBackMessage,
+    isHeldFor: (sessionId) => review.isHeldFor(sessionId),
   });
 
   const rememberProbed = (profileId: string, probed: ProbedOptions) =>
@@ -364,7 +380,7 @@ export default function App() {
         signIn.handBack(session, methods, unsent);
         return;
       }
-      // Several agents of a run can be refused at once and its panel has no composer: each waits on its row.
+      // Several agents of a run can be refused at once and its panel hides the composer: each waits on its row.
       signInStatus.markNeeded(session.profileId);
       compareRun.keepSignIn(session.id, { methods, unsent });
     },
@@ -406,6 +422,11 @@ export default function App() {
   const agentOptions = withRewound(state.agentOptions, draftAgent?.id, rewound);
   const startChoices = draftAgent ? withPreferred(acpChoices, agentOptions?.[draftAgent.id]) : acpChoices;
 
+  /** A run's panel shows no message, so nothing goes into one unseen. */
+  const insertPaths = (paths: string[]) => {
+    if (!activeRun) composerRef.current?.insertPaths(paths);
+  };
+
   /** Dropped files are added to the message; a name with control characters is left out. */
   const handleDroppedFiles = (dropped: string[]) => {
     const paths = dropped.filter((path) => !CONTROL_CHARACTER.test(path));
@@ -413,13 +434,15 @@ export default function App() {
       setNotice("Left out a dropped file whose name has control characters.");
     }
     if (paths.length === 0) return;
-    composerRef.current?.insertPaths(paths);
+    insertPaths(paths);
   };
   const isDraggingFiles = useFileDrop(handleDroppedFiles, reportError);
 
   const turnsEnded = useTurnsEnded(Boolean(activeSessionId) && isSessionBusy(activeSessionId));
   const sidePanel = useSidePanel(filesFolder?.path, isRepository, turnsEnded, reportError);
   const diffStats = sidePanel.headStats ? totalsOf(sidePanel.headStats) : undefined;
+  // The commit this session's worktree began at: the diff can compare with it, and the chip stays for it.
+  const startCommit = activeSession?.worktree?.startCommit;
   // The folder whose diff view is expanded: another folder's view starts unexpanded.
   const [expandedDiffFolder, setExpandedDiffFolder] = useState<string | null>(null);
   const isDiffOpen = sidePanel.open === "diff" && Boolean(filesFolder) && isRepository;
@@ -694,7 +717,7 @@ export default function App() {
   const pendingRestoreRef = useRef<FirstMessage | null>(null);
   useEffect(() => {
     const pending = pendingRestoreRef.current;
-    if (!pending || !composerRef.current) return;
+    if (!pending || !composerRef.current || activeRun) return;
     pendingRestoreRef.current = null;
     composerRef.current.restore(pending.text, pending.attachments);
   });
@@ -710,8 +733,8 @@ export default function App() {
     // The user may have opened another session meanwhile: the message goes back into the new session it was written for.
     restoreMessage: (message, agentId) => {
       if (!isDraftRef.current || !activeWorkspace) openNewSession(activeWorkspace?.path, agentId);
-      // A run's panel has no composer: the message waits for the new draft's one to mount.
-      if (composerRef.current) composerRef.current.restore(message.text, message.attachments);
+      // A run's panel hides the composer: the message waits for the new draft to show it.
+      if (composerRef.current && !isRunPanelRef.current) composerRef.current.restore(message.text, message.attachments);
       else pendingRestoreRef.current = message;
     },
     onStarted: () => {
@@ -731,7 +754,7 @@ export default function App() {
     // A notification that cannot be shown is not worth an error banner: the panel has it all.
     notifyRun: (notice) => void notifyIfAway(notice).catch(() => {}),
   });
-  // However a session comes on screen, its refusal is taken up there: only now does its composer exist.
+  // However a session comes on screen, its refusal is taken up there: only now does its composer show.
   const { takeSignIn } = compareRun;
   const refusedHere = compareRun.signInNeeded.get(activeSessionId);
   useEffect(() => {
@@ -750,12 +773,33 @@ export default function App() {
     void compareRun.startRun(picked, message);
   };
 
+  const canStartSession = Boolean(activeWorkspacePath && newSessionAgent);
+  const isComposerDisabled =
+    isCreatingWorktree ||
+    (!isActiveRunning && ((!isDraftAgentReady && !draftNeedsInstall) || (!isResumable && !canStartSession)));
+  const review = useReviewWiring({
+    session: activeSession,
+    sessions,
+    comments: reviewComments,
+    updateComments: updateReviewComments,
+    composerRef,
+    canContinue: isActiveRunning || isResumable,
+    hasComposer: activeAgentRemoved === null,
+    isComposerDisabled,
+    collapseDiff: () => setExpandedDiffFolder(null),
+    agentNameOf: (profileId) => agents.find((a) => a.id === profileId)?.name ?? profileId,
+  });
+
   /** Sends to the active session, continues it when it can be resumed, or starts a new one (or a run). */
   const handleSendMessage = (text: string, attachments?: string[]) => {
     const message = { text, attachments };
-    if (activeSession && isActiveRunning) sendFromComposer(activeSession.id, message);
-    else if (activeSession && isResumable) resumeSession(activeSession, message);
-    else if (compare.isCompare) handleNewRun(message);
+    if (activeSession && isActiveRunning) {
+      review.sendFrom(activeSession.id, text);
+      sendFromComposer(activeSession.id, message);
+    } else if (activeSession && isResumable) {
+      review.sendFrom(activeSession.id, text);
+      resumeSession(activeSession, message);
+    } else if (compare.isCompare) handleNewRun(message);
     else void handleNewSession(message);
   };
 
@@ -788,7 +832,6 @@ export default function App() {
 
   const currentMessages = transcripts[activeSessionId] ?? [];
   const sessionPlan = currentPlan(currentMessages);
-  const canStartSession = Boolean(activeWorkspacePath && newSessionAgent);
   const composer = composerStateFor({
     session: activeSession,
     draftAgent,
@@ -801,7 +844,8 @@ export default function App() {
   });
   // Several agents are not asked and nothing is picked for them yet: Send only waits for the single agent's install or sign-in.
   // The note promises one worktree each, so while the folder is not known to be a repository (still loading, or unreadable) Send waits too.
-  const isSendBlocked = compare.isCompare ? !canUseWorktree : draftNeedsInstall || draftNeedsSignIn;
+  const isSendWaiting = compare.isCompare ? !canUseWorktree : draftNeedsInstall || draftNeedsSignIn;
+  const isSendBlocked = isSendWaiting || review.blocksSend;
   const composerCommands = composerCommandsFor({
     isRunning: isActiveRunning,
     liveCommands: acp.info[activeSessionId]?.commands,
@@ -843,6 +887,8 @@ export default function App() {
         onToggleChanges={filesFolder && isRepository ? () => sidePanel.toggle("changes") : undefined}
         isChangesOpen={sidePanel.open === "changes" && Boolean(filesFolder) && isRepository}
         diffStats={diffStats}
+        isDiffAlwaysShown={Boolean(startCommit) || reviewComments.comments.length > 0}
+        diffCommentCount={unsentCommentCount}
         onOpenDiff={() => sidePanel.show("diff")}
         onPopout={activeSession ? () => shell.popout(activeSession.id) : undefined}
         onOpenSettings={() => setSettingsTab("general")}
@@ -942,6 +988,10 @@ export default function App() {
                   version={runVersion}
                   agentName={(profileId) => agents.find((a) => a.id === profileId)?.name ?? profileId}
                   onOpen={handleSelectSession}
+                  onReview={(sessionId) => {
+                    handleSelectSession(sessionId);
+                    sidePanel.show("diff");
+                  }}
                   onChoose={chooseOption}
                   onPick={(winnerId) => compareRun.pick(activeRun, winnerId)}
                 />
@@ -984,33 +1034,36 @@ export default function App() {
                 <EmptySessionState />
               )}
 
-              <div className="p-4 flex justify-center empty:hidden">
-                {activeRun ? null : activeAgentRemoved ? (
+              {/* Hidden, not unmounted: a look at a run's panel must not cost the message being written. */}
+              <div hidden={Boolean(activeRun)} className="p-4 flex justify-center">
+                {activeAgentRemoved ? (
                   <RemovedAgentPanel agentName={activeAgentRemoved} onAdd={() => activeAgent && catalogActions.addAgent(activeAgent.id)} />
                 ) : (
                   <ComposerDock
                     controls={compare.isCompare ? {} : composer.controls}
                     isThinking={Boolean(activeSession) && isSessionBusy(activeSessionId)}
                     onStop={activeSession ? () => handleInterrupt(activeSessionId) : undefined}
-                    disabled={
-                      isCreatingWorktree ||
-                      (!isActiveRunning && ((!isDraftAgentReady && !draftNeedsInstall) || (!isResumable && !canStartSession)))
-                    }
+                    disabled={isComposerDisabled}
                     sendDisabled={isSendBlocked}
                     placeholder={composerPlaceholder({
                       isRunning: isActiveRunning,
                       isCreatingWorktree,
                       isResumable,
                       canStartSession,
-                      isSendBlocked,
+                      // Comments held for another session say nothing about whether this one can continue.
+                      isSendBlocked: isSendWaiting,
                       isEndedSession: Boolean(activeSession),
                     })}
                     onSendMessage={handleSendMessage}
                     attachAsFiles
                     onAttach={pickFiles}
                     handleRef={composerRef}
+                    onTextChange={review.onComposerText}
+                    onRestored={review.onComposerRestored}
+                    onGivenBack={review.onComposerGivenBack}
                     commands={compare.isCompare ? [] : composerCommands}
                     note={composerNote({
+                      reviewOwner: review.reviewOwner,
                       compareCount: compare.agentIds.length,
                       agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
                       agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
@@ -1084,8 +1137,12 @@ export default function App() {
             )}
             {isDiffOpen && filesFolder && (
               <DiffView
-                key={filesFolder.path}
+                key={`${activeSession?.id ?? "draft"}:${filesFolder.path}`}
                 rootPath={filesFolder.path}
+                startCommit={startCommit}
+                prefersStart={Boolean(activeSession?.compareRunId)}
+                review={activeSession ? review.review : undefined}
+                addReview={activeSession ? review.addReview : undefined}
                 version={sidePanel.changes.version}
                 isExpanded={isDiffExpanded}
                 onToggleExpanded={() => setExpandedDiffFolder(isDiffExpanded ? null : filesFolder.path)}
@@ -1099,7 +1156,7 @@ export default function App() {
                 rootPath={filesFolder.path}
                 rootName={filesFolder.name}
                 onClose={sidePanel.close}
-                onInsertPath={(path) => composerRef.current?.insertPaths([path])}
+                onInsertPath={(path) => insertPaths([path])}
                 onRevealRoot={() => filesFolder && shell.revealFolder(filesFolder.path)}
               />
             )}

@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
-import { createRef } from "react";
+import { createRef, type ComponentProps } from "react";
 import { ComposerDock, type ComposerHandle } from "../components/ComposerDock";
 import type { ComposerControls } from "../lib/composer-controls";
 import type { BranchControl } from "../components/composer/FolderPicker";
@@ -499,5 +499,114 @@ describe("why Send is blocked", () => {
 
     expect(screen.getByText("Loading Qwen Code's models and commands…")).toBeInTheDocument();
     expect(send()).not.toHaveAttribute("aria-describedby");
+  });
+});
+
+describe("ComposerDock review comments", () => {
+  function renderDock(props: Partial<ComponentProps<typeof ComposerDock>> = {}) {
+    const handle = createRef<ComposerHandle>();
+    render(<ComposerDock handleRef={handle} onSendMessage={() => {}} {...props} />);
+    return handle;
+  }
+
+  it("insertText appends after a blank line and grows the box", () => {
+    const handle = renderDock();
+    fireEvent.change(prompt(), { target: { value: "Please look at this" } });
+    vi.spyOn(prompt(), "scrollHeight", "get").mockReturnValue(120);
+
+    act(() => handle.current?.insertText("src/a.ts:1\n> line\nFix it."));
+
+    expect(prompt().value).toBe("Please look at this\n\nsrc/a.ts:1\n> line\nFix it.");
+    expect(prompt().style.height).toBe("120px");
+    expect(document.activeElement).toBe(prompt());
+  });
+
+  it("insertText into an empty box adds no blank line", () => {
+    const handle = renderDock();
+
+    act(() => handle.current?.insertText("src/a.ts:1"));
+
+    expect(prompt().value).toBe("src/a.ts:1");
+  });
+
+  it("insertText stops growing the box at its limit", () => {
+    const handle = renderDock();
+    vi.spyOn(prompt(), "scrollHeight", "get").mockReturnValue(900);
+
+    act(() => handle.current?.insertText("a long message"));
+
+    expect(prompt().style.height).toBe("180px");
+  });
+
+  it("reports its text on clear, restore and Send", () => {
+    const onTextChange = vi.fn();
+    const handle = renderDock({ onTextChange });
+    fireEvent.change(prompt(), { target: { value: "typed" } });
+    expect(onTextChange).toHaveBeenLastCalledWith("typed");
+
+    act(() => handle.current?.clear());
+    expect(onTextChange).toHaveBeenLastCalledWith("");
+
+    act(() => handle.current?.restore("back again"));
+    expect(onTextChange).toHaveBeenLastCalledWith("back again");
+
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    expect(onTextChange).toHaveBeenLastCalledWith("");
+  });
+
+  it("does not report the same text again when it only redraws", () => {
+    const onTextChange = vi.fn();
+    const { rerender } = render(<ComposerDock onSendMessage={() => {}} onTextChange={onTextChange} />);
+    fireEvent.change(prompt(), { target: { value: "typed" } });
+    onTextChange.mockClear();
+
+    rerender(<ComposerDock onSendMessage={() => {}} onTextChange={() => onTextChange()} />);
+
+    expect(onTextChange).not.toHaveBeenCalled();
+  });
+
+  it("calls onRestored when restore runs, even for the text it already holds", () => {
+    const onRestored = vi.fn();
+    const handle = renderDock({ onRestored });
+    fireEvent.change(prompt(), { target: { value: "same" } });
+
+    act(() => handle.current?.restore("same"));
+
+    expect(onRestored).toHaveBeenCalledTimes(1);
+    expect(onRestored).toHaveBeenCalledWith("same");
+  });
+
+  it("gives back the returned text to onGivenBack, not what it became", () => {
+    const onGivenBack = vi.fn();
+    const onRestored = vi.fn();
+    const handle = renderDock({ onGivenBack, onRestored });
+    fireEvent.change(prompt(), { target: { value: "typed since" } });
+
+    act(() => handle.current?.giveBack("the message"));
+
+    expect(onGivenBack).toHaveBeenCalledWith("the message");
+    expect(onRestored).not.toHaveBeenCalled();
+    expect(prompt()).toHaveValue("the message\n\ntyped since");
+  });
+
+  it("does not call onRestored on clear or insertText", () => {
+    const onRestored = vi.fn();
+    const handle = renderDock({ onRestored });
+
+    act(() => handle.current?.insertText("text"));
+    act(() => handle.current?.clear());
+
+    expect(onRestored).not.toHaveBeenCalled();
+  });
+
+  it("points the disabled Send at the reason, while the message stays editable", () => {
+    const handle = renderDock({ sendDisabled: true, note: "These review comments are for Alpha." });
+
+    act(() => handle.current?.insertText("src/a.ts:1"));
+
+    const send = screen.getByRole("button", { name: "Send message" });
+    expect(send).toBeDisabled();
+    expect(send).toHaveAccessibleDescription("These review comments are for Alpha.");
+    expect(prompt()).toBeEnabled();
   });
 });

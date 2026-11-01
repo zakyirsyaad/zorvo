@@ -8,9 +8,10 @@ const POPOVER = "absolute top-full mt-1 rounded-lg border border-border bg-surfa
 const POPOVER_ITEM =
   "flex w-full items-center justify-between gap-3 rounded px-2.5 py-1.5 text-left text-xs transition-colors cursor-pointer";
 
-function TargetPicker({ target, targets, onSelect }: {
+function TargetPicker({ target, targets, options, onSelect }: {
   target: DiffTargetId;
   targets: DiffTargets;
+  options: readonly DiffTargetId[];
   onSelect: (target: DiffTargetId) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -18,10 +19,9 @@ function TargetPicker({ target, targets, onSelect }: {
   useDismiss(ref, isOpen, () => setIsOpen(false));
   const label = targetLabel(target, targets);
 
-  // Without a base branch there is nothing to choose between.
-  if (!targets.base) return <span className="truncate text-xs font-medium text-fg">{label}</span>;
+  // With only HEAD to compare against there is nothing to choose between.
+  if (options.length < 2) return <span className="truncate text-xs font-medium text-fg">{label}</span>;
 
-  const options: DiffTargetId[] = ["base", "head"];
   return (
     <div ref={ref} className="relative min-w-0">
       <button
@@ -104,6 +104,8 @@ function MoreMenu({ onCollapseAll, onExpandAll, onRefresh }: {
 export interface DiffViewHeaderProps {
   target: DiffTargetId;
   targets: DiffTargets;
+  /** The targets on offer, in the order they are listed. */
+  options: readonly DiffTargetId[];
   onTargetChange: (target: DiffTargetId) => void;
   isSearching: boolean;
   onToggleSearch: () => void;
@@ -124,7 +126,7 @@ export function DiffViewHeader(props: DiffViewHeaderProps) {
     <header className="shrink-0 border-b border-border">
       <div className="flex h-10 items-center gap-1 px-2">
         <div className="min-w-0 flex-1">
-          <TargetPicker target={props.target} targets={props.targets} onSelect={props.onTargetChange} />
+          <TargetPicker target={props.target} targets={props.targets} options={props.options} onSelect={props.onTargetChange} />
         </div>
         <IconButton label="Search files" aria-pressed={isSearching} onClick={props.onToggleSearch}>
           <Search size={14} />

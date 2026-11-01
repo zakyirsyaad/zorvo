@@ -1,16 +1,21 @@
 import { ChevronRight, File } from "lucide-react";
 import { FileDiff } from "./FileDiff";
+import { commentSummary, FileComments, type FileReview } from "./LineComment";
 import { formatLineCount, MINUS, type DiffTargetId, type FileStat } from "../../lib/diff-stats";
 
 /** One file in the diff view: a header with its counts, and the diff read on first open. */
-export function DiffFileSection({ rootPath, stat, target, version, isOpen, onToggle }: {
+export function DiffFileSection({ rootPath, stat, target, startCommit, version, isOpen, onToggle, review }: {
   rootPath: string;
   stat: FileStat;
   target: DiffTargetId;
+  /** What the "start" target is measured from. */
+  startCommit?: string;
   /** The diff is read again whenever this changes. */
   version: number | string;
   isOpen: boolean;
   onToggle: () => void;
+  /** The file's comments, for a session on screen. */
+  review?: FileReview;
 }) {
   // A nested repository is listed as a folder, "vendor/lib/": named by its last part.
   const shown = stat.path.replace(/\/+$/, "");
@@ -35,12 +40,26 @@ export function DiffFileSection({ rootPath, stat, target, version, isOpen, onTog
           {MINUS}
           {formatLineCount(stat.removed)}
         </span>
+        {review && review.checked.length > 0 && (
+          <span className="shrink-0 text-[11px] text-fg-muted">{commentSummary(review)}</span>
+        )}
       </button>
       {isOpen &&
         (stat.isBinary ? (
-          <p className="px-3 py-1.5 text-[11px] text-fg-subtle">Binary file</p>
+          <>
+            {review && <FileComments file={review} change={stat} rows={[]} />}
+            <p className="px-3 py-1.5 text-[11px] text-fg-subtle">Binary file</p>
+          </>
         ) : (
-          <FileDiff rootPath={rootPath} change={stat} target={target} version={version} />
+          <FileDiff
+            rootPath={rootPath}
+            change={stat}
+            target={target}
+            startCommit={startCommit}
+            version={version}
+            review={review}
+            takesComments={!stat.path.endsWith("/")}
+          />
         ))}
     </section>
   );

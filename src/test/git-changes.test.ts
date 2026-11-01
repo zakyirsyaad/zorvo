@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { commitPathsOf, unifiedDiffRows } from "../lib/git-changes";
+import { commitPathsOf, isCommentableFile, isCommentableRow, isCutDiff, unifiedDiffRows, type UnifiedRow } from "../lib/git-changes";
 
 describe("unifiedDiffRows", () => {
   it("drops git's file header and marks hunks, changes and context", () => {
@@ -67,5 +67,52 @@ describe("commitPathsOf", () => {
         { path: "a.ts", oldPath: null, kind: "modified" },
       ]),
     ).toEqual(["new.md", "old.md", "a.ts"]);
+  });
+});
+
+describe("isCutDiff", () => {
+  it("is true when the last row is the backend's size-limit note", () => {
+    const rows: UnifiedRow[] = [{ kind: "added", text: "a", newLine: 1 }, { kind: "note", text: "… diff cut: it is longer than 400000 characters" }];
+
+    expect(isCutDiff(rows)).toBe(true);
+  });
+
+  it("is true when the last row is the row-limit note", () => {
+    expect(isCutDiff(unifiedDiffRows(Array.from({ length: 2000 }, (_, i) => `+line ${i}`).join("\n")))).toBe(true);
+  });
+
+  it("is false for a whole diff, an empty one, and a cut note that is not last", () => {
+    expect(isCutDiff(unifiedDiffRows("@@ -1 +1 @@\n-a\n+b\n"))).toBe(false);
+    expect(isCutDiff([])).toBe(false);
+    expect(isCutDiff([{ kind: "note", text: "… diff cut: x" }, { kind: "added", text: "a", newLine: 1 }])).toBe(false);
+  });
+
+  it("is false for an ordinary note last", () => {
+    expect(isCutDiff([{ kind: "note", text: "\\ No newline at end of file" }])).toBe(false);
+  });
+});
+
+describe("isCommentableFile", () => {
+  it("is false for a symbolic link's diff", () => {
+    const rows = unifiedDiffRows("@@ -0,0 +1 @@\n+target\n\\ Symbolic link\n");
+
+    expect(isCommentableFile(rows)).toBe(false);
+  });
+
+  it("is true for an ordinary diff, even one with a no-newline note", () => {
+    expect(isCommentableFile(unifiedDiffRows("@@ -1 +1 @@\n-a\n+b\n\\ No newline at end of file\n"))).toBe(true);
+  });
+});
+
+describe("isCommentableRow", () => {
+  it("is true for added, removed and context rows", () => {
+    expect(isCommentableRow({ kind: "added", text: "a", newLine: 1 })).toBe(true);
+    expect(isCommentableRow({ kind: "removed", text: "a", oldLine: 1 })).toBe(true);
+    expect(isCommentableRow({ kind: "context", text: "a", oldLine: 1, newLine: 1 })).toBe(true);
+  });
+
+  it("is false for hunk and note rows", () => {
+    expect(isCommentableRow({ kind: "hunk", text: "@@ -1 +1 @@" })).toBe(false);
+    expect(isCommentableRow({ kind: "note", text: "x" })).toBe(false);
   });
 });

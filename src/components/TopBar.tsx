@@ -54,6 +54,10 @@ export interface TopBarProps {
   isChangesOpen?: boolean;
   /** Lines added and removed against HEAD, shown as a chip beside the button once known. */
   diffStats?: { added: number; removed: number };
+  /** Keeps the chip on screen at 0/0: the session has committed work or comments to open the diff for. */
+  isDiffAlwaysShown?: boolean;
+  /** Review comments on the session, counted on the chip. */
+  diffCommentCount?: number;
   /** Opens the diff view; the chip opens it. */
   onOpenDiff?: () => void;
   onOpenSettings?: () => void;
@@ -82,6 +86,8 @@ export function TopBar({
   onToggleChanges,
   isChangesOpen = false,
   diffStats,
+  isDiffAlwaysShown = false,
+  diffCommentCount,
   onOpenDiff,
   onOpenSettings,
   backgroundTasks,
@@ -164,7 +170,13 @@ export function TopBar({
         {backgroundTasks && <BackgroundTasksMenu {...backgroundTasks} />}
 
         {onToggleChanges && diffStats && onOpenDiff && (
-          <DiffStatChip added={diffStats.added} removed={diffStats.removed} onOpen={onOpenDiff} />
+          <DiffStatChip
+            added={diffStats.added}
+            removed={diffStats.removed}
+            commentCount={diffCommentCount}
+            isAlwaysShown={isDiffAlwaysShown}
+            onOpen={onOpenDiff}
+          />
         )}
 
         {onToggleChanges && (

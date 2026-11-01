@@ -204,4 +204,40 @@ describe("composerNote", () => {
     expect(composerNote({ continuesSession: false, agentLoading: "Qwen Code" })).toBe("Loading Qwen Code's models and commands…");
     expect(composerNote({ continuesSession: false })).toBeUndefined();
   });
+
+  it("says whom review comments are for", () => {
+    expect(composerNote({ continuesSession: true, reviewOwner: { title: "Alpha", isArchived: false } })).toBe(
+      "These review comments are for Alpha. Go back to that session, or clear the message.",
+    );
+  });
+
+  it("says when the session review comments are for is archived", () => {
+    expect(composerNote({ continuesSession: true, reviewOwner: { title: "Alpha", isArchived: true } })).toBe(
+      "These review comments are for Alpha, which is archived. Open it from the archive, or clear the message.",
+    );
+  });
+
+  it("says when the session review comments are for cannot continue", () => {
+    expect(composerNote({ continuesSession: true, reviewOwner: { title: "Alpha", isArchived: false, cannotContinue: true } })).toBe(
+      "These review comments are for Alpha, which cannot continue right now. Clear the message to send here.",
+    );
+  });
+
+  it("says it cannot continue over that it is archived, and ahead of the compare note", () => {
+    expect(composerNote({ continuesSession: true, compareCount: 2, reviewOwner: { title: "Alpha", isArchived: true, cannotContinue: true } })).toBe(
+      "These review comments are for Alpha, which cannot continue right now. Clear the message to send here.",
+    );
+  });
+
+  it("says another session when the one review comments are for is gone", () => {
+    expect(composerNote({ continuesSession: false, reviewOwner: { title: null, isArchived: false } })).toBe(
+      "These review comments are for another session. Clear the message to send here.",
+    );
+  });
+
+  it("the review note outranks the compare note", () => {
+    expect(composerNote({ continuesSession: false, compareCount: 2, reviewOwner: { title: "Alpha", isArchived: false } })).toBe(
+      "These review comments are for Alpha. Go back to that session, or clear the message.",
+    );
+  });
 });

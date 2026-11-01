@@ -7,6 +7,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 ### Added
 
 - **Compare agents.** In a git repository, tick up to four agents on a new session's Agent chip and send one prompt to all of them. Each agent works in its own worktree and uses its own quota. One panel shows each agent's state and what it changed, you answer permissions there, and **Pick** keeps one: the others stop and are archived, and their worktrees stay.
+- **Comment on lines of a diff.** Open a session's diff, or a compare row's numbers, and leave comments on the lines you want changed. **Add** puts them in your message with each file, line and quoted line, for you to read, edit and send. Comments survive a restart. A sent comment stays, dimmed, as a record until **Clear sent**, and a comment whose line changed reads **Outdated** and never moves to another line.
 
 ### Changed
 

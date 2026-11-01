@@ -172,6 +172,14 @@ export function fakeTauriInvoke(cmd: string, args?: unknown): Promise<unknown> {
   if (cmd === "session_diff_stats_since") {
     return Promise.resolve([]);
   }
+  if (cmd === "session_diff_targets") {
+    return Promise.resolve({ base: null, root: (args as { path: string }).path, prefix: "" });
+  }
+  if (cmd === "session_file_diff") {
+    // A read `since` a commit differs from the plain HEAD one, so a test can tell which it got.
+    const { since } = args as { since?: string };
+    return Promise.resolve(since ? `@@ -1 +1 @@\n-before\n+changed since ${since}\n` : "");
+  }
   if (cmd === "remove_agent_install") {
     return Promise.resolve(undefined);
   }

@@ -87,6 +87,10 @@
   agent offers.
 - **See every change.** Each file the agent changes comes with its diff. The
   Changes panel lets you review them and commit the files you choose.
+- **Comment on lines of a diff.** Leave comments on the lines an agent changed,
+  add them to your message, read or edit it, and send it. The agent gets each
+  comment with its file, its line and the line itself. A comment that no longer
+  matches its line says **Outdated** instead of moving to another one.
 - **Know when an agent is stuck.** If an agent reports failed requests, or has
   sent nothing for a minute, Zorvo says so under **Working…**, with a Stop
   button.

@@ -10,6 +10,8 @@ export interface CompareRunPanelProps {
   version: number;
   agentName: (profileId: string) => string;
   onOpen: (sessionId: string) => void;
+  /** Opens the session with its diff beside the chat. */
+  onReview: (sessionId: string) => void;
   onChoose: (sessionId: string, cardId: string, optionId: string) => void;
   /** Keeps this session and archives the others; may take a while, as agents are stopped. */
   onPick: (winnerId: string) => void | Promise<void>;
@@ -21,7 +23,7 @@ export function stopQuestion(count: number, winnerName: string): string {
 }
 
 /** What a user sees while a compare run is open: every agent's state and changes, and Pick to keep one. */
-export function CompareRunPanel({ run, rows, version, agentName, onOpen, onChoose, onPick }: CompareRunPanelProps) {
+export function CompareRunPanel({ run, rows, version, agentName, onOpen, onReview, onChoose, onPick }: CompareRunPanelProps) {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [isPicking, setIsPicking] = useState(false);
   const isBusy = (sessionId: string) => rows.find((row) => row.session.id === sessionId)?.isBusy ?? false;
@@ -65,6 +67,7 @@ export function CompareRunPanel({ run, rows, version, agentName, onOpen, onChoos
               version={version}
               isPickDisabled={isPicking}
               onOpen={onOpen}
+              onReview={onReview}
               onChoose={onChoose}
               onPick={handlePick}
             />

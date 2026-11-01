@@ -4,6 +4,7 @@ import { markElicitationsUnanswered } from './acp-elicitation';
 import { settlePermissionCards } from './acp-events';
 import { normalizeAppearance } from './appearance';
 import type { AgentOptions } from './acp-draft';
+import { validReviewComments } from './review-comments';
 import { toCommands, toConfigOptions, toModels, toModes } from '../hooks/useAcpSessions';
 
 export const STATE_VERSION = 2;
@@ -68,7 +69,8 @@ function withValidStartCommit(worktree: SessionWorktree): SessionWorktree {
 
 /** A session keeps everything else when one of its optional fields is malformed. */
 function withValidFields(session: Session): Session {
-  const { worktree, pinned, archivedAt, namedByUser, hasUnread, historyElsewhere, compareRunId, ...rest } = session;
+  const { worktree, pinned, archivedAt, namedByUser, hasUnread, historyElsewhere, compareRunId, reviewComments, ...rest } = session;
+  const comments = validReviewComments(reviewComments);
   return {
     ...rest,
     ...(worktree == null ? { worktree } : isWorktree(worktree) ? { worktree: withValidStartCommit(worktree) } : {}),
@@ -78,6 +80,7 @@ function withValidFields(session: Session): Session {
     ...(typeof hasUnread === 'boolean' ? { hasUnread } : {}),
     ...(typeof historyElsewhere === 'boolean' ? { historyElsewhere } : {}),
     ...(compareRunId == null || typeof compareRunId === 'string' ? { compareRunId } : {}),
+    ...(comments.length > 0 ? { reviewComments: comments } : {}),
   };
 }
 

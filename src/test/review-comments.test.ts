@@ -252,10 +252,15 @@ describe("commentBlock", () => {
     expect(commentBlock(comment({ quote: "a\u00A0b" }), "current", context)).toContain("> a\u00A0b");
   });
 
-  it("says an unknown comment was not checked", () => {
-    expect(commentBlock(comment(), "unknown", context).split("\n")[0]).toBe(
-      "src/auth/login.ts:42 (not checked: the diff was cut)",
-    );
+  it.each<[string, FileRead | undefined]>([
+    ["a failed read", { status: "failed" }],
+    ["a diff cut before the line", read([added("x", 1), CUT])],
+  ])("says an unknown comment was not checked, in the same words for %s", (_name, fileRead) => {
+    const c = comment({ target: "head", line: 42 });
+    const status = commentStatus(c, "head", fileRead);
+
+    expect(status).toBe("unknown");
+    expect(commentBlock(c, status, context).split("\n")[0]).toBe("src/auth/login.ts:42 (not checked against the diff)");
   });
 
   it("shows control and bidi characters in a quote as escapes", () => {

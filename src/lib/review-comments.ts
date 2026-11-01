@@ -142,7 +142,7 @@ export function reviewHeading(target: ReviewTarget, context: MessageContext): st
 
 const STATUS_NOTES: Partial<Record<CommentStatus, string>> = {
   outdated: ' (this line is no longer here in the diff)',
-  unknown: ' (not checked: the diff was cut)',
+  unknown: ' (not checked against the diff)',
 };
 
 /** One comment: where, the line it is on, and what the user wrote, which stays verbatim. */

@@ -93,7 +93,7 @@ A comment is checked only against the diff it was written on: its `target`, its 
 |---|---|---|---|
 | Current | The row at that line has the same `lineHash` | Under its row | Included |
 | Outdated | The row differs or is gone, or the target no longer lists the file | "Outdated" in the file's list, or at the top when the file is gone | Left out |
-| Unknown | The diff was cut before that line or on it (`git-changes.ts` row limit, `changes.rs` size limit), or the read failed | In the file's list | Included |
+| Unknown | Not checked against the diff: it was cut before that line or on it (`git-changes.ts` row limit, `changes.rs` size limit), or the read failed | In the file's list | Included |
 | Not in this diff | The panel shows another target, so it is not checked | "Not in this diff" at the top, with a link to its target when that target is on offer, else "a comparison no longer available" | Left out |
 
 There is no search for the same text elsewhere. Almost a third of the non-blank lines in this
@@ -136,7 +136,8 @@ Keep this.
 - A removed line says so, and uses `oldFile` when there is one.
 - An Outdated comment adds "(this line is no longer here in the diff)". It does not say the line
   changed, since a commit or an edit above it can do this too.
-- An Unknown comment adds "(not checked: the diff was cut)".
+- An Unknown comment adds "(not checked against the diff)", for a cut and for a failed read alike,
+  since saying the diff was cut would be false for a read that failed.
 - A cut quote ends with "…".
 - In a quote and a path, control characters, carriage returns, U+2028, U+2029 and bidi controls
   become visible escapes, so the user reads what the agent reads. `lineHash` stays on the raw text.

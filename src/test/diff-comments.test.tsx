@@ -343,14 +343,21 @@ describe("Writing a comment", () => {
   });
 
   it("a focus refresh keeps a comment being written", async () => {
-    mockRepo();
+    let fingerprint = "f1";
+    const spy = mockRepo({ stats: () => [statOf(FILE, fingerprint)] });
+    const reads = () => spy.mock.calls.filter((c) => c[0] === "session_file_diff").length;
     const store = storeOf();
     const view = await renderPanel(store);
     await openBox(addedRow(), "Comment on line 42");
     type("Comment on line 42", "Half a thought");
+    const readsBefore = reads();
 
+    // The file changed somewhere else: the same row stands at the same line, and the diff is read again.
+    fingerprint = "f2";
     await act(async () => view.rerender(<Harness store={store} version={2} />));
 
+    expect(reads()).toBeGreaterThan(readsBefore);
+    expect(addedRow()).toBeDefined();
     expect((screen.getByRole("textbox", { name: "Comment on line 42" }) as HTMLTextAreaElement).value).toBe("Half a thought");
   });
 
@@ -407,6 +414,33 @@ describe("Writing a comment", () => {
     const bar = screen.getByRole("region", { name: "Review comments" });
     expect(within(bar).getByText("src/app.ts:42")).toBeDefined();
     expect((within(bar).getByRole("textbox", { name: "Comment on line 42" }) as HTMLTextAreaElement).value).toBe("Keep me too");
+  });
+
+  it("a box saved from the top bar keeps the old path", async () => {
+    let stats: FileStat[] = [{ ...statOf(FILE), oldPath: "src/old.ts", kind: "renamed" }];
+    mockRepo({ stats: () => stats });
+    const store = storeOf();
+    const view = await renderPanel(store);
+    await openBox(row(/^Line 42, removed/), "Comment on line 42");
+    type("Comment on line 42", "Keep this.");
+
+    stats = [];
+    await act(async () => view.rerender(<Harness store={store} version={2} />));
+    await press("Save comment");
+
+    expect(saved(store)[0]).toMatchObject({ side: "old", line: 42, file: FILE, oldFile: "src/old.ts" });
+  });
+
+  it("a new line of a renamed file saves with no old path", async () => {
+    mockRepo({ stats: [{ ...statOf(FILE), oldPath: "src/old.ts", kind: "renamed" }] });
+    const store = storeOf();
+    await renderPanel(store);
+
+    await openBox(addedRow(), "Comment on line 42");
+    type("Comment on line 42", "Fine.");
+    await press("Save comment");
+
+    expect(saved(store)[0]).not.toHaveProperty("oldFile");
   });
 
   it("switching sessions with a box open saves nothing to the other session", async () => {
@@ -590,19 +624,60 @@ describe("Saved comments", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Edit" }));
   });
 
-  it("deleting removes it", async () => {
+  it("delete asks a second click", async () => {
     mockRepo();
     const store = storeOf({ "s-a": [commentOf(), commentOf({ id: "c-2", body: "Other one", line: 41, lineHash: lineHash("the context") })] });
     await renderPanel(store);
 
-    const under = addedRow().nextElementSibling as HTMLElement;
+    const under = within(addedRow().nextElementSibling as HTMLElement);
     await act(async () => {
-      fireEvent.click(within(under).getByRole("button", { name: "Delete" }));
+      fireEvent.click(under.getByRole("button", { name: "Delete" }));
+    });
+    expect(saved(store).map((c) => c.id)).toEqual(["c-1", "c-2"]);
+    expect(store.written).toEqual([]);
+
+    await act(async () => {
+      fireEvent.click(under.getByRole("button", { name: "Confirm delete" }));
     });
 
     expect(saved(store).map((c) => c.id)).toEqual(["c-2"]);
     expect(screen.queryByText("Use AuthError here.")).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole("grid"));
+  });
+
+  it("cancel keeps the comment", async () => {
+    mockRepo();
+    const store = storeOf({ "s-a": [commentOf()] });
+    await renderPanel(store);
+
+    await press("Delete");
+    await press("Cancel");
+
+    expect(store.written).toEqual([]);
+    expect(screen.getByText("Use AuthError here.")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Confirm delete" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Delete" }));
+  });
+
+  it("delete turns back by itself, and focus stays on the comment", async () => {
+    mockRepo();
+    const store = storeOf({ "s-a": [commentOf()] });
+    await renderPanel(store);
+
+    vi.useFakeTimers();
+    try {
+      await press("Delete");
+      act(() => screen.getByRole("button", { name: "Cancel" }).focus());
+      act(() => {
+        vi.advanceTimersByTime(4000);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(screen.queryByRole("button", { name: "Confirm delete" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Delete" }));
+    expect(store.written).toEqual([]);
   });
 
   it("a sent comment stays under its row, dimmed", async () => {
@@ -689,6 +764,21 @@ describe("How a comment stands", () => {
     expect(within(bar).getByText("Use AuthError here.")).toBeDefined();
   });
 
+  it("the gone file group takes its status from commentStatus", async () => {
+    mockRepo({ stats: [statOf("src/other.ts")], base: { name: "main" } });
+    await renderPanel(storeOf({
+      "s-a": [
+        commentOf({ id: "c-gone", target: "base" }),
+        commentOf({ id: "c-other", target: "head", file: "src/else.ts", line: 7 }),
+      ],
+    }));
+
+    const bar = within(screen.getByRole("region", { name: "Review comments" }));
+    expect(bar.getByText("src/app.ts:42").closest("p")?.textContent).toContain("Outdated");
+    expect(bar.getByText("src/else.ts:7").closest("p")?.textContent).toContain("Not in this diff");
+    expect(bar.getByText("src/else.ts:7").closest("p")?.textContent).not.toContain("Outdated");
+  });
+
   it("a comment on another target shows under Not in this diff, with a link to it", async () => {
     mockRepo({ base: { name: "main" }, diff: (_file, target) => (target === "head" ? DIFF : "@@ -1 +1 @@\n-a\n+b\n") });
     await renderPanel(storeOf({ "s-a": [commentOf()] }));
@@ -718,6 +808,9 @@ describe("How a comment stands", () => {
 
     await act(async () => {
       fireEvent.click(within(bar).getByRole("button", { name: "Delete" }));
+    });
+    await act(async () => {
+      fireEvent.click(within(bar).getByRole("button", { name: "Confirm delete" }));
     });
     expect(saved(store)).toEqual([]);
   });

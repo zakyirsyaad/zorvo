@@ -158,6 +158,7 @@ export function DiffView({
           target={target}
           targets={targets}
           options={options}
+          reads={reads}
           listed={stats}
           onTargetChange={setChosen}
           onFocusLost={focusPanel}

@@ -13,15 +13,16 @@ import {
   draftKeyOf,
   editDraftKeyOf,
   parseDraftKey,
+  type CommentAnchor,
   type ReviewComments,
 } from "../../hooks/useReviewComments";
 import type { ReviewComment, ReviewTarget } from "../../types";
 
 const LIMIT_NOTE = `This session has ${MAX_COMMENTS_PER_SESSION} comments. Clear sent comments or delete some first.`;
 const GONE_NOTE = "This line is no longer here in the diff.";
-
-/** Where on a diff a comment or a box sits. */
-export type LinePlace = Pick<ReviewComment, "target" | "file" | "side" | "line">;
+const STATUS_LABEL: Partial<Record<CommentStatus, string>> = { outdated: "Outdated", elsewhere: "Not in this diff" };
+/** How long Delete waits for its confirming second click. */
+const CONFIRM_DELETE_MS = 4000;
 
 /** What one file's section needs to show its comments. */
 export interface FileReview {
@@ -49,6 +50,54 @@ const lineIdOf = ({ side, line }: Pick<ReviewComment, "side" | "line">) => `${si
 
 const lineIdsOf = (rows: readonly UnifiedRow[]) => new Set(rows.flatMap(linesOf).map(lineIdOf));
 
+/**
+ * A comment can hold 2000 characters and has no undo, so deleting takes two clicks:
+ * Delete turns into "Delete?", which deletes, and turns back by itself. It is one
+ * button throughout, so focus stays on it; only Cancel can go away under the focus,
+ * and focus then comes back to Delete.
+ */
+function DeleteButton({ onDelete }: { onDelete: () => void }) {
+  const [isConfirming, setIsConfirming] = useState(false);
+  const deleteButton = useRef<HTMLButtonElement>(null);
+  const cancelButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!isConfirming) return;
+    const timer = setTimeout(() => {
+      if (document.activeElement === cancelButton.current) deleteButton.current?.focus();
+      setIsConfirming(false);
+    }, CONFIRM_DELETE_MS);
+    return () => clearTimeout(timer);
+  }, [isConfirming]);
+
+  return (
+    <>
+      <Button
+        ref={deleteButton}
+        variant={isConfirming ? "danger" : "ghost"}
+        aria-label={isConfirming ? "Confirm delete" : undefined}
+        title={isConfirming ? "Delete this comment for good" : undefined}
+        className="shrink-0 px-2 py-1"
+        onClick={isConfirming ? onDelete : () => setIsConfirming(true)}
+      >
+        {isConfirming ? "Delete?" : "Delete"}
+      </Button>
+      {isConfirming && (
+        <Button
+          ref={cancelButton}
+          variant="ghost"
+          className="shrink-0 px-2 py-1"
+          onClick={() => {
+            deleteButton.current?.focus();
+            setIsConfirming(false);
+          }}
+        >
+          Cancel
+        </Button>
+      )}
+    </>
+  );
+}
+
 /** One saved comment: under its row, or with `location` and its quote in a list, where no row explains it. */
 export function LineComment({ comment, status, review, location, onRemoved }: {
   comment: ReviewComment;
@@ -61,7 +110,7 @@ export function LineComment({ comment, status, review, location, onRemoved }: {
   const edit = review.draftFor(editKey);
   const isEditing = edit !== undefined;
   const isSent = comment.sentAt !== undefined;
-  const isOutdated = status === "outdated";
+  const statusLabel = STATUS_LABEL[status];
   const editButton = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const shouldMoveFocus = useRef(false);
@@ -95,15 +144,15 @@ export function LineComment({ comment, status, review, location, onRemoved }: {
   return (
     <div className="flex items-start gap-2 rounded-md border border-border bg-surface-2 px-2 py-1.5 font-sans text-xs">
       <div className={`min-w-0 flex-1 ${isSent ? "opacity-60" : ""}`}>
-        {(location || isOutdated || isSent) && (
+        {(location || statusLabel || isSent) && (
           <p className="flex flex-wrap items-center gap-x-1.5 text-[11px] text-fg-muted">
             {location && <span className="min-w-0 truncate font-mono">{location}</span>}
-            {isOutdated && <span className="font-medium text-status-attention">Outdated</span>}
+            {statusLabel && <span className={status === "outdated" ? "font-medium text-status-attention" : "font-medium"}>{statusLabel}</span>}
             {isSent && <span className="font-medium">Sent</span>}
           </p>
         )}
         {location && <p className="truncate font-mono text-[11px] text-fg-subtle">{comment.quote}</p>}
-        {isOutdated && <p className="text-[11px] text-fg-subtle">{GONE_NOTE}</p>}
+        {status === "outdated" && <p className="text-[11px] text-fg-subtle">{GONE_NOTE}</p>}
         <p className="whitespace-pre-wrap break-words text-fg-secondary">{comment.body}</p>
       </div>
       <Button
@@ -117,25 +166,20 @@ export function LineComment({ comment, status, review, location, onRemoved }: {
       >
         Edit
       </Button>
-      <Button
-        variant="ghost"
-        className="shrink-0 px-2 py-1"
-        onClick={() => {
+      <DeleteButton
+        onDelete={() => {
           onRemoved();
           review.deleteComment(comment.id);
         }}
-      >
-        Delete
-      </Button>
+      />
     </div>
   );
 }
 
-/** A comment being written, wherever it is shown. `oldPath` is the file's before a rename. */
-export function DraftBox({ review, place, oldPath, location, onDone }: {
+/** A comment being written, wherever it is shown. */
+export function DraftBox({ review, place, location, onDone }: {
   review: ReviewComments;
-  place: LinePlace;
-  oldPath?: string | null;
+  place: CommentAnchor;
   location?: string;
   onDone: () => void;
 }) {
@@ -143,7 +187,6 @@ export function DraftBox({ review, place, oldPath, location, onDone }: {
   const draft = review.draftFor(key);
   const [isFull, setIsFull] = useState(false);
   if (!draft) return null;
-  const anchor = { ...place, ...(place.side === "old" && oldPath ? { oldFile: oldPath } : {}) };
   return (
     <LineCommentBox
       label={`Comment on line ${place.line}`}
@@ -152,7 +195,7 @@ export function DraftBox({ review, place, oldPath, location, onDone }: {
       error={isFull ? LIMIT_NOTE : undefined}
       onChange={(body) => review.setDraftBody(key, body)}
       onSave={() => {
-        const isSaved = review.saveDraft(key, anchor);
+        const isSaved = review.saveDraft(key, place);
         setIsFull(!isSaved);
         if (isSaved) onDone();
       }}
@@ -193,7 +236,7 @@ function GridRow({ children }: { children: ReactNode }) {
 export function rowReviewOf(file: FileReview, change: FileNames, rows: readonly UnifiedRow[]): RowReview {
   const { review, target } = file;
   const placed = commentsOnRows(file, rows);
-  const placeOf = (line: Pick<ReviewComment, "side" | "line">): LinePlace => ({ ...line, target, file: change.path });
+  const placeOf = (line: Pick<ReviewComment, "side" | "line">): CommentAnchor => ({ ...line, target, file: change.path });
   // A removed row takes a comment on the old side, and an added or context row on the new one.
   const newCommentPlace = (row: UnifiedRow) => (isCommentableRow(row) ? placeOf(linesOf(row)[0]) : undefined);
   return {
@@ -203,7 +246,7 @@ export function rowReviewOf(file: FileReview, change: FileNames, rows: readonly 
     },
     openBox: (row) => {
       const place = newCommentPlace(row);
-      if (place) review.openDraft(draftKeyOf(place), row);
+      if (place) review.openDraft(draftKeyOf(place), row, place.side === "old" ? (change.oldPath ?? undefined) : undefined);
     },
     under: (row, onDone) => {
       // Most files have neither, and this runs for every row of every open file.
@@ -216,12 +259,12 @@ export function rowReviewOf(file: FileReview, change: FileNames, rows: readonly 
         <>
           {comments.map((comment) => (
             <GridRow key={comment.id}>
-              <LineComment comment={comment} status="current" review={review} onRemoved={onDone} />
+              <LineComment comment={comment} status={commentStatus(comment, target, file.read)} review={review} onRemoved={onDone} />
             </GridRow>
           ))}
           {boxes.map((place) => (
             <GridRow key={draftKeyOf(place)}>
-              <DraftBox review={review} place={place} oldPath={change.oldPath} onDone={onDone} />
+              <DraftBox review={review} place={place} onDone={onDone} />
             </GridRow>
           ))}
         </>
@@ -260,14 +303,7 @@ export function FileComments({ file, change, rows }: {
         />
       ))}
       {boxes.map((place) => (
-        <DraftBox
-          key={draftKeyOf(place)}
-          review={review}
-          place={place}
-          oldPath={change.oldPath}
-          location={`Line ${place.line}`}
-          onDone={onFocusLost}
-        />
+        <DraftBox key={draftKeyOf(place)} review={review} place={place} location={`Line ${place.line}`} onDone={onFocusLost} />
       ))}
     </div>
   );

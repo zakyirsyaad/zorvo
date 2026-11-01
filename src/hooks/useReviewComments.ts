@@ -4,20 +4,23 @@ import type { UnifiedRow } from '../lib/git-changes';
 import { lineHash, MAX_COMMENT_LENGTH, MAX_COMMENTS_PER_SESSION, quoteOf } from '../lib/review-comments';
 import type { ReviewComment, ReviewTarget } from '../types';
 
-/** A comment being written. Its hash and quote are the row's when the box opened, so a row that changes under it reads Outdated. */
+/**
+ * A comment being written. All but `body` is taken when the box opens: a row that
+ * changes under it reads Outdated, and a file that leaves the diff keeps its old path.
+ */
 export interface CommentDraft {
   body: string;
   lineHash: string;
   quote: string;
+  /** The path before a rename, for a comment on a removed line. */
+  oldFile?: string;
 }
 
 /** `${target}:${file}:${side}:${line}`, or `edit:${id}` while a saved comment is edited. */
 export type DraftKey = string;
 
 /** Where a new comment goes. */
-export type CommentAnchor = Omit<ReviewComment, 'id' | 'body' | 'createdAt' | 'lineHash' | 'quote'>;
-
-type DraftPlace = Pick<CommentAnchor, 'target' | 'file' | 'side' | 'line'>;
+export type CommentAnchor = Omit<ReviewComment, 'id' | 'body' | 'createdAt' | 'lineHash' | 'quote' | 'oldFile' | 'sentAt'>;
 
 export interface ReviewComments {
   comments: readonly ReviewComment[];
@@ -25,7 +28,7 @@ export interface ReviewComments {
   draftKeys: readonly DraftKey[];
   draftFor: (key: DraftKey) => CommentDraft | undefined;
   /** Leaves a box that is already open as it is. */
-  openDraft: (key: DraftKey, row: UnifiedRow) => void;
+  openDraft: (key: DraftKey, row: UnifiedRow, oldFile?: string) => void;
   openEdit: (comment: ReviewComment) => void;
   setDraftBody: (key: DraftKey, body: string) => void;
   closeDraft: (key: DraftKey) => void;
@@ -37,7 +40,7 @@ export interface ReviewComments {
   clearSent: () => void;
 }
 
-export function draftKeyOf({ target, file, side, line }: DraftPlace): DraftKey {
+export function draftKeyOf({ target, file, side, line }: CommentAnchor): DraftKey {
   return `${target}:${file}:${side}:${line}`;
 }
 
@@ -46,11 +49,11 @@ export function editDraftKeyOf(id: string): DraftKey {
 }
 
 /** The place in a new comment's key, or null for an edit's. A path may hold colons, so the match runs from both ends. */
-export function parseDraftKey(key: DraftKey): DraftPlace | null {
+export function parseDraftKey(key: DraftKey): CommentAnchor | null {
   const match = /^(head|base|start):(.*):(new|old):(\d+)$/s.exec(key);
   if (!match) return null;
   const [, target, file, side, line] = match;
-  return { target: target as ReviewTarget, file, side: side as DraftPlace['side'], line: Number(line) };
+  return { target: target as ReviewTarget, file, side: side as CommentAnchor['side'], line: Number(line) };
 }
 
 /**
@@ -92,7 +95,8 @@ export function useReviewComments(
     comments: list,
     draftKeys: Object.keys(sessionDrafts()),
     draftFor: (key) => sessionDrafts()[key],
-    openDraft: (key, row) => open(key, { body: '', lineHash: lineHash(row.text), quote: quoteOf(row.text) }),
+    openDraft: (key, row, oldFile) =>
+      open(key, { body: '', lineHash: lineHash(row.text), quote: quoteOf(row.text), ...(oldFile ? { oldFile } : {}) }),
     openEdit: (comment) =>
       open(editDraftKeyOf(comment.id), { body: comment.body, lineHash: comment.lineHash, quote: comment.quote }),
     setDraftBody: (key, body) => {
@@ -105,6 +109,7 @@ export function useReviewComments(
       if (!draft || list.length >= MAX_COMMENTS_PER_SESSION) return false;
       const comment: ReviewComment = {
         ...anchor,
+        ...(draft.oldFile ? { oldFile: draft.oldFile } : {}),
         id: createId('comment'),
         body: draft.body.slice(0, MAX_COMMENT_LENGTH),
         lineHash: draft.lineHash,

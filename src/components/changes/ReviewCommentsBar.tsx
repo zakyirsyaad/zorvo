@@ -1,33 +1,36 @@
 import { Button } from "../ui/Button";
-import { DraftBox, LineComment, type LinePlace } from "./LineComment";
-import { parseDraftKey, draftKeyOf, type ReviewComments } from "../../hooks/useReviewComments";
+import { DraftBox, LineComment } from "./LineComment";
+import { draftKeyOf, parseDraftKey, type CommentAnchor, type ReviewComments } from "../../hooks/useReviewComments";
 import { targetLabel, type DiffTargetId, type DiffTargets, type FileStat } from "../../lib/diff-stats";
+import { commentStatus, type FileRead } from "../../lib/review-comments";
 import type { ReviewComment } from "../../types";
 
-const locationOf = ({ file, line }: LinePlace) => `${file}:${line}`;
+const locationOf = ({ file, line }: Pick<ReviewComment, "file" | "line">) => `${file}:${line}`;
 
 /** The session's comments as a whole, and those no section can show: another target's, or a file gone from the diff. */
-export function ReviewCommentsBar({ review, comments, target, targets, options, listed, onTargetChange, onFocusLost }: {
+export function ReviewCommentsBar({ review, comments, target, targets, options, reads, listed, onTargetChange, onFocusLost }: {
   review: ReviewComments;
   /** The session's comments, in order. */
   comments: readonly ReviewComment[];
   target: DiffTargetId;
   targets: DiffTargets;
   options: readonly DiffTargetId[];
-  /** The files the diff lists, or null before the first answer. */
+  /** What each commented file on `target` reads as. */
+  reads: Readonly<Record<string, FileRead>>;
+  /** The files the diff lists, or null before the first answer. A box has no read to go by. */
   listed: readonly FileStat[] | null;
   onTargetChange: (target: DiffTargetId) => void;
   onFocusLost: () => void;
 }) {
-  const paths = listed && new Set(listed.map((stat) => stat.path));
-  const isGone = (place: LinePlace) => place.target === target && paths !== null && !paths.has(place.file);
+  const checked = comments.map((comment) => ({ comment, status: commentStatus(comment, target, reads[comment.file]) }));
   const hasSent = comments.some((comment) => comment.sentAt !== undefined);
-  const elsewhere = comments.filter((comment) => comment.target !== target);
-  const elsewhereTargets = [...new Set(elsewhere.map((comment) => comment.target))];
-  const gone = comments.filter(isGone);
-  const goneBoxes = review.draftKeys.flatMap((key) => {
+  const elsewhere = checked.filter(({ status }) => status === "elsewhere");
+  const elsewhereTargets = [...new Set(elsewhere.map(({ comment }) => comment.target))];
+  const gone = checked.filter(({ comment, status }) => status !== "elsewhere" && reads[comment.file]?.status === "missing");
+  const goneBoxes = review.draftKeys.flatMap((key): CommentAnchor[] => {
     const place = parseDraftKey(key);
-    return place && isGone(place) ? [place] : [];
+    const isGone = place?.target === target && listed?.every((stat) => stat.path !== place.file);
+    return place && isGone ? [place] : [];
   });
   if (!hasSent && elsewhere.length === 0 && gone.length === 0 && goneBoxes.length === 0) return null;
 
@@ -40,11 +43,11 @@ export function ReviewCommentsBar({ review, comments, target, targets, options, 
           </Button>
         </div>
       )}
-      {gone.map((comment) => (
+      {gone.map(({ comment, status }) => (
         <LineComment
           key={comment.id}
           comment={comment}
-          status="outdated"
+          status={status}
           review={review}
           location={locationOf(comment)}
           onRemoved={onFocusLost}
@@ -53,7 +56,6 @@ export function ReviewCommentsBar({ review, comments, target, targets, options, 
       {goneBoxes.map((place) => (
         <DraftBox key={draftKeyOf(place)} review={review} place={place} location={locationOf(place)} onDone={onFocusLost} />
       ))}
-      {elsewhere.length > 0 && <h3 className="text-[11px] font-medium text-fg-secondary">Not in this diff</h3>}
       {elsewhereTargets.map((other) => (
         <div key={other} className="flex flex-col gap-1">
           {options.includes(other) ? (
@@ -64,12 +66,12 @@ export function ReviewCommentsBar({ review, comments, target, targets, options, 
             <p className="text-[11px] text-fg-subtle">a comparison no longer available</p>
           )}
           {elsewhere
-            .filter((comment) => comment.target === other)
-            .map((comment) => (
+            .filter(({ comment }) => comment.target === other)
+            .map(({ comment, status }) => (
               <LineComment
                 key={comment.id}
                 comment={comment}
-                status="elsewhere"
+                status={status}
                 review={review}
                 location={locationOf(comment)}
                 onRemoved={onFocusLost}

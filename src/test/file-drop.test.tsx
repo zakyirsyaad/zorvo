@@ -14,7 +14,7 @@ vi.mock("@tauri-apps/api/webview", () => ({
 }));
 
 import App from "../App";
-import { fakeTauriInvoke } from "./setup";
+import { fakeTauriInvoke, type FakeTauriStore } from "./setup";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
 
@@ -52,6 +52,38 @@ describe("Dropping files onto the window", () => {
     expect(screen.queryByText("Drop files to add them to your message")).toBeNull();
     expect(attachedPaths()).toEqual(["/Users/test/shot.png", "/Users/test/my notes.md"]);
     expect((screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("adds nothing to the message from a compare run's panel, which shows no message", async () => {
+    const session = (id: string, profileId: string) => ({
+      id,
+      name: "Fix the login",
+      profileId,
+      cwd: "/Users/test/developer/zorvo",
+      status: "terminated",
+      createdAt: 1,
+      transport: "acp",
+      compareRunId: "run-1",
+    });
+    (window as unknown as { __FAKE_TAURI_STORE__: FakeTauriStore }).__FAKE_TAURI_STORE__.state.sessions = [
+      session("s-1", "claude-acp"),
+      session("s-2", "qwen-code"),
+    ] as FakeTauriStore["state"]["sessions"];
+    await act(async () => {
+      render(<App />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: /Fix the login.*2 agents/ }));
+    });
+
+    await act(async () => {
+      dragHandler({ payload: { type: "drop", paths: ["/Users/test/shot.png"] } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open Claude Code" }));
+    });
+
+    expect(screen.queryByRole("list", { name: "Attachments" })).toBeNull();
   });
 
   it("lists the session folder's files after an @ in the prompt", async () => {

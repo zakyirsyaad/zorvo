@@ -676,6 +676,26 @@ describe("Which session the message is for", () => {
     expect(screen.getByText(NOTE_FOR_ALPHA)).toBeDefined();
   });
 
+  const runOfTwo = () => [
+    alpha([commentOf()], { compareRunId: "run-1", name: "Fix the login" }),
+    sessionOf("s-b", "Fix the login", [], { profileId: "qwen-code", compareRunId: "run-1" }),
+  ];
+
+  it("a look at a compare run's panel keeps the message and its comments", async () => {
+    await renderDiff(runOfTwo());
+    await addAll();
+    typeInPrompt(`${prompt().value}\n\nAnd keep the tests green.`);
+    const written = prompt().value;
+
+    await press(/Fix the login.*2 agents/);
+    expect(screen.queryByRole("textbox", { name: "Prompt" })).toBeNull();
+    await press("Open Claude Code");
+
+    expect(prompt().value).toBe(written);
+    expect(prompt().value).toContain("Use AuthError here.");
+    expect(within(panel()).getByText("In message")).toBeDefined();
+  });
+
   it("a composer that was taken away gives its comments back", async () => {
     const removed = makeProfile({ id: "gemini", name: "Gemini CLI", detected: true });
     const settings = fakeStore().state.settings as Partial<Settings>;

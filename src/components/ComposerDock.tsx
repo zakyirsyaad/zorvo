@@ -169,6 +169,7 @@ export function ComposerDock({
     restoredRef.current = null;
     setText("");
     setAttachments([]);
+    setOpenDropdown(null);
     mentionMenu.close();
     if (textareaRef.current) textareaRef.current.style.height = "auto";
   };

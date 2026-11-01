@@ -302,12 +302,13 @@ export default function App() {
   const rememberModelPick = (profileId: string, preferredModelId: string) =>
     rememberAgentOptions(profileId, { preferredModelId });
 
+  const isRunPanelRef = useLatest(Boolean(activeRun));
   // The user may have opened another session meanwhile: the message goes back
   // into the session it was written for, not that one's composer.
   const restoreMessage = (sessionId: string, text: string, attachments?: readonly string[]) => {
     setActiveSessionId(sessionId);
-    // A run's panel has no composer: the message waits for the session's to mount.
-    if (composerRef.current) composerRef.current.restore(text, attachments);
+    // A run's panel hides the composer: the message waits for it to show, where it can take the focus.
+    if (composerRef.current && !isRunPanelRef.current) composerRef.current.restore(text, attachments);
     else pendingRestoreRef.current = { text, attachments };
   };
   // Read when an agent answers, seconds after the closure that waits for it was made.
@@ -410,6 +411,11 @@ export default function App() {
   const agentOptions = withRewound(state.agentOptions, draftAgent?.id, rewound);
   const startChoices = draftAgent ? withPreferred(acpChoices, agentOptions?.[draftAgent.id]) : acpChoices;
 
+  /** A run's panel shows no message, so nothing goes into one unseen. */
+  const insertPaths = (paths: string[]) => {
+    if (!activeRun) composerRef.current?.insertPaths(paths);
+  };
+
   /** Dropped files are added to the message; a name with control characters is left out. */
   const handleDroppedFiles = (dropped: string[]) => {
     const paths = dropped.filter((path) => !CONTROL_CHARACTER.test(path));
@@ -417,7 +423,7 @@ export default function App() {
       setNotice("Left out a dropped file whose name has control characters.");
     }
     if (paths.length === 0) return;
-    composerRef.current?.insertPaths(paths);
+    insertPaths(paths);
   };
   const isDraggingFiles = useFileDrop(handleDroppedFiles, reportError);
 
@@ -688,7 +694,7 @@ export default function App() {
   const pendingRestoreRef = useRef<FirstMessage | null>(null);
   useEffect(() => {
     const pending = pendingRestoreRef.current;
-    if (!pending || !composerRef.current) return;
+    if (!pending || !composerRef.current || activeRun) return;
     pendingRestoreRef.current = null;
     composerRef.current.restore(pending.text, pending.attachments);
   });
@@ -704,8 +710,8 @@ export default function App() {
     // The user may have opened another session meanwhile: the message goes back into the new session it was written for.
     restoreMessage: (message, agentId) => {
       if (!isDraftRef.current || !activeWorkspace) openNewSession(activeWorkspace?.path, agentId);
-      // A run's panel has no composer: the message waits for the new draft's one to mount.
-      if (composerRef.current) composerRef.current.restore(message.text, message.attachments);
+      // A run's panel hides the composer: the message waits for the new draft to show it.
+      if (composerRef.current && !isRunPanelRef.current) composerRef.current.restore(message.text, message.attachments);
       else pendingRestoreRef.current = message;
     },
     onStarted: () => {
@@ -1004,8 +1010,9 @@ export default function App() {
                 <EmptySessionState />
               )}
 
-              <div className="p-4 flex justify-center empty:hidden">
-                {activeRun ? null : activeAgentRemoved ? (
+              {/* Hidden, not unmounted: a look at a run's panel must not cost the message being written. */}
+              <div hidden={Boolean(activeRun)} className="p-4 flex justify-center">
+                {activeAgentRemoved ? (
                   <RemovedAgentPanel agentName={activeAgentRemoved} onAdd={() => activeAgent && catalogActions.addAgent(activeAgent.id)} />
                 ) : (
                   <ComposerDock
@@ -1124,7 +1131,7 @@ export default function App() {
                 rootPath={filesFolder.path}
                 rootName={filesFolder.name}
                 onClose={sidePanel.close}
-                onInsertPath={(path) => composerRef.current?.insertPaths([path])}
+                onInsertPath={(path) => insertPaths([path])}
                 onRevealRoot={() => filesFolder && shell.revealFolder(filesFolder.path)}
               />
             )}

@@ -250,12 +250,16 @@ export interface ToolExecution {
   details?: ToolDetail[];
   /** Files it touched, as "path" or "path:line". */
   locations?: string[];
+  /** The command it runs, when the agent gives one in its input. */
+  command?: string;
 }
 
 export type ToolDetail =
   | { kind: 'text'; text: string }
   /** `oldText` is null for a file the tool created. */
-  | { kind: 'diff'; path: string; oldText: string | null; newText: string };
+  | { kind: 'diff'; path: string; oldText: string | null; newText: string }
+  /** A diff too large to keep: the file stays named. */
+  | { kind: 'changed'; path: string };
 
 /** One stretch of a reply, kept in the order the agent produced it. */
 export type ChatMessagePart =

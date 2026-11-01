@@ -143,7 +143,7 @@ function toDetails(content: unknown): ToolDetail[] | undefined {
       if (!path || newText === undefined) return [];
       const oldText = str(item.oldText) ?? null;
       if (newText.length + (oldText?.length ?? 0) > MAX_DIFF_TEXT) {
-        return [{ kind: 'text', text: `Changed ${path} (too large to show)` }];
+        return [{ kind: 'changed', path }];
       }
       return [{ kind: 'diff', path, oldText, newText }];
     }
@@ -153,6 +153,20 @@ function toDetails(content: unknown): ToolDetail[] | undefined {
     }
     return [];
   });
+}
+
+/** The longest command kept, in the transcript and on screen. */
+export const MAX_COMMAND_LENGTH = 2000;
+
+const quotedArg = (arg: string) => (/\s/.test(arg) ? `"${arg}"` : arg);
+
+/** The command in a tool's input, as a string or an argument list, under the names agents use. */
+export function commandOf(rawInput: unknown): string | undefined {
+  if (!isObject(rawInput)) return undefined;
+  const raw = rawInput.command ?? rawInput.cmd;
+  const command = Array.isArray(raw) && raw.every((arg) => typeof arg === 'string') ? raw.map(quotedArg).join(' ') : str(raw);
+  if (!command) return undefined;
+  return command.length > MAX_COMMAND_LENGTH ? `${command.slice(0, MAX_COMMAND_LENGTH - 1)}…` : command;
 }
 
 function toLocations(locations: unknown): string[] | undefined {
@@ -183,6 +197,7 @@ function addToolCall(messages: readonly ChatMessage[], update: Json, ctx: AcpRed
     startedAt: ctx.now,
     details: toDetails(update.content),
     locations: toLocations(update.locations),
+    command: commandOf(update.rawInput),
   };
   return withOpenReply(messages, ctx, (reply) => appendTool(reply, tool));
 }
@@ -194,6 +209,7 @@ function updateToolCall(messages: readonly ChatMessage[], update: Json): ChatMes
   const title = str(update.title);
   const details = toDetails(update.content);
   const locations = toLocations(update.locations);
+  const command = commandOf(update.rawInput);
   const providerToolName = providerToolNameOf(update._meta);
   return messages.map((message) => {
     if (!message.tools?.some((t) => t.id === id)) return message;
@@ -206,8 +222,10 @@ function updateToolCall(messages: readonly ChatMessage[], update: Json): ChatMes
               status: status ?? tool.status,
               name: title ?? tool.name,
               providerToolName: providerToolName ?? tool.providerToolName,
-              details: details ?? tool.details,
-              locations: locations ?? tool.locations,
+              // An update with nothing in them does not unname what the tool touched.
+              details: details?.length ? details : tool.details,
+              locations: locations?.length ? locations : tool.locations,
+              command: command ?? tool.command,
             }
           : tool,
       ),

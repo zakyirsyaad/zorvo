@@ -350,6 +350,28 @@ describe("starting a compare run", () => {
     expect(prompt()).not.toHaveAttribute("placeholder", expect.stringContaining("start a new session"));
   });
 
+  it("stays on the session the user opened when a run goes away behind it", async () => {
+    const spy = await renderApp({
+      sessions: [
+        { id: "s-old", name: "Older work", profileId: "claude-acp", cwd: DRAFT_FOLDER, status: "terminated", createdAt: 1, transport: "acp" },
+      ],
+    });
+    await click(screen.getByRole("button", { name: "+ New session" }));
+    await tickAgents("Qwen Code");
+    await send("fix the login");
+    await endTurns(spy);
+    await screen.findByRole("region", { name: "Compare run" });
+    const sidebar = within(screen.getByRole("complementary"));
+    await click(sidebar.getByText("Older work"));
+
+    await click(sidebar.getAllByRole("button", { name: /^More actions for (Claude|Qwen)/ })[0]);
+    await click(screen.getByRole("menuitem", { name: "Archive" }));
+    await waitFor(() => expect(savedSessions().filter((s) => s.archivedAt)).toHaveLength(1));
+    await act(async () => {});
+
+    expect(within(screen.getAllByRole("banner")[0]).getByText("Older work")).toBeInTheDocument();
+  });
+
   it("opens the draft again from + New session while a run is open", async () => {
     await renderApp();
     await tickAgents("Qwen Code");

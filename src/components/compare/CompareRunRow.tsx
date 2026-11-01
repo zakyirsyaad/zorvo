@@ -33,7 +33,7 @@ function Changes({ facts, version, status }: { facts: RowFacts; version: number;
   const { cwd, worktree } = facts.session;
   const [error, setError] = useState<string | null>(null);
   // Read through the agent's folder: from a subfolder it is the known workspace, not the worktree's root.
-  // A status change reads again too: a Stop or an exit between turns brings no turn end to bump `version`.
+  // A status change reads again too: a cancelled turn bumps no `version`, and an exit between turns ends no turn.
   const { stats } = useDiffStatsSince(cwd, worktree?.startCommit, `${version}:${status}`, setError);
   if (!stats) {
     return (

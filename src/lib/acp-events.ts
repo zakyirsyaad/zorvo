@@ -374,6 +374,20 @@ export function isAwaitingPermission(messages: readonly ChatMessage[]): boolean 
   return pendingCardsInTurn(messages).length > 0;
 }
 
+/**
+ * Marks every permission request still waiting as unanswered, in any turn:
+ * its agent is gone (the app restarted, or the agent ended), so no answer can
+ * reach it. Returns the same list when none waits.
+ */
+export function settlePermissionCards(messages: ChatMessage[]): ChatMessage[] {
+  if (!messages.some((message) => message.actionCard?.status === 'pending')) return messages;
+  return messages.map((message) => {
+    const card = message.actionCard;
+    if (card?.status !== 'pending') return message;
+    return { ...message, actionCard: { ...card, status: 'rejected' as const, chosenOptionId: undefined } };
+  });
+}
+
 /** Records the option the user picked on a permission card. */
 export function resolvePermissionCard(
   messages: ChatMessage[],

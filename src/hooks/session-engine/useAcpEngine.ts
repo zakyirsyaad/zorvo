@@ -9,6 +9,7 @@ import {
   pendingCardsInTurn,
   reopenPermissionCard,
   resolvePermissionCard,
+  settlePermissionCards,
   type PermissionRequestPayload,
 } from '../../lib/acp-events';
 import { changesToApply, NO_CHOICES, type AcpChange, type AcpChoices, type AgentOptions } from '../../lib/acp-draft';
@@ -21,7 +22,7 @@ import { useAgentFailures } from '../useAgentFailures';
 import { qwenErrorDetail } from '../../lib/qwen-api-error';
 import type { AgentProfile, ChatMessage, ElicitationCard, Session } from '../../types';
 import { parseAuthRequired, type AuthMethod } from '../../lib/acp-auth';
-import { isUnknownSessionError } from '../../lib/acp-load-error';
+import { isSessionGoneError, isUnknownSessionError } from '../../lib/acp-load-error';
 import { writeConversationHandoff } from '../../lib/session-handoff';
 import { applyElicitation, completeElicitation, dismissPendingElicitations } from '../../lib/acp-elicitation';
 import { elicitationActions, type InFlightAnswer } from './elicitation-actions';
@@ -572,6 +573,12 @@ export function useAcpEngine({
     }
     updateNow(sessionId, (prev) => resolvePermissionCard(prev, cardId, optionId));
     acp.respondPermission(sessionId, card.requestId, optionId).catch((error) => {
+      if (isSessionGoneError(error)) {
+        // The agent that asked is gone, so nobody waits: the card reads unanswered rather than offering buttons that cannot work.
+        updateNow(sessionId, (prev) => settlePermissionCards(reopenPermissionCard(prev, cardId)));
+        reportError('The agent is no longer running, so this request can no longer be answered. Send a message to continue.');
+        return;
+      }
       // The agent is still waiting, so the card must stay answerable.
       updateNow(sessionId, (prev) => reopenPermissionCard(prev, cardId));
       reportError(`Could not answer the agent: ${String(error)}`);
@@ -628,7 +635,11 @@ export function useAcpEngine({
     agentFailures.clear(sessionId);
     for (const card of pendingCardsInTurn(messages ?? [])) {
       if (card.requestId === undefined) continue;
-      acp.respondPermission(sessionId, card.requestId, null).catch(reportFailure('Could not answer the agent'));
+      acp.respondPermission(sessionId, card.requestId, null).catch((error: unknown) => {
+        // An agent that is gone waits on nothing: the card is settled, and the backend's wording (with the session id) stays out of the notice.
+        if (isSessionGoneError(error)) updateNow(sessionId, settlePermissionCards);
+        else reportFailure('Could not answer the agent')(error);
+      });
     }
     // The backend answers the open elicitations as cancelled and names them; one that comes after stays open.
     elicitations.forget(sessionId);

@@ -170,6 +170,9 @@ pub struct SessionRecord {
     /// The agent finished while the user was looking at another session.
     #[serde(deserialize_with = "lenient_bool")]
     pub has_unread: bool,
+    /// The compare run this session belongs to, when it was started from one.
+    #[serde(deserialize_with = "lenient_string")]
+    pub compare_run_id: Option<String>,
 }
 
 /// A session's worktree: the workspace it was made from, its root and branch.
@@ -179,6 +182,9 @@ pub struct SessionWorktreeRecord {
     pub repo_path: String,
     pub path: String,
     pub branch: String,
+    /// The commit the worktree was made from; missing on worktrees saved before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_commit: Option<String>,
 }
 
 /// Where the app keeps its data: the platform app-data dir, or a sibling
@@ -229,6 +235,14 @@ fn lenient_bool<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::E
     Ok(serde_json::Value::deserialize(deserializer)?
         .as_bool()
         .unwrap_or(false))
+}
+
+/// A string, or none when it is not one.
+fn lenient_string<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
+    Ok(match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::String(text) => Some(text),
+        _ => None,
+    })
 }
 
 /// A time in unix milliseconds, or none when it is not a whole number.

@@ -31,6 +31,39 @@ describe("normalizePersistedState", () => {
     expect(state.sessions[0]).not.toHaveProperty("hasUnread");
   });
 
+  it("keeps a session's compareRunId and worktree startCommit", () => {
+    const worktree = { repoPath: "/w/api", path: "/data/worktrees/api/fix", branch: "agent/fix", startCommit: "abc123" };
+
+    const state = normalizePersistedState({ sessions: [{ ...base, compareRunId: "run-1", worktree }] });
+
+    expect(state.sessions[0].compareRunId).toBe("run-1");
+    expect(state.sessions[0].worktree).toEqual(worktree);
+  });
+
+  it("drops a compareRunId that is not a string", () => {
+    const state = normalizePersistedState({ sessions: [{ ...base, compareRunId: 7 }] });
+
+    expect(state.sessions).toHaveLength(1);
+    expect(state.sessions[0]).not.toHaveProperty("compareRunId");
+  });
+
+  it("keeps a worktree whose startCommit is missing", () => {
+    const worktree = { repoPath: "/w/api", path: "/data/worktrees/api/fix", branch: "agent/fix" };
+
+    const state = normalizePersistedState({ sessions: [{ ...base, worktree }] });
+
+    expect(state.sessions[0].worktree).toEqual(worktree);
+  });
+
+  it("drops a startCommit that is not a string and keeps the worktree", () => {
+    const worktree = { repoPath: "/w/api", path: "/data/worktrees/api/fix", branch: "agent/fix" };
+
+    const state = normalizePersistedState({ sessions: [{ ...base, worktree: { ...worktree, startCommit: 5 } }] });
+
+    expect(state.sessions[0].worktree).toEqual(worktree);
+    expect(state.sessions[0].worktree).not.toHaveProperty("startCommit");
+  });
+
   it("keeps a true historyElsewhere flag", () => {
     const state = normalizePersistedState({ sessions: [{ ...base, historyElsewhere: true }] });
 

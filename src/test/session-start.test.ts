@@ -36,6 +36,12 @@ describe("newSessionRecord", () => {
     });
   });
 
+  it("copies the spec's compareRunId onto the record", () => {
+    const session = newSessionRecord({ agent: QWEN, cwd: "/w/api", name: "Compare", compareRunId: "run-1" }, 1);
+
+    expect(session.compareRunId).toBe("run-1");
+  });
+
   it("makes up an id, and leaves out what the spec does not give", () => {
     const session = newSessionRecord({ agent: QWEN, cwd: "/w/api", name: "Session #1" }, 1);
 

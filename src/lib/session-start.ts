@@ -29,11 +29,13 @@ export interface SessionSpec {
   worktree?: SessionWorktree | null;
   /** The agent's own session to reopen, for a session started outside Zorvo. */
   acpSessionId?: string;
+  /** The compare run this session belongs to. */
+  compareRunId?: string | null;
 }
 
 /** The record of a session about to start: running, with the spec's agent and folder. */
 export function newSessionRecord(spec: SessionSpec, createdAt: number = Date.now()): Session {
-  const { id, agent, cwd, name, forkedFrom, worktree, acpSessionId } = spec;
+  const { id, agent, cwd, name, forkedFrom, worktree, acpSessionId, compareRunId } = spec;
   return {
     id: id ?? createId('s'),
     name,
@@ -45,6 +47,7 @@ export function newSessionRecord(spec: SessionSpec, createdAt: number = Date.now
     transport: TRANSPORT_ACP,
     worktree: worktree ?? null,
     acpSessionId: acpSessionId ?? null,
+    ...(compareRunId !== undefined ? { compareRunId } : {}),
   };
 }
 

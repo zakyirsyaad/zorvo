@@ -112,9 +112,10 @@ export function isCounted(comment: ReviewComment, status: CommentStatus, inMessa
   return (status === 'current' || status === 'unknown') && comment.sentAt === undefined && !inMessage.has(comment.id);
 }
 
-// Control characters other than tab, DEL, and the invisible marks that reorder or hide text.
+// Control characters other than tab, DEL, the C1 controls (U+0085 breaks a line for many renderers),
+// and the invisible marks that reorder or hide text.
 // eslint-disable-next-line no-control-regex -- matching control characters is the point.
-const ESCAPED = /[\u0000-\u0008\u000A-\u001F\u007F\u200E\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069]/g;
+const ESCAPED = /[\u0000-\u0008\u000A-\u001F\u007F-\u009F\u061C\u200E\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069]/g;
 
 /** Makes characters that hide or reshape text visible, so the user reads what the agent reads. */
 function escapeVisible(text: string): string {

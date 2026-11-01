@@ -239,6 +239,19 @@ describe("commentBlock", () => {
     );
   });
 
+  it.each([
+    ["the Arabic letter mark", "a\u061Cb", "\\u061C"],
+    ["a C1 control", "a\u0080b", "\\u0080"],
+    ["the next-line control, a line break for many renderers", "a\u0085b", "\\u0085"],
+    ["the last C1 control", "a\u009Fb", "\\u009F"],
+  ])("escapes %s", (_name, quote, escaped) => {
+    expect(commentBlock(comment({ quote }), "current", context)).toContain(`> a${escaped}b`);
+  });
+
+  it("leaves a no-break space alone, just past the C1 controls", () => {
+    expect(commentBlock(comment({ quote: "a\u00A0b" }), "current", context)).toContain("> a\u00A0b");
+  });
+
   it("says an unknown comment was not checked", () => {
     expect(commentBlock(comment(), "unknown", context).split("\n")[0]).toBe(
       "src/auth/login.ts:42 (not checked: the diff was cut)",

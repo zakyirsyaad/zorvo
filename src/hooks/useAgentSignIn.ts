@@ -103,6 +103,7 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
   };
 
   // The request a session's message went out on while that request, another session's, stayed in the slot.
+  // Matched by AuthRequest identity: any setStatus makes a new object, so the guard covers this exact slot state only.
   const resentOnRef = useRef(new Map<string, AuthRequest>());
 
   /**

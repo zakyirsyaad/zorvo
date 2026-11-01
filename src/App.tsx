@@ -6,6 +6,7 @@ import { ChatCanvas } from "./components/ChatCanvas";
 import { HistoryElsewhereNote } from "./components/chat/HistoryElsewhereNote";
 import { ComposerDock, type ComposerHandle } from "./components/ComposerDock";
 import { RemovedAgentPanel } from "./components/RemovedAgentPanel";
+import { ActivityPanel } from "./components/activity/ActivityPanel";
 import { FilesPanel } from "./components/FilesPanel";
 import { EmptySessionState, FileDropOverlay, NoticeBanner } from "./components/AppPlaceholders";
 import { CompareRunPanel } from "./components/compare/CompareRunPanel";
@@ -882,6 +883,8 @@ export default function App() {
         onForward={() => navigateTo(navigation.forward())}
         onToggleFiles={filesFolder ? () => sidePanel.toggle("files") : undefined}
         isFilesOpen={sidePanel.open === "files" && Boolean(filesFolder)}
+        onToggleActivity={activeSession ? () => sidePanel.toggle("activity") : undefined}
+        isActivityOpen={sidePanel.open === "activity" && Boolean(activeSession)}
         onToggleTerminal={filesFolder ? terminalDrawer.toggle : undefined}
         isTerminalOpen={terminalDrawer.isOpen}
         onToggleChanges={filesFolder && isRepository ? () => sidePanel.toggle("changes") : undefined}
@@ -1148,6 +1151,21 @@ export default function App() {
                 onToggleExpanded={() => setExpandedDiffFolder(isDiffExpanded ? null : filesFolder.path)}
                 onClose={sidePanel.close}
                 onError={reportError}
+              />
+            )}
+            {sidePanel.open === "activity" && activeSession && (
+              <ActivityPanel
+                key={activeSession.id}
+                messages={transcripts[activeSession.id]}
+                session={activeSession}
+                isRepository={isRepository}
+                isBusy={isSessionBusy(activeSession.id)}
+                version={sidePanel.changes.version}
+                headStats={sidePanel.headStats}
+                headStatsFailed={sidePanel.headStatsFailed}
+                onJump={() => {}}
+                onOpenDiff={() => sidePanel.show("diff")}
+                onClose={sidePanel.close}
               />
             )}
             {sidePanel.open === "files" && filesFolder && (

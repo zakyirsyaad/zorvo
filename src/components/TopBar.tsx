@@ -7,6 +7,7 @@ import {
   ExternalLink,
   MoreHorizontal,
   SquareTerminal,
+  History,
 } from "lucide-react";
 import { IconButton } from "./ui/IconButton";
 import { DiffStatChip } from "./changes/DiffStatChip";
@@ -46,6 +47,9 @@ export interface TopBarProps {
   /** Shows or hides the workspace's files; the button is hidden when absent. */
   onToggleFiles?: () => void;
   isFilesOpen?: boolean;
+  /** Shows or hides what the agent did in this session; the button is hidden when absent. */
+  onToggleActivity?: () => void;
+  isActivityOpen?: boolean;
   /** Shows or hides the terminal drawer; the button is hidden when absent. */
   onToggleTerminal?: () => void;
   isTerminalOpen?: boolean;
@@ -81,6 +85,8 @@ export function TopBar({
   onPopout,
   onToggleFiles,
   isFilesOpen = false,
+  onToggleActivity,
+  isActivityOpen = false,
   onToggleTerminal,
   isTerminalOpen = false,
   onToggleChanges,
@@ -200,6 +206,17 @@ export function TopBar({
             title="Files"
           >
             <Folder size={14} className={isFilesOpen ? "text-fg" : undefined} />
+          </IconButton>
+        )}
+
+        {onToggleActivity && (
+          <IconButton
+            label="Toggle activity panel"
+            onClick={onToggleActivity}
+            aria-pressed={isActivityOpen}
+            title="Activity"
+          >
+            <History size={14} className={isActivityOpen ? "text-fg" : undefined} />
           </IconButton>
         )}
 

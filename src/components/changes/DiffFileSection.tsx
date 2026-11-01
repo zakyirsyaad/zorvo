@@ -3,10 +3,12 @@ import { FileDiff } from "./FileDiff";
 import { formatLineCount, MINUS, type DiffTargetId, type FileStat } from "../../lib/diff-stats";
 
 /** One file in the diff view: a header with its counts, and the diff read on first open. */
-export function DiffFileSection({ rootPath, stat, target, version, isOpen, onToggle }: {
+export function DiffFileSection({ rootPath, stat, target, startCommit, version, isOpen, onToggle }: {
   rootPath: string;
   stat: FileStat;
   target: DiffTargetId;
+  /** What the "start" target is measured from. */
+  startCommit?: string;
   /** The diff is read again whenever this changes. */
   version: number | string;
   isOpen: boolean;
@@ -40,7 +42,7 @@ export function DiffFileSection({ rootPath, stat, target, version, isOpen, onTog
         (stat.isBinary ? (
           <p className="px-3 py-1.5 text-[11px] text-fg-subtle">Binary file</p>
         ) : (
-          <FileDiff rootPath={rootPath} change={stat} target={target} version={version} />
+          <FileDiff rootPath={rootPath} change={stat} target={target} startCommit={startCommit} version={version} />
         ))}
     </section>
   );

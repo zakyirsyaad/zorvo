@@ -49,6 +49,29 @@ describe("DiffStatChip", () => {
     const { container } = render(<DiffStatChip added={0} removed={0} onOpen={() => {}} />);
     expect(container.innerHTML).toBe("");
   });
+
+  it("the_chip_stays_hidden_at_zero_with_nothing_to_review", () => {
+    const { container } = render(<DiffStatChip added={0} removed={0} commentCount={0} isAlwaysShown={false} onOpen={() => {}} />);
+    expect(container.innerHTML).toBe("");
+  });
+
+  it("the_diff_chip_shows_at_zero_changes_when_always_shown", () => {
+    const onOpen = vi.fn();
+    render(<DiffStatChip added={0} removed={0} commentCount={2} isAlwaysShown onOpen={onOpen} />);
+
+    const button = screen.getByRole("button", { name: /2 comments/ });
+    expect(button.getAttribute("aria-label")).toBe("0 lines added, 0 removed, 2 comments. Open the diff");
+    fireEvent.click(button);
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it("says one comment in the singular and none when there are no comments", () => {
+    const { rerender } = render(<DiffStatChip added={1} removed={0} commentCount={1} onOpen={() => {}} />);
+    expect(screen.getByRole("button").getAttribute("aria-label")).toBe("1 lines added, 0 removed, 1 comment. Open the diff");
+
+    rerender(<DiffStatChip added={0} removed={0} isAlwaysShown onOpen={() => {}} />);
+    expect(screen.getByRole("button").getAttribute("aria-label")).toBe("0 lines added, 0 removed. Open the diff");
+  });
 });
 
 describe("DiffFileSection", () => {
@@ -436,5 +459,110 @@ describe("DiffView", () => {
       fireEvent.click(screen.getByRole("option", { name: "HEAD → working tree" }));
     });
     expect(screen.getByText("No changes against HEAD.")).toBeDefined();
+  });
+});
+
+const START = "abc123def456";
+const LOST_START = "The start of this worktree is no longer in this repository.";
+const START_LABEL = "Start of this worktree → working tree";
+
+function mockSession(options: { base: { name: string } | null; since?: FileStat[] | "lost"; stats?: FileStat[] }) {
+  return vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd) => {
+    if (cmd === "session_diff_targets") return Promise.resolve({ base: options.base, root: "/w", prefix: "" });
+    if (cmd === "session_diff_stats") return Promise.resolve(options.stats ?? THREE);
+    if (cmd === "session_diff_stats_since") {
+      return options.since === "lost" ? Promise.reject("not a commit") : Promise.resolve(options.since ?? THREE);
+    }
+    if (cmd === "session_file_diff") return Promise.resolve(DIFF);
+    return Promise.resolve("");
+  });
+}
+const callsOf = (spy: { mock: { calls: unknown[][] } }, cmd: string) => spy.mock.calls.filter((c) => c[0] === cmd);
+
+describe("DiffView with the start of the worktree", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("a_session_in_a_compare_run_opens_on_the_start_of_its_worktree", async () => {
+    const spy = mockSession({ base: { name: "main" }, since: [STAT] });
+    await renderView({ startCommit: START, prefersStart: true });
+
+    expect(screen.getByRole("button", { name: `Diff target: ${START_LABEL}` })).toBeDefined();
+    expect(callsOf(spy, "session_diff_stats_since").map((c) => c[1])).toEqual([{ path: "/w", commit: START }]);
+    expect(callsOf(spy, "session_diff_stats")).toHaveLength(0);
+    expect(callsOf(spy, "session_file_diff").map((c) => c[1])).toEqual([
+      { path: "/w", file: "src/lib/app.ts", target: "head", since: START },
+    ]);
+  });
+
+  it("an_ordinary_worktree_session_keeps_its_base_target_and_offers_start", async () => {
+    const spy = mockSession({ base: { name: "main" } });
+    await renderView({ startCommit: START });
+
+    expect(screen.getByRole("button", { name: "Diff target: main → working tree" })).toBeDefined();
+    expect(callsOf(spy, "session_diff_stats_since")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Diff target: main → working tree" }));
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
+      START_LABEL,
+      "main → working tree",
+      "HEAD → working tree",
+    ]);
+  });
+
+  it("reads the start's changes after choosing it in the picker", async () => {
+    const spy = mockSession({ base: { name: "main" } });
+    await renderView({ startCommit: START });
+
+    fireEvent.click(screen.getByRole("button", { name: "Diff target: main → working tree" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("option", { name: START_LABEL }));
+    });
+
+    expect(spy).toHaveBeenCalledWith("session_diff_stats_since", { path: "/w", commit: START }, undefined);
+    expect(screen.getByRole("button", { name: `Diff target: ${START_LABEL}` })).toBeDefined();
+  });
+
+  it("the_picker_shows_with_a_start_and_no_base", async () => {
+    mockSession({ base: null });
+    await renderView({ startCommit: START });
+
+    expect(screen.getByRole("button", { name: "Diff target: HEAD → working tree" })).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Diff target: HEAD → working tree" }));
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([START_LABEL, "HEAD → working tree"]);
+  });
+
+  it("keeps the plain label without a base or a start", async () => {
+    mockSession({ base: null });
+    await renderView();
+
+    expect(screen.getByText("HEAD → working tree")).toBeDefined();
+    expect(screen.queryByRole("button", { name: /Diff target/ })).toBeNull();
+  });
+
+  it("a_lost_start_commit_falls_back_with_a_notice", async () => {
+    const spy = mockSession({ base: { name: "main" }, since: "lost" });
+    const { onError } = await renderView({ startCommit: START, prefersStart: true });
+
+    expect(onError).toHaveBeenCalledWith(LOST_START);
+    expect(screen.getByRole("button", { name: "Diff target: main → working tree" })).toBeDefined();
+    expect(screen.queryByText("Reading the changes…")).toBeNull();
+    expect(callsOf(spy, "session_diff_stats").map((c) => c[1])).toEqual([{ path: "/w", target: "base" }]);
+    fireEvent.click(screen.getByRole("button", { name: "Diff target: main → working tree" }));
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["main → working tree", "HEAD → working tree"]);
+  });
+
+  it("falls to HEAD when a lost start leaves no base", async () => {
+    mockSession({ base: null, since: "lost" });
+    const { onError } = await renderView({ startCommit: START, prefersStart: true });
+
+    expect(onError).toHaveBeenCalledWith(LOST_START);
+    expect(screen.getByText("HEAD → working tree")).toBeDefined();
+    expect(screen.queryByText("Reading the changes…")).toBeNull();
+  });
+
+  it("says there are no changes since the start", async () => {
+    mockSession({ base: { name: "main" }, since: [] });
+    await renderView({ startCommit: START, prefersStart: true });
+
+    expect(screen.getByText("No changes since the start of this worktree.")).toBeDefined();
   });
 });

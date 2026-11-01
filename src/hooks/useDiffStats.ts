@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { DiffTargetId, DiffTargets, FileStat } from '../lib/diff-stats';
 import { useLatest } from './useLatest';
 
-const NO_TARGETS: DiffTargets = { base: null };
+const NO_TARGETS: DiffTargets = { base: null, root: '', prefix: '' };
 
 export interface DiffTargetsRead {
   targets: DiffTargets;
@@ -63,7 +63,8 @@ interface StatsRequest {
 /**
  * The body both stats hooks share: runs `request` for `path` and keeps the
  * answer for `key` (what the read is for) only. Read again when `version` or
- * `key` changes, and on `reload`. A failure is reported once per folder.
+ * `key` changes, and on `reload`. A failure is reported once per folder, and
+ * `onFailed` hears about every one.
  */
 function useStatsRead(
   path: string | undefined,
@@ -71,10 +72,12 @@ function useStatsRead(
   key: string,
   version: number | string,
   onError: (message: string) => void,
+  onFailed?: () => void,
 ): DiffStats {
   const [state, setState] = useState<{ key: string; stats: FileStat[] } | null>(null);
   const [reloads, setReloads] = useState(0);
   const onErrorRef = useLatest(onError);
+  const onFailedRef = useLatest(onFailed);
   const requestRef = useLatest(request);
   const reportedPath = useRef<string | undefined>(undefined);
   const reload = useCallback(() => setReloads((n) => n + 1), []);
@@ -90,14 +93,16 @@ function useStatsRead(
         setState({ key, stats });
       })
       .catch((error) => {
-        if (isCancelled || reportedPath.current === path) return;
+        if (isCancelled) return;
+        onFailedRef.current?.();
+        if (reportedPath.current === path) return;
         reportedPath.current = path;
         onErrorRef.current(`Could not read the diff in ${path}: ${String(error)}`);
       });
     return () => {
       isCancelled = true;
     };
-  }, [path, isEnabled, key, version, reloads, onErrorRef, requestRef]);
+  }, [path, isEnabled, key, version, reloads, onErrorRef, onFailedRef, requestRef]);
 
   // Never show another folder's or target's files while this one loads.
   const isCurrent = isEnabled && state !== null && state.key === key;
@@ -113,7 +118,7 @@ function useStatsRead(
 export function useDiffStats(
   path: string | undefined,
   isEnabled: boolean,
-  target: DiffTargetId,
+  target: Exclude<DiffTargetId, 'start'>,
   version: number,
   onError: (message: string) => void,
 ): DiffStats {
@@ -134,4 +139,33 @@ export function useDiffStatsSince(
 ): DiffStats {
   const request = commit ? { command: 'session_diff_stats_since' as const, args: { path, commit } } : null;
   return useStatsRead(path, request, `${path}\0since\0${commit}`, version, onError);
+}
+
+/**
+ * Per-file line counts of the changes in `path`'s repository against `target`:
+ * since `startCommit` for the start of the worktree, else against HEAD or the
+ * base as `useDiffStats` reads them. Nothing is read while `isEnabled` is false,
+ * or for the start without a commit. A failure is reported once per folder, and
+ * `onFailed` fires on every failed read, so a caller can drop a target that git
+ * cannot read.
+ */
+export function useTargetStats(
+  path: string | undefined,
+  isEnabled: boolean,
+  target: DiffTargetId,
+  startCommit: string | undefined,
+  version: number,
+  onError: (message: string) => void,
+  onFailed?: () => void,
+): DiffStats {
+  const isStart = target === 'start';
+  const request: StatsRequest | null = !isEnabled
+    ? null
+    : isStart
+      ? startCommit
+        ? { command: 'session_diff_stats_since', args: { path, commit: startCommit } }
+        : null
+      : { command: 'session_diff_stats', args: { path, target } };
+  const key = isStart ? `${path}\0since\0${startCommit}` : `${path}\0${target}`;
+  return useStatsRead(path, request, key, version, onError, onFailed);
 }

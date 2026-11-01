@@ -1,11 +1,19 @@
 import { useMemo, useState } from "react";
 import { DiffFileSection } from "./DiffFileSection";
 import { DiffViewHeader } from "./DiffViewHeader";
-import { useDiffStats, useDiffTargets } from "../../hooks/useDiffStats";
-import type { DiffTargetId } from "../../lib/diff-stats";
+import { useDiffTargets, useTargetStats } from "../../hooks/useDiffStats";
+import { defaultTarget, targetOptions, type DiffTargetId } from "../../lib/diff-stats";
 
 /** Above this many files the sections start collapsed, so a large diff does not read them all. */
 const AUTO_OPEN_LIMIT = 25;
+
+const START_LOST = "The start of this worktree is no longer in this repository.";
+
+/** The empty-diff line for `target`. */
+function noChangesText(target: DiffTargetId, baseName: string | undefined): string {
+  if (target === "start") return "No changes since the start of this worktree.";
+  return `No changes against ${target === "base" && baseName ? baseName : "HEAD"}.`;
+}
 
 export interface DiffViewProps {
   rootPath: string;
@@ -15,15 +23,47 @@ export interface DiffViewProps {
   onToggleExpanded: () => void;
   onClose: () => void;
   onError: (message: string) => void;
+  /** The commit this session's worktree was made from; it offers the "start" target. */
+  startCommit?: string;
+  /** Opens on the start of the worktree rather than the base (a session in a compare run). */
+  prefersStart?: boolean;
 }
 
 /** A whole repository's diff: one collapsible section per changed file. */
-export function DiffView({ rootPath, version, isExpanded, onToggleExpanded, onClose, onError }: DiffViewProps) {
+export function DiffView({
+  rootPath,
+  version,
+  isExpanded,
+  onToggleExpanded,
+  onClose,
+  onError,
+  startCommit,
+  prefersStart = false,
+}: DiffViewProps) {
   const { targets, isLoaded: areTargetsLoaded } = useDiffTargets(rootPath, true, version, onError);
   const [chosen, setChosen] = useState<DiffTargetId | null>(null);
-  // A chosen base means nothing once there is none (main checked out): HEAD then.
-  const target: DiffTargetId = targets.base ? (chosen ?? "base") : "head";
-  const { stats, reload } = useDiffStats(rootPath, areTargetsLoaded, target, version, onError);
+  // A start commit git cannot find any more stops being offered, for as long as this view lives.
+  const [isStartLost, setIsStartLost] = useState(false);
+  const options = useMemo(
+    () => targetOptions(targets, isStartLost ? undefined : startCommit),
+    [targets, startCommit, isStartLost],
+  );
+  // A chosen target means nothing once it is not on offer (main checked out, start lost).
+  const target = chosen && options.includes(chosen) ? chosen : defaultTarget(options, prefersStart);
+  const { stats, reload } = useTargetStats(
+    rootPath,
+    areTargetsLoaded,
+    target,
+    startCommit,
+    version,
+    // A start that cannot be read says so below; the generic notice would only repeat it.
+    (message) => target !== "start" && onError(message),
+    () => {
+      if (target !== "start") return;
+      setIsStartLost(true);
+      onError(START_LOST);
+    },
+  );
   // Refresh reads every open diff again; otherwise a diff is read again only when its file changed.
   const [refreshes, setRefreshes] = useState(0);
   const refresh = () => {
@@ -61,7 +101,7 @@ export function DiffView({ rootPath, version, isExpanded, onToggleExpanded, onCl
     if (isSearching) setSearch("");
     setIsSearching(!isSearching);
   };
-  const from = target === "base" && targets.base ? targets.base.name : "HEAD";
+  const noChanges = noChangesText(target, targets.base?.name);
 
   return (
     <aside
@@ -71,6 +111,7 @@ export function DiffView({ rootPath, version, isExpanded, onToggleExpanded, onCl
       <DiffViewHeader
         target={target}
         targets={targets}
+        options={options}
         onTargetChange={setChosen}
         isSearching={isSearching}
         onToggleSearch={toggleSearch}
@@ -87,7 +128,7 @@ export function DiffView({ rootPath, version, isExpanded, onToggleExpanded, onCl
         {stats === null ? (
           <p className="px-2 py-3 text-fg-subtle">Reading the changes…</p>
         ) : stats.length === 0 ? (
-          <p className="px-2 py-3 text-fg-subtle">No changes against {from}.</p>
+          <p className="px-2 py-3 text-fg-subtle">{noChanges}</p>
         ) : visible.length === 0 ? (
           <p className="px-2 py-3 text-fg-subtle">No files match “{search.trim()}”.</p>
         ) : (
@@ -97,6 +138,7 @@ export function DiffView({ rootPath, version, isExpanded, onToggleExpanded, onCl
               rootPath={rootPath}
               stat={stat}
               target={target}
+              startCommit={startCommit}
               version={`${refreshes}:${stat.fingerprint}`}
               isOpen={openPaths?.has(stat.path) ?? false}
               onToggle={() => toggle(stat.path)}

@@ -411,6 +411,8 @@ export default function App() {
   const turnsEnded = useTurnsEnded(Boolean(activeSessionId) && isSessionBusy(activeSessionId));
   const sidePanel = useSidePanel(filesFolder?.path, isRepository, turnsEnded, reportError);
   const diffStats = sidePanel.headStats ? totalsOf(sidePanel.headStats) : undefined;
+  // The commit this session's worktree began at: the diff can compare with it, and the chip stays for it.
+  const startCommit = activeSession?.worktree?.startCommit;
   // The folder whose diff view is expanded: another folder's view starts unexpanded.
   const [expandedDiffFolder, setExpandedDiffFolder] = useState<string | null>(null);
   const isDiffOpen = sidePanel.open === "diff" && Boolean(filesFolder) && isRepository;
@@ -822,6 +824,7 @@ export default function App() {
         onToggleChanges={filesFolder && isRepository ? () => sidePanel.toggle("changes") : undefined}
         isChangesOpen={sidePanel.open === "changes" && Boolean(filesFolder) && isRepository}
         diffStats={diffStats}
+        isDiffAlwaysShown={Boolean(startCommit)}
         onOpenDiff={() => sidePanel.show("diff")}
         onPopout={activeSession ? () => shell.popout(activeSession.id) : undefined}
         onOpenSettings={() => setSettingsTab("general")}
@@ -1063,8 +1066,10 @@ export default function App() {
             )}
             {isDiffOpen && filesFolder && (
               <DiffView
-                key={filesFolder.path}
+                key={`${activeSession?.id ?? "draft"}:${filesFolder.path}`}
                 rootPath={filesFolder.path}
+                startCommit={startCommit}
+                prefersStart={Boolean(activeSession?.compareRunId)}
                 version={sidePanel.changes.version}
                 isExpanded={isDiffExpanded}
                 onToggleExpanded={() => setExpandedDiffFolder(isDiffExpanded ? null : filesFolder.path)}

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
-import { useDiffStats, useDiffStatsSince, useDiffTargets } from "../hooks/useDiffStats";
+import { useDiffStats, useDiffStatsSince, useDiffTargets, useTargetStats } from "../hooks/useDiffStats";
 import type { FileStat } from "../lib/diff-stats";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
@@ -114,7 +114,7 @@ describe("useDiffTargets", () => {
     vi.spyOn(tauriInternals(), "invoke").mockResolvedValue({ base: { name: "main" } });
     const { result } = renderHook(() => useDiffTargets("/w", true, 1, () => {}));
 
-    expect(result.current).toEqual({ targets: { base: null }, isLoaded: false });
+    expect(result.current).toEqual({ targets: { base: null, root: "", prefix: "" }, isLoaded: false });
     await waitFor(() => expect(result.current).toEqual({ targets: { base: { name: "main" } }, isLoaded: true }));
   });
 
@@ -125,12 +125,62 @@ describe("useDiffTargets", () => {
       initialProps: { version: 1 },
     });
     await waitFor(() => expect(result.current.isLoaded).toBe(true));
-    expect(result.current.targets).toEqual({ base: null });
+    expect(result.current.targets).toEqual({ base: null, root: "", prefix: "" });
     expect(onError).toHaveBeenCalledOnce();
     expect(onError.mock.calls[0][0]).toContain("/w");
 
     rerender({ version: 2 });
     await act(async () => {});
+    expect(onError).toHaveBeenCalledOnce();
+  });
+});
+
+describe("useTargetStats", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("reads the stats since the start commit for the start target", async () => {
+    const spy = vi
+      .spyOn(tauriInternals(), "invoke")
+      .mockImplementation((cmd) => Promise.resolve(cmd === "session_diff_stats_since" ? [STAT] : undefined));
+    const { result } = renderHook(() => useTargetStats("/w", true, "start", "abc123", 1, () => {}));
+
+    await waitFor(() => expect(result.current.stats).toEqual([STAT]));
+    expect(spy).toHaveBeenCalledWith("session_diff_stats_since", { path: "/w", commit: "abc123" }, undefined);
+    expect(statCalls(spy)).toHaveLength(0);
+  });
+
+  it("reads against the target as useDiffStats does for HEAD and the base", async () => {
+    const spy = vi
+      .spyOn(tauriInternals(), "invoke")
+      .mockImplementation((cmd) => Promise.resolve(cmd === "session_diff_stats" ? [STAT] : undefined));
+    const { result } = renderHook(() => useTargetStats("/w", true, "base", "abc123", 1, () => {}));
+
+    await waitFor(() => expect(result.current.stats).toEqual([STAT]));
+    expect(spy).toHaveBeenCalledWith("session_diff_stats", { path: "/w", target: "base" }, undefined);
+  });
+
+  it("reads nothing for the start without a commit, or while disabled", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockResolvedValue([STAT]);
+    const { result } = renderHook(() => useTargetStats("/w", true, "start", undefined, 1, () => {}));
+    renderHook(() => useTargetStats("/w", false, "head", undefined, 1, () => {}));
+    await act(async () => {});
+
+    expect(result.current.stats).toBeNull();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("tells onFailed about every failed read but onError only once per folder", async () => {
+    vi.spyOn(tauriInternals(), "invoke").mockRejectedValue("boom");
+    const onError = vi.fn();
+    const onFailed = vi.fn();
+    const { rerender } = renderHook(
+      ({ version }) => useTargetStats("/w", true, "start", "abc123", version, onError, onFailed),
+      { initialProps: { version: 1 } },
+    );
+    await waitFor(() => expect(onFailed).toHaveBeenCalledOnce());
+
+    rerender({ version: 2 });
+    await waitFor(() => expect(onFailed).toHaveBeenCalledTimes(2));
     expect(onError).toHaveBeenCalledOnce();
   });
 });

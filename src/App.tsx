@@ -536,6 +536,17 @@ export default function App() {
     if (workspacePath && workspaces.some((ws) => ws.path === workspacePath)) selectWorkspace(workspacePath);
   };
 
+  /** Shows a run's panel in the chat's place; no session stays selected, or the panel would not show. */
+  const openRun = (runId: string) => {
+    setActiveSessionId("");
+    setPickedAgentId(null);
+    compare.reset();
+    setActiveRunId(runId);
+    const run = runOf(sessions, runId);
+    const workspacePath = run && workspacePathOf(run.sessions[0]);
+    if (workspacePath && workspaces.some((ws) => ws.path === workspacePath)) selectWorkspace(workspacePath);
+  };
+
   /** Stops the agent's current turn; the session stays open for the next message. */
   const handleInterrupt = (sessionId: string) => {
     // A rewound session's fresh agent has not started yet: only its start is called off.
@@ -637,6 +648,13 @@ export default function App() {
 
   // Read when a run's worktrees are done, seconds after the click: an empty session id also means a run's panel.
   const isDraftRef = useLatest(isNewSessionDraft);
+  const pendingRestoreRef = useRef<FirstMessage | null>(null);
+  useEffect(() => {
+    const pending = pendingRestoreRef.current;
+    if (!pending || !composerRef.current) return;
+    pendingRestoreRef.current = null;
+    composerRef.current.restore(pending.text, pending.attachments);
+  });
   const compareRun = useCompareRun({
     repoPath: activeWorkspace?.path ?? "",
     baseBranch: branchPicker.baseBranch,
@@ -648,7 +666,9 @@ export default function App() {
     // The user may have opened another session meanwhile: the message goes back into the new session it was written for.
     restoreMessage: (message, agentId) => {
       if (!isDraftRef.current || !activeWorkspace) openNewSession(activeWorkspace?.path, agentId);
-      composerRef.current?.restore(message.text, message.attachments);
+      // A run's panel has no composer: the message waits for the new draft's one to mount.
+      if (composerRef.current) composerRef.current.restore(message.text, message.attachments);
+      else pendingRestoreRef.current = message;
     },
     onStarted: () => {
       setPickedAgentId(null);
@@ -787,6 +807,7 @@ export default function App() {
           activeWorkspacePath={activeWorkspacePath}
           sessions={sessions}
           activeSessionId={activeSessionId}
+          activeRunId={activeRun?.id}
           agents={agents}
           settings={state.settings}
           signInStateOf={signInStatus.stateOf}
@@ -797,6 +818,7 @@ export default function App() {
           }}
           onNewSession={() => openNewSession()}
           onSelectSession={handleSelectSession}
+          onOpenRun={openRun}
           onNewSessionIn={openNewSession}
           defaultAgentId={defaultAgentId ?? undefined}
           onOpenFolder={() => void openFolder()}

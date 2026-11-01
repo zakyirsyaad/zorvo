@@ -6,6 +6,7 @@ import { SIGN_IN_CHIP_STYLES, SIGN_IN_LABELS, type SignInState } from "../lib/ag
 import type { AgentProfile, Session, Workspace } from "../types";
 import { NewSessionMenu } from "./sidebar/NewSessionMenu";
 import { SessionTree, type SessionListContext } from "./sidebar/SessionList";
+import { compareRuns } from "../lib/compare-run";
 import {
   folderNameOf,
   groupSessionsByWorkspace,
@@ -21,6 +22,8 @@ export interface SidebarProps {
   activeWorkspacePath?: string;
   sessions: Session[];
   activeSessionId?: string;
+  /** The compare run whose panel is open. */
+  activeRunId?: string | null;
   agents: AgentProfile[];
   /** Decides which registry agents are in use; the defaults apply when absent. */
   settings?: EnabledSettings;
@@ -30,6 +33,8 @@ export interface SidebarProps {
   onSetUpAgent?: (profileId: string) => void;
   onNewSession: () => void;
   onSelectSession: (sessionId: string) => void;
+  /** Opens a compare run's panel. */
+  onOpenRun?: (runId: string) => void;
   /** Opens a new session in that folder with that agent; each workspace's + button is hidden when absent. */
   onNewSessionIn?: (path: string, agentId: string) => void;
   /** The agent the + menu marks as the default. */
@@ -220,12 +225,14 @@ export function Sidebar({
   activeWorkspacePath,
   sessions,
   activeSessionId,
+  activeRunId,
   agents,
   settings = {},
   signInStateOf,
   onSetUpAgent,
   onNewSession,
   onSelectSession,
+  onOpenRun,
   onNewSessionIn,
   defaultAgentId,
   onOpenFolder,
@@ -244,13 +251,16 @@ export function Sidebar({
   const query = searchQuery.trim().toLowerCase();
 
   // Pinned sessions sit on top and archived ones at the bottom, out of their workspace.
-  const listed = sessions.filter((s) => !isArchived(s) && !isShownPinned(s));
-  const groups = searchGroups(groupSessionsByWorkspace(workspaces, listed), query);
+  // A pinned session of a run stays in the run's group instead, so it is not listed twice.
+  const runs = compareRuns(sessions);
+  const runMemberIds = new Set(runs.flatMap((run) => run.sessions.map((s) => s.id)));
+  const listed = sessions.filter((s) => !isArchived(s) && (!isShownPinned(s) || runMemberIds.has(s.id)));
+  const groups = searchGroups(groupSessionsByWorkspace(workspaces, listed, runs), query);
   const asNodes = (list: Session[]) => list.map((session) => ({ session, children: [] }));
   // Like a listed session, one is found by its own name or its project's.
   const isFound = (s: Session) => matches(query, s.name, folderNameOf(workspacePathOf(s)), workspacePathOf(s));
   const pinned = sessions
-    .filter((s) => isShownPinned(s) && isFound(s))
+    .filter((s) => isShownPinned(s) && !runMemberIds.has(s.id) && isFound(s))
     .sort((a, b) => b.createdAt - a.createdAt);
   const archived = sessions
     .filter((s) => isArchived(s) && isFound(s))
@@ -264,10 +274,12 @@ export function Sidebar({
     });
   const context: SessionListContext = {
     activeSessionId,
+    activeRunId: activeRunId ?? undefined,
     agentNameOf: (profileId) => agents.find((agent) => agent.id === profileId)?.name,
     isSessionBusy,
     isSessionWaiting,
     onSelectSession,
+    onOpenRun,
     onStopSession,
     onDeleteSession,
     onRenameSession,

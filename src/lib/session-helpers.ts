@@ -1,5 +1,6 @@
 import type { ActionCard, ChatMessage, PersistedState, Session, Workspace } from '../types';
 import { createId } from './ids';
+import type { CompareRun } from './compare-run';
 
 /** Id of the most recently created session, or "" when there is none. */
 export function mostRecentSessionId(sessions: readonly Session[]): string {
@@ -50,10 +51,15 @@ export function removeSessionFrom(state: PersistedState, sessionId: string): Per
   return { ...state, sessions: state.sessions.filter((s) => s.id !== sessionId) };
 }
 
-/** A session with the sessions forked from it, newest first. */
+/**
+ * A session with the sessions forked from it, newest first. A compare run is one node
+ * with `run` set: its `children` are the run's sessions (oldest first, each with its own
+ * forks), and `session` is the newest of them, which places the group in the list.
+ */
 export interface SessionNode {
   session: Session;
   children: SessionNode[];
+  run?: CompareRun;
 }
 
 export interface SessionGroup {
@@ -89,12 +95,30 @@ export function workspacePathOf(session: Session): string {
   return session.worktree?.repoPath ?? session.cwd;
 }
 
-/** One folder's sessions as a tree: a fork sits under its source when that is in the same folder. */
-function forkTree(sessions: readonly Session[]): SessionNode[] {
+/**
+ * One folder's sessions as a tree: a fork sits under its source when that is in the same folder,
+ * and each run (its sessions in this folder) is one group node placed by its newest session.
+ */
+function forkTree(sessions: readonly Session[], runs: readonly CompareRun[] = []): SessionNode[] {
   const ids = new Set(sessions.map((s) => s.id));
+  const runOfMember = new Map<string, CompareRun>();
+  for (const run of runs) {
+    const members = run.sessions.filter((s) => ids.has(s.id));
+    if (members.length < 2) continue;
+    const inFolder = { ...run, sessions: members };
+    for (const member of members) runOfMember.set(member.id, inFolder);
+  }
   const childrenOf = new Map<string, Session[]>();
-  const roots: Session[] = [];
+  const roots: Array<Session | CompareRun> = [];
+  const placedRuns = new Set<string>();
   for (const session of [...sessions].sort(newestFirst)) {
+    const run = runOfMember.get(session.id);
+    if (run) {
+      // A run's sessions are never nested under a fork source: they sit in their group.
+      if (!placedRuns.has(run.id)) roots.push(run);
+      placedRuns.add(run.id);
+      continue;
+    }
     const parent = session.forkedFrom;
     if (parent && parent !== session.id && ids.has(parent)) {
       childrenOf.set(parent, [...(childrenOf.get(parent) ?? []), session]);
@@ -108,11 +132,16 @@ function forkTree(sessions: readonly Session[]): SessionNode[] {
     const children = (childrenOf.get(session.id) ?? []).filter((c) => !seen.has(c.id));
     return { session, children: children.map(toNode) };
   };
-  const tree = roots.map(toNode);
+  const toGroup = (run: CompareRun): SessionNode => ({
+    session: run.sessions[run.sessions.length - 1],
+    children: run.sessions.map(toNode),
+    run,
+  });
+  const tree = roots.map((root) => ('sessions' in root ? toGroup(root) : toNode(root)));
   // Sessions forked from each other in a loop (only a hand-edited file has
   // that) are reached from no root; each loop is listed from its newest one.
   for (const session of [...sessions].sort(newestFirst)) {
-    if (!seen.has(session.id)) tree.push(toNode(session));
+    if (!seen.has(session.id) && !runOfMember.has(session.id)) tree.push(toNode(session));
   }
   return tree;
 }
@@ -121,11 +150,13 @@ function forkTree(sessions: readonly Session[]): SessionNode[] {
  * The sidebar's tree: every workspace in the given order, each with its
  * sessions newest first and forks nested under their source. Folders that
  * only sessions still point at (a folder removed from the recents) follow,
- * the one with the newest session first.
+ * the one with the newest session first. Each of `runs` with two or more
+ * sessions in a folder is one group there.
  */
 export function groupSessionsByWorkspace(
   workspaces: readonly Workspace[],
   sessions: readonly Session[],
+  runs: readonly CompareRun[] = [],
 ): SessionGroup[] {
   const byPath = new Map<string, Session[]>();
   const newestIn = new Map<string, number>();
@@ -144,7 +175,7 @@ export function groupSessionsByWorkspace(
   return [...workspaces, ...others].map(({ name, path }) => ({
     path,
     name,
-    sessions: forkTree(byPath.get(path) ?? []),
+    sessions: forkTree(byPath.get(path) ?? [], runs),
   }));
 }
 

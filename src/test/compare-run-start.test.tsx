@@ -309,7 +309,7 @@ describe("starting a compare run", () => {
     }
     const sidebar = within(screen.getByRole("complementary"));
 
-    await click(sidebar.getAllByRole("button", { name: "More actions for fix the login" })[0]);
+    await click(sidebar.getAllByRole("button", { name: /^More actions for (Claude|Qwen)/ })[0]);
     await click(screen.getByRole("menuitem", { name: "Archive" }));
     // One listed session is no run: the draft shows.
     expect(await screen.findByRole("button", { name: /^Folder:/ })).toBeInTheDocument();
@@ -360,6 +360,49 @@ describe("starting a compare run", () => {
 
     expect(await screen.findByRole("button", { name: /^Folder:/ })).toBeInTheDocument();
     expect(prompt()).toHaveValue("fix the login");
+  });
+
+  /** Run A is open on its panel, then run B's worktrees are held while the user clicks A's group in the sidebar. */
+  async function openRunAWhileRunBIsMaking(worktree: (call: number) => Promise<unknown>) {
+    const spy = await renderApp({ worktree });
+    await tickAgents("Qwen Code");
+    await send("fix the login");
+    await screen.findByRole("region", { name: "Compare run" });
+    await click(screen.getByRole("button", { name: "+ New session" }));
+    await tickAgents("Qwen Code");
+    await send("add a readme");
+    await click(within(screen.getByRole("complementary")).getByRole("button", { name: /fix the login.*2 agents/ }));
+    return spy;
+  }
+
+  it("keeps the open run's panel when another run's worktrees finish", async () => {
+    const heldFirst = deferred<Worktree>();
+    const spy = await openRunAWhileRunBIsMaking((call) => (call === 3 ? heldFirst.promise : Promise.resolve(worktreeNumber(call))));
+    expect(within(await screen.findByRole("region", { name: "Compare run" })).getByRole("heading", { name: "fix the login" })).toBeInTheDocument();
+
+    await act(async () => heldFirst.resolve(worktreeNumber(3)));
+    await waitFor(() => expect(calls(spy, "acp_start_session")).toHaveLength(4));
+    await act(async () => {});
+
+    const panel = screen.getByRole("region", { name: "Compare run" });
+    expect(within(panel).getByRole("heading", { name: "fix the login" })).toBeInTheDocument();
+    expect(screen.getAllByRole("region", { name: "Compare run" })).toHaveLength(1);
+    // The second run is in the sidebar, not on screen.
+    expect(within(screen.getByRole("complementary")).getByRole("button", { name: /add a readme.*2 agents/ })).toBeInTheDocument();
+  });
+
+  it("brings the message back in a new draft when the other run's worktrees all failed", async () => {
+    const heldFirst = deferred<Worktree>();
+    await openRunAWhileRunBIsMaking((call) =>
+      call === 3 ? heldFirst.promise : call === 4 ? Promise.reject("no space") : Promise.resolve(worktreeNumber(call)),
+    );
+
+    await act(async () => heldFirst.reject("no space"));
+    await act(async () => {});
+
+    expect(await screen.findByRole("button", { name: /^Folder:/ })).toBeInTheDocument();
+    expect(prompt()).toHaveValue("add a readme");
+    expect(screen.queryByRole("region", { name: "Compare run" })).toBeNull();
   });
 
   it("skips an agent whose worktree cannot be made and names it", async () => {

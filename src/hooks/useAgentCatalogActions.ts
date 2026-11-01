@@ -77,7 +77,7 @@ export function useAgentCatalogActions({
     try {
       await saveNow();
     } catch (error) {
-      throw new Error(`Could not save version ${version}: ${String(error)}`);
+      throw new Error(`Could not save version ${version}: ${String(error)}`, { cause: error });
     }
     await Promise.all([reloadAgents().catch(ignore), reloadCatalog()]);
   };
@@ -103,12 +103,12 @@ export function useAgentCatalogActions({
     try {
       await saveNow();
     } catch (error) {
-      throw new Error(`Could not save the removal: ${String(error)}`);
+      throw new Error(`Could not save the removal: ${String(error)}`, { cause: error });
     }
     try {
       await invoke('remove_agent_install', { agentId: id });
     } catch (error) {
-      throw new Error(`Could not delete Zorvo's copy: ${String(error)}`);
+      throw new Error(`Could not delete Zorvo's copy: ${String(error)}`, { cause: error });
     }
   };
 

@@ -155,7 +155,8 @@ So Zorvo has to remember whom added comments are for.
 focuses it. `ComposerDock` gains `onTextChange(text)`, reported from an effect so it fires on every
 change, including `clear`, `restore` and Send, since `App` does not re-render on typing and a block on
 Send could otherwise never lift. It also gains `onRestored`, fired whenever `ComposerHandle.restore`
-runs.
+runs, and `onGivenBack`, fired whenever `ComposerHandle.giveBack` runs, with the returned text rather
+than the text it joined.
 
 A new hook, `useReviewMessage`, holds one slot, in memory only:
 
@@ -178,15 +179,20 @@ A new hook, `useReviewMessage`, holds one slot, in memory only:
   the text still holds that heading, since the heading is what says quoted lines are not
   instructions. Replacing the text keeps the slot.
 - **Lifting it.** The slot clears when the composer becomes empty, and whenever
-  `ComposerHandle.restore` puts in other text, through `onRestored`, since a rewind, a retry and a
-  sign-in hand-back all replace the text, several of them by calling it directly. Its comments go
-  back to plain comments, nothing is lost.
-- **A message that comes back.** Restored text with comments keeps its owner, or it would be the one
-  way comments reach the wrong session. `useReviewMessage` keeps the session and text of the last send
-  that held comments, with its target, so `sendFrom` takes the text and `onRestored` passes the
-  restored text. When they match, a refusal has put back what was just sent, and the slot re-arms for
-  that session with no comment ids: Send stays blocked everywhere else, and Send there marks nothing
-  new, as those comments already read Sent. An empty composer clears it as usual.
+  `ComposerHandle.restore` puts in other text, through `onRestored`. Only a rewind does that now, and
+  it replaces the comments' text, so they go back to plain comments and nothing is lost.
+  `ComposerHandle.giveBack`, which returns a message that did not reach the agent, keeps what the
+  composer holds, so it never lifts a slot: comments added meanwhile are still in the text.
+- **A message that comes back.** Text with comments that comes back keeps its owner, or it would be
+  the one way comments reach the wrong session. `useReviewMessage` keeps the session and text of the
+  last send that held comments, with its target, so `sendFrom` takes the text. `restore` of exactly
+  that text re-arms the slot for that session with no comment ids. `giveBack` does the same, through
+  `onComposerGivenBack`, when the returned text holds that message as a whole block between blank
+  lines or at either end, since `useUnsentMessages` joins messages that came back together. A slot
+  already set for the session keeps its comment ids, and one for another session stays, as Send is
+  blocked there anyway. So a failed send, a failed resume and a sign-in refusal all leave Send blocked
+  everywhere else, and Send there marks nothing new, as those comments already read Sent. An empty
+  composer clears it as usual.
 - **A session that is gone.** A deleted session has no title, so the note says "another session". An
   archived one says so. Clearing the composer lifts the block either way.
 
@@ -202,7 +208,7 @@ still holds the heading. It decides nothing else, and no comment's state follows
 Zorvo does not try to learn which comments reached the agent. `acp_prompt` returns on write, stop
 reasons differ per agent, and matching text in an editable box breaks on a single typo. Instead:
 
-1. When the composer's message goes to the slot's session, through `sendTo` or `resumeSession` in
+1. When the composer's message goes to the slot's session, through `sendFromComposer` or `resumeSession` in
    `handleSendMessage`, the slot's comments get `sentAt` and the slot clears. `handleSendMessage` can
    also fall through to `handleNewRun` or `handleNewSession` when the session cannot continue, but
    not with comments for it in the message: that Send is blocked, with the "cannot continue" note.

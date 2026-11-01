@@ -576,6 +576,19 @@ describe("ComposerDock review comments", () => {
     expect(onRestored).toHaveBeenCalledWith("same");
   });
 
+  it("gives back the returned text to onGivenBack, not what it became", () => {
+    const onGivenBack = vi.fn();
+    const onRestored = vi.fn();
+    const handle = renderDock({ onGivenBack, onRestored });
+    fireEvent.change(prompt(), { target: { value: "typed since" } });
+
+    act(() => handle.current?.giveBack("the message"));
+
+    expect(onGivenBack).toHaveBeenCalledWith("the message");
+    expect(onRestored).not.toHaveBeenCalled();
+    expect(prompt()).toHaveValue("the message\n\ntyped since");
+  });
+
   it("does not call onRestored on clear or insertText", () => {
     const onRestored = vi.fn();
     const handle = renderDock({ onRestored });

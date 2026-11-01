@@ -102,6 +102,8 @@ export interface ComposerDockProps {
   onTextChange?: (text: string) => void;
   /** Every time `restore` runs, even with the text already there. */
   onRestored?: (text: string) => void;
+  /** Every time `giveBack` runs, with the message returned, not the text it joined. */
+  onGivenBack?: (returnedText: string) => void;
 }
 
 export function ComposerDock({
@@ -124,6 +126,7 @@ export function ComposerDock({
   mentions,
   onTextChange,
   onRestored,
+  onGivenBack,
 }: ComposerDockProps) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
@@ -283,6 +286,7 @@ export function ComposerDock({
       if (attachAsFiles) setAttachments(nextAttachments);
       restoredRef.current = { text: nextText, attachments: nextAttachments };
       textareaRef.current?.focus();
+      onGivenBack?.(returnedText);
     },
     holdsRestored: (message) => {
       const restored = restoredRef.current;

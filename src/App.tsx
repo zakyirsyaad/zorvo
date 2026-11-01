@@ -1058,6 +1058,7 @@ export default function App() {
                     handleRef={composerRef}
                     onTextChange={review.onComposerText}
                     onRestored={review.onComposerRestored}
+                    onGivenBack={review.onComposerGivenBack}
                     commands={compare.isCompare ? [] : composerCommands}
                     note={composerNote({
                       reviewOwner: review.reviewOwner,

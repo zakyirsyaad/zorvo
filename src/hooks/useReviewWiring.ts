@@ -31,6 +31,7 @@ export interface ReviewWiring {
   sendFrom: (sessionId: string, text: string) => void;
   onComposerText: (text: string) => void;
   onComposerRestored: (text: string) => void;
+  onComposerGivenBack: (text: string) => void;
 }
 
 /** What `App` joins: the session's comments, the composer, and the slot that says whom its comments are for. */
@@ -70,7 +71,7 @@ export function useReviewWiring({
       change(sessionId, ids, (comment) => ({ ...comment, sentAt }));
     },
   });
-  const { slot, inMessage, sendFrom, onComposerText, onComposerRestored } = message;
+  const { slot, inMessage, sendFrom, onComposerText, onComposerRestored, onComposerGivenBack } = message;
   const isOwnSessionStuck = slot !== null && slot.sessionId === session?.id && !canContinue;
   const blocksSend = message.blocksSend || isOwnSessionStuck;
 
@@ -120,5 +121,9 @@ export function useReviewWiring({
     sendFrom,
     onComposerText,
     onComposerRestored,
+    // A message only ever comes back to the composer of the session on screen.
+    onComposerGivenBack: (text) => {
+      if (session) onComposerGivenBack(session.id, text);
+    },
   };
 }

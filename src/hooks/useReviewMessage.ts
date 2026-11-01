@@ -24,9 +24,14 @@ export interface ReviewMessage {
   onComposerText: (text: string) => void;
   /** Restored text replaced the comments, which lifts the slot, unless it is the text they just went out in. */
   onComposerRestored: (text: string) => void;
+  /** `text` came back to `sessionId`'s composer beside what is there, so a slot stays; it re-arms one for what just went out. */
+  onComposerGivenBack: (sessionId: string, text: string) => void;
   /** Marks the slot's comments Sent and clears it, when `text` went to the slot's session. */
   sendFrom: (sessionId: string, text: string) => void;
 }
+
+/** Whether `block` stands alone in `text`: at either end or between blank lines, as messages given back together are joined. */
+const holdsBlock = (text: string, block: string) => `\n\n${text}\n\n`.includes(`\n\n${block}\n\n`);
 
 /**
  * One composer serves every session and keeps its text across a switch, so this remembers whom
@@ -39,7 +44,7 @@ export function useReviewMessage({ activeSessionId, markSent }: {
   const [slot, setSlot] = useState<ReviewSlot | null>(null);
   // Read only for the heading, which says quoted lines are not instructions: replacing the text keeps the slot.
   const composerText = useRef('');
-  // A refused message comes back holding its comments, already marked Sent: this says whom it is still for.
+  // A message that did not reach the agent comes back holding its comments, already marked Sent: this says whom it is still for.
   const lastSend = useRef<(Pick<ReviewSlot, 'sessionId' | 'lastTarget'> & { text: string }) | null>(null);
   const isActiveSessions = slot !== null && slot.sessionId === activeSessionId;
 
@@ -63,6 +68,12 @@ export function useReviewMessage({ activeSessionId, markSent }: {
     onComposerRestored: (text) => {
       const sent = lastSend.current;
       setSlot(sent?.text === text ? { sessionId: sent.sessionId, commentIds: [], lastTarget: sent.lastTarget } : null);
+    },
+    onComposerGivenBack: (sessionId, text) => {
+      const sent = lastSend.current;
+      if (!sent?.text || sent.sessionId !== sessionId || !holdsBlock(text, sent.text)) return;
+      // A slot here keeps its comments; one for another session already blocks Send here.
+      setSlot((prev) => prev ?? { sessionId, commentIds: [], lastTarget: sent.lastTarget });
     },
     sendFrom: (sessionId, text) => {
       if (slot?.sessionId !== sessionId) return;

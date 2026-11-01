@@ -37,7 +37,7 @@ export function useUnsentMessages(deps: UnsentMessagesDeps) {
 
   const deliver = useCallback(({ composerRef, activeSessionId }: UnsentMessagesDeps) => {
     const waiting = kept.current.get(activeSessionId);
-    // A run's panel has no composer: the message waits for the session's to mount.
+    // A run's panel shows no session (its id is empty) and hides the composer: the message waits for its row to open.
     if (!waiting || !composerRef.current) return;
     kept.current.delete(activeSessionId);
     const { text, attachments } = combined(waiting);

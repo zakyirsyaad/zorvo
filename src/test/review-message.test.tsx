@@ -106,12 +106,16 @@ type SpyOptions = {
   profiles?: AgentProfile[];
   targets?: () => Promise<unknown>;
   diff?: () => Promise<string>;
+  /** Commands answered otherwise right now; a test can change it. */
+  overrides?: Record<string, () => Promise<unknown>>;
 };
 
 function seed(sessions: unknown[], options: SpyOptions = {}) {
   let worktrees = 0;
   fakeStore().state.sessions = sessions as FakeTauriStore["state"]["sessions"];
   return vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
+    const override = options.overrides?.[cmd];
+    if (override) return override();
     if (cmd === "get_agent_profiles") return Promise.resolve(structuredClone(options.profiles ?? fakeProfiles));
     if (cmd === "session_diff_targets") {
       if (options.failing?.targets) return Promise.reject(new Error("no targets"));
@@ -968,6 +972,148 @@ describe("A message with comments that comes back", () => {
     expect(within(panel()).queryByText("In message")).toBeNull();
   });
 
+  /** Puts the session in a turn-free running state, with its comments in the message. */
+  async function runningWithComments(spy: { mock: { calls: unknown[][] } }) {
+    typeInPrompt("Carry on");
+    await send();
+    await waitFor(() => expect(promptsSent(spy)).toHaveLength(1));
+    await endTurn("s-a");
+    await addAll();
+  }
+
+  /** Back in the session, Send takes the message and marks no comment a second time. */
+  async function sendsFromItsOwnSession(spy: { mock: { calls: unknown[][] } }, written: string, prompts: number) {
+    const { sentAt } = (await savedComments("s-a"))[0];
+    expect(sentAt).toEqual(expect.any(Number));
+    await openSession("Alpha work");
+    expect(screen.queryByText(NOTE_FOR_ALPHA)).toBeNull();
+    expect(prompt().value).toBe(written);
+    await send();
+    await waitFor(() => expect(promptsSent(spy)).toHaveLength(prompts));
+    expect((await savedComments("s-a"))[0].sentAt).toBe(sentAt);
+  }
+
+  it("a failed send: it comes back for its session, and Send elsewhere is blocked", async () => {
+    const overrides: NonNullable<SpyOptions["overrides"]> = {};
+    const spy = await renderDiff([alpha(), beta()], { overrides });
+    await runningWithComments(spy);
+    const written = prompt().value;
+
+    overrides.acp_prompt = () => Promise.reject(new Error("the agent went away"));
+    await send();
+    await waitFor(() => expect(prompt().value).toBe(written));
+    await openSession("Beta work");
+
+    expect(screen.getByText(NOTE_FOR_ALPHA)).toBeDefined();
+    expect(sendButton()).toBeDisabled();
+    delete overrides.acp_prompt;
+    await sendsFromItsOwnSession(spy, written, 3);
+  });
+
+  it("a sign-in refusal while another session is on screen: it waits, and keeps its owner", async () => {
+    const spy = await renderDiff([alpha(), beta()]);
+    await runningWithComments(spy);
+    const written = prompt().value;
+    await send();
+    await waitFor(() => expect(promptsSent(spy)).toHaveLength(2));
+    await openSession("Beta work");
+
+    await act(async () => {
+      (listeners.get("acp-event") ?? []).forEach((cb) => cb({ payload: { sessionId: "s-a", kind: "turn-end", error: REFUSAL } }));
+    });
+    expect(prompt().value).toBe("");
+    await openSession("Alpha work");
+    await waitFor(() => expect(prompt().value).toBe(written));
+    await openSession("Beta work");
+
+    expect(screen.getByText(NOTE_FOR_ALPHA)).toBeDefined();
+    expect(sendButton()).toBeDisabled();
+    await openSession("Alpha work");
+    await press("Dismiss sign-in");
+    await send();
+    await waitFor(() => expect(promptsSent(spy)).toHaveLength(3));
+  });
+
+  it("an older message coming back keeps what was added and typed after it", async () => {
+    const held = { reject: (_reason: unknown) => {} };
+    const overrides: NonNullable<SpyOptions["overrides"]> = {};
+    const spy = await renderDiff([alpha(), beta()], { overrides });
+    overrides.acp_prompt = () => new Promise((_resolve, reject) => (held.reject = reject));
+    typeInPrompt("Older message");
+    await send();
+    await waitFor(() => expect(promptsSent(spy)).toHaveLength(1));
+    await addAll();
+    typeInPrompt(`${prompt().value}\n\nAnd more.`);
+    const written = prompt().value;
+
+    await act(async () => held.reject(new Error("the agent went away")));
+
+    await waitFor(() => expect(prompt().value).toBe(`Older message\n\n${written}`));
+    expect(within(panel()).getByText("In message")).toBeDefined();
+    await openSession("Beta work");
+    expect(screen.getByText(NOTE_FOR_ALPHA)).toBeDefined();
+  });
+
+  it("a resume that fails: it comes back for its session, and Send elsewhere is blocked", async () => {
+    const overrides: NonNullable<SpyOptions["overrides"]> = {};
+    const spy = await renderDiff([alpha(), beta()], { overrides });
+    await addAll();
+    const written = prompt().value;
+
+    overrides.acp_reopen_session = () => Promise.reject("session not found");
+    await send();
+    await waitFor(() => expect(prompt().value).toBe(written));
+    await openSession("Beta work");
+
+    expect(screen.getByText(NOTE_FOR_ALPHA)).toBeDefined();
+    expect(sendButton()).toBeDisabled();
+    delete overrides.acp_reopen_session;
+    await sendsFromItsOwnSession(spy, written, 1);
+  });
+
+  it("a rewind still lifts the slot, as its text replaces the comments", async () => {
+    seedTranscript();
+    await renderDiff([alpha(), beta()]);
+    await addAll();
+
+    await rewindTo("plan the parser");
+    await openSession("Beta work");
+
+    expect(screen.queryByText(NOTE_FOR_ALPHA)).toBeNull();
+    expect(prompt().value).toBe("plan the parser");
+  });
+
+  it("a message given back while its run's panel shows waits, and lands when the row opens", async () => {
+    const held = { reject: (_reason: unknown) => {} };
+    const overrides: NonNullable<SpyOptions["overrides"]> = {};
+    const spy = await renderDiff(
+      [
+        alpha([commentOf()], { compareRunId: "run-1", name: "Fix the login" }),
+        sessionOf("s-b", "Fix the login", [], { profileId: "qwen-code", compareRunId: "run-1" }),
+      ],
+      { overrides },
+    );
+    typeInPrompt("Carry on");
+    await send();
+    await waitFor(() => expect(promptsSent(spy)).toHaveLength(1));
+    await endTurn("s-a");
+    overrides.acp_prompt = () => new Promise((_resolve, reject) => (held.reject = reject));
+    typeInPrompt("Second message");
+    await send();
+    await waitFor(() => expect(promptsSent(spy)).toHaveLength(2));
+    await press(/Fix the login.*2 agents/);
+
+    await act(async () => held.reject(new Error("the agent went away")));
+
+    expect(screen.queryByRole("textbox", { name: "Prompt" })).toBeNull();
+    await press("Open Qwen Code");
+    expect(prompt().value).toBe("");
+    await press(/Fix the login.*2 agents/);
+    await press("Open Claude Code");
+
+    await waitFor(() => expect(prompt().value).toBe("Second message"));
+  });
+
   /** The slot's hook on its own, with the session on screen as a prop. */
   function renderMessage() {
     const markSent = vi.fn();
@@ -1029,6 +1175,64 @@ describe("A message with comments that comes back", () => {
     act(() => result.current.onComposerText(""));
 
     expect(result.current.blocksSend).toBe(false);
+  });
+
+  it("re-arms when the text is given back, with no comments", () => {
+    const { result } = renderMessage();
+
+    act(() => result.current.onComposerGivenBack("s-a", "the text"));
+
+    expect(result.current.slot).toEqual({ sessionId: "s-a", commentIds: [], lastTarget: "head" });
+  });
+
+  it.each([
+    ["first", "the text\n\nnewer"],
+    ["last", "older\n\nthe text"],
+    ["between others", "older\n\nthe text\n\nnewer"],
+  ])("re-arms when several came back together and the text is %s", (_place, returned) => {
+    const { result } = renderMessage();
+
+    act(() => result.current.onComposerGivenBack("s-a", returned));
+
+    expect(result.current.slot?.sessionId).toBe("s-a");
+  });
+
+  it.each([
+    ["other text", "something else"],
+    ["the text inside a longer line", "not the text at all"],
+    ["the text joined to the next line", "the text\nand more"],
+  ])("holds nothing when what came back is %s", (_name, returned) => {
+    const { result } = renderMessage();
+
+    act(() => result.current.onComposerGivenBack("s-a", returned));
+
+    expect(result.current.slot).toBeNull();
+  });
+
+  it("holds nothing for a message that came back to another session", () => {
+    const { result } = renderMessage();
+
+    act(() => result.current.onComposerGivenBack("s-b", "the text"));
+
+    expect(result.current.slot).toBeNull();
+  });
+
+  it("keeps a slot and its comments when an older message comes back", () => {
+    const { result } = renderMessage();
+    act(() => result.current.add("s-a", ["c-2"], "base"));
+
+    act(() => result.current.onComposerGivenBack("s-a", "the text"));
+
+    expect(result.current.slot).toEqual({ sessionId: "s-a", commentIds: ["c-2"], lastTarget: "base" });
+  });
+
+  it("leaves another session's slot alone: Send is already blocked here", () => {
+    const { result } = renderMessage();
+    act(() => result.current.add("s-b", ["c-3"], "head"));
+
+    act(() => result.current.onComposerGivenBack("s-a", "the text"));
+
+    expect(result.current.slot).toEqual({ sessionId: "s-b", commentIds: ["c-3"], lastTarget: "head" });
   });
 
   it("holds nothing for text that came back from a send without comments", () => {

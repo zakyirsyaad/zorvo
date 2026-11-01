@@ -14,6 +14,8 @@ export interface CompareRunRowProps {
   /** Another pick is under way, or this one is being confirmed elsewhere. */
   isPickDisabled: boolean;
   onOpen: (sessionId: string) => void;
+  /** Opens the session with its diff beside the chat. */
+  onReview: (sessionId: string) => void;
   onChoose: (sessionId: string, cardId: string, optionId: string) => void;
   onPick: (sessionId: string) => void;
 }
@@ -28,8 +30,16 @@ const STATUS_STYLES: Record<RunRowStatus, string> = {
   stopped: "text-fg-muted",
 };
 
-/** What the agent changed in its worktree since the run began, or — when that cannot be read. */
-function Changes({ facts, version, status }: { facts: RowFacts; version: number; status: RunRowStatus }) {
+interface ChangesProps {
+  facts: RowFacts;
+  agentName: string;
+  version: number;
+  status: RunRowStatus;
+  onReview: (sessionId: string) => void;
+}
+
+/** What the agent changed in its worktree since the run began, or — when that cannot be read. With changes, the numbers open them. */
+function Changes({ facts, agentName, version, status, onReview }: ChangesProps) {
   const { cwd, worktree } = facts.session;
   const [error, setError] = useState<string | null>(null);
   // Read through the agent's folder: from a subfolder it is the known workspace, not the worktree's root.
@@ -43,20 +53,40 @@ function Changes({ facts, version, status }: { facts: RowFacts; version: number;
     );
   }
   const { added, removed } = totalsOf(stats);
-  return (
-    <span className="flex items-center gap-2 text-xs text-fg-muted">
+  const numbers = (
+    <>
       <span>{stats.length === 1 ? "1 file" : `${formatLineCount(stats.length)} files`}</span>
       <span className="text-status-running">+{formatLineCount(added)}</span>
       <span className="text-danger">
         {MINUS}
         {formatLineCount(removed)}
       </span>
-    </span>
+    </>
+  );
+  if (stats.length === 0) return <span className="flex items-center gap-2 text-xs text-fg-muted">{numbers}</span>;
+  return (
+    <button
+      type="button"
+      aria-label={`Review ${agentName}'s changes`}
+      className="flex items-center gap-2 rounded-md text-xs text-fg-muted transition-colors hover:text-fg-secondary focus-ring"
+      onClick={() => onReview(facts.session.id)}
+    >
+      {numbers}
+    </button>
   );
 }
 
 /** One agent of a compare run: its state, what it changed, and a way to open or keep it. */
-export function CompareRunRow({ facts, agentName, version, isPickDisabled, onOpen, onChoose, onPick }: CompareRunRowProps) {
+export function CompareRunRow({
+  facts,
+  agentName,
+  version,
+  isPickDisabled,
+  onOpen,
+  onReview,
+  onChoose,
+  onPick,
+}: CompareRunRowProps) {
   const { session, pendingCard } = facts;
   const status = rowStatus(facts);
   return (
@@ -73,7 +103,7 @@ export function CompareRunRow({ facts, agentName, version, isPickDisabled, onOpe
         </Button>
         <span className={`text-xs font-medium ${STATUS_STYLES[status]}`}>{statusLabel(status)}</span>
         <div className="ml-auto flex items-center gap-3">
-          <Changes facts={facts} version={version} status={status} />
+          <Changes facts={facts} agentName={agentName} version={version} status={status} onReview={onReview} />
           <Button aria-label={`Pick ${agentName}`} variant="primary" disabled={isPickDisabled} onClick={() => onPick(session.id)}>
             Pick
           </Button>

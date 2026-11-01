@@ -1,6 +1,8 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, renderHook, waitFor, within } from "@testing-library/react";
+import { fakeTauriInvoke, type FakeTauriStore } from "./setup";
+import App from "../App";
 import { CompareRunPanel, type CompareRunPanelProps } from "../components/compare/CompareRunPanel";
 import { useCompareRun, type CompareRunDeps } from "../hooks/useCompareRun";
 import { rowFactsOf, rowStatus, type CompareRun, type RowFacts } from "../lib/compare-run";
@@ -23,7 +25,12 @@ function tauriInternals(): TauriInternals {
   return (window as unknown as { __TAURI_INTERNALS__: TauriInternals }).__TAURI_INTERNALS__;
 }
 
-const NAMES: Record<string, string> = { "claude-acp": "Claude Code", "qwen-code": "Qwen Code", kimi: "Kimi CLI" };
+const NAMES: Record<string, string> = {
+  "claude-acp": "Claude Code",
+  "qwen-code": "Qwen Code",
+  kimi: "Kimi CLI",
+  opencode: "OpenCode",
+};
 
 function session(n: number, overrides: Partial<Session> = {}): Session {
   const profileId = ["claude-acp", "qwen-code", "kimi"][n - 1];
@@ -103,6 +110,7 @@ function props(rows: RowFacts[], overrides: Partial<CompareRunPanelProps> = {}):
     version: 0,
     agentName: (profileId) => NAMES[profileId] ?? profileId,
     onOpen: vi.fn(),
+    onReview: vi.fn(),
     onChoose: vi.fn(),
     onPick: vi.fn(),
     ...overrides,
@@ -197,6 +205,28 @@ describe("CompareRunPanel", () => {
     rerender(<CompareRunPanel {...props(rows, { version: 1 })} />);
 
     await waitFor(() => expect(reads()).toBe(4));
+  });
+
+  it("a row's numbers open its diff", async () => {
+    answerDiffs({ "/wt/1": [stat("a.ts", 3, 1)] });
+    const p = props([facts(1, {}, { profileId: "opencode" }), facts(2)]);
+    await renderPanel(p);
+
+    const review = await within(rowOf("OpenCode")).findByRole("button", { name: "Review OpenCode's changes" });
+    expect(review).toHaveTextContent("1 file+3−1");
+    fireEvent.click(review);
+
+    expect(p.onReview).toHaveBeenCalledWith("s-1");
+    expect(p.onOpen).not.toHaveBeenCalled();
+  });
+
+  it("a row with no changes or no numbers has no review button", async () => {
+    answerDiffs({ "/wt/1": [], "/wt/2": new Error("not a repository") });
+    await renderPanel(props([facts(1), facts(2)]));
+
+    await waitFor(() => expect(within(rowOf("Claude Code")).getByText("0 files")).toBeInTheDocument());
+    expect(within(rowOf("Qwen Code")).getByText("—")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Review / })).toBeNull();
   });
 
   it("a permission request shows the agent's own options in the row", async () => {
@@ -320,6 +350,35 @@ describe("CompareRunPanel", () => {
     expect(screen.getByRole("button", { name: "Pick Qwen Code" })).toBeDisabled();
     await act(async () => finish());
     expect(screen.getByRole("button", { name: "Pick Qwen Code" })).toBeEnabled();
+  });
+});
+
+describe("reviewing a row in the app", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("opens its session with the diff on the start of its worktree", async () => {
+    const store = (window as unknown as { __FAKE_TAURI_STORE__: FakeTauriStore }).__FAKE_TAURI_STORE__;
+    store.state.sessions = [session(1), session(2)];
+    vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) =>
+      cmd === "session_diff_stats_since" ? Promise.resolve([stat("a.ts", 3, 1)]) : fakeTauriInvoke(cmd, args),
+    );
+    await act(async () => {
+      render(<App />);
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: /Fix the login.*2 agents/ }));
+    });
+
+    const review = await within(screen.getByRole("region", { name: "Compare run" })).findByRole("button", {
+      name: "Review Claude Code's changes",
+    });
+    await act(async () => {
+      fireEvent.click(review);
+    });
+
+    expect(await screen.findByRole("button", { name: "Diff target: Start of this worktree → working tree" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Compare run" })).toBeNull();
+    expect(await screen.findByText("changed since " + "1".repeat(40))).toBeInTheDocument();
   });
 });
 

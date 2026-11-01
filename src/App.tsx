@@ -958,6 +958,10 @@ export default function App() {
                   version={runVersion}
                   agentName={(profileId) => agents.find((a) => a.id === profileId)?.name ?? profileId}
                   onOpen={handleSelectSession}
+                  onReview={(sessionId) => {
+                    handleSelectSession(sessionId);
+                    sidePanel.show("diff");
+                  }}
                   onChoose={chooseOption}
                   onPick={(winnerId) => compareRun.pick(activeRun, winnerId)}
                 />

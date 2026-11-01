@@ -18,7 +18,7 @@ modes, models, permissions and diffs.
 | | |
 |---|---|
 | Audience | Individual developers who use more than one coding agent, worldwide. English first. |
-| Business model | Freemium: the desktop app is free, a Pro plan is paid monthly or yearly. |
+| Business model | Free and open source under Apache-2.0. No paid plan for now: the goal is users and reputation. |
 | Core promise | Vendor-neutral. Bring your own agent: no lock-in, no API keys, switch any time. |
 | Against | Single-vendor apps (an agent maker's own desktop app) and tools built around one agent. The difference is neutrality, not speed. |
 
@@ -167,8 +167,8 @@ Söhne.
 
 ## Open items
 
-Items 3 and 4 are done; the rest are not, and each is its own piece of
-work:
+Items 3 and 4 are done and item 6 was dropped; the rest are not, and each
+is its own piece of work:
 
 1. **Buy `zorvo.xyz`** (and `zorvo.dev` if it is free). Unregistered names
    can be taken at any time.
@@ -187,4 +187,5 @@ work:
    touch icon is the app icon's 256px PNG.
 5. **Homebrew cask** if the landing page is to offer
    `brew install --cask zorvo`; until it exists, the page offers the `.dmg`.
-6. **Pro plan scope:** which features are paid.
+6. ~~**Pro plan scope.**~~ Dropped on 2026-11-01: Zorvo is free and open
+   source, and a paid plan is a question for later.

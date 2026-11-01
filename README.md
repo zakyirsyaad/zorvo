@@ -250,4 +250,5 @@ local `pnpm tauri build` signs the update package too, so it needs
 
 ## License
 
-No license has been granted yet, so all rights are reserved by the author.
+Zorvo is licensed under the [Apache License 2.0](LICENSE). The license does not
+cover the Zorvo name or logo.

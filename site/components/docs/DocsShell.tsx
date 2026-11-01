@@ -184,7 +184,7 @@ export function DocsShell({ current, title, lead, toc = [], children }: DocsShel
       </div>
       <footer className="mt-auto border-t border-border">
         <div className="site-wrap flex flex-wrap justify-between gap-3 pt-5 pb-6">
-          <p className="t-caption m-0">© 2026 Zorvo. All rights reserved.</p>
+          <p className="t-caption m-0">© 2026 Zorvo.</p>
           <p className="t-caption m-0 max-w-[560px]">
             Docs for Zorvo {appPackage.version}. Agent names and logos belong to their makers. Zorvo
             works with them and is not endorsed by them.

@@ -2,6 +2,7 @@ import { useId, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { Plus, CornerDownLeft, Shield, ShieldAlert, Sparkles, Gauge, SlidersHorizontal, Square, Bot } from "lucide-react";
 import { IconButton } from "./ui/IconButton";
 import { OptionDropdown } from "./composer/OptionDropdown";
+import { AgentMultiPicker, type AgentMultiPickerProps } from "./composer/AgentMultiPicker";
 import { FolderPicker, type FolderControl } from "./composer/FolderPicker";
 import { appendAttachments, formatAttachmentPath, withAttachments } from "../lib/attachments";
 import { joinWorkspacePath } from "../lib/files";
@@ -74,6 +75,8 @@ export interface ComposerDockProps {
   folder?: FolderControl;
   /** Before a new session starts: the agent it runs. */
   agent?: ComposerControl;
+  /** Before a new session starts, in a git repository: the agent chip with a checkbox to tick several; replaces `agent`. */
+  agents?: Omit<AgentMultiPickerProps, "isOpen" | "onToggle">;
   /** The workspace whose files `@` lists; mentions are off when absent. */
   mentions?: MentionSource;
 }
@@ -94,6 +97,7 @@ export function ComposerDock({
   note,
   folder,
   agent,
+  agents,
   mentions,
 }: ComposerDockProps) {
   const [text, setText] = useState("");
@@ -313,7 +317,19 @@ export function ComposerDock({
               <FolderPicker {...folder} isOpen={openDropdown === "folder"} onToggle={() => toggle("folder")} />
             )}
 
-            {agent && (
+            {agents && (
+              <AgentMultiPicker
+                {...agents}
+                isOpen={openDropdown === "agent"}
+                onToggle={() => toggle("agent")}
+                onPick={(agentId) => {
+                  agents.onPick(agentId);
+                  setOpenDropdown(null);
+                }}
+              />
+            )}
+
+            {!agents && agent && (
               <OptionDropdown
                 label="Agent"
                 align="left"

@@ -10,7 +10,12 @@ export interface FolderControl {
   /** Opens the native folder dialog; the entry is hidden when absent. */
   onOpenFolder?: () => void;
   /** Whether the session gets its own worktree; offered only for a git repository. */
-  worktree?: { isOn: boolean; onChange: (isOn: boolean) => void };
+  worktree?: {
+    isOn: boolean;
+    onChange: (isOn: boolean) => void;
+    /** Why the switch cannot be turned off (several agents run, each in its own worktree); it stays on and is disabled. */
+    lockedReason?: string;
+  };
   /** The branch the session starts on; offered only for a git repository. */
   branch?: BranchControl;
 }
@@ -168,9 +173,13 @@ export function FolderPicker({ folders, selectedPath, onSelect, onOpenFolder, wo
                   role="switch"
                   aria-checked={worktree.isOn}
                   aria-label="Worktree"
-                  title="Run the session in its own checkout, on a new branch, so it does not touch your working copy"
+                  title={
+                    worktree.lockedReason ??
+                    "Run the session in its own checkout, on a new branch, so it does not touch your working copy"
+                  }
+                  disabled={worktree.lockedReason !== undefined}
                   onClick={() => worktree.onChange(!worktree.isOn)}
-                  className="flex w-full items-center justify-between gap-2 rounded px-2.5 py-1.5 text-left text-xs text-fg-secondary transition-colors hover:bg-surface-hover hover:text-fg"
+                  className="flex w-full items-center justify-between gap-2 rounded px-2.5 py-1.5 text-left text-xs text-fg-secondary transition-colors hover:bg-surface-hover hover:text-fg focus-ring disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-fg-secondary"
                 >
                   <span>Worktree</span>
                   <span

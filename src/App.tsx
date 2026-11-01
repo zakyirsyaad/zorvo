@@ -87,6 +87,8 @@ import { pickFiles } from "./lib/file-picker";
 import { useFileDrop } from "./hooks/useFileDrop";
 import { isAgentReady, isAgentRunnable, noAgentNotice, resolveDraftAgentId } from "./lib/agent-readiness";
 import { isInUse, removedAgentNameFor } from "./lib/enabled-agents";
+import { useCompareDraft } from "./hooks/useCompareDraft";
+import { compareAgentOptions } from "./lib/composer-controls";
 import { composerCommandsFor, composerNote, composerPlaceholder, composerStateFor } from "./lib/composer-state";
 import {
   NO_CHOICES,
@@ -170,8 +172,7 @@ export default function App() {
   // An agent not installed yet is offered too: picking it shows its Install panel.
   const pickableAgents = agentsInUse;
   const defaultAgentId = resolveDraftAgentId(agentsInUse, state.settings.defaultAgentId, pickableAgents);
-  const newSessionAgentId = pickableAgents.find((a) => a.id === pickedAgentId)?.id ?? defaultAgentId;
-  const newSessionAgent = agents.find((a) => a.id === newSessionAgentId);
+  const primaryAgentId = pickableAgents.find((a) => a.id === pickedAgentId)?.id ?? defaultAgentId;
   // No session is selected: the window shows a new one, not started until its first message.
   const isNewSessionDraft = !activeSession;
   // A session shows the folder it runs in, even one no longer in the recents.
@@ -183,10 +184,15 @@ export default function App() {
   // every saved session's folder, so one gone from the recents keeps them.
   const isRepository = Boolean(workspaceDetails?.branch);
   const canUseWorktree = isNewSessionDraft && isRepository;
+  // In a repository the Agent chip can tick several agents; the first ticked one is the draft's agent.
+  const compare = useCompareDraft({ primaryAgentId, isRepository: canUseWorktree });
+  const newSessionAgent = agents.find((a) => a.id === (compare.agentIds[0] ?? primaryAgentId));
+  // Several agents each run in their own worktree, so Worktree is on whatever it was set to.
+  const isWorktreeActive = canUseWorktree && (isWorktreeOn || compare.isCompare);
   const branchPicker = useBranchPicker({
     folderPath: isNewSessionDraft ? activeWorkspacePath : undefined,
     checkedOut: workspaceDetails?.branch ?? undefined,
-    isWorktreeOn: isWorktreeOn && canUseWorktree,
+    isWorktreeOn: isWorktreeActive,
     onSwitched: () => setBranchCheck((n) => n + 1),
     onNotice: setNotice,
   });
@@ -289,7 +295,8 @@ export default function App() {
 
   // A draft asks its ACP agent what it offers, and whether it needs a sign-in, before the first message.
   const agentCheck = useDraftAgentCheck({
-    agent: isActiveRunning || !isDraftAgentReady ? undefined : draftAgent,
+    // Several agents are not asked: nothing starts until Send, and the chips they feed are hidden.
+    agent: isActiveRunning || !isDraftAgentReady || compare.isCompare ? undefined : draftAgent,
     cwd: shownFolderPath ?? undefined,
     agentOptions: state.agentOptions,
     rememberProbed,
@@ -425,7 +432,7 @@ export default function App() {
     const name = first ? titleFor(first) : nextSessionName(sessions);
     let worktree: SessionWorktree | null = null;
     let cwd = activeWorkspace.path;
-    if (isWorktreeOn && canUseWorktree) {
+    if (isWorktreeActive) {
       setIsCreatingWorktree(true);
       try {
         ({ worktree, cwd } = await createSessionWorktree(activeWorkspace.path, name, branchPicker.baseBranch));
@@ -450,6 +457,7 @@ export default function App() {
       }
     }
     setPickedAgentId(null);
+    compare.reset();
     startSession({ agent: newSessionAgent, cwd, name, worktree }, message);
     // The base was this session's: the next draft starts from the folder's own branch.
     if (worktree) branchPicker.reset();
@@ -468,6 +476,7 @@ export default function App() {
   const openNewSession = (path?: string, agentId?: string, options?: OpenNewSessionOptions) => {
     if (path) chooseFolder(path);
     setPickedAgentId(agentId ?? null);
+    compare.reset();
     // A fresh draft: picks left from an earlier one would override the model picked last.
     // A failed import returns to the draft it started from, so its picks stay: it did not open.
     if (!options?.keepChoices) setAcpChoices(NO_CHOICES);
@@ -488,6 +497,7 @@ export default function App() {
     setActiveSessionId(sessionId);
     // An agent picked for a new session that was never started is forgotten.
     setPickedAgentId(null);
+    compare.reset();
     const selected = sessionById(sessionId);
     const workspacePath = selected && workspacePathOf(selected);
     if (workspacePath && workspaces.some((ws) => ws.path === workspacePath)) selectWorkspace(workspacePath);
@@ -561,7 +571,7 @@ export default function App() {
   const draftSessionList = useDraftSessionList({
     agent: isNewSessionDraft ? newSessionAgent : undefined, cwd: activeWorkspace?.path, sessions,
     activeSessionId,
-    isShown: Boolean(isNewSessionDraft && newSessionAgent && agentCheck.canListSessions(newSessionAgent.id) && !(isWorktreeOn && canUseWorktree)),
+    isShown: Boolean(isNewSessionDraft && newSessionAgent && agentCheck.canListSessions(newSessionAgent.id) && !isWorktreeActive),
     listSessions: acp.listSessions, acp, choices: startChoices, onChoicesUsed: () => setAcpChoices(NO_CHOICES),
     recordSession, openSession: handleSelectSession, discardSession: sessionActions.discardSession, openNewSession, requestSignIn: signIn.auth.requestSignIn,
   });
@@ -640,6 +650,8 @@ export default function App() {
     onPick: rememberPick,
     onPickModel: rememberModelPick,
   });
+  // Several agents are not asked and nothing is picked for them yet: Send only waits for the single agent's install or sign-in.
+  const isSendBlocked = !compare.isCompare && (draftNeedsInstall || draftNeedsSignIn);
   const composerCommands = composerCommandsFor({
     isRunning: isActiveRunning,
     liveCommands: acp.info[activeSessionId]?.commands,
@@ -803,7 +815,7 @@ export default function App() {
                   details={workspaceDetails}
                   agentName={newSessionAgent?.name}
                   unavailableReason={areAgentsLoaded && !agentsInUse.some(isAgentReady) ? noAgentNotice(agentsInUse) : undefined}
-                  worktreeBaseBranch={isWorktreeOn && canUseWorktree ? branchPicker.baseBranch : undefined}
+                  worktreeBaseBranch={isWorktreeActive ? branchPicker.baseBranch : undefined}
                   sessionList={draftSessionList.sessionList}
                 />
               ) : (
@@ -815,28 +827,29 @@ export default function App() {
                   <RemovedAgentPanel agentName={activeAgentRemoved} onAdd={() => activeAgent && catalogActions.addAgent(activeAgent.id)} />
                 ) : (
                   <ComposerDock
-                    controls={composer.controls}
+                    controls={compare.isCompare ? {} : composer.controls}
                     isThinking={Boolean(activeSession) && isSessionBusy(activeSessionId)}
                     onStop={activeSession ? () => handleInterrupt(activeSessionId) : undefined}
                     disabled={
                       isCreatingWorktree ||
                       (!isActiveRunning && ((!isDraftAgentReady && !draftNeedsInstall) || (!isResumable && !canStartSession)))
                     }
-                    sendDisabled={draftNeedsInstall || draftNeedsSignIn}
+                    sendDisabled={isSendBlocked}
                     placeholder={composerPlaceholder({
                       isRunning: isActiveRunning,
                       isCreatingWorktree,
                       isResumable,
                       canStartSession,
-                      isSendBlocked: draftNeedsInstall || draftNeedsSignIn,
+                      isSendBlocked,
                       isEndedSession: Boolean(activeSession),
                     })}
                     onSendMessage={handleSendMessage}
                     attachAsFiles
                     onAttach={pickFiles}
                     handleRef={composerRef}
-                    commands={composerCommands}
+                    commands={compare.isCompare ? [] : composerCommands}
                     note={composerNote({
+                      compareCount: compare.agentIds.length,
                       agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
                       agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
                       continuesSession: isResumable || Boolean(activeSession),
@@ -851,17 +864,36 @@ export default function App() {
                             selectedPath: activeWorkspacePath,
                             onSelect: chooseFolder,
                             onOpenFolder: () => void openFolder(),
-                            worktree: canUseWorktree ? { isOn: isWorktreeOn, onChange: setIsWorktreeOn } : undefined,
+                            worktree: canUseWorktree
+                              ? {
+                                  isOn: isWorktreeActive,
+                                  onChange: setIsWorktreeOn,
+                                  lockedReason: compare.isCompare ? "Each agent runs in its own worktree." : undefined,
+                                }
+                              : undefined,
                             branch: branchPicker.control,
                           }
                         : undefined
                     }
                     agent={
-                      isNewSessionDraft && newSessionAgent
+                      isNewSessionDraft && newSessionAgent && !canUseWorktree
                         ? {
                             options: pickableAgents.map((a) => ({ value: a.id, label: pickerLabelOf(a) })),
                             selected: newSessionAgent.id,
                             onChange: (agentId) => setPickedAgentId(agentId ?? null),
+                          }
+                        : undefined
+                    }
+                    agents={
+                      isNewSessionDraft && newSessionAgent && canUseWorktree
+                        ? {
+                            options: compareAgentOptions(pickableAgents, signInStatus.stateOf),
+                            selected: compare.agentIds,
+                            onChange: compare.toggle,
+                            onPick: (agentId) => {
+                              compare.reset();
+                              setPickedAgentId(agentId);
+                            },
                           }
                         : undefined
                     }

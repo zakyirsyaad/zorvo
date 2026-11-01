@@ -1,5 +1,9 @@
 import type { AcpOptions } from '../hooks/useAcpSessions';
 import type { DropdownOption } from '../components/composer/OptionDropdown';
+import { isAgentRunnable } from './agent-readiness';
+import { pickerLabelOf } from './install-plan';
+import type { SignInState } from './agent-sign-in';
+import type { AgentProfile } from '../types';
 
 /** One composer dropdown: the choices, the current one, and what picking does. */
 export interface ComposerControl {
@@ -126,4 +130,32 @@ export function acpControls(
     effort: fromConfig('thought_level'),
     ...(extras.length > 0 ? { extras } : {}),
   };
+}
+
+/** One agent in the composer's multi-choice picker; a `disabledReason` means it cannot be ticked, and says why. */
+export interface AgentChoice {
+  value: string;
+  label: string;
+  disabledReason?: string;
+}
+
+export const NOT_INSTALLED_REASON = 'You need to install it first.';
+export const NEEDS_SIGN_IN_REASON = 'You need to sign in first.';
+
+/**
+ * The picker's rows. An agent that cannot start now (not installed) or said it
+ * needs a sign-in cannot join a compare; one never asked ("Not checked") can.
+ */
+export function compareAgentOptions(
+  agents: readonly Pick<AgentProfile, 'id' | 'name' | 'availability'>[],
+  signInStateOf: (profileId: string) => SignInState,
+): AgentChoice[] {
+  return agents.map((agent) => {
+    const disabledReason = !isAgentRunnable(agent)
+      ? NOT_INSTALLED_REASON
+      : signInStateOf(agent.id) === 'needed'
+        ? NEEDS_SIGN_IN_REASON
+        : undefined;
+    return { value: agent.id, label: pickerLabelOf(agent), ...(disabledReason ? { disabledReason } : {}) };
+  });
 }

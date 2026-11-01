@@ -16,10 +16,10 @@
 //   4. asks for the key's password (typed hidden) and signs the update package with the pinned Tauri CLI of
 //      scripts/updater-signer, `--app-version` included, since installed copies require the signature to record
 //      the version it was made for. The key file is handed to the CLI by path: this script never reads it;
-//   5. checks latest.json against the signature, then makes the draft release (or fills it again), uploads the
-//      build and latest.json, and copies the user guide and public changelog to the releases repository.
+//   5. checks latest.json against the signature, then makes the draft release (or fills it again) and uploads the
+//      build and latest.json.
 //
-// You then publish the draft in the releases repository. `--dry-run` does 1 to 4 and the check in 5, and writes
+// You then publish the draft. `--dry-run` does 1 to 4 and the check in 5, and writes
 // nothing to GitHub.
 //
 // Exit codes: 0 done, 1 a check failed, 2 wrong usage.
@@ -32,16 +32,15 @@ import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { CheckError, checkManifest } from "./check-updater-signing.mjs";
-import { publicChangelog, releaseNotes } from "./public-docs.mjs";
+import { releaseNotes } from "./public-docs.mjs";
 import { ReleaseError, assetNames, checkArtifact, checkDownloadPolicy, fail, readConfig } from "./release-checks.mjs";
-import { RELEASES_REPO, SOURCE_REPO, assetUrl, downloadBuild, ensureDraft, findRun, remoteTagCommit, runGh, syncDocs, uploadAssets, uploadFile } from "./release-github.mjs";
+import { SOURCE_REPO, assetUrl, downloadBuild, ensureDraft, findRun, remoteTagCommit, runGh, uploadAssets, uploadFile } from "./release-github.mjs";
 import { ensureSignerCli, scrubSecrets, withoutProjectDirs } from "./signer-cli.mjs";
 import { ManifestError, buildManifest } from "./updater-manifest.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TAG = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/;
 const DEFAULT_KEY = join(homedir(), ".tauri", "zorvo-updater.key");
-const DOCS = "docs/releases-repo/";
 /** What an updater client and the people who download Zorvo trust is made from these: a change in them since the last release is worth a look before signing. */
 const TRUSTED_PATHS = ["package.json", "pnpm-lock.yaml", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock", "src-tauri/tauri.conf.json", ".github", "scripts"];
 const SIGN_TIMEOUT_MS = 120_000;
@@ -144,16 +143,11 @@ function stage({ buildDir, uploadDir, names }) {
   writeFileSync(join(uploadDir, "SHA256SUMS.txt"), `${sums.join("\n")}\n`);
 }
 
-/**
- * What the repository holds, read once, right after the checkout was proven clean: the config, the changelog and
- * the user guide as git tracks it (a stray file in that folder never goes to the public repository).
- */
-function readSnapshot({ root, git }) {
-  const tracked = git(["ls-files", "-z", "--", DOCS]).split("\0").filter(Boolean);
+/** What the repository holds, read once, right after the checkout was proven clean: the config and the changelog. */
+function readSnapshot({ root }) {
   return {
     config: readConfig(join(root, "src-tauri", "tauri.conf.json")),
     changelog: readFileSync(join(root, "CHANGELOG.md"), "utf8"),
-    docs: tracked.map((path) => ({ dest: path.slice(DOCS.length), content: readFileSync(join(root, path)) })),
   };
 }
 
@@ -180,7 +174,7 @@ function makeLatestJson({ root, work, tag, notes, url, packagePath, config, log 
   const latest = join(work, "upload", "latest.json");
   const manifest = buildManifest({ tag, notes, url, signature: readFileSync(`${packagePath}.sig`, "utf8") });
   writeFileSync(latest, `${JSON.stringify(manifest, null, 2)}\n`);
-  checkDownloadPolicy({ endpoints: config.endpoints, manifest, repo: RELEASES_REPO });
+  checkDownloadPolicy({ endpoints: config.endpoints, manifest, repo: SOURCE_REPO });
   log(checkManifest(join(root, "src-tauri", "tauri.conf.json"), latest, tag, packagePath));
   return latest;
 }
@@ -197,7 +191,7 @@ export async function signRelease({ tag, keyPath, dryRun = false, root = ROOT, d
   const isClean = () => git(["status", "--porcelain", "--untracked-files=no"]).trim() === "";
   if (!isClean()) fail("The working tree has changes. Commit or stash them, so the release is signed from exactly the tagged commit.");
   const head = git(["rev-parse", "HEAD"]).trim();
-  const snapshot = readSnapshot({ root, git });
+  const snapshot = readSnapshot({ root });
   const { config } = snapshot;
   if (config.version !== version) {
     fail(`src-tauri/tauri.conf.json says "${config.version}" but the tag is ${tag}. Check out the tag first: git switch --detach ${tag}`);
@@ -217,7 +211,7 @@ export async function signRelease({ tag, keyPath, dryRun = false, root = ROOT, d
 
   const notesText = releaseNotes(snapshot.changelog, tag);
   if (!notesText) fail(`CHANGELOG.md has no section for ${tag}.`);
-  const notes = `${notesText}\n\nDownload **Zorvo-mac.dmg** (Apple Silicon and Intel). See the [user guide](https://github.com/${RELEASES_REPO}#install) to install it, and SHA256SUMS.txt to check the download.\n`;
+  const notes = `${notesText}\n\nDownload **Zorvo-mac.dmg** (Apple Silicon and Intel). See the [user guide](https://github.com/${SOURCE_REPO}#install) to install it, and SHA256SUMS.txt to check the download.\n`;
 
   const work = mkdtempSync(join(tmpdir(), "zorvo-sign-release-"));
   try {
@@ -244,23 +238,20 @@ export async function signRelease({ tag, keyPath, dryRun = false, root = ROOT, d
     if (!existsSync(`${packagePath}.sig`)) fail("The Tauri CLI wrote no signature.");
 
     // Before anything goes to GitHub: a key that is not the public key's, or a manifest the app would refuse, stops here.
-    makeLatestJson({ root, work, tag, notes, url: `https://api.github.com/repos/${RELEASES_REPO}/releases/assets/0`, packagePath, config, log });
+    makeLatestJson({ root, work, tag, notes, url: `https://api.github.com/repos/${SOURCE_REPO}/releases/assets/0`, packagePath, config, log });
     if (dryRun) {
       log("Dry run: nothing was uploaded.");
       return;
     }
 
     assertUnchanged();
-    ensureDraft(gh, { repo: RELEASES_REPO, tag, notesFile, prerelease: tag.includes("-") });
+    ensureDraft(gh, { repo: SOURCE_REPO, tag, notesFile, prerelease: tag.includes("-") });
     // latest.json names the package by its asset URL, which exists only once the package is uploaded.
-    uploadAssets(gh, { repo: RELEASES_REPO, tag, files: [names.package, `${names.package}.sig`, names.dmg, "Zorvo-mac.dmg", "SHA256SUMS.txt"].map((name) => join(uploadDir, name)) });
-    const url = assetUrl(gh, { repo: RELEASES_REPO, tag, name: names.package });
+    uploadAssets(gh, { repo: SOURCE_REPO, tag, files: [names.package, `${names.package}.sig`, names.dmg, "Zorvo-mac.dmg", "SHA256SUMS.txt"].map((name) => join(uploadDir, name)) });
+    const url = assetUrl(gh, { repo: SOURCE_REPO, tag, name: names.package });
     const latest = makeLatestJson({ root, work, tag, notes, url, packagePath, config, log });
-    uploadFile(gh, { repo: RELEASES_REPO, tag, file: latest });
-
-    const docs = [{ dest: "CHANGELOG.md", content: Buffer.from(publicChangelog(snapshot.changelog)) }, ...snapshot.docs];
-    syncDocs(gh, { repo: RELEASES_REPO, tag, files: docs });
-    log(`The draft ${tag} is ready: https://github.com/${RELEASES_REPO}/releases. Publish it when it looks right; a published release cannot be changed.`);
+    uploadFile(gh, { repo: SOURCE_REPO, tag, file: latest });
+    log(`The draft ${tag} is ready: https://github.com/${SOURCE_REPO}/releases. Publish it when it looks right; a published release cannot be changed.`);
   } finally {
     rmSync(work, { recursive: true, force: true });
   }

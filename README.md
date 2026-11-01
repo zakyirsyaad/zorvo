@@ -1,254 +1,336 @@
-# Zorvo
+<p align="center">
+  <img src="docs/assets/zorvo-icon.png" alt="" width="112" height="112">
+</p>
 
-[![CI](https://github.com/zakyirsyaad/zorvo/actions/workflows/ci.yml/badge.svg)](https://github.com/zakyirsyaad/zorvo/actions/workflows/ci.yml)
-[![Security](https://github.com/zakyirsyaad/zorvo/actions/workflows/security.yml/badge.svg)](https://github.com/zakyirsyaad/zorvo/actions/workflows/security.yml)
-[![Release](https://img.shields.io/github/v/release/zakyirsyaad/zorvo-releases?include_prereleases)](https://github.com/zakyirsyaad/zorvo-releases/releases)
-![macOS](https://img.shields.io/badge/platform-macOS-lightgrey)
+<h1 align="center">Zorvo</h1>
 
-**Every coding agent. One desktop.**
+<p align="center">
+  <strong>Every coding agent. One desktop.</strong><br>
+  One Mac app for Claude Code, Codex, Qwen Code, Gemini CLI and the other agents in the
+  <a href="https://agentclientprotocol.com">ACP registry</a>, each in a real chat.
+</p>
 
-A desktop app for the coding agents you already use. Claude Code, Codex,
-Qwen Code, Gemini CLI and the other agents in the
-[ACP registry](https://agentclientprotocol.com) run in a real chat UI. It is
-like Claude Code Desktop, but for whichever agent you have.
+<p align="center">
+  <a href="https://github.com/zakyirsyaad/zorvo/releases/latest"><img src="https://img.shields.io/github/v/release/zakyirsyaad/zorvo?label=latest" alt="Latest release"></a>
+  <a href="https://github.com/zakyirsyaad/zorvo/releases"><img src="https://img.shields.io/github/downloads/zakyirsyaad/zorvo/total" alt="Downloads"></a>
+  <img src="https://img.shields.io/badge/macOS-Apple%20Silicon%20%7C%20Intel-lightgrey" alt="macOS on Apple Silicon or Intel">
+</p>
 
-- [User guide](#user-guide)
-- [How it works](#how-it-works)
+<p align="center">
+  <a href="https://github.com/zakyirsyaad/zorvo/releases/latest/download/Zorvo-mac.dmg"><strong>Download for Mac</strong></a>
+  ·
+  <a href="https://github.com/zakyirsyaad/zorvo/releases">All releases</a>
+  ·
+  <a href="CHANGELOG.md">Changelog</a>
+  ·
+  <a href="https://github.com/zakyirsyaad/zorvo/issues/new/choose">Report a problem</a>
+</p>
+
+> [!NOTE]
+> Zorvo is not signed by Apple yet, so macOS blocks it the first time you open
+> it. [Opening it the first time](#open-zorvo-the-first-time) takes one extra
+> step.
+
+## Contents
+
+- [Quick start](#quick-start)
+- [What you can do](#what-you-can-do)
+- [Supported agents](#supported-agents)
+- [Requirements](#requirements)
+- [Install](#install)
+- [Getting started](#getting-started)
+- [Privacy and your data](#privacy-and-your-data)
+- [Troubleshooting](#troubleshooting)
+- [Questions](#questions)
+- [Feedback and security](#feedback-and-security)
 - [Development](#development)
-- [Releasing](#releasing)
-- [Roadmap](#roadmap)
 - [License](#license)
 
-## User guide
+## Quick start
 
-The guide for people who use Zorvo (features, supported agents,
-requirements, install, privacy, troubleshooting) is
-[`docs/releases-repo/README.md`](docs/releases-repo/README.md). Each release
-publishes that file as the README of the
-[zorvo-releases](https://github.com/zakyirsyaad/zorvo-releases) repository,
-next to the downloads. Change user-facing documentation there.
+1. [Download **Zorvo-mac.dmg**](https://github.com/zakyirsyaad/zorvo/releases/latest/download/Zorvo-mac.dmg),
+   open it, and drag Zorvo into **Applications**.
+2. Open Zorvo, then allow it once in **System Settings → Privacy & Security →
+   Open Anyway** ([details](#open-zorvo-the-first-time)).
+3. Follow the onboarding: pick your agents and a project folder. Zorvo installs
+   what an agent needs, Node.js included.
+4. Click **+ New** and send your first message.
 
-## How it works
+## What you can do
 
-```mermaid
-flowchart LR
-  UI["React UI<br/>(src/)"] <-- "Tauri commands<br/>and events" --> Core["Rust backend<br/>(src-tauri/)"]
-  Core -- "ACP: JSON-RPC over stdio" --> ACP["ACP agents<br/>(Claude Code · Codex · Qwen Code · …)"]
-  Core -- "git · gh" --> Repo[("Your repository")]
-  Core --> Store[("state.json<br/>transcripts/")]
+### Work with any agent
+
+- **The agent's own options.** Zorvo talks to every agent over the
+  [Agent Client Protocol](https://agentclientprotocol.com), so you get its real
+  models, effort levels, modes and slash commands, including the ones your
+  skills and plugins add.
+- **An agent catalog.** Settings → Agents lists every agent in the ACP
+  registry. Add, install, update and remove agents there.
+- **Sign in without leaving the app.** An agent's own login runs in a terminal
+  inside Zorvo. The sidebar shows which agents are **Ready**, which need you to
+  **Sign in** and which are **Not checked** yet, and a new session shows the
+  sign-in panel before you type. Settings → Agents shows the same status on
+  each agent, with **Check sign-in** and, when an agent needs one, its sign-in
+  methods. When an agent needs an answer from you, it can
+  show a form in the chat, or send you to a web page.
+- **Pick up where you left off.** Continue a session you started in an agent's
+  own CLI, and sessions resume after a restart.
+
+### Stay in control
+
+- **Approve what the agent does.** Permission requests appear in the chat with
+  the agent's own choices, and every new session starts in the safest mode its
+  agent offers.
+- **See every change.** Each file the agent changes comes with its diff. The
+  Changes panel lets you review them and commit the files you choose.
+- **Know when an agent is stuck.** If an agent reports failed requests, or has
+  sent nothing for a minute, Zorvo says so under **Working…**, with a Stop
+  button.
+- **Follow your pull request.** The top bar shows your branch's pull request and
+  its checks, read with your own `gh`.
+- **Connect to GitHub.** **Settings → General → GitHub** shows whether your
+  GitHub CLI is installed and signed in. If it is not signed in, **Connect**
+  opens a terminal where `gh` signs you in through your browser; `gh` asks a few
+  questions there, such as which Git protocol you use, and you answer them in
+  the terminal. Once you are connected, the sidebar shows your GitHub name
+  instead of your git name.
+
+### Keep your work organized
+
+- **Sessions by folder.** Sessions are titled from your first message and saved
+  on your Mac. Rename, pin and archive them, or pop one out into its own window.
+  An unread mark shows which agent finished while you were away.
+- **Fork and rewind.** Fork any reply into a new session, or rewind to before
+  one of your messages and send it again, edited.
+- **Worktrees.** Run a session in its own git worktree on an `agent/<title>`
+  branch, so agents in the same repository never edit the same files.
+- **A terminal where the agent works.** The **Terminal** button opens a shell in
+  the session's folder, in a drawer under the chat, with tabs per folder.
+- **A composer that knows your project.** Mention files with `@`, drop files or
+  pictures onto the window, and click the context meter to see the tokens used,
+  the tokens left and the cost.
+
+## Supported agents
+
+Zorvo lists every agent in the [ACP registry](https://agentclientprotocol.com)
+and runs the ones it can verify: a download needs a published SHA-256 checksum,
+and a package must be pinned to one version. Agents that fail that check appear
+under **Not available** in **Settings → Agents**, with the reason.
+**Claude Code, Codex and Qwen Code** are on by default, along with any registry
+agent already installed on your Mac. Add the others, such as Gemini CLI, from
+**Settings → Agents**.
+
+Every agent works the same way in Zorvo: its own models, effort and modes,
+approvals in the chat, fork and rewind. A session continues after a restart
+when its agent can resume or reload sessions; an agent that cannot says so.
+
+A new version of an agent is offered a week after it was published, never
+sooner, and never one the registry has withdrawn.
+
+## Requirements
+
+- **A Mac** with Apple Silicon or Intel.
+- **Node.js 22 or newer** for the agents that run with `npx` (Claude Code,
+  Codex, Qwen Code and many others). If yours is missing or older, Zorvo
+  installs its own when you install such an agent.
+- **An account with at least one agent.** Each agent signs in with its own
+  tools; Zorvo never asks for your API keys.
+
+  | Agent | Sign in | Optional global install |
+  |---|---|---|
+  | Claude Code | The sign-in panel in Zorvo, or `claude` then `/login` | `npm i -g @anthropic-ai/claude-code` |
+  | Codex | The sign-in panel in Zorvo, or `codex login` | `npm i -g @openai/codex` |
+  | Qwen Code | Run `qwen` once in a terminal | `npm i -g @qwen-code/qwen-code` |
+
+  A global install is not needed; it only makes an agent show up as installed
+  before you first use it.
+- **Optional: the [GitHub CLI](https://cli.github.com)**, signed in with
+  `gh auth login` or with **Connect** in **Settings → General**, to see pull
+  requests and their checks and to show your GitHub name in the sidebar.
+
+Zorvo reads your login shell's environment, so it finds whatever your terminal
+finds. If you install an agent while Zorvo runs, click **Check again** in
+Settings → Agents.
+
+## Install
+
+### Download
+
+Download [**Zorvo-mac.dmg**](https://github.com/zakyirsyaad/zorvo/releases/latest/download/Zorvo-mac.dmg)
+from the latest release. One file works on both Apple Silicon and Intel Macs.
+Open it and drag **Zorvo** into **Applications**.
+
+### Open Zorvo the first time
+
+Zorvo is not signed by Apple yet, so macOS blocks it the first time:
+
+1. Open Zorvo from Applications. macOS says it cannot be opened; click **Done**.
+2. Open **System Settings → Privacy & Security**, scroll down, and click
+   **Open Anyway** next to the message about Zorvo.
+3. Confirm, and Zorvo opens. From then on it opens normally.
+
+macOS 15 and later no longer offer right-click → Open for this. If you prefer
+the terminal, this does the same:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Zorvo.app"
 ```
 
-- **The frontend** (`src/`, React 19 and Tailwind). Every session
-  is an ACP chat, run by `hooks/session-engine/useAcpEngine.ts`.
-- **The backend** (`src-tauri/src/`, Tauri 2):
-  - `acp/`: the ACP client;
-  - `pty_session.rs` and `workspace_terminal.rs`: the terminals an agent's own
-    sign-in and the workspace shells run in;
-  - `registry/`: the ACP agent registry, its dated version history and the
-    agents you use;
-  - `installer/`: installing agents, Node.js and `uv`, every download checked
-    against a pinned hash;
-  - `app_update.rs`: Zorvo's own updates, checked against `latest.json` in
-    zorvo-releases and verified with the updater public key;
-  - `profiles.rs`: the agent profiles and how agents are found;
-  - `store.rs`: state and transcripts;
-  - `changes.rs`, `worktrees.rs` and `branches.rs`: git;
-  - `pull_requests.rs`: `gh`.
+### Check your download
+
+Each release lists the SHA-256 checksum of its DMG in `SHA256SUMS.txt`.
+Download it into the folder with the DMG, then run this in that folder:
+
+```bash
+shasum -a 256 -c SHA256SUMS.txt --ignore-missing
+```
+
+`Zorvo-mac.dmg: OK` means you have the exact file the release published. Only
+download Zorvo from this repository's
+[releases](https://github.com/zakyirsyaad/zorvo/releases).
+
+### Update
+
+From 0.6.0 on, Zorvo tells you when a newer version exists: a notice at the top
+of the window says "Zorvo X.Y.Z is available." Click **Update & restart** and
+Zorvo downloads the update, checks its signature, installs it and opens again.
+**Later** hides the notice until you next start Zorvo. Agents that are working
+stop, and open terminals end, when Zorvo restarts, so update when the agents
+are idle and nothing runs in a terminal. Your sessions are kept: they are
+stored outside the app.
+
+A copy that runs from the disk image, or from any other read-only place, cannot
+update itself there: drag Zorvo into Applications, open it from there, and
+update again.
+
+Copies older than 0.6.0 cannot update themselves. Update those once by hand:
+download the newest DMG and replace Zorvo in Applications. The same works if an
+update ever fails and you would rather not retry.
+
+### Uninstall
+
+Quit Zorvo and move it from Applications to the Trash. To remove your data as
+well, delete `~/Library/Application Support/xyz.zorvo.desktop/`. It holds your
+sessions, their worktrees and the agents Zorvo installed.
+
+### Coming from Agent Desktop
+
+Zorvo is installed next to the old Agent Desktop app and copies its sessions on
+first launch. Then delete Agent Desktop from Applications: both apps share the
+old sessions' worktrees, so deleting a session in one would remove its worktree
+in the other. macOS asks again for notification and folder permissions.
+
+## Getting started
+
+1. **Onboarding.** The first run checks which agents are installed, lets you
+   pick a default, and asks for a project folder.
+2. **Start a session.** Click **+ New**, or the **+** next to a folder to choose
+   its agent. In the composer, pick the folder, branch, model, effort and
+   permission mode, then send your first message. Turn on **Worktree** first to
+   give the session its own checkout.
+3. **Work with the agent.**
+   - Answer its permission requests in the chat.
+   - Open **Files** to browse the folder, and **Changes** to review and commit
+     what it changed.
+   - Open **Terminal** for a shell in the same folder.
+4. **Branch off.**
+   - **Fork** under any reply starts a new session from there.
+   - **↺ Rewind** under one of your messages takes the conversation back to
+     before it and puts the message in the composer to edit. Files the agent
+     changed stay as they are.
+
+Each session starts in the safest permission mode its agent offers (its
+**Default**, **Manual**, **Ask** or **Read-only** mode), so the agent asks
+before it edits files or runs commands. Pick another mode in the composer.
+
+## Privacy and your data
+
+- **Your keys stay with the agents.** Zorvo never asks for or stores API keys
+  or tokens. Agents sign in with their own tools, and pull request data comes
+  from your own `gh` login.
+- **GitHub stays in your `gh`.** Zorvo asks your `gh` whether you are signed in
+  to github.com and reads only your login and name, to show them in the sidebar
+  and in Settings. It stores neither, never reads or keeps a token, and
+  downloads no picture. **Connect** runs `gh auth login` for github.com in a
+  terminal, and you sign in through your browser.
+- **No telemetry.** Zorvo sends nothing about you or your work anywhere.
+- **Only a few hosts, all named.** Zorvo itself contacts only:
+  - the ACP registry (`cdn.agentclientprotocol.com`), to list agents, their
+    versions and their logos;
+  - an agent's download URLs from the registry, when you install a binary
+    agent;
+  - `nodejs.org`, when you install an agent that needs Node.js and yours is
+    missing or older than 22;
+  - `uv`'s releases on GitHub, when you install an agent that runs with `uvx`
+    and you have no `uvx`;
+  - this repository's releases on GitHub, to ask whether a newer Zorvo exists
+    (`github.com/zakyirsyaad/zorvo`, shortly after Zorvo starts, then
+    about once a day) and, when you click **Update & restart**, to download it
+    (`api.github.com`). GitHub sends both requests on to its download host,
+    today `release-assets.githubusercontent.com`. The check sends no
+    information about you or your work.
+
+  No agent, runtime or Zorvo update downloads until you click **Install** or
+  **Update & restart**. Agent and runtime downloads are checked against a
+  SHA-256 hash pinned in advance. A Zorvo update must come from this
+  repository's releases and is installed only if its signature matches the key
+  built into Zorvo.
+
+  Your agents, and the `npm`, `npx` and `uvx` they run with, make their own
+  requests to their own services, and so does your `gh`, which Zorvo runs to
+  read your pull requests and your GitHub sign-in.
+- **Your data stays on your Mac.** Sessions and transcripts are stored in
+  `~/Library/Application Support/xyz.zorvo.desktop/`, and session worktrees in
+  `worktrees/` there.
+- **Only the folders you open.** Zorvo reads and runs commands only in folders
+  you opened in the app.
+
+## Troubleshooting
+
+| Problem | What to try |
+|---|---|
+| macOS blocks Zorvo on first open | See [Open Zorvo the first time](#open-zorvo-the-first-time). |
+| An agent shows as not installed | Click **Install** next to it in Settings → Agents, or pick it in a new session's agent list and click **Install**. Zorvo brings Node.js or `uv` when the agent needs them. Then click **Check again**. |
+| "Sign in to *agent*" | Use a sign-in method the panel offers, or sign in once in a terminal (see [Requirements](#requirements)). If you set a key outside Zorvo (for example in `~/.zshrc`), click **Check again** in the panel: Zorvo reads your shell's settings again, then asks the agent. Your refused message waits in the box and is sent once you are signed in. |
+| **Update & restart** fails with a read-only message | A copy that runs from the disk image cannot update itself: drag it into Applications and open it from there. Or download the newest DMG from [releases](https://github.com/zakyirsyaad/zorvo/releases) and replace Zorvo in Applications. |
+| An agent takes a while to start the first time | Its first start downloads the agent's package. Later starts are quick. |
+| The agent stays on **Working…** | If Zorvo shows that the agent's requests failed, the cause is usually the agent's account, such as a used-up quota. Check it in the agent's own CLI, then click **Stop** and send your message again. |
+| No pull request status | Open **Settings → General → GitHub**. If `gh` is not installed, install it; if you are not connected, click **Connect**. A repository without a GitHub remote has none to show. |
+| "is not in the last commit, so a worktree would not have it" | A worktree checks out the last commit. Commit the folder first, or start the session without **Worktree**. |
+
+Still stuck? [Open an issue](https://github.com/zakyirsyaad/zorvo/issues/new/choose)
+with your Zorvo version, shown at the bottom of the sidebar.
+
+## Questions
+
+**Does Zorvo need my API keys?** No. Each agent signs in with its own tools,
+and Zorvo never asks for or stores keys or tokens.
+
+**Does it work on Windows or Linux?** Not yet. Zorvo is a Mac app for now.
+
+**Is the source code available?** Yes. It is in this repository, under the
+Apache License 2.0.
+
+**Which agent should I start with?** The one you already use. Zorvo shows each
+agent's own models and modes, so it works the way that agent does, next to the
+others.
+
+## Feedback and security
+
+- **Found a problem or have an idea?**
+  [Open an issue](https://github.com/zakyirsyaad/zorvo/issues/new/choose).
+  Never paste API keys, tokens or other secrets into an issue.
+- **Found a security problem?** Report it privately, as described in
+  [SECURITY.md](SECURITY.md), not in a public issue.
 
 ## Development
 
-```bash
-pnpm install
-pnpm tauri dev
-```
-
-| Check | Command |
-|---|---|
-| Types and ESLint | `pnpm lint` |
-| Frontend tests | `pnpm test` |
-| Rust tests | `cd src-tauri && cargo test` |
-| Rust lint | `cd src-tauri && cargo clippy --all-targets -- -D warnings` |
-| Production build | `pnpm tauri build` |
-| Refresh the bundled registry history | `pnpm registry:update` |
-
-To run the fast checks before each commit (types, ESLint, `cargo fmt`), opt in
-with `pnpm lefthook install`.
-
-On every pull request, CI runs the types, ESLint and the frontend tests. The
-Rust lint and tests run on a macOS runner, so they run on every push to `main`
-and on a pull request only when it changes `src-tauri/` or the build inputs.
-CI also runs a dependency audit (`pnpm audit`, `cargo audit`), and Dependabot
-proposes updates weekly.
-
-CI does not build the release bundle. Before a release, run
-`pnpm tauri build` and open the app: the production build is the only one that
-applies the Content Security Policy. A build also signs the update package, so
-it needs the updater key in the environment; to build without it, add
-`--config '{"bundle":{"createUpdaterArtifacts":false}}'` (see
-[Releasing](#releasing)).
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose a change,
-[SECURITY.md](SECURITY.md) for how to report a vulnerability, and
-[CHANGELOG.md](CHANGELOG.md) for what changed in each release.
-
-## Releasing
-
-1. Bump the version in `package.json`, `src-tauri/Cargo.toml` and
-   `src-tauri/tauri.conf.json`. In `CHANGELOG.md`, rename `Unreleased` to the
-   new version with its release date, add its compare link, and start a new
-   empty `Unreleased` section.
-2. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`. The workflow
-   stops before it builds if the tag is not `vMAJOR.MINOR.PATCH` (or
-   `vMAJOR.MINOR.PATCH-rc.1`), does not match the version in those three
-   files, or has no section in `CHANGELOG.md`.
-3. The **Release** workflow builds a universal macOS app and keeps the DMG and
-   the update package as a workflow artifact for 30 days. It holds no secret of
-   the release and publishes nothing (see "Why signing happens on your Mac").
-4. When the run is green, sign and publish the draft from your Mac, in a clean
-   checkout of the tag:
-
-   ```bash
-   git fetch --tags
-   git switch --detach vX.Y.Z
-   node scripts/sign-release.mjs vX.Y.Z
-   ```
-
-   Run it with `node`, not as a package script: `pnpm run` puts the project's
-   `node_modules/.bin` first on PATH. The script proves that HEAD, the tag on
-   GitHub and the commit the run built are the same, then downloads the
-   artifact from that run with your own `gh` login (which needs access to this
-   repository and to
-   [zorvo-releases](https://github.com/zakyirsyaad/zorvo-releases)) and checks
-   it. A download that breaks halfway (a reset connection, a timeout, a server
-   error) is tried again on its own, up to three tries in all; any other
-   failure stops it. It shows what changed since the last release in the dependencies, the
-   workflow and the scripts, and asks you to go on. Then it asks for the key's
-   password (typed hidden, and never read from the environment), signs the
-   update package, and makes a draft release in zorvo-releases, the repository
-   installed copies update from. The draft gets
-   the release notes from the version's changelog section, the DMG (also as
-   `Zorvo-mac.dmg`, the name the site's Download link uses), `SHA256SUMS.txt`,
-   the update package with its `.sig`, and `latest.json`. The script also
-   copies `docs/releases-repo/` (the user guide, issue forms and security
-   policy, as git tracks them) and the released part of `CHANGELOG.md` there.
-   `--dry-run` does everything except write to GitHub. The key is read from
-   `~/.tauri/zorvo-updater.key`; use `--key <path>` or
-   `TAURI_SIGNING_PRIVATE_KEY_PATH` if it is elsewhere. If it stops partway,
-   run it again: it fills the same draft.
-5. Publish the draft when it looks right: releases there are immutable once
-   published. Publishing is what makes it the "latest" release installed
-   copies see; a tag with a pre-release part (`v0.7.0-rc.1`) makes a
-   pre-release, which never is.
-
-### Why signing happens on your Mac
-
-Every installed Zorvo trusts one updater key and installs whatever it signs, so
-whoever can read the private key can push an update to all of them. The
-workflow runs the project's own dependencies (Vite, every crate's `build.rs`,
-all dev-dependency code), and any repository secret can also be read by any
-workflow in the repository, a changed one on a branch included. So the updater
-key, its password and a token that can publish to zorvo-releases are not in
-GitHub at all, and no GitHub secret by those names should exist. The workflow
-needs only the optional Apple ones.
-
-To sign and notarize the app, so Gatekeeper opens it without a warning, add
-these repository secrets from an Apple Developer account. They stay repository
-secrets because the app is signed and notarized while it is built, so, unlike
-the updater key, they reach the build job:
-
-- `APPLE_CERTIFICATE` (a base64 `.p12`)
-- `APPLE_CERTIFICATE_PASSWORD`
-- `APPLE_SIGNING_IDENTITY`
-- `APPLE_ID`
-- `APPLE_PASSWORD` (an app-specific password)
-- `APPLE_TEAM_ID`
-
-Without them, the build is unsigned.
-
-### The updater key
-
-Make it once, on your own machine (not the Apple key):
-
-```bash
-pnpm tauri signer generate -w ~/.tauri/zorvo-updater.key
-```
-
-Put the **public** key it prints in `plugins.updater.pubkey` in
-`src-tauri/tauri.conf.json`. The private key stays in that file. To check, on
-your machine, that the password is right and the key is the one that belongs to
-the public key (the Tauri CLI only warns about that last case), run this (zsh,
-the macOS default; the password is typed hidden):
-
-```bash
-read -rs "pw?Updater key password> " && echo && TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/zorvo-updater.key)" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$pw" node scripts/check-updater-signing.mjs key src-tauri/tauri.conf.json; unset pw
-```
-
-Back the private key up somewhere safe: a build signed with another key is
-refused by every Zorvo already installed, so losing it means those installs can
-never update themselves again.
-
-### How `scripts/sign-release.mjs` signs
-
-Installed copies require the update's signature to record the version it was
-made for (`requireSignedVersion`), and `tauri signer sign` without
-`--app-version` does not, so releases are signed by the script, never by hand.
-It uses the Tauri CLI pinned in `scripts/updater-signer` (the root lockfile's
-version, which a test keeps equal), installed every time with
-`npm ci --ignore-scripts` and run by `node` itself, so none of the project's
-dependencies run next to the key's password and no PATH lookup decides which
-program gets it. It hands the CLI the key's path and never reads the file, and
-the password goes only into the CLI's own environment. It also drops the
-project's folders from PATH, and the key's variables from the environment of
-everything else it starts. `node scripts/check-updater-signing.mjs key
-src-tauri/tauri.conf.json` checks a key the same way, with the pinned CLI.
-
-Before it signs it checks that nothing changed in the checkout (tracked files
-only), that HEAD is the commit the tag has on GitHub and the commit the newest
-successful run built, and that the build is data it can accept: exactly the DMG
-and the package, a package that holds only `Zorvo.app` (no hard links, no links
-out of it), and an app that holds the public key of `tauri.conf.json` as text,
-so a build cannot quietly ship an app that trusts another key. The checkout is
-read once at the start and checked again before it signs and before it
-uploads. After signing, and before it touches GitHub, it writes `latest.json`
-and checks it (`check-updater-signing.mjs manifest`): it lists both
-`darwin-aarch64` and `darwin-x86_64`, every download URL is inside the releases
-repository, and every signature is the public key's, verifies the update
-package and records this release's version.
-
-The build job is given a one-off key made on the runner, because `tauri build`
-refuses to run without a key while update packages are on and `--no-sign` would
-also turn off Apple code signing; the signature it makes is thrown away. A
-local `pnpm tauri build` signs the update package too, so it needs
-`TAURI_SIGNING_PRIVATE_KEY` (and the password) in the environment; add
-`--config '{"bundle":{"createUpdaterArtifacts":false}}'` to build without them.
-
-### What this does not protect against
-
-- **A build that is compromised during a release you sign.** The build job runs
-  the project's dependencies, and what it makes is signed. The checks above are
-  a sanity check and a tripwire, not a boundary. The list of changes the script
-  shows before it asks is there for this: read the lockfile changes.
-- **The DMG.** Only the package is signed by your key and checked for the app
-  inside. The DMG, which new installs and the site's Download link use, is as
-  trustworthy as the build; `SHA256SUMS.txt` is made from the same file. With
-  the Apple secrets set, the DMG is signed and notarized, which a person can
-  check with `spctl`.
-- **Other code running as you on your Mac.** The project's dependencies also run
-  there (`pnpm test`, `pnpm tauri dev`), as you, and could read
-  `~/.tauri/zorvo-updater.key`. Only the password protects the key then. Keep
-  the password strong, and keep the file at mode 600 (the script warns if it
-  is not).
-- **A tag moved by someone with push access.** The script would run that tag's
-  code. Read what changed (the list above includes `scripts` and `.github`).
-
-## Roadmap
-
-- A signed and notarized build, so macOS opens it without a warning.
-- Windows and Linux builds.
-- Undoing an agent's file changes along with a rewind.
-- End-to-end tests of the built app.
+Zorvo is a Tauri 2 app with a React frontend and a Rust backend.
+[docs/development.md](docs/development.md) covers how it works, the checks and
+the release process, and [CONTRIBUTING.md](CONTRIBUTING.md) covers how to send a
+change.
 
 ## License
 
-Zorvo is licensed under the [Apache License 2.0](LICENSE). The license does not
-cover the Zorvo name or logo.
+Zorvo is open source under the [Apache License 2.0](LICENSE).
+The license does not cover the Zorvo name or logo.

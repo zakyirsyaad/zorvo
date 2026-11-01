@@ -31,7 +31,7 @@
   },
   "plugins": {
     "updater": {
-      "endpoints": ["https://github.com/zakyirsyaad/zorvo-releases/releases/latest/download/latest.json"],
+      "endpoints": ["https://github.com/zakyirsyaad/zorvo/releases/latest/download/latest.json"],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhBRTQwMUE3MERBOEI4OUYKUldTZnVLZ05wd0hraXExdnp6UTFKT2xHZlBKUDVGbFphM2dTcFJJRmtHQ1Njb2ZlMVVWa2pFTmkK",
       "requireSignedVersion": true
     }

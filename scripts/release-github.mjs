@@ -2,16 +2,14 @@
 //
 // Every function takes `gh`, a function `(args, { input }) => { status, stdout, stderr }` (`runGh` runs the real
 // one), so the tests need no network. The Release workflow publishes nothing: it only builds, and keeps the build
-// as a workflow artifact. Making the draft release, uploading to it and copying the user guide to the releases
-// repository all happen here, on the machine that holds the updater key.
+// as a workflow artifact. Making the draft release and uploading to it happen here, on the machine that holds the
+// updater key.
 
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
 import { fail } from "./release-checks.mjs";
 
 export const SOURCE_REPO = "zakyirsyaad/zorvo";
-export const RELEASES_REPO = "zakyirsyaad/zorvo-releases";
 /** The name the Release workflow gives the artifact that holds the DMG and the update package. */
 export const BUILD_ARTIFACT = "release-build";
 
@@ -112,7 +110,7 @@ export function ensureDraft(gh, { repo, tag, notesFile, prerelease }) {
     output(gh(["release", "edit", tag, "--repo", repo, "--title", `Zorvo ${tag}`, "--notes-file", notesFile, `--prerelease=${prerelease}`]), "Updating the draft release");
     return;
   }
-  const args = ["release", "create", tag, "--repo", repo, "--draft", "--target", "main", "--title", `Zorvo ${tag}`, "--notes-file", notesFile];
+  const args = ["release", "create", tag, "--repo", repo, "--draft", "--verify-tag", "--title", `Zorvo ${tag}`, "--notes-file", notesFile];
   if (prerelease) args.push("--prerelease");
   output(gh(args), "Creating the draft release");
 }
@@ -143,24 +141,4 @@ export function assetUrl(gh, { repo, tag, name }) {
 /** Uploads one file to the draft, over the one that is there. */
 export function uploadFile(gh, { repo, tag, file }) {
   output(gh(["release", "upload", tag, file, "--repo", repo, "--clobber"]), `Uploading ${file}`);
-}
-
-/** The hash git gives a file's bytes; the contents API reports it as `sha`. */
-export function gitBlobSha(content) {
-  return createHash("sha1").update(`blob ${content.length}\0`).update(content).digest("hex");
-}
-
-/**
- * Puts each `{ dest, content }` file (`content` a Buffer) in the main branch of the releases repository, skipping
- * the ones it already has. The file goes in a JSON body on standard input: a command-line argument is limited to
- * 128 KiB on Linux.
- */
-export function syncDocs(gh, { repo, tag, files }) {
-  for (const { dest, content } of files) {
-    const existing = gh(["api", `repos/${repo}/contents/${dest}`, "--jq", ".sha"]);
-    const sha = existing.status === 0 ? existing.stdout.trim() : "";
-    if (sha && sha === gitBlobSha(content)) continue;
-    const body = { message: `docs: update ${dest} for ${tag}`, content: content.toString("base64"), branch: "main", ...(sha ? { sha } : {}) };
-    output(gh(["api", "--method", "PUT", `repos/${repo}/contents/${dest}`, "--input", "-", "--silent"], { input: JSON.stringify(body) }), `Copying ${dest}`);
-  }
 }

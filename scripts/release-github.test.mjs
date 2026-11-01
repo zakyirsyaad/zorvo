@@ -2,10 +2,9 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ReleaseError } from "./release-checks.mjs";
-import { assetUrl, downloadBuild, draftState, ensureDraft, findRun, gitBlobSha, remoteTagCommit, syncDocs, uploadAssets, uploadFile } from "./release-github.mjs";
+import { assetUrl, downloadBuild, draftState, ensureDraft, findRun, remoteTagCommit, uploadAssets, uploadFile } from "./release-github.mjs";
 
-const REPO = "zakyirsyaad/zorvo-releases";
+const REPO = "zakyirsyaad/zorvo";
 const TAG = "v0.6.1";
 
 /** A stand-in for `gh`: records each call, and answers with the first handler whose pattern matches the arguments. */
@@ -183,7 +182,7 @@ describe("ensureDraft", () => {
   it("creates a draft aimed at main when there is no release", () => {
     const gh = stateIs({ status: 1, stderr: "release not found" });
     ensureDraft(gh, options);
-    expect(gh.lines()[1]).toBe("release create v0.6.1 --repo zakyirsyaad/zorvo-releases --draft --target main --title Zorvo v0.6.1 --notes-file /tmp/notes.md");
+    expect(gh.lines()[1]).toBe("release create v0.6.1 --repo zakyirsyaad/zorvo --draft --verify-tag --title Zorvo v0.6.1 --notes-file /tmp/notes.md");
   });
 
   it("marks a draft for a tag with a pre-release part", () => {
@@ -195,7 +194,7 @@ describe("ensureDraft", () => {
   it("fills a draft that is already there, again, instead of making a second one", () => {
     const gh = stateIs({ stdout: "true\n" });
     ensureDraft(gh, { ...options, prerelease: true });
-    expect(gh.lines()[1]).toBe("release edit v0.6.1 --repo zakyirsyaad/zorvo-releases --title Zorvo v0.6.1 --notes-file /tmp/notes.md --prerelease=true");
+    expect(gh.lines()[1]).toBe("release edit v0.6.1 --repo zakyirsyaad/zorvo --title Zorvo v0.6.1 --notes-file /tmp/notes.md --prerelease=true");
     expect(gh.lines().some((line) => line.startsWith("release create"))).toBe(false);
   });
 
@@ -242,60 +241,5 @@ describe("assetUrl and uploadFile", () => {
     const gh = fakeGh();
     uploadFile(gh, { repo: REPO, tag: TAG, file: "/tmp/u/latest.json" });
     expect(gh.lines()).toEqual([`release upload v0.6.1 /tmp/u/latest.json --repo ${REPO} --clobber`]);
-  });
-});
-
-describe("gitBlobSha", () => {
-  it("is the hash git gives a file, which the contents API reports as sha", () => {
-    expect(gitBlobSha(Buffer.from("hello\n"))).toBe("ce013625030ba8dba906f756967f9e9ca394464a");
-    expect(gitBlobSha(Buffer.alloc(0))).toBe("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391");
-  });
-});
-
-describe("syncDocs", () => {
-  function file(name, content) {
-    const path = join(dir, name);
-    writeFileSync(path, content);
-    return { src: path, dest: `docs/${name}`, content: Buffer.from(content) };
-  }
-  const putOf = (gh) => gh.calls.filter((call) => call.line.includes("--method PUT"));
-
-  it("writes a file the repository does not have, as a JSON body", () => {
-    const readme = file("README.md", "# Zorvo\n");
-    const gh = fakeGh([[/^api repos\/.*\/contents\/.* --jq \.sha$/, { status: 1, stderr: "HTTP 404" }]]);
-    syncDocs(gh, { repo: REPO, tag: TAG, files: [readme] });
-    const [put] = putOf(gh);
-    expect(put.args).toEqual(["api", "--method", "PUT", `repos/${REPO}/contents/docs/README.md`, "--input", "-", "--silent"]);
-    const body = JSON.parse(put.input);
-    expect(body).toEqual({ message: "docs: update docs/README.md for v0.6.1", content: Buffer.from("# Zorvo\n").toString("base64"), branch: "main" });
-  });
-
-  it("sends the sha of a file that changed", () => {
-    const readme = file("README.md", "new text\n");
-    const gh = fakeGh([[/^api repos\/.*\/contents\/.* --jq \.sha$/, { stdout: "abc123\n" }]]);
-    syncDocs(gh, { repo: REPO, tag: TAG, files: [readme] });
-    expect(JSON.parse(putOf(gh)[0].input).sha).toBe("abc123");
-  });
-
-  it("leaves a file alone when the repository already has the same bytes", () => {
-    const readme = file("README.md", "same\n");
-    const gh = fakeGh([[/--jq \.sha$/, { stdout: `${gitBlobSha(readme.content)}\n` }]]);
-    syncDocs(gh, { repo: REPO, tag: TAG, files: [readme] });
-    expect(putOf(gh)).toHaveLength(0);
-  });
-
-  it("sends a file too big for one command-line argument without trouble", () => {
-    const big = file("big.bin", "x".repeat(300_000));
-    const gh = fakeGh([[/--jq \.sha$/, { status: 1 }]]);
-    syncDocs(gh, { repo: REPO, tag: TAG, files: [big] });
-    expect(JSON.parse(putOf(gh)[0].input).content).toBe(Buffer.from("x".repeat(300_000)).toString("base64"));
-    expect(putOf(gh)[0].line.length).toBeLessThan(200);
-  });
-
-  it("fails with what gh said when a write is refused", () => {
-    const readme = file("README.md", "x\n");
-    const gh = fakeGh([[/--method PUT/, { status: 1, stderr: "HTTP 422: sha wasn't supplied\n" }], [/--jq \.sha$/, { status: 1 }]]);
-    expect(() => syncDocs(gh, { repo: REPO, tag: TAG, files: [readme] })).toThrow(ReleaseError);
-    expect(() => syncDocs(gh, { repo: REPO, tag: TAG, files: [readme] })).toThrow(/HTTP 422/);
   });
 });

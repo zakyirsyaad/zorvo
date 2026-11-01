@@ -40,7 +40,7 @@ export default function PrivacyPage() {
         <li><Chip isCode>nodejs.org</Chip>, when you install an agent that needs Node.js and yours is missing or older than 22;</li>
         <li>uv&apos;s releases on GitHub, when you install an agent that runs with <Chip isCode>uvx</Chip> and you have no <Chip isCode>uvx</Chip>;</li>
         <li>
-          Zorvo&apos;s own releases on GitHub: <Chip isCode>github.com/zakyirsyaad/zorvo-releases</Chip> to ask whether a
+          Zorvo&apos;s own releases on GitHub: <Chip isCode>github.com/zakyirsyaad/zorvo</Chip> to ask whether a
           newer Zorvo exists (a few seconds after start, then about once a day), and, when you click{" "}
           <B>Update &amp; restart</B>, <Chip isCode>api.github.com</Chip> to download it. GitHub sends both requests on to
           its download host, today <Chip isCode>release-assets.githubusercontent.com</Chip>.

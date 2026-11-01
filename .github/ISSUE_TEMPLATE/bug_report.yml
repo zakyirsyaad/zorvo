@@ -4,44 +4,49 @@ labels: [bug]
 body:
   - type: markdown
     attributes:
-      value: Never paste API keys, tokens or private transcripts; a bug report does not need them.
-  - type: input
-    id: version
+      value: |
+        Thanks for the report. Check [Troubleshooting](https://github.com/zakyirsyaad/zorvo#troubleshooting) first.
+        Never paste API keys, tokens or other secrets here. A security problem goes to the [Security tab](https://github.com/zakyirsyaad/zorvo/security) instead.
+  - type: textarea
+    id: what-happened
     attributes:
-      label: App version
-      description: Shown in the sidebar's footer, for example 0.2.0.
+      label: What happened
+      description: What you did, what you saw, and what you expected instead.
     validations:
       required: true
-  - type: dropdown
-    id: agent
-    attributes:
-      label: Agent
-      options: [Qwen Code, Claude Code, Codex, Oh-My-Pi, Aider, Not agent-specific]
-    validations:
-      required: true
-  - type: input
-    id: agent-version
-    attributes:
-      label: Agent version
-      description: For example the output of `qwen --version`.
-  - type: input
-    id: macos
-    attributes:
-      label: macOS version and chip
-      description: For example macOS 15.4, Apple Silicon.
   - type: textarea
     id: steps
     attributes:
-      label: What happened
-      description: What you did, what you expected, and what happened instead.
+      label: Steps to reproduce
       placeholder: |
-        1. Started a Qwen Code session in a repository with Worktree on
-        2. …
+        1. Start a new session with Codex in a folder
+        2. Send a message
+        3. ...
     validations:
       required: true
-  - type: textarea
-    id: logs
+  - type: input
+    id: zorvo-version
     attributes:
-      label: Error text or logs
-      description: Any error the app showed, with secrets removed.
-      render: text
+      label: Zorvo version
+      description: Shown at the bottom of the sidebar.
+      placeholder: v0.5.1
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version and Mac
+      placeholder: macOS 26.5, Apple Silicon
+    validations:
+      required: true
+  - type: input
+    id: agent
+    attributes:
+      label: Agent and its version
+      description: The agent the session used, if the problem is in a session.
+      placeholder: Qwen Code 0.25.2
+  - type: textarea
+    id: details
+    attributes:
+      label: Screenshots or error text
+      description: Remove anything private (paths, project names, secrets) first.

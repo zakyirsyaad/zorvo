@@ -171,7 +171,7 @@ describe("manifest", () => {
       const entryKey = overrides[name]?.key ?? key;
       const entryVersion = overrides[name]?.signedFor ?? signedFor;
       platforms[name] = {
-        url: `https://api.github.com/repos/zakyirsyaad/zorvo-releases/releases/assets/${name.length}`,
+        url: `https://api.github.com/repos/zakyirsyaad/zorvo/releases/assets/${name.length}`,
         signature: signatureOf(entryKey, PACKAGE, commentFor(entryVersion)),
       };
     }

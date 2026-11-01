@@ -42,17 +42,18 @@ const READ_TIMEOUT: Duration = Duration::from_secs(30);
 /// package is about 13 MB, so this still allows a connection of about 11 KB/s).
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
-/// Where a Zorvo update may be downloaded from: this project's releases repository, on GitHub's
-/// two hosts. `tauri-action` writes `https://api.github.com/repos/<owner>/<repo>/releases/assets/<id>`
+/// Where a Zorvo update may be downloaded from: this project's repository, on GitHub's two
+/// hosts. `tauri-action` writes `https://api.github.com/repos/<owner>/<repo>/releases/assets/<id>`
 /// into `latest.json`; a hand-written manifest would use
 /// `https://github.com/<owner>/<repo>/releases/download/<tag>/<file>`. GitHub sends either on to
 /// its own download host. The signature, not the host, is what makes the bytes trustworthy: this
 /// only keeps a doctored manifest from pointing Zorvo at some other server. Renaming or moving
 /// the repository needs a release that accepts both names first, since installed copies carry
-/// this list.
+/// this list. Copies up to 0.7.0 carry zorvo-releases: see docs/development.md, "The first
+/// release from this repository".
 const ALLOWED_DOWNLOADS: [(&str, &str); 2] = [
-    ("api.github.com", "/repos/zakyirsyaad/zorvo-releases/"),
-    ("github.com", "/zakyirsyaad/zorvo-releases/"),
+    ("api.github.com", "/repos/zakyirsyaad/zorvo/"),
+    ("github.com", "/zakyirsyaad/zorvo/"),
 ];
 
 /// What the UI is told about a newer version.
@@ -557,47 +558,47 @@ mod tests {
     fn a_download_from_the_releases_repository_is_allowed() {
         // The asset URL `tauri-action` writes into `latest.json`, and the website form.
         assert!(allowed(
-            "https://api.github.com/repos/zakyirsyaad/zorvo-releases/releases/assets/674789428"
+            "https://api.github.com/repos/zakyirsyaad/zorvo/releases/assets/674789428"
         ));
         assert!(allowed(
-            "https://github.com/zakyirsyaad/zorvo-releases/releases/download/v0.6.0/Zorvo_0.6.0_universal.app.tar.gz"
+            "https://github.com/zakyirsyaad/zorvo/releases/download/v0.6.0/Zorvo_0.6.0_universal.app.tar.gz"
         ));
         assert!(allowed(
-            "https://github.com/zakyirsyaad/zorvo-releases/releases/latest/download/Zorvo.app.tar.gz"
+            "https://github.com/zakyirsyaad/zorvo/releases/latest/download/Zorvo.app.tar.gz"
         ));
     }
 
     #[test]
     fn the_case_of_the_owner_and_the_repository_does_not_matter() {
         assert!(allowed(
-            "https://api.github.com/repos/Zakyirsyaad/Zorvo-Releases/releases/assets/1"
+            "https://api.github.com/repos/Zakyirsyaad/Zorvo/releases/assets/1"
         ));
         assert!(allowed(
-            "HTTPS://GitHub.com/zakyirsyaad/zorvo-releases/releases/download/v1/a"
+            "HTTPS://GitHub.com/zakyirsyaad/zorvo/releases/download/v1/a"
         ));
     }
 
     #[test]
     fn a_download_that_is_not_https_is_refused() {
         assert!(!allowed(
-            "http://github.com/zakyirsyaad/zorvo-releases/releases/download/v1/a"
+            "http://github.com/zakyirsyaad/zorvo/releases/download/v1/a"
         ));
         assert!(!allowed(
-            "http://api.github.com/repos/zakyirsyaad/zorvo-releases/releases/assets/1"
+            "http://api.github.com/repos/zakyirsyaad/zorvo/releases/assets/1"
         ));
-        assert!(!allowed("ftp://github.com/zakyirsyaad/zorvo-releases/a"));
+        assert!(!allowed("ftp://github.com/zakyirsyaad/zorvo/a"));
     }
 
     #[test]
     fn a_download_from_another_host_is_refused_whatever_its_path() {
         for url in [
-            "https://evil.example/zakyirsyaad/zorvo-releases/releases/download/v1/a",
-            "https://github.com.evil.example/zakyirsyaad/zorvo-releases/releases/download/v1/a",
-            "https://evil.example/https://github.com/zakyirsyaad/zorvo-releases/a",
-            "https://uploads.github.com/zakyirsyaad/zorvo-releases/a",
-            "https://raw.githubusercontent.com/zakyirsyaad/zorvo-releases/main/a",
-            "https://release-assets.githubusercontent.com/zakyirsyaad/zorvo-releases/a",
-            "https://github.com./zakyirsyaad/zorvo-releases/releases/download/v1/a",
+            "https://evil.example/zakyirsyaad/zorvo/releases/download/v1/a",
+            "https://github.com.evil.example/zakyirsyaad/zorvo/releases/download/v1/a",
+            "https://evil.example/https://github.com/zakyirsyaad/zorvo/a",
+            "https://uploads.github.com/zakyirsyaad/zorvo/a",
+            "https://raw.githubusercontent.com/zakyirsyaad/zorvo/main/a",
+            "https://release-assets.githubusercontent.com/zakyirsyaad/zorvo/a",
+            "https://github.com./zakyirsyaad/zorvo/releases/download/v1/a",
         ] {
             assert!(!allowed(url), "{url}");
         }
@@ -606,9 +607,9 @@ mod tests {
     #[test]
     fn a_download_with_user_info_or_a_port_is_refused() {
         for url in [
-            "https://github.com@evil.example/zakyirsyaad/zorvo-releases/releases/download/v1/a",
-            "https://user:pw@github.com/zakyirsyaad/zorvo-releases/releases/download/v1/a",
-            "https://github.com:8443/zakyirsyaad/zorvo-releases/releases/download/v1/a",
+            "https://github.com@evil.example/zakyirsyaad/zorvo/releases/download/v1/a",
+            "https://user:pw@github.com/zakyirsyaad/zorvo/releases/download/v1/a",
+            "https://github.com:8443/zakyirsyaad/zorvo/releases/download/v1/a",
         ] {
             assert!(!allowed(url), "{url}");
         }
@@ -617,18 +618,19 @@ mod tests {
     #[test]
     fn a_download_from_another_owner_or_repository_is_refused() {
         for url in [
-            // A plain "path contains zakyirsyaad/zorvo-releases/" test would accept this one.
-            "https://github.com/evil-zakyirsyaad/zorvo-releases/releases/download/v1/a",
-            "https://github.com/zakyirsyaad/zorvo-releases-fork/releases/download/v1/a",
-            "https://github.com/evil/x/zakyirsyaad/zorvo-releases/releases/download/v1/a",
-            "https://github.com/zakyirsyaad/zorvo/releases/download/v1/a",
-            "https://api.github.com/repos/zakyirsyaad/zorvo/releases/assets/1",
-            "https://api.github.com/repos/evil/zorvo-releases/releases/assets/1",
+            // A plain "path contains zakyirsyaad/zorvo/" test would accept this one.
+            "https://github.com/evil-zakyirsyaad/zorvo/releases/download/v1/a",
+            "https://github.com/zakyirsyaad/zorvo-fork/releases/download/v1/a",
+            "https://github.com/evil/x/zakyirsyaad/zorvo/releases/download/v1/a",
+            // The repository releases used to live in.
+            "https://github.com/zakyirsyaad/zorvo-releases/releases/download/v1/a",
+            "https://api.github.com/repos/zakyirsyaad/zorvo-releases/releases/assets/1",
+            "https://api.github.com/repos/evil/zorvo/releases/assets/1",
             // "/repos/" belongs to the API host only.
-            "https://api.github.com/zakyirsyaad/zorvo-releases/releases/assets/1",
-            "https://github.com/repos/zakyirsyaad/zorvo-releases/releases/assets/1",
+            "https://api.github.com/zakyirsyaad/zorvo/releases/assets/1",
+            "https://github.com/repos/zakyirsyaad/zorvo/releases/assets/1",
             // The repository itself, with nothing after it.
-            "https://api.github.com/repos/zakyirsyaad/zorvo-releases",
+            "https://api.github.com/repos/zakyirsyaad/zorvo",
         ] {
             assert!(!allowed(url), "{url}");
         }
@@ -637,11 +639,11 @@ mod tests {
     #[test]
     fn a_path_that_climbs_out_of_the_repository_is_refused() {
         for url in [
-            "https://github.com/zakyirsyaad/zorvo-releases/../evil/repo/releases/download/v1/a",
-            "https://github.com/zakyirsyaad/zorvo-releases/%2e%2e/evil/repo/a",
-            "https://github.com/zakyirsyaad/zorvo-releases/%2E%2E/%2E%2E/evil/repo/a",
-            "https://github.com/zakyirsyaad/zorvo-releases\\..\\evil\\repo\\a",
-            "https://github.com/zakyirsyaad/zorvo-releases%2Fa",
+            "https://github.com/zakyirsyaad/zorvo/../evil/repo/releases/download/v1/a",
+            "https://github.com/zakyirsyaad/zorvo/%2e%2e/evil/repo/a",
+            "https://github.com/zakyirsyaad/zorvo/%2E%2E/%2E%2E/evil/repo/a",
+            "https://github.com/zakyirsyaad/zorvo\\..\\evil\\repo\\a",
+            "https://github.com/zakyirsyaad/zorvo%2Fa",
         ] {
             assert!(!allowed(url), "{url}");
         }

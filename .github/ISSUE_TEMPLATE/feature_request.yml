@@ -1,22 +1,22 @@
-name: Feature request
+name: Idea
 description: Suggest something Zorvo could do.
 labels: [enhancement]
 body:
   - type: textarea
     id: problem
     attributes:
-      label: What are you trying to do?
-      description: The task or problem, not yet the solution.
+      label: What you are trying to do
+      description: The task, and what gets in the way today.
     validations:
       required: true
   - type: textarea
     id: idea
     attributes:
-      label: What would help?
-      description: How you picture it working; a screenshot of a similar app is welcome.
-  - type: dropdown
-    id: agents
+      label: What would help
+      description: How you picture it working. Screens or examples are welcome.
+  - type: input
+    id: agent
     attributes:
-      label: Which agents does it concern?
-      multiple: true
-      options: [Qwen Code, Claude Code, Codex, Oh-My-Pi, Aider, All of them]
+      label: Agent
+      description: The agent it is about, if any.
+      placeholder: Claude Code

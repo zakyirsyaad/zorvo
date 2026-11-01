@@ -7,7 +7,7 @@ import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { keyIdText } from "./check-updater-signing.mjs";
 import { ReleaseError, assetNames } from "./release-checks.mjs";
-import { RELEASES_REPO, SOURCE_REPO } from "./release-github.mjs";
+import { SOURCE_REPO } from "./release-github.mjs";
 import { explainSignFailure, main, promptHidden, signRelease, signWithTauri } from "./sign-release.mjs";
 
 // The release is signed and published from the machine that holds the updater key. Here everything around it is
@@ -21,7 +21,6 @@ const NAMES = assetNames(VERSION);
 const HEAD = "1f2e3d4c5b6a79881f2e3d4c5b6a79881f2e3d4c";
 const KEY_SENTINEL = "THE-PRIVATE-KEY-MUST-NEVER-BE-READ-OR-PRINTED";
 const DMG_BYTES = "dmg bytes";
-const DOC_PATHS = ["docs/releases-repo/README.md", "docs/releases-repo/assets/icon.png"];
 
 function makeKey() {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
@@ -63,18 +62,13 @@ const CHANGELOG = `# Changelog
 [0.6.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.6.0...v0.6.1
 `;
 
-/** A checkout of the repository: the config, the changelog, the user guide, and a key file with a sentinel in it. */
+/** A checkout of the repository: the config, the changelog, and a key file with a sentinel in it. */
 function makeRoot({ version = VERSION, changelog = CHANGELOG } = {}) {
   const root = join(dir, "repo");
   mkdirSync(join(root, "src-tauri"), { recursive: true });
-  mkdirSync(join(root, "docs/releases-repo/assets"), { recursive: true });
-  const endpoints = [`https://github.com/${RELEASES_REPO}/releases/latest/download/latest.json`];
+  const endpoints = [`https://github.com/${SOURCE_REPO}/releases/latest/download/latest.json`];
   writeFileSync(join(root, "src-tauri/tauri.conf.json"), JSON.stringify({ version, plugins: { updater: { pubkey: pubkeyOf(key), endpoints } } }));
   writeFileSync(join(root, "CHANGELOG.md"), changelog);
-  writeFileSync(join(root, "docs/releases-repo/README.md"), "# Zorvo\n");
-  writeFileSync(join(root, "docs/releases-repo/assets/icon.png"), Buffer.from([1, 2, 3]));
-  // A stray file that git does not track: it must never reach the public repository.
-  writeFileSync(join(root, "docs/releases-repo/.DS_Store"), "stray");
   writeFileSync(join(dir, "zorvo-updater.key"), KEY_SENTINEL);
   chmodSync(join(dir, "zorvo-updater.key"), 0o600);
   return root;
@@ -99,9 +93,8 @@ function makeBuild({ version = VERSION, extra = [] } = {}) {
 function makeGh({ build, runSha = HEAD, tagSha = HEAD, state = "none" }) {
   const calls = [];
   const uploads = new Map();
-  const puts = [];
   let notes = null;
-  const gh = (args, { input } = {}) => {
+  const gh = (args) => {
     const line = args.join(" ");
     calls.push(line);
     const ok = (stdout = "") => ({ status: 0, stdout, stderr: "" });
@@ -123,17 +116,12 @@ function makeGh({ build, runSha = HEAD, tagSha = HEAD, state = "none" }) {
       return ok();
     }
     if (line.includes("--json assets")) {
-      const assets = [...uploads.keys()].map((name, index) => ({ name, apiUrl: `https://api.github.com/repos/${RELEASES_REPO}/releases/assets/${index + 1}` }));
+      const assets = [...uploads.keys()].map((name, index) => ({ name, apiUrl: `https://api.github.com/repos/${SOURCE_REPO}/releases/assets/${index + 1}` }));
       return ok(JSON.stringify({ assets }));
-    }
-    if (line.includes("--jq .sha")) return { status: 1, stdout: "", stderr: "HTTP 404" };
-    if (line.includes("--method PUT")) {
-      puts.push({ line, body: JSON.parse(input) });
-      return ok();
     }
     return ok();
   };
-  return { gh, calls, uploads, puts, notes: () => notes };
+  return { gh, calls, uploads, notes: () => notes };
 }
 
 function makeDeps({ build = makeBuild(), head = HEAD, runSha, tagSha, state, dirty = false, password = "right", answer = true, previousTag = "v0.6.0", signingKey = key, log, headChange } = {}) {
@@ -154,7 +142,6 @@ function makeDeps({ build = makeBuild(), head = HEAD, runSha, tagSha, state, dir
         return `${headChange && headReads >= headChange.from ? headChange.to : head}\n`;
       }
       if (args[0] === "status") return dirty ? " M scripts/x.mjs\n" : "";
-      if (args[0] === "ls-files") return `${DOC_PATHS.join("\0")}\0`;
       if (args[0] === "describe") {
         if (!previousTag) throw new ReleaseError("git describe failed: No names found");
         return `${previousTag}\n`;
@@ -190,7 +177,7 @@ describe("a release that goes right", () => {
     expect(lines[0]).toBe(`api repos/${SOURCE_REPO}/commits/refs/tags/v0.6.1 --jq .sha`);
     expect(lines[1]).toBe(`run list --repo ${SOURCE_REPO} --workflow release.yml --branch v0.6.1 --status success --limit 10 --json databaseId,headSha,event,createdAt`);
     expect(lines[2]).toMatch(new RegExp(`^run download 42 --repo ${SOURCE_REPO} --name release-build --dir `));
-    expect(lines.some((line) => line.startsWith(`release create v0.6.1 --repo ${RELEASES_REPO} --draft --target main --title Zorvo v0.6.1`))).toBe(true);
+    expect(lines.some((line) => line.startsWith(`release create v0.6.1 --repo ${SOURCE_REPO} --draft --verify-tag --title Zorvo v0.6.1`))).toBe(true);
     expect(ctx.signed).toEqual([{ keyPath: join(dir, "zorvo-updater.key"), version: VERSION, password: "right" }]);
     expect(lines.some((line) => line.includes("--prerelease"))).toBe(false);
   });
@@ -218,7 +205,7 @@ describe("a release that goes right", () => {
     expect(manifest.version).toBe(VERSION);
     expect(Object.keys(manifest.platforms)).toHaveLength(6);
     const url = manifest.platforms["darwin-aarch64"].url;
-    expect(url).toMatch(new RegExp(`^https://api\\.github\\.com/repos/${RELEASES_REPO}/releases/assets/\\d+$`));
+    expect(url).toMatch(new RegExp(`^https://api\\.github\\.com/repos/${SOURCE_REPO}/releases/assets/\\d+$`));
     expect(manifest.platforms["darwin-x86_64-app"].url).toBe(url);
     expect(ctx.logs.filter((message) => /latest\.json OK: 6 platform entries/.test(message))).toHaveLength(2);
   });
@@ -227,17 +214,8 @@ describe("a release that goes right", () => {
     const ctx = await run();
     expect(ctx.fake.notes()).toContain("### Fixed");
     expect(ctx.fake.notes()).toContain("- A thing.");
-    expect(ctx.fake.notes()).toContain(`https://github.com/${RELEASES_REPO}#install`);
+    expect(ctx.fake.notes()).toContain(`https://github.com/${SOURCE_REPO}#install`);
     expect(ctx.fake.notes()).not.toContain("Unreleased");
-  });
-
-  it("copies the user guide as git tracks it, and the public changelog, and no stray file", async () => {
-    const ctx = await run();
-    expect(ctx.fake.puts.map((put) => put.line.match(/contents\/(\S+)/)[1])).toEqual(["CHANGELOG.md", "README.md", "assets/icon.png"]);
-    const changelog = Buffer.from(ctx.fake.puts[0].body.content, "base64").toString();
-    expect(changelog).toContain("## 0.6.1 - 2026-10-27");
-    expect(changelog).not.toContain("Unreleased");
-    expect(ctx.fake.puts[2].body.content).toBe(Buffer.from([1, 2, 3]).toString("base64"));
   });
 
   it("makes the draft a pre-release for a tag with a pre-release part", async () => {
@@ -376,7 +354,7 @@ describe("the password and the key", () => {
   it("only hands the key's path on: its contents are never read, printed or uploaded", async () => {
     const log = vi.fn();
     const ctx = await run({ deps: { log } });
-    const everything = [...ctx.fake.calls, ...log.mock.calls.flat(), ...ctx.fake.puts.map((put) => put.line + JSON.stringify(put.body)), ...[...ctx.fake.uploads.values()].map(String)].join("\n");
+    const everything = [...ctx.fake.calls, ...log.mock.calls.flat(), ...[...ctx.fake.uploads.values()].map(String)].join("\n");
     expect(everything).not.toContain(KEY_SENTINEL);
     expect(ctx.signed[0].keyPath).toBe(join(dir, "zorvo-updater.key"));
   });

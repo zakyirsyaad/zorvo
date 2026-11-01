@@ -1,9 +1,7 @@
 #!/usr/bin/env node
-// What the Release workflow publishes in the public zorvo-releases repository.
-// The public changelog leaves out the Unreleased section, and references into
-// the source repository become plain text.
+// A release's notes, from CHANGELOG.md. They leave out the Unreleased section, and
+// references into this repository become plain text, which GitHub links by itself.
 //
-//   node scripts/public-docs.mjs changelog CHANGELOG.md > public/CHANGELOG.md
 //   node scripts/public-docs.mjs notes CHANGELOG.md v1.2.3 > notes.md
 
 import { readFileSync } from "node:fs";
@@ -11,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const SOURCE_REPO = "https://github.com/zakyirsyaad/zorvo";
 
-/** True for a link into the source repository (not into zorvo-releases). */
+/** True for a link into this repository. */
 function isSourceLink(url) {
   return url === SOURCE_REPO || /^https:\/\/github\.com\/zakyirsyaad\/zorvo[/#]/.test(url);
 }
@@ -20,7 +18,7 @@ function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** The changelog for zorvo-releases: released versions only, no references into the source repository. */
+/** The changelog for release notes: released versions only, no references into this repository. */
 export function publicChangelog(text) {
   const lines = text.split("\n");
   const sourceLabels = [];
@@ -74,9 +72,7 @@ export function sectionsOf(text) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [kind, file, version] = process.argv.slice(2);
   const text = file ? readFileSync(file, "utf8") : "";
-  if (kind === "changelog" && file) {
-    process.stdout.write(publicChangelog(text));
-  } else if (kind === "notes" && file && version) {
+  if (kind === "notes" && file && version) {
     const notes = releaseNotes(text, version);
     if (!notes) {
       console.error(`CHANGELOG.md has no section for ${version}.`);
@@ -84,7 +80,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
     process.stdout.write(notes + "\n");
   } else {
-    console.error("Usage: node scripts/public-docs.mjs changelog <CHANGELOG.md> | notes <CHANGELOG.md> <version>");
+    console.error("Usage: node scripts/public-docs.mjs notes <CHANGELOG.md> <version>");
     process.exit(2);
   }
 }

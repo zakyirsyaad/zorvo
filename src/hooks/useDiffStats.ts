@@ -9,6 +9,10 @@ export interface DiffTargetsRead {
   targets: DiffTargets;
   /** True once the read has answered or failed; until then `targets` has no base yet. */
   isLoaded: boolean;
+  /** The last read failed, so `targets` knows no root. Unlike loading, this stays until `reload` or a new `version`. */
+  hasFailed: boolean;
+  /** Reads again without waiting for a new `version`. */
+  reload: () => void;
 }
 
 /**
@@ -21,20 +25,22 @@ export function useDiffTargets(
   version: number,
   onError: (message: string) => void,
 ): DiffTargetsRead {
-  const [state, setState] = useState<{ path: string; targets: DiffTargets } | null>(null);
+  const [state, setState] = useState<{ path: string; targets: DiffTargets; hasFailed: boolean } | null>(null);
+  const [reloads, setReloads] = useState(0);
   const onErrorRef = useLatest(onError);
   const reportedPath = useRef<string | undefined>(undefined);
+  const reload = useCallback(() => setReloads((n) => n + 1), []);
 
   useEffect(() => {
     if (!path || !isEnabled) return;
     let isCancelled = false;
     invoke<DiffTargets>('session_diff_targets', { path })
       .then((targets) => {
-        if (!isCancelled && targets) setState({ path, targets });
+        if (!isCancelled && targets) setState({ path, targets, hasFailed: false });
       })
       .catch((error) => {
         if (isCancelled) return;
-        setState({ path, targets: NO_TARGETS });
+        setState({ path, targets: NO_TARGETS, hasFailed: true });
         if (reportedPath.current === path) return;
         reportedPath.current = path;
         onErrorRef.current(`Could not read the diff targets in ${path}: ${String(error)}`);
@@ -42,15 +48,17 @@ export function useDiffTargets(
     return () => {
       isCancelled = true;
     };
-  }, [path, isEnabled, version, onErrorRef]);
+  }, [path, isEnabled, version, reloads, onErrorRef]);
 
   const isCurrent = isEnabled && state !== null && state.path === path;
-  return { targets: isCurrent ? state.targets : NO_TARGETS, isLoaded: isCurrent };
+  return { targets: isCurrent ? state.targets : NO_TARGETS, isLoaded: isCurrent, hasFailed: isCurrent && state.hasFailed, reload };
 }
 
 export interface DiffStats {
   /** The files with line counts, or null before the first answer for this folder and target. */
   stats: FileStat[] | null;
+  /** `stats` is null because the read failed, not because it is under way: only `reload` or a new `version` changes that. */
+  hasFailed: boolean;
   reload: () => void;
 }
 
@@ -76,6 +84,7 @@ function useStatsRead(
   onFailed?: (error: unknown) => boolean,
 ): DiffStats {
   const [state, setState] = useState<{ key: string; stats: FileStat[] } | null>(null);
+  const [failedKey, setFailedKey] = useState<string | null>(null);
   const [reloads, setReloads] = useState(0);
   const onErrorRef = useLatest(onError);
   const onFailedRef = useLatest(onFailed);
@@ -92,10 +101,12 @@ function useStatsRead(
       .then((stats) => {
         if (isCancelled || !Array.isArray(stats)) return;
         setState({ key, stats });
+        setFailedKey(null);
       })
       .catch((error) => {
         if (isCancelled) return;
         if (onFailedRef.current?.(error)) return;
+        setFailedKey(key);
         if (reportedPath.current === path) return;
         reportedPath.current = path;
         onErrorRef.current(`Could not read the diff in ${path}: ${String(error)}`);
@@ -107,7 +118,8 @@ function useStatsRead(
 
   // Never show another folder's or target's files while this one loads.
   const isCurrent = isEnabled && state !== null && state.key === key;
-  return { stats: isCurrent ? state.stats : null, reload };
+  const stats = isCurrent ? state.stats : null;
+  return { stats, hasFailed: isEnabled && stats === null && failedKey === key, reload };
 }
 
 /**

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { ReviewTarget } from '../types';
 
 /** Which session the comments added to the composer are for. */
@@ -16,8 +16,8 @@ export interface ReviewMessage {
   blocksSend: boolean;
   /** Call it after the text went into the composer, so a composer that took nothing leaves no slot. */
   add: (sessionId: string, ids: readonly string[], target: ReviewTarget) => void;
-  /** The text already has this target's heading unless the last add was for another session or target. */
-  needsHeading: (sessionId: string, target: ReviewTarget) => boolean;
+  /** The composer's text already has `heading` only after an add for this session and target, and only while it still holds it. */
+  needsHeading: (sessionId: string, target: ReviewTarget, heading: string) => boolean;
   /** Takes edited or deleted comments out. The slot stays, since their text stays in the composer. */
   forget: (ids: readonly string[]) => void;
   /** Lifts the slot when no text is left: `handleSend` sends nothing for spaces, so they count as empty. */
@@ -37,6 +37,8 @@ export function useReviewMessage({ activeSessionId, markSent }: {
   markSent: (sessionId: string, ids: readonly string[]) => void;
 }): ReviewMessage {
   const [slot, setSlot] = useState<ReviewSlot | null>(null);
+  // Read only for the heading, which says quoted lines are not instructions: replacing the text keeps the slot.
+  const composerText = useRef('');
   const isActiveSessions = slot !== null && slot.sessionId === activeSessionId;
 
   return {
@@ -49,9 +51,11 @@ export function useReviewMessage({ activeSessionId, markSent }: {
         commentIds: prev?.sessionId === sessionId ? [...new Set([...prev.commentIds, ...ids])] : [...ids],
         lastTarget: target,
       })),
-    needsHeading: (sessionId, target) => slot?.sessionId !== sessionId || slot.lastTarget !== target,
+    needsHeading: (sessionId, target, heading) =>
+      slot?.sessionId !== sessionId || slot.lastTarget !== target || !composerText.current.includes(heading),
     forget: (ids) => setSlot((prev) => prev && { ...prev, commentIds: prev.commentIds.filter((id) => !ids.includes(id)) }),
     onComposerText: (text) => {
+      composerText.current = text;
       if (text.trim() === '') setSlot(null);
     },
     onComposerRestored: () => setSlot(null),

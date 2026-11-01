@@ -25,7 +25,6 @@ import { ComposerDock, type ComposerHandle } from "../components/ComposerDock";
 import { useReviewComments, type ReviewComments } from "../hooks/useReviewComments";
 import { useReviewMessage } from "../hooks/useReviewMessage";
 import { useReviewWiring, type ReviewWiring } from "../hooks/useReviewWiring";
-import { COMPOSER_PLACEHOLDERS } from "../lib/composer-state";
 import { lineHash } from "../lib/review-comments";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
@@ -48,6 +47,8 @@ const BASE_HEADING = "Review comments on the diff against main. Quoted lines com
 const NOTE_FOR_ALPHA = "These review comments are for Alpha work. Go back to that session, or clear the message.";
 const NOTE_FOR_ARCHIVED = "These review comments are for Alpha work, which is archived. Open it from the archive, or clear the message.";
 const NOTE_FOR_GONE = "These review comments are for another session. Clear the message to send here.";
+const NOTE_STUCK = "These review comments are for Alpha work, which cannot continue right now. Clear the message to send here.";
+const NOT_LOADED = "The diff has not loaded, so comments cannot be added. Refresh to try again.";
 const NO_BOX = "There is no message box for this session, so comments cannot be added.";
 const BOX_UNAVAILABLE = "The message box is not available right now.";
 const SLOT_ELSEWHERE = "The message holds comments for another session. Go back to it, or clear the message.";
@@ -88,6 +89,8 @@ const beta = (comments: ReviewComment[] = []) => sessionOf("s-b", "Beta work", c
 
 type SpyOptions = {
   base?: { name: string } | null;
+  /** Which reads fail right now; a test can change it. */
+  failing?: { targets?: boolean; stats?: boolean };
   profiles?: AgentProfile[];
   targets?: () => Promise<unknown>;
   diff?: () => Promise<string>;
@@ -99,9 +102,12 @@ function seed(sessions: unknown[], options: SpyOptions = {}) {
   return vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
     if (cmd === "get_agent_profiles") return Promise.resolve(structuredClone(options.profiles ?? fakeProfiles));
     if (cmd === "session_diff_targets") {
+      if (options.failing?.targets) return Promise.reject(new Error("no targets"));
       return options.targets ? options.targets() : Promise.resolve({ base: options.base ?? null, root: CWD, prefix: "" });
     }
-    if (cmd === "session_diff_stats") return Promise.resolve([STAT]);
+    if (cmd === "session_diff_stats") {
+      return options.failing?.stats ? Promise.reject(new Error("no stats")) : Promise.resolve([STAT]);
+    }
     if (cmd === "session_file_diff") return options.diff ? options.diff() : Promise.resolve(DIFF);
     if (cmd === "create_session_worktree") {
       worktrees += 1;
@@ -169,6 +175,13 @@ async function openNewDraft() {
   await press("+ New session");
 }
 
+async function refresh() {
+  await press("More actions");
+  await act(async () => {
+    fireEvent.click(screen.getByRole("menuitem", { name: "Refresh" }));
+  });
+}
+
 const sidebarRow = (name: string) =>
   screen.getAllByText(name).map((text) => text.closest("li")).find(Boolean) as HTMLElement;
 
@@ -196,14 +209,14 @@ async function rewindTo(text: string) {
   });
 }
 
-/** Alpha's comment in the message, and a new draft with two agents ticked. */
-async function renderCompareDraft() {
+/** A new draft with two agents ticked, with Alpha's comment in the message when `withSlot`. */
+async function renderCompareDraft({ withSlot }: { withSlot: boolean }) {
   const settings = fakeStore().state.settings as Partial<Settings>;
   const kimi = makeProfile({ id: "kimi", name: "Kimi CLI", detected: true });
   const profiles = [...fakeProfiles, kimi];
   settings.enabledAgents = profiles.map((agent) => agent.id);
   const spy = await renderDiff([alpha([commentOf()])], { profiles });
-  await addAll();
+  if (withSlot) await addAll();
   await openNewDraft();
   await act(async () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Agent: / }));
@@ -285,6 +298,30 @@ describe("Adding comments to the message", () => {
     await addAll();
 
     expect(prompt().value).toBe(`${HEADING}\n\nsrc/app.ts:42\n> const x\nUse AuthError here.\n\nsrc/app.ts:42\n> const x\nChanged.`);
+  });
+
+  it("adds the heading again when the text no longer holds it", async () => {
+    await renderDiff([alpha([commentOf(), outdatedComment])]);
+    await addAll();
+
+    // Select-all and typing never empties the composer, so the slot stays.
+    typeInPrompt("Start over: look at this.");
+    await press("Add");
+
+    expect(prompt().value).toBe(
+      `Start over: look at this.\n\n${HEADING}\n\nsrc/app.ts:42 (this line is no longer here in the diff)\n> gone by now\nThis one is old.`,
+    );
+    expect(prompt().value.split(HEADING)).toHaveLength(2);
+  });
+
+  it("keeps out a second heading while the text still holds it", async () => {
+    await renderDiff([alpha([commentOf(), outdatedComment])]);
+    await addAll();
+
+    typeInPrompt(`${prompt().value}\n\nAnd a word of mine.`);
+    await press("Add");
+
+    expect(prompt().value.split(HEADING)).toHaveLength(2);
   });
 
   it("adds a heading on a second add with another target", async () => {
@@ -378,10 +415,69 @@ describe("Adding comments to the message", () => {
     expect(screen.getByRole("button", { name: "Add again" })).toBeDisabled();
   });
 
-  it("will not word paths until it knows the repository's root", async () => {
-    await renderDiff([alpha([commentOf()])], { targets: () => Promise.reject(new Error("no git")) });
+  it("waits with no reason while the diff is loading", async () => {
+    await renderDiff([alpha([commentOf()])], { targets: () => new Promise(() => {}) });
 
-    expect(addButton()).toBeDisabled();
+    const add = addButton();
+    expect(add).toBeDisabled();
+    expect(add).not.toHaveAttribute("aria-describedby");
+    expect(screen.queryByText(NOT_LOADED)).toBeNull();
+  });
+
+  it("says why when the diff targets failed, and Refresh recovers Add", async () => {
+    const failing = { targets: true };
+    await renderDiff([alpha([commentOf()])], { failing });
+
+    const add = await screen.findByRole("button", { name: "Add 1 comment to message" });
+    await waitFor(() => expect(add).toHaveAccessibleDescription(NOT_LOADED));
+    expect(add).toBeDisabled();
+
+    failing.targets = false;
+    await refresh();
+
+    await waitFor(() => expect(addButton()).toBeEnabled());
+    expect(screen.queryByText(NOT_LOADED)).toBeNull();
+    await addAll();
+    expect(prompt().value).toBe(`${HEADING}\n\nsrc/app.ts:42\n> const x\nUse AuthError here.`);
+  });
+
+  it("says why when the list of changes failed, and Refresh recovers Add", async () => {
+    const failing = { stats: false };
+    seed([alpha([commentOf()])], { failing });
+    await renderApp();
+    const chip = await screen.findByRole("button", { name: /lines added/ });
+    failing.stats = true;
+    await act(async () => {
+      fireEvent.click(chip);
+    });
+
+    const add = await screen.findByRole("button", { name: "Add 1 comment to message" });
+    await waitFor(() => expect(add).toHaveAccessibleDescription(NOT_LOADED));
+    expect(add).toBeDisabled();
+
+    failing.stats = false;
+    await refresh();
+
+    await waitFor(() => expect(addButton()).toBeEnabled());
+    expect(screen.queryByText(NOT_LOADED)).toBeNull();
+  });
+
+  it("gives the reason on Add again too", async () => {
+    await renderDiff([alpha([commentOf({ sentAt: 5 })])], { failing: { targets: true } });
+
+    const again = await screen.findByRole("button", { name: "Add again" });
+
+    await waitFor(() => expect(again).toHaveAccessibleDescription(NOT_LOADED));
+    expect(again).toBeDisabled();
+  });
+
+  it("a reason Refresh cannot fix comes first", async () => {
+    await renderDiff([alpha([commentOf()])], { profiles: [], failing: { targets: true } });
+
+    const add = await screen.findByRole("button", { name: "Add 1 comment to message" });
+
+    await waitFor(() => expect(add).toHaveAccessibleDescription(BOX_UNAVAILABLE));
+    expect(screen.queryByText(NOT_LOADED)).toBeNull();
   });
 
   it("add collapses an expanded diff and focuses the composer", async () => {
@@ -438,7 +534,7 @@ describe("Which session the message is for", () => {
   });
 
   it("blocks Send in a compare draft", async () => {
-    const spy = await renderCompareDraft();
+    const spy = await renderCompareDraft({ withSlot: true });
 
     expect(screen.getByText(NOTE_FOR_ALPHA)).toBeDefined();
     expect(sendButton()).toBeDisabled();
@@ -484,14 +580,14 @@ describe("Which session the message is for", () => {
     expect(screen.queryByText(NOTE_FOR_GONE)).toBeNull();
   });
 
-  it("says nothing false in the placeholder of a session the message cannot go to", async () => {
+  it("names the session the message is for, in a session that could not take it anyway", async () => {
     await renderDiff([alpha(), sessionOf("s-b", "Beta work", [], { profileId: "not-an-agent" })]);
     await addAll();
 
     await openSession("Beta work");
 
     expect(sendButton()).toBeDisabled();
-    expect(prompt().placeholder).toBe(COMPOSER_PLACEHOLDERS.newSession);
+    expect(sendButton()).toHaveAccessibleDescription(NOTE_FOR_ALPHA);
   });
 
   it("disables Add in another session, with the reason", async () => {
@@ -613,6 +709,7 @@ function WiredComposer({ handle, comments, onWired }: {
     comments: review,
     updateComments: (_id, change) => setList(change),
     composerRef: handle,
+    canContinue: true,
     hasComposer: true,
     isComposerDisabled: false,
     collapseDiff: () => {},
@@ -665,17 +762,6 @@ describe("Lifting the slot", () => {
     expect(wiring?.addReview.inMessage.has("c-1")).toBe(true);
   });
 
-  it("a deleted comment's id leaves the slot", () => {
-    const handle = createRef<ComposerHandle>();
-    let wiring: ReviewWiring | undefined;
-    render(<WiredComposer handle={handle} comments={[commentOf()]} onWired={(w) => (wiring = w)} />);
-    act(() => wiring?.addReview.add([{ comment: commentOf(), status: "current" }], "head", CONTEXT));
-
-    act(() => wiring?.review.deleteComment("c-1"));
-
-    expect(wiring?.addReview.inMessage.has("c-1")).toBe(false);
-  });
-
   it("a send from another session marks nothing and keeps the slot", () => {
     const markSent = vi.fn();
     const { result } = renderHook(() => useReviewMessage({ activeSessionId: "s-b", markSent }));
@@ -690,13 +776,31 @@ describe("Lifting the slot", () => {
 
   it("forgetting every comment keeps the slot, since their text is still in the composer", () => {
     const { result } = renderHook(() => useReviewMessage({ activeSessionId: "s-b", markSent: () => {} }));
-    act(() => result.current.add("s-a", ["c-1"], "head"));
+    act(() => {
+      result.current.onComposerText(`${HEADING}\n\nsrc/app.ts:42`);
+      result.current.add("s-a", ["c-1"], "head");
+    });
 
     act(() => result.current.forget(["c-1"]));
 
     expect(result.current.slot).toEqual({ sessionId: "s-a", commentIds: [], lastTarget: "head" });
     expect(result.current.blocksSend).toBe(true);
-    expect(result.current.needsHeading("s-a", "head")).toBe(false);
+    expect(result.current.needsHeading("s-a", "head", HEADING)).toBe(false);
+  });
+
+  it("needs the heading once the text stops holding it, slot or no slot", () => {
+    const { result } = renderHook(() => useReviewMessage({ activeSessionId: "s-a", markSent: () => {} }));
+    expect(result.current.needsHeading("s-a", "head", HEADING)).toBe(true);
+    act(() => {
+      result.current.onComposerText(HEADING);
+      result.current.add("s-a", ["c-1"], "head");
+    });
+    expect(result.current.needsHeading("s-a", "head", HEADING)).toBe(false);
+
+    act(() => result.current.onComposerText("Something else"));
+
+    expect(result.current.slot).not.toBeNull();
+    expect(result.current.needsHeading("s-a", "head", HEADING)).toBe(true);
   });
 
   it("no composer leaves no slot, whatever the button said", () => {
@@ -709,6 +813,7 @@ describe("Lifting the slot", () => {
         comments: { comments: [commentOf()] } as unknown as ReviewComments,
         updateComments,
         composerRef: empty,
+        canContinue: true,
         hasComposer: true,
         isComposerDisabled: false,
         collapseDiff: () => {},
@@ -778,23 +883,63 @@ describe("After Send", () => {
     expect(within(panel()).queryByText("Sent")).toBeNull();
   });
 
-  it("a send that falls through to a new session marks none", async () => {
+  it("a review message cannot fall through to a new session", async () => {
     const spy = await renderDiff([alpha([commentOf()], { profileId: "not-an-agent" })]);
+
     await addAll();
+
+    expect(screen.getByText(NOTE_STUCK)).toBeDefined();
+    expect(sendButton()).toBeDisabled();
+    expect(sendButton()).toHaveAccessibleDescription(NOTE_STUCK);
+    fireEvent.click(sendButton());
+    fireEvent.keyDown(prompt(), { key: "Enter" });
+    await act(async () => {});
+    expect(promptsSent(spy)).toEqual([]);
+    expect(startedSessions(spy)).toEqual([]);
+    expect(prompt().value).toContain("Use AuthError here.");
+    expect((await savedComments("s-a"))[0].sentAt).toBeUndefined();
+  });
+
+  it("clearing the message of a session that cannot continue lifts the block", async () => {
+    await renderDiff([alpha([commentOf()], { profileId: "not-an-agent" })]);
+    await addAll();
+
+    typeInPrompt("");
+
+    expect(screen.queryByText(NOTE_STUCK)).toBeNull();
+    typeInPrompt("A message of its own");
+    expect(sendButton()).toBeEnabled();
+  });
+
+  it("a message with no slot still starts a new session", async () => {
+    const spy = await renderDiff([alpha([commentOf()], { profileId: "not-an-agent" })]);
+    typeInPrompt("Just a message");
 
     await send();
 
     await waitFor(() => expect(startedSessions(spy)).toHaveLength(1));
+    await waitFor(() => expect(promptsSent(spy)).toHaveLength(1));
+    expect(promptsSent(spy)[0].text).toBe("Just a message");
     expect((await savedComments("s-a"))[0].sentAt).toBeUndefined();
   });
 
-  it("a send that falls through to a compare run marks none", async () => {
-    const spy = await renderCompareDraft();
-    // Only a draft compares, and a draft cannot send while a slot is set: it has to be lifted first.
-    expect(sendButton()).toBeDisabled();
+  it("a review message cannot fall through to a compare run", async () => {
+    const spy = await renderCompareDraft({ withSlot: true });
 
-    typeInPrompt("");
+    expect(sendButton()).toBeDisabled();
+    fireEvent.click(sendButton());
+    fireEvent.keyDown(prompt(), { key: "Enter" });
+    await act(async () => {});
+    expect(promptsSent(spy)).toEqual([]);
+    expect(startedSessions(spy)).toEqual([]);
+    expect(prompt().value).toContain("Use AuthError here.");
+    expect((await savedComments("s-a"))[0].sentAt).toBeUndefined();
+  });
+
+  it("a message with no slot still starts a compare run", async () => {
+    const spy = await renderCompareDraft({ withSlot: false });
     typeInPrompt("Fix the login");
+
     await send();
 
     await waitFor(() => expect(startedSessions(spy)).toHaveLength(2));
@@ -827,6 +972,25 @@ describe("After Send", () => {
     await openSession("Beta work");
     // The text is still Alpha's, so it still may not go to Beta.
     expect(screen.getByText(NOTE_FOR_ALPHA)).toBeDefined();
+  });
+
+  it("after Delete, Send marks nothing and sends the text as it stands", async () => {
+    const spy = await renderDiff([alpha([commentOf(), outdatedComment])]);
+    await addAll();
+
+    const card = within(panel()).getByText("Use AuthError here.").parentElement?.parentElement as HTMLElement;
+    await act(async () => {
+      fireEvent.click(within(card).getByRole("button", { name: "Delete" }));
+    });
+    await press("Confirm delete");
+    expect(prompt().value).toContain("Use AuthError here.");
+    await send();
+
+    await waitFor(() => expect(promptsSent(spy)).toHaveLength(1));
+    expect(promptsSent(spy)[0].text).toContain("Use AuthError here.");
+    expect(await savedComments("s-a")).toEqual([expect.objectContaining({ id: "c-old" })]);
+    expect((await savedComments("s-a"))[0].sentAt).toBeUndefined();
+    expect(within(panel()).queryByText("Sent")).toBeNull();
   });
 
   it("clear sent leaves in-message comments", async () => {

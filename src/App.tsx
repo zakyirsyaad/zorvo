@@ -754,6 +754,7 @@ export default function App() {
     comments: reviewComments,
     updateComments: updateReviewComments,
     composerRef,
+    canContinue: isActiveRunning || isResumable,
     hasComposer: activeAgentRemoved === null,
     isComposerDisabled,
     collapseDiff: () => setExpandedDiffFolder(null),

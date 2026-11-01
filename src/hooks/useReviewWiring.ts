@@ -2,7 +2,7 @@ import type { RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import type { ComposerHandle } from '../components/ComposerDock';
 import type { ReviewOwner } from '../lib/composer-state';
-import { asUnsent, reviewMessage, type CheckedComment, type MessageContext } from '../lib/review-comments';
+import { asUnsent, reviewHeading, reviewMessage, type CheckedComment, type MessageContext } from '../lib/review-comments';
 import type { ReviewComment, ReviewTarget, Session } from '../types';
 import type { ReviewComments } from './useReviewComments';
 import { useReviewMessage } from './useReviewMessage';
@@ -25,6 +25,7 @@ export interface ReviewWiring {
   addReview: AddReview;
   /** The session the composer's comments are for, while that blocks Send here. */
   reviewOwner: ReviewOwner | undefined;
+  /** Send would take the composer's comments somewhere other than their session. */
   blocksSend: boolean;
   sendFrom: (sessionId: string) => void;
   onComposerText: (text: string) => void;
@@ -38,6 +39,7 @@ export function useReviewWiring({
   comments,
   updateComments,
   composerRef,
+  canContinue,
   hasComposer,
   isComposerDisabled,
   collapseDiff,
@@ -48,6 +50,8 @@ export function useReviewWiring({
   comments: ReviewComments;
   updateComments: (sessionId: string, change: (prev: ReviewComment[]) => ReviewComment[]) => void;
   composerRef: RefObject<ComposerHandle | null>;
+  /** The session on screen takes a message itself. When not, Send falls through and starts a new session. */
+  canContinue: boolean;
   /** False where a panel stands in the composer's place. */
   hasComposer: boolean;
   isComposerDisabled: boolean;
@@ -63,16 +67,24 @@ export function useReviewWiring({
       change(sessionId, ids, (comment) => ({ ...comment, sentAt }));
     },
   });
-  const { slot, inMessage, blocksSend, sendFrom, onComposerText, onComposerRestored } = message;
+  const { slot, inMessage, sendFrom, onComposerText, onComposerRestored } = message;
+  const isOwnSessionStuck = slot !== null && slot.sessionId === session?.id && !canContinue;
+  const blocksSend = message.blocksSend || isOwnSessionStuck;
 
-  const blockedReason = !hasComposer ? NO_COMPOSER : isComposerDisabled ? COMPOSER_DISABLED : blocksSend ? SLOT_ELSEWHERE : undefined;
+  const blockedReason = !hasComposer
+    ? NO_COMPOSER
+    : isComposerDisabled
+      ? COMPOSER_DISABLED
+      : message.blocksSend
+        ? SLOT_ELSEWHERE
+        : undefined;
 
   const add: AddReview['add'] = (checked, target, context) => {
     const composer = composerRef.current;
     if (!session || !composer || blockedReason) return;
     // The composer takes the focus below, so it has to be on screen first.
     flushSync(collapseDiff);
-    const withHeading = message.needsHeading(session.id, target);
+    const withHeading = message.needsHeading(session.id, target, reviewHeading(target, context));
     composer.insertText(reviewMessage(checked, target, context, withHeading));
     const ids = checked.map(({ comment }) => comment.id);
     change(session.id, ids, asUnsent);
@@ -94,7 +106,9 @@ export function useReviewWiring({
       },
     },
     addReview: { inMessage, blockedReason, add },
-    reviewOwner: blocksSend ? { title: owner?.name || null, isArchived: Boolean(owner?.archivedAt) } : undefined,
+    reviewOwner: blocksSend
+      ? { title: owner?.name || null, isArchived: Boolean(owner?.archivedAt), cannotContinue: isOwnSessionStuck }
+      : undefined,
     blocksSend,
     sendFrom,
     onComposerText,

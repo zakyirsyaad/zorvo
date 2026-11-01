@@ -60,6 +60,49 @@ describe("useDiffStats", () => {
     expect(onError).toHaveBeenCalledOnce();
   });
 
+  it("says a read failed until one works", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockRejectedValueOnce("boom");
+    const { result } = renderHook(() => useDiffStats("/w", true, "head", 1, () => {}));
+    await waitFor(() => expect(result.current.hasFailed).toBe(true));
+    expect(result.current.stats).toBeNull();
+
+    spy.mockResolvedValue([STAT]);
+    act(() => result.current.reload());
+
+    await waitFor(() => expect(result.current.stats).toEqual([STAT]));
+    expect(result.current.hasFailed).toBe(false);
+  });
+
+  it("reads as loading, not failed, back on a target once another read worked", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockRejectedValueOnce("boom");
+    const { result, rerender } = renderHook(({ target }) => useDiffStats("/w", true, target, 1, () => {}), {
+      initialProps: { target: "head" as "head" | "base" },
+    });
+    await waitFor(() => expect(result.current.hasFailed).toBe(true));
+    spy.mockResolvedValue([STAT]);
+    rerender({ target: "base" });
+    await waitFor(() => expect(result.current.stats).toEqual([STAT]));
+
+    spy.mockImplementation(() => new Promise(() => {}));
+    rerender({ target: "head" });
+
+    expect(result.current.stats).toBeNull();
+    expect(result.current.hasFailed).toBe(false);
+  });
+
+  it("does not call another target's failure this one's", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockRejectedValueOnce("boom");
+    const { result, rerender } = renderHook(({ target }) => useDiffStats("/w", true, target, 1, () => {}), {
+      initialProps: { target: "head" as "head" | "base" },
+    });
+    await waitFor(() => expect(result.current.hasFailed).toBe(true));
+
+    spy.mockImplementation(() => new Promise(() => {}));
+    rerender({ target: "base" });
+
+    expect(result.current.hasFailed).toBe(false);
+  });
+
   it("reads nothing outside a repository", () => {
     const spy = vi.spyOn(tauriInternals(), "invoke");
     const { result } = renderHook(() => useDiffStats("/w", false, "head", 1, () => {}));
@@ -114,8 +157,8 @@ describe("useDiffTargets", () => {
     vi.spyOn(tauriInternals(), "invoke").mockResolvedValue({ base: { name: "main" } });
     const { result } = renderHook(() => useDiffTargets("/w", true, 1, () => {}));
 
-    expect(result.current).toEqual({ targets: { base: null, root: "", prefix: "" }, isLoaded: false });
-    await waitFor(() => expect(result.current).toEqual({ targets: { base: { name: "main" } }, isLoaded: true }));
+    expect(result.current).toMatchObject({ targets: { base: null, root: "", prefix: "" }, isLoaded: false, hasFailed: false });
+    await waitFor(() => expect(result.current).toMatchObject({ targets: { base: { name: "main" } }, isLoaded: true, hasFailed: false }));
   });
 
   it("settles without a base and reports once when the read fails", async () => {
@@ -132,6 +175,18 @@ describe("useDiffTargets", () => {
     rerender({ version: 2 });
     await act(async () => {});
     expect(onError).toHaveBeenCalledOnce();
+  });
+
+  it("says a read failed, and reload reads again without a new version", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockRejectedValueOnce("boom");
+    const { result } = renderHook(() => useDiffTargets("/w", true, 1, () => {}));
+    await waitFor(() => expect(result.current.hasFailed).toBe(true));
+
+    spy.mockResolvedValue({ base: null, root: "/w", prefix: "" });
+    act(() => result.current.reload());
+
+    await waitFor(() => expect(result.current.targets.root).toBe("/w"));
+    expect(result.current.hasFailed).toBe(false);
   });
 });
 

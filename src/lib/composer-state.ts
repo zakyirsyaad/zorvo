@@ -111,10 +111,13 @@ export interface ReviewOwner {
   /** Its name; null once it is deleted. */
   title: string | null;
   isArchived: boolean;
+  /** It is the session on screen, and Send would start a new one instead of reaching it. */
+  cannotContinue?: boolean;
 }
 
-function reviewOwnerNote({ title, isArchived }: ReviewOwner): string {
+function reviewOwnerNote({ title, isArchived, cannotContinue }: ReviewOwner): string {
   if (title === null) return 'These review comments are for another session. Clear the message to send here.';
+  if (cannotContinue) return `These review comments are for ${title}, which cannot continue right now. Clear the message to send here.`;
   return isArchived
     ? `These review comments are for ${title}, which is archived. Open it from the archive, or clear the message.`
     : `These review comments are for ${title}. Go back to that session, or clear the message.`;

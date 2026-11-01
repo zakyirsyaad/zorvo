@@ -14,6 +14,7 @@ import { sortComments } from "../../lib/review-comments";
 const AUTO_OPEN_LIMIT = 25;
 
 const START_LOST = "The start of this worktree is no longer in this repository.";
+const NOT_LOADED = "The diff has not loaded, so comments cannot be added. Refresh to try again.";
 /** What the backend says (`checked_commit`) when git does not have the start commit; any other failure is not that. */
 const BACKEND_START_LOST = "This repository does not have the start commit";
 
@@ -54,7 +55,12 @@ export function DiffView({
   review,
   addReview,
 }: DiffViewProps) {
-  const { targets, isLoaded: areTargetsLoaded } = useDiffTargets(rootPath, true, version, onError);
+  const {
+    targets,
+    isLoaded: areTargetsLoaded,
+    hasFailed: haveTargetsFailed,
+    reload: reloadTargets,
+  } = useDiffTargets(rootPath, true, version, onError);
   const [chosen, setChosen] = useState<DiffTargetId | null>(null);
   // A start commit git cannot find any more stops being offered, for as long as this view lives.
   const [isStartLost, setIsStartLost] = useState(false);
@@ -64,7 +70,7 @@ export function DiffView({
   );
   // A chosen target means nothing once it is not on offer (main checked out, start lost).
   const target = chosen && options.includes(chosen) ? chosen : defaultTarget(options, prefersStart);
-  const { stats, reload } = useTargetStats(
+  const { stats, hasFailed: hasListFailed, reload } = useTargetStats(
     rootPath,
     areTargetsLoaded,
     target,
@@ -84,6 +90,7 @@ export function DiffView({
   const [refreshes, setRefreshes] = useState(0);
   const refresh = () => {
     setRefreshes((n) => n + 1);
+    reloadTargets();
     reload();
   };
   const comments = useMemo(() => sortComments(review?.comments ?? []), [review?.comments]);
@@ -94,7 +101,7 @@ export function DiffView({
   const addReasonId = useId();
   const adder: CommentAdder | undefined = addReview && {
     inMessage: addReview.inMessage,
-    blockedReason: addReview.blockedReason,
+    blockedReason: addReview.blockedReason ?? (haveTargetsFailed || hasListFailed ? NOT_LOADED : undefined),
     reasonId: addReasonId,
     // Until the root is known (loading, or the targets failed) a path cannot be worded from the agent's folder.
     isWaiting: isReading || targets.root === "",

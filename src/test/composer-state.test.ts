@@ -217,6 +217,18 @@ describe("composerNote", () => {
     );
   });
 
+  it("says when the session review comments are for cannot continue", () => {
+    expect(composerNote({ continuesSession: true, reviewOwner: { title: "Alpha", isArchived: false, cannotContinue: true } })).toBe(
+      "These review comments are for Alpha, which cannot continue right now. Clear the message to send here.",
+    );
+  });
+
+  it("says it cannot continue over that it is archived, and ahead of the compare note", () => {
+    expect(composerNote({ continuesSession: true, compareCount: 2, reviewOwner: { title: "Alpha", isArchived: true, cannotContinue: true } })).toBe(
+      "These review comments are for Alpha, which cannot continue right now. Clear the message to send here.",
+    );
+  });
+
   it("says another session when the one review comments are for is gone", () => {
     expect(composerNote({ continuesSession: false, reviewOwner: { title: null, isArchived: false } })).toBe(
       "These review comments are for another session. Clear the message to send here.",

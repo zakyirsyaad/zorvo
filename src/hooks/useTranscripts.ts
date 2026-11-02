@@ -17,6 +17,8 @@ export interface TranscriptsHandle {
   ensureLoaded: (sessionId: string) => void;
   updateMessages: (sessionId: string, updater: (prev: ChatMessage[]) => ChatMessage[]) => void;
   removeTranscript: (sessionId: string) => void;
+  /** Whether each session's saved history has been read; absent while it loads. */
+  transcriptStatus: Readonly<Record<string, 'ready' | 'failed'>>;
   /** Writes every transcript still waiting for its timer, and resolves once those writes are done. */
   flush: () => Promise<void>;
 }
@@ -32,6 +34,7 @@ function omitKey(record: Transcripts, key: string): Transcripts {
  */
 export function useTranscripts(onError: (message: string) => void): TranscriptsHandle {
   const [transcripts, setTranscripts] = useState<Transcripts>({});
+  const [transcriptStatus, setTranscriptStatus] = useState<TranscriptsHandle['transcriptStatus']>({});
   const transcriptsRef = useLatest(transcripts);
   const onErrorRef = useLatest(onError);
   const requestedRef = useRef(new Set<string>());
@@ -159,8 +162,10 @@ export function useTranscripts(onError: (message: string) => void): TranscriptsH
             return { ...prev, [sessionId]: [...loaded, ...live.filter((m) => !savedIds.has(m.id))] };
           }),
         )
+        .then(() => setTranscriptStatus((prev) => ({ ...prev, [sessionId]: 'ready' })))
         .catch((error) => {
           unreadableRef.current.add(sessionId);
+          setTranscriptStatus((prev) => ({ ...prev, [sessionId]: 'failed' }));
           onErrorRef.current(
             `Failed to load the conversation; new messages will not be saved over it: ${String(error)}`,
           );
@@ -193,5 +198,5 @@ export function useTranscripts(onError: (message: string) => void): TranscriptsH
     [onErrorRef],
   );
 
-  return { transcripts, ensureLoaded, updateMessages, removeTranscript, flush };
+  return { transcripts, transcriptStatus, ensureLoaded, updateMessages, removeTranscript, flush };
 }

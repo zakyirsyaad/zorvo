@@ -3,7 +3,7 @@ import { useSessionChanges, type SessionChanges } from './useSessionChanges';
 import { useDiffStats } from './useDiffStats';
 import type { FileStat } from '../lib/diff-stats';
 
-export type SidePanel = 'files' | 'changes' | 'diff';
+export type SidePanel = 'files' | 'changes' | 'diff' | 'activity';
 
 export interface SidePanelState {
   /** The panel shown right of the chat, if any. */
@@ -16,6 +16,7 @@ export interface SidePanelState {
   changes: SessionChanges;
   /** Per-file line counts against HEAD, for the diff-stat chip; null until the first read. */
   headStats: FileStat[] | null;
+  headStatsFailed: boolean;
 }
 
 /**
@@ -31,15 +32,15 @@ export function useSidePanel(
   const [open, setOpen] = useState<SidePanel | null>(null);
   const changes = useSessionChanges(folderPath, isRepository, turnsEnded, onError);
 
-  const { stats: headStats } = useDiffStats(folderPath, isRepository, 'head', changes.version, onError);
+  const { stats: headStats, hasFailed: headStatsFailed } = useDiffStats(folderPath, isRepository, 'head', changes.version, onError);
 
   const show = (panel: SidePanel) => {
     // The list may be stale while the panel is closed (an agent mid-turn): opening reads it afresh.
     // Asking for the diff again (its chip) reads it afresh even while it is open.
-    if (panel === 'diff' || (panel === 'changes' && open !== panel)) changes.reload();
+    if (panel === 'diff' || ((panel === 'changes' || panel === 'activity') && open !== panel)) changes.reload();
     setOpen(panel);
   };
   const toggle = (panel: SidePanel) => (open === panel ? setOpen(null) : show(panel));
 
-  return { open, toggle, show, close: () => setOpen(null), changes, headStats };
+  return { open, toggle, show, close: () => setOpen(null), changes, headStats, headStatsFailed };
 }

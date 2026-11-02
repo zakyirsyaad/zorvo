@@ -102,6 +102,8 @@ export function ToolDetails({ details }: { details: ToolDetail[] }) {
       {details.map((detail, index) =>
         detail.kind === "diff" ? (
           <DiffView key={index} path={detail.path} oldText={detail.oldText} newText={detail.newText} />
+        ) : detail.kind === "changed" ? (
+          <TextOutput key={index} text={`Changed ${detail.path} (too large to show)`} />
         ) : (
           <TextOutput key={index} text={detail.text} />
         ),

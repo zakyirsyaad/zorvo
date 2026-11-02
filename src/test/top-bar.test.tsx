@@ -222,4 +222,18 @@ describe("TopBar", () => {
       expect(screen.getByRole("button", { name: "Background tasks" })).toBeTruthy();
     });
   });
+
+  it("opens the activity panel when a session offers it", () => {
+    const onToggleActivity = vi.fn();
+    renderTopBar({ onToggleActivity, isActivityOpen: true });
+    const button = screen.getByRole("button", { name: "Toggle activity panel" });
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(button);
+    expect(onToggleActivity).toHaveBeenCalledOnce();
+  });
+
+  it("offers no activity panel without a session", () => {
+    renderTopBar();
+    expect(screen.queryByRole("button", { name: "Toggle activity panel" })).toBeNull();
+  });
 });

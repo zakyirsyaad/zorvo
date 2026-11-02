@@ -6,6 +6,7 @@ import { ChatCanvas } from "./components/ChatCanvas";
 import { HistoryElsewhereNote } from "./components/chat/HistoryElsewhereNote";
 import { ComposerDock, type ComposerHandle } from "./components/ComposerDock";
 import { RemovedAgentPanel } from "./components/RemovedAgentPanel";
+import { ActivityPanel } from "./components/activity/ActivityPanel";
 import { FilesPanel } from "./components/FilesPanel";
 import { EmptySessionState, FileDropOverlay, NoticeBanner } from "./components/AppPlaceholders";
 import { CompareRunPanel } from "./components/compare/CompareRunPanel";
@@ -143,7 +144,7 @@ export default function App() {
   const reportError = useCallback((message: string) => setNotice(message), []);
   const { state, isLoaded, updateState, getState, saveNow } = usePersistedState(reportError);
   useAppearance(state.settings.appearance, isLoaded, reportError);
-  const { transcripts, ensureLoaded, updateMessages, removeTranscript, flush: flushTranscripts } = useTranscripts(reportError);
+  const { transcripts, transcriptStatus, ensureLoaded, updateMessages, removeTranscript, flush: flushTranscripts } = useTranscripts(reportError);
   const { agents, isLoaded: areAgentsLoaded, refresh: refreshAgents, reload: reloadAgents } = useAgentProfiles(reportError);
   const agentCatalog = useAgentCatalog();
   const shell = useShellActions(setNotice);
@@ -444,6 +445,8 @@ export default function App() {
   // The commit this session's worktree began at: the diff can compare with it, and the chip stays for it.
   const startCommit = activeSession?.worktree?.startCommit;
   // The folder whose diff view is expanded: another folder's view starts unexpanded.
+  // An activity entry's message to bring into view.
+  const [chatJump, setChatJump] = useState<{ messageId: string; nonce: number } | null>(null);
   const [expandedDiffFolder, setExpandedDiffFolder] = useState<string | null>(null);
   const isDiffOpen = sidePanel.open === "diff" && Boolean(filesFolder) && isRepository;
   const isDiffExpanded = isDiffOpen && expandedDiffFolder === filesFolder?.path;
@@ -882,6 +885,8 @@ export default function App() {
         onForward={() => navigateTo(navigation.forward())}
         onToggleFiles={filesFolder ? () => sidePanel.toggle("files") : undefined}
         isFilesOpen={sidePanel.open === "files" && Boolean(filesFolder)}
+        onToggleActivity={activeSession ? () => sidePanel.toggle("activity") : undefined}
+        isActivityOpen={sidePanel.open === "activity" && Boolean(activeSession)}
         onToggleTerminal={filesFolder ? terminalDrawer.toggle : undefined}
         isTerminalOpen={terminalDrawer.isOpen}
         onToggleChanges={filesFolder && isRepository ? () => sidePanel.toggle("changes") : undefined}
@@ -999,6 +1004,8 @@ export default function App() {
                 <ChatCanvas
                   conversationId={activeSessionId}
                   messages={currentMessages}
+                  jumpTo={chatJump}
+                  onJumped={() => setChatJump(null)}
                   agentName={activeAgent?.name}
                   onForkBranch={(messageId) => void forkSession(messageId)}
                   onRewind={(messageId) => { compareRun.dropSignIn(activeSessionId); void rewind(activeSession, messageId); }}
@@ -1148,6 +1155,22 @@ export default function App() {
                 onToggleExpanded={() => setExpandedDiffFolder(isDiffExpanded ? null : filesFolder.path)}
                 onClose={sidePanel.close}
                 onError={reportError}
+              />
+            )}
+            {sidePanel.open === "activity" && activeSession && (
+              <ActivityPanel
+                key={activeSession.id}
+                messages={transcripts[activeSession.id]}
+                transcript={transcriptStatus[activeSession.id] ?? "loading"}
+                session={activeSession}
+                isRepository={isRepository}
+                isBusy={isSessionBusy(activeSession.id)}
+                version={sidePanel.changes.version}
+                headStats={sidePanel.headStats}
+                headStatsFailed={sidePanel.headStatsFailed}
+                onJump={(messageId) => setChatJump((prev) => ({ messageId, nonce: (prev?.nonce ?? 0) + 1 }))}
+                onOpenDiff={() => sidePanel.show("diff")}
+                onClose={sidePanel.close}
               />
             )}
             {sidePanel.open === "files" && filesFolder && (

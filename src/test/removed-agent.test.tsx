@@ -68,17 +68,18 @@ const geminiSession: Session = {
 const REMOVED_NOTICE = "Gemini CLI was removed. Add it again to continue this session.";
 
 /** A saved Gemini CLI session whose agent the user removed. */
-function seedRemovedAgentSession() {
+function seedRemovedAgentSession(onPrompt?: () => Promise<unknown>) {
   const settings = fakeStore().state.settings as Partial<Settings>;
   settings.enabledAgents = ["claude-acp"];
   settings.removedAgents = ["gemini"];
   fakeStore().state.sessions = [geminiSession];
   fakeStore().transcripts["s-gem"] = [{ id: "m-1", role: "agent", content: "Earlier answer", timestamp: 1 }];
-  vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) =>
-    cmd === "get_agent_profiles"
+  vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
+    if (cmd === "acp_prompt" && onPrompt) return onPrompt();
+    return cmd === "get_agent_profiles"
       ? Promise.resolve([...structuredClone(fakeProfiles), structuredClone(gemini)])
-      : fakeTauriInvoke(cmd, args),
-  );
+      : fakeTauriInvoke(cmd, args);
+  });
 }
 
 async function openRemovedAgentSession() {
@@ -126,6 +127,127 @@ describe("A saved session of a removed agent", () => {
     await waitFor(() =>
       expect((fakeStore().state.settings as Partial<Settings>).enabledAgents).toContain("gemini"),
     );
+  });
+
+  it("keeps a message being written while a removed agent's session is on screen", async () => {
+    seedRemovedAgentSession();
+    fakeStore().state.sessions = [
+      geminiSession,
+      { ...geminiSession, id: "s-claude", name: "Claude chat", profileId: "claude-acp" },
+    ];
+    await openRemovedAgentSession();
+    await act(async () => {
+      fireEvent.click(screen.getAllByText("Claude chat")[0]);
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Prompt" }), { target: { value: "Half a thought" } });
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByText("Gemini chat")[0]);
+    });
+    expect(screen.getByText(REMOVED_NOTICE)).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Prompt" })).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByText("Claude chat")[0]);
+    });
+    expect(screen.getByRole("textbox", { name: "Prompt" })).toHaveValue("Half a thought");
+  });
+
+  it("holds a message that came back to a removed agent's session, out of every other session's composer", async () => {
+    let refusePrompt = (_reason: Error) => {};
+    seedRemovedAgentSession(() => new Promise((_resolve, reject) => (refusePrompt = reject)));
+    fakeStore().state.sessions = [
+      { ...geminiSession, status: "running" },
+      { ...geminiSession, id: "s-claude", name: "Claude chat", profileId: "claude-acp" },
+    ];
+    await openRemovedAgentSession();
+    fireEvent.change(screen.getByRole("textbox", { name: "Prompt" }), { target: { value: "Try this" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    });
+
+    await deliver("acp-event", { sessionId: "s-gem", kind: "exit", code: 1 });
+    await screen.findByText(REMOVED_NOTICE);
+    await act(async () => {
+      refusePrompt(new Error("agent exited"));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getAllByText("Claude chat")[0]);
+    });
+    expect(screen.getByRole("textbox", { name: "Prompt" })).toHaveValue("");
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByText("Gemini chat")[0]);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Add Gemini CLI" }));
+    });
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Prompt" })).toHaveValue("Try this"));
+  });
+
+  it("holds a message refused just before its agent exits, out of every other session's composer", async () => {
+    let refusePrompt = (_reason: Error) => {};
+    seedRemovedAgentSession(() => new Promise((_resolve, reject) => (refusePrompt = reject)));
+    fakeStore().state.sessions = [
+      { ...geminiSession, status: "running" },
+      { ...geminiSession, id: "s-claude", name: "Claude chat", profileId: "claude-acp" },
+    ];
+    await openRemovedAgentSession();
+    fireEvent.change(screen.getByRole("textbox", { name: "Prompt" }), { target: { value: "Try this" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    });
+
+    await act(async () => {
+      refusePrompt(new Error("agent exited"));
+    });
+    await deliver("acp-event", { sessionId: "s-gem", kind: "exit", code: 1 });
+    await screen.findByText(REMOVED_NOTICE);
+    await act(async () => {
+      fireEvent.click(screen.getAllByText("Claude chat")[0]);
+    });
+
+    expect(screen.getByRole("textbox", { name: "Prompt" })).toHaveValue("");
+  });
+
+  it("holds a rewound message for its own session, and leaves another session's draft alone", async () => {
+    seedRemovedAgentSession();
+    fakeStore().state.sessions = [
+      geminiSession,
+      { ...geminiSession, id: "s-claude", name: "Claude chat", profileId: "claude-acp" },
+    ];
+    fakeStore().transcripts["s-gem"] = [
+      { id: "u-1", role: "user", content: "Old question", timestamp: 1 },
+      { id: "m-1", role: "agent", content: "Earlier answer", timestamp: 2 },
+    ];
+    await openRemovedAgentSession();
+    await act(async () => {
+      fireEvent.click(screen.getAllByText("Claude chat")[0]);
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Prompt" }), { target: { value: "Draft for Claude" } });
+    await act(async () => {
+      fireEvent.click(screen.getAllByText("Gemini chat")[0]);
+    });
+    await screen.findByText("Earlier answer");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /rewind/i }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Confirm rewind" }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getAllByText("Claude chat")[0]);
+    });
+    expect(screen.getByRole("textbox", { name: "Prompt" })).toHaveValue("Draft for Claude");
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByText("Gemini chat")[0]);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Add Gemini CLI" }));
+    });
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Prompt" })).toHaveValue("Old question"));
   });
 
   it("keeps the composer, with Stop, while the session still runs", async () => {

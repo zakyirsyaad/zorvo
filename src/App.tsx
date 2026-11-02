@@ -92,7 +92,7 @@ import { attentionBody, notifyIfAway } from "./lib/notify";
 import { pickFiles } from "./lib/file-picker";
 import { useFileDrop } from "./hooks/useFileDrop";
 import { isAgentReady, isAgentRunnable, noAgentNotice, resolveDraftAgentId } from "./lib/agent-readiness";
-import { isInUse, removedAgentNameFor } from "./lib/enabled-agents";
+import { isInUse, removedAgentName, removedAgentNameFor } from "./lib/enabled-agents";
 import { useCompareDraft } from "./hooks/useCompareDraft";
 import { useCompareRun, useCompareRunRows } from "./hooks/useCompareRun";
 import { lastOfRun, runOf } from "./lib/compare-run";
@@ -191,6 +191,8 @@ export default function App() {
   const agentsInUse = agents.filter((agent) => isInUse(agent, state.settings));
   // A saved session of a removed agent stays readable; once it stops, its composer offers to add the agent again.
   const activeAgentRemoved = removedAgentNameFor(activeSession, agents, state.settings);
+  // Hidden, not unmounted: a look at either must not cost the message being written.
+  const isComposerHidden = Boolean(activeRun) || activeAgentRemoved !== null;
   // An agent not installed yet is offered too: picking it shows its Install panel.
   const pickableAgents = agentsInUse;
   const defaultAgentId = resolveDraftAgentId(agentsInUse, state.settings.defaultAgentId, pickableAgents);
@@ -304,22 +306,28 @@ export default function App() {
   const rememberModelPick = (profileId: string, preferredModelId: string) =>
     rememberAgentOptions(profileId, { preferredModelId });
 
-  const isRunPanelRef = useLatest(Boolean(activeRun));
+  const isComposerHiddenRef = useLatest(isComposerHidden);
+  /** Whatever its status: a composer on its way to hiding would carry a message into the next session on screen. */
+  const isAgentRemovedFor = (sessionId: string) => {
+    const session = sessions.find((s) => s.id === sessionId);
+    return removedAgentName(agents.find((agent) => agent.id === session?.profileId), state.settings) !== null;
+  };
   // A rewound message replaces the box, in the session the user is rewinding.
   const restoreMessage = (sessionId: string, text: string, attachments?: readonly string[]) => {
     setActiveSessionId(sessionId);
-    // A run's panel hides the composer: the message waits for it to show, where it can take the focus.
-    if (composerRef.current && !isRunPanelRef.current) composerRef.current.restore(text, attachments);
-    else pendingRestoreRef.current = { text, attachments };
+    // The message waits for the composer to show, where it can take the focus.
+    if (composerRef.current && !isComposerHiddenRef.current && !isAgentRemovedFor(sessionId)) composerRef.current.restore(text, attachments);
+    else pendingRestoreRef.current = { text, attachments, sessionId };
   };
   // A message that did not reach the agent: the user may have opened another session meanwhile, so it goes
   // back into the composer of the session it was written for, after what is typed there, and waits for
   // that session to be on screen rather than pulling the user there, and for any other session's comments to leave the composer.
+  const isMessageHeldFor = (sessionId: string) => review.isHeldFor(sessionId) || isAgentRemovedFor(sessionId);
   const { giveBack: giveBackMessage } = useUnsentMessages({
     composerRef,
     activeSessionId,
     sessionIds: sessions.map((s) => s.id),
-    isHeldFor: (sessionId) => review.isHeldFor(sessionId),
+    isHeldFor: isMessageHeldFor,
   });
   // Read when an agent answers, seconds after the closure that waits for it was made.
   const activeSessionIdRef = useLatest(activeSessionId);
@@ -336,7 +344,7 @@ export default function App() {
       return acp.retryAfterSignIn(sessionId, message);
     },
     onRestore: giveBackMessage,
-    isHeldFor: (sessionId) => review.isHeldFor(sessionId),
+    isHeldFor: isMessageHeldFor,
   });
 
   const rememberProbed = (profileId: string, probed: ProbedOptions) =>
@@ -423,9 +431,9 @@ export default function App() {
   const agentOptions = withRewound(state.agentOptions, draftAgent?.id, rewound);
   const startChoices = draftAgent ? withPreferred(acpChoices, agentOptions?.[draftAgent.id]) : acpChoices;
 
-  /** A run's panel shows no message, so nothing goes into one unseen. */
+  /** Nothing goes into a message that is not on screen. */
   const insertPaths = (paths: string[]) => {
-    if (!activeRun) composerRef.current?.insertPaths(paths);
+    if (!isComposerHidden) composerRef.current?.insertPaths(paths);
   };
 
   /** Dropped files are added to the message; a name with control characters is left out. */
@@ -717,10 +725,14 @@ export default function App() {
 
   // Read when a run's worktrees are done, seconds after the click: an empty session id also means a run's panel.
   const isDraftRef = useLatest(isNewSessionDraft);
-  const pendingRestoreRef = useRef<FirstMessage | null>(null);
+  // A rewound message names its session, and goes into no other session's box. A draft's message goes into the next composer shown.
+  const pendingRestoreRef = useRef<(FirstMessage & { sessionId?: string }) | null>(null);
   useEffect(() => {
     const pending = pendingRestoreRef.current;
-    if (!pending || !composerRef.current || activeRun) return;
+    if (!pending) return;
+    if (pending.sessionId !== undefined && !sessions.some((s) => s.id === pending.sessionId)) pendingRestoreRef.current = null;
+    if (!pendingRestoreRef.current || !composerRef.current || isComposerHidden) return;
+    if (pending.sessionId !== undefined && (pending.sessionId !== activeSessionId || isAgentRemovedFor(pending.sessionId))) return;
     pendingRestoreRef.current = null;
     composerRef.current.restore(pending.text, pending.attachments);
   });
@@ -736,8 +748,8 @@ export default function App() {
     // The user may have opened another session meanwhile: the message goes back into the new session it was written for.
     restoreMessage: (message, agentId) => {
       if (!isDraftRef.current || !activeWorkspace) openNewSession(activeWorkspace?.path, agentId);
-      // A run's panel hides the composer: the message waits for the new draft to show it.
-      if (composerRef.current && !isRunPanelRef.current) composerRef.current.restore(message.text, message.attachments);
+      // The message waits for the new draft to show the composer.
+      if (composerRef.current && !isComposerHiddenRef.current) composerRef.current.restore(message.text, message.attachments);
       else pendingRestoreRef.current = message;
     },
     onStarted: () => {
@@ -1041,86 +1053,86 @@ export default function App() {
                 <EmptySessionState />
               )}
 
-              {/* Hidden, not unmounted: a look at a run's panel must not cost the message being written. */}
-              <div hidden={Boolean(activeRun)} className="p-4 flex justify-center">
-                {activeAgentRemoved ? (
+              {activeAgentRemoved !== null && (
+                <div className="p-4 flex justify-center">
                   <RemovedAgentPanel agentName={activeAgentRemoved} onAdd={() => activeAgent && catalogActions.addAgent(activeAgent.id)} />
-                ) : (
-                  <ComposerDock
-                    controls={compare.isCompare ? {} : composer.controls}
-                    isThinking={Boolean(activeSession) && isSessionBusy(activeSessionId)}
-                    onStop={activeSession ? () => handleInterrupt(activeSessionId) : undefined}
-                    disabled={isComposerDisabled}
-                    sendDisabled={isSendBlocked}
-                    placeholder={composerPlaceholder({
-                      isRunning: isActiveRunning,
-                      isCreatingWorktree,
-                      isResumable,
-                      canStartSession,
-                      // Comments held for another session say nothing about whether this one can continue.
-                      isSendBlocked: isSendWaiting,
-                      isEndedSession: Boolean(activeSession),
-                    })}
-                    onSendMessage={handleSendMessage}
-                    attachAsFiles
-                    onAttach={pickFiles}
-                    handleRef={composerRef}
-                    onTextChange={review.onComposerText}
-                    onRestored={review.onComposerRestored}
-                    onGivenBack={review.onComposerGivenBack}
-                    commands={compare.isCompare ? [] : composerCommands}
-                    note={composerNote({
-                      reviewOwner: review.reviewOwner,
-                      compareCount: compare.agentIds.length,
-                      agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
-                      agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
-                      continuesSession: isResumable || Boolean(activeSession),
-                      agentLoading: !isActiveRunning && draftAgent && agentCheck.isProbing(draftAgent.id) ? draftAgent.name : undefined,
-                    })}
-                    contextUsage={isActiveRunning ? acp.info[activeSessionId]?.usage : undefined}
-                    mentions={filesFolder ? { root: filesFolder.path, loadFiles: () => shell.loadWorkspaceFiles(filesFolder.path) } : undefined}
-                    folder={
-                      isNewSessionDraft
-                        ? {
-                            folders: workspaces,
-                            selectedPath: activeWorkspacePath,
-                            onSelect: chooseFolder,
-                            onOpenFolder: () => void openFolder(),
-                            worktree: canUseWorktree
-                              ? {
-                                  isOn: isWorktreeActive,
-                                  onChange: setIsWorktreeOn,
-                                  lockedReason: compare.isCompare ? "Each agent runs in its own worktree." : undefined,
-                                }
-                              : undefined,
-                            branch: branchPicker.control,
-                          }
-                        : undefined
-                    }
-                    agent={
-                      isNewSessionDraft && newSessionAgent && !canCompare
-                        ? {
-                            options: pickableAgents.map((a) => ({ value: a.id, label: pickerLabelOf(a) })),
-                            selected: newSessionAgent.id,
-                            onChange: (agentId) => setPickedAgentId(agentId ?? null),
-                          }
-                        : undefined
-                    }
-                    agents={
-                      isNewSessionDraft && newSessionAgent && canCompare
-                        ? {
-                            options: agentChoices,
-                            selected: compare.agentIds,
-                            onChange: compare.toggle,
-                            onPick: (agentId) => {
-                              compare.reset();
-                              setPickedAgentId(agentId);
-                            },
-                          }
-                        : undefined
-                    }
-                  />
-                )}
+                </div>
+              )}
+              <div hidden={isComposerHidden} className="p-4 flex justify-center">
+                <ComposerDock
+                  controls={compare.isCompare ? {} : composer.controls}
+                  isThinking={Boolean(activeSession) && isSessionBusy(activeSessionId)}
+                  onStop={activeSession ? () => handleInterrupt(activeSessionId) : undefined}
+                  disabled={isComposerDisabled}
+                  sendDisabled={isSendBlocked}
+                  placeholder={composerPlaceholder({
+                    isRunning: isActiveRunning,
+                    isCreatingWorktree,
+                    isResumable,
+                    canStartSession,
+                    // Comments held for another session say nothing about whether this one can continue.
+                    isSendBlocked: isSendWaiting,
+                    isEndedSession: Boolean(activeSession),
+                  })}
+                  onSendMessage={handleSendMessage}
+                  attachAsFiles
+                  onAttach={pickFiles}
+                  handleRef={composerRef}
+                  onTextChange={review.onComposerText}
+                  onRestored={review.onComposerRestored}
+                  onGivenBack={review.onComposerGivenBack}
+                  commands={compare.isCompare ? [] : composerCommands}
+                  note={composerNote({
+                    reviewOwner: review.reviewOwner,
+                    compareCount: compare.agentIds.length,
+                    agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
+                    agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
+                    continuesSession: isResumable || Boolean(activeSession),
+                    agentLoading: !isActiveRunning && draftAgent && agentCheck.isProbing(draftAgent.id) ? draftAgent.name : undefined,
+                  })}
+                  contextUsage={isActiveRunning ? acp.info[activeSessionId]?.usage : undefined}
+                  mentions={filesFolder ? { root: filesFolder.path, loadFiles: () => shell.loadWorkspaceFiles(filesFolder.path) } : undefined}
+                  folder={
+                    isNewSessionDraft
+                      ? {
+                          folders: workspaces,
+                          selectedPath: activeWorkspacePath,
+                          onSelect: chooseFolder,
+                          onOpenFolder: () => void openFolder(),
+                          worktree: canUseWorktree
+                            ? {
+                                isOn: isWorktreeActive,
+                                onChange: setIsWorktreeOn,
+                                lockedReason: compare.isCompare ? "Each agent runs in its own worktree." : undefined,
+                              }
+                            : undefined,
+                          branch: branchPicker.control,
+                        }
+                      : undefined
+                  }
+                  agent={
+                    isNewSessionDraft && newSessionAgent && !canCompare
+                      ? {
+                          options: pickableAgents.map((a) => ({ value: a.id, label: pickerLabelOf(a) })),
+                          selected: newSessionAgent.id,
+                          onChange: (agentId) => setPickedAgentId(agentId ?? null),
+                        }
+                      : undefined
+                  }
+                  agents={
+                    isNewSessionDraft && newSessionAgent && canCompare
+                      ? {
+                          options: agentChoices,
+                          selected: compare.agentIds,
+                          onChange: compare.toggle,
+                          onPick: (agentId) => {
+                            compare.reset();
+                            setPickedAgentId(agentId);
+                          },
+                        }
+                      : undefined
+                  }
+                />
               </div>
 
             </article>

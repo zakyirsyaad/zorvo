@@ -18,6 +18,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Fixed
 
+- **Opening a removed agent's session no longer clears your message.** A look at a saved session whose agent you removed used to empty the box, along with any review comments in it. The message now stays and returns with the session you wrote it for.
 - **A message that did not reach the agent is no longer lost.** When a send failed, a session could not be resumed or started, or an agent asked you to sign in while another session was open, the composer had already been cleared and your message was gone. It now comes back to the box of the session you wrote it for, with its attachments, after anything you typed meanwhile. If that session is not open, the message waits for it, and Zorvo no longer switches sessions to show it.
 - **A worktree session's attachments point into its worktree.** A file attached from the folder you started in now names the same file in the session's worktree, so an agent no longer edits your main checkout. A file the worktree does not have, such as an untracked one, keeps its path.
 - **A worktree that cannot be made no longer leaves a branch behind.** When Zorvo could not create a session's worktree (a worktrees folder you cannot write to, for example), the new `agent/<title>` branch stayed in your repository and the next try got a numbered name. Zorvo now removes the branch it just made, and never one that was there before.

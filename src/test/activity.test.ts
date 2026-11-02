@@ -127,7 +127,7 @@ describe("activityOf", () => {
 });
 
 describe("statusWord", () => {
-  const file = (status: ToolExecution["status"]): ActivityEntry => ({ kind: "file", path: "a", isNamed: true, action: "changed", status, messageId: "m", time: null });
+  const file = (status: ToolExecution["status"]): ActivityEntry => ({ key: "k", kind: "file", path: "a", isNamed: true, action: "changed", status, messageId: "m", time: null });
 
   it("reads Changed only for a completed tool", () => {
     expect(statusWord(file("completed"), false)).toBe("Changed");
@@ -141,7 +141,7 @@ describe("statusWord", () => {
 
   it("words each answer", () => {
     const answers = ["waiting", "allowed", "rejected", "unanswered"] as const;
-    const words = answers.map((answer) => statusWord({ kind: "permission", prompt: "p", answer, messageId: "m", time: null }, false));
+    const words = answers.map((answer) => statusWord({ key: "k", kind: "permission", prompt: "p", answer, messageId: "m", time: null }, false));
     expect(words).toEqual(["Waiting for you", "Allowed", "Rejected", "Not answered"]);
   });
 });

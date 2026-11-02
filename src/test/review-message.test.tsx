@@ -756,7 +756,7 @@ describe("Which session the message is for", () => {
     expect(await screen.findByText("These review comments are for Claude Code, which is archived. Open it from the archive, or clear the message.")).toBeDefined();
   });
 
-  it("a composer that was taken away gives its comments back", async () => {
+  it("a removed agent's session on screen keeps the message and its comments", async () => {
     const removed = makeProfile({ id: "gemini", name: "Gemini CLI", detected: true });
     const settings = fakeStore().state.settings as Partial<Settings>;
     settings.enabledAgents = ["claude-acp"];
@@ -766,12 +766,14 @@ describe("Which session the message is for", () => {
     });
     await addAll();
 
+    const written = prompt().value;
+
     await openSession("Beta work");
+    expect(screen.queryByRole("textbox", { name: "Prompt" })).toBeNull();
     await openSession("Alpha work");
 
-    expect(prompt().value).toBe("");
-    expect(within(panel()).queryByText("In message")).toBeNull();
-    expect(addButton()).toBeEnabled();
+    expect(prompt().value).toBe(written);
+    expect(within(panel()).getByText("In message")).toBeDefined();
   });
 });
 

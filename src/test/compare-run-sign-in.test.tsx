@@ -1022,6 +1022,34 @@ describe("handBackKept with the slot of another session", () => {
     expect(onRestore).toHaveBeenCalledWith("s-run", "fix the login", undefined);
   });
 
+  it("sends nothing from the composer after a sign-in while its session's message is held", async () => {
+    const clear = vi.fn();
+    const composer = { holdsRestored: () => true, clear, focus: vi.fn() } as unknown as ComposerHandle;
+    const retryAfterSignIn = vi.fn(() => Promise.resolve(true));
+    const onRefusedMessageChanged = vi.fn();
+    const { result } = renderHook(() =>
+      useAgentSignIn({
+        agents: [],
+        composerRef: { current: composer },
+        activeSessionIdRef: { current: "s-run" },
+        retryAfterSignIn,
+        onRestore: () => {},
+        isHeldFor: () => true,
+        onRefusedMessageChanged,
+      }),
+    );
+    act(() => {
+      result.current.auth.requestSignIn("qwen-code", "/wt/1", methods, { sessionId: "s-run", text: "fix the login" });
+    });
+
+    await act(async () => result.current.auth.signIn("login"));
+    await waitFor(() => expect(result.current.auth.authRequest?.status).toBe("signed-in"));
+
+    expect(retryAfterSignIn).not.toHaveBeenCalled();
+    expect(clear).not.toHaveBeenCalled();
+    expect(onRefusedMessageChanged).not.toHaveBeenCalled();
+  });
+
   it("sends the row's message and leaves the slot and its pending untouched", async () => {
     const pending = { sessionId: "s-other", text: "hello" };
     const { result, retryAfterSignIn } = await signedInSlot(pending);

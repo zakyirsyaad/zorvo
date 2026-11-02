@@ -153,9 +153,9 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
    * the user left it. A message that still does not go out comes back.
    */
   const sendRefused = (pending: AuthRequest['pending']) => {
-    const { composerRef, activeSessionIdRef } = depsRef.current;
+    const { composerRef, activeSessionIdRef, isHeldFor } = depsRef.current;
     const composer = composerRef.current;
-    if (!pending || activeSessionIdRef.current !== pending.sessionId || !composer?.holdsRestored(pending)) return false;
+    if (!pending || activeSessionIdRef.current !== pending.sessionId || isHeldFor(pending.sessionId) || !composer?.holdsRestored(pending)) return false;
     composer.clear();
     dismiss();
     resend(pending.sessionId, pending);
@@ -204,9 +204,11 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
     if (!isQuiet) depsRef.current.composerRef.current?.focus();
     if (sendRefused(request.pending)) return;
     setStatus('signed-in');
-    const { composerRef, activeSessionIdRef, onRefusedMessageChanged } = depsRef.current;
+    const { composerRef, activeSessionIdRef, isHeldFor, onRefusedMessageChanged } = depsRef.current;
     const { pending } = request;
-    if (pending && pending.sessionId === activeSessionIdRef.current && composerRef.current) onRefusedMessageChanged?.(pending.sessionId);
+    if (pending && pending.sessionId === activeSessionIdRef.current && composerRef.current && !isHeldFor(pending.sessionId)) {
+      onRefusedMessageChanged?.(pending.sessionId);
+    }
   };
 
   const lastStartRef = useRef<{ start: SignInStart; methodId: string } | null>(null);

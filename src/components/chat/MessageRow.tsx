@@ -11,6 +11,7 @@ import { PlanUpdatedRow, ThinkingBlock } from "./ReplyExtras";
 import { partsOf } from "../../lib/acp-events";
 import { formatRelativeTime } from "../../lib/relative-time";
 import type { ChatMessage, ElicitationAnswer } from "../../types";
+import { SELECTABLE_TEXT_ATTRIBUTE } from "../../hooks/useChatSelection";
 
 /** No label for a message replayed from the agent's history, which gives no per-message time. */
 function timeLabelOf(message: ChatMessage): string | undefined {
@@ -94,8 +95,10 @@ export const MessageRow = memo(function MessageRow({
       </div>
 
       {/* The user's message sits in a bubble; the agent's reply sits on the background. */}
+      {/* Only the text can be selected, to copy or to reply to; its buttons cannot. */}
       <div
-        className={`w-full text-left ${
+        {...{ [SELECTABLE_TEXT_ATTRIBUTE]: "" }}
+        className={`w-full text-left select-text [&_button]:select-none ${
           isUser
             ? "rounded-2xl p-4 bg-surface-2 border border-border text-fg max-w-xl"
             : "px-1 text-fg-secondary"

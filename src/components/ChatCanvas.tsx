@@ -2,10 +2,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { MessageRow } from "./chat/MessageRow";
 import { WorkingIndicator } from "./chat/ReplyExtras";
 import { AgentStallNotice } from "./chat/AgentStallNotice";
+import { SelectionToolbar } from "./chat/SelectionToolbar";
 import type { AgentFailures } from "../lib/agent-stall";
 import { useLatest } from "../hooks/useLatest";
 import { useReadAloud } from "../hooks/useReadAloud";
 import { useStickToBottom } from "../hooks/useStickToBottom";
+import { useChatSelection } from "../hooks/useChatSelection";
+import { replyQuote } from "../lib/reply-quote";
 import { isAwaitingUser } from "../lib/acp-elicitation";
 import type { ChatMessage, ElicitationAnswer } from "../types";
 
@@ -50,6 +53,10 @@ export interface ChatCanvasProps {
   onRewind?: (messageId: string) => void;
   /** Shown above the conversation, e.g. the folder and branch the session works in. */
   header?: ReactNode;
+  /** Puts a quote of text selected in a message into the message box; Reply is offered only when given. */
+  onReply?: (quote: string) => void;
+  /** Why the message box cannot take a quote now: Reply shows it and does nothing. */
+  replyBlockedReason?: string;
 }
 
 export function ChatCanvas({
@@ -67,6 +74,8 @@ export function ChatCanvas({
   conversationId,
   onRewind,
   header,
+  onReply,
+  replyBlockedReason,
 }: ChatCanvasProps) {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const readAloud = useReadAloud();
@@ -150,6 +159,13 @@ export function ChatCanvas({
     (key: string) => onReopenElicitationUrlRef.current?.(key),
     [onReopenElicitationUrlRef],
   );
+  const chatSelection = useChatSelection(onReply !== undefined);
+  const replyToSelection = () => {
+    const quote = chatSelection.selected ? replyQuote(chatSelection.selected.text, chatSelection.selected.isCode) : "";
+    chatSelection.clear();
+    if (quote && !replyBlockedReason) onReply?.(quote);
+  };
+
   const { toggle: toggleReadAloud } = readAloud;
   const handleToggleReadAloud = useCallback(
     (id: string, content: string) => toggleReadAloud(id, content),
@@ -159,7 +175,11 @@ export function ChatCanvas({
   return (
     <div
       ref={stickToBottom.containerRef}
-      onScroll={stickToBottom.onScroll}
+      onScroll={(event) => {
+        stickToBottom.onScroll();
+        chatSelection.onScroll(event.currentTarget);
+      }}
+      onMouseUp={(event) => chatSelection.onMouseUp(event.currentTarget)}
       onWheel={stickToBottom.onWheel}
       onKeyDown={stickToBottom.onKeyDown}
       onTouchStart={stickToBottom.onTouchStart}
@@ -196,6 +216,9 @@ export function ChatCanvas({
           failures={failures}
           onStop={onStop}
         />
+      )}
+      {chatSelection.selected && (
+        <SelectionToolbar selection={chatSelection.selected} blockedReason={replyBlockedReason} onReply={replyToSelection} />
       )}
     </div>
   );

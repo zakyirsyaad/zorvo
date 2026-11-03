@@ -109,6 +109,7 @@ import {
   type ProbedOptions,
 } from "./lib/acp-draft";
 import type { ReviewComment, Session, SessionWorktree, Settings } from "./types";
+import { replyBlockedReason } from "./lib/reply-quote";
 
 const NO_FOLDER_NOTICE = "Open a project folder first: use the Open folder button next to Workspaces.";
 
@@ -1020,6 +1021,12 @@ export default function App() {
                   onJumped={() => setChatJump(null)}
                   agentName={activeAgent?.name}
                   onForkBranch={(messageId) => void forkSession(messageId)}
+                  onReply={(quote) => composerRef.current?.insertText(quote)}
+                  replyBlockedReason={replyBlockedReason({
+                    isComposerHidden,
+                    isComposerDisabled,
+                    isHeldElsewhere: review.isHeldFor(activeSessionId),
+                  })}
                   onRewind={(messageId) => { compareRun.dropSignIn(activeSessionId); void rewind(activeSession, messageId); }}
                   header={
                     <div className="space-y-3 rounded-xl border border-border bg-surface-1 px-4 py-3">

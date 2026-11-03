@@ -85,6 +85,8 @@
 - **Approve what the agent does.** Permission requests appear in the chat with
   the agent's own choices, and every new session starts in the safest mode its
   agent offers.
+- **Reply to part of a reply.** Select text in the chat to copy it, or press
+  **Reply** to quote it in your next message.
 - **See what an agent did.** The Activity panel lists the files it reported, the
   commands it ran, and the permissions you answered, and shows files git says
   changed that it did not report. It is the agent's own report, and it says so.

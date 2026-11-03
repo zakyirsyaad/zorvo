@@ -4,6 +4,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-03
+
 ### Added
 
 - **Select text in the chat, and reply to it.** The chat's text can now be selected and copied: replies, your messages, code and tool output, though not its buttons. Select text in a message and press **Reply** to quote it in your message, with a line under it for your question. Nothing is sent until you press Send. Reply is off, and says why, while the message box is hidden or holds review comments for another session.
@@ -213,7 +215,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.5.1...v0.6.0

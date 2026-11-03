@@ -4,7 +4,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
-## [0.8.0] - 2026-11-03
+## [0.8.0] - 2026-11-04
 
 ### Added
 

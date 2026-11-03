@@ -142,8 +142,8 @@ export function ActivityPanel({ messages, transcript, session, isRepository, isB
               <p className="px-3 py-3 text-fg-muted">Nothing yet. What the agent does shows here.</p>
             ) : (
               <ul>
-                {shown.map((entry, index) => (
-                  <ActivityEntryRow key={`${entry.messageId}:${matching.length - index}`} entry={entry} isBusy={isBusy} onJump={onJump} />
+                {shown.map((entry) => (
+                  <ActivityEntryRow key={entry.key} entry={entry} isBusy={isBusy} onJump={onJump} />
                 ))}
               </ul>
             )}

@@ -216,6 +216,44 @@ describe("ActivityPanel", () => {
     expect(screen.getByText(/^one/).textContent).toBe("one\ntwo\nthree\nfour");
   });
 
+  it("keeps an opened command with its own row when the filter changes", async () => {
+    stubBackend();
+    await show({
+      messages: [
+        reply([
+          { kind: "read", locations: ["/r/a.ts"] },
+          { kind: "execute", command: "first\ntwo\nthree\nfour" },
+          { kind: "execute", command: "second\ntwo\nthree\nfour" },
+        ]),
+      ],
+    });
+    fireEvent.click(within(screen.getByText(/^first/).closest("li") as HTMLElement).getByRole("button", { name: "Show all 4 lines" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Commands, 2" }));
+
+    expect(screen.getByText(/^first/).textContent).toBe("first\ntwo\nthree\nfour");
+    expect(screen.getByText(/^second/).textContent).toBe("second\ntwo\nthree");
+  });
+
+  it("keeps an opened command with its own row when an earlier tool reports another file", async () => {
+    stubBackend();
+    const message = (locations: string[]) =>
+      reply([
+        { id: "edit", kind: "edit", status: "running", locations },
+        { id: "long", kind: "execute", command: "one\ntwo\nthree\nfour" },
+        { id: "short", kind: "execute", command: "short" },
+      ]);
+    const props = { transcript: "ready" as const, session: SESSION, isRepository: true, isBusy: false, version: 1, headStats: [], headStatsFailed: false, onJump: vi.fn(), onOpenDiff: vi.fn(), onClose: vi.fn() };
+    const view = render(<ActivityPanel {...props} messages={[message(["/r/a.ts"])]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Show all 4 lines" }));
+    await act(async () => {
+      view.rerender(<ActivityPanel {...props} messages={[message(["/r/a.ts", "/r/b.ts"])]} />);
+    });
+
+    await screen.findByText("/r/b.ts");
+    expect(screen.queryByRole("button", { name: "Show all 4 lines" })).toBeNull();
+  });
+
   it("renders markdown as text", async () => {
     stubBackend();
     await show({ messages: [reply([{ kind: "execute", command: "[a](http://x)" }])] });

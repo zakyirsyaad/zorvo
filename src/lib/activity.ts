@@ -2,6 +2,8 @@ import type { ActionCard, ChatMessage, ToolExecution } from '../types';
 import type { DiffTargets, FileStat } from './diff-stats';
 
 interface EntryBase {
+  /** Stays with its tool or card while the agent's updates add entries around it. */
+  key: string;
   messageId: string;
   /** Null for a replayed history, which gives no per-message time. */
   time: number | null;
@@ -51,21 +53,22 @@ function pathsOf(tool: ToolExecution): string[] {
 }
 
 function entriesOfTool(tool: ToolExecution, message: ChatMessage): ActivityEntry[] {
+  const toolKey = `${message.id}:${tool.id}`;
   const base = {
     messageId: message.id,
     time: message.hasKnownTime === false ? null : (tool.startedAt ?? message.timestamp),
   };
   const isCommand = tool.kind === 'execute';
   const command: ActivityEntry[] = isCommand
-    ? [{ ...base, kind: 'command', command: typeof tool.command === 'string' ? tool.command : tool.name, status: tool.status }]
+    ? [{ ...base, key: `${toolKey}:command`, kind: 'command', command: typeof tool.command === 'string' ? tool.command : tool.name, status: tool.status }]
     : [];
   const action = actionOf(tool);
   const paths = pathsOf(tool);
-  const files = paths.map((path): ActivityEntry => ({ ...base, kind: 'file', path, isNamed: true, action, status: tool.status }));
+  const files = paths.map((path): ActivityEntry => ({ ...base, key: `${toolKey}:file:${path}`, kind: 'file', path, isNamed: true, action, status: tool.status }));
   // A change that names no file is still a change: it must not vanish from the list.
   const unnamed: ActivityEntry[] =
     paths.length === 0 && CHANGING_KINDS.has(tool.kind ?? '')
-      ? [{ ...base, kind: 'file', path: tool.name, isNamed: false, action, status: tool.status }]
+      ? [{ ...base, key: `${toolKey}:unnamed`, kind: 'file', path: tool.name, isNamed: false, action, status: tool.status }]
       : [];
   return [...command, ...files, ...unnamed];
 }
@@ -79,6 +82,7 @@ function answerOf(card: ActionCard): Extract<ActivityEntry, { kind: 'permission'
 
 function entryOfCard(card: ActionCard, message: ChatMessage): ActivityEntry {
   return {
+    key: `${message.id}:card`,
     messageId: message.id,
     time: message.hasKnownTime === false ? null : card.timestamp,
     kind: 'permission',

@@ -316,6 +316,7 @@ describe("ACP sessions in the app", () => {
     const spy = await renderWithQwen();
     const sessionId = await startQwenSession(spy);
     const row = within(screen.getByRole("complementary")).getByText(FIRST_MESSAGE).closest("li") as HTMLElement;
+    const saves = () => callsTo(spy, "save_transcript").filter(([, a]) => a?.sessionId === sessionId).length;
 
     await act(async () => {
       fireEvent.click(within(row).getByRole("button", { name: "Delete session" }));
@@ -323,11 +324,13 @@ describe("ACP sessions in the app", () => {
     await act(async () => {
       fireEvent.click(within(row).getByRole("button", { name: "Confirm delete" }));
     });
+    // A slow start can reach the regular save before the delete: only what comes after it counts.
+    const savesAtDelete = saves();
     await acpEvent({ sessionId, kind: "exit", code: 0 });
 
     expect(callsTo(spy, "acp_stop_session").map(([, a]) => a)).toContainEqual({ sessionId });
     await new Promise((resolve) => setTimeout(resolve, 1200));
-    expect(callsTo(spy, "save_transcript").filter(([, a]) => a?.sessionId === sessionId)).toHaveLength(0);
+    expect(saves()).toBe(savesAtDelete);
   });
 
   it("answers the agent's open permission requests as cancelled when the user stops the turn", async () => {

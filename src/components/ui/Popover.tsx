@@ -18,7 +18,9 @@ export interface PopoverProps {
   children: ReactNode;
 }
 
-const PANEL = "absolute z-50 rounded-lg border border-border bg-surface-3 p-1.5 shadow-popover";
+/** The panel's look without its position, for a list that keeps focus in a text field (the `/` and `@` menus). */
+export const POPOVER_PANEL_STYLE = "rounded-lg border border-border bg-surface-3 p-1.5 shadow-popover";
+const PANEL = `absolute z-50 ${POPOVER_PANEL_STYLE}`;
 const SIDES = { bottom: "top-full mt-1", top: "bottom-full mb-1" } as const;
 const ALIGNS = { start: "left-0", end: "right-0" } as const;
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -83,11 +85,22 @@ export function PopoverHeader({ children }: { children: ReactNode }) {
   return <div className="px-2 pt-1 pb-1.5 text-caption font-medium text-fg-muted">{children}</div>;
 }
 
+/** A listbox of options inside a dialog popover, beside a search field the listbox cannot hold. */
+export function PopoverList({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div role="listbox" aria-label={label}>
+      <PopoverRoleContext.Provider value="listbox">{children}</PopoverRoleContext.Provider>
+    </div>
+  );
+}
+
 export interface PopoverOptionProps {
   selected?: boolean;
   onSelect: () => void;
   /** A line under the label that says what the option does. */
-  description?: string;
+  description?: ReactNode;
+  /** In a menu: one of a set of choices, checked when `selected` (a radio item, not a command). */
+  isRadio?: boolean;
   /** Shown at the right edge, before the check (a hint such as a count). */
   trailing?: ReactNode;
   disabled?: boolean;
@@ -98,14 +111,24 @@ const OPTION =
   "focus-ring flex min-h-7.5 w-full items-center gap-2 rounded px-2 py-1 text-left text-ui text-fg transition-colors enabled:hover:bg-surface-hover disabled:text-fg-subtle";
 
 /** One row of a popover: an option in a listbox, a menu item in a menu. */
-export function PopoverOption({ selected = false, onSelect, description, trailing, disabled, children }: PopoverOptionProps) {
+export function PopoverOption({
+  selected = false,
+  onSelect,
+  description,
+  isRadio = false,
+  trailing,
+  disabled,
+  children,
+}: PopoverOptionProps) {
   const popoverRole = useContext(PopoverRoleContext);
-  const role = popoverRole === "listbox" ? "option" : popoverRole === "menu" ? "menuitem" : undefined;
+  const menuRole = isRadio ? "menuitemradio" : "menuitem";
+  const role = popoverRole === "listbox" ? "option" : popoverRole === "menu" ? menuRole : undefined;
   return (
     <button
       type="button"
       role={role}
       aria-selected={role === "option" ? selected : undefined}
+      aria-checked={role === "menuitemradio" ? selected : undefined}
       disabled={disabled}
       onClick={onSelect}
       className={[OPTION, selected && "bg-surface-hover"].filter(Boolean).join(" ")}

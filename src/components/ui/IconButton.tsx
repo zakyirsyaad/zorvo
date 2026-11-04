@@ -2,7 +2,8 @@ import type { ButtonHTMLAttributes, ReactNode, Ref } from "react";
 
 export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   label: string;
-  variant?: "ghost" | "primary";
+  /** Outline: a second action beside the view's one primary (Stop, where Send was). */
+  variant?: "ghost" | "primary" | "outline";
   children: ReactNode;
   ref?: Ref<HTMLButtonElement>;
 }
@@ -17,6 +18,7 @@ const VARIANTS: Record<NonNullable<IconButtonProps["variant"]>, string> = {
   primary:
     "rounded-lg bg-primary text-on-primary enabled:hover:bg-primary-hover " +
     "disabled:bg-surface-hover disabled:text-fg-muted",
+  outline: "rounded-lg border border-border-strong text-fg enabled:hover:bg-surface-hover disabled:opacity-40",
 };
 
 export function IconButton({

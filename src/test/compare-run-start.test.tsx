@@ -534,7 +534,7 @@ describe("starting a compare run", () => {
     expect(screen.getByRole("alert").textContent).toContain("not a git repository");
     expect(prompt()).toBeEnabled();
     // The draft keeps its ticks.
-    expect(screen.getByText("Runs in 2 worktrees. Each agent uses its own quota.")).toBeInTheDocument();
+    expect(screen.getByText("Each agent starts in its safest mode, in its own worktree, and uses its own quota.")).toBeInTheDocument();
   });
 
   it("keeps the composer busy until a single worktree session's attachments are resolved", async () => {
@@ -542,8 +542,8 @@ describe("starting a compare run", () => {
     const spy = await renderApp({ files: true, attachmentPaths: () => paths.promise });
     await openInspectorTab("Files");
     await click(await screen.findByRole("button", { name: "Add README.md to prompt" }));
-    await click(screen.getByRole("button", { name: /^Folder:/ }));
-    await click(await screen.findByRole("switch", { name: "Worktree" }));
+    await click(screen.getByRole("button", { name: /^Branch:/ }));
+    await click(await screen.findByRole("switch", { name: "New worktree" }));
     await send();
     await act(async () => {});
 

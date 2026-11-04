@@ -1,9 +1,13 @@
-import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from "react";
+import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { Plus, CornerDownLeft, Shield, ShieldAlert, Sparkles, Gauge, SlidersHorizontal, Square, Bot } from "lucide-react";
+import { Button } from "./ui/Button";
 import { IconButton } from "./ui/IconButton";
 import { OptionDropdown } from "./composer/OptionDropdown";
-import { AgentMultiPicker, type AgentMultiPickerProps } from "./composer/AgentMultiPicker";
-import { FolderPicker, type FolderControl } from "./composer/FolderPicker";
+import { MoreControls } from "./composer/MoreControls";
+import { splitControls } from "../lib/composer-overflow";
+import type { AgentMultiPickerProps } from "./composer/AgentMultiPicker";
+import type { FolderControl } from "./composer/FolderPicker";
+import { DraftChips } from "./composer/DraftChips";
 import { appendAttachments, formatAttachmentPath, withAttachments } from "../lib/attachments";
 import { joinWorkspacePath } from "../lib/files";
 import { MentionMenu } from "./composer/MentionMenu";
@@ -25,7 +29,22 @@ const PLACEHOLDER_WITH_COMMANDS = "Type / for commands, or prompt the agent...";
 const CARET_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
 
 /** An agent's extra option is open under its config id: `option:fast`. */
-type OpenDropdown = "folder" | "agent" | "permission" | "model" | "effort" | `option:${string}` | null;
+type OpenDropdown = "folder" | "branch" | "agent" | "permission" | "model" | "effort" | "more" | `option:${string}` | null;
+
+/** One of the agent's controls: a chip in the row, or a group in the ⋯ menu when it does not fit. */
+interface ControlEntry {
+  id: "model" | "permission" | "effort" | `option:${string}`;
+  label: string;
+  control: ComposerControl;
+  icon: ReactNode;
+  description?: string;
+  showLabel?: boolean;
+}
+
+/** A folder's own name, the last part of its path: "/w/agent-desktop/" gives "agent-desktop". */
+function folderNameOf(path: string): string {
+  return path.replace(/\/+$/, "").split("/").pop() || path;
+}
 
 function fitToText(field: HTMLTextAreaElement) {
   field.style.height = "auto";
@@ -69,11 +88,15 @@ export interface ComposerDockProps {
   sendDisabled?: boolean;
   /** `attachments` are file paths, given only when `attachAsFiles` is set. */
   onSendMessage: (message: string, attachments?: string[]) => void;
+  /** Words the Send button ("Start 2 sessions") in place of its icon; it sends and is blocked the same way. */
+  sendLabel?: string;
   /** Opens a file picker and resolves with the chosen paths; hidden when absent. */
   onAttach?: () => Promise<string[]>;
   handleRef?: Ref<ComposerHandle>;
   /** The agent's slash commands; typing `/` lists them. */
   commands?: SlashCommand[];
+  /** The agent's name, for the header of its `/` commands. */
+  agentName?: string;
   /**
    * True when the agent takes files with the message (ACP): attached files
    * show as chips and are sent apart from the text. Otherwise their paths
@@ -92,7 +115,7 @@ export interface ComposerDockProps {
   /** Before a new session starts: the agent it runs. */
   agent?: ComposerControl;
   /** Before a new session starts, in a git repository: the agent chip with a checkbox to tick several; replaces `agent`. */
-  agents?: Omit<AgentMultiPickerProps, "isOpen" | "onToggle">;
+  agents?: Omit<AgentMultiPickerProps, "isOpen" | "onToggle" | "onClose">;
   /** The workspace whose files `@` lists; mentions are off when absent. */
   mentions?: MentionSource;
   /**
@@ -113,10 +136,12 @@ export function ComposerDock({
   placeholder,
   disabled = false,
   sendDisabled = false,
+  sendLabel,
   onSendMessage,
   onAttach,
   handleRef,
   commands = [],
+  agentName,
   attachAsFiles = false,
   contextUsage,
   note,
@@ -160,6 +185,8 @@ export function ComposerDock({
     selected: control.selected,
     isOpen: openDropdown === name,
     onToggle: () => toggle(name),
+    // A close, not a toggle: this composer's own dismiss runs on the same click or Escape.
+    onClose: () => setOpenDropdown((current) => (current === name ? null : current)),
     onSelect: (value: string | undefined) => {
       control.onChange(value);
       setOpenDropdown(null);
@@ -217,6 +244,9 @@ export function ComposerDock({
   // The reason a blocked Send gives outranks a slash command's hint.
   const shownNote = sendDisabled && note ? note : (hint ?? note);
   const noteId = useId();
+  // A blocked Send points at the note that says why.
+  const sendBlockedNoteId = sendDisabled && note ? noteId : undefined;
+  const isSendEmpty = !text.trim() && attachments.length === 0;
 
   const pickCommand = (command: SlashCommand) => {
     setText(`/${command.name} `);
@@ -316,9 +346,58 @@ export function ComposerDock({
   const { permission, model, effort, extras = [] } = controls;
   const selectedPermission = permission?.options.find((o) => o.value === permission.selected);
   const isRiskyPermission = selectedPermission?.risky ?? isRiskyMode(permission?.selected);
+  // The agent's controls in the row's order; those past the first few go into the ⋯ menu.
+  const agentControls: ControlEntry[] = [
+    ...(model ? [{ id: "model", label: "Model", control: model, icon: <Sparkles size={12} className="text-fg-muted" /> } as const] : []),
+    ...(permission
+      ? [
+          {
+            id: "permission",
+            label: "Permission mode",
+            control: permission,
+            icon: isRiskyPermission ? (
+              <ShieldAlert size={13} className="text-danger" data-testid="risky-permission-icon" />
+            ) : (
+              <Shield size={13} className="text-status-running" />
+            ),
+          } as const,
+        ]
+      : []),
+    ...(effort ? [{ id: "effort", label: "Effort", control: effort, icon: <Gauge size={12} className="text-fg-muted" /> } as const] : []),
+    ...extras.map(
+      (extra): ControlEntry => ({
+        id: `option:${extra.id}`,
+        label: extra.label,
+        control: extra,
+        description: extra.description,
+        showLabel: true,
+        icon: <SlidersHorizontal size={12} className="text-fg-muted" />,
+      }),
+    ),
+  ];
+  const { inline: inlineControls, overflow: overflowControls } = splitControls(agentControls);
 
   return (
     <footer ref={containerRef} className="w-full max-w-3xl flex flex-col items-center px-4 select-none">
+      {(folder || agents || agent) && (
+        <DraftChips
+          folder={folder}
+          agents={agents}
+          agentChip={
+            !agents && agent ? (
+              <OptionDropdown
+                label="Agent"
+                align="left"
+                icon={<Bot size={12} className="text-fg-muted" />}
+                {...dropdownProps("agent", agent)}
+              />
+            ) : undefined
+          }
+          isOpen={(name) => openDropdown === name}
+          onToggle={toggle}
+          onClose={(name) => setOpenDropdown((current) => (current === name ? null : current))}
+        />
+      )}
       <div
         className="relative w-full rounded-xl border border-border bg-surface-2 p-3 shadow-popover transition-all focus-within:border-border-strong"
       >
@@ -331,10 +410,16 @@ export function ComposerDock({
           </div>
         )}
         {mentionMenu.files.length > 0 ? (
-          <MentionMenu files={mentionMenu.files} highlighted={highlighted} onPick={pickFile} />
+          <MentionMenu
+            files={mentionMenu.files}
+            highlighted={highlighted}
+            onPick={pickFile}
+            folderName={folderNameOf(mentions?.root ?? "")}
+            query={mentionMenu.mention?.query ?? ""}
+          />
         ) : (
           menuCommands.length > 0 && (
-            <SlashCommandMenu commands={menuCommands} highlighted={highlighted} onPick={pickCommand} />
+            <SlashCommandMenu commands={menuCommands} highlighted={highlighted} onPick={pickCommand} agentName={agentName} />
           )
         )}
         <textarea
@@ -353,11 +438,11 @@ export function ComposerDock({
           autoCorrect="off"
           autoCapitalize="off"
           spellCheck={false}
-          className="w-full bg-transparent text-sm text-fg-secondary placeholder-fg-subtle outline-none resize-none leading-relaxed min-h-[26px] max-h-[180px]"
+          className="w-full bg-transparent text-body text-fg placeholder-fg-subtle outline-none resize-none min-h-[26px] max-h-[180px]"
         />
 
         {shownNote && (
-          <p id={noteId} className="mt-1 text-[11px] text-fg-subtle">
+          <p id={noteId} className="mt-1 text-caption text-fg-muted">
             {shownNote}
           </p>
         )}
@@ -376,43 +461,25 @@ export function ComposerDock({
               </IconButton>
             )}
 
-            {folder && (
-              <FolderPicker {...folder} isOpen={openDropdown === "folder"} onToggle={() => toggle("folder")} />
-            )}
-
-            {agents && (
-              <AgentMultiPicker
-                {...agents}
-                isOpen={openDropdown === "agent"}
-                onToggle={() => toggle("agent")}
-                onPick={(agentId) => {
-                  agents.onPick(agentId);
-                  setOpenDropdown(null);
-                }}
-              />
-            )}
-
-            {!agents && agent && (
+            {inlineControls.map((entry) => (
               <OptionDropdown
-                label="Agent"
+                key={entry.id}
+                label={entry.label}
                 align="left"
-                icon={<Bot size={12} className="text-fg-muted" />}
-                {...dropdownProps("agent", agent)}
+                icon={entry.icon}
+                description={entry.description}
+                showLabel={entry.showLabel}
+                {...dropdownProps(entry.id, entry.control)}
               />
-            )}
+            ))}
 
-            {permission && (
-              <OptionDropdown
-                label="Permission mode"
-                align="left"
-                icon={
-                  isRiskyPermission ? (
-                    <ShieldAlert size={13} className="text-danger" data-testid="risky-permission-icon" />
-                  ) : (
-                    <Shield size={13} className="text-status-running" />
-                  )
-                }
-                {...dropdownProps("permission", permission)}
+            {overflowControls.length > 0 && (
+              <MoreControls
+                controls={overflowControls}
+                isOpen={openDropdown === "more"}
+                onToggle={() => toggle("more")}
+                onClose={() => setOpenDropdown((current) => (current === "more" ? null : current))}
+                onPicked={() => setOpenDropdown(null)}
               />
             )}
           </div>
@@ -420,49 +487,31 @@ export function ComposerDock({
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             {contextUsage && <ContextMeter {...contextUsage} />}
 
-            {model && (
-              <OptionDropdown
-                label="Model"
-                icon={<Sparkles size={12} className="text-fg-muted" />}
-                {...dropdownProps("model", model)}
-              />
-            )}
-
-            {effort && (
-              <OptionDropdown
-                label="Effort"
-                icon={<Gauge size={12} className="text-fg-muted" />}
-                {...dropdownProps("effort", effort)}
-              />
-            )}
-
-            {extras.map((extra) => (
-              <OptionDropdown
-                key={extra.id}
-                label={extra.label}
-                description={extra.description}
-                showLabel
-                icon={<SlidersHorizontal size={12} className="text-fg-muted" />}
-                {...dropdownProps(`option:${extra.id}`, extra)}
-              />
-            ))}
-
             {isThinking && onStop ? (
               <IconButton
-                variant="primary"
+                variant="outline"
                 label="Stop agent"
                 title="Stop the agent's current turn"
                 onClick={onStop}
               >
                 <Square size={12} fill="currentColor" />
               </IconButton>
+            ) : sendLabel ? (
+              <Button
+                variant="primary"
+                aria-describedby={sendBlockedNoteId}
+                onClick={handleSend}
+                disabled={isSendEmpty || !canSend}
+              >
+                {sendLabel}
+              </Button>
             ) : (
               <IconButton
                 variant="primary"
                 label="Send message"
-                aria-describedby={sendDisabled && note ? noteId : undefined}
+                aria-describedby={sendBlockedNoteId}
                 onClick={handleSend}
-                disabled={(!text.trim() && attachments.length === 0) || !canSend}
+                disabled={isSendEmpty || !canSend}
               >
                 <CornerDownLeft size={14} />
               </IconButton>

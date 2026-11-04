@@ -59,7 +59,7 @@ function notReadyProfiles() {
 }
 
 function newSessionView(): HTMLElement {
-  const view = screen.getByRole("heading", { name: "New session" }).parentElement;
+  const view = screen.getByRole("heading", { name: /^New session/ }).parentElement;
   if (!view) throw new Error("the new-session view has no container");
   return view;
 }

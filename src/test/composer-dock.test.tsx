@@ -135,6 +135,85 @@ describe("ComposerDock", () => {
       expect(c.model?.onChange).toHaveBeenCalledWith("opus");
     });
 
+    describe("that do not fit", () => {
+      const collaboration = {
+        id: "collaboration_mode",
+        label: "Collaboration",
+        options: [
+          { value: "default", label: "Default" },
+          { value: "plan", label: "Plan" },
+        ],
+        selected: "default",
+        onChange: vi.fn(),
+      };
+      const effort = {
+        options: [
+          { value: "low", label: "Low" },
+          { value: "high", label: "High" },
+        ],
+        selected: "high",
+        onChange: vi.fn(),
+      };
+      const chipNames = () =>
+        screen
+          .getAllByRole("button")
+          .map((button) => button.getAttribute("aria-label") ?? "")
+          .filter((name) => /^(Model|Permission mode|Effort|Collaboration):/.test(name))
+          .map((name) => name.split(":")[0]);
+
+      it("keeps model, mode and effort as chips and puts the agent's other controls in a menu", () => {
+        render(<ComposerDock controls={controls({ effort, extras: [collaboration] })} onSendMessage={() => {}} />);
+
+        expect(chipNames()).toEqual(["Model", "Permission mode", "Effort"]);
+        fireEvent.click(screen.getByRole("button", { name: "More options" }));
+        const group = screen.getByRole("group", { name: "Collaboration" });
+        expect(group).toBeDefined();
+        expect(screen.getByRole("menuitemradio", { name: "Default", checked: true })).toBeDefined();
+      });
+
+      it("picks from the menu and closes it", () => {
+        const onChange = vi.fn();
+        render(
+          <ComposerDock controls={controls({ effort, extras: [{ ...collaboration, onChange }] })} onSendMessage={() => {}} />,
+        );
+
+        fireEvent.click(screen.getByRole("button", { name: "More options" }));
+        fireEvent.click(screen.getByRole("menuitemradio", { name: "Plan" }));
+        expect(onChange).toHaveBeenCalledWith("plan");
+        expect(screen.queryByRole("menu", { name: "More options" })).toBeNull();
+      });
+
+      it("gives focus back to More options when Escape closes the menu", () => {
+        render(<ComposerDock controls={controls({ effort, extras: [collaboration] })} onSendMessage={() => {}} />);
+
+        const more = screen.getByRole("button", { name: "More options" });
+        fireEvent.click(more);
+        const item = screen.getByRole("menuitemradio", { name: "Plan" });
+        item.focus();
+        fireEvent.keyDown(item, { key: "Escape" });
+        expect(screen.queryByRole("menu", { name: "More options" })).toBeNull();
+        expect(more).toHaveFocus();
+      });
+
+      it("says what the hidden controls are set to on More options", () => {
+        render(
+          <ComposerDock
+            controls={controls({ effort, extras: [{ ...collaboration, selected: "plan" }] })}
+            onSendMessage={() => {}}
+          />,
+        );
+
+        expect(screen.getByRole("button", { name: "More options" })).toHaveAccessibleDescription("Collaboration: Plan");
+      });
+
+      it("shows no menu while every control fits", () => {
+        render(<ComposerDock controls={controls({ effort })} onSendMessage={() => {}} />);
+
+        expect(chipNames()).toEqual(["Model", "Permission mode", "Effort"]);
+        expect(screen.queryByRole("button", { name: "More options" })).toBeNull();
+      });
+    });
+
     it("renders only the controls it is given", () => {
       render(<ComposerDock controls={{ model: controls().model }} onSendMessage={() => {}} />);
 
@@ -159,6 +238,42 @@ describe("ComposerDock", () => {
       render(<ComposerDock onStop={() => {}} onSendMessage={() => {}} />);
 
       expect(screen.queryByRole("button", { name: "Stop agent" })).toBeNull();
+    });
+
+    it("draws Stop as an outline, since Send is the view's one primary", () => {
+      render(<ComposerDock isThinking onStop={() => {}} onSendMessage={() => {}} />);
+
+      const stop = screen.getByRole("button", { name: "Stop agent" });
+      expect(stop).toHaveClass("border");
+      expect(stop).not.toHaveClass("bg-primary");
+    });
+  });
+
+  describe("the card", () => {
+    it("writes the prompt in body text and the note in caption text", () => {
+      render(<ComposerDock note="Loading Codex's models…" onSendMessage={() => {}} />);
+
+      expect(screen.getByRole("textbox", { name: "Prompt" })).toHaveClass("text-body");
+      expect(screen.getByText("Loading Codex's models…")).toHaveClass("text-caption");
+    });
+
+    it("words Send with sendLabel, as a text button that sends", () => {
+      const onSendMessage = vi.fn();
+      render(<ComposerDock sendLabel="Start 2 sessions" onSendMessage={onSendMessage} />);
+
+      expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
+      const start = screen.getByRole("button", { name: "Start 2 sessions" });
+      expect(start).toBeDisabled();
+      fireEvent.change(screen.getByRole("textbox", { name: "Prompt" }), { target: { value: "fix the tests" } });
+      fireEvent.click(start);
+      expect(onSendMessage).toHaveBeenCalledWith("fix the tests");
+    });
+
+    it("points a worded Send at the note that says why it is blocked", () => {
+      render(<ComposerDock sendLabel="Start 2 sessions" sendDisabled note="Install Codex first." onSendMessage={() => {}} />);
+
+      const start = screen.getByRole("button", { name: "Start 2 sessions" });
+      expect(document.getElementById(start.getAttribute("aria-describedby") ?? "")).toHaveTextContent("Install Codex first.");
     });
   });
 
@@ -242,11 +357,9 @@ describe("ComposerDock", () => {
       render(
         <ComposerDock onSendMessage={() => {}} folder={{ folders, selectedPath: "/w/api", onSelect: () => {}, branch }} />,
       );
-    const openFolderList = () => fireEvent.click(screen.getByRole("button", { name: "Folder: api" }));
 
     it("has no Branch row outside a repository", () => {
       renderWith(undefined);
-      openFolderList();
 
       expect(screen.queryByRole("button", { name: /^Branch/ })).toBeNull();
     });
@@ -254,7 +367,6 @@ describe("ComposerDock", () => {
     it("names the current branch and lists the branches when opened", () => {
       const branch = branchControl();
       renderWith(branch);
-      openFolderList();
 
       fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
 
@@ -266,7 +378,6 @@ describe("ComposerDock", () => {
 
     it("says the branches are loading until they arrive", () => {
       renderWith(branchControl({ branches: null }));
-      openFolderList();
 
       fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
 
@@ -276,7 +387,6 @@ describe("ComposerDock", () => {
     it("filters the branches as you type and picks the first match with Enter", () => {
       const branch = branchControl();
       renderWith(branch);
-      openFolderList();
       fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
 
       const search = screen.getByRole("textbox", { name: "Search branches" });
@@ -287,24 +397,22 @@ describe("ComposerDock", () => {
       fireEvent.keyDown(search, { key: "Enter" });
 
       expect(branch.onPick).toHaveBeenCalledWith("release");
-      expect(screen.queryByRole("dialog", { name: "Choose a folder" })).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "Choose a branch" })).toBeNull();
     });
 
     it("picks a branch by clicking it and closes the list", () => {
       const branch = branchControl();
       renderWith(branch);
-      openFolderList();
       fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
 
       fireEvent.click(screen.getByRole("option", { name: "feature/login" }));
 
       expect(branch.onPick).toHaveBeenCalledWith("feature/login");
-      expect(screen.queryByRole("dialog", { name: "Choose a folder" })).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "Choose a branch" })).toBeNull();
     });
 
     it("says when no branch matches", () => {
       renderWith(branchControl());
-      openFolderList();
       fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
 
       fireEvent.change(screen.getByRole("textbox", { name: "Search branches" }), { target: { value: "zzz" } });
@@ -313,7 +421,7 @@ describe("ComposerDock", () => {
     });
   });
 
-  it("marks a worktree in place of the folder icon, so the chip keeps its width", () => {
+  it("says a new worktree on the branch chip and leaves the folder chip as it is", () => {
     const folder = (isOn: boolean) => ({
       folders: [{ name: "api", path: "/w/api" }],
       selectedPath: "/w/api",
@@ -321,13 +429,13 @@ describe("ComposerDock", () => {
       worktree: { isOn, onChange: () => {} },
     });
     const { rerender } = render(<ComposerDock onSendMessage={() => {}} folder={folder(false)} />);
-    const chip = () => screen.getByRole("button", { name: "Folder: api" });
-    const iconCountOff = chip().querySelectorAll("svg").length;
+    const folderChip = screen.getByRole("button", { name: "Folder: api" });
+    const folderText = folderChip.textContent;
 
     rerender(<ComposerDock onSendMessage={() => {}} folder={folder(true)} />);
 
-    expect(chip().querySelectorAll("svg").length).toBe(iconCountOff);
-    expect(chip().querySelector('[aria-label="in a new worktree"]')).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Folder: api" }).textContent).toBe(folderText);
+    expect(screen.getByRole("button", { name: /in a new worktree$/ })).toHaveTextContent("new worktree");
   });
 
   it("closes an open dropdown with Escape", () => {

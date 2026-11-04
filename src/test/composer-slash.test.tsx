@@ -28,6 +28,16 @@ describe("Composer slash commands", () => {
     expect(screen.getByText("Summarize the conversation to save context")).toBeDefined();
   });
 
+  it("heads the list with the agent whose commands they are", () => {
+    const { rerender } = render(<ComposerDock onSendMessage={() => {}} commands={commands} agentName="Codex" />);
+    type("/");
+    expect(screen.getByText("Commands from Codex")).toBeDefined();
+    expect(screen.getByRole("listbox", { name: "Slash commands" })).toBeDefined();
+
+    rerender(<ComposerDock onSendMessage={() => {}} commands={commands} />);
+    expect(screen.getByText("Commands")).toBeDefined();
+  });
+
   it("picks a command with the keyboard, without sending it", () => {
     const onSendMessage = vi.fn();
     render(<ComposerDock onSendMessage={onSendMessage} commands={commands} />);

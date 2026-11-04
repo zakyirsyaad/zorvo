@@ -39,6 +39,21 @@ describe("Composer @-mentions", () => {
     expect(loadFiles).toHaveBeenCalledTimes(1);
   });
 
+  it("heads the list with the folder, bolds what matches in a name, and puts the folder under it", async () => {
+    renderComposer(true);
+    await type("fix @app");
+
+    expect(screen.getByText("Files in api")).toBeDefined();
+    const row = screen.getByRole("option", { name: /App\.tsx/ });
+    expect([...row.querySelectorAll("mark")].map((mark) => mark.textContent)).toEqual(["App"]);
+    expect(within(row).getByText("src").className).toContain("text-caption");
+
+    await type("fix @READ");
+    const atRoot = screen.getByRole("option", { name: /README/ });
+    expect(atRoot.querySelectorAll("mark")[0]?.textContent).toBe("READ");
+    expect(atRoot.children).toHaveLength(1);
+  });
+
   it("attaches the picked file for an agent that takes files, and drops the @word", async () => {
     const { onSendMessage } = renderComposer(true);
     await type("look at @app");

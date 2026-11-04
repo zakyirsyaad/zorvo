@@ -2,6 +2,22 @@ import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { ContextMeter } from "../components/composer/ContextMeter";
 
+describe("ContextMeter", () => {
+  it("says how much of the context is used, in words", () => {
+    render(<ContextMeter used={38} size={100} />);
+
+    const meter = screen.getByRole("meter", { name: "Context used" });
+    expect(meter.getAttribute("aria-valuenow")).toBe("38");
+    expect(meter.textContent).toBe("38% of context");
+  });
+
+  it("shows the tokens in use when the window's size is unknown", () => {
+    render(<ContextMeter used={12_000} size={0} />);
+
+    expect(screen.getByRole("img", { name: "Context used: 12K tokens" }).textContent).toBe("12K tokens");
+  });
+});
+
 describe("ContextMeter details", () => {
   it("opens the context's details when clicked: used, window, share, what is left and the cost", () => {
     render(<ContextMeter used={250_000} size={1_000_000} cost={{ amount: 0.4231, currency: "USD" }} />);

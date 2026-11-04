@@ -1,18 +1,38 @@
-<!-- @dsCard group="Input" height=168 -->
+<!-- @dsCard group="Input" height=236 -->
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>Composer — preview</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&amp;family=Geist+Mono:wght@400&amp;display=swap"></head>
+<head><meta charset="utf-8"><title>Composer — preview</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400&amp;display=swap">
+<style>
+.z-draft-chips { display: flex; flex-wrap: wrap; gap: var(--space-1\.5); width: 100%; max-width: 560px; margin-bottom: var(--space-2); }
+.z-cchip { display: inline-flex; align-items: center; gap: var(--space-1\.5); height: 24px; box-sizing: border-box; padding: 0 var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: transparent; color: var(--fg-secondary); font: 400 12px/16px var(--font-sans); cursor: pointer; }
+.z-cchip:hover { background: var(--surface-hover); color: var(--fg); }
+.z-cchip__muted { color: var(--fg-muted); }
+.z-thumb { width: 96px; height: 64px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-3); }
+.z-meter { color: var(--fg-muted); font: 400 11px/16px var(--font-sans); }
+</style>
+</head>
 <body>
 <div class="z-col">
+  <div class="z-draft-chips">
+    <button class="z-cchip" type="button">agent-desktop</button>
+    <button class="z-cchip" type="button">main <span class="z-cchip__muted">· new worktree</span></button>
+    <button class="z-cchip" type="button">2 agents</button>
+  </div>
   <div class="z-composer">
-    <textarea id="prompt" rows="2" placeholder="Ask Claude Code to change something, @ to mention a file"></textarea>
+    <div class="z-thumb" role="img" aria-label="shot.png"></div>
+    <textarea id="prompt" rows="2" placeholder="Prompt Claude Code, / for commands, @ to mention a file"></textarea>
     <div class="z-composer__bar">
       <div class="z-composer__tools">
-        <button class="z-icon-btn" type="button" aria-label="Add context"><svg class="z-ico" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
-        <button class="z-select" type="button">Claude Code <svg class="z-ico" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
-        <button class="z-select" type="button">Sonnet 5.5 <svg class="z-ico" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+        <button class="z-icon-btn" type="button" aria-label="Add attachment"><svg class="z-ico" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+        <button class="z-cchip" type="button">Sonnet 5.5</button>
+        <button class="z-cchip" type="button">Default</button>
+        <button class="z-cchip" type="button">High</button>
+        <button class="z-icon-btn" type="button" aria-label="More options"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
       </div>
-      <button class="z-icon-btn z-icon-btn--primary" type="button" aria-label="Send"><svg class="z-ico" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></button>
+      <div class="z-composer__tools">
+        <span class="z-meter">38% of context</span>
+        <button class="z-icon-btn z-icon-btn--primary" type="button" aria-label="Send message"><svg class="z-ico" viewBox="0 0 24 24"><path d="M9 10 4 15l5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg></button>
+      </div>
     </div>
   </div>
 </div>

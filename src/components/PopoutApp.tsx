@@ -124,6 +124,7 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
             <RemovedAgentPanel agentName={removedAgentName} onAdd={() => forward({ kind: "add-agent" })} />
           ) : (
             <ComposerDock
+              agentName={agent?.name}
               disabled={!isRunning}
               placeholder={isRunning ? undefined : "This session is not running"}
               onSendMessage={(text) => forward({ kind: "send", text })}

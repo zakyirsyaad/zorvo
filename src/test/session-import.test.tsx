@@ -154,10 +154,12 @@ describe("Importing a session the agent listed", () => {
     listeners.clear();
   });
 
-  it("offers the list when the draft's agent can list its sessions", async () => {
+  it("offers the list when the draft's agent can list its sessions, under the composer", async () => {
     await renderDraft();
 
-    expect(await screen.findByRole("button", { name: "Continue a session from Claude Code" })).toBeDefined();
+    const offer = await screen.findByRole("button", { name: "Continue a session from Claude Code" });
+    const prompt = screen.getByRole("textbox", { name: "Prompt" });
+    expect(prompt.compareDocumentPosition(offer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("shows no list when the draft's agent cannot list its sessions", async () => {
@@ -172,10 +174,10 @@ describe("Importing a session the agent listed", () => {
     await renderDraft();
     await screen.findByRole("button", { name: "Continue a session from Claude Code" });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" }));
+      fireEvent.click(await screen.findByRole("button", { name: /^Branch:/ }));
     });
     await act(async () => {
-      fireEvent.click(await screen.findByRole("switch", { name: "Worktree" }));
+      fireEvent.click(await screen.findByRole("switch", { name: "New worktree" }));
     });
 
     expect(screen.queryByRole("button", { name: /Continue a session from/ })).toBeNull();
@@ -265,7 +267,7 @@ describe("Importing a session the agent listed", () => {
     expect(await screen.findByText("Could not open the session: session/load failed: Unknown session")).toBeDefined();
 
     // The draft is back as it was: both picks made for the import are still selected.
-    expect(screen.getByRole("heading", { name: "New session" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: /^New session/ })).toBeDefined();
     expect(screen.getByRole("button", { name: "Model: Smart" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Permission mode: Plan" })).toBeDefined();
   });
@@ -280,7 +282,7 @@ describe("Importing a session the agent listed", () => {
     expect(await screen.findByText("Could not open the session: session/load failed: Unknown session")).toBeDefined();
     await flushSaves();
 
-    expect(screen.getByRole("heading", { name: "New session" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: /^New session/ })).toBeDefined();
     expect(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" })).toBeDefined();
     expect(sidebar().queryByText("Fix the login")).toBeNull();
     const importedId = String(callsTo(spy, "acp_import_session")[0][1]?.sessionId);
@@ -329,7 +331,7 @@ describe("Importing a session the agent listed", () => {
 
     // The other session stays open: the failed import does not pull the draft back.
     expect(within(screen.getByRole("banner")).getByText("Earlier chat")).toBeDefined();
-    expect(screen.queryByRole("heading", { name: "New session" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: /^New session/ })).toBeNull();
     // Its record and transcript still go, and no error is raised over another session.
     expect(sidebar().queryByText("Fix the login")).toBeNull();
     expect(fakeStore().state.sessions.map((session) => (session as { id: string }).id)).toEqual(["s-other"]);

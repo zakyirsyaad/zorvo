@@ -286,7 +286,7 @@ describe("Window chrome wiring", () => {
     await click(sessions.getByText("Alpha work"));
 
     await click(screen.getByRole("button", { name: "New session" }));
-    expect(screen.getByRole("heading", { name: "New session" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: /^New session/ })).toBeDefined();
     await click(screen.getByRole("button", { name: "Hide sidebar" }));
     await click(header().getByRole("button", { name: "Back" }));
 
@@ -343,8 +343,8 @@ describe("Window chrome wiring", () => {
     await renderApp();
     await openInspectorTab("Files");
     await click(await screen.findByRole("button", { name: "Add README.md to prompt" }));
-    await click(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" }));
-    await click(await screen.findByRole("switch", { name: "Worktree" }));
+    await click(screen.getByRole("button", { name: /^Branch:/ }));
+    await click(await screen.findByRole("switch", { name: "New worktree" }));
 
     const prompt = screen.getByRole("textbox", { name: "Prompt" });
     await act(async () => {
@@ -373,8 +373,8 @@ describe("Window chrome wiring", () => {
     await renderApp();
     await openInspectorTab("Files");
     await click(await screen.findByRole("button", { name: "Add README.md to prompt" }));
-    await click(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" }));
-    await click(await screen.findByRole("switch", { name: "Worktree" }));
+    await click(screen.getByRole("button", { name: /^Branch:/ }));
+    await click(await screen.findByRole("switch", { name: "New worktree" }));
 
     const prompt = screen.getByRole("textbox", { name: "Prompt" });
     await act(async () => {

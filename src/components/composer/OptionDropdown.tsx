@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ShieldAlert } from "lucide-react";
+import { Popover, PopoverList, PopoverOption } from "../ui/Popover";
+import { Highlighted } from "../ui/Highlighted";
+import { COMPOSER_CHIP, RISKY_LINE, pluralOf } from "./chip-style";
 
 export interface DropdownOption {
   /** `undefined` means "agent default": no flag is passed. */
@@ -19,6 +22,11 @@ export interface OptionDropdownProps {
   selected: string | undefined;
   isOpen: boolean;
   onToggle: () => void;
+  /**
+   * Closes the menu on Escape or a click outside. Defaults to `onToggle`; a parent that also closes its menus
+   * on those (the composer) passes a close, or the two would toggle it shut and open again.
+   */
+  onClose?: () => void;
   onSelect: (value: string | undefined) => void;
   align?: "left" | "right";
   /** Writes the label before the value on the chip, for a setting whose value alone ("On", "Plan") says little. */
@@ -47,95 +55,90 @@ function matches(option: DropdownOption, query: string): boolean {
   );
 }
 
-interface OptionListProps {
+/** The line under an option: what it does, and for a risky mode that it acts without asking. */
+function detailOf(option: DropdownOption): ReactNode {
+  if (!option.risky) return option.description;
+  return (
+    <>
+      {option.description && <span className="block">{option.description}</span>}
+      <span className="block text-status-attention">{RISKY_LINE}</span>
+    </>
+  );
+}
+
+interface OptionRowsProps {
+  options: readonly DropdownOption[];
+  current: DropdownOption | undefined;
+  query: string;
+  onSelect: (value: string | undefined) => void;
+}
+
+function OptionRows({ options, current, query, onSelect }: OptionRowsProps) {
+  return (
+    <div className="max-h-72 overflow-y-auto">
+      {options.map((option) => (
+        <PopoverOption
+          key={option.value ?? "__default"}
+          selected={option.value === current?.value}
+          onSelect={() => onSelect(option.value)}
+          description={detailOf(option)}
+        >
+          <span className="flex items-center gap-1.5">
+            {option.risky && <ShieldAlert size={12} aria-hidden="true" className="shrink-0 text-status-attention" />}
+            <span className="truncate">
+              <Highlighted text={option.label} query={query} />
+            </span>
+          </span>
+        </PopoverOption>
+      ))}
+      {options.length === 0 && <p className="px-2 py-1 text-ui-sm text-fg-muted">No matches</p>}
+    </div>
+  );
+}
+
+/** A long list's menu: a search field over the options, and how many match under them. */
+function SearchableOptions({
+  label,
+  options,
+  current,
+  onSelect,
+}: {
   label: string;
   options: readonly DropdownOption[];
   current: DropdownOption | undefined;
   onSelect: (value: string | undefined) => void;
-  align: "left" | "right";
-  /** The chip that opened the menu; a menu with a search field gives focus back to it when it closes. */
-  trigger: RefObject<HTMLButtonElement | null>;
-}
-
-/** The open menu; it is mounted only while open, so its search starts empty each time. */
-function OptionList({ label, options, current, onSelect, align, trigger }: OptionListProps) {
+}) {
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
-  const hasSearch = options.length > SEARCH_THRESHOLD;
-  const visible = hasSearch ? options.filter((o) => matches(o, query)) : options;
-
-  useEffect(() => {
-    if (!hasSearch) return;
-    searchRef.current?.focus();
-    // The focused search field leaves with the menu, which would drop focus to the page.
-    const chip = trigger.current;
-    return () => chip?.focus();
-  }, [hasSearch, trigger]);
+  const visible = options.filter((option) => matches(option, query));
+  useEffect(() => searchRef.current?.focus(), []);
 
   return (
-    <div
-      className={`absolute bottom-full mb-2 min-w-40 max-w-80 w-max rounded-lg border border-border bg-surface-3 p-1 shadow-popover z-50 ${
-        align === "left" ? "left-0" : "right-0"
-      }`}
-    >
-      {hasSearch && (
-        <input
-          ref={searchRef}
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && query.trim() !== "" && visible.length > 0) {
-              e.preventDefault();
-              onSelect(visible[0].value);
-            }
-          }}
-          placeholder={`Search ${label.toLowerCase()}`}
-          aria-label={`Search ${label.toLowerCase()}`}
-          autoComplete="off"
-          spellCheck={false}
-          className="mb-1 w-full rounded border border-border bg-surface-2 px-2.5 py-1.5 text-xs text-fg placeholder-fg-subtle outline-none focus-ring"
-        />
-      )}
-      <div role="listbox" aria-label={label} className="max-h-72 overflow-y-auto">
-        {visible.map((option) => {
-          const isSelected = option.value === current?.value;
-          return (
-            <button
-              key={option.value ?? "__default"}
-              type="button"
-              role="option"
-              aria-selected={isSelected}
-              onClick={() => onSelect(option.value)}
-              className={`flex w-full items-start justify-between gap-3 rounded px-2.5 py-1.5 text-xs text-left transition-colors cursor-pointer focus-ring ${
-                isSelected
-                  ? "bg-surface-hover text-fg font-medium"
-                  : "text-fg-secondary hover:bg-surface-hover hover:text-fg"
-              }`}
-            >
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="flex items-center gap-1.5">
-                  {option.risky && (
-                    <ShieldAlert
-                      size={12}
-                      className="shrink-0 text-danger"
-                      role="img"
-                      aria-label="Lets the agent act without asking"
-                    />
-                  )}
-                  <span className="truncate">{option.label}</span>
-                </span>
-                {option.description && (
-                  <span className="text-[11px] font-normal leading-snug text-fg-muted">{option.description}</span>
-                )}
-              </span>
-              {isSelected && <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-fg" />}
-            </button>
-          );
-        })}
-        {visible.length === 0 && <p className="px-2.5 py-1.5 text-xs text-fg-muted">No matches</p>}
-      </div>
-    </div>
+    <>
+      <input
+        ref={searchRef}
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && query.trim() !== "" && visible.length > 0) {
+            e.preventDefault();
+            onSelect(visible[0].value);
+          }
+        }}
+        placeholder={`Search ${label.toLowerCase()}`}
+        aria-label={`Search ${label.toLowerCase()}`}
+        autoComplete="off"
+        spellCheck={false}
+        className="focus-ring mb-1 w-full rounded border border-border bg-surface-2 px-2 py-1 text-ui-sm text-fg placeholder-fg-subtle outline-none"
+      />
+      <PopoverList label={label}>
+        <OptionRows options={visible} current={current} query={query} onSelect={onSelect} />
+      </PopoverList>
+      <p className="px-2 pt-1.5 text-caption text-fg-muted">
+        {visible.length} of {options.length} {pluralOf(label)}
+      </p>
+    </>
   );
 }
 
@@ -147,6 +150,7 @@ export function OptionDropdown({
   selected,
   isOpen,
   onToggle,
+  onClose = onToggle,
   onSelect,
   align = "right",
   showLabel = false,
@@ -155,27 +159,39 @@ export function OptionDropdown({
   const current = options.find((o) => o.value === selected) ?? options[0];
   const valueLabel = current?.label ?? "";
   const detail = current?.description ?? description;
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const hasSearch = options.length > SEARCH_THRESHOLD;
 
   return (
-    <div className="relative">
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-label={`${label}: ${valueLabel}`}
-        aria-haspopup="listbox"
-        aria-expanded={isOpen}
-        onClick={onToggle}
-        title={detail ? `${valueLabel}: ${detail}` : valueLabel}
-        className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1 text-xs text-fg-secondary hover:bg-surface-hover hover:text-fg transition-colors cursor-pointer border border-border focus-ring"
-      >
-        {icon}
-        {showLabel && <span className="text-fg-subtle">{label}</span>}
-        <span className="max-w-[140px] truncate">{chipLabelOf(valueLabel)}</span>
-        <ChevronDown size={11} className="text-fg-subtle" />
-      </button>
-
-      {isOpen && <OptionList label={label} options={options} current={current} onSelect={onSelect} align={align} trigger={triggerRef} />}
-    </div>
+    <Popover
+      isOpen={isOpen}
+      onClose={onClose}
+      label={label}
+      role={hasSearch ? "dialog" : "listbox"}
+      side="top"
+      align={align === "left" ? "start" : "end"}
+      className="w-max min-w-40 max-w-80"
+      trigger={
+        <button
+          type="button"
+          aria-label={`${label}: ${valueLabel}`}
+          aria-haspopup="listbox"
+          aria-expanded={isOpen}
+          onClick={onToggle}
+          title={detail ? `${valueLabel}: ${detail}` : valueLabel}
+          className={COMPOSER_CHIP}
+        >
+          {icon}
+          {showLabel && <span className="text-fg-subtle">{label}</span>}
+          <span className="max-w-[140px] truncate">{chipLabelOf(valueLabel)}</span>
+          <ChevronDown size={11} aria-hidden="true" className="shrink-0 text-fg-subtle" />
+        </button>
+      }
+    >
+      {hasSearch ? (
+        <SearchableOptions label={label} options={options} current={current} onSelect={onSelect} />
+      ) : (
+        <OptionRows options={options} current={current} query="" onSelect={onSelect} />
+      )}
+    </Popover>
   );
 }

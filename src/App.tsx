@@ -16,7 +16,7 @@ import { SignInLayer } from "./components/SignInLayer";
 import { AgentInstallPanel } from "./components/AgentInstallPanel";
 import { pickerLabelOf } from "./lib/install-plan";
 import { installPanelAgentOf } from "./lib/install-panel";
-import { NewSessionView } from "./components/workspace/NewSessionView";
+import { NewSessionBelow, NewSessionHeading } from "./components/workspace/NewSessionView";
 import { WorkspaceSummary } from "./components/workspace/WorkspaceSummary";
 import { ChangesPanel } from "./components/changes/ChangesPanel";
 import { DiffView } from "./components/changes/DiffView";
@@ -1083,13 +1083,10 @@ export default function App() {
                   onStop={() => handleInterrupt(activeSessionId)}
                 />
               ) : isNewSessionDraft ? (
-                <NewSessionView
+                // The draft centers its composer: this heading takes the space above it, NewSessionBelow the space under it.
+                <NewSessionHeading
                   workspace={activeWorkspace}
-                  details={workspaceDetails}
-                  agentName={newSessionAgent?.name}
                   unavailableReason={areAgentsLoaded && !agentsInUse.some(isAgentReady) ? noAgentNotice(agentsInUse) : undefined}
-                  worktreeBaseBranch={isWorktreeActive ? branchPicker.baseBranch : undefined}
-                  sessionList={draftSessionList.sessionList}
                 />
               ) : (
                 <EmptySessionState />
@@ -1132,6 +1129,8 @@ export default function App() {
                   onRestored={review.onComposerRestored}
                   onGivenBack={review.onComposerGivenBack}
                   commands={compare.isCompare ? [] : composerCommands}
+                  sendLabel={compare.agentIds.length >= 2 ? `Start ${compare.agentIds.length} sessions` : undefined}
+                  agentName={activeSession ? activeAgent?.name : newSessionAgent?.name}
                   note={composerNote({
                     reviewOwner: review.reviewOwner,
                     compareCount: compare.agentIds.length,
@@ -1184,7 +1183,8 @@ export default function App() {
                   }
                 />
               </div>
-
+              {/* After the composer's slot, never around it: the composer keeps its place in the tree, and its text. */}
+              {isNewSessionDraft && <NewSessionBelow sessionList={draftSessionList.sessionList} />}
             </article>
             {isDiffOpen && filesFolder && (
               <DiffView

@@ -100,14 +100,16 @@ describe("The inspector in the app", () => {
     expect(inspector()).toBeNull();
   });
 
-  it("opens the diff beside the chat from Changes, keeping the inspector, and Expand takes the chat's place", async () => {
+  it("opens the diff beside the chat in the inspector's place, and Expand takes the chat's place", async () => {
     seedWithChanges();
     await renderApp();
     await openInspectorTab("Changes");
 
     await click(await within(inspector() as HTMLElement).findByRole("button", { name: /Open the diff/ }));
 
+    // The diff and the inspector never squeeze the chat between them.
     expect(screen.getByRole("complementary", { name: "Diff view" })).toBeInTheDocument();
+    expect(inspector()).toBeNull();
     const chat = screen.getByRole("textbox", { name: "Prompt", hidden: true }).closest("article") as HTMLElement;
     expect(chat.classList.contains("hidden")).toBe(false);
     await click(screen.getByRole("button", { name: "Expand diff view" }));
@@ -116,6 +118,17 @@ describe("The inspector in the app", () => {
     await click(screen.getByRole("button", { name: "Close diff view" }));
     expect(screen.queryByRole("complementary", { name: "Diff view" })).toBeNull();
     expect(chat.classList.contains("hidden")).toBe(false);
+  });
+
+  it("closes the diff when the inspector opens", async () => {
+    seedWithChanges();
+    await renderApp();
+    await click(await within(screen.getAllByRole("banner")[0]).findByRole("button", { name: /12 lines added, 3 removed/ }));
+    expect(screen.getByRole("complementary", { name: "Diff view" })).toBeInTheDocument();
+
+    await click(inspectorButton());
+
     expect(inspector()).not.toBeNull();
+    expect(screen.queryByRole("complementary", { name: "Diff view" })).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { useInspector } from "../hooks/useInspector";
+import type { InspectorTab } from "../lib/inspector";
 
 const originalWidth = window.innerWidth;
 const ALL = ["changes", "activity", "files", "terminal"] as const;
@@ -9,9 +10,12 @@ function setWindowWidth(px: number) {
   Object.defineProperty(window, "innerWidth", { configurable: true, value: px });
 }
 
+type Props = { folder: string; offered: readonly InspectorTab[] };
+
 function renderInspector(isRepository: boolean, onCrowded = vi.fn(), isSidebarShown = true, onShow = vi.fn()) {
-  const view = renderHook(() =>
-    useInspector("/Users/test/zorvo", isRepository, 0, vi.fn(), { isSidebarShown, onCrowded, onShow }),
+  const view = renderHook(
+    ({ folder, offered }: Props) => useInspector(folder, isRepository, 0, vi.fn(), { isSidebarShown, offered, onCrowded, onShow }),
+    { initialProps: { folder: "/Users/test/zorvo", offered: ALL } as Props },
   );
   return { ...view, onCrowded, onShow };
 }
@@ -76,16 +80,51 @@ describe("useInspector", () => {
     expect(result.current.tab).toBeNull();
   });
 
-  it("keeps the diff apart from the tabs", () => {
+  it("asks the sidebar to give way when a wider tab shows in a narrow window", () => {
+    setWindowWidth(1280);
+    const { result, onCrowded } = renderInspector(true);
+    act(() => result.current.show("files"));
+    expect(onCrowded).not.toHaveBeenCalled();
+    // Terminal shows 560px wide: 1280 - 256 - 560 leaves the chat 464px.
+    act(() => result.current.show("terminal"));
+    expect(onCrowded).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks the room when the button opens the inspector over a tab that no longer shows", () => {
+    setWindowWidth(1440);
+    const { result, rerender, onCrowded } = renderInspector(true);
+    act(() => result.current.show("changes"));
+    // Another folder, not a repository: Changes no longer shows, though it is still the tab.
+    rerender({ folder: "/Users/test/notes", offered: ["files", "terminal"] });
+    setWindowWidth(1100);
+    act(() => result.current.toggle(["files", "terminal"]));
+    expect(result.current.tab).toBe("files");
+    expect(onCrowded).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the diff in the inspector's place, one or the other", () => {
     setWindowWidth(1440);
     const { result } = renderInspector(true);
     act(() => result.current.show("files"));
     act(() => result.current.openDiff());
     expect(result.current.isDiffOpen).toBe(true);
+    expect(result.current.tab).toBeNull();
+    act(() => result.current.toggle(ALL));
     expect(result.current.tab).toBe("files");
-    act(() => result.current.closeDiff());
     expect(result.current.isDiffOpen).toBe(false);
-    expect(result.current.tab).toBe("files");
+  });
+
+  it("expands the diff for the folder it was expanded in only", () => {
+    setWindowWidth(1440);
+    const { result, rerender } = renderInspector(true);
+    act(() => result.current.openDiff());
+    act(() => result.current.toggleDiffExpanded());
+    expect(result.current.isDiffExpanded).toBe(true);
+    rerender({ folder: "/Users/test/other", offered: ALL });
+    expect(result.current.isDiffOpen).toBe(true);
+    expect(result.current.isDiffExpanded).toBe(false);
+    rerender({ folder: "/Users/test/zorvo", offered: ALL });
+    expect(result.current.isDiffExpanded).toBe(true);
   });
 
   it("remembers the width it is given, within bounds", () => {

@@ -455,16 +455,17 @@ export default function App() {
   const isDraggingFiles = useFileDrop(handleDroppedFiles, reportError);
 
   const turnsEnded = useTurnsEnded(Boolean(activeSessionId) && isSessionBusy(activeSessionId));
+  const inspectorTabs = offeredTabs({ hasFolder: Boolean(filesFolder), isRepository, hasSession: Boolean(activeSession) });
   const inspector = useInspector(filesFolder?.path, isRepository, turnsEnded, reportError, {
     isSidebarShown: !isSidebarHidden,
+    offered: inspectorTabs,
     onCrowded: () => setSidebarHidden(true),
     // The Terminal tab starts the folder's first shell in the click that shows it.
     onShow: (tab) => {
       if (tab === "terminal" && filesFolder) terminalDrawer.ensureShell(filesFolder.path);
     },
   });
-  const inspectorTabs = offeredTabs({ hasFolder: Boolean(filesFolder), isRepository, hasSession: Boolean(activeSession) });
-  // A tab that no longer applies (another folder, a draft) leaves the inspector closed.
+  // A tab that no longer applies (another folder, a draft) does not show.
   const inspectorTab = inspector.tab && inspectorTabs.includes(inspector.tab) ? inspector.tab : null;
   const diffStats = inspector.headStats ? totalsOf(inspector.headStats) : undefined;
   // The commit this session's worktree began at: the diff can compare with it, and the chip stays for it.

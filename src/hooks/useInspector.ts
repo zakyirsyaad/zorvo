@@ -16,9 +16,9 @@ export interface InspectorState {
    */
   toggle: (offered: readonly InspectorTab[]) => void;
   close: () => void;
-  /** Whether the diff view shows beside the chat; apart from the tabs. */
+  /** Whether the diff view shows; it takes the inspector's place, so opening one closes the other. */
   isDiffOpen: boolean;
-  /** Whether the open diff view takes the chat's place; it opens beside the chat each time. */
+  /** Whether the open diff view takes the chat's place, in the folder it was expanded in; it opens beside the chat each time. */
   isDiffExpanded: boolean;
   openDiff: () => void;
   closeDiff: () => void;
@@ -40,7 +40,9 @@ const FIRST_TABS: readonly InspectorTab[] = ["changes", "files"];
 
 export interface InspectorLayout {
   isSidebarShown: boolean;
-  /** Called when the inspector opens in a window too narrow for the sidebar beside it. */
+  /** The tabs that apply now; a tab outside them does not show, though it stays the tab. */
+  offered: readonly InspectorTab[];
+  /** Called when the inspector shows wider than before in a window too narrow for the sidebar beside it. */
   onCrowded: () => void;
   /** Called whenever a tab shows, in the click that shows it (the Terminal tab starts its first shell there). */
   onShow?: (tab: InspectorTab) => void;
@@ -60,24 +62,36 @@ export function useInspector(
   const [tab, setTab] = useState<InspectorTab | null>(null);
   const [lastTab, setLastTab] = useState<InspectorTab | null>(null);
   const [isDiffOpen, setDiffOpen] = useState(false);
-  const [isDiffExpanded, setDiffExpanded] = useState(false);
+  // The folder whose diff takes the chat's place, so another folder's diff opens beside its chat.
+  const [expandedFolder, setExpandedFolder] = useState<string | null>(null);
   const [width, setWidth] = useInspectorWidth();
   const changes = useSessionChanges(folderPath, isRepository, turnsEnded, onError);
   const { stats: headStats, hasFailed: headStatsFailed } = useDiffStats(folderPath, isRepository, "head", changes.version, onError);
 
+  const shownTab = tab !== null && layout.offered.includes(tab) ? tab : null;
+
+  const closeDiff = () => {
+    setDiffOpen(false);
+    // It opens beside the chat again next time.
+    setExpandedFolder(null);
+  };
+
   const show = (next: InspectorTab) => {
     // The list may be stale while its tab is not shown (an agent mid-turn): showing it reads it afresh.
-    if ((next === "changes" || next === "activity") && tab !== next) changes.reload();
-    if (tab === null && isCrowded(window.innerWidth, shownInspectorWidth(next, width), layout.isSidebarShown)) {
+    if ((next === "changes" || next === "activity") && shownTab !== next) changes.reload();
+    const nextWidth = shownInspectorWidth(next, width);
+    if (nextWidth > shownInspectorWidth(shownTab, width) && isCrowded(window.innerWidth, nextWidth, layout.isSidebarShown)) {
       layout.onCrowded();
     }
+    // The diff and the inspector share the room beside the chat: one shows at a time.
+    closeDiff();
     setTab(next);
     setLastTab(next);
     layout.onShow?.(next);
   };
 
   const toggle = (offered: readonly InspectorTab[]) => {
-    if (tab !== null && offered.includes(tab)) {
+    if (shownTab !== null && offered.includes(shownTab)) {
       setTab(null);
       return;
     }
@@ -92,7 +106,10 @@ export function useInspector(
     // Asking for the diff again reads it afresh even while it is open.
     changes.reload();
     setDiffOpen(true);
+    setTab(null);
   };
+
+  const isExpandedHere = folderPath !== undefined && expandedFolder === folderPath;
 
   return {
     tab,
@@ -100,15 +117,11 @@ export function useInspector(
     toggle,
     close: () => setTab(null),
     isDiffOpen,
-    isDiffExpanded: isDiffOpen && isDiffExpanded,
+    isDiffExpanded: isDiffOpen && isExpandedHere,
     openDiff,
-    closeDiff: () => {
-      setDiffOpen(false);
-      // It opens beside the chat again next time.
-      setDiffExpanded(false);
-    },
-    toggleDiffExpanded: () => setDiffExpanded((expanded) => !expanded),
-    collapseDiff: () => setDiffExpanded(false),
+    closeDiff,
+    toggleDiffExpanded: () => setExpandedFolder(isExpandedHere ? null : (folderPath ?? null)),
+    collapseDiff: () => setExpandedFolder(null),
     width,
     setWidth,
     changes,

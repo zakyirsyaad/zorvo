@@ -3,7 +3,7 @@ import { X } from "lucide-react";
 import { IconButton } from "../ui/IconButton";
 import { Tabs, tabIds, type TabItem } from "../ui/Tabs";
 import { useLatest } from "../../hooks/useLatest";
-import { clampInspectorWidth, INSPECTOR_WIDTH, shownInspectorWidth, type InspectorTab } from "../../lib/inspector";
+import { clampInspectorWidth, INSPECTOR_WIDTH, minInspectorWidth, shownInspectorWidth, type InspectorTab } from "../../lib/inspector";
 
 const LABELS: Record<InspectorTab, string> = {
   changes: "Changes",
@@ -43,12 +43,22 @@ export function Inspector({ tab, tabs, width, counts, onSelect, onResize, onClos
     count: counts?.[id],
   }));
 
+  // Resizing starts from the width that shows (the Terminal tab's may be wider than the remembered one)
+  // and never goes below the tab's own minimum, so every step changes what you see.
+  const shown = shownInspectorWidth(tab, width);
+  const min = minInspectorWidth(tab);
+  const widthFor = (px: number) => Math.max(min, clampInspectorWidth(px));
+
   const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    dragRef.current = { startX: event.clientX, startWidth: width };
+    dragRef.current = { startX: event.clientX, startWidth: shown };
+    let last = shown;
     const move = (moveEvent: PointerEvent) => {
       const drag = dragRef.current;
       if (!drag) return;
-      onResizeRef.current(clampInspectorWidth(drag.startWidth + (drag.startX - moveEvent.clientX)));
+      const next = widthFor(drag.startWidth + (drag.startX - moveEvent.clientX));
+      if (next === last) return;
+      last = next;
+      onResizeRef.current(next);
     };
     const stop = () => {
       dragRef.current = null;
@@ -65,23 +75,24 @@ export function Inspector({ tab, tabs, width, counts, onSelect, onResize, onClos
     const delta = { ArrowLeft: INSPECTOR_WIDTH.step, ArrowRight: -INSPECTOR_WIDTH.step }[event.key];
     if (delta === undefined) return;
     event.preventDefault();
-    onResize(clampInspectorWidth(width + delta));
+    const next = widthFor(shown + delta);
+    if (next !== shown) onResize(next);
   };
 
   const ids = tabIds(ID_PREFIX, tab);
   return (
     <section
       aria-label="Inspector"
-      style={{ width: shownInspectorWidth(tab, width) }}
+      style={{ width: shown }}
       className="relative flex shrink-0 flex-col border-l border-border bg-surface-1"
     >
       <div
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize inspector"
-        aria-valuemin={INSPECTOR_WIDTH.min}
+        aria-valuemin={min}
         aria-valuemax={INSPECTOR_WIDTH.max}
-        aria-valuenow={width}
+        aria-valuenow={shown}
         tabIndex={0}
         onPointerDown={startDrag}
         onKeyDown={resizeByKey}

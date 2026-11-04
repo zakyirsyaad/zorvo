@@ -98,7 +98,7 @@ describe("Window chrome wiring", () => {
     expect(screen.getByRole("complementary", { name: "Files panel" }).textContent).toContain("old-project");
   });
 
-  it("shows the diff totals as a chip that opens the diff view, keeping the Changes tab", async () => {
+  it("shows the diff totals as a chip that opens the diff view in the Changes tab's place", async () => {
     seedSessions();
     const stat = (path: string, added: number, removed: number) => ({ path, oldPath: null, kind: "modified", added, removed, isBinary: false });
     vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
@@ -114,11 +114,11 @@ describe("Window chrome wiring", () => {
     await click(header().getByRole("button", { name: /2,847 lines added, 35 removed/ }));
 
     expect(screen.getByRole("complementary", { name: "Diff view" })).toBeDefined();
-    expect(screen.getByRole("complementary", { name: "Changes panel" })).toBeDefined();
+    expect(screen.queryByRole("complementary", { name: "Changes panel" })).toBeNull();
 
     await click(within(screen.getByRole("complementary", { name: "Diff view" })).getByRole("button", { name: /close/i }));
     expect(screen.queryByRole("complementary", { name: "Diff view" })).toBeNull();
-    expect(screen.getByRole("complementary", { name: "Changes panel" })).toBeDefined();
+    expect(screen.queryByRole("complementary", { name: "Changes panel" })).toBeNull();
   });
 
   it("opens the diff view from the chip even when it is already open", async () => {

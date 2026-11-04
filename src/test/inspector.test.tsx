@@ -48,8 +48,9 @@ describe("Inspector", () => {
     first.unmount();
 
     const narrow = at(320);
+    // Already at the minimum: nothing would change.
     fireEvent.keyDown(narrow.edge, { key: "ArrowRight" });
-    expect(narrow.onResize).toHaveBeenLastCalledWith(320);
+    expect(narrow.onResize).not.toHaveBeenCalled();
     narrow.unmount();
 
     const wide = at(712);
@@ -74,5 +75,20 @@ describe("Inspector", () => {
     unmount();
     renderInspector("files", 380);
     expect(screen.getByRole("region", { name: "Inspector" }).style.width).toBe("380px");
+  });
+
+  it("resizes the Terminal tab from the width it shows", () => {
+    const { onResize } = renderInspector("terminal", 380);
+    const edge = screen.getByRole("separator", { name: "Resize inspector" });
+    expect(edge).toHaveAttribute("aria-valuenow", "560");
+    expect(edge).toHaveAttribute("aria-valuemin", "560");
+    fireEvent.keyDown(edge, { key: "ArrowRight" });
+    expect(onResize).not.toHaveBeenCalled();
+    fireEvent.keyDown(edge, { key: "ArrowLeft" });
+    expect(onResize).toHaveBeenLastCalledWith(576);
+    fireEvent.pointerDown(edge, { clientX: 1000 });
+    fireEvent.pointerMove(window, { clientX: 990 });
+    expect(onResize).toHaveBeenLastCalledWith(570);
+    fireEvent.pointerUp(window);
   });
 });

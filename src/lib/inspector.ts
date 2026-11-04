@@ -20,6 +20,11 @@ export function shownInspectorWidth(tab: InspectorTab | null, width: number): nu
   return tab === "terminal" ? Math.max(INSPECTOR_WIDTH.wide, width) : width;
 }
 
+/** The narrowest a tab shows: `wide` on the Terminal tab, else the inspector's own minimum. */
+export function minInspectorWidth(tab: InspectorTab): number {
+  return tab === "terminal" ? INSPECTOR_WIDTH.wide : INSPECTOR_WIDTH.min;
+}
+
 /** The tabs that apply: Changes in a repository, Activity with a session, Files and Terminal with a folder. */
 export function offeredTabs(on: { hasFolder: boolean; isRepository: boolean; hasSession: boolean }): InspectorTab[] {
   const tabs: InspectorTab[] = [];

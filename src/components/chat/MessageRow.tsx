@@ -94,7 +94,8 @@ export const MessageRow = memo(function MessageRow({
         {...{ [SELECTABLE_TEXT_ATTRIBUTE]: "" }}
         className={`text-left select-text [&_button]:select-none ${
           isUser
-            ? "ml-auto max-w-[85%] rounded-2xl bg-surface-2 px-4 py-3 text-body text-fg"
+            ? // The edge carries the bubble on the light theme, where surface-2 is barely off the chat's ground.
+              "ml-auto max-w-[85%] rounded-2xl border border-border bg-surface-2 px-4 py-3 text-body text-fg"
             : "w-full px-1 text-body text-fg-secondary"
         }`}
       >

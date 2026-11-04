@@ -38,7 +38,12 @@ export function WorkingIndicator({ agentName, since }: { agentName: string; sinc
     <div data-testid="agent-working" role="status" className="mx-auto w-full max-w-3xl px-1">
       <StatusLine status="running" className="text-ui-sm text-fg-muted">
         {agentName} is working
-        {since !== undefined && <span className="ml-1.5 tabular-nums">{formatElapsed(Math.max(0, now - since))}</span>}
+        {/* Hidden from the live region: a time that ticks every second would be read out every second. */}
+        {since !== undefined && (
+          <span aria-hidden="true" className="ml-1.5 tabular-nums">
+            {formatElapsed(Math.max(0, now - since))}
+          </span>
+        )}
       </StatusLine>
     </div>
   );

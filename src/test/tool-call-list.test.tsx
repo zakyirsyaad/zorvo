@@ -60,8 +60,21 @@ describe("ToolCallList", () => {
     render(<ToolCallList tools={[{ ...editTool, locations: ["src/app.ts"] }]} defaultOpenDiffs={false} isTurnOver />);
     const row = screen.getByRole("button", { name: /Edited/ });
     expect(within(row).getByText("Edited")).toBeDefined();
-    expect(within(row).getByText("src/app.ts").className).toContain("font-mono");
+    // The file's name first, its folder after it.
+    expect(within(row).getByText("app.ts").className).toContain("font-mono");
+    expect(within(row).getByText("src")).toBeDefined();
     expect(within(row).getByText("Done")).toBeDefined();
+  });
+
+  it("keeps the file name of a long absolute path in sight, with every path on hover", () => {
+    const path = "/Users/mac/Library/Application Support/xyz.zorvo.desktop/worktrees/agent-fix-the-parser/src/lib/parser.ts";
+    render(
+      <ToolCallList tools={[{ ...editTool, locations: [path, "/tmp/other.ts"] }]} defaultOpenDiffs={false} isTurnOver />,
+    );
+    const row = screen.getByRole("button", { name: /Edited/ });
+    expect(within(row).getByText("parser.ts").className).toContain("font-mono");
+    const titles = [...row.querySelectorAll("[title]")].map((element) => element.getAttribute("title"));
+    expect(titles).toContain(`${path}\n/tmp/other.ts`);
   });
 
   it("counts an edit's lines", () => {

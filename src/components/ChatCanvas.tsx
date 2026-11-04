@@ -190,6 +190,16 @@ export function ChatCanvas({
 
   // The working line and the stall notice name the agent; a conversation with no known agent says "The agent".
   const shownAgentName = agentName === DEFAULT_AGENT_NAME ? "The agent" : agentName;
+  // When the agent started working while this conversation was on screen. Try again sends a
+  // failed prompt in place, with no new message, so your message's time alone would be minutes off.
+  const [workingSince, setWorkingSince] = useState<number | null>(null);
+  const [seenWork, setSeenWork] = useState({ isWorking, conversationId });
+  if (seenWork.isWorking !== isWorking || seenWork.conversationId !== conversationId) {
+    setSeenWork({ isWorking, conversationId });
+    setWorkingSince(isWorking && seenWork.conversationId === conversationId ? Date.now() : null);
+  }
+  const sentAt = turnStartedAt(visibleMessages);
+  const workStartedAt = workingSince !== null && sentAt !== undefined ? Math.max(sentAt, workingSince) : (workingSince ?? sentAt);
 
   return (
     <div
@@ -228,7 +238,7 @@ export function ChatCanvas({
           onReopenElicitationUrl={onReopenElicitationUrl ? handleReopenElicitationUrl : undefined}
         />
       ))}
-      {isWorking && <WorkingIndicator agentName={shownAgentName} since={turnStartedAt(visibleMessages)} />}
+      {isWorking && <WorkingIndicator agentName={shownAgentName} since={workStartedAt} />}
       {isWorking && (
         <AgentStallNotice agentName={shownAgentName} messages={messages} failures={failures} onStop={onStop} />
       )}

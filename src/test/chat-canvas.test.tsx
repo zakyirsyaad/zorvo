@@ -1135,6 +1135,29 @@ describe("ChatCanvas: the two kinds of message", () => {
     expect(time.closest("[data-message-actions]")).toBeNull();
   });
 
+  it("keeps a keyboard user on Rewind's confirm step, and back on Rewind when it times out", () => {
+    vi.useFakeTimers();
+    try {
+      render(<ChatCanvas messages={messages} agentName="Codex" onRewind={() => {}} />);
+      const yours = within(screen.getByTestId("chat-message-u-1"));
+      const rewind = yours.getByRole("button", { name: "Rewind to here" });
+      rewind.focus();
+      fireEvent.click(rewind);
+      // Focus inside the message keeps its actions revealed.
+      expect(document.activeElement).toBe(yours.getByRole("button", { name: "Confirm rewind" }));
+      act(() => void vi.advanceTimersByTime(4_000));
+      expect(document.activeElement).toBe(yours.getByRole("button", { name: "Rewind to here" }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("edges your bubble, so it shows on the light theme's near-white ground", () => {
+    render(<ChatCanvas messages={messages} agentName="Codex" />);
+    const bubble = screen.getByTestId("chat-message-u-1").querySelector("[data-selectable-text]") as HTMLElement;
+    expect(bubble.classList.contains("border-border")).toBe(true);
+  });
+
   it("offers Fork from here on the agent's message", () => {
     render(<ChatCanvas messages={messages} agentName="Codex" onForkBranch={() => {}} />);
     expect(within(screen.getByTestId("chat-message-a-1")).getByRole("button", { name: "Fork from here" })).toBeDefined();
@@ -1157,6 +1180,30 @@ describe("ChatCanvas: the two kinds of message", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("counts the working time from when the agent started again, after Try again", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_700_000_000_000);
+    try {
+      // The prompt failed 12 minutes ago; Try again sends it in place, with no new message.
+      const failed: ChatMessage[] = [{ id: "u-1", role: "user", content: "fix it", timestamp: 1_700_000_000_000 - 720_000 }];
+      const view = render(<ChatCanvas conversationId="s-1" messages={failed} agentName="Codex" isWorking={false} />);
+      view.rerender(<ChatCanvas conversationId="s-1" messages={failed} agentName="Codex" isWorking />);
+      expect(screen.getByTestId("agent-working").textContent).toContain("0s");
+      expect(screen.getByTestId("agent-working").textContent).not.toContain("12m");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the ticking time out of what screen readers announce", () => {
+    const turn: ChatMessage[] = [{ id: "u-1", role: "user", content: "fix it", timestamp: Date.now() - 45_000 }];
+    render(<ChatCanvas messages={turn} agentName="Codex" isWorking />);
+    const status = screen.getByRole("status");
+    expect(status.textContent).toContain("Codex is working");
+    const time = status.querySelector("[aria-hidden='true'].tabular-nums");
+    expect(time?.textContent).toMatch(/\d+s/);
   });
 
   it("shows the footer under the last message", () => {

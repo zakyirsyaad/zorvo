@@ -53,7 +53,8 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
       return Promise.resolve(structuredClone(store.transcripts[args?.sessionId ?? ""] ?? []));
     case "save_transcript":
       store.transcripts[args?.sessionId ?? ""] = structuredClone(args?.messages ?? []);
-      return Promise.resolve(undefined);
+      // The backend answers with the bytes it wrote.
+      return Promise.resolve(JSON.stringify(args?.messages ?? []).length);
     case "delete_transcript":
       delete store.transcripts[args?.sessionId ?? ""];
       return Promise.resolve(undefined);

@@ -468,12 +468,13 @@ impl AppStore {
             .map_err(|e| format!("Failed to parse transcript '{}': {}", session_id, e))
     }
 
-    /// Writes a session's transcript, replacing any previous copy atomically.
+    /// Writes a session's transcript, replacing any previous copy atomically, and returns
+    /// its size in bytes, which the UI uses to space out the next write.
     pub fn save_transcript(
         &self,
         session_id: &str,
         messages: &[serde_json::Value],
-    ) -> Result<(), String> {
+    ) -> Result<usize, String> {
         validate_session_id(session_id)?;
 
         let dir = self.transcripts_dir();
@@ -493,7 +494,8 @@ impl AppStore {
             &self.transcript_path(session_id),
             &dir.join(unique_tmp_name(session_id)),
             json.as_bytes(),
-        )
+        )?;
+        Ok(json.len())
     }
 
     /// Deletes a session's transcript. A file that is already gone is success.

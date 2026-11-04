@@ -214,13 +214,14 @@ fn load_transcript(
     store.load_transcript(&session_id)
 }
 
-/// Saves a session's chat transcript, replacing the previous copy atomically.
+/// Saves a session's chat transcript, replacing the previous copy atomically, and
+/// returns how many bytes it wrote.
 #[tauri::command(async)]
 fn save_transcript(
     store: State<'_, AppStore>,
     session_id: String,
     messages: Vec<serde_json::Value>,
-) -> Result<(), String> {
+) -> Result<usize, String> {
     store.save_transcript(&session_id, &messages)
 }
 

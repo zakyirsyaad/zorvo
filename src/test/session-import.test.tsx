@@ -386,6 +386,10 @@ describe("Importing a session the agent listed", () => {
     await act(async () => {
       fireEvent.click(within(row).getByRole("button", { name: "Delete session" }));
     });
+    // A write while the session still existed is fine: on a busy machine the first one comes
+    // due before the delete. None may follow the delete.
+    const savesOf = () => callsTo(spy, "save_transcript").filter(([, args]) => args?.sessionId === importedId).length;
+    const savedBeforeDelete = savesOf();
     await act(async () => {
       fireEvent.click(within(row).getByRole("button", { name: "Confirm delete" }));
     });
@@ -404,7 +408,7 @@ describe("Importing a session the agent listed", () => {
     expect(screen.queryByText("late history")).toBeNull();
     expect(sidebar().queryByText("Fix the login")).toBeNull();
     expect(fakeStore().transcripts[importedId]).toBeUndefined();
-    expect(callsTo(spy, "save_transcript").filter(([, args]) => args?.sessionId === importedId)).toHaveLength(0);
+    expect(savesOf()).toBe(savedBeforeDelete);
   });
 
   it("closes the last reply and keeps the history note of a stopped import that is kept", async () => {

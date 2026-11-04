@@ -1,0 +1,43 @@
+<!-- @dsCard group="Navigation" height=220 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Inspector — preview</title>
+<style>
+.z-insp { position: relative; display: flex; flex-direction: column; width: 380px; height: 180px; box-sizing: border-box; border-left: 1px solid var(--border); background: var(--surface-1); font-family: var(--font-sans); }
+.z-insp__edge { position: absolute; top: 0; bottom: 0; left: -1px; width: 2px; background: var(--border-strong); }
+.z-insp__head { display: flex; align-items: stretch; justify-content: space-between; height: 40px; padding: 0 var(--space-1\.5) 0 var(--space-2); border-bottom: 1px solid var(--border); }
+.z-insp__tabs { display: flex; gap: var(--space-1); }
+.z-insp__tab { display: flex; align-items: center; gap: var(--space-1\.5); padding: 0 var(--space-2); border: 0; border-bottom: 2px solid transparent; background: none; color: var(--fg-muted); font: 400 13px/18px var(--font-sans); }
+.z-insp__tab[aria-selected="true"] { border-bottom-color: var(--fg); color: var(--fg); font-weight: 500; }
+.z-insp__count { color: var(--fg-muted); font: 400 11px/16px var(--font-sans); }
+.z-insp__close { display: flex; align-items: center; justify-content: center; align-self: center; width: 28px; height: 28px; border-radius: var(--radius-md); color: var(--fg-muted); }
+.z-insp__close svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.z-insp__body { padding: var(--space-3); color: var(--fg-secondary); font: 400 12px/16px var(--font-sans); }
+.z-insp__row { display: flex; justify-content: space-between; padding: var(--space-1) 0; }
+.z-insp__path { font: 400 11px/16px var(--font-mono); color: var(--fg-secondary); }
+.z-insp__add { color: var(--status-running); }
+.z-insp__del { color: var(--danger); }
+</style>
+</head>
+<body>
+<div class="z-stage" style="justify-content:flex-end">
+  <section class="z-insp" aria-label="Inspector">
+    <div class="z-insp__edge" role="separator" aria-label="Resize inspector" aria-valuenow="380" aria-valuemin="320" aria-valuemax="720"></div>
+    <div class="z-insp__head">
+      <div class="z-insp__tabs" role="tablist" aria-label="Inspector">
+        <button type="button" class="z-insp__tab" role="tab" aria-selected="true">Changes <span class="z-insp__count">3</span></button>
+        <button type="button" class="z-insp__tab" role="tab" aria-selected="false" tabindex="-1">Activity</button>
+        <button type="button" class="z-insp__tab" role="tab" aria-selected="false" tabindex="-1">Files</button>
+        <button type="button" class="z-insp__tab" role="tab" aria-selected="false" tabindex="-1">Terminal</button>
+      </div>
+      <span class="z-insp__close" aria-label="Close inspector"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
+    </div>
+    <div class="z-insp__body">
+      <div class="z-insp__row"><span class="z-insp__path">src/components/Sidebar.tsx</span><span><span class="z-insp__add">+42</span> <span class="z-insp__del">−11</span></span></div>
+      <div class="z-insp__row"><span class="z-insp__path">src/lib/sidebar-status.ts</span><span><span class="z-insp__add">+86</span></span></div>
+      <div class="z-insp__row"><span class="z-insp__path">CHANGELOG.md</span><span><span class="z-insp__add">+1</span></span></div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

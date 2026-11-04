@@ -36,7 +36,8 @@ export interface ActivityPanelProps {
   headStatsFailed: boolean;
   onJump: (messageId: string) => void;
   onOpenDiff: () => void;
-  onClose: () => void;
+  /** Shows a close button; inside the inspector the inspector closes it. */
+  onClose?: () => void;
 }
 
 function Unreported({ files, compared, onOpenDiff }: { files: readonly string[]; compared: string; onOpenDiff: () => void }) {
@@ -94,12 +95,14 @@ export function ActivityPanel({ messages, transcript, session, isRepository, isB
   const showsFiles = filter === "all" || filter === "file";
 
   return (
-    <aside aria-label="Activity panel" className="flex h-full w-80 shrink-0 flex-col border-l border-border bg-surface-1 text-xs text-fg-secondary">
+    <aside aria-label="Activity panel" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-xs text-fg-secondary">
       <header className="flex items-center justify-between border-b border-border px-3 py-2">
         <h2 className="text-xs font-medium text-fg">Activity</h2>
-        <IconButton label="Close activity panel" onClick={onClose}>
-          <X size={13} />
-        </IconButton>
+        {onClose && (
+          <IconButton label="Close activity panel" onClick={onClose}>
+            <X size={13} />
+          </IconButton>
+        )}
       </header>
       <p className="border-b border-border px-3 py-1.5 text-[11px] text-fg-muted">
         Agents report this themselves. Zorvo can only check file changes against git.

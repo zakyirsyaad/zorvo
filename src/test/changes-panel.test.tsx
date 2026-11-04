@@ -30,6 +30,14 @@ function renderPanel(overrides: Partial<Parameters<typeof ChangesPanel>[0]> = {}
   return props;
 }
 
+describe("ChangesPanel inside the inspector", () => {
+  it("has no close button of its own inside the inspector", () => {
+    renderPanel({ onClose: undefined });
+    expect(screen.queryByRole("button", { name: "Close changes panel" })).toBeNull();
+    expect(screen.getByRole("complementary", { name: "Changes panel" }).className).not.toContain("w-80");
+  });
+});
+
 describe("ChangesPanel", () => {
   afterEach(() => vi.restoreAllMocks());
 

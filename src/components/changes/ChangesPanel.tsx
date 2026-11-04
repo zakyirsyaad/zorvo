@@ -18,7 +18,8 @@ export interface ChangesPanelProps {
   /** Goes up with every list read; open diffs read again then. */
   version: number;
   onReload: () => void;
-  onClose: () => void;
+  /** Shows a close button; inside the inspector the inspector closes it. */
+  onClose?: () => void;
   /** The user's pull requests in this repository, newest first; none shown when null (gh missing, not on GitHub). */
   pullRequests?: PullRequestSummary[] | null;
   onOpenPullRequest?: (url: string) => void;
@@ -140,7 +141,7 @@ export function ChangesPanel({
   return (
     <aside
       aria-label="Changes panel"
-      className="flex h-full w-80 shrink-0 flex-col border-l border-border bg-surface-1 text-xs text-fg-secondary select-none"
+      className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-xs text-fg-secondary select-none"
     >
       <div className="flex items-center gap-1.5 border-b border-border px-3 py-2">
         <div className="min-w-0 flex-1">
@@ -160,9 +161,11 @@ export function ChangesPanel({
         <button type="button" onClick={onReload} aria-label="Refresh changes" title="Refresh" className={HEADER_BUTTON}>
           <RefreshCw size={12} />
         </button>
-        <button type="button" onClick={onClose} aria-label="Close changes panel" className={HEADER_BUTTON}>
-          <X size={13} />
-        </button>
+        {onClose && (
+          <button type="button" onClick={onClose} aria-label="Close changes panel" className={HEADER_BUTTON}>
+            <X size={13} />
+          </button>
+        )}
       </div>
 
       {diffStats && (diffStats.added > 0 || diffStats.removed > 0) && onOpenDiff && (

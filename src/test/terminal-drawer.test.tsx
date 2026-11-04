@@ -279,42 +279,12 @@ describe("TerminalDrawer", () => {
     expect(baseProps.onHide).not.toHaveBeenCalled();
   });
 
-  it("the resize handle moves with the arrow keys", () => {
-    Object.defineProperty(window, "innerHeight", { configurable: true, value: 1000 });
-    const terminals = fakeTerminals([tab("shell-1", "/work/zorvo", 1)]);
-    render(<TerminalDrawer {...baseProps} terminals={terminals} />);
-    const handle = screen.getByRole("separator");
-    expect(handle).toHaveAttribute("aria-valuenow", "280");
-
-    fireEvent.keyDown(handle, { key: "ArrowUp" });
-    expect(handle).toHaveAttribute("aria-valuenow", "304");
-
-    for (let i = 0; i < 100; i++) fireEvent.keyDown(handle, { key: "ArrowUp" });
-    expect(handle).toHaveAttribute("aria-valuenow", "700");
-
-    for (let i = 0; i < 100; i++) fireEvent.keyDown(handle, { key: "ArrowDown" });
-    expect(handle).toHaveAttribute("aria-valuenow", "120");
-  });
-
-  it("the resize handle follows a pointer drag", () => {
-    Object.defineProperty(window, "innerHeight", { configurable: true, value: 1000 });
-    const terminals = fakeTerminals([tab("shell-1", "/work/zorvo", 1)]);
-    render(<TerminalDrawer {...baseProps} terminals={terminals} />);
-    const handle = screen.getByRole("separator");
-    handle.setPointerCapture = vi.fn();
-    handle.releasePointerCapture = vi.fn();
-
-    act(() => {
-      fireEvent.pointerDown(handle, { clientY: 600, pointerId: 1 });
-      fireEvent.pointerMove(handle, { clientY: 500, pointerId: 1 });
-    });
-    expect(handle).toHaveAttribute("aria-valuenow", "380");
-
-    act(() => {
-      fireEvent.pointerUp(handle, { clientY: 500, pointerId: 1 });
-      fireEvent.pointerMove(handle, { clientY: 100, pointerId: 1 });
-    });
-    expect(handle).toHaveAttribute("aria-valuenow", "380");
+  it("fills the inspector, with no height handle", () => {
+    const { onHide: _onHide, ...withoutHide } = baseProps;
+    render(<TerminalDrawer {...withoutHide} terminals={fakeTerminals([tab("shell-1", "/work/zorvo", 1)])} />);
+    expect(screen.queryByRole("separator", { name: "Resize terminal" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Hide terminal" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Terminal" })).toHaveClass("flex-1");
   });
 
   it("Hide terminal calls onHide", async () => {

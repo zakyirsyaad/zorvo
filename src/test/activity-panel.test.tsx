@@ -51,6 +51,14 @@ async function show(props: Partial<Parameters<typeof ActivityPanel>[0]> = {}) {
 
 afterEach(() => vi.restoreAllMocks());
 
+describe("ActivityPanel inside the inspector", () => {
+  it("has no close button of its own inside the inspector", async () => {
+    await show({ onClose: undefined });
+    expect(screen.queryByRole("button", { name: "Close activity panel" })).toBeNull();
+    expect(screen.getByRole("complementary", { name: "Activity panel" }).className).not.toContain("w-80");
+  });
+});
+
 describe("ActivityPanel", () => {
   it("always says whose report this is, and what rewinding does", async () => {
     stubBackend();

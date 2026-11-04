@@ -5,6 +5,7 @@ import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { StatusLine } from "../components/ui/StatusLine";
 import { Chip } from "../components/ui/Chip";
+import { Tabs, tabIds, type TabItem } from "../components/ui/Tabs";
 
 describe("Button", () => {
   it("defaults to type button and does not submit a form", () => {
@@ -206,5 +207,59 @@ describe("Chip", () => {
       </Chip>,
     );
     expect(screen.getByRole("button", { name: "42 lines added, 11 removed. Open changes" })).toBeInTheDocument();
+  });
+});
+
+describe("Tabs", () => {
+  type Id = "changes" | "activity" | "files";
+  const TABS: readonly TabItem<Id>[] = [
+    { id: "changes", label: "Changes", count: 3 },
+    { id: "activity", label: "Activity" },
+    { id: "files", label: "Files", count: 0 },
+  ];
+  const renderTabs = (selected: Id, onSelect = vi.fn()) =>
+    render(<Tabs tabs={TABS} selected={selected} onSelect={onSelect} label="Inspector" idPrefix="insp" />);
+
+  it("marks the selected tab", () => {
+    renderTabs("changes");
+    expect(screen.getByRole("tablist", { name: "Inspector" })).toBeInTheDocument();
+    const changes = screen.getByRole("tab", { name: /Changes/ });
+    expect(changes).toHaveAttribute("aria-selected", "true");
+    expect(changes).toHaveAttribute("tabindex", "0");
+    expect(changes).toHaveClass("border-fg", "text-fg");
+    expect(changes).toHaveAttribute("aria-controls", tabIds("insp", "changes").panel);
+    expect(changes).toHaveAttribute("id", tabIds("insp", "changes").tab);
+    const activity = screen.getByRole("tab", { name: "Activity" });
+    expect(activity).toHaveAttribute("aria-selected", "false");
+    expect(activity).toHaveAttribute("tabindex", "-1");
+    expect(activity).toHaveClass("text-fg-muted");
+  });
+
+  it("moves and selects with the arrow keys, wrapping", () => {
+    const onSelect = vi.fn();
+    const { rerender } = renderTabs("files", onSelect);
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Files" }), { key: "ArrowRight" });
+    expect(onSelect).toHaveBeenLastCalledWith("changes");
+    expect(screen.getByRole("tab", { name: /Changes/ })).toHaveFocus();
+
+    rerender(<Tabs tabs={TABS} selected="changes" onSelect={onSelect} label="Inspector" idPrefix="insp" />);
+    fireEvent.keyDown(screen.getByRole("tab", { name: /Changes/ }), { key: "ArrowLeft" });
+    expect(onSelect).toHaveBeenLastCalledWith("files");
+  });
+
+  it("jumps with Home and End", () => {
+    const onSelect = vi.fn();
+    renderTabs("activity", onSelect);
+    const activity = screen.getByRole("tab", { name: "Activity" });
+    fireEvent.keyDown(activity, { key: "End" });
+    expect(onSelect).toHaveBeenLastCalledWith("files");
+    fireEvent.keyDown(activity, { key: "Home" });
+    expect(onSelect).toHaveBeenLastCalledWith("changes");
+  });
+
+  it("shows a count only when it is above zero", () => {
+    renderTabs("changes");
+    expect(screen.getByRole("tab", { name: /Changes/ })).toHaveTextContent("3");
+    expect(screen.getByRole("tab", { name: "Files" })).toHaveTextContent(/^Files$/);
   });
 });

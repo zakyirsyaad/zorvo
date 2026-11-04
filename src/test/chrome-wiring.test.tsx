@@ -48,6 +48,8 @@ describe("Window chrome wiring", () => {
     await click(sessions.getByText("Alpha work"));
     expect(header().getByText("Alpha work")).toBeDefined();
 
+    // Back and Forward show while the sidebar is hidden.
+    await click(screen.getByRole("button", { name: "Hide sidebar" }));
     await click(header().getByRole("button", { name: "Back" }));
     expect(header().getByText("Beta work")).toBeDefined();
 
@@ -60,8 +62,12 @@ describe("Window chrome wiring", () => {
     await renderApp();
 
     expect(header().getByText("Beta work")).toBeDefined();
-    expect(header().getByText("zorvo")).toBeDefined();
     expect(await header().findByLabelText("Branch main")).toBeDefined();
+    // The folder has no badge any more: Open in Finder shows which one it is.
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    await click(header().getByRole("button", { name: "More options" }));
+    await click(screen.getByRole("menuitem", { name: "Open in Finder" }));
+    expect(spy).toHaveBeenCalledWith("reveal_in_finder", { path: "/Users/test/developer/zorvo" }, undefined);
   });
 
   it("opens the files of the folder the top bar names, which is the open session's", async () => {
@@ -73,7 +79,6 @@ describe("Window chrome wiring", () => {
 
     await openInspectorTab("Files");
 
-    expect(header().getByText("zorvo")).toBeDefined();
     expect(spy).toHaveBeenCalledWith(
       "list_directory",
       expect.objectContaining({ root: "/Users/test/developer/zorvo" }),
@@ -268,12 +273,13 @@ describe("Window chrome wiring", () => {
 
     await click(screen.getByRole("button", { name: "New session" }));
     expect(screen.getByRole("heading", { name: "New session" })).toBeDefined();
+    await click(screen.getByRole("button", { name: "Hide sidebar" }));
     await click(header().getByRole("button", { name: "Back" }));
 
     expect(header().getByText("Alpha work")).toBeDefined();
   });
 
-  it("opens the workspace's files from the folder button, reveals it in Finder, and pops the session out", async () => {
+  it("opens the workspace's files, reveals it in Finder, and pops the session out from the menu", async () => {
     seedSessions();
     const spy = vi.spyOn(tauriInternals(), "invoke");
     await renderApp();
@@ -291,7 +297,8 @@ describe("Window chrome wiring", () => {
     await closeInspector();
     expect(screen.queryByRole("complementary", { name: "Files panel" })).toBeNull();
 
-    await click(header().getByRole("button", { name: "Popout window" }));
+    await click(header().getByRole("button", { name: "More options" }));
+    await click(screen.getByRole("menuitem", { name: "Open in new window" }));
     expect(spy).toHaveBeenCalledWith("open_session_window", { sessionId: "s-b" }, undefined);
   });
 

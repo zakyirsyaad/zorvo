@@ -61,79 +61,88 @@ describe("TopBar", () => {
   });
 
   describe("back / forward between sessions", () => {
+    const hidden = { onShowSidebar: () => {} };
+
+    it("shows Back and Forward only while the sidebar is hidden", () => {
+      const { unmount } = renderTopBar({ sessionName: "Alpha" });
+      expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Forward" })).toBeNull();
+      unmount();
+
+      renderTopBar({ sessionName: "Alpha", ...hidden });
+      const order = ["Show sidebar", "Back", "Forward"].map((name) => screen.getByRole("button", { name }));
+      const title = screen.getByText("Alpha");
+      for (let i = 1; i < order.length; i++) {
+        expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      }
+      expect(order[2].compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
     it("disables both buttons when there is nowhere to go", () => {
-      renderTopBar({ canGoBack: false, canGoForward: false });
-
-      const back = screen.getByRole("button", { name: /back/i });
-      const forward = screen.getByRole("button", { name: /forward/i });
-      expect(back.hasAttribute("disabled")).toBe(true);
-      expect(forward.hasAttribute("disabled")).toBe(true);
+      renderTopBar({ ...hidden, canGoBack: false, canGoForward: false });
+      expect(screen.getByRole("button", { name: "Back" }).hasAttribute("disabled")).toBe(true);
+      expect(screen.getByRole("button", { name: "Forward" }).hasAttribute("disabled")).toBe(true);
     });
 
-    it("disables the buttons by default when no navigation props are given", () => {
-      renderTopBar();
-
-      expect(
-        screen.getByRole("button", { name: /back/i }).hasAttribute("disabled")
-      ).toBe(true);
-      expect(
-        screen.getByRole("button", { name: /forward/i }).hasAttribute("disabled")
-      ).toBe(true);
-    });
-
-    it("enables and calls back when the history allows it", () => {
+    it("enables and calls back and forward when the history allows it", () => {
       const onBack = vi.fn();
-      renderTopBar({ canGoBack: true, canGoForward: false, onBack });
-
-      const back = screen.getByRole("button", { name: /back/i });
-      expect(back.hasAttribute("disabled")).toBe(false);
-
-      fireEvent.click(back);
-      expect(onBack).toHaveBeenCalledTimes(1);
-    });
-
-    it("enables and calls forward when the history allows it", () => {
       const onForward = vi.fn();
-      renderTopBar({ canGoBack: false, canGoForward: true, onForward });
-
-      const forward = screen.getByRole("button", { name: /forward/i });
-      expect(forward.hasAttribute("disabled")).toBe(false);
-
-      fireEvent.click(forward);
+      renderTopBar({ ...hidden, canGoBack: true, canGoForward: true, onBack, onForward });
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      fireEvent.click(screen.getByRole("button", { name: "Forward" }));
+      expect(onBack).toHaveBeenCalledTimes(1);
       expect(onForward).toHaveBeenCalledTimes(1);
     });
 
     it("does not fire the handler of a disabled button", () => {
       const onBack = vi.fn();
       const onForward = vi.fn();
-      renderTopBar({ canGoBack: false, canGoForward: false, onBack, onForward });
-
-      fireEvent.click(screen.getByRole("button", { name: /back/i }));
-      fireEvent.click(screen.getByRole("button", { name: /forward/i }));
-
+      renderTopBar({ ...hidden, onBack, onForward });
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      fireEvent.click(screen.getByRole("button", { name: "Forward" }));
       expect(onBack).not.toHaveBeenCalled();
       expect(onForward).not.toHaveBeenCalled();
     });
   });
 
-  describe("optional action buttons", () => {
-    it("hides popout, folder and more-options when no handlers are given", () => {
+  describe("more options menu", () => {
+    it("hides the menu when no handlers are given", () => {
       renderTopBar();
-
-      expect(screen.queryByRole("button", { name: /popout/i })).toBeNull();
-      expect(screen.queryByRole("button", { name: /workspace directory/i })).toBeNull();
-      expect(screen.queryByRole("button", { name: /more options/i })).toBeNull();
+      expect(screen.queryByRole("button", { name: "More options" })).toBeNull();
     });
 
-    it("shows and calls the popout button when onPopout is given", () => {
-      const onPopout = vi.fn();
-      renderTopBar({ onPopout });
+    it("runs the more options menu", () => {
+      const handlers = { onPopout: vi.fn(), onReveal: vi.fn(), onArchive: vi.fn(), onRename: vi.fn() };
+      renderTopBar({ sessionId: "s1", sessionName: "Alpha", ...handlers });
+      const open = () => fireEvent.click(screen.getByRole("button", { name: "More options" }));
 
-      const popout = screen.getByRole("button", { name: /popout/i });
-      fireEvent.click(popout);
-      expect(onPopout).toHaveBeenCalledTimes(1);
+      open();
+      const items = screen.getAllByRole("menuitem").map((item) => item.textContent);
+      expect(items).toEqual(["Open in new window", "Open in Finder", "Rename", "Archive"]);
+
+      for (const [label, spy] of [
+        ["Open in new window", handlers.onPopout],
+        ["Open in Finder", handlers.onReveal],
+        ["Archive", handlers.onArchive],
+      ] as const) {
+        fireEvent.click(screen.getByRole("menuitem", { name: label }));
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole("menu", { name: "More options" })).toBeNull();
+        open();
+      }
+
+      fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+      expect(screen.getByRole("textbox", { name: "Rename Alpha" })).toBeDefined();
     });
 
+    it("leaves out menu items without a handler", () => {
+      renderTopBar({ onPopout: () => {} });
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Open in new window"]);
+    });
+  });
+
+  describe("inspector toggle", () => {
     it("shows one Inspector toggle when onToggleInspector is given, pressed while it is open", () => {
       const onToggleInspector = vi.fn();
       renderTopBar({ onToggleInspector, isInspectorOpen: true });
@@ -142,20 +151,11 @@ describe("TopBar", () => {
       expect(toggle.getAttribute("aria-pressed")).toBe("true");
       fireEvent.click(toggle);
       expect(onToggleInspector).toHaveBeenCalledTimes(1);
-      expect(screen.queryByRole("button", { name: /^Toggle .* panel$/ })).toBeNull();
     });
 
     it("offers no Inspector toggle when there is nothing to inspect", () => {
       renderTopBar();
       expect(screen.queryByRole("button", { name: "Inspector" })).toBeNull();
-    });
-
-    it("shows and calls more options when onOpenSettings is given", () => {
-      const onOpenSettings = vi.fn();
-      renderTopBar({ onOpenSettings });
-
-      fireEvent.click(screen.getByRole("button", { name: /more options/i }));
-      expect(onOpenSettings).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -182,14 +182,12 @@ describe("TopBar", () => {
   });
 
   describe("breadcrumb", () => {
-    it("still renders the session name and workspace badge", () => {
-      renderTopBar({
-        sessionName: "Market analyzer refactor",
-        workspaceName: "titan-investment",
-      });
+    it("shows the branch as a plain chip and no folder badge", () => {
+      renderTopBar({ sessionName: "Market analyzer refactor", workspaceName: "titan-investment", branch: "main" });
 
       expect(screen.getByText("Market analyzer refactor")).toBeDefined();
-      expect(screen.getByText("titan-investment")).toBeDefined();
+      expect(screen.getByLabelText("Branch main")).toBeDefined();
+      expect(screen.queryByText("titan-investment")).toBeNull();
     });
   });
 

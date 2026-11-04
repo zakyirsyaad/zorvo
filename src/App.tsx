@@ -191,6 +191,8 @@ export default function App() {
     if (last) setActiveSessionId(last.id);
   }
   const activeSession = sessions.find((s) => s.id === activeSessionId);
+  // The session on screen when it is not one of a compare run's (they share one title, as the sidebar's menu has it).
+  const sessionOfItsOwn = activeSession && !activeSession.compareRunId ? activeSession : undefined;
   const activeAgent = agents.find((a) => a.id === activeSession?.profileId);
   const isActiveRunning = activeSession?.status === "running";
   // Only the agents in use are offered: the defaults and installed ones.
@@ -898,9 +900,13 @@ export default function App() {
     <main className="flex h-screen w-screen flex-col bg-bg text-fg-secondary">
       <TopBar
         onShowSidebar={isSidebarHidden ? () => setSidebarHidden(false) : undefined}
+        sessionId={activeSession?.id ?? activeRun?.id}
         sessionName={activeSession?.name ?? activeRun?.name}
+        // A run's sessions share one title, so only a session of its own is renamed or archived here.
+        onRename={sessionOfItsOwn ? (name) => sessionActions.renameSession(sessionOfItsOwn.id, name) : undefined}
+        onArchive={sessionOfItsOwn ? () => void sessionActions.archiveSession(sessionOfItsOwn.id, true) : undefined}
+        onReveal={shownFolderPath ? () => shell.revealFolder(shownFolderPath) : undefined}
         workspaceName={activeSession ? folderNameOf(workspacePathOf(activeSession)) : activeWorkspace?.name}
-        workspacePath={shownFolderPath}
         branch={workspaceDetails?.branch ?? undefined}
         pullRequest={pullRequest}
         onOpenPullRequest={openPullRequest}
@@ -915,7 +921,6 @@ export default function App() {
         diffCommentCount={unsentCommentCount}
         onOpenDiff={inspectorTabs.includes("changes") ? inspector.openDiff : undefined}
         onPopout={activeSession ? () => shell.popout(activeSession.id) : undefined}
-        onOpenSettings={() => setSettingsTab("general")}
         backgroundTasks={{
           tasks: backgroundTasks.tasks,
           isOpen: backgroundTasks.isMenuOpen,

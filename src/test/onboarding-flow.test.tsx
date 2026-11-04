@@ -114,7 +114,8 @@ describe("First run and project folders", () => {
   it("opens settings, saves a new default agent, and can rerun setup", async () => {
     await renderApp();
 
-    await click(screen.getByRole("button", { name: "More options" }));
+    // Settings lives in the sidebar footer.
+    await click(screen.getByRole("button", { name: /^Settings/ }));
     const dialog = within(screen.getByRole("dialog"));
     await act(async () => {
       fireEvent.change(dialog.getByLabelText("Default agent"), { target: { value: "qwen-code" } });

@@ -4,7 +4,7 @@ import { AgentLogo } from "./AgentLogo";
 import { isInUse, type EnabledSettings } from "../lib/enabled-agents";
 import { SIGN_IN_CHIP_STYLES, SIGN_IN_LABELS, type SignInState } from "../lib/agent-sign-in";
 import type { AgentProfile, Session, Workspace } from "../types";
-import { NewSessionMenu } from "./sidebar/NewSessionMenu";
+import { FolderGroup } from "./sidebar/FolderGroup";
 import { SessionTree, type SessionListContext } from "./sidebar/SessionList";
 import { compareRuns } from "../lib/compare-run";
 import {
@@ -62,50 +62,6 @@ const SECTION_HEADER = `${SECTION_HEADER_TEXT} mb-1.5`;
 
 function matches(query: string, ...values: string[]): boolean {
   return query === "" || values.some((v) => v.toLowerCase().includes(query));
-}
-
-interface WorkspaceGroupProps {
-  group: SessionGroup;
-  isActive: boolean;
-  isExpanded: boolean;
-  onToggle: () => void;
-  /** The + button's menu; hidden when absent. */
-  newSessionMenu?: ReactNode;
-  context: SessionListContext;
-}
-
-/** A folder's heading, which folds its sessions away, and its sessions. */
-function WorkspaceGroup({ group, isActive, isExpanded, onToggle, newSessionMenu, context }: WorkspaceGroupProps) {
-  return (
-    <li>
-      <div className="group/ws flex items-center">
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={isExpanded}
-          title={group.path}
-          className={`flex-1 min-w-0 flex items-center gap-1 rounded px-1.5 py-1 text-left text-[12px] transition-colors hover:text-fg-secondary focus-ring ${
-            isActive ? "text-fg-secondary" : "text-fg-subtle"
-          }`}
-        >
-          <span className="truncate">{group.name}</span>
-          <ChevronRight
-            size={12}
-            aria-hidden="true"
-            className={`shrink-0 transition-transform ${
-              isExpanded ? "rotate-90 opacity-0 group-hover/ws:opacity-100" : ""
-            }`}
-          />
-        </button>
-        {newSessionMenu}
-      </div>
-      {isExpanded && group.sessions.length > 0 && (
-        <div className="mt-0.5">
-          <SessionTree nodes={group.sessions} label={`Sessions in ${group.name}`} context={context} />
-        </div>
-      )}
-    </li>
-  );
 }
 
 /** An agent's sign-in state; one that is not ready opens a new session with it, where the sign-in is checked and shown. */
@@ -360,24 +316,17 @@ export function Sidebar({
         )}
         <ul aria-label="Workspaces" className="space-y-3">
           {groups.map((group) => (
-            <WorkspaceGroup
+            <FolderGroup
               key={group.path}
               group={group}
               isActive={group.path === activeWorkspacePath}
-              // A search shows every match, folded or not.
-              isExpanded={query !== "" || !collapsedPaths.has(group.path)}
+              isFolded={collapsedPaths.has(group.path)}
+              isForcedOpen={query !== ""}
               onToggle={() => toggle(group.path)}
-              newSessionMenu={
-                onNewSessionIn && (
-                  <NewSessionMenu
-                    folderName={group.name}
-                    agents={detectedAgents}
-                    defaultAgentId={defaultAgentId}
-                    onPick={(agentId) => onNewSessionIn(group.path, agentId)}
-                  />
-                )
-              }
               context={context}
+              agents={detectedAgents}
+              defaultAgentId={defaultAgentId}
+              onNewSessionIn={onNewSessionIn}
             />
           ))}
         </ul>

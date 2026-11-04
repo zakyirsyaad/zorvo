@@ -169,10 +169,23 @@ describe("a compare run in the sidebar", () => {
     expect(onDeleteSession).toHaveBeenCalledWith("r-qwen");
   });
 
-  it("shows the group as working while one of its agents is", () => {
+  it("shows a run as Compare with its agents' logos and a summary", () => {
     renderSidebar(runSessions(), { isSessionBusy: (id) => id === "r-kimi" });
 
-    expect(within(groupButton().closest("div") as HTMLElement).getByRole("status", { name: "Working" })).toBeInTheDocument();
+    const group = screen.getByTestId("run-group-run-1");
+    expect(group).toHaveClass("h-11");
+    expect(within(group).getByText("Compare · 3 agents · 1 working, 2 finished")).toBeInTheDocument();
+    expect(within(group).getAllByRole("img", { hidden: true })).toHaveLength(3);
+    expect(group.querySelector(".bg-status-running")).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("keeps its sessions listed under it after a click", () => {
+    const { onOpenRun } = renderSidebar(runSessions());
+
+    fireEvent.click(groupButton());
+
+    expect(onOpenRun).toHaveBeenCalledWith("run-1");
+    expect(screen.getByRole("list", { name: "Agents in Fix the login" })).toBeInTheDocument();
   });
 
   it("counts a run's agents from the run, not from what a search leaves", () => {

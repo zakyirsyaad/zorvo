@@ -1,6 +1,5 @@
-import { GitCompare } from "lucide-react";
 import type { SessionNode } from "../../lib/session-helpers";
-import { DOT_CLASS, statusOf } from "../../lib/sidebar-status";
+import { RunGroupRow } from "./RunGroupRow";
 import { SessionRow } from "./SessionRow";
 
 /** What every session row needs besides its own session. */
@@ -19,52 +18,6 @@ export interface SessionListContext {
   onRenameSession?: (sessionId: string, name: string) => void;
   onPinSession?: (sessionId: string, isPinned: boolean) => void;
   onArchiveSession?: (sessionId: string, isArchived: boolean) => void;
-}
-
-/** A run's heading: opens the run's panel, and shows the run's busiest state. */
-function RunGroupRow({ node, context }: { node: SessionNode; context: SessionListContext }) {
-  const run = node.run;
-  if (!run) return null;
-  const members = node.children.map((child) => child.session);
-  const status = statusOf(
-    members.some((member) => context.isSessionWaiting(member.id)),
-    members.some((member) => context.isSessionBusy(member.id)),
-    members.some((member) => member.hasUnread),
-  );
-  const isActive = context.activeRunId === run.id;
-  // Counted from the run, not from the rows a search leaves.
-  const countLabel = `${run.sessions.length} agents`;
-  return (
-    <div
-      data-testid={`run-group-${run.id}`}
-      className={`relative flex items-center rounded-md transition-colors ${
-        isActive
-          ? "bg-surface-hover text-fg font-medium"
-          : "text-fg-muted hover:bg-surface-hover hover:text-fg-secondary"
-      }`}
-    >
-      <button
-        type="button"
-        onClick={() => context.onOpenRun?.(run.id)}
-        aria-current={isActive ? "true" : undefined}
-        title={[run.name, countLabel, status?.label].filter(Boolean).join(" · ")}
-        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 pr-6 text-left focus-ring"
-      >
-        <GitCompare size={12} aria-hidden="true" className="shrink-0" />
-        <span className="truncate">{run.name}</span>
-        <span className="shrink-0 text-[10px] text-fg-subtle">{countLabel}</span>
-      </button>
-      {status && (
-        <span
-          role="status"
-          aria-label={status.label}
-          className={`pointer-events-none absolute right-2.5 h-1.5 w-1.5 shrink-0 rounded-full ${DOT_CLASS[status.tone]} ${
-            status.pulse ? "animate-pulse motion-reduce:animate-none" : ""
-          }`}
-        />
-      )}
-    </div>
-  );
 }
 
 /** Sessions with their forks nested beneath them, joined by a guide line. */

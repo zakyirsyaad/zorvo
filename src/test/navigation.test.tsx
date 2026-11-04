@@ -175,6 +175,46 @@ describe("Navigation and Layout Components", () => {
       expect(screen.getByText("Market analyzer refactor")).toBeDefined();
     });
 
+    it("shows a folded folder's summary in words", () => {
+      render(
+        <Sidebar
+          workspaces={workspaces}
+          sessions={mockSessions}
+          agents={mockProfiles}
+          isSessionWaiting={(id) => id === "s-2"}
+          onNewSession={() => {}}
+          onSelectSession={() => {}}
+        />
+      );
+      const heading = screen.getByRole("button", { name: "titan-investment" });
+      expect(screen.queryByText("1 waiting")).toBeNull();
+
+      fireEvent.click(heading);
+      expect(screen.getByText("1 waiting").className).toContain("text-status-attention");
+
+      fireEvent.click(heading);
+      expect(screen.queryByText("1 waiting")).toBeNull();
+    });
+
+    it("shows the folder's + on hover or focus, and its chevron while open", () => {
+      render(
+        <Sidebar
+          workspaces={workspaces}
+          sessions={mockSessions}
+          agents={mockProfiles}
+          onNewSessionIn={() => {}}
+          onNewSession={() => {}}
+          onSelectSession={() => {}}
+        />
+      );
+      const plus = screen.getByRole("button", { name: "New session in titan-investment" });
+      const actions = plus.closest("[data-testid='folder-actions']") as HTMLElement;
+      expect(actions.className).toContain("group-hover:opacity-100");
+      expect(actions.className).toContain("group-focus-within:opacity-100");
+      const chevron = screen.getByRole("button", { name: "titan-investment" }).querySelector("[data-chevron]") as Element;
+      expect(chevron.getAttribute("class")).toContain("group-hover:opacity-100");
+    });
+
     describe("organizing sessions", () => {
       const base = mockSessions[1];
       const organized: Session[] = [

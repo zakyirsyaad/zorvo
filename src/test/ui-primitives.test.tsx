@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { StatusLine } from "../components/ui/StatusLine";
+import { Chip } from "../components/ui/Chip";
 
 describe("Button", () => {
   it("defaults to type button and does not submit a form", () => {
@@ -159,5 +160,51 @@ describe("StatusLine", () => {
     const { container } = render(<StatusLine status="idle">2 h ago</StatusLine>);
     expect(screen.getByText("2 h ago")).toBeInTheDocument();
     expect(container.querySelector('[aria-hidden="true"]')).toBeNull();
+  });
+});
+
+describe("Chip", () => {
+  it("is a button only when it has an action", () => {
+    const onClick = vi.fn();
+    const { rerender, container } = render(<Chip onClick={onClick}>Plan 3/7</Chip>);
+    const button = screen.getByRole("button", { name: "Plan 3/7" });
+    expect(button).toHaveAttribute("type", "button");
+    expect(button).toHaveClass("focus-ring");
+    fireEvent.click(button);
+    expect(onClick).toHaveBeenCalledTimes(1);
+
+    rerender(<Chip>main</Chip>);
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(container.querySelector("[tabindex], button, a")).toBeNull();
+  });
+
+  it("uses the chip size and radius", () => {
+    render(<Chip>main</Chip>);
+    expect(screen.getByText("main").closest(".h-6")).toHaveClass("h-6", "text-caption", "rounded-md");
+  });
+
+  it("draws a border only in the outline variant", () => {
+    render(
+      <>
+        <Chip>Outline</Chip>
+        <Chip variant="plain">Plain</Chip>
+      </>,
+    );
+    expect(screen.getByText("Outline").closest(".h-6")).toHaveClass("border-border");
+    expect(screen.getByText("Plain").closest(".h-6")).toHaveClass("border-transparent");
+  });
+
+  it("hides its icon from assistive tech", () => {
+    render(<Chip icon={<svg data-testid="icon" />}>#134 Open</Chip>);
+    expect(screen.getByTestId("icon").parentElement).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("names itself with label when the text is not enough", () => {
+    render(
+      <Chip onClick={() => {}} label="42 lines added, 11 removed. Open changes">
+        +42 −11
+      </Chip>,
+    );
+    expect(screen.getByRole("button", { name: "42 lines added, 11 removed. Open changes" })).toBeInTheDocument();
   });
 });

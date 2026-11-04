@@ -1,8 +1,10 @@
-import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from "react";
+import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { Plus, CornerDownLeft, Shield, ShieldAlert, Sparkles, Gauge, SlidersHorizontal, Square, Bot } from "lucide-react";
 import { Button } from "./ui/Button";
 import { IconButton } from "./ui/IconButton";
 import { OptionDropdown } from "./composer/OptionDropdown";
+import { MoreControls } from "./composer/MoreControls";
+import { splitControls } from "../lib/composer-overflow";
 import { AgentMultiPicker, type AgentMultiPickerProps } from "./composer/AgentMultiPicker";
 import { FolderPicker, type FolderControl } from "./composer/FolderPicker";
 import { appendAttachments, formatAttachmentPath, withAttachments } from "../lib/attachments";
@@ -26,7 +28,17 @@ const PLACEHOLDER_WITH_COMMANDS = "Type / for commands, or prompt the agent...";
 const CARET_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
 
 /** An agent's extra option is open under its config id: `option:fast`. */
-type OpenDropdown = "folder" | "agent" | "permission" | "model" | "effort" | `option:${string}` | null;
+type OpenDropdown = "folder" | "agent" | "permission" | "model" | "effort" | "more" | `option:${string}` | null;
+
+/** One of the agent's controls: a chip in the row, or a group in the ⋯ menu when it does not fit. */
+interface ControlEntry {
+  id: "model" | "permission" | "effort" | `option:${string}`;
+  label: string;
+  control: ComposerControl;
+  icon: ReactNode;
+  description?: string;
+  showLabel?: boolean;
+}
 
 /** A folder's own name, the last part of its path: "/w/agent-desktop/" gives "agent-desktop". */
 function folderNameOf(path: string): string {
@@ -333,6 +345,36 @@ export function ComposerDock({
   const { permission, model, effort, extras = [] } = controls;
   const selectedPermission = permission?.options.find((o) => o.value === permission.selected);
   const isRiskyPermission = selectedPermission?.risky ?? isRiskyMode(permission?.selected);
+  // The agent's controls in the row's order; those past the first few go into the ⋯ menu.
+  const agentControls: ControlEntry[] = [
+    ...(model ? [{ id: "model", label: "Model", control: model, icon: <Sparkles size={12} className="text-fg-muted" /> } as const] : []),
+    ...(permission
+      ? [
+          {
+            id: "permission",
+            label: "Permission mode",
+            control: permission,
+            icon: isRiskyPermission ? (
+              <ShieldAlert size={13} className="text-danger" data-testid="risky-permission-icon" />
+            ) : (
+              <Shield size={13} className="text-status-running" />
+            ),
+          } as const,
+        ]
+      : []),
+    ...(effort ? [{ id: "effort", label: "Effort", control: effort, icon: <Gauge size={12} className="text-fg-muted" /> } as const] : []),
+    ...extras.map(
+      (extra): ControlEntry => ({
+        id: `option:${extra.id}`,
+        label: extra.label,
+        control: extra,
+        description: extra.description,
+        showLabel: true,
+        icon: <SlidersHorizontal size={12} className="text-fg-muted" />,
+      }),
+    ),
+  ];
+  const { inline: inlineControls, overflow: overflowControls } = splitControls(agentControls);
 
   return (
     <footer ref={containerRef} className="w-full max-w-3xl flex flex-col items-center px-4 select-none">
@@ -424,51 +466,31 @@ export function ComposerDock({
               />
             )}
 
-            {permission && (
+            {inlineControls.map((entry) => (
               <OptionDropdown
-                label="Permission mode"
+                key={entry.id}
+                label={entry.label}
                 align="left"
-                icon={
-                  isRiskyPermission ? (
-                    <ShieldAlert size={13} className="text-danger" data-testid="risky-permission-icon" />
-                  ) : (
-                    <Shield size={13} className="text-status-running" />
-                  )
-                }
-                {...dropdownProps("permission", permission)}
+                icon={entry.icon}
+                description={entry.description}
+                showLabel={entry.showLabel}
+                {...dropdownProps(entry.id, entry.control)}
+              />
+            ))}
+
+            {overflowControls.length > 0 && (
+              <MoreControls
+                controls={overflowControls}
+                isOpen={openDropdown === "more"}
+                onToggle={() => toggle("more")}
+                onClose={() => setOpenDropdown((current) => (current === "more" ? null : current))}
+                onPicked={() => setOpenDropdown(null)}
               />
             )}
           </div>
 
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             {contextUsage && <ContextMeter {...contextUsage} />}
-
-            {model && (
-              <OptionDropdown
-                label="Model"
-                icon={<Sparkles size={12} className="text-fg-muted" />}
-                {...dropdownProps("model", model)}
-              />
-            )}
-
-            {effort && (
-              <OptionDropdown
-                label="Effort"
-                icon={<Gauge size={12} className="text-fg-muted" />}
-                {...dropdownProps("effort", effort)}
-              />
-            )}
-
-            {extras.map((extra) => (
-              <OptionDropdown
-                key={extra.id}
-                label={extra.label}
-                description={extra.description}
-                showLabel
-                icon={<SlidersHorizontal size={12} className="text-fg-muted" />}
-                {...dropdownProps(`option:${extra.id}`, extra)}
-              />
-            ))}
 
             {isThinking && onStop ? (
               <IconButton

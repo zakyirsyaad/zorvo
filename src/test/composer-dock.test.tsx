@@ -135,6 +135,74 @@ describe("ComposerDock", () => {
       expect(c.model?.onChange).toHaveBeenCalledWith("opus");
     });
 
+    describe("that do not fit", () => {
+      const collaboration = {
+        id: "collaboration_mode",
+        label: "Collaboration",
+        options: [
+          { value: "default", label: "Default" },
+          { value: "plan", label: "Plan" },
+        ],
+        selected: "default",
+        onChange: vi.fn(),
+      };
+      const effort = {
+        options: [
+          { value: "low", label: "Low" },
+          { value: "high", label: "High" },
+        ],
+        selected: "high",
+        onChange: vi.fn(),
+      };
+      const chipNames = () =>
+        screen
+          .getAllByRole("button")
+          .map((button) => button.getAttribute("aria-label") ?? "")
+          .filter((name) => /^(Model|Permission mode|Effort|Collaboration):/.test(name))
+          .map((name) => name.split(":")[0]);
+
+      it("keeps model, mode and effort as chips and puts the agent's other controls in a menu", () => {
+        render(<ComposerDock controls={controls({ effort, extras: [collaboration] })} onSendMessage={() => {}} />);
+
+        expect(chipNames()).toEqual(["Model", "Permission mode", "Effort"]);
+        fireEvent.click(screen.getByRole("button", { name: "More options" }));
+        const group = screen.getByRole("group", { name: "Collaboration" });
+        expect(group).toBeDefined();
+        expect(screen.getByRole("menuitemradio", { name: "Default", checked: true })).toBeDefined();
+      });
+
+      it("picks from the menu and closes it", () => {
+        const onChange = vi.fn();
+        render(
+          <ComposerDock controls={controls({ effort, extras: [{ ...collaboration, onChange }] })} onSendMessage={() => {}} />,
+        );
+
+        fireEvent.click(screen.getByRole("button", { name: "More options" }));
+        fireEvent.click(screen.getByRole("menuitemradio", { name: "Plan" }));
+        expect(onChange).toHaveBeenCalledWith("plan");
+        expect(screen.queryByRole("menu", { name: "More options" })).toBeNull();
+      });
+
+      it("gives focus back to More options when Escape closes the menu", () => {
+        render(<ComposerDock controls={controls({ effort, extras: [collaboration] })} onSendMessage={() => {}} />);
+
+        const more = screen.getByRole("button", { name: "More options" });
+        fireEvent.click(more);
+        const item = screen.getByRole("menuitemradio", { name: "Plan" });
+        item.focus();
+        fireEvent.keyDown(item, { key: "Escape" });
+        expect(screen.queryByRole("menu", { name: "More options" })).toBeNull();
+        expect(more).toHaveFocus();
+      });
+
+      it("shows no menu while every control fits", () => {
+        render(<ComposerDock controls={controls({ effort })} onSendMessage={() => {}} />);
+
+        expect(chipNames()).toEqual(["Model", "Permission mode", "Effort"]);
+        expect(screen.queryByRole("button", { name: "More options" })).toBeNull();
+      });
+    });
+
     it("renders only the controls it is given", () => {
       render(<ComposerDock controls={{ model: controls().model }} onSendMessage={() => {}} />);
 

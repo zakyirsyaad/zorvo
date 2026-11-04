@@ -165,16 +165,18 @@ describe("OptionDropdown search focus", () => {
 });
 
 describe("the composer's option chips", () => {
-  it("shows Codex's collaboration mode and switches it", () => {
+  it("offers Codex's collaboration mode under More options and switches it", () => {
     const setConfigOption = vi.fn();
     const controls = acpControls(CODEX, { setMode: vi.fn(), setModel: vi.fn(), setConfigOption });
     render(<ComposerDock controls={controls} onSendMessage={() => {}} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Collaboration mode: Default" }));
-    fireEvent.click(screen.getByRole("option", { name: /Plan/ }));
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
+    const group = within(screen.getByRole("group", { name: "Collaboration mode" }));
+    expect(group.getByRole("menuitemradio", { name: /Default/, checked: true })).toBeTruthy();
+    fireEvent.click(group.getByRole("menuitemradio", { name: /Plan/ }));
 
     expect(setConfigOption).toHaveBeenCalledWith("collaboration_mode", "plan");
-    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
   it("closes a chip's menu on a click outside, and it stays closed", () => {
@@ -187,14 +189,15 @@ describe("the composer's option chips", () => {
     expect(screen.queryByRole("listbox")).toBeNull();
   });
 
-  it("shows Claude's fast mode and agent chips, and the permission chip warns once a risky mode is selected", () => {
+  it("keeps Claude's model and mode as chips, warns on a risky mode, and offers fast mode and agent under More options", () => {
     const risky = { ...CLAUDE, modes: { ...CLAUDE.modes!, currentModeId: "bypassPermissions" } };
     const controls = acpControls(risky, { setMode: vi.fn(), setModel: vi.fn(), setConfigOption: vi.fn() });
     render(<ComposerDock controls={controls} onSendMessage={() => {}} />);
 
-    expect(screen.getByRole("button", { name: "Fast mode: Off" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Agent: Default" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Model: Default (Opus)" })).toBeTruthy();
     expect(screen.getByTestId("risky-permission-icon")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
+    expect(within(screen.getByRole("group", { name: "Fast mode" })).getByRole("menuitemradio", { name: /Off/, checked: true })).toBeTruthy();
+    expect(within(screen.getByRole("group", { name: "Agent" })).getByRole("menuitemradio", { name: /Default/, checked: true })).toBeTruthy();
   });
 });

@@ -69,7 +69,7 @@ describe("the sign-in panel follows the agent on screen", () => {
     expect(await screen.findByRole("region", { name: "Sign in to Claude Code" })).toBeDefined();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
 
     await waitFor(() => expect(screen.queryByRole("region", { name: "Sign in to Claude Code" })).toBeNull());

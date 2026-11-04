@@ -141,6 +141,7 @@ export default function App() {
   const [branchCheck, setBranchCheck] = useState(0);
   const [acpChoices, setAcpChoices] = useState<AcpChoices>(NO_CHOICES);
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
+  const [isSidebarHidden, setSidebarHidden] = useState(false);
   const composerRef = useRef<ComposerHandle>(null);
 
   const reportError = useCallback((message: string) => setNotice(message), []);
@@ -888,6 +889,7 @@ export default function App() {
   return (
     <main className="flex h-screen w-screen flex-col bg-bg text-fg-secondary">
       <TopBar
+        onShowSidebar={isSidebarHidden ? () => setSidebarHidden(false) : undefined}
         sessionName={activeSession?.name ?? activeRun?.name}
         workspaceName={activeSession ? folderNameOf(workspacePathOf(activeSession)) : activeWorkspace?.name}
         workspacePath={shownFolderPath}
@@ -924,6 +926,8 @@ export default function App() {
 
       <section className="flex flex-1 overflow-hidden">
         <Sidebar
+          isHidden={isSidebarHidden}
+          onHide={() => setSidebarHidden(true)}
           workspaces={workspaces}
           activeWorkspacePath={activeWorkspacePath}
           sessions={sessions}

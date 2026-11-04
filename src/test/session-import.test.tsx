@@ -310,7 +310,7 @@ describe("Importing a session the agent listed", () => {
     });
     // The app opens the saved session; New goes back to the draft it came from.
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
     await openList();
     await clickRow();

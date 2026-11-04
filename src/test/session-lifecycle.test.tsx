@@ -50,7 +50,7 @@ const FIRST_MESSAGE = "get started";
 async function startNewSession(): Promise<string> {
   const spy = vi.spyOn(tauriInternals(), "invoke");
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+    fireEvent.click(screen.getByRole("button", { name: "New session" }));
   });
   const composer = screen.getByRole("textbox", { name: "Prompt" });
   await act(async () => {

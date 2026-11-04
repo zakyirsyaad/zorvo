@@ -190,7 +190,7 @@ async function openSession(name: string) {
 }
 
 async function openNewDraft() {
-  await press("+ New session");
+  await press("New session");
 }
 
 async function refresh() {

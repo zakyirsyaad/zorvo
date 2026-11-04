@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from "react";
-import { Search, Plus, FolderPlus, ChevronRight } from "lucide-react";
+import { Search, Plus, FolderPlus, ChevronRight, PanelLeft } from "lucide-react";
+import { Button } from "./ui/Button";
+import { IconButton } from "./ui/IconButton";
 import { AgentLogo } from "./AgentLogo";
 import { isInUse, type EnabledSettings } from "../lib/enabled-agents";
 import { SIGN_IN_CHIP_STYLES, SIGN_IN_LABELS, type SignInState } from "../lib/agent-sign-in";
@@ -54,6 +56,10 @@ export interface SidebarProps {
   onArchiveSession?: (sessionId: string, isArchived: boolean) => void;
   /** Bottom bar content, e.g. the user's profile. */
   footer?: ReactNode;
+  /** Hidden, the sidebar stays mounted, so its folds and its search are there when it comes back. */
+  isHidden?: boolean;
+  /** Hides the sidebar; the button is absent without it. */
+  onHide?: () => void;
 }
 
 const SECTION_HEADER_TEXT =
@@ -212,6 +218,8 @@ export function Sidebar({
   onPinSession,
   onArchiveSession,
   footer,
+  isHidden = false,
+  onHide,
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
@@ -257,32 +265,35 @@ export function Sidebar({
   };
 
   return (
-    <aside className="w-64 flex flex-col justify-between border-r border-border bg-surface-1 select-none text-xs text-fg-secondary">
-      <div className="p-3 border-b border-border">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search
-              size={13}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-subtle pointer-events-none"
-            />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search..."
-              aria-label="Search workspaces and sessions"
-              className="w-full rounded-md bg-surface-2 border border-border-strong py-1.5 pl-8 pr-3 text-xs text-fg-secondary placeholder-fg-subtle focus-ring"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={onNewSession}
-            aria-label="+ New session"
-            className="flex items-center gap-1 rounded-md bg-surface-3 hover:bg-surface-hover px-2.5 py-1.5 font-medium text-fg-secondary transition-colors focus-ring"
-          >
-            <Plus size={13} />
-            <span>New</span>
-          </button>
+    <aside
+      hidden={isHidden}
+      className="w-64 shrink-0 flex flex-col justify-between border-r border-border bg-surface-1 select-none text-xs text-fg-secondary"
+    >
+      <div className="flex flex-col gap-2 border-b border-border p-3">
+        <div className="flex items-center gap-1.5">
+          {onHide && (
+            <IconButton label="Hide sidebar" onClick={onHide}>
+              <PanelLeft size={14} />
+            </IconButton>
+          )}
+          <Button variant="outline" icon={<Plus size={13} />} onClick={onNewSession} className="flex-1">
+            New session
+          </Button>
+        </div>
+        <div className="relative">
+          <Search
+            size={13}
+            aria-hidden="true"
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-subtle pointer-events-none"
+          />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search sessions"
+            aria-label="Search sessions"
+            className="w-full rounded-md bg-surface-2 border border-border-strong py-1.5 pl-8 pr-3 text-ui text-fg-secondary placeholder-fg-subtle focus-ring"
+          />
         </div>
       </div>
 

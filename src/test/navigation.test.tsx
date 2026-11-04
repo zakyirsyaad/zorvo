@@ -60,7 +60,7 @@ describe("Navigation and Layout Components", () => {
         />
       );
 
-      fireEvent.click(screen.getByRole("button", { name: /\+ new/i }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
       expect(onNewSession).toHaveBeenCalledTimes(1);
 
       const workspaceList = within(screen.getByRole("list", { name: "Workspaces" }));
@@ -173,6 +173,36 @@ describe("Navigation and Layout Components", () => {
       fireEvent.click(heading);
       expect(heading.getAttribute("aria-expanded")).toBe("true");
       expect(screen.getByText("Market analyzer refactor")).toBeDefined();
+    });
+
+    it("lays the sidebar out from New session down to Archived", () => {
+      const base = mockSessions[1];
+      render(
+        <Sidebar
+          workspaces={workspaces}
+          sessions={[
+            { ...base, id: "p", name: "Pinned work", pinned: true },
+            { ...base, id: "a", name: "Old work", archivedAt: 10 },
+            base,
+          ]}
+          agents={mockProfiles}
+          onHide={() => {}}
+          onNewSession={() => {}}
+          onSelectSession={() => {}}
+        />
+      );
+      const inOrder = [
+        screen.getByRole("button", { name: "Hide sidebar" }),
+        screen.getByRole("button", { name: "New session" }),
+        screen.getByRole("textbox", { name: "Search sessions" }),
+        screen.getByRole("list", { name: "Pinned sessions" }),
+        screen.getByRole("list", { name: "Workspaces" }),
+        screen.getByRole("button", { name: "Archived (1)" }),
+      ];
+      for (let i = 1; i < inOrder.length; i++) {
+        expect(inOrder[i - 1].compareDocumentPosition(inOrder[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      }
+      expect(screen.getByRole("textbox", { name: "Search sessions" }).getAttribute("placeholder")).toBe("Search sessions");
     });
 
     it("shows a folded folder's summary in words", () => {
@@ -494,6 +524,28 @@ describe("Navigation and Layout Components", () => {
   });
 
   describe("App Integration", () => {
+    it("hides the sidebar and shows it again, keeping its folds and its search", async () => {
+      await act(async () => {
+        render(<App />);
+      });
+      const sidebar = () => within(screen.getByRole("complementary", { hidden: true }));
+      const heading = () => sidebar().getByRole("button", { name: "ai-perpetual-trading", hidden: true });
+      fireEvent.click(heading());
+      expect(heading().getAttribute("aria-expanded")).toBe("false");
+
+      fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
+      expect(screen.getByRole("complementary", { hidden: true }).hasAttribute("hidden")).toBe(true);
+      fireEvent.click(screen.getByRole("button", { name: "Show sidebar" }));
+      expect(screen.getByRole("complementary").hasAttribute("hidden")).toBe(false);
+      expect(heading().getAttribute("aria-expanded")).toBe("false");
+      expect(screen.queryByRole("button", { name: "Show sidebar" })).toBeNull();
+
+      fireEvent.change(sidebar().getByRole("textbox", { name: "Search sessions" }), { target: { value: "trading" } });
+      fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
+      fireEvent.click(screen.getByRole("button", { name: "Show sidebar" }));
+      expect((sidebar().getByRole("textbox", { name: "Search sessions" }) as HTMLInputElement).value).toBe("trading");
+    });
+
     it("renders TopBar and Sidebar inside App, without the popout-only terminal drawer toggle", async () => {
       await act(async () => {
         render(<App />);

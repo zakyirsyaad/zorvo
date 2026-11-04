@@ -75,7 +75,7 @@ describe("Agents in use", () => {
 
   it("offers only the agents in use in the new-session agent picker", async () => {
     await renderWithRegistryAgents();
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
 
     await click(screen.getByRole("button", { name: "Agent: Claude Code" }));
 
@@ -108,7 +108,7 @@ describe("Agents in use", () => {
     await act(async () => {
       render(<App />);
     });
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
 
     expect(newSessionView()).toHaveTextContent(NO_AGENT_NOTICE);
     expect(newSessionView()).not.toHaveTextContent("nodejs.org");
@@ -146,7 +146,7 @@ describe("Agents in use", () => {
       render(<App />);
     });
 
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
 
     expect(newSessionView()).toHaveTextContent(
       "No agent is ready. Codex and Kimi CLI need Node.js 22 or newer, which Zorvo installs for you. Choose one and click Install.",
@@ -174,7 +174,7 @@ describe("Agents in use", () => {
       render(<App />);
     });
 
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
 
     expect(newSessionView()).toHaveTextContent(
       "No agent is ready. OpenCode is not installed yet. Click Install to set it up.",
@@ -195,7 +195,7 @@ describe("Agents in use", () => {
     await act(async () => {
       render(<App />);
     });
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
 
     expect(newSessionView()).not.toHaveTextContent("No agent is ready");
 

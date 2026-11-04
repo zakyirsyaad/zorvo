@@ -72,7 +72,7 @@ const FIRST_MESSAGE = "get started";
  */
 async function startQwenSession(spy: { mock: { calls: unknown[][] } }) {
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+    fireEvent.click(screen.getByRole("button", { name: "New session" }));
   });
   await send(FIRST_MESSAGE);
   await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
@@ -726,7 +726,7 @@ describe("ACP sessions in the app", () => {
       render(<App />);
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
     expect(await screen.findByText(/Loading Qwen Code's models and commands/)).toBeDefined();
 
@@ -894,7 +894,7 @@ describe("ACP sessions in the app", () => {
   it("names a new session after its first message and keeps that name", async () => {
     const spy = await renderWithQwen();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
     const sidebar = within(screen.getByRole("complementary"));
 
@@ -993,7 +993,7 @@ describe("ACP sessions in the app", () => {
     const sessionId = await startQwenSession(spy);
     await send("still there?");
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
     await act(async () => {
       fireEvent.change(prompt(), { target: { value: "a new idea" } });
@@ -1037,7 +1037,7 @@ describe("ACP sessions in the app", () => {
         : realInvoke(cmd, args)
     );
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
     await send(FIRST_MESSAGE);
     const sessionId = String(callsTo(spy, "acp_start_session")[0][1]?.sessionId);
@@ -1239,7 +1239,7 @@ describe("ACP sessions in the app", () => {
     await send("plan the lexer");
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
     await act(async () => {
       failHandoff("disk full");
@@ -1349,7 +1349,7 @@ describe("ACP sessions in the app", () => {
     const sessionId = await startQwenSession(spy);
     await send("long task");
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
     const sidebar = within(screen.getByRole("complementary"));
     const row = () => sidebar.getByText(FIRST_MESSAGE).closest("li") as HTMLElement;
@@ -1452,7 +1452,7 @@ describe("ACP sessions in the app", () => {
     /** Opens a new session, sends a message and returns the calls made from then on. */
     async function nextSessionCalls(spy: ReturnType<typeof withModels>) {
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+        fireEvent.click(screen.getByRole("button", { name: "New session" }));
       });
       const before = (spy.mock.calls as unknown as InvokeCall[]).length;
       await send("next task");
@@ -1467,7 +1467,7 @@ describe("ACP sessions in the app", () => {
       const spy = withModels();
       await startQwenSession(spy);
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+        fireEvent.click(screen.getByRole("button", { name: "New session" }));
       });
       await send("other task");
       await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(2));
@@ -1502,7 +1502,7 @@ describe("ACP sessions in the app", () => {
       await startQwenSession(spy);
       await pick("Effort", "High");
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+        fireEvent.click(screen.getByRole("button", { name: "New session" }));
       });
       await send("other task");
       await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(2));
@@ -1594,7 +1594,7 @@ describe("ACP sessions in the app", () => {
       });
 
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+        fireEvent.click(screen.getByRole("button", { name: "New session" }));
       });
       expect(screen.getByRole("button", { name: "Model: Qwen3 Max" })).toBeDefined();
       const before = (spy.mock.calls as unknown as InvokeCall[]).length;
@@ -1626,7 +1626,7 @@ describe("ACP sessions in the app", () => {
       });
 
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+        fireEvent.click(screen.getByRole("button", { name: "New session" }));
       });
       expect(screen.getByRole("button", { name: "Effort: High" })).toBeDefined();
       const before = (spy.mock.calls as unknown as InvokeCall[]).length;
@@ -1657,7 +1657,7 @@ describe("ACP sessions in the app", () => {
       await renderWithQwen();
       const spy = withModels();
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+        fireEvent.click(screen.getByRole("button", { name: "New session" }));
       });
       await send("get started");
       await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
@@ -1665,7 +1665,7 @@ describe("ACP sessions in the app", () => {
       await acpEvent({ sessionId, kind: "turn-end", stopReason: "end_turn" });
       // A model picked in the draft before the second session, then switched back during it.
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+        fireEvent.click(screen.getByRole("button", { name: "New session" }));
       });
       await pick("Model", "Qwen3 Max");
       await send("second");
@@ -1685,7 +1685,7 @@ describe("ACP sessions in the app", () => {
       const spy = withModels();
       await startQwenSession(spy);
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+        fireEvent.click(screen.getByRole("button", { name: "New session" }));
       });
 
       await act(async () => {
@@ -1750,7 +1750,7 @@ describe("ACP sessions in the app", () => {
     );
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
     await send(FIRST_MESSAGE);
 
@@ -1923,7 +1923,7 @@ describe("ACP sessions in the app", () => {
       await waitFor(() => expect(callsTo(spy, "acp_set_model")).toHaveLength(1));
 
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+        fireEvent.click(screen.getByRole("button", { name: "New session" }));
       });
       expect(await screen.findByRole("button", { name: "Model: Gemini 2.5 Flash" })).toBeDefined();
       await send("next task");
@@ -1980,7 +1980,7 @@ describe("ACP sessions in the app", () => {
       const spy = await renderDraft();
       await startQwenSession(spy);
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+        fireEvent.click(screen.getByRole("button", { name: "New session" }));
       });
       await send("other task");
       await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(2));
@@ -2018,7 +2018,7 @@ describe("ACP sessions in the app", () => {
       await pickModel("Gemini 2.5 Flash");
       expect(await screen.findByText(/Could not change the model/)).toBeDefined();
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+        fireEvent.click(screen.getByRole("button", { name: "New session" }));
       });
 
       // The next session offers the model the agent runs, not the one it turned down.
@@ -2057,7 +2057,7 @@ describe("ACP sessions in the app", () => {
 
       expect(callsTo(spy, "acp_set_model").map(([, a]) => a)).toEqual([{ sessionId: "s-old", modelId: "gemini-2.5-flash" }]);
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+        fireEvent.click(screen.getByRole("button", { name: "New session" }));
       });
       expect(await screen.findByRole("button", { name: /^Model:/ })).toBeDefined();
     });

@@ -439,7 +439,7 @@ describe("signing in to an ACP agent from the app", () => {
   it("does not send into another session", async () => {
     const { spy, panel } = await sendRefused();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
 
     await signInInTerminal(spy, panel);

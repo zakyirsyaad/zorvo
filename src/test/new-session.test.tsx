@@ -65,7 +65,7 @@ describe("Starting a new session", () => {
   /** Opens a new session and sends its first message, which starts the agent. */
   async function startFromNew(text = "get started") {
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
     await sendFirst(text);
   }
@@ -86,7 +86,7 @@ describe("Starting a new session", () => {
       render(<App />);
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Agent: Claude Code" }));
@@ -100,7 +100,7 @@ describe("Starting a new session", () => {
       fireEvent.click(within(screen.getByRole("complementary")).getByText("Old work"));
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
 
     expect(screen.getByRole("button", { name: "Agent: Claude Code" })).toBeDefined();
@@ -129,7 +129,7 @@ describe("Starting a new session", () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
 
     expect(invokeSpy.mock.calls.find(([cmd]) => cmd === "acp_start_session")).toBeUndefined();
@@ -287,7 +287,7 @@ describe("Starting a new session", () => {
     await sendFirst();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
 
     await act(async () => {
@@ -472,7 +472,7 @@ describe("Starting a new session", () => {
       render(<App />);
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
     await turnOnWorktree();
     await sendFirst("fix the login");

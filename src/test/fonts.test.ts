@@ -15,12 +15,11 @@ describe("loadAppFonts", () => {
     await expect(loadAppFonts(1000)).resolves.toBeUndefined();
   });
 
-  it("loads both families", async () => {
+  it("loads only the bundled mono family, since the UI uses the system font", async () => {
     const load = vi.fn().mockResolvedValue([]);
     setFonts({ load });
     await loadAppFonts(1000);
-    expect(load).toHaveBeenCalledWith('400 14px "Instrument Sans Variable"');
-    expect(load).toHaveBeenCalledWith('400 12px "Geist Mono Variable"');
+    expect(load.mock.calls).toEqual([['400 12px "Geist Mono Variable"']]);
   });
 
   it("resolves when a font fails to load", async () => {

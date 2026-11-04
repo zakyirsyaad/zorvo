@@ -1,10 +1,8 @@
-const FONT_LOADS = [
-  '400 14px "Instrument Sans Variable"',
-  '400 12px "Geist Mono Variable"',
-] as const;
+// The UI uses the system font (SF Pro), so only the code font is bundled and loaded.
+const FONT_LOADS = ['400 12px "Geist Mono Variable"'] as const;
 
 /**
- * Resolves once both bundled font families are loaded, or after `timeoutMs`,
+ * Resolves once the bundled font family is loaded, or after `timeoutMs`,
  * whichever comes first. Never rejects, so a missing font cannot block startup.
  */
 export async function loadAppFonts(timeoutMs = 1000): Promise<void> {

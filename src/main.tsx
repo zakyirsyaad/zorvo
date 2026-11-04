@@ -4,7 +4,6 @@ import App from "./App";
 import { PopoutApp } from "./components/PopoutApp";
 import { loadAppFonts } from "./lib/fonts";
 import { readWindowMode } from "./lib/window-mode";
-import "@fontsource-variable/instrument-sans";
 import "@fontsource-variable/geist-mono";
 import "./styles/globals.css";
 

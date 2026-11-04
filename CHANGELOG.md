@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- **The app uses the Mac's system font (SF Pro) for its interface.** Code, commands and paths stay in Geist Mono.
+
 ### Fixed
 
 - **Qwen Code's questions now show, and your answers reach it.** When Qwen Code asks you something with its question tool, Zorvo showed an empty permission card with a single Submit button, and Qwen Code always read it as "No valid answers were provided". The card now shows each question with its options (one pick, or several for a multi-select question) and an **Other** field for your own words. **Submit** is enabled once every question has an answer, and **Cancel** declines. What you type goes only to Qwen Code: Zorvo does not save or log it, and the answered card keeps just your choice of Submit or Cancel.

@@ -81,7 +81,8 @@ function TextOutput({ text }: { text: string }) {
   const shown = showAll ? lines : lines.slice(0, MAX_DETAIL_ROWS);
   return (
     <div className="overflow-hidden rounded-md border border-border bg-bg">
-      <pre className="max-h-60 overflow-auto whitespace-pre-wrap px-2.5 py-1.5 font-mono text-[11px] text-fg-secondary">
+      {/* Output reads on the terminal's own dark ground; the Show all button below keeps the panel's. */}
+      <pre className="max-h-60 overflow-auto whitespace-pre-wrap bg-terminal-bg px-2.5 py-1.5 font-mono text-[11px] text-terminal-fg-subtle">
         {shown.join("\n")}
       </pre>
       {lines.length > MAX_DETAIL_ROWS && (

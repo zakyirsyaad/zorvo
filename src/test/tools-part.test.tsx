@@ -21,7 +21,7 @@ const runTool: ToolExecution = {
 
 describe("ToolsPart", () => {
   it("draws the whole group as one card with flat tool rows", () => {
-    render(<ToolsPart tools={[readTool, runTool]} isCurrentTurn={false} />);
+    render(<ToolsPart tools={[readTool, runTool]} isCurrentTurn={false} isTurnOver />);
 
     const summary = screen.getByRole("button", { name: /Read a file, ran a command/ });
     expect(summary.getAttribute("aria-expanded")).toBe("false");
@@ -48,12 +48,26 @@ describe("ToolsPart", () => {
   });
 
   it("shows quiet statuses on the tool rows", () => {
-    render(<ToolsPart tools={[readTool, runTool]} isCurrentTurn={false} />);
+    render(<ToolsPart tools={[readTool, runTool]} isCurrentTurn={false} isTurnOver />);
     fireEvent.click(screen.getByRole("button", { name: /Read a file, ran a command/ }));
 
     const card = screen.getByRole("button", { name: /Read a file, ran a command/ }).parentElement!;
-    const completed = within(card).getByText("Completed");
-    expect(completed.className).toBe("sr-only");
+    expect(within(card).getByText("Done").className).toContain("text-status-running");
     expect(within(card).getByText("Failed").className).toContain("text-danger");
+  });
+
+  it("says how many tools still run", () => {
+    const running: ToolExecution = { ...readTool, id: "t-3", status: "running" };
+    render(<ToolsPart tools={[running, readTool]} isCurrentTurn isTurnOver={false} />);
+    expect(screen.getByRole("button", { name: /Read 2 files/ }).textContent).toContain("1 still running");
+  });
+
+  it("reads Did not finish for a tool left running when the turn is over", () => {
+    const running: ToolExecution = { ...readTool, id: "t-3", status: "running" };
+    render(<ToolsPart tools={[running]} isCurrentTurn={false} isTurnOver />);
+    const summary = screen.getByRole("button", { name: /Read a file/ });
+    expect(summary.textContent).not.toContain("still running");
+    fireEvent.click(summary);
+    expect(screen.getByText("Did not finish")).toBeDefined();
   });
 });

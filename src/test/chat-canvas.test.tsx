@@ -194,21 +194,23 @@ All systems ready for compilation.`,
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith("pnpm install && pnpm build");
   });
 
-  it("shows a running tool on the collapsed summary row and reveals the rest on click", () => {
+  it("says a tool left running in a turn that ended did not finish", () => {
     render(
       <ChatCanvas
         messages={mockMessages}
       />
     );
 
-    const summary = screen.getByRole("button", { name: /Bash/ });
-    expect(summary.textContent).toContain("Running");
+    // Nothing is working, so the turn is over: Bash, still marked running, did not finish.
+    const summary = screen.getByRole("button", { name: /Used 2 tools/ });
+    expect(summary.textContent).not.toContain("still running");
     expect(screen.queryByText("Edit")).toBeNull();
 
     fireEvent.click(summary);
 
     expect(screen.getByText("Edit")).toBeDefined();
-    expect(screen.getByText(/Completed/i)).toBeDefined();
+    expect(screen.getByText("Done")).toBeDefined();
+    expect(screen.getByText("Did not finish")).toBeDefined();
   });
 
   it("renders the ActionCard of a message with a permission request and reports the pick with its card", () => {
@@ -675,9 +677,10 @@ describe("ACP chat content", () => {
     expect(screen.getByText("src/app.ts")).toBeTruthy();
   });
 
-  it("shows a running tool's title and state on its summary row", () => {
+  it("shows a running tool's summary and state on its row", () => {
     render(
       <ChatCanvas
+        isWorking
         messages={[
           {
             id: "m-1",
@@ -691,8 +694,8 @@ describe("ACP chat content", () => {
       />
     );
 
-    const summary = screen.getByRole("button", { name: /pnpm test/ });
-    expect(summary.textContent).toContain("Running");
+    const summary = screen.getByRole("button", { name: /Ran a command/ });
+    expect(summary.textContent).toContain("1 still running");
     expect(summary.getAttribute("aria-expanded")).toBe("false");
   });
 

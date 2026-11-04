@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { summarizeTools } from "../lib/tool-summary";
+import { stillRunning, summarizeTools, toolRow, toolStatusWord } from "../lib/tool-summary";
 import type { ToolExecution } from "../types";
 
 function tool(id: string, kind: string | undefined, status: ToolExecution["status"] = "completed"): ToolExecution {
@@ -55,5 +55,43 @@ describe("summarizeTools", () => {
 
   it("has nothing to say about no tools", () => {
     expect(summarizeTools([])).toBe("");
+  });
+});
+
+describe("toolRow", () => {
+  it("says a command ran and names it", () => {
+    expect(toolRow({ id: "t", name: "Run pnpm test", kind: "execute", status: "completed", command: "pnpm test" })).toEqual({
+      verb: "Ran",
+      target: "pnpm test",
+    });
+  });
+
+  it("names a file tool's first file", () => {
+    expect(toolRow({ id: "t", name: "Edit src/app.ts", kind: "edit", status: "completed", locations: ["src/app.ts", "b.ts"] })).toEqual({
+      verb: "Edited",
+      target: "src/app.ts",
+    });
+  });
+
+  it("falls back to the agent's title without a file or for an unknown kind", () => {
+    expect(toolRow({ id: "t", name: "Read something", kind: "read", status: "completed" })).toEqual({ verb: "Read something" });
+    expect(toolRow({ id: "t", name: "Think", kind: "think", status: "completed" })).toEqual({ verb: "Think" });
+  });
+});
+
+describe("toolStatusWord", () => {
+  it("claims a result only once a tool completed or failed", () => {
+    expect(toolStatusWord(tool("t", "read", "completed"), false)).toBe("Done");
+    expect(toolStatusWord(tool("t", "read", "failed"), false)).toBe("Failed");
+    expect(toolStatusWord(tool("t", "read", "running"), false)).toBeNull();
+    expect(toolStatusWord(tool("t", "read", "running"), true)).toBe("Did not finish");
+  });
+});
+
+describe("stillRunning", () => {
+  it("counts running tools only while the turn is not over", () => {
+    const tools = [tool("a", "read", "running"), tool("b", "edit", "completed"), tool("c", "execute", "running")];
+    expect(stillRunning(tools, false)).toBe(2);
+    expect(stillRunning(tools, true)).toBe(0);
   });
 });

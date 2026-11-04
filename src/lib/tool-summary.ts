@@ -44,3 +44,40 @@ export function summarizeTools(tools: readonly ToolExecution[]): string {
   const label = parts.join(', ');
   return failed > 0 ? `${label} · ${failed} failed` : label;
 }
+
+/** The past-tense verb of a file kind, which names its first file. */
+const FILE_VERBS: Readonly<Record<string, string>> = {
+  read: 'Read',
+  edit: 'Edited',
+  delete: 'Deleted',
+  move: 'Moved',
+  search: 'Searched',
+  fetch: 'Fetched',
+};
+
+/**
+ * One tool's row: what it did, and on what. A command names itself, a file
+ * kind its first file; without either, the agent's own title is the whole row.
+ */
+export function toolRow(tool: ToolExecution): { verb: string; target?: string } {
+  if (tool.kind === 'execute' && tool.command) return { verb: 'Ran', target: tool.command };
+  const verb = tool.kind && Object.prototype.hasOwnProperty.call(FILE_VERBS, tool.kind) ? FILE_VERBS[tool.kind] : undefined;
+  const target = tool.locations?.[0];
+  return verb && target ? { verb, target } : { verb: tool.name };
+}
+
+/**
+ * The word a tool's row claims. A result is claimed only once the agent said
+ * so; a tool still running when its turn ended did not finish, and one still
+ * running in the turn on screen claims nothing (it shows a spinner).
+ */
+export function toolStatusWord(tool: ToolExecution, isTurnOver: boolean): 'Done' | 'Failed' | 'Did not finish' | null {
+  if (tool.status === 'completed') return 'Done';
+  if (tool.status === 'failed') return 'Failed';
+  return isTurnOver ? 'Did not finish' : null;
+}
+
+/** How many tools still run, which is none once their turn is over. */
+export function stillRunning(tools: readonly ToolExecution[], isTurnOver: boolean): number {
+  return isTurnOver ? 0 : tools.filter((tool) => tool.status === 'running').length;
+}

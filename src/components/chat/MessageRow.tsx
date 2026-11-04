@@ -114,7 +114,7 @@ export const MessageRow = memo(function MessageRow({
               if (part.kind === "text") return <MarkdownRenderer key={index} content={part.text} />;
               const tools = part.toolIds.flatMap((id) => toolsById.get(id) ?? []);
               if (tools.length === 0) return null;
-              return <ToolsPart key={index} tools={tools} isCurrentTurn={isCurrentTurn} />;
+              return <ToolsPart key={index} tools={tools} isCurrentTurn={isCurrentTurn} isTurnOver={showActions} />;
             })}
           </div>
         )}

@@ -101,7 +101,15 @@ export function AgentsMenu({ agents, settings = {}, signInStateOf, onSetUpAgent,
             <SignInChip
               agentName={agent.name}
               state={stateOf(agent.id)}
-              onSetUp={onSetUpAgent ? () => onSetUpAgent(agent.id) : undefined}
+              onSetUp={
+                onSetUpAgent
+                  ? () => {
+                      // The new session's sign-in panel takes over; the menu would only cover the footer.
+                      setIsOpen(false);
+                      onSetUpAgent(agent.id);
+                    }
+                  : undefined
+              }
             />
           </li>
         ))}

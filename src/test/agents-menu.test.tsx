@@ -51,9 +51,16 @@ describe("AgentsMenu", () => {
     // Claude Code and Gemini CLI.
     expect(dialog.getAllByText("Ready")).toHaveLength(2);
     expect(dialog.queryByText("Kimi CLI")).toBeNull();
+    expect(dialog.getByRole("button", { name: "Check Codex" })).toHaveTextContent("Not checked");
     fireEvent.click(dialog.getByRole("button", { name: "Sign in to Qwen Code" }));
     expect(onSetUpAgent).toHaveBeenCalledWith("qwen-code");
-    expect(dialog.getByRole("button", { name: "Check Codex" })).toHaveTextContent("Not checked");
+  });
+
+  it("closes when you start an agent's sign-in", () => {
+    renderMenu({ "qwen-code": "needed" });
+    fireEvent.click(screen.getByRole("button", { name: "Agents, sign-in needed" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign in to Qwen Code" }));
+    expect(screen.queryByRole("dialog", { name: "Agents in use" })).toBeNull();
   });
 
   it("opens Settings → Agents from Manage agents", () => {

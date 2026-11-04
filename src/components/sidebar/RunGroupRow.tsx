@@ -18,7 +18,8 @@ export function RunGroupRow({ node, context }: { node: SessionNode; context: Ses
     members.some((member) => member.hasUnread),
   );
   const summary = runSummary(members, context.isSessionWaiting, context.isSessionBusy);
-  const detail = `Compare · ${members.length} agents · ${summary}`;
+  const count = `Compare · ${members.length} agents`;
+  const detail = `${count} · ${summary}`;
   const isActive = context.activeRunId === run.id;
   return (
     <div
@@ -56,7 +57,11 @@ export function RunGroupRow({ node, context }: { node: SessionNode; context: Ses
             </span>
             <span className="truncate text-ui">{run.name}</span>
           </span>
-          <span className="truncate text-caption text-fg-subtle">{detail}</span>
+          {/* fg-muted reads on surface-hover; the summary never gives way to the count. */}
+          <span className="flex min-w-0 text-caption text-fg-muted">
+            <span className="truncate">{count}</span>
+            <span className="shrink-0 whitespace-pre">{` · ${summary}`}</span>
+          </span>
         </span>
       </button>
     </div>

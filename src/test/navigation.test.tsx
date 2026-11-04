@@ -43,7 +43,7 @@ describe("Navigation and Layout Components", () => {
       { name: "titan-investment", path: "/Users/mac/titan-investment" },
     ];
 
-    it("groups sessions under their workspace, with the given footer and detected agents", () => {
+    it("groups sessions under their workspace, with the given footer", () => {
       const onNewSession = vi.fn();
       const onSelectSession = vi.fn();
 
@@ -73,7 +73,7 @@ describe("Navigation and Layout Components", () => {
       fireEvent.click(titanSessions.getByText("Market analyzer refactor"));
       expect(onSelectSession).toHaveBeenCalledWith("s-2");
       // Which agent runs a session is in its tooltip.
-      expect(titanSessions.getByTitle("Market analyzer refactor · Qwen Code")).toBeDefined();
+      expect(titanSessions.getByTitle(/^Market analyzer refactor · Qwen Code · /)).toBeDefined();
 
       expect(screen.getByText("footer content")).toBeDefined();
       expect(screen.queryByText(/iwang/i)).toBeNull();
@@ -91,9 +91,9 @@ describe("Navigation and Layout Components", () => {
       );
 
       const claudeRow = within(screen.getByText("New session (fork)").closest("li") as HTMLElement);
-      expect(claudeRow.getByText(/^Claude Code · /)).toBeDefined();
+      expect(claudeRow.getByText("Claude Code")).toBeDefined();
       const acmeRow = within(screen.getByText("Logoless chat").closest("li") as HTMLElement);
-      expect(acmeRow.getByText(/^Acme Agent · /)).toBeDefined();
+      expect(acmeRow.getByText("Acme Agent")).toBeDefined();
     });
 
     it("shows a workspace without sessions, and its + asks which agent to start there", () => {
@@ -236,6 +236,8 @@ describe("Navigation and Layout Components", () => {
       const actions = plus.closest("[data-testid='folder-actions']") as HTMLElement;
       expect(actions.className).toContain("group-hover:opacity-100");
       expect(actions.className).toContain("group-focus-within:opacity-100");
+      // Its agent menu stays visible while it is open, wherever the pointer goes.
+      expect(actions.className).toContain("has-[[role=menu]]:opacity-100");
       const chevron = screen.getByRole("button", { name: "titan-investment" }).querySelector("[data-chevron]") as Element;
       expect(chevron.getAttribute("class")).toContain("group-hover:opacity-100");
     });

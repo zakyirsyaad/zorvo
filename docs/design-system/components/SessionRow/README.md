@@ -4,7 +4,7 @@ One session in the sidebar, 44px and two lines: its title, then its agent and wh
 
 The consumer provides the title (from the first message, cut with an ellipsis), the agent's name, the status and when the session started.
 
-- Line 1: the title in `ui`, `fg-muted`, `font-medium` and `fg` while unread. Line 2: "Claude Code · Working" in `caption` `fg-subtle`. The words are "Waiting for you", "Working" and "Finished, unread". An idle row shows how long ago the session started ("2 hours ago").
+- Line 1: the title in `ui`, `fg-muted`, `font-medium` and `fg` while unread. Line 2: "Claude Code · Working" in `caption` `fg-muted` (not `fg-subtle`, which fails on the `surface-hover` of the open and hovered rows). The words are "Waiting for you", "Working" and "Finished, unread"; a long agent name is cut, the status words never are. An idle row shows how long ago the session started ("2 hours ago").
 - The status dot sits on the left and never hides: `status-attention`, `status-running` (the only one that pulses, under `motion-safe`) or `status-unread`. An idle row keeps the slot empty so titles line up. The words carry the meaning; the dot is hidden from assistive tech.
 - A session in its own worktree shows a branch icon named "Runs in its own worktree".
 - The open session and hovered rows fill `surface-hover`. Rows sit on `surface-1` with `radius-md`.

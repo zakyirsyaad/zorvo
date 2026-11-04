@@ -46,8 +46,30 @@ describe("SessionRow", () => {
   it("shows the agent and the status in words on its second line", () => {
     const busy = session({ id: "s-busy" });
     const { row } = renderRow(busy, { isSessionBusy: () => true, onStopSession: vi.fn() });
-    expect(within(row).getByText("Qwen Code · Working")).toBeInTheDocument();
+    expect(within(row).getByText("Qwen Code")).toBeInTheDocument();
+    expect(within(row).getByText(/· Working$/)).toBeInTheDocument();
     expect(within(row).getByText(busy.name).closest("button")?.title).toContain("Working");
+  });
+
+  it("keeps the status words whole when the agent's name is long, in a color readable on hover", () => {
+    const { row } = renderRow(session(), {
+      agentNameOf: () => "Google Antigravity",
+      isSessionBusy: () => true,
+      onStopSession: vi.fn(),
+    });
+    expect(within(row).getByText("Google Antigravity")).toHaveClass("truncate");
+    expect(within(row).getByText(/· Working$/)).toHaveClass("shrink-0");
+    const line = within(row).getByText("Google Antigravity").parentElement as HTMLElement;
+    expect(line).toHaveClass("text-fg-muted");
+    expect(line).not.toHaveClass("text-fg-subtle");
+  });
+
+  it("keeps its actions shown while its menu is open", () => {
+    const { row } = renderRow(session());
+    expect(within(row).getByTestId("session-row-actions")).toHaveClass(
+      "has-[[role=menu]]:opacity-100",
+      "has-[[role=menu]]:pointer-events-auto",
+    );
   });
 
   it("keeps the status dot on the left while the actions show", () => {
@@ -64,7 +86,7 @@ describe("SessionRow", () => {
     const { row } = renderRow(long);
     expect(row).toHaveClass("h-11");
     expect(within(row).getByText(long.name)).toHaveClass("truncate");
-    expect(within(row).getByText(/^Qwen Code · /)).toHaveClass("truncate");
+    expect(within(row).getByText("Qwen Code")).toHaveClass("truncate");
   });
 
   it("marks a session that runs in its own worktree", () => {

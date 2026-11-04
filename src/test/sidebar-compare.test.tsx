@@ -174,7 +174,10 @@ describe("a compare run in the sidebar", () => {
 
     const group = screen.getByTestId("run-group-run-1");
     expect(group).toHaveClass("h-11");
-    expect(within(group).getByText("Compare · 3 agents · 1 working, 2 finished")).toBeInTheDocument();
+    expect(within(group).getByText("Compare · 3 agents")).toHaveClass("truncate");
+    // The summary never gives way to the count.
+    expect(within(group).getByText(/· 1 working, 2 finished$/)).toHaveClass("shrink-0");
+    expect(within(group).getByText("Compare · 3 agents").parentElement).toHaveClass("text-fg-muted");
     expect(within(group).getAllByRole("img", { hidden: true })).toHaveLength(3);
     expect(group.querySelector(".bg-status-running")).toHaveAttribute("aria-hidden", "true");
   });

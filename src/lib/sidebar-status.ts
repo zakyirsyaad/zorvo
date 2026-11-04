@@ -12,6 +12,16 @@ export interface RowStatus {
   pulse: boolean;
 }
 
+/**
+ * A row's or a folder's actions: shown on hover or focus, and while their menu is open.
+ * WebKit does not focus a clicked button, so a menu opened with the mouse would otherwise
+ * vanish, still open, when the pointer leaves the row.
+ */
+export const REVEAL_ON_ROW =
+  "opacity-0 pointer-events-none transition-opacity " +
+  "group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto " +
+  "has-[[role=menu]]:opacity-100 has-[[role=menu]]:pointer-events-auto";
+
 export const DOT_CLASS: Record<RowTone, string> = {
   attention: "bg-status-attention",
   running: "bg-status-running",
@@ -26,14 +36,19 @@ export function statusOf(isWaiting: boolean, isBusy: boolean, hasUnread: boolean
   return null;
 }
 
-/** A row's second line: the agent, then the status, or how long ago the session started when idle. */
+/** What a row says after its agent: the status in words, or how long ago the session started when idle. */
+export function rowDetail(status: RowStatus | null, createdAt: number, now: number = Date.now()): string {
+  return status?.label ?? formatRelativeTime(createdAt, now);
+}
+
+/** A row's second line as one string: the agent, then the status or the time. */
 export function rowSubtitle(
   agentName: string | undefined,
   status: RowStatus | null,
   createdAt: number,
   now: number = Date.now(),
 ): string {
-  const detail = status?.label ?? formatRelativeTime(createdAt, now);
+  const detail = rowDetail(status, createdAt, now);
   return agentName ? `${agentName} · ${detail}` : detail;
 }
 

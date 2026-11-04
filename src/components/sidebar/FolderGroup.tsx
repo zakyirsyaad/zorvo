@@ -1,12 +1,9 @@
 import { ChevronRight, Folder } from "lucide-react";
 import type { AgentProfile } from "../../types";
 import type { SessionGroup } from "../../lib/session-helpers";
-import { folderSummary, sessionsIn } from "../../lib/sidebar-status";
+import { folderSummary, REVEAL_ON_ROW, sessionsIn } from "../../lib/sidebar-status";
 import { NewSessionMenu } from "./NewSessionMenu";
 import { SessionTree, type SessionListContext } from "./SessionList";
-
-const REVEAL =
-  "opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto";
 
 export interface FolderGroupProps {
   group: SessionGroup;
@@ -71,7 +68,7 @@ export function FolderGroup({
           </span>
         )}
         {onNewSessionIn && (
-          <span data-testid="folder-actions" className={`flex shrink-0 ${REVEAL}`}>
+          <span data-testid="folder-actions" className={`flex shrink-0 ${REVEAL_ON_ROW}`}>
             <NewSessionMenu
               folderName={group.name}
               agents={agents}

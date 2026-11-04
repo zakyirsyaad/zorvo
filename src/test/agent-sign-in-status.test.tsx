@@ -175,13 +175,16 @@ describe("Agents menu sign-in chips", () => {
       onSetUpAgent,
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Sign in to Claude Code" }));
-    fireEvent.click(screen.getByRole("button", { name: "Check Qwen Code" }));
-
-    expect(onSetUpAgent.mock.calls).toEqual([["claude-acp"], ["qwen-code"]]);
     expect(screen.getByText("Sign in")).toBeInTheDocument();
     expect(screen.getByText("Not checked")).toBeInTheDocument();
     expect(screen.queryByText("Ready")).toBeNull();
+
+    // Each press starts that agent's sign-in and closes the menu.
+    fireEvent.click(screen.getByRole("button", { name: "Sign in to Claude Code" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Agents/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Check Qwen Code" }));
+
+    expect(onSetUpAgent.mock.calls).toEqual([["claude-acp"], ["qwen-code"]]);
   });
 
   it("is not pressable once an agent is ready", () => {

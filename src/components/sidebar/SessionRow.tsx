@@ -1,14 +1,12 @@
 import { useRef, useState } from "react";
 import { GitBranch, Square } from "lucide-react";
 import type { Session } from "../../types";
-import { DOT_CLASS, rowSubtitle, statusOf } from "../../lib/sidebar-status";
+import { DOT_CLASS, REVEAL_ON_ROW, rowDetail, rowSubtitle, statusOf } from "../../lib/sidebar-status";
 import { IconButton } from "../ui/IconButton";
 import type { SessionListContext } from "./SessionList";
 import { SessionMenu } from "./SessionMenu";
 
-const ACTIONS =
-  "absolute inset-y-0 right-1 flex items-center gap-0.5 rounded-md bg-surface-hover pl-1 opacity-0 pointer-events-none transition-opacity " +
-  "group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto";
+const ACTIONS = `absolute inset-y-0 right-1 flex items-center gap-0.5 rounded-md bg-surface-hover pl-1 ${REVEAL_ON_ROW}`;
 
 /** The name field a session's row turns into while it is renamed. */
 function RenameField({ session, onDone }: { session: Session; onDone: (name: string | null) => void }) {
@@ -55,7 +53,8 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
   const status = statusOf(isWaiting, isBusy, Boolean(session.hasUnread));
   const label = isInRun ? (agentName ?? session.profileId) : session.name;
   // A run member's title already names the agent.
-  const subtitle = rowSubtitle(isInRun ? undefined : agentName, status, session.createdAt);
+  const lineAgent = isInRun ? undefined : agentName;
+  const detail = rowDetail(status, session.createdAt);
   const isUnread = Boolean(session.hasUnread) && !isBusy;
 
   if (isRenaming) {
@@ -83,7 +82,9 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
       <button
         type="button"
         onClick={() => context.onSelectSession(session.id)}
-        title={[session.name, agentName, session.worktree?.branch, status?.label].filter(Boolean).join(" · ")}
+        title={[session.name, rowSubtitle(agentName, status, session.createdAt), session.worktree?.branch]
+          .filter(Boolean)
+          .join(" · ")}
         className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left focus-ring"
       >
         <span
@@ -94,7 +95,11 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
         />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className={`truncate text-ui ${isUnread ? "font-medium text-fg" : ""}`}>{label}</span>
-          <span className="truncate text-caption text-fg-subtle">{subtitle}</span>
+          {/* fg-muted, not fg-subtle: the open and hovered rows fill surface-hover. The status words never truncate. */}
+          <span className="flex min-w-0 text-caption text-fg-muted">
+            {lineAgent && <span className="truncate">{lineAgent}</span>}
+            <span className="shrink-0 whitespace-pre">{lineAgent ? ` · ${detail}` : detail}</span>
+          </span>
         </span>
         {session.worktree && (
           <span role="img" aria-label="Runs in its own worktree" className="flex shrink-0 text-fg-subtle">

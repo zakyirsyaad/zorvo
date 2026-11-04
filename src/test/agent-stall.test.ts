@@ -141,9 +141,10 @@ describe("stallNoticeText", () => {
   });
 
   it("falls back to how long the agent has been silent, with no guess at the cause", () => {
+    // "It may be stuck" is the spec's line: it says what you may see, not why.
     expect(stallNoticeText("Gemini CLI", { silentForMs: 59_999 })).toBeNull();
-    expect(stallNoticeText("Gemini CLI", { silentForMs: 60_000 })).toBe("Gemini CLI hasn't sent anything for 1 minute.");
-    expect(stallNoticeText("Gemini CLI", { silentForMs: 185_000 })).toBe("Gemini CLI hasn't sent anything for 3 minutes.");
+    expect(stallNoticeText("Gemini CLI", { silentForMs: 60_000 })).toBe("Gemini CLI hasn't sent anything for 1 minute. It may be stuck.");
+    expect(stallNoticeText("Gemini CLI", { silentForMs: 185_000 })).toBe("Gemini CLI hasn't sent anything for 3 minutes. It may be stuck.");
   });
 
   it("puts the agent's failure report before its silence", () => {

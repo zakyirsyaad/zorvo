@@ -8,7 +8,8 @@ import { ComposerDock, type ComposerHandle } from "./components/ComposerDock";
 import { RemovedAgentPanel } from "./components/RemovedAgentPanel";
 import { ActivityPanel } from "./components/activity/ActivityPanel";
 import { FilesPanel } from "./components/FilesPanel";
-import { EmptySessionState, FileDropOverlay, NoticeBanner } from "./components/AppPlaceholders";
+import { EmptySessionState, FileDropOverlay } from "./components/AppPlaceholders";
+import { Toast, ToastStack } from "./components/ui/Toast";
 import { CompareRunPanel } from "./components/compare/CompareRunPanel";
 import { FailedTurnBanner } from "./components/FailedTurnBanner";
 import { SignInLayer } from "./components/SignInLayer";
@@ -965,7 +966,6 @@ export default function App() {
           <div className="flex min-h-0 flex-1">
             <article className={`${isDiffOpen && isDiffExpanded ? "hidden" : "flex"} flex-1 flex-col bg-bg relative overflow-hidden`}>
               {isDraggingFiles && <FileDropOverlay />}
-              {notice && <NoticeBanner message={notice} onDismiss={() => setNotice(null)} />}
               {failedTurns[activeSessionId] && (
                 <FailedTurnBanner
                   agentName={activeAgent?.name}
@@ -1064,6 +1064,14 @@ export default function App() {
               {activeAgentRemoved !== null && (
                 <div className="p-4 flex justify-center">
                   <RemovedAgentPanel agentName={activeAgentRemoved} onAdd={() => activeAgent && catalogActions.addAgent(activeAgent.id)} />
+                </div>
+              )}
+              {notice && (
+                // Anchored at the composer's top edge, so the toast floats over the chat and never over Send or Stop.
+                <div className="relative h-0">
+                  <ToastStack>
+                    <Toast tone="error" message={notice} onDismiss={() => setNotice(null)} />
+                  </ToastStack>
                 </div>
               )}
               <div hidden={isComposerHidden} className="p-4 flex justify-center">

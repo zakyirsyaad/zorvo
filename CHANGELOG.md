@@ -4,6 +4,11 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- **The app uses the Mac's system font (SF Pro) for its interface.** Code, commands and paths stay in Geist Mono.
+- **Notices appear as a card in the bottom right corner** instead of a strip across the top of the chat, so they no longer push the conversation down. A long message wraps inside the card, and **Dismiss notice** closes it as before.
+
 ## [0.8.1] - 2026-11-04
 
 ### Fixed

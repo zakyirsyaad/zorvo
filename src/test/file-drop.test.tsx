@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, act, fireEvent, within } from "@testing-library/react";
 
@@ -113,5 +114,21 @@ describe("Dropping files onto the window", () => {
 
     expect(attachedPaths()).toEqual(["/Users/test/ok.md"]);
     expect(screen.getByRole("alert").textContent).toContain("control characters");
+  });
+
+  it("shows the notice above the message box, not over its Send button", async () => {
+    await act(async () => {
+      render(<App />);
+    });
+
+    await act(async () => {
+      dragHandler({ payload: { type: "drop", paths: ["/Users/test/evil\rname.md"] } });
+    });
+
+    // The stack is placed from an anchor at the top edge of the composer area,
+    // so its bottom offset starts there and never reaches the Send button.
+    const anchor = screen.getByRole("alert").parentElement?.parentElement;
+    expect(anchor).toHaveClass("relative", "h-0");
+    expect(anchor?.nextElementSibling?.contains(screen.getByRole("textbox", { name: "Prompt" }))).toBe(true);
   });
 });

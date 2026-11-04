@@ -1,24 +1,4 @@
-import { Sparkles, X } from "lucide-react";
-import { NOTICE_BANNER_LAYOUT } from "./ui/noticeBannerStyle";
-
-export function NoticeBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
-  return (
-    <div
-      role="alert"
-      className={`bg-danger-surface text-danger ${NOTICE_BANNER_LAYOUT}`}
-    >
-      <span className="break-words">{message}</span>
-      <button
-        type="button"
-        onClick={onDismiss}
-        aria-label="Dismiss notice"
-        className="shrink-0 ml-3 rounded p-0.5 text-danger hover:text-fg focus-ring"
-      >
-        <X size={13} />
-      </button>
-    </div>
-  );
-}
+import { Sparkles } from "lucide-react";
 
 export function EmptySessionState() {
   return (

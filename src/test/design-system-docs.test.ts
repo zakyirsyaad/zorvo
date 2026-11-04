@@ -110,6 +110,41 @@ describe("docs/design-system/tokens.json", () => {
       expect(inCode("elevation", name), token.name).toEqual(documented(token));
     }
   });
+
+  it("uses the same sans stack as globals.css", () => {
+    const sans = /--font-sans:\s*([^;]+);/.exec(css)?.[1].trim();
+    expect(sans).toBe(doc.type.families.sans);
+    expect(sans?.startsWith("-apple-system")).toBe(true);
+  });
+
+  it("has the type scale globals.css declares", () => {
+    const groups = (doc.type as unknown as { groups: { styles: { name: string; fontSize: string; lineHeight: string }[] }[] })
+      .groups;
+    const styles = new Map(groups.flatMap((group) => group.styles).map((style) => [style.name, style]));
+    const scale: [string, string, string][] = [
+      ["ui", "13px", "18px"],
+      ["ui-sm", "12px", "16px"],
+      ["caption", "11px", "16px"],
+      ["body", "14px", "22px"],
+      ["micro", "10px", "14px"],
+    ];
+    for (const [name, size, line] of scale) {
+      expect(css, name).toContain(`--text-${name}: ${size};`);
+      expect(css, name).toContain(`--text-${name}--line-height: ${line};`);
+      expect(styles.get(name), name).toMatchObject({ fontSize: size, lineHeight: line });
+    }
+  });
+
+  it("leaves no Instrument Sans in the app", () => {
+    const sourceFiles = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) return entry.name === "test" ? [] : sourceFiles(path);
+        return /\.(ts|tsx|css)$/.test(entry.name) ? [path] : [];
+      });
+    const offenders = sourceFiles(join(ROOT, "src")).filter((file) => /instrument[ -]sans/i.test(read(file)));
+    expect(offenders).toEqual([]);
+  });
 });
 
 describe("docs/design-system components", () => {

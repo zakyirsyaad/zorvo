@@ -1,0 +1,23 @@
+<!-- @dsCard group="Navigation" height=64 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Tabs — preview</title>
+<style>
+.z-tabs { display: flex; gap: var(--space-1); border-bottom: 1px solid var(--border); }
+.z-tab { display: flex; align-items: center; gap: var(--space-1\.5); padding: 0 var(--space-2); height: 32px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--fg-muted); font: 400 13px/18px var(--font-sans); cursor: pointer; }
+.z-tab:hover { color: var(--fg); }
+.z-tab[aria-selected="true"] { border-bottom-color: var(--fg); color: var(--fg); font-weight: 500; }
+.z-tab-count { color: var(--fg-muted); font: 400 11px/16px var(--font-sans); }
+</style>
+</head>
+<body>
+<div class="z-stage" style="display:block">
+  <div class="z-tabs" role="tablist" aria-label="Inspector">
+    <button type="button" class="z-tab" role="tab" aria-selected="true">Changes <span class="z-tab-count">3</span></button>
+    <button type="button" class="z-tab" role="tab" aria-selected="false" tabindex="-1">Activity</button>
+    <button type="button" class="z-tab" role="tab" aria-selected="false" tabindex="-1">Files</button>
+    <button type="button" class="z-tab" role="tab" aria-selected="false" tabindex="-1">Terminal</button>
+  </div>
+</div>
+</body>
+</html>

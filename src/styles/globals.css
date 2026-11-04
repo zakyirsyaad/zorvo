@@ -32,8 +32,19 @@
   --color-terminal-bg: #0a0a0b;
   --color-terminal-fg-subtle: #8b8b94;
 
-  --font-sans: "Instrument Sans Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-ui: 13px;
+  --text-ui--line-height: 18px;
+  --text-ui-sm: 12px;
+  --text-ui-sm--line-height: 16px;
+  --text-caption: 11px;
+  --text-caption--line-height: 16px;
+  --text-body: 14px;
+  --text-body--line-height: 22px;
+  --text-micro: 10px;
+  --text-micro--line-height: 14px;
 
   --shadow-popover: var(--elevation-popover);
   --shadow-dialog: var(--elevation-dialog);

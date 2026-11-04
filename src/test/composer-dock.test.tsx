@@ -195,6 +195,17 @@ describe("ComposerDock", () => {
         expect(more).toHaveFocus();
       });
 
+      it("says what the hidden controls are set to on More options", () => {
+        render(
+          <ComposerDock
+            controls={controls({ effort, extras: [{ ...collaboration, selected: "plan" }] })}
+            onSendMessage={() => {}}
+          />,
+        );
+
+        expect(screen.getByRole("button", { name: "More options" })).toHaveAccessibleDescription("Collaboration: Plan");
+      });
+
       it("shows no menu while every control fits", () => {
         render(<ComposerDock controls={controls({ effort })} onSendMessage={() => {}} />);
 

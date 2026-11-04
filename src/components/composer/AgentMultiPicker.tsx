@@ -56,7 +56,7 @@ export function AgentMultiPicker({ options, selected, isOpen, onToggle, onClose 
       onClose={onClose}
       label="Choose agents"
       role="dialog"
-      side="top"
+      side="bottom"
       align="start"
       className="w-72"
       trigger={

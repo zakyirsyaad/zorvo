@@ -64,7 +64,7 @@ export function FolderPicker({ folders, selectedPath, onSelect, onOpenFolder, is
       onClose={onClose}
       label="Choose a folder"
       role="dialog"
-      side="top"
+      side="bottom"
       align="start"
       className="w-64"
       trigger={

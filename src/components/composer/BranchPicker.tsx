@@ -32,7 +32,7 @@ export function BranchPicker({ branch, worktree, isOpen, onToggle, onClose }: Br
       onClose={onClose}
       label="Choose a branch"
       role="dialog"
-      side="top"
+      side="bottom"
       align="start"
       className="w-72"
       trigger={
@@ -64,7 +64,8 @@ export function BranchPicker({ branch, worktree, isOpen, onToggle, onClose }: Br
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && shown[0]) pick(shown[0]);
+              // Only with something typed: a pick here can switch the folder's own checkout.
+              if (e.key === "Enter" && needle !== "" && shown[0]) pick(shown[0]);
             }}
             placeholder="Search branches"
             aria-label="Search branches"

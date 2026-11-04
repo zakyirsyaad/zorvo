@@ -39,6 +39,25 @@ describe("the draft's chips", () => {
   });
 });
 
+describe("where the draft's menus open", () => {
+  it("opens them downward, over the card, where there is room for a full list", () => {
+    const agents: AgentChoice[] = [{ value: "claude-acp", label: "Claude Code", name: "Claude Code", signIn: "ready" }];
+    renderDraft(folderControl({ branch: branchControl() }), agents);
+
+    for (const [chip, panel] of [
+      ["Folder: agent-desktop", "Choose a folder"],
+      ["Branch: main", "Choose a branch"],
+      ["Agent: Claude Code", "Choose agents"],
+    ] as const) {
+      fireEvent.click(screen.getByRole("button", { name: chip }));
+      const dialog = screen.getByRole("dialog", { name: panel });
+      expect(dialog).toHaveClass("top-full");
+      expect(dialog).not.toHaveClass("bottom-full");
+      fireEvent.mouseDown(document.body);
+    }
+  });
+});
+
 describe("the folder chip", () => {
   it("lists the recent folders with the chosen one checked, and opens another", () => {
     const folder = folderControl();
@@ -73,6 +92,20 @@ describe("the branch chip", () => {
     expect(dialog.getByRole("textbox", { name: "Search branches" })).toBeInTheDocument();
     expect(dialog.getByText("Local branches")).toBeInTheDocument();
     expect(dialog.getByRole("option", { name: "main" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("picks nothing on Return while the search is empty, so a stray key cannot switch the checkout", () => {
+    const branch = branchControl();
+    renderDraft(folderControl({ branch }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
+    const search = screen.getByRole("textbox", { name: "Search branches" });
+    fireEvent.keyDown(search, { key: "Enter" });
+    expect(branch.onPick).not.toHaveBeenCalled();
+
+    fireEvent.change(search, { target: { value: "feat" } });
+    fireEvent.keyDown(search, { key: "Enter" });
+    expect(branch.onPick).toHaveBeenCalledWith("feature/login");
   });
 
   it("offers a new worktree, says what it does, and says so on the chip once on", () => {

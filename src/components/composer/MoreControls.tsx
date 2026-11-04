@@ -20,6 +20,16 @@ export interface MoreControlsProps {
   onPicked: () => void;
 }
 
+/** What the hidden controls are set to, so a Plan or Fast mode behind ⋯ is not invisible: "Fast mode: On, Agent: Default". */
+function currentValues(controls: readonly OverflowControl[]): string {
+  return controls
+    .map(({ label, control }) => {
+      const current = control.options.find((option) => option.value === control.selected) ?? control.options[0];
+      return current ? `${label}: ${current.label}` : label;
+    })
+    .join(", ");
+}
+
 /** The composer's ⋯ menu: each control that did not fit, as a group of choices with the current one checked. */
 export function MoreControls({ controls, isOpen, onToggle, onClose, onPicked }: MoreControlsProps) {
   return (
@@ -32,7 +42,14 @@ export function MoreControls({ controls, isOpen, onToggle, onClose, onPicked }: 
       align="start"
       className="w-max min-w-48 max-w-80"
       trigger={
-        <IconButton label="More options" aria-haspopup="menu" aria-expanded={isOpen} onClick={onToggle}>
+        // The tooltip, read as the button's description, says what the hidden controls are set to.
+        <IconButton
+          label="More options"
+          title={currentValues(controls)}
+          aria-haspopup="menu"
+          aria-expanded={isOpen}
+          onClick={onToggle}
+        >
           <MoreHorizontal size={15} />
         </IconButton>
       }

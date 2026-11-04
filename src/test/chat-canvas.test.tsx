@@ -1140,6 +1140,31 @@ describe("ChatCanvas: the two kinds of message", () => {
     expect(within(screen.getByTestId("chat-message-a-1")).getByRole("button", { name: "Fork from here" })).toBeDefined();
   });
 
+  it("says which agent is working and for how long", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_700_000_000_000);
+    try {
+      const turn: ChatMessage[] = [
+        { id: "u-1", role: "user", content: "fix it", timestamp: 1_700_000_000_000 - 45_000 },
+        { id: "a-1", role: "agent", content: "", timestamp: 1_700_000_000_000 - 40_000 },
+      ];
+      render(<ChatCanvas messages={turn} agentName="Codex" isWorking />);
+      const working = screen.getByTestId("agent-working");
+      expect(working.textContent).toContain("Codex is working");
+      expect(working.textContent).toContain("45s");
+      act(() => void vi.advanceTimersByTime(1_000));
+      expect(working.textContent).toContain("46s");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the footer under the last message", () => {
+    render(<ChatCanvas messages={messages} agentName="Codex" footer={<p>The turn failed.</p>} />);
+    const last = screen.getByTestId("chat-message-a-1");
+    expect(last.compareDocumentPosition(screen.getByText("The turn failed.")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("leaves the time out of a replayed message's header", () => {
     const replayed: ChatMessage[] = [{ id: "a-2", role: "agent", content: "Earlier.", timestamp: 0, hasKnownTime: false, isComplete: true }];
     render(<ChatCanvas messages={replayed} agentName="Codex" />);

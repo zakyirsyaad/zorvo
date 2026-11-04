@@ -317,7 +317,8 @@ describe("ACP sessions in the app", () => {
         { optionId: "cancel", name: "Reject", kind: "reject_once" },
       ],
     });
-    expect(screen.getByText("Run rm -rf build")).toBeDefined();
+    // The card's one sentence carries the agent's title.
+    expect(screen.getByRole("heading", { name: /wants to run rm -rf build/ })).toBeDefined();
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /permission mode: default/i }));

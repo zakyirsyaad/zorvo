@@ -48,7 +48,7 @@ export function AgentStallNotice({ agentName, messages, failures, onStop }: Agen
   return (
     <div
       role="status"
-      className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 rounded-lg border border-attention-border bg-attention-surface px-3 py-2 text-xs text-fg-secondary"
+      className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 rounded-lg border border-border bg-surface-1 px-3 py-2 text-ui-sm text-fg-muted"
     >
       <span>{text}</span>
       {onStop && (

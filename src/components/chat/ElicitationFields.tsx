@@ -5,7 +5,7 @@ import type { FormValue } from "../../lib/elicitation-form";
 /** A radio group holds up to this many options; more become a select. */
 const MAX_RADIO_OPTIONS = 4;
 
-const INPUT =
+export const INPUT =
   "w-full rounded-lg border border-border-strong bg-surface-2 px-2.5 py-1.5 text-xs text-fg " +
   "placeholder:text-fg-subtle focus-ring disabled:opacity-40";
 
@@ -230,13 +230,14 @@ function Group({ id, field, role, describedBy, children }: { id: string; field: 
   );
 }
 
-function Choice({ option, type, name, checked, disabled, onChange }: { option: ElicitationChoice; type: "radio" | "checkbox"; name?: string; checked: boolean; disabled: boolean; onChange: () => void }) {
+/** One radio or checkbox with its title and description; also used by Qwen Code's question form. */
+export function Choice({ option, type, name, checked, disabled, onChange }: { option: ElicitationChoice; type: "radio" | "checkbox"; name?: string; checked: boolean; disabled: boolean; onChange: () => void }) {
   return (
     <label className="flex items-start gap-2 text-xs text-fg-secondary">
       <input type={type} name={name} className="focus-ring mt-0.5 h-3.5 w-3.5" checked={checked} disabled={disabled} onChange={onChange} />
       <span>
         {option.title}
-        {option.description && <span className="block text-fg-muted">{option.description}</span>}
+        {option.description && <span className="block whitespace-pre-line text-fg-muted">{option.description}</span>}
       </span>
     </label>
   );

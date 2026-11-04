@@ -250,6 +250,30 @@ describe("CompareRunPanel", () => {
     expect(p.onChoose).toHaveBeenCalledWith("s-2", "card-2", "allow");
   });
 
+  it("answering Qwen Code's questions in the row sends the answers for that session", async () => {
+    answerDiffs({});
+    const questions = [
+      { question: "Which editor do you use?", header: "Editor", options: [{ label: "Vim" }, { label: "Zed" }], multiSelect: false },
+    ];
+    const asking = card({
+      sessionId: "s-2",
+      id: "card-2",
+      options: [
+        { optionId: "proceed_once", name: "Submit", kind: "allow_once" },
+        { optionId: "cancel", name: "Cancel", kind: "reject_once" },
+      ],
+      questions,
+    });
+    const p = props([facts(1), facts(2, { pendingCard: asking })]);
+    await renderPanel(p);
+    const row = within(rowOf("Qwen Code"));
+
+    fireEvent.click(row.getByRole("radio", { name: "Zed" }));
+    fireEvent.click(row.getByRole("button", { name: "Submit" }));
+
+    expect(p.onChoose).toHaveBeenCalledWith("s-2", "card-2", "proceed_once", { "0": "Zed" });
+  });
+
   it("a request answered in the chat leaves the row", async () => {
     answerDiffs({});
     const { rerender } = await renderPanel(props([facts(1, { pendingCard: card() }), facts(2)]));

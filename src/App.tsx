@@ -820,8 +820,8 @@ export default function App() {
     else void handleNewSession(message);
   };
 
-  const chooseOption = (sessionId: string, cardId: string, optionId: string) =>
-    acp.chooseOption(sessionId, transcripts[sessionId], cardId, optionId);
+  const chooseOption = (sessionId: string, cardId: string, optionId: string, answers?: Record<string, string>) =>
+    acp.chooseOption(sessionId, transcripts[sessionId], cardId, optionId, answers);
 
   usePopoutHost({
     sessions,
@@ -839,7 +839,7 @@ export default function App() {
       else if (action.kind === "stop") handleInterrupt(sessionId);
       else if (action.kind === "answer-elicitation") acp.answerElicitation(sessionId, action.key, action.answer);
       else if (action.kind === "reopen-elicitation-url") acp.reopenElicitationUrl(sessionId, action.key);
-      else chooseOption(sessionId, action.cardId, action.optionId);
+      else chooseOption(sessionId, action.cardId, action.optionId, action.answers);
     },
   });
 
@@ -1041,7 +1041,7 @@ export default function App() {
                       />
                     </div>
                   }
-                  onChooseOption={(cardId, optionId) => chooseOption(activeSessionId, cardId, optionId)}
+                  onChooseOption={(cardId, optionId, answers) => chooseOption(activeSessionId, cardId, optionId, answers)}
                   onAnswerElicitation={(key, answer) => acp.answerElicitation(activeSessionId, key, answer)}
                   onReopenElicitationUrl={(key) => acp.reopenElicitationUrl(activeSessionId, key)}
                   isWorking={isSessionBusy(activeSessionId) && !isAwaitingUser(currentMessages)}

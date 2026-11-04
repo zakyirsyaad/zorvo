@@ -413,14 +413,23 @@ pub fn acp_cancel(
     manager.cancel(&session_id)
 }
 
+/// Answers a permission request with one of the agent's options (`None` cancels it).
+/// `answers` is only for Qwen Code's `ask_user_question`: question number to answer,
+/// checked in `permission_response` and never logged.
 #[tauri::command(async)]
 pub fn acp_respond_permission(
     manager: State<'_, AcpManager>,
     session_id: String,
     request_id: Value,
     option_id: Option<String>,
+    answers: Option<BTreeMap<String, String>>,
 ) -> Result<(), String> {
-    manager.respond_permission(&session_id, &request_id, option_id.as_deref())
+    manager.respond_permission(
+        &session_id,
+        &request_id,
+        option_id.as_deref(),
+        answers.as_ref(),
+    )
 }
 
 /// Answers an elicitation: `accept` (with the form's `content`), `decline` or `cancel`.

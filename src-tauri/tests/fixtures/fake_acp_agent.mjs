@@ -1,6 +1,11 @@
 // A tiny ACP agent for integration tests. It speaks newline-delimited
 // JSON-RPC on stdin/stdout and reacts to a few magic prompts:
 //   "permission" -> asks the client for permission, then reports the choice
+//   "user-question" -> asks as Qwen Code's ask_user_question does: a permission request with
+//                    two questions (_meta.qwenInteractionKind "user_question") and the options
+//                    Submit ("proceed_once") and Cancel ("cancel"); says "question:<outcome>:<answers
+//                    as JSON>" when answered. FAKE_ACP_QUESTION_LOG names a file the whole reply
+//                    (its result) is appended to, as one JSON line
 //   "slow"       -> waits until the client sends session/cancel
 //   "crash"      -> exits with code 3 mid-turn
 //   "needs-login" -> refuses the prompt until the user signs in
@@ -44,6 +49,8 @@ let nextSession = 1;
 // The folder each session was opened in, by session id.
 const sessionFolders = new Map();
 let pendingPermission = null;
+// The user-question prompt waiting on its reply.
+let pendingQuestion = null;
 let pendingSlow = null;
 let pendingStray = null;
 // The elicit-* prompt waiting on its elicitation/create replies.
@@ -150,6 +157,49 @@ function handlePrompt(id, params) {
         options: [
           { optionId: "allow", name: "Allow", kind: "allow_once" },
           { optionId: "reject", name: "Reject", kind: "reject_once" },
+        ],
+      },
+    });
+    return;
+  }
+  if (text === "user-question") {
+    pendingQuestion = { promptId: id, sessionId: params.sessionId };
+    const questions = [
+      {
+        question: "Which colours do you like?",
+        header: "Colours",
+        options: [
+          { label: "Blue", description: "Like the sea" },
+          { label: "Green", description: "Like grass" },
+        ],
+        multiSelect: true,
+      },
+      {
+        question: "Which editor do you use?",
+        header: "Editor",
+        options: [
+          { label: "Vim", description: "Modal" },
+          { label: "Zed", description: "Fast" },
+        ],
+        multiSelect: false,
+      },
+    ];
+    send({
+      id: "ask-1",
+      method: "session/request_permission",
+      params: {
+        sessionId: params.sessionId,
+        toolCall: {
+          toolCallId: "t-ask",
+          status: "pending",
+          title: "Ask user 2 questions",
+          kind: "other",
+          rawInput: { questions },
+          _meta: { toolName: "ask_user_question", qwenInteractionKind: "user_question", qwenQuestions: questions },
+        },
+        options: [
+          { optionId: "proceed_once", name: "Submit", kind: "allow_once" },
+          { optionId: "cancel", name: "Cancel", kind: "reject_once" },
         ],
       },
     });
@@ -475,6 +525,16 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     say(pendingStray.sessionId, `stray:${outcome}`);
     reply(pendingStray.promptId, { stopReason: "end_turn" });
     pendingStray = null;
+    return;
+  }
+  if (message.id === "ask-1" && pendingQuestion && message.method === undefined) {
+    if (process.env.FAKE_ACP_QUESTION_LOG) {
+      appendFileSync(process.env.FAKE_ACP_QUESTION_LOG, `${JSON.stringify(message.result ?? message.error)}\n`);
+    }
+    const outcome = message.result?.outcome;
+    say(pendingQuestion.sessionId, `question:${outcome?.optionId ?? outcome?.outcome}:${JSON.stringify(message.result?.answers ?? null)}`);
+    reply(pendingQuestion.promptId, { stopReason: "end_turn" });
+    pendingQuestion = null;
     return;
   }
   if (message.id === "perm-1" && pendingPermission) {

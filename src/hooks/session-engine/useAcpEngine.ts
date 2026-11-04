@@ -571,7 +571,13 @@ export function useAcpEngine({
       action: 'fork',
     });
 
-  const chooseOption = (sessionId: string, messages: ChatMessage[] | undefined, cardId: string, optionId: string) => {
+  const chooseOption = (
+    sessionId: string,
+    messages: ChatMessage[] | undefined,
+    cardId: string,
+    optionId: string,
+    answers?: Record<string, string>,
+  ) => {
     const card = findCard(messages, cardId);
     if (card?.status !== 'pending') return;
     if (card.requestId === undefined) {
@@ -579,7 +585,8 @@ export function useAcpEngine({
       return;
     }
     updateNow(sessionId, (prev) => resolvePermissionCard(prev, cardId, optionId));
-    acp.respondPermission(sessionId, card.requestId, optionId).catch((error) => {
+    // Typed answers only go with a card that asked questions; the card keeps none of them.
+    acp.respondPermission(sessionId, card.requestId, optionId, card.questions ? answers : undefined).catch((error) => {
       if (isSessionGoneError(error)) {
         // The agent that asked is gone, so nobody waits: the card reads unanswered rather than offering buttons that cannot work.
         updateNow(sessionId, (prev) => settlePermissionCards(reopenPermissionCard(prev, cardId)));

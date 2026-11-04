@@ -215,6 +215,55 @@ describe("Popout windows", () => {
     });
   });
 
+  it("forwards the answers to Qwen Code's questions with the option picked", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", {
+      sessionId: "s-1",
+      session: { ...runningSession, profileId: "qwen-code" },
+      messages: [
+        {
+          id: "m-1",
+          role: "agent",
+          content: "",
+          timestamp: 1,
+          actionCard: {
+            id: "act-1",
+            sessionId: "s-1",
+            title: "Permission requested",
+            prompt: "Ask user 1 question",
+            status: "pending",
+            timestamp: 1,
+            requestId: 3,
+            options: [
+              { optionId: "proceed_once", name: "Submit", kind: "allow_once" },
+              { optionId: "cancel", name: "Cancel", kind: "reject_once" },
+            ],
+            questions: [
+              { question: "Which editor do you use?", header: "Editor", options: [{ label: "Vim" }, { label: "Zed" }], multiSelect: false },
+            ],
+          },
+        },
+      ],
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("radio", { name: "Zed" }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    });
+
+    expect(emitted).toContainEqual({
+      event: "popout-action",
+      payload: {
+        sessionId: "s-1",
+        action: { kind: "choose-option", cardId: "act-1", optionId: "proceed_once", answers: { "0": "Zed" } },
+      },
+    });
+  });
+
   it("forwards an answer to an agent's form request", async () => {
     await act(async () => {
       render(<PopoutApp sessionId="s-1" />);

@@ -35,8 +35,8 @@ export interface ChatCanvasProps {
   /** Display name of the agent behind this conversation, e.g. "Claude Code". */
   agentName?: string;
   onForkBranch?: (messageId: string) => void;
-  /** Answers an ACP permission card with one of the agent's options. */
-  onChooseOption?: (cardId: string, optionId: string) => void;
+  /** Answers an ACP permission card with one of the agent's options; `answers` are a question card's typed answers. */
+  onChooseOption?: (cardId: string, optionId: string, answers?: Record<string, string>) => void;
   /** Answers an agent's request for input or to open a page. */
   onAnswerElicitation?: (key: string, answer: ElicitationAnswer) => void;
   /** Opens an agent's page again after the user opened it once. */
@@ -148,7 +148,8 @@ export function ChatCanvas({
   const handleFork = useCallback((id: string) => onForkRef.current?.(id), [onForkRef]);
   const handleRewind = useCallback((id: string) => onRewindRef.current?.(id), [onRewindRef]);
   const handleChooseOption = useCallback(
-    (cardId: string, optionId: string) => onChooseOptionRef.current?.(cardId, optionId),
+    (cardId: string, optionId: string, answers?: Record<string, string>) =>
+      answers ? onChooseOptionRef.current?.(cardId, optionId, answers) : onChooseOptionRef.current?.(cardId, optionId),
     [onChooseOptionRef],
   );
   const handleAnswerElicitation = useCallback(

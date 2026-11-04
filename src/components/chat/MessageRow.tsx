@@ -34,7 +34,7 @@ export interface MessageRowProps {
   onFork?: (messageId: string) => void;
   onRewind?: (messageId: string) => void;
   onToggleReadAloud: (messageId: string, content: string) => void;
-  onChooseOption?: (cardId: string, optionId: string) => void;
+  onChooseOption?: (cardId: string, optionId: string, answers?: Record<string, string>) => void;
   onAnswerElicitation?: (key: string, answer: ElicitationAnswer) => void;
   onReopenElicitationUrl?: (key: string) => void;
 }
@@ -130,7 +130,12 @@ export const MessageRow = memo(function MessageRow({
           <ActionCard
             card={message.actionCard}
             onChoose={
-              onChooseOption ? (optionId) => onChooseOption(message.actionCard!.id, optionId) : undefined
+              onChooseOption
+                ? (optionId, answers) =>
+                    answers
+                      ? onChooseOption(message.actionCard!.id, optionId, answers)
+                      : onChooseOption(message.actionCard!.id, optionId)
+                : undefined
             }
           />
         )}

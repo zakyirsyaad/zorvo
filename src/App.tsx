@@ -191,8 +191,6 @@ export default function App() {
     if (last) setActiveSessionId(last.id);
   }
   const activeSession = sessions.find((s) => s.id === activeSessionId);
-  // The session on screen when it is not one of a compare run's (they share one title, as the sidebar's menu has it).
-  const sessionOfItsOwn = activeSession && !activeSession.compareRunId ? activeSession : undefined;
   const activeAgent = agents.find((a) => a.id === activeSession?.profileId);
   const isActiveRunning = activeSession?.status === "running";
   // Only the agents in use are offered: the defaults and installed ones.
@@ -783,6 +781,8 @@ export default function App() {
     // A notification that cannot be shown is not worth an error banner: the panel has it all.
     notifyRun: (notice) => void notifyIfAway(notice).catch(() => {}),
   });
+  // The session on screen when it is not in a compare run (a run's sessions share one title, as the sidebar's menu has it).
+  const sessionOfItsOwn = activeSession && !compareRun.isInRun(activeSession.id) ? activeSession : undefined;
   // However a session comes on screen, its refusal is taken up there: only now does its composer show.
   const { takeSignIn } = compareRun;
   const refusedHere = compareRun.signInNeeded.get(activeSessionId);

@@ -40,6 +40,18 @@ function header() {
 describe("Window chrome wiring", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it("renames a run's picked session from the top bar, which is a session of its own again", async () => {
+    // A run with one listed session left is no run: its winner keeps the id.
+    fakeStore().state.sessions = [
+      { id: "s-w", name: "Fix the parser", profileId: "claude-code", cwd: "/Users/test/developer/zorvo", status: "terminated", createdAt: 3, transport: "acp", compareRunId: "run-1" },
+    ];
+    await renderApp();
+
+    await click(header().getByRole("button", { name: "More options" }));
+    expect(screen.getByRole("menuitem", { name: "Rename" })).toBeDefined();
+    expect(screen.getByRole("menuitem", { name: "Archive" })).toBeDefined();
+  });
+
   it("goes back and forward through the sessions the user viewed", async () => {
     seedSessions();
     await renderApp();

@@ -41,6 +41,8 @@ describe("DiffStatChip", () => {
     const button = screen.getByRole("button", { name: "2,847 lines added, 35 removed. Open the diff" });
     expect(button.textContent).toContain("+2,847");
     expect(button.textContent).toContain("−35");
+    // A bordered contextual chip, like Plan and background tasks.
+    expect(button.classList.contains("border-border")).toBe(true);
     fireEvent.click(button);
     expect(onOpen).toHaveBeenCalledOnce();
   });

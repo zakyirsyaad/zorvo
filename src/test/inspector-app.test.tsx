@@ -64,14 +64,25 @@ describe("The inspector in the app", () => {
     expect(inspectorButton()).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("opens the full diff from the diff chip, leaving the inspector as it was", async () => {
+  it("opens the full diff from the diff chip, leaving the inspector closed", async () => {
     seedWithChanges();
     await renderApp();
 
+    // The Changes tab cannot show committed work or comments yet, so the chip opens the review itself.
     await click(await within(screen.getAllByRole("banner")[0]).findByRole("button", { name: /12 lines added, 3 removed/ }));
 
     expect(screen.getByRole("complementary", { name: "Diff view" })).toBeInTheDocument();
     expect(inspector()).toBeNull();
+  });
+
+  it("gives focus back to the Inspector button when it closes from its own button", async () => {
+    seedWithChanges();
+    await renderApp();
+    await openInspectorTab("Files");
+
+    await closeInspector();
+
+    expect(document.activeElement).toBe(inspectorButton());
   });
 
   it("keeps the shell when you leave the Terminal tab or close the inspector", async () => {
@@ -123,7 +134,8 @@ describe("The inspector in the app", () => {
   it("closes the diff when the inspector opens", async () => {
     seedWithChanges();
     await renderApp();
-    await click(await within(screen.getAllByRole("banner")[0]).findByRole("button", { name: /12 lines added, 3 removed/ }));
+    await openInspectorTab("Changes");
+    await click(await within(inspector() as HTMLElement).findByRole("button", { name: /Open the diff/ }));
     expect(screen.getByRole("complementary", { name: "Diff view" })).toBeInTheDocument();
 
     await click(inspectorButton());

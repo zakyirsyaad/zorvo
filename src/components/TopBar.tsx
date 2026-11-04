@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, GitBranch, MoreHorizontal, PanelLeft, PanelRight } from "lucide-react";
-import { useState } from "react";
+import { useState, type Ref } from "react";
 import { Chip } from "./ui/Chip";
 import { IconButton } from "./ui/IconButton";
 import { Popover, PopoverOption } from "./ui/Popover";
@@ -130,6 +130,8 @@ export interface TopBarProps {
   /** Opens or closes the inspector (changes, activity, files, terminal); the button is hidden when absent. */
   onToggleInspector?: () => void;
   isInspectorOpen?: boolean;
+  /** The Inspector button, which takes focus back when the inspector closes from its own button. */
+  inspectorButtonRef?: Ref<HTMLButtonElement>;
   /** Lines added and removed against HEAD, shown as a chip beside the button once known. */
   diffStats?: { added: number; removed: number };
   /** Keeps the chip on screen at 0/0: the session has committed work or comments to open the diff for. */
@@ -164,6 +166,7 @@ export function TopBar({
   onArchive,
   onToggleInspector,
   isInspectorOpen = false,
+  inspectorButtonRef,
   diffStats,
   isDiffAlwaysShown = false,
   diffCommentCount,
@@ -239,7 +242,7 @@ export function TopBar({
         )}
 
         {onToggleInspector && (
-          <IconButton label="Inspector" onClick={onToggleInspector} aria-pressed={isInspectorOpen}>
+          <IconButton ref={inspectorButtonRef} label="Inspector" onClick={onToggleInspector} aria-pressed={isInspectorOpen}>
             <PanelRight size={14} className={isInspectorOpen ? "text-fg" : undefined} />
           </IconButton>
         )}

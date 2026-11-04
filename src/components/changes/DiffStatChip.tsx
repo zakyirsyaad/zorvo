@@ -1,4 +1,5 @@
 import { MessageSquare } from "lucide-react";
+import { Chip } from "../ui/Chip";
 import { formatLineCount, MINUS } from "../../lib/diff-stats";
 
 /**
@@ -18,11 +19,10 @@ export function DiffStatChip({ added, removed, commentCount = 0, isAlwaysShown =
   const removedText = formatLineCount(removed);
   const commentsText = commentCount > 0 ? `, ${formatLineCount(commentCount)} ${commentCount === 1 ? "comment" : "comments"}` : "";
   return (
-    <button
-      type="button"
+    <Chip
       onClick={onOpen}
-      aria-label={`${addedText} lines added, ${removedText} removed${commentsText}. Open the diff`}
-      className="flex items-center gap-1.5 rounded-md bg-surface-2 px-2 py-0.5 text-[11px] tabular-nums hover:bg-surface-hover focus-ring"
+      label={`${addedText} lines added, ${removedText} removed${commentsText}. Open the diff`}
+      className="tabular-nums"
     >
       <span className="text-status-running">+{addedText}</span>
       <span className="text-danger">
@@ -35,6 +35,6 @@ export function DiffStatChip({ added, removed, commentCount = 0, isAlwaysShown =
           {formatLineCount(commentCount)}
         </span>
       )}
-    </button>
+    </Chip>
   );
 }

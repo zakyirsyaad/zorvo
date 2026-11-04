@@ -146,6 +146,8 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [isSidebarHidden, setSidebarHidden] = useState(false);
   const composerRef = useRef<ComposerHandle>(null);
+  // The top bar's Inspector button: focus goes back to it when the inspector closes from its own button.
+  const inspectorButtonRef = useRef<HTMLButtonElement>(null);
 
   const reportError = useCallback((message: string) => setNotice(message), []);
   const { state, isLoaded, updateState, getState, saveNow } = usePersistedState(reportError);
@@ -916,6 +918,7 @@ export default function App() {
         onForward={() => navigateTo(navigation.forward())}
         onToggleInspector={inspectorTabs.length > 0 ? () => inspector.toggle(inspectorTabs) : undefined}
         isInspectorOpen={inspectorTab !== null}
+        inspectorButtonRef={inspectorButtonRef}
         diffStats={diffStats}
         isDiffAlwaysShown={Boolean(startCommit) || reviewComments.comments.length > 0}
         diffCommentCount={unsentCommentCount}
@@ -1194,7 +1197,10 @@ export default function App() {
                 counts={{ changes: inspector.changes.changes?.length }}
                 onSelect={inspector.show}
                 onResize={inspector.setWidth}
-                onClose={inspector.close}
+                onClose={() => {
+                  inspector.close();
+                  inspectorButtonRef.current?.focus();
+                }}
               >
                 {inspectorTab === "changes" && filesFolder && (
                   <ChangesPanel

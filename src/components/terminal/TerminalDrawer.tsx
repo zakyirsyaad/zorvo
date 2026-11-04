@@ -1,16 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import type { KeyboardEvent, PointerEvent } from "react";
 import { ChevronDown, Plus, X } from "lucide-react";
 import { TerminalView, type TerminalViewHandle } from "../TerminalView";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { tabLabel } from "../../lib/terminal-labels";
 import type { WorkspaceTerminals, WorkspaceTerminalTab } from "../../hooks/useWorkspaceTerminals";
-
-const START_HEIGHT = 280;
-const MIN_HEIGHT = 120;
-const MAX_HEIGHT_RATIO = 0.7;
-const KEY_STEP = 24;
 
 export interface TerminalDrawerProps {
   folderPath: string;
@@ -22,20 +16,13 @@ export interface TerminalDrawerProps {
   startingFor: string | null;
   /** Starts a shell through the caller's guard against a second start in the same folder. */
   onStartShell: (folderPath: string) => Promise<string | null>;
-  onHide: () => void;
-}
-
-function maxHeight(): number {
-  return Math.max(MIN_HEIGHT, Math.floor(window.innerHeight * MAX_HEIGHT_RATIO));
-}
-
-function clampHeight(height: number): number {
-  return Math.min(maxHeight(), Math.max(MIN_HEIGHT, height));
+  /** Shows a Hide terminal button; inside the inspector the inspector closes it. */
+  onHide?: () => void;
 }
 
 /**
- * The shells of one folder, in a drawer under the chat. The caller keys nothing
- * on the folder: switching sessions only changes `folderPath`.
+ * The shells of one folder, filling the inspector's Terminal tab. The caller keys
+ * nothing on the folder: switching sessions only changes `folderPath`.
  */
 export function TerminalDrawer({
   folderPath,
@@ -47,7 +34,6 @@ export function TerminalDrawer({
   onHide,
 }: TerminalDrawerProps) {
   const tabs = terminals.tabsFor(folderPath);
-  const [height, setHeight] = useState(START_HEIGHT);
   const [activeByFolder, setActiveByFolder] = useState<Record<string, string>>({});
   const activeTab = pickActive(tabs, activeByFolder[folderPath]);
   // The tab whose view takes keyboard focus when it mounts: set by an action in
@@ -118,12 +104,7 @@ export function TerminalDrawer({
 
   // Only the terminal itself stays dark in both themes; the drawer's own controls follow the theme.
   return (
-    <section
-      aria-label="Terminal"
-      style={{ height, maxHeight: `${MAX_HEIGHT_RATIO * 100}vh` }}
-      className="flex shrink-0 flex-col border-t border-border bg-surface-1"
-    >
-      <ResizeHandle height={height} onChange={(next) => setHeight(clampHeight(next))} />
+    <section aria-label="Terminal" className="flex min-h-0 flex-1 flex-col bg-surface-1">
       <div className="flex items-center gap-1 border-b border-border px-2">
         <div ref={tabListRef} role="tablist" aria-label="Terminals" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {tabs.map((tab) => (
@@ -141,9 +122,11 @@ export function TerminalDrawer({
             <Plus size={14} aria-hidden />
           </IconButton>
         )}
-        <IconButton label="Hide terminal" onClick={onHide}>
-          <ChevronDown size={14} aria-hidden />
-        </IconButton>
+        {onHide && (
+          <IconButton label="Hide terminal" onClick={onHide}>
+            <ChevronDown size={14} aria-hidden />
+          </IconButton>
+        )}
       </div>
       <div role="tabpanel" className="flex min-h-0 flex-1 flex-col">
         {activeTab ? (
@@ -214,48 +197,3 @@ function TabItem({ label, selected, onSelect, onClose }: TabItemProps) {
   );
 }
 
-interface ResizeHandleProps {
-  height: number;
-  onChange: (height: number) => void;
-}
-
-function ResizeHandle({ height, onChange }: ResizeHandleProps) {
-  const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
-
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "ArrowUp") onChange(height + KEY_STEP);
-    else if (event.key === "ArrowDown") onChange(height - KEY_STEP);
-    else return;
-    event.preventDefault();
-  };
-  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { startY: event.clientY, startHeight: height };
-  };
-  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (drag) onChange(drag.startHeight + (drag.startY - event.clientY));
-  };
-  const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
-    dragRef.current = null;
-    event.currentTarget.releasePointerCapture(event.pointerId);
-  };
-
-  return (
-    <div
-      role="separator"
-      aria-orientation="horizontal"
-      aria-label="Resize terminal"
-      aria-valuemin={MIN_HEIGHT}
-      aria-valuemax={maxHeight()}
-      aria-valuenow={height}
-      tabIndex={0}
-      onKeyDown={onKeyDown}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-      className="focus-ring h-1.5 shrink-0 cursor-row-resize touch-none bg-border opacity-0 transition-opacity hover:opacity-100 focus-visible:opacity-100"
-    />
-  );
-}

@@ -25,7 +25,8 @@ export interface FilesPanelProps {
   rootPath: string;
   /** Display name of that folder, e.g. its last path segment. */
   rootName: string;
-  onClose: () => void;
+  /** Shows a close button; inside the inspector the inspector closes it. */
+  onClose?: () => void;
   /** Adds a file's absolute path to the composer; row buttons are hidden when absent. */
   onInsertPath?: (absolutePath: string) => void;
   /** Reveals the workspace folder in Finder; the header button is hidden when absent. */
@@ -172,7 +173,7 @@ interface PanelHeaderProps {
   onQueryChange: (query: string) => void;
   onRefresh: () => void;
   onRevealRoot?: () => void;
-  onClose: () => void;
+  onClose?: () => void;
 }
 
 function PanelHeader({ rootName, rootPath, query, onQueryChange, onRefresh, onRevealRoot, onClose }: PanelHeaderProps) {
@@ -194,9 +195,11 @@ function PanelHeader({ rootName, rootPath, query, onQueryChange, onRefresh, onRe
               <FolderSearch size={13} aria-hidden="true" />
             </button>
           )}
-          <button type="button" onClick={onClose} aria-label="Close files panel" title="Close" className={HEADER_BUTTON}>
-            <X size={14} aria-hidden="true" />
-          </button>
+          {onClose && (
+            <button type="button" onClick={onClose} aria-label="Close files panel" title="Close" className={HEADER_BUTTON}>
+              <X size={14} aria-hidden="true" />
+            </button>
+          )}
         </div>
       </div>
       <div className="relative">
@@ -237,7 +240,7 @@ export function FilesPanel({ rootPath, rootName, onClose, onInsertPath, onReveal
   return (
     <aside
       aria-label="Files panel"
-      className="flex h-full w-72 shrink-0 flex-col border-l border-border bg-surface-1 text-xs text-fg-secondary select-none"
+      className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-xs text-fg-secondary select-none"
     >
       <PanelHeader
         rootName={rootName}

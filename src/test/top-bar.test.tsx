@@ -134,14 +134,20 @@ describe("TopBar", () => {
       expect(onPopout).toHaveBeenCalledTimes(1);
     });
 
-    it("shows the files toggle when onToggleFiles is given, pressed while the panel is open", () => {
-      const onToggleFiles = vi.fn();
-      renderTopBar({ onToggleFiles, isFilesOpen: true });
+    it("shows one Inspector toggle when onToggleInspector is given, pressed while it is open", () => {
+      const onToggleInspector = vi.fn();
+      renderTopBar({ onToggleInspector, isInspectorOpen: true });
 
-      const toggle = screen.getByRole("button", { name: "Toggle files panel" });
+      const toggle = screen.getByRole("button", { name: "Inspector" });
       expect(toggle.getAttribute("aria-pressed")).toBe("true");
       fireEvent.click(toggle);
-      expect(onToggleFiles).toHaveBeenCalledTimes(1);
+      expect(onToggleInspector).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("button", { name: /^Toggle .* panel$/ })).toBeNull();
+    });
+
+    it("offers no Inspector toggle when there is nothing to inspect", () => {
+      renderTopBar();
+      expect(screen.queryByRole("button", { name: "Inspector" })).toBeNull();
     });
 
     it("shows and calls more options when onOpenSettings is given", () => {
@@ -154,23 +160,23 @@ describe("TopBar", () => {
   });
 
   describe("diff-stat chip", () => {
-    it("shows the totals next to the Changes toggle, opens the diff from the chip only, and shows no count on the toggle", () => {
+    it("shows the totals, opens the diff from the chip only, and shows no count on the Inspector toggle", () => {
       const onOpenDiff = vi.fn();
-      const onToggleChanges = vi.fn();
-      renderTopBar({ diffStats: { added: 2847, removed: 35 }, onOpenDiff, onToggleChanges });
+      const onToggleInspector = vi.fn();
+      renderTopBar({ diffStats: { added: 2847, removed: 35 }, onOpenDiff, onToggleInspector });
 
-      const toggle = screen.getByRole("button", { name: "Toggle changes panel" });
+      const toggle = screen.getByRole("button", { name: "Inspector" });
       expect(toggle.textContent).toBe("");
       fireEvent.click(screen.getByRole("button", { name: /2,847 lines added, 35 removed/ }));
       expect(onOpenDiff).toHaveBeenCalledTimes(1);
-      expect(onToggleChanges).not.toHaveBeenCalled();
+      expect(onToggleInspector).not.toHaveBeenCalled();
       fireEvent.click(toggle);
-      expect(onToggleChanges).toHaveBeenCalledTimes(1);
+      expect(onToggleInspector).toHaveBeenCalledTimes(1);
       expect(onOpenDiff).toHaveBeenCalledTimes(1);
     });
 
     it("shows no chip without totals or when nothing changed", () => {
-      renderTopBar({ onToggleChanges: () => {}, onOpenDiff: () => {} });
+      renderTopBar({ onToggleInspector: () => {}, onOpenDiff: () => {} });
       expect(screen.queryByRole("button", { name: /lines added/ })).toBeNull();
     });
   });
@@ -223,17 +229,4 @@ describe("TopBar", () => {
     });
   });
 
-  it("opens the activity panel when a session offers it", () => {
-    const onToggleActivity = vi.fn();
-    renderTopBar({ onToggleActivity, isActivityOpen: true });
-    const button = screen.getByRole("button", { name: "Toggle activity panel" });
-    expect(button.getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(button);
-    expect(onToggleActivity).toHaveBeenCalledOnce();
-  });
-
-  it("offers no activity panel without a session", () => {
-    renderTopBar();
-    expect(screen.queryByRole("button", { name: "Toggle activity panel" })).toBeNull();
-  });
 });

@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { StrictMode, useState } from "react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, within } from "@testing-library/react";
+import { closeInspector, openInspectorTab } from "./inspector-helpers";
 import { clickRowDelete } from "./sidebar-helpers";
 import { fakeTauriInvoke, type FakeTauriStore } from "./setup";
 import type { TerminalViewProps } from "../components/TerminalView";
@@ -97,7 +98,6 @@ async function click(element: HTMLElement) {
   });
 }
 
-const terminalButton = () => screen.getByRole("button", { name: "Terminal" });
 const sidebar = () => within(screen.getByRole("complementary"));
 
 async function openSession(name: string) {
@@ -117,30 +117,30 @@ describe("Workspace terminal in the app", () => {
     mounts.length = 0;
   });
 
-  it("the Terminal button opens a shell in the session's folder", async () => {
+  it("the Terminal tab opens a shell in the session's folder", async () => {
     fakeStore().state.sessions = [seedSession("s-a", "Fix login", REPO, 1000)];
     const spy = await renderApp({ strict: true });
     await openSession("Fix login");
 
-    await click(terminalButton());
+    await openInspectorTab("Terminal");
 
-    expect(terminalButton()).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("tab", { name: "Terminal" })).toHaveAttribute("aria-selected", "true");
     expect(callsTo(spy, "workspace_terminal_open")).toHaveLength(1);
     expect(callsTo(spy, "workspace_terminal_open")[0][1]).toEqual({ path: REPO });
     expect(screen.getByTestId("view-shell-1")).toBeInTheDocument();
   });
 
-  it("opening the drawer again does not add a shell", async () => {
+  it("showing the Terminal tab again does not add a shell", async () => {
     fakeStore().state.sessions = [seedSession("s-a", "Fix login", REPO, 1000)];
     const spy = await renderApp({ strict: true });
     await openSession("Fix login");
 
-    await click(terminalButton());
-    await click(terminalButton());
-    expect(terminalButton()).toHaveAttribute("aria-pressed", "false");
-    await click(terminalButton());
+    await openInspectorTab("Terminal");
+    await closeInspector();
+    expect(screen.queryByRole("region", { name: "Inspector" })).toBeNull();
+    await openInspectorTab("Terminal");
 
-    expect(terminalButton()).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("tab", { name: "Terminal" })).toHaveAttribute("aria-selected", "true");
     expect(callsTo(spy, "workspace_terminal_open")).toHaveLength(1);
   });
 
@@ -151,7 +151,7 @@ describe("Workspace terminal in the app", () => {
     ];
     const spy = await renderApp();
     await openSession("Fix login");
-    await click(terminalButton());
+    await openInspectorTab("Terminal");
 
     await openSession("Add search");
 
@@ -166,7 +166,7 @@ describe("Workspace terminal in the app", () => {
     const spy = await renderApp();
     await openSession("Fix login");
 
-    await click(terminalButton());
+    await openInspectorTab("Terminal");
 
     expect(callsTo(spy, "workspace_terminal_open").map(([, args]) => args)).toEqual([{ path: WORKTREE.path }]);
   });
@@ -178,7 +178,7 @@ describe("Workspace terminal in the app", () => {
     ];
     const spy = await renderApp();
     await openSession("Fix login");
-    await click(terminalButton());
+    await openInspectorTab("Terminal");
     await act(async () => {
       listeners.get("workspace-terminal")?.({ payload: { terminalId: "shell-1", kind: "output", data: "hello\r\n" } });
     });
@@ -192,11 +192,11 @@ describe("Workspace terminal in the app", () => {
     expect(callsTo(spy, "workspace_terminal_close")).toHaveLength(0);
   });
 
-  it("has no Terminal button without a folder", async () => {
+  it("has no inspector without a folder", async () => {
     fakeStore().state.recentFolders = [];
     await renderApp();
 
-    expect(screen.queryByRole("button", { name: "Terminal" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Inspector" })).toBeNull();
   });
 
   it("deleting a worktree session closes its terminals once the worktree is removed", async () => {
@@ -206,7 +206,7 @@ describe("Workspace terminal in the app", () => {
     ];
     const spy = await renderApp();
     await openSession("Fix login");
-    await click(terminalButton());
+    await openInspectorTab("Terminal");
 
     await deleteSession("Fix login");
 
@@ -225,7 +225,7 @@ describe("Workspace terminal in the app", () => {
     ];
     const spy = await renderApp({ removeWorktree: () => Promise.reject("it has uncommitted changes, so it was kept") });
     await openSession("Fix login");
-    await click(terminalButton());
+    await openInspectorTab("Terminal");
 
     await deleteSession("Fix login");
 
@@ -240,7 +240,7 @@ describe("Workspace terminal in the app", () => {
     fakeStore().state.sessions = [seedSession("s-w", "Fix login", inside, 1000, { worktree: WORKTREE })];
     const spy = await renderApp();
     await openSession("Fix login");
-    await click(terminalButton());
+    await openInspectorTab("Terminal");
     expect(callsTo(spy, "workspace_terminal_open")[0][1]).toEqual({ path: inside });
 
     await deleteSession("Fix login");
@@ -257,15 +257,15 @@ describe("Workspace terminal in the app", () => {
     const spy = await renderApp({ strict: true, openGate });
     await openSession("Fix login");
 
-    await click(terminalButton());
-    await click(terminalButton());
-    await click(terminalButton());
+    await openInspectorTab("Terminal");
+    await closeInspector();
+    await openInspectorTab("Terminal");
     await act(async () => {
       release();
     });
 
     expect(callsTo(spy, "workspace_terminal_open")).toHaveLength(1);
-    expect(screen.getAllByRole("tab")).toHaveLength(1);
+    expect(within(screen.getByRole("tablist", { name: "Terminals" })).getAllByRole("tab")).toHaveLength(1);
   });
 
   it("shows that the first shell is starting, offers no second one, and focuses it once it is there", async () => {
@@ -277,7 +277,7 @@ describe("Workspace terminal in the app", () => {
     const spy = await renderApp({ openGate });
     await openSession("Fix login");
 
-    await click(terminalButton());
+    await openInspectorTab("Terminal");
 
     expect(screen.getByText("Starting a shell…")).toBeInTheDocument();
     expect(screen.queryByText("No terminal in zorvo.")).toBeNull();
@@ -297,7 +297,7 @@ describe("Workspace terminal in the app", () => {
     const spy = await renderApp({ openFails: () => attempts++ === 0 });
     await openSession("Fix login");
 
-    await click(terminalButton());
+    await openInspectorTab("Terminal");
     expect(screen.getByText("No terminal in zorvo.")).toBeInTheDocument();
     await click(screen.getByRole("button", { name: "New terminal" }));
 
@@ -312,7 +312,7 @@ describe("Workspace terminal in the app", () => {
     ];
     const spy = await renderApp();
     await openSession("Fix login");
-    await click(terminalButton());
+    await openInspectorTab("Terminal");
 
     await deleteSession("Fix login (fork)");
 
@@ -320,11 +320,11 @@ describe("Workspace terminal in the app", () => {
     expect(callsTo(spy, "remove_session_worktree")).toHaveLength(0);
   });
 
-  it("a popout has no Terminal button", async () => {
+  it("a popout has no inspector", async () => {
     await act(async () => {
       render(<PopoutApp sessionId="s-1" />);
     });
 
-    expect(screen.queryByRole("button", { name: "Terminal" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Inspector" })).toBeNull();
   });
 });

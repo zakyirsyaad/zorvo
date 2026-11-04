@@ -429,6 +429,14 @@ describe("DiffView", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it("offers no expand button when it always fills the chat area", async () => {
+    mockDiff(THREE);
+    await renderView({ onToggleExpanded: undefined, isExpanded: true });
+
+    expect(screen.queryByRole("button", { name: /^(Expand|Shrink) diff view$/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Close diff view" })).toBeDefined();
+  });
+
   it("starts every section collapsed above 25 files", async () => {
     mockDiff(Array.from({ length: 26 }, (_, i) => statOf(`src/f${i}.ts`)));
     await renderView();

@@ -1,15 +1,4 @@
-import {
-  ChevronLeft,
-  ChevronRight,
-  Folder,
-  GitBranch,
-  GitCompare,
-  ExternalLink,
-  MoreHorizontal,
-  PanelLeft,
-  SquareTerminal,
-  History,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, GitBranch, ExternalLink, MoreHorizontal, PanelLeft, PanelRight } from "lucide-react";
 import { IconButton } from "./ui/IconButton";
 import { DiffStatChip } from "./changes/DiffStatChip";
 import { BackgroundTasksMenu, type BackgroundTasksMenuProps } from "./topbar/BackgroundTasksMenu";
@@ -47,18 +36,9 @@ export interface TopBarProps {
   onForward?: () => void;
   /** Opens this session in its own window; the button is hidden when absent. */
   onPopout?: () => void;
-  /** Shows or hides the workspace's files; the button is hidden when absent. */
-  onToggleFiles?: () => void;
-  isFilesOpen?: boolean;
-  /** Shows or hides what the agent did in this session; the button is hidden when absent. */
-  onToggleActivity?: () => void;
-  isActivityOpen?: boolean;
-  /** Shows or hides the terminal drawer; the button is hidden when absent. */
-  onToggleTerminal?: () => void;
-  isTerminalOpen?: boolean;
-  /** Shows or hides the session's uncommitted changes; the button is hidden when absent. */
-  onToggleChanges?: () => void;
-  isChangesOpen?: boolean;
+  /** Opens or closes the inspector (changes, activity, files, terminal); the button is hidden when absent. */
+  onToggleInspector?: () => void;
+  isInspectorOpen?: boolean;
   /** Lines added and removed against HEAD, shown as a chip beside the button once known. */
   diffStats?: { added: number; removed: number };
   /** Keeps the chip on screen at 0/0: the session has committed work or comments to open the diff for. */
@@ -87,14 +67,8 @@ export function TopBar({
   onBack,
   onForward,
   onPopout,
-  onToggleFiles,
-  isFilesOpen = false,
-  onToggleActivity,
-  isActivityOpen = false,
-  onToggleTerminal,
-  isTerminalOpen = false,
-  onToggleChanges,
-  isChangesOpen = false,
+  onToggleInspector,
+  isInspectorOpen = false,
   diffStats,
   isDiffAlwaysShown = false,
   diffCommentCount,
@@ -184,7 +158,7 @@ export function TopBar({
 
         {backgroundTasks && <BackgroundTasksMenu {...backgroundTasks} />}
 
-        {onToggleChanges && diffStats && onOpenDiff && (
+        {diffStats && onOpenDiff && (
           <DiffStatChip
             added={diffStats.added}
             removed={diffStats.removed}
@@ -194,49 +168,9 @@ export function TopBar({
           />
         )}
 
-        {onToggleChanges && (
-          <button
-            type="button"
-            onClick={onToggleChanges}
-            className="flex items-center rounded-md p-1.5 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary focus-ring"
-            aria-label="Toggle changes panel"
-            aria-pressed={isChangesOpen}
-            title="Changes"
-          >
-            <GitCompare size={14} className={isChangesOpen ? "text-fg" : undefined} />
-          </button>
-        )}
-
-        {onToggleFiles && (
-          <IconButton
-            label="Toggle files panel"
-            onClick={onToggleFiles}
-            aria-pressed={isFilesOpen}
-            title="Files"
-          >
-            <Folder size={14} className={isFilesOpen ? "text-fg" : undefined} />
-          </IconButton>
-        )}
-
-        {onToggleActivity && (
-          <IconButton
-            label="Toggle activity panel"
-            onClick={onToggleActivity}
-            aria-pressed={isActivityOpen}
-            title="Activity"
-          >
-            <History size={14} className={isActivityOpen ? "text-fg" : undefined} />
-          </IconButton>
-        )}
-
-        {onToggleTerminal && (
-          <IconButton
-            label="Terminal"
-            onClick={onToggleTerminal}
-            aria-pressed={isTerminalOpen}
-            title="Terminal"
-          >
-            <SquareTerminal size={14} className={isTerminalOpen ? "text-fg" : undefined} />
+        {onToggleInspector && (
+          <IconButton label="Inspector" onClick={onToggleInspector} aria-pressed={isInspectorOpen}>
+            <PanelRight size={14} className={isInspectorOpen ? "text-fg" : undefined} />
           </IconButton>
         )}
 

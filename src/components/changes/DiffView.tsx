@@ -29,7 +29,8 @@ export interface DiffViewProps {
   /** Goes up whenever the session's changes were read again. */
   version: number;
   isExpanded: boolean;
-  onToggleExpanded: () => void;
+  /** Shows the Expand/Shrink button; absent when the view always fills the chat area. */
+  onToggleExpanded?: () => void;
   onClose: () => void;
   onError: (message: string) => void;
   /** The commit this session's worktree was made from; it offers the "start" target. */

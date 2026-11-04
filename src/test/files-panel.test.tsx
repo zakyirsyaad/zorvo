@@ -54,6 +54,14 @@ async function renderPanel(overrides: Partial<FilesPanelProps> = {}): Promise<Fi
   return props;
 }
 
+describe("FilesPanel inside the inspector", () => {
+  it("has no close button of its own inside the inspector", async () => {
+    await renderPanel({ onClose: undefined });
+    expect(screen.queryByRole("button", { name: "Close files panel" })).toBeNull();
+    expect(screen.getByRole("complementary", { name: "Files panel" }).className).not.toContain("w-72");
+  });
+});
+
 function fileTree(): HTMLElement {
   return screen.getByRole("tree", { name: "Files in proj" });
 }

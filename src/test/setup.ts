@@ -122,9 +122,21 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
   }
 }
 
+/**
+ * A desktop window's width. jsdom's default (1024) is narrower than the sidebar,
+ * the inspector and the chat together, so every open inspector would hide the sidebar.
+ */
+const DESKTOP_WIDTH = 1440;
+
+function setDesktopWidth() {
+  Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: DESKTOP_WIDTH });
+}
+
 if (typeof window !== "undefined") {
   (window as unknown as { __FAKE_TAURI_STORE__: FakeTauriStore }).__FAKE_TAURI_STORE__ = emptyFakeStore();
+  setDesktopWidth();
   afterEach(async () => {
+    setDesktopWidth();
     // Imported here, not at the top: a static import would load the module before a test file's vi.mock applies.
     (await import("../lib/agent-icons")).resetAgentIcons();
     (await import("../lib/attachment-previews")).clearAttachmentPreviews();

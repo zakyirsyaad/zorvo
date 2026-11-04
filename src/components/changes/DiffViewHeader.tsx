@@ -115,7 +115,8 @@ export interface DiffViewHeaderProps {
   onExpandAll: () => void;
   onRefresh: () => void;
   isExpanded: boolean;
-  onToggleExpanded: () => void;
+  /** Shows the Expand/Shrink button; absent when the view always fills the chat area. */
+  onToggleExpanded?: () => void;
   onClose: () => void;
 }
 
@@ -132,9 +133,11 @@ export function DiffViewHeader(props: DiffViewHeaderProps) {
           <Search size={14} />
         </IconButton>
         <MoreMenu onCollapseAll={props.onCollapseAll} onExpandAll={props.onExpandAll} onRefresh={props.onRefresh} />
-        <IconButton label={isExpanded ? "Shrink diff view" : "Expand diff view"} onClick={props.onToggleExpanded}>
-          {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-        </IconButton>
+        {props.onToggleExpanded && (
+          <IconButton label={isExpanded ? "Shrink diff view" : "Expand diff view"} onClick={props.onToggleExpanded}>
+            {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          </IconButton>
+        )}
         <IconButton label="Close diff view" onClick={props.onClose}>
           <X size={14} />
         </IconButton>

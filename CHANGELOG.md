@@ -8,6 +8,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - **The app uses the Mac's system font (SF Pro) for its interface.** Code, commands and paths stay in Geist Mono.
 - **A tidier sidebar.** Each session is two lines: its title, then its agent and what it is doing in words ("Working", "Waiting for you", "Finished, unread", or how long ago it started). Stop and a ⋯ menu with Rename, Pin, Archive and Delete show when you point at a row or tab to it. A folded folder says what its sessions are doing ("1 waiting"), a compare run shows its agents and how far they are, and **Hide sidebar** makes room for the chat (**Show sidebar** brings it back). Your agents and their sign-in state moved into the **Agents** button next to Settings.
+- **One inspector instead of four panels and a drawer.** The top bar's **Inspector** button opens a panel on the right with tabs for Changes, Activity, Files and Terminal; the terminal moved there from the bottom of the window, and its shells keep running when you switch tabs or close the inspector. Drag its left edge (or use the arrow keys) to make it wider or narrower, and Zorvo remembers the width. In a narrow window the sidebar steps aside while it is open.
 - **Notices appear as a card in the bottom right corner** instead of a strip across the top of the chat, so they no longer push the conversation down. A long message wraps inside the card, and **Dismiss notice** closes it as before.
 
 ## [0.8.1] - 2026-11-04

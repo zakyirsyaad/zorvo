@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Bot, Terminal, Users, ListChecks, type LucideIcon } from "lucide-react";
 import { Button } from "../ui/Button";
-import { IconButton } from "../ui/IconButton";
-import { useDismiss } from "../../hooks/useDismiss";
+import { Chip } from "../ui/Chip";
+import { Popover, PopoverHeader } from "../ui/Popover";
 import { formatElapsed, type BackgroundTask, type BackgroundTaskKind } from "../../lib/background-tasks";
 
 export interface BackgroundTasksMenuProps {
@@ -44,11 +44,15 @@ function useNow(isActive: boolean): number {
   return now;
 }
 
+/**
+ * What runs in the background, as a top bar chip ("2 background tasks") that
+ * shows only while something runs; it opens each task with Open and Stop.
+ */
 export function BackgroundTasksMenu({ tasks, isOpen, onOpenChange, onOpenTask, onStopTask }: BackgroundTasksMenuProps) {
-  const ref = useRef<HTMLDivElement>(null);
-  const now = useNow(isOpen);
+  const count = tasks.length;
+  const isShown = isOpen && count > 0;
+  const now = useNow(isShown);
   const [stoppingIds, setStoppingIds] = useState<ReadonlySet<string>>(new Set());
-  useDismiss(ref, isOpen, () => onOpenChange(false));
 
   // A task that is gone is no longer stopping; if it comes back it is a new run.
   useEffect(() => {
@@ -58,6 +62,13 @@ export function BackgroundTasksMenu({ tasks, isOpen, onOpenChange, onOpenTask, o
       return kept.length === current.size ? current : new Set(kept);
     });
   }, [tasks]);
+
+  // With the last task gone the chip goes too, and the next task must not find it open.
+  useEffect(() => {
+    if (isOpen && count === 0) onOpenChange(false);
+  }, [isOpen, count, onOpenChange]);
+
+  if (count === 0) return null;
 
   const stop = (task: BackgroundTask) => {
     setStoppingIds((current) => new Set(current).add(task.id));
@@ -71,74 +82,82 @@ export function BackgroundTasksMenu({ tasks, isOpen, onOpenChange, onOpenTask, o
     });
   };
 
-  const count = tasks.length;
-  const label = count > 0 ? `Background tasks (${count} running)` : "Background tasks";
-
   return (
-    <div ref={ref} className="relative">
-      <IconButton label={label} aria-haspopup="dialog" aria-expanded={isOpen} onClick={() => onOpenChange(!isOpen)} className="relative">
-        <ListChecks size={14} aria-hidden="true" className={isOpen ? "text-fg" : undefined} />
-        {count > 0 && (
-          <span
-            aria-hidden="true"
-            className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-medium text-on-primary"
-          >
-            {count}
-          </span>
-        )}
-      </IconButton>
-
-      {isOpen && (
-        <div role="dialog" aria-label="Background tasks" className="absolute right-0 top-full z-50 mt-1 w-96 rounded-lg border border-border bg-surface-3 p-1 shadow-popover select-text">
-          {count === 0 ? (
-            <p className="px-3 py-4 text-center text-xs text-fg-muted">Nothing running.</p>
-          ) : (
-            <ul aria-label="Running tasks" className="max-h-80 overflow-y-auto">
-              {tasks.map((task) => {
-                const Icon = KIND_ICONS[task.kind];
-                const isStopping = stoppingIds.has(task.id);
-                return (
-                  <li key={task.id} className="flex items-center gap-2.5 rounded-md px-2 py-2">
-                    <Icon size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-medium text-fg" title={task.name}>
-                        {task.name}
-                      </p>
-                      <p className="flex items-center gap-1.5 text-[11px] text-fg-subtle">
-                        <span className={STATUS_CLASSES[task.status]}>{task.status}</span>
-                        <span className="tabular-nums">{formatElapsed(now - task.startedAt)}</span>
-                      </p>
-                      {task.detail && <p className="truncate text-[11px] text-fg-subtle" title={task.detail}>{task.detail}</p>}
-                    </div>
-                    <Button
-                      variant="outline"
-                      aria-label={`Open ${task.name}`}
-                      className="shrink-0"
-                      onClick={() => {
-                        onOpenTask(task);
-                        onOpenChange(false);
-                      }}
-                    >
-                      Open
-                    </Button>
-                    {(task.kind === "agent" || task.pid !== undefined) && (
-                      <Button
-                        variant="outline"
-                        aria-label={`Stop ${task.name}`}
-                        className="shrink-0"
-                        disabled={isStopping}
-                        onClick={() => stop(task)}
-                      >
-                        {isStopping ? "Stopping…" : "Stop"}
-                      </Button>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      )}
-    </div>
+    <Popover
+      isOpen={isShown}
+      onClose={() => onOpenChange(false)}
+      label="Background tasks"
+      role="dialog"
+      align="end"
+      className="w-96 select-text"
+      trigger={
+        <Chip
+          icon={<ListChecks size={12} />}
+          aria-haspopup="dialog"
+          aria-expanded={isShown}
+          onClick={() => onOpenChange(!isOpen)}
+        >
+          {count} {count === 1 ? "background task" : "background tasks"}
+        </Chip>
+      }
+    >
+      <PopoverHeader>Background tasks · {count} running</PopoverHeader>
+      <ul aria-label="Running tasks" className="max-h-80 overflow-y-auto">
+        {tasks.map((task) => {
+          const Icon = KIND_ICONS[task.kind];
+          const isStopping = stoppingIds.has(task.id);
+          const canOpen = task.kind === "agent" || task.kind === "subagent";
+          return (
+            <li key={task.id} className="flex items-center gap-2.5 rounded px-2 py-2">
+              <Icon size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
+              <div className="min-w-0 flex-1">
+                <p
+                  className={`truncate text-ui font-medium text-fg ${task.kind === "shell" ? "font-mono" : ""}`}
+                  title={task.name}
+                >
+                  {task.name}
+                </p>
+                {task.detail && (
+                  <p className="truncate text-caption text-fg-muted" title={task.detail}>
+                    {task.detail}
+                  </p>
+                )}
+                <p className="flex items-center gap-1.5 text-caption text-fg-muted">
+                  <span className={STATUS_CLASSES[task.status]}>{task.status}</span>
+                  <span className="tabular-nums">{formatElapsed(now - task.startedAt)}</span>
+                </p>
+              </div>
+              {canOpen && (
+                <Button
+                  variant="outline"
+                  aria-label={`Open ${task.name}`}
+                  className="shrink-0"
+                  onClick={() => {
+                    onOpenTask(task);
+                    onOpenChange(false);
+                  }}
+                >
+                  Open
+                </Button>
+              )}
+              {(task.kind === "agent" || task.pid !== undefined) && (
+                <Button
+                  variant="outline"
+                  aria-label={`Stop ${task.name}`}
+                  className="shrink-0"
+                  disabled={isStopping}
+                  onClick={() => stop(task)}
+                >
+                  {isStopping ? "Stopping…" : "Stop"}
+                </Button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="border-t border-border px-2 pt-1.5 text-caption text-fg-muted">
+        Tasks keep running when you switch sessions.
+      </p>
+    </Popover>
   );
 }

@@ -452,6 +452,20 @@ describe("ACP sessions in the app", () => {
     expect(callsTo(spy, "acp_cancel")).toHaveLength(1);
   });
 
+  it("offers no Archive in the top bar's menu while the agent works, as the sidebar does", async () => {
+    const spy = await renderWithQwen();
+    await startQwenSession(spy);
+    await send("clean up");
+
+    await act(async () => {
+      fireEvent.click(within(screen.getAllByRole("banner")[0]).getByRole("button", { name: "More options" }));
+    });
+
+    // Archiving ends the agent, so it waits until the turn is over.
+    expect(screen.queryByRole("menuitem", { name: "Archive" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Rename" })).toBeDefined();
+  });
+
   it("stops an agent waiting for approval from the background tasks menu through the interrupt path", async () => {
     const spy = await renderWithQwen();
     const sessionId = await startQwenSession(spy);
@@ -465,7 +479,7 @@ describe("ACP sessions in the app", () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /^Background tasks/ }));
+      fireEvent.click(screen.getByRole("button", { name: /^\d+ background tasks?$/ }));
     });
     const list = screen.getByRole("list", { name: "Running tasks" });
     await act(async () => {

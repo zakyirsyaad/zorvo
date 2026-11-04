@@ -18,9 +18,10 @@ export interface InspectorState {
   close: () => void;
   /** Whether the diff view shows; it takes the inspector's place, so opening one closes the other. */
   isDiffOpen: boolean;
-  /** Whether the open diff view takes the chat's place, in the folder it was expanded in; it opens beside the chat each time. */
+  /** Whether the open diff view takes the chat's place, in the view it opened in; it opens that way each time. */
   isDiffExpanded: boolean;
-  openDiff: () => void;
+  /** Opens the full review in the chat's place of `forView` (what will be on screen), else of the view on screen now. */
+  openDiff: (forView?: string) => void;
   closeDiff: () => void;
   toggleDiffExpanded: () => void;
   /** Brings the diff view back beside the chat, where the composer shows. */
@@ -42,6 +43,11 @@ export interface InspectorLayout {
   isSidebarShown: boolean;
   /** The tabs that apply now; a tab outside them does not show, though it stays the tab. */
   offered: readonly InspectorTab[];
+  /**
+   * What is on screen (a session's id, a run's, a draft's with its folder): the review
+   * takes the chat's place only in the view it opened in, so another one shows its own chat.
+   */
+  view: string;
   /** Called when the inspector shows wider than before in a window too narrow for the sidebar beside it. */
   onCrowded: () => void;
   /** Called whenever a tab shows, in the click that shows it (the Terminal tab starts its first shell there). */
@@ -62,8 +68,8 @@ export function useInspector(
   const [tab, setTab] = useState<InspectorTab | null>(null);
   const [lastTab, setLastTab] = useState<InspectorTab | null>(null);
   const [isDiffOpen, setDiffOpen] = useState(false);
-  // The folder whose diff takes the chat's place, so another folder's diff opens beside its chat.
-  const [expandedFolder, setExpandedFolder] = useState<string | null>(null);
+  // The view whose chat the review takes the place of; any other view shows its chat, the diff beside it.
+  const [expandedView, setExpandedView] = useState<string | null>(null);
   const [width, setWidth] = useInspectorWidth();
   const changes = useSessionChanges(folderPath, isRepository, turnsEnded, onError);
   const { stats: headStats, hasFailed: headStatsFailed } = useDiffStats(folderPath, isRepository, "head", changes.version, onError);
@@ -72,8 +78,7 @@ export function useInspector(
 
   const closeDiff = () => {
     setDiffOpen(false);
-    // It opens beside the chat again next time.
-    setExpandedFolder(null);
+    setExpandedView(null);
   };
 
   const show = (next: InspectorTab) => {
@@ -102,14 +107,16 @@ export function useInspector(
     if (next) show(next);
   };
 
-  const openDiff = () => {
+  const openDiff = (forView?: string) => {
     // Asking for the diff again reads it afresh even while it is open.
     changes.reload();
     setDiffOpen(true);
+    // The full review opens in the chat's place; Shrink, or Add to message, brings it beside the chat.
+    setExpandedView(forView ?? layout.view);
     setTab(null);
   };
 
-  const isExpandedHere = folderPath !== undefined && expandedFolder === folderPath;
+  const isExpandedHere = expandedView === layout.view;
 
   return {
     tab,
@@ -120,8 +127,8 @@ export function useInspector(
     isDiffExpanded: isDiffOpen && isExpandedHere,
     openDiff,
     closeDiff,
-    toggleDiffExpanded: () => setExpandedFolder(isExpandedHere ? null : (folderPath ?? null)),
-    collapseDiff: () => setExpandedFolder(null),
+    toggleDiffExpanded: () => setExpandedView(isExpandedHere ? null : layout.view),
+    collapseDiff: () => setExpandedView(null),
     width,
     setWidth,
     changes,

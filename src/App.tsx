@@ -146,6 +146,8 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [isSidebarHidden, setSidebarHidden] = useState(false);
   const composerRef = useRef<ComposerHandle>(null);
+  // The top bar's Inspector button: focus goes back to it when the inspector closes from its own button.
+  const inspectorButtonRef = useRef<HTMLButtonElement>(null);
 
   const reportError = useCallback((message: string) => setNotice(message), []);
   const { state, isLoaded, updateState, getState, saveNow } = usePersistedState(reportError);
@@ -459,6 +461,8 @@ export default function App() {
   const inspector = useInspector(filesFolder?.path, isRepository, turnsEnded, reportError, {
     isSidebarShown: !isSidebarHidden,
     offered: inspectorTabs,
+    // What is on screen: the full review takes the chat's place only in the view it opened in.
+    view: activeSession ? activeSession.id : activeRun ? `run:${activeRun.id}` : `draft:${filesFolder?.path ?? ""}`,
     onCrowded: () => setSidebarHidden(true),
     // The Terminal tab starts the folder's first shell in the click that shows it.
     onShow: (tab) => {
@@ -781,6 +785,8 @@ export default function App() {
     // A notification that cannot be shown is not worth an error banner: the panel has it all.
     notifyRun: (notice) => void notifyIfAway(notice).catch(() => {}),
   });
+  // The session on screen when it is not in a compare run (a run's sessions share one title, as the sidebar's menu has it).
+  const sessionOfItsOwn = activeSession && !compareRun.isInRun(activeSession.id) ? activeSession : undefined;
   // However a session comes on screen, its refusal is taken up there: only now does its composer show.
   const { takeSignIn } = compareRun;
   const refusedHere = compareRun.signInNeeded.get(activeSessionId);
@@ -898,9 +904,18 @@ export default function App() {
     <main className="flex h-screen w-screen flex-col bg-bg text-fg-secondary">
       <TopBar
         onShowSidebar={isSidebarHidden ? () => setSidebarHidden(false) : undefined}
+        sessionId={activeSession?.id ?? activeRun?.id}
         sessionName={activeSession?.name ?? activeRun?.name}
+        // A run's sessions share one title, so only a session of its own is renamed or archived here.
+        onRename={sessionOfItsOwn ? (name) => sessionActions.renameSession(sessionOfItsOwn.id, name) : undefined}
+        // Archiving ends the agent, so, as in the sidebar's menu, it waits until the agent is not working.
+        onArchive={
+          sessionOfItsOwn && !isSessionBusy(sessionOfItsOwn.id)
+            ? () => void sessionActions.archiveSession(sessionOfItsOwn.id, true)
+            : undefined
+        }
+        onReveal={shownFolderPath ? () => shell.revealFolder(shownFolderPath) : undefined}
         workspaceName={activeSession ? folderNameOf(workspacePathOf(activeSession)) : activeWorkspace?.name}
-        workspacePath={shownFolderPath}
         branch={workspaceDetails?.branch ?? undefined}
         pullRequest={pullRequest}
         onOpenPullRequest={openPullRequest}
@@ -910,12 +925,12 @@ export default function App() {
         onForward={() => navigateTo(navigation.forward())}
         onToggleInspector={inspectorTabs.length > 0 ? () => inspector.toggle(inspectorTabs) : undefined}
         isInspectorOpen={inspectorTab !== null}
+        inspectorButtonRef={inspectorButtonRef}
         diffStats={diffStats}
         isDiffAlwaysShown={Boolean(startCommit) || reviewComments.comments.length > 0}
         diffCommentCount={unsentCommentCount}
-        onOpenDiff={inspectorTabs.includes("changes") ? inspector.openDiff : undefined}
+        onOpenDiff={inspectorTabs.includes("changes") ? () => inspector.openDiff() : undefined}
         onPopout={activeSession ? () => shell.popout(activeSession.id) : undefined}
-        onOpenSettings={() => setSettingsTab("general")}
         backgroundTasks={{
           tasks: backgroundTasks.tasks,
           isOpen: backgroundTasks.isMenuOpen,
@@ -924,6 +939,7 @@ export default function App() {
           onStopTask: backgroundTasks.stop,
         }}
         plan={sessionPlan}
+        planSource={activeAgent?.name}
       />
 
       <section className="flex flex-1 overflow-hidden">
@@ -1022,7 +1038,8 @@ export default function App() {
                   onOpen={handleSelectSession}
                   onReview={(sessionId) => {
                     handleSelectSession(sessionId);
-                    inspector.openDiff();
+                    // The review is for the session that comes on screen, not for the run's panel.
+                    inspector.openDiff(sessionId);
                   }}
                   onChoose={chooseOption}
                   onPick={(winnerId) => compareRun.pick(activeRun, winnerId)}
@@ -1188,7 +1205,10 @@ export default function App() {
                 counts={{ changes: inspector.changes.changes?.length }}
                 onSelect={inspector.show}
                 onResize={inspector.setWidth}
-                onClose={inspector.close}
+                onClose={() => {
+                  inspector.close();
+                  inspectorButtonRef.current?.focus();
+                }}
               >
                 {inspectorTab === "changes" && filesFolder && (
                   <ChangesPanel
@@ -1204,7 +1224,7 @@ export default function App() {
                     githubProblem={githubProblem}
                     onOpenGithubSettings={() => setSettingsTab("general")}
                     diffStats={diffStats}
-                    onOpenDiff={inspector.openDiff}
+                    onOpenDiff={() => inspector.openDiff()}
                   />
                 )}
                 {inspectorTab === "activity" && activeSession && (
@@ -1219,7 +1239,7 @@ export default function App() {
                     headStats={inspector.headStats}
                     headStatsFailed={inspector.headStatsFailed}
                     onJump={(messageId) => setChatJump((prev) => ({ messageId, nonce: (prev?.nonce ?? 0) + 1 }))}
-                    onOpenDiff={inspector.openDiff}
+                    onOpenDiff={() => inspector.openDiff()}
                   />
                 )}
                 {inspectorTab === "files" && filesFolder && (

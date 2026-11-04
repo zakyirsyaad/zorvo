@@ -45,6 +45,9 @@ export function Popover({
   useEffect(() => {
     if (isOpen || !hasFocusInside.current) return;
     hasFocusInside.current = false;
+    // Only focus that the closing lost goes back: a choice that moved it (a rename field) keeps it.
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
     triggerRef.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
   }, [isOpen]);
 

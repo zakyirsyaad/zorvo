@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { ChevronDown, Maximize2, Minimize2, MoreHorizontal, Search, X } from "lucide-react";
 import { IconButton } from "../ui/IconButton";
 import { useDismiss } from "../../hooks/useDismiss";
-import { targetLabel, type DiffTargetId, type DiffTargets } from "../../lib/diff-stats";
+import { formatLineCount, MINUS, targetLabel, type DiffTargetId, type DiffTargets } from "../../lib/diff-stats";
 
 const POPOVER = "absolute top-full mt-1 rounded-lg border border-border bg-surface-3 p-1 shadow-popover z-50";
 const POPOVER_ITEM =
@@ -118,6 +118,8 @@ export interface DiffViewHeaderProps {
   /** Shows the Expand/Shrink button; absent when the view always fills the chat area. */
   onToggleExpanded?: () => void;
   onClose: () => void;
+  /** How many files changed and the lines added and removed, once the list is read. */
+  totals?: { files: number; added: number; removed: number };
 }
 
 /** The diff view's title bar: what is compared, plus search, section controls, expand and close. */
@@ -126,8 +128,20 @@ export function DiffViewHeader(props: DiffViewHeaderProps) {
   return (
     <header className="shrink-0 border-b border-border">
       <div className="flex h-10 items-center gap-1 px-2">
-        <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <TargetPicker target={props.target} targets={props.targets} options={props.options} onSelect={props.onTargetChange} />
+          {props.totals && (
+            <div role="group" aria-label="Diff totals" className="flex shrink-0 items-center gap-1.5 text-caption tabular-nums">
+              <span className="text-fg-muted">
+                {formatLineCount(props.totals.files)} {props.totals.files === 1 ? "file" : "files"}
+              </span>
+              <span className="text-status-running">+{formatLineCount(props.totals.added)}</span>
+              <span className="text-danger">
+                {MINUS}
+                {formatLineCount(props.totals.removed)}
+              </span>
+            </div>
+          )}
         </div>
         <IconButton label="Search files" aria-pressed={isSearching} onClick={props.onToggleSearch}>
           <Search size={14} />

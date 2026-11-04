@@ -499,8 +499,8 @@ describe("Adding comments to the message", () => {
   });
 
   it("add collapses an expanded diff and focuses the composer", async () => {
+    // The review opens in the chat's place.
     await renderDiff([alpha([commentOf()])]);
-    await press("Expand diff view");
     const chat = prompt().closest("article") as HTMLElement;
     expect(chat).toHaveClass("hidden");
     const hiddenAtFocus: boolean[] = [];

@@ -1,39 +1,13 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { GitBranch, Square } from "lucide-react";
 import type { Session } from "../../types";
 import { DOT_CLASS, REVEAL_ON_ROW, rowDetail, rowSubtitle, statusOf } from "../../lib/sidebar-status";
 import { IconButton } from "../ui/IconButton";
+import { RenameField } from "../ui/RenameField";
 import type { SessionListContext } from "./SessionList";
 import { SessionMenu } from "./SessionMenu";
 
 const ACTIONS = `absolute inset-y-0 right-1 flex items-center gap-0.5 rounded-md bg-surface-hover pl-1 ${REVEAL_ON_ROW}`;
-
-/** The name field a session's row turns into while it is renamed. */
-function RenameField({ session, onDone }: { session: Session; onDone: (name: string | null) => void }) {
-  const [name, setName] = useState(session.name);
-  // Enter, Escape and the blur that follows them finish once.
-  const isDoneRef = useRef(false);
-  const finish = (value: string | null) => {
-    if (isDoneRef.current) return;
-    isDoneRef.current = true;
-    onDone(value);
-  };
-  return (
-    <input
-      autoFocus
-      onFocus={(e) => e.target.select()}
-      value={name}
-      onChange={(e) => setName(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") finish(name);
-        if (e.key === "Escape") finish(null);
-      }}
-      onBlur={() => finish(name)}
-      aria-label={`Rename ${session.name}`}
-      className="mx-1 min-w-0 flex-1 rounded border border-border-strong bg-surface-2 px-1.5 py-1 text-ui text-fg focus-ring"
-    />
-  );
-}
 
 export interface SessionRowProps {
   session: Session;
@@ -61,7 +35,9 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
     return (
       <div className="flex h-11 items-center">
         <RenameField
-          session={session}
+          value={session.name}
+          label={`Rename ${session.name}`}
+          className="mx-1"
           onDone={(name) => {
             setIsRenaming(false);
             const trimmed = name?.trim();

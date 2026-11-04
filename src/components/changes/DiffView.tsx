@@ -1,5 +1,6 @@
-import { useId, useMemo, useRef, useState } from "react";
-import { DiffFileSection } from "./DiffFileSection";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { DiffFileList } from "./DiffFileList";
+import { DiffFileSection, diffSectionId } from "./DiffFileSection";
 import { DiffViewHeader } from "./DiffViewHeader";
 import type { CommentAdder, FileReview } from "./LineComment";
 import { ReviewCommentsBar } from "./ReviewCommentsBar";
@@ -155,6 +156,28 @@ export function DiffView({
     setIsSearching(!isSearching);
   };
   const noChanges = noChangesText(target, targets.base?.name);
+  const totals = useMemo(
+    () =>
+      stats && stats.length > 0
+        ? {
+            files: stats.length,
+            added: stats.reduce((sum, s) => sum + s.added, 0),
+            removed: stats.reduce((sum, s) => sum + s.removed, 0),
+          }
+        : undefined,
+    [stats],
+  );
+  // A file chosen in the list opens, and is scrolled to once its section has rendered open.
+  const [scrollTarget, setScrollTarget] = useState<string | null>(null);
+  const selectFile = (path: string) => {
+    setOpenPaths((prev) => (prev.has(path) ? prev : new Set(prev).add(path)));
+    setScrollTarget(path);
+  };
+  useEffect(() => {
+    if (scrollTarget === null) return;
+    document.getElementById(diffSectionId(rootPath, scrollTarget))?.scrollIntoView?.({ block: "start" });
+    setScrollTarget(null);
+  }, [scrollTarget, rootPath]);
 
   return (
     <aside
@@ -178,22 +201,14 @@ export function DiffView({
         isExpanded={isExpanded}
         onToggleExpanded={onToggleExpanded}
         onClose={onClose}
+        totals={totals}
       />
-      {review && (
-        <ReviewCommentsBar
-          review={review}
-          adder={adder}
-          checked={checked}
-          target={target}
-          targets={targets}
-          options={options}
-          reads={reads}
-          listed={stats}
-          onTargetChange={setChosen}
-          onFocusLost={focusPanel}
-        />
-      )}
-      <div className="min-h-0 flex-1 overflow-y-auto p-2 text-xs">
+      <div className="flex min-h-0 flex-1">
+        {isExpanded && stats && stats.length > 0 && <DiffFileList stats={visible} onSelect={selectFile} />}
+        <div className="min-h-0 flex-1 overflow-y-auto p-2 text-xs">
+        {review && stats && stats.length > 0 && (
+          <p className="px-1.5 pb-1.5 text-caption text-fg-muted">Click a line number to comment</p>
+        )}
         {stats === null ? (
           <p className="px-2 py-3 text-fg-subtle">Reading the changes…</p>
         ) : stats.length === 0 ? (
@@ -215,7 +230,22 @@ export function DiffView({
             />
           ))
         )}
+        </div>
       </div>
+      {review && (
+        <ReviewCommentsBar
+          review={review}
+          adder={adder}
+          checked={checked}
+          target={target}
+          targets={targets}
+          options={options}
+          reads={reads}
+          listed={stats}
+          onTargetChange={setChosen}
+          onFocusLost={focusPanel}
+        />
+      )}
     </aside>
   );
 }

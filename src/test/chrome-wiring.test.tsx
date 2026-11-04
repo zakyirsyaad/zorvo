@@ -40,6 +40,18 @@ function header() {
 describe("Window chrome wiring", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it("renames a run's picked session from the top bar, which is a session of its own again", async () => {
+    // A run with one listed session left is no run: its winner keeps the id.
+    fakeStore().state.sessions = [
+      { id: "s-w", name: "Fix the parser", profileId: "claude-code", cwd: "/Users/test/developer/zorvo", status: "terminated", createdAt: 3, transport: "acp", compareRunId: "run-1" },
+    ];
+    await renderApp();
+
+    await click(header().getByRole("button", { name: "More options" }));
+    expect(screen.getByRole("menuitem", { name: "Rename" })).toBeDefined();
+    expect(screen.getByRole("menuitem", { name: "Archive" })).toBeDefined();
+  });
+
   it("goes back and forward through the sessions the user viewed", async () => {
     seedSessions();
     await renderApp();
@@ -48,6 +60,8 @@ describe("Window chrome wiring", () => {
     await click(sessions.getByText("Alpha work"));
     expect(header().getByText("Alpha work")).toBeDefined();
 
+    // Back and Forward show while the sidebar is hidden.
+    await click(screen.getByRole("button", { name: "Hide sidebar" }));
     await click(header().getByRole("button", { name: "Back" }));
     expect(header().getByText("Beta work")).toBeDefined();
 
@@ -60,8 +74,12 @@ describe("Window chrome wiring", () => {
     await renderApp();
 
     expect(header().getByText("Beta work")).toBeDefined();
-    expect(header().getByText("zorvo")).toBeDefined();
     expect(await header().findByLabelText("Branch main")).toBeDefined();
+    // The folder has no badge any more: Open in Finder shows which one it is.
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    await click(header().getByRole("button", { name: "More options" }));
+    await click(screen.getByRole("menuitem", { name: "Open in Finder" }));
+    expect(spy).toHaveBeenCalledWith("reveal_in_finder", { path: "/Users/test/developer/zorvo" }, undefined);
   });
 
   it("opens the files of the folder the top bar names, which is the open session's", async () => {
@@ -73,7 +91,6 @@ describe("Window chrome wiring", () => {
 
     await openInspectorTab("Files");
 
-    expect(header().getByText("zorvo")).toBeDefined();
     expect(spy).toHaveBeenCalledWith(
       "list_directory",
       expect.objectContaining({ root: "/Users/test/developer/zorvo" }),
@@ -141,7 +158,7 @@ describe("Window chrome wiring", () => {
     expect(reads()).toBeGreaterThan(readsBefore);
   });
 
-  it("hides the chat while the diff view is expanded, and opens it unexpanded next time", async () => {
+  it("opens the diff view in the chat's place each time, and Shrink brings the chat back", async () => {
     seedSessions();
     vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
       if (cmd === "session_diff_stats") return Promise.resolve([{ path: "a.ts", oldPath: null, kind: "modified", added: 4, removed: 1, isBinary: false }]);
@@ -153,14 +170,16 @@ describe("Window chrome wiring", () => {
 
     await click(await header().findByRole("button", { name: /4 lines added, 1 removed/ }));
     const diffView = () => within(screen.getByRole("complementary", { name: "Diff view" }));
-    await click(diffView().getByRole("button", { name: "Expand diff view" }));
+    // The full review opens in the chat's place; Shrink brings the chat back beside it.
     expect(chat().classList.contains("hidden")).toBe(true);
+    await click(diffView().getByRole("button", { name: "Shrink diff view" }));
+    expect(chat().classList.contains("hidden")).toBe(false);
 
     await click(diffView().getByRole("button", { name: "Close diff view" }));
     expect(chat().classList.contains("hidden")).toBe(false);
     await click(header().getByRole("button", { name: /4 lines added, 1 removed/ }));
-    expect(diffView().getByRole("button", { name: "Expand diff view" })).toBeDefined();
-    expect(chat().classList.contains("hidden")).toBe(false);
+    expect(diffView().getByRole("button", { name: "Shrink diff view" })).toBeDefined();
+    expect(chat().classList.contains("hidden")).toBe(true);
   });
 
   it("shows the session's changes in a tab that takes turns with Files", async () => {
@@ -268,12 +287,13 @@ describe("Window chrome wiring", () => {
 
     await click(screen.getByRole("button", { name: "New session" }));
     expect(screen.getByRole("heading", { name: "New session" })).toBeDefined();
+    await click(screen.getByRole("button", { name: "Hide sidebar" }));
     await click(header().getByRole("button", { name: "Back" }));
 
     expect(header().getByText("Alpha work")).toBeDefined();
   });
 
-  it("opens the workspace's files from the folder button, reveals it in Finder, and pops the session out", async () => {
+  it("opens the workspace's files, reveals it in Finder, and pops the session out from the menu", async () => {
     seedSessions();
     const spy = vi.spyOn(tauriInternals(), "invoke");
     await renderApp();
@@ -291,7 +311,8 @@ describe("Window chrome wiring", () => {
     await closeInspector();
     expect(screen.queryByRole("complementary", { name: "Files panel" })).toBeNull();
 
-    await click(header().getByRole("button", { name: "Popout window" }));
+    await click(header().getByRole("button", { name: "More options" }));
+    await click(screen.getByRole("menuitem", { name: "Open in new window" }));
     expect(spy).toHaveBeenCalledWith("open_session_window", { sessionId: "s-b" }, undefined);
   });
 

@@ -8,6 +8,9 @@ export interface ChipProps {
   onClick?: () => void;
   /** The accessible name when the visible text is not enough (the diff chip). */
   label?: string;
+  /** For a chip that opens a popover: what it opens, and whether it is open. */
+  "aria-haspopup"?: "dialog" | "menu";
+  "aria-expanded"?: boolean;
   className?: string;
   children: ReactNode;
 }
@@ -17,7 +20,16 @@ const VARIANTS = { plain: "border-transparent", outline: "border-border" } as co
 const ACTION = "focus-ring transition-colors enabled:hover:bg-surface-hover";
 
 /** A 24px chip for session info and contextual actions in the top bar. */
-export function Chip({ variant = "outline", icon, onClick, label, className, children }: ChipProps) {
+export function Chip({
+  variant = "outline",
+  icon,
+  onClick,
+  label,
+  "aria-haspopup": hasPopup,
+  "aria-expanded": isExpanded,
+  className,
+  children,
+}: ChipProps) {
   const content = (
     <>
       {icon && (
@@ -37,7 +49,14 @@ export function Chip({ variant = "outline", icon, onClick, label, className, chi
     );
   }
   return (
-    <button type="button" className={classes} onClick={onClick} aria-label={label}>
+    <button
+      type="button"
+      className={classes}
+      onClick={onClick}
+      aria-label={label}
+      aria-haspopup={hasPopup}
+      aria-expanded={isExpanded}
+    >
       {content}
     </button>
   );

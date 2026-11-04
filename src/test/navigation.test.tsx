@@ -29,11 +29,12 @@ describe("Navigation and Layout Components", () => {
   ];
 
   describe("TopBar", () => {
-    it("renders the session breadcrumb and workspace badge", () => {
+    it("renders the session title without a folder badge", () => {
       render(<TopBar sessionName="New session (fork)" workspaceName="ai-perpetual-trading" />);
 
       expect(screen.getByText("New session (fork)")).toBeDefined();
-      expect(screen.getByText("ai-perpetual-trading")).toBeDefined();
+      // The spec's top bar has no folder badge: the sidebar groups sessions by folder.
+      expect(screen.queryByText("ai-perpetual-trading")).toBeNull();
     });
   });
 

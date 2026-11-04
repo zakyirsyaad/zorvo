@@ -64,14 +64,25 @@ describe("The inspector in the app", () => {
     expect(inspectorButton()).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("opens the full diff from the diff chip, leaving the inspector as it was", async () => {
+  it("opens the full diff from the diff chip, leaving the inspector closed", async () => {
     seedWithChanges();
     await renderApp();
 
+    // The Changes tab cannot show committed work or comments yet, so the chip opens the review itself.
     await click(await within(screen.getAllByRole("banner")[0]).findByRole("button", { name: /12 lines added, 3 removed/ }));
 
     expect(screen.getByRole("complementary", { name: "Diff view" })).toBeInTheDocument();
     expect(inspector()).toBeNull();
+  });
+
+  it("gives focus back to the Inspector button when it closes from its own button", async () => {
+    seedWithChanges();
+    await renderApp();
+    await openInspectorTab("Files");
+
+    await closeInspector();
+
+    expect(document.activeElement).toBe(inspectorButton());
   });
 
   it("keeps the shell when you leave the Terminal tab or close the inspector", async () => {
@@ -100,7 +111,7 @@ describe("The inspector in the app", () => {
     expect(inspector()).toBeNull();
   });
 
-  it("opens the diff beside the chat in the inspector's place, and Expand takes the chat's place", async () => {
+  it("opens the full review from Changes in the chat's place, and Shrink brings the chat back", async () => {
     seedWithChanges();
     await renderApp();
     await openInspectorTab("Changes");
@@ -111,6 +122,8 @@ describe("The inspector in the app", () => {
     expect(screen.getByRole("complementary", { name: "Diff view" })).toBeInTheDocument();
     expect(inspector()).toBeNull();
     const chat = screen.getByRole("textbox", { name: "Prompt", hidden: true }).closest("article") as HTMLElement;
+    expect(chat.classList.contains("hidden")).toBe(true);
+    await click(screen.getByRole("button", { name: "Shrink diff view" }));
     expect(chat.classList.contains("hidden")).toBe(false);
     await click(screen.getByRole("button", { name: "Expand diff view" }));
     expect(chat.classList.contains("hidden")).toBe(true);
@@ -120,10 +133,29 @@ describe("The inspector in the app", () => {
     expect(chat.classList.contains("hidden")).toBe(false);
   });
 
+  it("shows the chat of another session in the same folder, with the review beside it", async () => {
+    seedWithChanges();
+    fakeStore().state.sessions = [
+      ...(fakeStore().state.sessions ?? []),
+      { id: "s-b", name: "Beta work", profileId: "claude-code", cwd: "/Users/test/developer/zorvo", status: "terminated", createdAt: 2, transport: "acp" },
+    ];
+    await renderApp();
+    await click(screen.getAllByText("Alpha work")[0]);
+    await click(await within(screen.getAllByRole("banner")[0]).findByRole("button", { name: /12 lines added, 3 removed/ }));
+    const chat = () => screen.getByRole("textbox", { name: "Prompt", hidden: true }).closest("article") as HTMLElement;
+    expect(chat().classList.contains("hidden")).toBe(true);
+
+    await click(within(screen.getByRole("list", { name: "Workspaces" })).getByText("Beta work"));
+
+    expect(chat().classList.contains("hidden")).toBe(false);
+    expect(screen.getByRole("complementary", { name: "Diff view" })).toBeInTheDocument();
+  });
+
   it("closes the diff when the inspector opens", async () => {
     seedWithChanges();
     await renderApp();
-    await click(await within(screen.getAllByRole("banner")[0]).findByRole("button", { name: /12 lines added, 3 removed/ }));
+    await openInspectorTab("Changes");
+    await click(await within(inspector() as HTMLElement).findByRole("button", { name: /Open the diff/ }));
     expect(screen.getByRole("complementary", { name: "Diff view" })).toBeInTheDocument();
 
     await click(inspectorButton());

@@ -400,7 +400,7 @@ describe("ACP sessions in the app", () => {
 
     const reply = screen.getByText("Here is the plan").closest("[data-testid^='chat-message-']") as HTMLElement;
     await act(async () => {
-      fireEvent.click(within(reply).getByRole("button", { name: "Fork branch" }));
+      fireEvent.click(within(reply).getByRole("button", { name: "Fork from here" }));
     });
 
     const [, forkArgs] = callsTo(spy, "acp_fork_session")[0];
@@ -1085,7 +1085,7 @@ describe("ACP sessions in the app", () => {
 
     const reply = screen.getByText("Here is the plan").closest("[data-testid^='chat-message-']") as HTMLElement;
     await act(async () => {
-      fireEvent.click(within(reply).getByRole("button", { name: "Fork branch" }));
+      fireEvent.click(within(reply).getByRole("button", { name: "Fork from here" }));
     });
 
     await waitFor(() => expect(callsTo(spy, "write_fork_handoff")).toHaveLength(1));

@@ -1,9 +1,9 @@
 import { Copy, Check, GitBranch, Volume2, Square } from "lucide-react";
+import { IconButton } from "./ui/IconButton";
+import { REVEAL_ON_ROW } from "../lib/sidebar-status";
 
 export interface MessageActionBarProps {
   copied: boolean;
-  /** Undefined for a replayed message, whose time the agent did not report. */
-  timeLabel?: string;
   onCopy: () => void;
   /** Fork is offered only when the host app can fork a session. */
   onFork?: () => void;
@@ -11,68 +11,30 @@ export interface MessageActionBarProps {
   readAloud?: { speaking: boolean; onToggle: () => void };
 }
 
-const ACTION_BUTTON_CLASS =
-  "flex items-center gap-1 hover:text-fg-secondary transition-colors";
-
-/** Copy / Fork / Read aloud controls and the timestamp under an agent message. */
-export function MessageActionBar({
-  copied,
-  timeLabel,
-  onCopy,
-  onFork,
-  readAloud,
-}: MessageActionBarProps) {
+/**
+ * Copy, Fork from here and Read aloud under an agent message, as icon buttons
+ * that show when you point at the message or tab into it. Its time is in the header.
+ */
+export function MessageActionBar({ copied, onCopy, onFork, readAloud }: MessageActionBarProps) {
   return (
-    <div className="flex items-center gap-3 mt-2 px-1 text-xs text-fg-muted">
-      <button
-        type="button"
-        onClick={onCopy}
-        aria-label="Copy message"
-        className={ACTION_BUTTON_CLASS}
-      >
-        {copied ? (
-          <>
-            <Check className="h-3.5 w-3.5 text-status-running" />
-            <span className="text-status-running">Copied</span>
-          </>
-        ) : (
-          <>
-            <Copy className="h-3.5 w-3.5" />
-            <span>Copy</span>
-          </>
-        )}
-      </button>
-
+    <div data-message-actions="" className={`-ml-1.5 mt-1 flex items-center gap-0.5 ${REVEAL_ON_ROW}`}>
+      <IconButton label={copied ? "Copied" : "Copy message"} onClick={onCopy} aria-label="Copy message">
+        {copied ? <Check size={14} className="text-status-running" /> : <Copy size={14} />}
+      </IconButton>
       {onFork && (
-        <button
-          type="button"
-          onClick={onFork}
-          aria-label="Fork branch"
-          className={ACTION_BUTTON_CLASS}
-        >
-          <GitBranch className="h-3.5 w-3.5" />
-          <span>Fork</span>
-        </button>
+        <IconButton label="Fork from here" onClick={onFork}>
+          <GitBranch size={14} />
+        </IconButton>
       )}
-
       {readAloud && (
-        <button
-          type="button"
+        <IconButton
+          label={readAloud.speaking ? "Stop reading" : "Read aloud"}
           onClick={readAloud.onToggle}
-          aria-label={readAloud.speaking ? "Stop reading" : "Read aloud"}
-          className={`${ACTION_BUTTON_CLASS} ${
-            readAloud.speaking ? "text-fg" : ""
-          }`}
+          className={readAloud.speaking ? "text-fg" : undefined}
         >
-          {readAloud.speaking ? (
-            <Square className="h-3.5 w-3.5" />
-          ) : (
-            <Volume2 className="h-3.5 w-3.5" />
-          )}
-        </button>
+          {readAloud.speaking ? <Square size={14} /> : <Volume2 size={14} />}
+        </IconButton>
       )}
-
-      {timeLabel && <span className="text-fg-muted">{timeLabel}</span>}
     </div>
   );
 }

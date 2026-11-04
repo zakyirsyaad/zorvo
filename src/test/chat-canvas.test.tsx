@@ -239,7 +239,7 @@ All systems ready for compilation.`,
 
     // Message action bar buttons (your messages have a Copy of their own)
     expect(screen.getAllByRole("button", { name: /copy message/i }).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: /fork branch/i })).toBeDefined();
+    expect(screen.getByRole("button", { name: /fork from here/i })).toBeDefined();
     expect(screen.getByRole("button", { name: /read aloud/i })).toBeDefined();
     expect(screen.getAllByText(/ago/i).length).toBeGreaterThan(0);
   });
@@ -274,7 +274,7 @@ All systems ready for compilation.`,
       />
     );
 
-    expect(screen.queryByRole("button", { name: /fork branch/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /fork from here/i })).toBeNull();
   });
 
   it("calls onForkBranch with the agent message id when Fork is clicked", () => {
@@ -287,7 +287,7 @@ All systems ready for compilation.`,
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /fork branch/i }));
+    fireEvent.click(screen.getByRole("button", { name: /fork from here/i }));
 
     expect(onForkBranch).toHaveBeenCalledTimes(1);
     expect(onForkBranch).toHaveBeenCalledWith("msg-2");
@@ -772,11 +772,11 @@ describe("ACP chat content", () => {
 
     const finished = within(screen.getByTestId("chat-message-a-1"));
     expect(finished.getByRole("button", { name: "Copy message" })).toBeDefined();
-    expect(finished.getByRole("button", { name: "Fork branch" })).toBeDefined();
+    expect(finished.getByRole("button", { name: "Fork from here" })).toBeDefined();
 
     const running = within(screen.getByTestId("chat-message-a-2"));
     expect(running.queryByRole("button", { name: "Copy message" })).toBeNull();
-    expect(running.queryByRole("button", { name: "Fork branch" })).toBeNull();
+    expect(running.queryByRole("button", { name: "Fork from here" })).toBeNull();
     expect(running.queryByRole("button", { name: "Read aloud" })).toBeNull();
     // The time is in the reply's header, which shows while the turn runs too.
 
@@ -784,7 +784,7 @@ describe("ACP chat content", () => {
 
     const ended = within(screen.getByTestId("chat-message-a-2"));
     expect(ended.getByRole("button", { name: "Copy message" })).toBeDefined();
-    expect(ended.getByRole("button", { name: "Fork branch" })).toBeDefined();
+    expect(ended.getByRole("button", { name: "Fork from here" })).toBeDefined();
   });
 
   it("keeps reply actions off a turn that waits for a permission answer", () => {
@@ -1095,6 +1095,25 @@ describe("ChatCanvas: the two kinds of message", () => {
     const header = screen.getByTestId("chat-message-a-1").querySelector("[data-message-header]") as HTMLElement;
     expect(within(header).getByText("Codex")).toBeDefined();
     expect(within(header).getByText("2 minutes ago")).toBeDefined();
+  });
+
+  it("reveals a message's actions on hover or keyboard focus", () => {
+    render(<ChatCanvas messages={messages} agentName="Codex" onForkBranch={() => {}} onRewind={() => {}} />);
+    for (const id of ["chat-message-a-1", "chat-message-u-1"]) {
+      const root = screen.getByTestId(id);
+      expect(root.classList.contains("group")).toBe(true);
+      const actions = within(root).getByRole("button", { name: "Copy message" }).closest("[data-message-actions]") as HTMLElement;
+      expect(actions.className).toContain("group-hover:opacity-100");
+      expect(actions.className).toContain("group-focus-within:opacity-100");
+    }
+    // Your message's time is not an action: it stays on screen.
+    const time = within(screen.getByTestId("chat-message-u-1")).getByText("5 minutes ago");
+    expect(time.closest("[data-message-actions]")).toBeNull();
+  });
+
+  it("offers Fork from here on the agent's message", () => {
+    render(<ChatCanvas messages={messages} agentName="Codex" onForkBranch={() => {}} />);
+    expect(within(screen.getByTestId("chat-message-a-1")).getByRole("button", { name: "Fork from here" })).toBeDefined();
   });
 
   it("leaves the time out of a replayed message's header", () => {

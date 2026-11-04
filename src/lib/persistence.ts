@@ -264,8 +264,9 @@ export async function loadTranscript(sessionId: string): Promise<ChatMessage[]> 
   return settlePermissionCards(markElicitationsUnanswered(normalizeTranscript(messages)));
 }
 
-export function saveTranscript(sessionId: string, messages: ChatMessage[]): Promise<void> {
-  return invoke('save_transcript', { sessionId, messages });
+/** Resolves with the size the backend wrote, in bytes. */
+export function saveTranscript(sessionId: string, messages: ChatMessage[]): Promise<unknown> {
+  return invoke<unknown>('save_transcript', { sessionId, messages });
 }
 
 export function deleteTranscript(sessionId: string): Promise<void> {

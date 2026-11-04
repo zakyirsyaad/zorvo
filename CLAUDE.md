@@ -80,7 +80,7 @@ The Rust ACP tests spawn `src-tauri/tests/fixtures/fake_acp_agent.mjs` with Node
 
 **Environment.** A Finder-launched app has no shell PATH, so `env_resolver.rs` reads the user's login-shell environment once (warmed at startup) and every spawn uses it. `get_agent_profiles(refresh: true)` re-reads it (with the registry and `npm`), and `refresh_login_env` re-reads only it, for the sign-in checks.
 
-**Persistence.** `store.rs` writes `state.json` and `transcripts/<id>.json` atomically under `~/Library/Application Support/xyz.zorvo.desktop/`. Frontend validation/normalization of loaded state is in `src/lib/persistence.ts` (`STATE_VERSION`); `data_migration.rs` copies data once from the old `com.agentdesktop.app` folder. On load the UI calls `end_orphaned_sessions`, because a webview reload leaves backend agents running that the new UI does not know.
+**Persistence.** `store.rs` writes `state.json` and `transcripts/<id>.json` atomically under `~/Library/Application Support/xyz.zorvo.desktop/`. Each transcript write is the whole file, so `useTranscripts` spaces them by the size `save_transcript` returns (`transcriptSaveInterval`: 1 s up to 128 KiB, then about 128 KiB a second, at most 30 s apart). Frontend validation/normalization of loaded state is in `src/lib/persistence.ts` (`STATE_VERSION`); `data_migration.rs` copies data once from the old `com.agentdesktop.app` folder. On load the UI calls `end_orphaned_sessions`, because a webview reload leaves backend agents running that the new UI does not know.
 
 **Path checks.** Every backend command that reads or runs in a folder from the UI must first call `files::ensure_known_workspace` (canonicalized, checked against the store's known workspaces). Follow this in any new command.
 

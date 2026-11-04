@@ -286,6 +286,23 @@ fn a_state_file_missing_optional_sections_still_loads() {
 }
 
 #[test]
+fn save_transcript_reports_the_bytes_it_wrote() {
+    let root = unique_temp_root("transcript-size");
+    let store = AppStore::new(root.clone());
+    let messages = vec![json!({ "role": "user", "content": "fix the parser" })];
+
+    let written = store
+        .save_transcript("s-1", &messages)
+        .expect("save transcript");
+
+    let on_disk = fs::metadata(root.join("transcripts").join("s-1.json"))
+        .expect("transcript file")
+        .len();
+    assert_eq!(written as u64, on_disk);
+    fs::remove_dir_all(&root).expect("remove temp root");
+}
+
+#[test]
 fn transcripts_round_trip_and_delete_idempotently() {
     let root = unique_temp_root("transcripts");
     let store = AppStore::new(root.clone());

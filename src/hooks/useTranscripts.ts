@@ -11,6 +11,21 @@ type Transcripts = Record<string, ChatMessage[]>;
  * transcript is written at most this often, and still during a long stream.
  */
 const TRANSCRIPT_SAVE_INTERVAL_MS = 1000;
+/**
+ * Every write is the whole file, so a long session waits longer between writes: about this
+ * many bytes a second while it streams. A 7 MB session written every second came to 2 GB in
+ * 20 minutes.
+ */
+const TRANSCRIPT_WRITE_BYTES_PER_SECOND = 128 * 1024;
+/** The longest wait, so a crash loses at most this much of a long session's stream. */
+const TRANSCRIPT_MAX_SAVE_INTERVAL_MS = 30_000;
+
+/** How long to wait before the next write of a transcript whose last write was `bytes` long. */
+export function transcriptSaveInterval(bytes: number | undefined): number {
+  if (bytes === undefined || !Number.isFinite(bytes) || bytes <= 0) return TRANSCRIPT_SAVE_INTERVAL_MS;
+  const paced = Math.ceil((bytes / TRANSCRIPT_WRITE_BYTES_PER_SECOND) * 1000);
+  return Math.min(TRANSCRIPT_MAX_SAVE_INTERVAL_MS, Math.max(TRANSCRIPT_SAVE_INTERVAL_MS, paced));
+}
 
 export interface TranscriptsHandle {
   transcripts: Transcripts;
@@ -30,7 +45,8 @@ function omitKey(record: Transcripts, key: string): Transcripts {
 
 /**
  * Chat messages per session: loaded lazily from disk the first time a session
- * is shown, and saved per session at most once per interval while it changes.
+ * is shown, and saved per session at most once per interval while it changes,
+ * an interval that grows with the transcript's size.
  */
 export function useTranscripts(onError: (message: string) => void): TranscriptsHandle {
   const [transcripts, setTranscripts] = useState<Transcripts>({});
@@ -57,6 +73,8 @@ export function useTranscripts(onError: (message: string) => void): TranscriptsH
   // How many writes each session has started, so that only the latest one decides whether the
   // session counts as unwritten (an older write that ends late must not clear a newer failure).
   const writeCountRef = useRef(new Map<string, number>());
+  // The size of each session's last write, in bytes, which spaces out its next one.
+  const writtenSizeRef = useRef(new Map<string, number>());
 
   /** Writes the transcript now (never an unreadable one) and rejects when the write fails. */
   const write = useCallback(
@@ -64,7 +82,9 @@ export function useTranscripts(onError: (message: string) => void): TranscriptsH
       if (unreadableRef.current.has(sessionId)) return Promise.resolve();
       const count = (writeCountRef.current.get(sessionId) ?? 0) + 1;
       writeCountRef.current.set(sessionId, count);
-      const writing = saveTranscript(sessionId, transcriptsRef.current[sessionId] ?? []);
+      const writing = saveTranscript(sessionId, transcriptsRef.current[sessionId] ?? []).then((bytes) => {
+        if (typeof bytes === 'number') writtenSizeRef.current.set(sessionId, bytes);
+      });
       writesRef.current.add(writing);
       const settle = (written: boolean) => {
         writesRef.current.delete(writing);
@@ -94,7 +114,10 @@ export function useTranscripts(onError: (message: string) => void): TranscriptsH
     [write, onErrorRef],
   );
 
-  /** A throttle, not a debounce: a save already due writes the latest messages, so it is not pushed back. */
+  /**
+   * A throttle, not a debounce: a save already due writes the latest messages, so it is not pushed
+   * back. The wait grows with the size of the last write (`transcriptSaveInterval`).
+   */
   const scheduleSave = useCallback(
     (sessionId: string) => {
       const timers = timersRef.current;
@@ -104,7 +127,7 @@ export function useTranscripts(onError: (message: string) => void): TranscriptsH
         setTimeout(() => {
           timers.delete(sessionId);
           save(sessionId);
-        }, TRANSCRIPT_SAVE_INTERVAL_MS),
+        }, transcriptSaveInterval(writtenSizeRef.current.get(sessionId))),
       );
     },
     [save],
@@ -189,6 +212,7 @@ export function useTranscripts(onError: (message: string) => void): TranscriptsH
       timersRef.current.delete(sessionId);
       unwrittenRef.current.delete(sessionId);
       writeCountRef.current.delete(sessionId);
+      writtenSizeRef.current.delete(sessionId);
       requestedRef.current.delete(sessionId);
       setTranscripts((prev) => omitKey(prev, sessionId));
       deleteTranscript(sessionId).catch((error) => {

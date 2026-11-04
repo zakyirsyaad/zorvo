@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- **A long session no longer rewrites its whole conversation every second.** Zorvo saved a session's conversation in full once a second while an agent worked, so a session with a few megabytes of tool output wrote gigabytes to disk in an hour and could slow the window down. A large conversation is now saved less often, the larger it is the longer the wait, never more than 30 seconds apart; a small one is still saved every second, and everything is still saved when Zorvo closes.
+
 ## [0.8.0] - 2026-11-04
 
 ### Added

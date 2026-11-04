@@ -2,7 +2,8 @@ import "@testing-library/jest-dom/vitest";
 import { useState, type ReactNode } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Popover, PopoverHeader, PopoverOption } from "../components/ui/Popover";
+import { Popover, PopoverHeader, PopoverList, PopoverOption } from "../components/ui/Popover";
+import { Highlighted } from "../components/ui/Highlighted";
 import { Toast, ToastStack } from "../components/ui/Toast";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
@@ -414,6 +415,47 @@ describe("Popover", () => {
     open();
     fireEvent.click(screen.getByRole("menuitem", { name: "Plan" }));
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("makes radio items of a menu's options, checked when selected", () => {
+    render(
+      <Harness>
+        <PopoverOption isRadio selected onSelect={() => {}}>
+          High
+        </PopoverOption>
+        <PopoverOption isRadio onSelect={() => {}}>
+          Low
+        </PopoverOption>
+      </Harness>,
+    );
+    open();
+    expect(screen.getByRole("menuitemradio", { checked: true })).toHaveTextContent("High");
+    expect(screen.getByRole("menuitemradio", { checked: false })).toHaveTextContent("Low");
+  });
+
+  it("holds a listbox of options inside a dialog, beside a search field", () => {
+    render(
+      <Harness role="dialog">
+        <input aria-label="Search models" />
+        <PopoverList label="Models">
+          <PopoverOption selected onSelect={() => {}}>
+            Sonnet
+          </PopoverOption>
+        </PopoverList>
+      </Harness>,
+    );
+    open();
+    const list = screen.getByRole("listbox", { name: "Models" });
+    expect(screen.getByRole("dialog", { name: "Mode menu" })).toContainElement(list);
+    expect(screen.getByRole("option", { name: "Sonnet" })).toHaveAttribute("aria-selected", "true");
+  });
+});
+
+describe("Highlighted", () => {
+  it("marks every match of the query, in any case", () => {
+    const { container } = render(<Highlighted text="ReadMe me.md" query="ME" />);
+    expect([...container.querySelectorAll("mark")].map((mark) => mark.textContent)).toEqual(["Me", "me"]);
+    expect(container).toHaveTextContent("ReadMe me.md");
   });
 });
 

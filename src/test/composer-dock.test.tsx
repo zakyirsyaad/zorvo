@@ -160,6 +160,42 @@ describe("ComposerDock", () => {
 
       expect(screen.queryByRole("button", { name: "Stop agent" })).toBeNull();
     });
+
+    it("draws Stop as an outline, since Send is the view's one primary", () => {
+      render(<ComposerDock isThinking onStop={() => {}} onSendMessage={() => {}} />);
+
+      const stop = screen.getByRole("button", { name: "Stop agent" });
+      expect(stop).toHaveClass("border");
+      expect(stop).not.toHaveClass("bg-primary");
+    });
+  });
+
+  describe("the card", () => {
+    it("writes the prompt in body text and the note in caption text", () => {
+      render(<ComposerDock note="Loading Codex's models…" onSendMessage={() => {}} />);
+
+      expect(screen.getByRole("textbox", { name: "Prompt" })).toHaveClass("text-body");
+      expect(screen.getByText("Loading Codex's models…")).toHaveClass("text-caption");
+    });
+
+    it("words Send with sendLabel, as a text button that sends", () => {
+      const onSendMessage = vi.fn();
+      render(<ComposerDock sendLabel="Start 2 sessions" onSendMessage={onSendMessage} />);
+
+      expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
+      const start = screen.getByRole("button", { name: "Start 2 sessions" });
+      expect(start).toBeDisabled();
+      fireEvent.change(screen.getByRole("textbox", { name: "Prompt" }), { target: { value: "fix the tests" } });
+      fireEvent.click(start);
+      expect(onSendMessage).toHaveBeenCalledWith("fix the tests");
+    });
+
+    it("points a worded Send at the note that says why it is blocked", () => {
+      render(<ComposerDock sendLabel="Start 2 sessions" sendDisabled note="Install Codex first." onSendMessage={() => {}} />);
+
+      const start = screen.getByRole("button", { name: "Start 2 sessions" });
+      expect(document.getElementById(start.getAttribute("aria-describedby") ?? "")).toHaveTextContent("Install Codex first.");
+    });
   });
 
   describe("context usage", () => {

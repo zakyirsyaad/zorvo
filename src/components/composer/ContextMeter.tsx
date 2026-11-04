@@ -63,7 +63,7 @@ function Gauge({ used, size }: ContextUsage) {
           />
         )}
       </svg>
-      <span>{percent}%</span>
+      <span>{percent}% of context</span>
     </span>
   );
 }
@@ -94,7 +94,7 @@ export function ContextMeter({ used, size, cost }: ContextUsage) {
         aria-label="Context details"
         aria-expanded={isOpen}
         onClick={() => setIsOpen((open) => !open)}
-        className="rounded px-1 py-0.5 text-[11px] text-fg-muted hover:bg-surface-hover focus-ring"
+        className="rounded px-1 py-0.5 text-caption text-fg-muted hover:bg-surface-hover focus-ring"
       >
         <Gauge used={used} size={size} />
       </button>
@@ -102,7 +102,7 @@ export function ContextMeter({ used, size, cost }: ContextUsage) {
         <div
           role="dialog"
           aria-label="Context usage"
-          className="absolute bottom-full right-0 z-50 mb-2 w-56 rounded-lg border border-border bg-surface-3 p-3 text-xs shadow-popover"
+          className="absolute bottom-full right-0 z-50 mb-2 w-56 rounded-lg border border-border bg-surface-3 p-3 text-ui-sm shadow-popover"
         >
           <p className="mb-2 font-medium text-fg-secondary">Context usage</p>
           <dl className="space-y-1">
@@ -114,7 +114,7 @@ export function ContextMeter({ used, size, cost }: ContextUsage) {
             ))}
           </dl>
           {percent !== null && percent >= WARN_AT && (
-            <p className="mt-2 text-[11px] text-status-attention">
+            <p className="mt-2 text-caption text-status-attention">
               The window is nearly full; the agent may summarize or drop older context.
             </p>
           )}

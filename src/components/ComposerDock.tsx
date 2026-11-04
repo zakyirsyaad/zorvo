@@ -1,5 +1,6 @@
 import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from "react";
 import { Plus, CornerDownLeft, Shield, ShieldAlert, Sparkles, Gauge, SlidersHorizontal, Square, Bot } from "lucide-react";
+import { Button } from "./ui/Button";
 import { IconButton } from "./ui/IconButton";
 import { OptionDropdown } from "./composer/OptionDropdown";
 import { AgentMultiPicker, type AgentMultiPickerProps } from "./composer/AgentMultiPicker";
@@ -74,6 +75,8 @@ export interface ComposerDockProps {
   sendDisabled?: boolean;
   /** `attachments` are file paths, given only when `attachAsFiles` is set. */
   onSendMessage: (message: string, attachments?: string[]) => void;
+  /** Words the Send button ("Start 2 sessions") in place of its icon; it sends and is blocked the same way. */
+  sendLabel?: string;
   /** Opens a file picker and resolves with the chosen paths; hidden when absent. */
   onAttach?: () => Promise<string[]>;
   handleRef?: Ref<ComposerHandle>;
@@ -120,6 +123,7 @@ export function ComposerDock({
   placeholder,
   disabled = false,
   sendDisabled = false,
+  sendLabel,
   onSendMessage,
   onAttach,
   handleRef,
@@ -227,6 +231,9 @@ export function ComposerDock({
   // The reason a blocked Send gives outranks a slash command's hint.
   const shownNote = sendDisabled && note ? note : (hint ?? note);
   const noteId = useId();
+  // A blocked Send points at the note that says why.
+  const sendBlockedNoteId = sendDisabled && note ? noteId : undefined;
+  const isSendEmpty = !text.trim() && attachments.length === 0;
 
   const pickCommand = (command: SlashCommand) => {
     setText(`/${command.name} `);
@@ -369,11 +376,11 @@ export function ComposerDock({
           autoCorrect="off"
           autoCapitalize="off"
           spellCheck={false}
-          className="w-full bg-transparent text-sm text-fg-secondary placeholder-fg-subtle outline-none resize-none leading-relaxed min-h-[26px] max-h-[180px]"
+          className="w-full bg-transparent text-body text-fg placeholder-fg-subtle outline-none resize-none min-h-[26px] max-h-[180px]"
         />
 
         {shownNote && (
-          <p id={noteId} className="mt-1 text-[11px] text-fg-subtle">
+          <p id={noteId} className="mt-1 text-caption text-fg-muted">
             {shownNote}
           </p>
         )}
@@ -465,20 +472,29 @@ export function ComposerDock({
 
             {isThinking && onStop ? (
               <IconButton
-                variant="primary"
+                variant="outline"
                 label="Stop agent"
                 title="Stop the agent's current turn"
                 onClick={onStop}
               >
                 <Square size={12} fill="currentColor" />
               </IconButton>
+            ) : sendLabel ? (
+              <Button
+                variant="primary"
+                aria-describedby={sendBlockedNoteId}
+                onClick={handleSend}
+                disabled={isSendEmpty || !canSend}
+              >
+                {sendLabel}
+              </Button>
             ) : (
               <IconButton
                 variant="primary"
                 label="Send message"
-                aria-describedby={sendDisabled && note ? noteId : undefined}
+                aria-describedby={sendBlockedNoteId}
                 onClick={handleSend}
-                disabled={(!text.trim() && attachments.length === 0) || !canSend}
+                disabled={isSendEmpty || !canSend}
               >
                 <CornerDownLeft size={14} />
               </IconButton>

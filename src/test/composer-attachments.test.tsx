@@ -27,7 +27,9 @@ describe("Composer attachments", () => {
       fireEvent.click(screen.getByRole("button", { name: "Add attachment" }));
     });
     expect(prompt().value).toBe("");
-    expect(await screen.findByRole("img", { name: "shot.png" })).toBeDefined();
+    // A 96×64 thumbnail, with a round button to take it off.
+    expect((await screen.findByRole("img", { name: "shot.png" })).className).toContain("h-16 w-24");
+    expect(screen.getByRole("button", { name: "Remove shot.png" }).className).toContain("rounded-full");
 
     fireEvent.click(screen.getByRole("button", { name: "Remove notes.md" }));
     fireEvent.change(prompt(), { target: { value: "what is wrong here?" } });

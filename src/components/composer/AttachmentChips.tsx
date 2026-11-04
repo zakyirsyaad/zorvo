@@ -45,9 +45,9 @@ function ImageAttachment({
           aria-label={`Open ${name}`}
           aria-haspopup="dialog"
           onClick={() => onOpen(path)}
-          className="block overflow-hidden rounded-lg border border-border focus-ring"
+          className="block overflow-hidden rounded-md border border-border focus-ring"
         >
-          <img src={preview.src} alt={name} className="h-16 w-16 object-cover" />
+          <img src={preview.src} alt={name} className="h-16 w-24 object-cover" />
         </button>
         {onRemove && (
           <span className="absolute -right-1.5 -top-1.5">
@@ -62,7 +62,7 @@ function ImageAttachment({
     <li
       title={path}
       aria-busy={preview.status === "loading"}
-      className="flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-fg-secondary"
+      className="flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-0.5 text-caption text-fg-secondary"
     >
       <ImageIcon size={11} className="text-fg-subtle" />
       <span className="max-w-48 truncate">{name}</span>
@@ -88,7 +88,7 @@ export function AttachmentChips({ paths, onRemove }: AttachmentChipsProps) {
             <li
               key={path}
               title={path}
-              className="flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-fg-secondary"
+              className="flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-0.5 text-caption text-fg-secondary"
             >
               <FileText size={11} className="text-fg-subtle" />
               <span className="max-w-48 truncate">{name}</span>

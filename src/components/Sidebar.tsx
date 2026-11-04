@@ -2,9 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Search, Plus, FolderPlus, ChevronRight, PanelLeft } from "lucide-react";
 import { Button } from "./ui/Button";
 import { IconButton } from "./ui/IconButton";
-import { AgentLogo } from "./AgentLogo";
 import { isInUse, type EnabledSettings } from "../lib/enabled-agents";
-import { SIGN_IN_CHIP_STYLES, SIGN_IN_LABELS, type SignInState } from "../lib/agent-sign-in";
 import type { AgentProfile, Session, Workspace } from "../types";
 import { FolderGroup } from "./sidebar/FolderGroup";
 import { SessionTree, type SessionListContext } from "./sidebar/SessionList";
@@ -27,12 +25,8 @@ export interface SidebarProps {
   /** The compare run whose panel is open. */
   activeRunId?: string | null;
   agents: AgentProfile[];
-  /** Decides which registry agents are in use; the defaults apply when absent. */
+  /** Decides which agents a folder's + offers; the defaults apply when absent. */
   settings?: EnabledSettings;
-  /** Where each agent stands on signing in; every agent reads Ready when absent. */
-  signInStateOf?: (profileId: string) => SignInState;
-  /** Starts a new session with an agent that is not ready, which asks it and shows its sign-in. */
-  onSetUpAgent?: (profileId: string) => void;
   onNewSession: () => void;
   onSelectSession: (sessionId: string) => void;
   /** Opens a compare run's panel. */
@@ -68,96 +62,6 @@ const SECTION_HEADER = `${SECTION_HEADER_TEXT} mb-1.5`;
 
 function matches(query: string, ...values: string[]): boolean {
   return query === "" || values.some((v) => v.toLowerCase().includes(query));
-}
-
-/** An agent's sign-in state; one that is not ready opens a new session with it, where the sign-in is checked and shown. */
-function SignInChip({ agentName, state, onSetUp }: { agentName: string; state: SignInState; onSetUp?: () => void }) {
-  const style = SIGN_IN_CHIP_STYLES[state];
-  const content = (
-    <>
-      <span className={`h-1.5 w-1.5 rounded-full ${style.dot} inline-block`} />
-      {SIGN_IN_LABELS[state]}
-    </>
-  );
-  const className = `flex shrink-0 items-center gap-1 text-[10px] font-medium ${style.text}`;
-  if (state === "ready" || !onSetUp) return <span className={className}>{content}</span>;
-  return (
-    <button
-      type="button"
-      onClick={onSetUp}
-      aria-label={state === "needed" ? `Sign in to ${agentName}` : `Check ${agentName}`}
-      className={`${className} rounded px-1 hover:bg-surface-2 focus-ring`}
-    >
-      {content}
-    </button>
-  );
-}
-
-/**
- * Installed agents, pinned above the footer; renders nothing when none are detected.
- * The header folds the list away to leave more room for the sessions.
- */
-function DetectedAgents({
-  agents,
-  settings,
-  signInStateOf,
-  onSetUpAgent,
-}: {
-  agents: AgentProfile[];
-  settings: EnabledSettings;
-  signInStateOf?: (profileId: string) => SignInState;
-  onSetUpAgent?: (profileId: string) => void;
-}) {
-  const [isExpanded, setIsExpanded] = useState(true);
-  const detected = agents.filter((agent) => agent.detected && isInUse(agent, settings));
-  if (detected.length === 0) return null;
-  return (
-    <section aria-label="Detected agents" className="border-t border-border px-3 pt-2.5 pb-2">
-      <button
-        type="button"
-        onClick={() => setIsExpanded((expanded) => !expanded)}
-        aria-expanded={isExpanded}
-        className={`${SECTION_HEADER_TEXT} group/agents w-full rounded transition-colors hover:text-fg-secondary focus-ring ${
-          isExpanded ? "mb-1.5" : ""
-        }`}
-      >
-        <span className="flex items-center gap-1">
-          Detected Agents
-          <ChevronRight
-            size={12}
-            aria-hidden="true"
-            className={`shrink-0 transition-transform ${
-              isExpanded
-                ? "rotate-90 opacity-0 group-hover/agents:opacity-100 group-focus-visible/agents:opacity-100"
-                : ""
-            }`}
-          />
-        </span>
-        <span className="text-[10px] text-fg-subtle">{detected.length}</span>
-      </button>
-      {isExpanded && (
-        <ul aria-label="Detected agents" className="space-y-0.5">
-          {detected.map((agent) => (
-            <li
-              key={agent.id}
-              title={agent.detected_path ?? undefined}
-              className="flex items-center justify-between rounded-md px-2 py-1 text-fg-secondary hover:bg-surface-hover"
-            >
-              <div className="flex items-center gap-2 truncate">
-                <AgentLogo profileId={agent.id} name={agent.name} />
-                <span className="truncate">{agent.name}</span>
-              </div>
-              <SignInChip
-                agentName={agent.name}
-                state={signInStateOf?.(agent.id) ?? "ready"}
-                onSetUp={onSetUpAgent ? () => onSetUpAgent(agent.id) : undefined}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
 }
 
 /** Finds a profile id's agent name for the search. */
@@ -202,8 +106,6 @@ export function Sidebar({
   activeRunId,
   agents,
   settings = {},
-  signInStateOf,
-  onSetUpAgent,
   onNewSession,
   onSelectSession,
   onOpenRun,
@@ -367,7 +269,6 @@ export function Sidebar({
         )}
       </div>
 
-      <DetectedAgents agents={agents} settings={settings} signInStateOf={signInStateOf} onSetUpAgent={onSetUpAgent} />
       {footer && <div className="border-t border-border bg-bg">{footer}</div>}
     </aside>
   );

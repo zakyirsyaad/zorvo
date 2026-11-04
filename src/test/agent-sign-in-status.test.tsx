@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
 import { act, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { AuthPanel } from "../components/AuthPanel";
-import { Sidebar } from "../components/Sidebar";
+import { AgentsMenu } from "../components/sidebar/AgentsMenu";
 import { useAgentSignInStatus } from "../hooks/useAgentSignInStatus";
 import { parseAuthRequired } from "../lib/acp-auth";
 import { signInPlaceholder, signInStateOf } from "../lib/agent-sign-in";
@@ -155,19 +155,12 @@ describe("AuthPanel for agents with several kinds of methods", () => {
   });
 });
 
-describe("Sidebar sign-in chips", () => {
+describe("Agents menu sign-in chips", () => {
   const agents = [claudeProfile, qwenProfile];
-  const renderSidebar = (extra: Partial<React.ComponentProps<typeof Sidebar>> = {}) =>
-    render(
-      <Sidebar
-        workspaces={[]}
-        sessions={[]}
-        agents={agents}
-        onNewSession={vi.fn()}
-        onSelectSession={vi.fn()}
-        {...extra}
-      />,
-    );
+  const renderSidebar = (extra: Partial<React.ComponentProps<typeof AgentsMenu>> = {}) => {
+    render(<AgentsMenu agents={agents} onManageAgents={vi.fn()} {...extra} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Agents/ }));
+  };
 
   it("reads Ready for every agent when nothing says otherwise", () => {
     renderSidebar();

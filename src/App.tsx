@@ -72,6 +72,7 @@ import { UpdateNotice } from "./components/UpdateNotice";
 import { AppUpdateNotice } from "./components/AppUpdateNotice";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { ProfileFooter } from "./components/ProfileFooter";
+import { AgentsMenu } from "./components/sidebar/AgentsMenu";
 import { useNavigationHistory } from "./hooks/useNavigationHistory";
 import { useUserProfile } from "./hooks/useUserProfile";
 import { useGithubConnection } from "./hooks/useGithubConnection";
@@ -935,12 +936,6 @@ export default function App() {
           activeRunId={activeRun?.id}
           agents={agents}
           settings={state.settings}
-          signInStateOf={signInStatus.stateOf}
-          onSetUpAgent={(profileId) => {
-            openNewSession(undefined, profileId);
-            // Asks again even when this agent is already the draft's: its panel may have been dismissed.
-            agentCheck.reprobe(profileId);
-          }}
           onNewSession={() => openNewSession()}
           onSelectSession={handleSelectSession}
           onOpenRun={openRun}
@@ -962,6 +957,19 @@ export default function App() {
               version={userProfile.version}
               updateCount={agentUpdates.updateCount}
               onOpenSettings={() => setSettingsTab("general")}
+              agents={
+                <AgentsMenu
+                  agents={agents}
+                  settings={state.settings}
+                  signInStateOf={signInStatus.stateOf}
+                  onSetUpAgent={(profileId) => {
+                    openNewSession(undefined, profileId);
+                    // Asks again even when this agent is already the draft's: its panel may have been dismissed.
+                    agentCheck.reprobe(profileId);
+                  }}
+                  onManageAgents={() => setSettingsTab("agents")}
+                />
+              }
             />
           }
         />

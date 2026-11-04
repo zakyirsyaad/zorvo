@@ -75,13 +75,11 @@ describe("Navigation and Layout Components", () => {
       // Which agent runs a session is in its tooltip.
       expect(titanSessions.getByTitle("Market analyzer refactor · Qwen Code")).toBeDefined();
 
-      const agentList = within(screen.getByRole("list", { name: "Detected agents" }));
-      expect(agentList.getByText("Claude Code")).toBeDefined();
       expect(screen.getByText("footer content")).toBeDefined();
       expect(screen.queryByText(/iwang/i)).toBeNull();
     });
 
-    it("names each session's agent on its second line, and shows the detected agents' logos", () => {
+    it("names each session's agent on its second line", () => {
       render(
         <Sidebar
           workspaces={workspaces}
@@ -96,9 +94,6 @@ describe("Navigation and Layout Components", () => {
       expect(claudeRow.getByText(/^Claude Code · /)).toBeDefined();
       const acmeRow = within(screen.getByText("Logoless chat").closest("li") as HTMLElement);
       expect(acmeRow.getByText(/^Acme Agent · /)).toBeDefined();
-      // The logo itself (small SVGs are inlined by Vite), not the generic icon.
-      const detected = within(screen.getByRole("list", { name: "Detected agents" }));
-      expect(detected.getByRole("img", { name: "Claude Code" }).tagName.toLowerCase()).toBe("img");
     });
 
     it("shows a workspace without sessions, and its + asks which agent to start there", () => {
@@ -401,85 +396,6 @@ describe("Navigation and Layout Components", () => {
       expect(forks.getByText("Refactor plan (fork)")).toBeDefined();
       // The fork is listed once, under its source, not again at the top level.
       expect(screen.getAllByText("Refactor plan (fork)")).toHaveLength(1);
-    });
-
-    function renderWithAgents(agents: AgentProfile[], settings?: { enabledAgents?: string[] }) {
-      return render(
-        <Sidebar
-          settings={settings}
-          workspaces={workspaces}
-          sessions={mockSessions}
-          agents={agents}
-          onNewSession={() => {}}
-          onSelectSession={() => {}}
-          footer={<span>footer content</span>}
-        />
-      );
-    }
-
-    it("lists only detected agents, without a Not found status", () => {
-      renderWithAgents([
-        makeProfile({ id: "claude-acp", name: "Claude Code", detected: true }),
-        makeProfile({ id: "codex-acp", name: "Codex", detected: false }),
-        makeProfile({ id: "qwen-code", name: "Qwen Code", detected: true }),
-      ]);
-
-      const items = within(screen.getByRole("list", { name: "Detected agents" })).getAllByRole("listitem");
-      expect(items.map((item) => item.textContent)).toEqual([
-        expect.stringContaining("Claude Code"),
-        expect.stringContaining("Qwen Code"),
-      ]);
-      expect(screen.queryByText("Codex")).toBeNull();
-      expect(screen.queryByText("Not found")).toBeNull();
-    });
-
-    it("lists only the agents in use", () => {
-      renderWithAgents(
-        [
-          makeProfile({ id: "claude-acp", name: "Claude Code", source: "registry", detected: true }),
-          makeProfile({ id: "gemini", name: "Gemini CLI", source: "registry", detected: true }),
-        ],
-        { enabledAgents: ["claude-acp"] },
-      );
-
-      const items = within(screen.getByRole("list", { name: "Detected agents" })).getAllByRole("listitem");
-      expect(items).toHaveLength(1);
-      expect(items[0].textContent).toContain("Claude Code");
-      expect(screen.queryByText("Gemini CLI")).toBeNull();
-    });
-
-    it("pins detected agents directly above the footer, outside the scrolling area", () => {
-      renderWithAgents([makeProfile({ id: "claude-acp", name: "Claude Code", detected: true })]);
-
-      const section = screen.getByRole("region", { name: "Detected agents" });
-      const footer = screen.getByText("footer content");
-
-      expect(section.closest(".overflow-y-auto")).toBeNull();
-      expect(screen.getByRole("list", { name: "Workspaces" }).closest(".overflow-y-auto")).not.toBeNull();
-      expect(section.nextElementSibling?.contains(footer)).toBe(true);
-    });
-
-    it("collapses and expands the detected agents list from its header", () => {
-      renderWithAgents([makeProfile({ id: "claude-acp", name: "Claude Code", detected: true })]);
-
-      const toggle = screen.getByRole("button", { name: /Detected Agents/i });
-      expect(toggle.getAttribute("aria-expanded")).toBe("true");
-
-      fireEvent.click(toggle);
-      expect(toggle.getAttribute("aria-expanded")).toBe("false");
-      expect(screen.queryByRole("list", { name: "Detected agents" })).toBeNull();
-      expect(within(toggle).getByText("1")).toBeDefined();
-
-      fireEvent.click(toggle);
-      expect(screen.getByRole("list", { name: "Detected agents" })).toBeDefined();
-    });
-
-    it("hides the agents section when no agent is detected", () => {
-      renderWithAgents([makeProfile({ id: "codex-acp", name: "Codex", detected: false })]);
-
-      expect(screen.queryByRole("region", { name: "Detected agents" })).toBeNull();
-      expect(screen.queryByText(/Detected Agents/i)).toBeNull();
-      expect(screen.getByText("footer content")).toBeDefined();
     });
 
     it("filters sessions and workspaces when searching", () => {

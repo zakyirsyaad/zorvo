@@ -1,4 +1,12 @@
-import { act, fireEvent, within } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
+
+/** The footer's Agents menu, opened first when it is closed (a click elsewhere closes it). */
+export function agentsMenu(): HTMLElement {
+  const open = screen.queryByRole("dialog", { name: "Agents in use" });
+  if (open) return open;
+  fireEvent.click(screen.getByRole("button", { name: /^Agents(, sign-in needed)?$/ }));
+  return screen.getByRole("dialog", { name: "Agents in use" });
+}
 
 /** Opens a sidebar row's ⋯ menu. `row` is the row or the list item that holds it. */
 export async function openRowMenu(row: HTMLElement): Promise<void> {

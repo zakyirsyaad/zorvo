@@ -21,7 +21,9 @@ import { WorkspaceSummary } from "./components/workspace/WorkspaceSummary";
 import { ChangesPanel } from "./components/changes/ChangesPanel";
 import { DiffView } from "./components/changes/DiffView";
 import { totalsOf } from "./lib/diff-stats";
-import { useSidePanel } from "./hooks/useSidePanel";
+import { useInspector } from "./hooks/useInspector";
+import { Inspector } from "./components/inspector/Inspector";
+import { offeredTabs } from "./lib/inspector";
 import { useReviewComments } from "./hooks/useReviewComments";
 import { useReviewWiring } from "./hooks/useReviewWiring";
 import { useTurnsEnded } from "./hooks/useTurnsEnded";
@@ -453,20 +455,24 @@ export default function App() {
   const isDraggingFiles = useFileDrop(handleDroppedFiles, reportError);
 
   const turnsEnded = useTurnsEnded(Boolean(activeSessionId) && isSessionBusy(activeSessionId));
-  const sidePanel = useSidePanel(filesFolder?.path, isRepository, turnsEnded, reportError);
-  const diffStats = sidePanel.headStats ? totalsOf(sidePanel.headStats) : undefined;
+  const inspector = useInspector(filesFolder?.path, isRepository, turnsEnded, reportError, {
+    isSidebarShown: !isSidebarHidden,
+    onCrowded: () => setSidebarHidden(true),
+    // The Terminal tab starts the folder's first shell in the click that shows it.
+    onShow: (tab) => {
+      if (tab === "terminal" && filesFolder) terminalDrawer.ensureShell(filesFolder.path);
+    },
+  });
+  const inspectorTabs = offeredTabs({ hasFolder: Boolean(filesFolder), isRepository, hasSession: Boolean(activeSession) });
+  // A tab that no longer applies (another folder, a draft) leaves the inspector closed.
+  const inspectorTab = inspector.tab && inspectorTabs.includes(inspector.tab) ? inspector.tab : null;
+  const diffStats = inspector.headStats ? totalsOf(inspector.headStats) : undefined;
   // The commit this session's worktree began at: the diff can compare with it, and the chip stays for it.
   const startCommit = activeSession?.worktree?.startCommit;
-  // The folder whose diff view is expanded: another folder's view starts unexpanded.
   // An activity entry's message to bring into view.
   const [chatJump, setChatJump] = useState<{ messageId: string; nonce: number } | null>(null);
-  const [expandedDiffFolder, setExpandedDiffFolder] = useState<string | null>(null);
-  const isDiffOpen = sidePanel.open === "diff" && Boolean(filesFolder) && isRepository;
-  const isDiffExpanded = isDiffOpen && expandedDiffFolder === filesFolder?.path;
-  // An expanded diff view starts over the next time it opens.
-  useEffect(() => {
-    if (!isDiffOpen) setExpandedDiffFolder(null);
-  }, [isDiffOpen]);
+  // The diff view shows beside the chat, or in its place once expanded.
+  const isDiffOpen = inspector.isDiffOpen && Boolean(filesFolder) && isRepository;
   const pullRequest = usePullRequest(
     isRepository ? shownFolderPath : undefined,
     workspaceDetails?.branch ?? undefined,
@@ -474,7 +480,7 @@ export default function App() {
   );
   // Read only while the Changes panel shows them.
   const repoPullRequests = useRepoPullRequests(
-    sidePanel.open === "changes" && isRepository ? filesFolder?.path : undefined,
+    inspectorTab === "changes" ? filesFolder?.path : undefined,
     turnsEnded,
     // The panel already says gh is missing or signed out and points to Settings; gh's own error would only repeat it.
     githubProblem ? () => {} : reportError,
@@ -806,7 +812,7 @@ export default function App() {
     canContinue: isActiveRunning || isResumable,
     hasComposer: activeAgentRemoved === null,
     isComposerDisabled,
-    collapseDiff: () => setExpandedDiffFolder(null),
+    collapseDiff: inspector.collapseDiff,
     agentNameOf: (profileId) => agents.find((a) => a.id === profileId)?.name ?? profileId,
   });
 
@@ -901,18 +907,12 @@ export default function App() {
         canGoForward={navigation.canGoForward}
         onBack={() => navigateTo(!activeSession ? lastViewedSessionId : navigation.back())}
         onForward={() => navigateTo(navigation.forward())}
-        onToggleFiles={filesFolder ? () => sidePanel.toggle("files") : undefined}
-        isFilesOpen={sidePanel.open === "files" && Boolean(filesFolder)}
-        onToggleActivity={activeSession ? () => sidePanel.toggle("activity") : undefined}
-        isActivityOpen={sidePanel.open === "activity" && Boolean(activeSession)}
-        onToggleTerminal={filesFolder ? terminalDrawer.toggle : undefined}
-        isTerminalOpen={terminalDrawer.isOpen}
-        onToggleChanges={filesFolder && isRepository ? () => sidePanel.toggle("changes") : undefined}
-        isChangesOpen={sidePanel.open === "changes" && Boolean(filesFolder) && isRepository}
+        onToggleInspector={inspectorTabs.length > 0 ? () => inspector.toggle(inspectorTabs) : undefined}
+        isInspectorOpen={inspectorTab !== null}
         diffStats={diffStats}
         isDiffAlwaysShown={Boolean(startCommit) || reviewComments.comments.length > 0}
         diffCommentCount={unsentCommentCount}
-        onOpenDiff={() => sidePanel.show("diff")}
+        onOpenDiff={inspectorTabs.includes("changes") ? inspector.openDiff : undefined}
         onPopout={activeSession ? () => shell.popout(activeSession.id) : undefined}
         onOpenSettings={() => setSettingsTab("general")}
         backgroundTasks={{
@@ -976,7 +976,7 @@ export default function App() {
 
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1">
-            <article className={`${isDiffOpen && isDiffExpanded ? "hidden" : "flex"} flex-1 flex-col bg-bg relative overflow-hidden`}>
+            <article className={`${isDiffOpen && inspector.isDiffExpanded ? "hidden" : "flex"} flex-1 flex-col bg-bg relative overflow-hidden`}>
               {isDraggingFiles && <FileDropOverlay />}
               {failedTurns[activeSessionId] && (
                 <FailedTurnBanner
@@ -1021,7 +1021,7 @@ export default function App() {
                   onOpen={handleSelectSession}
                   onReview={(sessionId) => {
                     handleSelectSession(sessionId);
-                    sidePanel.show("diff");
+                    inspector.openDiff();
                   }}
                   onChoose={chooseOption}
                   onPick={(winnerId) => compareRun.pick(activeRun, winnerId)}
@@ -1164,24 +1164,6 @@ export default function App() {
               </div>
 
             </article>
-            {sidePanel.open === "changes" && filesFolder && isRepository && (
-              <ChangesPanel
-                key={filesFolder.path}
-                rootPath={filesFolder.path}
-                rootName={filesFolder.name}
-                branch={workspaceDetails?.branch ?? undefined}
-                changes={sidePanel.changes.changes}
-                version={sidePanel.changes.version}
-                onReload={sidePanel.changes.reload}
-                onClose={sidePanel.close}
-                pullRequests={repoPullRequests}
-                onOpenPullRequest={openPullRequest}
-                githubProblem={githubProblem}
-                onOpenGithubSettings={() => setSettingsTab("general")}
-                diffStats={diffStats}
-                onOpenDiff={() => sidePanel.show("diff")}
-              />
-            )}
             {isDiffOpen && filesFolder && (
               <DiffView
                 key={`${activeSession?.id ?? "draft"}:${filesFolder.path}`}
@@ -1190,51 +1172,77 @@ export default function App() {
                 prefersStart={Boolean(activeSession?.compareRunId)}
                 review={activeSession ? review.review : undefined}
                 addReview={activeSession ? review.addReview : undefined}
-                version={sidePanel.changes.version}
-                isExpanded={isDiffExpanded}
-                onToggleExpanded={() => setExpandedDiffFolder(isDiffExpanded ? null : filesFolder.path)}
-                onClose={sidePanel.close}
+                version={inspector.changes.version}
+                isExpanded={inspector.isDiffExpanded}
+                onToggleExpanded={inspector.toggleDiffExpanded}
+                onClose={inspector.closeDiff}
                 onError={reportError}
               />
             )}
-            {sidePanel.open === "activity" && activeSession && (
-              <ActivityPanel
-                key={activeSession.id}
-                messages={transcripts[activeSession.id]}
-                transcript={transcriptStatus[activeSession.id] ?? "loading"}
-                session={activeSession}
-                isRepository={isRepository}
-                isBusy={isSessionBusy(activeSession.id)}
-                version={sidePanel.changes.version}
-                headStats={sidePanel.headStats}
-                headStatsFailed={sidePanel.headStatsFailed}
-                onJump={(messageId) => setChatJump((prev) => ({ messageId, nonce: (prev?.nonce ?? 0) + 1 }))}
-                onOpenDiff={() => sidePanel.show("diff")}
-                onClose={sidePanel.close}
-              />
-            )}
-            {sidePanel.open === "files" && filesFolder && (
-              <FilesPanel
-                key={filesFolder.path}
-                rootPath={filesFolder.path}
-                rootName={filesFolder.name}
-                onClose={sidePanel.close}
-                onInsertPath={(path) => insertPaths([path])}
-                onRevealRoot={() => filesFolder && shell.revealFolder(filesFolder.path)}
-              />
+            {inspectorTab && (
+              <Inspector
+                tab={inspectorTab}
+                tabs={inspectorTabs}
+                width={inspector.width}
+                counts={{ changes: inspector.changes.changes?.length }}
+                onSelect={inspector.show}
+                onResize={inspector.setWidth}
+                onClose={inspector.close}
+              >
+                {inspectorTab === "changes" && filesFolder && (
+                  <ChangesPanel
+                    key={filesFolder.path}
+                    rootPath={filesFolder.path}
+                    rootName={filesFolder.name}
+                    branch={workspaceDetails?.branch ?? undefined}
+                    changes={inspector.changes.changes}
+                    version={inspector.changes.version}
+                    onReload={inspector.changes.reload}
+                    pullRequests={repoPullRequests}
+                    onOpenPullRequest={openPullRequest}
+                    githubProblem={githubProblem}
+                    onOpenGithubSettings={() => setSettingsTab("general")}
+                    diffStats={diffStats}
+                    onOpenDiff={inspector.openDiff}
+                  />
+                )}
+                {inspectorTab === "activity" && activeSession && (
+                  <ActivityPanel
+                    key={activeSession.id}
+                    messages={transcripts[activeSession.id]}
+                    transcript={transcriptStatus[activeSession.id] ?? "loading"}
+                    session={activeSession}
+                    isRepository={isRepository}
+                    isBusy={isSessionBusy(activeSession.id)}
+                    version={inspector.changes.version}
+                    headStats={inspector.headStats}
+                    headStatsFailed={inspector.headStatsFailed}
+                    onJump={(messageId) => setChatJump((prev) => ({ messageId, nonce: (prev?.nonce ?? 0) + 1 }))}
+                    onOpenDiff={inspector.openDiff}
+                  />
+                )}
+                {inspectorTab === "files" && filesFolder && (
+                  <FilesPanel
+                    key={filesFolder.path}
+                    rootPath={filesFolder.path}
+                    rootName={filesFolder.name}
+                    onInsertPath={(path) => insertPaths([path])}
+                    onRevealRoot={() => filesFolder && shell.revealFolder(filesFolder.path)}
+                  />
+                )}
+                {inspectorTab === "terminal" && filesFolder && (
+                  <TerminalDrawer
+                    folderPath={filesFolder.path}
+                    folderName={filesFolder.name}
+                    branch={workspaceDetails?.branch ?? undefined}
+                    terminals={terminals}
+                    startingFor={terminalDrawer.startingFor}
+                    onStartShell={terminalDrawer.startShell}
+                  />
+                )}
+              </Inspector>
             )}
           </div>
-          {terminalDrawer.isOpen && filesFolder && (
-            <TerminalDrawer
-              folderPath={filesFolder.path}
-              folderName={filesFolder.name}
-              branch={workspaceDetails?.branch ?? undefined}
-              terminals={terminals}
-              startingFor={terminalDrawer.startingFor}
-              onStartShell={terminalDrawer.startShell}
-              onHide={terminalDrawer.hide}
-            />
-          )}
         </div>
       </section>
       <AppSettingsDialog

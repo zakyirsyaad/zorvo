@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { openInspectorTab } from "./inspector-helpers";
 import type { FakeTauriStore } from "./setup";
 import type { Session } from "../types";
 import App from "../App";
@@ -29,7 +30,9 @@ describe("The activity panel in the app", () => {
       render(<App />);
     });
 
-    expect(screen.queryByRole("button", { name: "Toggle activity panel" })).toBeNull();
+    const inspectorButton = screen.queryByRole("button", { name: "Inspector" });
+    if (inspectorButton) await act(async () => fireEvent.click(inspectorButton));
+    expect(screen.queryByRole("tab", { name: "Activity" })).toBeNull();
   });
 
   it("starts at All again when another session comes on screen", async () => {
@@ -39,9 +42,7 @@ describe("The activity panel in the app", () => {
     });
     await waitFor(() => expect(screen.getAllByText("Alpha work").length).toBeGreaterThan(0));
     await openSession("Alpha work");
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Toggle activity panel" }));
-    });
+    await openInspectorTab("Activity");
     const panel = () => within(screen.getByRole("complementary", { name: "Activity panel" }));
     fireEvent.click(panel().getByRole("button", { name: /^Commands/ }));
     expect(panel().getByRole("button", { name: /^Commands/ })).toHaveAttribute("aria-pressed", "true");

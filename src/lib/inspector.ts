@@ -20,6 +20,15 @@ export function shownInspectorWidth(tab: InspectorTab | null, width: number): nu
   return tab === "terminal" ? Math.max(INSPECTOR_WIDTH.wide, width) : width;
 }
 
+/** The tabs that apply: Changes in a repository, Activity with a session, Files and Terminal with a folder. */
+export function offeredTabs(on: { hasFolder: boolean; isRepository: boolean; hasSession: boolean }): InspectorTab[] {
+  const tabs: InspectorTab[] = [];
+  if (on.hasFolder && on.isRepository) tabs.push("changes");
+  if (on.hasSession) tabs.push("activity");
+  if (on.hasFolder) tabs.push("files", "terminal");
+  return tabs;
+}
+
 /** True when the sidebar, the inspector and the narrowest chat column do not all fit. */
 export function isCrowded(windowWidth: number, inspectorWidth: number, isSidebarShown: boolean): boolean {
   return isSidebarShown && windowWidth - SIDEBAR_WIDTH - inspectorWidth < MIN_CHAT_WIDTH;

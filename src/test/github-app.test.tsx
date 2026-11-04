@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, within, waitFor } from "@testing-library/react";
+import { openInspectorTab } from "./inspector-helpers";
 import { fakeTauriInvoke } from "./setup";
 import type { TerminalViewProps } from "../components/TerminalView";
 
@@ -97,8 +98,7 @@ describe("GitHub and the Changes panel", () => {
   });
 
   async function openChanges() {
-    const header = within(screen.getAllByRole("banner")[0]);
-    await click(await header.findByRole("button", { name: "Toggle changes panel" }));
+    await openInspectorTab("Changes");
     return screen.getByRole("complementary", { name: "Changes panel" });
   }
 

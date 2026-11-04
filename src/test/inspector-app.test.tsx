@@ -1,0 +1,121 @@
+import "@testing-library/jest-dom/vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { render, screen, act, fireEvent, within } from "@testing-library/react";
+import { fakeTauriInvoke, type FakeTauriStore } from "./setup";
+import { closeInspector, inspectorButton, openInspectorTab } from "./inspector-helpers";
+import App from "../App";
+
+type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+
+function tauriInternals(): TauriInternals {
+  return (window as unknown as { __TAURI_INTERNALS__: TauriInternals }).__TAURI_INTERNALS__;
+}
+
+function fakeStore(): FakeTauriStore {
+  return (window as unknown as { __FAKE_TAURI_STORE__: FakeTauriStore }).__FAKE_TAURI_STORE__;
+}
+
+const stat = (path: string, added: number, removed: number) => ({ path, oldPath: null, kind: "modified", added, removed, isBinary: false });
+
+function seedWithChanges() {
+  fakeStore().state.sessions = [
+    { id: "s-a", name: "Alpha work", profileId: "claude-code", cwd: "/Users/test/developer/zorvo", status: "terminated", createdAt: 1, transport: "acp" },
+  ];
+  return vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
+    if (cmd === "session_changes") return Promise.resolve([{ path: "src/app.ts", oldPath: null, kind: "modified" }]);
+    if (cmd === "session_diff_stats") return Promise.resolve([stat("src/app.ts", 12, 3)]);
+    if (cmd === "session_diff_targets") return Promise.resolve({ base: null });
+    if (cmd === "workspace_terminal_open") return Promise.resolve({ id: "shell-1", folder: String(args?.path) });
+    if (cmd === "workspace_terminal_close") return Promise.resolve(undefined);
+    return fakeTauriInvoke(cmd, args);
+  });
+}
+
+async function renderApp() {
+  await act(async () => {
+    render(<App />);
+  });
+}
+
+async function click(element: HTMLElement) {
+  await act(async () => {
+    fireEvent.click(element);
+  });
+}
+
+const inspector = () => screen.queryByRole("region", { name: "Inspector" });
+const callsTo = (spy: { mock: { calls: unknown[][] } }, name: string) => spy.mock.calls.filter(([cmd]) => cmd === name);
+
+describe("The inspector in the app", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("opens the inspector from the top bar on Changes, and closes it", async () => {
+    seedWithChanges();
+    await renderApp();
+    expect(inspector()).toBeNull();
+
+    await click(inspectorButton());
+    expect(inspectorButton()).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("tab", { name: /^Changes/ })).toHaveAttribute("aria-selected", "true");
+    expect(within(inspector() as HTMLElement).getByRole("complementary", { name: "Changes panel" })).toBeInTheDocument();
+
+    await closeInspector();
+    expect(inspector()).toBeNull();
+    expect(inspectorButton()).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("opens the full diff from the diff chip, leaving the inspector as it was", async () => {
+    seedWithChanges();
+    await renderApp();
+
+    await click(await within(screen.getAllByRole("banner")[0]).findByRole("button", { name: /12 lines added, 3 removed/ }));
+
+    expect(screen.getByRole("complementary", { name: "Diff view" })).toBeInTheDocument();
+    expect(inspector()).toBeNull();
+  });
+
+  it("keeps the shell when you leave the Terminal tab or close the inspector", async () => {
+    const spy = seedWithChanges();
+    await renderApp();
+
+    await openInspectorTab("Terminal");
+    await openInspectorTab("Files");
+    await closeInspector();
+    await openInspectorTab("Terminal");
+
+    expect(callsTo(spy, "workspace_terminal_open")).toHaveLength(1);
+    expect(callsTo(spy, "workspace_terminal_close")).toHaveLength(0);
+    expect(screen.getByRole("region", { name: "Terminal" })).toBeInTheDocument();
+  });
+
+  it("closes the inspector when its tab no longer applies", async () => {
+    seedWithChanges();
+    await renderApp();
+    await click(screen.getAllByText("Alpha work")[0]);
+    await openInspectorTab("Activity");
+    expect(inspector()).not.toBeNull();
+
+    // A new-session draft has no session, so it has no activity to show.
+    await click(screen.getByRole("button", { name: "New session" }));
+    expect(inspector()).toBeNull();
+  });
+
+  it("opens the diff beside the chat from Changes, keeping the inspector, and Expand takes the chat's place", async () => {
+    seedWithChanges();
+    await renderApp();
+    await openInspectorTab("Changes");
+
+    await click(await within(inspector() as HTMLElement).findByRole("button", { name: /Open the diff/ }));
+
+    expect(screen.getByRole("complementary", { name: "Diff view" })).toBeInTheDocument();
+    const chat = screen.getByRole("textbox", { name: "Prompt", hidden: true }).closest("article") as HTMLElement;
+    expect(chat.classList.contains("hidden")).toBe(false);
+    await click(screen.getByRole("button", { name: "Expand diff view" }));
+    expect(chat.classList.contains("hidden")).toBe(true);
+
+    await click(screen.getByRole("button", { name: "Close diff view" }));
+    expect(screen.queryByRole("complementary", { name: "Diff view" })).toBeNull();
+    expect(chat.classList.contains("hidden")).toBe(false);
+    expect(inspector()).not.toBeNull();
+  });
+});

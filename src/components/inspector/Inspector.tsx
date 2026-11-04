@@ -70,7 +70,7 @@ export function Inspector({ tab, tabs, width, counts, onSelect, onResize, onClos
 
   const ids = tabIds(ID_PREFIX, tab);
   return (
-    <aside
+    <section
       aria-label="Inspector"
       style={{ width: shownInspectorWidth(tab, width) }}
       className="relative flex shrink-0 flex-col border-l border-border bg-surface-1"
@@ -98,6 +98,6 @@ export function Inspector({ tab, tabs, width, counts, onSelect, onResize, onClos
       <div role="tabpanel" id={ids.panel} aria-labelledby={ids.tab} className="flex min-h-0 flex-1 flex-col">
         {children}
       </div>
-    </aside>
+    </section>
   );
 }

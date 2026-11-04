@@ -10,13 +10,21 @@ export interface InspectorState {
   tab: InspectorTab | null;
   /** Shows a tab, opening the inspector if it is closed; unlike `toggle` it never closes it. */
   show: (tab: InspectorTab) => void;
-  /** Closes an open inspector, or opens it on the last tab used. */
-  toggle: () => void;
+  /**
+   * Closes an inspector that shows one of `offered`, or opens it on the last tab
+   * used while that is still offered, else on Changes, else on Files, else on the first offered tab.
+   */
+  toggle: (offered: readonly InspectorTab[]) => void;
   close: () => void;
-  /** Whether the full diff review takes the chat's place; apart from the tabs. */
+  /** Whether the diff view shows beside the chat; apart from the tabs. */
   isDiffOpen: boolean;
+  /** Whether the open diff view takes the chat's place; it opens beside the chat each time. */
+  isDiffExpanded: boolean;
   openDiff: () => void;
   closeDiff: () => void;
+  toggleDiffExpanded: () => void;
+  /** Brings the diff view back beside the chat, where the composer shows. */
+  collapseDiff: () => void;
   /** The remembered width, clamped to its bounds. */
   width: number;
   setWidth: (px: number) => void;
@@ -27,10 +35,15 @@ export interface InspectorState {
   headStatsFailed: boolean;
 }
 
+/** Where the inspector opens the first time: the changes in a repository, else the files. */
+const FIRST_TABS: readonly InspectorTab[] = ["changes", "files"];
+
 export interface InspectorLayout {
   isSidebarShown: boolean;
   /** Called when the inspector opens in a window too narrow for the sidebar beside it. */
   onCrowded: () => void;
+  /** Called whenever a tab shows, in the click that shows it (the Terminal tab starts its first shell there). */
+  onShow?: (tab: InspectorTab) => void;
 }
 
 /**
@@ -47,6 +60,7 @@ export function useInspector(
   const [tab, setTab] = useState<InspectorTab | null>(null);
   const [lastTab, setLastTab] = useState<InspectorTab | null>(null);
   const [isDiffOpen, setDiffOpen] = useState(false);
+  const [isDiffExpanded, setDiffExpanded] = useState(false);
   const [width, setWidth] = useInspectorWidth();
   const changes = useSessionChanges(folderPath, isRepository, turnsEnded, onError);
   const { stats: headStats, hasFailed: headStatsFailed } = useDiffStats(folderPath, isRepository, "head", changes.version, onError);
@@ -59,14 +73,19 @@ export function useInspector(
     }
     setTab(next);
     setLastTab(next);
+    layout.onShow?.(next);
   };
 
-  const toggle = () => {
-    if (tab !== null) {
+  const toggle = (offered: readonly InspectorTab[]) => {
+    if (tab !== null && offered.includes(tab)) {
       setTab(null);
       return;
     }
-    show(lastTab ?? (isRepository ? "changes" : "files"));
+    const next =
+      (lastTab && offered.includes(lastTab) ? lastTab : undefined) ??
+      FIRST_TABS.find((candidate) => offered.includes(candidate)) ??
+      offered[0];
+    if (next) show(next);
   };
 
   const openDiff = () => {
@@ -81,8 +100,15 @@ export function useInspector(
     toggle,
     close: () => setTab(null),
     isDiffOpen,
+    isDiffExpanded: isDiffOpen && isDiffExpanded,
     openDiff,
-    closeDiff: () => setDiffOpen(false),
+    closeDiff: () => {
+      setDiffOpen(false);
+      // It opens beside the chat again next time.
+      setDiffExpanded(false);
+    },
+    toggleDiffExpanded: () => setDiffExpanded((expanded) => !expanded),
+    collapseDiff: () => setDiffExpanded(false),
     width,
     setWidth,
     changes,

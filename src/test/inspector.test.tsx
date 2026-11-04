@@ -70,9 +70,9 @@ describe("Inspector", () => {
 
   it("is at least 560px wide on the Terminal tab", () => {
     const { unmount } = renderInspector("terminal", 380);
-    expect(screen.getByRole("complementary", { name: "Inspector" }).style.width).toBe("560px");
+    expect(screen.getByRole("region", { name: "Inspector" }).style.width).toBe("560px");
     unmount();
     renderInspector("files", 380);
-    expect(screen.getByRole("complementary", { name: "Inspector" }).style.width).toBe("380px");
+    expect(screen.getByRole("region", { name: "Inspector" }).style.width).toBe("380px");
   });
 });

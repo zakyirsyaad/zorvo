@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, within } from "@testing-library/react";
+import { closeInspector, openInspectorTab } from "./inspector-helpers";
 import { fakeTauriInvoke, type FakeTauriStore } from "./setup";
 import App from "../App";
 
@@ -70,7 +71,7 @@ describe("Window chrome wiring", () => {
     // Folding another folder's sessions does not move the session's folder.
     await click(within(screen.getByRole("complementary")).getByRole("button", { name: "titan-investment" }));
 
-    await click(header().getByRole("button", { name: "Toggle files panel" }));
+    await openInspectorTab("Files");
 
     expect(header().getByText("zorvo")).toBeDefined();
     expect(spy).toHaveBeenCalledWith(
@@ -87,7 +88,7 @@ describe("Window chrome wiring", () => {
     const spy = vi.spyOn(tauriInternals(), "invoke");
     await renderApp();
 
-    await click(header().getByRole("button", { name: "Toggle files panel" }));
+    await openInspectorTab("Files");
 
     expect(spy).toHaveBeenCalledWith(
       "list_directory",
@@ -97,7 +98,7 @@ describe("Window chrome wiring", () => {
     expect(screen.getByRole("complementary", { name: "Files panel" }).textContent).toContain("old-project");
   });
 
-  it("shows the diff totals as a chip that opens the diff view in place of the Changes panel", async () => {
+  it("shows the diff totals as a chip that opens the diff view, keeping the Changes tab", async () => {
     seedSessions();
     const stat = (path: string, added: number, removed: number) => ({ path, oldPath: null, kind: "modified", added, removed, isBinary: false });
     vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
@@ -108,16 +109,16 @@ describe("Window chrome wiring", () => {
     });
     await renderApp();
 
-    await click(await header().findByRole("button", { name: "Toggle changes panel" }));
+    await openInspectorTab("Changes");
     expect(screen.getByRole("complementary", { name: "Changes panel" })).toBeDefined();
     await click(header().getByRole("button", { name: /2,847 lines added, 35 removed/ }));
 
     expect(screen.getByRole("complementary", { name: "Diff view" })).toBeDefined();
-    expect(screen.queryByRole("complementary", { name: "Changes panel" })).toBeNull();
+    expect(screen.getByRole("complementary", { name: "Changes panel" })).toBeDefined();
 
     await click(within(screen.getByRole("complementary", { name: "Diff view" })).getByRole("button", { name: /close/i }));
     expect(screen.queryByRole("complementary", { name: "Diff view" })).toBeNull();
-    expect(screen.queryByRole("complementary", { name: "Changes panel" })).toBeNull();
+    expect(screen.getByRole("complementary", { name: "Changes panel" })).toBeDefined();
   });
 
   it("opens the diff view from the chip even when it is already open", async () => {
@@ -162,7 +163,7 @@ describe("Window chrome wiring", () => {
     expect(chat().classList.contains("hidden")).toBe(false);
   });
 
-  it("shows the changes toggle without a count, and the session's changes in a panel that takes turns with Files", async () => {
+  it("shows the session's changes in a tab that takes turns with Files", async () => {
     seedSessions();
     vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) =>
       cmd === "session_changes"
@@ -174,17 +175,17 @@ describe("Window chrome wiring", () => {
     );
     await renderApp();
 
-    const toggle = await header().findByRole("button", { name: "Toggle changes panel" });
-    expect(toggle.textContent).toBe("");
+    await click(await header().findByRole("button", { name: "Inspector" }));
+    await openInspectorTab("Files");
     const reads = () => (tauriInternals().invoke as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(([cmd]) => cmd === "session_changes").length;
     const readsBefore = reads();
-    await click(toggle);
-    // Opening the panel reads the list afresh, not the one from before.
+    await openInspectorTab("Changes");
+    // Showing the tab reads the list afresh, not the one from before.
     expect(reads()).toBeGreaterThan(readsBefore);
     const panel = within(screen.getByRole("complementary", { name: "Changes panel" }));
     expect(panel.getByText("app.ts")).toBeDefined();
 
-    await click(header().getByRole("button", { name: "Toggle files panel" }));
+    await openInspectorTab("Files");
     expect(screen.queryByRole("complementary", { name: "Changes panel" })).toBeNull();
     expect(screen.getByRole("complementary", { name: "Files panel" })).toBeDefined();
   });
@@ -204,7 +205,7 @@ describe("Window chrome wiring", () => {
     await renderApp();
     expect(spy.mock.calls.some(([cmd]) => cmd === "repo_pull_requests")).toBe(false);
 
-    await click(await header().findByRole("button", { name: "Toggle changes panel" }));
+    await openInspectorTab("Changes");
     const panel = within(screen.getByRole("complementary", { name: "Changes panel" }));
     const list = within(await panel.findByRole("list", { name: "Pull requests" }));
     expect(spy).toHaveBeenCalledWith("repo_pull_requests", { path: "/Users/test/developer/zorvo" }, undefined);
@@ -218,14 +219,16 @@ describe("Window chrome wiring", () => {
     );
   });
 
-  it("offers no changes panel for a folder that is not a git repository", async () => {
+  it("offers no Changes tab for a folder that is not a git repository", async () => {
     seedSessions();
     const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) =>
       cmd === "workspace_details" ? Promise.resolve({ location: "~/developer", branch: null }) : fakeTauriInvoke(cmd, args)
     );
     await renderApp();
 
-    expect(header().queryByRole("button", { name: "Toggle changes panel" })).toBeNull();
+    await click(await header().findByRole("button", { name: "Inspector" }));
+    expect(screen.getByRole("tablist", { name: "Inspector" })).toBeDefined();
+    expect(screen.queryByRole("tab", { name: /^Changes/ })).toBeNull();
     expect(spy.mock.calls.some(([cmd]) => cmd === "session_changes")).toBe(false);
   });
 
@@ -275,7 +278,7 @@ describe("Window chrome wiring", () => {
     const spy = vi.spyOn(tauriInternals(), "invoke");
     await renderApp();
 
-    await click(header().getByRole("button", { name: "Toggle files panel" }));
+    await openInspectorTab("Files");
     const panel = within(screen.getByRole("complementary", { name: "Files panel" }));
     expect(spy).toHaveBeenCalledWith(
       "list_directory",
@@ -285,7 +288,7 @@ describe("Window chrome wiring", () => {
     await click(panel.getByRole("button", { name: "Reveal in Finder" }));
     expect(spy).toHaveBeenCalledWith("reveal_in_finder", { path: "/Users/test/developer/zorvo" }, undefined);
 
-    await click(header().getByRole("button", { name: "Toggle files panel" }));
+    await closeInspector();
     expect(screen.queryByRole("complementary", { name: "Files panel" })).toBeNull();
 
     await click(header().getByRole("button", { name: "Popout window" }));
@@ -300,7 +303,7 @@ describe("Window chrome wiring", () => {
     );
     await renderApp();
 
-    await click(header().getByRole("button", { name: "Toggle files panel" }));
+    await openInspectorTab("Files");
     await click(await screen.findByRole("button", { name: "Add README.md to prompt" }));
 
     const attachments = within(screen.getByRole("list", { name: "Attachments" }));
@@ -317,7 +320,7 @@ describe("Window chrome wiring", () => {
       return fakeTauriInvoke(cmd, args);
     });
     await renderApp();
-    await click(header().getByRole("button", { name: "Toggle files panel" }));
+    await openInspectorTab("Files");
     await click(await screen.findByRole("button", { name: "Add README.md to prompt" }));
     await click(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" }));
     await click(await screen.findByRole("switch", { name: "Worktree" }));
@@ -347,7 +350,7 @@ describe("Window chrome wiring", () => {
       return fakeTauriInvoke(cmd, args);
     });
     await renderApp();
-    await click(header().getByRole("button", { name: "Toggle files panel" }));
+    await openInspectorTab("Files");
     await click(await screen.findByRole("button", { name: "Add README.md to prompt" }));
     await click(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" }));
     await click(await screen.findByRole("switch", { name: "Worktree" }));

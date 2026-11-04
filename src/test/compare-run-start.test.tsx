@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, act, fireEvent, renderHook, waitFor, within } from "@testing-library/react";
+import { openInspectorTab } from "./inspector-helpers";
 import { fakeTauriInvoke, type FakeTauriStore } from "./setup";
 import { makeProfile } from "./fixtures/agents";
 import App from "../App";
@@ -256,7 +257,7 @@ describe("starting a compare run", () => {
       files: true,
       attachmentPaths: ({ cwd, paths }) => Promise.resolve(paths.map((p) => p.replace(DRAFT_FOLDER, cwd))),
     });
-    await click(within(screen.getAllByRole("banner")[0]).getByRole("button", { name: "Toggle files panel" }));
+    await openInspectorTab("Files");
     await click(await screen.findByRole("button", { name: "Add README.md to prompt" }));
     await tickAgents("Qwen Code");
     await send();
@@ -539,7 +540,7 @@ describe("starting a compare run", () => {
   it("keeps the composer busy until a single worktree session's attachments are resolved", async () => {
     const paths = deferred<string[]>();
     const spy = await renderApp({ files: true, attachmentPaths: () => paths.promise });
-    await click(within(screen.getAllByRole("banner")[0]).getByRole("button", { name: "Toggle files panel" }));
+    await openInspectorTab("Files");
     await click(await screen.findByRole("button", { name: "Add README.md to prompt" }));
     await click(screen.getByRole("button", { name: /^Folder:/ }));
     await click(await screen.findByRole("switch", { name: "Worktree" }));

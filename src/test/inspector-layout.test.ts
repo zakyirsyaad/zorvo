@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { clampInspectorWidth, isCrowded, shownInspectorWidth } from "../lib/inspector";
+import { clampInspectorWidth, isCrowded, offeredTabs, shownInspectorWidth } from "../lib/inspector";
 import { useInspectorWidth } from "../hooks/useInspectorWidth";
 
 const KEY = "zorvo.inspectorWidth";
@@ -23,6 +23,14 @@ describe("inspector layout", () => {
     expect(shownInspectorWidth("terminal", 640)).toBe(640);
     expect(shownInspectorWidth("files", 380)).toBe(380);
     expect(shownInspectorWidth(null, 380)).toBe(0);
+  });
+
+  it("offers only the tabs that apply", () => {
+    expect(offeredTabs({ hasFolder: true, isRepository: true, hasSession: true })).toEqual(["changes", "activity", "files", "terminal"]);
+    expect(offeredTabs({ hasFolder: true, isRepository: false, hasSession: true })).toEqual(["activity", "files", "terminal"]);
+    expect(offeredTabs({ hasFolder: true, isRepository: true, hasSession: false })).toEqual(["changes", "files", "terminal"]);
+    expect(offeredTabs({ hasFolder: false, isRepository: false, hasSession: true })).toEqual(["activity"]);
+    expect(offeredTabs({ hasFolder: false, isRepository: false, hasSession: false })).toEqual([]);
   });
 
   it("gives way to the chat only when the window is narrow", () => {

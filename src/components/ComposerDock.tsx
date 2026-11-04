@@ -160,6 +160,8 @@ export function ComposerDock({
     selected: control.selected,
     isOpen: openDropdown === name,
     onToggle: () => toggle(name),
+    // A close, not a toggle: this composer's own dismiss runs on the same click or Escape.
+    onClose: () => setOpenDropdown((current) => (current === name ? null : current)),
     onSelect: (value: string | undefined) => {
       control.onChange(value);
       setOpenDropdown(null);

@@ -148,26 +148,26 @@ describe("comparing agents in the composer", () => {
   it("turns Worktree on and keeps it on while two are ticked", async () => {
     await renderDraft();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /^Folder:/ }));
+      fireEvent.click(screen.getByRole("button", { name: /^Branch:/ }));
     });
-    const worktree = await screen.findByRole("switch", { name: "Worktree" });
+    const worktree = await screen.findByRole("switch", { name: "New worktree" });
     expect(worktree).toHaveAttribute("aria-checked", "false");
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /^Folder:/ }));
+      fireEvent.click(screen.getByRole("button", { name: /^Branch:/ }));
     });
 
     await openAgentMenu();
     await tick("Qwen Code");
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /^Folder:/ }));
+      fireEvent.click(screen.getByRole("button", { name: /^Branch:/ }));
     });
-    const locked = screen.getByRole("switch", { name: "Worktree" });
+    const locked = screen.getByRole("switch", { name: "New worktree" });
     expect(locked).toHaveAttribute("aria-checked", "true");
     expect(locked).toBeDisabled();
     await act(async () => {
       fireEvent.click(locked);
     });
-    expect(screen.getByRole("switch", { name: "Worktree" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("switch", { name: "New worktree" })).toHaveAttribute("aria-checked", "true");
   });
 
   it("cannot tick a fifth agent", async () => {
@@ -349,7 +349,21 @@ describe("compareAgentOptions", () => {
   it("an uninstalled agent says to install it, and keeps its not-installed name", () => {
     const codexOption = compareAgentOptions(ALL, stateOf({})).find((o) => o.value === "codex-acp");
 
-    expect(codexOption).toEqual({ value: "codex-acp", label: "Codex (not installed)", name: "Codex", disabledReason: "You need to install it first." });
+    expect(codexOption).toEqual({
+      value: "codex-acp",
+      label: "Codex (not installed)",
+      name: "Codex",
+      signIn: "unchecked",
+      disabledReason: "You need to install it first.",
+    });
+  });
+
+  it("carries each agent's sign-in state, for the picker's readiness word", () => {
+    const options = compareAgentOptions(ALL, stateOf({ "claude-acp": "ready", "qwen-code": "needed" }));
+
+    expect(options.find((o) => o.value === "claude-acp")?.signIn).toBe("ready");
+    expect(options.find((o) => o.value === "qwen-code")?.signIn).toBe("needed");
+    expect(options.find((o) => o.value === "kimi")?.signIn).toBe("unchecked");
   });
 });
 

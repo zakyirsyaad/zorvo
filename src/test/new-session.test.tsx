@@ -206,10 +206,10 @@ describe("Starting a new session", () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" }));
+      fireEvent.click(await screen.findByRole("button", { name: /^Branch:/ }));
     });
     await act(async () => {
-      fireEvent.click(await screen.findByRole("switch", { name: "Worktree" }));
+      fireEvent.click(await screen.findByRole("switch", { name: "New worktree" }));
     });
     await sendFirst();
 
@@ -236,13 +236,10 @@ describe("Starting a new session", () => {
       render(<App />);
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" }));
+      fireEvent.click(await screen.findByRole("button", { name: /^Branch:/ }));
     });
     await act(async () => {
-      fireEvent.click(await screen.findByRole("switch", { name: "Worktree" }));
-    });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
+      fireEvent.click(await screen.findByRole("switch", { name: "New worktree" }));
     });
 
     await act(async () => {
@@ -273,13 +270,10 @@ describe("Starting a new session", () => {
       render(<App />);
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" }));
+      fireEvent.click(await screen.findByRole("button", { name: /^Branch:/ }));
     });
     await act(async () => {
-      fireEvent.click(await screen.findByRole("switch", { name: "Worktree" }));
-    });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
+      fireEvent.click(await screen.findByRole("switch", { name: "New worktree" }));
     });
     await act(async () => {
       fireEvent.click(await screen.findByRole("option", { name: "release" }));
@@ -290,11 +284,8 @@ describe("Starting a new session", () => {
       fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" }));
-    });
-
-    expect(await screen.findByRole("button", { name: "Branch: main" })).toBeDefined();
+    // Back on the folder's own branch; the worktree switch may stay on for the next session.
+    expect(await screen.findByRole("button", { name: /^Branch: main/ })).toBeDefined();
     const workspace = within(screen.getByRole("group", { name: "Workspace" }));
     expect(workspace.getByLabelText("Branch main")).toBeDefined();
   });
@@ -305,13 +296,10 @@ describe("Starting a new session", () => {
       render(<App />);
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" }));
+      fireEvent.click(await screen.findByRole("button", { name: /^Branch:/ }));
     });
     await act(async () => {
-      fireEvent.click(await screen.findByRole("switch", { name: "Worktree" }));
-    });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
+      fireEvent.click(await screen.findByRole("switch", { name: "New worktree" }));
     });
     await act(async () => {
       fireEvent.click(await screen.findByRole("option", { name: "release" }));
@@ -325,9 +313,6 @@ describe("Starting a new session", () => {
     const invokeSpy = stubInvoke({ list_branches: () => Promise.resolve(["release", "main"]) });
     await act(async () => {
       render(<App />);
-    });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" }));
     });
     await act(async () => {
       fireEvent.click(await screen.findByRole("button", { name: "Branch: main" }));
@@ -354,10 +339,10 @@ describe("Starting a new session", () => {
       render(<App />);
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" }));
+      fireEvent.click(await screen.findByRole("button", { name: /^Branch:/ }));
     });
     await act(async () => {
-      fireEvent.click(await screen.findByRole("switch", { name: "Worktree" }));
+      fireEvent.click(await screen.findByRole("switch", { name: "New worktree" }));
     });
 
     await sendFirst("fix the login");
@@ -378,15 +363,16 @@ describe("Starting a new session", () => {
     });
 
     expect(screen.getByRole("dialog", { name: "Choose a folder" })).toBeDefined();
-    expect(screen.queryByRole("switch", { name: "Worktree" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Branch:/ })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "New worktree" })).toBeNull();
   });
 
   async function turnOnWorktree() {
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" }));
+      fireEvent.click(await screen.findByRole("button", { name: /^Branch:/ }));
     });
     await act(async () => {
-      fireEvent.click(await screen.findByRole("switch", { name: "Worktree" }));
+      fireEvent.click(await screen.findByRole("switch", { name: "New worktree" }));
     });
   }
 

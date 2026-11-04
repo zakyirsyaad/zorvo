@@ -5,8 +5,9 @@ import { IconButton } from "./ui/IconButton";
 import { OptionDropdown } from "./composer/OptionDropdown";
 import { MoreControls } from "./composer/MoreControls";
 import { splitControls } from "../lib/composer-overflow";
-import { AgentMultiPicker, type AgentMultiPickerProps } from "./composer/AgentMultiPicker";
-import { FolderPicker, type FolderControl } from "./composer/FolderPicker";
+import type { AgentMultiPickerProps } from "./composer/AgentMultiPicker";
+import type { FolderControl } from "./composer/FolderPicker";
+import { DraftChips } from "./composer/DraftChips";
 import { appendAttachments, formatAttachmentPath, withAttachments } from "../lib/attachments";
 import { joinWorkspacePath } from "../lib/files";
 import { MentionMenu } from "./composer/MentionMenu";
@@ -28,7 +29,7 @@ const PLACEHOLDER_WITH_COMMANDS = "Type / for commands, or prompt the agent...";
 const CARET_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
 
 /** An agent's extra option is open under its config id: `option:fast`. */
-type OpenDropdown = "folder" | "agent" | "permission" | "model" | "effort" | "more" | `option:${string}` | null;
+type OpenDropdown = "folder" | "branch" | "agent" | "permission" | "model" | "effort" | "more" | `option:${string}` | null;
 
 /** One of the agent's controls: a chip in the row, or a group in the ⋯ menu when it does not fit. */
 interface ControlEntry {
@@ -114,7 +115,7 @@ export interface ComposerDockProps {
   /** Before a new session starts: the agent it runs. */
   agent?: ComposerControl;
   /** Before a new session starts, in a git repository: the agent chip with a checkbox to tick several; replaces `agent`. */
-  agents?: Omit<AgentMultiPickerProps, "isOpen" | "onToggle">;
+  agents?: Omit<AgentMultiPickerProps, "isOpen" | "onToggle" | "onClose">;
   /** The workspace whose files `@` lists; mentions are off when absent. */
   mentions?: MentionSource;
   /**
@@ -378,6 +379,25 @@ export function ComposerDock({
 
   return (
     <footer ref={containerRef} className="w-full max-w-3xl flex flex-col items-center px-4 select-none">
+      {(folder || agents || agent) && (
+        <DraftChips
+          folder={folder}
+          agents={agents}
+          agentChip={
+            !agents && agent ? (
+              <OptionDropdown
+                label="Agent"
+                align="left"
+                icon={<Bot size={12} className="text-fg-muted" />}
+                {...dropdownProps("agent", agent)}
+              />
+            ) : undefined
+          }
+          isOpen={(name) => openDropdown === name}
+          onToggle={toggle}
+          onClose={(name) => setOpenDropdown((current) => (current === name ? null : current))}
+        />
+      )}
       <div
         className="relative w-full rounded-xl border border-border bg-surface-2 p-3 shadow-popover transition-all focus-within:border-border-strong"
       >
@@ -439,31 +459,6 @@ export function ComposerDock({
               >
                 <Plus size={15} />
               </IconButton>
-            )}
-
-            {folder && (
-              <FolderPicker {...folder} isOpen={openDropdown === "folder"} onToggle={() => toggle("folder")} />
-            )}
-
-            {agents && (
-              <AgentMultiPicker
-                {...agents}
-                isOpen={openDropdown === "agent"}
-                onToggle={() => toggle("agent")}
-                onPick={(agentId) => {
-                  agents.onPick(agentId);
-                  setOpenDropdown(null);
-                }}
-              />
-            )}
-
-            {!agents && agent && (
-              <OptionDropdown
-                label="Agent"
-                align="left"
-                icon={<Bot size={12} className="text-fg-muted" />}
-                {...dropdownProps("agent", agent)}
-              />
             )}
 
             {inlineControls.map((entry) => (

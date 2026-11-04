@@ -346,11 +346,9 @@ describe("ComposerDock", () => {
       render(
         <ComposerDock onSendMessage={() => {}} folder={{ folders, selectedPath: "/w/api", onSelect: () => {}, branch }} />,
       );
-    const openFolderList = () => fireEvent.click(screen.getByRole("button", { name: "Folder: api" }));
 
     it("has no Branch row outside a repository", () => {
       renderWith(undefined);
-      openFolderList();
 
       expect(screen.queryByRole("button", { name: /^Branch/ })).toBeNull();
     });
@@ -358,7 +356,6 @@ describe("ComposerDock", () => {
     it("names the current branch and lists the branches when opened", () => {
       const branch = branchControl();
       renderWith(branch);
-      openFolderList();
 
       fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
 
@@ -370,7 +367,6 @@ describe("ComposerDock", () => {
 
     it("says the branches are loading until they arrive", () => {
       renderWith(branchControl({ branches: null }));
-      openFolderList();
 
       fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
 
@@ -380,7 +376,6 @@ describe("ComposerDock", () => {
     it("filters the branches as you type and picks the first match with Enter", () => {
       const branch = branchControl();
       renderWith(branch);
-      openFolderList();
       fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
 
       const search = screen.getByRole("textbox", { name: "Search branches" });
@@ -391,24 +386,22 @@ describe("ComposerDock", () => {
       fireEvent.keyDown(search, { key: "Enter" });
 
       expect(branch.onPick).toHaveBeenCalledWith("release");
-      expect(screen.queryByRole("dialog", { name: "Choose a folder" })).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "Choose a branch" })).toBeNull();
     });
 
     it("picks a branch by clicking it and closes the list", () => {
       const branch = branchControl();
       renderWith(branch);
-      openFolderList();
       fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
 
       fireEvent.click(screen.getByRole("option", { name: "feature/login" }));
 
       expect(branch.onPick).toHaveBeenCalledWith("feature/login");
-      expect(screen.queryByRole("dialog", { name: "Choose a folder" })).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "Choose a branch" })).toBeNull();
     });
 
     it("says when no branch matches", () => {
       renderWith(branchControl());
-      openFolderList();
       fireEvent.click(screen.getByRole("button", { name: "Branch: main" }));
 
       fireEvent.change(screen.getByRole("textbox", { name: "Search branches" }), { target: { value: "zzz" } });
@@ -417,7 +410,7 @@ describe("ComposerDock", () => {
     });
   });
 
-  it("marks a worktree in place of the folder icon, so the chip keeps its width", () => {
+  it("says a new worktree on the branch chip and leaves the folder chip as it is", () => {
     const folder = (isOn: boolean) => ({
       folders: [{ name: "api", path: "/w/api" }],
       selectedPath: "/w/api",
@@ -425,13 +418,13 @@ describe("ComposerDock", () => {
       worktree: { isOn, onChange: () => {} },
     });
     const { rerender } = render(<ComposerDock onSendMessage={() => {}} folder={folder(false)} />);
-    const chip = () => screen.getByRole("button", { name: "Folder: api" });
-    const iconCountOff = chip().querySelectorAll("svg").length;
+    const folderChip = screen.getByRole("button", { name: "Folder: api" });
+    const folderText = folderChip.textContent;
 
     rerender(<ComposerDock onSendMessage={() => {}} folder={folder(true)} />);
 
-    expect(chip().querySelectorAll("svg").length).toBe(iconCountOff);
-    expect(chip().querySelector('[aria-label="in a new worktree"]')).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Folder: api" }).textContent).toBe(folderText);
+    expect(screen.getByRole("button", { name: /in a new worktree$/ })).toHaveTextContent("new worktree");
   });
 
   it("closes an open dropdown with Escape", () => {

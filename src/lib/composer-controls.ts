@@ -139,6 +139,8 @@ export interface AgentChoice {
   label: string;
   /** The agent's plain name, for sentences about it. */
   name: string;
+  /** Whether it was seen signed in, for the picker's readiness word ("Ready", "Not checked"). */
+  signIn?: SignInState;
   disabledReason?: string;
 }
 
@@ -154,11 +156,18 @@ export function compareAgentOptions(
   signInStateOf: (profileId: string) => SignInState,
 ): AgentChoice[] {
   return agents.map((agent) => {
+    const signIn = signInStateOf(agent.id);
     const disabledReason = !isAgentRunnable(agent)
       ? NOT_INSTALLED_REASON
-      : signInStateOf(agent.id) === 'needed'
+      : signIn === 'needed'
         ? NEEDS_SIGN_IN_REASON
         : undefined;
-    return { value: agent.id, label: pickerLabelOf(agent), name: agent.name, ...(disabledReason ? { disabledReason } : {}) };
+    return {
+      value: agent.id,
+      label: pickerLabelOf(agent),
+      name: agent.name,
+      signIn,
+      ...(disabledReason ? { disabledReason } : {}),
+    };
   });
 }

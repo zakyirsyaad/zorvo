@@ -542,8 +542,8 @@ describe("starting a compare run", () => {
     const spy = await renderApp({ files: true, attachmentPaths: () => paths.promise });
     await openInspectorTab("Files");
     await click(await screen.findByRole("button", { name: "Add README.md to prompt" }));
-    await click(screen.getByRole("button", { name: /^Folder:/ }));
-    await click(await screen.findByRole("switch", { name: "Worktree" }));
+    await click(screen.getByRole("button", { name: /^Branch:/ }));
+    await click(await screen.findByRole("switch", { name: "New worktree" }));
     await send();
     await act(async () => {});
 

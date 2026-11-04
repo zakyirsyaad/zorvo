@@ -172,10 +172,10 @@ describe("Importing a session the agent listed", () => {
     await renderDraft();
     await screen.findByRole("button", { name: "Continue a session from Claude Code" });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" }));
+      fireEvent.click(await screen.findByRole("button", { name: /^Branch:/ }));
     });
     await act(async () => {
-      fireEvent.click(await screen.findByRole("switch", { name: "Worktree" }));
+      fireEvent.click(await screen.findByRole("switch", { name: "New worktree" }));
     });
 
     expect(screen.queryByRole("button", { name: /Continue a session from/ })).toBeNull();

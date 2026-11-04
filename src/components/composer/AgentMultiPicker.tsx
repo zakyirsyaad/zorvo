@@ -1,6 +1,10 @@
 import { useRef, type KeyboardEvent } from "react";
 import { Bot, Check, ChevronDown } from "lucide-react";
+import { AgentLogo } from "../AgentLogo";
+import { Popover } from "../ui/Popover";
+import { COMPOSER_CHIP } from "./chip-style";
 import { MAX_COMPARE_AGENTS } from "../../lib/compare-run";
+import { SIGN_IN_LABELS } from "../../lib/agent-sign-in";
 import type { AgentChoice } from "../../lib/composer-controls";
 
 export interface AgentMultiPickerProps {
@@ -9,6 +13,8 @@ export interface AgentMultiPickerProps {
   selected: readonly string[];
   isOpen: boolean;
   onToggle: () => void;
+  /** Closes the list on Escape or a click outside, without toggling it; defaults to `onToggle`. */
+  onClose?: () => void;
   /** Ticks or unticks an agent. */
   onChange: (agentId: string) => void;
   /** Chooses this agent alone. */
@@ -24,10 +30,10 @@ function chipLabel(options: readonly AgentChoice[], selected: readonly string[])
 }
 
 /**
- * The Agent chip in a git repository: a name picks that agent alone, and a checkbox ticks it for
- * a compare run. Like `OptionDropdown`, plus the arrow keys to move between the buttons.
+ * The draft's Agent chip in a git repository: a name picks that agent alone, and a checkbox ticks it for
+ * a compare run. Each row shows the agent's logo and whether it is ready; the arrow keys move between the buttons.
  */
-export function AgentMultiPicker({ options, selected, isOpen, onToggle, onChange, onPick }: AgentMultiPickerProps) {
+export function AgentMultiPicker({ options, selected, isOpen, onToggle, onClose = onToggle, onChange, onPick }: AgentMultiPickerProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const label = chipLabel(options, selected);
   const isFull = selected.length >= MAX_COMPARE_AGENTS;
@@ -45,76 +51,90 @@ export function AgentMultiPicker({ options, selected, isOpen, onToggle, onChange
   };
 
   return (
-    <div className="relative">
-      <button
-        type="button"
-        aria-label={`Agent: ${label}`}
-        aria-haspopup="listbox"
-        aria-expanded={isOpen}
-        onClick={onToggle}
-        title={label}
-        className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1 text-xs text-fg-secondary hover:bg-surface-hover hover:text-fg transition-colors cursor-pointer border border-border focus-ring"
-      >
-        <Bot size={12} className="text-fg-muted" />
-        <span className="max-w-[140px] truncate">{label}</span>
-        <ChevronDown size={11} className="text-fg-subtle" />
-      </button>
-
-      {isOpen && (
-        <div
-          ref={menuRef}
-          role="listbox"
-          aria-label="Agent"
-          aria-multiselectable="true"
-          onKeyDown={moveFocus}
-          className="absolute bottom-full left-0 mb-2 min-w-48 max-w-80 w-max rounded-lg border border-border bg-surface-3 p-1 shadow-popover z-50"
+    <Popover
+      isOpen={isOpen}
+      onClose={onClose}
+      label="Choose agents"
+      role="dialog"
+      side="top"
+      align="start"
+      className="w-72"
+      trigger={
+        <button
+          type="button"
+          aria-label={`Agent: ${label}`}
+          aria-haspopup="dialog"
+          aria-expanded={isOpen}
+          onClick={onToggle}
+          title={label}
+          className={COMPOSER_CHIP}
         >
-          {options.map((option) => {
-            const isTicked = selected.includes(option.value);
-            const isOnly = isTicked && selected.length === 1;
-            const isHeldBack = !isTicked && isOnlyBlocked;
-            const reason =
-              option.disabledReason ??
-              (isHeldBack ? `Set up ${onlyAgent?.name} first.` : !isTicked && isFull ? LIMIT_REASON : undefined);
-            const reasonId = `agent-reason-${option.value}`;
-            return (
-              <div key={option.value} role="presentation" className="rounded px-1 py-0.5">
-                <div role="presentation" className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={isTicked}
-                    onClick={() => onPick(option.value)}
-                    className={`min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left text-xs transition-colors cursor-pointer focus-ring ${
-                      isTicked ? "text-fg font-medium" : "text-fg-secondary hover:bg-surface-hover hover:text-fg"
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                  <button
-                    type="button"
-                    role="checkbox"
-                    aria-checked={isTicked}
-                    aria-label={`Compare ${option.label}`}
-                    aria-describedby={reason ? reasonId : undefined}
-                    disabled={isOnly || isHeldBack || (!isTicked && reason !== undefined)}
-                    title={isOnly ? "Keep at least one agent" : undefined}
-                    onClick={() => onChange(option.value)}
-                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-border-strong text-fg transition-colors cursor-pointer focus-ring disabled:cursor-default disabled:opacity-50"
-                  >
-                    {isTicked && <Check size={12} aria-hidden="true" />}
-                  </button>
-                </div>
-                {reason && (
-                  <p id={reasonId} className="px-1.5 pb-0.5 text-[11px] leading-snug text-fg-muted">
-                    {reason}
-                  </p>
-                )}
+          <Bot size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
+          <span className="max-w-[140px] truncate">{label}</span>
+          <ChevronDown size={11} aria-hidden="true" className="shrink-0 text-fg-subtle" />
+        </button>
+      }
+    >
+      <p className="px-2 pb-1.5 pt-1 text-caption text-fg-muted">Pick more than one to compare them in a run.</p>
+      <div
+        ref={menuRef}
+        role="listbox"
+        aria-label="Agent"
+        aria-multiselectable="true"
+        onKeyDown={moveFocus}
+        className="max-h-72 overflow-y-auto"
+      >
+        {options.map((option) => {
+          const isTicked = selected.includes(option.value);
+          const isOnly = isTicked && selected.length === 1;
+          const isHeldBack = !isTicked && isOnlyBlocked;
+          const reason =
+            option.disabledReason ??
+            (isHeldBack ? `Set up ${onlyAgent?.name} first.` : !isTicked && isFull ? LIMIT_REASON : undefined);
+          const reasonId = `agent-reason-${option.value}`;
+          const readiness = !option.disabledReason && option.signIn ? SIGN_IN_LABELS[option.signIn] : undefined;
+          return (
+            <div key={option.value} role="presentation" className="rounded">
+              <div role="presentation" className="flex min-h-7.5 items-center gap-1">
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={isTicked}
+                  onClick={() => onPick(option.value)}
+                  className={`focus-ring flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-left text-ui transition-colors hover:bg-surface-hover ${
+                    option.disabledReason ? "text-fg-muted" : isTicked ? "font-medium text-fg" : "text-fg-secondary hover:text-fg"
+                  }`}
+                >
+                  <AgentLogo profileId={option.value} name="" size={14} />
+                  <span className="truncate">{option.label}</span>
+                </button>
+                {readiness && <span className="shrink-0 text-caption text-fg-muted">{readiness}</span>}
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={isTicked}
+                  aria-label={`Compare ${option.label}`}
+                  aria-describedby={reason ? reasonId : undefined}
+                  disabled={isOnly || isHeldBack || (!isTicked && reason !== undefined)}
+                  title={isOnly ? "Keep at least one agent" : undefined}
+                  onClick={() => onChange(option.value)}
+                  className="focus-ring mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-border-strong text-fg transition-colors disabled:cursor-default disabled:opacity-50"
+                >
+                  {isTicked && <Check size={12} aria-hidden="true" />}
+                </button>
               </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+              {reason && (
+                <p id={reasonId} className="px-2 pb-1 text-caption text-fg-muted">
+                  {reason}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-1 border-t border-border px-2 pb-1 pt-2 text-caption text-fg-muted">
+        Each agent runs in its own worktree, in its safest mode.
+      </p>
+    </Popover>
   );
 }

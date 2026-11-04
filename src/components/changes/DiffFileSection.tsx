@@ -3,6 +3,11 @@ import { FileDiff } from "./FileDiff";
 import { commentSummary, FileComments, type FileReview } from "./LineComment";
 import { formatLineCount, MINUS, type DiffTargetId, type FileStat } from "../../lib/diff-stats";
 
+/** The id of a file's section in the diff view, which the review's file list scrolls to. */
+export function diffSectionId(rootPath: string, path: string): string {
+  return `diff-file:${rootPath}:${path}`;
+}
+
 /** One file in the diff view: a header with its counts, and the diff read on first open. */
 export function DiffFileSection({ rootPath, stat, target, startCommit, version, isOpen, onToggle, review }: {
   rootPath: string;
@@ -23,7 +28,7 @@ export function DiffFileSection({ rootPath, stat, target, startCommit, version, 
   const name = shown.slice(slash + 1);
   const folder = slash > 0 ? shown.slice(0, slash) : "";
   return (
-    <section>
+    <section id={diffSectionId(rootPath, stat.path)} className="scroll-mt-2">
       <button
         type="button"
         onClick={onToggle}

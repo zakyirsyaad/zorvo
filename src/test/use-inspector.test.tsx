@@ -114,11 +114,19 @@ describe("useInspector", () => {
     expect(result.current.isDiffOpen).toBe(false);
   });
 
+  it("opens the diff in the chat's place, and Shrink brings it beside the chat", () => {
+    setWindowWidth(1440);
+    const { result } = renderInspector(true);
+    act(() => result.current.openDiff());
+    expect(result.current.isDiffExpanded).toBe(true);
+    act(() => result.current.toggleDiffExpanded());
+    expect(result.current.isDiffExpanded).toBe(false);
+  });
+
   it("expands the diff for the folder it was expanded in only", () => {
     setWindowWidth(1440);
     const { result, rerender } = renderInspector(true);
     act(() => result.current.openDiff());
-    act(() => result.current.toggleDiffExpanded());
     expect(result.current.isDiffExpanded).toBe(true);
     rerender({ folder: "/Users/test/other", offered: ALL });
     expect(result.current.isDiffOpen).toBe(true);

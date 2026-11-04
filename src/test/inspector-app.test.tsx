@@ -111,7 +111,7 @@ describe("The inspector in the app", () => {
     expect(inspector()).toBeNull();
   });
 
-  it("opens the diff beside the chat in the inspector's place, and Expand takes the chat's place", async () => {
+  it("opens the full review from Changes in the chat's place, and Shrink brings the chat back", async () => {
     seedWithChanges();
     await renderApp();
     await openInspectorTab("Changes");
@@ -122,6 +122,8 @@ describe("The inspector in the app", () => {
     expect(screen.getByRole("complementary", { name: "Diff view" })).toBeInTheDocument();
     expect(inspector()).toBeNull();
     const chat = screen.getByRole("textbox", { name: "Prompt", hidden: true }).closest("article") as HTMLElement;
+    expect(chat.classList.contains("hidden")).toBe(true);
+    await click(screen.getByRole("button", { name: "Shrink diff view" }));
     expect(chat.classList.contains("hidden")).toBe(false);
     await click(screen.getByRole("button", { name: "Expand diff view" }));
     expect(chat.classList.contains("hidden")).toBe(true);

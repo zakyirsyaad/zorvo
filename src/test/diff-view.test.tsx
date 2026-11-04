@@ -1,6 +1,6 @@
 import { useLayoutEffect } from "react";
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, act, within } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent, act, within } from "@testing-library/react";
 import { DiffStatChip } from "../components/changes/DiffStatChip";
 import { DiffFileSection } from "../components/changes/DiffFileSection";
 import { DiffView } from "../components/changes/DiffView";
@@ -659,5 +659,56 @@ describe("DiffView with the start of the worktree", () => {
     await renderView({ startCommit: START, prefersStart: true });
 
     expect(screen.getByText("No changes since the start of this worktree.")).toBeDefined();
+  });
+});
+
+describe("The full diff review", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const fileList = () => screen.queryByRole("navigation", { name: "Changed files" });
+  const sectionHeader = (path: string) =>
+    screen.getAllByRole("button").find((b) => b.getAttribute("title") === path && b.hasAttribute("aria-expanded")) as HTMLElement;
+
+  it("lists the changed files on the left while expanded", async () => {
+    mockDiff(THREE);
+    await renderView({ isExpanded: true });
+    expect(within(fileList() as HTMLElement).getAllByRole("button")).toHaveLength(3);
+    cleanup();
+
+    mockDiff(THREE);
+    await renderView({ isExpanded: false });
+    expect(fileList()).toBeNull();
+  });
+
+  it("opens a collapsed file chosen from the list", async () => {
+    mockDiff(Array.from({ length: 26 }, (_, i) => statOf(`src/f${i}.ts`)));
+    await renderView({ isExpanded: true });
+    expect(sectionHeader("src/f3.ts").getAttribute("aria-expanded")).toBe("false");
+
+    await act(async () => {
+      fireEvent.click(within(fileList() as HTMLElement).getAllByRole("button")[3]);
+    });
+
+    expect(sectionHeader("src/f3.ts").getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("narrows the file list with Search files", async () => {
+    mockDiff(THREE);
+    await renderView({ isExpanded: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "Search files" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Filter files" }), { target: { value: "app" } });
+
+    expect(within(fileList() as HTMLElement).getAllByRole("button")).toHaveLength(1);
+  });
+
+  it("shows the file count and totals in the header", async () => {
+    mockDiff([statOf("src/app.ts"), { ...statOf("README.md"), added: 11, removed: 2 }]);
+    await renderView();
+
+    const header = within(screen.getByRole("group", { name: "Diff totals" }));
+    expect(header.getByText("2 files")).toBeDefined();
+    expect(header.getByText("+12")).toBeDefined();
+    expect(header.getByText("−3")).toBeDefined();
   });
 });

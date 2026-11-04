@@ -400,7 +400,7 @@ describe("Writing a comment", () => {
     expect(screen.getByText("Outdated")).toBeDefined();
   });
 
-  it("a box whose file leaves the diff shows at the top", async () => {
+  it("a box whose file leaves the diff shows in the bar under the diff", async () => {
     let stats = [statOf(FILE)];
     mockRepo({ stats: () => stats });
     const store = storeOf();
@@ -414,6 +414,8 @@ describe("Writing a comment", () => {
     const bar = screen.getByRole("region", { name: "Review comments" });
     expect(within(bar).getByText("src/app.ts:42")).toBeDefined();
     expect((within(bar).getByRole("textbox", { name: "Comment on line 42" }) as HTMLTextAreaElement).value).toBe("Keep me too");
+    // The bar with Add N to message sits at the bottom of the review.
+    expect(screen.getByRole("complementary", { name: "Diff view" }).lastElementChild).toBe(bar);
   });
 
   it("a box saved from the top bar keeps the old path", async () => {

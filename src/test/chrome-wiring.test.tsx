@@ -158,7 +158,7 @@ describe("Window chrome wiring", () => {
     expect(reads()).toBeGreaterThan(readsBefore);
   });
 
-  it("hides the chat while the diff view is expanded, and opens it unexpanded next time", async () => {
+  it("opens the diff view in the chat's place each time, and Shrink brings the chat back", async () => {
     seedSessions();
     vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
       if (cmd === "session_diff_stats") return Promise.resolve([{ path: "a.ts", oldPath: null, kind: "modified", added: 4, removed: 1, isBinary: false }]);
@@ -170,14 +170,16 @@ describe("Window chrome wiring", () => {
 
     await click(await header().findByRole("button", { name: /4 lines added, 1 removed/ }));
     const diffView = () => within(screen.getByRole("complementary", { name: "Diff view" }));
-    await click(diffView().getByRole("button", { name: "Expand diff view" }));
+    // The full review opens in the chat's place; Shrink brings the chat back beside it.
     expect(chat().classList.contains("hidden")).toBe(true);
+    await click(diffView().getByRole("button", { name: "Shrink diff view" }));
+    expect(chat().classList.contains("hidden")).toBe(false);
 
     await click(diffView().getByRole("button", { name: "Close diff view" }));
     expect(chat().classList.contains("hidden")).toBe(false);
     await click(header().getByRole("button", { name: /4 lines added, 1 removed/ }));
-    expect(diffView().getByRole("button", { name: "Expand diff view" })).toBeDefined();
-    expect(chat().classList.contains("hidden")).toBe(false);
+    expect(diffView().getByRole("button", { name: "Shrink diff view" })).toBeDefined();
+    expect(chat().classList.contains("hidden")).toBe(true);
   });
 
   it("shows the session's changes in a tab that takes turns with Files", async () => {

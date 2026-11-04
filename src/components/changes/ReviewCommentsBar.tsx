@@ -40,7 +40,7 @@ export function ReviewCommentsBar({ review, adder, checked, target, targets, opt
   if (!hasSent && !reason && counted.length === 0 && elsewhere.length === 0 && gone.length === 0 && goneBoxes.length === 0) return null;
 
   return (
-    <section aria-label="Review comments" className="flex max-h-64 shrink-0 flex-col gap-1.5 overflow-y-auto border-b border-border p-2 text-xs">
+    <section aria-label="Review comments" className="flex max-h-64 shrink-0 flex-col gap-1.5 overflow-y-auto border-t border-border p-2 text-xs">
       {(hasSent || reason || counted.length > 0) && (
         <div className="flex flex-wrap items-center justify-end gap-2">
           {reason && (

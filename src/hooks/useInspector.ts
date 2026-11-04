@@ -18,7 +18,7 @@ export interface InspectorState {
   close: () => void;
   /** Whether the diff view shows; it takes the inspector's place, so opening one closes the other. */
   isDiffOpen: boolean;
-  /** Whether the open diff view takes the chat's place, in the folder it was expanded in; it opens beside the chat each time. */
+  /** Whether the open diff view takes the chat's place, in the folder it was expanded in; it opens that way each time. */
   isDiffExpanded: boolean;
   openDiff: () => void;
   closeDiff: () => void;
@@ -106,6 +106,8 @@ export function useInspector(
     // Asking for the diff again reads it afresh even while it is open.
     changes.reload();
     setDiffOpen(true);
+    // The full review opens in the chat's place; Shrink, or Add to message, brings it beside the chat.
+    setExpandedFolder(folderPath ?? null);
     setTab(null);
   };
 

@@ -123,6 +123,7 @@ export const MessageRow = memo(function MessageRow({
         {message.actionCard && (
           <ActionCard
             card={message.actionCard}
+            agentName={agentName}
             onChoose={
               onChooseOption
                 ? (optionId, answers) =>

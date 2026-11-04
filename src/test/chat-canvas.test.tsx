@@ -30,10 +30,31 @@ describe("ActionCard Component", () => {
   it("renders card title, prompt description, and command snippet", () => {
     render(<ActionCard card={mockCard} />);
 
-    expect(screen.getByText("Permission requested")).toBeDefined();
+    // The agent's title does not start with a verb: a plain sentence, with the title under it.
+    expect(screen.getByRole("heading", { name: "The agent wants your permission" })).toBeDefined();
     expect(screen.getByText(/Agent wants to edit file/i)).toBeDefined();
     expect(screen.getByText("npm run build")).toBeDefined();
-    expect(screen.getByText(/Tool: Bash/i)).toBeDefined();
+    expect(screen.queryByText(/Tool: Bash/i)).toBeNull();
+  });
+
+  it("titles a permission with what the agent wants", () => {
+    render(<ActionCard card={{ ...mockCard, prompt: "Edit src/main.ts" }} agentName="Claude Code" />);
+    expect(screen.getByRole("heading", { name: "Claude Code wants to edit src/main.ts" })).toBeDefined();
+    // The title says it all; the agent's title is not repeated under it.
+    expect(screen.queryByText("Edit src/main.ts")).toBeNull();
+  });
+
+  it("orders Deny, Always allow and Allow once", () => {
+    const options = [
+      { optionId: "allow", name: "Allow once", kind: "allow_once" as const },
+      { optionId: "always", name: "Always allow", kind: "allow_always" as const },
+      { optionId: "reject", name: "Deny", kind: "reject_once" as const },
+    ];
+    render(<ActionCard card={{ ...mockCard, options }} />);
+    const [deny, always, once] = ["Deny", "Always allow", "Allow once"].map((name) => screen.getByRole("button", { name }));
+    expect(deny.compareDocumentPosition(always) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(always.compareDocumentPosition(once) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(deny.className).not.toContain("bg-danger-surface");
   });
 
   it("calls onChoose with the option the user picked", () => {
@@ -223,8 +244,8 @@ All systems ready for compilation.`,
 
     render(<ChatCanvas messages={waiting} onChooseOption={onChooseOption} />);
 
-    expect(screen.getByText("Permission requested")).toBeDefined();
-    expect(screen.getByText("Run command `pnpm test` in background?")).toBeDefined();
+    // The agent's title starts with a verb, so the card's one sentence holds it.
+    expect(screen.getByRole("heading", { name: /wants to run command `pnpm test` in background\?/ })).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: "Allow" }));
 

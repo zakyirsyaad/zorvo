@@ -142,6 +142,8 @@ export interface TopBarProps {
   backgroundTasks?: BackgroundTasksMenuProps;
   /** The session's current plan; the menu is hidden when it has none. */
   plan?: readonly PlanEntry[];
+  /** The agent the plan comes from ("Plan from Claude Code"). */
+  planSource?: string;
 }
 
 export function TopBar({
@@ -168,6 +170,7 @@ export function TopBar({
   onOpenDiff,
   backgroundTasks,
   plan,
+  planSource,
 }: TopBarProps) {
   // The session whose title is a field; another session showing closes it.
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -221,7 +224,7 @@ export function TopBar({
 
       {/* Right: the chips that have something to say, the inspector, the session's menu. */}
       <div className="flex shrink-0 items-center gap-1.5 text-fg-muted">
-        {plan && plan.length > 0 && <PlanMenu plan={plan} />}
+        {plan && plan.length > 0 && <PlanMenu plan={plan} source={planSource} />}
 
         {backgroundTasks && <BackgroundTasksMenu {...backgroundTasks} />}
 

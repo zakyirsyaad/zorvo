@@ -929,6 +929,7 @@ export default function App() {
           onStopTask: backgroundTasks.stop,
         }}
         plan={sessionPlan}
+        planSource={activeAgent?.name}
       />
 
       <section className="flex flex-1 overflow-hidden">

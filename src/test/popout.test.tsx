@@ -131,7 +131,7 @@ describe("Popout windows", () => {
       ],
     });
 
-    expect(screen.getByRole("button", { name: "Plan (1 of 2 done)" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Plan, 1 of 2 done" })).toBeDefined();
   });
 
   it("shows the history note for a resumed import with no messages", async () => {

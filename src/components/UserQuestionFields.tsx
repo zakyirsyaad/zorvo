@@ -1,10 +1,7 @@
 import { useId } from "react";
 import type { UserQuestion } from "../types";
 import { EMPTY_DRAFT, MAX_OTHER_CHARS, type QuestionDraft } from "../lib/user-questions";
-
-const INPUT =
-  "min-w-0 flex-1 rounded-lg border border-border-strong bg-surface-2 px-2.5 py-1.5 text-xs text-fg " +
-  "placeholder:text-fg-subtle focus-ring disabled:opacity-40";
+import { Choice, INPUT } from "./chat/ElicitationFields";
 
 export interface UserQuestionFieldsProps {
   questions: UserQuestion[];
@@ -61,7 +58,7 @@ function QuestionField({ question, draft, onChange, disabled }: QuestionFieldPro
 
   return (
     <fieldset className="min-w-0">
-      <legend className="text-xs font-semibold text-fg">
+      <legend className="whitespace-pre-line text-xs font-semibold text-fg">
         {question.header && (
           <span className="mr-1.5 rounded-md border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] font-normal text-fg-muted">
             {question.header}
@@ -72,20 +69,15 @@ function QuestionField({ question, draft, onChange, disabled }: QuestionFieldPro
       {question.multiSelect && <p className="mt-0.5 text-xs text-fg-muted">Pick all that apply.</p>}
       <div className="mt-1.5 space-y-1">
         {question.options.map((option) => (
-          <label key={option.label} className="flex items-start gap-2 text-xs text-fg-secondary">
-            <input
-              type={type}
-              name={name}
-              className="focus-ring mt-0.5 h-3.5 w-3.5"
-              checked={draft.picked.includes(option.label)}
-              disabled={disabled}
-              onChange={() => toggle(option.label)}
-            />
-            <span>
-              {option.label}
-              {option.description && <span className="block text-fg-muted">{option.description}</span>}
-            </span>
-          </label>
+          <Choice
+            key={option.label}
+            option={{ value: option.label, title: option.label, description: option.description }}
+            type={type}
+            name={name}
+            checked={draft.picked.includes(option.label)}
+            disabled={disabled}
+            onChange={() => toggle(option.label)}
+          />
         ))}
         <div className="flex items-center gap-2">
           <label className="flex shrink-0 items-center gap-2 text-xs text-fg-secondary">
@@ -101,7 +93,7 @@ function QuestionField({ question, draft, onChange, disabled }: QuestionFieldPro
           </label>
           <input
             type="text"
-            className={INPUT}
+            className={`${INPUT} min-w-0 flex-1`}
             aria-label={`Other answer for ${subject}`}
             placeholder="Type your own answer"
             maxLength={MAX_OTHER_CHARS}

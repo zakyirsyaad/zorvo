@@ -33,23 +33,36 @@ function isObject(value: unknown): value is Json {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Cuts at a whole character, never inside a surrogate pair: a lone half would
+ * not survive the JSON on the way to the backend, and the answer would fail.
+ */
+function cut(text: string, max: number): string {
+  const chars = Array.from(text);
+  return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : text;
+}
+
 /** What the agent sent, made visible and cut: it is shown, and sent back as the answer, as it reads here. */
 function clean(text: string, max: number): string {
-  const visible = escapeVisible(text.trim());
-  return visible.length > max ? `${visible.slice(0, max - 1)}…` : visible;
+  return cut(escapeVisible(text.trim()), max);
+}
+
+/** As `clean`, for text that may run over several lines (a question, a description): the line breaks stay. */
+function cleanLines(text: string, max: number): string {
+  return cut(text.trim().split(/\r\n|\r|\n/).map(escapeVisible).join('\n'), max);
 }
 
 function parseOption(raw: unknown): UserQuestionOption | undefined {
   if (!isObject(raw) || typeof raw.label !== 'string') return undefined;
   const label = clean(raw.label, MAX_LABEL_CHARS);
   if (label === '') return undefined;
-  const description = typeof raw.description === 'string' ? clean(raw.description, MAX_DESCRIPTION_CHARS) : '';
+  const description = typeof raw.description === 'string' ? cleanLines(raw.description, MAX_DESCRIPTION_CHARS) : '';
   return description === '' ? { label } : { label, description };
 }
 
 function parseQuestion(raw: unknown): UserQuestion | undefined {
   if (!isObject(raw) || typeof raw.question !== 'string') return undefined;
-  const question = clean(raw.question, MAX_QUESTION_CHARS);
+  const question = cleanLines(raw.question, MAX_QUESTION_CHARS);
   if (question === '') return undefined;
   if (!Array.isArray(raw.options) || raw.options.length < MIN_OPTIONS || raw.options.length > MAX_OPTIONS) {
     return undefined;
@@ -75,6 +88,26 @@ export function parseUserQuestions(toolCall: unknown): UserQuestion[] | undefine
   if (!Array.isArray(raw) || raw.length < 1 || raw.length > MAX_QUESTIONS) return undefined;
   const questions = raw.map(parseQuestion);
   return questions.every((question): question is UserQuestion => question !== undefined) ? questions : undefined;
+}
+
+/**
+ * The questions saved on a card, or undefined when they are not the shape
+ * `parseUserQuestions` makes. A transcript is read back from disk, so a card
+ * whose questions were damaged shows as a plain card instead of breaking the chat.
+ */
+export function usableQuestions(saved: unknown): UserQuestion[] | undefined {
+  if (!Array.isArray(saved) || saved.length < 1 || saved.length > MAX_QUESTIONS) return undefined;
+  const isOption = (option: unknown) =>
+    isObject(option) && typeof option.label === 'string' && (option.description === undefined || typeof option.description === 'string');
+  const isQuestion = (question: unknown) =>
+    isObject(question) &&
+    typeof question.question === 'string' &&
+    typeof question.header === 'string' &&
+    typeof question.multiSelect === 'boolean' &&
+    Array.isArray(question.options) &&
+    question.options.length >= 1 &&
+    question.options.every(isOption);
+  return saved.every(isQuestion) ? (saved as UserQuestion[]) : undefined;
 }
 
 /** What the user has picked or typed for one question. Lives in the form only, never stored. */

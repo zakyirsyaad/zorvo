@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import { Check, X, Wrench, AlertTriangle } from "lucide-react";
 import { Button, type ButtonVariant } from "./ui/Button";
 import { UserQuestionFields } from "./UserQuestionFields";
-import { EMPTY_DRAFT, answersOf, type QuestionDraft } from "../lib/user-questions";
+import { EMPTY_DRAFT, answersOf, usableQuestions, type QuestionDraft } from "../lib/user-questions";
 import type { ActionCard as ActionCardType, PermissionChoice } from "../types";
 
 /** The typed answers of Qwen Code's `ask_user_question`: question number to text. */
@@ -84,7 +84,8 @@ function PermissionChoices({
 
 export function ActionCard({ card, onChoose, disabled = false }: ActionCardProps) {
   // A form needs a way to send it: a card with questions but no allowing option stays a plain card.
-  const questions = card.options?.some((o) => o.kind.startsWith("allow")) ? card.questions : undefined;
+  // The questions come back from the saved transcript, so their shape is checked again.
+  const questions = card.options?.some((o) => o.kind.startsWith("allow")) ? usableQuestions(card.questions) : undefined;
   // What is picked or typed lives here, in memory, so an answer that did not go through keeps it. It is never stored.
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
   const answers = questions ? answersOf(questions, drafts) : undefined;
@@ -138,7 +139,7 @@ export function ActionCard({ card, onChoose, disabled = false }: ActionCardProps
         card={card}
         disabled={disabled}
         onChoose={onChoose}
-        asksQuestions={questions !== undefined && card.status === "pending"}
+        asksQuestions={questions !== undefined}
         answers={answers}
       />
     </div>

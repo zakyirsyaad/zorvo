@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { ActionCard } from "../components/ActionCard";
 import { applyPermissionRequest } from "../lib/acp-events";
-import { EMPTY_DRAFT, MAX_OTHER_CHARS, answerOf, answersOf, parseUserQuestions } from "../lib/user-questions";
+import { EMPTY_DRAFT, MAX_OTHER_CHARS, answerOf, answersOf, parseUserQuestions, usableQuestions } from "../lib/user-questions";
 import type { ActionCard as ActionCardType, UserQuestion } from "../types";
 
 const COLOURS = {
@@ -100,6 +100,49 @@ describe("parseUserQuestions", () => {
     expect(parsed[0].question).toBe("Run\\u202Eevil?");
     expect(parsed[0].options[0].label).toBe("A\\u0007");
     expect(parsed[0].options[1].label).toHaveLength(200);
+  });
+});
+
+describe("text from the agent", () => {
+  it("keeps the line breaks of a question and a description, and escapes every other hidden character", () => {
+    const parsed = parseUserQuestions(
+      qwenToolCall([
+        { question: "First line\nSecond‮line", options: [{ label: "A", description: "one\r\ntwo" }, { label: "B" }] },
+      ]),
+    )!;
+
+    expect(parsed[0].question).toBe("First line\nSecond\\u202Eline");
+    expect(parsed[0].options[0].description).toBe("one\ntwo");
+  });
+
+  it("cuts at a whole character, so no half of a surrogate pair is left to break the JSON", () => {
+    const label = "x".repeat(198) + "😀".repeat(5);
+    const parsed = parseUserQuestions(qwenToolCall([{ question: "Q?", options: [{ label }, { label: "B" }] }]))!;
+
+    expect(parsed[0].options[0].label).toBe("x".repeat(198) + "😀…");
+    expect(() => encodeURIComponent(parsed[0].options[0].label)).not.toThrow();
+  });
+});
+
+describe("usableQuestions", () => {
+  it("accepts what parseUserQuestions makes", () => {
+    const parsed = parseUserQuestions(qwenToolCall());
+
+    expect(usableQuestions(parsed)).toBe(parsed);
+  });
+
+  it.each([
+    ["nothing", undefined],
+    ["not a list", { question: "x" }],
+    ["an empty list", []],
+    ["five questions", Array.from({ length: 5 }, () => EDITOR)],
+    ["a question without options", [{ ...EDITOR, options: undefined }]],
+    ["a question with no options", [{ ...EDITOR, options: [] }]],
+    ["an option that is a string", [{ ...EDITOR, options: ["Vim"] }]],
+    ["a question without a header", [{ question: "x", options: [{ label: "A" }], multiSelect: false }]],
+    ["a multiSelect that is not a boolean", [{ ...EDITOR, multiSelect: 1 }]],
+  ])("rejects damaged questions: %s", (_name, saved) => {
+    expect(usableQuestions(saved)).toBeUndefined();
   });
 });
 
@@ -280,6 +323,15 @@ describe("ActionCard with questions", () => {
 
     expect(screen.queryByRole("group")).toBeNull();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDefined();
+  });
+
+  it("is a plain card when the questions saved on it are damaged", () => {
+    const onChoose = vi.fn();
+    const damaged = [{ question: "Which?" }] as unknown as UserQuestion[];
+    render(<ActionCard card={questionCard({ questions: damaged })} onChoose={onChoose} />);
+
+    expect(screen.queryByRole("group")).toBeNull();
+    expect(submit().disabled).toBe(false);
   });
 
   it("is a plain card without questions", () => {

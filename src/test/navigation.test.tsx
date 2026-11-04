@@ -81,7 +81,7 @@ describe("Navigation and Layout Components", () => {
       expect(screen.queryByText(/iwang/i)).toBeNull();
     });
 
-    it("shows each session's agent by its logo, and the detected agents too", () => {
+    it("names each session's agent on its second line, and shows the detected agents' logos", () => {
       render(
         <Sidebar
           workspaces={workspaces}
@@ -93,13 +93,12 @@ describe("Navigation and Layout Components", () => {
       );
 
       const claudeRow = within(screen.getByText("New session (fork)").closest("li") as HTMLElement);
-      // The logo itself (small SVGs are inlined by Vite), not the generic icon.
-      expect(claudeRow.getByRole("img", { name: "Claude Code" }).tagName.toLowerCase()).toBe("img");
-      // An agent with no official logo: a generic agent icon names it instead.
+      expect(claudeRow.getByText(/^Claude Code · /)).toBeDefined();
       const acmeRow = within(screen.getByText("Logoless chat").closest("li") as HTMLElement);
-      expect(acmeRow.getByRole("img", { name: "Acme Agent" }).tagName.toLowerCase()).toBe("svg");
+      expect(acmeRow.getByText(/^Acme Agent · /)).toBeDefined();
+      // The logo itself (small SVGs are inlined by Vite), not the generic icon.
       const detected = within(screen.getByRole("list", { name: "Detected agents" }));
-      expect(detected.getByRole("img", { name: "Claude Code" })).toBeDefined();
+      expect(detected.getByRole("img", { name: "Claude Code" }).tagName.toLowerCase()).toBe("img");
     });
 
     it("shows a workspace without sessions, and its + asks which agent to start there", () => {
@@ -288,7 +287,7 @@ describe("Navigation and Layout Components", () => {
           <Sidebar workspaces={workspaces} sessions={withUnread} agents={mockProfiles} onNewSession={() => {}} onSelectSession={() => {}} />
         );
         const row = () => screen.getByText("Done work").closest("li") as HTMLElement;
-        expect(within(row()).getByLabelText("New activity")).toBeDefined();
+        expect(within(row()).getByText(/(^|· )Finished, unread$/)).toBeDefined();
 
         rerender(
           <Sidebar
@@ -300,8 +299,8 @@ describe("Navigation and Layout Components", () => {
             isSessionBusy={(id) => id === "done"}
           />
         );
-        expect(within(row()).queryByLabelText("New activity")).toBeNull();
-        expect(within(row()).getByLabelText("Agent working")).toBeDefined();
+        expect(within(row()).queryByText(/(^|· )Finished, unread$/)).toBeNull();
+        expect(within(row()).getByText(/(^|· )Working$/)).toBeDefined();
       });
 
       it("finds pinned and archived sessions when searching", () => {

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, act, fireEvent, within, waitFor } from "@testing-library/react";
+import { clickRowDelete } from "./sidebar-helpers";
 import type { FakeTauriStore } from "./setup";
 
 type Listener = (event: { payload: unknown }) => void;
@@ -408,14 +409,12 @@ describe("Elicitations in the app", () => {
     await acpEvent({ sessionId, kind: "turn-end", stopReason: "end_turn" });
     const row = sidebar().getByText("sign me up").closest("li") as HTMLElement;
 
-    await act(async () => {
-      fireEvent.click(within(row).getByRole("button", { name: "Delete session" }));
-    });
+    await clickRowDelete(() => row);
     // A write while the session still existed is fine: on a slow machine the first one comes
     // due before the delete. None may follow the delete.
     const savedBeforeDelete = savesOf(spy, sessionId);
     await act(async () => {
-      fireEvent.click(within(row).getByRole("button", { name: "Confirm delete" }));
+      fireEvent.click(within(row).getByRole("menuitem", { name: "Confirm delete" }));
     });
     await flushSaves();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -436,13 +435,11 @@ describe("Elicitations in the app", () => {
     await submitName("el-1", "Ada");
     const row = sidebar().getByText("sign me up").closest("li") as HTMLElement;
 
-    await act(async () => {
-      fireEvent.click(within(row).getByRole("button", { name: "Delete session" }));
-    });
+    await clickRowDelete(() => row);
     // As above: only writes after the delete count.
     const savedBeforeDelete = savesOf(spy, sessionId);
     await act(async () => {
-      fireEvent.click(within(row).getByRole("button", { name: "Confirm delete" }));
+      fireEvent.click(within(row).getByRole("menuitem", { name: "Confirm delete" }));
     });
     await act(async () => {
       fail("the pipe broke");
@@ -521,7 +518,7 @@ describe("Elicitations in the app", () => {
 
     await askForName(sessionId);
 
-    expect(within(row()).getByLabelText("Waiting for your answer")).toBeDefined();
+    expect(within(row()).getByText(/(^|· )Waiting for you$/)).toBeDefined();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /^Background tasks/ }));
     });
@@ -531,7 +528,7 @@ describe("Elicitations in the app", () => {
     );
 
     await submitName("el-1", "Ada");
-    expect(within(row()).queryByLabelText("Waiting for your answer")).toBeNull();
+    expect(within(row()).queryByText(/(^|· )Waiting for you$/)).toBeNull();
   });
 
   it("never_persists_typed_values", async () => {

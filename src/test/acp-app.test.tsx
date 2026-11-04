@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, within, waitFor } from "@testing-library/react";
+import { clickRowDelete, openRowMenu } from "./sidebar-helpers";
 import type { FakeTauriStore } from "./setup";
 
 type Listener = (event: { payload: unknown }) => void;
@@ -337,20 +338,21 @@ describe("ACP sessions in the app", () => {
 
     const sidebar = within(screen.getByRole("complementary"));
     const row = sidebar.getByText(FIRST_MESSAGE).closest("li") as HTMLElement;
-    expect(within(row).getByRole("button", { name: "Delete session" })).toBeDefined();
+    await openRowMenu(row);
+    expect(within(row).getByRole("menuitem", { name: "Delete" })).toBeDefined();
   });
 
   it("only marks a session as working while its agent is busy", async () => {
     const spy = await renderWithQwen();
     const sessionId = await startQwenSession(spy);
     const row = () => within(screen.getByRole("list", { name: /^Sessions in/ })).getAllByRole("listitem")[0];
-    expect(within(row()).queryByLabelText("Agent working")).toBeNull();
+    expect(within(row()).queryByText(/(^|· )Working$/)).toBeNull();
 
     await send("go");
-    expect(within(row()).getByLabelText("Agent working")).toBeDefined();
+    expect(within(row()).getByText(/(^|· )Working$/)).toBeDefined();
 
     await acpEvent({ sessionId, kind: "turn-end", stopReason: "end_turn" });
-    expect(within(row()).queryByLabelText("Agent working")).toBeNull();
+    expect(within(row()).queryByText(/(^|· )Working$/)).toBeNull();
   });
 
   it("reports a failed turn instead of hiding it", async () => {
@@ -413,11 +415,9 @@ describe("ACP sessions in the app", () => {
     const row = within(screen.getByRole("complementary")).getByText(FIRST_MESSAGE).closest("li") as HTMLElement;
     const saves = () => callsTo(spy, "save_transcript").filter(([, a]) => a?.sessionId === sessionId).length;
 
+    await clickRowDelete(() => row);
     await act(async () => {
-      fireEvent.click(within(row).getByRole("button", { name: "Delete session" }));
-    });
-    await act(async () => {
-      fireEvent.click(within(row).getByRole("button", { name: "Confirm delete" }));
+      fireEvent.click(within(row).getByRole("menuitem", { name: "Confirm delete" }));
     });
     // A slow start can reach the regular save before the delete: only what comes after it counts.
     const savesAtDelete = saves();
@@ -544,7 +544,8 @@ describe("ACP sessions in the app", () => {
     await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
     expect(screen.getByRole("alert").textContent).toContain("mode switch timed out");
     const row = within(screen.getByRole("complementary")).getByText("explain the parser").closest("li") as HTMLElement;
-    expect(within(row).queryByRole("button", { name: "Delete session" })).toBeNull();
+    await openRowMenu(row);
+    expect(within(row).queryByRole("menuitem", { name: "Delete" })).toBeNull();
   });
 
   it("stopping a session while its agent starts ends that agent once it is up", async () => {
@@ -1355,11 +1356,11 @@ describe("ACP sessions in the app", () => {
 
     await acpEvent({ sessionId, kind: "turn-end", stopReason: "end_turn" });
 
-    expect(within(row()).getByLabelText("New activity")).toBeDefined();
+    expect(within(row()).getByText(/(^|· )Finished, unread$/)).toBeDefined();
     await act(async () => {
       fireEvent.click(sidebar.getByText(FIRST_MESSAGE));
     });
-    expect(within(row()).queryByLabelText("New activity")).toBeNull();
+    expect(within(row()).queryByText(/(^|· )Finished, unread$/)).toBeNull();
   });
 
   it("does not mark the open session unread when its agent finishes", async () => {
@@ -1370,7 +1371,7 @@ describe("ACP sessions in the app", () => {
     await acpEvent({ sessionId, kind: "turn-end", stopReason: "end_turn" });
 
     const row = within(screen.getByRole("complementary")).getByText(FIRST_MESSAGE).closest("li") as HTMLElement;
-    expect(within(row).queryByLabelText("New activity")).toBeNull();
+    expect(within(row).queryByText(/(^|· )Finished, unread$/)).toBeNull();
   });
 
   describe("choosing Qwen's model", () => {
@@ -1788,8 +1789,8 @@ describe("ACP sessions in the app", () => {
       options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
     });
 
-    expect(within(row()).queryByLabelText("Agent working")).toBeNull();
-    expect(within(row()).getByLabelText("Waiting for your answer")).toBeDefined();
+    expect(within(row()).queryByText(/(^|· )Working$/)).toBeNull();
+    expect(within(row()).getByText(/(^|· )Waiting for you$/)).toBeDefined();
   });
 
   it("opens another session at its latest messages after scrolling up in this one", async () => {

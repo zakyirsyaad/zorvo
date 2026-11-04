@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, waitFor, within } from "@testing-library/react";
+import { clickRowDelete, openRowMenu } from "./sidebar-helpers";
 import { fakeTauriInvoke, type FakeTauriStore } from "./setup";
 
 type Listener = (event: { payload: unknown }) => void;
@@ -124,7 +125,7 @@ describe("Session lifecycle", () => {
     await renderApp();
     const sessionId = await startNewSession();
     const row = () => sessionRow(FIRST_MESSAGE);
-    expect(within(row()).getByLabelText("Agent working")).toBeDefined();
+    expect(within(row()).getByText(/(^|· )Working$/)).toBeDefined();
 
     const spy = vi.spyOn(tauriInternals(), "invoke");
     await act(async () => {
@@ -134,7 +135,7 @@ describe("Session lifecycle", () => {
 
     await endTurn(sessionId);
     expect(within(row()).queryByRole("button", { name: "Stop session" })).toBeNull();
-    expect(within(row()).queryByLabelText("Agent working")).toBeNull();
+    expect(within(row()).queryByText(/(^|· )Working$/)).toBeNull();
   });
 
   it("marks a session ended when its agent process exits", async () => {
@@ -147,7 +148,8 @@ describe("Session lifecycle", () => {
       const [saved] = fakeStore().state.sessions as { status: string }[];
       expect(saved.status).toBe("terminated");
     });
-    expect(within(sessionRow(FIRST_MESSAGE)).getByRole("button", { name: "Delete session" })).toBeDefined();
+    await openRowMenu(sessionRow(FIRST_MESSAGE));
+    expect(within(sessionRow(FIRST_MESSAGE)).getByRole("menuitem", { name: "Delete" })).toBeDefined();
   });
 
   it("stops a live session's agent before deleting it", async () => {
@@ -156,11 +158,9 @@ describe("Session lifecycle", () => {
     await endTurn(sessionId);
     const spy = vi.spyOn(tauriInternals(), "invoke");
 
+    await clickRowDelete(() => sessionRow(FIRST_MESSAGE));
     await act(async () => {
-      fireEvent.click(within(sessionRow(FIRST_MESSAGE)).getByRole("button", { name: "Delete session" }));
-    });
-    await act(async () => {
-      fireEvent.click(within(sessionRow(FIRST_MESSAGE)).getByRole("button", { name: "Confirm delete" }));
+      fireEvent.click(within(sessionRow(FIRST_MESSAGE)).getByRole("menuitem", { name: "Confirm delete" }));
     });
 
     expect(spy).toHaveBeenCalledWith("acp_stop_session", { sessionId }, undefined);
@@ -172,13 +172,11 @@ describe("Session lifecycle", () => {
     await renderApp();
     const spy = vi.spyOn(tauriInternals(), "invoke");
 
-    await act(async () => {
-      fireEvent.click(within(sessionRow("Refactor parser")).getByRole("button", { name: "Delete session" }));
-    });
+    await clickRowDelete(() => sessionRow("Refactor parser"));
 
     expect(sidebar().getByText("Refactor parser")).toBeDefined();
     expect(spy.mock.calls.some(([cmd]) => cmd === "delete_transcript")).toBe(false);
-    expect(within(sessionRow("Refactor parser")).getByRole("button", { name: "Confirm delete" })).toBeDefined();
+    expect(within(sessionRow("Refactor parser")).getByRole("menuitem", { name: "Confirm delete" })).toBeDefined();
   });
 
   it("deletes an ended session and its transcript", async () => {
@@ -187,11 +185,9 @@ describe("Session lifecycle", () => {
     await renderApp();
     const spy = vi.spyOn(tauriInternals(), "invoke");
 
+    await clickRowDelete(() => sessionRow("Refactor parser"));
     await act(async () => {
-      fireEvent.click(within(sessionRow("Refactor parser")).getByRole("button", { name: "Delete session" }));
-    });
-    await act(async () => {
-      fireEvent.click(within(sessionRow("Refactor parser")).getByRole("button", { name: "Confirm delete" }));
+      fireEvent.click(within(sessionRow("Refactor parser")).getByRole("menuitem", { name: "Confirm delete" }));
     });
 
     expect(sidebar().queryByText("Refactor parser")).toBeNull();
@@ -226,11 +222,9 @@ describe("Session lifecycle", () => {
     await renderApp();
     const spy = vi.spyOn(tauriInternals(), "invoke");
     const remove = async (name: string) => {
+      await clickRowDelete(() => sessionRow(name));
       await act(async () => {
-        fireEvent.click(within(sessionRow(name)).getByRole("button", { name: "Delete session" }));
-      });
-      await act(async () => {
-        fireEvent.click(within(sessionRow(name)).getByRole("button", { name: "Confirm delete" }));
+        fireEvent.click(within(sessionRow(name)).getByRole("menuitem", { name: "Confirm delete" }));
       });
     };
     const removals = () => spy.mock.calls.filter(([cmd]) => cmd === "remove_session_worktree");
@@ -252,11 +246,9 @@ describe("Session lifecycle", () => {
         : fakeTauriInvoke(cmd, args)
     );
 
+    await clickRowDelete(() => sessionRow("Fix login"));
     await act(async () => {
-      fireEvent.click(within(sessionRow("Fix login")).getByRole("button", { name: "Delete session" }));
-    });
-    await act(async () => {
-      fireEvent.click(within(sessionRow("Fix login")).getByRole("button", { name: "Confirm delete" }));
+      fireEvent.click(within(sessionRow("Fix login")).getByRole("menuitem", { name: "Confirm delete" }));
     });
 
     expect((await screen.findByRole("alert")).textContent).toContain("uncommitted changes");

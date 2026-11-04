@@ -163,15 +163,16 @@ describe("a compare run in the sidebar", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Pin" }));
     expect(onPinSession).toHaveBeenCalledWith("r-qwen", true);
 
-    fireEvent.click(within(row).getByRole("button", { name: "Delete session" }));
-    fireEvent.click(within(row).getByRole("button", { name: "Confirm delete" }));
+    fireEvent.click(within(row).getByRole("button", { name: /^More actions for / }));
+    fireEvent.click(within(row).getByRole("menuitem", { name: "Delete" }));
+    fireEvent.click(within(row).getByRole("menuitem", { name: "Confirm delete" }));
     expect(onDeleteSession).toHaveBeenCalledWith("r-qwen");
   });
 
   it("shows the group as working while one of its agents is", () => {
     renderSidebar(runSessions(), { isSessionBusy: (id) => id === "r-kimi" });
 
-    expect(within(groupButton().closest("div") as HTMLElement).getByRole("status", { name: "Agent working" })).toBeInTheDocument();
+    expect(within(groupButton().closest("div") as HTMLElement).getByRole("status", { name: "Working" })).toBeInTheDocument();
   });
 
   it("counts a run's agents from the run, not from what a search leaves", () => {

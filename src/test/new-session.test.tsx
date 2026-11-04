@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, within } from "@testing-library/react";
+import { clickRowDelete } from "./sidebar-helpers";
 
 type Listener = (event: { payload: unknown }) => void;
 const listeners = new Map<string, Listener>();
@@ -406,11 +407,9 @@ describe("Starting a new session", () => {
 
   async function deleteSession(name: string) {
     const row = () => within(screen.getByRole("complementary")).getByText(name).closest("li") as HTMLElement;
+    await clickRowDelete(() => row());
     await act(async () => {
-      fireEvent.click(within(row()).getByRole("button", { name: "Delete session" }));
-    });
-    await act(async () => {
-      fireEvent.click(within(row()).getByRole("button", { name: "Confirm delete" }));
+      fireEvent.click(within(row()).getByRole("menuitem", { name: "Confirm delete" }));
     });
   }
 

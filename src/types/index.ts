@@ -220,6 +220,25 @@ export interface ActionCard {
   chosenOptionId?: string;
   /** The mode changed after the agent asked; the card still needs its answer. */
   modeChanged?: boolean;
+  /**
+   * Qwen Code's `ask_user_question`: the questions the agent asks, shown as a form.
+   * Only the agent's own text; what the user types is never kept on the card.
+   */
+  questions?: UserQuestion[];
+}
+
+/** One question of Qwen Code's `ask_user_question`. */
+export interface UserQuestion {
+  question: string;
+  /** A short label for the question. */
+  header: string;
+  options: UserQuestionOption[];
+  multiSelect: boolean;
+}
+
+export interface UserQuestionOption {
+  label: string;
+  description?: string;
 }
 
 /** A command an agent offers, typed as `/name` in the prompt. */

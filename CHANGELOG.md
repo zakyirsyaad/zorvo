@@ -6,6 +6,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Fixed
 
+- **Qwen Code's questions now show, and your answers reach it.** When Qwen Code asks you something with its question tool, Zorvo showed an empty permission card with a single Submit button, and Qwen Code always read it as "No valid answers were provided". The card now shows each question with its options (one pick, or several for a multi-select question) and an **Other** field for your own words. **Submit** is enabled once every question has an answer, and **Cancel** declines. What you type goes only to Qwen Code: Zorvo does not save or log it, and the answered card keeps just your choice of Submit or Cancel.
 - **A long session no longer rewrites its whole conversation every second.** Zorvo saved a session's conversation in full once a second while an agent worked, so a session with a few megabytes of tool output wrote gigabytes to disk in an hour and could slow the window down. A large conversation is now saved less often while the agent streams, the larger it is the longer the wait, never more than 10 seconds apart, and at once when a turn ends or the agent asks you something; a small one is still saved every second, and everything is still saved when Zorvo closes.
 
 ## [0.8.0] - 2026-11-04

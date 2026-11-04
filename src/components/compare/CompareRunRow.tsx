@@ -16,7 +16,7 @@ export interface CompareRunRowProps {
   onOpen: (sessionId: string) => void;
   /** Opens the session with its diff beside the chat. */
   onReview: (sessionId: string) => void;
-  onChoose: (sessionId: string, cardId: string, optionId: string) => void;
+  onChoose: (sessionId: string, cardId: string, optionId: string, answers?: Record<string, string>) => void;
   onPick: (sessionId: string) => void;
 }
 
@@ -110,7 +110,12 @@ export function CompareRunRow({
         </div>
       </div>
       {pendingCard && (
-        <ActionCard card={pendingCard} onChoose={(optionId) => onChoose(session.id, pendingCard.id, optionId)} />
+        <ActionCard
+          card={pendingCard}
+          onChoose={(optionId, answers) =>
+            answers ? onChoose(session.id, pendingCard.id, optionId, answers) : onChoose(session.id, pendingCard.id, optionId)
+          }
+        />
       )}
     </li>
   );

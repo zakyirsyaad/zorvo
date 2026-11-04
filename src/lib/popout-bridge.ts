@@ -40,7 +40,7 @@ export interface SessionSnapshotPayload {
 
 export type PopoutAction =
   | { kind: 'send'; text: string }
-  | { kind: 'choose-option'; cardId: string; optionId: string }
+  | { kind: 'choose-option'; cardId: string; optionId: string; answers?: Record<string, string> }
   | { kind: 'answer-elicitation'; key: string; answer: ElicitationAnswer }
   | { kind: 'reopen-elicitation-url'; key: string }
   | { kind: 'stop' }

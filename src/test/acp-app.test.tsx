@@ -200,6 +200,81 @@ describe("ACP sessions in the app", () => {
     expect(screen.getByText(/You chose: Allow/)).toBeDefined();
   });
 
+  it("answers Qwen Code's questions: the answers go out with Submit and are kept nowhere", async () => {
+    const spy = await renderWithQwen();
+    const sessionId = await startQwenSession(spy);
+    await send("ask me");
+    const questions = [
+      { question: "Which colours do you like?", header: "Colours", options: [{ label: "Blue" }, { label: "Green" }], multiSelect: true },
+      { question: "Which editor do you use?", header: "Editor", options: [{ label: "Vim" }, { label: "Zed" }], multiSelect: false },
+    ];
+
+    await acpEvent({
+      sessionId,
+      kind: "permission",
+      requestId: "ask-3",
+      toolCall: {
+        title: "Ask user 2 questions",
+        kind: "other",
+        rawInput: { questions },
+        _meta: { toolName: "ask_user_question", qwenInteractionKind: "user_question", qwenQuestions: questions },
+      },
+      options: [
+        { optionId: "proceed_once", name: "Submit", kind: "allow_once" },
+        { optionId: "cancel", name: "Cancel", kind: "reject_once" },
+      ],
+    });
+    const submit = screen.getByRole("button", { name: "Submit" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("checkbox", { name: "Blue" }));
+      fireEvent.click(screen.getByRole("checkbox", { name: "Green" }));
+      fireEvent.change(screen.getByRole("textbox", { name: "Other answer for Editor" }), { target: { value: "Helix-9f3" } });
+    });
+    expect(submit.disabled).toBe(false);
+    await act(async () => {
+      fireEvent.click(submit);
+    });
+
+    expect(callsTo(spy, "acp_respond_permission").map(([, a]) => a)).toContainEqual({
+      sessionId,
+      requestId: "ask-3",
+      optionId: "proceed_once",
+      answers: { "0": "Blue, Green", "1": "Helix-9f3" },
+    });
+    expect(screen.getByText(/You chose: Submit/)).toBeDefined();
+    // The typed text went to the agent and nowhere else: no other call (a transcript save, say) carries it.
+    const others = spy.mock.calls.filter(([cmd]) => cmd !== "acp_respond_permission");
+    expect(JSON.stringify(others)).not.toContain("Helix-9f3");
+  });
+
+  it("declines Qwen Code's questions with Cancel and sends no answers", async () => {
+    const spy = await renderWithQwen();
+    const sessionId = await startQwenSession(spy);
+    await send("ask me");
+    const questions = [{ question: "Which editor do you use?", header: "Editor", options: [{ label: "Vim" }, { label: "Zed" }], multiSelect: false }];
+
+    await acpEvent({
+      sessionId,
+      kind: "permission",
+      requestId: "ask-4",
+      toolCall: { title: "Ask user 1 question", _meta: { qwenInteractionKind: "user_question", qwenQuestions: questions } },
+      options: [
+        { optionId: "proceed_once", name: "Submit", kind: "allow_once" },
+        { optionId: "cancel", name: "Cancel", kind: "reject_once" },
+      ],
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    });
+
+    expect(callsTo(spy, "acp_respond_permission").map(([, a]) => a)).toContainEqual({
+      sessionId,
+      requestId: "ask-4",
+      optionId: "cancel",
+    });
+  });
+
   it("stops the agent's turn from the composer while it works", async () => {
     const spy = await renderWithQwen();
     const sessionId = await startQwenSession(spy);

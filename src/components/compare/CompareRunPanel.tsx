@@ -12,7 +12,7 @@ export interface CompareRunPanelProps {
   onOpen: (sessionId: string) => void;
   /** Opens the session with its diff beside the chat. */
   onReview: (sessionId: string) => void;
-  onChoose: (sessionId: string, cardId: string, optionId: string) => void;
+  onChoose: (sessionId: string, cardId: string, optionId: string, answers?: Record<string, string>) => void;
   /** Keeps this session and archives the others; may take a while, as agents are stopped. */
   onPick: (winnerId: string) => void | Promise<void>;
 }

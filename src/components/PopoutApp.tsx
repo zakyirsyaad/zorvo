@@ -100,7 +100,13 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
                 <HistoryElsewhereNote agentName={agent?.name ?? "the agent"} />
               ) : undefined
             }
-            onChooseOption={(cardId, optionId) => forward({ kind: "choose-option", cardId, optionId })}
+            onChooseOption={(cardId, optionId, answers) =>
+              forward(
+                answers
+                  ? { kind: "choose-option", cardId, optionId, answers }
+                  : { kind: "choose-option", cardId, optionId },
+              )
+            }
             onAnswerElicitation={(key, answer) => forward({ kind: "answer-elicitation", key, answer })}
             onReopenElicitationUrl={(key) => forward({ kind: "reopen-elicitation-url", key })}
             isWorking={status.isBusy && !status.isWaiting}

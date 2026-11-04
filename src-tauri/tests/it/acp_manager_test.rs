@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
@@ -60,11 +60,117 @@ fn round_trips_a_permission_request() {
     assert_eq!(params["options"].as_array().unwrap().len(), 2);
 
     manager
-        .respond_permission("s-1", &request_id, Some("allow"))
+        .respond_permission("s-1", &request_id, Some("allow"), None)
         .unwrap();
 
     let chunk = wait_for(&rx, |e| agent_text(e).is_some());
     assert_eq!(agent_text(&chunk).as_deref(), Some("allowed:allow"));
+    manager.stop("s-1");
+}
+
+/// Starts a session on the fake agent, asks the "user-question" prompt and
+/// returns the request, with the file the agent records its reply in.
+fn ask_questions(
+    name: &str,
+) -> (
+    Arc<AcpManager>,
+    Receiver<AcpEvent>,
+    Value,
+    std::path::PathBuf,
+) {
+    let (manager, rx) = manager();
+    let log = method_log(name);
+    let launch = with_env(fake_agent(), "FAKE_ACP_QUESTION_LOG", log.to_str().unwrap());
+    manager.start("s-1", &cwd(), &launch).unwrap();
+    manager.prompt("s-1", "user-question", &[]).unwrap();
+    let request = wait_for(&rx, |e| matches!(e, AcpEvent::PermissionRequest { .. }));
+    let AcpEvent::PermissionRequest {
+        request_id, params, ..
+    } = request
+    else {
+        unreachable!()
+    };
+    // The questions reach the UI as the agent sent them.
+    let meta = &params["toolCall"]["_meta"];
+    assert_eq!(meta["qwenInteractionKind"], "user_question");
+    assert_eq!(meta["qwenQuestions"].as_array().unwrap().len(), 2);
+    (manager, rx, request_id, log)
+}
+
+fn last_reply(log: &std::path::Path) -> Value {
+    let text = std::fs::read_to_string(log).expect("the agent logs its reply");
+    serde_json::from_str(text.lines().last().expect("one reply")).expect("json")
+}
+
+fn typed(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
+}
+
+#[test]
+fn typed_answers_reach_the_agent_next_to_the_outcome() {
+    let (manager, rx, request_id, log) = ask_questions("answers-reach-agent");
+    let answers = typed(&[("0", "Blue, Green"), ("1", "Helix")]);
+
+    manager
+        .respond_permission("s-1", &request_id, Some("proceed_once"), Some(&answers))
+        .unwrap();
+
+    let chunk = wait_for(&rx, |e| agent_text(e).is_some());
+    assert_eq!(
+        agent_text(&chunk).as_deref(),
+        Some(r#"question:proceed_once:{"0":"Blue, Green","1":"Helix"}"#)
+    );
+    let reply = last_reply(&log);
+    assert_eq!(reply["outcome"]["outcome"], "selected");
+    assert_eq!(reply["answers"]["1"], "Helix");
+    manager.stop("s-1");
+}
+
+#[test]
+fn declining_the_questions_sends_no_answers() {
+    let (manager, rx, request_id, log) = ask_questions("answers-declined");
+
+    manager
+        .respond_permission("s-1", &request_id, Some("cancel"), None)
+        .unwrap();
+
+    let chunk = wait_for(&rx, |e| agent_text(e).is_some());
+    assert_eq!(agent_text(&chunk).as_deref(), Some("question:cancel:null"));
+    assert!(last_reply(&log).get("answers").is_none());
+    manager.stop("s-1");
+}
+
+#[test]
+fn bad_answers_are_refused_and_the_request_stays_open() {
+    let (manager, rx, request_id, _log) = ask_questions("answers-refused");
+
+    let error = manager
+        .respond_permission(
+            "s-1",
+            &request_id,
+            Some("proceed_once"),
+            Some(&typed(&[("7", "x")])),
+        )
+        .unwrap_err();
+    assert!(error.contains("question number"), "{error}");
+
+    // Nothing was sent, so the agent still waits and a good answer still lands.
+    manager
+        .respond_permission(
+            "s-1",
+            &request_id,
+            Some("proceed_once"),
+            Some(&typed(&[("0", "Blue")])),
+        )
+        .unwrap();
+    let chunk = wait_for(&rx, |e| agent_text(e).is_some());
+    assert_eq!(
+        agent_text(&chunk).as_deref(),
+        Some(r#"question:proceed_once:{"0":"Blue"}"#)
+    );
     manager.stop("s-1");
 }
 
@@ -219,7 +325,7 @@ fn routes_each_agent_process_to_its_own_session_when_their_ids_match() {
         unreachable!()
     };
     manager
-        .respond_permission("s-1", &request_id, Some("allow"))
+        .respond_permission("s-1", &request_id, Some("allow"), None)
         .unwrap();
     wait_for(&rx, |e| matches!(e, AcpEvent::TurnEnded { .. }));
 

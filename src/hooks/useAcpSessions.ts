@@ -345,8 +345,9 @@ export function useAcpSessions(handlers: AcpHandlers) {
   );
 
   const respondPermission = useCallback(
-    (sessionId: string, requestId: string | number, optionId: string | null) =>
-      invoke<void>('acp_respond_permission', { sessionId, requestId, optionId }),
+    (sessionId: string, requestId: string | number, optionId: string | null, answers?: Record<string, string>) =>
+      // `answers` are Qwen Code's `ask_user_question` answers: sent only when there are some, never kept here.
+      invoke<void>('acp_respond_permission', { sessionId, requestId, optionId, ...(answers ? { answers } : {}) }),
     [],
   );
 

@@ -4,7 +4,7 @@
 //! process as its source), so connections are shared and only killed when the
 //! last app session using them stops.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 
 use super::connection::{error_message, AcpConnection, ConnectionEvent, EventSink};
 use super::elicitation::{Pending, PendingElicitations};
+use super::permission_response::permission_response;
 use super::prompt_blocks::prompt_blocks;
 use super::terminal_auth::{terminal_method, SignInAttempts, TerminalMethodError};
 use crate::pty_session::validate_cwd;
@@ -390,19 +391,20 @@ impl AcpManager {
         Ok(cancelled)
     }
 
-    /// Answers a permission request; `None` cancels it.
+    /// Answers a permission request; `None` cancels it. `answers` are the typed
+    /// answers of Qwen Code's `ask_user_question`, sent next to the outcome once
+    /// checked (see `permission_response`).
     pub fn respond_permission(
         &self,
         app_session_id: &str,
         request_id: &Value,
         option_id: Option<&str>,
+        answers: Option<&BTreeMap<String, String>>,
     ) -> Result<(), String> {
+        // Checked before the connection is looked up, so bad input is refused on its own terms.
+        let response = permission_response(option_id, answers)?;
         let (connection, _) = self.connection_for(app_session_id)?;
-        let outcome = match option_id {
-            Some(option_id) => json!({ "outcome": "selected", "optionId": option_id }),
-            None => json!({ "outcome": "cancelled" }),
-        };
-        connection.respond(request_id, json!({ "outcome": outcome }))
+        connection.respond(request_id, response)
     }
 
     pub fn set_mode(&self, app_session_id: &str, mode_id: &str) -> Result<(), String> {

@@ -8,6 +8,7 @@ import type {
   ToolExecution,
 } from '../types';
 import { fileNameOf } from './attachments';
+import { parseUserQuestions } from './user-questions';
 
 /**
  * Folds Agent Client Protocol session updates into chat messages.
@@ -349,6 +350,8 @@ export function applyPermissionRequest(
   const toolCall = isObject(payload.toolCall) ? payload.toolCall : {};
   const rawInput = isObject(toolCall.rawInput) ? toolCall.rawInput : {};
   const title = str(toolCall.title) ?? 'The agent asks for permission';
+  // Qwen Code's ask_user_question: a request that does not parse stays a plain card.
+  const questions = parseUserQuestions(toolCall);
   const card: ActionCard = {
     id: ctx.createId('act'),
     sessionId: ctx.sessionId,
@@ -360,6 +363,7 @@ export function applyPermissionRequest(
     timestamp: ctx.now,
     options: toChoices(payload.options),
     requestId: payload.requestId,
+    ...(questions ? { questions } : {}),
   };
   const withCard = (reply: ChatMessage) => ({ ...reply, actionCard: card });
   // A reply holds one card: a second request while the first waits gets its own message.

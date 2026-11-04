@@ -1,12 +1,18 @@
+import { useId, useState } from "react";
 import { Check, X, Wrench, AlertTriangle } from "lucide-react";
 import { Button, type ButtonVariant } from "./ui/Button";
+import { UserQuestionFields } from "./UserQuestionFields";
+import { EMPTY_DRAFT, answersOf, type QuestionDraft } from "../lib/user-questions";
 import type { ActionCard as ActionCardType, PermissionChoice } from "../types";
+
+/** The typed answers of Qwen Code's `ask_user_question`: question number to text. */
+export type QuestionAnswers = Record<string, string>;
 
 /** A permission request from an agent, answered with one of the agent's own options. */
 export interface ActionCardProps {
   card: ActionCardType;
-  /** Picks one of the agent's options. */
-  onChoose?: (optionId: string) => void;
+  /** Picks one of the agent's options; `answers` go with an allowing pick on a card that asks questions. */
+  onChoose?: (optionId: string, answers?: QuestionAnswers) => void;
   disabled?: boolean;
 }
 
@@ -23,12 +29,19 @@ function PermissionChoices({
   card,
   disabled,
   onChoose,
+  asksQuestions,
+  answers,
 }: {
   card: ActionCardType;
   disabled: boolean;
-  onChoose?: (optionId: string) => void;
+  onChoose?: (optionId: string, answers?: QuestionAnswers) => void;
+  /** The card shows questions: an allowing pick needs all of them answered, and sends the answers. */
+  asksQuestions: boolean;
+  answers: QuestionAnswers | undefined;
 }) {
+  const hintId = useId();
   const options: PermissionChoice[] = card.options ?? [];
+  const needsAnswers = asksQuestions && answers === undefined;
   if (card.status !== "pending") {
     const chosen = options.find((o) => o.optionId === card.chosenOptionId);
     return (
@@ -42,22 +55,41 @@ function PermissionChoices({
   }
   return (
     <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-2">
-      {options.map((option) => (
-        <Button
-          key={option.optionId}
-          variant={choiceVariant(option.kind)}
-          disabled={disabled}
-          onClick={() => onChoose?.(option.optionId)}
-          icon={option.kind.startsWith("allow") ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
-        >
-          {option.name}
-        </Button>
-      ))}
+      {needsAnswers && (
+        <p id={hintId} className="w-full text-xs text-fg-muted">
+          Answer every question to submit.
+        </p>
+      )}
+      {options.map((option) => {
+        const isAllow = option.kind.startsWith("allow");
+        const waitsForAnswers = isAllow && needsAnswers;
+        return (
+          <Button
+            key={option.optionId}
+            variant={choiceVariant(option.kind)}
+            disabled={disabled || waitsForAnswers}
+            aria-describedby={waitsForAnswers ? hintId : undefined}
+            onClick={() =>
+              isAllow && answers ? onChoose?.(option.optionId, answers) : onChoose?.(option.optionId)
+            }
+            icon={isAllow ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+          >
+            {option.name}
+          </Button>
+        );
+      })}
     </div>
   );
 }
 
 export function ActionCard({ card, onChoose, disabled = false }: ActionCardProps) {
+  // A form needs a way to send it: a card with questions but no allowing option stays a plain card.
+  const questions = card.options?.some((o) => o.kind.startsWith("allow")) ? card.questions : undefined;
+  // What is picked or typed lives here, in memory, so an answer that did not go through keeps it. It is never stored.
+  const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
+  const answers = questions ? answersOf(questions, drafts) : undefined;
+  const setDraft = (index: number, draft: QuestionDraft) =>
+    setDrafts((prev) => (questions ?? []).map((_, i) => (i === index ? draft : (prev[i] ?? EMPTY_DRAFT))));
   return (
     <div
       data-testid={`action-card-${card.id}`}
@@ -98,7 +130,17 @@ export function ActionCard({ card, onChoose, disabled = false }: ActionCardProps
         </p>
       )}
 
-      <PermissionChoices card={card} disabled={disabled} onChoose={onChoose} />
+      {questions && card.status === "pending" && (
+        <UserQuestionFields questions={questions} drafts={drafts} onChange={setDraft} disabled={disabled} />
+      )}
+
+      <PermissionChoices
+        card={card}
+        disabled={disabled}
+        onChoose={onChoose}
+        asksQuestions={questions !== undefined && card.status === "pending"}
+        answers={answers}
+      />
     </div>
   );
 }

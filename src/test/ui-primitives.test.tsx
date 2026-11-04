@@ -3,6 +3,7 @@ import { useState, type ReactNode } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { Popover, PopoverHeader, PopoverOption } from "../components/ui/Popover";
+import { Toast, ToastStack } from "../components/ui/Toast";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { StatusLine } from "../components/ui/StatusLine";
@@ -373,5 +374,53 @@ describe("Popover", () => {
     open();
     fireEvent.click(screen.getByRole("menuitem", { name: "Plan" }));
     expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+describe("Toast", () => {
+  it("shows the message with a dismiss button", () => {
+    const onDismiss = vi.fn();
+    render(<Toast message="Could not open the link." onDismiss={onDismiss} />);
+    expect(screen.getByText("Could not open the link.")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss notice" }));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("speaks errors as alerts and the rest as status", () => {
+    render(
+      <>
+        <Toast tone="error" message="Failed" onDismiss={() => {}} />
+        <Toast tone="warning" message="Careful" onDismiss={() => {}} />
+        <Toast tone="info" message="Heads up" onDismiss={() => {}} />
+      </>,
+    );
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("Failed");
+    expect(alert).toHaveClass("border-danger");
+    const statuses = screen.getAllByRole("status");
+    expect(statuses.map((status) => status.textContent)).toEqual(["Careful", "Heads up"]);
+  });
+
+  it("runs its action", () => {
+    const onClick = vi.fn();
+    render(<Toast tone="error" message="Failed" action={{ label: "Try again", onClick }} onDismiss={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("wraps a long message inside the card", () => {
+    const message = "/Users/someone/".repeat(20);
+    render(<Toast message={message} onDismiss={() => {}} />);
+    expect(screen.getByRole("status")).toHaveClass("w-[340px]");
+    expect(screen.getByText(message)).toHaveClass("break-words");
+  });
+
+  it("stacks toasts in the corner", () => {
+    render(
+      <ToastStack>
+        <Toast message="One" onDismiss={() => {}} />
+      </ToastStack>,
+    );
+    expect(screen.getByRole("status").parentElement).toHaveClass("absolute", "right-5", "bottom-5", "z-40");
   });
 });

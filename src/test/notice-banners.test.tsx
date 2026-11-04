@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { NoticeBanner } from "../components/AppPlaceholders";
+import { FailedTurnBanner } from "../components/FailedTurnBanner";
 import { UpdateNotice } from "../components/UpdateNotice";
 import { NOTICE_BANNER_LAYOUT } from "../components/ui/noticeBannerStyle";
 import { makeCatalogAgent } from "./fixtures/catalog";
@@ -10,7 +10,7 @@ describe("banners under the top bar", () => {
   it("share one layout and keep their own colors", () => {
     render(
       <>
-        <NoticeBanner message="Broke" onDismiss={vi.fn()} />
+        <FailedTurnBanner agentName="Gemini CLI" error="fetch failed" isBusy={false} onRetry={vi.fn()} onDismiss={vi.fn()} />
         <UpdateNotice agents={[makeCatalogAgent({ id: "gemini", name: "Gemini", updateVersion: "1.1.0" })]} onShow={vi.fn()} onDismiss={vi.fn()} />
       </>,
     );

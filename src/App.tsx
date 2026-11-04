@@ -8,7 +8,8 @@ import { ComposerDock, type ComposerHandle } from "./components/ComposerDock";
 import { RemovedAgentPanel } from "./components/RemovedAgentPanel";
 import { ActivityPanel } from "./components/activity/ActivityPanel";
 import { FilesPanel } from "./components/FilesPanel";
-import { EmptySessionState, FileDropOverlay, NoticeBanner } from "./components/AppPlaceholders";
+import { EmptySessionState, FileDropOverlay } from "./components/AppPlaceholders";
+import { Toast, ToastStack } from "./components/ui/Toast";
 import { CompareRunPanel } from "./components/compare/CompareRunPanel";
 import { FailedTurnBanner } from "./components/FailedTurnBanner";
 import { SignInLayer } from "./components/SignInLayer";
@@ -965,7 +966,11 @@ export default function App() {
           <div className="flex min-h-0 flex-1">
             <article className={`${isDiffOpen && isDiffExpanded ? "hidden" : "flex"} flex-1 flex-col bg-bg relative overflow-hidden`}>
               {isDraggingFiles && <FileDropOverlay />}
-              {notice && <NoticeBanner message={notice} onDismiss={() => setNotice(null)} />}
+              {notice && (
+                <ToastStack>
+                  <Toast tone="error" message={notice} onDismiss={() => setNotice(null)} />
+                </ToastStack>
+              )}
               {failedTurns[activeSessionId] && (
                 <FailedTurnBanner
                   agentName={activeAgent?.name}

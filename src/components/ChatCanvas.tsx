@@ -34,6 +34,8 @@ export interface ChatCanvasProps {
   onJumped?: () => void;
   /** Display name of the agent behind this conversation, e.g. "Claude Code". */
   agentName?: string;
+  /** The agent's id, for its logo over each reply. */
+  agentProfileId?: string;
   onForkBranch?: (messageId: string) => void;
   /** Answers an ACP permission card with one of the agent's options; `answers` are a question card's typed answers. */
   onChooseOption?: (cardId: string, optionId: string, answers?: Record<string, string>) => void;
@@ -64,6 +66,7 @@ export function ChatCanvas({
   jumpTo,
   onJumped,
   agentName = DEFAULT_AGENT_NAME,
+  agentProfileId,
   onForkBranch,
   onChooseOption,
   onAnswerElicitation,
@@ -194,6 +197,7 @@ export function ChatCanvas({
           key={msg.id}
           message={msg}
           agentName={agentName}
+          agentProfileId={agentProfileId}
           isLast={msg === lastMessage}
           isCurrentTurn={msg.role === "agent" && index >= currentTurnStartsAt}
           showActions={msg.role !== "user" && index < runningTurnStartsAt}

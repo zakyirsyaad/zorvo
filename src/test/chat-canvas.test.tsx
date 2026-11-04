@@ -778,7 +778,7 @@ describe("ACP chat content", () => {
     expect(running.queryByRole("button", { name: "Copy message" })).toBeNull();
     expect(running.queryByRole("button", { name: "Fork branch" })).toBeNull();
     expect(running.queryByRole("button", { name: "Read aloud" })).toBeNull();
-    expect(running.queryByText(/ago/i)).toBeNull();
+    // The time is in the reply's header, which shows while the turn runs too.
 
     rerender(<ChatCanvas messages={messages} isWorking={false} onForkBranch={() => {}} />);
 
@@ -1071,5 +1071,35 @@ describe("ChatCanvas: your messages and the session's header", () => {
     render(<ChatCanvas messages={messages} header={<p>zorvo · ~/developer</p>} />);
 
     expect(screen.queryByRole("note")).toBeNull();
+  });
+});
+
+describe("ChatCanvas: the two kinds of message", () => {
+  const messages: ChatMessage[] = [
+    { id: "u-1", role: "user", content: "fix the parser", timestamp: Date.now() - 300_000 },
+    { id: "a-1", role: "agent", content: "Done.", timestamp: Date.now() - 120_000, isComplete: true },
+  ];
+
+  it("shows your message as a bubble on the right without a header", () => {
+    render(<ChatCanvas messages={messages} agentName="Codex" />);
+    const yours = screen.getByTestId("chat-message-u-1");
+    const bubble = yours.querySelector("[data-selectable-text]") as HTMLElement;
+    expect(bubble.classList.contains("bg-surface-2")).toBe(true);
+    expect(bubble.classList.contains("ml-auto")).toBe(true);
+    expect(within(yours).queryByText("You")).toBeNull();
+    expect(yours.querySelector("[data-message-header]")).toBeNull();
+  });
+
+  it("heads the agent's message with its logo, name and time", () => {
+    render(<ChatCanvas messages={messages} agentName="Codex" agentProfileId="codex" />);
+    const header = screen.getByTestId("chat-message-a-1").querySelector("[data-message-header]") as HTMLElement;
+    expect(within(header).getByText("Codex")).toBeDefined();
+    expect(within(header).getByText("2 minutes ago")).toBeDefined();
+  });
+
+  it("leaves the time out of a replayed message's header", () => {
+    const replayed: ChatMessage[] = [{ id: "a-2", role: "agent", content: "Earlier.", timestamp: 0, hasKnownTime: false, isComplete: true }];
+    render(<ChatCanvas messages={replayed} agentName="Codex" />);
+    expect(within(screen.getByTestId("chat-message-a-2")).queryByText(/ago/)).toBeNull();
   });
 });

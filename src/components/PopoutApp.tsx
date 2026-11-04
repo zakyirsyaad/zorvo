@@ -95,6 +95,7 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
           <ChatCanvas
             messages={messages}
             agentName={agent?.name}
+            agentProfileId={session?.profileId}
             header={
               session?.historyElsewhere ? (
                 <HistoryElsewhereNote agentName={agent?.name ?? "the agent"} />

@@ -1051,6 +1051,7 @@ export default function App() {
                   jumpTo={chatJump}
                   onJumped={() => setChatJump(null)}
                   agentName={activeAgent?.name}
+                  agentProfileId={activeSession?.profileId}
                   onForkBranch={(messageId) => void forkSession(messageId)}
                   onReply={(quote) => composerRef.current?.insertText(quote)}
                   replyBlockedReason={replyBlockedReason({

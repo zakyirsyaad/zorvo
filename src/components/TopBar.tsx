@@ -1,5 +1,7 @@
 import { ChevronLeft, ChevronRight, GitBranch, ExternalLink, MoreHorizontal, PanelLeft, PanelRight } from "lucide-react";
+import { useState } from "react";
 import { IconButton } from "./ui/IconButton";
+import { RenameField } from "./ui/RenameField";
 import { DiffStatChip } from "./changes/DiffStatChip";
 import { BackgroundTasksMenu, type BackgroundTasksMenuProps } from "./topbar/BackgroundTasksMenu";
 import { PlanMenu } from "./topbar/PlanMenu";
@@ -18,8 +20,45 @@ import type { PlanEntry } from "../types";
  */
 export const TOP_BAR_TRAFFIC_LIGHT_INSET_PX = 78;
 
+/**
+ * The session's title. With `onRename`, a double-click turns it into a field;
+ * then it is not a drag region, since a double-click there would zoom the window.
+ * Keyed by session, so a field left open never renames the next session.
+ */
+function SessionTitle({ name, onRename }: { name: string; onRename?: (name: string) => void }) {
+  const [isRenaming, setIsRenaming] = useState(false);
+  if (isRenaming && onRename) {
+    return (
+      <RenameField
+        value={name}
+        label={`Rename ${name}`}
+        className="max-w-64"
+        onDone={(next) => {
+          setIsRenaming(false);
+          const trimmed = next?.trim();
+          if (trimmed && trimmed !== name) onRename(trimmed);
+        }}
+      />
+    );
+  }
+  return (
+    <span
+      data-tauri-drag-region={onRename ? undefined : true}
+      title={onRename ? "Double-click to rename" : undefined}
+      onDoubleClick={onRename ? () => setIsRenaming(true) : undefined}
+      className="truncate font-medium text-fg-secondary"
+    >
+      {name}
+    </span>
+  );
+}
+
 export interface TopBarProps {
+  /** Which session the bar shows; a rename field closes when it changes. */
+  sessionId?: string;
   sessionName?: string;
+  /** Renames the session; the title then opens a field on double-click. */
+  onRename?: (name: string) => void;
   workspaceName?: string;
   /** Shown as the workspace badge's tooltip. */
   workspacePath?: string;
@@ -55,7 +94,9 @@ export interface TopBarProps {
 }
 
 export function TopBar({
+  sessionId,
   sessionName,
+  onRename,
   workspaceName,
   workspacePath,
   branch,
@@ -113,9 +154,7 @@ export function TopBar({
       >
         {sessionName && (
           <>
-            <span data-tauri-drag-region className="truncate font-medium text-fg-secondary">
-              {sessionName}
-            </span>
+            <SessionTitle key={sessionId} name={sessionName} onRename={onRename} />
             {workspaceName && (
               <span data-tauri-drag-region className="text-fg-subtle">
                 /

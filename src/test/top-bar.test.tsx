@@ -229,4 +229,47 @@ describe("TopBar", () => {
     });
   });
 
+  describe("renaming from the title", () => {
+    const typeAndPress = (value: string, key: string) => {
+      const field = screen.getByRole("textbox", { name: "Rename Alpha" });
+      fireEvent.change(field, { target: { value } });
+      fireEvent.keyDown(field, { key });
+    };
+
+    it("renames the session from a double-click on its title", () => {
+      const onRename = vi.fn();
+      renderTopBar({ sessionId: "s1", sessionName: "Alpha", onRename });
+      fireEvent.doubleClick(screen.getByText("Alpha"));
+      expect(screen.getByRole("textbox", { name: "Rename Alpha" })).toHaveProperty("value", "Alpha");
+      typeAndPress("Beta", "Enter");
+      expect(onRename).toHaveBeenCalledTimes(1);
+      expect(onRename).toHaveBeenCalledWith("Beta");
+      expect(screen.queryByRole("textbox", { name: "Rename Alpha" })).toBeNull();
+    });
+
+    it("keeps the name on Escape, a blank name or the same name", () => {
+      const onRename = vi.fn();
+      renderTopBar({ sessionId: "s1", sessionName: "Alpha", onRename });
+      for (const [value, key] of [["Beta", "Escape"], ["   ", "Enter"], [" Alpha ", "Enter"]]) {
+        fireEvent.doubleClick(screen.getByText("Alpha"));
+        typeAndPress(value, key);
+      }
+      expect(onRename).not.toHaveBeenCalled();
+    });
+
+    it("closes the field when another session shows", () => {
+      const onRename = vi.fn();
+      const view = renderTopBar({ sessionId: "s1", sessionName: "Alpha", onRename });
+      fireEvent.doubleClick(screen.getByText("Alpha"));
+      view.rerender(<TopBar sessionId="s2" sessionName="Other" onRename={onRename} />);
+      expect(screen.queryByRole("textbox")).toBeNull();
+      expect(onRename).not.toHaveBeenCalled();
+    });
+
+    it("offers no rename without onRename", () => {
+      renderTopBar({ sessionId: "s1", sessionName: "Alpha" });
+      fireEvent.doubleClick(screen.getByText("Alpha"));
+      expect(screen.queryByRole("textbox")).toBeNull();
+    });
+  });
 });

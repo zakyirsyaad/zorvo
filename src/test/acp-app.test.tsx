@@ -127,6 +127,26 @@ describe("ACP sessions in the app", () => {
     expect(screen.queryByTestId("agent-working")).toBeNull();
   });
 
+  it("writes a large session's reply as soon as its turn ends, not at its next interval", async () => {
+    const spy = await renderWithQwen();
+    // The backend reports a large transcript, so a plain write would wait 10 s.
+    spy.mockImplementation((cmd, args) =>
+      cmd === "save_transcript" ? realInvoke(cmd, args).then(() => 50 * 1024 * 1024) : realInvoke(cmd, args),
+    );
+    const sessionId = await startQwenSession(spy);
+    await waitFor(() => expect(fakeStore().transcripts[sessionId]).toBeDefined());
+    await send("hi");
+
+    await acpEvent({
+      sessionId,
+      kind: "update",
+      update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "The whole answer" } },
+    });
+    await acpEvent({ sessionId, kind: "turn-end", stopReason: "end_turn" });
+
+    await waitFor(() => expect(JSON.stringify(fakeStore().transcripts[sessionId])).toContain("The whole answer"));
+  });
+
   it("applies a streamed chunk before the turn end that closes it", async () => {
     const spy = await renderWithQwen();
     const sessionId = await startQwenSession(spy);

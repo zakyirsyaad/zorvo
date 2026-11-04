@@ -18,12 +18,12 @@ function tauriInternals(): TauriInternals {
 }
 
 describe("transcriptSaveInterval", () => {
-  it("is a second for a small or unknown size, grows with the size, and stops at 30 seconds", () => {
+  it("is a second for a small or unknown size, grows with the size, and stops at 10 seconds", () => {
     expect(transcriptSaveInterval(undefined)).toBe(1000);
     expect(transcriptSaveInterval(0)).toBe(1000);
     expect(transcriptSaveInterval(100 * 1024)).toBe(1000);
     expect(transcriptSaveInterval(1024 * 1024)).toBe(8000);
-    expect(transcriptSaveInterval(7_749_636)).toBe(30_000);
+    expect(transcriptSaveInterval(7_749_636)).toBe(10_000);
     expect(transcriptSaveInterval(Number.NaN)).toBe(1000);
   });
 });
@@ -134,14 +134,81 @@ describe("useTranscripts", () => {
     }
   });
 
-  it("waits at most 30 seconds between saves, however large the transcript", async () => {
+  it("waits at most 10 seconds between saves, however large the transcript", async () => {
     vi.useFakeTimers();
     try {
       const spy = reportWrittenSize(500 * 1024 * 1024);
       const { result } = renderHook(() => useTranscripts(() => {}));
 
-      // Saves at 1 s (the size is not known yet), then 31 s and 61 s.
-      expect(await streamAndCountSaves(result, spy, 62_000, 1000)).toBe(3);
+      // Saves at 1 s (the size is not known yet), then 11 s and 21 s.
+      expect(await streamAndCountSaves(result, spy, 22_000, 1000)).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("writes what saveSoon asks to keep within a moment, however large the transcript", async () => {
+    vi.useFakeTimers();
+    try {
+      const spy = reportWrittenSize(1024 * 1024);
+      const { result } = renderHook(() => useTranscripts(() => {}));
+      const saved = () => spy.mock.calls.filter(([cmd]) => cmd === "save_transcript");
+      act(() => result.current.updateMessages("s-1", (prev) => [...prev, live]));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(saved()).toHaveLength(1);
+
+      // The next write would wait 8 s; a turn that ends asks for it now.
+      act(() => {
+        result.current.updateMessages("s-1", (prev) => [...prev, { ...live, id: "m-turn-end" }]);
+        result.current.saveSoon("s-1");
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100);
+      });
+
+      expect(saved()).toHaveLength(2);
+      const written = saved()[1][1]?.messages as ChatMessage[];
+      expect(written.map((m) => m.id)).toEqual(["m-new", "m-turn-end"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not push a near write back when saveSoon is asked again and again", async () => {
+    vi.useFakeTimers();
+    try {
+      const spy = reportWrittenSize(1024 * 1024);
+      const { result } = renderHook(() => useTranscripts(() => {}));
+      const saves = () => spy.mock.calls.filter(([cmd]) => cmd === "save_transcript").length;
+
+      act(() => result.current.updateMessages("s-1", (prev) => [...prev, live]));
+      for (let i = 0; i < 4; i++) {
+        act(() => result.current.saveSoon("s-1"));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(30);
+        });
+      }
+
+      expect(saves()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("writes nothing for saveSoon when nothing changed since the last write", async () => {
+    vi.useFakeTimers();
+    try {
+      const spy = reportWrittenSize(100);
+      const { result } = renderHook(() => useTranscripts(() => {}));
+
+      act(() => result.current.saveSoon("s-1"));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+
+      expect(spy.mock.calls.some(([cmd]) => cmd === "save_transcript")).toBe(false);
     } finally {
       vi.useRealTimers();
     }

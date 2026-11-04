@@ -18,7 +18,12 @@ const TRANSCRIPT_SAVE_INTERVAL_MS = 1000;
  */
 const TRANSCRIPT_WRITE_BYTES_PER_SECOND = 128 * 1024;
 /** The longest wait, so a crash loses at most this much of a long session's stream. */
-const TRANSCRIPT_MAX_SAVE_INTERVAL_MS = 30_000;
+const TRANSCRIPT_MAX_SAVE_INTERVAL_MS = 10_000;
+/**
+ * How soon `saveSoon` writes: a turn that ended or a question to the user is kept at once, whatever
+ * the size. Not zero: the write reads the transcript after React has applied the change.
+ */
+const TRANSCRIPT_SOON_SAVE_MS = 100;
 
 /** How long to wait before the next write of a transcript whose last write was `bytes` long. */
 export function transcriptSaveInterval(bytes: number | undefined): number {
@@ -31,6 +36,8 @@ export interface TranscriptsHandle {
   transcripts: Transcripts;
   ensureLoaded: (sessionId: string) => void;
   updateMessages: (sessionId: string, updater: (prev: ChatMessage[]) => ChatMessage[]) => void;
+  /** Brings a session's waiting write forward to a moment from now; nothing when nothing is waiting. */
+  saveSoon: (sessionId: string) => void;
   removeTranscript: (sessionId: string) => void;
   /** Whether each session's saved history has been read; absent while it loads. */
   transcriptStatus: Readonly<Record<string, 'ready' | 'failed'>>;
@@ -60,6 +67,8 @@ export function useTranscripts(onError: (message: string) => void): TranscriptsH
   // this run never writes over it.
   const unreadableRef = useRef(new Set<string>());
   const timersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  // When each waiting timer fires (Date.now() time), so saveSoon never pushes a nearer one back.
+  const dueRef = useRef(new Map<string, number>());
 
   useEffect(() => {
     const timers = timersRef.current;
@@ -118,21 +127,43 @@ export function useTranscripts(onError: (message: string) => void): TranscriptsH
    * A throttle, not a debounce: a save already due writes the latest messages, so it is not pushed
    * back. The wait grows with the size of the last write (`transcriptSaveInterval`).
    */
-  const scheduleSave = useCallback(
-    (sessionId: string) => {
+  const arm = useCallback(
+    (sessionId: string, delay: number) => {
       const timers = timersRef.current;
-      if (timers.has(sessionId)) return;
+      dueRef.current.set(sessionId, Date.now() + delay);
       timers.set(
         sessionId,
         setTimeout(() => {
           timers.delete(sessionId);
+          dueRef.current.delete(sessionId);
           save(sessionId);
-        }, transcriptSaveInterval(writtenSizeRef.current.get(sessionId))),
+        }, delay),
       );
     },
     [save],
   );
+
+  const scheduleSave = useCallback(
+    (sessionId: string) => {
+      if (timersRef.current.has(sessionId)) return;
+      arm(sessionId, transcriptSaveInterval(writtenSizeRef.current.get(sessionId)));
+    },
+    [arm],
+  );
   const scheduleSaveRef = useLatest(scheduleSave);
+
+  const saveSoon = useCallback(
+    (sessionId: string) => {
+      const timers = timersRef.current;
+      if (!timers.has(sessionId)) return;
+      const due = dueRef.current.get(sessionId) ?? Infinity;
+      if (due - Date.now() <= TRANSCRIPT_SOON_SAVE_MS) return;
+      clearTimeout(timers.get(sessionId));
+      timers.delete(sessionId);
+      arm(sessionId, TRANSCRIPT_SOON_SAVE_MS);
+    },
+    [arm],
+  );
 
   /**
    * Writes what is still waiting for its timer, and what an earlier write failed to write,
@@ -146,6 +177,7 @@ export function useTranscripts(onError: (message: string) => void): TranscriptsH
     const waiting = [...new Set([...timers.keys(), ...unwrittenRef.current])];
     timers.forEach((timer) => clearTimeout(timer));
     timers.clear();
+    dueRef.current.clear();
     const loading = waiting.filter((sessionId) => loadingRef.current.has(sessionId));
     loading.forEach((sessionId) => scheduleSaveRef.current(sessionId));
     waiting
@@ -210,6 +242,7 @@ export function useTranscripts(onError: (message: string) => void): TranscriptsH
     (sessionId: string) => {
       clearTimeout(timersRef.current.get(sessionId));
       timersRef.current.delete(sessionId);
+      dueRef.current.delete(sessionId);
       unwrittenRef.current.delete(sessionId);
       writeCountRef.current.delete(sessionId);
       writtenSizeRef.current.delete(sessionId);
@@ -222,5 +255,5 @@ export function useTranscripts(onError: (message: string) => void): TranscriptsH
     [onErrorRef],
   );
 
-  return { transcripts, transcriptStatus, ensureLoaded, updateMessages, removeTranscript, flush };
+  return { transcripts, transcriptStatus, ensureLoaded, updateMessages, saveSoon, removeTranscript, flush };
 }

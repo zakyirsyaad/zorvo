@@ -145,7 +145,7 @@ export default function App() {
   const reportError = useCallback((message: string) => setNotice(message), []);
   const { state, isLoaded, updateState, getState, saveNow } = usePersistedState(reportError);
   useAppearance(state.settings.appearance, isLoaded, reportError);
-  const { transcripts, transcriptStatus, ensureLoaded, updateMessages, removeTranscript, flush: flushTranscripts } = useTranscripts(reportError);
+  const { transcripts, transcriptStatus, ensureLoaded, updateMessages, saveSoon, removeTranscript, flush: flushTranscripts } = useTranscripts(reportError);
   const { agents, isLoaded: areAgentsLoaded, refresh: refreshAgents, reload: reloadAgents } = useAgentProfiles(reportError);
   const agentCatalog = useAgentCatalog();
   const shell = useShellActions(setNotice);
@@ -383,6 +383,7 @@ export default function App() {
   const acp = useAcpEngine({
     ...engineDeps,
     transcripts,
+    saveSoon,
     rememberOptions: rememberAgentOptions,
     onAttention: (id, reason) => { notifyAttention(id, reason); if (reason !== "needs-answer") setRunVersion((n) => n + 1); },
     onAuthRequired: (session, methods, unsent) => {

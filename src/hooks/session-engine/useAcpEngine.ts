@@ -95,6 +95,8 @@ export interface AcpEngineDeps extends EngineDeps {
    * sends again). Without it the error is reported as a plain notice and there is nothing to try again.
    */
   onTurnFailed?: (sessionId: string, error: string | null) => void;
+  /** Writes the session's transcript in a moment rather than at its next interval: a turn ended, or the agent asks the user. */
+  saveSoon?: (sessionId: string) => void;
 }
 
 /**
@@ -113,6 +115,7 @@ export function useAcpEngine({
   onAttention,
   transcripts,
   onTurnFailed,
+  saveSoon,
 }: AcpEngineDeps) {
   const [starting, setStarting] = useState<ReadonlySet<string>>(new Set());
   const agentFailures = useAgentFailures();
@@ -191,10 +194,12 @@ export function useAcpEngine({
     }),
     onPermission: unlessStopped((sessionId, request: PermissionRequestPayload) => {
       updateNow(sessionId, (prev) => applyPermissionRequest(prev, request, ctx(sessionId)));
+      saveSoon?.(sessionId);
       onAttention?.(sessionId, 'needs-answer');
     }),
     onElicitation: unlessStopped((sessionId, card: ElicitationCard) => {
       updateNow(sessionId, (prev) => applyElicitation(prev, card, ctx(sessionId)));
+      saveSoon?.(sessionId);
       onAttention?.(sessionId, 'needs-answer');
     }),
     onElicitationComplete: unlessStopped((sessionId, key: string) => {
@@ -203,6 +208,7 @@ export function useAcpEngine({
     onTurnEnd: unlessStopped((sessionId, { stopReason, error }: TurnResult) => {
       agentFailures.clear(sessionId);
       updateNow(sessionId, closeTurn);
+      saveSoon?.(sessionId);
       const authMethods = parseAuthRequired(error);
       if (authMethods) {
         handBackForSignIn(sessionId, authMethods);
@@ -221,6 +227,7 @@ export function useAcpEngine({
     onExit: unlessStopped((sessionId, code: number | null) => {
       agentFailures.clear(sessionId);
       updateNow(sessionId, closeTurn);
+      saveSoon?.(sessionId);
       // The agent leaves no more updates: the cards it showed are the ones marked unanswered.
       elicitations.abandon(sessionId);
       patchSession(sessionId, { status: 'terminated', endedAt: Date.now(), exitCode: code });

@@ -6,6 +6,7 @@ import {
   GitCompare,
   ExternalLink,
   MoreHorizontal,
+  PanelLeft,
   SquareTerminal,
   History,
 } from "lucide-react";
@@ -38,6 +39,8 @@ export interface TopBarProps {
   /** The branch's pull request, with a chip that opens it; none when absent. */
   pullRequest?: PullRequestStatus | null;
   onOpenPullRequest?: (url: string) => void;
+  /** Set while the sidebar is hidden: its show button leads the bar. */
+  onShowSidebar?: () => void;
   canGoBack?: boolean;
   canGoForward?: boolean;
   onBack?: () => void;
@@ -78,6 +81,7 @@ export function TopBar({
   branch,
   pullRequest,
   onOpenPullRequest,
+  onShowSidebar,
   canGoBack = false,
   canGoForward = false,
   onBack,
@@ -107,6 +111,11 @@ export function TopBar({
     >
       {/* Left: session navigation. The traffic lights above are the OS's own. */}
       <div data-tauri-drag-region className="flex items-center space-x-0.5 text-fg-subtle">
+        {onShowSidebar && (
+          <IconButton label="Show sidebar" onClick={onShowSidebar}>
+            <PanelLeft size={14} />
+          </IconButton>
+        )}
         <IconButton
           label="Back"
           onClick={canGoBack ? onBack : undefined}

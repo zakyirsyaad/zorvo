@@ -1,14 +1,38 @@
-<!-- @dsCard group="Navigation" height=172 -->
+<!-- @dsCard group="Navigation" height=300 -->
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>SessionRow — preview</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&amp;family=Geist+Mono:wght@400&amp;display=swap"></head>
+<head><meta charset="utf-8"><title>SessionRow — preview</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400&amp;display=swap">
+<style>
+.z-side { width: 256px; box-sizing: border-box; padding: var(--space-3); background: var(--surface-1); font-family: var(--font-sans); }
+.z-folder { display: flex; align-items: center; gap: var(--space-1\.5); height: 32px; padding: 0 var(--space-1\.5); color: var(--fg-subtle); font: 400 12px/16px var(--font-sans); }
+.z-folder svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.75; flex-shrink: 0; }
+.z-folder__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.z-folder__sum { color: var(--status-attention); font: 400 11px/16px var(--font-sans); }
+.z-srow { position: relative; display: flex; align-items: center; gap: var(--space-2); height: 44px; padding: 0 var(--space-2); border-radius: var(--radius-md); color: var(--fg-muted); }
+.z-srow[aria-current="true"], .z-srow--hover { background: var(--surface-hover); color: var(--fg); }
+.z-srow__dot { width: 6px; height: 6px; border-radius: var(--radius-full); flex-shrink: 0; }
+.z-srow__dot--running { background: var(--status-running); }
+.z-srow__dot--attention { background: var(--status-attention); }
+.z-srow__dot--unread { background: var(--status-unread); }
+.z-srow__text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.z-srow__title, .z-srow__sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.z-srow__title { font: 400 13px/18px var(--font-sans); }
+.z-srow__title--unread { color: var(--fg); font-weight: 500; }
+.z-srow__sub { color: var(--fg-muted); font: 400 11px/16px var(--font-sans); }
+.z-srow__actions { display: flex; gap: var(--space-0\.5); }
+.z-srow__actions span { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: var(--radius-md); color: var(--fg-subtle); }
+.z-srow__actions svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+</style>
+</head>
 <body>
 <div class="z-stage" style="padding:0;align-items:stretch">
-  <nav class="z-sidebar" aria-label="Sessions">
-    <div class="z-row" aria-current="true"><span class="z-row__title">Rename the app to Zorvo</span><span class="z-row__meta"><span class="z-dot z-dot--running"></span></span></div>
-    <div class="z-row"><span class="z-row__title">Fix the flaky transcripts test</span><span class="z-row__meta"><span class="z-dot z-dot--attention"></span></span></div>
-    <div class="z-row"><span class="z-row__title">Add @-mentions to the composer</span><span class="z-row__meta"><span class="z-dot z-dot--unread"></span></span></div>
-    <div class="z-row"><span class="z-row__title">Show PR checks in the top bar</span><span class="z-row__meta">2d</span></div>
+  <nav class="z-side" aria-label="Sessions">
+    <div class="z-folder"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg><span class="z-folder__name">agent-desktop</span></div>
+    <div class="z-srow" aria-current="true"><span class="z-srow__dot z-srow__dot--running"></span><span class="z-srow__text"><span class="z-srow__title">Rename the app to Zorvo</span><span class="z-srow__sub">Claude Code · Working</span></span></div>
+    <div class="z-srow z-srow--hover"><span class="z-srow__dot z-srow__dot--attention"></span><span class="z-srow__text"><span class="z-srow__title">Fix the flaky transcripts test</span><span class="z-srow__sub">Codex · Waiting for you</span></span><span class="z-srow__actions"><span><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></span></span></div>
+    <div class="z-srow"><span class="z-srow__dot z-srow__dot--unread"></span><span class="z-srow__text"><span class="z-srow__title z-srow__title--unread">Add @-mentions to the composer</span><span class="z-srow__sub">Qwen Code · Finished, unread</span></span></div>
+    <div class="z-srow"><span class="z-srow__dot"></span><span class="z-srow__text"><span class="z-srow__title">Show PR checks in the top bar</span><span class="z-srow__sub">Claude Code · 2 hours ago</span></span></div>
+    <div class="z-folder"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg><span class="z-folder__name">titan-investment</span><span class="z-folder__sum">1 waiting</span></div>
   </nav>
 </div>
 </body>

@@ -123,7 +123,7 @@ function endedSession(id: string, name: string, createdAt: number, acpSessionId:
 /** Starts a session with a first message and ends its turn, so the next message goes to a running agent. */
 async function startRunningSession(spy: Spy) {
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+    fireEvent.click(screen.getByRole("button", { name: "New session" }));
   });
   await send(FIRST_MESSAGE);
   await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
@@ -235,7 +235,7 @@ describe("a message that did not reach the agent", () => {
     const spy = await renderWithQwen();
     answer(spy, "acp_start_session", () => Promise.reject("spawn failed"));
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
 
     await send(FIRST_MESSAGE);

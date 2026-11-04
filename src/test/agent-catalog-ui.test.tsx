@@ -616,7 +616,7 @@ describe("Catalog actions — Remove in the app", () => {
       render(<App />);
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
     const prompt = screen.getByRole("textbox", { name: "Prompt" });
     await act(async () => {

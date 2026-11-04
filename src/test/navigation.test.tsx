@@ -43,7 +43,7 @@ describe("Navigation and Layout Components", () => {
       { name: "titan-investment", path: "/Users/mac/titan-investment" },
     ];
 
-    it("groups sessions under their workspace, with the given footer and detected agents", () => {
+    it("groups sessions under their workspace, with the given footer", () => {
       const onNewSession = vi.fn();
       const onSelectSession = vi.fn();
 
@@ -60,7 +60,7 @@ describe("Navigation and Layout Components", () => {
         />
       );
 
-      fireEvent.click(screen.getByRole("button", { name: /\+ new/i }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
       expect(onNewSession).toHaveBeenCalledTimes(1);
 
       const workspaceList = within(screen.getByRole("list", { name: "Workspaces" }));
@@ -73,15 +73,13 @@ describe("Navigation and Layout Components", () => {
       fireEvent.click(titanSessions.getByText("Market analyzer refactor"));
       expect(onSelectSession).toHaveBeenCalledWith("s-2");
       // Which agent runs a session is in its tooltip.
-      expect(titanSessions.getByTitle("Market analyzer refactor · Qwen Code")).toBeDefined();
+      expect(titanSessions.getByTitle(/^Market analyzer refactor · Qwen Code · /)).toBeDefined();
 
-      const agentList = within(screen.getByRole("list", { name: "Detected agents" }));
-      expect(agentList.getByText("Claude Code")).toBeDefined();
       expect(screen.getByText("footer content")).toBeDefined();
       expect(screen.queryByText(/iwang/i)).toBeNull();
     });
 
-    it("shows each session's agent by its logo, and the detected agents too", () => {
+    it("names each session's agent on its second line", () => {
       render(
         <Sidebar
           workspaces={workspaces}
@@ -93,13 +91,9 @@ describe("Navigation and Layout Components", () => {
       );
 
       const claudeRow = within(screen.getByText("New session (fork)").closest("li") as HTMLElement);
-      // The logo itself (small SVGs are inlined by Vite), not the generic icon.
-      expect(claudeRow.getByRole("img", { name: "Claude Code" }).tagName.toLowerCase()).toBe("img");
-      // An agent with no official logo: a generic agent icon names it instead.
+      expect(claudeRow.getByText("Claude Code")).toBeDefined();
       const acmeRow = within(screen.getByText("Logoless chat").closest("li") as HTMLElement);
-      expect(acmeRow.getByRole("img", { name: "Acme Agent" }).tagName.toLowerCase()).toBe("svg");
-      const detected = within(screen.getByRole("list", { name: "Detected agents" }));
-      expect(detected.getByRole("img", { name: "Claude Code" })).toBeDefined();
+      expect(acmeRow.getByText("Acme Agent")).toBeDefined();
     });
 
     it("shows a workspace without sessions, and its + asks which agent to start there", () => {
@@ -174,6 +168,78 @@ describe("Navigation and Layout Components", () => {
       fireEvent.click(heading);
       expect(heading.getAttribute("aria-expanded")).toBe("true");
       expect(screen.getByText("Market analyzer refactor")).toBeDefined();
+    });
+
+    it("lays the sidebar out from New session down to Archived", () => {
+      const base = mockSessions[1];
+      render(
+        <Sidebar
+          workspaces={workspaces}
+          sessions={[
+            { ...base, id: "p", name: "Pinned work", pinned: true },
+            { ...base, id: "a", name: "Old work", archivedAt: 10 },
+            base,
+          ]}
+          agents={mockProfiles}
+          onHide={() => {}}
+          onNewSession={() => {}}
+          onSelectSession={() => {}}
+        />
+      );
+      const inOrder = [
+        screen.getByRole("button", { name: "Hide sidebar" }),
+        screen.getByRole("button", { name: "New session" }),
+        screen.getByRole("textbox", { name: "Search sessions" }),
+        screen.getByRole("list", { name: "Pinned sessions" }),
+        screen.getByRole("list", { name: "Workspaces" }),
+        screen.getByRole("button", { name: "Archived (1)" }),
+      ];
+      for (let i = 1; i < inOrder.length; i++) {
+        expect(inOrder[i - 1].compareDocumentPosition(inOrder[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      }
+      expect(screen.getByRole("textbox", { name: "Search sessions" }).getAttribute("placeholder")).toBe("Search sessions");
+    });
+
+    it("shows a folded folder's summary in words", () => {
+      render(
+        <Sidebar
+          workspaces={workspaces}
+          sessions={mockSessions}
+          agents={mockProfiles}
+          isSessionWaiting={(id) => id === "s-2"}
+          onNewSession={() => {}}
+          onSelectSession={() => {}}
+        />
+      );
+      const heading = screen.getByRole("button", { name: "titan-investment" });
+      expect(screen.queryByText("1 waiting")).toBeNull();
+
+      fireEvent.click(heading);
+      expect(screen.getByText("1 waiting").className).toContain("text-status-attention");
+
+      fireEvent.click(heading);
+      expect(screen.queryByText("1 waiting")).toBeNull();
+    });
+
+    it("shows the folder's + on hover or focus, and its chevron while open", () => {
+      render(
+        <Sidebar
+          workspaces={workspaces}
+          sessions={mockSessions}
+          agents={mockProfiles}
+          onNewSessionIn={() => {}}
+          onNewSession={() => {}}
+          onSelectSession={() => {}}
+        />
+      );
+      const plus = screen.getByRole("button", { name: "New session in titan-investment" });
+      const actions = plus.closest("[data-testid='folder-actions']") as HTMLElement;
+      expect(actions.className).toContain("group-hover:opacity-100");
+      expect(actions.className).toContain("group-focus-within:opacity-100");
+      // Its agent menu stays visible while it is open, wherever the pointer goes.
+      expect(actions.className).toContain("has-[[role=menu]]:opacity-100");
+      const chevron = screen.getByRole("button", { name: "titan-investment" }).querySelector("[data-chevron]") as Element;
+      expect(chevron.getAttribute("class")).toContain("group-hover:opacity-100");
     });
 
     describe("organizing sessions", () => {
@@ -288,7 +354,7 @@ describe("Navigation and Layout Components", () => {
           <Sidebar workspaces={workspaces} sessions={withUnread} agents={mockProfiles} onNewSession={() => {}} onSelectSession={() => {}} />
         );
         const row = () => screen.getByText("Done work").closest("li") as HTMLElement;
-        expect(within(row()).getByLabelText("New activity")).toBeDefined();
+        expect(within(row()).getByText(/(^|· )Finished, unread$/)).toBeDefined();
 
         rerender(
           <Sidebar
@@ -300,8 +366,8 @@ describe("Navigation and Layout Components", () => {
             isSessionBusy={(id) => id === "done"}
           />
         );
-        expect(within(row()).queryByLabelText("New activity")).toBeNull();
-        expect(within(row()).getByLabelText("Agent working")).toBeDefined();
+        expect(within(row()).queryByText(/(^|· )Finished, unread$/)).toBeNull();
+        expect(within(row()).getByText(/(^|· )Working$/)).toBeDefined();
       });
 
       it("finds pinned and archived sessions when searching", () => {
@@ -332,85 +398,6 @@ describe("Navigation and Layout Components", () => {
       expect(forks.getByText("Refactor plan (fork)")).toBeDefined();
       // The fork is listed once, under its source, not again at the top level.
       expect(screen.getAllByText("Refactor plan (fork)")).toHaveLength(1);
-    });
-
-    function renderWithAgents(agents: AgentProfile[], settings?: { enabledAgents?: string[] }) {
-      return render(
-        <Sidebar
-          settings={settings}
-          workspaces={workspaces}
-          sessions={mockSessions}
-          agents={agents}
-          onNewSession={() => {}}
-          onSelectSession={() => {}}
-          footer={<span>footer content</span>}
-        />
-      );
-    }
-
-    it("lists only detected agents, without a Not found status", () => {
-      renderWithAgents([
-        makeProfile({ id: "claude-acp", name: "Claude Code", detected: true }),
-        makeProfile({ id: "codex-acp", name: "Codex", detected: false }),
-        makeProfile({ id: "qwen-code", name: "Qwen Code", detected: true }),
-      ]);
-
-      const items = within(screen.getByRole("list", { name: "Detected agents" })).getAllByRole("listitem");
-      expect(items.map((item) => item.textContent)).toEqual([
-        expect.stringContaining("Claude Code"),
-        expect.stringContaining("Qwen Code"),
-      ]);
-      expect(screen.queryByText("Codex")).toBeNull();
-      expect(screen.queryByText("Not found")).toBeNull();
-    });
-
-    it("lists only the agents in use", () => {
-      renderWithAgents(
-        [
-          makeProfile({ id: "claude-acp", name: "Claude Code", source: "registry", detected: true }),
-          makeProfile({ id: "gemini", name: "Gemini CLI", source: "registry", detected: true }),
-        ],
-        { enabledAgents: ["claude-acp"] },
-      );
-
-      const items = within(screen.getByRole("list", { name: "Detected agents" })).getAllByRole("listitem");
-      expect(items).toHaveLength(1);
-      expect(items[0].textContent).toContain("Claude Code");
-      expect(screen.queryByText("Gemini CLI")).toBeNull();
-    });
-
-    it("pins detected agents directly above the footer, outside the scrolling area", () => {
-      renderWithAgents([makeProfile({ id: "claude-acp", name: "Claude Code", detected: true })]);
-
-      const section = screen.getByRole("region", { name: "Detected agents" });
-      const footer = screen.getByText("footer content");
-
-      expect(section.closest(".overflow-y-auto")).toBeNull();
-      expect(screen.getByRole("list", { name: "Workspaces" }).closest(".overflow-y-auto")).not.toBeNull();
-      expect(section.nextElementSibling?.contains(footer)).toBe(true);
-    });
-
-    it("collapses and expands the detected agents list from its header", () => {
-      renderWithAgents([makeProfile({ id: "claude-acp", name: "Claude Code", detected: true })]);
-
-      const toggle = screen.getByRole("button", { name: /Detected Agents/i });
-      expect(toggle.getAttribute("aria-expanded")).toBe("true");
-
-      fireEvent.click(toggle);
-      expect(toggle.getAttribute("aria-expanded")).toBe("false");
-      expect(screen.queryByRole("list", { name: "Detected agents" })).toBeNull();
-      expect(within(toggle).getByText("1")).toBeDefined();
-
-      fireEvent.click(toggle);
-      expect(screen.getByRole("list", { name: "Detected agents" })).toBeDefined();
-    });
-
-    it("hides the agents section when no agent is detected", () => {
-      renderWithAgents([makeProfile({ id: "codex-acp", name: "Codex", detected: false })]);
-
-      expect(screen.queryByRole("region", { name: "Detected agents" })).toBeNull();
-      expect(screen.queryByText(/Detected Agents/i)).toBeNull();
-      expect(screen.getByText("footer content")).toBeDefined();
     });
 
     it("filters sessions and workspaces when searching", () => {
@@ -455,6 +442,28 @@ describe("Navigation and Layout Components", () => {
   });
 
   describe("App Integration", () => {
+    it("hides the sidebar and shows it again, keeping its folds and its search", async () => {
+      await act(async () => {
+        render(<App />);
+      });
+      const sidebar = () => within(screen.getByRole("complementary", { hidden: true }));
+      const heading = () => sidebar().getByRole("button", { name: "ai-perpetual-trading", hidden: true });
+      fireEvent.click(heading());
+      expect(heading().getAttribute("aria-expanded")).toBe("false");
+
+      fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
+      expect(screen.getByRole("complementary", { hidden: true }).hasAttribute("hidden")).toBe(true);
+      fireEvent.click(screen.getByRole("button", { name: "Show sidebar" }));
+      expect(screen.getByRole("complementary").hasAttribute("hidden")).toBe(false);
+      expect(heading().getAttribute("aria-expanded")).toBe("false");
+      expect(screen.queryByRole("button", { name: "Show sidebar" })).toBeNull();
+
+      fireEvent.change(sidebar().getByRole("textbox", { name: "Search sessions" }), { target: { value: "trading" } });
+      fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
+      fireEvent.click(screen.getByRole("button", { name: "Show sidebar" }));
+      expect((sidebar().getByRole("textbox", { name: "Search sessions" }) as HTMLInputElement).value).toBe("trading");
+    });
+
     it("renders TopBar and Sidebar inside App, without the popout-only terminal drawer toggle", async () => {
       await act(async () => {
         render(<App />);

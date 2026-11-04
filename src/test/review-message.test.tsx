@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { createRef, useState, type RefObject } from "react";
 import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
 import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
+import { clickRowDelete } from "./sidebar-helpers";
 import { fakeTauriInvoke, type FakeTauriStore } from "./setup";
 import { fakeProfiles, makeProfile } from "./fixtures/agents";
 import type { AgentProfile, ReviewComment, Session, Settings } from "../types";
@@ -189,7 +190,7 @@ async function openSession(name: string) {
 }
 
 async function openNewDraft() {
-  await press("+ New session");
+  await press("New session");
 }
 
 async function refresh() {
@@ -582,11 +583,9 @@ describe("Which session the message is for", () => {
     await openSession("Beta work");
 
     const row = sidebarRow("Alpha work");
+    await clickRowDelete(() => row);
     await act(async () => {
-      fireEvent.click(within(row).getByRole("button", { name: "Delete session" }));
-    });
-    await act(async () => {
-      fireEvent.click(within(row).getByRole("button", { name: "Confirm delete" }));
+      fireEvent.click(within(row).getByRole("menuitem", { name: "Confirm delete" }));
     });
 
     expect(await screen.findByText(NOTE_FOR_GONE)).toBeDefined();

@@ -1,10 +1,10 @@
 import { useState, type ReactNode } from "react";
-import { Search, Plus, FolderPlus, ChevronRight } from "lucide-react";
-import { AgentLogo } from "./AgentLogo";
+import { Search, Plus, FolderPlus, ChevronRight, PanelLeft } from "lucide-react";
+import { Button } from "./ui/Button";
+import { IconButton } from "./ui/IconButton";
 import { isInUse, type EnabledSettings } from "../lib/enabled-agents";
-import { SIGN_IN_CHIP_STYLES, SIGN_IN_LABELS, type SignInState } from "../lib/agent-sign-in";
 import type { AgentProfile, Session, Workspace } from "../types";
-import { NewSessionMenu } from "./sidebar/NewSessionMenu";
+import { FolderGroup } from "./sidebar/FolderGroup";
 import { SessionTree, type SessionListContext } from "./sidebar/SessionList";
 import { compareRuns } from "../lib/compare-run";
 import {
@@ -25,12 +25,8 @@ export interface SidebarProps {
   /** The compare run whose panel is open. */
   activeRunId?: string | null;
   agents: AgentProfile[];
-  /** Decides which registry agents are in use; the defaults apply when absent. */
+  /** Decides which agents a folder's + offers; the defaults apply when absent. */
   settings?: EnabledSettings;
-  /** Where each agent stands on signing in; every agent reads Ready when absent. */
-  signInStateOf?: (profileId: string) => SignInState;
-  /** Starts a new session with an agent that is not ready, which asks it and shows its sign-in. */
-  onSetUpAgent?: (profileId: string) => void;
   onNewSession: () => void;
   onSelectSession: (sessionId: string) => void;
   /** Opens a compare run's panel. */
@@ -54,6 +50,10 @@ export interface SidebarProps {
   onArchiveSession?: (sessionId: string, isArchived: boolean) => void;
   /** Bottom bar content, e.g. the user's profile. */
   footer?: ReactNode;
+  /** Hidden, the sidebar stays mounted, so its folds and its search are there when it comes back. */
+  isHidden?: boolean;
+  /** Hides the sidebar; the button is absent without it. */
+  onHide?: () => void;
 }
 
 const SECTION_HEADER_TEXT =
@@ -62,140 +62,6 @@ const SECTION_HEADER = `${SECTION_HEADER_TEXT} mb-1.5`;
 
 function matches(query: string, ...values: string[]): boolean {
   return query === "" || values.some((v) => v.toLowerCase().includes(query));
-}
-
-interface WorkspaceGroupProps {
-  group: SessionGroup;
-  isActive: boolean;
-  isExpanded: boolean;
-  onToggle: () => void;
-  /** The + button's menu; hidden when absent. */
-  newSessionMenu?: ReactNode;
-  context: SessionListContext;
-}
-
-/** A folder's heading, which folds its sessions away, and its sessions. */
-function WorkspaceGroup({ group, isActive, isExpanded, onToggle, newSessionMenu, context }: WorkspaceGroupProps) {
-  return (
-    <li>
-      <div className="group/ws flex items-center">
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={isExpanded}
-          title={group.path}
-          className={`flex-1 min-w-0 flex items-center gap-1 rounded px-1.5 py-1 text-left text-[12px] transition-colors hover:text-fg-secondary focus-ring ${
-            isActive ? "text-fg-secondary" : "text-fg-subtle"
-          }`}
-        >
-          <span className="truncate">{group.name}</span>
-          <ChevronRight
-            size={12}
-            aria-hidden="true"
-            className={`shrink-0 transition-transform ${
-              isExpanded ? "rotate-90 opacity-0 group-hover/ws:opacity-100" : ""
-            }`}
-          />
-        </button>
-        {newSessionMenu}
-      </div>
-      {isExpanded && group.sessions.length > 0 && (
-        <div className="mt-0.5">
-          <SessionTree nodes={group.sessions} label={`Sessions in ${group.name}`} context={context} />
-        </div>
-      )}
-    </li>
-  );
-}
-
-/** An agent's sign-in state; one that is not ready opens a new session with it, where the sign-in is checked and shown. */
-function SignInChip({ agentName, state, onSetUp }: { agentName: string; state: SignInState; onSetUp?: () => void }) {
-  const style = SIGN_IN_CHIP_STYLES[state];
-  const content = (
-    <>
-      <span className={`h-1.5 w-1.5 rounded-full ${style.dot} inline-block`} />
-      {SIGN_IN_LABELS[state]}
-    </>
-  );
-  const className = `flex shrink-0 items-center gap-1 text-[10px] font-medium ${style.text}`;
-  if (state === "ready" || !onSetUp) return <span className={className}>{content}</span>;
-  return (
-    <button
-      type="button"
-      onClick={onSetUp}
-      aria-label={state === "needed" ? `Sign in to ${agentName}` : `Check ${agentName}`}
-      className={`${className} rounded px-1 hover:bg-surface-2 focus-ring`}
-    >
-      {content}
-    </button>
-  );
-}
-
-/**
- * Installed agents, pinned above the footer; renders nothing when none are detected.
- * The header folds the list away to leave more room for the sessions.
- */
-function DetectedAgents({
-  agents,
-  settings,
-  signInStateOf,
-  onSetUpAgent,
-}: {
-  agents: AgentProfile[];
-  settings: EnabledSettings;
-  signInStateOf?: (profileId: string) => SignInState;
-  onSetUpAgent?: (profileId: string) => void;
-}) {
-  const [isExpanded, setIsExpanded] = useState(true);
-  const detected = agents.filter((agent) => agent.detected && isInUse(agent, settings));
-  if (detected.length === 0) return null;
-  return (
-    <section aria-label="Detected agents" className="border-t border-border px-3 pt-2.5 pb-2">
-      <button
-        type="button"
-        onClick={() => setIsExpanded((expanded) => !expanded)}
-        aria-expanded={isExpanded}
-        className={`${SECTION_HEADER_TEXT} group/agents w-full rounded transition-colors hover:text-fg-secondary focus-ring ${
-          isExpanded ? "mb-1.5" : ""
-        }`}
-      >
-        <span className="flex items-center gap-1">
-          Detected Agents
-          <ChevronRight
-            size={12}
-            aria-hidden="true"
-            className={`shrink-0 transition-transform ${
-              isExpanded
-                ? "rotate-90 opacity-0 group-hover/agents:opacity-100 group-focus-visible/agents:opacity-100"
-                : ""
-            }`}
-          />
-        </span>
-        <span className="text-[10px] text-fg-subtle">{detected.length}</span>
-      </button>
-      {isExpanded && (
-        <ul aria-label="Detected agents" className="space-y-0.5">
-          {detected.map((agent) => (
-            <li
-              key={agent.id}
-              title={agent.detected_path ?? undefined}
-              className="flex items-center justify-between rounded-md px-2 py-1 text-fg-secondary hover:bg-surface-hover"
-            >
-              <div className="flex items-center gap-2 truncate">
-                <AgentLogo profileId={agent.id} name={agent.name} />
-                <span className="truncate">{agent.name}</span>
-              </div>
-              <SignInChip
-                agentName={agent.name}
-                state={signInStateOf?.(agent.id) ?? "ready"}
-                onSetUp={onSetUpAgent ? () => onSetUpAgent(agent.id) : undefined}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
 }
 
 /** Finds a profile id's agent name for the search. */
@@ -240,8 +106,6 @@ export function Sidebar({
   activeRunId,
   agents,
   settings = {},
-  signInStateOf,
-  onSetUpAgent,
   onNewSession,
   onSelectSession,
   onOpenRun,
@@ -256,6 +120,8 @@ export function Sidebar({
   onPinSession,
   onArchiveSession,
   footer,
+  isHidden = false,
+  onHide,
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
@@ -301,32 +167,35 @@ export function Sidebar({
   };
 
   return (
-    <aside className="w-64 flex flex-col justify-between border-r border-border bg-surface-1 select-none text-xs text-fg-secondary">
-      <div className="p-3 border-b border-border">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search
-              size={13}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-subtle pointer-events-none"
-            />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search..."
-              aria-label="Search workspaces and sessions"
-              className="w-full rounded-md bg-surface-2 border border-border-strong py-1.5 pl-8 pr-3 text-xs text-fg-secondary placeholder-fg-subtle focus-ring"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={onNewSession}
-            aria-label="+ New session"
-            className="flex items-center gap-1 rounded-md bg-surface-3 hover:bg-surface-hover px-2.5 py-1.5 font-medium text-fg-secondary transition-colors focus-ring"
-          >
-            <Plus size={13} />
-            <span>New</span>
-          </button>
+    <aside
+      hidden={isHidden}
+      className="w-64 shrink-0 flex flex-col justify-between border-r border-border bg-surface-1 select-none text-xs text-fg-secondary"
+    >
+      <div className="flex flex-col gap-2 border-b border-border p-3">
+        <div className="flex items-center gap-1.5">
+          {onHide && (
+            <IconButton label="Hide sidebar" onClick={onHide}>
+              <PanelLeft size={14} />
+            </IconButton>
+          )}
+          <Button variant="outline" icon={<Plus size={13} />} onClick={onNewSession} className="flex-1">
+            New session
+          </Button>
+        </div>
+        <div className="relative">
+          <Search
+            size={13}
+            aria-hidden="true"
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-subtle pointer-events-none"
+          />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search sessions"
+            aria-label="Search sessions"
+            className="w-full rounded-md bg-surface-2 border border-border-strong py-1.5 pl-8 pr-3 text-ui text-fg-secondary placeholder-fg-subtle focus-ring"
+          />
         </div>
       </div>
 
@@ -360,24 +229,17 @@ export function Sidebar({
         )}
         <ul aria-label="Workspaces" className="space-y-3">
           {groups.map((group) => (
-            <WorkspaceGroup
+            <FolderGroup
               key={group.path}
               group={group}
               isActive={group.path === activeWorkspacePath}
-              // A search shows every match, folded or not.
-              isExpanded={query !== "" || !collapsedPaths.has(group.path)}
+              isFolded={collapsedPaths.has(group.path)}
+              isForcedOpen={query !== ""}
               onToggle={() => toggle(group.path)}
-              newSessionMenu={
-                onNewSessionIn && (
-                  <NewSessionMenu
-                    folderName={group.name}
-                    agents={detectedAgents}
-                    defaultAgentId={defaultAgentId}
-                    onPick={(agentId) => onNewSessionIn(group.path, agentId)}
-                  />
-                )
-              }
               context={context}
+              agents={detectedAgents}
+              defaultAgentId={defaultAgentId}
+              onNewSessionIn={onNewSessionIn}
             />
           ))}
         </ul>
@@ -407,7 +269,6 @@ export function Sidebar({
         )}
       </div>
 
-      <DetectedAgents agents={agents} settings={settings} signInStateOf={signInStateOf} onSetUpAgent={onSetUpAgent} />
       {footer && <div className="border-t border-border bg-bg">{footer}</div>}
     </aside>
   );

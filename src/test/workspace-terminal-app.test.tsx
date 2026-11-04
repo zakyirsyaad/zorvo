@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { StrictMode, useState } from "react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, within } from "@testing-library/react";
+import { clickRowDelete } from "./sidebar-helpers";
 import { fakeTauriInvoke, type FakeTauriStore } from "./setup";
 import type { TerminalViewProps } from "../components/TerminalView";
 
@@ -105,8 +106,8 @@ async function openSession(name: string) {
 
 async function deleteSession(name: string) {
   const row = () => sidebar().getByText(name).closest("li") as HTMLElement;
-  await click(within(row()).getByRole("button", { name: "Delete session" }));
-  await click(within(row()).getByRole("button", { name: "Confirm delete" }));
+  await clickRowDelete(row);
+  await click(within(row()).getByRole("menuitem", { name: "Confirm delete" }));
 }
 
 describe("Workspace terminal in the app", () => {

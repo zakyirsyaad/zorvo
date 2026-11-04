@@ -1,4 +1,5 @@
-import { Settings, User } from "lucide-react";
+import type { ReactNode } from "react";
+import { SlidersHorizontal, User } from "lucide-react";
 import type { GithubStatus } from "../lib/github";
 import { GithubMark } from "./GithubMark";
 import { IconButton } from "./ui/IconButton";
@@ -15,6 +16,8 @@ export interface ProfileFooterProps {
   onOpenSettings?: () => void;
   /** Agent updates waiting; puts a dot on the Settings button. */
   updateCount?: number;
+  /** The Agents button and its menu, shown before Settings. */
+  agents?: ReactNode;
 }
 
 const FALLBACK_DISPLAY_NAME = "Local user";
@@ -75,6 +78,7 @@ export function ProfileFooter({
   version,
   onOpenSettings,
   updateCount = 0,
+  agents,
 }: ProfileFooterProps) {
   const { displayName, initials } = identityOf(github, name?.trim() || undefined, email?.trim() || undefined);
   const isGithubConnected = github?.state === "signed-in" && Boolean(github.login);
@@ -111,14 +115,17 @@ export function ProfileFooter({
         </div>
       </div>
 
-      {onOpenSettings && (
-        <IconButton label={settingsLabel(updateCount)} onClick={onOpenSettings} className="relative">
-          <Settings size={14} />
-          {updateCount > 0 && (
-            <span aria-hidden="true" className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-primary" />
-          )}
-        </IconButton>
-      )}
+      <div className="flex shrink-0 items-center gap-0.5">
+        {agents}
+        {onOpenSettings && (
+          <IconButton label={settingsLabel(updateCount)} onClick={onOpenSettings} className="relative">
+            <SlidersHorizontal size={14} />
+            {updateCount > 0 && (
+              <span aria-hidden="true" className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-primary" />
+            )}
+          </IconButton>
+        )}
+      </div>
     </footer>
   );
 }

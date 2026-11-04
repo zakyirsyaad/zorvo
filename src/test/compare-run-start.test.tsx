@@ -356,7 +356,7 @@ describe("starting a compare run", () => {
         { id: "s-old", name: "Older work", profileId: "claude-acp", cwd: DRAFT_FOLDER, status: "terminated", createdAt: 1, transport: "acp" },
       ],
     });
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
     await tickAgents("Qwen Code");
     await send("fix the login");
     await endTurns(spy);
@@ -378,7 +378,7 @@ describe("starting a compare run", () => {
     await send("fix the login");
     await waitFor(() => expect(screen.queryByRole("button", { name: /^Folder:/ })).toBeNull());
 
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
 
     expect(await screen.findByRole("button", { name: /^Folder:/ })).toBeInTheDocument();
     expect(prompt()).toHaveAttribute("placeholder", expect.stringContaining("start a new session"));
@@ -416,7 +416,7 @@ describe("starting a compare run", () => {
         { id: "s-old", name: "Older work", profileId: "claude-acp", cwd: DRAFT_FOLDER, status: "terminated", createdAt: 1, transport: "acp" },
       ],
     });
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
     await tickAgents("Qwen Code");
     await send();
     await click(within(screen.getByRole("complementary")).getByText("Older work"));
@@ -436,7 +436,7 @@ describe("starting a compare run", () => {
         { id: "s-old", name: "Older work", profileId: "claude-acp", cwd: DRAFT_FOLDER, status: "terminated", createdAt: 1, transport: "acp" },
       ],
     });
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
     await tickAgents("Qwen Code");
     await send("fix the login");
     await click(within(screen.getByRole("complementary")).getByText("Older work"));
@@ -454,7 +454,7 @@ describe("starting a compare run", () => {
     await tickAgents("Qwen Code");
     await send("fix the login");
     await screen.findByRole("region", { name: "Compare run" });
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
     await tickAgents("Qwen Code");
     await send("add a readme");
     await click(within(screen.getByRole("complementary")).getByRole("button", { name: /fix the login.*2 agents/ }));

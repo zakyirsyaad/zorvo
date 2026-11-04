@@ -243,7 +243,7 @@ describe("a sign-in inside a compare run", () => {
     expect(signInPanel("Qwen Code")).toBeNull();
     expect(screen.queryByRole("textbox", { name: "Prompt" })).toBeNull();
     // The draft's panel shows the one request there is, had this refusal taken it.
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
     await click(await screen.findByRole("button", { name: "Agent: Claude Code" }));
     await click(screen.getByRole("option", { name: "Qwen Code" }));
     expect(prompt().value).toBe("");
@@ -360,7 +360,7 @@ describe("a sign-in inside a compare run", () => {
 
     await refuse(spy, ["claude-acp", "qwen-code"]);
 
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
     expect(screen.getByRole("region", { name: "Sign in to Kimi CLI" })).toBeInTheDocument();
     expect(prompt().value).toBe("");
   });
@@ -485,7 +485,7 @@ describe("a sign-in inside a compare run", () => {
 
     await refuse(spy, ["qwen-code"]);
 
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
     await click(await screen.findByRole("button", { name: /^Agent: / }));
     expect(await screen.findByRole("checkbox", { name: /^Compare Qwen Code/ })).toBeDisabled();
     expect(screen.getByRole("checkbox", { name: /^Compare Kimi CLI/ })).toBeEnabled();
@@ -574,7 +574,7 @@ describe("a sign-in inside a compare run", () => {
     const sessionId = sessionOf(spy, "qwen-code");
     await openRow("Qwen Code");
     await pressSignIn("Qwen Code");
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
     await click(await screen.findByRole("button", { name: /^Agent: / }));
     await click(screen.getByRole("option", { name: "Kimi CLI" }));
     await sendMessage("hello");
@@ -595,7 +595,7 @@ describe("a sign-in inside a compare run", () => {
     const spy = await startedRun({ overrides });
     await refuse(spy, ["qwen-code"]);
     const rowSession = sessionOf(spy, "qwen-code");
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
     await click(await screen.findByRole("button", { name: /^Agent: / }));
     await click(screen.getByRole("option", { name: "Qwen Code" }));
     await sendMessage("hello");
@@ -622,7 +622,7 @@ describe("a sign-in inside a compare run", () => {
     const spy = await startedRun({ overrides });
     await refuse(spy, ["qwen-code"]);
     const rowSession = sessionOf(spy, "qwen-code");
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
     await click(await screen.findByRole("button", { name: /^Agent: / }));
     await click(screen.getByRole("option", { name: "Qwen Code" }));
     await sendMessage("hello");
@@ -834,7 +834,7 @@ describe("a sign-in inside a compare run", () => {
     const sessionId = sessionOf(spy, "qwen-code");
     await waitFor(() => expect(promptsTo(spy, sessionId)).toHaveLength(2));
 
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
     await refuse(spy, ["qwen-code"]);
 
     // Not kept for a row that no longer exists: the agent's request waits in the one slot, as for any session.

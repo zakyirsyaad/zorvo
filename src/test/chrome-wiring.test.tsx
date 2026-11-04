@@ -263,7 +263,7 @@ describe("Window chrome wiring", () => {
     const sessions = within(screen.getByRole("complementary"));
     await click(sessions.getByText("Alpha work"));
 
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
     expect(screen.getByRole("heading", { name: "New session" })).toBeDefined();
     await click(header().getByRole("button", { name: "Back" }));
 

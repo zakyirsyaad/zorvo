@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, renderHook, screen, act, fireEvent, within, waitFor } from "@testing-library/react";
+import { agentsMenu } from "./sidebar-helpers";
 import type { FakeTauriStore } from "./setup";
 
 type Listener = (event: { payload: unknown }) => void;
@@ -353,7 +354,7 @@ describe("signing in to an ACP agent from the app", () => {
         acp_probe_agent: (args) => (isRecheck(args) ? Promise.resolve({ signInChecked: true }) : realInvoke("acp_probe_agent", args)),
       },
     });
-    const agents = () => within(screen.getByRole("list", { name: "Detected agents" }));
+    const agents = () => within(agentsMenu());
 
     expect(agents().getByRole("button", { name: "Sign in to Qwen Code" })).toBeDefined();
 
@@ -399,8 +400,9 @@ describe("signing in to an ACP agent from the app", () => {
     const probesBefore = callsTo(spy, "acp_probe_agent").length;
     isAskedAgain = true;
 
+    const signIn = within(agentsMenu()).getByRole("button", { name: "Sign in to Qwen Code" });
     await act(async () => {
-      fireEvent.click(within(screen.getByRole("list", { name: "Detected agents" })).getByRole("button", { name: "Sign in to Qwen Code" }));
+      fireEvent.click(signIn);
     });
 
     expect(await screen.findByRole("region", { name: "Sign in to Qwen Code" })).toBeDefined();
@@ -439,7 +441,7 @@ describe("signing in to an ACP agent from the app", () => {
   it("does not send into another session", async () => {
     const { spy, panel } = await sendRefused();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
 
     await signInInTerminal(spy, panel);

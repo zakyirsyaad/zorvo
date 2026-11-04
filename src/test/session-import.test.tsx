@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
+import { clickRowDelete } from "./sidebar-helpers";
 import type { FakeTauriStore } from "./setup";
 
 type Listener = (event: { payload: unknown }) => void;
@@ -309,7 +310,7 @@ describe("Importing a session the agent listed", () => {
     });
     // The app opens the saved session; New goes back to the draft it came from.
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "+ New session" }));
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
     await openList();
     await clickRow();
@@ -383,15 +384,13 @@ describe("Importing a session the agent listed", () => {
     await act(async () => {
       fireEvent.click(within(row).getByRole("button", { name: "Stop session" }));
     });
-    await act(async () => {
-      fireEvent.click(within(row).getByRole("button", { name: "Delete session" }));
-    });
+    await clickRowDelete(() => row);
     // A write while the session still existed is fine: on a busy machine the first one comes
     // due before the delete. None may follow the delete.
     const savesOf = () => callsTo(spy, "save_transcript").filter(([, args]) => args?.sessionId === importedId).length;
     const savedBeforeDelete = savesOf();
     await act(async () => {
-      fireEvent.click(within(row).getByRole("button", { name: "Confirm delete" }));
+      fireEvent.click(within(row).getByRole("menuitem", { name: "Confirm delete" }));
     });
 
     // A replay update for the deleted session must not land anywhere.

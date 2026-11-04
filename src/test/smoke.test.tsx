@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, act, within } from "@testing-library/react";
+import { agentsMenu } from "./sidebar-helpers";
 import App from "../App";
 
 describe("App smoke test", () => {
@@ -11,7 +12,7 @@ describe("App smoke test", () => {
     expect(screen.queryByText("Codebase Inspection Summary")).toBeNull();
     expect(screen.queryByText("Market analyzer refactor")).toBeNull();
     expect(screen.getByRole("heading", { name: "New session" })).toBeDefined();
-    const agents = within(screen.getByRole("list", { name: "Detected agents" }));
+    const agents = within(agentsMenu());
     expect(agents.getByText("Claude Code")).toBeDefined();
     expect(agents.getByText("Qwen Code")).toBeDefined();
   });

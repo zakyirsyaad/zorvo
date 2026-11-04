@@ -72,6 +72,7 @@ import { UpdateNotice } from "./components/UpdateNotice";
 import { AppUpdateNotice } from "./components/AppUpdateNotice";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { ProfileFooter } from "./components/ProfileFooter";
+import { AgentsMenu } from "./components/sidebar/AgentsMenu";
 import { useNavigationHistory } from "./hooks/useNavigationHistory";
 import { useUserProfile } from "./hooks/useUserProfile";
 import { useGithubConnection } from "./hooks/useGithubConnection";
@@ -141,6 +142,7 @@ export default function App() {
   const [branchCheck, setBranchCheck] = useState(0);
   const [acpChoices, setAcpChoices] = useState<AcpChoices>(NO_CHOICES);
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
+  const [isSidebarHidden, setSidebarHidden] = useState(false);
   const composerRef = useRef<ComposerHandle>(null);
 
   const reportError = useCallback((message: string) => setNotice(message), []);
@@ -888,6 +890,7 @@ export default function App() {
   return (
     <main className="flex h-screen w-screen flex-col bg-bg text-fg-secondary">
       <TopBar
+        onShowSidebar={isSidebarHidden ? () => setSidebarHidden(false) : undefined}
         sessionName={activeSession?.name ?? activeRun?.name}
         workspaceName={activeSession ? folderNameOf(workspacePathOf(activeSession)) : activeWorkspace?.name}
         workspacePath={shownFolderPath}
@@ -924,6 +927,8 @@ export default function App() {
 
       <section className="flex flex-1 overflow-hidden">
         <Sidebar
+          isHidden={isSidebarHidden}
+          onHide={() => setSidebarHidden(true)}
           workspaces={workspaces}
           activeWorkspacePath={activeWorkspacePath}
           sessions={sessions}
@@ -931,12 +936,6 @@ export default function App() {
           activeRunId={activeRun?.id}
           agents={agents}
           settings={state.settings}
-          signInStateOf={signInStatus.stateOf}
-          onSetUpAgent={(profileId) => {
-            openNewSession(undefined, profileId);
-            // Asks again even when this agent is already the draft's: its panel may have been dismissed.
-            agentCheck.reprobe(profileId);
-          }}
           onNewSession={() => openNewSession()}
           onSelectSession={handleSelectSession}
           onOpenRun={openRun}
@@ -958,6 +957,19 @@ export default function App() {
               version={userProfile.version}
               updateCount={agentUpdates.updateCount}
               onOpenSettings={() => setSettingsTab("general")}
+              agents={
+                <AgentsMenu
+                  agents={agents}
+                  settings={state.settings}
+                  signInStateOf={signInStatus.stateOf}
+                  onSetUpAgent={(profileId) => {
+                    openNewSession(undefined, profileId);
+                    // Asks again even when this agent is already the draft's: its panel may have been dismissed.
+                    agentCheck.reprobe(profileId);
+                  }}
+                  onManageAgents={() => setSettingsTab("agents")}
+                />
+              }
             />
           }
         />

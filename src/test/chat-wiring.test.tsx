@@ -115,7 +115,7 @@ describe("Chat wiring", () => {
   it("attaches files picked with Attach to the message", async () => {
     openDialog.mockResolvedValue(["/Users/test/developer/zorvo/src/App.tsx"]);
     await renderApp();
-    await click(screen.getByRole("button", { name: "+ New session" }));
+    await click(screen.getByRole("button", { name: "New session" }));
 
     await click(screen.getByRole("button", { name: "Add attachment" }));
 

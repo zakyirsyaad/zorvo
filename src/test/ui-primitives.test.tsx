@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
+import { StatusLine } from "../components/ui/StatusLine";
 
 describe("Button", () => {
   it("defaults to type button and does not submit a form", () => {
@@ -116,5 +117,47 @@ describe("IconButton", () => {
     );
     expect(screen.getByRole("button", { name: "P" })).toHaveClass("bg-primary", "rounded-lg");
     expect(screen.getByRole("button", { name: "G" })).toHaveClass("rounded-md", "text-fg-muted");
+  });
+});
+
+describe("StatusLine", () => {
+  const dotOf = (text: string) => screen.getByText(text).closest("span")?.querySelector('[aria-hidden="true"]');
+
+  it("puts the word next to a dot in the status color", () => {
+    render(<StatusLine status="attention">Waiting for you</StatusLine>);
+    expect(screen.getByText("Waiting for you")).toBeInTheDocument();
+    expect(dotOf("Waiting for you")).toHaveClass("rounded-full", "size-1.5", "bg-status-attention");
+  });
+
+  it("maps every status to its token", () => {
+    render(
+      <>
+        <StatusLine status="running">Working</StatusLine>
+        <StatusLine status="unread">Finished, unread</StatusLine>
+        <StatusLine status="merged">Merged</StatusLine>
+        <StatusLine status="danger">Failed</StatusLine>
+      </>,
+    );
+    expect(dotOf("Working")).toHaveClass("bg-status-running");
+    expect(dotOf("Finished, unread")).toHaveClass("bg-status-unread");
+    expect(dotOf("Merged")).toHaveClass("bg-status-merged");
+    expect(dotOf("Failed")).toHaveClass("bg-danger");
+  });
+
+  it("pulses only while running, and only when motion is allowed", () => {
+    render(
+      <>
+        <StatusLine status="running">Working</StatusLine>
+        <StatusLine status="attention">Waiting for you</StatusLine>
+      </>,
+    );
+    expect(dotOf("Working")).toHaveClass("motion-safe:animate-pulse");
+    expect(dotOf("Waiting for you")).not.toHaveClass("motion-safe:animate-pulse");
+  });
+
+  it("shows no dot when idle", () => {
+    const { container } = render(<StatusLine status="idle">2 h ago</StatusLine>);
+    expect(screen.getByText("2 h ago")).toBeInTheDocument();
+    expect(container.querySelector('[aria-hidden="true"]')).toBeNull();
   });
 });

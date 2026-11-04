@@ -52,6 +52,18 @@ describe("ElicitationCard mounted while its answer is on its way", () => {
   });
 });
 
+describe("ElicitationCard looks like a question", () => {
+  it("looks like a question, not a permission", () => {
+    render(<ElicitationCard card={formCard([])} agentName="Claude Code" onAnswer={() => {}} />);
+    const root = screen.getByTestId("elicitation-card-e1");
+    expect(root.className).toContain("bg-surface-2");
+    expect(root.className).toContain("border-border-strong");
+    expect(root.className).not.toContain("bg-attention-surface");
+    // Decline is quiet: ghost, not the outline button's strong border.
+    expect(screen.getByRole("button", { name: "Decline" }).className).not.toContain("border-border-strong");
+  });
+});
+
 describe("ElicitationCard", () => {
   it("renders every field kind with defaults", () => {
     const fields: ElicitationField[] = [

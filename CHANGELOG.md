@@ -9,6 +9,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **The app uses the Mac's system font (SF Pro) for its interface.** Code, commands and paths stay in Geist Mono.
 - **Notices appear as a card in the bottom right corner** instead of a strip across the top of the chat, so they no longer push the conversation down. A long message wraps inside the card, and **Dismiss notice** closes it as before.
 
+## [0.8.1] - 2026-11-04
+
 ### Fixed
 
 - **Qwen Code's questions now show, and your answers reach it.** When Qwen Code asks you something with its question tool, Zorvo showed an empty permission card with a single Submit button, and Qwen Code always read it as "No valid answers were provided". The card now shows each question with its options (one pick, or several for a multi-select question) and an **Other** field for your own words. **Submit** is enabled once every question has an answer, and **Cancel** declines. What you type goes only to Qwen Code: Zorvo does not save or log it, and the answered card keeps just your choice of Submit or Cancel.
@@ -225,7 +227,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.6.0...v0.6.1

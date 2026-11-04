@@ -27,6 +27,11 @@ const CARET_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
 /** An agent's extra option is open under its config id: `option:fast`. */
 type OpenDropdown = "folder" | "agent" | "permission" | "model" | "effort" | `option:${string}` | null;
 
+/** A folder's own name, the last part of its path: "/w/agent-desktop/" gives "agent-desktop". */
+function folderNameOf(path: string): string {
+  return path.replace(/\/+$/, "").split("/").pop() || path;
+}
+
 function fitToText(field: HTMLTextAreaElement) {
   field.style.height = "auto";
   field.style.height = `${Math.min(field.scrollHeight, MAX_PROMPT_HEIGHT_PX)}px`;
@@ -74,6 +79,8 @@ export interface ComposerDockProps {
   handleRef?: Ref<ComposerHandle>;
   /** The agent's slash commands; typing `/` lists them. */
   commands?: SlashCommand[];
+  /** The agent's name, for the header of its `/` commands. */
+  agentName?: string;
   /**
    * True when the agent takes files with the message (ACP): attached files
    * show as chips and are sent apart from the text. Otherwise their paths
@@ -117,6 +124,7 @@ export function ComposerDock({
   onAttach,
   handleRef,
   commands = [],
+  agentName,
   attachAsFiles = false,
   contextUsage,
   note,
@@ -333,10 +341,16 @@ export function ComposerDock({
           </div>
         )}
         {mentionMenu.files.length > 0 ? (
-          <MentionMenu files={mentionMenu.files} highlighted={highlighted} onPick={pickFile} />
+          <MentionMenu
+            files={mentionMenu.files}
+            highlighted={highlighted}
+            onPick={pickFile}
+            folderName={folderNameOf(mentions?.root ?? "")}
+            query={mentionMenu.mention?.query ?? ""}
+          />
         ) : (
           menuCommands.length > 0 && (
-            <SlashCommandMenu commands={menuCommands} highlighted={highlighted} onPick={pickCommand} />
+            <SlashCommandMenu commands={menuCommands} highlighted={highlighted} onPick={pickCommand} agentName={agentName} />
           )
         )}
         <textarea

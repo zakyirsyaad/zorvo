@@ -1132,6 +1132,7 @@ export default function App() {
                   onRestored={review.onComposerRestored}
                   onGivenBack={review.onComposerGivenBack}
                   commands={compare.isCompare ? [] : composerCommands}
+                  agentName={activeSession ? activeAgent?.name : newSessionAgent?.name}
                   note={composerNote({
                     reviewOwner: review.reviewOwner,
                     compareCount: compare.agentIds.length,

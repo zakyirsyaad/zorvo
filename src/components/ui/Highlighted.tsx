@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { matchSegments } from "../../lib/match-segments";
 
 export interface HighlightedProps {
@@ -16,7 +17,8 @@ export function Highlighted({ text, query }: HighlightedProps) {
             {segment.text}
           </mark>
         ) : (
-          <span key={index}>{segment.text}</span>
+          // Plain text, not a span: an element's edge drops its spaces from the accessible name ("my file" read as "myfile").
+          <Fragment key={index}>{segment.text}</Fragment>
         ),
       )}
     </>

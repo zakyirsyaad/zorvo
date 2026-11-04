@@ -68,20 +68,41 @@ describe("BackgroundTasksMenu", () => {
     vi.useRealTimers();
   });
 
-  it("names the trigger and badges the running count", () => {
-    setup({ isOpen: false });
-    expect(screen.getByRole("button", { name: "Background tasks (2 running)" })).toBeTruthy();
-    expect(screen.getByText("2")).toBeTruthy();
+  it("counts the tasks on the chip", () => {
+    const { props, rerender } = setup({ isOpen: false });
+    expect(screen.getByRole("button", { name: "2 background tasks" })).toBeTruthy();
+    rerender(<BackgroundTasksMenu {...props} tasks={[agent]} />);
+    expect(screen.getByRole("button", { name: "1 background task" })).toBeTruthy();
   });
 
-  it("uses the plain name when nothing runs", () => {
-    setup({ isOpen: false, tasks: [] });
-    expect(screen.getByRole("button", { name: "Background tasks" })).toBeTruthy();
+  it("shows nothing while no task runs", () => {
+    const { container } = setup({ isOpen: false, tasks: [] });
+    expect(container.textContent).toBe("");
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("closes when the last task ends", () => {
+    const { props, rerender } = setup();
+    rerender(<BackgroundTasksMenu {...props} tasks={[]} />);
+    expect(props.onOpenChange).toHaveBeenCalledWith(false);
+    expect(screen.queryByRole("dialog", { name: "Background tasks" })).toBeNull();
+  });
+
+  it("lists each task with its status, origin and actions", () => {
+    setup({ tasks: [shellTool, subagent] });
+    const dialog = within(screen.getByRole("dialog", { name: "Background tasks" }));
+    expect(dialog.getByText("Background tasks · 2 running")).toBeTruthy();
+    const rows = within(dialog.getByRole("list", { name: "Running tasks" })).getAllByRole("listitem");
+    expect(within(rows[0]).getByText("pnpm test:unit").classList.contains("font-mono")).toBe(true);
+    expect(within(rows[0]).queryByRole("button", { name: /^Open/ })).toBeNull();
+    expect(within(rows[1]).getByText("Explore the migration").classList.contains("font-mono")).toBe(false);
+    expect(within(rows[1]).getByRole("button", { name: "Open Explore the migration" })).toBeTruthy();
+    expect(dialog.getByText("Tasks keep running when you switch sessions.")).toBeTruthy();
   });
 
   it("asks to open when the trigger is clicked", () => {
     const { props } = setup({ isOpen: false });
-    fireEvent.click(screen.getByRole("button", { name: /Background tasks/ }));
+    fireEvent.click(screen.getByRole("button", { name: /background tasks/ }));
     expect(props.onOpenChange).toHaveBeenCalledWith(true);
   });
 
@@ -98,7 +119,7 @@ describe("BackgroundTasksMenu", () => {
 
   it("renders one row of each kind, with Stop only where it can act", () => {
     setup({ tasks: [devServer, agent, subagent, shellTool] });
-    expect(screen.getByRole("button", { name: "Background tasks (4 running)" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "4 background tasks" })).toBeTruthy();
     const rows = within(screen.getByRole("list", { name: "Running tasks" })).getAllByRole("listitem");
     expect(rows).toHaveLength(4);
     expect(within(rows[0]).getByRole("button", { name: "Stop npm run dev" })).toBeTruthy();
@@ -161,8 +182,8 @@ describe("BackgroundTasksMenu", () => {
 
   it("opens a task and closes the menu", () => {
     const { props } = setup();
-    fireEvent.click(screen.getByRole("button", { name: "Open npm run dev" }));
-    expect(props.onOpenTask).toHaveBeenCalledWith(devServer);
+    fireEvent.click(screen.getByRole("button", { name: "Open Refactor auth" }));
+    expect(props.onOpenTask).toHaveBeenCalledWith(agent);
     expect(props.onOpenChange).toHaveBeenCalledWith(false);
   });
 
@@ -195,7 +216,7 @@ describe("BackgroundTasksMenu", () => {
   it("announces its popup and labels it", () => {
     setup();
 
-    const trigger = screen.getByRole("button", { name: "Background tasks (2 running)" });
+    const trigger = screen.getByRole("button", { name: "2 background tasks" });
     expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
     expect(screen.getByRole("dialog", { name: "Background tasks" })).toBeDefined();
   });
@@ -208,11 +229,6 @@ describe("BackgroundTasksMenu", () => {
     expect(within(popup).getByText("Fix login · localhost:5173").getAttribute("title")).toBe(
       "Fix login · localhost:5173",
     );
-  });
-
-  it("says nothing is running when empty", () => {
-    setup({ tasks: [] });
-    expect(screen.getByText("Nothing running.")).toBeTruthy();
   });
 
   it("closes on Escape", () => {

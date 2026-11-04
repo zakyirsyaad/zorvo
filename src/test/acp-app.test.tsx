@@ -465,7 +465,7 @@ describe("ACP sessions in the app", () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /^Background tasks/ }));
+      fireEvent.click(screen.getByRole("button", { name: /^\d+ background tasks?$/ }));
     });
     const list = screen.getByRole("list", { name: "Running tasks" });
     await act(async () => {

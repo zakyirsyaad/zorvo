@@ -210,7 +210,7 @@ describe("TopBar", () => {
 
   describe("background tasks", () => {
     const backgroundTasks = {
-      tasks: [],
+      tasks: [{ id: "agent:s2", kind: "agent" as const, name: "Refactor auth", status: "Working" as const, startedAt: 0, sessionId: "s2" }],
       isOpen: false,
       onOpenChange: () => {},
       onOpenTask: () => {},
@@ -219,11 +219,11 @@ describe("TopBar", () => {
 
     it("renders the background tasks menu only when given", () => {
       const { unmount } = renderTopBar();
-      expect(screen.queryByRole("button", { name: /Background tasks/ })).toBeNull();
+      expect(screen.queryByRole("button", { name: /background task/ })).toBeNull();
       unmount();
 
       renderTopBar({ backgroundTasks });
-      expect(screen.getByRole("button", { name: "Background tasks" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "1 background task" })).toBeTruthy();
     });
   });
 

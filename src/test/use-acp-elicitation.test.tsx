@@ -520,7 +520,7 @@ describe("Elicitations in the app", () => {
 
     expect(within(row()).getByText(/(^|· )Waiting for you$/)).toBeDefined();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /^Background tasks/ }));
+      fireEvent.click(screen.getByRole("button", { name: /^\d+ background tasks?$/ }));
     });
     expect(within(screen.getByRole("list", { name: "Running tasks" })).getByText("Needs approval")).toBeDefined();
     await waitFor(() =>

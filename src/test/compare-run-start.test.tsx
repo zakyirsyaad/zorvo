@@ -534,7 +534,7 @@ describe("starting a compare run", () => {
     expect(screen.getByRole("alert").textContent).toContain("not a git repository");
     expect(prompt()).toBeEnabled();
     // The draft keeps its ticks.
-    expect(screen.getByText("Runs in 2 worktrees. Each agent uses its own quota.")).toBeInTheDocument();
+    expect(screen.getByText("Each agent starts in its safest mode, in its own worktree, and uses its own quota.")).toBeInTheDocument();
   });
 
   it("keeps the composer busy until a single worktree session's attachments are resolved", async () => {

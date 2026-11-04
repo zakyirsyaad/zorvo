@@ -31,7 +31,7 @@ export function AgentSessionList({ agentName, state, importError, onLoad, onImpo
       {state.kind === 'idle' && <Button onClick={onLoad}>Continue a session from {agentName}</Button>}
 
       {state.kind === 'loading' && (
-        <p role="status" className="text-sm text-fg-muted">
+        <p role="status" className="text-ui text-fg-muted">
           Asking {agentName} for its sessions…
         </p>
       )}
@@ -39,7 +39,7 @@ export function AgentSessionList({ agentName, state, importError, onLoad, onImpo
       {state.kind === 'loaded' && (
         <>
           {state.sessions.length === 0 ? (
-            <p className="text-sm text-fg-muted">{agentName} has no other sessions in this folder.</p>
+            <p className="text-ui text-fg-muted">{agentName} has no other sessions in this folder.</p>
           ) : (
             <ul className="space-y-1">
               {state.sessions.map((listed) => {
@@ -57,14 +57,14 @@ export function AgentSessionList({ agentName, state, importError, onLoad, onImpo
               })}
             </ul>
           )}
-          {state.truncated && <p className="text-xs text-fg-subtle">Showing the 200 most recent sessions.</p>}
-          {state.incomplete && <p className="text-xs text-fg-subtle">Some sessions could not be listed.</p>}
+          {state.truncated && <p className="text-caption text-fg-muted">Showing the 200 most recent sessions.</p>}
+          {state.incomplete && <p className="text-caption text-fg-muted">Some sessions could not be listed.</p>}
         </>
       )}
 
       {state.kind === 'failed' && (
         <div className="space-y-2">
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="text-ui text-danger">
             {state.message}
           </p>
           <Button onClick={onLoad}>Try again</Button>
@@ -72,7 +72,7 @@ export function AgentSessionList({ agentName, state, importError, onLoad, onImpo
       )}
 
       {importError && (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-ui text-danger">
           {importError}
         </p>
       )}

@@ -36,7 +36,7 @@ const codex = makeProfile({
 });
 const ALL = [...fakeProfiles, kimi, gemini, goose, codex];
 
-const QUOTA_NOTE = "Runs in 2 worktrees. Each agent uses its own quota.";
+const QUOTA_NOTE = "Each agent starts in its safest mode, in its own worktree, and uses its own quota.";
 
 interface DraftOptions {
   /** Every folder is a plain folder. */
@@ -121,8 +121,18 @@ describe("comparing agents in the composer", () => {
 
     expect(screen.getByText(QUOTA_NOTE)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Agent: 2 agents" })).toBeInTheDocument();
+  });
+
+  it("words the primary button by how many sessions it starts", async () => {
+    await renderDraft();
+    expect(screen.getByRole("button", { name: "Send message" })).toBeInTheDocument();
+    await openAgentMenu();
+
+    await tick("Qwen Code");
+    expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Start 2 sessions" })).toBeInTheDocument();
     await tick("Kimi CLI");
-    expect(screen.getByText("Runs in 3 worktrees. Each agent uses its own quota.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start 3 sessions" })).toBeInTheDocument();
   });
 
   it("hides the permission, model and effort chips and the slash menu, and brings them back at one agent", async () => {
@@ -180,7 +190,7 @@ describe("comparing agents in the composer", () => {
     const fifth = screen.getByRole("checkbox", { name: /^Compare Goose/ });
     expect(fifth).toBeDisabled();
     expect(screen.getByRole("button", { name: "Agent: 4 agents" })).toBeInTheDocument();
-    expect(screen.getByText("Runs in 4 worktrees. Each agent uses its own quota.")).toBeInTheDocument();
+    expect(screen.getByText("Each agent starts in its safest mode, in its own worktree, and uses its own quota.")).toBeInTheDocument();
   });
 
   it("an uninstalled agent cannot be ticked and says why", async () => {
@@ -316,7 +326,7 @@ describe("comparing agents in the composer", () => {
 
     // The ticks and the note stay, but nothing may start outside a worktree.
     expect(screen.getByText(QUOTA_NOTE)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Start 2 sessions" })).toBeDisabled();
     await act(async () => {
       fireEvent.keyDown(prompt(), { key: "Enter" });
     });
@@ -527,7 +537,7 @@ describe("the draft check while several agents are ticked", () => {
 describe("composerNote with several agents", () => {
   it("says what a run costs, ahead of any other note", () => {
     expect(composerNote({ continuesSession: false, compareCount: 3, agentLoading: "Qwen Code" })).toBe(
-      "Runs in 3 worktrees. Each agent uses its own quota.",
+      "Each agent starts in its safest mode, in its own worktree, and uses its own quota.",
     );
     expect(composerNote({ continuesSession: false, compareCount: 1 })).toBeUndefined();
   });

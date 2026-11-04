@@ -1261,7 +1261,7 @@ describe("ACP sessions in the app", () => {
     });
 
     // The user stays where they went: the message is not pulled into the new session's box.
-    expect(screen.getByRole("heading", { name: "New session" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: /^New session/ })).toBeDefined();
     expect(prompt().value).toBe("");
 
     await act(async () => {

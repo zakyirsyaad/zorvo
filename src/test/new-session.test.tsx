@@ -14,7 +14,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 import App from "../App";
-import { NewSessionView } from "../components/workspace/NewSessionView";
+import { NewSessionBelow, NewSessionHeading } from "../components/workspace/NewSessionView";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
 
@@ -22,20 +22,26 @@ function tauriInternals(): TauriInternals {
   return (window as unknown as { __TAURI_INTERNALS__: TauriInternals }).__TAURI_INTERNALS__;
 }
 
-describe("The new-session view", () => {
-  it("shows the session list below the workspace summary", () => {
-    render(
-      <NewSessionView
-        workspace={{ name: "api", path: "/Users/test/developer/api" }}
-        details={{ location: "~/developer", branch: "main" }}
-        agentName="Claude Code"
-        sessionList={<p>Listed sessions</p>}
-      />
-    );
+describe("The new-session heading", () => {
+  it("names the folder the session starts in", () => {
+    render(<NewSessionHeading workspace={{ name: "api", path: "/Users/test/developer/api" }} />);
 
-    const summary = screen.getByRole("group", { name: "Workspace" });
-    const slot = screen.getByText("Listed sessions");
-    expect(summary.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "New session in api" })).toBeDefined();
+  });
+
+  it("says to open a folder when there is none, and why nothing can start when no agent is ready", () => {
+    const { rerender } = render(<NewSessionHeading />);
+    expect(screen.getByRole("heading", { name: /^New session/ })).toBeDefined();
+    expect(screen.getByText("Open a project folder to start a session in it.")).toBeDefined();
+
+    rerender(<NewSessionHeading workspace={{ name: "api", path: "/w/api" }} unavailableReason="Install an agent first." />);
+    expect(screen.getByText("Install an agent first.")).toBeDefined();
+  });
+
+  it("puts the agent's other sessions under the composer", () => {
+    render(<NewSessionBelow sessionList={<p>Listed sessions</p>} />);
+
+    expect(screen.getByText("Listed sessions")).toBeDefined();
   });
 });
 
@@ -133,10 +139,35 @@ describe("Starting a new session", () => {
     });
 
     expect(invokeSpy.mock.calls.find(([cmd]) => cmd === "acp_start_session")).toBeUndefined();
-    expect(screen.getByRole("heading", { name: "New session" })).toBeDefined();
-    const workspace = within(await screen.findByRole("group", { name: "Workspace" }));
-    expect(workspace.getByText("~/developer", { exact: false })).toBeDefined();
-    expect(await workspace.findByLabelText("Branch main")).toBeDefined();
+    expect(screen.getByRole("heading", { name: "New session in ai-perpetual-trading" })).toBeDefined();
+    // The chips say where the session starts; the draft has no summary card any more.
+    expect(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" })).toBeDefined();
+    expect(await screen.findByRole("button", { name: "Branch: main" })).toBeDefined();
+    expect(screen.queryByRole("group", { name: "Workspace" })).toBeNull();
+  });
+
+  it("puts the heading above the composer (the agent's sessions below it are checked in session-import)", async () => {
+    await act(async () => {
+      render(<App />);
+    });
+
+    const heading = screen.getByRole("heading", { name: /^New session/ });
+    const prompt = screen.getByRole("textbox", { name: "Prompt" });
+    expect(heading.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps the same composer when the draft becomes a session, so nothing typed is lost", async () => {
+    const invokeSpy = vi.spyOn(tauriInternals(), "invoke");
+    await act(async () => {
+      render(<App />);
+    });
+    const draftPrompt = screen.getByRole("textbox", { name: "Prompt" });
+
+    await sendFirst();
+
+    expect(invokeSpy.mock.calls.find(([cmd]) => cmd === "acp_start_session")).toBeDefined();
+    expect(screen.queryByRole("heading", { name: /^New session/ })).toBeNull();
+    expect(screen.getByRole("textbox", { name: "Prompt" })).toBe(draftPrompt);
   });
 
   it("starts a session in the workspace and with the agent picked from its + menu", async () => {
@@ -286,11 +317,9 @@ describe("Starting a new session", () => {
 
     // Back on the folder's own branch; the worktree switch may stay on for the next session.
     expect(await screen.findByRole("button", { name: /^Branch: main/ })).toBeDefined();
-    const workspace = within(screen.getByRole("group", { name: "Workspace" }));
-    expect(workspace.getByLabelText("Branch main")).toBeDefined();
   });
 
-  it("shows the branch the worktree will start from on the new-session card", async () => {
+  it("shows the branch the worktree will start from on the branch chip", async () => {
     stubInvoke({ list_branches: () => Promise.resolve(["release", "main"]) });
     await act(async () => {
       render(<App />);
@@ -305,8 +334,7 @@ describe("Starting a new session", () => {
       fireEvent.click(await screen.findByRole("option", { name: "release" }));
     });
 
-    const workspace = within(screen.getByRole("group", { name: "Workspace" }));
-    expect(workspace.getByLabelText("Branch release")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Branch: release, in a new worktree" })).toBeDefined();
   });
 
   it("switches the folder to the branch picked while Worktree is off", async () => {
@@ -470,7 +498,7 @@ describe("Starting a new session", () => {
       failCreating();
     });
 
-    expect(screen.getByRole("heading", { name: "New session" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: /^New session/ })).toBeDefined();
     expect(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" })).toBeDefined();
     expect((screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement).value).toBe("fix the login");
   });

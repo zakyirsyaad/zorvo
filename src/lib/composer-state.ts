@@ -103,8 +103,8 @@ export function composerPlaceholder(state: {
   return continuesSession ? COMPOSER_PLACEHOLDERS.resume : COMPOSER_PLACEHOLDERS.newSession;
 }
 
-/** What a compare run costs, said under the prompt while several agents are ticked. */
-export const compareNote = (count: number) => `Runs in ${count} worktrees. Each agent uses its own quota.`;
+/** How a compare run starts and what it costs, said under the prompt while several agents are ticked. */
+export const COMPARE_NOTE = "Each agent starts in its safest mode, in its own worktree, and uses its own quota.";
 
 /** The session review comments in the composer are for, when Send is blocked for them. */
 export interface ReviewOwner {
@@ -142,7 +142,7 @@ export function composerNote(state: {
   agentLoading?: string;
 }): string | undefined {
   if (state.reviewOwner) return reviewOwnerNote(state.reviewOwner);
-  if (state.compareCount !== undefined && state.compareCount >= 2) return compareNote(state.compareCount);
+  if (state.compareCount !== undefined && state.compareCount >= 2) return COMPARE_NOTE;
   if (state.agentToInstall) return installPlaceholder(state.agentToInstall, state.continuesSession);
   if (state.agentToSignIn) return signInPlaceholder(state.agentToSignIn, state.continuesSession);
   if (state.agentLoading) return `Loading ${state.agentLoading}'s models and commands…`;

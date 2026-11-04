@@ -162,7 +162,8 @@ async function press(name: string | RegExp) {
 }
 
 const prompt = () => screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement;
-const sendButton = () => screen.getByRole("button", { name: "Send message" });
+// In a compare draft the primary button reads "Start N sessions".
+const sendButton = () => screen.getByRole("button", { name: /^(Send message|Start \d+ sessions)$/ });
 const addButton = () => screen.queryByRole("button", { name: /^Add \d+ comments? to message$/ });
 const panel = () => screen.getByRole("complementary", { name: "Diff view" });
 

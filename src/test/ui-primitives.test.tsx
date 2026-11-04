@@ -1,6 +1,8 @@
 import "@testing-library/jest-dom/vitest";
+import { useState, type ReactNode } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { Popover, PopoverHeader, PopoverOption } from "../components/ui/Popover";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { StatusLine } from "../components/ui/StatusLine";
@@ -261,5 +263,115 @@ describe("Tabs", () => {
     renderTabs("changes");
     expect(screen.getByRole("tab", { name: /Changes/ })).toHaveTextContent("3");
     expect(screen.getByRole("tab", { name: "Files" })).toHaveTextContent(/^Files$/);
+  });
+});
+
+describe("Popover", () => {
+  interface HarnessProps {
+    role?: "menu" | "listbox" | "dialog";
+    side?: "bottom" | "top";
+    onClose?: () => void;
+    children?: ReactNode;
+  }
+
+  function Harness({ role, side, onClose = () => {}, children }: HarnessProps) {
+    const [isOpen, setOpen] = useState(false);
+    return (
+      <Popover
+        isOpen={isOpen}
+        onClose={() => {
+          onClose();
+          setOpen(false);
+        }}
+        trigger={
+          <button type="button" onClick={() => setOpen((wasOpen) => !wasOpen)}>
+            Mode
+          </button>
+        }
+        label="Mode menu"
+        role={role}
+        side={side}
+      >
+        {children ?? (
+          <>
+            <PopoverHeader>Mode</PopoverHeader>
+            <PopoverOption selected onSelect={() => {}}>
+              Ask
+            </PopoverOption>
+            <PopoverOption onSelect={() => {}} description="Edits files without asking">
+              Auto
+            </PopoverOption>
+          </>
+        )}
+      </Popover>
+    );
+  }
+
+  const open = () => fireEvent.click(screen.getByRole("button", { name: "Mode" }));
+
+  it("renders its panel only while open, named by label", () => {
+    render(<Harness />);
+    expect(screen.queryByRole("menu")).toBeNull();
+    open();
+    expect(screen.getByRole("menu", { name: "Mode menu" })).toHaveClass("bg-surface-3", "shadow-popover", "rounded-lg");
+  });
+
+  it("closes on Escape and gives focus back to the trigger", () => {
+    const onClose = vi.fn();
+    render(<Harness onClose={onClose} />);
+    open();
+    const option = screen.getByRole("menuitem", { name: /Auto/ });
+    option.focus();
+    fireEvent.keyDown(option, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.getByRole("button", { name: "Mode" })).toHaveFocus();
+  });
+
+  it("closes on a click outside but not inside", () => {
+    const onClose = vi.fn();
+    render(<Harness onClose={onClose} />);
+    open();
+    fireEvent.mouseDown(screen.getByRole("menuitem", { name: /Ask/ }));
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.mouseDown(document.body);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens above the trigger when side is top", () => {
+    render(<Harness side="top" />);
+    open();
+    expect(screen.getByRole("menu")).toHaveClass("bottom-full", "mb-1");
+  });
+
+  it("marks the selected option", () => {
+    const { unmount } = render(<Harness role="listbox" />);
+    open();
+    const selected = screen.getByRole("option", { name: /Ask/ });
+    expect(selected).toHaveAttribute("aria-selected", "true");
+    expect(selected).toHaveClass("bg-surface-hover");
+    expect(selected.querySelector("svg")).not.toBeNull();
+    const other = screen.getByRole("option", { name: /Auto/ });
+    expect(other).toHaveAttribute("aria-selected", "false");
+    expect(other.querySelector("svg")).toBeNull();
+    unmount();
+
+    render(<Harness />);
+    open();
+    expect(screen.getByRole("menuitem", { name: /Ask/ })).not.toHaveAttribute("aria-selected");
+  });
+
+  it("does not select a disabled option", () => {
+    const onSelect = vi.fn();
+    render(
+      <Harness>
+        <PopoverOption disabled onSelect={onSelect}>
+          Plan
+        </PopoverOption>
+      </Harness>,
+    );
+    open();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Plan" }));
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

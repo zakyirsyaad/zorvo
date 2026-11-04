@@ -1,0 +1,25 @@
+<!-- @dsCard group="Overlay" height=200 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Popover — preview</title>
+<style>
+.z-pop { width: 240px; box-sizing: border-box; padding: 6px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-3); box-shadow: var(--shadow-popover); font-family: var(--font-sans); }
+.z-pop-head { padding: var(--space-1) var(--space-2) var(--space-1\.5); color: var(--fg-muted); font: 500 11px/16px var(--font-sans); }
+.z-pop-opt { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: 30px; box-sizing: border-box; padding: var(--space-1) var(--space-2); border: 0; border-radius: var(--radius-sm); background: none; color: var(--fg); font: 400 13px/18px var(--font-sans); text-align: left; cursor: pointer; }
+.z-pop-opt:hover, .z-pop-opt[aria-selected="true"] { background: var(--surface-hover); }
+.z-pop-text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.z-pop-desc { color: var(--fg-muted); font: 400 11px/16px var(--font-sans); }
+.z-pop-check { width: 14px; height: 14px; fill: none; stroke: var(--fg); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+</style>
+</head>
+<body>
+<div class="z-stage">
+  <div class="z-pop" role="listbox" aria-label="Mode">
+    <div class="z-pop-head">Mode</div>
+    <button type="button" class="z-pop-opt" role="option" aria-selected="true"><span class="z-pop-text">Ask</span><svg class="z-pop-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></button>
+    <button type="button" class="z-pop-opt" role="option" aria-selected="false"><span class="z-pop-text">Auto<span class="z-pop-desc">Edits files without asking</span></span></button>
+    <button type="button" class="z-pop-opt" role="option" aria-selected="false"><span class="z-pop-text">Plan</span></button>
+  </div>
+</div>
+</body>
+</html>

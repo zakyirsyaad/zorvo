@@ -461,6 +461,8 @@ export default function App() {
   const inspector = useInspector(filesFolder?.path, isRepository, turnsEnded, reportError, {
     isSidebarShown: !isSidebarHidden,
     offered: inspectorTabs,
+    // What is on screen: the full review takes the chat's place only in the view it opened in.
+    view: activeSession ? activeSession.id : activeRun ? `run:${activeRun.id}` : `draft:${filesFolder?.path ?? ""}`,
     onCrowded: () => setSidebarHidden(true),
     // The Terminal tab starts the folder's first shell in the click that shows it.
     onShow: (tab) => {
@@ -906,7 +908,12 @@ export default function App() {
         sessionName={activeSession?.name ?? activeRun?.name}
         // A run's sessions share one title, so only a session of its own is renamed or archived here.
         onRename={sessionOfItsOwn ? (name) => sessionActions.renameSession(sessionOfItsOwn.id, name) : undefined}
-        onArchive={sessionOfItsOwn ? () => void sessionActions.archiveSession(sessionOfItsOwn.id, true) : undefined}
+        // Archiving ends the agent, so, as in the sidebar's menu, it waits until the agent is not working.
+        onArchive={
+          sessionOfItsOwn && !isSessionBusy(sessionOfItsOwn.id)
+            ? () => void sessionActions.archiveSession(sessionOfItsOwn.id, true)
+            : undefined
+        }
         onReveal={shownFolderPath ? () => shell.revealFolder(shownFolderPath) : undefined}
         workspaceName={activeSession ? folderNameOf(workspacePathOf(activeSession)) : activeWorkspace?.name}
         branch={workspaceDetails?.branch ?? undefined}
@@ -922,7 +929,7 @@ export default function App() {
         diffStats={diffStats}
         isDiffAlwaysShown={Boolean(startCommit) || reviewComments.comments.length > 0}
         diffCommentCount={unsentCommentCount}
-        onOpenDiff={inspectorTabs.includes("changes") ? inspector.openDiff : undefined}
+        onOpenDiff={inspectorTabs.includes("changes") ? () => inspector.openDiff() : undefined}
         onPopout={activeSession ? () => shell.popout(activeSession.id) : undefined}
         backgroundTasks={{
           tasks: backgroundTasks.tasks,
@@ -1031,7 +1038,8 @@ export default function App() {
                   onOpen={handleSelectSession}
                   onReview={(sessionId) => {
                     handleSelectSession(sessionId);
-                    inspector.openDiff();
+                    // The review is for the session that comes on screen, not for the run's panel.
+                    inspector.openDiff(sessionId);
                   }}
                   onChoose={chooseOption}
                   onPick={(winnerId) => compareRun.pick(activeRun, winnerId)}
@@ -1216,7 +1224,7 @@ export default function App() {
                     githubProblem={githubProblem}
                     onOpenGithubSettings={() => setSettingsTab("general")}
                     diffStats={diffStats}
-                    onOpenDiff={inspector.openDiff}
+                    onOpenDiff={() => inspector.openDiff()}
                   />
                 )}
                 {inspectorTab === "activity" && activeSession && (
@@ -1231,7 +1239,7 @@ export default function App() {
                     headStats={inspector.headStats}
                     headStatsFailed={inspector.headStatsFailed}
                     onJump={(messageId) => setChatJump((prev) => ({ messageId, nonce: (prev?.nonce ?? 0) + 1 }))}
-                    onOpenDiff={inspector.openDiff}
+                    onOpenDiff={() => inspector.openDiff()}
                   />
                 )}
                 {inspectorTab === "files" && filesFolder && (

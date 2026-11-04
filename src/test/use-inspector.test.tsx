@@ -10,11 +10,13 @@ function setWindowWidth(px: number) {
   Object.defineProperty(window, "innerWidth", { configurable: true, value: px });
 }
 
-type Props = { folder: string; offered: readonly InspectorTab[] };
+/** `view` is what is on screen: a session's id, a run's, or a draft's. */
+type Props = { folder: string; offered: readonly InspectorTab[]; view?: string };
 
 function renderInspector(isRepository: boolean, onCrowded = vi.fn(), isSidebarShown = true, onShow = vi.fn()) {
   const view = renderHook(
-    ({ folder, offered }: Props) => useInspector(folder, isRepository, 0, vi.fn(), { isSidebarShown, offered, onCrowded, onShow }),
+    ({ folder, offered, view = "s-a" }: Props) =>
+      useInspector(folder, isRepository, 0, vi.fn(), { isSidebarShown, offered, view, onCrowded, onShow }),
     { initialProps: { folder: "/Users/test/zorvo", offered: ALL } as Props },
   );
   return { ...view, onCrowded, onShow };
@@ -123,15 +125,29 @@ describe("useInspector", () => {
     expect(result.current.isDiffExpanded).toBe(false);
   });
 
-  it("expands the diff for the folder it was expanded in only", () => {
+  it("keeps the review in the chat's place only in the view it opened in", () => {
     setWindowWidth(1440);
     const { result, rerender } = renderInspector(true);
     act(() => result.current.openDiff());
     expect(result.current.isDiffExpanded).toBe(true);
-    rerender({ folder: "/Users/test/other", offered: ALL });
+    // Another session in the same folder shows its chat, the diff beside it.
+    rerender({ folder: "/Users/test/zorvo", offered: ALL, view: "s-b" });
     expect(result.current.isDiffOpen).toBe(true);
     expect(result.current.isDiffExpanded).toBe(false);
-    rerender({ folder: "/Users/test/zorvo", offered: ALL });
+    rerender({ folder: "/Users/test/other", offered: ALL, view: "s-c" });
+    expect(result.current.isDiffExpanded).toBe(false);
+    rerender({ folder: "/Users/test/zorvo", offered: ALL, view: "s-a" });
+    expect(result.current.isDiffExpanded).toBe(true);
+  });
+
+  it("opens the review in the chat's place for the view it names", () => {
+    setWindowWidth(1440);
+    const { result, rerender } = renderInspector(true);
+    // A compare row opens its session's review while the run's panel is on screen.
+    rerender({ folder: "/Users/test/zorvo", offered: ALL, view: "run:r1" });
+    act(() => result.current.openDiff("s-b"));
+    expect(result.current.isDiffExpanded).toBe(false);
+    rerender({ folder: "/Users/app-data/worktrees/zorvo/agent-b", offered: ALL, view: "s-b" });
     expect(result.current.isDiffExpanded).toBe(true);
   });
 

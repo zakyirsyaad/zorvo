@@ -267,6 +267,46 @@ describe("Tabs", () => {
   });
 });
 
+describe("Popover focus after a choice that moves it", () => {
+  function RenameHarness() {
+    const [isOpen, setOpen] = useState(true);
+    const [isRenaming, setRenaming] = useState(false);
+    return (
+      <>
+        <Popover
+          isOpen={isOpen}
+          onClose={() => setOpen(false)}
+          label="More options"
+          trigger={
+            <button type="button" onClick={() => setOpen((wasOpen) => !wasOpen)}>
+              More options
+            </button>
+          }
+        >
+          <PopoverOption
+            onSelect={() => {
+              setOpen(false);
+              setRenaming(true);
+            }}
+          >
+            Rename
+          </PopoverOption>
+        </Popover>
+        {isRenaming && <input aria-label="Rename" autoFocus />}
+      </>
+    );
+  }
+
+  it("leaves focus where the choice put it, rather than on the trigger", () => {
+    render(<RenameHarness />);
+    const rename = screen.getByRole("menuitem", { name: "Rename" });
+    // A keyboard user: focus is inside the menu when the item is chosen.
+    rename.focus();
+    fireEvent.click(rename);
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Rename" }));
+  });
+});
+
 describe("Popover", () => {
   interface HarnessProps {
     role?: "menu" | "listbox" | "dialog";

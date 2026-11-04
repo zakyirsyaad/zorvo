@@ -112,6 +112,7 @@ export function CompareRunRow({
       {pendingCard && (
         <ActionCard
           card={pendingCard}
+          agentName={agentName}
           onChoose={(optionId, answers) =>
             answers ? onChoose(session.id, pendingCard.id, optionId, answers) : onChoose(session.id, pendingCard.id, optionId)
           }

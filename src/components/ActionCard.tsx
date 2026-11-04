@@ -1,7 +1,8 @@
 import { useId, useState } from "react";
-import { Check, X, Wrench, AlertTriangle } from "lucide-react";
+import { Check, X, AlertTriangle } from "lucide-react";
 import { Button, type ButtonVariant } from "./ui/Button";
 import { UserQuestionFields } from "./UserQuestionFields";
+import { orderedChoices, permissionTitle, questionsTitle, titleHoldsPrompt } from "../lib/permission-copy";
 import { EMPTY_DRAFT, answersOf, usableQuestions, type QuestionDraft } from "../lib/user-questions";
 import type { ActionCard as ActionCardType, PermissionChoice } from "../types";
 
@@ -14,14 +15,17 @@ export interface ActionCardProps {
   /** Picks one of the agent's options; `answers` go with an allowing pick on a card that asks questions. */
   onChoose?: (optionId: string, answers?: QuestionAnswers) => void;
   disabled?: boolean;
+  /** Who asks, named in the card's title; "The agent" when unknown. */
+  agentName?: string;
 }
 
 /** Shown on a request that came without options: only stopping the agent ends the wait. */
 export const NO_OPTIONS_MESSAGE = "This request has no options to pick. Stop the agent to continue.";
 
+/** Deny is quiet (ghost), Always allow outline, Allow once the primary answer. */
 function choiceVariant(kind: string): ButtonVariant {
   if (kind === "allow_once") return "primary";
-  return kind.startsWith("allow") ? "outline" : "danger";
+  return kind.startsWith("allow") ? "outline" : "ghost";
 }
 
 /** The agent's own answers to its permission request, or the one that was picked. */
@@ -40,7 +44,7 @@ function PermissionChoices({
   answers: QuestionAnswers | undefined;
 }) {
   const hintId = useId();
-  const options: PermissionChoice[] = card.options ?? [];
+  const options: PermissionChoice[] = orderedChoices(card.options ?? []);
   const needsAnswers = asksQuestions && answers === undefined;
   if (card.status !== "pending") {
     const chosen = options.find((o) => o.optionId === card.chosenOptionId);
@@ -82,10 +86,12 @@ function PermissionChoices({
   );
 }
 
-export function ActionCard({ card, onChoose, disabled = false }: ActionCardProps) {
+export function ActionCard({ card, onChoose, disabled = false, agentName = "The agent" }: ActionCardProps) {
   // A form needs a way to send it: a card with questions but no allowing option stays a plain card.
   // The questions come back from the saved transcript, so their shape is checked again.
   const questions = card.options?.some((o) => o.kind.startsWith("allow")) ? usableQuestions(card.questions) : undefined;
+  const title = questions ? questionsTitle(agentName, questions.length) : permissionTitle(agentName, card.prompt);
+  const showsPrompt = questions !== undefined || !titleHoldsPrompt(card.prompt);
   // What is picked or typed lives here, in memory, so an answer that did not go through keeps it. It is never stored.
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
   const answers = questions ? answersOf(questions, drafts) : undefined;
@@ -96,27 +102,15 @@ export function ActionCard({ card, onChoose, disabled = false }: ActionCardProps
       data-testid={`action-card-${card.id}`}
       className="my-3 rounded-xl border border-attention-border bg-attention-surface p-4 text-left transition-all"
     >
-      {/* Header with Title and Tool Badge */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4 text-status-attention shrink-0" />
-          <h2 className="text-sm font-semibold tracking-wide text-fg">
-            {card.title}
-          </h2>
-        </div>
-
-        {card.toolName && (
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-surface-2 border border-border px-2.5 py-0.5 text-xs font-mono text-fg-muted">
-            <Wrench className="h-3 w-3 text-fg-subtle" />
-            Tool: {card.toolName}
-          </span>
-        )}
+      {/* One sentence says what the agent wants; the agent's own title follows only when the sentence cannot hold it. */}
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-status-attention" aria-hidden="true" />
+        <h2 className="text-ui font-medium text-fg">{title}</h2>
       </div>
 
-      {/* Description / Prompt */}
-      <p className="mt-2 text-xs leading-relaxed text-fg-secondary">
-        {card.prompt}
-      </p>
+      {showsPrompt && card.prompt.trim() && (
+        <p className="mt-2 text-ui-sm leading-relaxed text-fg-secondary">{card.prompt}</p>
+      )}
 
       {/* Command Snippet */}
       {card.commandSnippet && (

@@ -7,19 +7,22 @@ import { NOTICE_BANNER_LAYOUT } from "../components/ui/noticeBannerStyle";
 import { makeCatalogAgent } from "./fixtures/catalog";
 
 describe("banners under the top bar", () => {
-  it("share one layout and keep their own colors", () => {
-    render(
-      <>
-        <FailedTurnBanner agentName="Gemini CLI" error="fetch failed" isBusy={false} onRetry={vi.fn()} onDismiss={vi.fn()} />
-        <UpdateNotice agents={[makeCatalogAgent({ id: "gemini", name: "Gemini", updateVersion: "1.1.0" })]} onShow={vi.fn()} onDismiss={vi.fn()} />
-      </>,
-    );
+  it("keep the shared layout and their own colors", () => {
+    render(<UpdateNotice agents={[makeCatalogAgent({ id: "gemini", name: "Gemini", updateVersion: "1.1.0" })]} onShow={vi.fn()} onDismiss={vi.fn()} />);
 
-    const layout = NOTICE_BANNER_LAYOUT.split(" ");
-    const alert = screen.getByRole("alert");
     const status = screen.getByRole("status");
-    for (const banner of [alert, status]) expect(banner).toHaveClass(...layout);
-    expect(alert).toHaveClass("bg-danger-surface", "text-danger");
+    expect(status).toHaveClass(...NOTICE_BANNER_LAYOUT.split(" "));
     expect(status).toHaveClass("bg-surface-2", "text-fg-secondary");
+  });
+});
+
+describe("the failed turn under the last message", () => {
+  it("is a danger card of its own, not a banner under the top bar", () => {
+    render(<FailedTurnBanner agentName="Gemini CLI" error="fetch failed" isBusy={false} onRetry={vi.fn()} onDismiss={vi.fn()} />);
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveClass("bg-danger-surface", "text-danger", "border-danger");
+    // It sits in the chat's column, so it has no margins of a banner across the top.
+    expect(alert).not.toHaveClass("mx-6");
   });
 });

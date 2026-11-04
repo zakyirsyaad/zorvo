@@ -82,7 +82,7 @@ export function stallNoticeText(agentName: string, { failures, silentForMs }: St
   }
   if (silentForMs < STALL_SILENCE_MS) return null;
   const minutes = Math.floor(silentForMs / MS_PER_MINUTE);
-  return `${agentName} hasn't sent anything for ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.`;
+  return `${agentName} hasn't sent anything for ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}. It may be stuck.`;
 }
 
 function lastAgentMessage(messages: readonly ChatMessage[]): ChatMessage | undefined {

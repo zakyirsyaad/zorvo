@@ -2,7 +2,6 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import { explainTurnError } from "../lib/turn-error";
 import { Button } from "./ui/Button";
-import { NOTICE_BANNER_LAYOUT } from "./ui/noticeBannerStyle";
 
 export interface FailedTurnBannerProps {
   /** Undefined when the agent is no longer known: the text then says "The agent". */
@@ -21,7 +20,7 @@ export function FailedTurnBanner({ agentName, error, isBusy, onRetry, onDismiss 
   const { summary, hint, details } = explainTurnError(agentName, error);
 
   return (
-    <div role="alert" className={`bg-danger-surface text-danger ${NOTICE_BANNER_LAYOUT} items-start gap-3`}>
+    <div role="alert" className="mx-auto flex w-full max-w-3xl items-start justify-between gap-3 rounded-lg border border-danger bg-danger-surface px-3 py-2 text-ui-sm text-danger">
       <div className="min-w-0 flex-1">
         <p className="break-words">
           {summary}

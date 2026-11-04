@@ -995,19 +995,6 @@ export default function App() {
           <div className="flex min-h-0 flex-1">
             <article className={`${isDiffOpen && inspector.isDiffExpanded ? "hidden" : "flex"} flex-1 flex-col bg-bg relative overflow-hidden`}>
               {isDraggingFiles && <FileDropOverlay />}
-              {failedTurns[activeSessionId] && (
-                <FailedTurnBanner
-                  agentName={activeAgent?.name}
-                  error={failedTurns[activeSessionId]}
-                  isBusy={isSessionBusy(activeSessionId)}
-                  onRetry={
-                    acp.hasFailedPrompt(activeSessionId)
-                      ? () => void acp.retryFailedTurn(activeSessionId, (unsent) => giveBackMessage(activeSessionId, unsent.text, unsent.attachments))
-                      : undefined
-                  }
-                  onDismiss={() => clearFailedTurn(activeSessionId)}
-                />
-              )}
               <AppUpdateNotice
                 update={appUpdate.update}
                 busyCount={sessions.filter((session) => isSessionBusy(session.id)).length}
@@ -1051,6 +1038,7 @@ export default function App() {
                   jumpTo={chatJump}
                   onJumped={() => setChatJump(null)}
                   agentName={activeAgent?.name}
+                  agentProfileId={activeSession?.profileId}
                   onForkBranch={(messageId) => void forkSession(messageId)}
                   onReply={(quote) => composerRef.current?.insertText(quote)}
                   replyBlockedReason={replyBlockedReason({
@@ -1070,6 +1058,22 @@ export default function App() {
                         details={workspaceDetails}
                       />
                     </div>
+                  }
+                  // A turn that failed says so under its last message, with Try again.
+                  footer={
+                    failedTurns[activeSessionId] ? (
+                      <FailedTurnBanner
+                        agentName={activeAgent?.name}
+                        error={failedTurns[activeSessionId]}
+                        isBusy={isSessionBusy(activeSessionId)}
+                        onRetry={
+                          acp.hasFailedPrompt(activeSessionId)
+                            ? () => void acp.retryFailedTurn(activeSessionId, (unsent) => giveBackMessage(activeSessionId, unsent.text, unsent.attachments))
+                            : undefined
+                        }
+                        onDismiss={() => clearFailedTurn(activeSessionId)}
+                      />
+                    ) : undefined
                   }
                   onChooseOption={(cardId, optionId, answers) => chooseOption(activeSessionId, cardId, optionId, answers)}
                   onAnswerElicitation={(key, answer) => acp.answerElicitation(activeSessionId, key, answer)}

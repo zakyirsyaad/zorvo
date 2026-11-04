@@ -1,5 +1,7 @@
-import { memo, useState } from "react";
-import { CheckCircle2, ChevronDown, ChevronRight, Circle, CircleDot, ListTodo, Sparkles } from "lucide-react";
+import { memo, useEffect, useState } from "react";
+import { CheckCircle2, ChevronDown, ChevronRight, Circle, CircleDot, ListTodo } from "lucide-react";
+import { StatusLine } from "../ui/StatusLine";
+import { formatElapsed } from "../../lib/background-tasks";
 import type { PlanEntry } from "../../types";
 
 /**
@@ -22,15 +24,27 @@ export const ThinkingBlock = memo(function ThinkingBlock({ text, isDone = false 
 });
 
 /** Shown under the last message while the agent works on its turn. */
-export function WorkingIndicator() {
+const TICK_MS = 1000;
+
+/** "Claude Code is working" with the time since your message, under the last message while a turn runs. */
+export function WorkingIndicator({ agentName, since }: { agentName: string; since?: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (since === undefined) return;
+    const timer = setInterval(() => setNow(Date.now()), TICK_MS);
+    return () => clearInterval(timer);
+  }, [since]);
   return (
-    <div
-      data-testid="agent-working"
-      role="status"
-      className="mx-auto flex w-full max-w-3xl items-center gap-2 px-1 text-xs text-fg-muted"
-    >
-      <Sparkles className="h-3.5 w-3.5 animate-pulse text-fg-muted" aria-hidden="true" />
-      <span className="animate-pulse">Working…</span>
+    <div data-testid="agent-working" role="status" className="mx-auto w-full max-w-3xl px-1">
+      <StatusLine status="running" className="text-ui-sm text-fg-muted">
+        {agentName} is working
+        {/* Hidden from the live region: a time that ticks every second would be read out every second. */}
+        {since !== undefined && (
+          <span aria-hidden="true" className="ml-1.5 tabular-nums">
+            {formatElapsed(Math.max(0, now - since))}
+          </span>
+        )}
+      </StatusLine>
     </div>
   );
 }

@@ -30,10 +30,31 @@ describe("ActionCard Component", () => {
   it("renders card title, prompt description, and command snippet", () => {
     render(<ActionCard card={mockCard} />);
 
-    expect(screen.getByText("Permission requested")).toBeDefined();
+    // The agent's title does not start with a verb: a plain sentence, with the title under it.
+    expect(screen.getByRole("heading", { name: "The agent wants your permission" })).toBeDefined();
     expect(screen.getByText(/Agent wants to edit file/i)).toBeDefined();
     expect(screen.getByText("npm run build")).toBeDefined();
-    expect(screen.getByText(/Tool: Bash/i)).toBeDefined();
+    expect(screen.queryByText(/Tool: Bash/i)).toBeNull();
+  });
+
+  it("titles a permission with what the agent wants", () => {
+    render(<ActionCard card={{ ...mockCard, prompt: "Edit src/main.ts" }} agentName="Claude Code" />);
+    expect(screen.getByRole("heading", { name: "Claude Code wants to edit src/main.ts" })).toBeDefined();
+    // The title says it all; the agent's title is not repeated under it.
+    expect(screen.queryByText("Edit src/main.ts")).toBeNull();
+  });
+
+  it("orders Deny, Always allow and Allow once", () => {
+    const options = [
+      { optionId: "allow", name: "Allow once", kind: "allow_once" as const },
+      { optionId: "always", name: "Always allow", kind: "allow_always" as const },
+      { optionId: "reject", name: "Deny", kind: "reject_once" as const },
+    ];
+    render(<ActionCard card={{ ...mockCard, options }} />);
+    const [deny, always, once] = ["Deny", "Always allow", "Allow once"].map((name) => screen.getByRole("button", { name }));
+    expect(deny.compareDocumentPosition(always) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(always.compareDocumentPosition(once) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(deny.className).not.toContain("bg-danger-surface");
   });
 
   it("calls onChoose with the option the user picked", () => {
@@ -194,21 +215,23 @@ All systems ready for compilation.`,
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith("pnpm install && pnpm build");
   });
 
-  it("shows a running tool on the collapsed summary row and reveals the rest on click", () => {
+  it("says a tool left running in a turn that ended did not finish", () => {
     render(
       <ChatCanvas
         messages={mockMessages}
       />
     );
 
-    const summary = screen.getByRole("button", { name: /Bash/ });
-    expect(summary.textContent).toContain("Running");
+    // Nothing is working, so the turn is over: Bash, still marked running, did not finish.
+    const summary = screen.getByRole("button", { name: /Used 2 tools/ });
+    expect(summary.textContent).not.toContain("still running");
     expect(screen.queryByText("Edit")).toBeNull();
 
     fireEvent.click(summary);
 
     expect(screen.getByText("Edit")).toBeDefined();
-    expect(screen.getByText(/Completed/i)).toBeDefined();
+    expect(screen.getByText("Done")).toBeDefined();
+    expect(screen.getByText("Did not finish")).toBeDefined();
   });
 
   it("renders the ActionCard of a message with a permission request and reports the pick with its card", () => {
@@ -221,8 +244,8 @@ All systems ready for compilation.`,
 
     render(<ChatCanvas messages={waiting} onChooseOption={onChooseOption} />);
 
-    expect(screen.getByText("Permission requested")).toBeDefined();
-    expect(screen.getByText("Run command `pnpm test` in background?")).toBeDefined();
+    // The agent's title starts with a verb, so the card's one sentence holds it.
+    expect(screen.getByRole("heading", { name: /wants to run command `pnpm test` in background\?/ })).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: "Allow" }));
 
@@ -239,7 +262,7 @@ All systems ready for compilation.`,
 
     // Message action bar buttons (your messages have a Copy of their own)
     expect(screen.getAllByRole("button", { name: /copy message/i }).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: /fork branch/i })).toBeDefined();
+    expect(screen.getByRole("button", { name: /fork from here/i })).toBeDefined();
     expect(screen.getByRole("button", { name: /read aloud/i })).toBeDefined();
     expect(screen.getAllByText(/ago/i).length).toBeGreaterThan(0);
   });
@@ -274,7 +297,7 @@ All systems ready for compilation.`,
       />
     );
 
-    expect(screen.queryByRole("button", { name: /fork branch/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /fork from here/i })).toBeNull();
   });
 
   it("calls onForkBranch with the agent message id when Fork is clicked", () => {
@@ -287,7 +310,7 @@ All systems ready for compilation.`,
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /fork branch/i }));
+    fireEvent.click(screen.getByRole("button", { name: /fork from here/i }));
 
     expect(onForkBranch).toHaveBeenCalledTimes(1);
     expect(onForkBranch).toHaveBeenCalledWith("msg-2");
@@ -675,9 +698,10 @@ describe("ACP chat content", () => {
     expect(screen.getByText("src/app.ts")).toBeTruthy();
   });
 
-  it("shows a running tool's title and state on its summary row", () => {
+  it("shows a running tool's summary and state on its row", () => {
     render(
       <ChatCanvas
+        isWorking
         messages={[
           {
             id: "m-1",
@@ -691,8 +715,8 @@ describe("ACP chat content", () => {
       />
     );
 
-    const summary = screen.getByRole("button", { name: /pnpm test/ });
-    expect(summary.textContent).toContain("Running");
+    const summary = screen.getByRole("button", { name: /Ran a command/ });
+    expect(summary.textContent).toContain("1 still running");
     expect(summary.getAttribute("aria-expanded")).toBe("false");
   });
 
@@ -772,19 +796,19 @@ describe("ACP chat content", () => {
 
     const finished = within(screen.getByTestId("chat-message-a-1"));
     expect(finished.getByRole("button", { name: "Copy message" })).toBeDefined();
-    expect(finished.getByRole("button", { name: "Fork branch" })).toBeDefined();
+    expect(finished.getByRole("button", { name: "Fork from here" })).toBeDefined();
 
     const running = within(screen.getByTestId("chat-message-a-2"));
     expect(running.queryByRole("button", { name: "Copy message" })).toBeNull();
-    expect(running.queryByRole("button", { name: "Fork branch" })).toBeNull();
+    expect(running.queryByRole("button", { name: "Fork from here" })).toBeNull();
     expect(running.queryByRole("button", { name: "Read aloud" })).toBeNull();
-    expect(running.queryByText(/ago/i)).toBeNull();
+    // The time is in the reply's header, which shows while the turn runs too.
 
     rerender(<ChatCanvas messages={messages} isWorking={false} onForkBranch={() => {}} />);
 
     const ended = within(screen.getByTestId("chat-message-a-2"));
     expect(ended.getByRole("button", { name: "Copy message" })).toBeDefined();
-    expect(ended.getByRole("button", { name: "Fork branch" })).toBeDefined();
+    expect(ended.getByRole("button", { name: "Fork from here" })).toBeDefined();
   });
 
   it("keeps reply actions off a turn that waits for a permission answer", () => {
@@ -1071,5 +1095,126 @@ describe("ChatCanvas: your messages and the session's header", () => {
     render(<ChatCanvas messages={messages} header={<p>zorvo · ~/developer</p>} />);
 
     expect(screen.queryByRole("note")).toBeNull();
+  });
+});
+
+describe("ChatCanvas: the two kinds of message", () => {
+  const messages: ChatMessage[] = [
+    { id: "u-1", role: "user", content: "fix the parser", timestamp: Date.now() - 300_000 },
+    { id: "a-1", role: "agent", content: "Done.", timestamp: Date.now() - 120_000, isComplete: true },
+  ];
+
+  it("shows your message as a bubble on the right without a header", () => {
+    render(<ChatCanvas messages={messages} agentName="Codex" />);
+    const yours = screen.getByTestId("chat-message-u-1");
+    const bubble = yours.querySelector("[data-selectable-text]") as HTMLElement;
+    expect(bubble.classList.contains("bg-surface-2")).toBe(true);
+    expect(bubble.classList.contains("ml-auto")).toBe(true);
+    expect(within(yours).queryByText("You")).toBeNull();
+    expect(yours.querySelector("[data-message-header]")).toBeNull();
+  });
+
+  it("heads the agent's message with its logo, name and time", () => {
+    render(<ChatCanvas messages={messages} agentName="Codex" agentProfileId="codex" />);
+    const header = screen.getByTestId("chat-message-a-1").querySelector("[data-message-header]") as HTMLElement;
+    expect(within(header).getByText("Codex")).toBeDefined();
+    expect(within(header).getByText("2 minutes ago")).toBeDefined();
+  });
+
+  it("reveals a message's actions on hover or keyboard focus", () => {
+    render(<ChatCanvas messages={messages} agentName="Codex" onForkBranch={() => {}} onRewind={() => {}} />);
+    for (const id of ["chat-message-a-1", "chat-message-u-1"]) {
+      const root = screen.getByTestId(id);
+      expect(root.classList.contains("group")).toBe(true);
+      const actions = within(root).getByRole("button", { name: "Copy message" }).closest("[data-message-actions]") as HTMLElement;
+      expect(actions.className).toContain("group-hover:opacity-100");
+      expect(actions.className).toContain("group-focus-within:opacity-100");
+    }
+    // Your message's time is not an action: it stays on screen.
+    const time = within(screen.getByTestId("chat-message-u-1")).getByText("5 minutes ago");
+    expect(time.closest("[data-message-actions]")).toBeNull();
+  });
+
+  it("keeps a keyboard user on Rewind's confirm step, and back on Rewind when it times out", () => {
+    vi.useFakeTimers();
+    try {
+      render(<ChatCanvas messages={messages} agentName="Codex" onRewind={() => {}} />);
+      const yours = within(screen.getByTestId("chat-message-u-1"));
+      const rewind = yours.getByRole("button", { name: "Rewind to here" });
+      rewind.focus();
+      fireEvent.click(rewind);
+      // Focus inside the message keeps its actions revealed.
+      expect(document.activeElement).toBe(yours.getByRole("button", { name: "Confirm rewind" }));
+      act(() => void vi.advanceTimersByTime(4_000));
+      expect(document.activeElement).toBe(yours.getByRole("button", { name: "Rewind to here" }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("edges your bubble, so it shows on the light theme's near-white ground", () => {
+    render(<ChatCanvas messages={messages} agentName="Codex" />);
+    const bubble = screen.getByTestId("chat-message-u-1").querySelector("[data-selectable-text]") as HTMLElement;
+    expect(bubble.classList.contains("border-border")).toBe(true);
+  });
+
+  it("offers Fork from here on the agent's message", () => {
+    render(<ChatCanvas messages={messages} agentName="Codex" onForkBranch={() => {}} />);
+    expect(within(screen.getByTestId("chat-message-a-1")).getByRole("button", { name: "Fork from here" })).toBeDefined();
+  });
+
+  it("says which agent is working and for how long", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_700_000_000_000);
+    try {
+      const turn: ChatMessage[] = [
+        { id: "u-1", role: "user", content: "fix it", timestamp: 1_700_000_000_000 - 45_000 },
+        { id: "a-1", role: "agent", content: "", timestamp: 1_700_000_000_000 - 40_000 },
+      ];
+      render(<ChatCanvas messages={turn} agentName="Codex" isWorking />);
+      const working = screen.getByTestId("agent-working");
+      expect(working.textContent).toContain("Codex is working");
+      expect(working.textContent).toContain("45s");
+      act(() => void vi.advanceTimersByTime(1_000));
+      expect(working.textContent).toContain("46s");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("counts the working time from when the agent started again, after Try again", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_700_000_000_000);
+    try {
+      // The prompt failed 12 minutes ago; Try again sends it in place, with no new message.
+      const failed: ChatMessage[] = [{ id: "u-1", role: "user", content: "fix it", timestamp: 1_700_000_000_000 - 720_000 }];
+      const view = render(<ChatCanvas conversationId="s-1" messages={failed} agentName="Codex" isWorking={false} />);
+      view.rerender(<ChatCanvas conversationId="s-1" messages={failed} agentName="Codex" isWorking />);
+      expect(screen.getByTestId("agent-working").textContent).toContain("0s");
+      expect(screen.getByTestId("agent-working").textContent).not.toContain("12m");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the ticking time out of what screen readers announce", () => {
+    const turn: ChatMessage[] = [{ id: "u-1", role: "user", content: "fix it", timestamp: Date.now() - 45_000 }];
+    render(<ChatCanvas messages={turn} agentName="Codex" isWorking />);
+    const status = screen.getByRole("status");
+    expect(status.textContent).toContain("Codex is working");
+    const time = status.querySelector("[aria-hidden='true'].tabular-nums");
+    expect(time?.textContent).toMatch(/\d+s/);
+  });
+
+  it("shows the footer under the last message", () => {
+    render(<ChatCanvas messages={messages} agentName="Codex" footer={<p>The turn failed.</p>} />);
+    const last = screen.getByTestId("chat-message-a-1");
+    expect(last.compareDocumentPosition(screen.getByText("The turn failed.")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("leaves the time out of a replayed message's header", () => {
+    const replayed: ChatMessage[] = [{ id: "a-2", role: "agent", content: "Earlier.", timestamp: 0, hasKnownTime: false, isComplete: true }];
+    render(<ChatCanvas messages={replayed} agentName="Codex" />);
+    expect(within(screen.getByTestId("chat-message-a-2")).queryByText(/ago/)).toBeNull();
   });
 });

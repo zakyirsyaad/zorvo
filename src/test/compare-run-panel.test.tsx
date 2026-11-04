@@ -234,7 +234,7 @@ describe("CompareRunPanel", () => {
     await renderPanel(props([facts(1, { pendingCard: card() }), facts(2)]));
 
     const row = within(rowOf("Claude Code"));
-    expect(row.getByText("Run rm -rf build?")).toBeInTheDocument();
+    expect(row.getByRole("heading", { name: "Claude Code wants to run rm -rf build?" })).toBeInTheDocument();
     expect(row.getByRole("button", { name: "Allow once" })).toBeInTheDocument();
     expect(row.getByRole("button", { name: "Reject" })).toBeInTheDocument();
     expect(within(rowOf("Qwen Code")).queryByRole("button", { name: "Allow once" })).toBeNull();

@@ -317,7 +317,8 @@ describe("ACP sessions in the app", () => {
         { optionId: "cancel", name: "Reject", kind: "reject_once" },
       ],
     });
-    expect(screen.getByText("Run rm -rf build")).toBeDefined();
+    // The card's one sentence carries the agent's title.
+    expect(screen.getByRole("heading", { name: /wants to run rm -rf build/ })).toBeDefined();
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /permission mode: default/i }));
@@ -400,7 +401,7 @@ describe("ACP sessions in the app", () => {
 
     const reply = screen.getByText("Here is the plan").closest("[data-testid^='chat-message-']") as HTMLElement;
     await act(async () => {
-      fireEvent.click(within(reply).getByRole("button", { name: "Fork branch" }));
+      fireEvent.click(within(reply).getByRole("button", { name: "Fork from here" }));
     });
 
     const [, forkArgs] = callsTo(spy, "acp_fork_session")[0];
@@ -1085,7 +1086,7 @@ describe("ACP sessions in the app", () => {
 
     const reply = screen.getByText("Here is the plan").closest("[data-testid^='chat-message-']") as HTMLElement;
     await act(async () => {
-      fireEvent.click(within(reply).getByRole("button", { name: "Fork branch" }));
+      fireEvent.click(within(reply).getByRole("button", { name: "Fork from here" }));
     });
 
     await waitFor(() => expect(callsTo(spy, "write_fork_handoff")).toHaveLength(1));

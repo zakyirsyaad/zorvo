@@ -67,7 +67,7 @@ function callsTo(spy: { mock: { calls: unknown[][] } }, cmd: string) {
 
 function forkButtonFor(text: string) {
   const message = screen.getByText(text).closest("[data-testid^='chat-message-']") as HTMLElement;
-  return within(message).getByRole("button", { name: "Fork branch" });
+  return within(message).getByRole("button", { name: "Fork from here" });
 }
 
 describe("Chat wiring", () => {

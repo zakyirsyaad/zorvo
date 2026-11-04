@@ -1,4 +1,4 @@
-import { AlertTriangle } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import { Button } from "../ui/Button";
 import { ElicitationFields } from "./ElicitationFields";
 import { canSubmit } from "../../lib/elicitation-form";
@@ -44,10 +44,10 @@ export function ElicitationCard({ card, agentName, onAnswer, onReopen, disabled 
   return (
     <div
       data-testid={`elicitation-card-${card.key}`}
-      className="my-3 rounded-xl border border-attention-border bg-attention-surface p-4 text-left transition-all"
+      className="my-3 rounded-xl border border-border-strong bg-surface-2 p-4 text-left transition-all"
     >
       <div className="flex items-center gap-2">
-        <AlertTriangle className="h-4 w-4 shrink-0 text-status-attention" />
+        <MessageSquare className="h-4 w-4 shrink-0 text-fg-muted" aria-hidden="true" />
         <h2 className="text-sm font-semibold tracking-wide text-fg">
           {isForm ? `${agentName} asks for input` : `${agentName} wants to open a page`}
         </h2>
@@ -110,7 +110,7 @@ function Actions({ children }: { children: React.ReactNode }) {
 function AnswerButtons({ disabled, onAnswer }: { disabled: boolean; onAnswer: (a: ElicitationAnswer) => void }) {
   return (
     <>
-      <Button disabled={disabled} onClick={() => onAnswer({ action: "decline" })}>
+      <Button variant="ghost" disabled={disabled} onClick={() => onAnswer({ action: "decline" })}>
         Decline
       </Button>
       <Button variant="ghost" disabled={disabled} onClick={() => onAnswer({ action: "cancel" })}>

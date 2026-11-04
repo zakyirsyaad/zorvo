@@ -1,6 +1,6 @@
 import { memo } from "react";
-import { Sparkles, User } from "lucide-react";
 import { ActionCard } from "../ActionCard";
+import { AgentLogo } from "../AgentLogo";
 import { ElicitationCard } from "./ElicitationCard";
 import { MarkdownRenderer } from "../MarkdownRenderer";
 import { MessageActionBar } from "../MessageActionBar";
@@ -21,6 +21,8 @@ function timeLabelOf(message: ChatMessage): string | undefined {
 export interface MessageRowProps {
   message: ChatMessage;
   agentName: string;
+  /** The agent's id, for its logo in the reply's header. */
+  agentProfileId?: string;
   /** True for the newest visible message: its reasoning is not done yet. */
   isLast: boolean;
   /** True for the turn the user is watching: its diffs open themselves. */
@@ -48,6 +50,7 @@ export interface MessageRowProps {
 export const MessageRow = memo(function MessageRow({
   message,
   agentName,
+  agentProfileId,
   isLast,
   isCurrentTurn,
   showActions,
@@ -63,6 +66,7 @@ export const MessageRow = memo(function MessageRow({
   onReopenElicitationUrl,
 }: MessageRowProps) {
   const isUser = message.role === "user";
+  const agentTime = isUser ? undefined : timeLabelOf(message);
   const toolsById = new Map((message.tools ?? []).map((tool) => [tool.id, tool]));
   // Older transcripts have no parts; render them with the same tool rows as a
   // reply saved with parts, without rewriting the saved data.
@@ -73,35 +77,26 @@ export const MessageRow = memo(function MessageRow({
       id={`message-${message.id}`}
       tabIndex={-1}
       data-testid={`chat-message-${message.id}`}
-      className={`focus-ring data-[jumped]:outline data-[jumped]:outline-1 data-[jumped]:outline-offset-1 data-[jumped]:outline-focus-ring flex flex-col ${isUser ? "items-end" : "items-start"} w-full max-w-3xl mx-auto`}
+      className={`group focus-ring data-[jumped]:outline data-[jumped]:outline-1 data-[jumped]:outline-offset-1 data-[jumped]:outline-focus-ring flex flex-col ${isUser ? "items-end" : "items-start"} w-full max-w-3xl mx-auto`}
     >
-      {/* Header info */}
-      <div className="flex items-center gap-2 mb-1.5 px-1">
-        {isUser ? (
-          <>
-            <span className="text-xs text-fg-muted">You</span>
-            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-surface-hover text-fg-secondary">
-              <User className="h-3 w-3" />
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-surface-2 border border-border text-fg-muted">
-              <Sparkles className="h-3 w-3" />
-            </div>
-            <span className="text-xs font-medium text-fg-secondary">{agentName}</span>
-          </>
-        )}
-      </div>
+      {/* The agent's reply is headed by its logo, name and time; your message needs no header. */}
+      {!isUser && (
+        <div data-message-header="" className="mb-1.5 flex min-w-0 max-w-full items-center gap-2 px-1">
+          <AgentLogo profileId={agentProfileId ?? ""} name="" size={16} className="shrink-0" />
+          <span className="min-w-0 truncate text-ui font-medium text-fg-secondary">{agentName}</span>
+          {agentTime && <span className="shrink-0 text-caption text-fg-muted">{agentTime}</span>}
+        </div>
+      )}
 
-      {/* The user's message sits in a bubble; the agent's reply sits on the background. */}
+      {/* Your message sits in a bubble on the right; the agent's reply sits on the background. */}
       {/* Only the text can be selected, to copy or to reply to; its buttons cannot. */}
       <div
         {...{ [SELECTABLE_TEXT_ATTRIBUTE]: "" }}
-        className={`w-full text-left select-text [&_button]:select-none ${
+        className={`text-left select-text [&_button]:select-none ${
           isUser
-            ? "rounded-2xl p-4 bg-surface-2 border border-border text-fg max-w-xl"
-            : "px-1 text-fg-secondary"
+            ? // The edge carries the bubble on the light theme, where surface-2 is barely off the chat's ground.
+              "ml-auto max-w-[85%] rounded-2xl border border-border bg-surface-2 px-4 py-3 text-body text-fg"
+            : "w-full px-1 text-body text-fg-secondary"
         }`}
       >
         {message.thinking && (
@@ -120,7 +115,7 @@ export const MessageRow = memo(function MessageRow({
               if (part.kind === "text") return <MarkdownRenderer key={index} content={part.text} />;
               const tools = part.toolIds.flatMap((id) => toolsById.get(id) ?? []);
               if (tools.length === 0) return null;
-              return <ToolsPart key={index} tools={tools} isCurrentTurn={isCurrentTurn} />;
+              return <ToolsPart key={index} tools={tools} isCurrentTurn={isCurrentTurn} isTurnOver={showActions} />;
             })}
           </div>
         )}
@@ -129,6 +124,7 @@ export const MessageRow = memo(function MessageRow({
         {message.actionCard && (
           <ActionCard
             card={message.actionCard}
+            agentName={agentName}
             onChoose={
               onChooseOption
                 ? (optionId, answers) =>
@@ -165,7 +161,6 @@ export const MessageRow = memo(function MessageRow({
       {!isUser && showActions && (
         <MessageActionBar
           copied={copied}
-          timeLabel={timeLabelOf(message)}
           onCopy={() => onCopy(message.id, message.content)}
           onFork={onFork ? () => onFork(message.id) : undefined}
           readAloud={

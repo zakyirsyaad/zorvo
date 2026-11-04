@@ -16,6 +16,15 @@ export type { ChatMessage, ToolExecution } from "../types";
 
 /** Header label for agent messages when the host does not name the agent. */
 const DEFAULT_AGENT_NAME = "Agent";
+
+/** When the running turn began: the time of your newest message, unless it was replayed without one. */
+function turnStartedAt(messages: readonly ChatMessage[]): number | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.role === "user") return message.hasKnownTime === false ? undefined : message.timestamp;
+  }
+  return undefined;
+}
 const COPIED_FEEDBACK_MS = 2000;
 
 /** An agent reply with no text, reasoning, plan, tools or card is noise, not a message. */
@@ -34,6 +43,8 @@ export interface ChatCanvasProps {
   onJumped?: () => void;
   /** Display name of the agent behind this conversation, e.g. "Claude Code". */
   agentName?: string;
+  /** The agent's id, for its logo over each reply. */
+  agentProfileId?: string;
   onForkBranch?: (messageId: string) => void;
   /** Answers an ACP permission card with one of the agent's options; `answers` are a question card's typed answers. */
   onChooseOption?: (cardId: string, optionId: string, answers?: Record<string, string>) => void;
@@ -53,6 +64,8 @@ export interface ChatCanvasProps {
   onRewind?: (messageId: string) => void;
   /** Shown above the conversation, e.g. the folder and branch the session works in. */
   header?: ReactNode;
+  /** Shown under the last message and the turn's status (a failed turn's card). */
+  footer?: ReactNode;
   /** Puts a quote of text selected in a message into the message box; Reply is offered only when given. */
   onReply?: (quote: string) => void;
   /** Why the message box cannot take a quote now: Reply shows it and does nothing. */
@@ -64,6 +77,7 @@ export function ChatCanvas({
   jumpTo,
   onJumped,
   agentName = DEFAULT_AGENT_NAME,
+  agentProfileId,
   onForkBranch,
   onChooseOption,
   onAnswerElicitation,
@@ -74,6 +88,7 @@ export function ChatCanvas({
   conversationId,
   onRewind,
   header,
+  footer,
   onReply,
   replyBlockedReason,
 }: ChatCanvasProps) {
@@ -173,6 +188,19 @@ export function ChatCanvas({
     [toggleReadAloud],
   );
 
+  // The working line and the stall notice name the agent; a conversation with no known agent says "The agent".
+  const shownAgentName = agentName === DEFAULT_AGENT_NAME ? "The agent" : agentName;
+  // When the agent started working while this conversation was on screen. Try again sends a
+  // failed prompt in place, with no new message, so your message's time alone would be minutes off.
+  const [workingSince, setWorkingSince] = useState<number | null>(null);
+  const [seenWork, setSeenWork] = useState({ isWorking, conversationId });
+  if (seenWork.isWorking !== isWorking || seenWork.conversationId !== conversationId) {
+    setSeenWork({ isWorking, conversationId });
+    setWorkingSince(isWorking && seenWork.conversationId === conversationId ? Date.now() : null);
+  }
+  const sentAt = turnStartedAt(visibleMessages);
+  const workStartedAt = workingSince !== null && sentAt !== undefined ? Math.max(sentAt, workingSince) : (workingSince ?? sentAt);
+
   return (
     <div
       ref={stickToBottom.containerRef}
@@ -194,6 +222,7 @@ export function ChatCanvas({
           key={msg.id}
           message={msg}
           agentName={agentName}
+          agentProfileId={agentProfileId}
           isLast={msg === lastMessage}
           isCurrentTurn={msg.role === "agent" && index >= currentTurnStartsAt}
           showActions={msg.role !== "user" && index < runningTurnStartsAt}
@@ -209,15 +238,11 @@ export function ChatCanvas({
           onReopenElicitationUrl={onReopenElicitationUrl ? handleReopenElicitationUrl : undefined}
         />
       ))}
-      {isWorking && <WorkingIndicator />}
+      {isWorking && <WorkingIndicator agentName={shownAgentName} since={workStartedAt} />}
       {isWorking && (
-        <AgentStallNotice
-          agentName={agentName === DEFAULT_AGENT_NAME ? "The agent" : agentName}
-          messages={messages}
-          failures={failures}
-          onStop={onStop}
-        />
+        <AgentStallNotice agentName={shownAgentName} messages={messages} failures={failures} onStop={onStop} />
       )}
+      {footer && <div className="mx-auto w-full max-w-3xl">{footer}</div>}
       {chatSelection.selected && (
         <SelectionToolbar selection={chatSelection.selected} blockedReason={replyBlockedReason} onReply={replyToSelection} />
       )}

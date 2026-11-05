@@ -1966,3 +1966,43 @@ fn sign_in_probe_fails_with_the_sign_in_error_when_nobody_is_signed_in() {
 
     assert_eq!(auth_methods_in(&error)[0]["id"], "browser");
 }
+
+#[test]
+fn agent_setup_runs_the_setup_launch_as_given_when_the_agent_offers_a_setup() {
+    let (manager, _rx) = manager();
+    let launch = with_env(fake_agent(), "FAKE_ACP_SETUP_METHOD", "1");
+    let setup = AcpLaunch {
+        program: "node".to_string(),
+        args: vec!["setup.mjs".to_string()],
+        env: vec![("A".to_string(), "1".to_string())],
+    };
+
+    let run = manager
+        .agent_setup_with(&cwd(), &launch, &setup, |_| true)
+        .expect("agent setup");
+
+    assert_eq!(run, setup);
+    assert!(!run
+        .args
+        .iter()
+        .any(|arg| arg.contains("auth-type") || arg == "--acp"));
+}
+
+#[test]
+fn agent_setup_is_refused_for_an_agent_that_offers_none() {
+    let (manager, _rx) = manager();
+    let setup = AcpLaunch {
+        program: "node".to_string(),
+        args: vec![],
+        env: vec![],
+    };
+
+    let error = manager
+        .agent_setup_with(&cwd(), &fake_agent(), &setup, |_| true)
+        .unwrap_err();
+
+    assert_eq!(
+        error,
+        "Zorvo does not run this agent's setup: it offers none"
+    );
+}

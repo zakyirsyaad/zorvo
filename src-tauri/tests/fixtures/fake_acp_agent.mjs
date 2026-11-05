@@ -281,6 +281,10 @@ const handlers = {
       authMethods: process.env.FAKE_ACP_NO_AUTH_METHODS ? [] : [
         { id: "browser", name: "Sign in with a browser" },
         { id: "api-key", name: "API key", description: "Set FAKE_API_KEY" },
+        // FAKE_ACP_SETUP_METHOD: Qwen Code's older terminal method, which marks an interactive setup.
+        ...(process.env.FAKE_ACP_SETUP_METHOD
+          ? [{ id: "setup", name: "Use OpenAI API key", _meta: { type: "terminal", args: ["--auth-type=openai"] } }]
+          : []),
         ...(params?.clientCapabilities?.auth?.terminal === true
           ? [
               {

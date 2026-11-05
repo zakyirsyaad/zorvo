@@ -70,6 +70,23 @@ pub fn terminal_method(
     Ok(TerminalMethod { args, env })
 }
 
+/// Why the setup command refuses an agent that marks no interactive setup.
+const NO_SETUP_MESSAGE: &str = "Zorvo does not run this agent's setup: it offers none";
+
+/// True when the agent's `initialize` marks an interactive setup of its own: a method in the
+/// older form, with no `type` of its own and `_meta.type: "terminal"` (Qwen Code, whose provider
+/// choice lives in the app it starts without `--acp`). The method's own `args` are not used.
+pub fn has_interactive_setup(init: &Value) -> bool {
+    init.get("authMethods")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|method| {
+            method.get("type").is_none()
+                && method.pointer("/_meta/type").and_then(Value::as_str) == Some("terminal")
+        })
+}
+
 fn read_args(value: Option<&Value>) -> Result<Vec<String>, TerminalMethodError> {
     let Some(value) = value else {
         return Ok(Vec::new());
@@ -266,6 +283,32 @@ impl AcpManager {
                 Err(auth_required_error(&auth_methods_of(&init)))
             }
             Err(TerminalMethodError::Refused(message)) => Err(message),
+        }
+    }
+
+    /// The command that runs the agent's own interactive setup: `setup`, unchanged, but only when
+    /// the agent's fresh `initialize` (asked through `launch` in a short-lived process) marks one.
+    /// `on_spawned` is as in [`Self::terminal_login_with`].
+    pub fn agent_setup_with(
+        &self,
+        cwd: &str,
+        launch: &AcpLaunch,
+        setup: &AcpLaunch,
+        on_spawned: impl FnOnce(Arc<AcpConnection>) -> bool,
+    ) -> Result<AcpLaunch, String> {
+        validate_cwd(cwd)?;
+        let connection = spawn_unrouted(cwd, launch, |_, _| {})?;
+        if !on_spawned(Arc::clone(&connection)) {
+            connection.kill();
+            return Err(CANCELLED_MESSAGE.to_string());
+        }
+        let init = initialize(&connection)
+            .map_err(|message| failure_message(&connection, OpenError::Transport(message)))?;
+        connection.kill();
+        if has_interactive_setup(&init) {
+            Ok(setup.clone())
+        } else {
+            Err(NO_SETUP_MESSAGE.to_string())
         }
     }
 }
@@ -467,5 +510,30 @@ mod tests {
 
         assert!(!attempts.is_cancelled("signin-1"));
         assert!(attempts.begin("signin-1").is_ok());
+    }
+
+    #[test]
+    fn qwen_codes_legacy_terminal_method_marks_an_interactive_setup() {
+        // Qwen Code 0.26.6's answer to a bare `initialize`, checked on 2026-11-05.
+        let qwen = offered(json!({
+            "id": "openai",
+            "name": "Use OpenAI API key",
+            "description": "Requires setting the `OPENAI_API_KEY` environment variable",
+            "_meta": { "type": "terminal", "args": ["--auth-type=openai"] }
+        }));
+
+        assert!(has_interactive_setup(&qwen));
+    }
+
+    #[test]
+    fn other_methods_mark_no_interactive_setup() {
+        for init in [
+            offered(json!({"id": "t", "type": "terminal", "args": ["--login"]})),
+            offered(json!({"id": "browser", "name": "Sign in"})),
+            offered(json!({"id": "a", "_meta": {"type": "agent"}})),
+            json!({}),
+        ] {
+            assert!(!has_interactive_setup(&init), "{init}");
+        }
     }
 }

@@ -23,6 +23,7 @@ import { ChangesPanel } from "./components/changes/ChangesPanel";
 import { DiffView } from "./components/changes/DiffView";
 import { totalsOf } from "./lib/diff-stats";
 import { useInspector } from "./hooks/useInspector";
+import { useNotice } from "./hooks/useNotice";
 import { Inspector } from "./components/inspector/Inspector";
 import { offeredTabs } from "./lib/inspector";
 import { useReviewComments } from "./hooks/useReviewComments";
@@ -116,13 +117,13 @@ import {
 import type { ReviewComment, Session, SessionWorktree, Settings } from "./types";
 import { replyBlockedReason } from "./lib/reply-quote";
 
-const NO_FOLDER_NOTICE = "Open a project folder first: use the Open folder button next to Workspaces.";
+const NO_FOLDER_NOTICE = "Open a project folder first: choose one from the folder chip by the message box.";
 
 // eslint-disable-next-line no-control-regex -- matching control characters is the point.
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
 
 export default function App() {
-  const [notice, setNotice] = useState<string | null>(null);
+  const { notice, setNotice } = useNotice();
   /** The error each session's last turn failed with, shown with a way to try again while that session is open. */
   const [failedTurns, setFailedTurns] = useState<Readonly<Record<string, string>>>({});
   const clearFailedTurn = (sessionId: string) =>
@@ -150,7 +151,7 @@ export default function App() {
   // The top bar's Inspector button: focus goes back to it when the inspector closes from its own button.
   const inspectorButtonRef = useRef<HTMLButtonElement>(null);
 
-  const reportError = useCallback((message: string) => setNotice(message), []);
+  const reportError = useCallback((message: string) => setNotice(message), [setNotice]);
   const { state, isLoaded, updateState, getState, saveNow } = usePersistedState(reportError);
   useAppearance(state.settings.appearance, isLoaded, reportError);
   const { transcripts, transcriptStatus, ensureLoaded, updateMessages, saveSoon, removeTranscript, flush: flushTranscripts } = useTranscripts(reportError);
@@ -264,7 +265,8 @@ export default function App() {
     sweepOrphans().catch((error) => {
       setNotice(`Could not stop agents left from before: ${String(error)}`);
     });
-  }, []);
+    // setNotice keeps one identity, so this still runs once, on load.
+  }, [setNotice]);
 
   // Once saved sessions are loaded, show the most recent one.
   useEffect(() => {
@@ -450,7 +452,7 @@ export default function App() {
   const handleDroppedFiles = (dropped: string[]) => {
     const paths = dropped.filter((path) => !CONTROL_CHARACTER.test(path));
     if (paths.length < dropped.length) {
-      setNotice("Left out a dropped file whose name has control characters.");
+      setNotice("Left out a dropped file whose name has control characters.", "warning");
     }
     if (paths.length === 0) return;
     insertPaths(paths);
@@ -534,11 +536,11 @@ export default function App() {
   const handleNewSession = async (first?: FirstMessage) => {
     // The backend rejects relative and missing cwds, so never spawn without a path.
     if (!activeWorkspace) {
-      setNotice(NO_FOLDER_NOTICE);
+      setNotice(NO_FOLDER_NOTICE, "warning");
       return;
     }
     if (!newSessionAgent) {
-      setNotice(noAgentNotice(agentsInUse));
+      setNotice(noAgentNotice(agentsInUse), "warning");
       return;
     }
     rememberFolder(activeWorkspace);
@@ -801,11 +803,11 @@ export default function App() {
   /** Starts the ticked agents on one prompt, each in its own worktree. */
   const handleNewRun = (message: FirstMessage) => {
     if (!activeWorkspace) {
-      setNotice(NO_FOLDER_NOTICE);
+      setNotice(NO_FOLDER_NOTICE, "warning");
       return;
     }
     rememberFolder(activeWorkspace);
-    const picked = compare.agentIds.flatMap((id) => agents.filter((a) => a.id === id));
+    const picked =compare.agentIds.flatMap((id) => agents.filter((a) => a.id === id));
     void compareRun.startRun(picked, message);
   };
 
@@ -1091,7 +1093,7 @@ export default function App() {
                     onInstall={() => void appUpdate.install()}
                     onLater={appUpdate.dismiss}
                   />
-                  {notice && <Toast tone="error" message={notice} onDismiss={() => setNotice(null)} />}
+                  {notice && <Toast tone={notice.tone} message={notice.message} onDismiss={() => setNotice(null)} />}
                 </ToastStack>
               </div>
               {activeAgentRemoved !== null && (

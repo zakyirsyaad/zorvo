@@ -477,7 +477,7 @@ describe("Starting a new session", () => {
     const row = () => within(screen.getByRole("complementary")).getByText(name).closest("li") as HTMLElement;
     await clickRowDelete(() => row());
     await act(async () => {
-      fireEvent.click(within(row()).getByRole("menuitem", { name: "Confirm delete" }));
+      fireEvent.click(within(row()).getByRole("button", { name: "Confirm delete" }));
     });
   }
 

@@ -586,7 +586,7 @@ describe("Which session the message is for", () => {
     const row = sidebarRow("Alpha work");
     await clickRowDelete(() => row);
     await act(async () => {
-      fireEvent.click(within(row).getByRole("menuitem", { name: "Confirm delete" }));
+      fireEvent.click(within(row).getByRole("button", { name: "Confirm delete" }));
     });
 
     expect(await screen.findByText(NOTE_FOR_GONE)).toBeDefined();

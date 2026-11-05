@@ -1,16 +1,17 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from "lucide-react";
 import type { Session } from "../../types";
 import { Popover, PopoverOption } from "../ui/Popover";
 import type { SessionListContext } from "./SessionList";
 
-/** How long Delete waits for its confirming second click. */
+/** How long Delete? waits in the row for its confirming press. */
 export const CONFIRM_DELETE_MS = 4000;
 
 const TRIGGER =
   "flex size-6 items-center justify-center rounded-md text-fg-secondary transition-colors hover:text-fg aria-expanded:bg-surface-hover focus-ring";
+/** The row's "Delete?" pill: 24px, danger on its surface, 12px at 500, radius 4. */
 const CONFIRM =
-  "focus-ring flex min-h-7.5 w-full items-center rounded bg-danger-surface px-2 py-1 text-left text-ui font-medium text-danger";
+  "focus-ring flex h-6 shrink-0 items-center rounded bg-danger-surface px-2 text-ui-sm font-medium text-danger";
 
 export interface SessionMenuProps {
   session: Session;
@@ -36,12 +37,17 @@ function Item({ icon, children }: { icon: ReactNode; children: ReactNode }) {
 }
 
 /**
- * A session's ⋯ menu: rename, pin, archive and delete. Deleting erases the
- * conversation for good, so Delete turns into "Delete?" first and turns back by itself.
+ * A session's ⋯ menu: rename, pin, archive and delete. Deleting erases the conversation for
+ * good, so Delete closes the menu and asks "Delete?" in the row, focused: Return deletes,
+ * Escape gives up and puts focus back on ⋯, and it turns back by itself after a while.
  */
 export function SessionMenu({ session, label, isBusy, isInRun, context, onRename }: SessionMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  // Set when the pill had focus as it went away, so focus goes back to ⋯ rather than the page.
+  const shouldRefocusRef = useRef(false);
   // A confirm left open must never delete a session whose agent has started working.
   const [wasBusy, setWasBusy] = useState(isBusy);
   if (wasBusy !== isBusy) {
@@ -51,8 +57,17 @@ export function SessionMenu({ session, label, isBusy, isInRun, context, onRename
 
   useEffect(() => {
     if (!isConfirming) return;
-    const timer = setTimeout(() => setIsConfirming(false), CONFIRM_DELETE_MS);
+    const timer = setTimeout(() => {
+      shouldRefocusRef.current = document.activeElement === confirmRef.current;
+      setIsConfirming(false);
+    }, CONFIRM_DELETE_MS);
     return () => clearTimeout(timer);
+  }, [isConfirming]);
+
+  useEffect(() => {
+    if (isConfirming || !shouldRefocusRef.current) return;
+    shouldRefocusRef.current = false;
+    triggerRef.current?.focus();
   }, [isConfirming]);
 
   const { onPinSession, onRenameSession, onDeleteSession } = context;
@@ -63,29 +78,55 @@ export function SessionMenu({ session, label, isBusy, isInRun, context, onRename
   const isArchived = Boolean(session.archivedAt);
   if (!canRename && !onPinSession && !onArchiveSession && !deleteSession) return null;
 
-  const close = () => {
-    setIsOpen(false);
-    setIsConfirming(false);
-  };
   const pick = (action: () => void) => () => {
-    close();
+    setIsOpen(false);
     action();
   };
+
+  if (isConfirming && deleteSession) {
+    return (
+      <button
+        ref={confirmRef}
+        type="button"
+        autoFocus
+        aria-label="Confirm delete"
+        title="Delete this session and its conversation for good"
+        onClick={() => {
+          setIsConfirming(false);
+          deleteSession(session.id);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.stopPropagation();
+          shouldRefocusRef.current = true;
+          setIsConfirming(false);
+        }}
+        onBlur={(event) => {
+          // A press elsewhere in the window gives up too; focus is already where the user put it.
+          if (event.relatedTarget) setIsConfirming(false);
+        }}
+        className={CONFIRM}
+      >
+        Delete?
+      </button>
+    );
+  }
 
   return (
     <Popover
       isOpen={isOpen}
-      onClose={close}
+      onClose={() => setIsOpen(false)}
       label={`Actions for ${label}`}
       align="end"
       className="w-44"
       trigger={
         <button
+          ref={triggerRef}
           type="button"
           aria-label={`More actions for ${label}`}
           aria-haspopup="menu"
           aria-expanded={isOpen}
-          onClick={() => (isOpen ? close() : setIsOpen(true))}
+          onClick={() => setIsOpen((open) => !open)}
           className={TRIGGER}
         >
           <MoreHorizontal size={12} />
@@ -109,24 +150,11 @@ export function SessionMenu({ session, label, isBusy, isInRun, context, onRename
           </Item>
         </PopoverOption>
       )}
-      {deleteSession &&
-        (isConfirming ? (
-          <button
-            type="button"
-            role="menuitem"
-            autoFocus
-            aria-label="Confirm delete"
-            title="Delete this session and its conversation for good"
-            onClick={pick(() => deleteSession(session.id))}
-            className={CONFIRM}
-          >
-            <Item icon={<Trash2 size={12} />}>Delete?</Item>
-          </button>
-        ) : (
-          <PopoverOption onSelect={() => setIsConfirming(true)}>
-            <Item icon={<Trash2 size={12} />}>Delete</Item>
-          </PopoverOption>
-        ))}
+      {deleteSession && (
+        <PopoverOption onSelect={pick(() => setIsConfirming(true))}>
+          <Item icon={<Trash2 size={12} />}>Delete</Item>
+        </PopoverOption>
+      )}
     </Popover>
   );
 }

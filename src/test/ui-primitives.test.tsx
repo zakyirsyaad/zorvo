@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { useState, type ReactNode } from "react";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { Popover, PopoverHeader, PopoverList, PopoverOption } from "../components/ui/Popover";
 import { Highlighted } from "../components/ui/Highlighted";
 import { Toast, ToastStack } from "../components/ui/Toast";
@@ -577,6 +577,25 @@ describe("Toast", () => {
     expect(alert).toHaveClass("border-danger");
     const statuses = screen.getAllByRole("status");
     expect(statuses.map((status) => status.textContent)).toEqual(["Careful", "Heads up"]);
+  });
+
+  it("draws a warning with the circle-alert icon, off the danger border, and leaves an error as it was", () => {
+    render(
+      <>
+        <Toast tone="warning" message="Careful" onDismiss={() => {}} />
+        <Toast tone="error" message="Failed" onDismiss={() => {}} />
+      </>,
+    );
+    const warning = screen.getByRole("status");
+    expect(warning).not.toHaveClass("border-danger");
+    expect(warning.querySelector(".lucide-circle-alert")?.getAttribute("class")).toContain("text-status-attention");
+    expect(within(warning).getByText("Careful")).toHaveClass("text-fg-secondary");
+    expect(within(warning).getByRole("button", { name: "Dismiss notice" })).toHaveClass("h-5.5", "w-5.5");
+
+    const error = screen.getByRole("alert");
+    expect(error).toHaveClass("border-danger");
+    expect(error.querySelector(".lucide-circle-alert")?.getAttribute("class")).toContain("text-danger");
+    expect(within(error).getByText("Failed")).toHaveClass("text-fg");
   });
 
   it("runs its action", () => {

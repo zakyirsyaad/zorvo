@@ -28,6 +28,6 @@ export async function clickRowDelete(row: () => HTMLElement): Promise<void> {
 export async function deleteFromRow(row: () => HTMLElement): Promise<void> {
   await clickRowDelete(row);
   await act(async () => {
-    fireEvent.click(within(row()).getByRole("menuitem", { name: "Confirm delete" }));
+    fireEvent.click(within(row()).getByRole("button", { name: "Confirm delete" }));
   });
 }

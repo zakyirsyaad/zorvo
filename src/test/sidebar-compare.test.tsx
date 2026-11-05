@@ -166,7 +166,7 @@ describe("a compare run in the sidebar", () => {
 
     fireEvent.click(within(row).getByRole("button", { name: /^More actions for / }));
     fireEvent.click(within(row).getByRole("menuitem", { name: "Delete" }));
-    fireEvent.click(within(row).getByRole("menuitem", { name: "Confirm delete" }));
+    fireEvent.click(within(row).getByRole("button", { name: "Confirm delete" }));
     expect(onDeleteSession).toHaveBeenCalledWith("r-qwen");
   });
 

@@ -160,7 +160,7 @@ describe("Session lifecycle", () => {
 
     await clickRowDelete(() => sessionRow(FIRST_MESSAGE));
     await act(async () => {
-      fireEvent.click(within(sessionRow(FIRST_MESSAGE)).getByRole("menuitem", { name: "Confirm delete" }));
+      fireEvent.click(within(sessionRow(FIRST_MESSAGE)).getByRole("button", { name: "Confirm delete" }));
     });
 
     expect(spy).toHaveBeenCalledWith("acp_stop_session", { sessionId }, undefined);
@@ -176,7 +176,7 @@ describe("Session lifecycle", () => {
 
     expect(sidebar().getByText("Refactor parser")).toBeDefined();
     expect(spy.mock.calls.some(([cmd]) => cmd === "delete_transcript")).toBe(false);
-    expect(within(sessionRow("Refactor parser")).getByRole("menuitem", { name: "Confirm delete" })).toBeDefined();
+    expect(within(sessionRow("Refactor parser")).getByRole("button", { name: "Confirm delete" })).toBeDefined();
   });
 
   it("deletes an ended session and its transcript", async () => {
@@ -187,7 +187,7 @@ describe("Session lifecycle", () => {
 
     await clickRowDelete(() => sessionRow("Refactor parser"));
     await act(async () => {
-      fireEvent.click(within(sessionRow("Refactor parser")).getByRole("menuitem", { name: "Confirm delete" }));
+      fireEvent.click(within(sessionRow("Refactor parser")).getByRole("button", { name: "Confirm delete" }));
     });
 
     expect(sidebar().queryByText("Refactor parser")).toBeNull();
@@ -224,7 +224,7 @@ describe("Session lifecycle", () => {
     const remove = async (name: string) => {
       await clickRowDelete(() => sessionRow(name));
       await act(async () => {
-        fireEvent.click(within(sessionRow(name)).getByRole("menuitem", { name: "Confirm delete" }));
+        fireEvent.click(within(sessionRow(name)).getByRole("button", { name: "Confirm delete" }));
       });
     };
     const removals = () => spy.mock.calls.filter(([cmd]) => cmd === "remove_session_worktree");
@@ -248,7 +248,7 @@ describe("Session lifecycle", () => {
 
     await clickRowDelete(() => sessionRow("Fix login"));
     await act(async () => {
-      fireEvent.click(within(sessionRow("Fix login")).getByRole("menuitem", { name: "Confirm delete" }));
+      fireEvent.click(within(sessionRow("Fix login")).getByRole("button", { name: "Confirm delete" }));
     });
 
     expect((await screen.findByRole("alert")).textContent).toContain("uncommitted changes");

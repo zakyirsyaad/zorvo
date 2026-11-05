@@ -130,27 +130,44 @@ describe("SessionRow", () => {
     expect(within(row).getByText(/· fork$/)).toBeInTheDocument();
   });
 
-  it("deletes only after the confirm in its menu", () => {
+  it("asks Delete? in the row itself, focused, after the menu closes", () => {
     const onDeleteSession = vi.fn();
-    renderRow(session(), { onDeleteSession });
+    const { row } = renderRow(session(), { onDeleteSession });
     openMenu("A session");
     fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
-    const confirm = screen.getByRole("menuitem", { name: "Confirm delete" });
+
+    expect(screen.queryByRole("menu")).toBeNull();
+    const confirm = within(row).getByRole("button", { name: "Confirm delete" });
     expect(confirm).toHaveTextContent("Delete?");
-    expect(confirm).toHaveClass("bg-danger-surface", "text-danger");
+    expect(confirm).toHaveClass("h-6", "bg-danger-surface", "text-danger");
+    expect(confirm).toHaveFocus();
     expect(onDeleteSession).not.toHaveBeenCalled();
+    // Return on a focused button is a click.
     fireEvent.click(confirm);
     expect(onDeleteSession).toHaveBeenCalledWith("s-1");
   });
 
+  it("gives up on Escape, with focus back on the row's menu button", () => {
+    const onDeleteSession = vi.fn();
+    const { row } = renderRow(session(), { onDeleteSession });
+    openMenu("A session");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+
+    fireEvent.keyDown(within(row).getByRole("button", { name: "Confirm delete" }), { key: "Escape" });
+
+    expect(within(row).queryByRole("button", { name: "Confirm delete" })).toBeNull();
+    expect(within(row).getByRole("button", { name: "More actions for A session" })).toHaveFocus();
+    expect(onDeleteSession).not.toHaveBeenCalled();
+  });
+
   it("turns the confirm back by itself", () => {
     vi.useFakeTimers();
-    renderRow(session(), { onDeleteSession: vi.fn() });
+    const { row } = renderRow(session(), { onDeleteSession: vi.fn() });
     openMenu("A session");
     fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
     act(() => vi.advanceTimersByTime(CONFIRM_DELETE_MS));
-    expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: "Confirm delete" })).toBeNull();
+    expect(within(row).queryByRole("button", { name: "Confirm delete" })).toBeNull();
+    expect(within(row).getByRole("button", { name: "More actions for A session" })).toBeInTheDocument();
   });
 
   it("offers no Delete or Archive while the agent works, and drops an open confirm when it starts", () => {
@@ -158,15 +175,30 @@ describe("SessionRow", () => {
     const { rerender } = renderRow(session(), idle);
     openMenu("A session");
     fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
-    expect(screen.getByRole("menuitem", { name: "Confirm delete" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm delete" })).toBeInTheDocument();
 
     rerender(tree(session(), { ...idle, isSessionBusy: () => true }));
-    expect(screen.queryByRole("menuitem", { name: "Confirm delete" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Confirm delete" })).toBeNull();
+    openMenu("A session");
     expect(screen.queryByRole("menuitem", { name: "Delete" })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: "Archive" })).toBeNull();
 
     rerender(tree(session(), idle));
     expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
+  });
+
+  it("keeps the row's fill and dot while it is renamed, with a hint", () => {
+    renderRow(session(), { isSessionBusy: () => true, onStopSession: vi.fn() });
+    openMenu("A session");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+
+    const field = screen.getByRole("textbox", { name: "Rename A session" });
+    const renaming = screen.getByTestId("session-row-s-1");
+    expect(renaming).toContainElement(field);
+    expect(renaming).toHaveClass("bg-surface-hover");
+    expect(renaming.querySelector(".bg-status-running")).not.toBeNull();
+    expect(within(renaming).getByText("Return saves, Esc cancels")).toHaveClass("text-fg-subtle");
+    expect(field).toHaveClass("h-6.5", "border-fg", "bg-bg");
   });
 
   it("offers Stop only while the agent works", () => {

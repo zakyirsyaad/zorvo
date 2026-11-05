@@ -107,7 +107,7 @@ async function openSession(name: string) {
 async function deleteSession(name: string) {
   const row = () => sidebar().getByText(name).closest("li") as HTMLElement;
   await clickRowDelete(row);
-  await click(within(row()).getByRole("menuitem", { name: "Confirm delete" }));
+  await click(within(row()).getByRole("button", { name: "Confirm delete" }));
 }
 
 describe("Workspace terminal in the app", () => {

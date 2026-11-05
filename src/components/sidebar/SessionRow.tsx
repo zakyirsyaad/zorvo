@@ -43,18 +43,28 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
   const words = `${lineAgent ? " · " : ""}${detail}${session.forkedFrom ? " · fork" : ""}`;
 
   if (isRenaming) {
+    // The row keeps its fill and its dot, so it is plain which session the field renames.
     return (
-      <div className="flex items-center py-2">
-        <RenameField
-          value={session.name}
-          label={`Rename ${session.name}`}
-          className="mx-1"
-          onDone={(name) => {
-            setIsRenaming(false);
-            const trimmed = name?.trim();
-            if (trimmed && trimmed !== session.name) onRenameSession?.(session.id, trimmed);
-          }}
+      <div data-testid={`session-row-${session.id}`} className="flex items-start gap-2.5 rounded-md bg-surface-hover p-2">
+        <span
+          aria-hidden="true"
+          className={`mt-2.5 size-1.5 shrink-0 rounded-full ${status ? DOT_CLASS[status.tone] : ""}`}
         />
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          {/* A row of its own: the field's flex-1 is for its width, not its height. */}
+          <span className="flex">
+            <RenameField
+              value={session.name}
+              label={`Rename ${session.name}`}
+              onDone={(name) => {
+                setIsRenaming(false);
+                const trimmed = name?.trim();
+                if (trimmed && trimmed !== session.name) onRenameSession?.(session.id, trimmed);
+              }}
+            />
+          </span>
+          <span className="text-caption text-fg-subtle">Return saves, Esc cancels</span>
+        </span>
       </div>
     );
   }

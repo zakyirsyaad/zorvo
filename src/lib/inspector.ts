@@ -14,15 +14,20 @@ export function clampInspectorWidth(px: number): number {
   return Math.min(INSPECTOR_WIDTH.max, Math.max(INSPECTOR_WIDTH.min, Math.round(px)));
 }
 
-/** How wide the inspector shows: none while closed, at least `wide` on the Terminal tab. */
-export function shownInspectorWidth(tab: InspectorTab | null, width: number): number {
-  if (tab === null) return 0;
-  return tab === "terminal" ? Math.max(INSPECTOR_WIDTH.wide, width) : width;
+/** The Terminal tab, and the Files tab while a file is open in it, need room for a line of code or a shell. */
+function isWideTab(tab: InspectorTab, isViewingFile: boolean): boolean {
+  return tab === "terminal" || (tab === "files" && isViewingFile);
 }
 
-/** The narrowest a tab shows: `wide` on the Terminal tab, else the inspector's own minimum. */
-export function minInspectorWidth(tab: InspectorTab): number {
-  return tab === "terminal" ? INSPECTOR_WIDTH.wide : INSPECTOR_WIDTH.min;
+/** How wide the inspector shows: none while closed, at least `wide` on the Terminal tab or a file open in Files. */
+export function shownInspectorWidth(tab: InspectorTab | null, width: number, isViewingFile = false): number {
+  if (tab === null) return 0;
+  return isWideTab(tab, isViewingFile) ? Math.max(INSPECTOR_WIDTH.wide, width) : width;
+}
+
+/** The narrowest a tab shows: `wide` on the Terminal tab or a file open in Files, else the inspector's own minimum. */
+export function minInspectorWidth(tab: InspectorTab, isViewingFile = false): number {
+  return isWideTab(tab, isViewingFile) ? INSPECTOR_WIDTH.wide : INSPECTOR_WIDTH.min;
 }
 
 /** The tabs that apply: Changes in a repository, Activity with a session, Files and Terminal with a folder. */

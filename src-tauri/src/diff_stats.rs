@@ -17,7 +17,7 @@ use crate::changes::{
     changes_at, diff_base, resolves_inside, run_git, run_git_with, toplevel_of, ChangeKind,
     FileChange,
 };
-use crate::files::ensure_known_workspace;
+use crate::files::{ensure_known_workspace, BINARY_SNIFF_BYTES};
 use crate::git_info::git_binary;
 use crate::store::AppStore;
 
@@ -65,8 +65,6 @@ pub struct FileStat {
 
 /// How much of a file is read at a time when counting its lines.
 const CHUNK_BYTES: usize = 64 * 1024;
-/// How much of a file's start is searched for a NUL byte to tell it is binary.
-const BINARY_SNIFF_BYTES: usize = 8 * 1024;
 /// Names tried, in order, for the default branch when the remote names none.
 const DEFAULT_BRANCHES: [&str; 2] = ["main", "master"];
 

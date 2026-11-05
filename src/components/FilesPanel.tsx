@@ -19,6 +19,8 @@ import {
   ROOT_FOLDER,
   type DirEntryInfo,
 } from "../lib/files";
+import { MARKER_LETTER, MARKER_WORD, type FileMarker, type FileMarkers } from "../lib/file-markers";
+import { FileViewer } from "./files/FileViewer";
 
 export interface FilesPanelProps {
   /** Absolute path of the workspace folder the tree shows. */
@@ -31,7 +33,26 @@ export interface FilesPanelProps {
   onInsertPath?: (absolutePath: string) => void;
   /** Reveals the workspace folder in Finder; the header button is hidden when absent. */
   onRevealRoot?: () => void;
+  /** Git markers: a letter on changed files, a dot on folders holding changes. */
+  markers?: FileMarkers;
+  /** The file open in the viewer, relative to the folder; the tree shows while it is null. */
+  viewedFile?: string | null;
+  /** Opens a clicked file in the viewer; without it, a click opens the file in its own app. */
+  onViewFile?: (relative: string) => void;
+  /** The viewer's "← Files". */
+  onCloseFile?: () => void;
+  /** Moves when the folder's changes are read again; the open file is read again then. */
+  version?: number;
+  /** The folder relative to its repository's root, for the open file's diff. */
+  filesPrefix?: string;
+  /** Adds text to the composer (a range of the open file's lines). */
+  onInsertText?: (text: string) => void;
 }
+
+const MARKER_COLOR: Record<FileMarker, string> = {
+  modified: "text-status-attention",
+  added: "text-status-running",
+};
 
 const BASE_INDENT_PX = 8;
 const INDENT_STEP_PX = 12;
@@ -39,7 +60,7 @@ const HEADER_BUTTON =
   "rounded p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg-secondary focus-ring";
 const ROW =
   "group flex items-center rounded-md text-fg-muted hover:bg-surface-hover hover:text-fg-secondary";
-const NOTE = "py-1 pr-2 text-[11px]";
+const NOTE = "py-1 pr-2 text-caption";
 
 interface TreeView {
   tree: FileTree;
@@ -48,6 +69,7 @@ interface TreeView {
   rootPath: string;
   onOpenFile: (entry: DirEntryInfo) => void;
   onInsertPath?: (absolutePath: string) => void;
+  markers?: FileMarkers;
 }
 
 function indent(depth: number): { paddingLeft: number } {
@@ -63,8 +85,9 @@ function FolderRow({ entry, depth, view }: { entry: DirEntryInfo; depth: number;
   const path = entry.relativePath;
   const expanded = view.visible ? hasVisibleDescendant(view.visible, path) : view.tree.isExpanded(path);
   const Icon = expanded ? FolderOpen : Folder;
+  const hasChanges = view.markers?.folders.has(path) ?? false;
   return (
-    <li role="treeitem" aria-label={entry.name} aria-expanded={expanded}>
+    <li role="treeitem" aria-label={hasChanges ? `${entry.name}, contains changes` : entry.name} aria-expanded={expanded}>
       <div className={ROW}>
         <button
           type="button"
@@ -79,8 +102,11 @@ function FolderRow({ entry, depth, view }: { entry: DirEntryInfo; depth: number;
             className={`shrink-0 text-fg-muted transition-transform ${expanded ? "rotate-90" : ""}`}
           />
           <Icon size={13} aria-hidden="true" className="shrink-0 text-fg-muted" />
-          <span className="truncate">{entry.name}</span>
+          <span className="truncate font-mono">{entry.name}</span>
         </button>
+        {hasChanges && (
+          <span role="img" aria-label="Contains changes" className="mr-2.5 size-1.5 shrink-0 rounded-full bg-status-attention" />
+        )}
       </div>
       {expanded && (
         <ul role="group">
@@ -93,8 +119,9 @@ function FolderRow({ entry, depth, view }: { entry: DirEntryInfo; depth: number;
 
 function FileRow({ entry, depth, view }: { entry: DirEntryInfo; depth: number; view: TreeView }) {
   const { onInsertPath } = view;
+  const marker = view.markers?.files.get(entry.relativePath);
   return (
-    <li role="treeitem" aria-label={entry.name}>
+    <li role="treeitem" aria-label={marker ? `${entry.name}, ${MARKER_WORD[marker]}` : entry.name}>
       <div className={ROW}>
         <button
           type="button"
@@ -105,7 +132,15 @@ function FileRow({ entry, depth, view }: { entry: DirEntryInfo; depth: number; v
           className="flex min-w-0 flex-1 items-center gap-1.5 py-1 pr-2 text-left focus-ring"
         >
           <File size={13} aria-hidden="true" className="shrink-0 text-fg-muted" />
-          <span className="truncate">{entry.name}</span>
+          <span className="truncate font-mono">{entry.name}</span>
+          {marker && (
+            <>
+              <span aria-hidden="true" className={`ml-auto shrink-0 font-mono text-caption ${MARKER_COLOR[marker]}`}>
+                {MARKER_LETTER[marker]}
+              </span>
+              <span className="sr-only">{MARKER_WORD[marker]}</span>
+            </>
+          )}
         </button>
         {onInsertPath && (
           <button
@@ -181,8 +216,8 @@ function PanelHeader({ rootName, rootPath, query, onQueryChange, onRefresh, onRe
     <div className="flex flex-col gap-2 border-b border-border p-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-baseline gap-2">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">Files</h2>
-          <span title={rootPath} className="truncate font-mono text-[11px] text-fg-muted">
+          <h2 className="text-caption font-semibold uppercase tracking-wider text-fg-subtle">Files</h2>
+          <span title={rootPath} className="truncate font-mono text-caption text-fg-muted">
             {rootName}
           </span>
         </div>
@@ -214,7 +249,7 @@ function PanelHeader({ rootName, rootPath, query, onQueryChange, onRefresh, onRe
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder="Filter files"
           aria-label="Filter files"
-          className="w-full rounded-md border border-border-strong bg-surface-2 py-1.5 pl-8 pr-3 text-xs text-fg-secondary placeholder-fg-subtle focus-ring"
+          className="w-full rounded-md border border-border-strong bg-surface-2 py-1.5 pl-8 pr-3 text-ui-sm text-fg-secondary placeholder-fg-subtle focus-ring"
         />
       </div>
     </div>
@@ -222,25 +257,61 @@ function PanelHeader({ rootName, rootPath, query, onQueryChange, onRefresh, onRe
 }
 
 /** Right-hand panel with a lazily loaded tree of the workspace folder. */
-export function FilesPanel({ rootPath, rootName, onClose, onInsertPath, onRevealRoot }: FilesPanelProps) {
+export function FilesPanel({
+  rootPath,
+  rootName,
+  onClose,
+  onInsertPath,
+  onRevealRoot,
+  markers,
+  viewedFile = null,
+  onViewFile,
+  onCloseFile,
+  version = 0,
+  onInsertText,
+  filesPrefix = "",
+}: FilesPanelProps) {
   const tree = useFileTree(rootPath);
   const [query, setQuery] = useState("");
   const [openError, setOpenError] = useState<string | null>(null);
   const visible = useMemo(() => filterVisiblePaths(tree.children, query), [tree.children, query]);
 
   const handleOpenFile = (entry: DirEntryInfo) => {
+    // With the viewer wired (the inspector), a click reads the file here; else it opens in its app.
+    if (onViewFile) {
+      onViewFile(entry.relativePath);
+      return;
+    }
     setOpenError(null);
     openWorkspacePath(rootPath, entry.relativePath).catch((error: unknown) => {
       setOpenError(`Couldn't open ${entry.name}: ${errorMessage(error)}`);
     });
   };
 
-  const view: TreeView = { tree, visible, rootPath, onOpenFile: handleOpenFile, onInsertPath };
+  const view: TreeView = { tree, visible, rootPath, onOpenFile: handleOpenFile, onInsertPath, markers };
+
+  // The viewer takes the header's and the tree's place; the tree's state (open folders, filter) waits for "← Files".
+  if (viewedFile) {
+    return (
+      <aside aria-label="Files panel" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui-sm text-fg-secondary">
+        <FileViewer
+          rootPath={rootPath}
+          relativePath={viewedFile}
+          marker={markers?.files.get(viewedFile)}
+          version={version}
+          onBack={() => onCloseFile?.()}
+          onInsertPath={(path) => onInsertPath?.(path)}
+          onInsertText={onInsertText}
+          filesPrefix={filesPrefix}
+        />
+      </aside>
+    );
+  }
 
   return (
     <aside
       aria-label="Files panel"
-      className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-xs text-fg-secondary select-none"
+      className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui-sm text-fg-secondary select-none"
     >
       <PanelHeader
         rootName={rootName}
@@ -252,7 +323,7 @@ export function FilesPanel({ rootPath, rootName, onClose, onInsertPath, onReveal
         onClose={onClose}
       />
       {openError && (
-        <p role="alert" className="border-b border-border px-3 py-1.5 text-[11px] text-danger">
+        <p role="alert" className="border-b border-border px-3 py-1.5 text-caption text-danger">
           {openError}
         </p>
       )}
@@ -261,7 +332,7 @@ export function FilesPanel({ rootPath, rootName, onClose, onInsertPath, onReveal
           <FolderChildren folder={ROOT_FOLDER} depth={0} view={view} />
         </ul>
         {visible?.size === 0 && (
-          <p className="px-2 py-1 text-[11px] text-fg-subtle">No loaded files match “{query.trim()}”.</p>
+          <p className="px-2 py-1 text-caption text-fg-subtle">No loaded files match “{query.trim()}”.</p>
         )}
       </div>
     </aside>

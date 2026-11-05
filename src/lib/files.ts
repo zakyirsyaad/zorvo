@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { parseFileContent, type FileContent } from "./file-content";
 
 /** One child of a workspace folder, as `list_directory` returns it. */
 export interface DirEntryInfo {
@@ -33,6 +34,11 @@ export function parseDirEntries(value: unknown): DirEntryInfo[] {
 
 export async function listDirectory(root: string, relative: string): Promise<DirEntryInfo[]> {
   return parseDirEntries(await invoke("list_directory", { root, relative }));
+}
+
+/** Reads a workspace file for the read-only viewer: text, or why it is not shown. */
+export async function readWorkspaceFile(root: string, relative: string): Promise<FileContent> {
+  return parseFileContent(await invoke("read_workspace_file", { root, relative }));
 }
 
 /** Opens a workspace file with the platform's default application. */

@@ -102,6 +102,14 @@ describe("the sign-in of an agent row", () => {
     expect(screen.queryByRole("button", { name: /^(Sign|Log) in/ })).toBeNull();
   });
 
+  it("shows an agent's own setup as text only: Settings does not run it", () => {
+    const setup: AuthMethod = { id: "openai", name: "Use OpenAI API key", kind: "setup" };
+    renderRow(fakeSignIn({ stateOf: () => "needed", methodsOf: () => [setup] }), "Qwen Code");
+
+    expect(screen.getByText("Use OpenAI API key")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Use OpenAI API key|Open setup/ })).toBeNull();
+  });
+
   it("disables Check sign-in and the sign-in buttons while it works", () => {
     const request = { profileId: "claude-acp", cwd: CWD, methods: [claudeLogin], status: "signing-in" } as AuthRequest;
     renderRow(fakeSignIn({ stateOf: () => "needed", methodsOf: () => [claudeLogin], requestOf: () => request }));

@@ -126,7 +126,8 @@ export function AgentSignIn({ agentId, agentName, signIn }: AgentSignInProps) {
                     <span className="font-medium text-fg-secondary">{method.name}</span>
                     {method.description && <p className="text-fg-subtle">{method.description}</p>}
                   </div>
-                  {method.kind !== "explain" && (
+                  {/* Settings runs a sign-in, never an agent's own setup: that runs from the draft's card. */}
+                  {(method.kind === "agent" || method.kind === "terminal") && (
                     <Button
                       variant="primary"
                       disabled={isBusy}

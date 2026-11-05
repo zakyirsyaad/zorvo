@@ -4,9 +4,11 @@ export const AUTH_REQUIRED_PREFIX = 'ACP_AUTH_REQUIRED:';
 /**
  * How the app handles a sign-in method: `agent` runs inside the agent
  * (authenticate), `terminal` is a login command the app runs in a terminal
- * for the agent, `explain` needs a secret the app never asks for.
+ * for the agent, `setup` is the agent's own interactive setup (Qwen Code picks
+ * its provider there), run in a terminal by `acp_start_agent_setup`, and
+ * `explain` needs a secret the app never asks for.
  */
-export type AuthMethodKind = 'agent' | 'terminal' | 'explain';
+export type AuthMethodKind = 'agent' | 'terminal' | 'setup' | 'explain';
 
 /** A way to sign in that the agent offers. */
 export interface AuthMethod {
@@ -24,8 +26,10 @@ function methodKind(method: Json): AuthMethodKind {
   // Any other type the app does not run (env_var needs a secret it never asks for).
   if (method.type !== undefined && method.type !== 'agent') return 'explain';
   const meta = isObject(method._meta) ? method._meta : {};
+  // The older terminal form (no `type`, `_meta.type: "terminal"`) is the agent's own setup; its args are not used.
+  if (method.type === undefined && meta.type === 'terminal') return 'setup';
   // Keys, Vertex AI and a gateway need settings or a secret the app never asks for.
-  if (meta.type === 'terminal' || 'api-key' in meta || 'gateway' in meta || /api.?key|vertex|gateway/i.test(String(method.id))) {
+  if ('api-key' in meta || 'gateway' in meta || /api.?key|vertex|gateway/i.test(String(method.id))) {
     return 'explain';
   }
   return 'agent';
@@ -86,14 +90,22 @@ export interface AuthCopy {
   keysNote: string | null;
 }
 
+/** True when the agent's only way in is its own setup: the draft shows the setup card. */
+export function isSetupOnly(methods: readonly AuthMethod[]): boolean {
+  return methods.length > 0 && methods.every((method) => method.kind === 'setup');
+}
+
 export function authCopy(agentName: string, methods: readonly AuthMethod[]): AuthCopy {
   const hasButton = methods.some((method) => method.kind !== 'explain');
   const hasExplained = methods.some((method) => method.kind === 'explain');
   const onlyKeys = hasExplained && !hasButton;
-  return {
-    lead: onlyKeys
+  const lead = isSetupOnly(methods)
+    ? `${agentName} needs its own setup before it can start.`
+    : onlyKeys
       ? `${agentName} needs an API key or another account setting before it can start.`
-      : `${agentName} needs you to sign in before it can start.`,
+      : `${agentName} needs you to sign in before it can start.`;
+  return {
+    lead,
     cliHint: methods.length === 0 ? `Sign in with ${agentName}'s own command line tool, then check again.` : null,
     keysNote: hasExplained
       ? `Zorvo never stores keys. To use a key or another account setting, set it up in ${agentName} or your shell (for example in ~/.zshrc), then check again.`

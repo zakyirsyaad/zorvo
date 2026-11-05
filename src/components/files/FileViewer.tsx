@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { ArrowLeft, Check, Copy, ExternalLink, Plus } from "lucide-react";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
@@ -70,8 +70,11 @@ function Breadcrumb({ relativePath, marker }: { relativePath: string; marker?: F
   );
 }
 
-/** The file's lines, numbered, in mono, with a thin bar beside each changed line. */
-function Lines({
+/**
+ * The file's lines, numbered, in mono, with a thin bar beside each changed line. Memoized: the window
+ * re-renders on every streamed frame of a turn, and a 1 MiB file has some 25,000 rows to rebuild.
+ */
+export const FileLines = memo(function FileLines({
   name,
   lines,
   tokens,
@@ -85,11 +88,13 @@ function Lines({
   bodyRef: RefObject<HTMLDivElement | null>;
 }) {
   return (
+    // Focusable: WebKit does not let the keyboard into a scroll container, and Shift with the arrows selects lines here.
     <div
       ref={bodyRef}
       role="region"
+      tabIndex={0}
       aria-label={`Contents of ${name}`}
-      className="min-h-0 flex-1 overflow-auto py-1 font-mono text-ui-sm select-text"
+      className="focus-ring min-h-0 flex-1 overflow-auto py-1 font-mono text-ui-sm select-text"
     >
       {lines.map((_, index) => {
         const change = changes.get(index + 1);
@@ -115,7 +120,7 @@ function Lines({
       })}
     </div>
   );
-}
+});
 
 /** Why there is nothing to read: binary, too large, gone, or another failure. */
 function Unshown({ content, failure }: { content?: FileContent; failure?: string }) {
@@ -233,7 +238,7 @@ export function FileViewer({
       {read.status === "ready" &&
         (text !== null ? (
           <div className="relative flex min-h-0 flex-1 flex-col">
-            <Lines name={name} lines={lines} tokens={tokens} changes={isMarking ? changes : NO_CHANGES} bodyRef={bodyRef} />
+            <FileLines name={name} lines={lines} tokens={tokens} changes={isMarking ? changes : NO_CHANGES} bodyRef={bodyRef} />
             {onInsertText && selection.range && (
               <Button
                 variant="outline"

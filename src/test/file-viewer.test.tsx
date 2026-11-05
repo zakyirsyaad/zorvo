@@ -1,7 +1,13 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act, within } from "@testing-library/react";
-import { FileViewer, type FileViewerProps } from "../components/files/FileViewer";
+import { FileLines, FileViewer, type FileViewerProps } from "../components/files/FileViewer";
+
+describe("FileLines", () => {
+  it("is memoized, so a render of the window that changes nothing about the file does not rebuild its rows", () => {
+    expect((FileLines as unknown as { $$typeof: symbol }).$$typeof).toBe(Symbol.for("react.memo"));
+  });
+});
 
 const ROOT = "/Users/test/proj";
 
@@ -159,6 +165,44 @@ describe("FileViewer — adding lines to the prompt", () => {
 
     selectLines(2, 2);
     expect(screen.getByRole("button", { name: "Add line 2 to prompt" })).toBeInTheDocument();
+  });
+
+  it("drops the offer on Escape, wherever focus is", async () => {
+    await renderViewer({ onInsertText: vi.fn() });
+
+    selectLines(1, 2);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("button", { name: /^Add lines?/ })).toBeNull();
+  });
+
+  it("drops the offer once the selection goes away, as a click elsewhere does", async () => {
+    await renderViewer({ onInsertText: vi.fn() });
+
+    selectLines(1, 2);
+    window.getSelection()!.removeAllRanges();
+    fireEvent(document, new Event("selectionchange"));
+    expect(screen.queryByRole("button", { name: /^Add lines?/ })).toBeNull();
+  });
+
+  it("leaves out the next line when the selection ends at its very start, as a triple-click does", async () => {
+    await renderViewer({ onInsertText: vi.fn() });
+
+    const body = screen.getByRole("region", { name: "Contents of a.ts" });
+    const range = document.createRange();
+    range.setStart(body.querySelector('[data-line="1"]')!.lastElementChild!, 0);
+    range.setEnd(body.querySelector('[data-line="2"]')!.lastElementChild!, 0);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    fireEvent.mouseUp(body);
+    expect(screen.getByRole("button", { name: "Add line 1 to prompt" })).toBeInTheDocument();
+  });
+
+  it("lets a keyboard user reach and scroll the file", async () => {
+    await renderViewer();
+
+    const body = screen.getByRole("region", { name: "Contents of a.ts" });
+    expect(body).toHaveAttribute("tabindex", "0");
+    expect(body).toHaveClass("focus-ring");
   });
 
   it("offers nothing where no message box can take the lines", async () => {

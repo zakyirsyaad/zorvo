@@ -251,7 +251,12 @@ export function TopBar({
           </span>
         )}
         {title && branch && (
-          <Chip variant="plain" icon={<GitBranch size={12} />} label={`Branch ${branch}`} className="shrink-0 font-mono">
+          <Chip
+            variant="plain"
+            icon={<GitBranch size={12} className="text-fg-muted" />}
+            label={`Branch ${branch}`}
+            className="shrink-0 font-mono"
+          >
             <span className="max-w-40 truncate">{branch}</span>
           </Chip>
         )}

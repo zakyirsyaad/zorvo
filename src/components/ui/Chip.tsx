@@ -11,12 +11,15 @@ export interface ChipProps {
   /** For a chip that opens a popover: what it opens, and whether it is open. */
   "aria-haspopup"?: "dialog" | "menu";
   "aria-expanded"?: boolean;
+  /** A tooltip with more than the chip shows (a pull request's title). */
+  title?: string;
   className?: string;
   children: ReactNode;
 }
 
-const BASE = "inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-caption whitespace-nowrap text-fg-secondary";
-const VARIANTS = { plain: "border-transparent", outline: "border-border" } as const;
+const BASE = "inline-flex h-6 items-center gap-1.5 rounded-md border text-caption whitespace-nowrap text-fg-secondary";
+// Plain chips are session info, borderless and tight (0 4px); outline chips are actions.
+const VARIANTS = { plain: "border-transparent px-1", outline: "border-border px-2" } as const;
 // An open chip (its popover showing) is filled and edged, as the canvas draws it.
 const ACTION =
   "focus-ring transition-colors enabled:hover:bg-surface-hover aria-expanded:bg-surface-hover aria-expanded:border-border-strong";
@@ -29,6 +32,7 @@ export function Chip({
   label,
   "aria-haspopup": hasPopup,
   "aria-expanded": isExpanded,
+  title,
   className,
   children,
 }: ChipProps) {
@@ -45,7 +49,7 @@ export function Chip({
   const classes = [BASE, VARIANTS[variant], onClick && ACTION, className].filter(Boolean).join(" ");
   if (!onClick) {
     return (
-      <span className={classes} aria-label={label}>
+      <span className={classes} aria-label={label} title={title}>
         {content}
       </span>
     );
@@ -56,6 +60,7 @@ export function Chip({
       className={classes}
       onClick={onClick}
       aria-label={label}
+      title={title}
       aria-haspopup={hasPopup}
       aria-expanded={isExpanded}
     >

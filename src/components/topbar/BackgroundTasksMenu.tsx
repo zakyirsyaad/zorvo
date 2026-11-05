@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Bot, Terminal, Users, ListChecks, type LucideIcon } from "lucide-react";
+import { Bot, LoaderCircle, Terminal, Users, type LucideIcon } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Chip } from "../ui/Chip";
-import { Popover, PopoverHeader } from "../ui/Popover";
+import { Popover, PopoverTitle } from "../ui/Popover";
 import { formatElapsed, type BackgroundTask, type BackgroundTaskKind } from "../../lib/background-tasks";
 
 export interface BackgroundTasksMenuProps {
@@ -92,7 +92,8 @@ export function BackgroundTasksMenu({ tasks, isOpen, onOpenChange, onOpenTask, o
       className="w-96 select-text"
       trigger={
         <Chip
-          icon={<ListChecks size={12} />}
+          // An arc that turns, so it never reads as the Plan chip's checklist.
+          icon={<LoaderCircle size={12} strokeWidth={2.25} className="text-status-running motion-safe:animate-spin" />}
           aria-haspopup="dialog"
           aria-expanded={isShown}
           onClick={() => onOpenChange(!isOpen)}
@@ -101,18 +102,20 @@ export function BackgroundTasksMenu({ tasks, isOpen, onOpenChange, onOpenTask, o
         </Chip>
       }
     >
-      <PopoverHeader>Background tasks · {count} running</PopoverHeader>
+      <PopoverTitle aside={`${count} running`}>Background tasks</PopoverTitle>
       <ul aria-label="Running tasks" className="max-h-80 overflow-y-auto">
         {tasks.map((task) => {
           const Icon = KIND_ICONS[task.kind];
           const isStopping = stoppingIds.has(task.id);
           const canOpen = task.kind === "agent" || task.kind === "subagent";
           return (
-            <li key={task.id} className="flex items-center gap-2.5 rounded px-2 py-2">
-              <Icon size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
+            <li key={task.id} className="flex items-center gap-2.5 rounded-md px-2 py-2 hover:bg-surface-hover">
+              <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-md bg-surface-hover">
+                <Icon size={14} className="text-fg-muted" />
+              </span>
               <div className="min-w-0 flex-1">
                 <p
-                  className={`truncate text-ui font-medium text-fg ${task.kind === "shell" ? "font-mono" : ""}`}
+                  className={`truncate text-fg ${task.kind === "shell" ? "font-mono text-ui-sm" : "text-ui"}`}
                   title={task.name}
                 >
                   {task.name}
@@ -122,14 +125,15 @@ export function BackgroundTasksMenu({ tasks, isOpen, onOpenChange, onOpenTask, o
                     {task.detail}
                   </p>
                 )}
-                <p className="flex items-center gap-1.5 text-caption text-fg-muted">
-                  <span className={STATUS_CLASSES[task.status]}>{task.status}</span>
-                  <span className="tabular-nums">{formatElapsed(now - task.startedAt)}</span>
-                </p>
               </div>
+              <p className="flex shrink-0 flex-col items-end text-caption text-fg-muted">
+                <span className={STATUS_CLASSES[task.status]}>{task.status}</span>
+                <span className="font-mono tabular-nums">{formatElapsed(now - task.startedAt)}</span>
+              </p>
               {canOpen && (
                 <Button
                   variant="outline"
+                  size="sm"
                   aria-label={`Open ${task.name}`}
                   className="shrink-0"
                   onClick={() => {
@@ -143,6 +147,7 @@ export function BackgroundTasksMenu({ tasks, isOpen, onOpenChange, onOpenTask, o
               {(task.kind === "agent" || task.pid !== undefined) && (
                 <Button
                   variant="outline"
+                  size="sm"
                   aria-label={`Stop ${task.name}`}
                   className="shrink-0"
                   disabled={isStopping}
@@ -156,7 +161,7 @@ export function BackgroundTasksMenu({ tasks, isOpen, onOpenChange, onOpenTask, o
         })}
       </ul>
       <p className="border-t border-border px-2 pt-1.5 text-caption text-fg-muted">
-        Tasks keep running when you switch sessions.
+        Tasks keep running when you switch sessions. Stop ends the process.
       </p>
     </Popover>
   );

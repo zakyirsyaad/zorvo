@@ -43,6 +43,8 @@ describe("DiffStatChip", () => {
     expect(button.textContent).toContain("−35");
     // A bordered contextual chip, like Plan and background tasks.
     expect(button.classList.contains("border-border")).toBe(true);
+    // Its counts are mono, as drawn.
+    expect(button.classList.contains("font-mono")).toBe(true);
     fireEvent.click(button);
     expect(onOpen).toHaveBeenCalledOnce();
   });

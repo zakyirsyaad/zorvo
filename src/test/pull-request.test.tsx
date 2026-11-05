@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, renderHook, act, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, renderHook, act, waitFor, within } from "@testing-library/react";
 import { MAX_FAILED_READS, usePullRequest, type PullRequestStatus } from "../hooks/usePullRequest";
 import { PullRequestChip } from "../components/topbar/PullRequestChip";
 
@@ -166,5 +166,21 @@ describe("PullRequestChip", () => {
 
     rerender(<PullRequestChip pullRequest={{ ...OPEN, state: "merged", checks: { passing: 0, failing: 0, pending: 0 } }} onOpen={() => {}} />);
     expect(screen.getByRole("button", { name: "Pull request #12, merged" })).toBeDefined();
+  });
+
+  it("reads the number in mono, then the state as a word", () => {
+    const { rerender } = render(<PullRequestChip pullRequest={OPEN} onOpen={() => {}} />);
+    const chip = () => screen.getByRole("button", { name: /^Pull request #12/ });
+    expect(within(chip()).getByText("#12").classList.contains("font-mono")).toBe(true);
+    const word = within(chip()).getByText("Open");
+    expect(word.classList.contains("font-mono")).toBe(false);
+    expect(word.classList.contains("text-fg-secondary")).toBe(true);
+
+    rerender(<PullRequestChip pullRequest={{ ...OPEN, isDraft: true }} onOpen={() => {}} />);
+    expect(within(chip()).getByText("Draft")).toBeDefined();
+    rerender(<PullRequestChip pullRequest={{ ...OPEN, state: "merged" }} onOpen={() => {}} />);
+    expect(within(chip()).getByText("Merged")).toBeDefined();
+    rerender(<PullRequestChip pullRequest={{ ...OPEN, state: "closed" }} onOpen={() => {}} />);
+    expect(within(chip()).getByText("Closed")).toBeDefined();
   });
 });

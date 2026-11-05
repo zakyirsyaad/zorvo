@@ -93,6 +93,16 @@ export function PopoverHeader({ children }: { children: ReactNode }) {
   return <div className="px-2 pt-1 pb-1.5 text-caption font-medium text-fg-muted">{children}</div>;
 }
 
+/** A popover's title row, as the canvas draws the Plan and Background tasks headers: the title, and a count on the right. */
+export function PopoverTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 px-2 pt-1 pb-2">
+      <span className="truncate text-ui font-semibold text-fg">{children}</span>
+      {aside && <span className="shrink-0 text-caption text-fg-subtle">{aside}</span>}
+    </div>
+  );
+}
+
 /** A listbox of options inside a dialog popover, beside a search field the listbox cannot hold. */
 export function PopoverList({ label, children }: { label: string; children: ReactNode }) {
   return (

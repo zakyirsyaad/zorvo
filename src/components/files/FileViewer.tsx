@@ -1,9 +1,11 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { ArrowLeft, Check, Copy, ExternalLink, Plus } from "lucide-react";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { useFileContent } from "../../hooks/useFileContent";
 import { useChangedLines } from "../../hooks/useChangedLines";
+import { useLineSelection } from "../../hooks/useLineSelection";
+import { lineQuote, lineRangeLabel } from "../../lib/line-quote";
 import type { LineChange } from "../../lib/changed-lines";
 import { TOKEN_STYLE, tokenizeLines, type Token } from "../../lib/code-tokens";
 import { errorMessage, joinWorkspacePath, openWorkspacePath } from "../../lib/files";
@@ -74,14 +76,21 @@ function Lines({
   lines,
   tokens,
   changes,
+  bodyRef,
 }: {
   name: string;
   lines: readonly string[];
   tokens: readonly Token[][];
   changes: ReadonlyMap<number, LineChange>;
+  bodyRef: RefObject<HTMLDivElement | null>;
 }) {
   return (
-    <div role="region" aria-label={`Contents of ${name}`} className="min-h-0 flex-1 overflow-auto py-1 font-mono text-ui-sm">
+    <div
+      ref={bodyRef}
+      role="region"
+      aria-label={`Contents of ${name}`}
+      className="min-h-0 flex-1 overflow-auto py-1 font-mono text-ui-sm select-text"
+    >
       {lines.map((_, index) => {
         const change = changes.get(index + 1);
         return (
@@ -129,7 +138,18 @@ function Unshown({ content, failure }: { content?: FileContent; failure?: string
 }
 
 /** A workspace file, read only, inside the Files tab. */
-export function FileViewer({ rootPath, relativePath, marker, version, onBack, onInsertPath, filesPrefix = "" }: FileViewerProps) {
+export function FileViewer({
+  rootPath,
+  relativePath,
+  marker,
+  version,
+  onBack,
+  onInsertPath,
+  onInsertText,
+  filesPrefix = "",
+}: FileViewerProps) {
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const selection = useLineSelection(bodyRef);
   const read = useFileContent(rootPath, relativePath, version);
   const [isMarking, setIsMarking] = useState(true);
   // Only a changed file has lines to mark; one without a marker reads no diff at all.
@@ -212,7 +232,25 @@ export function FileViewer({ rootPath, relativePath, marker, version, onBack, on
       {read.status === "failed" && <Unshown failure={read.message} />}
       {read.status === "ready" &&
         (text !== null ? (
-          <Lines name={name} lines={lines} tokens={tokens} changes={isMarking ? changes : NO_CHANGES} />
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <Lines name={name} lines={lines} tokens={tokens} changes={isMarking ? changes : NO_CHANGES} bodyRef={bodyRef} />
+            {onInsertText && selection.range && (
+              <Button
+                variant="outline"
+                className="absolute right-3 top-2 bg-surface-2 shadow-popover"
+                // mousedown, not click, would end the selection the click is about.
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  const { first, last } = selection.range!;
+                  onInsertText(lineQuote(relativePath, first, last, lines.slice(first - 1, last), language.fence));
+                  selection.clear();
+                  window.getSelection()?.removeAllRanges();
+                }}
+              >
+                {lineRangeLabel(selection.range.first, selection.range.last)}
+              </Button>
+            )}
+          </div>
         ) : (
           <Unshown content={read.content} />
         ))}

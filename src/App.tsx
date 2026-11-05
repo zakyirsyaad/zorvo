@@ -1263,6 +1263,12 @@ export default function App() {
                     onCloseFile={inspector.closeFile}
                     version={inspector.changes.version}
                     filesPrefix={inspector.filesPrefix}
+                    // Lines go into the message box only when Reply could: shown, enabled, not holding another session's comments.
+                    onInsertText={
+                      replyBlockedReason({ isComposerHidden, isComposerDisabled, isHeldElsewhere: review.isHeldFor(activeSessionId) })
+                        ? undefined
+                        : (text) => composerRef.current?.insertText(text)
+                    }
                   />
                 )}
                 {inspectorTab === "terminal" && filesFolder && (

@@ -130,6 +130,55 @@ describe("FileViewer — changed lines", () => {
   });
 });
 
+describe("FileViewer — adding lines to the prompt", () => {
+  /** Selects from the start of `firstLine`'s code to the end of `lastLine`'s, as a drag would, and lets go. */
+  function selectLines(firstLine: number, lastLine: number) {
+    const body = screen.getByRole("region", { name: "Contents of a.ts" });
+    const codeOf = (line: number) => body.querySelector(`[data-line="${line}"]`)!.lastElementChild!;
+    const range = document.createRange();
+    range.setStart(codeOf(firstLine), 0);
+    range.setEnd(codeOf(lastLine), codeOf(lastLine).childNodes.length);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    fireEvent.mouseUp(body);
+  }
+
+  it("offers to add the selected lines, and adds them as a fenced quote", async () => {
+    const onInsertText = vi.fn();
+    await renderViewer({ onInsertText });
+
+    selectLines(1, 2);
+    fireEvent.click(screen.getByRole("button", { name: "Add lines 1–2 to prompt" }));
+    expect(onInsertText).toHaveBeenCalledWith("`src/a.ts` lines 1–2:\n\n```ts\nconst a = 1;\nlet b;\n```");
+    expect(screen.queryByRole("button", { name: /^Add lines?/ })).toBeNull();
+  });
+
+  it("words a single line in the singular", async () => {
+    await renderViewer({ onInsertText: vi.fn() });
+
+    selectLines(2, 2);
+    expect(screen.getByRole("button", { name: "Add line 2 to prompt" })).toBeInTheDocument();
+  });
+
+  it("offers nothing where no message box can take the lines", async () => {
+    await renderViewer();
+
+    selectLines(1, 2);
+    expect(screen.queryByRole("button", { name: /^Add lines?/ })).toBeNull();
+  });
+
+  it("quotes a CRLF file without its carriage returns", async () => {
+    fileResult = () => Promise.resolve({ kind: "text", text: "a\r\nb\r\n", size: 6 });
+    const onInsertText = vi.fn();
+    await renderViewer({ onInsertText });
+
+    selectLines(1, 2);
+    fireEvent.click(screen.getByRole("button", { name: "Add lines 1–2 to prompt" }));
+    expect(onInsertText.mock.calls[0][0]).not.toContain("\r");
+  });
+});
+
 describe("FileViewer — contents", () => {
   it("says the language, the line count and that it is read only", async () => {
     await renderViewer();

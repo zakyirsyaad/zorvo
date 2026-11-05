@@ -107,6 +107,31 @@ describe("The inspector in the app", () => {
     expect(inspector()?.style.width).toBe("380px");
   });
 
+  it("adds selected lines of the open file to the message box", async () => {
+    const spy = seedWithChanges();
+    const original = spy.getMockImplementation()!;
+    spy.mockImplementation((cmd, args) => {
+      if (cmd === "list_directory") return Promise.resolve([{ name: "notes.txt", relativePath: "notes.txt", isDir: false }]);
+      if (cmd === "read_workspace_file") return Promise.resolve({ kind: "text", text: "one\ntwo\n", size: 8 });
+      return original(cmd, args);
+    });
+    await renderApp();
+    await openInspectorTab("Files");
+    await click(await screen.findByRole("button", { name: /^notes\.txt/ }));
+
+    const body = await screen.findByRole("region", { name: "Contents of notes.txt" });
+    const code = (line: number) => body.querySelector(`[data-line="${line}"]`)!.lastElementChild!;
+    const range = document.createRange();
+    range.setStart(code(1), 0);
+    range.setEnd(code(2), code(2).childNodes.length);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    fireEvent.mouseUp(body);
+    await click(screen.getByRole("button", { name: "Add lines 1–2 to prompt" }));
+
+    expect((screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement).value).toBe("`notes.txt` lines 1–2:\n\n```\none\ntwo\n```");
+  });
+
   it("keeps the shell when you leave the Terminal tab or close the inspector", async () => {
     const spy = seedWithChanges();
     await renderApp();

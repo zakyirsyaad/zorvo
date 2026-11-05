@@ -84,7 +84,7 @@ describe("ElicitationCard", () => {
         agentName="Claude Code"
       />,
     );
-    expect(screen.getByText("Claude Code asks for input")).toBeTruthy();
+    expect(screen.getByText("Claude Code needs a few details")).toBeTruthy();
     expect(valueOf(screen.getByLabelText(/Email/))).toBe(String("a@b.co"));
     expect(screen.getByLabelText(/Email/).getAttribute("aria-describedby")).toBeTruthy();
     expect(screen.getByText("Work address")).toBeTruthy();

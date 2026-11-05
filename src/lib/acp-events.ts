@@ -8,6 +8,7 @@ import type {
   ToolExecution,
 } from '../types';
 import { fileNameOf } from './attachments';
+import { countChanges, diffRows } from './diff-rows';
 import { parseUserQuestions } from './user-questions';
 
 /**
@@ -154,6 +155,20 @@ function toDetails(content: unknown): ToolDetail[] | undefined {
     }
     return [];
   });
+}
+
+/**
+ * The files a permission request's diffs would change, with the lines each adds and removes,
+ * read through the same `toDetails` as a tool call's content. A diff too large to keep has no
+ * counts and is left out; undefined when nothing is left to list.
+ */
+export function editsOf(content: unknown): ActionCard['edits'] {
+  const edits = (toDetails(content) ?? []).flatMap((detail) => {
+    if (detail.kind !== 'diff') return [];
+    const { added, removed } = countChanges(diffRows(detail.oldText, detail.newText));
+    return [{ path: detail.path, added, removed }];
+  });
+  return edits.length > 0 ? edits : undefined;
 }
 
 /** The longest command kept, in the transcript and on screen. */
@@ -352,6 +367,7 @@ export function applyPermissionRequest(
   const title = str(toolCall.title) ?? 'The agent asks for permission';
   // Qwen Code's ask_user_question: a request that does not parse stays a plain card.
   const questions = parseUserQuestions(toolCall);
+  const edits = editsOf(toolCall.content);
   const card: ActionCard = {
     id: ctx.createId('act'),
     sessionId: ctx.sessionId,
@@ -364,6 +380,7 @@ export function applyPermissionRequest(
     options: toChoices(payload.options),
     requestId: payload.requestId,
     ...(questions ? { questions } : {}),
+    ...(edits ? { edits } : {}),
   };
   const withCard = (reply: ChatMessage) => ({ ...reply, actionCard: card });
   // A reply holds one card: a second request while the first waits gets its own message.

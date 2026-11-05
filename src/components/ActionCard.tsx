@@ -1,5 +1,6 @@
 import { useId, useState } from "react";
-import { Check, X, AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
+import { formatLineCount, MINUS } from "../lib/diff-stats";
 import { Button, type ButtonVariant } from "./ui/Button";
 import { UserQuestionFields } from "./UserQuestionFields";
 import { orderedChoices, permissionTitle, questionsTitle, titleHoldsPrompt } from "../lib/permission-copy";
@@ -28,6 +29,33 @@ function choiceVariant(kind: string): ButtonVariant {
   return kind.startsWith("allow") ? "outline" : "ghost";
 }
 
+/** The files an edit would change, one row each, with only the counts that are not zero. */
+function EditedFiles({ edits }: { edits: NonNullable<ActionCardType["edits"]> }) {
+  return (
+    <ul aria-label="Files to edit" className="rounded-md border border-border bg-bg">
+      {edits.map((edit) => (
+        <li
+          key={edit.path}
+          className="flex items-center gap-2 border-b border-border px-2.5 py-1.5 last:border-b-0"
+        >
+          <span className="min-w-0 flex-1 truncate font-mono text-ui-sm text-fg-secondary" title={edit.path}>
+            {edit.path}
+          </span>
+          {edit.added > 0 && (
+            <span className="shrink-0 font-mono text-caption text-status-running">+{formatLineCount(edit.added)}</span>
+          )}
+          {edit.removed > 0 && (
+            <span className="shrink-0 font-mono text-caption text-danger">
+              {MINUS}
+              {formatLineCount(edit.removed)}
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** The agent's own answers to its permission request, or the one that was picked. */
 function PermissionChoices({
   card,
@@ -49,18 +77,19 @@ function PermissionChoices({
   if (card.status !== "pending") {
     const chosen = options.find((o) => o.optionId === card.chosenOptionId);
     return (
-      <p className="mt-4 border-t border-border pt-2 text-xs text-fg-muted">
+      <p className="text-ui-sm text-fg-muted">
         {chosen ? `You chose: ${chosen.name}` : "This request was not answered."}
       </p>
     );
   }
   if (options.length === 0) {
-    return <p className="mt-4 border-t border-border pt-2 text-xs text-fg-muted">{NO_OPTIONS_MESSAGE}</p>;
+    return <p className="text-ui-sm text-fg-muted">{NO_OPTIONS_MESSAGE}</p>;
   }
+  // Right-aligned plain buttons, with no rule above them, as the canvas draws them.
   return (
-    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-2">
+    <div className="flex flex-wrap items-center justify-end gap-2">
       {needsAnswers && (
-        <p id={hintId} className="w-full text-xs text-fg-muted">
+        <p id={hintId} className="w-full text-right text-ui-sm text-fg-muted">
           Answer every question to submit.
         </p>
       )}
@@ -76,7 +105,6 @@ function PermissionChoices({
             onClick={() =>
               isAllow && answers ? onChoose?.(option.optionId, answers) : onChoose?.(option.optionId)
             }
-            icon={isAllow ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
           >
             {option.name}
           </Button>
@@ -100,27 +128,29 @@ export function ActionCard({ card, onChoose, disabled = false, agentName = "The 
   return (
     <div
       data-testid={`action-card-${card.id}`}
-      className="my-3 rounded-xl border border-attention-border bg-attention-surface p-4 text-left transition-all"
+      className="my-3 flex flex-col gap-3 rounded-xl border border-attention-border bg-attention-surface p-4 text-left transition-all"
     >
       {/* One sentence says what the agent wants; the agent's own title follows only when the sentence cannot hold it. */}
       <div className="flex items-start gap-2">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-status-attention" aria-hidden="true" />
-        <h2 className="text-ui font-medium text-fg">{title}</h2>
+        <h2 className="text-ui font-semibold text-fg">{title}</h2>
       </div>
 
       {showsPrompt && card.prompt.trim() && (
-        <p className="mt-2 text-ui-sm leading-relaxed text-fg-secondary">{card.prompt}</p>
+        <p className="text-ui-sm leading-relaxed text-fg-secondary">{card.prompt}</p>
       )}
+
+      {card.edits && card.edits.length > 0 && <EditedFiles edits={card.edits} />}
 
       {/* Command Snippet */}
       {card.commandSnippet && (
-        <div className="mt-3 rounded-lg border border-border bg-bg p-2.5 font-mono text-xs text-fg-secondary overflow-x-auto">
+        <div className="overflow-x-auto rounded-md border border-border bg-bg px-2.5 py-2 font-mono text-ui-sm text-fg-secondary">
           <code>{card.commandSnippet}</code>
         </div>
       )}
 
       {card.status === "pending" && card.modeChanged && (
-        <p className="mt-2 text-[11px] text-fg-subtle">
+        <p className="text-caption text-fg-subtle">
           The permission mode changed after the agent asked. This request was made before the switch, so it still needs an answer.
         </p>
       )}

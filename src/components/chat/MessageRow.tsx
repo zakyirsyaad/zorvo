@@ -129,6 +129,7 @@ export const MessageRow = memo(function MessageRow({
           key={message.elicitation.key}
           card={message.elicitation}
           agentName={agentName}
+          agentProfileId={agentProfileId}
           onAnswer={onAnswerElicitation}
           onReopen={onReopenElicitationUrl}
         />

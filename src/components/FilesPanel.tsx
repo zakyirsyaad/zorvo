@@ -43,6 +43,8 @@ export interface FilesPanelProps {
   onCloseFile?: () => void;
   /** Moves when the folder's changes are read again; the open file is read again then. */
   version?: number;
+  /** The folder relative to its repository's root, for the open file's diff. */
+  filesPrefix?: string;
   /** Adds text to the composer (a range of the open file's lines). */
   onInsertText?: (text: string) => void;
 }
@@ -267,6 +269,7 @@ export function FilesPanel({
   onCloseFile,
   version = 0,
   onInsertText,
+  filesPrefix = "",
 }: FilesPanelProps) {
   const tree = useFileTree(rootPath);
   const [query, setQuery] = useState("");
@@ -299,6 +302,7 @@ export function FilesPanel({
           onBack={() => onCloseFile?.()}
           onInsertPath={(path) => onInsertPath?.(path)}
           onInsertText={onInsertText}
+          filesPrefix={filesPrefix}
         />
       </aside>
     );

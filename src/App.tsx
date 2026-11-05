@@ -1262,6 +1262,7 @@ export default function App() {
                     onViewFile={inspector.viewFile}
                     onCloseFile={inspector.closeFile}
                     version={inspector.changes.version}
+                    filesPrefix={inspector.filesPrefix}
                   />
                 )}
                 {inspectorTab === "terminal" && filesFolder && (

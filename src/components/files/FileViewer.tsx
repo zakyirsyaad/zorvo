@@ -3,6 +3,8 @@ import { ArrowLeft, Check, Copy, ExternalLink, Plus } from "lucide-react";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { useFileContent } from "../../hooks/useFileContent";
+import { useChangedLines } from "../../hooks/useChangedLines";
+import type { LineChange } from "../../lib/changed-lines";
 import { errorMessage, joinWorkspacePath, openWorkspacePath } from "../../lib/files";
 import { formatSize, languageOf, splitLines, type FileContent } from "../../lib/file-content";
 import { MARKER_LETTER, MARKER_WORD, type FileMarker } from "../../lib/file-markers";
@@ -21,12 +23,21 @@ export interface FileViewerProps {
   onInsertPath: (absolutePath: string) => void;
   /** Adds text to the composer (a range of lines); absent in a popout. */
   onInsertText?: (text: string) => void;
+  /** The Files tab's folder relative to its repository's root ("app/"), for the file's diff. */
+  filesPrefix?: string;
 }
+
+const GUTTER_COLOR: Record<LineChange, string> = {
+  added: "bg-status-running",
+  modified: "bg-status-attention",
+};
 
 const MARKER_COLOR: Record<FileMarker, string> = {
   modified: "text-status-attention",
   added: "text-status-running",
 };
+
+const NO_CHANGES: ReadonlyMap<number, LineChange> = new Map();
 
 /** How long "Path copied" stays after Copy path. */
 const COPIED_MS = 2000;
@@ -56,16 +67,22 @@ function Breadcrumb({ relativePath, marker }: { relativePath: string; marker?: F
   );
 }
 
-/** The file's lines, numbered, in mono. */
-function Lines({ name, lines }: { name: string; lines: readonly string[] }) {
+/** The file's lines, numbered, in mono, with a thin bar beside each changed line. */
+function Lines({ name, lines, changes }: { name: string; lines: readonly string[]; changes: ReadonlyMap<number, LineChange> }) {
   return (
     <div role="region" aria-label={`Contents of ${name}`} className="min-h-0 flex-1 overflow-auto py-1 font-mono text-ui-sm">
-      {lines.map((line, index) => (
-        <div key={index} data-line={index + 1} className="flex min-w-max">
-          <span className="w-12 shrink-0 select-none pr-3 text-right tabular-nums text-fg-subtle">{index + 1}</span>
-          <span className="whitespace-pre pr-4 text-fg-secondary">{line}</span>
-        </div>
-      ))}
+      {lines.map((line, index) => {
+        const change = changes.get(index + 1);
+        return (
+          <div key={index} data-line={index + 1} className="flex min-w-max">
+            <span className="w-12 shrink-0 select-none pr-2 text-right tabular-nums text-fg-subtle">{index + 1}</span>
+            <span className="mr-2 w-0.5 shrink-0 select-none">
+              {change && <span data-gutter="" aria-hidden="true" className={`block h-full w-0.5 ${GUTTER_COLOR[change]}`} />}
+            </span>
+            <span className="whitespace-pre pr-4 text-fg-secondary">{line}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -91,8 +108,11 @@ function Unshown({ content, failure }: { content?: FileContent; failure?: string
 }
 
 /** A workspace file, read only, inside the Files tab. */
-export function FileViewer({ rootPath, relativePath, marker, version, onBack, onInsertPath }: FileViewerProps) {
+export function FileViewer({ rootPath, relativePath, marker, version, onBack, onInsertPath, filesPrefix = "" }: FileViewerProps) {
   const read = useFileContent(rootPath, relativePath, version);
+  const [isMarking, setIsMarking] = useState(true);
+  // Only a changed file has lines to mark; one without a marker reads no diff at all.
+  const changes = useChangedLines(rootPath, `${filesPrefix}${relativePath}`, marker !== undefined, version);
   const [isCopied, setIsCopied] = useState(false);
   const [openError, setOpenError] = useState<string | null>(null);
   const absolutePath = joinWorkspacePath(rootPath, relativePath);
@@ -142,9 +162,22 @@ export function FileViewer({ rootPath, relativePath, marker, version, onBack, on
         </div>
         <Breadcrumb relativePath={relativePath} marker={marker} />
         {text !== null && (
-          <p className="text-caption text-fg-muted">
-            {language.name} · {lines.length} {lines.length === 1 ? "line" : "lines"} · Read only
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-caption text-fg-muted">
+              {language.name} · {lines.length} {lines.length === 1 ? "line" : "lines"} · Read only
+            </p>
+            {marker && (
+              <label className="flex shrink-0 items-center gap-1.5 text-caption text-fg-muted">
+                <input
+                  type="checkbox"
+                  checked={isMarking}
+                  onChange={(event) => setIsMarking(event.target.checked)}
+                  className="focus-ring accent-fg"
+                />
+                Mark changed lines
+              </label>
+            )}
+          </div>
         )}
         {openError && (
           <p role="alert" className="text-caption text-danger">
@@ -154,7 +187,12 @@ export function FileViewer({ rootPath, relativePath, marker, version, onBack, on
       </div>
       {read.status === "loading" && <p className="px-3 py-4 text-ui-sm text-fg-muted">Loading…</p>}
       {read.status === "failed" && <Unshown failure={read.message} />}
-      {read.status === "ready" && (text !== null ? <Lines name={name} lines={lines} /> : <Unshown content={read.content} />)}
+      {read.status === "ready" &&
+        (text !== null ? (
+          <Lines name={name} lines={lines} changes={isMarking ? changes : NO_CHANGES} />
+        ) : (
+          <Unshown content={read.content} />
+        ))}
     </section>
   );
 }

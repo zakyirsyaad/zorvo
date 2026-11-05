@@ -6,10 +6,13 @@ import { FileViewer, type FileViewerProps } from "../components/files/FileViewer
 const ROOT = "/Users/test/proj";
 
 let fileResult: () => Promise<unknown> = () => Promise.resolve({ kind: "text", text: "const a = 1;\nlet b;\n", size: 20 });
+/** Line 1 replaced, line 2 new. */
+let diffResult: () => Promise<unknown> = () => Promise.resolve("@@ -1 +1,2 @@\n-const a = 0;\n+const a = 1;\n+let b;\n");
 
 const mockInvoke = vi.fn((cmd: string, args?: Record<string, unknown>) => {
   if (cmd === "read_workspace_file") return fileResult();
   if (cmd === "open_path") return Promise.resolve(undefined);
+  if (cmd === "session_file_diff") return diffResult();
   return Promise.resolve(args === undefined ? undefined : null);
 });
 
@@ -33,6 +36,7 @@ async function renderViewer(overrides: Partial<FileViewerProps> = {}) {
 beforeEach(() => {
   mockInvoke.mockClear();
   fileResult = () => Promise.resolve({ kind: "text", text: "const a = 1;\nlet b;\n", size: 20 });
+  diffResult = () => Promise.resolve("@@ -1 +1,2 @@\n-const a = 0;\n+const a = 1;\n+let b;\n");
 });
 
 afterEach(() => {
@@ -77,6 +81,52 @@ describe("FileViewer — header", () => {
       vi.advanceTimersByTime(2000);
     });
     expect(screen.getByRole("button", { name: "Copy path" })).toBeInTheDocument();
+  });
+});
+
+describe("FileViewer — changed lines", () => {
+  const gutterOf = (line: number) =>
+    screen.getByRole("region", { name: "Contents of a.ts" }).querySelector(`[data-line="${line}"] [data-gutter]`);
+
+  it("marks the lines that changed, by kind, from the file's diff against HEAD", async () => {
+    await renderViewer({ marker: "modified", filesPrefix: "" });
+
+    await screen.findByLabelText("Mark changed lines");
+    // One line removed and two added in one run: both added lines replace something, so both are modified.
+    expect(gutterOf(1)).toHaveClass("bg-status-attention");
+    expect(gutterOf(2)).toHaveClass("bg-status-attention");
+  });
+
+  it("marks an added line in the running color", async () => {
+    diffResult = () => Promise.resolve("@@ -0,0 +1,2 @@\n+const a = 1;\n+let b;\n");
+    await renderViewer({ marker: "added", filesPrefix: "" });
+
+    await screen.findByLabelText("Mark changed lines");
+    expect(gutterOf(1)).toHaveClass("bg-status-running");
+    expect(gutterOf(2)).toHaveClass("bg-status-running");
+  });
+
+  it("hides the marks when Mark changed lines is unticked", async () => {
+    await renderViewer({ marker: "modified", filesPrefix: "" });
+
+    const box = await screen.findByLabelText("Mark changed lines");
+    expect(box).toBeChecked();
+    fireEvent.click(box);
+    expect(gutterOf(1)).toBeNull();
+  });
+
+  it("reads no diff and offers no checkbox for a file without changes", async () => {
+    await renderViewer({ filesPrefix: "" });
+
+    expect(screen.queryByLabelText("Mark changed lines")).toBeNull();
+    expect(mockInvoke.mock.calls.filter(([cmd]) => cmd === "session_file_diff")).toHaveLength(0);
+  });
+
+  it("reads the diff by the file's path in its repository, for a folder below the root", async () => {
+    await renderViewer({ marker: "modified", filesPrefix: "app/" });
+
+    await screen.findByLabelText("Mark changed lines");
+    expect(mockInvoke).toHaveBeenCalledWith("session_file_diff", { path: ROOT, file: "app/src/a.ts", target: "head" });
   });
 });
 

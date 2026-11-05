@@ -265,7 +265,8 @@ export function Sidebar({
         )}
       </div>
 
-      {footer && <div className="border-t border-border bg-bg">{footer}</div>}
+      {/* The footer draws its own top border and surface; a wrapper here would double them. */}
+      {footer}
     </aside>
   );
 }

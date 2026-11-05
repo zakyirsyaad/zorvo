@@ -933,7 +933,6 @@ export default function App() {
               name={userProfile.name}
               email={userProfile.email}
               github={github.status}
-              version={userProfile.version}
               updateCount={agentUpdates.updateCount}
               onOpenSettings={() => setSettingsTab("general")}
               agents={

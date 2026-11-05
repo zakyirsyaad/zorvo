@@ -85,6 +85,46 @@ describe("AgentsMenu", () => {
     expect(dialog.getByRole("img", { name: "Claude Code" }).tagName.toLowerCase()).toBe("img");
   });
 
+  it("opens across the sidebar's footer, never from the button's right edge", () => {
+    render(
+      <div data-testid="footer-box" className="relative">
+        <AgentsMenu agents={all} settings={inUse("claude-acp", "qwen-code")} onManageAgents={vi.fn()} />
+      </div>,
+    );
+    const trigger = screen.getByRole("button", { name: "Agents" });
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Agents in use" });
+    expect(dialog).toHaveClass("left-2", "right-2");
+    expect(dialog.className).not.toMatch(/(^|\s)right-0(\s|$)/);
+    // Anchored to the footer's box, so the sidebar's edge cannot cut it off.
+    expect(dialog.parentElement?.closest(".relative")).toBe(screen.getByTestId("footer-box"));
+    expect(trigger).toHaveClass("aria-expanded:bg-surface-hover");
+  });
+
+  it("draws each state as the canvas does", () => {
+    renderMenu({ "qwen-code": "needed", "codex-acp": "unchecked" });
+    fireEvent.click(screen.getByRole("button", { name: /^Agents/ }));
+    const dialog = within(screen.getByRole("dialog", { name: "Agents in use" }));
+
+    // Ready: muted words, only the dot is green.
+    const ready = dialog.getAllByText("Ready")[0];
+    expect(ready).toHaveClass("text-fg-muted");
+    expect(ready.querySelector(".bg-status-running")).not.toBeNull();
+
+    // Needs sign-in: an outline Sign in button on a filled row.
+    const signIn = dialog.getByRole("button", { name: "Sign in to Qwen Code" });
+    expect(signIn).toHaveTextContent(/^Sign in$/);
+    expect(signIn).toHaveClass("h-6", "border-border-strong");
+    expect(signIn.closest("li")).toHaveClass("bg-surface-hover");
+
+    // Not checked: subtle words, no dot.
+    const check = dialog.getByRole("button", { name: "Check Codex" });
+    expect(check).toHaveClass("text-fg-subtle");
+    expect(check.querySelector("[class*='bg-']")).toBeNull();
+
+    expect(dialog.getByRole("button", { name: "Manage agents" }).querySelector(".lucide-settings-2")).not.toBeNull();
+  });
+
   it("renders nothing when no agent is in use", () => {
     render(<AgentsMenu agents={[notInstalled]} settings={inUse("kimi")} onManageAgents={vi.fn()} />);
     expect(screen.queryByRole("button", { name: /^Agents/ })).toBeNull();

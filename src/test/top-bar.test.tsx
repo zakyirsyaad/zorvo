@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import {
@@ -28,13 +29,60 @@ describe("TopBar", () => {
       expect(container.innerHTML).not.toContain("27c93f");
     });
 
-    it("reserves the inset the real traffic lights float in", () => {
-      const { container } = renderTopBar();
+    it("reserves the inset the real traffic lights float in only while the sidebar is hidden", () => {
+      const { container, rerender } = renderTopBar();
+      // With the sidebar shown, the traffic lights sit in the sidebar's own header.
+      expect(headerOf(container).style.paddingLeft).toBe("");
+
+      rerender(<TopBar onShowSidebar={() => {}} hasTrafficLights />);
 
       expect(TOP_BAR_TRAFFIC_LIGHT_INSET_PX).toBe(78);
-      expect(headerOf(container).style.paddingLeft).toBe(
-        `${TOP_BAR_TRAFFIC_LIGHT_INSET_PX}px`
+      expect(headerOf(container).style.paddingLeft).toBe(`${TOP_BAR_TRAFFIC_LIGHT_INSET_PX}px`);
+    });
+
+    it("keeps the inset for a window with no sidebar at all, such as a popout", () => {
+      const { container } = render(<TopBar sessionName="Fix the login" hasTrafficLights />);
+      expect(headerOf(container).style.paddingLeft).toBe(`${TOP_BAR_TRAFFIC_LIGHT_INSET_PX}px`);
+    });
+
+    it("keeps the title readable when the bar is crowded", () => {
+      render(
+        <TopBar
+          sessionName="Fix the login"
+          branch="agent/fix-the-login-flow-for-users-who-signed-up-with-email"
+          pullRequest={{ branch: "agent/x", number: 134, title: "Fix", url: "https://github.com/o/r/pull/134", state: "open", isDraft: false, checks: { passing: 0, failing: 0, pending: 0 } }}
+          onOpenPullRequest={() => {}}
+        />,
       );
+      const title = screen.getByText("Fix the login");
+      // A floor for the title, a branch chip that gives way first, and a left group that cannot paint over the right.
+      expect(title.className).toContain("min-w-12");
+      const branch = screen.getByLabelText(/^Branch /);
+      expect(branch.className).not.toContain("shrink-0");
+      expect(branch.className).toContain("shrink-[4]");
+      expect(branch.className).toContain("min-w-0");
+      expect(title.parentElement?.className).toContain("overflow-hidden");
+    });
+
+    it("is 48px tall with the session's title at weight 600 in the brightest text", () => {
+      const { container } = renderTopBar({ sessionName: "Fix the login" });
+
+      expect(headerOf(container)).toHaveClass("h-12");
+      expect(screen.getByText("Fix the login")).toHaveClass("font-semibold", "text-fg");
+    });
+
+    it("lists the session's actions with an icon each, and a rule before Archive", () => {
+      renderTopBar({ sessionName: "Fix the login", onPopout: vi.fn(), onReveal: vi.fn(), onRename: vi.fn(), onArchive: vi.fn() });
+
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+
+      const menu = screen.getByRole("menu", { name: "More options" });
+      const items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
+      expect(items.map((item) => item.textContent)).toEqual(["Open in new window", "Open in Finder", "Rename", "Archive"]);
+      for (const item of items) expect(item.querySelector("svg")).not.toBeNull();
+      const separator = menu.querySelector('[role="separator"]');
+      expect(separator).not.toBeNull();
+      expect(separator!.nextElementSibling?.textContent).toBe("Archive");
     });
 
     it("marks the header and its inert areas as the window drag region", () => {

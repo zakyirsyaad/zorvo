@@ -33,7 +33,8 @@ export function RenameField({ value, label, onDone, className }: RenameFieldProp
       onBlur={() => finish(name)}
       aria-label={label}
       className={[
-        "min-w-0 flex-1 rounded border border-border-strong bg-surface-2 px-1.5 py-1 text-ui text-fg focus-ring",
+        // 26px, radius 6, a 1px fg edge on the bg fill, as the canvas draws a name being edited.
+        "h-6.5 min-w-0 flex-1 rounded-md border border-fg bg-bg px-2 text-ui text-fg focus-ring",
         className,
       ]
         .filter(Boolean)

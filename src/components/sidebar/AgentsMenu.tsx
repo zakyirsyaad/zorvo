@@ -1,12 +1,20 @@
 import { useState } from "react";
+import { Settings2 } from "lucide-react";
 import { AgentLogo } from "../AgentLogo";
+import { Button } from "../ui/Button";
 import { Popover, PopoverHeader } from "../ui/Popover";
 import { isInUse, type EnabledSettings } from "../../lib/enabled-agents";
-import { SIGN_IN_CHIP_STYLES, SIGN_IN_LABELS, type SignInState } from "../../lib/agent-sign-in";
+import { SIGN_IN_LABELS, type SignInState } from "../../lib/agent-sign-in";
 import type { AgentProfile } from "../../types";
 
 /** How many logos the footer button stacks. */
 const SHOWN_LOGOS = 3;
+
+/**
+ * The panel spans the sidebar's footer, 8px in from each side and 8px above it. It anchors to
+ * the footer's box, so a narrow sidebar can never cut it off at the button's edge.
+ */
+const PANEL_PLACEMENT = "left-2 right-2 bottom-[60px]";
 
 export interface AgentsMenuProps {
   agents: readonly AgentProfile[];
@@ -20,25 +28,37 @@ export interface AgentsMenuProps {
   onManageAgents: () => void;
 }
 
-/** An agent's sign-in state; one that is not ready opens a new session with it, where the sign-in is checked and shown. */
-function SignInChip({ agentName, state, onSetUp }: { agentName: string; state: SignInState; onSetUp?: () => void }) {
-  const style = SIGN_IN_CHIP_STYLES[state];
-  const content = (
-    <>
-      <span aria-hidden="true" className={`inline-block size-1.5 rounded-full ${style.dot}`} />
-      {SIGN_IN_LABELS[state]}
-    </>
-  );
-  const className = `flex shrink-0 items-center gap-1 text-caption font-medium ${style.text}`;
-  if (state === "ready" || !onSetUp) return <span className={className}>{content}</span>;
+/**
+ * An agent's sign-in state as the menu draws it: Ready in muted words with a green dot; a Sign in
+ * button when one is needed; Not checked in subtle words. Either of the last two opens a new
+ * session with the agent, where the sign-in is checked and shown.
+ */
+function StateCell({ agentName, state, onSetUp }: { agentName: string; state: SignInState; onSetUp?: () => void }) {
+  if (state === "ready") {
+    return (
+      <span className="flex shrink-0 items-center gap-1.5 text-caption text-fg-muted">
+        <span aria-hidden="true" className="size-1.5 rounded-full bg-status-running" />
+        {SIGN_IN_LABELS.ready}
+      </span>
+    );
+  }
+  if (state === "needed") {
+    if (!onSetUp) return <span className="shrink-0 text-caption text-status-attention">{SIGN_IN_LABELS.needed}</span>;
+    return (
+      <Button variant="outline" size="sm" aria-label={`Sign in to ${agentName}`} onClick={onSetUp} className="shrink-0">
+        <span className="text-fg">{SIGN_IN_LABELS.needed}</span>
+      </Button>
+    );
+  }
+  if (!onSetUp) return <span className="shrink-0 text-caption text-fg-subtle">{SIGN_IN_LABELS.unchecked}</span>;
   return (
     <button
       type="button"
       onClick={onSetUp}
-      aria-label={state === "needed" ? `Sign in to ${agentName}` : `Check ${agentName}`}
-      className={`${className} rounded px-1 hover:bg-surface-hover focus-ring`}
+      aria-label={`Check ${agentName}`}
+      className="shrink-0 rounded px-1 text-caption text-fg-subtle transition-colors hover:text-fg-secondary focus-ring"
     >
-      {content}
+      {SIGN_IN_LABELS.unchecked}
     </button>
   );
 }
@@ -61,9 +81,7 @@ export function AgentsMenu({ agents, settings = {}, signInStateOf, onSetUpAgent,
       onClose={() => setIsOpen(false)}
       label="Agents in use"
       role="dialog"
-      side="top"
-      align="end"
-      className="w-64"
+      panelClassName={PANEL_PLACEMENT}
       trigger={
         <button
           type="button"
@@ -71,61 +89,69 @@ export function AgentsMenu({ agents, settings = {}, signInStateOf, onSetUpAgent,
           aria-haspopup="dialog"
           aria-expanded={isOpen}
           onClick={() => setIsOpen((open) => !open)}
-          className="relative flex h-7 items-center rounded-md px-1.5 transition-colors hover:bg-surface-hover focus-ring"
+          className="relative flex h-7 items-center rounded-md px-1.5 transition-colors hover:bg-surface-hover aria-expanded:bg-surface-hover focus-ring"
         >
           <span aria-hidden="true" className="flex -space-x-1">
             {listed.slice(0, SHOWN_LOGOS).map((agent) => (
-              <span key={agent.id} className="flex rounded-full bg-bg ring-1 ring-bg">
-                <AgentLogo profileId={agent.id} name={agent.name} size={14} />
+              <span key={agent.id} className="flex rounded-[4px] bg-surface-1 ring-2 ring-surface-1">
+                <AgentLogo profileId={agent.id} name={agent.name} size={16} />
               </span>
             ))}
           </span>
           {needsSignIn && (
-            <span aria-hidden="true" className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-status-attention" />
+            <span
+              aria-hidden="true"
+              className="absolute right-[3px] top-[3px] size-1.5 rounded-full bg-status-attention ring-2 ring-surface-1"
+            />
           )}
         </button>
       }
     >
       <PopoverHeader>Agents in use</PopoverHeader>
       <ul className="space-y-0.5">
-        {listed.map((agent) => (
-          <li
-            key={agent.id}
-            title={agent.detected_path ?? undefined}
-            className="flex min-h-7.5 items-center justify-between gap-2 rounded px-2 text-ui text-fg-secondary"
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              <AgentLogo profileId={agent.id} name={agent.name} />
-              <span className="truncate">{agent.name}</span>
-            </span>
-            <SignInChip
-              agentName={agent.name}
-              state={stateOf(agent.id)}
-              onSetUp={
-                onSetUpAgent
-                  ? () => {
-                      // The new session's sign-in panel takes over; the menu would only cover the footer.
-                      setIsOpen(false);
-                      onSetUpAgent(agent.id);
-                    }
-                  : undefined
-              }
-            />
-          </li>
-        ))}
+        {listed.map((agent) => {
+          const state = stateOf(agent.id);
+          return (
+            <li
+              key={agent.id}
+              title={agent.detected_path ?? undefined}
+              className={`flex min-h-8 items-center justify-between gap-2 rounded-md px-2 text-ui text-fg-secondary ${
+                state === "needed" ? "bg-surface-hover" : ""
+              }`}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <AgentLogo profileId={agent.id} name={agent.name} size={16} />
+                <span className="truncate">{agent.name}</span>
+              </span>
+              <StateCell
+                agentName={agent.name}
+                state={state}
+                onSetUp={
+                  onSetUpAgent
+                    ? () => {
+                        // The new session's sign-in panel takes over; the menu would only cover the footer.
+                        setIsOpen(false);
+                        onSetUpAgent(agent.id);
+                      }
+                    : undefined
+                }
+              />
+            </li>
+          );
+        })}
       </ul>
-      <div className="mt-1 border-t border-border pt-1">
-        <button
-          type="button"
-          onClick={() => {
-            setIsOpen(false);
-            onManageAgents();
-          }}
-          className="flex min-h-7.5 w-full items-center rounded px-2 text-left text-ui text-fg transition-colors hover:bg-surface-hover focus-ring"
-        >
-          Manage agents
-        </button>
-      </div>
+      <div role="separator" className="my-1.5 h-px bg-border" />
+      <button
+        type="button"
+        onClick={() => {
+          setIsOpen(false);
+          onManageAgents();
+        }}
+        className="flex min-h-7.5 w-full items-center gap-2 rounded px-2 text-left text-ui text-fg-secondary transition-colors hover:bg-surface-hover hover:text-fg focus-ring"
+      >
+        <Settings2 size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
+        Manage agents
+      </button>
     </Popover>
   );
 }

@@ -201,6 +201,49 @@ describe("Navigation and Layout Components", () => {
       expect(screen.getByRole("textbox", { name: "Search sessions" }).getAttribute("placeholder")).toBe("Search sessions");
     });
 
+    it("draws the top block, the search and the headings as the canvas does", () => {
+      const base = mockSessions[1];
+      render(
+        <Sidebar
+          workspaces={workspaces}
+          sessions={[
+            { ...base, id: "p", name: "Pinned work", pinned: true },
+            { ...base, id: "a", name: "Old work", archivedAt: 10 },
+            base,
+          ]}
+          agents={mockProfiles}
+          onNewSession={() => {}}
+          onSelectSession={() => {}}
+        />
+      );
+
+      const newSession = screen.getByRole("button", { name: "New session" });
+      expect(newSession.parentElement?.className).not.toContain("border-b");
+      expect(newSession.className).toContain("h-8");
+      expect(newSession.className).toContain("justify-start");
+      expect(newSession.className).not.toContain("justify-center");
+
+      const search = screen.getByRole("textbox", { name: "Search sessions" });
+      expect(search.className).toContain("bg-surface-2");
+      expect(search.className).not.toMatch(/(^|\s)border(\s|-)/);
+
+      // No Workspaces heading and no folder button: a folder opens from the draft's folder chip.
+      expect(screen.queryByText("Workspaces")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Open folder" })).toBeNull();
+
+      const pinned = screen.getByText("Pinned");
+      expect(pinned.closest("div")?.className).not.toContain("uppercase");
+      expect(pinned.closest("div")?.querySelector(".lucide-pin")).not.toBeNull();
+
+      const archived = screen.getByRole("button", { name: "Archived (1)" });
+      expect(archived.className).not.toContain("uppercase");
+      expect(within(archived).getByText("Archived")).toBeDefined();
+      expect(within(archived).getByText("1").className).toContain("text-fg-subtle");
+      const section = archived.closest("section")!;
+      expect(section.nextElementSibling).toBeNull();
+      expect(section.previousElementSibling?.className).toContain("flex-1");
+    });
+
     it("shows a folded folder's summary in words", () => {
       render(
         <Sidebar
@@ -239,8 +282,56 @@ describe("Navigation and Layout Components", () => {
       expect(actions.className).toContain("group-focus-within:opacity-100");
       // Its agent menu stays visible while it is open, wherever the pointer goes.
       expect(actions.className).toContain("has-[[role=menu]]:opacity-100");
-      const chevron = screen.getByRole("button", { name: "titan-investment" }).querySelector("[data-chevron]") as Element;
+      // Open, the fold chevron sits after the +, at the header's right end.
+      const header = screen.getByRole("button", { name: "titan-investment" }).parentElement as HTMLElement;
+      const chevron = header.querySelector("[data-chevron]") as Element;
       expect(chevron.getAttribute("class")).toContain("group-hover:opacity-100");
+      expect(plus.compareDocumentPosition(chevron) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(header.querySelector(".lucide-folder")).not.toBeNull();
+    });
+
+    it("draws a folded folder with its chevron first and a dot before waiting or working", () => {
+      const { rerender } = render(
+        <Sidebar
+          workspaces={workspaces}
+          sessions={mockSessions}
+          agents={mockProfiles}
+          isSessionWaiting={(id) => id === "s-2"}
+          onNewSession={() => {}}
+          onSelectSession={() => {}}
+        />
+      );
+      const heading = screen.getByRole("button", { name: "titan-investment" });
+      fireEvent.click(heading);
+
+      expect(heading.firstElementChild?.getAttribute("class")).toContain("lucide-chevron-right");
+      expect(heading.querySelector(".lucide-folder")).toBeNull();
+      expect(screen.getByText("1 waiting").parentElement?.querySelector(".bg-status-attention")).not.toBeNull();
+
+      rerender(
+        <Sidebar
+          workspaces={workspaces}
+          sessions={mockSessions}
+          agents={mockProfiles}
+          isSessionBusy={(id) => id === "s-2"}
+          onNewSession={() => {}}
+          onSelectSession={() => {}}
+        />
+      );
+      expect(screen.getByText("1 working").parentElement?.querySelector(".bg-status-running")).not.toBeNull();
+
+      rerender(
+        <Sidebar
+          workspaces={workspaces}
+          sessions={mockSessions}
+          agents={mockProfiles}
+          onNewSession={() => {}}
+          onSelectSession={() => {}}
+        />
+      );
+      const idle = screen.getByText("1 session");
+      expect(idle.parentElement?.querySelector("[class*='bg-status-']")).toBeNull();
+      expect(idle.className).toContain("text-fg-subtle");
     });
 
     describe("organizing sessions", () => {

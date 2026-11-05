@@ -52,7 +52,7 @@ export function AgentStallNotice({ agentName, messages, failures, onStop }: Agen
     >
       <span>{text}</span>
       {onStop && (
-        <Button variant="outline" className="shrink-0 px-2 py-1" onClick={onStop}>
+        <Button variant="outline" size="sm" className="shrink-0" onClick={onStop}>
           Stop
         </Button>
       )}

@@ -91,13 +91,23 @@ describe("BackgroundTasksMenu", () => {
   it("lists each task with its status, origin and actions", () => {
     setup({ tasks: [shellTool, subagent] });
     const dialog = within(screen.getByRole("dialog", { name: "Background tasks" }));
-    expect(dialog.getByText("Background tasks · 2 running")).toBeTruthy();
+    const title = dialog.getByText("Background tasks");
+    expect(title.parentElement?.textContent).toBe("Background tasks2 running");
     const rows = within(dialog.getByRole("list", { name: "Running tasks" })).getAllByRole("listitem");
     expect(within(rows[0]).getByText("pnpm test:unit").classList.contains("font-mono")).toBe(true);
     expect(within(rows[0]).queryByRole("button", { name: /^Open/ })).toBeNull();
     expect(within(rows[1]).getByText("Explore the migration").classList.contains("font-mono")).toBe(false);
     expect(within(rows[1]).getByRole("button", { name: "Open Explore the migration" })).toBeTruthy();
-    expect(dialog.getByText("Tasks keep running when you switch sessions.")).toBeTruthy();
+    expect(dialog.getByText(/^Tasks keep running when you switch sessions\. Stop ends the process\.$/)).toBeTruthy();
+  });
+
+  it("marks the chip with a spinning arc, not the plan's checklist", () => {
+    setup({ isOpen: false });
+    const chip = screen.getByRole("button", { name: /background tasks?/ });
+    expect(chip.querySelector(".lucide-list-checks")).toBeNull();
+    const arc = chip.querySelector("svg");
+    expect(arc?.getAttribute("class")).toContain("animate-spin");
+    expect(arc?.getAttribute("class")).toContain("text-status-running");
   });
 
   it("asks to open when the trigger is clicked", () => {

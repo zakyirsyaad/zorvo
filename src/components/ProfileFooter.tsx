@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { SlidersHorizontal, User } from "lucide-react";
+import { Settings2, User } from "lucide-react";
 import type { GithubStatus } from "../lib/github";
 import { GithubMark } from "./GithubMark";
 import { IconButton } from "./ui/IconButton";
@@ -11,8 +11,6 @@ export interface ProfileFooterProps {
   email?: string;
   /** The GitHub connection; its name and login win over git's while someone is signed in. */
   github?: GithubStatus | null;
-  /** Bundled app version; the version line is omitted when unknown. */
-  version?: string;
   onOpenSettings?: () => void;
   /** Agent updates waiting; puts a dot on the Settings button. */
   updateCount?: number;
@@ -75,7 +73,6 @@ export function ProfileFooter({
   name,
   email,
   github,
-  version,
   onOpenSettings,
   updateCount = 0,
   agents,
@@ -84,13 +81,14 @@ export function ProfileFooter({
   const isGithubConnected = github?.state === "signed-in" && Boolean(github.login);
 
   return (
-    <footer className="flex items-center justify-between border-t border-border bg-bg p-3">
+    // `relative`: the Agents menu anchors to this bar, across the sidebar, not to its own button.
+    <footer className="relative flex h-13 shrink-0 items-center justify-between border-t border-border bg-surface-1 px-3">
       <div className="flex min-w-0 items-center gap-2">
         <span className="relative shrink-0">
           <span
             role="img"
             aria-label={`${displayName} avatar`}
-            className="flex h-6 w-6 items-center justify-center rounded-full border border-border-strong bg-surface-hover text-[11px] font-semibold text-fg-secondary"
+            className="flex h-6 w-6 items-center justify-center rounded-full bg-surface-hover text-[10px] font-semibold text-fg-secondary"
           >
             {initials ?? <User size={13} aria-hidden="true" />}
           </span>
@@ -105,21 +103,14 @@ export function ProfileFooter({
             </span>
           )}
         </span>
-        <div className="flex min-w-0 flex-col">
-          <span className="truncate font-medium text-fg-secondary">{displayName}</span>
-          {version && (
-            <span className="text-[10px] text-fg-subtle">
-              Zorvo v{version}
-            </span>
-          )}
-        </div>
+        <span className="truncate text-ui text-fg-secondary">{displayName}</span>
       </div>
 
       <div className="flex shrink-0 items-center gap-0.5">
         {agents}
         {onOpenSettings && (
           <IconButton label={settingsLabel(updateCount)} onClick={onOpenSettings} className="relative">
-            <SlidersHorizontal size={14} />
+            <Settings2 size={14} />
             {updateCount > 0 && (
               <span aria-hidden="true" className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-primary" />
             )}

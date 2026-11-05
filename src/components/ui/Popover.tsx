@@ -14,6 +14,11 @@ export interface PopoverProps {
   role?: PopoverRole;
   side?: "bottom" | "top";
   align?: "start" | "end";
+  /**
+   * Places the panel itself (in place of `side` and `align`), against the nearest positioned box around
+   * the popover rather than its trigger: the sidebar's Agents menu spans the sidebar's footer.
+   */
+  panelClassName?: string;
   className?: string;
   children: ReactNode;
 }
@@ -36,6 +41,7 @@ export function Popover({
   role = "menu",
   side = "bottom",
   align = "start",
+  panelClassName,
   className,
   children,
 }: PopoverProps) {
@@ -59,9 +65,11 @@ export function Popover({
     if (next && !event.currentTarget.contains(next)) hasFocusInside.current = false;
   };
 
-  const panelClasses = [PANEL, SIDES[side], ALIGNS[align], className].filter(Boolean).join(" ");
+  const placement = panelClassName ?? `${SIDES[side]} ${ALIGNS[align]}`;
+  const panelClasses = [PANEL, placement, className].filter(Boolean).join(" ");
   return (
-    <div ref={wrapperRef} className="relative">
+    // With its own placement the panel is positioned against a box further out, so the wrapper is not one.
+    <div ref={wrapperRef} className={panelClassName ? undefined : "relative"}>
       <span ref={triggerRef} className="contents">
         {trigger}
       </span>
@@ -83,6 +91,16 @@ export function Popover({
 /** A small muted heading over a group of options. */
 export function PopoverHeader({ children }: { children: ReactNode }) {
   return <div className="px-2 pt-1 pb-1.5 text-caption font-medium text-fg-muted">{children}</div>;
+}
+
+/** A popover's title row, as the canvas draws the Plan and Background tasks headers: the title, and a count on the right. */
+export function PopoverTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 px-2 pt-1 pb-2">
+      <span className="truncate text-ui font-semibold text-fg">{children}</span>
+      {aside && <span className="shrink-0 text-caption text-fg-subtle">{aside}</span>}
+    </div>
+  );
 }
 
 /** A listbox of options inside a dialog popover, beside a search field the listbox cannot hold. */

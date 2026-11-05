@@ -63,23 +63,28 @@ describe("ProfileFooter", () => {
     });
   });
 
-  describe("version line", () => {
-    it("shows the app name and version when a version is given", () => {
-      render(<ProfileFooter name="Iwang" version="0.1.0" />);
+  describe("as the canvas draws it", () => {
+    it("is one surface-1 bar under one border, with no version line", () => {
+      const { container } = render(<ProfileFooter name="Iwang" onOpenSettings={() => {}} />);
 
-      expect(screen.getByText("Zorvo v0.1.0")).toBeDefined();
+      const footer = container.querySelector("footer") as HTMLElement;
+      expect(footer.className).toContain("border-t");
+      expect(footer.className).toContain("bg-surface-1");
+      expect(footer.className).not.toContain("bg-bg");
+      expect(screen.queryByText(/Zorvo v/)).toBeNull();
     });
 
-    it("omits the version line when no version is known", () => {
-      render(<ProfileFooter name="Iwang" />);
+    it("shows the name at weight 400, and Settings with the settings-2 glyph", () => {
+      render(<ProfileFooter name="Iwang Nurhadi" onOpenSettings={() => {}} />);
 
-      expect(screen.queryByText(/Zorvo v/)).toBeNull();
+      expect(screen.getByText("Iwang Nurhadi").className).not.toContain("font-medium");
+      expect(screen.getByRole("button", { name: "Settings" }).querySelector(".lucide-settings-2")).not.toBeNull();
     });
   });
 
   describe("no invented account state", () => {
     it("renders no plan or tier badge", () => {
-      render(<ProfileFooter name="Iwang Nurhadi" email="iwang@example.com" version="0.1.0" />);
+      render(<ProfileFooter name="Iwang Nurhadi" email="iwang@example.com" />);
 
       expect(screen.queryByText("Pro")).toBeNull();
       expect(screen.queryByText(/pro\b/i)).toBeNull();

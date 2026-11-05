@@ -113,7 +113,11 @@ describe("Dropping files onto the window", () => {
     });
 
     expect(attachedPaths()).toEqual(["/Users/test/ok.md"]);
-    expect(screen.getByRole("alert").textContent).toContain("control characters");
+    // A warning, not an error: spoken politely, and drawn without the danger edge.
+    expect(screen.queryByRole("alert")).toBeNull();
+    const notice = screen.getAllByRole("status").find((status) => status.textContent?.includes("control characters"));
+    expect(notice).toBeDefined();
+    expect(notice?.className).not.toContain("border-danger");
   });
 
   it("shows the notice above the message box, not over its Send button", async () => {
@@ -127,7 +131,8 @@ describe("Dropping files onto the window", () => {
 
     // The stack is placed from an anchor at the top edge of the composer area,
     // so its bottom offset starts there and never reaches the Send button.
-    const anchor = screen.getByRole("alert").parentElement?.parentElement;
+    const toast = screen.getAllByRole("status").find((status) => status.textContent?.includes("control characters"));
+    const anchor = toast?.parentElement?.parentElement;
     expect(anchor).toHaveClass("relative", "h-0");
     // The composer's slot follows it (after the draft's blockers, which sit right above the composer).
     const later: Element[] = [];

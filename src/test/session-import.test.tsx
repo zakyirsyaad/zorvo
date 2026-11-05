@@ -392,7 +392,7 @@ describe("Importing a session the agent listed", () => {
     const savesOf = () => callsTo(spy, "save_transcript").filter(([, args]) => args?.sessionId === importedId).length;
     const savedBeforeDelete = savesOf();
     await act(async () => {
-      fireEvent.click(within(row).getByRole("menuitem", { name: "Confirm delete" }));
+      fireEvent.click(within(row).getByRole("button", { name: "Confirm delete" }));
     });
 
     // A replay update for the deleted session must not land anywhere.

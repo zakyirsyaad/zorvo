@@ -45,7 +45,7 @@ describe("folderSummary", () => {
 
   it("summarises a folded folder, waiting first", () => {
     expect(folderSummary(sessions, among(["a"]), among(["b", "c"]))).toEqual({ text: "1 waiting", tone: "attention" });
-    expect(folderSummary(sessions, none, among(["b", "c"]))).toEqual({ text: "2 working", tone: "muted" });
+    expect(folderSummary(sessions, none, among(["b", "c"]))).toEqual({ text: "2 working", tone: "running" });
     expect(folderSummary([session("a")], none, none)).toEqual({ text: "1 session", tone: "muted" });
     expect(folderSummary(sessions, none, none)).toEqual({ text: "3 sessions", tone: "muted" });
   });

@@ -10,17 +10,18 @@
 .z-toast-ico--warning { stroke: var(--status-attention); }
 .z-toast-ico--error { stroke: var(--danger); }
 .z-toast-body { display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: var(--space-2); min-width: 0; }
-.z-toast-msg { margin: 0; color: var(--fg); font: 400 13px/18px var(--font-sans); overflow-wrap: anywhere; }
-.z-toast-action { padding: var(--space-1\.5) var(--space-3); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: none; color: var(--fg-secondary); font: 500 12px/16px var(--font-sans); cursor: pointer; }
-.z-toast-x { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin: -4px -4px 0 0; border: 0; border-radius: var(--radius-md); background: none; color: var(--fg-muted); cursor: pointer; }
-.z-toast-x svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.z-toast-msg { margin: 0; color: var(--fg-secondary); font: 400 13px/18px var(--font-sans); overflow-wrap: anywhere; }
+.z-toast--error .z-toast-msg { color: var(--fg); }
+.z-toast-action { height: 24px; padding: 0 var(--space-2); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: none; color: var(--fg); font: 500 12px/16px var(--font-sans); cursor: pointer; }
+.z-toast-x { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin: -2px -2px 0 0; border: 0; border-radius: var(--radius-md); background: none; color: var(--fg-muted); cursor: pointer; }
+.z-toast-x svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 </style>
 </head>
 <body>
 <div class="z-stage">
   <div class="z-toasts">
     <div class="z-toast" role="status">
-      <svg class="z-toast-ico z-toast-ico--warning" viewBox="0 0 24 24" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+      <svg class="z-toast-ico z-toast-ico--warning" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
       <div class="z-toast-body"><p class="z-toast-msg">Left out a dropped file whose name has control characters.</p></div>
       <button type="button" class="z-toast-x" aria-label="Dismiss notice"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     </div>

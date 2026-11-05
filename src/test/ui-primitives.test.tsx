@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { useState, type ReactNode } from "react";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { Popover, PopoverHeader, PopoverList, PopoverOption } from "../components/ui/Popover";
 import { Highlighted } from "../components/ui/Highlighted";
 import { Toast, ToastStack } from "../components/ui/Toast";
@@ -11,6 +11,64 @@ import { StatusLine } from "../components/ui/StatusLine";
 import { BlockerCard } from "../components/ui/BlockerCard";
 import { Chip } from "../components/ui/Chip";
 import { Tabs, tabIds, type TabItem } from "../components/ui/Tabs";
+
+describe("primitive sizes from the canvas", () => {
+  it("Button is 28px with 13px text by default, 24px small and 32px large", () => {
+    const { rerender } = render(<Button>Go</Button>);
+    expect(screen.getByRole("button", { name: "Go" })).toHaveClass("h-7", "text-ui");
+
+    rerender(<Button size="sm">Go</Button>);
+    expect(screen.getByRole("button", { name: "Go" })).toHaveClass("h-6", "text-ui-sm");
+
+    rerender(<Button size="lg">Go</Button>);
+    expect(screen.getByRole("button", { name: "Go" })).toHaveClass("h-8", "text-ui");
+  });
+
+  it("IconButton comes in 22, 24 and 28px, muted or secondary", () => {
+    const { rerender } = render(<IconButton label="Stop">x</IconButton>);
+    expect(screen.getByRole("button", { name: "Stop" })).toHaveClass("h-7", "w-7", "text-fg-muted");
+
+    rerender(<IconButton label="Stop" size="xs" tone="secondary">x</IconButton>);
+    const small = screen.getByRole("button", { name: "Stop" });
+    expect(small).toHaveClass("h-5.5", "w-5.5", "text-fg-secondary");
+    expect(small).not.toHaveClass("h-7");
+
+    rerender(<IconButton label="Stop" size="sm">x</IconButton>);
+    expect(screen.getByRole("button", { name: "Stop" })).toHaveClass("h-6", "w-6");
+  });
+
+  it("an open Chip or IconButton gets the open fill", () => {
+    render(
+      <>
+        <Chip onClick={() => {}} aria-expanded>
+          Plan
+        </Chip>
+        <IconButton label="More" aria-expanded="true">
+          x
+        </IconButton>
+      </>,
+    );
+
+    expect(screen.getByRole("button", { name: "Plan" }).className).toContain("aria-expanded:bg-surface-hover");
+    expect(screen.getByRole("button", { name: "Plan" }).className).toContain("aria-expanded:border-border-strong");
+    expect(screen.getByRole("button", { name: "More" }).className).toContain("aria-expanded:bg-surface-hover");
+  });
+
+  it("a Popover with panelClassName places its panel there, anchored to the nearest positioned box", () => {
+    const { container } = render(
+      <Popover isOpen onClose={() => {}} label="Agents" trigger={<button type="button">Agents</button>} panelClassName="left-2 right-2 bottom-[60px]">
+        <p>Inside</p>
+      </Popover>,
+    );
+
+    const panel = screen.getByRole("menu", { name: "Agents" });
+    expect(panel).toHaveClass("left-2", "right-2", "bottom-[60px]");
+    expect(panel).not.toHaveClass("left-0");
+    expect(panel).not.toHaveClass("right-0");
+    expect(panel).not.toHaveClass("top-full");
+    expect(container.firstElementChild).not.toHaveClass("relative");
+  });
+});
 
 describe("Button", () => {
   it("defaults to type button and does not submit a form", () => {
@@ -519,6 +577,25 @@ describe("Toast", () => {
     expect(alert).toHaveClass("border-danger");
     const statuses = screen.getAllByRole("status");
     expect(statuses.map((status) => status.textContent)).toEqual(["Careful", "Heads up"]);
+  });
+
+  it("draws a warning with the circle-alert icon, off the danger border, and leaves an error as it was", () => {
+    render(
+      <>
+        <Toast tone="warning" message="Careful" onDismiss={() => {}} />
+        <Toast tone="error" message="Failed" onDismiss={() => {}} />
+      </>,
+    );
+    const warning = screen.getByRole("status");
+    expect(warning).not.toHaveClass("border-danger");
+    expect(warning.querySelector(".lucide-circle-alert")?.getAttribute("class")).toContain("text-status-attention");
+    expect(within(warning).getByText("Careful")).toHaveClass("text-fg-secondary");
+    expect(within(warning).getByRole("button", { name: "Dismiss notice" })).toHaveClass("h-5.5", "w-5.5");
+
+    const error = screen.getByRole("alert");
+    expect(error).toHaveClass("border-danger");
+    expect(error.querySelector(".lucide-circle-alert")?.getAttribute("class")).toContain("text-danger");
+    expect(within(error).getByText("Failed")).toHaveClass("text-fg");
   });
 
   it("runs its action", () => {

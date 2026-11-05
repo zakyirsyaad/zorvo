@@ -22,6 +22,18 @@ export const REVEAL_ON_ROW =
   "group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto " +
   "has-[[role=menu]]:opacity-100 has-[[role=menu]]:pointer-events-auto";
 
+/**
+ * A session row's actions, in the row's flow: collapsed to no width until hover or focus (so
+ * the title has the whole width), and kept open while their menu is, for the same WebKit reason.
+ * Collapsed, never `display: none`: a hidden button cannot take focus, so Delete?'s autofocus
+ * and focus going back to ⋯ would fail for a keyboard user. Focus landing inside opens it.
+ */
+export const SHOW_IN_ROW =
+  "w-0 overflow-hidden " +
+  "group-hover:w-auto group-hover:overflow-visible group-hover:pr-1.5 " +
+  "group-focus-within:w-auto group-focus-within:overflow-visible group-focus-within:pr-1.5 " +
+  "has-[[role=menu]]:w-auto has-[[role=menu]]:overflow-visible has-[[role=menu]]:pr-1.5";
+
 export const DOT_CLASS: Record<RowTone, string> = {
   attention: "bg-status-attention",
   running: "bg-status-running",
@@ -63,7 +75,8 @@ export function sessionsIn(nodes: readonly SessionNode[]): Session[] {
 
 export interface FolderSummary {
   text: string;
-  tone: "attention" | "muted";
+  /** Attention and running get a dot before the words; muted ("4 sessions") has none. */
+  tone: "attention" | "running" | "muted";
 }
 
 type IsTrue = (sessionId: string) => boolean;
@@ -73,7 +86,7 @@ export function folderSummary(sessions: readonly Session[], isWaiting: IsTrue, i
   const waiting = sessions.filter((s) => isWaiting(s.id)).length;
   if (waiting > 0) return { text: `${waiting} waiting`, tone: "attention" };
   const working = sessions.filter((s) => isBusy(s.id)).length;
-  if (working > 0) return { text: `${working} working`, tone: "muted" };
+  if (working > 0) return { text: `${working} working`, tone: "running" };
   return { text: `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"}`, tone: "muted" };
 }
 

@@ -22,7 +22,7 @@ export function DiffStatChip({ added, removed, commentCount = 0, isAlwaysShown =
     <Chip
       onClick={onOpen}
       label={`${addedText} lines added, ${removedText} removed${commentsText}. Open the diff`}
-      className="tabular-nums"
+      className="font-mono tabular-nums"
     >
       <span className="text-status-running">+{addedText}</span>
       <span className="text-danger">

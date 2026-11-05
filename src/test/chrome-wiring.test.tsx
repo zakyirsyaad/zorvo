@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, within } from "@testing-library/react";
 import { closeInspector, openInspectorTab } from "./inspector-helpers";
@@ -50,6 +51,29 @@ describe("Window chrome wiring", () => {
     await click(header().getByRole("button", { name: "More options" }));
     expect(screen.getByRole("menuitem", { name: "Rename" })).toBeDefined();
     expect(screen.getByRole("menuitem", { name: "Archive" })).toBeDefined();
+  });
+
+  it("runs the sidebar the full height with the traffic lights in its own header, and the top bar over the chat", async () => {
+    seedSessions();
+    await renderApp();
+
+    const sidebar = screen.getByRole("complementary");
+    const sidebarHeader = sidebar.firstElementChild as HTMLElement;
+    expect(sidebarHeader).toHaveClass("h-12");
+    expect(sidebarHeader.hasAttribute("data-tauri-drag-region")).toBe(true);
+    expect(sidebarHeader.style.paddingLeft).toBe("78px");
+    expect(within(sidebarHeader).getByRole("button", { name: "Hide sidebar" })).toBeDefined();
+    // The banner comes after the sidebar, in the chat's column, and has no inset of its own.
+    const banner = screen.getByRole("banner");
+    expect(sidebar.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(banner.style.paddingLeft).toBe("");
+
+    // Hidden, the top bar takes the inset; shown again, the sidebar's header has it back.
+    await click(within(sidebarHeader).getByRole("button", { name: "Hide sidebar" }));
+    expect(screen.getByRole("banner").style.paddingLeft).toBe("78px");
+    await click(header().getByRole("button", { name: "Show sidebar" }));
+    expect((screen.getByRole("complementary").firstElementChild as HTMLElement).style.paddingLeft).toBe("78px");
+    expect(screen.getByRole("banner").style.paddingLeft).toBe("");
   });
 
   it("goes back and forward through the sessions the user viewed", async () => {
@@ -387,12 +411,13 @@ describe("Window chrome wiring", () => {
     expect(prompted).toMatchObject({ attachments: ["/Users/test/developer/ai-perpetual-trading/README.md"] });
   });
 
-  it("shows the user's git identity and app version, and opens settings from the profile", async () => {
+  it("shows the user's git identity, no version line, and opens settings from the profile", async () => {
     await renderApp();
     const sidebar = within(screen.getByRole("complementary"));
 
     expect(sidebar.getByText("Test User")).toBeDefined();
-    expect(sidebar.getByText(/0\.1\.0/)).toBeDefined();
+    // The version lives in Settings; the footer is the person and their controls.
+    expect(sidebar.queryByText(/Zorvo v/)).toBeNull();
     await click(sidebar.getByRole("button", { name: /^Settings/ }));
     expect(screen.getByRole("dialog")).toBeDefined();
   });

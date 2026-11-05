@@ -418,7 +418,7 @@ describe("ACP sessions in the app", () => {
 
     await clickRowDelete(() => row);
     await act(async () => {
-      fireEvent.click(within(row).getByRole("menuitem", { name: "Confirm delete" }));
+      fireEvent.click(within(row).getByRole("button", { name: "Confirm delete" }));
     });
     // A slow start can reach the regular save before the delete: only what comes after it counts.
     const savesAtDelete = saves();

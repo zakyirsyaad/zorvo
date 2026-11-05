@@ -414,7 +414,7 @@ describe("Elicitations in the app", () => {
     // due before the delete. None may follow the delete.
     const savedBeforeDelete = savesOf(spy, sessionId);
     await act(async () => {
-      fireEvent.click(within(row).getByRole("menuitem", { name: "Confirm delete" }));
+      fireEvent.click(within(row).getByRole("button", { name: "Confirm delete" }));
     });
     await flushSaves();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -439,7 +439,7 @@ describe("Elicitations in the app", () => {
     // As above: only writes after the delete count.
     const savedBeforeDelete = savesOf(spy, sessionId);
     await act(async () => {
-      fireEvent.click(within(row).getByRole("menuitem", { name: "Confirm delete" }));
+      fireEvent.click(within(row).getByRole("button", { name: "Confirm delete" }));
     });
     await act(async () => {
       fail("the pipe broke");

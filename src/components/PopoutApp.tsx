@@ -85,7 +85,9 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
 
   return (
     <main className="flex h-screen w-screen flex-col bg-bg text-fg-secondary">
+      {/* An Overlay window with no sidebar: the traffic lights always float over its bar. */}
       <TopBar
+        hasTrafficLights
         sessionName={session?.name}
         workspaceName={session ? folderNameOf(session.cwd) : undefined}
         plan={currentPlan(messages)}

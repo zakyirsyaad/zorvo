@@ -38,10 +38,10 @@ export function LineCommentBox({ label, location, initialBody, error, onChange, 
         </p>
       )}
       <div className="flex justify-end gap-1.5">
-        <Button variant="ghost" className="px-2 py-1" onClick={onCancel}>
+        <Button variant="ghost" size="sm" onClick={onCancel}>
           Cancel
         </Button>
-        <Button variant="primary" className="px-2 py-1" disabled={body.trim() === ""} onClick={() => onSave(body)}>
+        <Button variant="primary" size="sm" disabled={body.trim() === ""} onClick={() => onSave(body)}>
           Save comment
         </Button>
       </div>

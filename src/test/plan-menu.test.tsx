@@ -15,7 +15,9 @@ describe("the plan in the top bar", () => {
     render(<TopBar plan={PLAN} />);
 
     const chip = screen.getByRole("button", { name: "Plan, 2 of 4 done" });
-    expect(chip.textContent).toBe("Plan 2/4");
+    expect(chip.textContent).toBe("2/4");
+    expect(chip.className).toContain("font-mono");
+    expect(chip.querySelector(".lucide-list-checks")).not.toBeNull();
   });
 
   it("opens the steps from the agent", () => {
@@ -29,6 +31,20 @@ describe("the plan in the top bar", () => {
     expect(dialog.getAllByLabelText("In progress")).toHaveLength(1);
     expect(dialog.getAllByLabelText("Not started")).toHaveLength(1);
     expect(dialog.getByText("Split it in two")).toBeDefined();
+  });
+
+  it("puts the source and the progress on one header row, and highlights the current step", () => {
+    render(<TopBar plan={PLAN} planSource="Claude Code" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Plan, 2 of 4 done" }));
+    const dialog = within(screen.getByRole("dialog", { name: "Plan" }));
+    expect(dialog.getByText("Plan from Claude Code").parentElement?.textContent).toBe("Plan from Claude Code2 of 4 done");
+    const current = dialog.getByText("Split it in two").closest("li")!;
+    expect(current.getAttribute("aria-current")).toBe("step");
+    expect(current.className).toContain("bg-surface-hover");
+    const pending = dialog.getByText("Run the tests").closest("li")!;
+    expect(pending.getAttribute("aria-current")).toBeNull();
+    expect(pending.className).not.toContain("bg-surface-hover");
   });
 
   it("names no agent when it does not know which one", () => {

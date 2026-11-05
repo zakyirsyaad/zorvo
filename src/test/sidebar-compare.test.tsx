@@ -57,8 +57,9 @@ describe("a compare run in the sidebar", () => {
     expect(rows.getByRole("button", { name: /Claude Code/ })).toBeInTheDocument();
     expect(rows.getByRole("button", { name: /Qwen Code/ })).toBeInTheDocument();
     expect(rows.getByRole("button", { name: /Kimi CLI/ })).toBeInTheDocument();
-    // The shared title is the group's, never repeated on the rows.
-    expect(screen.getAllByText("Fix the login")).toHaveLength(1);
+    // The shared task is the group's name and tooltip, never repeated on the rows.
+    expect(screen.queryAllByText("Fix the login")).toHaveLength(0);
+    expect(groupButton().getAttribute("title")).toContain("Fix the login");
   });
 
   it("opens the panel when the group is clicked", () => {
@@ -165,7 +166,7 @@ describe("a compare run in the sidebar", () => {
 
     fireEvent.click(within(row).getByRole("button", { name: /^More actions for / }));
     fireEvent.click(within(row).getByRole("menuitem", { name: "Delete" }));
-    fireEvent.click(within(row).getByRole("menuitem", { name: "Confirm delete" }));
+    fireEvent.click(within(row).getByRole("button", { name: "Confirm delete" }));
     expect(onDeleteSession).toHaveBeenCalledWith("r-qwen");
   });
 
@@ -173,12 +174,15 @@ describe("a compare run in the sidebar", () => {
     renderSidebar(runSessions(), { isSessionBusy: (id) => id === "r-kimi" });
 
     const group = screen.getByTestId("run-group-run-1");
-    expect(group).toHaveClass("h-11");
-    expect(within(group).getByText("Compare · 3 agents")).toHaveClass("truncate");
-    // The summary never gives way to the count.
-    expect(within(group).getByText(/· 1 working, 2 finished$/)).toHaveClass("shrink-0");
-    expect(within(group).getByText("Compare · 3 agents").parentElement).toHaveClass("text-fg-muted");
-    expect(within(group).getAllByRole("img", { hidden: true })).toHaveLength(3);
+    // "Compare · 3 agents" over "1 working, 2 finished", as drawn; idle, the title is fg-secondary.
+    const title = within(group).getByText("Compare · 3 agents");
+    expect(title).toHaveClass("truncate", "text-fg-secondary");
+    const summary = within(group).getByText("1 working, 2 finished");
+    expect(title.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const logos = within(group).getAllByRole("img", { hidden: true });
+    expect(logos).toHaveLength(3);
+    // The logos come after the words.
+    expect(summary.compareDocumentPosition(logos[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(group.querySelector(".bg-status-running")).toHaveAttribute("aria-hidden", "true");
   });
 

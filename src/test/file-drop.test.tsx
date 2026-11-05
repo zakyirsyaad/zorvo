@@ -129,6 +129,9 @@ describe("Dropping files onto the window", () => {
     // so its bottom offset starts there and never reaches the Send button.
     const anchor = screen.getByRole("alert").parentElement?.parentElement;
     expect(anchor).toHaveClass("relative", "h-0");
-    expect(anchor?.nextElementSibling?.contains(screen.getByRole("textbox", { name: "Prompt" }))).toBe(true);
+    // The composer's slot follows it (after the draft's blockers, which sit right above the composer).
+    const later: Element[] = [];
+    for (let next = anchor?.nextElementSibling; next; next = next.nextElementSibling) later.push(next);
+    expect(later.some((sibling) => sibling.contains(screen.getByRole("textbox", { name: "Prompt" })))).toBe(true);
   });
 });

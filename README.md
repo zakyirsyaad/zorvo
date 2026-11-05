@@ -204,8 +204,8 @@ download Zorvo from this repository's
 
 ### Update
 
-From 0.6.0 on, Zorvo tells you when a newer version exists: a notice at the top
-of the window says "Zorvo X.Y.Z is available." Click **Update & restart** and
+From 0.6.0 on, Zorvo tells you when a newer version exists: a card in the bottom
+right of the window says "Zorvo X.Y.Z is ready". Click **Update & restart** and
 Zorvo downloads the update, checks its signature, installs it and opens again.
 **Later** hides the notice until you next start Zorvo. Agents that are working
 stop, and open terminals end, when Zorvo restarts, so update when the agents

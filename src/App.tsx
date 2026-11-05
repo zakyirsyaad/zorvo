@@ -905,46 +905,6 @@ export default function App() {
 
   return (
     <main className="flex h-screen w-screen flex-col bg-bg text-fg-secondary">
-      <TopBar
-        onShowSidebar={isSidebarHidden ? () => setSidebarHidden(false) : undefined}
-        sessionId={activeSession?.id ?? activeRun?.id}
-        sessionName={activeSession?.name ?? activeRun?.name}
-        // A run's sessions share one title, so only a session of its own is renamed or archived here.
-        onRename={sessionOfItsOwn ? (name) => sessionActions.renameSession(sessionOfItsOwn.id, name) : undefined}
-        // Archiving ends the agent, so, as in the sidebar's menu, it waits until the agent is not working.
-        onArchive={
-          sessionOfItsOwn && !isSessionBusy(sessionOfItsOwn.id)
-            ? () => void sessionActions.archiveSession(sessionOfItsOwn.id, true)
-            : undefined
-        }
-        onReveal={shownFolderPath ? () => shell.revealFolder(shownFolderPath) : undefined}
-        workspaceName={activeSession ? folderNameOf(workspacePathOf(activeSession)) : activeWorkspace?.name}
-        branch={workspaceDetails?.branch ?? undefined}
-        pullRequest={pullRequest}
-        onOpenPullRequest={openPullRequest}
-        canGoBack={canGoBack}
-        canGoForward={navigation.canGoForward}
-        onBack={() => navigateTo(!activeSession ? lastViewedSessionId : navigation.back())}
-        onForward={() => navigateTo(navigation.forward())}
-        onToggleInspector={inspectorTabs.length > 0 ? () => inspector.toggle(inspectorTabs) : undefined}
-        isInspectorOpen={inspectorTab !== null}
-        inspectorButtonRef={inspectorButtonRef}
-        diffStats={diffStats}
-        isDiffAlwaysShown={Boolean(startCommit) || reviewComments.comments.length > 0}
-        diffCommentCount={unsentCommentCount}
-        onOpenDiff={inspectorTabs.includes("changes") ? () => inspector.openDiff() : undefined}
-        onPopout={activeSession ? () => shell.popout(activeSession.id) : undefined}
-        backgroundTasks={{
-          tasks: backgroundTasks.tasks,
-          isOpen: backgroundTasks.isMenuOpen,
-          onOpenChange: backgroundTasks.setMenuOpen,
-          onOpenTask: backgroundTasks.open,
-          onStopTask: backgroundTasks.stop,
-        }}
-        plan={sessionPlan}
-        planSource={activeAgent?.name}
-      />
-
       <section className="flex flex-1 overflow-hidden">
         <Sidebar
           isHidden={isSidebarHidden}
@@ -995,6 +955,45 @@ export default function App() {
         />
 
         <div className="flex min-w-0 flex-1 flex-col">
+          <TopBar
+            onShowSidebar={isSidebarHidden ? () => setSidebarHidden(false) : undefined}
+            sessionId={activeSession?.id ?? activeRun?.id}
+            sessionName={activeSession?.name ?? activeRun?.name}
+            // A run's sessions share one title, so only a session of its own is renamed or archived here.
+            onRename={sessionOfItsOwn ? (name) => sessionActions.renameSession(sessionOfItsOwn.id, name) : undefined}
+            // Archiving ends the agent, so, as in the sidebar's menu, it waits until the agent is not working.
+            onArchive={
+              sessionOfItsOwn && !isSessionBusy(sessionOfItsOwn.id)
+                ? () => void sessionActions.archiveSession(sessionOfItsOwn.id, true)
+                : undefined
+            }
+            onReveal={shownFolderPath ? () => shell.revealFolder(shownFolderPath) : undefined}
+            workspaceName={activeSession ? folderNameOf(workspacePathOf(activeSession)) : activeWorkspace?.name}
+            branch={workspaceDetails?.branch ?? undefined}
+            pullRequest={pullRequest}
+            onOpenPullRequest={openPullRequest}
+            canGoBack={canGoBack}
+            canGoForward={navigation.canGoForward}
+            onBack={() => navigateTo(!activeSession ? lastViewedSessionId : navigation.back())}
+            onForward={() => navigateTo(navigation.forward())}
+            onToggleInspector={inspectorTabs.length > 0 ? () => inspector.toggle(inspectorTabs) : undefined}
+            isInspectorOpen={inspectorTab !== null}
+            inspectorButtonRef={inspectorButtonRef}
+            diffStats={diffStats}
+            isDiffAlwaysShown={Boolean(startCommit) || reviewComments.comments.length > 0}
+            diffCommentCount={unsentCommentCount}
+            onOpenDiff={inspectorTabs.includes("changes") ? () => inspector.openDiff() : undefined}
+            onPopout={activeSession ? () => shell.popout(activeSession.id) : undefined}
+            backgroundTasks={{
+              tasks: backgroundTasks.tasks,
+              isOpen: backgroundTasks.isMenuOpen,
+              onOpenChange: backgroundTasks.setMenuOpen,
+              onOpenTask: backgroundTasks.open,
+              onStopTask: backgroundTasks.stop,
+            }}
+            plan={sessionPlan}
+            planSource={activeAgent?.name}
+          />
           <div className="flex min-h-0 flex-1">
             <article className={`${isDiffOpen && inspector.isDiffExpanded ? "hidden" : "flex"} flex-1 flex-col bg-bg relative overflow-hidden`}>
               {isDraggingFiles && <FileDropOverlay />}

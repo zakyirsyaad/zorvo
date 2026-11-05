@@ -1,5 +1,16 @@
-import { ChevronLeft, ChevronRight, GitBranch, MoreHorizontal, PanelLeft, PanelRight } from "lucide-react";
-import { useState, type Ref } from "react";
+import {
+  Archive,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Folder,
+  GitBranch,
+  MoreHorizontal,
+  PanelLeft,
+  PanelRight,
+  Pencil,
+} from "lucide-react";
+import { Fragment, useState, type Ref } from "react";
 import { Chip } from "./ui/Chip";
 import { IconButton } from "./ui/IconButton";
 import { Popover, PopoverOption } from "./ui/Popover";
@@ -52,7 +63,7 @@ function SessionTitle({ name, isRenaming, onRename, onStartRename, onEndRename }
       data-tauri-drag-region={onRename ? undefined : true}
       title={onRename ? "Double-click to rename" : undefined}
       onDoubleClick={onRename ? onStartRename : undefined}
-      className="truncate text-ui font-medium text-fg-secondary"
+      className="truncate text-ui font-semibold text-fg"
     >
       {name}
     </span>
@@ -68,11 +79,11 @@ function MoreOptionsMenu({ onPopout, onReveal, onRename, onArchive }: {
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const items = [
-    { label: "Open in new window", run: onPopout },
-    { label: "Open in Finder", run: onReveal },
-    { label: "Rename", run: onRename },
-    { label: "Archive", run: onArchive },
-  ].filter((item): item is { label: string; run: () => void } => Boolean(item.run));
+    { label: "Open in new window", run: onPopout, Icon: ExternalLink },
+    { label: "Open in Finder", run: onReveal, Icon: Folder },
+    { label: "Rename", run: onRename, Icon: Pencil },
+    { label: "Archive", run: onArchive, Icon: Archive },
+  ].filter((item): item is { label: string; run: () => void; Icon: typeof Archive } => Boolean(item.run));
   if (items.length === 0) return null;
   return (
     <Popover
@@ -80,23 +91,35 @@ function MoreOptionsMenu({ onPopout, onReveal, onRename, onArchive }: {
       onClose={() => setIsOpen(false)}
       label="More options"
       align="end"
-      className="min-w-48"
+      className="w-[220px]"
       trigger={
-        <IconButton label="More options" aria-haspopup="menu" aria-expanded={isOpen} onClick={() => setIsOpen((open) => !open)}>
-          <MoreHorizontal size={15} />
+        <IconButton
+          label="More options"
+          tone="secondary"
+          aria-haspopup="menu"
+          aria-expanded={isOpen}
+          onClick={() => setIsOpen((open) => !open)}
+        >
+          <MoreHorizontal size={14} />
         </IconButton>
       }
     >
-      {items.map((item) => (
-        <PopoverOption
-          key={item.label}
-          onSelect={() => {
-            setIsOpen(false);
-            item.run();
-          }}
-        >
-          {item.label}
-        </PopoverOption>
+      {items.map(({ label, run, Icon }, index) => (
+        <Fragment key={label}>
+          {/* Archive ends the session's work, so a rule sets it apart from the rest. */}
+          {label === "Archive" && index > 0 && <div role="separator" className="my-1.5 h-px bg-border" />}
+          <PopoverOption
+            onSelect={() => {
+              setIsOpen(false);
+              run();
+            }}
+          >
+            <span className="flex items-center gap-2">
+              <Icon size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
+              {label}
+            </span>
+          </PopoverOption>
+        </Fragment>
       ))}
     </Popover>
   );
@@ -184,21 +207,33 @@ export function TopBar({
   return (
     <header
       data-tauri-drag-region
-      style={{ paddingLeft: TOP_BAR_TRAFFIC_LIGHT_INSET_PX }}
-      className="flex h-11 w-full items-center gap-3 border-b border-border bg-bg px-3.5 text-xs select-none"
+      // The traffic lights float over the bar only while the sidebar, which holds them otherwise, is hidden.
+      style={onShowSidebar ? { paddingLeft: TOP_BAR_TRAFFIC_LIGHT_INSET_PX } : undefined}
+      className="flex h-12 w-full shrink-0 items-center gap-3 border-b border-border bg-bg pr-3 pl-5 text-ui-sm select-none"
     >
       {/* Left: with the sidebar hidden, its show button and the session history; then what is open. */}
-      <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center gap-2">
+      <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center gap-3">
         {onShowSidebar && (
-          <div className="flex shrink-0 items-center gap-0.5 text-fg-subtle">
-            <IconButton label="Show sidebar" onClick={onShowSidebar}>
+          // The three sit close together, as one control, with the title 4px after them.
+          <div className="-mr-2 flex shrink-0 items-center">
+            <IconButton label="Show sidebar" tone="secondary" onClick={onShowSidebar}>
               <PanelLeft size={14} />
             </IconButton>
-            <IconButton label="Back" onClick={canGoBack ? onBack : undefined} disabled={!canGoBack}>
-              <ChevronLeft size={15} />
+            <IconButton
+              label="Back"
+              onClick={canGoBack ? onBack : undefined}
+              disabled={!canGoBack}
+              className="-ml-2 disabled:text-fg-subtle disabled:opacity-100"
+            >
+              <ChevronLeft size={14} />
             </IconButton>
-            <IconButton label="Forward" onClick={canGoForward ? onForward : undefined} disabled={!canGoForward}>
-              <ChevronRight size={15} />
+            <IconButton
+              label="Forward"
+              onClick={canGoForward ? onForward : undefined}
+              disabled={!canGoForward}
+              className="-ml-2.5 disabled:text-fg-subtle disabled:opacity-100"
+            >
+              <ChevronRight size={14} />
             </IconButton>
           </div>
         )}
@@ -211,7 +246,7 @@ export function TopBar({
             onEndRename={() => setRenamingId(null)}
           />
         ) : (
-          <span data-tauri-drag-region className="truncate text-ui font-medium text-fg-muted">
+          <span data-tauri-drag-region className="truncate text-ui font-semibold text-fg">
             {title ?? "Zorvo"}
           </span>
         )}
@@ -226,7 +261,7 @@ export function TopBar({
       </div>
 
       {/* Right: the chips that have something to say, the inspector, the session's menu. */}
-      <div className="flex shrink-0 items-center gap-1.5 text-fg-muted">
+      <div className="flex shrink-0 items-center gap-3 text-fg-muted">
         {plan && plan.length > 0 && <PlanMenu plan={plan} source={planSource} />}
 
         {backgroundTasks && <BackgroundTasksMenu {...backgroundTasks} />}
@@ -242,8 +277,14 @@ export function TopBar({
         )}
 
         {onToggleInspector && (
-          <IconButton ref={inspectorButtonRef} label="Inspector" onClick={onToggleInspector} aria-pressed={isInspectorOpen}>
-            <PanelRight size={14} className={isInspectorOpen ? "text-fg" : undefined} />
+          <IconButton
+            ref={inspectorButtonRef}
+            label="Inspector"
+            tone="secondary"
+            onClick={onToggleInspector}
+            aria-pressed={isInspectorOpen}
+          >
+            <PanelRight size={14} />
           </IconButton>
         )}
 

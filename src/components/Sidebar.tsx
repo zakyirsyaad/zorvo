@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Search, Plus, FolderPlus, ChevronRight, PanelLeft } from "lucide-react";
 import { Button } from "./ui/Button";
 import { IconButton } from "./ui/IconButton";
+import { TOP_BAR_TRAFFIC_LIGHT_INSET_PX } from "./TopBar";
 import { isInUse, type EnabledSettings } from "../lib/enabled-agents";
 import type { AgentProfile, Session, Workspace } from "../types";
 import { FolderGroup } from "./sidebar/FolderGroup";
@@ -171,17 +172,22 @@ export function Sidebar({
       hidden={isHidden}
       className="w-64 shrink-0 flex flex-col justify-between border-r border-border bg-surface-1 select-none text-xs text-fg-secondary"
     >
+      {/* The window's own buttons float in this header's inset; the rest of it drags the window. */}
+      <div
+        data-tauri-drag-region
+        style={{ paddingLeft: TOP_BAR_TRAFFIC_LIGHT_INSET_PX }}
+        className="flex h-12 shrink-0 items-center justify-end pr-3"
+      >
+        {onHide && (
+          <IconButton label="Hide sidebar" onClick={onHide}>
+            <PanelLeft size={14} />
+          </IconButton>
+        )}
+      </div>
       <div className="flex flex-col gap-2 border-b border-border p-3">
-        <div className="flex items-center gap-1.5">
-          {onHide && (
-            <IconButton label="Hide sidebar" onClick={onHide}>
-              <PanelLeft size={14} />
-            </IconButton>
-          )}
-          <Button variant="outline" icon={<Plus size={13} />} onClick={onNewSession} className="flex-1">
-            New session
-          </Button>
-        </div>
+        <Button variant="outline" icon={<Plus size={13} />} onClick={onNewSession}>
+          New session
+        </Button>
         <div className="relative">
           <Search
             size={13}

@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import {
@@ -28,13 +29,36 @@ describe("TopBar", () => {
       expect(container.innerHTML).not.toContain("27c93f");
     });
 
-    it("reserves the inset the real traffic lights float in", () => {
-      const { container } = renderTopBar();
+    it("reserves the inset the real traffic lights float in only while the sidebar is hidden", () => {
+      const { container, rerender } = renderTopBar();
+      // With the sidebar shown, the traffic lights sit in the sidebar's own header.
+      expect(headerOf(container).style.paddingLeft).toBe("");
+
+      rerender(<TopBar onShowSidebar={() => {}} />);
 
       expect(TOP_BAR_TRAFFIC_LIGHT_INSET_PX).toBe(78);
-      expect(headerOf(container).style.paddingLeft).toBe(
-        `${TOP_BAR_TRAFFIC_LIGHT_INSET_PX}px`
-      );
+      expect(headerOf(container).style.paddingLeft).toBe(`${TOP_BAR_TRAFFIC_LIGHT_INSET_PX}px`);
+    });
+
+    it("is 48px tall with the session's title at weight 600 in the brightest text", () => {
+      const { container } = renderTopBar({ sessionName: "Fix the login" });
+
+      expect(headerOf(container)).toHaveClass("h-12");
+      expect(screen.getByText("Fix the login")).toHaveClass("font-semibold", "text-fg");
+    });
+
+    it("lists the session's actions with an icon each, and a rule before Archive", () => {
+      renderTopBar({ sessionName: "Fix the login", onPopout: vi.fn(), onReveal: vi.fn(), onRename: vi.fn(), onArchive: vi.fn() });
+
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+
+      const menu = screen.getByRole("menu", { name: "More options" });
+      const items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
+      expect(items.map((item) => item.textContent)).toEqual(["Open in new window", "Open in Finder", "Rename", "Archive"]);
+      for (const item of items) expect(item.querySelector("svg")).not.toBeNull();
+      const separator = menu.querySelector('[role="separator"]');
+      expect(separator).not.toBeNull();
+      expect(separator!.nextElementSibling?.textContent).toBe("Archive");
     });
 
     it("marks the header and its inert areas as the window drag region", () => {

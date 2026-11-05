@@ -19,6 +19,55 @@ use std::process::Command;
 /// Most entries returned for one directory, after sorting.
 pub const MAX_ENTRIES: usize = 2000;
 
+/// The largest file the viewer reads; a larger one is refused from its size, before it is read.
+pub const MAX_VIEW_BYTES: u64 = 1_048_576;
+
+/// How much of a file's start is searched for a NUL byte to tell it is binary.
+pub const BINARY_SNIFF_BYTES: usize = 8 * 1024;
+
+/// A workspace file as the read-only viewer gets it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum FileContent {
+    /// UTF-8 text, exactly as it is on disk (line endings included).
+    Text { text: String, size: u64 },
+    /// A NUL near the start, or bytes that are not UTF-8: shown as a message, never decoded lossily.
+    Binary { size: u64 },
+    /// Over `MAX_VIEW_BYTES`; not read at all.
+    TooLarge { size: u64, limit: u64 },
+}
+
+/// Reads `relative` inside `root` for the viewer. Only a regular file is read: a folder, a named
+/// pipe or a socket is refused from its metadata, since opening a pipe with no writer would block.
+pub fn read_view_file(root: &str, relative: &str) -> Result<FileContent, String> {
+    let (_, target) = resolve_inside_root(root, relative)?;
+    let metadata =
+        std::fs::metadata(&target).map_err(|e| format!("Cannot read {relative:?}: {e}"))?;
+    if !metadata.is_file() {
+        return Err(format!("{relative:?} is not a file"));
+    }
+    let size = metadata.len();
+    if size > MAX_VIEW_BYTES {
+        return Ok(FileContent::TooLarge {
+            size,
+            limit: MAX_VIEW_BYTES,
+        });
+    }
+    let bytes = std::fs::read(&target).map_err(|e| format!("Cannot read {relative:?}: {e}"))?;
+    let size = bytes.len() as u64;
+    if bytes[..bytes.len().min(BINARY_SNIFF_BYTES)].contains(&0) {
+        return Ok(FileContent::Binary { size });
+    }
+    match String::from_utf8(bytes) {
+        Ok(text) => Ok(FileContent::Text { text, size }),
+        Err(_) => Ok(FileContent::Binary { size }),
+    }
+}
+
 /// One child of a listed directory, as the Files panel shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -134,6 +183,18 @@ pub fn list_directory(
 ) -> Result<Vec<DirEntryInfo>, String> {
     ensure_known_workspace(&root, |r| store.is_known_workspace(r))?;
     list_entries(&root, &relative)
+}
+
+/// Reads a workspace file for the read-only viewer. The webview sends a workspace and a path
+/// relative to it, never an absolute path of its own choosing.
+#[tauri::command(async)]
+pub fn read_workspace_file(
+    store: State<'_, AppStore>,
+    root: String,
+    relative: String,
+) -> Result<FileContent, String> {
+    ensure_known_workspace(&root, |r| store.is_known_workspace(r))?;
+    read_view_file(&root, &relative)
 }
 
 /// Opens a workspace file with its default application.
@@ -376,6 +437,113 @@ mod tests {
         assert_eq!(
             json,
             serde_json::json!({ "name": "a", "relativePath": "dir/a", "isDir": false })
+        );
+    }
+
+    #[test]
+    fn reads_a_text_file_with_its_size() {
+        let ws = TempWorkspace::new("view-text");
+        fs::write(ws.path.join("a.txt"), "a\r\nb\n").expect("write");
+
+        let content = read_view_file(ws.root(), "a.txt").expect("read");
+
+        assert_eq!(
+            content,
+            FileContent::Text {
+                text: "a\r\nb\n".to_string(),
+                size: 5
+            }
+        );
+    }
+
+    #[test]
+    fn calls_a_file_with_a_nul_binary() {
+        let ws = TempWorkspace::new("view-nul");
+        fs::write(ws.path.join("img.png"), b"PNG\0data").expect("write");
+
+        assert_eq!(
+            read_view_file(ws.root(), "img.png").expect("read"),
+            FileContent::Binary { size: 8 }
+        );
+    }
+
+    #[test]
+    fn calls_invalid_utf8_binary() {
+        let ws = TempWorkspace::new("view-utf8");
+        fs::write(ws.path.join("latin1.txt"), [0xff, 0xfe, 0x41]).expect("write");
+
+        assert_eq!(
+            read_view_file(ws.root(), "latin1.txt").expect("read"),
+            FileContent::Binary { size: 3 }
+        );
+    }
+
+    #[test]
+    fn refuses_a_file_over_the_cap_without_reading_it() {
+        let ws = TempWorkspace::new("view-large");
+        let file = fs::File::create(ws.path.join("big.log")).expect("create");
+        file.set_len(MAX_VIEW_BYTES + 1).expect("grow sparse file");
+
+        assert_eq!(
+            read_view_file(ws.root(), "big.log").expect("read"),
+            FileContent::TooLarge {
+                size: MAX_VIEW_BYTES + 1,
+                limit: MAX_VIEW_BYTES
+            }
+        );
+    }
+
+    #[test]
+    fn refuses_a_folder() {
+        let ws = TempWorkspace::new("view-dir");
+        ws.mkdir("src");
+
+        let err = read_view_file(ws.root(), "src").expect_err("must reject");
+        assert!(err.contains("is not a file"), "unexpected error: {err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_a_named_pipe_without_opening_it() {
+        let ws = TempWorkspace::new("view-pipe");
+        let status = std::process::Command::new("mkfifo")
+            .arg(ws.path.join("pipe"))
+            .status()
+            .expect("run mkfifo");
+        assert!(status.success(), "mkfifo failed");
+
+        // Opening a pipe with no writer blocks, so returning at all shows it was not opened.
+        let err = read_view_file(ws.root(), "pipe").expect_err("must reject");
+        assert!(err.contains("is not a file"), "unexpected error: {err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_a_path_outside_the_workspace() {
+        let ws = TempWorkspace::new("view-outside");
+        ws.mkdir("inner");
+        let outside = TempWorkspace::new("view-outside-target");
+        fs::write(outside.path.join("secret.txt"), "secret").expect("write");
+        std::os::unix::fs::symlink(outside.path.join("secret.txt"), ws.path.join("link.txt"))
+            .expect("create symlink");
+
+        let err = read_view_file(ws.root(), "link.txt").expect_err("must reject the symlink");
+        assert!(err.contains("outside"), "unexpected error: {err}");
+
+        let inner = format!("{}/inner", ws.root());
+        fs::write(ws.path.join("sibling.txt"), "x").expect("write");
+        let err = read_view_file(&inner, "../sibling.txt").expect_err("must reject ..");
+        assert!(err.contains("outside"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn serializes_file_content_tagged_by_kind_in_camel_case() {
+        let json =
+            serde_json::to_value(FileContent::TooLarge { size: 2, limit: 1 }).expect("serialize");
+
+        assert_eq!(
+            json,
+            serde_json::json!({ "kind": "tooLarge", "size": 2, "limit": 1 })
         );
     }
 }

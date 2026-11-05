@@ -419,6 +419,7 @@ pub fn run() {
             windows::open_external_url,
             files::list_directory,
             files::open_path,
+            files::read_workspace_file,
             files::remember_workspace,
             attachments::attachment_preview,
             workspace_files::workspace_files,

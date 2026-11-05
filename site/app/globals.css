@@ -36,6 +36,7 @@
   --color-diff-removed: rgba(248, 113, 113, 0.12);
   --color-terminal-bg: #0a0a0b;
   --color-terminal-fg-subtle: #8b8b94;
+  --color-selection: rgba(161, 161, 170, 0.32);
 
   /* Site only: a terminal stays dark in both themes, like the real one. */
   --color-terminal-border: #27272a;
@@ -83,6 +84,7 @@
     --color-attention-border: #e9c46a;
     --color-diff-added: rgba(4, 120, 87, 0.08);
     --color-diff-removed: rgba(185, 28, 28, 0.08);
+    --color-selection: rgba(161, 161, 170, 0.32);
     --elevation-popover: 0 12px 32px -8px rgba(9, 9, 11, 0.18);
     --elevation-dialog: 0 24px 64px -12px rgba(9, 9, 11, 0.25);
   }

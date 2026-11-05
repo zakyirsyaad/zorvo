@@ -1,39 +1,45 @@
-<!-- @dsCard group="Chat" height=260 -->
+<!-- @dsCard group="Chat" height=300 -->
 <!doctype html>
 <html>
 <head><meta charset="utf-8"><title>Message — preview</title>
 <style>
-.z-chat { display: flex; flex-direction: column; gap: var(--space-3); width: 520px; padding: var(--space-3); box-sizing: border-box; background: var(--bg); font-family: var(--font-sans); }
-.z-you { align-self: flex-end; max-width: 85%; padding: var(--space-2) var(--space-3); border-radius: 16px; background: var(--surface-2); color: var(--fg); font: 400 14px/22px var(--font-sans); }
-.z-head { display: flex; align-items: center; gap: var(--space-2); }
-.z-logo { width: 16px; height: 16px; border-radius: 4px; background: var(--fg-muted); }
-.z-name { color: var(--fg-secondary); font: 500 13px/18px var(--font-sans); }
-.z-time { color: var(--fg-muted); font: 400 11px/16px var(--font-sans); }
-.z-body { margin-top: var(--space-1); color: var(--fg-secondary); font: 400 14px/22px var(--font-sans); }
-.z-tools { margin-top: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); }
-.z-tools__sum { display: flex; justify-content: space-between; padding: var(--space-1) var(--space-3); color: var(--fg-secondary); font: 400 13px/18px var(--font-sans); }
-.z-tools__row { display: flex; justify-content: space-between; gap: var(--space-2); padding: var(--space-1) var(--space-3); border-top: 1px solid var(--border); font: 400 13px/18px var(--font-sans); color: var(--fg-secondary); }
-.z-target { color: var(--fg-muted); font: 400 12px/16px var(--font-mono); }
-.z-muted { color: var(--fg-muted); font: 400 11px/16px var(--font-sans); }
-.z-done { color: var(--status-running); font: 400 11px/16px var(--font-sans); }
-.z-working { display: flex; align-items: center; gap: var(--space-1\.5); color: var(--fg-muted); font: 400 12px/16px var(--font-sans); }
-.z-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--status-running); }
+.z-chat { display: flex; flex-direction: column; gap: 24px; width: 560px; padding: var(--space-6) var(--space-6) var(--space-4); box-sizing: border-box; background: var(--bg); font-family: var(--font-sans); }
+.z-you { align-self: flex-end; max-width: 85%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); color: var(--fg); font: 400 14px/22px var(--font-sans); }
+.z-reply { margin: 0 -12px; padding: 12px; border-radius: 10px; }
+.z-reply:hover { background: var(--surface-1); }
+.z-head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: 10px; }
+.z-logo { width: 16px; height: 16px; border-radius: 4px; background: var(--surface-hover); }
+.z-name { color: var(--fg-secondary); font: 500 12px/16px var(--font-sans); }
+.z-time { color: var(--fg-subtle); font: 400 11px/16px var(--font-sans); }
+.z-body { color: var(--fg-secondary); font: 400 14px/22px var(--font-sans); }
+.z-tools { margin-top: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-1); overflow: hidden; }
+.z-tools__sum { display: flex; align-items: center; gap: var(--space-2); height: 34px; padding: 0 var(--space-3); border-bottom: 1px solid var(--border); color: var(--fg-secondary); font: 400 12px/16px var(--font-sans); }
+.z-tools__row { display: flex; align-items: center; gap: var(--space-2); height: 30px; padding: 0 var(--space-3); color: var(--fg-secondary); font: 400 12px/16px var(--font-sans); }
+.z-verb { width: 56px; flex: none; color: var(--fg-muted); }
+.z-target { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 11px/16px var(--font-mono); }
+.z-subtle { margin-left: auto; color: var(--fg-subtle); font: 400 11px/16px var(--font-sans); }
+.z-running { color: var(--status-running); font: 400 11px/16px var(--font-sans); }
+.z-out { margin: 0 var(--space-3) var(--space-2) 76px; padding: var(--space-2) 10px; border-radius: var(--radius-md); background: var(--terminal-bg); color: var(--terminal-fg); font: 400 11px/17px var(--font-mono); }
+.z-working { display: flex; align-items: center; gap: 10px; color: var(--fg-secondary); font: 400 13px/18px var(--font-sans); }
+.z-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--status-running); box-shadow: 0 0 0 4px color-mix(in srgb, var(--status-running) 20%, transparent); }
+.z-elapsed { color: var(--fg-subtle); font: 400 11px/16px var(--font-sans); }
 </style>
 </head>
 <body>
 <div class="z-stage">
   <div class="z-chat">
     <div class="z-you">Split the parser in two and keep the tests green.</div>
-    <div>
+    <div class="z-reply">
       <div class="z-head"><span class="z-logo" aria-hidden="true"></span><span class="z-name">Claude Code</span><span class="z-time">2 minutes ago</span></div>
       <div class="z-body">I split it into a lexer and a parser.</div>
       <div class="z-tools">
-        <div class="z-tools__sum"><span>Edited 2 files, ran a command</span><span class="z-muted">1 still running</span></div>
-        <div class="z-tools__row"><span>Edited <span class="z-target">src/lexer.ts</span></span><span class="z-done">Done</span></div>
-        <div class="z-tools__row"><span>Ran <span class="z-target">pnpm test</span></span><span class="z-muted">Running</span></div>
+        <div class="z-tools__sum"><span>Edited 2 files, ran a command</span><span class="z-subtle">1 still running</span></div>
+        <div class="z-tools__row"><span class="z-verb">Edited</span><span class="z-target">src/lexer.ts</span><span class="z-subtle">Done</span></div>
+        <div class="z-tools__row"><span class="z-verb">Ran</span><span class="z-target">pnpm test</span><span class="z-running">Running</span></div>
+        <div class="z-out">✓ src/test/lexer.test.ts (6 tests)</div>
       </div>
     </div>
-    <div class="z-working"><span class="z-dot" aria-hidden="true"></span>Claude Code is working 45s</div>
+    <div class="z-working"><span class="z-dot" aria-hidden="true"></span>Claude Code is working<span class="z-elapsed">45s</span></div>
   </div>
 </div>
 </body>

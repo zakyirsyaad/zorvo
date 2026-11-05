@@ -1012,13 +1012,6 @@ export default function App() {
                 onShow={() => { agentUpdates.acknowledge(); setSettingsTab("agents"); }}
                 onDismiss={agentUpdates.acknowledge}
               />
-              <SignInLayer
-                signIn={signIn}
-                agents={agents}
-                agentId={activeSession?.profileId ?? (activeRun ? undefined : newSessionAgent?.id)}
-                showTerminal={settingsTab === null}
-              />
-              {installPanelAgent ? <AgentInstallPanel agent={installPanelAgent} /> : null}
               {activeRun ? (
                 <CompareRunPanel
                   run={activeRun}
@@ -1097,7 +1090,11 @@ export default function App() {
 
               {activeAgentRemoved !== null && (
                 <div className="p-4 flex justify-center">
-                  <RemovedAgentPanel agentName={activeAgentRemoved} onAdd={() => activeAgent && catalogActions.addAgent(activeAgent.id)} />
+                  <RemovedAgentPanel
+                    agentName={activeAgentRemoved}
+                    profileId={activeSession?.profileId}
+                    onAdd={() => activeAgent && catalogActions.addAgent(activeAgent.id)}
+                  />
                 </div>
               )}
               {notice && (
@@ -1108,6 +1105,16 @@ export default function App() {
                   </ToastStack>
                 </div>
               )}
+              {/* The draft's blockers sit right above the composer, which stays: a prompt can be written meanwhile. */}
+              <div className="mx-auto w-full max-w-3xl space-y-3 px-4">
+                <SignInLayer
+                  signIn={signIn}
+                  agents={agents}
+                  agentId={activeSession?.profileId ?? (activeRun ? undefined : newSessionAgent?.id)}
+                  showTerminal={settingsTab === null}
+                />
+                {installPanelAgent ? <AgentInstallPanel agent={installPanelAgent} /> : null}
+              </div>
               <div hidden={isComposerHidden} className="p-4 flex justify-center">
                 <ComposerDock
                   controls={compare.isCompare ? {} : composer.controls}

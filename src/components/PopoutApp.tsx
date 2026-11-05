@@ -121,7 +121,7 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
         )}
         <div className="p-4 flex justify-center">
           {removedAgentName ? (
-            <RemovedAgentPanel agentName={removedAgentName} onAdd={() => forward({ kind: "add-agent" })} />
+            <RemovedAgentPanel agentName={removedAgentName} profileId={session?.profileId} onAdd={() => forward({ kind: "add-agent" })} />
           ) : (
             <ComposerDock
               agentName={agent?.name}

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Search, Plus, FolderPlus, ChevronRight, PanelLeft } from "lucide-react";
+import { Search, Plus, ChevronRight, PanelLeft, Pin } from "lucide-react";
 import { Button } from "./ui/Button";
 import { IconButton } from "./ui/IconButton";
 import { TOP_BAR_TRAFFIC_LIGHT_INSET_PX } from "./TopBar";
@@ -36,8 +36,6 @@ export interface SidebarProps {
   onNewSessionIn?: (path: string, agentId: string) => void;
   /** The agent the + menu marks as the default. */
   defaultAgentId?: string;
-  /** Opens the native folder dialog; the button is hidden when absent. */
-  onOpenFolder?: () => void;
   /** True while a session's agent is working on a turn. */
   isSessionBusy?: (sessionId: string) => boolean;
   /** True while a session's agent waits for the user to answer a permission request. */
@@ -57,9 +55,8 @@ export interface SidebarProps {
   onHide?: () => void;
 }
 
-const SECTION_HEADER_TEXT =
-  "flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-fg-subtle px-1";
-const SECTION_HEADER = `${SECTION_HEADER_TEXT} mb-1.5`;
+/** A list heading as the canvas draws it: sentence case, 11px, weight 500, muted. */
+const HEADING = "flex items-center gap-1.5 px-1 text-caption font-medium text-fg-muted";
 
 function matches(query: string, ...values: string[]): boolean {
   return query === "" || values.some((v) => v.toLowerCase().includes(query));
@@ -112,7 +109,6 @@ export function Sidebar({
   onOpenRun,
   onNewSessionIn,
   defaultAgentId,
-  onOpenFolder,
   isSessionBusy = () => false,
   isSessionWaiting = () => false,
   onStopSession,
@@ -146,6 +142,7 @@ export function Sidebar({
     .filter((s) => isArchived(s) && isFound(s))
     .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0));
   const detectedAgents = agents.filter((agent) => agent.detected && isInUse(agent, settings));
+  const isArchiveShown = isArchiveOpen || query !== "";
   const toggle = (path: string) =>
     setCollapsedPaths((prev) => {
       const next = new Set(prev);
@@ -170,7 +167,7 @@ export function Sidebar({
   return (
     <aside
       hidden={isHidden}
-      className="w-64 shrink-0 flex flex-col justify-between border-r border-border bg-surface-1 select-none text-xs text-fg-secondary"
+      className="w-64 shrink-0 flex flex-col justify-between border-r border-border bg-surface-1 select-none text-ui text-fg-secondary"
     >
       {/* The window's own buttons float in this header's inset; the rest of it drags the window. */}
       <div
@@ -184,9 +181,9 @@ export function Sidebar({
           </IconButton>
         )}
       </div>
-      <div className="flex flex-col gap-2 border-b border-border p-3">
-        <Button variant="outline" icon={<Plus size={13} />} onClick={onNewSession}>
-          New session
+      <div className="flex flex-col gap-2 px-3 pb-3">
+        <Button variant="outline" size="lg" align="start" icon={<Plus size={14} className="mr-0.5" />} onClick={onNewSession}>
+          <span className="text-fg">New session</span>
         </Button>
         <div className="relative">
           <Search
@@ -200,36 +197,23 @@ export function Sidebar({
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search sessions"
             aria-label="Search sessions"
-            className="w-full rounded-md bg-surface-2 border border-border-strong py-1.5 pl-8 pr-3 text-ui text-fg-secondary placeholder-fg-subtle focus-ring"
+            className="h-7.5 w-full rounded-lg bg-surface-2 pl-8 pr-3 text-ui text-fg placeholder-fg-subtle focus-ring"
           />
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3">
+      <div className="flex flex-1 flex-col overflow-y-auto px-2 pb-3">
         {pinned.length > 0 && (
           <section className="mb-4">
-            <div className={SECTION_HEADER}>
+            <div className={`${HEADING} mb-1.5`}>
+              <Pin size={12} aria-hidden="true" />
               <span>Pinned</span>
             </div>
             <SessionTree nodes={asNodes(pinned)} label="Pinned sessions" context={context} />
           </section>
         )}
-        <div className={SECTION_HEADER}>
-          <span>Workspaces</span>
-          {onOpenFolder && (
-            <button
-              type="button"
-              aria-label="Open folder"
-              title="Open a project folder"
-              onClick={onOpenFolder}
-              className="rounded p-0.5 text-fg-subtle hover:text-fg-secondary focus-ring"
-            >
-              <FolderPlus size={13} />
-            </button>
-          )}
-        </div>
         {groups.length === 0 && pinned.length === 0 && archived.length === 0 && (
-          <p className="px-2 py-1 text-[11px] text-fg-subtle">
+          <p className="px-2 py-1 text-caption text-fg-subtle">
             {query ? "Nothing matches your search." : "No folders yet. Open one to start."}
           </p>
         )}
@@ -250,28 +234,34 @@ export function Sidebar({
           ))}
         </ul>
         {archived.length > 0 && (
-          <section className="mt-4">
-            <button
-              type="button"
-              onClick={() => setIsArchiveOpen((open) => !open)}
-              // A search shows its matches whether the section is folded or not.
-              disabled={query !== ""}
-              aria-expanded={isArchiveOpen || query !== ""}
-              className="flex w-full items-center gap-1 px-1 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle hover:text-fg-secondary"
-            >
-              <ChevronRight
-                size={11}
-                aria-hidden="true"
-                className={`transition-transform ${isArchiveOpen || query !== "" ? "rotate-90" : ""}`}
-              />
-              {`Archived (${archived.length})`}
-            </button>
-            {(isArchiveOpen || query !== "") && (
-              <div className="mt-1.5">
-                <SessionTree nodes={asNodes(archived)} label="Archived sessions" context={context} />
-              </div>
-            )}
-          </section>
+          <>
+            {/* Pushes Archived to the bottom of the list while the list is short. */}
+            <div aria-hidden="true" className="min-h-4 flex-1" />
+            <section>
+              <button
+                type="button"
+                onClick={() => setIsArchiveOpen((open) => !open)}
+                // A search shows its matches whether the section is folded or not.
+                disabled={query !== ""}
+                aria-expanded={isArchiveShown}
+                aria-label={`Archived (${archived.length})`}
+                className={`${HEADING} w-full rounded hover:text-fg-secondary focus-ring`}
+              >
+                <ChevronRight
+                  size={11}
+                  aria-hidden="true"
+                  className={`transition-transform ${isArchiveShown ? "rotate-90" : ""}`}
+                />
+                <span>Archived</span>
+                <span className="font-normal text-fg-subtle">{archived.length}</span>
+              </button>
+              {isArchiveShown && (
+                <div className="mt-1.5">
+                  <SessionTree nodes={asNodes(archived)} label="Archived sessions" context={context} />
+                </div>
+              )}
+            </section>
+          </>
         )}
       </div>
 

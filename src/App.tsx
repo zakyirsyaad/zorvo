@@ -921,7 +921,6 @@ export default function App() {
           onOpenRun={openRun}
           onNewSessionIn={openNewSession}
           defaultAgentId={defaultAgentId ?? undefined}
-          onOpenFolder={() => void openFolder()}
           isSessionBusy={isSessionBusy}
           isSessionWaiting={isSessionWaiting}
           onStopSession={handleInterrupt}

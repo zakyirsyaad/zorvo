@@ -411,12 +411,13 @@ describe("Window chrome wiring", () => {
     expect(prompted).toMatchObject({ attachments: ["/Users/test/developer/ai-perpetual-trading/README.md"] });
   });
 
-  it("shows the user's git identity and app version, and opens settings from the profile", async () => {
+  it("shows the user's git identity, no version line, and opens settings from the profile", async () => {
     await renderApp();
     const sidebar = within(screen.getByRole("complementary"));
 
     expect(sidebar.getByText("Test User")).toBeDefined();
-    expect(sidebar.getByText(/0\.1\.0/)).toBeDefined();
+    // The version lives in Settings; the footer is the person and their controls.
+    expect(sidebar.queryByText(/Zorvo v/)).toBeNull();
     await click(sidebar.getByRole("button", { name: /^Settings/ }));
     expect(screen.getByRole("dialog")).toBeDefined();
   });

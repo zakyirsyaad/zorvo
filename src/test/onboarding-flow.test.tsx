@@ -33,6 +33,13 @@ function sidebar() {
   return within(screen.getByRole("complementary"));
 }
 
+/** Opens a folder the way the window offers it: the new-session draft's folder chip. */
+async function openFolderFromDraft() {
+  await click(screen.getByRole("button", { name: "New session" }));
+  await click(screen.getByRole("button", { name: /^Folder: / }));
+  await click(screen.getByRole("button", { name: "Open another folder…" }));
+}
+
 describe("First run and project folders", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -76,7 +83,7 @@ describe("First run and project folders", () => {
     const invokeSpy = vi.spyOn(tauriInternals(), "invoke");
     await renderApp();
 
-    await click(sidebar().getByRole("button", { name: "Open folder" }));
+    await openFolderFromDraft();
     expect(sidebar().getByText("new-project")).toBeDefined();
     await click(screen.getByRole("button", { name: "New session" }));
     await act(async () => {
@@ -102,7 +109,7 @@ describe("First run and project folders", () => {
     const detailsReads = () =>
       spy.mock.calls.filter(([cmd, a]) => cmd === "workspace_details" && (a as { path?: string })?.path === "/Users/test/code/new-project");
 
-    await click(sidebar().getByRole("button", { name: "Open folder" }));
+    await openFolderFromDraft();
     expect(detailsReads()).toHaveLength(0);
 
     await act(async () => {

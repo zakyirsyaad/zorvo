@@ -239,6 +239,44 @@ describe("FilesPanel — tree", () => {
   });
 });
 
+describe("FilesPanel — git markers", () => {
+  const markers = {
+    files: new Map([
+      ["src/main.ts", "modified" as const],
+      ["README.md", "added" as const],
+    ]),
+    folders: new Set(["src"]),
+  };
+
+  it("marks a modified file M and an added one A, in words for a screen reader", async () => {
+    await renderPanel({ markers });
+
+    const readme = screen.getByRole("treeitem", { name: /README\.md/ });
+    expect(within(readme).getByText("A")).toHaveClass("text-status-running");
+    expect(within(readme).getByText("Added")).toHaveClass("sr-only");
+    expect(within(screen.getByRole("treeitem", { name: /package\.json/ })).queryByText(/^[MA]$/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "src" }));
+    const main = await screen.findByRole("treeitem", { name: /main\.ts/ });
+    expect(within(main).getByText("M")).toHaveClass("text-status-attention");
+    expect(within(main).getByText("Modified")).toHaveClass("sr-only");
+  });
+
+  it("puts a dot on a folder that holds changes", async () => {
+    await renderPanel({ markers });
+
+    const src = screen.getByRole("treeitem", { name: /^src/ });
+    expect(within(src).getByRole("img", { name: "Contains changes" })).toBeInTheDocument();
+    expect(within(screen.getByRole("treeitem", { name: /\.claude/ })).queryByRole("img", { name: "Contains changes" })).toBeNull();
+  });
+
+  it("writes the tree's names in mono", async () => {
+    await renderPanel();
+
+    expect(within(screen.getByRole("treeitem", { name: /README\.md/ })).getByText("README.md")).toHaveClass("font-mono");
+  });
+});
+
 describe("FilesPanel — workspace switch", () => {
   it("loads the new root and drops the old tree when rootPath changes", async () => {
     const { rerender } = render(<FilesPanel rootPath={ROOT} rootName="proj" onClose={vi.fn()} />);

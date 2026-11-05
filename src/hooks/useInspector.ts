@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSessionChanges, type SessionChanges } from "./useSessionChanges";
-import { useDiffStats } from "./useDiffStats";
+import { useDiffStats, useDiffTargets } from "./useDiffStats";
 import { useInspectorWidth } from "./useInspectorWidth";
 import { isCrowded, shownInspectorWidth, type InspectorTab } from "../lib/inspector";
 import type { FileStat } from "../lib/diff-stats";
@@ -34,6 +34,11 @@ export interface InspectorState {
   /** Per-file line counts against HEAD, for the diff-stat chip; null until the first read. */
   headStats: FileStat[] | null;
   headStatsFailed: boolean;
+  /**
+   * The Files tab's folder relative to its repository's root, with a trailing `/` ("" at the root or
+   * until it loads): diff stats name repository paths, the Files tab the folder's own.
+   */
+  filesPrefix: string;
 }
 
 /** Where the inspector opens the first time: the changes in a repository, else the files. */
@@ -73,6 +78,7 @@ export function useInspector(
   const [width, setWidth] = useInspectorWidth();
   const changes = useSessionChanges(folderPath, isRepository, turnsEnded, onError);
   const { stats: headStats, hasFailed: headStatsFailed } = useDiffStats(folderPath, isRepository, "head", changes.version, onError);
+  const filesPrefix = useDiffTargets(folderPath, isRepository, changes.version, onError).targets.prefix;
 
   const shownTab = tab !== null && layout.offered.includes(tab) ? tab : null;
 
@@ -134,5 +140,6 @@ export function useInspector(
     changes,
     headStats,
     headStatsFailed,
+    filesPrefix,
   };
 }

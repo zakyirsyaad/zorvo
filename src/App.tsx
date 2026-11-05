@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
@@ -8,6 +8,7 @@ import { ComposerDock, type ComposerHandle } from "./components/ComposerDock";
 import { RemovedAgentPanel } from "./components/RemovedAgentPanel";
 import { ActivityPanel } from "./components/activity/ActivityPanel";
 import { FilesPanel } from "./components/FilesPanel";
+import { markersOf } from "./lib/file-markers";
 import { EmptySessionState, FileDropOverlay } from "./components/AppPlaceholders";
 import { Toast, ToastStack } from "./components/ui/Toast";
 import { CompareRunPanel } from "./components/compare/CompareRunPanel";
@@ -469,6 +470,8 @@ export default function App() {
       if (tab === "terminal" && filesFolder) terminalDrawer.ensureShell(filesFolder.path);
     },
   });
+  // Memoized: the stats object only changes when they are read again.
+  const fileMarkers = useMemo(() => markersOf(inspector.headStats, inspector.filesPrefix), [inspector.headStats, inspector.filesPrefix]);
   // A tab that no longer applies (another folder, a draft) does not show.
   const inspectorTab = inspector.tab && inspectorTabs.includes(inspector.tab) ? inspector.tab : null;
   const diffStats = inspector.headStats ? totalsOf(inspector.headStats) : undefined;
@@ -1253,6 +1256,7 @@ export default function App() {
                     rootName={filesFolder.name}
                     onInsertPath={(path) => insertPaths([path])}
                     onRevealRoot={() => filesFolder && shell.revealFolder(filesFolder.path)}
+                    markers={fileMarkers}
                   />
                 )}
                 {inspectorTab === "terminal" && filesFolder && (

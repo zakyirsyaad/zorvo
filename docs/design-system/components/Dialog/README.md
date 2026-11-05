@@ -9,11 +9,12 @@ The consumer provides the title, the fields and the actions.
 - Fields: a `label` in `ui` weight 500, an input with a `border-strong` edge, a hint in `caption` and `fg-subtle`.
 - Actions sit bottom right above a `border` rule: Cancel as ghost, the confirming action as primary.
 
-## Terminal sign-in
+## Terminal sign-in and setup
 
-An agent's own login, run in a terminal inside the dialog (`TerminalSignInDialog`).
+An agent's own login, or its own setup (Qwen Code: pick a provider), run in a terminal inside the dialog (`TerminalSignInDialog`).
 
-- 760px wide (`max-w-[760px]`), with the agent's logo at 24px beside the title ("Sign in to Qwen Code") and the method's name under it in `caption`. The GitHub sign-in uses the same dialog without a logo.
-- A `role="status"` line under the header. While the login runs it reads "Pick with ↑ ↓ and Return, here in the terminal. Zorvo checks again when the login finishes.", unless the login has its own note; then "Checking your sign-in…", or the failure in `danger`.
+- 760px wide (`max-w-[760px]`), with the agent's logo at 24px beside the title ("Sign in to Qwen Code", or "Set up Qwen Code") and the method's name under it in `caption` ("Qwen Code's own setup" for a setup). The GitHub sign-in uses the same dialog without a logo.
+- A `role="status"` line under the header. While the program runs it reads "Pick with ↑ ↓ and Return, here in the terminal. Zorvo checks again when you close this.", unless the login has its own note; then "Checking your sign-in…", or the failure in `danger`.
+- Zorvo checks the sign-in when the program ends, and when **Close** ends it while it runs; Close while it starts, checks or has failed only cancels. A setup's exit always counts as done, whatever its code, since the user quits the agent's app.
 - The terminal is 380px tall on `terminal-bg`, and has focus while the login runs.
 - The footer has **Close**, and **Try again** (primary) after a failure, which then takes focus; otherwise Close does. Escape closes, and the header's X is "Cancel sign-in".

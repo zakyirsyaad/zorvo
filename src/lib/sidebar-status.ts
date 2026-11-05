@@ -22,6 +22,12 @@ export const REVEAL_ON_ROW =
   "group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto " +
   "has-[[role=menu]]:opacity-100 has-[[role=menu]]:pointer-events-auto";
 
+/**
+ * A session row's actions, in the row's flow: absent until hover or focus (so the title
+ * has the whole width), and kept while their menu is open, for the same WebKit reason.
+ */
+export const SHOW_IN_ROW = "hidden group-hover:flex group-focus-within:flex has-[[role=menu]]:flex";
+
 export const DOT_CLASS: Record<RowTone, string> = {
   attention: "bg-status-attention",
   running: "bg-status-running",
@@ -63,7 +69,8 @@ export function sessionsIn(nodes: readonly SessionNode[]): Session[] {
 
 export interface FolderSummary {
   text: string;
-  tone: "attention" | "muted";
+  /** Attention and running get a dot before the words; muted ("4 sessions") has none. */
+  tone: "attention" | "running" | "muted";
 }
 
 type IsTrue = (sessionId: string) => boolean;
@@ -73,7 +80,7 @@ export function folderSummary(sessions: readonly Session[], isWaiting: IsTrue, i
   const waiting = sessions.filter((s) => isWaiting(s.id)).length;
   if (waiting > 0) return { text: `${waiting} waiting`, tone: "attention" };
   const working = sessions.filter((s) => isBusy(s.id)).length;
-  if (working > 0) return { text: `${working} working`, tone: "muted" };
+  if (working > 0) return { text: `${working} working`, tone: "running" };
   return { text: `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"}`, tone: "muted" };
 }
 

@@ -8,7 +8,7 @@ import type { SessionListContext } from "./SessionList";
 export const CONFIRM_DELETE_MS = 4000;
 
 const TRIGGER =
-  "flex size-7 items-center justify-center rounded-md text-fg-subtle transition-colors hover:text-fg-secondary focus-ring";
+  "flex size-6 items-center justify-center rounded-md text-fg-secondary transition-colors hover:text-fg aria-expanded:bg-surface-hover focus-ring";
 const CONFIRM =
   "focus-ring flex min-h-7.5 w-full items-center rounded bg-danger-surface px-2 py-1 text-left text-ui font-medium text-danger";
 
@@ -88,7 +88,7 @@ export function SessionMenu({ session, label, isBusy, isInRun, context, onRename
           onClick={() => (isOpen ? close() : setIsOpen(true))}
           className={TRIGGER}
         >
-          <MoreHorizontal size={13} />
+          <MoreHorizontal size={12} />
         </button>
       }
     >

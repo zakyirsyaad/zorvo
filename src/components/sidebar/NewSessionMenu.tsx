@@ -38,9 +38,9 @@ export function NewSessionMenu({ folderName, agents, defaultAgentId, onPick }: N
           aria-haspopup="menu"
           aria-expanded={isOpen}
           onClick={() => setIsOpen((open) => !open)}
-          className="flex size-6 items-center justify-center rounded-md text-fg-subtle transition-colors hover:text-fg-secondary focus-ring"
+          className="flex size-5.5 items-center justify-center rounded text-fg-subtle transition-colors hover:text-fg-secondary aria-expanded:bg-surface-hover focus-ring"
         >
-          <Plus size={13} />
+          <Plus size={12} />
         </button>
       }
     >

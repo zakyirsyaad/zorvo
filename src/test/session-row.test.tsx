@@ -59,41 +59,75 @@ describe("SessionRow", () => {
     });
     expect(within(row).getByText("Google Antigravity")).toHaveClass("truncate");
     expect(within(row).getByText(/· Working$/)).toHaveClass("shrink-0");
+    // fg-subtle at rest, as drawn; fg-muted once the row fills surface-hover.
     const line = within(row).getByText("Google Antigravity").parentElement as HTMLElement;
-    expect(line).toHaveClass("text-fg-muted");
-    expect(line).not.toHaveClass("text-fg-subtle");
+    expect(line).toHaveClass("text-fg-subtle", "group-hover:text-fg-muted");
+  });
+
+  it("draws the open row's title in fg at weight 500, with a fg-muted subtitle", () => {
+    const { row } = renderRow(session(), { activeSessionId: "s-1" });
+    expect(within(row).getByText("A session")).toHaveClass("text-fg", "font-medium");
+    expect(within(row).getByText("Qwen Code").parentElement).toHaveClass("text-fg-muted");
+  });
+
+  it("shows the agent's logo before the agent's name", () => {
+    const { row } = renderRow(session({ profileId: "qwen-code" }));
+    const name = within(row).getByText("Qwen Code");
+    const logo = name.parentElement?.querySelector("img, svg, [aria-hidden='true']") as Element;
+    expect(logo).not.toBeNull();
+    // Decorative: the name is written next to it.
+    expect(logo.getAttribute("alt") === "" || logo.getAttribute("aria-hidden") === "true").toBe(true);
+    expect(logo.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("keeps its actions shown while its menu is open", () => {
     const { row } = renderRow(session());
-    expect(within(row).getByTestId("session-row-actions")).toHaveClass(
-      "has-[[role=menu]]:opacity-100",
-      "has-[[role=menu]]:pointer-events-auto",
-    );
+    expect(within(row).getByTestId("session-row-actions")).toHaveClass("has-[[role=menu]]:flex");
   });
 
-  it("keeps the status dot on the left while the actions show", () => {
+  it("puts its actions in the row's flow, so the title gives way to them", () => {
     const { row } = renderRow(session({ id: "s-busy" }), { isSessionBusy: () => true, onStopSession: vi.fn() });
     const actions = within(row).getByTestId("session-row-actions");
     const dot = row.querySelector(".bg-status-running");
     expect(dot).toHaveAttribute("aria-hidden", "true");
     expect(actions.contains(dot)).toBe(false);
-    expect(actions).toHaveClass("group-hover:opacity-100", "group-focus-within:opacity-100");
+    expect(actions.className).not.toContain("absolute");
+    expect(actions).toHaveClass("shrink-0", "group-hover:flex", "group-focus-within:flex");
   });
 
-  it("is 44px tall and cuts long text", () => {
-    const long = session({ id: "s-long", name: "x".repeat(200) });
-    const { row } = renderRow(long);
-    expect(row).toHaveClass("h-11");
+  it("does not pulse the working dot", () => {
+    const { row } = renderRow(session({ id: "s-busy" }), { isSessionBusy: () => true, onStopSession: vi.fn() });
+    expect(row.querySelector(".bg-status-running")).not.toHaveClass("motion-safe:animate-pulse");
+  });
+
+  it("is top-aligned and cuts a long title and a long agent name", () => {
+    const long = session({ id: "s-long", name: "x".repeat(120) });
+    const { row } = renderRow(long, {
+      agentNameOf: () => "An agent with a very long name indeed",
+      isSessionBusy: () => true,
+      onStopSession: vi.fn(),
+    });
+    expect(row).toHaveClass("items-start");
     expect(within(row).getByText(long.name)).toHaveClass("truncate");
-    expect(within(row).getByText("Qwen Code")).toHaveClass("truncate");
+    expect(within(row).getByText("An agent with a very long name indeed")).toHaveClass("truncate");
+    // The actions keep their room: they never shrink, and the text column can.
+    expect(within(row).getByTestId("session-row-actions")).toHaveClass("shrink-0");
+    expect(within(row).getByText(long.name).closest("button")).toHaveClass("min-w-0");
   });
 
-  it("marks a session that runs in its own worktree", () => {
+  it("marks a session that runs in its own worktree at the start of its subtitle", () => {
     const { row } = renderRow(
       session({ worktree: { path: "/tmp/wt", branch: "agent/fix", repoPath: "/Users/test/developer/zorvo" } }),
     );
-    expect(within(row).getByLabelText("Runs in its own worktree")).toBeInTheDocument();
+    const mark = within(row).getByLabelText("Runs in its own worktree");
+    const name = within(row).getByText("Qwen Code");
+    expect(mark.parentElement).toBe(name.parentElement);
+    expect(mark.parentElement?.firstElementChild).toBe(mark);
+  });
+
+  it("ends a fork's subtitle with fork", () => {
+    const { row } = renderRow(session({ id: "s-fork", forkedFrom: "s-0" }));
+    expect(within(row).getByText(/· fork$/)).toBeInTheDocument();
   });
 
   it("deletes only after the confirm in its menu", () => {

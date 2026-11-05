@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { GitBranch, Square } from "lucide-react";
 import type { Session } from "../../types";
-import { DOT_CLASS, REVEAL_ON_ROW, rowDetail, rowSubtitle, statusOf } from "../../lib/sidebar-status";
+import { DOT_CLASS, SHOW_IN_ROW, rowDetail, rowSubtitle, statusOf } from "../../lib/sidebar-status";
+import { AgentLogo } from "../AgentLogo";
 import { IconButton } from "../ui/IconButton";
 import { RenameField } from "../ui/RenameField";
 import type { SessionListContext } from "./SessionList";
 import { SessionMenu } from "./SessionMenu";
 
-const ACTIONS = `absolute inset-y-0 right-1 flex items-center gap-0.5 rounded-md bg-surface-hover pl-1 ${REVEAL_ON_ROW}`;
+const ACTIONS = `${SHOW_IN_ROW} shrink-0 items-center gap-0.5 self-center pr-1.5`;
 
 export interface SessionRowProps {
   session: Session;
@@ -16,7 +17,16 @@ export interface SessionRowProps {
   isInRun?: boolean;
 }
 
-/** A 44px, two-line session row: the title, then the agent and the status in words; its actions show on hover or focus. */
+/** The title's colour and weight: the open row in fg at 500, an unread one at 500, the rest fg-secondary. */
+function titleClass(isActive: boolean, isUnread: boolean): string {
+  if (isActive) return "font-medium text-fg";
+  return isUnread ? "font-medium text-fg-secondary" : "text-fg-secondary";
+}
+
+/**
+ * A two-line session row, top-aligned: the title, then the worktree mark, the agent's logo and
+ * name, and the status in words. Its actions join the row on hover or focus, and the title gives way.
+ */
 export function SessionRow({ session, context, isInRun = false }: SessionRowProps) {
   const [isRenaming, setIsRenaming] = useState(false);
   const { onStopSession, onRenameSession } = context;
@@ -30,10 +40,11 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
   const lineAgent = isInRun ? undefined : agentName;
   const detail = rowDetail(status, session.createdAt);
   const isUnread = Boolean(session.hasUnread) && !isBusy;
+  const words = `${lineAgent ? " · " : ""}${detail}${session.forkedFrom ? " · fork" : ""}`;
 
   if (isRenaming) {
     return (
-      <div className="flex h-11 items-center">
+      <div className="flex items-center py-2">
         <RenameField
           value={session.name}
           label={`Rename ${session.name}`}
@@ -51,8 +62,8 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
   return (
     <div
       data-testid={`session-row-${session.id}`}
-      className={`group relative flex h-11 items-center rounded-md transition-colors ${
-        isActive ? "bg-surface-hover text-fg" : "text-fg-muted hover:bg-surface-hover hover:text-fg-secondary"
+      className={`group relative flex items-start rounded-md transition-colors ${
+        isActive ? "bg-surface-hover" : "hover:bg-surface-hover"
       }`}
     >
       <button
@@ -61,32 +72,35 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
         title={[session.name, rowSubtitle(agentName, status, session.createdAt), session.worktree?.branch]
           .filter(Boolean)
           .join(" · ")}
-        className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left focus-ring"
+        className="flex min-w-0 flex-1 items-start gap-2.5 rounded-md p-2 text-left focus-ring"
       >
         <span
           aria-hidden="true"
-          className={`size-1.5 shrink-0 rounded-full ${status ? DOT_CLASS[status.tone] : ""} ${
-            status?.pulse ? "motion-safe:animate-pulse" : ""
-          }`}
+          className={`mt-1.5 size-1.5 shrink-0 rounded-full ${status ? DOT_CLASS[status.tone] : ""}`}
         />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className={`truncate text-ui ${isUnread ? "font-medium text-fg" : ""}`}>{label}</span>
-          {/* fg-muted, not fg-subtle: the open and hovered rows fill surface-hover. The status words never truncate. */}
-          <span className="flex min-w-0 text-caption text-fg-muted">
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className={`truncate text-ui ${titleClass(isActive, isUnread)}`}>{label}</span>
+          {/* fg-subtle at rest, fg-muted on the surface-hover fill. The status words never truncate. */}
+          <span
+            className={`flex min-w-0 items-center gap-1 text-caption ${
+              isActive ? "text-fg-muted" : "text-fg-subtle group-hover:text-fg-muted"
+            }`}
+          >
+            {session.worktree && (
+              <span role="img" aria-label="Runs in its own worktree" className="flex shrink-0">
+                <GitBranch size={11} aria-hidden="true" />
+              </span>
+            )}
+            {lineAgent && <AgentLogo profileId={session.profileId} name="" size={14} />}
             {lineAgent && <span className="truncate">{lineAgent}</span>}
-            <span className="shrink-0 whitespace-pre">{lineAgent ? ` · ${detail}` : detail}</span>
+            <span className="shrink-0 whitespace-pre">{words}</span>
           </span>
         </span>
-        {session.worktree && (
-          <span role="img" aria-label="Runs in its own worktree" className="flex shrink-0 text-fg-subtle">
-            <GitBranch size={12} aria-hidden="true" />
-          </span>
-        )}
       </button>
       <div data-testid="session-row-actions" className={ACTIONS}>
         {isBusy && onStopSession && (
-          <IconButton label="Stop session" onClick={() => onStopSession(session.id)}>
-            <Square size={11} />
+          <IconButton label="Stop session" size="sm" tone="secondary" onClick={() => onStopSession(session.id)}>
+            <Square size={12} />
           </IconButton>
         )}
         <SessionMenu

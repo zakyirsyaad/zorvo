@@ -4,8 +4,9 @@ import { AgentLogo } from "../AgentLogo";
 import type { SessionListContext } from "./SessionList";
 
 /**
- * A compare run's heading, two lines like a session row: its agents' logos and its task,
- * then "Compare · N agents" with who is waiting, working and finished. A click opens its panel.
+ * A compare run's heading, two lines like a session row: "Compare · N agents" over who is waiting,
+ * working and finished, with its agents' logos on the right. The task names the run in its
+ * accessible name and tooltip. A click opens its panel.
  */
 export function RunGroupRow({ node, context }: { node: SessionNode; context: SessionListContext }) {
   const run = node.run;
@@ -19,49 +20,38 @@ export function RunGroupRow({ node, context }: { node: SessionNode; context: Ses
   );
   const summary = runSummary(members, context.isSessionWaiting, context.isSessionBusy);
   const count = `Compare · ${members.length} agents`;
-  const detail = `${count} · ${summary}`;
   const isActive = context.activeRunId === run.id;
   return (
     <div
       data-testid={`run-group-${run.id}`}
-      className={`relative flex h-11 items-center rounded-md transition-colors ${
-        isActive ? "bg-surface-hover text-fg" : "text-fg-muted hover:bg-surface-hover hover:text-fg-secondary"
+      className={`relative flex items-start rounded-md transition-colors ${
+        isActive ? "bg-surface-hover" : "hover:bg-surface-hover"
       }`}
     >
       <button
         type="button"
         onClick={() => context.onOpenRun?.(run.id)}
         aria-current={isActive ? "true" : undefined}
-        title={[run.name, detail].join(" · ")}
-        className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left focus-ring"
+        aria-label={`${run.name}, ${count}, ${summary}`}
+        title={[run.name, count, summary].join(" · ")}
+        className="flex min-w-0 flex-1 items-start gap-2.5 rounded-md p-2 text-left focus-ring"
       >
-        <span
-          aria-hidden="true"
-          className={`size-1.5 shrink-0 rounded-full ${status ? DOT_CLASS[status.tone] : ""} ${
-            status?.pulse ? "motion-safe:animate-pulse" : ""
-          }`}
-        />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="flex min-w-0 items-center gap-1.5">
-            {/* Decorative: the words name the run, so the logos stay out of the button's name. */}
-            <span aria-hidden="true" className="flex shrink-0 -space-x-1">
-              {members.map((member) => (
-                <span key={member.id} className="flex rounded-full bg-surface-1 ring-1 ring-surface-1">
-                  <AgentLogo
-                    profileId={member.profileId}
-                    name={context.agentNameOf(member.profileId) ?? member.profileId}
-                    size={12}
-                  />
-                </span>
-              ))}
+        <span aria-hidden="true" className={`mt-1.5 size-1.5 shrink-0 rounded-full ${status ? DOT_CLASS[status.tone] : ""}`} />
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className={`truncate text-ui ${isActive ? "font-medium text-fg" : "text-fg-secondary"}`}>{count}</span>
+          <span className={`truncate text-caption ${isActive ? "text-fg-muted" : "text-fg-subtle"}`}>{summary}</span>
+        </span>
+        {/* Decorative: the words name the run, so the logos stay out of the button's name. */}
+        <span aria-hidden="true" className="mt-0.5 flex shrink-0 -space-x-1">
+          {members.map((member) => (
+            <span key={member.id} className="flex rounded-[4px] bg-surface-1 ring-2 ring-surface-1">
+              <AgentLogo
+                profileId={member.profileId}
+                name={context.agentNameOf(member.profileId) ?? member.profileId}
+                size={16}
+              />
             </span>
-            <span className="truncate text-ui">{run.name}</span>
-          </span>
-          {/* fg-muted reads on surface-hover; the summary never gives way to the count. */}
-          <span className="flex min-w-0 text-caption text-fg-muted">
-            <span className="truncate">{count}</span>
-            <span className="shrink-0 whitespace-pre">{` · ${summary}`}</span>
-          </span>
+          ))}
         </span>
       </button>
     </div>

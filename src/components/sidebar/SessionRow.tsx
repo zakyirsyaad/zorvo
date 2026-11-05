@@ -29,6 +29,8 @@ function titleClass(isActive: boolean, isUnread: boolean): string {
  */
 export function SessionRow({ session, context, isInRun = false }: SessionRowProps) {
   const [isRenaming, setIsRenaming] = useState(false);
+  // Held here so a right-click anywhere on the row opens the same ⋯ menu.
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { onStopSession, onRenameSession } = context;
   const isActive = session.id === context.activeSessionId;
   const isBusy = context.isSessionBusy(session.id);
@@ -72,6 +74,11 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
   return (
     <div
       data-testid={`session-row-${session.id}`}
+      // A right-click opens the row's own actions in place of WebKit's menu.
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setIsMenuOpen(true);
+      }}
       className={`group relative flex items-start rounded-md transition-colors ${
         isActive ? "bg-surface-hover" : "hover:bg-surface-hover"
       }`}
@@ -120,6 +127,8 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
           isInRun={isInRun}
           context={context}
           onRename={() => setIsRenaming(true)}
+          isOpen={isMenuOpen}
+          onOpenChange={setIsMenuOpen}
         />
       </div>
     </div>

@@ -1286,13 +1286,13 @@ describe("ACP sessions in the app", () => {
     expect(callsTo(spy, "acp_prompt")[1][1]).toMatchObject({ text: "start over" });
   });
 
-  it("shows the session's folder and branch above its conversation", async () => {
+  it("shows no folder card above its conversation: the sidebar and the top bar say where it runs", async () => {
     const spy = await renderWithQwen();
     await startQwenSession(spy);
 
-    const workspace = within(within(screen.getByTestId("chat-canvas-container")).getByRole("group", { name: "Workspace" }));
-    expect(workspace.getByText("ai-perpetual-trading")).toBeDefined();
-    expect(await workspace.findByLabelText("Branch main")).toBeDefined();
+    const chat = within(screen.getByTestId("chat-canvas-container"));
+    expect(chat.queryByRole("group", { name: "Workspace" })).toBeNull();
+    expect(chat.queryByText("ai-perpetual-trading")).toBeNull();
   });
 
   it("stays busy until the first prompt is out, so a second message cannot slip in", async () => {

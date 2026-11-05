@@ -1015,12 +1015,14 @@ describe("ChatCanvas: your messages and the session's header", () => {
     { id: "a-1", role: "agent", content: "Done.", timestamp: Date.now() - 60_000, isComplete: true },
   ];
 
-  it("puts the time, Copy and Rewind under your message, and Rewind names the message", () => {
+  it("puts Copy and Rewind under your message, its time in the bubble's tooltip, and Rewind names the message", () => {
     const onRewind = vi.fn();
     render(<ChatCanvas messages={messages} onRewind={onRewind} />);
     const yours = within(screen.getByTestId("chat-message-u-1"));
 
-    expect(yours.getByText("2 minutes ago")).toBeDefined();
+    // The canvas draws no time under your bubble; the bubble's tooltip carries it.
+    expect(yours.queryByText("2 minutes ago")).toBeNull();
+    expect(screen.getByTestId("chat-message-u-1").querySelector("[title='2 minutes ago']")).not.toBeNull();
     expect(yours.getByRole("button", { name: "Copy message" })).toBeDefined();
     fireEvent.click(yours.getByRole("button", { name: "Rewind to here" }));
     // It drops the messages after it, so it takes a confirming second click.
@@ -1130,9 +1132,10 @@ describe("ChatCanvas: the two kinds of message", () => {
       expect(actions.className).toContain("group-hover:opacity-100");
       expect(actions.className).toContain("group-focus-within:opacity-100");
     }
-    // Your message's time is not an action: it stays on screen.
-    const time = within(screen.getByTestId("chat-message-u-1")).getByText("5 minutes ago");
-    expect(time.closest("[data-message-actions]")).toBeNull();
+    // Your message's time is not an action: it is the bubble's tooltip, never hidden with the actions.
+    const bubble = screen.getByTestId("chat-message-u-1").querySelector("[title='5 minutes ago']") as HTMLElement;
+    expect(bubble).not.toBeNull();
+    expect(bubble.closest("[data-message-actions]")).toBeNull();
   });
 
   it("keeps a keyboard user on Rewind's confirm step, and back on Rewind when it times out", () => {

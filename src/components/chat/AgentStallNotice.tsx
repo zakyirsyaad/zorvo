@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Clock, Square } from "lucide-react";
 import { Button } from "../ui/Button";
 import {
   activityKeyOf,
@@ -48,11 +49,12 @@ export function AgentStallNotice({ agentName, messages, failures, onStop }: Agen
   return (
     <div
       role="status"
-      className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 rounded-lg border border-border bg-surface-1 px-3 py-2 text-ui-sm text-fg-muted"
+      className="mx-auto flex w-full max-w-chat items-center gap-2.5 rounded-lg border border-border bg-surface-1 px-3 py-2.5"
     >
-      <span>{text}</span>
+      <Clock size={14} aria-hidden="true" className="shrink-0 text-status-attention" />
+      <span className="min-w-0 flex-1 text-ui text-fg-secondary">{text}</span>
       {onStop && (
-        <Button variant="outline" size="sm" className="shrink-0" onClick={onStop}>
+        <Button variant="outline" size="sm" icon={<Square size={10} aria-hidden="true" />} className="shrink-0" onClick={onStop}>
           Stop
         </Button>
       )}

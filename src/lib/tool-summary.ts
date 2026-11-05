@@ -81,3 +81,17 @@ export function toolStatusWord(tool: ToolExecution, isTurnOver: boolean): 'Done'
 export function stillRunning(tools: readonly ToolExecution[], isTurnOver: boolean): number {
   return isTurnOver ? 0 : tools.filter((tool) => tool.status === 'running').length;
 }
+
+/**
+ * The file a group of tools touched last, as its last two path segments, with how many other
+ * files they touched: "sidebar/SessionList.tsx +1". Null when no tool names a file.
+ */
+export function lastTouchedLabel(tools: readonly ToolExecution[]): string | null {
+  // A location may carry a line ("path:12"); the file is the same either way.
+  const paths = tools.flatMap((tool) => tool.locations ?? []).map((path) => path.replace(/:\d+$/, ''));
+  const last = paths.at(-1);
+  if (!last) return null;
+  const others = new Set(paths.filter((path) => path !== last)).size;
+  const shortName = last.split('/').filter(Boolean).slice(-2).join('/');
+  return others > 0 ? `${shortName} +${others}` : shortName;
+}

@@ -18,7 +18,6 @@ import { AgentInstallPanel } from "./components/AgentInstallPanel";
 import { pickerLabelOf } from "./lib/install-plan";
 import { installPanelAgentOf } from "./lib/install-panel";
 import { NewSessionBelow, NewSessionHeading } from "./components/workspace/NewSessionView";
-import { WorkspaceSummary } from "./components/workspace/WorkspaceSummary";
 import { ChangesPanel } from "./components/changes/ChangesPanel";
 import { DiffView } from "./components/changes/DiffView";
 import { totalsOf } from "./lib/diff-stats";
@@ -1034,17 +1033,12 @@ export default function App() {
                     isHeldElsewhere: review.isHeldFor(activeSessionId),
                   })}
                   onRewind={(messageId) => { compareRun.dropSignIn(activeSessionId); void rewind(activeSession, messageId); }}
+                  // The sidebar and the top bar say where a session runs; only an imported
+                  // session's note sits above its first message.
                   header={
-                    <div className="space-y-3 rounded-xl border border-border bg-surface-1 px-4 py-3">
-                      {activeSession.historyElsewhere && (
-                        <HistoryElsewhereNote agentName={activeAgent?.name ?? "the agent"} />
-                      )}
-                      <WorkspaceSummary
-                        name={folderNameOf(workspacePathOf(activeSession))}
-                        path={shownFolderPath ?? activeSession.cwd}
-                        details={workspaceDetails}
-                      />
-                    </div>
+                    activeSession.historyElsewhere ? (
+                      <HistoryElsewhereNote agentName={activeAgent?.name ?? "the agent"} />
+                    ) : undefined
                   }
                   // A turn that failed says so under its last message, with Try again.
                   footer={
@@ -1107,7 +1101,7 @@ export default function App() {
                 </div>
               )}
               {/* The draft's blockers sit right above the composer, which stays: a prompt can be written meanwhile. */}
-              <div className="mx-auto w-full max-w-3xl space-y-3 px-4">
+              <div className="mx-auto w-full max-w-chat space-y-3 px-4">
                 <SignInLayer
                   signIn={signIn}
                   agents={agents}

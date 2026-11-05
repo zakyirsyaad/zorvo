@@ -138,6 +138,13 @@ describe("SessionRow", () => {
     expect(mark.parentElement?.firstElementChild).toBe(mark);
   });
 
+  it("opens its actions on right-click, in place of WebKit's menu", () => {
+    const { row } = renderRow(session(), { onDeleteSession: vi.fn(), onPinSession: vi.fn() });
+    // fireEvent returns false when the default was prevented.
+    expect(fireEvent.contextMenu(row)).toBe(false);
+    expect(screen.getByRole("menu", { name: "Actions for A session" })).toBeInTheDocument();
+  });
+
   it("ends a fork's subtitle with fork", () => {
     const { row } = renderRow(session({ id: "s-fork", forkedFrom: "s-0" }));
     expect(within(row).getByText(/· fork$/)).toBeInTheDocument();

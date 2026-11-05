@@ -1,6 +1,5 @@
 import { memo, useEffect, useState } from "react";
 import { CheckCircle2, ChevronDown, ChevronRight, Circle, CircleDot, ListTodo } from "lucide-react";
-import { StatusLine } from "../ui/StatusLine";
 import { formatElapsed } from "../../lib/background-tasks";
 import type { PlanEntry } from "../../types";
 
@@ -35,16 +34,18 @@ export function WorkingIndicator({ agentName, since }: { agentName: string; sinc
     return () => clearInterval(timer);
   }, [since]);
   return (
-    <div data-testid="agent-working" role="status" className="mx-auto w-full max-w-3xl px-1">
-      <StatusLine status="running" className="text-ui-sm text-fg-muted">
-        {agentName} is working
+    <div data-testid="agent-working" role="status" className="mx-auto w-full max-w-chat">
+      {/* Its own dot, with a soft 4px ring, as the canvas draws it: not one of StatusLine's states. */}
+      <div className="flex items-center gap-2.5 py-1">
+        <span data-working-dot="" aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-status-running ring-4 ring-status-running/20" />
+        <span className="text-ui text-fg-secondary">{agentName} is working</span>
         {/* Hidden from the live region: a time that ticks every second would be read out every second. */}
         {since !== undefined && (
-          <span aria-hidden="true" className="ml-1.5 tabular-nums">
+          <span aria-hidden="true" className="text-caption text-fg-subtle tabular-nums">
             {formatElapsed(Math.max(0, now - since))}
           </span>
         )}
-      </StatusLine>
+      </div>
     </div>
   );
 }

@@ -12,7 +12,7 @@ export interface RemovedAgentPanelProps {
 export function RemovedAgentPanel({ agentName, profileId, onAdd }: RemovedAgentPanelProps) {
   const title = `${agentName} is no longer in use`;
   return (
-    <div className="w-full max-w-3xl">
+    <div className="w-full max-w-chat">
       <BlockerCard
         label={title}
         profileId={profileId}

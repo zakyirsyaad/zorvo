@@ -22,6 +22,9 @@ export interface SessionMenuProps {
   isInRun: boolean;
   context: SessionListContext;
   onRename: () => void;
+  /** Whether the menu is open, when the row holds it (a right-click opens it); else the menu does. */
+  isOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 /** An option's icon and words. */
@@ -41,9 +44,21 @@ function Item({ icon, children }: { icon: ReactNode; children: ReactNode }) {
  * good, so Delete closes the menu and asks "Delete?" in the row, focused: Return deletes,
  * Escape gives up and puts focus back on ⋯, and it turns back by itself after a while.
  */
-export function SessionMenu({ session, label, isBusy, isInRun, context, onRename }: SessionMenuProps) {
-  const [isOpen, setIsOpen] = useState(false);
+export function SessionMenu({
+  session,
+  label,
+  isBusy,
+  isInRun,
+  context,
+  onRename,
+  isOpen: heldOpen,
+  onOpenChange,
+}: SessionMenuProps) {
+  const [ownOpen, setOwnOpen] = useState(false);
+  const setIsOpen = (open: boolean) => (onOpenChange ? onOpenChange(open) : setOwnOpen(open));
   const [isConfirming, setIsConfirming] = useState(false);
+  // While Delete? asks, the menu is not open, whatever the row asked for meanwhile.
+  const isOpen = !isConfirming && (heldOpen ?? ownOpen);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
   // Set when the pill had focus as it went away, so focus goes back to ⋯ rather than the page.
@@ -63,6 +78,12 @@ export function SessionMenu({ session, label, isBusy, isInRun, context, onRename
     }, CONFIRM_DELETE_MS);
     return () => clearTimeout(timer);
   }, [isConfirming]);
+
+  // A right-click on the row while Delete? asks is dropped, so the menu does not pop open by
+  // itself once the question goes away.
+  useEffect(() => {
+    if (isConfirming && heldOpen) onOpenChange?.(false);
+  }, [isConfirming, heldOpen, onOpenChange]);
 
   useEffect(() => {
     if (isConfirming || !shouldRefocusRef.current) return;
@@ -126,7 +147,7 @@ export function SessionMenu({ session, label, isBusy, isInRun, context, onRename
           aria-label={`More actions for ${label}`}
           aria-haspopup="menu"
           aria-expanded={isOpen}
-          onClick={() => setIsOpen((open) => !open)}
+          onClick={() => setIsOpen(!isOpen)}
           className={TRIGGER}
         >
           <MoreHorizontal size={12} />

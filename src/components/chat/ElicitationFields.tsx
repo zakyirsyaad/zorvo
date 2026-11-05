@@ -6,7 +6,7 @@ import type { FormValue } from "../../lib/elicitation-form";
 const MAX_RADIO_OPTIONS = 4;
 
 export const INPUT =
-  "w-full rounded-lg border border-border-strong bg-surface-2 px-2.5 py-1.5 text-xs text-fg " +
+  "h-8 w-full rounded-lg border border-border-strong bg-bg px-2.5 text-ui text-fg " +
   "placeholder:text-fg-subtle focus-ring disabled:opacity-40";
 
 export interface ElicitationFieldsProps {
@@ -21,7 +21,7 @@ export interface ElicitationFieldsProps {
 /** The controls of an agent's form. Holds no state: the card owns the values. */
 export function ElicitationFields({ fields, values, errors, onChange, disabled = false }: ElicitationFieldsProps) {
   return (
-    <div className="mt-3 space-y-3">
+    <div className="space-y-3">
       {fields.map((field) => (
         <FieldRow
           key={field.name}
@@ -67,12 +67,12 @@ function Help({ id, field, error, errorId }: { id: string; field: ElicitationFie
   return (
     <>
       {field.description && (
-        <p id={id} className="mt-1 text-xs text-fg-muted">
+        <p id={id} className="mt-1 text-ui-sm text-fg-muted">
           {field.description}
         </p>
       )}
       {error && (
-        <p id={errorId} role="alert" className="mt-1 text-xs text-danger">
+        <p id={errorId} role="alert" className="mt-1 text-ui-sm text-danger">
           {error}
         </p>
       )}
@@ -132,7 +132,7 @@ interface ControlProps {
 function BooleanField({ field, value, onChange, control }: ControlProps) {
   return (
     <div>
-      <label className="flex items-center gap-2 text-xs font-medium text-fg-secondary">
+      <label className="flex items-center gap-2 text-ui font-medium text-fg-secondary">
         <input
           type="checkbox"
           {...control.shared}
@@ -180,7 +180,7 @@ function InputField({ field, value, onChange, control }: ControlProps) {
   const { kind } = field;
   return (
     <div>
-      <label htmlFor={control.id} className="block text-xs font-medium text-fg-secondary">
+      <label htmlFor={control.id} className="block text-ui font-medium text-fg-secondary">
         <Caption field={field} />
       </label>
       <div className="mt-1">
@@ -222,7 +222,7 @@ function Group({ id, field, role, describedBy, children }: { id: string; field: 
       aria-describedby={describedBy}
       aria-required={isRadio && field.required ? true : undefined}
     >
-      <span id={`${id}-label`} className="block text-xs font-medium text-fg-secondary">
+      <span id={`${id}-label`} className="block text-ui font-medium text-fg-secondary">
         <Caption field={field} sayRequired={!isRadio} />
       </span>
       <div className="mt-1 space-y-1">{children}</div>
@@ -233,7 +233,7 @@ function Group({ id, field, role, describedBy, children }: { id: string; field: 
 /** One radio or checkbox with its title and description; also used by Qwen Code's question form. */
 export function Choice({ option, type, name, checked, disabled, onChange }: { option: ElicitationChoice; type: "radio" | "checkbox"; name?: string; checked: boolean; disabled: boolean; onChange: () => void }) {
   return (
-    <label className="flex items-start gap-2 text-xs text-fg-secondary">
+    <label className="flex items-start gap-2 text-ui text-fg-secondary">
       <input type={type} name={name} className="focus-ring mt-0.5 h-3.5 w-3.5" checked={checked} disabled={disabled} onChange={onChange} />
       <span>
         {option.title}

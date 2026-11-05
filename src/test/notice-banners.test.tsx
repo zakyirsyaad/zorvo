@@ -21,7 +21,9 @@ describe("the failed turn under the last message", () => {
     render(<FailedTurnBanner agentName="Gemini CLI" error="fetch failed" isBusy={false} onRetry={vi.fn()} onDismiss={vi.fn()} />);
 
     const alert = screen.getByRole("alert");
-    expect(alert).toHaveClass("bg-danger-surface", "text-danger", "border-danger");
+    // The danger edge and icon carry the colour; the words read in fg, as drawn.
+    expect(alert).toHaveClass("bg-danger-surface", "border-danger");
+    expect(alert.querySelector(".lucide-circle-alert")?.getAttribute("class")).toContain("text-danger");
     // It sits in the chat's column, so it has no margins of a banner across the top.
     expect(alert).not.toHaveClass("mx-6");
   });

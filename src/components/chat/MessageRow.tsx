@@ -66,109 +66,121 @@ export const MessageRow = memo(function MessageRow({
   onReopenElicitationUrl,
 }: MessageRowProps) {
   const isUser = message.role === "user";
-  const agentTime = isUser ? undefined : timeLabelOf(message);
+  const timeLabel = timeLabelOf(message);
   const toolsById = new Map((message.tools ?? []).map((tool) => [tool.id, tool]));
   // Older transcripts have no parts; render them with the same tool rows as a
   // reply saved with parts, without rewriting the saved data.
   const parts = partsOf(message);
+
+  // Your message sits in a bubble on the right; the agent's reply sits on the background.
+  // Only the text can be selected, to copy or to reply to; its buttons cannot.
+  const text = (
+    <div
+      {...{ [SELECTABLE_TEXT_ATTRIBUTE]: "" }}
+      // Your message's time is its tooltip: the canvas draws no time under the bubble.
+      title={isUser ? timeLabel : undefined}
+      className={`text-left select-text [&_button]:select-none ${
+        isUser
+          ? // The edge carries the bubble on the light theme, where surface-2 is barely off the chat's ground.
+            "ml-auto max-w-[85%] rounded-xl border border-border bg-surface-2 px-3.5 py-2.5 text-body text-fg"
+          : "w-full text-body text-fg-secondary"
+      }`}
+    >
+      {message.thinking && (
+        // A reply is done once its turn ended or anything came after it.
+        <ThinkingBlock text={message.thinking} isDone={Boolean(message.isComplete) || !isLast} />
+      )}
+      {message.plan && message.plan.length > 0 && <PlanUpdatedRow entries={message.plan} />}
+      {message.attachments && message.attachments.length > 0 && (
+        <div className={parts.length > 0 ? "mb-2" : undefined}>
+          <AttachmentChips paths={message.attachments} />
+        </div>
+      )}
+      {parts.length > 0 && (
+        <div className="space-y-4">
+          {parts.map((part, index) => {
+            if (part.kind === "text") return <MarkdownRenderer key={index} content={part.text} />;
+            const tools = part.toolIds.flatMap((id) => toolsById.get(id) ?? []);
+            if (tools.length === 0) return null;
+            return <ToolsPart key={index} tools={tools} isCurrentTurn={isCurrentTurn} isTurnOver={showActions} />;
+          })}
+        </div>
+      )}
+
+      {/* The agent's permission request, answered with one of its options */}
+      {message.actionCard && (
+        <ActionCard
+          card={message.actionCard}
+          agentName={agentName}
+          onChoose={
+            onChooseOption
+              ? (optionId, answers) =>
+                  answers
+                    ? onChooseOption(message.actionCard!.id, optionId, answers)
+                    : onChooseOption(message.actionCard!.id, optionId)
+              : undefined
+          }
+        />
+      )}
+
+      {/* The agent's request for input or to open a page; keyed so typed values never move between cards */}
+      {message.elicitation && (
+        <ElicitationCard
+          key={message.elicitation.key}
+          card={message.elicitation}
+          agentName={agentName}
+          agentProfileId={agentProfileId}
+          onAnswer={onAnswerElicitation}
+          onReopen={onReopenElicitationUrl}
+        />
+      )}
+    </div>
+  );
 
   return (
     <div
       id={`message-${message.id}`}
       tabIndex={-1}
       data-testid={`chat-message-${message.id}`}
-      className={`group focus-ring data-[jumped]:outline data-[jumped]:outline-1 data-[jumped]:outline-offset-1 data-[jumped]:outline-focus-ring flex flex-col ${isUser ? "items-end" : "items-start"} w-full max-w-3xl mx-auto`}
+      className={`group focus-ring data-[jumped]:outline data-[jumped]:outline-1 data-[jumped]:outline-offset-1 data-[jumped]:outline-focus-ring flex flex-col ${isUser ? "items-end" : "items-start"} w-full max-w-chat mx-auto`}
     >
-      {/* The agent's reply is headed by its logo, name and time; your message needs no header. */}
-      {!isUser && (
-        <div data-message-header="" className="mb-1.5 flex min-w-0 max-w-full items-center gap-2 px-1">
-          <AgentLogo profileId={agentProfileId ?? ""} name="" size={16} className="shrink-0" />
-          <span className="min-w-0 truncate text-ui font-medium text-fg-secondary">{agentName}</span>
-          {agentTime && <span className="shrink-0 text-caption text-fg-muted">{agentTime}</span>}
+      {isUser ? (
+        <>
+          {text}
+          <UserMessageBar
+            copied={copied}
+            onCopy={() => onCopy(message.id, message.content)}
+            onRewind={onRewind ? () => onRewind(message.id) : undefined}
+          />
+        </>
+      ) : (
+        // The reply's box: its padding is there from the start, so nothing moves when the turn
+        // ends; only an ended reply fills surface-1 on hover, never one whose card still waits.
+        <div
+          data-message-body=""
+          className={`-mx-3 self-stretch rounded-[10px] p-3 transition-colors ${showActions ? "group-hover:bg-surface-1" : ""}`}
+        >
+          {/* The agent's reply is headed by its logo, name and time; your message needs no header. */}
+          <div data-message-header="" className="mb-2.5 flex min-w-0 max-w-full items-center gap-2">
+            <AgentLogo profileId={agentProfileId ?? ""} name="" size={16} className="shrink-0" />
+            <span className="min-w-0 truncate text-ui-sm font-medium text-fg-secondary">{agentName}</span>
+            {timeLabel && <span className="shrink-0 text-caption text-fg-subtle">{timeLabel}</span>}
+          </div>
+          {text}
+          {/* The reply's actions, once its turn has ended */}
+          {showActions && (
+            <MessageActionBar
+              copied={copied}
+              onCopy={() => onCopy(message.id, message.content)}
+              onFork={onFork ? () => onFork(message.id) : undefined}
+              readAloud={
+                readAloudSupported
+                  ? { speaking, onToggle: () => onToggleReadAloud(message.id, message.content) }
+                  : undefined
+              }
+            />
+          )}
         </div>
-      )}
-
-      {/* Your message sits in a bubble on the right; the agent's reply sits on the background. */}
-      {/* Only the text can be selected, to copy or to reply to; its buttons cannot. */}
-      <div
-        {...{ [SELECTABLE_TEXT_ATTRIBUTE]: "" }}
-        className={`text-left select-text [&_button]:select-none ${
-          isUser
-            ? // The edge carries the bubble on the light theme, where surface-2 is barely off the chat's ground.
-              "ml-auto max-w-[85%] rounded-2xl border border-border bg-surface-2 px-4 py-3 text-body text-fg"
-            : "w-full px-1 text-body text-fg-secondary"
-        }`}
-      >
-        {message.thinking && (
-          // A reply is done once its turn ended or anything came after it.
-          <ThinkingBlock text={message.thinking} isDone={Boolean(message.isComplete) || !isLast} />
-        )}
-        {message.plan && message.plan.length > 0 && <PlanUpdatedRow entries={message.plan} />}
-        {message.attachments && message.attachments.length > 0 && (
-          <div className={parts.length > 0 ? "mb-2" : undefined}>
-            <AttachmentChips paths={message.attachments} />
-          </div>
-        )}
-        {parts.length > 0 && (
-          <div className="space-y-4">
-            {parts.map((part, index) => {
-              if (part.kind === "text") return <MarkdownRenderer key={index} content={part.text} />;
-              const tools = part.toolIds.flatMap((id) => toolsById.get(id) ?? []);
-              if (tools.length === 0) return null;
-              return <ToolsPart key={index} tools={tools} isCurrentTurn={isCurrentTurn} isTurnOver={showActions} />;
-            })}
-          </div>
-        )}
-
-        {/* The agent's permission request, answered with one of its options */}
-        {message.actionCard && (
-          <ActionCard
-            card={message.actionCard}
-            agentName={agentName}
-            onChoose={
-              onChooseOption
-                ? (optionId, answers) =>
-                    answers
-                      ? onChooseOption(message.actionCard!.id, optionId, answers)
-                      : onChooseOption(message.actionCard!.id, optionId)
-                : undefined
-            }
-          />
-        )}
-
-        {/* The agent's request for input or to open a page; keyed so typed values never move between cards */}
-        {message.elicitation && (
-          <ElicitationCard
-            key={message.elicitation.key}
-            card={message.elicitation}
-            agentName={agentName}
-            onAnswer={onAnswerElicitation}
-            onReopen={onReopenElicitationUrl}
-          />
-        )}
-      </div>
-
-      {isUser && (
-        <UserMessageBar
-          timeLabel={timeLabelOf(message)}
-          copied={copied}
-          onCopy={() => onCopy(message.id, message.content)}
-          onRewind={onRewind ? () => onRewind(message.id) : undefined}
-        />
-      )}
-
-      {/* Message Action Bar at bottom of Agent message, once its turn has ended */}
-      {!isUser && showActions && (
-        <MessageActionBar
-          copied={copied}
-          onCopy={() => onCopy(message.id, message.content)}
-          onFork={onFork ? () => onFork(message.id) : undefined}
-          readAloud={
-            readAloudSupported
-              ? { speaking, onToggle: () => onToggleReadAloud(message.id, message.content) }
-              : undefined
-          }
-        />
       )}
     </div>
   );

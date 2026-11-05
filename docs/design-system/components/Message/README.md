@@ -1,10 +1,19 @@
 # Message
 
-A message in the chat: yours, or the agent's with its tool runs, and the status of the turn under the last one.
+A message in the chat: yours, or the agent's with its tool runs, and the status of the turn under the last one. Every part of the chat sits in one 680px column (`max-w-chat`), on a canvas padded 32px at the top, 24px at the sides and 16px at the bottom, with 24px between messages.
 
 The consumer provides the message, the agent's name and id (for its logo), and the handlers for the actions that apply.
 
-- **Your message:** a `surface-2` bubble on the right, at most 85% of the column, `radius-2xl`, `body` text in `fg`. No header. Under it, its time stays on screen; Copy and Rewind to here (which asks once more: "Rewind?") show when you point at the message or tab into it.
-- **The agent's message:** no bubble. A header with the agent's logo, its name in `ui` weight 500 and the time in `caption` `fg-muted` (no time for a message replayed from the agent's history); the body in `body` 14/22 `fg-secondary`. Under it, once the turn has ended, Copy, Fork from here and Read aloud as icon buttons, shown on hover or keyboard focus.
-- **Tool runs:** one bordered card per run of tools, its summary in words ("Read 2 files, ran a command") with "N still running" while any run and "N failed" in `danger`. Opened, one row per tool: its kind's icon, the verb, the target in mono, an edit's `+N −N`, and a status word claimed only once the agent said so (Done, Failed, or Did not finish for a tool left running when the turn ended); a running tool shows a spinner. A command's output reads on the terminal's dark ground.
-- **Turn status:** while the agent works, a pulsing `status-running` dot, "Claude Code is working" and the time since your message. After a minute of silence a muted notice says "Claude Code hasn't sent anything for N minutes. It may be stuck." with Stop. A failed turn is a `danger-surface` card with a `danger` border, the reason, **Try again**, Details and dismiss, under the last message.
+- **Your message:** a `surface-2` bubble with a `border` edge on the right, at most 85% of the column, radius 12, padding 10px 14px, `body` text in `fg`. No header and no time under it; the time is the bubble's tooltip. Copy and Rewind to here (which asks once more: "Rewind?") show when you point at the message or tab into it.
+- **The agent's message:** no bubble. A header with the agent's 16px logo, its name in `ui-sm` weight 500 `fg-secondary` and the time in `caption` `fg-subtle` (no time for a message replayed from the agent's history), 10px above the body in `body` 14/22 `fg-secondary`. Once the turn has ended, the whole reply fills `surface-1` on hover (padding 12, radius 10; the padding is there from the start, so nothing moves), and Copy, Fork from here and Read aloud show under it as 24px icon buttons in `fg-secondary`.
+- **Tool runs:** one `surface-1` card per run of tools, with a 34px summary in `ui-sm` ("Read 2 files, ran a command") and on its right "N still running" in `fg-subtle`, or the file touched last in mono ("sidebar/SessionList.tsx +1"). Opened, one 30px row per tool, with no dividers:
+  - its kind's icon, the verb in a 56px `fg-muted` column, the path in mono 11px (cut at its start, so the file's name stays in sight) or the command (cut at its end);
+  - an edit's `+N −N` in mono;
+  - a status claimed only once the agent said so: Done in `fg-subtle`, Failed in `danger`, Did not finish in `fg-muted`, or "Running" in `status-running` beside a turning arc.
+  - A command's output is indented 76px, on `terminal-bg` in `terminal-fg`, with no edge.
+- **Turn status:**
+  - While the agent works: a 6px `status-running` dot with a soft 4px ring, "Claude Code is working" in `ui` `fg-secondary`, and the time since your message in `caption` `fg-subtle`. Nothing pulses.
+  - After a minute of silence: a `surface-1` notice with a clock in `status-attention`, "Claude Code hasn't sent anything for N minutes. It may be stuck." in `fg-secondary`, and a 24px **Stop** with a square.
+  - A failed turn: one `danger-surface` row with a `danger` edge under the last message, a circle-alert in `danger`, the reason in `ui` `fg`, then a 28px **Try again**, Details and Dismiss. Details open under the row.
+- **Selection and Reply:** selected text is tinted `selection`. The Reply toolbar is a 2px-padded `surface-3` panel with a 28px **Reply** in `fg`.
+- **The folder card is gone:** the sidebar and the top bar say where a session runs. An imported session whose history stays in the agent says so in one quiet line above its first message.

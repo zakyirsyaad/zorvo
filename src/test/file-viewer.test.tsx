@@ -143,8 +143,20 @@ describe("FileViewer — contents", () => {
     const body = screen.getByRole("region", { name: "Contents of a.ts" });
     const rows = body.querySelectorAll("[data-line]");
     expect([...rows].map((row) => row.getAttribute("data-line"))).toEqual(["1", "2"]);
-    expect(within(rows[0] as HTMLElement).getByText("1")).toHaveClass("select-none");
+    expect(rows[0].firstElementChild).toHaveTextContent("1");
+    expect(rows[0].firstElementChild).toHaveClass("select-none");
     expect(rows[1]).toHaveTextContent("let b;");
+  });
+
+  it("draws keywords brighter than the rest, in one color", async () => {
+    await renderViewer();
+
+    const body = screen.getByRole("region", { name: "Contents of a.ts" });
+    expect(within(body).getByText("const")).toHaveClass("text-fg");
+    // The number in the code, not the line number beside it.
+    const number = within(body).getAllByText("1").find((element) => !element.classList.contains("select-none"));
+    expect(number).toHaveClass("text-fg");
+    expect(within(body).getByText("let")).toHaveClass("text-fg");
   });
 
   it("says one line in the singular", async () => {

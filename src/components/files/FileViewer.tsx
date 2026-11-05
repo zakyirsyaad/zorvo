@@ -5,6 +5,7 @@ import { IconButton } from "../ui/IconButton";
 import { useFileContent } from "../../hooks/useFileContent";
 import { useChangedLines } from "../../hooks/useChangedLines";
 import type { LineChange } from "../../lib/changed-lines";
+import { TOKEN_STYLE, tokenizeLines, type Token } from "../../lib/code-tokens";
 import { errorMessage, joinWorkspacePath, openWorkspacePath } from "../../lib/files";
 import { formatSize, languageOf, splitLines, type FileContent } from "../../lib/file-content";
 import { MARKER_LETTER, MARKER_WORD, type FileMarker } from "../../lib/file-markers";
@@ -68,10 +69,20 @@ function Breadcrumb({ relativePath, marker }: { relativePath: string; marker?: F
 }
 
 /** The file's lines, numbered, in mono, with a thin bar beside each changed line. */
-function Lines({ name, lines, changes }: { name: string; lines: readonly string[]; changes: ReadonlyMap<number, LineChange> }) {
+function Lines({
+  name,
+  lines,
+  tokens,
+  changes,
+}: {
+  name: string;
+  lines: readonly string[];
+  tokens: readonly Token[][];
+  changes: ReadonlyMap<number, LineChange>;
+}) {
   return (
     <div role="region" aria-label={`Contents of ${name}`} className="min-h-0 flex-1 overflow-auto py-1 font-mono text-ui-sm">
-      {lines.map((line, index) => {
+      {lines.map((_, index) => {
         const change = changes.get(index + 1);
         return (
           <div key={index} data-line={index + 1} className="flex min-w-max">
@@ -79,7 +90,17 @@ function Lines({ name, lines, changes }: { name: string; lines: readonly string[
             <span className="mr-2 w-0.5 shrink-0 select-none">
               {change && <span data-gutter="" aria-hidden="true" className={`block h-full w-0.5 ${GUTTER_COLOR[change]}`} />}
             </span>
-            <span className="whitespace-pre pr-4 text-fg-secondary">{line}</span>
+            <span className="whitespace-pre pr-4 text-fg-secondary">
+              {tokens[index].map((token, at) =>
+                token.kind === "plain" ? (
+                  <Fragment key={at}>{token.text}</Fragment>
+                ) : (
+                  <span key={at} className={TOKEN_STYLE[token.kind]}>
+                    {token.text}
+                  </span>
+                ),
+              )}
+            </span>
           </div>
         );
       })}
@@ -120,6 +141,8 @@ export function FileViewer({ rootPath, relativePath, marker, version, onBack, on
   const language = languageOf(relativePath);
   const text = read.status === "ready" && read.content.kind === "text" ? read.content.text : null;
   const lines = useMemo(() => (text === null ? [] : splitLines(text)), [text]);
+  // Once per text: a re-render (a tick of the copied label, the checkbox) never re-scans the file.
+  const tokens = useMemo(() => tokenizeLines(lines, language.fence), [lines, language.fence]);
 
   useEffect(() => {
     if (!isCopied) return;
@@ -189,7 +212,7 @@ export function FileViewer({ rootPath, relativePath, marker, version, onBack, on
       {read.status === "failed" && <Unshown failure={read.message} />}
       {read.status === "ready" &&
         (text !== null ? (
-          <Lines name={name} lines={lines} changes={isMarking ? changes : NO_CHANGES} />
+          <Lines name={name} lines={lines} tokens={tokens} changes={isMarking ? changes : NO_CHANGES} />
         ) : (
           <Unshown content={read.content} />
         ))}

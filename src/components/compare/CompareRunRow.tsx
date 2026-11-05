@@ -2,16 +2,17 @@ import { useState } from "react";
 import { ActionCard } from "../ActionCard";
 import { AgentLogo } from "../AgentLogo";
 import { Button } from "../ui/Button";
+import { StatusLine } from "../ui/StatusLine";
 import { useDiffStatsSince } from "../../hooks/useDiffStats";
-import { formatLineCount, MINUS, totalsOf } from "../../lib/diff-stats";
-import { rowStatus, statusLabel, type RowFacts, type RunRowStatus } from "../../lib/compare-run";
+import { formatLineCount, MINUS, totalsOf, type FileStat } from "../../lib/diff-stats";
+import { rowStatus, runStatusDot, statusLabel, type RowFacts } from "../../lib/compare-run";
 
 export interface CompareRunRowProps {
   facts: RowFacts;
   agentName: string;
   /** Bumped when a turn ends, so the numbers are read again. */
   version: number;
-  /** Another pick is under way, or this one is being confirmed elsewhere. */
+  /** Another pick is under way. */
   isPickDisabled: boolean;
   onOpen: (sessionId: string) => void;
   /** Opens the session with its diff beside the chat. */
@@ -20,34 +21,21 @@ export interface CompareRunRowProps {
   onPick: (sessionId: string) => void;
 }
 
-const STATUS_STYLES: Record<RunRowStatus, string> = {
-  starting: "text-fg-muted",
-  working: "text-status-running",
-  "needs-you": "text-status-attention",
-  "needs-sign-in": "text-status-attention",
-  failed: "text-danger",
-  done: "text-fg-secondary",
-  stopped: "text-fg-muted",
-};
+/** Why Pick is off on a row whose worktree holds nothing. */
+const NO_CHANGES_TITLE = "No changes to keep yet";
 
 interface ChangesProps {
-  facts: RowFacts;
+  stats: FileStat[] | null;
+  error: string | null;
   agentName: string;
-  version: number;
-  status: RunRowStatus;
-  onReview: (sessionId: string) => void;
+  onReview: () => void;
 }
 
 /** What the agent changed in its worktree since the run began, or — when that cannot be read. With changes, the numbers open them. */
-function Changes({ facts, agentName, version, status, onReview }: ChangesProps) {
-  const { cwd, worktree } = facts.session;
-  const [error, setError] = useState<string | null>(null);
-  // Read through the agent's folder: from a subfolder it is the known workspace, not the worktree's root.
-  // A status change reads again too: a cancelled turn bumps no `version`, and an exit between turns ends no turn.
-  const { stats } = useDiffStatsSince(cwd, worktree?.startCommit, `${version}:${status}`, setError);
+function Changes({ stats, error, agentName, onReview }: ChangesProps) {
   if (!stats) {
     return (
-      <span className="text-xs text-fg-muted" title={error ?? undefined}>
+      <span className="text-ui-sm text-fg-muted" title={error ?? undefined}>
         —
       </span>
     );
@@ -63,20 +51,20 @@ function Changes({ facts, agentName, version, status, onReview }: ChangesProps) 
       </span>
     </>
   );
-  if (stats.length === 0) return <span className="flex items-center gap-2 text-xs text-fg-muted">{numbers}</span>;
+  if (stats.length === 0) return <span className="flex items-center gap-2 text-ui-sm text-fg-muted">{numbers}</span>;
   return (
     <button
       type="button"
       aria-label={`Review ${agentName}'s changes`}
-      className="flex items-center gap-2 rounded-md text-xs text-fg-muted transition-colors hover:text-fg-secondary focus-ring"
-      onClick={() => onReview(facts.session.id)}
+      className="flex items-center gap-2 rounded-md text-ui-sm text-fg-muted transition-colors hover:text-fg-secondary focus-ring"
+      onClick={onReview}
     >
       {numbers}
     </button>
   );
 }
 
-/** One agent of a compare run: its state, what it changed, and a way to open or keep it. */
+/** One agent of a compare run, as a card: its state, what it changed, and a way to open or keep it. */
 export function CompareRunRow({
   facts,
   agentName,
@@ -89,22 +77,34 @@ export function CompareRunRow({
 }: CompareRunRowProps) {
   const { session, pendingCard } = facts;
   const status = rowStatus(facts);
+  const [error, setError] = useState<string | null>(null);
+  // Read through the agent's folder: from a subfolder it is the known workspace, not the worktree's root.
+  // A status change reads again too: a cancelled turn bumps no `version`, and an exit between turns ends no turn.
+  const { stats } = useDiffStatsSince(session.cwd, session.worktree?.startCommit, `${version}:${status}`, setError);
+  // Only known-empty changes turn Pick off: while they load, or when they cannot be read, the run must stay pickable.
+  const hasNoChanges = stats?.length === 0;
   return (
-    <li aria-label={agentName} className="border-b border-border px-4 py-3 last:border-b-0">
-      <div className="flex flex-wrap items-center gap-3">
-        <Button
-          variant="ghost"
-          aria-label={`Open ${agentName}`}
-          icon={<AgentLogo profileId={session.profileId} name="" size={14} />}
-          className="-ml-3"
-          onClick={() => onOpen(session.id)}
-        >
-          {agentName}
-        </Button>
-        <span className={`text-xs font-medium ${STATUS_STYLES[status]}`}>{statusLabel(status)}</span>
-        <div className="ml-auto flex items-center gap-3">
-          <Changes facts={facts} agentName={agentName} version={version} status={status} onReview={onReview} />
-          <Button aria-label={`Pick ${agentName}`} variant="primary" disabled={isPickDisabled} onClick={() => onPick(session.id)}>
+    <li aria-label={agentName} className="rounded-xl border border-border bg-surface-1 p-4">
+      <div className="flex items-center gap-2">
+        <AgentLogo profileId={session.profileId} name="" size={16} />
+        <span className="text-ui font-medium text-fg">{agentName}</span>
+        <StatusLine status={runStatusDot(status)} className="ml-1 text-caption text-fg-muted">
+          {statusLabel(status)}
+        </StatusLine>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <Changes stats={stats} error={error} agentName={agentName} onReview={() => onReview(session.id)} />
+        <div className="ml-auto flex items-center gap-2">
+          <Button aria-label={`Open ${agentName}`} onClick={() => onOpen(session.id)}>
+            Open
+          </Button>
+          <Button
+            aria-label={`Pick ${agentName}`}
+            variant="primary"
+            disabled={isPickDisabled || hasNoChanges}
+            title={hasNoChanges ? NO_CHANGES_TITLE : undefined}
+            onClick={() => onPick(session.id)}
+          >
             Pick
           </Button>
         </div>

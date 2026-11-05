@@ -84,6 +84,23 @@ interface Setup {
   defaultAgentId?: string;
 }
 
+/** One file each agent changed in its worktree, as `session_diff_stats_since` answers. */
+const CHANGED_FILE = {
+  path: "src/login.ts",
+  oldPath: null,
+  kind: "modified",
+  added: 3,
+  removed: 1,
+  isBinary: false,
+  fingerprint: "login-3-1",
+};
+
+/** Pick in the agent's card, then Pick in the confirm bar, which every Pick raises. */
+async function pickAgent(name: string) {
+  await click(await screen.findByRole("button", { name: `Pick ${name}` }));
+  await click(within(await screen.findByRole("group", { name: "Confirm pick" })).getByRole("button", { name: `Pick ${name}` }));
+}
+
 async function renderApp(setup: Setup = {}) {
   const settings = fakeStore().state.settings as FakeTauriStore["state"]["settings"] & { enabledAgents?: string[] };
   settings.enabledAgents = ALL.map((a) => a.id);
@@ -95,6 +112,8 @@ async function renderApp(setup: Setup = {}) {
     const answer = setup.overrides?.[cmd]?.(args);
     if (answer) return answer;
     if (cmd === "get_agent_profiles") return Promise.resolve(structuredClone(ALL));
+    // Every agent changed a file, so Pick is on: a row with known-empty changes cannot be picked.
+    if (cmd === "session_diff_stats_since") return Promise.resolve([CHANGED_FILE]);
     if (cmd === "create_session_worktree") {
       worktreeCalls += 1;
       return Promise.resolve({
@@ -802,7 +821,7 @@ describe("a sign-in inside a compare run", () => {
     const spy = await startedRun();
     await refuse(spy, ["claude-acp", "qwen-code"]);
 
-    await click(screen.getByRole("button", { name: "Pick Qwen Code" }));
+    await pickAgent("Qwen Code");
 
     expect(await screen.findByRole("region", { name: "Sign in to Qwen Code" })).toBeInTheDocument();
     expect(prompt().value).toBe("fix the login");
@@ -828,7 +847,7 @@ describe("a sign-in inside a compare run", () => {
     const spy = await startedRun();
     await finish(spy, "qwen-code");
     await finish(spy, "claude-acp");
-    await click(await screen.findByRole("button", { name: "Pick Qwen Code" }));
+    await pickAgent("Qwen Code");
     await waitFor(() => expect(screen.queryByRole("region", { name: "Compare run" })).toBeNull());
     await sendMessage("and the logout");
     const sessionId = sessionOf(spy, "qwen-code");
@@ -954,8 +973,7 @@ describe("notifications of a compare run", () => {
   it("the winner's later turns notify once the run is gone", async () => {
     const spy = await startedRun();
     await finish(spy, "claude-acp");
-    await click(await screen.findByRole("button", { name: "Pick Claude Code" }));
-    await click(await screen.findByRole("button", { name: "Stop and pick" }));
+    await pickAgent("Claude Code");
     await waitFor(() => expect(screen.queryByRole("region", { name: "Compare run" })).toBeNull());
     await sendMessage("and the logout");
     await waitFor(() => expect(promptsTo(spy, sessionOf(spy, "claude-acp"))).toHaveLength(2));

@@ -45,6 +45,17 @@ interface Worktree {
   startCommit: string;
 }
 
+/** One file each agent changed in its worktree, as `session_diff_stats_since` answers. */
+const CHANGED_FILE = {
+  path: "src/login.ts",
+  oldPath: null,
+  kind: "modified",
+  added: 3,
+  removed: 1,
+  isBinary: false,
+  fingerprint: "login-3-1",
+};
+
 const worktreeNumber = (n: number): Worktree => ({
   path: `/data/worktrees/zorvo/fix-${n}`,
   cwd: `/data/worktrees/zorvo/fix-${n}`,
@@ -73,6 +84,8 @@ async function renderApp(setup: Setup = {}) {
   let worktreeCalls = 0;
   const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
     if (cmd === "get_agent_profiles") return Promise.resolve(structuredClone(ALL));
+    // Every agent changed a file, so Pick is on: a row with known-empty changes cannot be picked.
+    if (cmd === "session_diff_stats_since") return Promise.resolve([CHANGED_FILE]);
     if (cmd === "create_session_worktree") {
       worktreeCalls += 1;
       return setup.worktree ? setup.worktree(worktreeCalls) : Promise.resolve(worktreeNumber(worktreeCalls));
@@ -299,9 +312,11 @@ describe("starting a compare run", () => {
     await send("fix the login");
     await click(await screen.findByRole("button", { name: "Pick Claude Code" }));
 
-    expect(await screen.findByText("Stop 1 agent and keep Claude Code's work?")).toBeInTheDocument();
+    const bar = within(await screen.findByRole("group", { name: "Confirm pick" }));
+    expect(bar.getByText("Keep Claude Code's work and archive the others?")).toBeInTheDocument();
+    expect(bar.getByText("This stops Qwen Code mid-turn.")).toBeInTheDocument();
     expect(calls(spy, "acp_stop_session")).toHaveLength(0);
-    await click(screen.getByRole("button", { name: "Stop and pick" }));
+    await click(bar.getByRole("button", { name: "Pick Claude Code" }));
 
     // The keeper's own chat: not the panel, and not the new-session draft the view falls to when the run is gone.
     await waitFor(() => expect(screen.queryByRole("region", { name: "Compare run" })).toBeNull());
@@ -322,6 +337,7 @@ describe("starting a compare run", () => {
     const draftsMounted = watchForDrafts();
 
     await click(within(panel).getByRole("button", { name: "Pick Claude Code" }));
+    await click(within(screen.getByRole("group", { name: "Confirm pick" })).getByRole("button", { name: "Pick Claude Code" }));
     await waitFor(() => expect(savedSessions().filter((s) => s.archivedAt)).toHaveLength(1));
     await act(async () => {});
 

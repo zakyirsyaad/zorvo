@@ -2,6 +2,7 @@ import type { ActionCard, ChatMessage, Session } from '../types';
 import { pendingCardsInTurn } from './acp-events';
 import { hasPendingElicitation } from './acp-elicitation';
 import { isListed } from './session-helpers';
+import type { Status } from '../components/ui/StatusLine';
 
 /** Most agents one compare run can start. */
 export const MAX_COMPARE_AGENTS = 4;
@@ -82,6 +83,32 @@ export function rowStatus(facts: RowFacts): RunRowStatus {
 
 export function statusLabel(status: RunRowStatus): string {
   return STATUS_LABELS[status];
+}
+
+const STATUS_DOTS: Record<RunRowStatus, Status> = {
+  starting: 'running',
+  working: 'running',
+  'needs-you': 'attention',
+  'needs-sign-in': 'attention',
+  failed: 'danger',
+  done: 'idle',
+  stopped: 'idle',
+};
+
+/** The dot beside a row's status word; done and stopped show the word alone. */
+export function runStatusDot(status: RunRowStatus): Status {
+  return STATUS_DOTS[status];
+}
+
+/** The confirm bar's question before the others are archived. */
+export function pickQuestion(winnerName: string): string {
+  return `Keep ${winnerName}'s work and archive the others?`;
+}
+
+/** The confirm bar's second line, naming the agents a Pick cuts off mid-turn. */
+export function stopsLine(names: readonly string[]): string {
+  const listed = names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+  return `This stops ${listed} mid-turn.`;
 }
 
 /** True when no row is still starting, working or waiting for the user. */

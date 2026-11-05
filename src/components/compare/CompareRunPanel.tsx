@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "../ui/Button";
 import { CompareRunRow } from "./CompareRunRow";
-import { othersToStop, type CompareRun, type RowFacts } from "../../lib/compare-run";
+import { othersToStop, pickQuestion, stopsLine, type CompareRun, type RowFacts } from "../../lib/compare-run";
+import { formatRelativeTime } from "../../lib/relative-time";
 
 export interface CompareRunPanelProps {
   run: CompareRun;
@@ -17,23 +18,24 @@ export interface CompareRunPanelProps {
   onPick: (winnerId: string) => void | Promise<void>;
 }
 
-/** The copy of the question asked before agents that are still working are stopped. */
-export function stopQuestion(count: number, winnerName: string): string {
-  return `Stop ${count} ${count === 1 ? "agent" : "agents"} and keep ${winnerName}'s work?`;
+/** "started 12 minutes ago", from the run's oldest session. */
+function startedLine(run: CompareRun): string {
+  const ago = formatRelativeTime(run.sessions[0]?.createdAt ?? Date.now());
+  return `started ${ago.charAt(0).toLowerCase()}${ago.slice(1)}`;
 }
 
-/** What a user sees while a compare run is open: every agent's state and changes, and Pick to keep one. */
+/** What a user sees while a compare run is open: one card per agent, and Pick to keep one. */
 export function CompareRunPanel({ run, rows, version, agentName, onOpen, onReview, onChoose, onPick }: CompareRunPanelProps) {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [isPicking, setIsPicking] = useState(false);
   const isBusy = (sessionId: string) => rows.find((row) => row.session.id === sessionId)?.isBusy ?? false;
   const confirmedRow = rows.find((row) => row.session.id === confirming);
-  const workingOthers = (winnerId: string) => othersToStop(run, winnerId, isBusy).filter((s) => isBusy(s.id));
-  const workingCount = confirmedRow ? workingOthers(confirmedRow.session.id).length : 0;
-  // The agents finished while the question was open: there is nothing left to stop, so it goes and Pick needs one more press.
-  useEffect(() => {
-    if (confirming !== null && workingCount === 0) setConfirming(null);
-  }, [confirming, workingCount]);
+  // Read on every render, so the bar's second line goes when the working agents finish while it is open.
+  const working = confirmedRow
+    ? othersToStop(run, confirmedRow.session.id, isBusy)
+        .filter((session) => isBusy(session.id))
+        .map((session) => agentName(session.profileId))
+    : [];
 
   const pick = async (winnerId: string) => {
     setConfirming(null);
@@ -45,20 +47,14 @@ export function CompareRunPanel({ run, rows, version, agentName, onOpen, onRevie
     }
   };
 
-  // Idle agents are archived without asking; only ones that are working are cut off mid-turn.
-  const handlePick = (winnerId: string) => {
-    if (workingOthers(winnerId).length === 0) void pick(winnerId);
-    else setConfirming(winnerId);
-  };
-
   return (
     <section aria-label="Compare run" className="flex flex-1 flex-col overflow-y-auto px-6 py-8">
       <div className="mx-auto w-full max-w-3xl">
-        <h2 className="text-base font-semibold text-fg">{run.name}</h2>
-        <p className="mt-1 text-xs text-fg-muted">
-          Compare what each agent did, then pick the one to keep. The others are archived and their worktrees stay.
+        <h2 className="text-xl font-semibold text-fg">{run.name}</h2>
+        <p className="mt-1 text-ui-sm text-fg-muted">
+          {run.sessions.length} agents, each in its own worktree · {startedLine(run)}
         </p>
-        <ul className="mt-4 rounded-xl border border-border bg-surface-1">
+        <ul className="mt-5 space-y-3">
           {rows.map((facts) => (
             <CompareRunRow
               key={facts.session.id}
@@ -69,21 +65,26 @@ export function CompareRunPanel({ run, rows, version, agentName, onOpen, onRevie
               onOpen={onOpen}
               onReview={onReview}
               onChoose={onChoose}
-              onPick={handlePick}
+              onPick={setConfirming}
             />
           ))}
         </ul>
-        {confirmedRow && workingCount > 0 && (
+        {confirmedRow && (
           <div
             role="group"
             aria-label="Confirm pick"
-            className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-attention-border bg-attention-surface px-4 py-3"
+            className="sticky bottom-0 mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-border-strong bg-surface-2 p-4 shadow-popover"
           >
-            <p className="text-sm text-fg">{stopQuestion(workingCount, agentName(confirmedRow.session.profileId))}</p>
+            <div className="min-w-0">
+              <p className="text-ui text-fg">{pickQuestion(agentName(confirmedRow.session.profileId))}</p>
+              {working.length > 0 && <p className="mt-0.5 text-ui-sm text-fg-muted">{stopsLine(working)}</p>}
+            </div>
             <div className="ml-auto flex items-center gap-2">
-              <Button onClick={() => setConfirming(null)}>Cancel</Button>
+              <Button variant="ghost" onClick={() => setConfirming(null)}>
+                Cancel
+              </Button>
               <Button variant="primary" onClick={() => void pick(confirmedRow.session.id)}>
-                Stop and pick
+                Pick {agentName(confirmedRow.session.profileId)}
               </Button>
             </div>
           </div>

@@ -239,6 +239,31 @@ describe("FilesPanel — tree", () => {
   });
 });
 
+describe("FilesPanel — the file viewer", () => {
+  it("opens a clicked file in the viewer instead of its app, when the viewer is wired", async () => {
+    const onViewFile = vi.fn();
+    await renderPanel({ onViewFile });
+
+    fireEvent.click(screen.getByRole("button", { name: "src" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^main\.ts/ }));
+    expect(onViewFile).toHaveBeenCalledWith("src/main.ts");
+    expect(mockInvoke).not.toHaveBeenCalledWith("open_path", expect.anything());
+  });
+
+  it("shows the viewer in the tree's place while a file is open, and keeps the tree for the way back", async () => {
+    const onCloseFile = vi.fn();
+    const { rerender } = render(<FilesPanel rootPath={ROOT} rootName="proj" viewedFile="README.md" onCloseFile={onCloseFile} />);
+    await act(async () => {});
+
+    expect(screen.queryByRole("tree")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Files" }));
+    expect(onCloseFile).toHaveBeenCalled();
+
+    rerender(<FilesPanel rootPath={ROOT} rootName="proj" viewedFile={null} onCloseFile={onCloseFile} />);
+    expect(screen.getByRole("tree", { name: "Files in proj" })).toBeInTheDocument();
+  });
+});
+
 describe("FilesPanel — git markers", () => {
   const markers = {
     files: new Map([

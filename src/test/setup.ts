@@ -101,6 +101,8 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
       return Promise.resolve({ name: "Test User", email: "test@example.com" });
     case "plugin:app|version":
       return Promise.resolve("0.1.0");
+    case "read_workspace_file":
+      return Promise.resolve({ kind: "text", text: "", size: 0 });
     case "list_directory":
     case "background_processes":
       return Promise.resolve([]);

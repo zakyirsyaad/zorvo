@@ -20,6 +20,7 @@ import {
   type DirEntryInfo,
 } from "../lib/files";
 import { MARKER_LETTER, MARKER_WORD, type FileMarker, type FileMarkers } from "../lib/file-markers";
+import { FileViewer } from "./files/FileViewer";
 
 export interface FilesPanelProps {
   /** Absolute path of the workspace folder the tree shows. */
@@ -34,6 +35,16 @@ export interface FilesPanelProps {
   onRevealRoot?: () => void;
   /** Git markers: a letter on changed files, a dot on folders holding changes. */
   markers?: FileMarkers;
+  /** The file open in the viewer, relative to the folder; the tree shows while it is null. */
+  viewedFile?: string | null;
+  /** Opens a clicked file in the viewer; without it, a click opens the file in its own app. */
+  onViewFile?: (relative: string) => void;
+  /** The viewer's "← Files". */
+  onCloseFile?: () => void;
+  /** Moves when the folder's changes are read again; the open file is read again then. */
+  version?: number;
+  /** Adds text to the composer (a range of the open file's lines). */
+  onInsertText?: (text: string) => void;
 }
 
 const MARKER_COLOR: Record<FileMarker, string> = {
@@ -244,13 +255,30 @@ function PanelHeader({ rootName, rootPath, query, onQueryChange, onRefresh, onRe
 }
 
 /** Right-hand panel with a lazily loaded tree of the workspace folder. */
-export function FilesPanel({ rootPath, rootName, onClose, onInsertPath, onRevealRoot, markers }: FilesPanelProps) {
+export function FilesPanel({
+  rootPath,
+  rootName,
+  onClose,
+  onInsertPath,
+  onRevealRoot,
+  markers,
+  viewedFile = null,
+  onViewFile,
+  onCloseFile,
+  version = 0,
+  onInsertText,
+}: FilesPanelProps) {
   const tree = useFileTree(rootPath);
   const [query, setQuery] = useState("");
   const [openError, setOpenError] = useState<string | null>(null);
   const visible = useMemo(() => filterVisiblePaths(tree.children, query), [tree.children, query]);
 
   const handleOpenFile = (entry: DirEntryInfo) => {
+    // With the viewer wired (the inspector), a click reads the file here; else it opens in its app.
+    if (onViewFile) {
+      onViewFile(entry.relativePath);
+      return;
+    }
     setOpenError(null);
     openWorkspacePath(rootPath, entry.relativePath).catch((error: unknown) => {
       setOpenError(`Couldn't open ${entry.name}: ${errorMessage(error)}`);
@@ -258,6 +286,23 @@ export function FilesPanel({ rootPath, rootName, onClose, onInsertPath, onReveal
   };
 
   const view: TreeView = { tree, visible, rootPath, onOpenFile: handleOpenFile, onInsertPath, markers };
+
+  // The viewer takes the header's and the tree's place; the tree's state (open folders, filter) waits for "← Files".
+  if (viewedFile) {
+    return (
+      <aside aria-label="Files panel" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui-sm text-fg-secondary">
+        <FileViewer
+          rootPath={rootPath}
+          relativePath={viewedFile}
+          marker={markers?.files.get(viewedFile)}
+          version={version}
+          onBack={() => onCloseFile?.()}
+          onInsertPath={(path) => onInsertPath?.(path)}
+          onInsertText={onInsertText}
+        />
+      </aside>
+    );
+  }
 
   return (
     <aside

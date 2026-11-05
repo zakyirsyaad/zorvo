@@ -84,7 +84,7 @@ export function useInspector(
   const [width, setWidth] = useInspectorWidth();
   const changes = useSessionChanges(folderPath, isRepository, turnsEnded, onError);
   const { stats: headStats, hasFailed: headStatsFailed } = useDiffStats(folderPath, isRepository, "head", changes.version, onError);
-  const filesPrefix = useDiffTargets(folderPath, isRepository, changes.version, onError).targets.prefix;
+  const filesPrefix = useDiffTargets(folderPath, isRepository, changes.version, onError).targets.prefix ?? "";
 
   const shownTab = tab !== null && layout.offered.includes(tab) ? tab : null;
 

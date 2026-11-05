@@ -1258,6 +1258,10 @@ export default function App() {
                     onInsertPath={(path) => insertPaths([path])}
                     onRevealRoot={() => filesFolder && shell.revealFolder(filesFolder.path)}
                     markers={fileMarkers}
+                    viewedFile={inspector.viewedFile}
+                    onViewFile={inspector.viewFile}
+                    onCloseFile={inspector.closeFile}
+                    version={inspector.changes.version}
                   />
                 )}
                 {inspectorTab === "terminal" && filesFolder && (

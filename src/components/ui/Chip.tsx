@@ -17,7 +17,9 @@ export interface ChipProps {
 
 const BASE = "inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-caption whitespace-nowrap text-fg-secondary";
 const VARIANTS = { plain: "border-transparent", outline: "border-border" } as const;
-const ACTION = "focus-ring transition-colors enabled:hover:bg-surface-hover";
+// An open chip (its popover showing) is filled and edged, as the canvas draws it.
+const ACTION =
+  "focus-ring transition-colors enabled:hover:bg-surface-hover aria-expanded:bg-surface-hover aria-expanded:border-border-strong";
 
 /** A 24px chip for session info and contextual actions in the top bar. */
 export function Chip({

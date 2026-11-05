@@ -18,6 +18,8 @@ export interface TerminalSignInState {
   agentName: string;
   methodName: string;
   phase: SignInPhase;
+  /** The agent's own interactive setup rather than a sign-in: the dialog reads "Set up <Agent>". */
+  isSetup?: boolean;
   error?: string;
   /** Replaces the usual line shown while the terminal runs, for a login that needs more said about it. */
   note?: string;
@@ -38,6 +40,8 @@ const CANCELLED: LoginOutcome = { ok: false, reason: 'Sign-in cancelled', cancel
 
 interface Run {
   terminalId: string;
+  /** The agent's own setup, which the user quits: any exit means it is done, whatever its code. */
+  isSetup: boolean;
   isCancelled: boolean;
   isStarted: boolean;
   settle: (outcome: LoginOutcome) => void;
@@ -74,7 +78,7 @@ export function useTerminalSignIn() {
         return;
       }
       if (run.isCancelled) finish(run, CANCELLED);
-      else if (payload.exitCode === 0) finish(run, { ok: true });
+      else if (run.isSetup || payload.exitCode === 0) finish(run, { ok: true });
       else finish(run, { ok: false, reason: `The sign-in ended with code ${payload.exitCode}` });
     });
     return () => {
@@ -85,11 +89,13 @@ export function useTerminalSignIn() {
   const run = useCallback(
     ({ profileId, cwd, agentName, method }: TerminalSignInRequest) => {
       const terminalId = createId('signin');
+      const isSetup = method.kind === 'setup';
       output.forget(terminalId);
       return new Promise<LoginOutcome>((resolve) => {
         let isSettled = false;
         const current: Run = {
           terminalId,
+          isSetup,
           isCancelled: false,
           isStarted: false,
           settle: (outcome) => {
@@ -99,9 +105,15 @@ export function useTerminalSignIn() {
           },
         };
         runRef.current = current;
-        setDialog({ terminalId, profileId, agentName, methodName: method.name, phase: 'starting' });
+        // A setup's method name ("Use OpenAI API key") would mislead: the setup offers every provider.
+        const methodName = isSetup ? `${agentName}'s own setup` : method.name;
+        setDialog({ terminalId, profileId, agentName, methodName, phase: 'starting', ...(isSetup ? { isSetup } : {}) });
 
-        invoke('acp_start_terminal_sign_in', { profileId, cwd, methodId: method.id, terminalId }).then(
+        // The setup names no method: the backend reads the program from the registry alone.
+        const start = isSetup
+          ? invoke('acp_start_agent_setup', { profileId, cwd, terminalId })
+          : invoke('acp_start_terminal_sign_in', { profileId, cwd, methodId: method.id, terminalId });
+        start.then(
           () => {
             current.isStarted = true;
             if (current.isCancelled) {

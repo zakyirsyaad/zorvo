@@ -839,3 +839,35 @@ fn binary_entry_without_this_macs_target_is_unsupported() {
     assert!(is_supported(&opencode()));
     assert!(is_supported(&gemini()));
 }
+
+#[test]
+fn setup_args_leave_out_the_registry_entrys_own_acp_arguments() {
+    let dir = bin_dir_with(&["npx", "opencode"]);
+    let path = path_of(dir.path());
+    let globals = BTreeSet::new();
+    let new_node = user_node(22);
+    let tools = SystemTools {
+        path_var: Some(&path),
+        npm_globals: &globals,
+        installed: &new_node,
+    };
+    let qwen = entry(
+        "qwen-code",
+        "Qwen Code",
+        Distribution::Npx {
+            package: "pkg@1".to_string(),
+            args: vec!["--acp".to_string(), "--experimental-skills".to_string()],
+            env: BTreeMap::new(),
+        },
+    );
+
+    let npx = resolve_profile(&qwen, &tools, true);
+    let binary = resolve_profile(&opencode(), &tools, false);
+
+    assert_eq!(
+        npx.acp_args,
+        vec!["-y", "pkg@1", "--acp", "--experimental-skills"]
+    );
+    assert_eq!(npx.setup_args, vec!["-y", "pkg@1"]);
+    assert!(binary.setup_args.is_empty());
+}

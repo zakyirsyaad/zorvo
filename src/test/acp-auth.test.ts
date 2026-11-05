@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { authCopy, parseAuthRequired, signInButtonLabel, type AuthMethod } from "../lib/acp-auth";
+import { authCopy, isSetupOnly, parseAuthRequired, signInButtonLabel, type AuthMethod } from "../lib/acp-auth";
 
 const codexMethods = [
   { id: "api-key", name: "API Key", description: "Use an API key to authenticate", _meta: { "api-key": { provider: "openai" } } },
@@ -16,10 +16,27 @@ describe("parseAuthRequired", () => {
     ]);
   });
 
-  it("explains methods the user must set up in a terminal through _meta", () => {
-    const qwen = [{ id: "openai", name: "Use OpenAI API key", _meta: { type: "terminal", args: ["--auth-type=openai"] } }];
+  it("reads Qwen Code's older terminal method as the agent's own setup", () => {
+    // Qwen Code 0.26.6's only method, as its `initialize` reports it.
+    const qwen = [
+      {
+        id: "openai",
+        name: "Use OpenAI API key",
+        description: "Requires setting the `OPENAI_API_KEY` environment variable",
+        _meta: { type: "terminal", args: ["--auth-type=openai"] },
+      },
+    ];
 
-    expect(parseAuthRequired(`ACP_AUTH_REQUIRED:${JSON.stringify(qwen)}`)?.[0].kind).toBe("explain");
+    const methods = parseAuthRequired(`ACP_AUTH_REQUIRED:${JSON.stringify(qwen)}`);
+
+    expect(methods).toHaveLength(1);
+    expect(methods?.[0]).toMatchObject({ id: "openai", kind: "setup" });
+  });
+
+  it("still explains a method that needs a key, even with other _meta", () => {
+    const methods = parseAuthRequired(`ACP_AUTH_REQUIRED:${JSON.stringify(codexMethods)}`);
+
+    expect(methods?.[0].kind).toBe("explain");
   });
 
   it("marks a type terminal method as a terminal sign-in", () => {
@@ -95,6 +112,30 @@ describe("authCopy", () => {
 
   it("points to the command line tool when the agent listed no method", () => {
     expect(authCopy("Codex", []).cliHint).toBe("Sign in with Codex's own command line tool, then check again.");
+  });
+});
+
+describe("an agent's own setup", () => {
+  const setup: AuthMethod = { id: "openai", name: "Use OpenAI API key", kind: "setup" };
+  const agent: AuthMethod = { id: "browser", name: "Sign in", kind: "agent" };
+
+  it("isSetupOnly is true only when every method is the agent's setup", () => {
+    expect(isSetupOnly([])).toBe(false);
+    expect(isSetupOnly([setup])).toBe(true);
+    expect(isSetupOnly([setup, agent])).toBe(false);
+  });
+
+  it("leads a setup-only agent with its setup, with no keys note or command line hint", () => {
+    expect(authCopy("Qwen Code", [setup])).toEqual({
+      lead: "Qwen Code needs its own setup before it can start.",
+      cliHint: null,
+      keysNote: null,
+    });
+  });
+
+  it("counts the setup among the ways in, not among the keys", () => {
+    expect(authCopy("Qwen Code", [setup, agent]).lead).toBe("Qwen Code needs you to sign in before it can start.");
+    expect(authCopy("Qwen Code", [setup, agent]).keysNote).toBeNull();
   });
 });
 

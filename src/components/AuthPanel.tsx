@@ -1,7 +1,7 @@
-import { LogIn } from "lucide-react";
+import { LogIn, SquareTerminal } from "lucide-react";
 import { Button } from "./ui/Button";
 import { BlockerCard } from "./ui/BlockerCard";
-import { authCopy, signInButtonLabel, type AuthMethod } from "../lib/acp-auth";
+import { authCopy, isSetupOnly, signInButtonLabel, type AuthMethod } from "../lib/acp-auth";
 import { plainReason } from "../lib/agent-sign-in";
 
 export type AuthStatus = "idle" | "signing-in" | "checking" | "signed-in" | "failed";
@@ -56,6 +56,7 @@ function MethodRow({ method, isBusy, onSignIn }: { method: AuthMethod; isBusy: b
       </li>
     );
   }
+  const isSetup = method.kind === "setup";
   return (
     <li className="flex items-center justify-between gap-3">
       <div className="min-w-0">
@@ -66,14 +67,17 @@ function MethodRow({ method, isBusy, onSignIn }: { method: AuthMethod; isBusy: b
         variant="primary"
         disabled={isBusy}
         onClick={() => onSignIn(method.id)}
-        icon={<LogIn size={12} />}
+        icon={isSetup ? <SquareTerminal size={12} /> : <LogIn size={12} />}
         className="shrink-0"
       >
-        {signInButtonLabel(method)}
+        {isSetup ? OPEN_SETUP_LABEL : signInButtonLabel(method)}
       </Button>
     </li>
   );
 }
+
+/** The button that opens an agent's own setup in the terminal dialog. */
+const OPEN_SETUP_LABEL = "Open setup in terminal";
 
 /**
  * Shown when an agent needs a sign-in before it can start. Methods that run
@@ -93,7 +97,8 @@ export function AuthPanel({
 }: AuthPanelProps) {
   const copy = authCopy(agentName, methods);
   const isBusy = status === "signing-in" || status === "checking";
-  const title = `Sign in to ${agentName}`;
+  const isSetup = isSetupOnly(methods);
+  const title = isSetup ? `Set up ${agentName}` : `Sign in to ${agentName}`;
   const isSignedIn = status === "signed-in";
   const line = statusLine(agentName, status, error, hasReturnedMessage);
   const footer = (
@@ -105,6 +110,7 @@ export function AuthPanel({
       <Button variant="ghost" aria-label="Dismiss sign-in" onClick={onDismiss}>
         Dismiss
       </Button>
+      {!isSignedIn && isSetup && <span className="text-caption text-fg-muted">Already set up?</span>}
       {!isSignedIn && (
         <Button disabled={isBusy} onClick={onCheckAgain}>
           Check again
@@ -112,6 +118,32 @@ export function AuthPanel({
       )}
     </div>
   );
+  if (isSetup) {
+    // The agent picks its provider in its own app, which Zorvo opens; its list is never copied here.
+    const setupMethod = methods[0];
+    return (
+      <BlockerCard
+        label={title}
+        profileId={profileId}
+        title={title}
+        footer={footer}
+        actions={
+          !isSignedIn && (
+            <Button
+              variant="primary"
+              disabled={isBusy}
+              onClick={() => onSignIn(setupMethod.id)}
+              icon={<SquareTerminal size={12} />}
+            >
+              {OPEN_SETUP_LABEL}
+            </Button>
+          )
+        }
+      >
+        {!isSignedIn && `${agentName} picks its provider in its own setup, which Zorvo opens in a terminal.`}
+      </BlockerCard>
+    );
+  }
   return (
     <BlockerCard label={title} profileId={profileId} title={title} footer={footer}>
       {!isSignedIn && (

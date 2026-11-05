@@ -144,6 +144,8 @@ struct Resolution<'e> {
     kind: &'static str,
     command: String,
     args: Vec<String>,
+    /// `args` without the entry's own arguments: the agent's interactive setup.
+    setup_args: Vec<String>,
     installed_on_system: bool,
     program: Program,
     /// Zorvo's runtime, when the user's own cannot run the agent.
@@ -229,18 +231,24 @@ fn binary_program(entry: &RegistryEntry, target: &BinaryTarget, tools: &SystemTo
 }
 
 fn resolve<'e>(entry: &'e RegistryEntry, tools: &SystemTools) -> Resolution<'e> {
-    let (kind, command, args, installed_on_system, target) = match &entry.distribution {
-        Distribution::Npx { package, args, .. } => (
-            "npx",
-            "npx".to_string(),
-            [vec!["-y".to_string(), package.clone()], args.clone()].concat(),
-            tools.npm_globals.contains(package_name(package)),
-            None,
-        ),
+    // `setup_args` is the same launch without the entry's own arguments, which are its ACP flags.
+    let (kind, command, args, setup_args, installed_on_system, target) = match &entry.distribution {
+        Distribution::Npx { package, args, .. } => {
+            let runner = vec!["-y".to_string(), package.clone()];
+            (
+                "npx",
+                "npx".to_string(),
+                [runner.clone(), args.clone()].concat(),
+                runner,
+                tools.npm_globals.contains(package_name(package)),
+                None,
+            )
+        }
         Distribution::Uvx { package, args, .. } => (
             "uvx",
             "uvx".to_string(),
             [vec![package.clone()], args.clone()].concat(),
+            vec![package.clone()],
             false,
             None,
         ),
@@ -250,7 +258,7 @@ fn resolve<'e>(entry: &'e RegistryEntry, tools: &SystemTools) -> Resolution<'e> 
             let args = target.map_or_else(Vec::new, |t| t.args.clone());
             // Apple's own tools never count as the agent (see `locate_user_installed`).
             let installed = tools.locate_user_installed(&command).is_some();
-            ("binary", command, args, installed, target)
+            ("binary", command, args, Vec::new(), installed, target)
         }
     };
     let (program, zorvo_runtime) = match (kind, target) {
@@ -279,6 +287,7 @@ fn resolve<'e>(entry: &'e RegistryEntry, tools: &SystemTools) -> Resolution<'e> 
         kind,
         command,
         args,
+        setup_args,
         installed_on_system,
         program,
         zorvo_runtime,
@@ -414,6 +423,7 @@ pub fn resolve_profile(entry: &RegistryEntry, tools: &SystemTools, listed: bool)
     );
     profile.acp_program = Some(resolution.command);
     profile.acp_args = resolution.args;
+    profile.setup_args = resolution.setup_args;
     profile.detected = availability == AVAILABILITY_READY;
     profile.detected_path = program_path.clone().or(unusable);
     profile.acp_program_path = program_path;

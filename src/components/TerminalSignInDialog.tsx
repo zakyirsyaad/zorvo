@@ -21,10 +21,10 @@ export interface TerminalSignInDialogProps {
 }
 
 /**
- * What the user does while the terminal runs: most logins ask with a menu. Zorvo checks once the login's
- * program ends; Close cancels it, so the line must not promise a check on Close.
+ * What the user does while the terminal runs: most logins ask with a menu. Zorvo checks when the
+ * program ends, and when Close ends it while it runs (`useAgentSignIn.closeDialog`).
  */
-const RUNNING_LINE = "Pick with ↑ ↓ and Return, here in the terminal. Zorvo checks again when the login finishes.";
+const RUNNING_LINE = "Pick with ↑ ↓ and Return, here in the terminal. Zorvo checks again when you close this.";
 
 function statusText({ phase, agentName, error, note }: TerminalSignInState): string {
   switch (phase) {
@@ -84,7 +84,7 @@ export function TerminalSignInDialog({
             {profileId && <AgentLogo profileId={profileId} name="" size={24} />}
             <div className="min-w-0">
               <h2 id={titleId} className="text-ui font-semibold text-fg">
-                Sign in to {state.agentName}
+                {state.isSetup ? `Set up ${state.agentName}` : `Sign in to ${state.agentName}`}
               </h2>
               <p className="truncate text-caption text-fg-subtle">{state.methodName}</p>
             </div>

@@ -26,6 +26,10 @@ pub struct AgentProfile {
     /// Program that speaks ACP for this agent (the CLI itself, or `npx` for an adapter).
     pub acp_program: Option<String>,
     pub acp_args: Vec<String>,
+    /// `acp_args` without the registry entry's own arguments (`--acp` and the like): what runs the
+    /// agent's interactive setup. Launch-only, like the path fields.
+    #[serde(skip)]
+    pub setup_args: Vec<String>,
     /// Absolute path of `acp_program` on this machine, once detected.
     pub acp_program_path: Option<String>,
     /// Dirs put before the user's `PATH` at launch (Zorvo's Node).
@@ -60,6 +64,7 @@ impl AgentProfile {
             detected_path: None,
             acp_program: None,
             acp_args: Vec::new(),
+            setup_args: Vec::new(),
             acp_program_path: None,
             acp_path_prepend: Vec::new(),
             acp_path_append: Vec::new(),

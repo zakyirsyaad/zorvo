@@ -150,6 +150,50 @@ describe("AuthPanel", () => {
     expect(onCheckAgain).toHaveBeenCalled();
   });
 
+  describe("an agent whose only way in is its own setup", () => {
+    const setup: AuthMethod = { id: "openai", name: "Use OpenAI API key", kind: "setup" };
+
+    it("is the setup card: Set up <Agent>, why, and Open setup in terminal", () => {
+      const { onSignIn } = renderPanel({ agentName: "Qwen Code", methods: [setup] });
+
+      const card = within(screen.getByRole("region", { name: "Set up Qwen Code" }));
+      expect(card.getByRole("heading", { level: 2, name: "Set up Qwen Code" })).toBeInTheDocument();
+      expect(card.getByText("Qwen Code picks its provider in its own setup, which Zorvo opens in a terminal.")).toBeInTheDocument();
+      fireEvent.click(card.getByRole("button", { name: "Open setup in terminal" }));
+      expect(onSignIn).toHaveBeenCalledWith("openai");
+    });
+
+    it("asks Already set up? beside Check again, with Dismiss, and no field or sign-in button", () => {
+      renderPanel({ agentName: "Qwen Code", methods: [setup] });
+
+      const footer = screen.getByRole("status").closest<HTMLElement>(".border-t")!;
+      expect(within(footer).getByText("Already set up?")).toBeInTheDocument();
+      expect(within(footer).getByRole("button", { name: "Check again" })).toBeInTheDocument();
+      expect(within(footer).getByRole("button", { name: "Dismiss sign-in" })).toBeInTheDocument();
+      expect(screen.queryByRole("textbox")).toBeNull();
+      expect(screen.queryByRole("button", { name: /^Sign in with/ })).toBeNull();
+    });
+
+    it("keeps one status line across idle, signing-in and checking", () => {
+      const props = { agentName: "Qwen Code", methods: [setup], onSignIn: vi.fn(), onCheckAgain: vi.fn(), onDismiss: vi.fn() };
+      const { rerender } = render(<AuthPanel {...props} status="idle" />);
+      const region = screen.getByRole("status");
+
+      rerender(<AuthPanel {...props} status="signing-in" />);
+      expect(screen.getByRole("status")).toBe(region);
+      rerender(<AuthPanel {...props} status="checking" />);
+      expect(screen.getByRole("status")).toBe(region);
+      expect(region).toHaveTextContent("Checking whether you are signed in…");
+    });
+
+    it("among other methods, is a row of the sign-in card with Open setup in terminal", () => {
+      renderPanel({ agentName: "Qwen Code", methods: [setup, agent], status: "signing-in" });
+
+      expect(screen.getByRole("region", { name: "Sign in to Qwen Code" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Open setup in terminal" })).toBeDisabled();
+    });
+  });
+
   it("with only keys, leads with the keys sentence and offers only Dismiss and Check again", () => {
     renderPanel({ methods: [explain] });
 

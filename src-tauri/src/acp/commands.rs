@@ -70,9 +70,21 @@ pub fn event_payload(event: &AcpEvent) -> Value {
 /// Resolves how to launch an installed ACP agent for `profile_id` (a legacy
 /// id is mapped first), at the version in `versions` when the catalog has it.
 fn launch_for(profile_id: &str, versions: &BTreeMap<String, String>) -> Result<AcpLaunch, String> {
-    let profile = with_system_tools(|catalog, tools| {
+    launch_of(resolved_profile(profile_id, versions)?)
+}
+
+/// The profile `profile_id` launches from, at `versions`, on this Mac now.
+fn resolved_profile(
+    profile_id: &str,
+    versions: &BTreeMap<String, String>,
+) -> Result<AgentProfile, String> {
+    with_system_tools(|catalog, tools| {
         profile_to_launch(catalog, tools, profile_id, versions, registry::unix_now())
-    })?;
+    })
+}
+
+/// How to launch `profile` with the user's environment and the registry's variables.
+fn launch_of(profile: AgentProfile) -> Result<AcpLaunch, String> {
     // A GUI app does not inherit the login shell's PATH, so hand the agent the
     // user's real environment (nvm, Homebrew, ...).
     let user_env = || {
@@ -184,6 +196,23 @@ fn launch_with_store(store: &AppStore, profile_id: &str) -> Result<AcpLaunch, St
 fn launch_in_workspace(store: &AppStore, cwd: &str, profile_id: &str) -> Result<AcpLaunch, String> {
     ensure_known_workspace(cwd, |path| store.is_known_workspace(path))?;
     launch_with_store(store, profile_id)
+}
+
+/// The ACP launch of `profile_id` in `cwd`, and the same program without the registry entry's own
+/// arguments (`setup_args`), which runs the agent's interactive setup. Both come from the registry
+/// alone; `cwd` must be one of the user's workspaces.
+fn setup_launches_in_workspace(
+    store: &AppStore,
+    cwd: &str,
+    profile_id: &str,
+) -> Result<(AcpLaunch, AcpLaunch), String> {
+    ensure_known_workspace(cwd, |path| store.is_known_workspace(path))?;
+    let profile = resolved_profile(profile_id, &versions_in_use(store))?;
+    let setup = AgentProfile {
+        acp_args: profile.setup_args.clone(),
+        ..profile.clone()
+    };
+    Ok((launch_of(profile)?, launch_of(setup)?))
 }
 
 #[tauri::command(async)]
@@ -384,6 +413,58 @@ pub fn acp_start_terminal_sign_in(
         &method_id,
         &terminal_id,
     )
+}
+
+/// Runs the agent's own interactive setup (Qwen Code: pick a provider) in a sign-in terminal, for
+/// an agent whose `initialize` marks one. As [`start_terminal_sign_in`], but the UI names no
+/// method: the program and its arguments come from the registry only.
+fn start_agent_setup(
+    manager: &AcpManager,
+    pty: &PtySessionManager,
+    store: &AppStore,
+    profile_id: &str,
+    cwd: &str,
+    terminal_id: &str,
+) -> Result<(), String> {
+    if !is_sign_in_terminal_id(terminal_id) {
+        return Err("Not a sign-in terminal id".to_string());
+    }
+    if pty.has_session(terminal_id) {
+        return Err("That sign-in is already running".to_string());
+    }
+    let attempts = manager.sign_ins();
+    attempts.begin(terminal_id)?;
+    let result = setup_launches_in_workspace(store, cwd, profile_id)
+        .and_then(|(launch, setup)| {
+            manager.agent_setup_with(cwd, &launch, &setup, |connection| {
+                attempts.track(terminal_id, connection)
+            })
+        })
+        .and_then(|setup| {
+            if attempts.is_cancelled(terminal_id) {
+                return Err(CANCELLED_MESSAGE.to_string());
+            }
+            pty.start_session(terminal_id, cwd, &setup.program, &setup.args, &setup.env)
+        });
+    // Whatever went wrong, a setup the user cancelled reads as cancelled.
+    let result = match result {
+        Err(_) if attempts.is_cancelled(terminal_id) => Err(CANCELLED_MESSAGE.to_string()),
+        other => other,
+    };
+    attempts.end(terminal_id);
+    result
+}
+
+#[tauri::command(async)]
+pub fn acp_start_agent_setup(
+    manager: State<'_, AcpManager>,
+    pty: State<'_, PtySessionManager>,
+    store: State<'_, AppStore>,
+    profile_id: String,
+    cwd: String,
+    terminal_id: String,
+) -> Result<(), String> {
+    start_agent_setup(&manager, &pty, &store, &profile_id, &cwd, &terminal_id)
 }
 
 /// Cancels a terminal sign-in that is still starting: the agent it reads the
@@ -700,6 +781,43 @@ mod tests {
             err.contains("is not one of your workspaces"),
             "unexpected: {err}"
         );
+    }
+
+    #[test]
+    fn a_setup_is_not_started_in_a_folder_that_is_not_a_workspace() {
+        let scratch = Scratch::new("setup-unknown");
+
+        let err = start_agent_setup(
+            &quiet_manager(),
+            &PtySessionManager::default_manager(),
+            &scratch.store(),
+            "qwen-code",
+            &scratch.folder(),
+            "signin-1",
+        )
+        .unwrap_err();
+
+        assert!(
+            err.contains("is not one of your workspaces"),
+            "unexpected: {err}"
+        );
+    }
+
+    #[test]
+    fn a_setup_needs_a_sign_in_terminal_id() {
+        let scratch = Scratch::new("setup-id");
+
+        let err = start_agent_setup(
+            &quiet_manager(),
+            &PtySessionManager::default_manager(),
+            &scratch.store(),
+            "qwen-code",
+            &scratch.folder(),
+            "shell-1",
+        )
+        .unwrap_err();
+
+        assert_eq!(err, "Not a sign-in terminal id");
     }
 
     #[test]

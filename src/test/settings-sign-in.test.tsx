@@ -102,6 +102,14 @@ describe("the sign-in of an agent row", () => {
     expect(screen.queryByRole("button", { name: /^(Sign|Log) in/ })).toBeNull();
   });
 
+  it("shows an agent's own setup as text only: Settings does not run it", () => {
+    const setup: AuthMethod = { id: "openai", name: "Use OpenAI API key", kind: "setup" };
+    renderRow(fakeSignIn({ stateOf: () => "needed", methodsOf: () => [setup] }), "Qwen Code");
+
+    expect(screen.getByText("Use OpenAI API key")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Use OpenAI API key|Open setup/ })).toBeNull();
+  });
+
   it("disables Check sign-in and the sign-in buttons while it works", () => {
     const request = { profileId: "claude-acp", cwd: CWD, methods: [claudeLogin], status: "signing-in" } as AuthRequest;
     renderRow(fakeSignIn({ stateOf: () => "needed", methodsOf: () => [claudeLogin], requestOf: () => request }));
@@ -582,6 +590,59 @@ describe("overlaps and leftovers", () => {
 
     expect(cancel).toHaveBeenCalled();
     expect(dismiss).toHaveBeenCalled();
+  });
+
+  it("checks the agent again, once, when its running login is closed", async () => {
+    const spy = vi.spyOn(internals(), "invoke").mockRejectedValue(authRequiredError(claudeMethods));
+    const { hook, cancel, signIn } = setupHook();
+    act(() => hook.result.current.settingsSignIn.check("claude-acp"));
+    await waitFor(() => expect(hook.result.current.settingsSignIn.methodsOf("claude-acp")).toHaveLength(1));
+    act(() => hook.result.current.settingsSignIn.signInWith("claude-acp", "claude-ai-login"));
+    (signIn.terminal as { dialog: unknown }).dialog = { phase: "running" };
+    const probes = () => spy.mock.calls.filter(([cmd]) => cmd === "acp_probe_agent").length;
+    const before = probes();
+
+    act(() => hook.result.current.settingsSignIn.cancelSignIn());
+
+    expect(cancel).toHaveBeenCalled();
+    await waitFor(() => expect(probes()).toBe(before + 1));
+  });
+
+  it("lets a check under way finish when the dialog is closed during it", async () => {
+    const spy = vi.spyOn(internals(), "invoke").mockRejectedValue(authRequiredError(claudeMethods));
+    const { hook, cancel, dismiss, signIn } = setupHook();
+    act(() => hook.result.current.settingsSignIn.check("claude-acp"));
+    await waitFor(() => expect(hook.result.current.settingsSignIn.methodsOf("claude-acp")).toHaveLength(1));
+    act(() => hook.result.current.settingsSignIn.signInWith("claude-acp", "claude-ai-login"));
+    const close = vi.fn();
+    (signIn.terminal as { dialog: unknown; close: unknown }).dialog = { phase: "checking" };
+    (signIn.terminal as { dialog: unknown; close: unknown }).close = close;
+    const probes = () => spy.mock.calls.filter(([cmd]) => cmd === "acp_probe_agent").length;
+    const before = probes();
+
+    act(() => hook.result.current.settingsSignIn.cancelSignIn());
+    await act(async () => {});
+
+    expect(close).toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+    expect(dismiss).not.toHaveBeenCalled();
+    expect(probes()).toBe(before);
+  });
+
+  it("checks nothing when the login is closed before it runs", async () => {
+    const spy = vi.spyOn(internals(), "invoke").mockRejectedValue(authRequiredError(claudeMethods));
+    const { hook, signIn } = setupHook();
+    act(() => hook.result.current.settingsSignIn.check("claude-acp"));
+    await waitFor(() => expect(hook.result.current.settingsSignIn.methodsOf("claude-acp")).toHaveLength(1));
+    act(() => hook.result.current.settingsSignIn.signInWith("claude-acp", "claude-ai-login"));
+    (signIn.terminal as { dialog: unknown }).dialog = { phase: "starting" };
+    const probes = () => spy.mock.calls.filter(([cmd]) => cmd === "acp_probe_agent").length;
+    const before = probes();
+
+    act(() => hook.result.current.settingsSignIn.cancelSignIn());
+    await act(async () => {});
+
+    expect(probes()).toBe(before);
   });
 
   it("leaves the draft's request alone when it cancels a login it did not start", () => {

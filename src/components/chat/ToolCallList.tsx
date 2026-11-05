@@ -4,7 +4,7 @@ import {
   ChevronRight,
   FileText,
   Globe,
-  Loader2,
+  LoaderCircle,
   Pencil,
   Search,
   Terminal,
@@ -27,8 +27,9 @@ const KIND_ICONS: Readonly<Record<string, LucideIcon>> = {
   fetch: Globe,
 };
 
+/** Done is quiet, as the canvas draws it; only a failure is coloured. */
 const STATUS_CLASSES = {
-  Done: "text-status-running",
+  Done: "text-fg-subtle",
   Failed: "text-danger",
   "Did not finish": "text-fg-muted",
 } as const;
@@ -47,66 +48,65 @@ function editCounts(tool: ToolExecution): { added: number; removed: number } | n
   );
 }
 
-/** A status claimed only once the agent said so; a tool still running shows a spinner. */
+/** A status claimed only once the agent said so; a tool still running says so in words, by a turning arc. */
 function ToolStatus({ tool, isTurnOver }: { tool: ToolExecution; isTurnOver: boolean }) {
   const word = toolStatusWord(tool, isTurnOver);
   if (word === null) {
     return (
-      <span className="inline-flex items-center text-fg-muted">
-        <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin" aria-hidden="true" />
-        <span className="sr-only">Running</span>
+      <span className="flex shrink-0 items-center gap-1.5">
+        <LoaderCircle className="h-3 w-3 text-status-running motion-safe:animate-spin" aria-hidden="true" />
+        <span className="text-caption text-status-running">Running</span>
       </span>
     );
   }
-  return <span className={`text-caption ${STATUS_CLASSES[word]}`}>{word}</span>;
+  return <span className={`shrink-0 text-caption ${STATUS_CLASSES[word]}`}>{word}</span>;
 }
 
-const ROW = "flex items-center justify-between gap-2 px-3 py-1.5 text-left";
-
-/** A file path as its name, which must stay in sight, and the folder it is in, which may be cut. */
-function splitPath(path: string): { name: string; folder: string } {
-  const trimmed = path.replace(/\/+$/, "");
-  const slash = trimmed.lastIndexOf("/");
-  return slash < 0 ? { name: trimmed, folder: "" } : { name: trimmed.slice(slash + 1), folder: trimmed.slice(0, slash) };
-}
+/** A 30px row: the icon, a 56px verb, the full path in mono, then the counts and the status. */
+const ROW = "flex h-7.5 w-full items-center gap-2 px-3 text-left text-ui-sm text-fg-secondary";
 
 function ToolRow({ tool, isTurnOver, isOpen }: { tool: ToolExecution; isTurnOver: boolean; isOpen?: boolean }) {
   const Chevron = isOpen ? ChevronDown : ChevronRight;
   const Icon = (tool.kind && KIND_ICONS[tool.kind]) || Wrench;
   const { verb, target } = toolRow(tool);
+  // A file's path is cut at its start, so its name stays in sight however long the path;
+  // a command reads from its start, so it is cut at its end.
+  const isFile = Boolean(target) && tool.kind !== "execute";
   // Diffing is the costly part, and the agent's diff objects stay the same between streamed frames.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what editCounts reads
   const counts = useMemo(() => editCounts(tool), [tool.kind, tool.details]);
-  // A command reads as it is; a file shows its name first, so a long absolute path never hides it.
-  const file = target && tool.kind !== "execute" ? splitPath(target) : null;
   const hover = tool.locations?.length ? tool.locations.join("\n") : tool.name;
   return (
     <>
-      <div className="flex min-w-0 items-center gap-2 overflow-hidden" title={hover}>
-        {isOpen !== undefined && <Chevron size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />}
-        <Icon className="h-3.5 w-3.5 shrink-0 text-fg-muted" aria-hidden="true" />
-        <span className={`text-ui text-fg-secondary ${target ? "shrink-0" : "min-w-0 truncate"}`}>{verb}</span>
-        {file ? (
-          <>
-            <span className="shrink-0 font-mono text-ui-sm text-fg-secondary">{file.name}</span>
-            {file.folder && <span className="min-w-0 truncate font-mono text-ui-sm text-fg-muted">{file.folder}</span>}
-          </>
-        ) : (
-          target && <span className="min-w-0 truncate font-mono text-ui-sm text-fg-muted">{target}</span>
-        )}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {counts && (
-          <span className="text-caption tabular-nums">
-            <span className="text-status-running">+{formatLineCount(counts.added)}</span>{" "}
-            <span className="text-danger">
-              {MINUS}
-              {formatLineCount(counts.removed)}
-            </span>
+      {isOpen !== undefined && <Chevron size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />}
+      <Icon className="h-3.5 w-3.5 shrink-0 text-fg-muted" aria-hidden="true" />
+      {target ? (
+        <>
+          <span className="w-14 shrink-0 truncate text-fg-muted">{verb}</span>
+          <span
+            className={`min-w-0 flex-1 truncate font-mono text-caption ${isFile ? "text-left [direction:rtl]" : ""}`}
+            title={hover}
+          >
+            {/* bdi keeps the path itself reading left to right inside the right-to-left box. */}
+            <bdi>{target}</bdi>
           </span>
-        )}
-        <ToolStatus tool={tool} isTurnOver={isTurnOver} />
-      </div>
+        </>
+      ) : (
+        // Without a file or a command, the agent's own title is the whole row.
+        <span className="min-w-0 flex-1 truncate" title={hover}>
+          {verb}
+        </span>
+      )}
+      {counts && (
+        <span className="shrink-0 font-mono text-caption tabular-nums">
+          <span className="text-status-running">+{formatLineCount(counts.added)}</span>{" "}
+          <span className="text-danger">
+            {MINUS}
+            {formatLineCount(counts.removed)}
+          </span>
+        </span>
+      )}
+      <ToolStatus tool={tool} isTurnOver={isTurnOver} />
     </>
   );
 }
@@ -126,14 +126,16 @@ function ToolCallRow({ tool, defaultOpenDiffs, isTurnOver }: { tool: ToolExecuti
     <div>
       <button
         type="button"
+        data-tool-row=""
         aria-expanded={isOpen}
         onClick={() => setUserOpen(!isOpen)}
-        className={`${ROW} focus-ring w-full cursor-pointer transition-colors hover:bg-surface-hover`}
+        className={`${ROW} focus-ring cursor-pointer transition-colors hover:bg-surface-hover`}
       >
         <ToolRow tool={tool} isTurnOver={isTurnOver} isOpen={isOpen} />
       </button>
       {isOpen && (
-        <div className="pb-2.5 pl-12 pr-3 pt-1">
+        // Indented 76px, past the icon and the verb, as the canvas draws a command's output.
+        <div data-tool-output="" className="mb-2 ml-[76px] mr-3">
           <ToolDetails details={tool.details ?? []} />
         </div>
       )}
@@ -142,9 +144,9 @@ function ToolCallRow({ tool, defaultOpenDiffs, isTurnOver }: { tool: ToolExecuti
 }
 
 /**
- * The agent's tool calls as flat rows inside their group's card: what each
- * did, on what, and whether it finished. One that produced something can be
- * expanded; a diff starts open only in the turn being watched.
+ * The agent's tool calls as flat rows inside their group's card, with no dividers: what each
+ * did, on what, and whether it finished. One that produced something can be expanded; a diff
+ * starts open only in the turn being watched.
  */
 export const ToolCallList = memo(function ToolCallList({
   tools,
@@ -159,18 +161,15 @@ export const ToolCallList = memo(function ToolCallList({
 }) {
   return (
     <div>
-      {tools.map((tool, index) => (
-        <div key={tool.id}>
-          {index > 0 && <div className="h-px bg-border" aria-hidden="true" />}
-          {tool.details?.length ? (
-            <ToolCallRow tool={tool} defaultOpenDiffs={defaultOpenDiffs} isTurnOver={isTurnOver} />
-          ) : (
-            <div className={ROW}>
-              <ToolRow tool={tool} isTurnOver={isTurnOver} />
-            </div>
-          )}
-        </div>
-      ))}
+      {tools.map((tool) =>
+        tool.details?.length ? (
+          <ToolCallRow key={tool.id} tool={tool} defaultOpenDiffs={defaultOpenDiffs} isTurnOver={isTurnOver} />
+        ) : (
+          <div key={tool.id} data-tool-row="" className={ROW}>
+            <ToolRow tool={tool} isTurnOver={isTurnOver} />
+          </div>
+        ),
+      )}
     </div>
   );
 });

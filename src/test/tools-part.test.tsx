@@ -52,7 +52,8 @@ describe("ToolsPart", () => {
     fireEvent.click(screen.getByRole("button", { name: /Read a file, ran a command/ }));
 
     const card = screen.getByRole("button", { name: /Read a file, ran a command/ }).parentElement!;
-    expect(within(card).getByText("Done").className).toContain("text-status-running");
+    // Done is quiet, as the canvas draws it; only a failure is coloured.
+    expect(within(card).getByText("Done").className).toContain("text-fg-subtle");
     expect(within(card).getByText("Failed").className).toContain("text-danger");
   });
 

@@ -80,9 +80,9 @@ function TextOutput({ text }: { text: string }) {
   const [showAll, setShowAll] = useState(false);
   const shown = showAll ? lines : lines.slice(0, MAX_DETAIL_ROWS);
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-bg">
-      {/* Output reads on the terminal's own dark ground; the Show all button below keeps the panel's. */}
-      <pre className="max-h-60 overflow-auto whitespace-pre-wrap bg-terminal-bg px-2.5 py-1.5 font-mono text-[11px] text-terminal-fg-subtle">
+    // No edge: the output sits on the terminal's own dark ground, as the canvas draws it.
+    <div className="overflow-hidden rounded-md bg-terminal-bg">
+      <pre className="max-h-60 overflow-auto whitespace-pre-wrap bg-terminal-bg px-2.5 py-2 font-mono text-caption leading-[17px] text-terminal-fg">
         {shown.join("\n")}
       </pre>
       {lines.length > MAX_DETAIL_ROWS && (

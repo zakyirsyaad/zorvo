@@ -60,9 +60,8 @@ describe("ToolCallList", () => {
     render(<ToolCallList tools={[{ ...editTool, locations: ["src/app.ts"] }]} defaultOpenDiffs={false} isTurnOver />);
     const row = screen.getByRole("button", { name: /Edited/ });
     expect(within(row).getByText("Edited")).toBeDefined();
-    // The file's name first, its folder after it.
-    expect(within(row).getByText("app.ts").className).toContain("font-mono");
-    expect(within(row).getByText("src")).toBeDefined();
+    // The full path as one mono span, as the canvas draws it.
+    expect(within(row).getByText("src/app.ts").parentElement?.className).toContain("font-mono");
     expect(within(row).getByText("Done")).toBeDefined();
   });
 
@@ -72,7 +71,10 @@ describe("ToolCallList", () => {
       <ToolCallList tools={[{ ...editTool, locations: [path, "/tmp/other.ts"] }]} defaultOpenDiffs={false} isTurnOver />,
     );
     const row = screen.getByRole("button", { name: /Edited/ });
-    expect(within(row).getByText("parser.ts").className).toContain("font-mono");
+    // One span with the whole path, cut at its start so the file's name stays in sight.
+    const shown = within(row).getByText(path).parentElement as HTMLElement;
+    expect(shown.className).toContain("font-mono");
+    expect(shown.className).toContain("[direction:rtl]");
     const titles = [...row.querySelectorAll("[title]")].map((element) => element.getAttribute("title"));
     expect(titles).toContain(`${path}\n/tmp/other.ts`);
   });

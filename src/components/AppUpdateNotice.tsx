@@ -1,6 +1,5 @@
 import { downloadPercent, restartWarning, type AppUpdateInfo, type AppUpdateProgress } from '../lib/app-update';
 import { Button } from './ui/Button';
-import { NOTICE_BANNER_LAYOUT } from './ui/noticeBannerStyle';
 
 export interface AppUpdateNoticeProps {
   update: AppUpdateInfo | null;
@@ -14,7 +13,7 @@ export interface AppUpdateNoticeProps {
   onLater: () => void;
 }
 
-/** Tells the user a newer Zorvo exists and offers to install it and restart. */
+/** A card at the bottom right of the main area: a newer Zorvo is ready, with Update & restart. */
 export function AppUpdateNotice({
   update,
   busyCount = 0,
@@ -28,27 +27,26 @@ export function AppUpdateNotice({
   const percent = downloadPercent(progress);
   const warning = restartWarning(busyCount, terminalCount);
   return (
-    <div role="status" className={`bg-surface-2 text-fg-secondary ${NOTICE_BANNER_LAYOUT}`}>
-      <span className="break-words">
-        {isInstalling ? (
-          <>
-            Updating…
-            {/* Shown, not announced: a screen reader would read every percent of the download. */}
-            {percent !== null && <span aria-hidden="true"> {percent}%</span>}
-          </>
-        ) : (
-          `Zorvo ${update.version} is available.`
+    <div role="status" className="w-[340px] rounded-xl border border-border bg-surface-2 p-4 shadow-popover">
+      <p className="text-ui font-medium text-fg">{`Zorvo ${update.version} is ready`}</p>
+      {warning && <p className="mt-1 text-ui-sm text-fg-muted">{warning}</p>}
+      {isInstalling && (
+        <p className="mt-1 text-ui-sm text-fg-muted">
+          {progress?.phase === 'installing' ? 'Installing…' : 'Downloading…'}
+          {/* Shown, not announced: a screen reader would read every percent of the download. */}
+          {percent !== null && <span aria-hidden="true"> {percent}%</span>}
+        </p>
+      )}
+      <div className="mt-3 flex justify-end gap-2">
+        {!isInstalling && (
+          <Button variant="ghost" onClick={onLater}>
+            Later
+          </Button>
         )}
-        {warning && ` ${warning}`}
-      </span>
-      <span className="ml-3 flex shrink-0 gap-2">
-        <Button variant="primary" onClick={onInstall} disabled={isInstalling}>
+        <Button onClick={onInstall} disabled={isInstalling}>
           Update &amp; restart
         </Button>
-        {!isInstalling && (
-          <Button variant="ghost" onClick={onLater}>Later</Button>
-        )}
-      </span>
+      </div>
     </div>
   );
 }

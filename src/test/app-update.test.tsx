@@ -66,15 +66,34 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 describe("AppUpdateNotice", () => {
   const base = { isInstalling: false, progress: null, onInstall: () => {}, onLater: () => {} };
 
-  it("names the version and offers Update & restart and Later", () => {
+  it("is a card that names the version and offers Later and Update & restart", () => {
     const onInstall = vi.fn();
     const onLater = vi.fn();
-    render(<AppUpdateNotice {...base} update={info("0.6.0")} onInstall={onInstall} onLater={onLater} />);
-    expect(screen.getByRole("status")).toHaveTextContent("Zorvo 0.6.0 is available.");
+    render(<AppUpdateNotice {...base} update={info("0.9.0")} busyCount={1} onInstall={onInstall} onLater={onLater} />);
+
+    const card = screen.getByRole("status");
+    expect(card).toHaveClass("rounded-xl", "border", "border-border", "bg-surface-2", "shadow-popover");
+    expect(card).toHaveTextContent("Zorvo 0.9.0 is ready");
+    expect(card).toHaveTextContent("Agents that are working stop when Zorvo restarts.");
+    expect(screen.getByRole("button", { name: "Later" }).className).toContain("border-transparent");
+    expect(screen.getByRole("button", { name: "Update & restart" }).className).toContain("border-border-strong");
     fireEvent.click(screen.getByRole("button", { name: "Update & restart" }));
     fireEvent.click(screen.getByRole("button", { name: "Later" }));
     expect(onInstall).toHaveBeenCalledTimes(1);
     expect(onLater).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads Downloading… then Installing… during an install, with Later gone and the button off", () => {
+    const { rerender } = render(
+      <AppUpdateNotice {...base} update={info("0.9.0")} isInstalling progress={{ phase: "downloading", downloaded: 50, total: 200 }} />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Downloading… 25%");
+    expect(screen.queryByRole("button", { name: "Later" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Update & restart" })).toBeDisabled();
+
+    rerender(<AppUpdateNotice {...base} update={info("0.9.0")} isInstalling progress={{ phase: "installing" }} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Installing…");
+    expect(screen.getByRole("status")).not.toHaveTextContent("Downloading");
   });
 
   it("renders nothing without an update", () => {
@@ -86,7 +105,7 @@ describe("AppUpdateNotice", () => {
     render(
       <AppUpdateNotice {...base} update={info("0.6.0")} isInstalling progress={{ phase: "downloading", downloaded: 50, total: 200 }} />,
     );
-    expect(screen.getByRole("status")).toHaveTextContent("Updating… 25%");
+    expect(screen.getByRole("status")).toHaveTextContent("Downloading… 25%");
     expect(screen.getByRole("button", { name: "Update & restart" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Later" })).not.toBeInTheDocument();
   });
@@ -98,9 +117,9 @@ describe("AppUpdateNotice", () => {
     expect(screen.getByText("25%")).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("says only Updating… when the size is unknown", () => {
+  it("says only the phase when the size is unknown", () => {
     render(<AppUpdateNotice {...base} update={info("0.6.0")} isInstalling progress={{ phase: "installing" }} />);
-    expect(screen.getByRole("status")).toHaveTextContent(/^Updating…/);
+    expect(screen.getByRole("status")).toHaveTextContent("Installing…");
     expect(screen.getByRole("status")).not.toHaveTextContent("%");
   });
 
@@ -112,7 +131,7 @@ describe("AppUpdateNotice", () => {
     rerender(<AppUpdateNotice {...base} update={info("0.6.0")} busyCount={1} terminalCount={3} />);
     expect(screen.getByRole("status")).toHaveTextContent("Agents that are working and open terminals end when Zorvo restarts.");
     rerender(<AppUpdateNotice {...base} update={info("0.6.0")} busyCount={0} terminalCount={0} />);
-    expect(screen.getByRole("status")).toHaveTextContent("Zorvo 0.6.0 is available.");
+    expect(screen.getByRole("status")).toHaveTextContent("Zorvo 0.6.0 is ready");
     expect(screen.getByRole("status")).not.toHaveTextContent("when Zorvo restarts");
   });
 });

@@ -998,15 +998,6 @@ export default function App() {
           <div className="flex min-h-0 flex-1">
             <article className={`${isDiffOpen && inspector.isDiffExpanded ? "hidden" : "flex"} flex-1 flex-col bg-bg relative overflow-hidden`}>
               {isDraggingFiles && <FileDropOverlay />}
-              <AppUpdateNotice
-                update={appUpdate.update}
-                busyCount={sessions.filter((session) => isSessionBusy(session.id)).length}
-                terminalCount={terminals.liveCount}
-                isInstalling={appUpdate.isInstalling}
-                progress={appUpdate.progress}
-                onInstall={() => void appUpdate.install()}
-                onLater={appUpdate.dismiss}
-              />
               <UpdateNotice
                 agents={agentUpdates.unnotified}
                 onShow={() => { agentUpdates.acknowledge(); setSettingsTab("agents"); }}
@@ -1100,14 +1091,21 @@ export default function App() {
                   />
                 </div>
               )}
-              {notice && (
-                // Anchored at the composer's top edge, so the toast floats over the chat and never over Send or Stop.
-                <div className="relative h-0">
-                  <ToastStack>
-                    <Toast tone="error" message={notice} onDismiss={() => setNotice(null)} />
-                  </ToastStack>
-                </div>
-              )}
+              {/* Anchored at the composer's top edge, so the cards float over the chat and never over Send or Stop. */}
+              <div className="relative h-0">
+                <ToastStack>
+                  <AppUpdateNotice
+                    update={appUpdate.update}
+                    busyCount={sessions.filter((session) => isSessionBusy(session.id)).length}
+                    terminalCount={terminals.liveCount}
+                    isInstalling={appUpdate.isInstalling}
+                    progress={appUpdate.progress}
+                    onInstall={() => void appUpdate.install()}
+                    onLater={appUpdate.dismiss}
+                  />
+                  {notice && <Toast tone="error" message={notice} onDismiss={() => setNotice(null)} />}
+                </ToastStack>
+              </div>
               {/* The draft's blockers sit right above the composer, which stays: a prompt can be written meanwhile. */}
               <div className="mx-auto w-full max-w-3xl space-y-3 px-4">
                 <SignInLayer

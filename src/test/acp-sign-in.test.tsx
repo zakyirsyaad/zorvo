@@ -161,12 +161,10 @@ describe("signing in to an ACP agent from the app", () => {
     expect(document.activeElement).toBe(prompt());
   });
 
-  it("says in the panel that the refused message is back in the box and is sent again", async () => {
+  it("says in the panel's status line that the refused message is sent again", async () => {
     const { panel } = await sendRefused();
 
-    expect(
-      panel.getByText("Your message is back in the box below. Zorvo sends it again once you are signed in, unless you change it."),
-    ).toBeDefined();
+    expect(panel.getByRole("status").textContent).toBe("Your message will be sent again after you sign in");
   });
 
   it("shows the session running again once the refused message is sent", async () => {

@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { AuthPanel, type AuthPanelProps } from "../components/AuthPanel";
 import type { AuthMethod } from "../lib/acp-auth";
 
@@ -100,17 +100,64 @@ describe("AuthPanel", () => {
     }
   });
 
-  it("says the refused message is back in the box only when it was put back", () => {
-    const { rerender } = render(
-      <AuthPanel agentName="Claude Code" methods={[terminal]} status="idle" onSignIn={vi.fn()} onCheckAgain={vi.fn()} onDismiss={vi.fn()} />,
-    );
-    expect(screen.queryByText(/Your message is back in the box below/)).toBeNull();
+  it("says in the status line that the returned message is sent again, only while idle", () => {
+    const props = { agentName: "Claude Code", methods: [terminal], onSignIn: vi.fn(), onCheckAgain: vi.fn(), onDismiss: vi.fn() };
+    const { rerender } = render(<AuthPanel {...props} status="idle" />);
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
 
-    rerender(
-      <AuthPanel agentName="Claude Code" methods={[terminal]} status="idle" hasReturnedMessage onSignIn={vi.fn()} onCheckAgain={vi.fn()} onDismiss={vi.fn()} />,
-    );
-    expect(
-      screen.getByText("Your message is back in the box below. Zorvo sends it again once you are signed in, unless you change it."),
-    ).toBeTruthy();
+    rerender(<AuthPanel {...props} status="idle" hasReturnedMessage />);
+    expect(screen.getByRole("status")).toHaveTextContent("Your message will be sent again after you sign in");
+
+    rerender(<AuthPanel {...props} status="checking" hasReturnedMessage />);
+    expect(screen.getByRole("status")).toHaveTextContent("Checking whether you are signed in…");
+
+    rerender(<AuthPanel {...props} status="failed" error="Claude Code still says you are signed out" hasReturnedMessage />);
+    expect(screen.getByRole("status")).toHaveTextContent("Sign-in failed: Claude Code still says you are signed out");
+  });
+
+  it("is a card named for the agent that lists every method", () => {
+    renderPanel({ agentName: "Gemini CLI", methods: [agent, terminal, explain] });
+
+    const card = within(screen.getByRole("region", { name: "Sign in to Gemini CLI" }));
+    expect(card.getByRole("heading", { level: 2, name: "Sign in to Gemini CLI" })).toBeInTheDocument();
+    expect(card.getAllByRole("listitem")).toHaveLength(3);
+    expect(card.getByRole("button", { name: "Sign in with ChatGPT" })).toBeInTheDocument();
+    expect(card.getByRole("button", { name: "Sign in with Claude Subscription" })).toBeInTheDocument();
+  });
+
+  it("shows a method Zorvo cannot run as its name, In your shell and its description, with no button or field", () => {
+    renderPanel({ methods: [agent, explain] });
+
+    const item = screen.getAllByRole("listitem").find((li) => li.textContent?.includes("API Key"))!;
+    expect(item).toHaveTextContent("API Key");
+    expect(item).toHaveTextContent("In your shell");
+    expect(item).toHaveTextContent("Use an API key to authenticate");
+    expect(within(item).queryByRole("button")).toBeNull();
+    expect(within(item).queryByRole("textbox")).toBeNull();
+  });
+
+  it("puts the status line, Dismiss and Check again in the card's footer", () => {
+    const onDismiss = vi.fn();
+    const onCheckAgain = vi.fn();
+    renderPanel({ onDismiss, onCheckAgain });
+
+    const footer = screen.getByRole("status").closest<HTMLElement>(".border-t");
+    expect(footer).not.toBeNull();
+    fireEvent.click(within(footer!).getByRole("button", { name: "Dismiss sign-in" }));
+    fireEvent.click(within(footer!).getByRole("button", { name: "Check again" }));
+
+    expect(onDismiss).toHaveBeenCalled();
+    expect(onCheckAgain).toHaveBeenCalled();
+  });
+
+  it("with only keys, leads with the keys sentence and offers only Dismiss and Check again", () => {
+    renderPanel({ methods: [explain] });
+
+    expect(screen.getByText("Claude Code needs an API key or another account setting before it can start.")).toBeInTheDocument();
+    expect(screen.getAllByRole("button").map((button) => button.getAttribute("aria-label") ?? button.textContent)).toEqual([
+      "Dismiss sign-in",
+      "Check again",
+    ]);
+    expect(screen.queryByRole("textbox")).toBeNull();
   });
 });

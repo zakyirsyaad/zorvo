@@ -1165,7 +1165,7 @@ describe("A message with comments that comes back", () => {
 
     expect(prompt().value).toBe(betaText);
     expect(screen.getByRole("region", { name: "Sign in to Claude Code" })).toBeDefined();
-    expect(screen.queryByText(/Your message is back in the box below/)).toBeNull();
+    expect(screen.queryByText("Your message will be sent again after you sign in")).toBeNull();
 
     typeInPrompt("");
 

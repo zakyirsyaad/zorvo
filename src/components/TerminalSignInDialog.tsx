@@ -20,8 +20,11 @@ export interface TerminalSignInDialogProps {
   onResize: (cols: number, rows: number) => void;
 }
 
-/** What the user does while the terminal runs: most logins ask with a menu. */
-const RUNNING_LINE = "Pick with ↑ ↓ and Return, here in the terminal. Zorvo checks again when you close this.";
+/**
+ * What the user does while the terminal runs: most logins ask with a menu. Zorvo checks once the login's
+ * program ends; Close cancels it, so the line must not promise a check on Close.
+ */
+const RUNNING_LINE = "Pick with ↑ ↓ and Return, here in the terminal. Zorvo checks again when the login finishes.";
 
 function statusText({ phase, agentName, error, note }: TerminalSignInState): string {
   switch (phase) {

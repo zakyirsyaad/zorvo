@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../ui/Button";
 import { CompareRunRow } from "./CompareRunRow";
 import { othersToStop, pickQuestion, stopsLine, type CompareRun, type RowFacts } from "../../lib/compare-run";
@@ -28,6 +28,12 @@ function startedLine(run: CompareRun): string {
 export function CompareRunPanel({ run, rows, version, agentName, onOpen, onReview, onChoose, onPick }: CompareRunPanelProps) {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [isPicking, setIsPicking] = useState(false);
+  const panelRef = useRef<HTMLElement>(null);
+  const barPickRef = useRef<HTMLButtonElement>(null);
+  // Every Pick asks: the question takes focus, or it would come and go unheard below the list.
+  useEffect(() => {
+    if (confirming !== null) barPickRef.current?.focus();
+  }, [confirming]);
   const isBusy = (sessionId: string) => rows.find((row) => row.session.id === sessionId)?.isBusy ?? false;
   const confirmedRow = rows.find((row) => row.session.id === confirming);
   // Read on every render, so the bar's second line goes when the working agents finish while it is open.
@@ -36,6 +42,13 @@ export function CompareRunPanel({ run, rows, version, agentName, onOpen, onRevie
         .filter((session) => isBusy(session.id))
         .map((session) => agentName(session.profileId))
     : [];
+
+  /** Closes the question and hands focus back to the row's Pick that asked it. */
+  const cancelPick = () => {
+    const name = confirmedRow ? agentName(confirmedRow.session.profileId) : null;
+    setConfirming(null);
+    if (name) panelRef.current?.querySelector<HTMLButtonElement>(`button[aria-label="Pick ${CSS.escape(name)}"]`)?.focus();
+  };
 
   const pick = async (winnerId: string) => {
     setConfirming(null);
@@ -48,7 +61,7 @@ export function CompareRunPanel({ run, rows, version, agentName, onOpen, onRevie
   };
 
   return (
-    <section aria-label="Compare run" className="flex flex-1 flex-col overflow-y-auto px-6 py-8">
+    <section ref={panelRef} aria-label="Compare run" className="flex flex-1 flex-col overflow-y-auto px-6 py-8">
       <div className="mx-auto w-full max-w-3xl">
         <h2 className="text-xl font-semibold text-fg">{run.name}</h2>
         <p className="mt-1 text-ui-sm text-fg-muted">
@@ -74,16 +87,19 @@ export function CompareRunPanel({ run, rows, version, agentName, onOpen, onRevie
             role="group"
             aria-label="Confirm pick"
             className="sticky bottom-0 mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-border-strong bg-surface-2 p-4 shadow-popover"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") cancelPick();
+            }}
           >
             <div className="min-w-0">
               <p className="text-ui text-fg">{pickQuestion(agentName(confirmedRow.session.profileId))}</p>
               {working.length > 0 && <p className="mt-0.5 text-ui-sm text-fg-muted">{stopsLine(working)}</p>}
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <Button variant="ghost" onClick={() => setConfirming(null)}>
+              <Button variant="ghost" onClick={cancelPick}>
                 Cancel
               </Button>
-              <Button variant="primary" onClick={() => void pick(confirmedRow.session.id)}>
+              <Button ref={barPickRef} variant="primary" onClick={() => void pick(confirmedRow.session.id)}>
                 Pick {agentName(confirmedRow.session.profileId)}
               </Button>
             </div>

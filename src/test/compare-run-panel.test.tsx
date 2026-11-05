@@ -371,6 +371,27 @@ describe("CompareRunPanel", () => {
     expect(p.onPick).toHaveBeenCalledWith("s-1");
   });
 
+  it("moves focus to the bar's Pick, and Escape or Cancel gives it back to the row's Pick", async () => {
+    answerDiffs({ "/wt/1": [stat("a.ts", 1, 0)] });
+    const p = props([facts(1), facts(2)]);
+    await renderPanel(p);
+    await within(rowOf("Claude Code")).findByText("+1");
+    const rowPick = within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" });
+
+    fireEvent.click(rowPick);
+    const bar = screen.getByRole("group", { name: "Confirm pick" });
+    expect(document.activeElement).toBe(within(bar).getByRole("button", { name: "Pick Claude Code" }));
+
+    fireEvent.keyDown(bar, { key: "Escape" });
+    expect(screen.queryByRole("group", { name: "Confirm pick" })).toBeNull();
+    expect(document.activeElement).toBe(rowPick);
+
+    fireEvent.click(rowPick);
+    fireEvent.click(within(screen.getByRole("group", { name: "Confirm pick" })).getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(rowPick);
+    expect(p.onPick).not.toHaveBeenCalled();
+  });
+
   it("Cancel closes the bar and picks nothing", async () => {
     answerDiffs({ "/wt/1": [stat("a.ts", 1, 0)] });
     const p = props([facts(1), facts(2, { isBusy: true }), facts(3, { isBusy: true })]);

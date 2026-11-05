@@ -292,7 +292,7 @@ describe("TerminalSignInDialog", () => {
 
   it.each([
     ["starting", "Starting Qwen Code…"],
-    ["running", "Pick with ↑ ↓ and Return, here in the terminal. Zorvo checks again when you close this."],
+    ["running", "Pick with ↑ ↓ and Return, here in the terminal. Zorvo checks again when the login finishes."],
     ["checking", "Checking your sign-in…"],
   ] as const)("shows the %s copy with Close", (phase, copy) => {
     renderDialog(phase);

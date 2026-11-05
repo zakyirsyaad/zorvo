@@ -1082,15 +1082,6 @@ export default function App() {
                 <div className="flex-1" />
               )}
 
-              {activeAgentRemoved !== null && (
-                <div className="p-4 flex justify-center">
-                  <RemovedAgentPanel
-                    agentName={activeAgentRemoved}
-                    profileId={activeSession?.profileId}
-                    onAdd={() => activeAgent && catalogActions.addAgent(activeAgent.id)}
-                  />
-                </div>
-              )}
               {/* Anchored at the composer's top edge, so the cards float over the chat and never over Send or Stop. */}
               <div className="relative h-0">
                 <ToastStack>
@@ -1106,6 +1097,15 @@ export default function App() {
                   {notice && <Toast tone="error" message={notice} onDismiss={() => setNotice(null)} />}
                 </ToastStack>
               </div>
+              {activeAgentRemoved !== null && (
+                <div className="p-4 flex justify-center">
+                  <RemovedAgentPanel
+                    agentName={activeAgentRemoved}
+                    profileId={activeSession?.profileId}
+                    onAdd={() => activeAgent && catalogActions.addAgent(activeAgent.id)}
+                  />
+                </div>
+              )}
               {/* The draft's blockers sit right above the composer, which stays: a prompt can be written meanwhile. */}
               <div className="mx-auto w-full max-w-3xl space-y-3 px-4">
                 <SignInLayer

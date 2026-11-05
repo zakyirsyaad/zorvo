@@ -114,6 +114,16 @@ describe("RemovedAgentPanel", () => {
 });
 
 describe("A saved session of a removed agent", () => {
+  it("keeps the toast anchor above the card, so a floating card never covers Add", async () => {
+    seedRemovedAgentSession();
+    await openRemovedAgentSession();
+
+    const card = await screen.findByRole("region", { name: REMOVED_NOTICE });
+    const anchor = document.querySelector("article > .relative.h-0");
+    expect(anchor).not.toBeNull();
+    expect(anchor!.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("keeps the transcript, replaces the composer and adds the agent back", async () => {
     seedRemovedAgentSession();
     await openRemovedAgentSession();

@@ -1770,7 +1770,7 @@ describe("ACP sessions in the app", () => {
     await send(FIRST_MESSAGE);
 
     expect(screen.getByTestId("agent-working")).toBeDefined();
-    expect(screen.queryByRole("heading", { name: "No session yet" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Open a folder to start" })).toBeNull();
   });
 
   it("stops showing 'Working' while the agent waits for a permission answer", async () => {

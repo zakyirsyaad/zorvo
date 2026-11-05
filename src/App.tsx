@@ -9,7 +9,7 @@ import { RemovedAgentPanel } from "./components/RemovedAgentPanel";
 import { ActivityPanel } from "./components/activity/ActivityPanel";
 import { FilesPanel } from "./components/FilesPanel";
 import { markersOf } from "./lib/file-markers";
-import { EmptySessionState, FileDropOverlay } from "./components/AppPlaceholders";
+import { EmptyFolderState, FileDropOverlay } from "./components/AppPlaceholders";
 import { Toast, ToastStack } from "./components/ui/Toast";
 import { CompareRunPanel } from "./components/compare/CompareRunPanel";
 import { FailedTurnBanner } from "./components/FailedTurnBanner";
@@ -1078,14 +1078,17 @@ export default function App() {
                   failures={acp.failuresOf(activeSessionId)}
                   onStop={() => handleInterrupt(activeSessionId)}
                 />
-              ) : isNewSessionDraft ? (
+              ) : isNewSessionDraft && !activeWorkspace ? (
+                <EmptyFolderState onOpenFolder={() => void openFolder()} />
+              ) : isNewSessionDraft && activeWorkspace ? (
                 // The draft centers its composer: this heading takes the space above it, NewSessionBelow the space under it.
                 <NewSessionHeading
                   workspace={activeWorkspace}
                   unavailableReason={areAgentsLoaded && !agentsInUse.some(isAgentReady) ? noAgentNotice(agentsInUse) : undefined}
                 />
               ) : (
-                <EmptySessionState />
+                // A session with no messages yet (its transcript may still be loading): only its composer, at the bottom.
+                <div className="flex-1" />
               )}
 
               {activeAgentRemoved !== null && (

@@ -14,6 +14,9 @@ vi.mock("@tauri-apps/api/event", () => ({
   emit: () => Promise.resolve(),
 }));
 
+const openDialog = vi.fn();
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: (...args: unknown[]) => openDialog(...args) }));
+
 import App from "../App";
 import { NewSessionBelow, NewSessionHeading } from "../components/workspace/NewSessionView";
 
@@ -30,13 +33,32 @@ describe("The new-session heading", () => {
     expect(screen.getByRole("heading", { name: "New session in api" })).toBeDefined();
   });
 
-  it("says to open a folder when there is none, and why nothing can start when no agent is ready", () => {
-    const { rerender } = render(<NewSessionHeading />);
-    expect(screen.getByRole("heading", { name: /^New session/ })).toBeDefined();
-    expect(screen.getByText("Open a project folder to start a session in it.")).toBeDefined();
+  it("says why nothing can start when no agent is ready", () => {
+    render(<NewSessionHeading workspace={{ name: "api", path: "/w/api" }} unavailableReason="Install an agent first." />);
 
-    rerender(<NewSessionHeading workspace={{ name: "api", path: "/w/api" }} unavailableReason="Install an agent first." />);
     expect(screen.getByText("Install an agent first.")).toBeDefined();
+  });
+
+  it("with no folder open, asks for one in the chat's place, and Open folder opens the dialog", async () => {
+    const store = (window as unknown as { __FAKE_TAURI_STORE__: { state: { recentFolders: unknown[] } } }).__FAKE_TAURI_STORE__;
+    store.state.recentFolders = [];
+    openDialog.mockResolvedValue(null);
+    await act(async () => {
+      render(<App />);
+    });
+
+    expect(screen.getByRole("heading", { name: "Open a folder to start" })).toBeDefined();
+    expect(
+      screen.getByText("Pick a project folder. Your agents work inside it, and its sessions show in the sidebar."),
+    ).toBeDefined();
+    expect(screen.queryByRole("heading", { name: /^New session/ })).toBeNull();
+    expect((screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement).disabled).toBe(true);
+
+    const open = screen.getAllByRole("button", { name: "Open folder" }).find((button) => button.className.includes("bg-primary"))!;
+    await act(async () => {
+      fireEvent.click(open);
+    });
+    expect(openDialog).toHaveBeenCalledWith({ directory: true, multiple: false });
   });
 
   it("puts the agent's other sessions under the composer", () => {
@@ -574,7 +596,7 @@ describe("Starting a new session", () => {
     });
     await startFromNew();
 
-    expect(screen.getByText("Open a project folder to start a session in it.")).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Open a folder to start" })).toBeDefined();
     expect((screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement).disabled).toBe(true);
     expect(invokeSpy.mock.calls.find(([cmd]) => cmd === "acp_start_session")).toBeUndefined();
   });

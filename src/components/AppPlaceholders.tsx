@@ -1,15 +1,20 @@
-import { Sparkles } from "lucide-react";
+import { FolderOpen } from "lucide-react";
+import { Button } from "./ui/Button";
 
-export function EmptySessionState() {
+/** In the chat's place while no folder is open: nothing can start until one is. */
+export function EmptyFolderState({ onOpenFolder }: { onOpenFolder: () => void }) {
   return (
-    <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center justify-center text-center">
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-2 border border-border text-fg-muted">
-        <Sparkles size={24} />
+    <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto p-6 text-center">
+      <div className="mb-4 flex size-12 items-center justify-center rounded-xl border border-border bg-surface-2">
+        <FolderOpen size={24} aria-hidden="true" className="text-fg-muted" />
       </div>
-      <h1 className="text-xl font-medium text-fg">No session yet</h1>
-      <p className="mt-1 max-w-sm text-sm text-fg-muted">
-        Type a message below to start an agent in this workspace.
+      <h1 className="text-xl font-medium text-fg">Open a folder to start</h1>
+      <p className="mt-1 max-w-sm text-ui text-fg-muted">
+        Pick a project folder. Your agents work inside it, and its sessions show in the sidebar.
       </p>
+      <Button variant="primary" onClick={onOpenFolder} icon={<FolderOpen size={12} aria-hidden="true" />} className="mt-4">
+        Open folder
+      </Button>
     </div>
   );
 }

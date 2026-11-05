@@ -29,12 +29,13 @@ describe("AgentStallNotice", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Gemini CLI hasn't sent anything for 1 minute.");
   });
 
-  it("says the agent may be stuck, as a muted notice", () => {
+  it("says the agent may be stuck, as a quiet notice, not an alert", () => {
     render(<AgentStallNotice agentName="Qwen Code" messages={[question]} />);
     act(() => void vi.advanceTimersByTime(121_000));
     const notice = screen.getByRole("status");
     expect(notice.textContent).toContain("Qwen Code hasn't sent anything for 2 minutes. It may be stuck.");
-    expect(notice.className).toContain("text-fg-muted");
+    // The words in fg-secondary on surface-1, as drawn; only the clock carries the attention colour.
+    expect(notice.querySelector("span")?.className).toContain("text-fg-secondary");
     expect(notice.className).not.toContain("bg-attention-surface");
   });
 

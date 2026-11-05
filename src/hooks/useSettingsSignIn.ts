@@ -273,8 +273,14 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
   const cancelSignIn = useCallback(() => {
     const startedHere = startedHereRef.current;
     const login = depsRef.current.signIn;
+    const phase = login.terminal.dialog?.phase;
+    // A check under way finishes on its own: only the dialog goes.
+    if (phase === 'checking') {
+      login.terminal.close();
+      return;
+    }
     // A login that still runs may be done: the dialog's line says Zorvo checks again on Close.
-    const wasRunning = login.terminal.dialog?.phase === 'running';
+    const wasRunning = phase === 'running';
     if (startedHere === null) {
       // The draft's login, drawn here while Settings is open: its own Close checks the draft's request.
       if (wasRunning) login.closeDialog();

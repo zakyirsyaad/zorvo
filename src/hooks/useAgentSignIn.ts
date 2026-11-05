@@ -270,9 +270,15 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
    * exits on its own), so Zorvo checks again, as its line says; in any other phase it only cancels.
    */
   const closeDialog = () => {
-    const wasRunning = terminal.dialog?.phase === 'running';
+    const phase = terminal.dialog?.phase;
+    // The check is already under way (a setup the user quit lands here): only the dialog goes, the
+    // check finishes and sends the message as it would have.
+    if (phase === 'checking') {
+      terminal.close();
+      return;
+    }
     cancel();
-    if (wasRunning) void recheck();
+    if (phase === 'running') void recheck();
   };
 
   return { auth, handBack, handBackKept, cancel, closeDialog, terminal, startSignIn, retryStart };

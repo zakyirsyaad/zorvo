@@ -125,16 +125,35 @@ describe("Installing an agent from the new-session draft", () => {
     expect(screen.getByRole("region", { name: "Install Codex" })).toBeDefined();
     expect(screen.getByText("Codex needs Node.js 24.11.1 (49 MB) and Codex 0.4.2 before it can start.")).toBeDefined();
 
-    await click("Install");
+    await click("Install Codex");
 
     expect(callsTo(spy, "install_agent").map(([, args]) => args)).toEqual([{ agentId: "codex-acp" }]);
-    expect(screen.queryByRole("button", { name: "Install" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Install Codex" })).toBeNull();
+  });
+
+  it("is a card that says the agent isn't installed yet, with Install <Agent> as its action", async () => {
+    mockInstall();
+    await renderPanel();
+
+    const card = screen.getByRole("region", { name: "Install Codex" });
+    expect(card.querySelector("h2")?.textContent).toBe("Codex isn't installed yet");
+    expect(screen.getByRole("button", { name: "Install Codex" }).className).toContain("bg-primary");
+  });
+
+  it("leaves focus where it was while the install runs", async () => {
+    mockInstall();
+    await renderPanel();
+    await click("Install Codex");
+    await deliver("agent-install-progress", nodeDownload);
+
+    expect(document.activeElement).not.toBe(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("progressbar", { name: "Node.js download" })).toBeDefined();
   });
 
   it("shows_progress_from_events", async () => {
     mockInstall();
     await renderPanel();
-    await click("Install");
+    await click("Install Codex");
 
     await deliver("agent-install-progress", {
       agentId: "codex-acp",
@@ -149,7 +168,7 @@ describe("Installing an agent from the new-session draft", () => {
 
     const bar = screen.getByRole("progressbar", { name: "Node.js download" }) as HTMLProgressElement;
     expect(bar.value / bar.max).toBe(0.5);
-    expect(screen.getByText("Downloading Node.js…")).toBeDefined();
+    expect(screen.getByRole("status").textContent).toBe("Downloading Node.js… (1 KB)");
 
     // Another agent's progress is not this one's.
     await deliver("agent-install-progress", {
@@ -182,21 +201,21 @@ describe("Installing an agent from the new-session draft", () => {
   it("cancel_calls_cancel_agent_install_and_returns_to_install", async () => {
     const { spy, settle } = mockInstall();
     await renderPanel();
-    await click("Install");
+    await click("Install Codex");
 
     await click("Cancel");
     expect(callsTo(spy, "cancel_agent_install").map(([, args]) => args)).toEqual([{ agentId: "codex-acp" }]);
 
     await act(async () => settle().reject("INSTALL_CANCELLED"));
 
-    expect(screen.getByRole("button", { name: "Install" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Install Codex" })).toBeDefined();
     expect(screen.queryByText(/INSTALL_CANCELLED/)).toBeNull();
   });
 
   it("a_failure_shows_the_message_and_retry_installs_again", async () => {
     const { spy, settle } = mockInstall();
     await renderPanel();
-    await click("Install");
+    await click("Install Codex");
 
     await act(async () => settle().reject("Not enough disk space to install Node.js"));
 
@@ -209,11 +228,11 @@ describe("Installing an agent from the new-session draft", () => {
   it("keeps an install's result for its own agent when the user switches away and back", async () => {
     const { spy, settle } = mockInstall();
     const { rerender } = await renderPanel();
-    await click("Install");
+    await click("Install Codex");
 
     await act(async () => rerender(<AgentInstallPanel agent={opencode} />));
     // OpenCode has its own state: not installing, and Codex's answer is not its own.
-    expect(screen.getByRole("button", { name: "Install" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Install OpenCode" })).toBeDefined();
     await act(async () => settle().reject("Codex failed"));
     expect(screen.queryByText(/Codex failed/)).toBeNull();
 
@@ -229,7 +248,7 @@ describe("Installing an agent from the new-session draft", () => {
   it("shows a running install's progress and result after the panel unmounts and comes back", async () => {
     const { spy, settle } = mockInstall();
     const { unmount } = await renderPanel();
-    await click("Install");
+    await click("Install Codex");
     // Picking a ready agent removes the panel; the install goes on.
     unmount();
     await deliver("agent-install-progress", nodeDownload);
@@ -237,7 +256,7 @@ describe("Installing an agent from the new-session draft", () => {
     await renderPanel();
     const bar = screen.getByRole("progressbar", { name: "Node.js download" }) as HTMLProgressElement;
     expect(bar.value / bar.max).toBe(0.25);
-    expect(screen.getByText("Downloading Node.js…")).toBeDefined();
+    expect(screen.getByRole("status").textContent).toBe("Downloading Node.js… (1 KB)");
 
     await act(async () => settle().reject("Checksum mismatch for Node.js"));
     expect(screen.getByText("Install failed: Checksum mismatch for Node.js")).toBeDefined();
@@ -247,18 +266,18 @@ describe("Installing an agent from the new-session draft", () => {
   it("offers no second Install while an agent is installing, even after coming back to it", async () => {
     const { spy, settle } = mockInstall();
     const { unmount } = await renderPanel();
-    await click("Install");
-    expect(screen.queryByRole("button", { name: "Install" })).toBeNull();
+    await click("Install Codex");
+    expect(screen.queryByRole("button", { name: "Install Codex" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
 
     unmount();
     await renderPanel();
-    expect(screen.queryByRole("button", { name: "Install" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Install Codex" })).toBeNull();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDefined();
     expect(callsTo(spy, "install_agent")).toHaveLength(1);
 
     await act(async () => settle().resolve());
-    expect(screen.getByRole("button", { name: "Install" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Install Codex" })).toBeDefined();
   });
 
   it("with no ready agent in use, the draft offers the picker and Install", async () => {
@@ -283,7 +302,7 @@ describe("Installing an agent from the new-session draft", () => {
     });
 
     await waitFor(() => expect(screen.getByRole("region", { name: "Install Claude Code" })).toBeDefined());
-    expect(screen.getByRole("button", { name: "Install" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Install Claude Code" })).toBeDefined();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /^Agent:/ }));
     });
@@ -431,7 +450,7 @@ describe("Installing an agent from the new-session draft", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("option", { name: "Codex (not installed)" }));
     });
-    await click("Install");
+    await click("Install Codex");
     await act(async () => settle().reject("Checksum mismatch for Node.js"));
     expect(screen.getByText("Install failed: Checksum mismatch for Node.js")).toBeDefined();
 
@@ -444,7 +463,7 @@ describe("Installing an agent from the new-session draft", () => {
     profiles[profiles.length - 1] = codex;
     await deliver("agent-profiles-changed", null);
     await waitFor(() => expect(screen.getByRole("region", { name: "Install Codex" })).toBeDefined());
-    expect(screen.getByRole("button", { name: "Install" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Install Codex" })).toBeDefined();
     expect(screen.queryByText(/Checksum mismatch/)).toBeNull();
   });
 });

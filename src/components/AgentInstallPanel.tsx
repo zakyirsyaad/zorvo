@@ -1,5 +1,6 @@
 import { Download, RotateCcw } from "lucide-react";
 import { Button } from "./ui/Button";
+import { BlockerCard } from "./ui/BlockerCard";
 import { InstallProgressLine } from "./InstallProgressLine";
 import { useAgentInstall } from "../hooks/useAgentInstall";
 import { describePlan } from "../lib/install-plan";
@@ -15,33 +16,30 @@ export interface AgentInstallPanelProps {
  */
 export function AgentInstallPanel({ agent }: AgentInstallPanelProps) {
   const { status, progress, error, install, cancel } = useAgentInstall(agent.id);
-  const title = `Install ${agent.name}`;
+  const installLabel = `Install ${agent.name}`;
+  const actions =
+    status === "idle" ? (
+      <Button variant="primary" onClick={install} icon={<Download size={12} />}>
+        {installLabel}
+      </Button>
+    ) : status === "failed" ? (
+      <Button variant="primary" onClick={install} icon={<RotateCcw size={12} />}>
+        Retry
+      </Button>
+    ) : undefined;
   return (
-    <section
-      aria-label={title}
-      className="mx-6 mt-3 rounded-lg border border-border bg-surface-1 px-4 py-3 text-xs text-fg-secondary"
+    <BlockerCard
+      label={installLabel}
+      profileId={agent.id}
+      title={`${agent.name} isn't installed yet`}
+      actions={actions}
+      footer={status === "installing" ? <InstallProgressLine progress={progress} onCancel={cancel} /> : undefined}
     >
-      <h2 className="flex items-center gap-1.5 font-medium text-fg">
-        <Download size={13} />
-        {title}
-      </h2>
-      <p className="mt-1.5 text-fg-muted">
+      <p>
         {agent.name} needs {describePlan(agent.install_plan ?? [])} before it can start.
       </p>
-      <p className="mt-1 text-fg-muted">Once it is installed, Zorvo checks whether you are signed in.</p>
-
-      {status === "installing" && <InstallProgressLine progress={progress} onCancel={cancel} />}
-      {status === "idle" && (
-        <Button variant="primary" onClick={install} icon={<Download size={12} />} className="mt-2">
-          Install
-        </Button>
-      )}
+      <p className="mt-1">Once it is installed, Zorvo checks whether you are signed in.</p>
       {error && <p className="mt-2 text-danger">{status === "failed" ? `Install failed: ${error}` : error}</p>}
-      {status === "failed" && (
-        <Button variant="primary" onClick={install} icon={<RotateCcw size={12} />} className="mt-2">
-          Retry
-        </Button>
-      )}
-    </section>
+    </BlockerCard>
   );
 }

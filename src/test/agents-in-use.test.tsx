@@ -113,7 +113,7 @@ describe("Agents in use", () => {
     expect(newSessionView()).toHaveTextContent(NO_AGENT_NOTICE);
     expect(newSessionView()).not.toHaveTextContent("nodejs.org");
     expect(screen.getByRole("region", { name: "Install Claude Code" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "Install" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Install Claude Code" })).toBeDefined();
     // The prompt can be written while the agent is missing; only Send waits for the install.
     const prompt = screen.getByRole("textbox", { name: "Prompt" });
     expect(prompt).toBeEnabled();

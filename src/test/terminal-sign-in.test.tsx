@@ -292,12 +292,12 @@ describe("TerminalSignInDialog", () => {
 
   it.each([
     ["starting", "Starting Qwen Code…"],
-    ["running", "Finish signing in in the terminal. Zorvo continues when it closes."],
+    ["running", "Pick with ↑ ↓ and Return, here in the terminal. Zorvo checks again when you close this."],
     ["checking", "Checking your sign-in…"],
-  ] as const)("shows the %s copy with Cancel", (phase, copy) => {
+  ] as const)("shows the %s copy with Close", (phase, copy) => {
     renderDialog(phase);
     expect(screen.getByText(copy)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cancel sign-in" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
@@ -312,6 +312,48 @@ describe("TerminalSignInDialog", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("is a 760px dialog with the agent's logo beside its heading and a 380px terminal", () => {
+    render(
+      <TerminalSignInDialog
+        state={{ terminalId: "signin-1", agentName: "Qwen Code", methodName: "Log in with Qwen", phase: "running" }}
+        profileId="qwen-code"
+        output={createPtyOutputStore()}
+        onClose={() => {}}
+        onInput={() => {}}
+        onResize={() => {}}
+      />,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "Sign in to Qwen Code" });
+    expect(dialog.className).toContain("max-w-[760px]");
+    expect(dialog.className).toContain("shadow-dialog");
+    const heading = screen.getByRole("heading", { level: 2, name: "Sign in to Qwen Code" });
+    expect(heading.closest("header")?.querySelector("img[alt='']")).not.toBeNull();
+    const box = dialog.querySelector(".h-\\[380px\\]");
+    expect(box?.className).toContain("bg-terminal-bg");
+  });
+
+  it("lets a login's own note replace the running line", () => {
+    render(
+      <TerminalSignInDialog
+        state={{ terminalId: "signin-1", agentName: "Qwen Code", methodName: "Log in with Qwen", phase: "running", note: "Pick OpenAI." }}
+        output={createPtyOutputStore()}
+        onClose={() => {}}
+        onInput={() => {}}
+        onResize={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole("status").textContent).toBe("Pick OpenAI.");
+  });
+
+  it("leaves focus to the terminal while the login runs", () => {
+    renderDialog("running");
+
+    expect(document.activeElement).not.toBe(screen.getByRole("button", { name: "Close" }));
+    expect(document.activeElement).not.toBe(screen.getByRole("button", { name: "Cancel sign-in" }));
+  });
+
   it("closes on Escape", () => {
     const { onClose } = renderDialog("running");
     fireEvent.keyDown(document, { key: "Escape" });
@@ -324,9 +366,9 @@ describe("TerminalSignInDialog", () => {
     expect(terminals[0].written).toContain("Visit the link");
   });
 
-  it.each(["starting", "checking"] as const)("moves focus to Cancel while %s", (phase) => {
+  it.each(["starting", "checking"] as const)("moves focus to Close while %s", (phase) => {
     renderDialog(phase);
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
   });
 
   it("moves focus to Try again when failed, and again after each failure", () => {
@@ -339,7 +381,7 @@ describe("TerminalSignInDialog", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Try again" }));
 
     rerender(<TerminalSignInDialog state={{ ...state, phase: "starting" }} output={output} {...handlers} />);
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
   });
 
   it("offers Close only, with focus on it, when the method cannot be tried again", () => {

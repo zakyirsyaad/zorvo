@@ -412,7 +412,7 @@ describe("signing in to an ACP agent from the app", () => {
     const { dialog, terminalId } = await startTerminalSignIn(spy, panel);
 
     await act(async () => {
-      fireEvent.click(dialog.getByRole("button", { name: "Cancel" }));
+      fireEvent.click(dialog.getByRole("button", { name: "Close" }));
     });
 
     expect(callsTo(spy, "terminate_session").map(([, args]) => args)).toContainEqual({ sessionId: terminalId });
@@ -487,7 +487,7 @@ describe("signing in to an ACP agent from the app", () => {
     expect(await dialog.findByText("Checking your sign-in…")).toBeDefined();
 
     await act(async () => {
-      fireEvent.click(dialog.getByRole("button", { name: "Cancel" }));
+      fireEvent.click(dialog.getByRole("button", { name: "Close" }));
     });
     await act(async () => {
       recheck.resolve(undefined);

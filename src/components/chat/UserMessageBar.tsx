@@ -3,8 +3,6 @@ import { Check, Copy, Undo2 } from "lucide-react";
 import { REVEAL_ON_ROW } from "../../lib/sidebar-status";
 
 export interface UserMessageBarProps {
-  /** Undefined for a replayed message, whose time the agent did not report. */
-  timeLabel?: string;
   copied: boolean;
   onCopy: () => void;
   /** Takes the conversation back to before this message; offered only when the host can. */
@@ -59,13 +57,12 @@ function RewindButton({ onRewind }: { onRewind: () => void }) {
 }
 
 /**
- * The time, Copy and Rewind under one of your messages. The time stays on
- * screen; the buttons show when you point at the message or tab into it.
+ * Copy and Rewind under one of your messages, shown when you point at the message or tab
+ * into it. The time is the bubble's tooltip, since the canvas draws none under it.
  */
-export function UserMessageBar({ timeLabel, copied, onCopy, onRewind }: UserMessageBarProps) {
+export function UserMessageBar({ copied, onCopy, onRewind }: UserMessageBarProps) {
   return (
     <div className="mt-1 flex items-center justify-end gap-2 px-1 text-caption text-fg-muted">
-      {timeLabel && <span>{timeLabel}</span>}
       <span data-message-actions="" className={`flex items-center gap-1 ${REVEAL_ON_ROW}`}>
         <button type="button" onClick={onCopy} aria-label="Copy message" title="Copy" className={ICON_BUTTON}>
           {copied ? <Check className="h-3.5 w-3.5 text-status-running" /> : <Copy className="h-3.5 w-3.5" />}

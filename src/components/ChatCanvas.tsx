@@ -214,9 +214,9 @@ export function ChatCanvas({
       onTouchStart={stickToBottom.onTouchStart}
       onTouchMove={stickToBottom.onTouchMove}
       data-testid="chat-canvas-container"
-      className="flex-1 overflow-y-auto px-6 py-6 space-y-6"
+      className="flex-1 overflow-y-auto pt-8 px-6 pb-4 space-y-6"
     >
-      {header && <div className="mx-auto w-full max-w-3xl">{header}</div>}
+      {header && <div className="mx-auto w-full max-w-chat">{header}</div>}
       {visibleMessages.map((msg, index) => (
         <MessageRow
           key={msg.id}
@@ -242,7 +242,7 @@ export function ChatCanvas({
       {isWorking && (
         <AgentStallNotice agentName={shownAgentName} messages={messages} failures={failures} onStop={onStop} />
       )}
-      {footer && <div className="mx-auto w-full max-w-3xl">{footer}</div>}
+      {footer && <div className="mx-auto w-full max-w-chat">{footer}</div>}
       {chatSelection.selected && (
         <SelectionToolbar selection={chatSelection.selected} blockedReason={replyBlockedReason} onReply={replyToSelection} />
       )}

@@ -378,7 +378,7 @@ export function ComposerDock({
   const { inline: inlineControls, overflow: overflowControls } = splitControls(agentControls);
 
   return (
-    <footer ref={containerRef} className="w-full max-w-3xl flex flex-col items-center px-4 select-none">
+    <footer ref={containerRef} className="w-full max-w-chat flex flex-col items-center px-4 select-none">
       {(folder || agents || agent) && (
         <DraftChips
           folder={folder}

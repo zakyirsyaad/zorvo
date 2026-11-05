@@ -9,7 +9,8 @@ export interface HistoryElsewhereNoteProps {
  */
 export function HistoryElsewhereNote({ agentName }: HistoryElsewhereNoteProps) {
   return (
-    <p role="note" className="text-sm text-fg-muted">
+    // A quiet line above the first message, not a card.
+    <p role="note" className="text-ui-sm text-fg-muted">
       Earlier messages stay in {agentName}. They are not shown here.
     </p>
   );

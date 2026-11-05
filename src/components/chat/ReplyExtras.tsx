@@ -35,7 +35,7 @@ export function WorkingIndicator({ agentName, since }: { agentName: string; sinc
     return () => clearInterval(timer);
   }, [since]);
   return (
-    <div data-testid="agent-working" role="status" className="mx-auto w-full max-w-3xl px-1">
+    <div data-testid="agent-working" role="status" className="mx-auto w-full max-w-chat px-1">
       <StatusLine status="running" className="text-ui-sm text-fg-muted">
         {agentName} is working
         {/* Hidden from the live region: a time that ticks every second would be read out every second. */}

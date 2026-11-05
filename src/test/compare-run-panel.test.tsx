@@ -5,7 +5,17 @@ import { fakeTauriInvoke, type FakeTauriStore } from "./setup";
 import App from "../App";
 import { CompareRunPanel, type CompareRunPanelProps } from "../components/compare/CompareRunPanel";
 import { useCompareRun, type CompareRunDeps } from "../hooks/useCompareRun";
-import { rowFactsOf, rowStatus, type CompareRun, type RowFacts } from "../lib/compare-run";
+import {
+  pickQuestion,
+  rowFactsOf,
+  rowStatus,
+  runStatusDot,
+  stopsLine,
+  type CompareRun,
+  type RowFacts,
+  type RunRowStatus,
+} from "../lib/compare-run";
+import type { Status } from "../components/ui/StatusLine";
 import type { ActionCard, ChatMessage, Session } from "../types";
 
 type Listener = (event: { payload: unknown }) => void;
@@ -308,72 +318,164 @@ describe("CompareRunPanel", () => {
     expect(p.onOpen).toHaveBeenCalledWith("s-1");
   });
 
-  it("Pick with nothing running stops nothing and asks nothing", async () => {
+  it("heads the run with its name, its agents and when it started", async () => {
     answerDiffs({});
+    const started = Date.now() - 12 * 60_000;
+    await renderPanel(props([facts(1, {}, { createdAt: started }), facts(2, {}, { createdAt: started + 1 })]));
+
+    expect(screen.getByRole("heading", { name: "Fix the login" })).toBeInTheDocument();
+    expect(screen.getByText("2 agents, each in its own worktree · started 12 minutes ago")).toBeInTheDocument();
+  });
+
+  it("each agent is a card with its status word, its changes, Open and Pick", async () => {
+    answerDiffs({ "/wt/1": [stat("a.ts", 80, 10), stat("b.ts", 3, 1), stat("c.ts", 2, 1), stat("d.ts", 1, 0)] });
+    await renderPanel(props([facts(1, { isBusy: true }, { profileId: "opencode" }), facts(2)]));
+    const row = within(rowOf("OpenCode"));
+
+    expect(row.getByText("Working")).toBeInTheDocument();
+    expect(await row.findByRole("button", { name: "Review OpenCode's changes" })).toHaveTextContent("4 files+86−12");
+    expect(row.getByRole("button", { name: "Open OpenCode" })).toHaveTextContent("Open");
+    expect(row.getByRole("button", { name: "Pick OpenCode" })).toBeEnabled();
+  });
+
+  it("a row with no changes cannot be picked, and says why", async () => {
+    answerDiffs({ "/wt/1": [] });
+    await renderPanel(props([facts(1), facts(2)]));
+
+    const pickButton = within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" });
+    await waitFor(() => expect(pickButton).toBeDisabled());
+    expect(pickButton).toHaveAttribute("title", "No changes to keep yet");
+  });
+
+  it("a row whose changes cannot be read can still be picked", async () => {
+    answerDiffs({ "/wt/1": new Error("not a repository") });
+    await renderPanel(props([facts(1), facts(2)]));
+
+    await waitFor(() => expect(within(rowOf("Claude Code")).getByText("—")).toBeInTheDocument());
+    expect(within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" })).toBeEnabled();
+  });
+
+  it("Pick with nothing running still asks, and Pick in the bar keeps that agent", async () => {
+    answerDiffs({ "/wt/1": [stat("a.ts", 1, 0)] });
     const p = props([facts(1), facts(2, {}, { status: "terminated" }), facts(3, { failed: true })]);
     await renderPanel(p);
+    await within(rowOf("Claude Code")).findByText("+1");
 
-    fireEvent.click(screen.getByRole("button", { name: "Pick Claude Code" }));
+    fireEvent.click(within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" }));
 
-    expect(screen.queryByText(/Stop \d+ agents? and keep/)).toBeNull();
+    const bar = within(screen.getByRole("group", { name: "Confirm pick" }));
+    expect(bar.getByText("Keep Claude Code's work and archive the others?")).toBeInTheDocument();
+    expect(bar.queryByText(/mid-turn/)).toBeNull();
+    expect(p.onPick).not.toHaveBeenCalled();
+    fireEvent.click(bar.getByRole("button", { name: "Pick Claude Code" }));
     expect(p.onPick).toHaveBeenCalledWith("s-1");
   });
 
-  it("Pick with two running asks with the exact copy, and Cancel changes nothing", async () => {
-    answerDiffs({});
+  it("moves focus to the bar's Pick, and Escape or Cancel gives it back to the row's Pick", async () => {
+    answerDiffs({ "/wt/1": [stat("a.ts", 1, 0)] });
+    const p = props([facts(1), facts(2)]);
+    await renderPanel(p);
+    await within(rowOf("Claude Code")).findByText("+1");
+    const rowPick = within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" });
+
+    fireEvent.click(rowPick);
+    const bar = screen.getByRole("group", { name: "Confirm pick" });
+    expect(document.activeElement).toBe(within(bar).getByRole("button", { name: "Pick Claude Code" }));
+
+    fireEvent.keyDown(bar, { key: "Escape" });
+    expect(screen.queryByRole("group", { name: "Confirm pick" })).toBeNull();
+    expect(document.activeElement).toBe(rowPick);
+
+    fireEvent.click(rowPick);
+    fireEvent.click(within(screen.getByRole("group", { name: "Confirm pick" })).getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(rowPick);
+    expect(p.onPick).not.toHaveBeenCalled();
+  });
+
+  it("Cancel closes the bar and picks nothing", async () => {
+    answerDiffs({ "/wt/1": [stat("a.ts", 1, 0)] });
     const p = props([facts(1), facts(2, { isBusy: true }), facts(3, { isBusy: true })]);
     await renderPanel(p);
+    await within(rowOf("Claude Code")).findByText("+1");
 
-    fireEvent.click(screen.getByRole("button", { name: "Pick Claude Code" }));
-
-    expect(screen.getByText("Stop 2 agents and keep Claude Code's work?")).toBeInTheDocument();
-    expect(p.onPick).not.toHaveBeenCalled();
+    fireEvent.click(within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" }));
+    expect(screen.getByText("This stops Qwen Code and Kimi CLI mid-turn.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByText(/and keep/)).toBeNull();
+
+    expect(screen.queryByRole("group", { name: "Confirm pick" })).toBeNull();
     expect(p.onPick).not.toHaveBeenCalled();
   });
 
-  it("counts one running agent in the singular, and not the idle ones", async () => {
-    answerDiffs({});
+  it("names only the agents still working in the bar", async () => {
+    answerDiffs({ "/wt/1": [stat("a.ts", 1, 0)] });
     await renderPanel(props([facts(1), facts(2, { isBusy: true }), facts(3)]));
+    await within(rowOf("Claude Code")).findByText("+1");
 
-    fireEvent.click(screen.getByRole("button", { name: "Pick Claude Code" }));
+    fireEvent.click(within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" }));
 
-    expect(screen.getByText("Stop 1 agent and keep Claude Code's work?")).toBeInTheDocument();
+    expect(screen.getByText("This stops Qwen Code mid-turn.")).toBeInTheDocument();
   });
 
-  it("drops the question when the working agents finish, and Pick then needs one more press", async () => {
-    answerDiffs({});
-    const rows = [facts(1), facts(2, { isBusy: true })];
-    const p = props(rows);
+  it("keeps the bar when the working agents finish, without the stops line, and Pick still works", async () => {
+    answerDiffs({ "/wt/1": [stat("a.ts", 1, 0)] });
+    const p = props([facts(1), facts(2, { isBusy: true })]);
     const { rerender } = await renderPanel(p);
-    fireEvent.click(screen.getByRole("button", { name: "Pick Claude Code" }));
-    expect(screen.getByText("Stop 1 agent and keep Claude Code's work?")).toBeInTheDocument();
+    await within(rowOf("Claude Code")).findByText("+1");
+    fireEvent.click(within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" }));
+    expect(screen.getByText("This stops Qwen Code mid-turn.")).toBeInTheDocument();
 
     rerender(<CompareRunPanel {...props([facts(1), facts(2)], { onPick: p.onPick })} />);
 
-    expect(screen.queryByText(/and keep/)).toBeNull();
-    expect(screen.queryByText(/Stop 0/)).toBeNull();
-    expect(p.onPick).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Pick Claude Code" }));
+    const bar = within(screen.getByRole("group", { name: "Confirm pick" }));
+    expect(bar.getByText("Keep Claude Code's work and archive the others?")).toBeInTheDocument();
+    expect(screen.queryByText(/mid-turn/)).toBeNull();
+    fireEvent.click(bar.getByRole("button", { name: "Pick Claude Code" }));
     expect(p.onPick).toHaveBeenCalledWith("s-1");
   });
 
-  it("Stop and pick calls onPick once and keeps the buttons off until it is done", async () => {
-    answerDiffs({});
+  it("Pick in the bar calls onPick once and keeps the buttons off until it is done", async () => {
+    answerDiffs({ "/wt/1": [stat("a.ts", 1, 0)], "/wt/2": [stat("b.ts", 1, 0)] });
     let finish!: () => void;
     const onPick = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
     await renderPanel(props([facts(1), facts(2, { isBusy: true })], { onPick }));
+    await within(rowOf("Qwen Code")).findByText("+1");
 
-    fireEvent.click(screen.getByRole("button", { name: "Pick Claude Code" }));
-    fireEvent.click(screen.getByRole("button", { name: "Stop and pick" }));
+    fireEvent.click(within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Confirm pick" })).getByRole("button", { name: "Pick Claude Code" }));
     await act(async () => {});
 
     expect(onPick).toHaveBeenCalledTimes(1);
     expect(onPick).toHaveBeenCalledWith("s-1");
+    expect(screen.queryByRole("group", { name: "Confirm pick" })).toBeNull();
     expect(screen.getByRole("button", { name: "Pick Qwen Code" })).toBeDisabled();
     await act(async () => finish());
     expect(screen.getByRole("button", { name: "Pick Qwen Code" })).toBeEnabled();
+  });
+});
+
+describe("compare run copy", () => {
+  it("pickQuestion names the agent kept", () => {
+    expect(pickQuestion("Codex")).toBe("Keep Codex's work and archive the others?");
+  });
+
+  it.each<[string[], string]>([
+    [["Claude Code"], "This stops Claude Code mid-turn."],
+    [["Claude Code", "Qwen Code"], "This stops Claude Code and Qwen Code mid-turn."],
+    [["A", "B", "C"], "This stops A, B and C mid-turn."],
+  ])("stopsLine(%j)", (names, line) => {
+    expect(stopsLine(names)).toBe(line);
+  });
+
+  it.each<[RunRowStatus, Status]>([
+    ["starting", "running"],
+    ["working", "running"],
+    ["needs-you", "attention"],
+    ["needs-sign-in", "attention"],
+    ["failed", "danger"],
+    ["done", "idle"],
+    ["stopped", "idle"],
+  ])("runStatusDot(%s) is %s", (status, dot) => {
+    expect(runStatusDot(status)).toBe(dot);
   });
 });
 

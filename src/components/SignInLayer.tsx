@@ -41,6 +41,7 @@ export function SignInLayer({ signIn, agents, agentId, showTerminal = true }: Si
       {authRequest && isForVisibleAgent && (
         <AuthPanel
           agentName={agentName}
+          profileId={authRequest.profileId}
           methods={authRequest.methods}
           status={authRequest.status}
           error={authRequest.error}
@@ -53,6 +54,7 @@ export function SignInLayer({ signIn, agents, agentId, showTerminal = true }: Si
       {terminal.dialog && showTerminal && (
         <TerminalSignInDialog
           state={terminal.dialog}
+          profileId={authRequest?.profileId}
           output={terminal.output}
           onClose={cancel}
           onTryAgain={retryId ? () => auth.signIn(retryId) : undefined}

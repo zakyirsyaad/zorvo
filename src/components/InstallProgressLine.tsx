@@ -1,6 +1,7 @@
 import { Button } from "./ui/Button";
 import type { InstallProgress } from "../hooks/useAgentInstall";
 import { describePhase } from "../lib/install-plan";
+import { formatSize } from "../lib/file-content";
 
 const PROGRESS_BAR =
   "h-1.5 w-full appearance-none overflow-hidden rounded-full bg-surface-2 " +
@@ -11,6 +12,13 @@ export interface InstallProgressLineProps {
   onCancel: () => void;
   /** What the job is, for the line shown before the first progress report. */
   action?: "install" | "update";
+}
+
+/** "Downloading Node.js… (49 MB)": the step, with its size when the installer knows it. */
+function stepLine(progress: InstallProgress | null, action: "install" | "update"): string {
+  if (!progress) return `Starting the ${action}…`;
+  const phase = describePhase(progress.phase, progress.name);
+  return progress.totalBytes ? `${phase} (${formatSize(progress.totalBytes)})` : phase;
 }
 
 export function InstallProgressLine({ progress, onCancel, action = "install" }: InstallProgressLineProps) {
@@ -25,8 +33,9 @@ export function InstallProgressLine({ progress, onCancel, action = "install" }: 
         />
       )}
       <div className="flex items-center justify-between gap-3">
-        <p className="text-fg-muted">
-          {progress ? describePhase(progress.phase, progress.name) : `Starting the ${action}…`}
+        {/* Announces each step, never each byte: the bytes are only in the bar. */}
+        <p role="status" className="text-caption text-fg-muted">
+          {stepLine(progress, action)}
         </p>
         <Button onClick={onCancel} className="shrink-0">
           Cancel

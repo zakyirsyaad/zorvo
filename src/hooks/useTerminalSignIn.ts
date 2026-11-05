@@ -13,6 +13,8 @@ export type SignInPhase = 'starting' | 'running' | 'checking' | 'failed';
 
 export interface TerminalSignInState {
   terminalId: string;
+  /** The agent signing in, for its logo; absent for a login that is not an agent's (GitHub). */
+  profileId?: string;
   agentName: string;
   methodName: string;
   phase: SignInPhase;
@@ -97,7 +99,7 @@ export function useTerminalSignIn() {
           },
         };
         runRef.current = current;
-        setDialog({ terminalId, agentName, methodName: method.name, phase: 'starting' });
+        setDialog({ terminalId, profileId, agentName, methodName: method.name, phase: 'starting' });
 
         invoke('acp_start_terminal_sign_in', { profileId, cwd, methodId: method.id, terminalId }).then(
           () => {

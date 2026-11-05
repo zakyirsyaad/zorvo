@@ -85,11 +85,11 @@ function renderSettings(signIn: SettingsSignIn, isOpen = true) {
 }
 
 describe("an agent's login started in Settings", () => {
-  it("is drawn by Settings, and Cancel stops it", () => {
+  it("is drawn by Settings, and Close stops it", () => {
     const signIn = agentSignIn();
     renderSettings(signIn);
 
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
     expect(signIn.cancelSignIn).toHaveBeenCalled();
   });

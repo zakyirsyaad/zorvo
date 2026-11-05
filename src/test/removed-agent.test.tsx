@@ -65,7 +65,7 @@ const geminiSession: Session = {
   transport: "acp",
 };
 
-const REMOVED_NOTICE = "Gemini CLI was removed. Add it again to continue this session.";
+const REMOVED_NOTICE = "Gemini CLI is no longer in use";
 
 /** A saved Gemini CLI session whose agent the user removed. */
 function seedRemovedAgentSession(onPrompt?: () => Promise<unknown>) {
@@ -99,17 +99,31 @@ afterEach(() => {
 });
 
 describe("RemovedAgentPanel", () => {
-  it("says the agent was removed and adds it again", () => {
+  it("says the agent is no longer in use, that its messages stay, and adds it again", () => {
     const onAdd = vi.fn();
-    render(<RemovedAgentPanel agentName="Gemini CLI" onAdd={onAdd} />);
+    render(<RemovedAgentPanel agentName="Gemini CLI" profileId="gemini" onAdd={onAdd} />);
 
-    expect(screen.getByText(REMOVED_NOTICE)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Add Gemini CLI" }));
+    const card = screen.getByRole("region", { name: REMOVED_NOTICE });
+    expect(screen.getByRole("heading", { level: 2, name: REMOVED_NOTICE })).toBeInTheDocument();
+    expect(card).toHaveTextContent("Add it again to continue this session. Its messages stay here either way.");
+    const add = screen.getByRole("button", { name: "Add Gemini CLI" });
+    expect(add.className).toContain("bg-primary");
+    fireEvent.click(add);
     expect(onAdd).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("A saved session of a removed agent", () => {
+  it("keeps the toast anchor above the card, so a floating card never covers Add", async () => {
+    seedRemovedAgentSession();
+    await openRemovedAgentSession();
+
+    const card = await screen.findByRole("region", { name: REMOVED_NOTICE });
+    const anchor = document.querySelector("article > .relative.h-0");
+    expect(anchor).not.toBeNull();
+    expect(anchor!.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("keeps the transcript, replaces the composer and adds the agent back", async () => {
     seedRemovedAgentSession();
     await openRemovedAgentSession();

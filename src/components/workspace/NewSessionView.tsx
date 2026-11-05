@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { Workspace } from "../../types";
 
 export interface NewSessionHeadingProps {
-  workspace?: Workspace;
+  workspace: Workspace;
   /** Why no session can start in the folder (no agent is ready). */
   unavailableReason?: string;
 }
@@ -12,11 +12,10 @@ export interface NewSessionHeadingProps {
  * something stops the session from starting. The folder and branch chips say the rest.
  */
 export function NewSessionHeading({ workspace, unavailableReason }: NewSessionHeadingProps) {
-  const reason = !workspace ? "Open a project folder to start a session in it." : unavailableReason;
   return (
     <div className="flex flex-1 flex-col items-center justify-end px-6 pb-6">
-      <h1 className="text-xl font-medium text-fg">{workspace ? `New session in ${workspace.name}` : "New session"}</h1>
-      {reason && <p className="mt-1 max-w-md text-center text-ui text-fg-muted">{reason}</p>}
+      <h1 className="text-xl font-medium text-fg">{`New session in ${workspace.name}`}</h1>
+      {unavailableReason && <p className="mt-1 max-w-md text-center text-ui text-fg-muted">{unavailableReason}</p>}
     </div>
   );
 }

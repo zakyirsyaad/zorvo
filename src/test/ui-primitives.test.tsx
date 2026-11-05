@@ -8,6 +8,7 @@ import { Toast, ToastStack } from "../components/ui/Toast";
 import { Button } from "../components/ui/Button";
 import { IconButton } from "../components/ui/IconButton";
 import { StatusLine } from "../components/ui/StatusLine";
+import { BlockerCard } from "../components/ui/BlockerCard";
 import { Chip } from "../components/ui/Chip";
 import { Tabs, tabIds, type TabItem } from "../components/ui/Tabs";
 
@@ -123,6 +124,43 @@ describe("IconButton", () => {
     );
     expect(screen.getByRole("button", { name: "P" })).toHaveClass("bg-primary", "rounded-lg");
     expect(screen.getByRole("button", { name: "G" })).toHaveClass("rounded-md", "text-fg-muted");
+  });
+});
+
+describe("BlockerCard", () => {
+  it("is a region named by its label, with the logo, heading, body, actions and footer", () => {
+    render(
+      <BlockerCard
+        label="Install Codex"
+        profileId="codex-acp"
+        title="Codex isn't installed yet"
+        actions={<Button>Install Codex</Button>}
+        footer={<p>Footer line</p>}
+      >
+        Codex needs Node.js before it can start.
+      </BlockerCard>,
+    );
+
+    const card = screen.getByRole("region", { name: "Install Codex" });
+    expect(card).toHaveClass("rounded-xl", "border", "bg-surface-2", "p-4");
+    expect(screen.getByRole("heading", { level: 2, name: "Codex isn't installed yet" })).toBeInTheDocument();
+    expect(screen.getByText("Codex needs Node.js before it can start.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Install Codex" })).toBeInTheDocument();
+    expect(screen.getByText("Footer line").parentElement).toHaveClass("border-t", "pt-3", "mt-3");
+    // Codex's official logo is a decorative img: the heading already names the agent.
+    expect(card.querySelector("img[alt='']")).not.toBeNull();
+  });
+
+  it("leaves out the logo, actions and footer it is not given", () => {
+    render(
+      <BlockerCard label="Note" title="Something">
+        Body
+      </BlockerCard>,
+    );
+
+    const card = screen.getByRole("region", { name: "Note" });
+    expect(card.querySelector("img, svg, [aria-hidden]")).toBeNull();
+    expect(card.querySelector(".border-t")).toBeNull();
   });
 });
 

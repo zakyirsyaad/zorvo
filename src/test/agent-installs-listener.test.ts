@@ -98,7 +98,7 @@ describe("agent installs", () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Install" }));
+      fireEvent.click(screen.getByRole("button", { name: "Install Codex" }));
     });
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -108,7 +108,7 @@ describe("agent installs", () => {
     });
 
     expect(calls("install_agent")).toEqual([]);
-    expect(screen.getByRole("button", { name: "Install" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Install Codex" })).toBeDefined();
     expect(screen.queryByText(/failed|Could not/)).toBeNull();
     expect(installEntryOf("codex-acp").status).toBe("idle");
   });

@@ -30,11 +30,11 @@ const request = (extra: Partial<AuthRequest> = {}): AuthRequest => ({
 describe("the sign-in layer", () => {
   it("tells the user the returned message is sent again, only when a refused message was put back", () => {
     const { rerender } = render(layerFor(request()));
-    expect(screen.queryByText(/Your message is back in the box below/)).toBeNull();
+    expect(screen.queryByText("Your message will be sent again after you sign in")).toBeNull();
 
     rerender(layerFor(request({ pending: { sessionId: "s1", text: "hello" } })));
 
-    expect(screen.getByText(/Your message is back in the box below/)).toBeInTheDocument();
+    expect(screen.getByText("Your message will be sent again after you sign in")).toBeInTheDocument();
   });
 
   it("announces the panel through a live region that was mounted before it", () => {

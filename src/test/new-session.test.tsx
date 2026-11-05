@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, within } from "@testing-library/react";
 import { clickRowDelete } from "./sidebar-helpers";
+import { makeProfile } from "./fixtures/agents";
 
 type Listener = (event: { payload: unknown }) => void;
 const listeners = new Map<string, Listener>();
@@ -12,6 +13,9 @@ vi.mock("@tauri-apps/api/event", () => ({
   },
   emit: () => Promise.resolve(),
 }));
+
+const openDialog = vi.fn();
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: (...args: unknown[]) => openDialog(...args) }));
 
 import App from "../App";
 import { NewSessionBelow, NewSessionHeading } from "../components/workspace/NewSessionView";
@@ -29,13 +33,32 @@ describe("The new-session heading", () => {
     expect(screen.getByRole("heading", { name: "New session in api" })).toBeDefined();
   });
 
-  it("says to open a folder when there is none, and why nothing can start when no agent is ready", () => {
-    const { rerender } = render(<NewSessionHeading />);
-    expect(screen.getByRole("heading", { name: /^New session/ })).toBeDefined();
-    expect(screen.getByText("Open a project folder to start a session in it.")).toBeDefined();
+  it("says why nothing can start when no agent is ready", () => {
+    render(<NewSessionHeading workspace={{ name: "api", path: "/w/api" }} unavailableReason="Install an agent first." />);
 
-    rerender(<NewSessionHeading workspace={{ name: "api", path: "/w/api" }} unavailableReason="Install an agent first." />);
     expect(screen.getByText("Install an agent first.")).toBeDefined();
+  });
+
+  it("with no folder open, asks for one in the chat's place, and Open folder opens the dialog", async () => {
+    const store = (window as unknown as { __FAKE_TAURI_STORE__: { state: { recentFolders: unknown[] } } }).__FAKE_TAURI_STORE__;
+    store.state.recentFolders = [];
+    openDialog.mockResolvedValue(null);
+    await act(async () => {
+      render(<App />);
+    });
+
+    expect(screen.getByRole("heading", { name: "Open a folder to start" })).toBeDefined();
+    expect(
+      screen.getByText("Pick a project folder. Your agents work inside it, and its sessions show in the sidebar."),
+    ).toBeDefined();
+    expect(screen.queryByRole("heading", { name: /^New session/ })).toBeNull();
+    expect((screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement).disabled).toBe(true);
+
+    const open = screen.getAllByRole("button", { name: "Open folder" }).find((button) => button.className.includes("bg-primary"))!;
+    await act(async () => {
+      fireEvent.click(open);
+    });
+    expect(openDialog).toHaveBeenCalledWith({ directory: true, multiple: false });
   });
 
   it("puts the agent's other sessions under the composer", () => {
@@ -126,6 +149,37 @@ describe("Starting a new session", () => {
     const cwd = (startCall?.[1] as { cwd: string }).cwd;
     expect(cwd.startsWith("/")).toBe(true);
     expect(cwd.endsWith("/ai-perpetual-trading")).toBe(true);
+  });
+
+  it("puts the install card under the heading and right above the prompt, which can still be written", async () => {
+    const needsNode = (id: string, name: string) =>
+      makeProfile({
+        id,
+        name,
+        source: "registry",
+        distribution: "npx",
+        availability: "needs_runtime",
+        detected: false,
+        install_plan: [{ kind: "node", name: "Node.js", version: "24.11.1", download_bytes: 49 * 1_048_576 }],
+      });
+    const profiles = [needsNode("claude-acp", "Claude Code"), needsNode("codex-acp", "Codex")];
+    const original = tauriInternals().invoke;
+    vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) =>
+      cmd === "get_agent_profiles" ? Promise.resolve(structuredClone(profiles)) : original(cmd, args),
+    );
+    await act(async () => {
+      render(<App />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
+    });
+
+    const heading = screen.getByRole("heading", { name: "New session in ai-perpetual-trading" });
+    const card = await screen.findByRole("region", { name: "Install Claude Code" });
+    const prompt = screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement;
+    expect(heading.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(prompt.disabled).toBe(false);
   });
 
   it("does not start an agent until the new session's first message", async () => {
@@ -542,7 +596,7 @@ describe("Starting a new session", () => {
     });
     await startFromNew();
 
-    expect(screen.getByText("Open a project folder to start a session in it.")).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Open a folder to start" })).toBeDefined();
     expect((screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement).disabled).toBe(true);
     expect(invokeSpy.mock.calls.find(([cmd]) => cmd === "acp_start_session")).toBeUndefined();
   });

@@ -34,10 +34,34 @@ describe("TopBar", () => {
       // With the sidebar shown, the traffic lights sit in the sidebar's own header.
       expect(headerOf(container).style.paddingLeft).toBe("");
 
-      rerender(<TopBar onShowSidebar={() => {}} />);
+      rerender(<TopBar onShowSidebar={() => {}} hasTrafficLights />);
 
       expect(TOP_BAR_TRAFFIC_LIGHT_INSET_PX).toBe(78);
       expect(headerOf(container).style.paddingLeft).toBe(`${TOP_BAR_TRAFFIC_LIGHT_INSET_PX}px`);
+    });
+
+    it("keeps the inset for a window with no sidebar at all, such as a popout", () => {
+      const { container } = render(<TopBar sessionName="Fix the login" hasTrafficLights />);
+      expect(headerOf(container).style.paddingLeft).toBe(`${TOP_BAR_TRAFFIC_LIGHT_INSET_PX}px`);
+    });
+
+    it("keeps the title readable when the bar is crowded", () => {
+      render(
+        <TopBar
+          sessionName="Fix the login"
+          branch="agent/fix-the-login-flow-for-users-who-signed-up-with-email"
+          pullRequest={{ branch: "agent/x", number: 134, title: "Fix", url: "https://github.com/o/r/pull/134", state: "open", isDraft: false, checks: { passing: 0, failing: 0, pending: 0 } }}
+          onOpenPullRequest={() => {}}
+        />,
+      );
+      const title = screen.getByText("Fix the login");
+      // A floor for the title, a branch chip that gives way first, and a left group that cannot paint over the right.
+      expect(title.className).toContain("min-w-12");
+      const branch = screen.getByLabelText(/^Branch /);
+      expect(branch.className).not.toContain("shrink-0");
+      expect(branch.className).toContain("shrink-[4]");
+      expect(branch.className).toContain("min-w-0");
+      expect(title.parentElement?.className).toContain("overflow-hidden");
     });
 
     it("is 48px tall with the session's title at weight 600 in the brightest text", () => {

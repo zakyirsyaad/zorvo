@@ -63,7 +63,7 @@ function SessionTitle({ name, isRenaming, onRename, onStartRename, onEndRename }
       data-tauri-drag-region={onRename ? undefined : true}
       title={onRename ? "Double-click to rename" : undefined}
       onDoubleClick={onRename ? onStartRename : undefined}
-      className="truncate text-ui font-semibold text-fg"
+      className="min-w-12 truncate text-ui font-semibold text-fg"
     >
       {name}
     </span>
@@ -140,6 +140,11 @@ export interface TopBarProps {
   onOpenPullRequest?: (url: string) => void;
   /** Set while the sidebar is hidden: its show button, then Back and Forward, lead the bar. */
   onShowSidebar?: () => void;
+  /**
+   * The window's traffic lights float over this bar, so it keeps their inset: in the main
+   * window while the sidebar (which holds them otherwise) is hidden, and always in a popout.
+   */
+  hasTrafficLights?: boolean;
   canGoBack?: boolean;
   canGoForward?: boolean;
   onBack?: () => void;
@@ -180,6 +185,7 @@ export function TopBar({
   pullRequest,
   onOpenPullRequest,
   onShowSidebar,
+  hasTrafficLights = false,
   canGoBack = false,
   canGoForward = false,
   onBack,
@@ -207,12 +213,12 @@ export function TopBar({
   return (
     <header
       data-tauri-drag-region
-      // The traffic lights float over the bar only while the sidebar, which holds them otherwise, is hidden.
-      style={onShowSidebar ? { paddingLeft: TOP_BAR_TRAFFIC_LIGHT_INSET_PX } : undefined}
+      style={hasTrafficLights ? { paddingLeft: TOP_BAR_TRAFFIC_LIGHT_INSET_PX } : undefined}
       className="flex h-12 w-full shrink-0 items-center gap-3 border-b border-border bg-bg pr-3 pl-5 text-ui-sm select-none"
     >
-      {/* Left: with the sidebar hidden, its show button and the session history; then what is open. */}
-      <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center gap-3">
+      {/* Left: with the sidebar hidden, its show button and the session history; then what is open.
+          It clips, so a crowded bar never paints its chips over the right-hand ones. */}
+      <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center gap-3 self-stretch overflow-hidden">
         {onShowSidebar && (
           // The three sit close together, as one control, with the title 4px after them.
           <div className="-mr-2 flex shrink-0 items-center">
@@ -246,7 +252,7 @@ export function TopBar({
             onEndRename={() => setRenamingId(null)}
           />
         ) : (
-          <span data-tauri-drag-region className="truncate text-ui font-semibold text-fg">
+          <span data-tauri-drag-region className="min-w-12 truncate text-ui font-semibold text-fg">
             {title ?? "Zorvo"}
           </span>
         )}
@@ -255,9 +261,10 @@ export function TopBar({
             variant="plain"
             icon={<GitBranch size={12} className="text-fg-muted" />}
             label={`Branch ${branch}`}
-            className="shrink-0 font-mono"
+            // Gives way four times faster than the title, down to its icon, in a crowded bar.
+            className="min-w-0 shrink-[4] font-mono"
           >
-            <span className="max-w-40 truncate">{branch}</span>
+            <span className="min-w-0 max-w-40 truncate">{branch}</span>
           </Chip>
         )}
         {title && branch && pullRequest && onOpenPullRequest && (

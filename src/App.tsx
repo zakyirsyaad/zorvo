@@ -807,7 +807,7 @@ export default function App() {
       return;
     }
     rememberFolder(activeWorkspace);
-    const picked =compare.agentIds.flatMap((id) => agents.filter((a) => a.id === id));
+    const picked = compare.agentIds.flatMap((id) => agents.filter((a) => a.id === id));
     void compareRun.startRun(picked, message);
   };
 
@@ -957,6 +957,7 @@ export default function App() {
         <div className="flex min-w-0 flex-1 flex-col">
           <TopBar
             onShowSidebar={isSidebarHidden ? () => setSidebarHidden(false) : undefined}
+            hasTrafficLights={isSidebarHidden}
             sessionId={activeSession?.id ?? activeRun?.id}
             sessionName={activeSession?.name ?? activeRun?.name}
             // A run's sessions share one title, so only a session of its own is renamed or archived here.

@@ -8,7 +8,7 @@ import { RenameField } from "../ui/RenameField";
 import type { SessionListContext } from "./SessionList";
 import { SessionMenu } from "./SessionMenu";
 
-const ACTIONS = `${SHOW_IN_ROW} shrink-0 items-center gap-0.5 self-center pr-1.5`;
+const ACTIONS = `${SHOW_IN_ROW} flex shrink-0 items-center gap-0.5 self-center`;
 
 export interface SessionRowProps {
   session: Session;

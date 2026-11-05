@@ -134,6 +134,14 @@ describe("Popout windows", () => {
     expect(screen.getByRole("button", { name: "Plan, 1 of 2 done" })).toBeDefined();
   });
 
+  it("keeps its top bar clear of the window's buttons", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    // The popout is an Overlay window with no sidebar: the traffic lights always float over its bar.
+    expect(screen.getByRole("banner").style.paddingLeft).toBe("78px");
+  });
+
   it("shows the history note for a resumed import with no messages", async () => {
     await act(async () => {
       render(<PopoutApp sessionId="s-1" />);

@@ -31,7 +31,7 @@ export function FailedTurnBanner({ agentName, error, isBusy, onRetry, onDismiss 
         )}
         <div className="mt-1.5 flex items-center gap-2">
           {onRetry && (
-            <Button variant="outline" onClick={onRetry} disabled={isBusy} className="px-2 py-1">
+            <Button variant="outline" onClick={onRetry} disabled={isBusy} size="sm">
               Try again
             </Button>
           )}

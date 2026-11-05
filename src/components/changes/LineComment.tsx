@@ -96,7 +96,7 @@ function DeleteButton({ onDelete }: { onDelete: () => void }) {
         variant={isConfirming ? "danger" : "ghost"}
         aria-label={isConfirming ? "Confirm delete" : undefined}
         title={isConfirming ? "Delete this comment for good" : undefined}
-        className="shrink-0 px-2 py-1"
+        size="sm" className="shrink-0"
         onClick={isConfirming ? onDelete : () => setIsConfirming(true)}
       >
         {isConfirming ? "Delete?" : "Delete"}
@@ -105,7 +105,7 @@ function DeleteButton({ onDelete }: { onDelete: () => void }) {
         <Button
           ref={cancelButton}
           variant="ghost"
-          className="shrink-0 px-2 py-1"
+          size="sm" className="shrink-0"
           onClick={() => {
             deleteButton.current?.focus();
             setIsConfirming(false);
@@ -182,7 +182,7 @@ export function LineComment({ comment, status, review, adder, location, onRemove
       {adder && addLabel && (
         <Button
           variant="ghost"
-          className="shrink-0 px-2 py-1"
+          size="sm" className="shrink-0"
           disabled={adder.isWaiting || adder.blockedReason !== undefined}
           aria-describedby={adder.blockedReason ? adder.reasonId : undefined}
           onClick={() => adder.add([{ comment, status }])}
@@ -193,7 +193,7 @@ export function LineComment({ comment, status, review, adder, location, onRemove
       <Button
         ref={editButton}
         variant="ghost"
-        className="shrink-0 px-2 py-1"
+        size="sm" className="shrink-0"
         onClick={() => {
           shouldMoveFocus.current = true;
           review.openEdit(comment);

@@ -49,13 +49,13 @@ export function ReviewCommentsBar({ review, adder, checked, target, targets, opt
             </p>
           )}
           {hasSent && (
-            <Button variant="ghost" className="px-2 py-1" onClick={review.clearSent}>
+            <Button variant="ghost" size="sm" onClick={review.clearSent}>
               Clear sent
             </Button>
           )}
           {adder && counted.length > 0 && (
             <Button
-              className="px-2 py-1"
+              size="sm"
               disabled={adder.isWaiting || reason !== undefined}
               aria-describedby={reason ? adder.reasonId : undefined}
               onClick={() => adder.add(counted)}
@@ -82,7 +82,7 @@ export function ReviewCommentsBar({ review, adder, checked, target, targets, opt
       {elsewhereTargets.map((other) => (
         <div key={other} className="flex flex-col gap-1">
           {options.includes(other) ? (
-            <Button variant="ghost" className="self-start px-2 py-1" onClick={() => onTargetChange(other)}>
+            <Button variant="ghost" size="sm" className="self-start" onClick={() => onTargetChange(other)}>
               Show {targetLabel(other, targets)}
             </Button>
           ) : (

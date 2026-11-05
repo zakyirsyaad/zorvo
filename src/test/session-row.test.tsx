@@ -82,7 +82,10 @@ describe("SessionRow", () => {
 
   it("keeps its actions shown while its menu is open", () => {
     const { row } = renderRow(session());
-    expect(within(row).getByTestId("session-row-actions")).toHaveClass("has-[[role=menu]]:flex");
+    expect(within(row).getByTestId("session-row-actions")).toHaveClass(
+      "has-[[role=menu]]:w-auto",
+      "has-[[role=menu]]:overflow-visible",
+    );
   });
 
   it("puts its actions in the row's flow, so the title gives way to them", () => {
@@ -92,7 +95,17 @@ describe("SessionRow", () => {
     expect(dot).toHaveAttribute("aria-hidden", "true");
     expect(actions.contains(dot)).toBe(false);
     expect(actions.className).not.toContain("absolute");
-    expect(actions).toHaveClass("shrink-0", "group-hover:flex", "group-focus-within:flex");
+    // Collapsed, never display:none: a hidden button cannot take focus, so Delete?'s
+    // autofocus and the return of focus to ⋯ would fail for a keyboard user.
+    expect(actions.className.split(/\s+/)).not.toContain("hidden");
+    expect(actions).toHaveClass(
+      "shrink-0",
+      "w-0",
+      "overflow-hidden",
+      "group-hover:w-auto",
+      "group-focus-within:w-auto",
+      "group-focus-within:overflow-visible",
+    );
   });
 
   it("does not pulse the working dot", () => {

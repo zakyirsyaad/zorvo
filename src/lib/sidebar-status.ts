@@ -23,10 +23,16 @@ export const REVEAL_ON_ROW =
   "has-[[role=menu]]:opacity-100 has-[[role=menu]]:pointer-events-auto";
 
 /**
- * A session row's actions, in the row's flow: absent until hover or focus (so the title
- * has the whole width), and kept while their menu is open, for the same WebKit reason.
+ * A session row's actions, in the row's flow: collapsed to no width until hover or focus (so
+ * the title has the whole width), and kept open while their menu is, for the same WebKit reason.
+ * Collapsed, never `display: none`: a hidden button cannot take focus, so Delete?'s autofocus
+ * and focus going back to ⋯ would fail for a keyboard user. Focus landing inside opens it.
  */
-export const SHOW_IN_ROW = "hidden group-hover:flex group-focus-within:flex has-[[role=menu]]:flex";
+export const SHOW_IN_ROW =
+  "w-0 overflow-hidden " +
+  "group-hover:w-auto group-hover:overflow-visible group-hover:pr-1.5 " +
+  "group-focus-within:w-auto group-focus-within:overflow-visible group-focus-within:pr-1.5 " +
+  "has-[[role=menu]]:w-auto has-[[role=menu]]:overflow-visible has-[[role=menu]]:pr-1.5";
 
 export const DOT_CLASS: Record<RowTone, string> = {
   attention: "bg-status-attention",

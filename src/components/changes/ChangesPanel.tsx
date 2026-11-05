@@ -185,7 +185,7 @@ export function ChangesPanel({
               ? "Pull requests need the GitHub CLI, which is not installed."
               : "Pull requests need you to be connected to GitHub."}
           </p>
-          <Button variant="ghost" onClick={onOpenGithubSettings} className="mt-1 px-2 py-1 text-[11px]">
+          <Button variant="ghost" onClick={onOpenGithubSettings} size="sm" className="mt-1">
             Open GitHub settings
           </Button>
         </section>

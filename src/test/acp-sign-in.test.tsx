@@ -407,8 +407,12 @@ describe("signing in to an ACP agent from the app", () => {
     expect(callsTo(spy, "acp_probe_agent").length).toBeGreaterThan(probesBefore);
   });
 
-  it("cancelling stops the login and leaves the message", async () => {
-    const { spy, panel } = await sendRefused();
+  it("Close while the login runs stops it and checks again, and a signed-out answer leaves the message", async () => {
+    const { spy, panel } = await sendRefused({
+      overrides: {
+        acp_probe_agent: (args) => (isRecheck(args) ? Promise.reject("ACP_AUTH_REQUIRED:[]") : realInvoke("acp_probe_agent", args)),
+      },
+    });
     const { dialog, terminalId } = await startTerminalSignIn(spy, panel);
 
     await act(async () => {
@@ -417,10 +421,104 @@ describe("signing in to an ACP agent from the app", () => {
 
     expect(callsTo(spy, "terminate_session").map(([, args]) => args)).toContainEqual({ sessionId: terminalId });
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(
-      (panel.getByRole("button", { name: "Sign in with Claude Subscription" }) as HTMLButtonElement).disabled,
-    ).toBe(false);
+    await waitFor(() => expect(sequenceOf(spy)).toEqual(["refresh", "probe"]));
+    expect(promptedTexts(spy)).toEqual([]);
     expect(prompt().value).toBe("hello");
+  });
+
+  it("Close while the login runs sends the message once the check finds the user signed in", async () => {
+    const { spy, panel } = await sendRefused({
+      overrides: {
+        acp_probe_agent: (args) => (isRecheck(args) ? Promise.resolve({ signInChecked: true }) : realInvoke("acp_probe_agent", args)),
+      },
+    });
+    const { dialog } = await startTerminalSignIn(spy, panel);
+
+    await act(async () => {
+      fireEvent.click(dialog.getByRole("button", { name: "Close" }));
+    });
+
+    await waitFor(() => expect(promptedTexts(spy)).toEqual(["hello"]));
+    expect(sequenceOf(spy)).toEqual(["refresh", "probe"]);
+  });
+
+  it("Close before the login runs, or after it failed, checks nothing", async () => {
+    const start = deferred();
+    const { spy, panel } = await sendRefused({ overrides: { acp_start_terminal_sign_in: () => start.promise } });
+    await act(async () => {
+      fireEvent.click(panel.getByRole("button", { name: "Sign in with Claude Subscription" }));
+    });
+    const starting = within(await screen.findByRole("dialog", { name: "Sign in to Qwen Code" }));
+    expect(starting.getByText("Starting Qwen Code…")).toBeDefined();
+
+    await act(async () => {
+      fireEvent.click(starting.getByRole("button", { name: "Close" }));
+    });
+    expect(sequenceOf(spy)).toEqual([]);
+
+    start.resolve(undefined);
+    await act(async () => {
+      fireEvent.click(panel.getByRole("button", { name: "Sign in with Claude Subscription" }));
+    });
+    const failed = within(await screen.findByRole("dialog", { name: "Sign in to Qwen Code" }));
+    // The second login's terminal, not the one closed while it started.
+    const secondId = String(callsTo(spy, "acp_start_terminal_sign_in").at(-1)?.[1]?.terminalId);
+    await terminalEvent({ terminalId: secondId, kind: "exit", exitCode: 1 });
+    expect(await failed.findByText("The sign-in ended with code 1")).toBeDefined();
+    await act(async () => {
+      fireEvent.click(failed.getByRole("button", { name: "Close" }));
+    });
+    expect(sequenceOf(spy)).toEqual([]);
+  });
+
+  describe("an agent whose only way in is its own setup", () => {
+    const QWEN_SETUP = [{ id: "openai", name: "Use OpenAI API key", _meta: { type: "terminal", args: ["--auth-type=openai"] } }];
+
+    async function openSetup(onProbe: () => Promise<unknown>) {
+      const spy = await renderWithQwen();
+      let starts = 0;
+      spy.mockImplementation((cmd, args) => {
+        if (cmd === "acp_start_session" && starts++ < 1) return Promise.reject(`ACP_AUTH_REQUIRED:${JSON.stringify(QWEN_SETUP)}`);
+        if (cmd === "acp_start_agent_setup") return Promise.resolve();
+        if (cmd === "acp_probe_agent" && isRecheck(args as Record<string, unknown>)) return onProbe();
+        return realInvoke(cmd, args);
+      });
+      await send("hello");
+      const card = within(await screen.findByRole("region", { name: "Set up Qwen Code" }));
+      await act(async () => {
+        fireEvent.click(card.getByRole("button", { name: "Open setup in terminal" }));
+      });
+      const dialog = within(await screen.findByRole("dialog", { name: "Set up Qwen Code" }));
+      const [[, args]] = callsTo(spy, "acp_start_agent_setup");
+      return { spy, dialog, terminalId: String(args?.terminalId), args };
+    }
+
+    it("opens the agent's own setup, naming no method, and Close checks and sends the message", async () => {
+      const { spy, dialog, args } = await openSetup(() => Promise.resolve({ signInChecked: true }));
+
+      expect(Object.keys(args ?? {}).sort()).toEqual(["cwd", "profileId", "terminalId"]);
+      expect(callsTo(spy, "acp_start_terminal_sign_in")).toHaveLength(0);
+      await act(async () => {
+        fireEvent.click(dialog.getByRole("button", { name: "Close" }));
+      });
+
+      await waitFor(() => expect(promptedTexts(spy)).toEqual(["hello"]));
+      expect(sequenceOf(spy)).toEqual(["refresh", "probe"]);
+    });
+
+    it("checks when the user quits the setup, whatever its exit code, and shows it is checking", async () => {
+      const probe = deferred();
+      const { spy, dialog, terminalId } = await openSetup(() => probe.promise);
+
+      await terminalEvent({ terminalId, kind: "exit", exitCode: 130 });
+
+      expect(await dialog.findByText("Checking your sign-in…")).toBeDefined();
+      expect(dialog.queryByText(/ended with code/)).toBeNull();
+      await act(async () => {
+        probe.resolve({ signInChecked: true });
+      });
+      await waitFor(() => expect(promptedTexts(spy)).toEqual(["hello"]));
+    });
   });
 
   it("does not send a message the user changed", async () => {

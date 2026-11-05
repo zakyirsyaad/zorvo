@@ -179,13 +179,15 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
       return;
     }
 
-    if (method.kind === 'terminal') terminal.showChecking();
+    // A setup runs in the same dialog as a terminal sign-in, which shows the check and its result.
+    const isInDialog = method.kind === 'terminal' || method.kind === 'setup';
+    if (isInDialog) terminal.showChecking();
     const check = await checkSignIn(request.profileId, request.cwd);
     if (!isCurrent()) return;
     attemptRef.current = null;
     if (check === 'signed-out') {
       const reason = `${agentName} still says you are signed out`;
-      if (method.kind === 'terminal') terminal.fail(reason);
+      if (isInDialog) terminal.fail(reason);
       setStatus('failed', reason);
       return;
     }
@@ -263,5 +265,15 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
     dismiss,
   };
 
-  return { auth, handBack, handBackKept, cancel, terminal, startSignIn, retryStart };
+  /**
+   * The dialog's Close. A login or setup that still runs may already be done (Qwen's setup never
+   * exits on its own), so Zorvo checks again, as its line says; in any other phase it only cancels.
+   */
+  const closeDialog = () => {
+    const wasRunning = terminal.dialog?.phase === 'running';
+    cancel();
+    if (wasRunning) void recheck();
+  };
+
+  return { auth, handBack, handBackKept, cancel, closeDialog, terminal, startSignIn, retryStart };
 }

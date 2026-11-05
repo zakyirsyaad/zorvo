@@ -271,10 +271,21 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
   /** The login dialog's Cancel. A request left idle by a cancel would make a new session of that agent wait on its panel. */
   const { cancel, auth } = signIn;
   const cancelSignIn = useCallback(() => {
+    const startedHere = startedHereRef.current;
+    const login = depsRef.current.signIn;
+    // A login that still runs may be done: the dialog's line says Zorvo checks again on Close.
+    const wasRunning = login.terminal.dialog?.phase === 'running';
+    if (startedHere === null) {
+      // The draft's login, drawn here while Settings is open: its own Close checks the draft's request.
+      if (wasRunning) login.closeDialog();
+      else cancel();
+      return;
+    }
     cancel();
-    if (startedHereRef.current !== null) auth.dismiss();
+    auth.dismiss();
     startedHereRef.current = null;
-  }, [cancel, auth]);
+    if (wasRunning) check(startedHere);
+  }, [cancel, auth, depsRef, check]);
 
   return useMemo<SettingsSignIn>(
     () => ({

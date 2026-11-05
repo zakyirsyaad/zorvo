@@ -592,6 +592,38 @@ describe("overlaps and leftovers", () => {
     expect(dismiss).toHaveBeenCalled();
   });
 
+  it("checks the agent again, once, when its running login is closed", async () => {
+    const spy = vi.spyOn(internals(), "invoke").mockRejectedValue(authRequiredError(claudeMethods));
+    const { hook, cancel, signIn } = setupHook();
+    act(() => hook.result.current.settingsSignIn.check("claude-acp"));
+    await waitFor(() => expect(hook.result.current.settingsSignIn.methodsOf("claude-acp")).toHaveLength(1));
+    act(() => hook.result.current.settingsSignIn.signInWith("claude-acp", "claude-ai-login"));
+    (signIn.terminal as { dialog: unknown }).dialog = { phase: "running" };
+    const probes = () => spy.mock.calls.filter(([cmd]) => cmd === "acp_probe_agent").length;
+    const before = probes();
+
+    act(() => hook.result.current.settingsSignIn.cancelSignIn());
+
+    expect(cancel).toHaveBeenCalled();
+    await waitFor(() => expect(probes()).toBe(before + 1));
+  });
+
+  it("checks nothing when the login is closed before it runs", async () => {
+    const spy = vi.spyOn(internals(), "invoke").mockRejectedValue(authRequiredError(claudeMethods));
+    const { hook, signIn } = setupHook();
+    act(() => hook.result.current.settingsSignIn.check("claude-acp"));
+    await waitFor(() => expect(hook.result.current.settingsSignIn.methodsOf("claude-acp")).toHaveLength(1));
+    act(() => hook.result.current.settingsSignIn.signInWith("claude-acp", "claude-ai-login"));
+    (signIn.terminal as { dialog: unknown }).dialog = { phase: "starting" };
+    const probes = () => spy.mock.calls.filter(([cmd]) => cmd === "acp_probe_agent").length;
+    const before = probes();
+
+    act(() => hook.result.current.settingsSignIn.cancelSignIn());
+    await act(async () => {});
+
+    expect(probes()).toBe(before);
+  });
+
   it("leaves the draft's request alone when it cancels a login it did not start", () => {
     const { hook, dismiss, cancel } = setupHook();
 

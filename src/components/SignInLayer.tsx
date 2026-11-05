@@ -16,7 +16,7 @@ export interface SignInLayerProps {
 
 /** The sign-in panel above the chat, and an agent's terminal login over the app while it runs. */
 export function SignInLayer({ signIn, agents, agentId, showTerminal = true }: SignInLayerProps) {
-  const { auth, cancel, terminal } = signIn;
+  const { auth, closeDialog, terminal } = signIn;
   const { authRequest } = auth;
   // The method the dialog's Try again runs once more.
   const [methodId, setMethodId] = useState<string | null>(null);
@@ -56,7 +56,7 @@ export function SignInLayer({ signIn, agents, agentId, showTerminal = true }: Si
           state={terminal.dialog}
           profileId={authRequest?.profileId}
           output={terminal.output}
-          onClose={cancel}
+          onClose={closeDialog}
           onTryAgain={retryId ? () => auth.signIn(retryId) : undefined}
           onInput={terminal.sendInput}
           onResize={terminal.resize}

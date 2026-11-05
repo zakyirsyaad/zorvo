@@ -127,6 +127,39 @@ describe("useTerminalSignIn", () => {
     await sweep;
   });
 
+  it("runs an agent's own setup through acp_start_agent_setup, naming no method", async () => {
+    const real = internals().invoke;
+    const spy = vi.spyOn(internals(), "invoke").mockImplementation((cmd, args) =>
+      cmd === "acp_start_agent_setup" ? Promise.resolve() : real(cmd, args),
+    );
+    const { result } = renderHook(() => useTerminalSignIn());
+    let outcome!: Promise<LoginOutcome>;
+    await act(async () => {
+      outcome = result.current.run({ ...REQUEST, method: { id: "openai", name: "Use OpenAI API key", kind: "setup" } });
+    });
+
+    const [[, args]] = callsTo(spy, "acp_start_agent_setup");
+    expect(Object.keys(args ?? {}).sort()).toEqual(["cwd", "profileId", "terminalId"]);
+    expect(args).toMatchObject({ profileId: "qwen", cwd: "/work" });
+    expect(args?.terminalId).toMatch(/^signin-/);
+    expect(callsTo(spy, "acp_start_terminal_sign_in")).toHaveLength(0);
+    expect(result.current.dialog).toMatchObject({ isSetup: true, methodName: "Qwen Code's own setup", phase: "running" });
+
+    // Qwen's app is quit by the user (Ctrl-C twice): its exit code says nothing about the setup.
+    await terminalEvent({ terminalId: args?.terminalId, kind: "exit", exitCode: 130 });
+    await expect(outcome).resolves.toEqual({ ok: true });
+  });
+
+  it("still fails a sign-in that exits with 130", async () => {
+    const spy = mockStart(() => Promise.resolve());
+    const { result } = renderHook(() => useTerminalSignIn());
+    const { outcome } = await startRun(result);
+    const [[, args]] = callsTo(spy, "acp_start_terminal_sign_in");
+
+    await terminalEvent({ terminalId: args?.terminalId, kind: "exit", exitCode: 130 });
+    await expect(outcome).resolves.toEqual({ ok: false, reason: "The sign-in ended with code 130" });
+  });
+
   it("fails with the exit code", async () => {
     const spy = mockStart(() => Promise.resolve());
     const { result } = renderHook(() => useTerminalSignIn());
@@ -331,6 +364,21 @@ describe("TerminalSignInDialog", () => {
     expect(heading.closest("header")?.querySelector("img[alt='']")).not.toBeNull();
     const box = dialog.querySelector(".h-\\[380px\\]");
     expect(box?.className).toContain("bg-terminal-bg");
+  });
+
+  it("titles an agent's setup Set up <Agent>", () => {
+    render(
+      <TerminalSignInDialog
+        state={{ terminalId: "signin-1", agentName: "Qwen Code", methodName: "Qwen Code's own setup", phase: "running", isSetup: true }}
+        output={createPtyOutputStore()}
+        onClose={() => {}}
+        onInput={() => {}}
+        onResize={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole("dialog", { name: "Set up Qwen Code" })).toBeTruthy();
+    expect(screen.getByText("Qwen Code's own setup")).toBeTruthy();
   });
 
   it("lets a login's own note replace the running line", () => {

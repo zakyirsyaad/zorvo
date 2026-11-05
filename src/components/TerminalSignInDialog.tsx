@@ -84,7 +84,7 @@ export function TerminalSignInDialog({
             {profileId && <AgentLogo profileId={profileId} name="" size={24} />}
             <div className="min-w-0">
               <h2 id={titleId} className="text-ui font-semibold text-fg">
-                Sign in to {state.agentName}
+                {state.isSetup ? `Set up ${state.agentName}` : `Sign in to ${state.agentName}`}
               </h2>
               <p className="truncate text-caption text-fg-subtle">{state.methodName}</p>
             </div>

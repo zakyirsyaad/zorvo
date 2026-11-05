@@ -151,6 +151,40 @@ describe("useInspector", () => {
     expect(result.current.isDiffExpanded).toBe(true);
   });
 
+  it("remembers the file open in the Files tab until it is closed", () => {
+    setWindowWidth(1440);
+    const { result } = renderInspector(true);
+    act(() => result.current.show("files"));
+    expect(result.current.viewedFile).toBeNull();
+
+    act(() => result.current.viewFile("src/a.ts"));
+    expect(result.current.viewedFile).toBe("src/a.ts");
+    act(() => result.current.closeFile());
+    expect(result.current.viewedFile).toBeNull();
+  });
+
+  it("forgets the open file when the Files tab shows another folder", () => {
+    setWindowWidth(1440);
+    const { result, rerender } = renderInspector(true);
+    act(() => result.current.show("files"));
+    act(() => result.current.viewFile("src/a.ts"));
+
+    rerender({ folder: "/Users/test/other", offered: ALL });
+    expect(result.current.viewedFile).toBeNull();
+    rerender({ folder: "/Users/test/zorvo", offered: ALL });
+    expect(result.current.viewedFile).toBeNull();
+  });
+
+  it("asks the sidebar to give way when opening a file widens the inspector in a narrow window", () => {
+    setWindowWidth(1100);
+    const { result, onCrowded } = renderInspector(true, vi.fn(), true);
+    act(() => result.current.show("files"));
+    onCrowded.mockClear();
+
+    act(() => result.current.viewFile("src/a.ts"));
+    expect(onCrowded).toHaveBeenCalledTimes(1);
+  });
+
   it("remembers the width it is given, within bounds", () => {
     const { result } = renderInspector(true);
     expect(result.current.width).toBe(380);

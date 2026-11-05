@@ -39,6 +39,12 @@ export interface InspectorState {
    * until it loads): diff stats name repository paths, the Files tab the folder's own.
    */
   filesPrefix: string;
+  /** The file open in the Files tab, relative to its folder; null shows the tree. Another folder closes it. */
+  viewedFile: string | null;
+  /** Opens a file in the Files tab; the inspector widens like the Terminal tab, the sidebar giving way if it must. */
+  viewFile: (relative: string) => void;
+  /** Back to the tree. */
+  closeFile: () => void;
 }
 
 /** Where the inspector opens the first time: the changes in a repository, else the files. */
@@ -82,6 +88,27 @@ export function useInspector(
 
   const shownTab = tab !== null && layout.offered.includes(tab) ? tab : null;
 
+  // The file open in the Files tab, relative to its folder. Another folder closes it (adjusted in
+  // render, not in an effect), so a path from the old folder never shows in the new one.
+  const [viewedFile, setViewedFile] = useState<string | null>(null);
+  const [viewedFolder, setViewedFolder] = useState(folderPath);
+  if (viewedFolder !== folderPath) {
+    setViewedFolder(folderPath);
+    setViewedFile(null);
+  }
+  const isViewingFile = viewedFile !== null && viewedFolder === folderPath;
+
+  /** Asks the sidebar to give way when the inspector is about to show wider than it does now, in a narrow window. */
+  const makeRoom = (nextWidth: number) => {
+    const shownWidth = shownInspectorWidth(shownTab, width, isViewingFile);
+    if (nextWidth > shownWidth && isCrowded(window.innerWidth, nextWidth, layout.isSidebarShown)) layout.onCrowded();
+  };
+
+  const viewFile = (relative: string) => {
+    if (shownTab === "files") makeRoom(shownInspectorWidth("files", width, true));
+    setViewedFile(relative);
+  };
+
   const closeDiff = () => {
     setDiffOpen(false);
     setExpandedView(null);
@@ -90,10 +117,7 @@ export function useInspector(
   const show = (next: InspectorTab) => {
     // The list may be stale while its tab is not shown (an agent mid-turn): showing it reads it afresh.
     if ((next === "changes" || next === "activity") && shownTab !== next) changes.reload();
-    const nextWidth = shownInspectorWidth(next, width);
-    if (nextWidth > shownInspectorWidth(shownTab, width) && isCrowded(window.innerWidth, nextWidth, layout.isSidebarShown)) {
-      layout.onCrowded();
-    }
+    makeRoom(shownInspectorWidth(next, width, next === "files" && isViewingFile));
     // The diff and the inspector share the room beside the chat: one shows at a time.
     closeDiff();
     setTab(next);
@@ -141,5 +165,8 @@ export function useInspector(
     headStats,
     headStatsFailed,
     filesPrefix,
+    viewedFile: isViewingFile ? viewedFile : null,
+    viewFile,
+    closeFile: () => setViewedFile(null),
   };
 }

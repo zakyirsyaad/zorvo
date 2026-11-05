@@ -77,6 +77,23 @@ describe("Inspector", () => {
     expect(screen.getByRole("region", { name: "Inspector" }).style.width).toBe("380px");
   });
 
+  it("is at least 560px wide while a file is open in the Files tab", () => {
+    const handlers = { onSelect: vi.fn(), onResize: vi.fn(), onClose: vi.fn() };
+    const { rerender } = render(
+      <Inspector tab="files" tabs={["files"]} width={380} isViewingFile {...handlers}>
+        <p>viewer</p>
+      </Inspector>,
+    );
+    expect(screen.getByRole("region", { name: "Inspector" }).style.width).toBe("560px");
+
+    rerender(
+      <Inspector tab="files" tabs={["files"]} width={380} {...handlers}>
+        <p>tree</p>
+      </Inspector>,
+    );
+    expect(screen.getByRole("region", { name: "Inspector" }).style.width).toBe("380px");
+  });
+
   it("resizes the Terminal tab from the width it shows", () => {
     const { onResize } = renderInspector("terminal", 380);
     const edge = screen.getByRole("separator", { name: "Resize inspector" });

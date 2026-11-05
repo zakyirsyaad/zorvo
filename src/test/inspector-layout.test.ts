@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { clampInspectorWidth, isCrowded, offeredTabs, shownInspectorWidth } from "../lib/inspector";
+import { clampInspectorWidth, isCrowded, minInspectorWidth, offeredTabs, shownInspectorWidth } from "../lib/inspector";
 import { useInspectorWidth } from "../hooks/useInspectorWidth";
 
 const KEY = "zorvo.inspectorWidth";
@@ -23,6 +23,14 @@ describe("inspector layout", () => {
     expect(shownInspectorWidth("terminal", 640)).toBe(640);
     expect(shownInspectorWidth("files", 380)).toBe(380);
     expect(shownInspectorWidth(null, 380)).toBe(0);
+  });
+
+  it("widens the Files tab while a file is open in it, and no other tab", () => {
+    expect(shownInspectorWidth("files", 380, true)).toBe(560);
+    expect(shownInspectorWidth("files", 640, true)).toBe(640);
+    expect(shownInspectorWidth("changes", 380, true)).toBe(380);
+    expect(minInspectorWidth("files", true)).toBe(560);
+    expect(minInspectorWidth("files")).toBe(320);
   });
 
   it("offers only the tabs that apply", () => {

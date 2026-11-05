@@ -21,6 +21,8 @@ export interface InspectorProps {
   /** The remembered width; the Terminal tab shows at least `INSPECTOR_WIDTH.wide`. */
   width: number;
   counts?: Partial<Record<InspectorTab, number>>;
+  /** A file is open in the Files tab: like the Terminal tab, it shows at least `INSPECTOR_WIDTH.wide`. */
+  isViewingFile?: boolean;
   onSelect: (tab: InspectorTab) => void;
   onResize: (px: number) => void;
   onClose: () => void;
@@ -29,7 +31,7 @@ export interface InspectorProps {
 }
 
 /** The right-hand inspector: one tab of the session's changes, activity, files or terminal, with an edge that drags. */
-export function Inspector({ tab, tabs, width, counts, onSelect, onResize, onClose, children }: InspectorProps) {
+export function Inspector({ tab, tabs, width, counts, isViewingFile = false, onSelect, onResize, onClose, children }: InspectorProps) {
   const onResizeRef = useLatest(onResize);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const stopDragRef = useRef<() => void>(() => {});
@@ -45,8 +47,8 @@ export function Inspector({ tab, tabs, width, counts, onSelect, onResize, onClos
 
   // Resizing starts from the width that shows (the Terminal tab's may be wider than the remembered one)
   // and never goes below the tab's own minimum, so every step changes what you see.
-  const shown = shownInspectorWidth(tab, width);
-  const min = minInspectorWidth(tab);
+  const shown = shownInspectorWidth(tab, width, isViewingFile);
+  const min = minInspectorWidth(tab, isViewingFile);
   const widthFor = (px: number) => Math.max(min, clampInspectorWidth(px));
 
   const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {

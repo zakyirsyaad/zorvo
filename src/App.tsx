@@ -1210,6 +1210,7 @@ export default function App() {
                 tabs={inspectorTabs}
                 width={inspector.width}
                 counts={{ changes: inspector.changes.changes?.length }}
+                isViewingFile={inspectorTab === "files" && inspector.viewedFile !== null}
                 onSelect={inspector.show}
                 onResize={inspector.setWidth}
                 onClose={() => {

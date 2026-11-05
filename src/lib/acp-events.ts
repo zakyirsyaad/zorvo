@@ -159,11 +159,13 @@ function toDetails(content: unknown): ToolDetail[] | undefined {
 
 /**
  * The files a permission request's diffs would change, with the lines each adds and removes,
- * read through the same `toDetails` as a tool call's content. A diff too large to keep has no
- * counts and is left out; undefined when nothing is left to list.
+ * read through the same `toDetails` as a tool call's content. A diff too large to keep is still
+ * listed, by its path alone: the largest edit is the one to see before allowing it. Undefined
+ * when nothing is left to list.
  */
 export function editsOf(content: unknown): ActionCard['edits'] {
-  const edits = (toDetails(content) ?? []).flatMap((detail) => {
+  const edits = (toDetails(content) ?? []).flatMap((detail): NonNullable<ActionCard['edits']> => {
+    if (detail.kind === 'changed') return [{ path: detail.path }];
     if (detail.kind !== 'diff') return [];
     const { added, removed } = countChanges(diffRows(detail.oldText, detail.newText));
     return [{ path: detail.path, added, removed }];

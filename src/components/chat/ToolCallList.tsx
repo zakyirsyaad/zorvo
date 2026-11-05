@@ -16,6 +16,7 @@ import type { ToolExecution } from "../../types";
 import { countChanges, diffRows } from "../../lib/diff-rows";
 import { formatLineCount, MINUS } from "../../lib/diff-stats";
 import { toolRow, toolStatusWord } from "../../lib/tool-summary";
+import { PathText } from "../ui/PathText";
 import { ToolDetails } from "./ToolDetails";
 
 const KIND_ICONS: Readonly<Record<string, LucideIcon>> = {
@@ -83,13 +84,13 @@ function ToolRow({ tool, isTurnOver, isOpen }: { tool: ToolExecution; isTurnOver
       {target ? (
         <>
           <span className="w-14 shrink-0 truncate text-fg-muted">{verb}</span>
-          <span
-            className={`min-w-0 flex-1 truncate font-mono text-caption ${isFile ? "text-left [direction:rtl]" : ""}`}
-            title={hover}
-          >
-            {/* bdi keeps the path itself reading left to right inside the right-to-left box. */}
-            <bdi>{target}</bdi>
-          </span>
+          {isFile ? (
+            <PathText path={target} title={hover} className="flex-1 text-caption" />
+          ) : (
+            <span className="min-w-0 flex-1 truncate font-mono text-caption" title={hover}>
+              {target}
+            </span>
+          )}
         </>
       ) : (
         // Without a file or a command, the agent's own title is the whole row.
@@ -129,7 +130,7 @@ function ToolCallRow({ tool, defaultOpenDiffs, isTurnOver }: { tool: ToolExecuti
         data-tool-row=""
         aria-expanded={isOpen}
         onClick={() => setUserOpen(!isOpen)}
-        className={`${ROW} focus-ring cursor-pointer transition-colors hover:bg-surface-hover`}
+        className={`${ROW} focus-ring-inset cursor-pointer transition-colors hover:bg-surface-hover`}
       >
         <ToolRow tool={tool} isTurnOver={isTurnOver} isOpen={isOpen} />
       </button>

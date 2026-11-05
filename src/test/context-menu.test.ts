@@ -22,19 +22,25 @@ describe("keepsNativeMenu", () => {
     editable.setAttribute("contenteditable", "true");
     const inside = document.createElement("span");
     editable.append(inside);
-    expect(keepsNativeMenu(input, "")).toBe(true);
-    expect(keepsNativeMenu(textarea, "")).toBe(true);
-    expect(keepsNativeMenu(inside, "")).toBe(true);
+    expect(keepsNativeMenu(input, null)).toBe(true);
+    expect(keepsNativeMenu(textarea, null)).toBe(true);
+    expect(keepsNativeMenu(inside, null)).toBe(true);
   });
 
-  it("keeps it while text is selected, so Copy still works", () => {
-    expect(keepsNativeMenu(document.createElement("p"), "status words")).toBe(true);
+  it("keeps it on selected text, so Copy still works", () => {
+    const reply = document.createElement("p");
+    reply.textContent = "status words";
+    document.body.append(reply);
+    const range = document.createRange();
+    range.selectNodeContents(reply);
+    window.getSelection()?.addRange(range);
+    expect(keepsNativeMenu(reply, window.getSelection())).toBe(true);
   });
 
   it("keeps it nowhere else", () => {
-    expect(keepsNativeMenu(document.createElement("div"), "")).toBe(false);
-    expect(keepsNativeMenu(document.createElement("div"), "   ")).toBe(false);
-    expect(keepsNativeMenu(null, "")).toBe(false);
+    expect(keepsNativeMenu(document.createElement("div"), window.getSelection())).toBe(false);
+    expect(keepsNativeMenu(document.createElement("div"), null)).toBe(false);
+    expect(keepsNativeMenu(null, null)).toBe(false);
   });
 });
 

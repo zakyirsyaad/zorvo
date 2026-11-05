@@ -36,7 +36,7 @@ export function ToolsPart({ tools, isCurrentTurn, isTurnOver }: ToolsPartProps) 
         aria-expanded={isOpen}
         onClick={() => setUserOpen(!isOpen)}
         title={label}
-        className={`focus-ring flex h-[34px] w-full items-center gap-2 px-3 text-left text-ui-sm text-fg-secondary transition-colors hover:bg-surface-hover ${
+        className={`focus-ring-inset flex h-[34px] w-full items-center gap-2 px-3 text-left text-ui-sm text-fg-secondary transition-colors hover:bg-surface-hover ${
           isOpen ? "border-b border-border" : ""
         }`}
       >

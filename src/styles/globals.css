@@ -103,6 +103,15 @@
   }
 }
 
+/* The same ring drawn inside the control's edge, for a full-width button in a card that clips
+   its rounded corners (a tool card's header and rows), where an outer ring would be cut off. */
+@utility focus-ring-inset {
+  &:focus-visible {
+    outline: 1px solid var(--color-focus-ring);
+    outline-offset: -1px;
+  }
+}
+
 /* The same ring on a wrapper (a card around a radio), only for keyboard focus inside it. */
 @utility focus-ring-within {
   &:has(:focus-visible) {

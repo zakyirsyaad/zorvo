@@ -221,10 +221,11 @@ export interface ActionCard {
   /** The mode changed after the agent asked; the card still needs its answer. */
   modeChanged?: boolean;
   /**
-   * The files an edit would change, with its lines, from the request's diffs. Absent when the
-   * request carries none, and in transcripts saved before it existed.
+   * The files an edit would change, with its lines, from the request's diffs. A diff too large
+   * to keep has no counts. Absent when the request carries none, and in transcripts saved
+   * before it existed.
    */
-  edits?: { path: string; added: number; removed: number }[];
+  edits?: { path: string; added?: number; removed?: number }[];
   /**
    * Qwen Code's `ask_user_question`: the questions the agent asks, shown as a form.
    * Only the agent's own text; what the user types is never kept on the card.

@@ -28,7 +28,7 @@ function ShowAllButton({
       type="button"
       aria-expanded={expanded}
       onClick={onToggle}
-      className="focus-ring w-full border-t border-border px-2.5 py-1 text-left text-[11px] text-fg-muted transition-colors hover:bg-surface-hover"
+      className="focus-ring-inset w-full border-t border-border px-2.5 py-1 text-left text-[11px] text-fg-muted transition-colors hover:bg-surface-hover"
     >
       {expanded ? "Show fewer lines" : `Show all ${count} lines`}
     </button>

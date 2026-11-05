@@ -55,9 +55,10 @@ export function SessionMenu({
   onOpenChange,
 }: SessionMenuProps) {
   const [ownOpen, setOwnOpen] = useState(false);
-  const isOpen = heldOpen ?? ownOpen;
   const setIsOpen = (open: boolean) => (onOpenChange ? onOpenChange(open) : setOwnOpen(open));
   const [isConfirming, setIsConfirming] = useState(false);
+  // While Delete? asks, the menu is not open, whatever the row asked for meanwhile.
+  const isOpen = !isConfirming && (heldOpen ?? ownOpen);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
   // Set when the pill had focus as it went away, so focus goes back to ⋯ rather than the page.
@@ -77,6 +78,12 @@ export function SessionMenu({
     }, CONFIRM_DELETE_MS);
     return () => clearTimeout(timer);
   }, [isConfirming]);
+
+  // A right-click on the row while Delete? asks is dropped, so the menu does not pop open by
+  // itself once the question goes away.
+  useEffect(() => {
+    if (isConfirming && heldOpen) onOpenChange?.(false);
+  }, [isConfirming, heldOpen, onOpenChange]);
 
   useEffect(() => {
     if (isConfirming || !shouldRefocusRef.current) return;

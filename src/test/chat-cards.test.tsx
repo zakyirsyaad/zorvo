@@ -68,7 +68,12 @@ describe("the permission card, as drawn", () => {
     const files = within(card).getByRole("list", { name: "Files to edit" });
     expect(files).toHaveClass("rounded-md", "border-border", "bg-bg");
     const [first, second] = within(files).getAllByRole("listitem");
-    expect(within(first).getByText("src/components/sidebar/SessionRow.tsx")).toHaveClass("font-mono", "text-ui-sm", "text-fg-secondary");
+    // The path text sits in a bdi inside the mono span that cuts it at its start.
+    expect(within(first).getByText("src/components/sidebar/SessionRow.tsx").parentElement).toHaveClass(
+      "font-mono",
+      "text-ui-sm",
+      "text-fg-secondary",
+    );
     expect(within(first).getByText("+14")).toHaveClass("font-mono", "text-caption", "text-status-running");
     // Only what changed: no "−0" beside +14, no "+0" beside −5.
     expect(within(first).queryByText(/−0/)).toBeNull();

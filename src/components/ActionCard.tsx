@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { formatLineCount, MINUS } from "../lib/diff-stats";
+import { PathText } from "./ui/PathText";
 import { Button, type ButtonVariant } from "./ui/Button";
 import { UserQuestionFields } from "./UserQuestionFields";
 import { orderedChoices, permissionTitle, questionsTitle, titleHoldsPrompt } from "../lib/permission-copy";
@@ -29,22 +30,25 @@ function choiceVariant(kind: string): ButtonVariant {
   return kind.startsWith("allow") ? "outline" : "ghost";
 }
 
-/** The files an edit would change, one row each, with only the counts that are not zero. */
+/**
+ * The files an edit would change, one row each: the path cut at its start so the file's name
+ * stays in sight, and only the counts that are known and not zero (a diff too large to keep
+ * shows its path alone).
+ */
 function EditedFiles({ edits }: { edits: NonNullable<ActionCardType["edits"]> }) {
   return (
     <ul aria-label="Files to edit" className="rounded-md border border-border bg-bg">
-      {edits.map((edit) => (
+      {edits.map((edit, index) => (
         <li
-          key={edit.path}
+          // A request can carry two diffs for one file, so the path alone is not a key.
+          key={`${index}-${edit.path}`}
           className="flex items-center gap-2 border-b border-border px-2.5 py-1.5 last:border-b-0"
         >
-          <span className="min-w-0 flex-1 truncate font-mono text-ui-sm text-fg-secondary" title={edit.path}>
-            {edit.path}
-          </span>
-          {edit.added > 0 && (
+          <PathText path={edit.path} className="flex-1 text-ui-sm text-fg-secondary" />
+          {edit.added !== undefined && edit.added > 0 && (
             <span className="shrink-0 font-mono text-caption text-status-running">+{formatLineCount(edit.added)}</span>
           )}
-          {edit.removed > 0 && (
+          {edit.removed !== undefined && edit.removed > 0 && (
             <span className="shrink-0 font-mono text-caption text-danger">
               {MINUS}
               {formatLineCount(edit.removed)}

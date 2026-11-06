@@ -1,6 +1,8 @@
 import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { ArrowUp, Paperclip, ShieldAlert, Square } from "lucide-react";
 import { DRAFT_CHIP } from "./composer/chip-style";
+import { CompareModelStatus } from "./composer/CompareModelStatus";
+import type { CompareModelControl } from "../lib/compare-models";
 import { AgentLogo } from "./AgentLogo";
 import { Button } from "./ui/Button";
 import { IconButton } from "./ui/IconButton";
@@ -34,7 +36,21 @@ const SKELETON_CHIP_WIDTHS = ["w-18", "w-24", "w-14"] as const;
 const CARET_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
 
 /** An agent's extra option is open under its config id: `option:fast`. */
-type OpenDropdown = "folder" | "branch" | "agent" | "permission" | "model" | "effort" | "more" | `option:${string}` | null;
+type OpenDropdown =
+  | "folder"
+  | "branch"
+  | "agent"
+  | "permission"
+  | "model"
+  | "effort"
+  | "more"
+  | `option:${string}`
+  // A compare draft's model chip, by agent.
+  | `model:${string}`
+  | null;
+
+/** The one choice a compare chip shows before its agent's models are known. */
+const DEFAULT_MODEL_OPTIONS = [{ value: undefined, label: "Default" }];
 
 /** One of the agent's controls: a chip in the row, or a group in the ⋯ menu when it does not fit. */
 interface ControlEntry {
@@ -135,6 +151,10 @@ export interface ComposerDockProps {
   agents?: Omit<AgentMultiPickerProps, "isOpen" | "onToggle" | "onClose">;
   /** A running session's agent, named first in the row; drafts name theirs with the `agent`/`agents` chip. */
   sessionAgent?: { profileId: string; name: string };
+  /** In a compare draft: one model chip per ticked agent, in the run's order. */
+  compareModels?: CompareModelControl[];
+  /** A compare chip whose agent's models are unknown was opened (or its Try again pressed): ask that agent. */
+  onOpenCompareModel?: (profileId: string) => void;
   /** The workspace whose files `@` lists; mentions are off when absent. */
   mentions?: MentionSource;
   /**
@@ -171,6 +191,8 @@ export function ComposerDock({
   agent,
   agents,
   sessionAgent,
+  compareModels,
+  onOpenCompareModel,
   mentions,
   onTextChange,
   onRestored,
@@ -514,6 +536,38 @@ export function ComposerDock({
                   className={`h-7 ${width} rounded-md bg-surface-hover motion-safe:animate-pulse`}
                 />
               ))}
+
+            {compareModels?.map((entry) => {
+              const key = `model:${entry.profileId}` as const;
+              const shared = {
+                label: `${entry.name} model`,
+                align: "left" as const,
+                side: "bottom" as const,
+                icon: <AgentLogo profileId={entry.profileId} name="" size={16} />,
+              };
+              if (entry.state === "known" && entry.control) {
+                return <OptionDropdown key={key} {...shared} {...dropdownProps(key, entry.control)} />;
+              }
+              // Its models are not known yet: opening it asks the agent, and the menu says so meanwhile.
+              const ask = () => onOpenCompareModel?.(entry.profileId);
+              return (
+                <OptionDropdown
+                  key={key}
+                  {...shared}
+                  options={DEFAULT_MODEL_OPTIONS}
+                  selected={undefined}
+                  isOpen={openDropdown === key}
+                  onToggle={() => toggle(key)}
+                  onClose={() => setOpenDropdown((current) => (current === key ? null : current))}
+                  onSelect={() => setOpenDropdown(null)}
+                  onOpen={ask}
+                  // Not yet asked: the plain "Default" row, until the ask this opening starts shows its skeleton.
+                  status={
+                    entry.state === "unknown" ? undefined : <CompareModelStatus name={entry.name} state={entry.state} onRetry={ask} />
+                  }
+                />
+              );
+            })}
 
             {inlineControls.map((entry) => (
               <OptionDropdown

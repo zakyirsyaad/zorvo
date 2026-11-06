@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useLatest } from "../../hooks/useLatest";
 import { ChevronDown, ShieldAlert } from "lucide-react";
 import { Popover, PopoverHeader, PopoverList, PopoverOption, PopoverSearch } from "../ui/Popover";
 import { Highlighted } from "../ui/Highlighted";
@@ -32,6 +33,10 @@ export interface OptionDropdownProps {
   side?: "top" | "bottom";
   /** A small mark before each row's name: the agent dropdown's logos. */
   renderIcon?: (option: DropdownOption) => ReactNode;
+  /** Called each time the menu opens: a compare chip asks its agent for its models then. */
+  onOpen?: () => void;
+  /** Drawn in place of the rows and the search, while there is no list to show (it loads, or asking failed). */
+  status?: ReactNode;
   options: readonly DropdownOption[];
   selected: string | undefined;
   isOpen: boolean;
@@ -223,13 +228,22 @@ export function OptionDropdown({
   chipClassName = COMPOSER_CHIP,
   side = "top",
   renderIcon,
+  onOpen,
+  status,
 }: OptionDropdownProps) {
   const current = options.find((o) => o.value === selected) ?? options[0];
   const valueLabel = current?.label ?? "";
   const detail = current?.description ?? description;
-  const hasSearch = options.length > SEARCH_THRESHOLD;
+  const hasStatus = status !== undefined && status !== null;
+  const hasSearch = !hasStatus && options.length > SEARCH_THRESHOLD;
   // Options with a line under them wrap at the canvas's 300px; a short plain list stays as wide as its words.
-  const isWide = hasSearch || options.some((option) => option.description || option.risky);
+  const isWide = hasStatus || hasSearch || options.some((option) => option.description || option.risky);
+  const onOpenRef = useLatest(onOpen);
+
+  // Once per opening, never on a re-render while it stays open.
+  useEffect(() => {
+    if (isOpen) onOpenRef.current?.();
+  }, [isOpen, onOpenRef]);
 
   return (
     <Popover
@@ -259,7 +273,9 @@ export function OptionDropdown({
       }
     >
       {heading && <PopoverHeader>{heading}</PopoverHeader>}
-      {hasSearch ? (
+      {hasStatus ? (
+        status
+      ) : hasSearch ? (
         <SearchableOptions label={label} options={options} current={current} onSelect={onSelect} renderIcon={renderIcon} />
       ) : (
         <OptionRows options={options} current={current} query="" onSelect={onSelect} renderIcon={renderIcon} />

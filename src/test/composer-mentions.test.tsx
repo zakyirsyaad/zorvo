@@ -51,7 +51,8 @@ describe("Composer @-mentions", () => {
     await type("fix @READ");
     const atRoot = screen.getByRole("option", { name: /README/ });
     expect(atRoot.querySelectorAll("mark")[0]?.textContent).toBe("READ");
-    expect(atRoot.children).toHaveLength(1);
+    // A file at the root has no folder line: its text column holds only the name, after the file icon.
+    expect(atRoot.lastElementChild?.children).toHaveLength(1);
   });
 
   it("attaches the picked file for an agent that takes files, and drops the @word", async () => {

@@ -1,3 +1,4 @@
+import { FileText } from "lucide-react";
 import { POPOVER_PANEL_STYLE } from "../ui/Popover";
 import { Highlighted } from "../ui/Highlighted";
 
@@ -32,14 +33,19 @@ export function MentionMenu({ files, highlighted, onPick, folderName, query }: M
                 e.preventDefault();
                 onPick(path);
               }}
-              className={`flex min-h-7.5 cursor-pointer flex-col justify-center rounded px-2 py-1 ${
+              className={`flex cursor-pointer items-start gap-2 rounded px-2 py-1.75 ${
                 index === highlighted ? "bg-surface-hover text-fg" : "text-fg-secondary hover:bg-surface-hover"
               }`}
             >
-              <span className="truncate font-mono text-ui-sm">
-                <Highlighted text={path.slice(slash + 1)} query={query} />
+              <FileText size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-fg-subtle" />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate font-mono text-ui-sm">
+                  <Highlighted text={path.slice(slash + 1)} query={query} />
+                </span>
+                {slash > 0 && (
+                  <span className="truncate font-mono text-caption leading-[15px] text-fg-subtle">{path.slice(0, slash)}</span>
+                )}
               </span>
-              {slash > 0 && <span className="truncate text-caption text-fg-muted">{path.slice(0, slash)}</span>}
             </li>
           );
         })}

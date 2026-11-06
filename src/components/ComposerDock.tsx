@@ -39,6 +39,8 @@ interface ControlEntry {
   icon: ReactNode;
   description?: string;
   showLabel?: boolean;
+  /** A visible heading over the open menu: the mode menu reads "Mode". */
+  heading?: string;
 }
 
 /** A folder's own name, the last part of its path: "/w/agent-desktop/" gives "agent-desktop". */
@@ -354,6 +356,7 @@ export function ComposerDock({
           {
             id: "permission",
             label: "Permission mode",
+            heading: "Mode",
             control: permission,
             icon: isRiskyPermission ? (
               <ShieldAlert size={13} className="text-danger" data-testid="risky-permission-icon" />
@@ -469,6 +472,7 @@ export function ComposerDock({
                 icon={entry.icon}
                 description={entry.description}
                 showLabel={entry.showLabel}
+                heading={entry.heading}
                 {...dropdownProps(entry.id, entry.control)}
               />
             ))}

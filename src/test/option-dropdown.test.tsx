@@ -35,19 +35,21 @@ describe("OptionDropdown rows", () => {
     renderDropdown(options);
 
     expect(within(screen.getByRole("option", { name: /Default/ })).getByText("Prompts for approval")).toBeTruthy();
-    expect(within(screen.getByRole("option", { name: /YOLO/ })).getByText("Auto-approves all tools")).toBeTruthy();
+    expect(
+      within(screen.getByRole("option", { name: /YOLO/ })).getByText("Auto-approves all tools Lets the agent act without asking."),
+    ).toBeTruthy();
     expect(screen.getByRole("option", { name: "Plan" }).textContent).toBe("Plan");
   });
 
-  it("marks only the risky row, in words and in the attention color, before it is picked", () => {
+  it("marks only the risky row, in words and with a shield in the attention color, before it is picked", () => {
     renderDropdown(options);
 
-    const lines = screen.getAllByText("Lets the agent act without asking");
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toHaveClass("text-status-attention");
+    const shields = screen.getAllByRole("img", { name: "Lets the agent act without asking" });
+    expect(shields).toHaveLength(1);
+    expect(shields[0]).toHaveClass("text-status-attention");
     const risky = screen.getByRole("option", { name: /YOLO/ });
-    expect(risky.contains(lines[0])).toBe(true);
-    expect(risky.querySelector("svg.lucide-shield-alert")?.getAttribute("aria-hidden")).toBe("true");
+    expect(risky.contains(shields[0])).toBe(true);
+    expect(within(risky).getByText(/Lets the agent act without asking\.$/)).toHaveClass("text-fg-subtle");
   });
 
   it("checks the selected row on the hover ground", () => {

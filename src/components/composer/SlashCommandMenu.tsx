@@ -28,12 +28,15 @@ export function SlashCommandMenu({ commands, highlighted, onPick, agentName }: S
               e.preventDefault();
               onPick(command);
             }}
-            className={`flex min-h-7.5 cursor-pointer items-center gap-3 rounded px-2 py-1 text-ui-sm ${
-              index === highlighted ? "bg-surface-hover text-fg" : "text-fg-secondary hover:bg-surface-hover"
+            // The command over what it does, as the canvas draws the `/` menu.
+            className={`flex cursor-pointer flex-col rounded px-2 py-1.75 ${
+              index === highlighted ? "bg-surface-hover" : "hover:bg-surface-hover"
             }`}
           >
-            <span className="shrink-0 font-mono text-fg">/{command.name}</span>
-            <span className="truncate text-fg-muted">{command.description}</span>
+            <span className="truncate font-mono text-ui-sm text-fg">/{command.name}</span>
+            {command.description && (
+              <span className="truncate text-caption leading-[15px] text-fg-subtle">{command.description}</span>
+            )}
           </li>
         ))}
       </ul>

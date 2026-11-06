@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ShieldAlert } from "lucide-react";
-import { Popover, PopoverList, PopoverOption } from "../ui/Popover";
+import { Popover, PopoverHeader, PopoverList, PopoverOption, PopoverSearch } from "../ui/Popover";
 import { Highlighted } from "../ui/Highlighted";
 import { COMPOSER_CHIP, RISKY_LINE, pluralOf } from "./chip-style";
 
@@ -17,7 +17,10 @@ export interface DropdownOption {
 export interface OptionDropdownProps {
   /** Accessible name prefix, e.g. "Model" gives "Model: sonnet". */
   label: string;
-  icon: ReactNode;
+  /** Before the value on the chip: only the agent chip has one (its logo); the canvas draws the others without. */
+  icon?: ReactNode;
+  /** A visible heading over the options: "Mode". */
+  heading?: string;
   options: readonly DropdownOption[];
   selected: string | undefined;
   isOpen: boolean;
@@ -55,15 +58,10 @@ function matches(option: DropdownOption, query: string): boolean {
   );
 }
 
-/** The line under an option: what it does, and for a risky mode that it acts without asking. */
-function detailOf(option: DropdownOption): ReactNode {
+/** The line under an option: what it does, and for a risky mode that it acts without asking, on one subtle line. */
+function detailOf(option: DropdownOption): string | undefined {
   if (!option.risky) return option.description;
-  return (
-    <>
-      {option.description && <span className="block">{option.description}</span>}
-      <span className="block text-status-attention">{RISKY_LINE}</span>
-    </>
-  );
+  return option.description ? `${option.description} ${RISKY_LINE}.` : `${RISKY_LINE}.`;
 }
 
 interface OptionRowsProps {
@@ -84,10 +82,12 @@ function OptionRows({ options, current, query, onSelect }: OptionRowsProps) {
           description={detailOf(option)}
         >
           <span className="flex items-center gap-1.5">
-            {option.risky && <ShieldAlert size={12} aria-hidden="true" className="shrink-0 text-status-attention" />}
             <span className="truncate">
               <Highlighted text={option.label} query={query} />
             </span>
+            {option.risky && (
+              <ShieldAlert size={12} role="img" aria-label={RISKY_LINE} className="shrink-0 text-status-attention" />
+            )}
           </span>
         </PopoverOption>
       ))}
@@ -115,11 +115,11 @@ function SearchableOptions({
 
   return (
     <>
-      <input
-        ref={searchRef}
+      <PopoverSearch
+        inputRef={searchRef}
         type="search"
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={setQuery}
         onKeyDown={(e) => {
           if (e.key === "Enter" && query.trim() !== "" && visible.length > 0) {
             e.preventDefault();
@@ -127,15 +127,11 @@ function SearchableOptions({
           }
         }}
         placeholder={`Search ${label.toLowerCase()}`}
-        aria-label={`Search ${label.toLowerCase()}`}
-        autoComplete="off"
-        spellCheck={false}
-        className="focus-ring mb-1 w-full rounded border border-border bg-surface-2 px-2 py-1 text-ui-sm text-fg placeholder-fg-subtle outline-none"
       />
       <PopoverList label={label}>
         <OptionRows options={visible} current={current} query={query} onSelect={onSelect} />
       </PopoverList>
-      <p className="px-2 pt-1.5 text-caption text-fg-muted">
+      <p className="px-2 pt-1.5 pb-0.5 text-caption text-fg-subtle">
         {visible.length} of {options.length} {pluralOf(label)}
       </p>
     </>
@@ -155,11 +151,14 @@ export function OptionDropdown({
   align = "right",
   showLabel = false,
   description,
+  heading,
 }: OptionDropdownProps) {
   const current = options.find((o) => o.value === selected) ?? options[0];
   const valueLabel = current?.label ?? "";
   const detail = current?.description ?? description;
   const hasSearch = options.length > SEARCH_THRESHOLD;
+  // Options with a line under them wrap at the canvas's 300px; a short plain list stays as wide as its words.
+  const isWide = hasSearch || options.some((option) => option.description || option.risky);
 
   return (
     <Popover
@@ -169,7 +168,7 @@ export function OptionDropdown({
       role={hasSearch ? "dialog" : "listbox"}
       side="top"
       align={align === "left" ? "start" : "end"}
-      className="w-max min-w-40 max-w-80"
+      className={isWide ? "w-75" : "w-max min-w-40 max-w-80"}
       trigger={
         <button
           type="button"
@@ -187,6 +186,7 @@ export function OptionDropdown({
         </button>
       }
     >
+      {heading && <PopoverHeader>{heading}</PopoverHeader>}
       {hasSearch ? (
         <SearchableOptions label={label} options={options} current={current} onSelect={onSelect} />
       ) : (

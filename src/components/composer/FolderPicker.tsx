@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, Folder, FolderPlus } from "lucide-react";
 import { Popover, PopoverHeader, PopoverList, PopoverOption } from "../ui/Popover";
-import { COMPOSER_CHIP } from "./chip-style";
+import { DRAFT_CHIP } from "./chip-style";
 import type { Workspace } from "../../types";
 
 /** The folder a new session starts in, chosen before it starts. */
@@ -75,11 +75,11 @@ export function FolderPicker({ folders, selectedPath, onSelect, onOpenFolder, is
           aria-expanded={isOpen}
           onClick={onToggle}
           title={selected?.path}
-          className={COMPOSER_CHIP}
+          className={DRAFT_CHIP}
         >
           <Folder size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
           <span className="max-w-[160px] truncate">{selected?.name ?? "Choose folder"}</span>
-          <ChevronDown size={11} aria-hidden="true" className="shrink-0 text-fg-subtle" />
+          <ChevronDown size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
         </button>
       }
     >

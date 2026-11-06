@@ -1,5 +1,6 @@
 import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
-import { ArrowUp, Paperclip, ShieldAlert, Square, Bot } from "lucide-react";
+import { ArrowUp, Paperclip, ShieldAlert, Square } from "lucide-react";
+import { DRAFT_CHIP } from "./composer/chip-style";
 import { AgentLogo } from "./AgentLogo";
 import { Button } from "./ui/Button";
 import { IconButton } from "./ui/IconButton";
@@ -114,6 +115,8 @@ export interface ComposerDockProps {
    * except while `sendDisabled`: then the note says why and the Send button points to it.
    */
   note?: string;
+  /** The note sits in the control row, after attach, as the canvas draws a compare run's note; else under the prompt. */
+  noteInRow?: boolean;
   /** Before a new session starts: the folder it starts in. */
   folder?: FolderControl;
   /** Before a new session starts: the agent it runs. */
@@ -151,6 +154,7 @@ export function ComposerDock({
   attachAsFiles = false,
   contextUsage,
   note,
+  noteInRow = false,
   folder,
   agent,
   agents,
@@ -394,7 +398,8 @@ export function ComposerDock({
               <OptionDropdown
                 label="Agent"
                 align="left"
-                icon={<Bot size={12} className="text-fg-muted" />}
+                chipClassName={DRAFT_CHIP}
+                icon={<AgentLogo profileId={agent.selected ?? ""} name="" size={16} />}
                 {...dropdownProps("agent", agent)}
               />
             ) : undefined
@@ -447,7 +452,7 @@ export function ComposerDock({
           className="w-full resize-none bg-transparent px-1 text-body text-fg placeholder-fg-subtle outline-none min-h-11 max-h-[180px]"
         />
 
-        {shownNote && (
+        {shownNote && !noteInRow && (
           <p id={noteId} className="text-caption text-fg-muted">
             {shownNote}
           </p>
@@ -496,6 +501,12 @@ export function ComposerDock({
                 onClose={() => setOpenDropdown((current) => (current === "more" ? null : current))}
                 onPicked={() => setOpenDropdown(null)}
               />
+            )}
+
+            {shownNote && noteInRow && (
+              <p id={noteId} className="pl-1 text-caption text-fg-subtle">
+                {shownNote}
+              </p>
             )}
           </div>
 

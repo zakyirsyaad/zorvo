@@ -23,6 +23,8 @@ export interface OptionDropdownProps {
   heading?: string;
   /** After the value on the chip: a risky mode's shield. */
   trailing?: ReactNode;
+  /** The chip's look: the composer row's by default, `DRAFT_CHIP` above a draft's card. */
+  chipClassName?: string;
   options: readonly DropdownOption[];
   selected: string | undefined;
   isOpen: boolean;
@@ -155,6 +157,7 @@ export function OptionDropdown({
   description,
   heading,
   trailing,
+  chipClassName = COMPOSER_CHIP,
 }: OptionDropdownProps) {
   const current = options.find((o) => o.value === selected) ?? options[0];
   const valueLabel = current?.label ?? "";
@@ -180,7 +183,7 @@ export function OptionDropdown({
           aria-expanded={isOpen}
           onClick={onToggle}
           title={detail ? `${valueLabel}: ${detail}` : valueLabel}
-          className={COMPOSER_CHIP}
+          className={chipClassName}
         >
           {icon}
           {showLabel && <span className="text-fg-subtle">{label}</span>}

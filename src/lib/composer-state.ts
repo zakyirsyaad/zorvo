@@ -108,7 +108,7 @@ export function composerPlaceholder(state: {
 }
 
 /** How a compare run starts and what it costs, said under the prompt while several agents are ticked. */
-export const COMPARE_NOTE = "Each agent starts in its safest mode, in its own worktree, and uses its own quota.";
+export const COMPARE_NOTE = "Each agent starts in its safest mode, in its own worktree.";
 
 /** The session review comments in the composer are for, when Send is blocked for them. */
 export interface ReviewOwner {

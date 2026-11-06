@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, GitBranch } from "lucide-react";
 import { Popover, PopoverHeader, PopoverList, PopoverOption } from "../ui/Popover";
-import { COMPOSER_CHIP } from "./chip-style";
+import { DRAFT_CHIP } from "./chip-style";
 import type { BranchControl, FolderControl } from "./FolderPicker";
 
 export interface BranchPickerProps {
@@ -46,13 +46,13 @@ export function BranchPicker({ branch, worktree, isOpen, onToggle, onClose }: Br
             onToggle();
           }}
           title={current}
-          className={COMPOSER_CHIP}
+          className={DRAFT_CHIP}
         >
-          <GitBranch size={12} aria-hidden="true" className={`shrink-0 ${isWorktree ? "text-fg" : "text-fg-muted"}`} />
-          <span className="min-w-0 truncate">{current}</span>
+          <GitBranch size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
+          <span className="min-w-0 truncate font-mono text-caption">{current}</span>
           {/* The space reads "main · new worktree" when copied or read as text; the gap draws it. */}
-          {isWorktree && <span className="shrink-0 text-fg-muted">{" "}· new worktree</span>}
-          <ChevronDown size={11} aria-hidden="true" className="shrink-0 text-fg-subtle" />
+          {isWorktree && <span className="shrink-0 text-fg-subtle">{" "}· new worktree</span>}
+          <ChevronDown size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
         </button>
       }
     >

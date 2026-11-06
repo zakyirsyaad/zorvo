@@ -102,7 +102,7 @@ import { useCompareDraft } from "./hooks/useCompareDraft";
 import { useCompareRun, useCompareRunRows } from "./hooks/useCompareRun";
 import { lastOfRun, runOf } from "./lib/compare-run";
 import { compareAgentOptions } from "./lib/composer-controls";
-import { composerCommandsFor, composerNote, composerPlaceholder, composerStateFor } from "./lib/composer-state";
+import { COMPARE_NOTE, composerCommandsFor, composerNote, composerPlaceholder, composerStateFor } from "./lib/composer-state";
 import {
   NO_CHOICES,
   rememberedChoice,
@@ -883,6 +883,14 @@ export default function App() {
   // The note promises one worktree each, so while the folder is not known to be a repository (still loading, or unreadable) Send waits too.
   const isSendWaiting = compare.isCompare ? !canUseWorktree : draftNeedsInstall || draftNeedsSignIn;
   const isSendBlocked = isSendWaiting || review.blocksSend;
+  const composerNoteText = composerNote({
+    reviewOwner: review.reviewOwner,
+    compareCount: compare.agentIds.length,
+    agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
+    agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
+    continuesSession: isResumable || Boolean(activeSession),
+    agentLoading: !isActiveRunning && draftAgent && agentCheck.isProbing(draftAgent.id) ? draftAgent.name : undefined,
+  });
   const composerCommands = composerCommandsFor({
     isRunning: isActiveRunning,
     liveCommands: acp.info[activeSessionId]?.commands,
@@ -1111,7 +1119,8 @@ export default function App() {
                 {installPanelAgent ? <AgentInstallPanel agent={installPanelAgent} /> : null}
               </div>
               {/* 24px at the sides and 20px under it, as the canvas draws the composer's dock. */}
-              <div hidden={isComposerHidden} className="flex justify-center px-6 pb-5">
+              {/* A draft's composer sits inside its column, with the agent's sessions right under it. */}
+              <div hidden={isComposerHidden} className={`flex justify-center px-6 ${isNewSessionDraft ? "" : "pb-5"}`}>
                 <ComposerDock
                   controls={compare.isCompare ? {} : composer.controls}
                   isThinking={Boolean(activeSession) && isSessionBusy(activeSessionId)}
@@ -1139,14 +1148,9 @@ export default function App() {
                   sendLabel={compare.agentIds.length >= 2 ? `Start ${compare.agentIds.length} sessions` : undefined}
                   agentName={activeSession ? activeAgent?.name : newSessionAgent?.name}
                   sessionAgent={activeSession && activeAgent ? { profileId: activeAgent.id, name: activeAgent.name } : undefined}
-                  note={composerNote({
-                    reviewOwner: review.reviewOwner,
-                    compareCount: compare.agentIds.length,
-                    agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
-                    agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
-                    continuesSession: isResumable || Boolean(activeSession),
-                    agentLoading: !isActiveRunning && draftAgent && agentCheck.isProbing(draftAgent.id) ? draftAgent.name : undefined,
-                  })}
+                  note={composerNoteText}
+                  // Only a compare run's note sits in the row, as drawn; a reason or a loading line is a sentence for under the prompt.
+                  noteInRow={composerNoteText === COMPARE_NOTE}
                   contextUsage={isActiveRunning ? acp.info[activeSessionId]?.usage : undefined}
                   mentions={filesFolder ? { root: filesFolder.path, loadFiles: () => shell.loadWorkspaceFiles(filesFolder.path) } : undefined}
                   folder={

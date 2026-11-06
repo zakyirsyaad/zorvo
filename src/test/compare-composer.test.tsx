@@ -36,7 +36,7 @@ const codex = makeProfile({
 });
 const ALL = [...fakeProfiles, kimi, gemini, goose, codex];
 
-const QUOTA_NOTE = "Each agent starts in its safest mode, in its own worktree, and uses its own quota.";
+const QUOTA_NOTE = "Each agent starts in its safest mode, in its own worktree.";
 
 interface DraftOptions {
   /** Every folder is a plain folder. */
@@ -190,7 +190,7 @@ describe("comparing agents in the composer", () => {
     const fifth = screen.getByRole("checkbox", { name: /^Compare Goose/ });
     expect(fifth).toBeDisabled();
     expect(screen.getByRole("button", { name: "Agent: 4 agents" })).toBeInTheDocument();
-    expect(screen.getByText("Each agent starts in its safest mode, in its own worktree, and uses its own quota.")).toBeInTheDocument();
+    expect(screen.getByText("Each agent starts in its safest mode, in its own worktree.")).toBeInTheDocument();
   });
 
   it("an uninstalled agent cannot be ticked and says why", async () => {
@@ -537,7 +537,7 @@ describe("the draft check while several agents are ticked", () => {
 describe("composerNote with several agents", () => {
   it("says what a run costs, ahead of any other note", () => {
     expect(composerNote({ continuesSession: false, compareCount: 3, agentLoading: "Qwen Code" })).toBe(
-      "Each agent starts in its safest mode, in its own worktree, and uses its own quota.",
+      "Each agent starts in its safest mode, in its own worktree.",
     );
     expect(composerNote({ continuesSession: false, compareCount: 1 })).toBeUndefined();
   });

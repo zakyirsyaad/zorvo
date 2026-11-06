@@ -224,6 +224,20 @@ describe("Starting a new session", () => {
     expect(screen.getByRole("textbox", { name: "Prompt" })).toBe(draftPrompt);
   });
 
+  it("docks the draft's composer in its column, and a session's 20px above the bottom", async () => {
+    await act(async () => {
+      render(<App />);
+    });
+    const dock = () => screen.getByRole("textbox", { name: "Prompt" }).closest("footer")!.parentElement!;
+    expect(dock().className).toContain("px-6");
+    expect(dock().className).not.toContain("pb-5");
+
+    await sendFirst();
+
+    expect(dock().className).toContain("px-6");
+    expect(dock().className).toContain("pb-5");
+  });
+
   it("starts a session in the workspace and with the agent picked from its + menu", async () => {
     const invokeSpy = vi.spyOn(tauriInternals(), "invoke");
     await act(async () => {

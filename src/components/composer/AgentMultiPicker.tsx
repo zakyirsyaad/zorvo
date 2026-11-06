@@ -2,7 +2,7 @@ import { useRef, type KeyboardEvent } from "react";
 import { Bot, Check, ChevronDown } from "lucide-react";
 import { AgentLogo } from "../AgentLogo";
 import { Popover } from "../ui/Popover";
-import { COMPOSER_CHIP } from "./chip-style";
+import { DRAFT_CHIP } from "./chip-style";
 import { MAX_COMPARE_AGENTS } from "../../lib/compare-run";
 import { SIGN_IN_LABELS } from "../../lib/agent-sign-in";
 import type { AgentChoice } from "../../lib/composer-controls";
@@ -67,11 +67,11 @@ export function AgentMultiPicker({ options, selected, isOpen, onToggle, onClose 
           aria-expanded={isOpen}
           onClick={onToggle}
           title={label}
-          className={COMPOSER_CHIP}
+          className={DRAFT_CHIP}
         >
           <Bot size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
           <span className="max-w-[140px] truncate">{label}</span>
-          <ChevronDown size={11} aria-hidden="true" className="shrink-0 text-fg-subtle" />
+          <ChevronDown size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
         </button>
       }
     >

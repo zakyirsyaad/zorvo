@@ -21,7 +21,7 @@ export interface DraftChipsProps {
 export function DraftChips({ folder, agents, agentChip, isOpen, onToggle, onClose }: DraftChipsProps) {
   const hasBranch = Boolean(folder?.branch || folder?.worktree);
   return (
-    <div className="mb-2 flex w-full flex-wrap items-center gap-1.5">
+    <div className="mb-4 flex w-full flex-wrap items-center gap-2">
       {folder && (
         <FolderPicker
           folders={folder.folders}

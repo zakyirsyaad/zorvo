@@ -69,7 +69,7 @@ Monochrome on the zinc scale, in a dark and a light theme. The app follows the M
 ## Type
 
 - Set all UI in the Mac's system font, **SF Pro** (`sans`), and all code, commands, paths and branch names in **Geist Mono** (`mono`). The system font needs no file; the app bundles Geist Mono (SIL Open Font License) through `@fontsource-variable/geist-mono`, because its Content Security Policy blocks Google Fonts. Instrument Sans stays only in the `zorvo` wordmark asset.
-- `ui` (13px) is the workhorse: buttons, menus, rows. `ui-sm` (12px) is for composer chips, tool rows and small buttons. Messages and the composer use `body` (14px). Hints use `caption` (11px). `micro` (10px) is for badges, never sentences. In code they are `text-ui`, `text-ui-sm`, `text-body`, `text-caption` and `text-micro`.
+- `ui` (13px) is the workhorse: menus, rows and the 32px lead button. `ui-sm` (12px) is for composer chips, tool rows and buttons (24px, 26px and the default 28px). Messages and the composer use `body` (14px). Hints use `caption` (11px). `micro` (10px) is for badges, never sentences. In code they are `text-ui`, `text-ui-sm`, `text-body`, `text-caption` and `text-micro`.
 - Marketing headlines use `display` and `headline`: tight tracking, two lines at most.
 - Never go below 10px. Never use weights other than 400, 500 and 600.
 

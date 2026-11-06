@@ -87,7 +87,8 @@ describe("the Reply toolbar, as drawn", () => {
     const toolbar = screen.getByRole("toolbar", { name: "Selected text" });
     expect(toolbar).toHaveClass("p-0.5", "rounded-lg", "border-border", "bg-surface-3", "shadow-popover");
     const reply = within(toolbar).getByRole("button", { name: "Reply" });
-    expect(reply).toHaveClass("h-7", "text-ui");
-    expect(within(reply).getByText("Reply")).toHaveClass("text-fg");
+    expect(reply).toHaveClass("h-7", "font-normal");
+    // The canvas draws Reply at 13px, so the label carries the size a 28px button no longer has.
+    expect(within(reply).getByText("Reply")).toHaveClass("text-ui", "text-fg");
   });
 });

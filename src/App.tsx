@@ -1340,7 +1340,8 @@ export default function App() {
                     headStats={inspector.headStats}
                     headStatsFailed={inspector.headStatsFailed}
                     onJump={(messageId) => setChatJump((prev) => ({ messageId, nonce: (prev?.nonce ?? 0) + 1 }))}
-                    onOpenDiff={() => inspector.openDiff()}
+                    agentName={agents.find((agent) => agent.id === activeSession.profileId)?.name ?? activeSession.profileId}
+                    onShowChanges={() => inspector.show("changes")}
                   />
                 )}
                 {inspectorTab === "files" && filesFolder && (

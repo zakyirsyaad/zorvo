@@ -1,21 +1,18 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DiffFileList } from "./DiffFileList";
 import { DiffFileSection, diffSectionId } from "./DiffFileSection";
 import { DiffViewHeader } from "./DiffViewHeader";
-import type { CommentAdder, FileReview } from "./LineComment";
 import { ReviewCommentsBar } from "./ReviewCommentsBar";
-import { useCommentedFileReads } from "../../hooks/useCommentedFileReads";
 import { useDiffTargets, useTargetStats } from "../../hooks/useDiffStats";
+import { DIFF_NOT_LOADED, useFileReviews } from "../../hooks/useFileReviews";
 import type { ReviewComments } from "../../hooks/useReviewComments";
 import type { AddReview } from "../../hooks/useReviewWiring";
 import { defaultTarget, targetOptions, type DiffTargetId } from "../../lib/diff-stats";
-import { commentStatus, sortComments } from "../../lib/review-comments";
 
 /** Above this many files the sections start collapsed, so a large diff does not read them all. */
 const AUTO_OPEN_LIMIT = 25;
 
 const START_LOST = "The start of this worktree is no longer in this repository.";
-const NOT_LOADED = "The diff has not loaded, so comments cannot be added. Refresh to try again.";
 /** What the backend says (`checked_commit`) when git does not have the start commit; any other failure is not that. */
 const BACKEND_START_LOST = "This repository does not have the start commit";
 
@@ -95,35 +92,20 @@ export function DiffView({
     reloadTargets();
     reload();
   };
-  const comments = useMemo(() => sortComments(review?.comments ?? []), [review?.comments]);
-  const { reads, isReading } = useCommentedFileReads(rootPath, comments, target, stats, startCommit, refreshes);
-  // Each status can scan a whole file's rows, and an agent's every chunk redraws this panel.
-  const checked = useMemo(
-    () => comments.map((comment) => ({ comment, status: commentStatus(comment, target, reads[comment.file]) })),
-    [comments, reads, target],
-  );
-  const onTarget = useMemo(() => checked.filter(({ comment }) => comment.target === target), [checked, target]);
   const panel = useRef<HTMLElement>(null);
   const focusPanel = () => panel.current?.focus({ preventScroll: true });
-  const addReasonId = useId();
-  const adder: CommentAdder | undefined = addReview && {
-    inMessage: addReview.inMessage,
-    blockedReason: addReview.blockedReason ?? (haveTargetsFailed || hasListFailed ? NOT_LOADED : undefined),
-    reasonId: addReasonId,
-    // Until the root is known (loading, or the targets failed) a path cannot be worded from the agent's folder.
-    isWaiting: isReading || targets.root === "",
-    add: (checked) =>
-      addReview.add(checked, target, { root: targets.root, prefix: targets.prefix, baseName: targets.base?.name ?? null }),
-  };
-  const fileReviewOf = (path: string): FileReview | undefined =>
-    review && {
-      review,
-      adder,
-      target,
-      checked: onTarget.filter(({ comment }) => comment.file === path),
-      read: reads[path],
-      onFocusLost: focusPanel,
-    };
+  const { checked, reads, adder, fileReviewFor: fileReviewOf } = useFileReviews({
+    rootPath,
+    review,
+    addReview,
+    target,
+    targets,
+    stats,
+    startCommit,
+    refreshes,
+    blockedReason: haveTargetsFailed || hasListFailed ? DIFF_NOT_LOADED : undefined,
+    onFocusLost: focusPanel,
+  });
   const [isSearching, setIsSearching] = useState(false);
   const [search, setSearch] = useState("");
   // Each target's first list decides what starts open; after that the user's
@@ -169,7 +151,11 @@ export function DiffView({
   );
   // A file chosen in the list opens, and is scrolled to once its section has rendered open.
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
+  // The file marked in the list: the last one picked there while it is still listed, else the first.
+  const [pickedPath, setPickedPath] = useState<string | null>(null);
+  const selectedPath = visible.some((s) => s.path === pickedPath) ? pickedPath : (visible[0]?.path ?? null);
   const selectFile = (path: string) => {
+    setPickedPath(path);
     setOpenPaths((prev) => (prev.has(path) ? prev : new Set(prev).add(path)));
     setScrollTarget(path);
   };
@@ -184,7 +170,7 @@ export function DiffView({
       ref={panel}
       aria-label="Diff view"
       tabIndex={review ? -1 : undefined}
-      className={`flex h-full flex-col border-l border-border bg-surface-1 ${isExpanded ? "flex-1" : "w-1/2 min-w-[480px] shrink-0"}${review ? " focus-ring" : ""}`}
+      className={`flex h-full flex-col border-l border-border bg-bg text-ui ${isExpanded ? "flex-1" : "w-1/2 min-w-[480px] shrink-0"}${review ? " focus-ring" : ""}`}
     >
       <DiffViewHeader
         target={target}
@@ -204,17 +190,14 @@ export function DiffView({
         totals={totals}
       />
       <div className="flex min-h-0 flex-1">
-        {isExpanded && stats && stats.length > 0 && <DiffFileList stats={visible} onSelect={selectFile} />}
-        <div className="min-h-0 flex-1 overflow-y-auto p-2 text-xs">
-        {review && stats && stats.length > 0 && (
-          <p className="px-1.5 pb-1.5 text-caption text-fg-muted">Click a line number to comment</p>
-        )}
+        {isExpanded && stats && stats.length > 0 && <DiffFileList stats={visible} selectedPath={selectedPath} onSelect={selectFile} />}
+        <div className="min-h-0 flex-1 overflow-y-auto">
         {stats === null ? (
-          <p className="px-2 py-3 text-fg-subtle">Reading the changes…</p>
+          <p className="px-4 py-3 text-fg-subtle">Reading the changes…</p>
         ) : stats.length === 0 ? (
-          <p className="px-2 py-3 text-fg-subtle">{noChanges}</p>
+          <p className="px-4 py-3 text-fg-subtle">{noChanges}</p>
         ) : visible.length === 0 ? (
-          <p className="px-2 py-3 text-fg-subtle">No files match “{search.trim()}”.</p>
+          <p className="px-4 py-3 text-fg-subtle">No files match “{search.trim()}”.</p>
         ) : (
           visible.map((stat) => (
             <DiffFileSection

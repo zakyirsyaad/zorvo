@@ -146,8 +146,8 @@ describe("DiffFileSection", () => {
   it("names a nested repository by its folder", () => {
     renderSection({ ...STAT, path: "vendor/lib/", kind: "untracked", isBinary: true }, false);
 
-    // Name "lib", then its folder "vendor"; not an empty name under "vendor/lib".
-    expect(screen.getByRole("button", { expanded: false }).textContent?.startsWith("libvendor")).toBe(true);
+    // Its full path, as the header shows every file's: never an empty name.
+    expect(screen.getByRole("button", { expanded: false }).textContent?.startsWith("vendor/lib/")).toBe(true);
   });
 
   it("never shows the previous target's error in the first frame of the next", async () => {
@@ -304,8 +304,8 @@ describe("DiffView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Search files" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Filter files" }), { target: { value: "app" } });
 
-    expect(screen.getByText("app.ts")).toBeDefined();
-    expect(screen.queryByText("util.ts")).toBeNull();
+    expect(screen.getByText("src/app.ts")).toBeDefined();
+    expect(screen.queryByText("src/lib/util.ts")).toBeNull();
     expect(screen.queryByText("README.md")).toBeNull();
   });
 
@@ -599,7 +599,7 @@ describe("DiffView with the start of the worktree", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("menuitem", { name: "Refresh" }));
     });
-    expect(screen.getByText("app.ts")).toBeDefined();
+    expect(screen.getByText("src/app.ts")).toBeDefined();
     expect(screen.getByRole("button", { name: `Diff target: ${START_LABEL}` })).toBeDefined();
   });
 

@@ -1317,7 +1317,6 @@ export default function App() {
                     key={filesFolder.path}
                     rootPath={filesFolder.path}
                     rootName={filesFolder.name}
-                    branch={workspaceDetails?.branch ?? undefined}
                     changes={inspector.changes.changes}
                     version={inspector.changes.version}
                     onReload={inspector.changes.reload}
@@ -1327,6 +1326,12 @@ export default function App() {
                     onOpenGithubSettings={() => setSettingsTab("general")}
                     diffStats={diffStats}
                     onOpenDiff={() => inspector.openDiff()}
+                    stats={inspector.headStats ?? undefined}
+                    statsFailed={inspector.headStatsFailed}
+                    targets={inspector.targets}
+                    targetsFailed={inspector.targetsFailed}
+                    review={activeSession ? review.review : undefined}
+                    addReview={activeSession ? review.addReview : undefined}
                   />
                 )}
                 {inspectorTab === "activity" && activeSession && (

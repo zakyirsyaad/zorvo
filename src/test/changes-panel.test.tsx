@@ -19,11 +19,9 @@ function renderPanel(overrides: Partial<Parameters<typeof ChangesPanel>[0]> = {}
   const props = {
     rootPath: "/w/api",
     rootName: "api",
-    branch: "agent/fix",
     changes: CHANGES,
     version: 1,
     onReload: vi.fn(),
-    onClose: vi.fn(),
     ...overrides,
   };
   render(<ChangesPanel {...props} />);
@@ -32,7 +30,7 @@ function renderPanel(overrides: Partial<Parameters<typeof ChangesPanel>[0]> = {}
 
 describe("ChangesPanel inside the inspector", () => {
   it("has no close button of its own inside the inspector", () => {
-    renderPanel({ onClose: undefined });
+    renderPanel();
     expect(screen.queryByRole("button", { name: "Close changes panel" })).toBeNull();
     expect(screen.getByRole("complementary", { name: "Changes panel" }).className).not.toContain("w-80");
   });
@@ -41,14 +39,15 @@ describe("ChangesPanel inside the inspector", () => {
 describe("ChangesPanel", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("lists each changed file with its kind, and the folder and branch", () => {
+  it("lists each changed file with its kind", () => {
     renderPanel();
 
     const list = within(screen.getByRole("list", { name: "Changes in api" }));
     expect(list.getAllByRole("listitem")).toHaveLength(3);
     expect(list.getByLabelText("Renamed")).toBeDefined();
     expect(list.getByTitle("old.md → new.md")).toBeDefined();
-    expect(screen.getByText("agent/fix")).toBeDefined();
+    // The inspector's own frame names the folder; the panel has no header.
+    expect(screen.getByText("3 files changed")).toBeDefined();
     expect(screen.getByRole("button", { name: "Commit 3 files" })).toBeDefined();
   });
 
@@ -86,7 +85,7 @@ describe("ChangesPanel", () => {
     });
   });
 
-  it("shows the diff-stat chip under the header and opens the diff from it", () => {
+  it("opens the diff from the summary row", () => {
     const onOpenDiff = vi.fn();
     renderPanel({ diffStats: { added: 12, removed: 3 }, onOpenDiff });
 
@@ -98,7 +97,7 @@ describe("ChangesPanel", () => {
   it("leaves no empty strip when the totals are zero", () => {
     const panel = () => screen.getByRole("complementary", { name: "Changes panel" });
     const { unmount } = render(
-      <ChangesPanel rootPath="/w/api" rootName="api" changes={CHANGES} version={1} onReload={vi.fn()} onClose={vi.fn()} />,
+      <ChangesPanel rootPath="/w/api" rootName="api" changes={CHANGES} version={1} onReload={vi.fn()} />,
     );
     const withoutTotals = panel().childElementCount;
     unmount();

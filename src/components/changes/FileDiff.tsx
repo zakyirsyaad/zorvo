@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { isCommentableFile, unifiedDiffRows, type FileChange } from "../../lib/git-changes";
 import type { DiffTargetId } from "../../lib/diff-stats";
-import { DiffRows } from "./DiffRows";
+import { DiffRows, type DiffDensity } from "./DiffRows";
 import { againstRows, FileComments, rowReviewOf, type FileReview } from "./LineComment";
 import { readFileDiff } from "../../lib/diff-read";
 
 type DiffState = { status: "loading" } | { status: "ready"; diff: string; key: string } | { status: "failed"; error: string; key: string };
 
 /** One changed file's diff against `target` (the last commit unless told otherwise), read when it is opened. */
-export function FileDiff({ rootPath, change, version, target = "head", startCommit, review, takesComments = false }: {
+export function FileDiff({ rootPath, change, version, target = "head", startCommit, review, takesComments = false, density = "review" }: {
   rootPath: string;
   change: FileChange;
   /** The diff is read again whenever this changes. */
@@ -20,6 +20,8 @@ export function FileDiff({ rootPath, change, version, target = "head", startComm
   review?: FileReview;
   /** Whether its lines can take a new comment; a nested repository's cannot. */
   takesComments?: boolean;
+  /** `card` in the Changes tab, `review` in the full diff review. */
+  density?: DiffDensity;
 }) {
   const [state, setState] = useState<DiffState>({ status: "loading" });
 
@@ -47,24 +49,24 @@ export function FileDiff({ rootPath, change, version, target = "head", startComm
   // A comment just saved reads against the rows on screen until its own read answers.
   const fileReview = review && (review.read || shownRows.length === 0 ? review : againstRows(review, shownRows));
   const rowReview = fileReview && takesComments && shownRows.length > 0 && isCommentableFile(shownRows)
-    ? rowReviewOf(fileReview, change, shownRows)
+    ? rowReviewOf(fileReview, change, shownRows, density)
     : undefined;
 
   const body = () => {
-    if (state.status === "loading" || isStale) return <p className="px-3 py-1.5 text-[11px] text-fg-subtle">Loading the diff…</p>;
+    if (state.status === "loading" || isStale) return <p className="px-4 py-1.5 text-caption text-fg-subtle">Loading the diff…</p>;
     if (state.status === "failed") {
       return (
-        <p role="alert" className="px-3 py-1.5 text-[11px] text-danger">
+        <p role="alert" className="px-4 py-1.5 text-caption text-danger">
           Could not show the diff: {state.error}
         </p>
       );
     }
-    if (rows.length === 0) return <p className="px-3 py-1.5 text-[11px] text-fg-subtle">No text changes.</p>;
-    return <DiffRows rows={rows} label={`Diff of ${change.path}`} review={rowReview} />;
+    if (rows.length === 0) return <p className="px-4 py-1.5 text-caption text-fg-subtle">No text changes.</p>;
+    return <DiffRows rows={rows} label={`Diff of ${change.path}`} review={rowReview} density={density} />;
   };
   return (
     <>
-      {fileReview && <FileComments file={fileReview} change={change} rows={rowReview ? shownRows : []} />}
+      {fileReview && <FileComments file={fileReview} change={change} rows={rowReview ? shownRows : []} density={density} />}
       {body()}
     </>
   );

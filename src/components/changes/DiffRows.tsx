@@ -1,15 +1,19 @@
 import { memo, useEffect, useId, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
-import { MessageSquarePlus } from "lucide-react";
+import { MessageSquare, MessageSquarePlus } from "lucide-react";
 import { IconButton } from "../ui/IconButton";
 import { MINUS } from "../../lib/diff-stats";
 import type { UnifiedRow, UnifiedRowKind } from "../../lib/git-changes";
 import { quoteOf } from "../../lib/review-comments";
 
+/** How roomy the rows are: `review` in the full diff review, `card` in a Changes card. */
+export type DiffDensity = "card" | "review";
+
+// Only the fill says what a row is; its text stays fg-secondary, as drawn.
 const ROW_STYLE: Record<UnifiedRowKind, string> = {
-  added: "bg-diff-added text-status-running",
-  removed: "bg-diff-removed text-danger",
-  context: "text-fg-muted",
-  hunk: "bg-surface-2 text-fg-muted",
+  added: "bg-diff-added text-fg-secondary",
+  removed: "bg-diff-removed text-fg-secondary",
+  context: "text-fg-secondary",
+  hunk: "text-fg-subtle",
   note: "text-fg-subtle italic",
 };
 
@@ -17,15 +21,30 @@ const ROW_SIGN: Record<UnifiedRowKind, string> = { added: "+", removed: MINUS, c
 
 const ROW_KIND: Record<UnifiedRowKind, string> = { added: "added", removed: "removed", context: "unchanged", hunk: "", note: "" };
 
-const GUTTER = "w-10 shrink-0 select-none text-right tabular-nums text-fg-subtle";
-const LIST = "mx-1.5 mb-1.5 max-h-80 overflow-auto rounded-md border border-border bg-bg py-1 font-mono text-[11px] leading-5";
+const GUTTER: Record<DiffDensity, string> = {
+  review: "w-10 shrink-0 select-none pr-2 text-right tabular-nums text-fg-subtle",
+  card: "w-[30px] shrink-0 select-none pr-2 text-right tabular-nums text-fg-subtle",
+};
+const SIGN: Record<DiffDensity, string> = {
+  review: "w-4 shrink-0 select-none text-fg-subtle",
+  card: "w-3.5 shrink-0 select-none text-fg-subtle",
+};
+// The review is flush in its file section; a card caps a long diff.
+const LIST: Record<DiffDensity, string> = {
+  review: "overflow-x-auto py-2 font-mono text-ui-sm leading-5 text-fg-secondary",
+  card: "max-h-80 overflow-auto py-1 font-mono text-caption leading-[18px] text-fg-secondary",
+};
+const BADGE =
+  "ml-4 inline-flex h-[18px] shrink-0 items-center gap-1 self-center rounded border border-border bg-surface-3 px-1.5 font-sans text-caption text-fg-secondary";
 /** As wide as its line, so the control beside it stays in view when the diff scrolls sideways. */
 const GRID_ROW = "w-max min-w-full";
 /** The row the arrow keys are on: the grid holds the focus, so the row has to show it. */
-const ACTIVE_ROW = "group-focus-visible/grid:ring-1 group-focus-visible/grid:ring-inset group-focus-visible/grid:ring-focus-ring";
+const ACTIVE_ROW = "group-focus-visible/grid:shadow-[inset_2px_0_0_var(--color-fg)]";
 
 /** What rows need to take comments. With it the diff is a grid, one Tab stop, with one control for the row in use. */
 export interface RowReview {
+  /** What the row's badge says about the comments on its line ("1 comment · Current"), or null. */
+  badge: (row: UnifiedRow) => string | null;
   /** Whether the row can take a new comment now: it has a line, and no open box. */
   canComment: (row: UnifiedRow) => boolean;
   openBox: (row: UnifiedRow) => void;
@@ -48,8 +67,11 @@ function rowName(row: UnifiedRow): string {
   return `Line ${lineOf(row)}, ${ROW_KIND[row.kind]}: ${text}`;
 }
 
-const DiffRow = memo(function DiffRow({ row, rowKey, rowId, isActive, control, under }: {
+const DiffRow = memo(function DiffRow({ row, density, rowKey, rowId, isActive, control, badge, under }: {
   row: UnifiedRow;
+  density: DiffDensity;
+  /** Shown at the end of the row in the review; the comments themselves are rows under it. */
+  badge: string | null;
   rowKey: string;
   /** Set when the rows form a grid. */
   rowId?: string;
@@ -69,16 +91,31 @@ const DiffRow = memo(function DiffRow({ row, rowKey, rowId, isActive, control, u
         className={`flex whitespace-pre pr-2 ${ROW_STYLE[row.kind]}${isGridRow ? ` ${GRID_ROW}` : ""}${isActive ? ` ${ACTIVE_ROW}` : ""}`}
       >
         {control}
-        <span aria-hidden="true" className={GUTTER}>
-          {row.oldLine}
-        </span>
-        <span aria-hidden="true" className={`${GUTTER} ml-1`}>
-          {row.newLine}
-        </span>
-        <span aria-hidden="true" className="w-3.5 shrink-0 select-none text-center opacity-60">
+        {density === "review" ? (
+          <>
+            <span aria-hidden="true" className={GUTTER.review}>
+              {row.oldLine}
+            </span>
+            <span aria-hidden="true" className={GUTTER.review}>
+              {row.newLine}
+            </span>
+          </>
+        ) : (
+          // One gutter in a card: the new number, or the old one for a removed line.
+          <span aria-hidden="true" className={GUTTER.card}>
+            {row.newLine ?? row.oldLine}
+          </span>
+        )}
+        <span aria-hidden="true" className={SIGN[density]}>
           {ROW_SIGN[row.kind]}
         </span>
         <span role={isGridRow ? "gridcell" : undefined}>{row.text}</span>
+        {badge && density === "review" && (
+          <span aria-hidden="true" className={BADGE}>
+            <MessageSquare size={10} />
+            {badge}
+          </span>
+        )}
       </div>
       {under && (
         // A sticky box travels only inside its parent, and the grid is the one parent as wide as the long lines.
@@ -91,7 +128,12 @@ const DiffRow = memo(function DiffRow({ row, rowKey, rowId, isActive, control, u
 });
 
 /** A unified diff as rows with old and new line numbers. */
-export function DiffRows({ rows, label, review }: { rows: UnifiedRow[]; label: string; review?: RowReview }) {
+export function DiffRows({ rows, label, review, density = "review" }: {
+  rows: UnifiedRow[];
+  label: string;
+  review?: RowReview;
+  density?: DiffDensity;
+}) {
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const grid = useRef<HTMLDivElement>(null);
   const boxToFocus = useRef<string | null>(null);
@@ -161,7 +203,7 @@ export function DiffRows({ rows, label, review }: { rows: UnifiedRow[]; label: s
   const takeFocusBack = () => grid.current?.focus();
 
   return (
-    <div aria-label={label} className={review ? `${LIST} group/grid focus-ring` : LIST} {...gridProps}>
+    <div aria-label={label} className={review ? `${LIST[density]} group/grid focus-ring` : LIST[density]} {...gridProps}>
       {rows.map((row, index) => {
         const key = keys[index];
         const isActive = key === activeKey;
@@ -169,17 +211,20 @@ export function DiffRows({ rows, label, review }: { rows: UnifiedRow[]; label: s
           <DiffRow
             key={key}
             row={row}
+            density={density}
             rowKey={key}
             rowId={review ? rowIdOf(key) : undefined}
             isActive={isActive}
             control={
               isActive && review?.canComment(row) ? (
-                // Sits over the row without widening it: a row is 20px and the button 28px.
+                // Sits over the row without widening it, centred on it: a review row is 20px and the
+                // button 28px, a card row 18px and the button 24px.
                 <span role="gridcell" className="sticky left-0 z-10 w-0 shrink-0">
                   <IconButton
                     label={`Comment on line ${lineOf(row)}`}
+                    size={density === "card" ? "sm" : "md"}
                     tabIndex={-1}
-                    className="absolute -top-1 left-0 bg-surface-3 shadow-popover"
+                    className={`absolute left-0 bg-surface-3 shadow-popover ${density === "card" ? "-top-[3px]" : "-top-1"}`}
                     onClick={() => openBox(index)}
                   >
                     <MessageSquarePlus size={14} />
@@ -187,6 +232,7 @@ export function DiffRows({ rows, label, review }: { rows: UnifiedRow[]; label: s
                 </span>
               ) : null
             }
+            badge={review?.badge(row) ?? null}
             under={review?.under(row, takeFocusBack) ?? null}
           />
         );

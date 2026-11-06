@@ -1,3 +1,4 @@
+import { MessageSquare } from "lucide-react";
 import { Button } from "../ui/Button";
 import { DraftBox, LineComment, ownAddLabel, type CommentAdder } from "./LineComment";
 import { draftKeyOf, parseDraftKey, type CommentAnchor, type ReviewComments } from "../../hooks/useReviewComments";
@@ -5,10 +6,14 @@ import { targetLabel, type DiffTargetId, type DiffTargets, type FileStat } from 
 import { isCounted, type CheckedComment, type FileRead } from "../../lib/review-comments";
 import type { ReviewComment } from "../../types";
 
+const commentsWord = (count: number) => `${count} ${count === 1 ? "comment" : "comments"}`;
+
 const locationOf = ({ file, line }: Pick<ReviewComment, "file" | "line">) => `${file}:${line}`;
 
 /** The session's comments as a whole, and those no section can show: another target's, or a file gone from the diff. */
-export function ReviewCommentsBar({ review, adder, checked, target, targets, options, reads, listed, onTargetChange, onFocusLost }: {
+export function ReviewCommentsBar({ variant = "review", review, adder, checked, target, targets, options, reads, listed, onTargetChange, onFocusLost }: {
+  /** `review` under the full diff review, `card` under the Changes tab's cards, where Add is smaller. */
+  variant?: "review" | "card";
   review: ReviewComments;
   adder?: CommentAdder;
   /** The session's comments, in order, with their statuses on `target`. */
@@ -23,7 +28,9 @@ export function ReviewCommentsBar({ review, adder, checked, target, targets, opt
   onTargetChange: (target: DiffTargetId) => void;
   onFocusLost: () => void;
 }) {
-  const hasSent = checked.some(({ comment }) => comment.sentAt !== undefined);
+  // Clear sent removes only what this bar is about: the Changes tab never lists another target's comments.
+  const sentIds = new Set(checked.flatMap(({ comment }) => (comment.sentAt === undefined ? [] : [comment.id])));
+  const hasSent = sentIds.size > 0;
   const elsewhere = checked.filter(({ status }) => status === "elsewhere");
   const elsewhereTargets = [...new Set(elsewhere.map(({ comment }) => comment.target))];
   const gone = checked.filter(({ comment, status }) => status !== "elsewhere" && reads[comment.file]?.status === "missing");
@@ -40,30 +47,42 @@ export function ReviewCommentsBar({ review, adder, checked, target, targets, opt
   if (!hasSent && !reason && counted.length === 0 && elsewhere.length === 0 && gone.length === 0 && goneBoxes.length === 0) return null;
 
   return (
-    <section aria-label="Review comments" className="flex max-h-64 shrink-0 flex-col gap-1.5 overflow-y-auto border-t border-border p-2 text-xs">
+    <section
+      aria-label="Review comments"
+      className="mx-4 mb-4 flex max-h-64 shrink-0 flex-col gap-1.5 overflow-y-auto rounded-lg border border-border bg-surface-2 px-3 py-2 text-ui"
+    >
       {(hasSent || reason || counted.length > 0) && (
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {reason && (
-            <p id={adder?.reasonId} className="min-w-0 flex-1 text-[11px] text-fg-subtle">
-              {reason}
-            </p>
+          {counted.length > 0 && (
+            <>
+              <MessageSquare aria-hidden="true" size={14} className="shrink-0 text-fg-muted" />
+              <p className="min-w-0 flex-1 text-fg-secondary">{commentsWord(counted.length)} not in a message</p>
+            </>
           )}
           {hasSent && (
-            <Button variant="ghost" size="sm" onClick={review.clearSent}>
+            <Button variant="ghost" size="sm" onClick={() => review.clearSent(sentIds)}>
               Clear sent
             </Button>
           )}
           {adder && counted.length > 0 && (
             <Button
-              size="sm"
+              variant={variant === "review" ? "primary" : "outline"}
+              size={variant === "review" ? "md" : "sm"}
               disabled={adder.isWaiting || reason !== undefined}
+              // The card's short "Add 2" starts its name, so Voice Control finds it by what it shows.
+              aria-label={variant === "card" ? `Add ${commentsWord(counted.length)} to message` : undefined}
               aria-describedby={reason ? adder.reasonId : undefined}
               onClick={() => adder.add(counted)}
             >
-              Add {counted.length} {counted.length === 1 ? "comment" : "comments"} to message
+              {variant === "review" ? `Add ${commentsWord(counted.length)} to message` : `Add ${counted.length}`}
             </Button>
           )}
         </div>
+      )}
+      {reason && (
+        <p id={adder?.reasonId} className="text-caption text-fg-subtle">
+          {reason}
+        </p>
       )}
       {gone.map(({ comment, status }) => (
         <LineComment
@@ -86,7 +105,7 @@ export function ReviewCommentsBar({ review, adder, checked, target, targets, opt
               Show {targetLabel(other, targets)}
             </Button>
           ) : (
-            <p className="text-[11px] text-fg-subtle">a comparison no longer available</p>
+            <p className="text-caption text-fg-subtle">a comparison no longer available</p>
           )}
           {elsewhere
             .filter(({ comment }) => comment.target === other)

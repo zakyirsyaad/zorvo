@@ -23,6 +23,8 @@ export type DraftKey = string;
 export type CommentAnchor = Omit<ReviewComment, 'id' | 'body' | 'createdAt' | 'lineHash' | 'quote' | 'oldFile' | 'sentAt'>;
 
 export interface ReviewComments {
+  /** Whose comments these are; a box keeps its own text only for its session. */
+  sessionId: string;
   comments: readonly ReviewComment[];
   /** This session's open boxes, so one whose row has left the diff can still be shown. */
   draftKeys: readonly DraftKey[];
@@ -37,7 +39,8 @@ export interface ReviewComments {
   /** An edited comment is plain again, so it can be added afresh: this clears `sentAt`. */
   editComment: (id: string, body: string) => void;
   deleteComment: (id: string) => void;
-  clearSent: () => void;
+  /** Removes the sent comments among `ids`, or every sent comment without them. */
+  clearSent: (ids?: ReadonlySet<string>) => void;
 }
 
 export function draftKeyOf({ target, file, side, line }: CommentAnchor): DraftKey {
@@ -92,6 +95,7 @@ export function useReviewComments(
   };
 
   return {
+    sessionId: session,
     comments: list,
     draftKeys: Object.keys(sessionDrafts()),
     draftFor: (key) => sessionDrafts()[key],
@@ -132,6 +136,7 @@ export function useReviewComments(
       change((prev) => prev.filter((comment) => comment.id !== id));
       closeDraft(editDraftKeyOf(id));
     },
-    clearSent: () => change((prev) => prev.filter((comment) => comment.sentAt === undefined)),
+    clearSent: (ids) =>
+      change((prev) => prev.filter((comment) => comment.sentAt === undefined || (ids !== undefined && !ids.has(comment.id)))),
   };
 }

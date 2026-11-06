@@ -1,12 +1,9 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { ChevronDown, Maximize2, Minimize2, MoreHorizontal, Search, X } from "lucide-react";
+import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
-import { useDismiss } from "../../hooks/useDismiss";
+import { Popover, PopoverOption } from "../ui/Popover";
 import { formatLineCount, MINUS, targetLabel, type DiffTargetId, type DiffTargets } from "../../lib/diff-stats";
-
-const POPOVER = "absolute top-full mt-1 rounded-lg border border-border bg-surface-3 p-1 shadow-popover z-50";
-const POPOVER_ITEM =
-  "flex w-full items-center justify-between gap-3 rounded px-2.5 py-1.5 text-left text-xs transition-colors cursor-pointer";
 
 function TargetPicker({ target, targets, options, onSelect }: {
   target: DiffTargetId;
@@ -15,49 +12,46 @@ function TargetPicker({ target, targets, options, onSelect }: {
   onSelect: (target: DiffTargetId) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useDismiss(ref, isOpen, () => setIsOpen(false));
   const label = targetLabel(target, targets);
 
   // With only HEAD to compare against there is nothing to choose between.
-  if (options.length < 2) return <span className="truncate text-xs font-medium text-fg">{label}</span>;
+  if (options.length < 2) return <span className="truncate px-2 text-ui font-semibold text-fg">{label}</span>;
 
   return (
-    <div ref={ref} className="relative min-w-0">
-      <button
-        type="button"
-        aria-label={`Diff target: ${label}`}
-        aria-haspopup="listbox"
-        aria-expanded={isOpen}
-        onClick={() => setIsOpen((open) => !open)}
-        className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-fg hover:bg-surface-hover cursor-pointer focus-ring"
-      >
-        <span className="truncate">{label}</span>
-        <ChevronDown size={11} aria-hidden="true" className="shrink-0 text-fg-subtle" />
-      </button>
-      {isOpen && (
-        <div role="listbox" aria-label="Diff target" className={`${POPOVER} left-0 min-w-48`}>
-          {options.map((option) => (
-            <button
-              key={option}
-              type="button"
-              role="option"
-              aria-selected={option === target}
-              onClick={() => {
-                onSelect(option);
-                setIsOpen(false);
-              }}
-              className={`${POPOVER_ITEM} ${
-                option === target ? "bg-surface-hover text-fg font-medium" : "text-fg-secondary hover:bg-surface-hover hover:text-fg"
-              }`}
-            >
-              <span className="truncate">{targetLabel(option, targets)}</span>
-              {option === target && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-fg" />}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <Popover
+      isOpen={isOpen}
+      onClose={() => setIsOpen(false)}
+      label="Diff target"
+      role="listbox"
+      className="min-w-56"
+      wrapperClassName="min-w-0"
+      trigger={
+        <button
+          type="button"
+          aria-label={`Diff target: ${label}`}
+          aria-haspopup="listbox"
+          aria-expanded={isOpen}
+          onClick={() => setIsOpen((open) => !open)}
+          className="flex h-7 max-w-full items-center gap-1.5 rounded-md px-2 text-ui font-semibold text-fg hover:bg-surface-hover cursor-pointer focus-ring"
+        >
+          <span className="truncate">{label}</span>
+          <ChevronDown size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
+        </button>
+      }
+    >
+      {options.map((option) => (
+        <PopoverOption
+          key={option}
+          selected={option === target}
+          onSelect={() => {
+            onSelect(option);
+            setIsOpen(false);
+          }}
+        >
+          {targetLabel(option, targets)}
+        </PopoverOption>
+      ))}
+    </Popover>
   );
 }
 
@@ -67,37 +61,36 @@ function MoreMenu({ onCollapseAll, onExpandAll, onRefresh }: {
   onRefresh: () => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useDismiss(ref, isOpen, () => setIsOpen(false));
   const items = [
     { label: "Collapse all", run: onCollapseAll },
     { label: "Expand all", run: onExpandAll },
     { label: "Refresh", run: onRefresh },
   ];
   return (
-    <div ref={ref} className="relative">
-      <IconButton label="More actions" aria-haspopup="menu" aria-expanded={isOpen} onClick={() => setIsOpen((open) => !open)}>
-        <MoreHorizontal size={14} />
-      </IconButton>
-      {isOpen && (
-        <div role="menu" aria-label="More actions" className={`${POPOVER} right-0 min-w-36`}>
-          {items.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                item.run();
-                setIsOpen(false);
-              }}
-              className={`${POPOVER_ITEM} text-fg-secondary hover:bg-surface-hover hover:text-fg`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <Popover
+      isOpen={isOpen}
+      onClose={() => setIsOpen(false)}
+      label="More actions"
+      align="end"
+      className="min-w-36"
+      trigger={
+        <IconButton label="More actions" tone="secondary" aria-haspopup="menu" aria-expanded={isOpen} onClick={() => setIsOpen((open) => !open)}>
+          <MoreHorizontal size={14} />
+        </IconButton>
+      }
+    >
+      {items.map((item) => (
+        <PopoverOption
+          key={item.label}
+          onSelect={() => {
+            item.run();
+            setIsOpen(false);
+          }}
+        >
+          {item.label}
+        </PopoverOption>
+      ))}
+    </Popover>
   );
 }
 
@@ -127,37 +120,43 @@ export function DiffViewHeader(props: DiffViewHeaderProps) {
   const { isExpanded, isSearching, search } = props;
   return (
     <header className="shrink-0 border-b border-border">
-      <div className="flex h-10 items-center gap-1 px-2">
+      <div className="flex h-12 items-center gap-2 pr-3 pl-4">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <TargetPicker target={props.target} targets={props.targets} options={props.options} onSelect={props.onTargetChange} />
           {props.totals && (
-            <div role="group" aria-label="Diff totals" className="flex shrink-0 items-center gap-1.5 text-caption tabular-nums">
-              <span className="text-fg-muted">
+            <div role="group" aria-label="Diff totals" className="flex shrink-0 items-center gap-2 tabular-nums">
+              <span className="text-ui-sm text-fg-muted">
                 {formatLineCount(props.totals.files)} {props.totals.files === 1 ? "file" : "files"}
               </span>
-              <span className="text-status-running">+{formatLineCount(props.totals.added)}</span>
-              <span className="text-danger">
+              <span className="font-mono text-caption text-status-running">+{formatLineCount(props.totals.added)}</span>
+              <span className="font-mono text-caption text-danger">
                 {MINUS}
                 {formatLineCount(props.totals.removed)}
               </span>
             </div>
           )}
         </div>
-        <IconButton label="Search files" aria-pressed={isSearching} onClick={props.onToggleSearch}>
+        <IconButton label="Search files" tone="secondary" aria-pressed={isSearching} onClick={props.onToggleSearch}>
           <Search size={14} />
         </IconButton>
         <MoreMenu onCollapseAll={props.onCollapseAll} onExpandAll={props.onExpandAll} onRefresh={props.onRefresh} />
         {props.onToggleExpanded && (
-          <IconButton label={isExpanded ? "Shrink diff view" : "Expand diff view"} onClick={props.onToggleExpanded}>
-            {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-          </IconButton>
+          <Button
+            variant="outline"
+            size="md"
+            aria-label={isExpanded ? "Shrink diff view" : "Expand diff view"}
+            icon={isExpanded ? <Minimize2 size={12} aria-hidden="true" /> : <Maximize2 size={12} aria-hidden="true" />}
+            onClick={props.onToggleExpanded}
+          >
+            {isExpanded ? "Shrink" : "Expand"}
+          </Button>
         )}
-        <IconButton label="Close diff view" onClick={props.onClose}>
+        <IconButton label="Close diff view" tone="secondary" onClick={props.onClose}>
           <X size={14} />
         </IconButton>
       </div>
       {isSearching && (
-        <div className="px-2 pb-2">
+        <div className="px-4 pb-2">
           <input
             type="text"
             autoFocus
@@ -165,7 +164,7 @@ export function DiffViewHeader(props: DiffViewHeaderProps) {
             onChange={(e) => props.onSearchChange(e.target.value)}
             placeholder="Filter files"
             aria-label="Filter files"
-            className="w-full rounded-md border border-border bg-surface-2 px-2 py-1 text-xs text-fg placeholder:text-fg-subtle focus-ring"
+            className="w-full rounded-md border border-border-strong bg-surface-2 px-2 py-1 text-ui-sm text-fg placeholder:text-fg-subtle focus-ring"
           />
         </div>
       )}

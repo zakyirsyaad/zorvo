@@ -111,3 +111,36 @@ describe("the welcome screen", () => {
     expect(note()).toHaveAttribute("id", start().getAttribute("aria-describedby"));
   });
 });
+
+describe("the welcome screen while things load or fail", () => {
+  it("keeps Start off and quiet until the agents and their profiles are read", () => {
+    const { rerender, props } = renderOnboarding({ catalog: null });
+    expect(screen.getByText("Loading the agents…")).toBeInTheDocument();
+    expect(start()).toBeDisabled();
+    expect(startNote()).toBeNull();
+    rerender(<Onboarding {...props} catalog={{ lastChecked: null, agents: fakeCatalog, unavailable: [] }} areAgentsLoaded={false} />);
+    expect(start()).toBeDisabled();
+    expect(screen.queryByText(/Install one of these agents/)).toBeNull();
+  });
+
+  it("says why the agents could not be read, and reads them again", () => {
+    const onRetryCatalog = vi.fn();
+    renderOnboarding({ catalog: null, catalogError: "network down", onRetryCatalog });
+    expect(screen.getByText("Could not load the agents: network down")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRetryCatalog).toHaveBeenCalled();
+  });
+
+  it("shows the app's notice", () => {
+    renderOnboarding({ notice: <p>Could not open the folder dialog: denied</p> });
+    expect(screen.getByText("Could not open the folder dialog: denied")).toBeInTheDocument();
+  });
+
+  it("keeps each row where it first was when an agent is ticked", () => {
+    const { rerender, props } = renderOnboarding({ settings: { enabledAgents: ["claude-acp"], defaultAgentId: null } });
+    const names = () => screen.getAllByRole("checkbox").map((box) => box.getAttribute("aria-label"));
+    const before = names();
+    rerender(<Onboarding {...props} settings={{ enabledAgents: ["claude-acp", "qwen-code"], defaultAgentId: null }} />);
+    expect(names()).toEqual(before);
+  });
+});

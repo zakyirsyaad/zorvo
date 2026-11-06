@@ -1,15 +1,16 @@
-import { useState, useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { isAgentRunnable } from "../lib/agent-readiness";
 import { installEntryOf, subscribeToInstalls } from "../lib/agent-installs";
 import type { SignInState } from "../lib/agent-sign-in";
 import { enabledAgentIds, type EnabledSettings } from "../lib/enabled-agents";
-import { defaultOf, startAgentOf, startGate, visibleAgents } from "../lib/onboarding";
+import { defaultOf, orderedAgents, startAgentOf, startGate } from "../lib/onboarding";
 import type { AgentCatalog, AgentProfile, Settings } from "../types";
 import { AgentChoices } from "./onboarding/AgentChoices";
 import { FolderChoice } from "./onboarding/FolderChoice";
 import { Wordmark } from "./onboarding/Wordmark";
 import { toFolderOption, type FolderOption, type OnboardingResult } from "./onboarding/types";
 import { Button } from "./ui/Button";
+import { ToastStack } from "./ui/Toast";
 
 export type { FolderOption, OnboardingResult } from "./onboarding/types";
 
@@ -30,9 +31,24 @@ export interface OnboardingProps {
   suggestedFolders: readonly FolderOption[];
   onPickFolder: () => Promise<FolderOption | null>;
   onComplete: (result: OnboardingResult) => void;
+  /** False while the agent profiles load: whether an agent can run is not known yet. */
+  areAgentsLoaded?: boolean;
+  /** Why the agent catalog could not be read, with `onRetryCatalog` to read it again. */
+  catalogError?: string | null;
+  onRetryCatalog?: () => void;
+  /** Reads the agents and the registry again. */
+  onCheckAgain?: () => Promise<void>;
+  /** The app's notice (a folder dialog that failed), drawn here since the main window is not. */
+  notice?: ReactNode;
 }
 
 const NOTE_ID = "onboarding-start-note";
+
+/** Where `id` sits in `order`; an agent the catalog added since goes last. */
+const rankIn = (order: readonly string[], id: string) => {
+  const index = order.indexOf(id);
+  return index === -1 ? order.length : index;
+};
 
 /** The install status of each of `ids`, kept in step with the installs store. */
 function useInstalling(ids: readonly string[]): ReadonlySet<string> {
@@ -60,14 +76,24 @@ export function Onboarding({
   suggestedFolders,
   onPickFolder,
   onComplete,
+  areAgentsLoaded = true,
+  catalogError = null,
+  onRetryCatalog,
+  onCheckAgain,
+  notice,
 }: OnboardingProps) {
   const [folder, setFolder] = useState<FolderOption | null>(() =>
     recentFolders[0] ? toFolderOption(recentFolders[0]) : null,
   );
   const enabledIds = enabledAgentIds(settings);
   const catalogAgents = catalog?.agents ?? [];
+  // The rows' order is fixed once there are agents, so ticking never moves a row under the pointer.
+  const [order, setOrder] = useState<readonly string[] | null>(null);
+  if (order === null && catalogAgents.length > 0) setOrder(orderedAgents(catalogAgents, enabledIds).map((agent) => agent.id));
+  const listed = orderedAgents(catalogAgents, enabledIds);
+  const inOrder = order ? [...listed].sort((a, b) => rankIn(order, a.id) - rankIn(order, b.id)) : listed;
   // Ticked agents in the order the screen lists them, so "the first ticked" is the first row ticked.
-  const ticked = visibleAgents(catalogAgents, enabledIds, true).filter((agent) => enabledIds.includes(agent.id));
+  const ticked = inOrder.filter((agent) => enabledIds.includes(agent.id));
   const tickedIds = ticked.map((agent) => agent.id);
   const installing = useInstalling(tickedIds);
   const isReady = (id: string) => {
@@ -80,6 +106,7 @@ export function Onboarding({
     ticked: ticked.map((agent) => ({ id: agent.id, name: agent.name, isReady: isReady(agent.id), isInstalling: installing.has(agent.id) })),
     defaultId,
     folder,
+    isLoading: catalog === null || !areAgentsLoaded,
   });
 
   const start = () => {
@@ -109,6 +136,11 @@ export function Onboarding({
           onTick={onTick}
           onUntick={onUntick}
           onMakeDefault={onMakeDefault}
+          order={order ?? undefined}
+          isLoading={catalog === null}
+          loadError={catalog === null ? catalogError : null}
+          onRetry={onRetryCatalog}
+          onCheckAgain={onCheckAgain}
         />
 
         <FolderChoice
@@ -134,6 +166,7 @@ export function Onboarding({
           </Button>
         </footer>
       </div>
+      {notice && <ToastStack>{notice}</ToastStack>}
     </main>
   );
 }

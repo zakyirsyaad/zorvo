@@ -63,6 +63,10 @@ describe("rowWords", () => {
   it("says Zorvo installs an agent that is not installed", () => {
     expect(rowWords(agent("a", { id: "a", name: "A", status: "not_installed" }), "unchecked", false)).toBe("Zorvo installs it when you tick it");
   });
+
+  it("says a ticked agent that is not installed is not installed yet", () => {
+    expect(rowWords(agent("a", { id: "a", name: "A", status: "not_installed" }), "unchecked", false, true)).toBe("Not installed yet");
+  });
 });
 
 describe("defaultOf and startAgentOf", () => {
@@ -111,6 +115,13 @@ describe("startGate", () => {
     expect(startGate({ ticked: [row("x", "Codex", false, true), row("c", "Claude Code", true)], defaultId: "x", folder: FOLDER })).toEqual({
       canStart: true,
       note: "Codex is still installing. You can start with Claude Code now.",
+    });
+  });
+
+  it("is quiet and closed while the agents load", () => {
+    expect(startGate({ ticked: [row("c", "Claude Code", false)], defaultId: "c", folder: FOLDER, isLoading: true })).toEqual({
+      canStart: false,
+      note: "",
     });
   });
 

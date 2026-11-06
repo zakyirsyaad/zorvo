@@ -180,3 +180,50 @@ describe("project folder", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });
+
+describe("review fixes", () => {
+  const notInstalled = fakeCatalog.map((agent) => ({ ...agent, status: "not_installed" as const }));
+
+  it("a ticked agent that is not installed offers Install", () => {
+    const { props } = renderChoices({ catalog: notInstalled });
+    const claude = rowOf("Claude Code");
+    expect(claude).toHaveTextContent("Not installed yet");
+    fireEvent.click(within(claude).getByRole("button", { name: "Install Claude Code" }));
+    expect(props.onTick).toHaveBeenCalledWith("claude-acp");
+  });
+
+  it("says the agents are loading, and why they could not be", () => {
+    const onRetry = vi.fn();
+    const { rerender, props } = renderChoices({ catalog: [], isLoading: true });
+    expect(screen.getByText("Loading the agents…")).toBeInTheDocument();
+    rerender(<AgentChoices {...props} catalog={[]} isLoading={false} loadError="network down" onRetry={onRetry} />);
+    expect(screen.getByText("Could not load the agents: network down")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRetry).toHaveBeenCalled();
+  });
+
+  it("Check again asks for the agents again", () => {
+    const onCheckAgain = vi.fn(async () => {});
+    renderChoices({ onCheckAgain });
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    expect(onCheckAgain).toHaveBeenCalled();
+  });
+
+  it("rows keep their place when one is ticked", () => {
+    const { props, rerender } = renderChoices({ order: ["claude-acp", "codex-acp", "gemini", "qwen-code"] });
+    const names = () => screen.getAllByRole("checkbox").map((box) => box.getAttribute("aria-label"));
+    const before = names();
+    rerender(<AgentChoices {...props} enabledIds={["claude-acp", "codex-acp", "qwen-code"]} />);
+    expect(names()).toEqual(before);
+  });
+
+  it("a row unticked past the first five stays on screen", () => {
+    const more = ["a", "b", "c"].map((id) => makeCatalogAgent({ id, name: `Agent ${id}`, status: "ready" }));
+    const order = ["claude-acp", "codex-acp", "gemini", "qwen-code", "a", "b", "c"];
+    const { props, rerender } = renderChoices({ catalog: [...fakeCatalog, ...more], order, enabledIds: ["claude-acp", "c"] });
+    expect(screen.getByRole("checkbox", { name: "Use Agent c" })).toBeChecked();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Use Agent c" }));
+    rerender(<AgentChoices {...props} enabledIds={["claude-acp"]} />);
+    expect(screen.getByRole("checkbox", { name: "Use Agent c" })).not.toBeChecked();
+  });
+});

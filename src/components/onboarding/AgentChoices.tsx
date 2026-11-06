@@ -8,7 +8,7 @@ import { StatusLine } from "../ui/StatusLine";
 import { useAgentInstall } from "../../hooks/useAgentInstall";
 import type { SignInState } from "../../lib/agent-sign-in";
 import { statusLine } from "../../lib/agent-catalog";
-import { hasMoreAgents, rowWords, visibleAgents } from "../../lib/onboarding";
+import { orderedAgents, rowWords } from "../../lib/onboarding";
 import type { CatalogAgent } from "../../types";
 
 export interface AgentChoicesProps {
@@ -20,7 +20,18 @@ export interface AgentChoicesProps {
   onTick: (id: string) => void;
   onUntick: (id: string) => void;
   onMakeDefault: (id: string) => void;
+  /** The rows' order, fixed when the screen first had agents, so a row never moves under the pointer. */
+  order?: readonly string[];
+  isLoading?: boolean;
+  /** Why the agents could not be read, with `onRetry` to read them again. */
+  loadError?: string | null;
+  onRetry?: () => void;
+  /** Reads the agents and the registry again (an agent installed elsewhere meanwhile). */
+  onCheckAgain?: () => Promise<void>;
 }
+
+/** Rows shown before Show all agents. */
+const FIRST_ROWS = 5;
 
 /** A welcome-screen section's heading: its number in a ring, then its name. */
 export function NumberedHeading({ number, children }: { number: number; children: string }) {
@@ -52,7 +63,9 @@ function ChoiceRow({ agent, isTicked, isDefault, signIn, isSetupOnly, onTick, on
   const job = useAgentInstall(agent.id);
   const isInstalling = job.status === "installing";
   const hasFailed = job.status === "failed" && isTicked;
-  const words = rowWords(agent, signIn, isSetupOnly);
+  const words = rowWords(agent, signIn, isSetupOnly, isTicked);
+  // Ticked but not installed: a default agent on a new Mac, or an install that was stopped.
+  const needsInstall = isTicked && agent.status === "not_installed" && !isInstalling && !hasFailed;
 
   const description = isInstalling ? (
     <>
@@ -70,6 +83,10 @@ function ChoiceRow({ agent, isTicked, isDefault, signIn, isSetupOnly, onTick, on
   const control = hasFailed ? (
     <Button size="md" onClick={job.install}>
       <span className="text-fg">Retry</span>
+    </Button>
+  ) : needsInstall ? (
+    <Button size="md" onClick={onTick} aria-label={`Install ${agent.name}`}>
+      <span className="text-fg">Install</span>
     </Button>
   ) : isTicked && !isDefault ? (
     <Button
@@ -138,14 +155,62 @@ export function AgentChoices({
   onTick,
   onUntick,
   onMakeDefault,
+  order,
+  isLoading = false,
+  loadError = null,
+  onRetry,
+  onCheckAgain,
 }: AgentChoicesProps) {
   const [showAll, setShowAll] = useState(false);
-  const agents = visibleAgents(catalog, enabledIds, showAll);
+  const [isChecking, setIsChecking] = useState(false);
+  // Rows ticked or unticked here stay on screen until the screen goes, even past the first five.
+  const [kept, setKept] = useState<ReadonlySet<string>>(new Set());
+  const live = orderedAgents(catalog, enabledIds);
+  const byId = new Map(live.map((agent) => [agent.id, agent]));
+  const fixed = (order ?? live.map((agent) => agent.id)).flatMap((id) => byId.get(id) ?? []);
+  const all = [...fixed, ...live.filter((agent) => !fixed.includes(agent))];
+  // The first rows as the screen first showed them; an agent in use is never cut.
+  const [first, setFirst] = useState<ReadonlySet<string> | null>(null);
+  if (first === null && all.length > 0) {
+    setFirst(new Set(all.filter((agent, index) => index < FIRST_ROWS || enabledIds.includes(agent.id)).map((agent) => agent.id)));
+  }
+  const shown = showAll
+    ? all
+    : all.filter((agent) => first?.has(agent.id) || kept.has(agent.id) || enabledIds.includes(agent.id));
+  const keep = (id: string) => setKept((current) => new Set(current).add(id));
+
+  const checkAgain = () => {
+    if (!onCheckAgain) return;
+    setIsChecking(true);
+    void onCheckAgain().finally(() => setIsChecking(false));
+  };
+
   return (
     <section className="flex flex-col gap-2.5">
       <NumberedHeading number={1}>Agents you'll use</NumberedHeading>
       <ul aria-label="Agents you'll use" className="flex flex-col rounded-xl border border-border bg-surface-2">
-        {agents.map((agent) => (
+        {shown.length === 0 && (isLoading || loadError) && (
+          <li>
+            <SettingsRow
+              isTight
+              label={
+                loadError ? (
+                  <span className="text-danger">{`Could not load the agents: ${loadError}`}</span>
+                ) : (
+                  <span className="text-fg-subtle">Loading the agents…</span>
+                )
+              }
+              control={
+                loadError && onRetry ? (
+                  <Button size="md" onClick={onRetry}>
+                    <span className="text-fg">Try again</span>
+                  </Button>
+                ) : undefined
+              }
+            />
+          </li>
+        )}
+        {shown.map((agent) => (
           <ChoiceRow
             key={agent.id}
             agent={agent}
@@ -153,22 +218,40 @@ export function AgentChoices({
             isDefault={agent.id === defaultId}
             signIn={signInStateOf(agent.id)}
             isSetupOnly={isSetupOnly(agent.id)}
-            onTick={() => onTick(agent.id)}
-            onUntick={() => onUntick(agent.id)}
+            onTick={() => {
+              keep(agent.id);
+              onTick(agent.id);
+            }}
+            onUntick={() => {
+              keep(agent.id);
+              onUntick(agent.id);
+            }}
             onMakeDefault={() => onMakeDefault(agent.id)}
           />
         ))}
       </ul>
-      {(showAll || hasMoreAgents(catalog, enabledIds)) && (
-        <button
-          type="button"
-          aria-expanded={showAll}
-          onClick={() => setShowAll(!showAll)}
-          className="h-6.5 self-start rounded px-1 text-ui-sm text-fg-muted focus-ring"
-        >
-          {showAll ? "Show fewer agents" : "Show all agents"}
-        </button>
-      )}
+      <div className="flex items-center gap-1">
+        {(showAll || all.length > shown.length) && (
+          <button
+            type="button"
+            aria-expanded={showAll}
+            onClick={() => setShowAll(!showAll)}
+            className="h-6.5 rounded px-1 text-ui-sm text-fg-muted focus-ring"
+          >
+            {showAll ? "Show fewer agents" : "Show all agents"}
+          </button>
+        )}
+        {onCheckAgain && (
+          <button
+            type="button"
+            disabled={isChecking}
+            onClick={checkAgain}
+            className="h-6.5 rounded px-1 text-ui-sm text-fg-muted focus-ring disabled:opacity-40"
+          >
+            Check again
+          </button>
+        )}
+      </div>
     </section>
   );
 }

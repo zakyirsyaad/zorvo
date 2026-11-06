@@ -104,6 +104,7 @@ import { enabledAgentIds, isInUse, removedAgentName, removedAgentNameFor } from 
 import { cancelInstall, installEntryOf } from "./lib/agent-installs";
 import { isSetupOnly } from "./lib/acp-auth";
 import { withAgentRemoved } from "./lib/agent-catalog";
+import { loadAgentIcons } from "./lib/agent-icons";
 import { useCompareDraft } from "./hooks/useCompareDraft";
 import { useCompareRun, useCompareRunRows } from "./hooks/useCompareRun";
 import { useCompareModelProbe } from "./hooks/useCompareModelProbe";
@@ -705,6 +706,15 @@ export default function App() {
     openNewSession(folder.path, defaultAgentId);
   };
 
+  /** The welcome screen's Check again: the registry and the agents read again, then the catalog and logos. */
+  const checkAgentsAgain = async () => {
+    try {
+      await refreshAgents();
+    } finally {
+      await Promise.all([agentCatalog.reload(), loadAgentIcons()]);
+    }
+  };
+
   /** Onboarding's untick: out of use, and its install stopped. Zorvo's copy of it is never deleted here. */
   const untickAgent = (id: string) => {
     if (installEntryOf(id).status === "installing") cancelInstall(id);
@@ -965,6 +975,11 @@ export default function App() {
         suggestedFolders={suggestedFolders}
         onPickFolder={openFolder}
         onComplete={handleOnboardingComplete}
+        areAgentsLoaded={areAgentsLoaded}
+        catalogError={agentCatalog.error}
+        onRetryCatalog={() => void agentCatalog.reload()}
+        onCheckAgain={checkAgentsAgain}
+        notice={noticeToast}
       />
     );
   }

@@ -139,6 +139,16 @@ describe("First run and project folders", () => {
     expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("says so on the welcome screen when the folder dialog fails", async () => {
+    fakeStore().state.settings.onboardingCompleted = false;
+    fakeStore().state.recentFolders = [];
+    openDialog.mockRejectedValue(new Error("denied"));
+    await renderApp();
+    await click(screen.getByRole("button", { name: "Open folder" }));
+
+    expect(await screen.findByText(/Could not open the folder dialog/)).toBeDefined();
+  });
+
   it("unticking an installing agent cancels it and keeps its files", async () => {
     fakeStore().state.settings.onboardingCompleted = false;
     const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) =>

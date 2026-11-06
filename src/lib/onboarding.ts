@@ -12,7 +12,8 @@ const isOffered = (agent: CatalogAgent) => agent.status !== 'waiting' && agent.s
 const isHere = (agent: CatalogAgent, enabledIds: readonly string[]) =>
   enabledIds.includes(agent.id) || agent.status === 'by_zorvo' || agent.status === 'on_your_mac';
 
-function ordered(catalog: readonly CatalogAgent[], enabledIds: readonly string[]): CatalogAgent[] {
+/** Every agent the welcome screen can offer, in its order: in use or on this Mac, popular, then by name. */
+export function orderedAgents(catalog: readonly CatalogAgent[], enabledIds: readonly string[]): CatalogAgent[] {
   const offered = catalog.filter(isOffered);
   const here = offered.filter((agent) => isHere(agent, enabledIds));
   const popular = POPULAR_AGENT_IDS.map((id) => offered.find((agent) => agent.id === id)).filter(
@@ -30,14 +31,14 @@ function ordered(catalog: readonly CatalogAgent[], enabledIds: readonly string[]
  * yet (waiting, unsupported) are left out.
  */
 export function visibleAgents(catalog: readonly CatalogAgent[], enabledIds: readonly string[], showAll: boolean): CatalogAgent[] {
-  const all = ordered(catalog, enabledIds);
+  const all = orderedAgents(catalog, enabledIds);
   if (showAll) return all;
   return all.filter((agent, index) => index < FIRST_ROWS || enabledIds.includes(agent.id));
 }
 
 /** Whether Show all agents would show more. */
 export function hasMoreAgents(catalog: readonly CatalogAgent[], enabledIds: readonly string[]): boolean {
-  return ordered(catalog, enabledIds).length > visibleAgents(catalog, enabledIds, false).length;
+  return orderedAgents(catalog, enabledIds).length > visibleAgents(catalog, enabledIds, false).length;
 }
 
 const SIGN_IN_WORDS: Readonly<Record<SignInState, string>> = {
@@ -52,9 +53,12 @@ function sourceOf(agent: CatalogAgent): string {
   return `Runs with ${agent.distribution}`;
 }
 
-/** A welcome-screen row's line: where the agent runs and its sign-in, or that ticking it installs it. */
-export function rowWords(agent: CatalogAgent, signIn: SignInState, isSetupOnly: boolean): string {
-  if (agent.status === 'not_installed') return 'Zorvo installs it when you tick it';
+/**
+ * A welcome-screen row's line: where the agent runs and its sign-in; for one not installed, that ticking
+ * installs it, or, once ticked (a default agent, or an install that was stopped), that it is not yet.
+ */
+export function rowWords(agent: CatalogAgent, signIn: SignInState, isSetupOnly: boolean, isTicked = false): string {
+  if (agent.status === 'not_installed') return isTicked ? 'Not installed yet' : 'Zorvo installs it when you tick it';
   const state = isSetupOnly && signIn !== 'ready' ? 'Set up when you start' : SIGN_IN_WORDS[signIn];
   return `${sourceOf(agent)} · ${state}`;
 }
@@ -88,11 +92,15 @@ export function startGate({
   ticked,
   defaultId,
   folder,
+  isLoading = false,
 }: {
   ticked: readonly TickedAgent[];
   defaultId: string | null;
   folder: FolderOption | null;
+  /** The agents or their profiles are still loading: nothing to say yet. */
+  isLoading?: boolean;
 }): { canStart: boolean; note: string } {
+  if (isLoading) return { canStart: false, note: '' };
   if (ticked.length === 0) return { canStart: false, note: 'Tick an agent to continue.' };
   const installing = ticked.filter((agent) => agent.isInstalling);
   const startId = startAgentOf(

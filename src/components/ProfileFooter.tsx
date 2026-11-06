@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { Settings2, User } from "lucide-react";
 import type { GithubStatus } from "../lib/github";
 import { GithubMark } from "./GithubMark";
@@ -6,6 +6,8 @@ import { IconButton } from "./ui/IconButton";
 import { initialsFromName } from "../lib/initials";
 
 export interface ProfileFooterProps {
+  /** The Settings button, where focus goes back from Settings when what opened it is gone. */
+  settingsButtonRef?: Ref<HTMLButtonElement>;
   /** `git config --global user.name`, when the user has one set. */
   name?: string;
   /** `git config --global user.email`, when the user has one set. */
@@ -65,6 +67,7 @@ export function ProfileFooter({
   email,
   github,
   onOpenSettings,
+  settingsButtonRef,
   updateCount = 0,
   agents,
 }: ProfileFooterProps) {
@@ -100,7 +103,7 @@ export function ProfileFooter({
       <div className="flex shrink-0 items-center gap-0.5">
         {agents}
         {onOpenSettings && (
-          <IconButton label={settingsLabel(updateCount)} onClick={onOpenSettings} className="relative">
+          <IconButton ref={settingsButtonRef} label={settingsLabel(updateCount)} onClick={onOpenSettings} className="relative">
             <Settings2 size={14} />
             {updateCount > 0 && (
               <span aria-hidden="true" className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-primary" />

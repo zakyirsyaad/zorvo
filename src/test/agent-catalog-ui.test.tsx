@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { fakeTauriInvoke, type FakeTauriStore } from "./setup";
 import { fakeCatalog, makeCatalogAgent } from "./fixtures/catalog";
@@ -19,7 +20,9 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 import App from "../App";
 import { AgentCatalog } from "../components/agents/AgentCatalog";
-import { AppSettingsDialog } from "../components/AppSettingsDialog";
+import { SettingsPage } from "../components/settings/SettingsPage";
+import type { SettingsTab } from "../components/settings/SettingsNav";
+import { idleAppUpdate, pageAt } from "./fixtures/settings-page";
 import { useAgentCatalogActions, type AgentCatalogActions } from "../hooks/useAgentCatalogActions";
 import { useAgentCatalog } from "../hooks/useAgentCatalog";
 import { useAgentProfiles } from "../hooks/useDiscovery";
@@ -261,8 +264,9 @@ describe("AgentCatalog", () => {
   });
 });
 
-/** The Settings dialog with the app's real state, profile and catalog hooks behind it. */
+/** The Settings page with the app's real state, profile and catalog hooks behind it. */
 function Harness() {
+  const [section, setSection] = useState<SettingsTab>("general");
   const persisted = usePersistedState(() => {});
   const { agents, refresh, reload } = useAgentProfiles(() => {});
   const catalog = useAgentCatalog();
@@ -276,17 +280,19 @@ function Harness() {
     catalog,
   });
   return (
-    <AppSettingsDialog
-      isOpen
+    <SettingsPage
+      page={pageAt(section, setSection)}
       persisted={persisted}
       agents={agents}
       refreshAgents={refresh}
       catalog={catalog}
       actions={actions}
+      updateCount={0}
       recentFolders={[]}
       onRemoveRecentFolder={() => {}}
       onRunOnboarding={() => {}}
-      onClose={() => {}}
+      appUpdate={idleAppUpdate}
+      restartNote={null}
     />
   );
 }
@@ -307,7 +313,7 @@ async function openAgentsTab() {
   await act(async () => {
     render(<Harness />);
   });
-  fireEvent.click(screen.getByRole("tab", { name: /Agents/ }));
+  fireEvent.click(screen.getByRole("link", { name: /^Agents/ }));
   await screen.findByRole("listitem", { name: "Gemini CLI" });
 }
 
@@ -627,7 +633,7 @@ describe("Catalog actions — Remove in the app", () => {
     const sessionId = String(callsTo(spy, "acp_start_session")[0][1]?.sessionId);
 
     fireEvent.click(screen.getByRole("button", { name: /^Settings/ }));
-    fireEvent.click(screen.getByRole("tab", { name: /Agents/ }));
+    fireEvent.click(screen.getByRole("link", { name: /^Agents/ }));
     const qwen = await screen.findByRole("listitem", { name: "Qwen Code" });
     fireEvent.click(within(qwen).getByRole("button", { name: "Remove" }));
     expect(within(qwen).getByText(/Its open sessions stop\./)).toBeInTheDocument();

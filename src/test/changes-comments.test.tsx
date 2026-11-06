@@ -16,6 +16,7 @@ const FILE = "src/app.ts";
 const CWD = "/Users/test/developer/zorvo";
 const DIFF = "@@ -41,2 +41,2 @@\n the context\n-old line\n+const x\n";
 const STAT = { path: FILE, oldPath: null, kind: "modified", added: 1, removed: 1, isBinary: false, fingerprint: "f1" };
+const NOT_LOADED = "The diff has not loaded, so comments cannot be added. Refresh to try again.";
 const SLOT_ELSEWHERE = "The message holds comments for another session. Go back to it, or clear the message.";
 
 const commentOf = (overrides: Partial<ReviewComment> = {}): ReviewComment => ({
@@ -43,12 +44,14 @@ const sessionOf = (id: string, name: string, reviewComments: ReviewComment[]) =>
   reviewComments,
 });
 
+let isListFailing = false;
+
 function seed(sessions: unknown[], base: { name: string } | null = null) {
   fakeStore().state.sessions = sessions as FakeTauriStore["state"]["sessions"];
   vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
     if (cmd === "session_changes") return Promise.resolve([{ path: FILE, oldPath: null, kind: "modified" }]);
     if (cmd === "session_diff_targets") return Promise.resolve({ base, root: CWD, prefix: "" });
-    if (cmd === "session_diff_stats") return Promise.resolve([STAT]);
+    if (cmd === "session_diff_stats") return isListFailing ? Promise.reject(new Error("git is busy")) : Promise.resolve([STAT]);
     if (cmd === "session_file_diff") return Promise.resolve(DIFF);
     return fakeTauriInvoke(cmd, args);
   });
@@ -86,7 +89,10 @@ const prompt = () => screen.getByRole("textbox", { name: "Prompt" }) as HTMLText
 beforeAll(() => {
   Element.prototype.scrollIntoView = () => {};
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  isListFailing = false;
+  vi.restoreAllMocks();
+});
 
 describe("Line comments in the Changes tab", () => {
   it("the Changes inline diff offers a comment on its active line", async () => {
@@ -150,5 +156,14 @@ describe("Line comments in the Changes tab", () => {
     await waitFor(() => expect(review.getByText("Not in this diff")).toBeInTheDocument());
     expect(review.getAllByText("Written in Changes.")).toHaveLength(1);
     expect(review.queryByRole("button", { name: /^Add \d+ comments? to message$/ })).toBeNull();
+  });
+
+  it("Changes' Add says why when the list of changes against HEAD failed", async () => {
+    isListFailing = true;
+    await openChanges([sessionOf("s-a", "Alpha work", [commentOf()])]);
+
+    const add = await within(changes()).findByRole("button", { name: "Add 1 comment to message" });
+    expect(add).toBeDisabled();
+    await waitFor(() => expect(add).toHaveAccessibleDescription(NOT_LOADED));
   });
 });

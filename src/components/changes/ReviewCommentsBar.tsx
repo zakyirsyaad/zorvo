@@ -28,7 +28,9 @@ export function ReviewCommentsBar({ variant = "review", review, adder, checked, 
   onTargetChange: (target: DiffTargetId) => void;
   onFocusLost: () => void;
 }) {
-  const hasSent = checked.some(({ comment }) => comment.sentAt !== undefined);
+  // Clear sent removes only what this bar is about: the Changes tab never lists another target's comments.
+  const sentIds = new Set(checked.flatMap(({ comment }) => (comment.sentAt === undefined ? [] : [comment.id])));
+  const hasSent = sentIds.size > 0;
   const elsewhere = checked.filter(({ status }) => status === "elsewhere");
   const elsewhereTargets = [...new Set(elsewhere.map(({ comment }) => comment.target))];
   const gone = checked.filter(({ comment, status }) => status !== "elsewhere" && reads[comment.file]?.status === "missing");
@@ -58,7 +60,7 @@ export function ReviewCommentsBar({ variant = "review", review, adder, checked, 
             </>
           )}
           {hasSent && (
-            <Button variant="ghost" size="sm" onClick={review.clearSent}>
+            <Button variant="ghost" size="sm" onClick={() => review.clearSent(sentIds)}>
               Clear sent
             </Button>
           )}
@@ -67,11 +69,12 @@ export function ReviewCommentsBar({ variant = "review", review, adder, checked, 
               variant={variant === "review" ? "primary" : "outline"}
               size={variant === "review" ? "md" : "sm"}
               disabled={adder.isWaiting || reason !== undefined}
-              aria-label={`Add ${commentsWord(counted.length)} to message`}
+              // The card's short "Add 2" starts its name, so Voice Control finds it by what it shows.
+              aria-label={variant === "card" ? `Add ${commentsWord(counted.length)} to message` : undefined}
               aria-describedby={reason ? adder.reasonId : undefined}
               onClick={() => adder.add(counted)}
             >
-              {variant === "review" ? `Add ${counted.length} to message` : `Add ${counted.length}`}
+              {variant === "review" ? `Add ${commentsWord(counted.length)} to message` : `Add ${counted.length}`}
             </Button>
           )}
         </div>

@@ -37,7 +37,8 @@ export interface ReviewComments {
   /** An edited comment is plain again, so it can be added afresh: this clears `sentAt`. */
   editComment: (id: string, body: string) => void;
   deleteComment: (id: string) => void;
-  clearSent: () => void;
+  /** Removes the sent comments among `ids`, or every sent comment without them. */
+  clearSent: (ids?: ReadonlySet<string>) => void;
 }
 
 export function draftKeyOf({ target, file, side, line }: CommentAnchor): DraftKey {
@@ -132,6 +133,7 @@ export function useReviewComments(
       change((prev) => prev.filter((comment) => comment.id !== id));
       closeDraft(editDraftKeyOf(id));
     },
-    clearSent: () => change((prev) => prev.filter((comment) => comment.sentAt === undefined)),
+    clearSent: (ids) =>
+      change((prev) => prev.filter((comment) => comment.sentAt === undefined || (ids !== undefined && !ids.has(comment.id)))),
   };
 }

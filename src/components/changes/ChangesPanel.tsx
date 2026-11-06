@@ -41,6 +41,8 @@ export interface ChangesPanelProps {
   addReview?: AddReview;
   /** Says why the diff's paths could not be read. */
   onError?: (message: string) => void;
+  /** The last read of `stats` failed, so comments cannot be checked or added. */
+  statsFailed?: boolean;
 }
 
 /** The Changes tab lists what Commit would take, so its comments are always on the diff against HEAD. */
@@ -144,6 +146,7 @@ export function ChangesPanel({
   review,
   addReview,
   onError,
+  statsFailed = false,
 }: ChangesPanelProps) {
   // Files left out of the commit; any new change is included by default.
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(() => new Set());
@@ -165,7 +168,7 @@ export function ChangesPanel({
     targets,
     stats: stats ?? null,
     refreshes: version,
-    blockedReason: haveTargetsFailed ? DIFF_NOT_LOADED : undefined,
+    blockedReason: haveTargetsFailed || statsFailed ? DIFF_NOT_LOADED : undefined,
     onFocusLost: focusPanel,
   });
   // Another target's comments belong to the full review, which can show that target.

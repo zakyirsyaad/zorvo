@@ -1327,6 +1327,7 @@ export default function App() {
                     diffStats={diffStats}
                     onOpenDiff={() => inspector.openDiff()}
                     stats={inspector.headStats ?? undefined}
+                    statsFailed={inspector.headStatsFailed}
                     review={activeSession ? review.review : undefined}
                     addReview={activeSession ? review.addReview : undefined}
                     onError={reportError}

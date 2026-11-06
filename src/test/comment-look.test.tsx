@@ -129,12 +129,43 @@ describe("the comments bar as drawn", () => {
     expect(bar.classList.contains("border-t")).toBe(false);
   });
 
-  it("its Add keeps the full name", async () => {
+  it("its Add says in words what its name says", async () => {
     await renderView(two);
 
     const add = screen.getByRole("button", { name: "Add 2 comments to message" });
-    expect(add.textContent).toBe("Add 2 to message");
+    // Voice Control finds a button by the words it shows, so they are its name.
+    expect(add.textContent).toBe("Add 2 comments to message");
     expect(add.className).toContain("bg-primary");
+  });
+
+  it("Clear sent clears only the sent comments the bar shows", () => {
+    const sentHere = commentOf({ id: "c-h", body: "Sent on HEAD.", sentAt: 5 });
+    const sentOnBase = commentOf({ id: "c-b", body: "Sent on main.", target: "base", sentAt: 5 });
+    function Bar() {
+      const [comments, setComments] = useState([sentHere, sentOnBase]);
+      const review = useReviewComments("s-a", comments, (_id, change) => setComments(change));
+      return (
+        <>
+          <p data-testid="left">{comments.map((comment) => comment.id).join(",")}</p>
+          <ReviewCommentsBar
+            variant="card"
+            review={review}
+            checked={comments.filter((comment) => comment.target === "head").map((comment) => ({ comment, status: "current" as const }))}
+            target="head"
+            targets={{ base: null, root: "/w", prefix: "" }}
+            options={["head"]}
+            reads={{}}
+            listed={[STAT]}
+            onTargetChange={() => {}}
+            onFocusLost={() => {}}
+          />
+        </>
+      );
+    }
+    render(<Bar />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear sent" }));
+    expect(screen.getByTestId("left").textContent).toBe("c-b");
   });
 
   it("the card variant reads Add 2", () => {

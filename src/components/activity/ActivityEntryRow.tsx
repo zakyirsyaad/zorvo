@@ -58,9 +58,14 @@ export const ActivityEntryRow = memo(function ActivityEntryRow({ entry, isBusy, 
   onJump: (messageId: string) => void;
 }) {
   const result = activityResult(entry, isBusy);
-  const label = `${escapeVisible(textOf(entry).split("\n")[0].slice(0, MAX_LABEL_LENGTH))}, ${result}. Show in the chat`;
+  // What you picked says more than the result: "Allow always" grants a standing permission.
+  const choice = entry.kind === "permission" && entry.choice ? ` (${escapeVisible(entry.choice)})` : "";
+  const label = `${escapeVisible(textOf(entry).split("\n")[0].slice(0, MAX_LABEL_LENGTH))}, ${result}${choice}. Show in the chat`;
   return (
-    <li className="relative flex items-start gap-2.5 py-[5px] pl-[22px] before:absolute before:inset-y-0 before:left-1.5 before:w-px before:bg-border">
+    // The whole command, every line, for a row that shows only its first.
+    <li
+      title={textOf(entry).split("\n").map(escapeVisible).join("\n")}
+      className="relative flex items-start gap-2.5 py-[5px] pl-[22px] before:absolute before:inset-y-0 before:left-1.5 before:w-px before:bg-border">
       <span
         aria-hidden="true"
         data-dot=""

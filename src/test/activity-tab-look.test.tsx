@@ -68,6 +68,8 @@ describe("the Activity tab as drawn", () => {
     expect(card).toHaveClass("bg-attention-surface", "border-attention-border");
     expect(within(card).getByText("2 files changed that Claude Code didn't report")).toHaveClass("font-semibold");
     expect(within(card).getByText("src/a.ts")).toHaveClass("font-mono");
+    // The agent is not the only one who changes files: the card says so rather than blame it.
+    expect(within(card).getByText("You, a command or another session may have changed them.")).toBeTruthy();
     act(() => within(card).getByRole("button", { name: "Show in Changes" }).click());
     expect(handlers.onShowChanges).toHaveBeenCalledTimes(1);
   });
@@ -112,6 +114,26 @@ describe("the Activity tab as drawn", () => {
     const asked = screen.getByText("Asked").closest("li")!;
     expect(within(asked).getByRole("button", { name: /You denied/ })).toHaveClass("text-danger");
     expect(asked).toHaveTextContent("to run rm -rf node_modules");
+  });
+
+  it("a row keeps the full command and the chosen option for the record", async () => {
+    const allowed: ActionCard = {
+      id: "c-2",
+      sessionId: "s-1",
+      title: "Permission requested",
+      prompt: "Run tests",
+      commandSnippet: "pnpm test\n--run",
+      status: "approved",
+      chosenOptionId: "always",
+      timestamp: 900,
+      options: [{ optionId: "always", name: "Allow always", kind: "allow_always" }],
+    };
+    await show({ messages: [user("u1", "Go"), reply("r1", [{ kind: "execute", command: "ls\n-la" }], { actionCard: allowed })] });
+
+    const result = screen.getByRole("button", { name: /Allowed/ });
+    expect(result).toHaveAccessibleName(expect.stringContaining("Allow always"));
+    expect(result.closest("li")).toHaveAttribute("title", "pnpm test\n--run");
+    expect(screen.getByRole("button", { name: /^ls, Done/ }).closest("li")).toHaveAttribute("title", "ls\n-la");
   });
 
   it("a running tool in an idle session reads Did not finish with an open dot", async () => {

@@ -128,7 +128,8 @@ function FileRow({ entry, depth, view }: { entry: DirEntryInfo; depth: number; v
             aria-label={`Add ${entry.name} to prompt`}
             title="Add to prompt"
             onClick={() => onInsertPath(joinWorkspacePath(view.rootPath, entry.relativePath))}
-            className="flex h-5 shrink-0 items-center gap-1 rounded border border-border-strong px-1.5 font-sans text-caption text-fg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-ring"
+            // Out of the layout until then, so the hidden pill does not cut every file name short.
+            className="hidden h-5 shrink-0 items-center gap-1 rounded border border-border-strong px-1.5 font-sans text-caption text-fg group-hover:flex group-focus-within:flex focus-ring"
           >
             <Plus size={10} aria-hidden="true" />
             Add to prompt

@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
+import { useState } from "react";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { FileViewer, type FileViewerProps } from "../components/files/FileViewer";
 import { TOKEN_STYLE } from "../lib/code-tokens";
@@ -87,5 +88,34 @@ describe("the file view as drawn", () => {
 
   it("keywords are medium weight", () => {
     expect(TOKEN_STYLE.keyword).toContain("font-medium");
+  });
+
+  it("keeps the code rows when the window re-renders during a selection", async () => {
+    function Harness() {
+      const [, setTick] = useState(0);
+      return (
+        <>
+          <button onClick={() => setTick((t) => t + 1)}>tick</button>
+          {/* A new callback each render, as App passes one. */}
+          <FileViewer rootPath={ROOT} relativePath="src/sidebar/a.ts" version={0} onBack={() => {}} onInsertPath={() => {}} onInsertText={() => {}} />
+        </>
+      );
+    }
+    await act(async () => {
+      render(<Harness />);
+    });
+    selectLines(3, 4);
+
+    // The rows read TOKEN_STYLE for every keyword they draw: a read means they were drawn again.
+    const keyword = TOKEN_STYLE.keyword;
+    let reads = 0;
+    Object.defineProperty(TOKEN_STYLE, "keyword", { configurable: true, enumerable: true, get: () => (reads++, keyword) });
+    try {
+      act(() => screen.getByText("tick").click());
+      selectLines(3, 4);
+      expect(reads).toBe(0);
+    } finally {
+      Object.defineProperty(TOKEN_STYLE, "keyword", { configurable: true, enumerable: true, writable: true, value: keyword });
+    }
   });
 });

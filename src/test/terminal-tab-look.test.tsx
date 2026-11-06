@@ -75,6 +75,13 @@ describe("the terminal tab as drawn", () => {
     expect(terminals.resize).toHaveBeenCalledWith("shell-1", 100, 30);
   });
 
+  it("the strip draws focus rings in the terminal's own fixed grey, so they show in light mode", () => {
+    renderDrawer([tab("shell-1", 1)]);
+    expect(screen.getByRole("tablist", { name: "Terminals" }).parentElement).toHaveClass(
+      "[--color-focus-ring:var(--color-terminal-fg-muted)]",
+    );
+  });
+
   it("xterm draws 18px rows with a block cursor", () => {
     expect(XTERM_OPTIONS.lineHeight).toBe(1.5);
     expect(XTERM_OPTIONS.cursorStyle).toBe("block");

@@ -92,4 +92,12 @@ describe("the Files tab as drawn", () => {
     expect(add).toHaveTextContent("Add to prompt");
     expect(add).toHaveClass("h-5", "border-border-strong");
   });
+
+  it("the pill takes no room until its row is pointed at or focused", async () => {
+    await renderPanel();
+    await openTo("src", "components");
+    const add = screen.getByRole("button", { name: "Add SessionList.tsx to prompt" });
+    expect(add).toHaveClass("hidden", "group-hover:flex", "group-focus-within:flex");
+    expect(add).not.toHaveClass("opacity-0");
+  });
 });

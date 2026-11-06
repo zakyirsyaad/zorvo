@@ -68,6 +68,7 @@ function Unreported({ files, agentName, compared, onShowChanges }: {
         ))}
       </ul>
       {files.length > shown.length && <p className="pl-[22px] text-caption text-fg-muted">{files.length - shown.length} more.</p>}
+      <p className="pl-[22px] text-caption text-fg-subtle">You, a command or another session may have changed them.</p>
       <div className="flex items-center justify-between gap-2">
         <p className="text-caption text-fg-subtle">{compared}</p>
         <Button variant="outline" size="sm" onClick={onShowChanges}>

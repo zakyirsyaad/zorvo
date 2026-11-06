@@ -113,7 +113,8 @@ export function TerminalDrawer({
   return (
     <section aria-label="Terminal" className={`flex min-h-0 flex-1 flex-col ${hasTabs ? "bg-terminal-bg" : "bg-surface-1"}`}>
       {(hasTabs || onHide) && (
-        <div className="flex h-9 shrink-0 items-center gap-1 border-b border-terminal-surface bg-terminal-bg pr-2 pl-3">
+        // The theme's focus ring turns dark in light mode, which would vanish on this strip: it takes the terminal's fixed grey.
+        <div className="flex h-9 shrink-0 items-center gap-1 border-b border-terminal-surface bg-terminal-bg pr-2 pl-3 [--color-focus-ring:var(--color-terminal-fg-muted)]">
           <div ref={tabListRef} role="tablist" aria-label="Terminals" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
             {tabs.map((tab) => (
               <TabItem

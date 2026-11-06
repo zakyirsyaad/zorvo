@@ -1,4 +1,4 @@
-import { useEffect, useState, type RefObject } from "react";
+import { useCallback, useEffect, useState, type RefObject } from "react";
 
 export interface LineRange {
   first: number;
@@ -56,7 +56,9 @@ export function useLineSelection(body: RefObject<HTMLElement | null>): { range: 
     const read = (event: Event) => {
       // Escape's keydown dropped the offer; its keyup must not read the same selection back.
       if (event instanceof KeyboardEvent && event.key === "Escape") return;
-      setRange(readRange(element));
+      const next = readRange(element);
+      // The same lines keep the same range, so the viewer's memoized rows are not drawn again.
+      setRange((current) => (current && next && current.first === next.first && current.last === next.last ? current : next));
     };
     element.addEventListener("mouseup", read);
     element.addEventListener("keyup", read);
@@ -83,5 +85,6 @@ export function useLineSelection(body: RefObject<HTMLElement | null>): { range: 
     };
   }, [range, body]);
 
-  return { range, clear: () => setRange(null) };
+  const clear = useCallback(() => setRange(null), []);
+  return { range, clear };
 }

@@ -3,6 +3,7 @@ import { Check, ChevronLeft, Copy, ExternalLink, Plus } from "lucide-react";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { useFileContent } from "../../hooks/useFileContent";
+import { useLatest } from "../../hooks/useLatest";
 import { useChangedLines } from "../../hooks/useChangedLines";
 import { useLineSelection } from "../../hooks/useLineSelection";
 import { lineQuote, lineRangeLabel } from "../../lib/line-quote";
@@ -211,10 +212,13 @@ export function FileViewer({
     });
   };
 
-  const range = selection.range;
+  const { range, clear: clearSelection } = selection;
+  // The caller passes a new callback on every render; read through a ref, it does not rebuild the card.
+  const insertTextRef = useLatest(onInsertText);
+  const canInsertText = onInsertText !== undefined;
   // Built once per selection: a new element each render would rebuild every row of the memoized lines.
   const addLines = useMemo(() => {
-    if (!onInsertText || !range) return null;
+    if (!canInsertText || !range) return null;
     return (
       <div
         style={{ top: BODY_PADDING_PX + range.last * LINE_HEIGHT_PX + ADD_LINES_GAP_PX, left: ADD_LINES_LEFT_PX }}
@@ -227,8 +231,8 @@ export function FileViewer({
           // mousedown, not click, would end the selection the click is about.
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => {
-            onInsertText(lineQuote(relativePath, range.first, range.last, lines.slice(range.first - 1, range.last), language.fence));
-            selection.clear();
+            insertTextRef.current?.(lineQuote(relativePath, range.first, range.last, lines.slice(range.first - 1, range.last), language.fence));
+            clearSelection();
             window.getSelection()?.removeAllRanges();
           }}
         >
@@ -236,7 +240,7 @@ export function FileViewer({
         </Button>
       </div>
     );
-  }, [onInsertText, range, relativePath, lines, language.fence, selection]);
+  }, [canInsertText, range, relativePath, lines, language.fence, clearSelection, insertTextRef]);
 
   return (
     <section aria-label="File viewer" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1">
@@ -288,7 +292,7 @@ export function FileViewer({
             tokens={tokens}
             changes={isMarking ? changes : NO_CHANGES}
             bodyRef={bodyRef}
-            selected={onInsertText ? range : null}
+            selected={canInsertText ? range : null}
             overlay={addLines}
           />
         ) : (

@@ -68,6 +68,9 @@ function facts(n: number, overrides: Partial<RowFacts> = {}, sessionOverrides: P
     hasOpenForm: false,
     needsSignIn: false,
     failed: false,
+    turnStartedAt: 0,
+    finishedAt: null,
+    hasUnread: false,
     ...overrides,
   };
 }
@@ -184,13 +187,13 @@ describe("CompareRunPanel", () => {
 
     await waitFor(() => expect(within(rowOf("Qwen Code")).getByText("1 file")).toBeInTheDocument());
     expect(within(rowOf("Claude Code")).getByText("—")).toBeInTheDocument();
-    expect(within(rowOf("Claude Code")).getByText("Done")).toBeInTheDocument();
+    expect(within(rowOf("Claude Code")).getByText("Finished")).toBeInTheDocument();
   });
 
   it.each<[string, Partial<RowFacts>, Partial<Session>]>([
     ["Failed", { failed: true }, { status: "terminated", exitCode: 3 }],
     ["Stopped", {}, { status: "terminated" }],
-    ["Done", {}, {}],
+    ["Finished", {}, {}],
   ])("reads the numbers again when a row goes from Working to %s, with no new version", async (label, rowChange, sessionChange) => {
     const answers = { "/wt/1": [stat("a.ts", 1, 0)] };
     answerDiffs(answers);
@@ -365,7 +368,7 @@ describe("CompareRunPanel", () => {
 
     const bar = within(screen.getByRole("group", { name: "Confirm pick" }));
     expect(bar.getByText("Keep Claude Code's work and archive the others?")).toBeInTheDocument();
-    expect(bar.queryByText(/mid-turn/)).toBeNull();
+    expect(bar.queryByText(/will be stopped/)).toBeNull();
     expect(p.onPick).not.toHaveBeenCalled();
     fireEvent.click(bar.getByRole("button", { name: "Pick Claude Code" }));
     expect(p.onPick).toHaveBeenCalledWith("s-1");
@@ -399,7 +402,7 @@ describe("CompareRunPanel", () => {
     await within(rowOf("Claude Code")).findByText("+1");
 
     fireEvent.click(within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" }));
-    expect(screen.getByText("This stops Qwen Code and Kimi CLI mid-turn.")).toBeInTheDocument();
+    expect(screen.getByText("Qwen Code and Kimi CLI are still working and will be stopped.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(screen.queryByRole("group", { name: "Confirm pick" })).toBeNull();
@@ -413,7 +416,7 @@ describe("CompareRunPanel", () => {
 
     fireEvent.click(within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" }));
 
-    expect(screen.getByText("This stops Qwen Code mid-turn.")).toBeInTheDocument();
+    expect(screen.getByText("Qwen Code is still working and will be stopped.")).toBeInTheDocument();
   });
 
   it("keeps the bar when the working agents finish, without the stops line, and Pick still works", async () => {
@@ -422,13 +425,13 @@ describe("CompareRunPanel", () => {
     const { rerender } = await renderPanel(p);
     await within(rowOf("Claude Code")).findByText("+1");
     fireEvent.click(within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" }));
-    expect(screen.getByText("This stops Qwen Code mid-turn.")).toBeInTheDocument();
+    expect(screen.getByText("Qwen Code is still working and will be stopped.")).toBeInTheDocument();
 
     rerender(<CompareRunPanel {...props([facts(1), facts(2)], { onPick: p.onPick })} />);
 
     const bar = within(screen.getByRole("group", { name: "Confirm pick" }));
     expect(bar.getByText("Keep Claude Code's work and archive the others?")).toBeInTheDocument();
-    expect(screen.queryByText(/mid-turn/)).toBeNull();
+    expect(screen.queryByText(/will be stopped/)).toBeNull();
     fireEvent.click(bar.getByRole("button", { name: "Pick Claude Code" }));
     expect(p.onPick).toHaveBeenCalledWith("s-1");
   });
@@ -459,9 +462,9 @@ describe("compare run copy", () => {
   });
 
   it.each<[string[], string]>([
-    [["Claude Code"], "This stops Claude Code mid-turn."],
-    [["Claude Code", "Qwen Code"], "This stops Claude Code and Qwen Code mid-turn."],
-    [["A", "B", "C"], "This stops A, B and C mid-turn."],
+    [["Claude Code"], "Claude Code is still working and will be stopped."],
+    [["Claude Code", "Qwen Code"], "Claude Code and Qwen Code are still working and will be stopped."],
+    [["A", "B", "C"], "A, B and C are still working and will be stopped."],
   ])("stopsLine(%j)", (names, line) => {
     expect(stopsLine(names)).toBe(line);
   });

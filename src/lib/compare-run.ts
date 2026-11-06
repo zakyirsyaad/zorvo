@@ -27,6 +27,12 @@ export interface RowFacts {
   hasOpenForm: boolean;
   needsSignIn: boolean;
   failed: boolean;
+  /** When the current or last turn began: its prompt's time, else the session's start. */
+  turnStartedAt: number;
+  /** When that turn's reply finished, if its time is known. */
+  finishedAt: number | null;
+  /** The session finished something the user has not looked at. */
+  hasUnread: boolean;
 }
 
 const STATUS_LABELS: Record<RunRowStatus, string> = {
@@ -35,7 +41,7 @@ const STATUS_LABELS: Record<RunRowStatus, string> = {
   'needs-you': 'Needs you',
   'needs-sign-in': 'Needs sign-in',
   failed: 'Failed',
-  done: 'Done',
+  done: 'Finished',
   stopped: 'Stopped',
 };
 
@@ -95,9 +101,46 @@ const STATUS_DOTS: Record<RunRowStatus, Status> = {
   stopped: 'idle',
 };
 
-/** The dot beside a row's status word; done and stopped show the word alone. */
-export function runStatusDot(status: RunRowStatus): Status {
-  return STATUS_DOTS[status];
+/** The dot beside a row's status word; done shows one only while unread, and stopped never does. */
+export function runStatusDot(status: RunRowStatus, hasUnread = false): Status {
+  return status === 'done' && hasUnread ? 'unread' : STATUS_DOTS[status];
+}
+
+const MINUTE_MS = 60_000;
+const MINUTES_PER_HOUR = 60;
+
+/** "1 min" under two minutes, "12 min" under an hour, then "1 h 5 min" or "2 h". */
+export function elapsedWords(ms: number): string {
+  const minutes = Math.max(1, Math.floor(ms / MINUTE_MS));
+  if (minutes < MINUTES_PER_HOUR) return `${minutes} min`;
+  const hours = Math.floor(minutes / MINUTES_PER_HOUR);
+  const rest = minutes % MINUTES_PER_HOUR;
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
+}
+
+/** A row's status in words, with the turn's time while it works and once it finished ("Working · 12 min"). */
+export function rowStatusWords(facts: RowFacts, status: RunRowStatus, now: number): string {
+  const label = STATUS_LABELS[status];
+  if (status === 'working') return `${label} · ${elapsedWords(now - facts.turnStartedAt)}`;
+  if (status === 'done' && facts.finishedAt !== null) return `${label} · ${elapsedWords(facts.finishedAt - facts.turnStartedAt)}`;
+  return label;
+}
+
+/** The time of the last prompt, and of the finished reply after it; a replayed message's time is not known. */
+function turnTimes(session: Session, messages: readonly ChatMessage[]): Pick<RowFacts, 'turnStartedAt' | 'finishedAt'> {
+  const hasTime = (message: ChatMessage) => message.hasKnownTime !== false;
+  let reply: ChatMessage | undefined;
+  let prompt: ChatMessage | undefined;
+  for (let index = messages.length - 1; index >= 0 && !prompt; index -= 1) {
+    const message = messages[index];
+    if (message.role === 'user') prompt = message;
+    else if (!reply && message.isComplete === true) reply = message;
+  }
+  const isPromptTimed = !prompt || hasTime(prompt);
+  return {
+    turnStartedAt: prompt && isPromptTimed ? prompt.timestamp : session.createdAt,
+    finishedAt: reply && hasTime(reply) && isPromptTimed ? reply.timestamp : null,
+  };
 }
 
 /** The confirm bar's question before the others are archived. */
@@ -105,10 +148,10 @@ export function pickQuestion(winnerName: string): string {
   return `Keep ${winnerName}'s work and archive the others?`;
 }
 
-/** The confirm bar's second line, naming the agents a Pick cuts off mid-turn. */
+/** The confirm bar's words for the agents a Pick cuts off mid-turn. */
 export function stopsLine(names: readonly string[]): string {
   const listed = names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
-  return `This stops ${listed} mid-turn.`;
+  return `${listed} ${names.length === 1 ? 'is' : 'are'} still working and will be stopped.`;
 }
 
 /** True when no row is still starting, working or waiting for the user. */
@@ -169,6 +212,8 @@ export function rowFactsOf(run: CompareRun, { isBusy, transcripts, failedTurns, 
       hasOpenForm: isLive && hasPendingElicitation(messages),
       needsSignIn: signInNeeded.has(session.id),
       failed: session.id in failedTurns || exitedBadly,
+      ...turnTimes(session, messages),
+      hasUnread: session.hasUnread === true,
     };
   });
 }

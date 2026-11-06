@@ -431,7 +431,7 @@ describe("starting a compare run", () => {
 
     const bar = within(await screen.findByRole("group", { name: "Confirm pick" }));
     expect(bar.getByText("Keep Claude Code's work and archive the others?")).toBeInTheDocument();
-    expect(bar.getByText("This stops Qwen Code mid-turn.")).toBeInTheDocument();
+    expect(bar.getByText("Qwen Code is still working and will be stopped.")).toBeInTheDocument();
     expect(calls(spy, "acp_stop_session")).toHaveLength(0);
     await click(bar.getByRole("button", { name: "Pick Claude Code" }));
 

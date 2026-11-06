@@ -210,9 +210,30 @@ export function sourceLine(agent: CatalogAgent): string {
   return agent.listed ? line : `${line} · no longer listed`;
 }
 
-/** An available agent's line: what Add would install, else its description, else why it cannot be used. */
+/** What an available agent's line says first, before its description: why it cannot be used, or that it is already here. */
+function availableReason(agent: CatalogAgent): string | null {
+  switch (agent.status) {
+    case 'waiting':
+    case 'unsupported':
+      return baseStatusLine(agent, null, false);
+    case 'on_your_mac':
+      return 'On this Mac';
+    case 'by_zorvo':
+      return 'Installed by Zorvo';
+    default:
+      return null;
+  }
+}
+
+/**
+ * An available agent's line: what Add would install; else why it cannot be used, or that it is already
+ * on this Mac (so Add installs nothing), then its description; and whether the registry still lists it.
+ */
 export function availableLine(agent: CatalogAgent, plan: readonly InstallStep[] | null): string {
-  if (plan && plan.length > 0) return `Installs ${describePlan(plan)} into Zorvo's folder`;
-  if (agent.description) return agent.description;
-  return agent.status === 'waiting' || agent.status === 'unsupported' ? baseStatusLine(agent, plan, false) : '';
+  const line =
+    plan && plan.length > 0
+      ? `Installs ${describePlan(plan)} into Zorvo's folder`
+      : [availableReason(agent), agent.description].filter(Boolean).join(' · ');
+  if (agent.listed) return line;
+  return line ? `${line} · No longer listed` : 'No longer listed';
 }

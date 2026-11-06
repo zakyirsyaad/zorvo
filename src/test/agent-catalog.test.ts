@@ -317,6 +317,26 @@ describe("availableLine", () => {
     expect(availableLine(makeCatalogAgent({ id: "q", name: "Q", description: "Alibaba's coding assistant" }), null)).toBe("Alibaba's coding assistant");
   });
 
+  it("puts why an agent cannot be used before its description", () => {
+    expect(availableLine(makeCatalogAgent({ id: "u", name: "U", description: "Moonshot's coding agent", status: "unsupported" }), null)).toBe(
+      "Not available for this Mac · Moonshot's coding agent",
+    );
+    expect(availableLine(makeCatalogAgent({ id: "w", name: "W", description: "A coding agent", status: "waiting" }), null)).toBe(
+      "Not available yet · A coding agent",
+    );
+  });
+
+  it("says an available agent is already on this Mac, so Add installs nothing", () => {
+    expect(
+      availableLine(makeCatalogAgent({ id: "o", name: "O", description: "An open agent", status: "on_your_mac", location: "/opt/homebrew/bin/opencode" }), null),
+    ).toBe("On this Mac · An open agent");
+    expect(availableLine(makeCatalogAgent({ id: "z", name: "Z", status: "by_zorvo" }), null)).toBe("Installed by Zorvo");
+  });
+
+  it("says when the registry no longer lists an available agent", () => {
+    expect(availableLine(makeCatalogAgent({ id: "q", name: "Q", description: "Gone", listed: false }), null)).toBe("Gone · No longer listed");
+  });
+
   it("says why an agent cannot be used, with no description", () => {
     expect(availableLine(makeCatalogAgent({ id: "u", name: "U", status: "unsupported" }), null)).toBe("Not available for this Mac");
     expect(availableLine(makeCatalogAgent({ id: "r", name: "R", status: "ready" }), null)).toBe("");

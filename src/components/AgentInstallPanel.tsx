@@ -31,6 +31,8 @@ export function AgentInstallPanel({ agent }: AgentInstallPanelProps) {
         }
       >
         <InstallStatus progress={progress} />
+        {/* A Cancel that failed leaves the install running, and says why. */}
+        {error && <p className="mt-2 text-danger">{error}</p>}
       </BlockerCard>
     );
   }

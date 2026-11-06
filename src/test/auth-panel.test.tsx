@@ -248,7 +248,6 @@ describe("AuthPanel", () => {
       expect(open.className).toContain("border-border-strong");
       expect(open.closest(".border-t")).toBeNull();
       expect(open.parentElement).toHaveTextContent("Already set up in Qwen Code? Check again.");
-      expect(screen.getByRole("status")).toHaveTextContent("Not checked yet.");
       expect(screen.queryByText("Already set up?")).toBeNull();
     });
 
@@ -257,6 +256,26 @@ describe("AuthPanel", () => {
 
       expect(screen.getByRole("region", { name: "Sign in to Qwen Code" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Open setup in terminal" }).className).toContain("border-border-strong");
+    });
+  });
+
+  describe("review fixes", () => {
+    const setup: AuthMethod = { id: "openai", name: "Use OpenAI API key", kind: "setup" };
+
+    it("an outline method button's label is in fg", () => {
+      renderPanel();
+      expect(screen.getByRole("button", { name: "Sign in with Claude Subscription" }).querySelector(".text-fg")).not.toBeNull();
+    });
+
+    it("an agent that lists no method is not asked to pick one", () => {
+      renderPanel({ methods: [] });
+      expect(screen.queryByText(/^Pick how/)).toBeNull();
+      expect(screen.getByText("Claude Code needs you to sign in before it can start.")).toBeInTheDocument();
+    });
+
+    it("an idle setup card claims nothing about a check", () => {
+      renderPanel({ agentName: "Qwen Code", methods: [setup] });
+      expect(screen.getByRole("status")).toBeEmptyDOMElement();
     });
   });
 });

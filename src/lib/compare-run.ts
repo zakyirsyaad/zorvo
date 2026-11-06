@@ -29,8 +29,6 @@ export interface RowFacts {
   failed: boolean;
   /** When the current or last turn began: its prompt's time, else the session's start. */
   turnStartedAt: number;
-  /** When that turn's reply finished, if its time is known. */
-  finishedAt: number | null;
   /** The session finished something the user has not looked at. */
   hasUnread: boolean;
 }
@@ -118,29 +116,22 @@ export function elapsedWords(ms: number): string {
   return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
 }
 
-/** A row's status in words, with the turn's time while it works and once it finished ("Working · 12 min"). */
+/**
+ * A row's status in words, with the turn's time while it works ("Working · 12 min"). A finished turn shows no
+ * duration: a reply's time is when it began, and no turn-end time is stored, so any figure would be wrong.
+ */
 export function rowStatusWords(facts: RowFacts, status: RunRowStatus, now: number): string {
   const label = STATUS_LABELS[status];
-  if (status === 'working') return `${label} · ${elapsedWords(now - facts.turnStartedAt)}`;
-  if (status === 'done' && facts.finishedAt !== null) return `${label} · ${elapsedWords(facts.finishedAt - facts.turnStartedAt)}`;
-  return label;
+  return status === 'working' ? `${label} · ${elapsedWords(now - facts.turnStartedAt)}` : label;
 }
 
-/** The time of the last prompt, and of the finished reply after it; a replayed message's time is not known. */
-function turnTimes(session: Session, messages: readonly ChatMessage[]): Pick<RowFacts, 'turnStartedAt' | 'finishedAt'> {
-  const hasTime = (message: ChatMessage) => message.hasKnownTime !== false;
-  let reply: ChatMessage | undefined;
-  let prompt: ChatMessage | undefined;
-  for (let index = messages.length - 1; index >= 0 && !prompt; index -= 1) {
+/** When the current or last turn began: the last prompt's time when it is known, else the session's start. */
+function turnStartOf(session: Session, messages: readonly ChatMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    if (message.role === 'user') prompt = message;
-    else if (!reply && message.isComplete === true) reply = message;
+    if (message.role === 'user') return message.hasKnownTime === false ? session.createdAt : message.timestamp;
   }
-  const isPromptTimed = !prompt || hasTime(prompt);
-  return {
-    turnStartedAt: prompt && isPromptTimed ? prompt.timestamp : session.createdAt,
-    finishedAt: reply && hasTime(reply) && isPromptTimed ? reply.timestamp : null,
-  };
+  return session.createdAt;
 }
 
 /** The confirm bar's question before the others are archived. */
@@ -212,7 +203,7 @@ export function rowFactsOf(run: CompareRun, { isBusy, transcripts, failedTurns, 
       hasOpenForm: isLive && hasPendingElicitation(messages),
       needsSignIn: signInNeeded.has(session.id),
       failed: session.id in failedTurns || exitedBadly,
-      ...turnTimes(session, messages),
+      turnStartedAt: turnStartOf(session, messages),
       hasUnread: session.hasUnread === true,
     };
   });

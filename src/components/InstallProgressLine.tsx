@@ -18,12 +18,12 @@ function stepParts(progress: InstallProgress | null, action: InstallAction): { s
   return { step: phase.replace(/…$/, ""), size: `${formatSize(progress.receivedBytes)} of ${formatSize(progress.totalBytes)}` };
 }
 
-/** "Downloading Node.js · 18 MB of 42 MB": announces each step, never each byte, so the size is hidden from it. */
+/** "Downloading Node.js · 18 MB of 42 MB": only the step is a live region, so each step is announced and no byte is. */
 export function InstallStatus({ progress, action = "install" }: { progress: InstallProgress | null; action?: InstallAction }) {
   const { step, size } = stepParts(progress, action);
   return (
-    <p role="status" className="text-ui text-fg-muted">
-      {step}
+    <p className="text-ui text-fg-muted">
+      <span role="status">{step}</span>
       {size && <span aria-hidden="true"> · {size}</span>}
     </p>
   );

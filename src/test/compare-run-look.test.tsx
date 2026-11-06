@@ -38,7 +38,6 @@ function facts(n: number, overrides: Partial<RowFacts> = {}): RowFacts {
     needsSignIn: false,
     failed: false,
     turnStartedAt: NOW - 20 * MIN,
-    finishedAt: NOW - 12 * MIN,
     hasUnread: false,
     ...overrides,
   };
@@ -96,7 +95,7 @@ describe("the compare run as drawn", () => {
     answerDiffs({});
     await renderPanel([facts(1, { hasUnread: true })]);
 
-    expect(within(cardOf("Claude Code")).getByText("Finished · 8 min")).toBeInTheDocument();
+    expect(within(cardOf("Claude Code")).getByText("Finished")).toBeInTheDocument();
     expect(cardOf("Claude Code").querySelector(".bg-status-unread")).not.toBeNull();
   });
 

@@ -107,8 +107,8 @@ export function TerminalSignInDialog({
           <p role="status" className={`min-w-0 flex-1 text-ui-sm ${isFailed ? "text-danger" : "text-fg-muted"}`}>
             {statusText(state)}
           </p>
-          <Button ref={isFailed && canTryAgain ? undefined : primaryRef} onClick={onClose} className="text-fg">
-            Close
+          <Button ref={isFailed && canTryAgain ? undefined : primaryRef} onClick={onClose}>
+            <span className="text-fg">Close</span>
           </Button>
           {isFailed && canTryAgain && (
             <Button ref={primaryRef} variant="primary" onClick={onTryAgain}>

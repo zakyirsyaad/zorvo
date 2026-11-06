@@ -170,7 +170,7 @@ describe("Installing an agent from the new-session draft", () => {
 
     const bar = screen.getByRole("progressbar", { name: "Node.js download" }) as HTMLProgressElement;
     expect(bar.value / bar.max).toBe(0.5);
-    expect(screen.getByRole("status").textContent).toBe("Downloading Node.js · 512 bytes of 1 KB");
+    expect(screen.getByRole("status").parentElement?.textContent).toBe("Downloading Node.js · 512 bytes of 1 KB");
 
     // Another agent's progress is not this one's.
     await deliver("agent-install-progress", {
@@ -258,7 +258,7 @@ describe("Installing an agent from the new-session draft", () => {
     await renderPanel();
     const bar = screen.getByRole("progressbar", { name: "Node.js download" }) as HTMLProgressElement;
     expect(bar.value / bar.max).toBe(0.25);
-    expect(screen.getByRole("status").textContent).toBe("Downloading Node.js · 256 bytes of 1 KB");
+    expect(screen.getByRole("status").parentElement?.textContent).toBe("Downloading Node.js · 256 bytes of 1 KB");
 
     await act(async () => settle().reject("Checksum mismatch for Node.js"));
     expect(screen.getByText("Install failed: Checksum mismatch for Node.js")).toBeDefined();
@@ -508,6 +508,34 @@ describe("Installing an agent from the new-session draft", () => {
       const cancel = screen.getByRole("button", { name: "Cancel" });
       expect(cancel.className).toContain("border-transparent");
       expect(cancel.parentElement?.classList.contains("justify-end")).toBe(true);
+    });
+  });
+
+  describe("review fixes", () => {
+    it("says why Cancel failed while the install goes on", async () => {
+      const { spy } = mockInstall();
+      spy.mockImplementation((cmd, args) => {
+        if (cmd === "cancel_agent_install") return Promise.reject("the installer is not answering");
+        if (cmd === "install_agent") return new Promise(() => {});
+        return fakeTauriInvoke(cmd, args);
+      });
+      await renderPanel();
+      await click("Install Codex");
+      await click("Cancel");
+
+      expect(screen.getByText(/Could not cancel the install/)).toBeDefined();
+      expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Installing Codex");
+    });
+
+    it("keeps the changing size out of the live region", async () => {
+      mockInstall();
+      await renderPanel();
+      await click("Install Codex");
+      await deliver("agent-install-progress", nodeDownload);
+
+      const status = screen.getByRole("status");
+      expect(status.textContent).toBe("Downloading Node.js");
+      expect(status.parentElement?.textContent).toBe("Downloading Node.js · 256 bytes of 1 KB");
     });
   });
 });

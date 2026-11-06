@@ -53,8 +53,8 @@ export function AppUpdateNotice({
             Later
           </Button>
         )}
-        <Button onClick={onInstall} disabled={isInstalling} className="text-fg">
-          Update &amp; restart
+        <Button onClick={onInstall} disabled={isInstalling}>
+          <span className="text-fg">Update &amp; restart</span>
         </Button>
       </div>
     </div>

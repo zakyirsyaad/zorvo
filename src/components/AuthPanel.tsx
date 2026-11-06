@@ -28,7 +28,6 @@ function statusLine(
   status: AuthStatus,
   error: string | undefined,
   hasReturnedMessage: boolean,
-  isSetup: boolean,
 ): { text: string; style: string; isWaiting?: boolean } {
   switch (status) {
     case "signing-in":
@@ -43,7 +42,8 @@ function statusLine(
       if (hasReturnedMessage) {
         return { text: "Your message will be sent again after you sign in.", style: "text-fg-secondary", isWaiting: true };
       }
-      return isSetup ? { text: "Not checked yet.", style: "text-fg-muted" } : { text: "", style: "" };
+      // The card shows after a check or a refusal, so an idle line claims nothing about one.
+      return { text: "", style: "" };
   }
 }
 
@@ -60,8 +60,9 @@ function MethodRow({ method, isBusy, onSignIn }: { method: AuthMethod; isBusy: b
         // Never a field: the app never asks for or stores a key.
         <span className="shrink-0 text-caption text-fg-subtle">In your shell</span>
       ) : (
-        <Button variant="outline" disabled={isBusy} onClick={() => onSignIn(method.id)} className="shrink-0 text-fg">
-          {method.kind === "setup" ? OPEN_SETUP_LABEL : signInButtonLabel(method)}
+        <Button variant="outline" disabled={isBusy} onClick={() => onSignIn(method.id)} className="shrink-0">
+          {/* The label carries the colour: the outline's own text-fg-secondary would win over a className. */}
+          <span className="text-fg">{method.kind === "setup" ? OPEN_SETUP_LABEL : signInButtonLabel(method)}</span>
         </Button>
       )}
     </li>
@@ -92,7 +93,7 @@ export function AuthPanel({
   const isSetup = isSetupOnly(methods);
   const title = isSetup ? `Set up ${agentName}` : `Sign in to ${agentName}`;
   const isSignedIn = status === "signed-in";
-  const line = statusLine(agentName, status, error, hasReturnedMessage, isSetup);
+  const line = statusLine(agentName, status, error, hasReturnedMessage);
   const footer = (
     <div className="flex flex-wrap items-center gap-2">
       {/* Always mounted, so a change of its text is announced. */}
@@ -123,9 +124,8 @@ export function AuthPanel({
                 disabled={isBusy}
                 onClick={() => onSignIn(setupMethod.id)}
                 icon={<SquareTerminal size={14} aria-hidden="true" />}
-                className="text-fg"
               >
-                {OPEN_SETUP_LABEL}
+                <span className="text-fg">{OPEN_SETUP_LABEL}</span>
               </Button>
               <span className="text-ui-sm text-fg-subtle">Already set up in {agentName}? Check again.</span>
             </div>

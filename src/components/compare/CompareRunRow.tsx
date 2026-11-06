@@ -112,12 +112,12 @@ export function CompareRunRow({
           aria-label={`Pick ${agentName}`}
           variant="outline"
           aria-pressed={isPicking || undefined}
-          className={isPicking ? "bg-surface-hover text-fg" : undefined}
+          className={isPicking ? "bg-surface-hover" : undefined}
           disabled={isPickDisabled || hasNoChanges}
           title={hasNoChanges ? NO_CHANGES_TITLE : undefined}
           onClick={() => onPick(session.id)}
         >
-          Pick
+          <span className={isPicking ? "text-fg" : undefined}>Pick</span>
         </Button>
       </div>
       {pendingCard && (

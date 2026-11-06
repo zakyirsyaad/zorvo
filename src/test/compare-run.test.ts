@@ -43,7 +43,6 @@ function facts(overrides: Partial<RowFacts> = {}): RowFacts {
     needsSignIn: false,
     failed: false,
     turnStartedAt: 1,
-    finishedAt: null,
     hasUnread: false,
     ...overrides,
   };
@@ -275,8 +274,7 @@ describe("how long a compare agent has worked", () => {
     expect(rowStatusWords(facts({ turnStartedAt: NOW - 12 * MIN }), "working", NOW)).toBe("Working · 12 min");
   });
 
-  it("a finished row says how long its turn took", () => {
-    expect(rowStatusWords(facts({ turnStartedAt: NOW - 20 * MIN, finishedAt: NOW - 12 * MIN }), "done", NOW)).toBe("Finished · 8 min");
+  it("other statuses read their word alone", () => {
     expect(rowStatusWords(facts(), "needs-sign-in", NOW)).toBe("Needs sign-in");
   });
 
@@ -286,15 +284,14 @@ describe("how long a compare agent has worked", () => {
     const [row] = rowFactsOf(run, { isBusy: () => true, transcripts, failedTurns: {}, signInNeeded: new Map() });
 
     expect(rowStatusWords(row, "working", NOW)).toBe("Working · 2 min");
-    expect(row.finishedAt).toBeNull();
   });
 
-  it("a finished row with no known reply time shows no duration", () => {
+  it("a replayed prompt with no known time counts from the session's start", () => {
     const run = { id: "r", name: "Compare", sessions: [session({ createdAt: NOW - 30 * MIN, hasUnread: true })] };
-    const transcripts = { "s-1": [timed("user", NOW - 30 * MIN, { hasKnownTime: false }), timed("agent", NOW - 20 * MIN, { isComplete: true, hasKnownTime: false })] };
-    const [row] = rowFactsOf(run, { isBusy: () => false, transcripts, failedTurns: {}, signInNeeded: new Map() });
+    const transcripts = { "s-1": [timed("user", NOW - 2 * MIN, { hasKnownTime: false })] };
+    const [row] = rowFactsOf(run, { isBusy: () => true, transcripts, failedTurns: {}, signInNeeded: new Map() });
 
-    expect(rowStatusWords(row, "done", NOW)).toBe("Finished");
+    expect(rowStatusWords(row, "working", NOW)).toBe("Working · 30 min");
     expect(row.hasUnread).toBe(true);
   });
 
@@ -308,5 +305,15 @@ describe("how long a compare agent has worked", () => {
     expect(stopsLine(["Qwen Code"])).toBe("Qwen Code is still working and will be stopped.");
     expect(stopsLine(["Qwen Code", "Kimi CLI"])).toBe("Qwen Code and Kimi CLI are still working and will be stopped.");
     expect(statusLabel("done")).toBe("Finished");
+  });
+});
+
+describe("review fixes", () => {
+  it("a finished row reads Finished, since no turn-end time is stored", () => {
+    const run = { id: "r", name: "Compare", sessions: [session({ createdAt: 0 })] };
+    const transcripts = { "s-1": [timed("user", 1_000), timed("agent", 2_000, { isComplete: true })] };
+    const [row] = rowFactsOf(run, { isBusy: () => false, transcripts, failedTurns: {}, signInNeeded: new Map() });
+
+    expect(rowStatusWords(row, "done", 60 * 60_000)).toBe("Finished");
   });
 });

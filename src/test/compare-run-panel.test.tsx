@@ -69,7 +69,6 @@ function facts(n: number, overrides: Partial<RowFacts> = {}, sessionOverrides: P
     needsSignIn: false,
     failed: false,
     turnStartedAt: 0,
-    finishedAt: null,
     hasUnread: false,
     ...overrides,
   };

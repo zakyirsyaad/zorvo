@@ -101,7 +101,9 @@ export function authCopy(agentName: string, methods: readonly AuthMethod[]): Aut
   const onlyKeys = hasExplained && !hasButton;
   const lead = isSetupOnly(methods)
     ? `${agentName} needs its own setup before it can start.`
-    : onlyKeys
+    : methods.length === 0
+      ? `${agentName} needs you to sign in before it can start.`
+      : onlyKeys
       ? `${agentName} needs an API key or another account setting before it can start.`
       : `Pick how ${agentName} signs in. It uses its own tool; Zorvo never sees your password or key.`;
   return {

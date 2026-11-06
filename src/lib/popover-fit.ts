@@ -20,7 +20,7 @@ const EDGE_MARGIN = 8;
 const MIN_PANEL_HEIGHT = 96;
 
 /**
- * Picks the side a panel opens on and caps it, so the box that clips it (an `overflow-hidden` article) never
+ * Picks the side a panel opens on and caps it, so the box that clips it (the main area's scrolling column) never
  * cuts it off: the asked-for side when the panel fits there, else the side with more room, capped to that room.
  * Without a layout (a trigger or bounds with no height, as in jsdom) it decides nothing.
  */

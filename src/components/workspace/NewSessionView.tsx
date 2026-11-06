@@ -20,7 +20,7 @@ export function NewSessionHeading({ workspace, unavailableReason }: NewSessionHe
     // The gutter outside the column, as the composer's and the session list's are, so all of them line up.
     <div className="px-6 pt-[clamp(120px,24vh,260px)] pb-4">
       <div className="mx-auto w-full max-w-chat">
-        <h1 className="text-xl font-semibold tracking-[-0.02em] text-fg">{`New session in ${workspace.name}`}</h1>
+        <h1 className="break-words text-xl font-semibold tracking-[-0.02em] text-fg">{`New session in ${workspace.name}`}</h1>
         {unavailableReason && <p className="mt-1 text-ui text-fg-muted">{unavailableReason}</p>}
       </div>
     </div>
@@ -28,12 +28,13 @@ export function NewSessionHeading({ workspace, unavailableReason }: NewSessionHe
 }
 
 /**
- * Under the draft's composer, in the same column: the agent's other sessions in the folder, to continue one. It
- * has no scroll of its own: the draft's whole column scrolls, so the card above it stays reachable.
+ * Under the draft's composer, in the same column: the agent's other sessions in the folder, to continue one. A
+ * long list scrolls inside it, so the heading, chips and card above stay put. It keeps at least 160px: when the
+ * window is too short for the rest, the main column scrolls to it rather than squeezing it to nothing.
  */
 export function NewSessionBelow({ sessionList }: { sessionList?: ReactNode }) {
   return (
-    <div className="flex flex-1 flex-col px-6 pb-6">
+    <div className={`flex-1 overflow-y-auto px-6 pb-6 ${sessionList ? "min-h-40" : "min-h-0"}`}>
       {sessionList && <div className="mx-auto mt-6 w-full max-w-chat">{sessionList}</div>}
     </div>
   );

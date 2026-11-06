@@ -1,6 +1,7 @@
 import { FileText } from "lucide-react";
 import { POPOVER_PANEL_STYLE } from "../ui/Popover";
 import { Highlighted } from "../ui/Highlighted";
+import { PROMPT_LIST_SIDES } from "./SlashCommandMenu";
 
 export interface MentionMenuProps {
   /** Paths relative to the workspace. */
@@ -11,12 +12,14 @@ export interface MentionMenuProps {
   folderName: string;
   /** What follows the `@`; its match in a file's name shows in bold. */
   query: string;
+  /** Above the card in a session; under it in a draft, whose card sits near the top of its column. */
+  side?: "top" | "bottom";
 }
 
-/** Workspace files matching what follows the `@`, above the prompt. */
-export function MentionMenu({ files, highlighted, onPick, folderName, query }: MentionMenuProps) {
+/** Workspace files matching what follows the `@`, above the prompt (under the card in a draft). */
+export function MentionMenu({ files, highlighted, onPick, folderName, query, side = "top" }: MentionMenuProps) {
   return (
-    <div className={`absolute bottom-full left-0 z-50 mb-2 w-full ${POPOVER_PANEL_STYLE}`}>
+    <div className={`absolute ${PROMPT_LIST_SIDES[side]} left-0 z-50 w-full ${POPOVER_PANEL_STYLE}`}>
       <p className="px-2 pb-1.5 pt-1 text-caption font-medium text-fg-muted">Files in {folderName}</p>
       <ul role="listbox" aria-label="Files to mention" className="max-h-64 overflow-y-auto">
         {files.map((path, index) => {

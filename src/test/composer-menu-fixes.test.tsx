@@ -48,6 +48,22 @@ describe("which way the composer's menus open", () => {
     fireEvent.click(chip);
     expect(panelOf(chip)).toHaveClass("bottom-full");
   });
+
+  // Above a draft's card there is only the heading: a list of commands there ran past the column's top edge.
+  const commands = ["plan", "review", "test", "commit", "fix", "explain"].map((name) => ({ name, description: `Runs ${name}` }));
+  const listPanel = (name: string) => screen.getByRole("listbox", { name }).parentElement!;
+
+  it("opens a draft's command list under the card, and a session's above it", () => {
+    const { unmount } = render(<ComposerDock onSendMessage={() => {}} folder={draftFolder} commands={commands} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Prompt" }), { target: { value: "/" } });
+    expect(listPanel("Slash commands")).toHaveClass("top-full", "mt-2");
+    expect(listPanel("Slash commands")).not.toHaveClass("bottom-full");
+    unmount();
+
+    render(<ComposerDock onSendMessage={() => {}} commands={commands} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Prompt" }), { target: { value: "/" } });
+    expect(listPanel("Slash commands")).toHaveClass("bottom-full", "mb-2");
+  });
 });
 
 describe("model names with a provider tag", () => {
@@ -104,6 +120,46 @@ describe("model names with a provider tag", () => {
     const heading = document.getElementById(group.getAttribute("aria-labelledby") ?? "");
     expect(heading).toHaveTextContent("OpenRouter");
     expect(group).toContainElement(heading);
+    // Shown, and read as the group's name: not read a second time as text inside it.
+    expect(heading!.closest("[aria-hidden='true']")).not.toBeNull();
+  });
+
+  it("puts an untagged model first in a long list too, where Return picks the first row shown", () => {
+    const tagged: DropdownOption[] = Array.from({ length: 12 }, (_, n) => ({ value: `q${n}`, label: `${TAG} qwen-${n}` }));
+    const onSelect = vi.fn();
+    render(
+      <OptionDropdown label="Model" options={[...tagged, { value: "local", label: "qwen-local" }]} selected="q0" isOpen onToggle={() => {}} onSelect={onSelect} />,
+    );
+    const search = screen.getByRole("searchbox", { name: "Search model" });
+    fireEvent.change(search, { target: { value: "qwen" } });
+    expect(screen.getAllByRole("option")[0]).toHaveTextContent("qwen-local");
+    fireEvent.keyDown(search, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("local");
+  });
+
+  it("keeps a long list's scrolling to itself", () => {
+    open();
+    expect(screen.getByRole("option", { name: "kimi-k2" }).closest(".max-h-72")).toHaveClass("overscroll-contain");
+  });
+});
+
+describe("the composer's ⋯ menu", () => {
+  it("names each control's group by its heading, read once", () => {
+    render(
+      <ComposerDock
+        onSendMessage={() => {}}
+        controls={{
+          model: control(["Opus", "Sonnet"]),
+          permission: control(["Default", "Plan"]),
+          effort: control(["Low", "High"]),
+          extras: [{ ...control(["Off", "On"]), id: "fast", label: "Fast mode" }],
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
+    const group = screen.getByRole("group", { name: "Fast mode" });
+    expect(group).not.toHaveAttribute("aria-label");
+    expect(within(group).getByText("Fast mode").closest("[aria-hidden='true']")).not.toBeNull();
   });
 });
 
@@ -122,6 +178,9 @@ describe("a risky mode's line", () => {
     expect(screen.getByText("Automatically approve all tools. Lets the agent act without asking.")).toBeInTheDocument();
   });
 
+  // Exact text: the default matcher trims and folds spaces, so it would not see a doubled one.
+  const exactly = { normalizer: (text: string) => text };
+
   it("adds no second full stop after trailing spaces, a closing quote or a bracket", () => {
     const options: DropdownOption[] = [
       { value: "a", label: "A", description: "Runs anything. ", risky: true },
@@ -129,9 +188,31 @@ describe("a risky mode's line", () => {
       { value: "c", label: "C", description: "Skips checks (all of them.)", risky: true },
     ];
     render(<OptionDropdown label="Mode" options={options} selected="a" isOpen onToggle={() => {}} onSelect={() => {}} />);
-    expect(screen.getByText("Runs anything. Lets the agent act without asking.")).toBeInTheDocument();
-    expect(screen.getByText('Says "go." Lets the agent act without asking.')).toBeInTheDocument();
-    expect(screen.getByText("Skips checks (all of them.) Lets the agent act without asking.")).toBeInTheDocument();
+    expect(screen.getByText("Runs anything. Lets the agent act without asking.", exactly)).toBeInTheDocument();
+    expect(screen.getByText('Says "go." Lets the agent act without asking.', exactly)).toBeInTheDocument();
+    expect(screen.getByText("Skips checks (all of them.) Lets the agent act without asking.", exactly)).toBeInTheDocument();
+  });
+
+  it("knows an ellipsis, curly quotes and a full-width stop end a sentence too", () => {
+    const options: DropdownOption[] = [
+      { value: "a", label: "A", description: "Runs anything…", risky: true },
+      { value: "b", label: "B", description: "Says “go.”", risky: true },
+      { value: "c", label: "C", description: "自动批准所有工具。", risky: true },
+    ];
+    render(<OptionDropdown label="Mode" options={options} selected="a" isOpen onToggle={() => {}} onSelect={() => {}} />);
+    expect(screen.getByText("Runs anything… Lets the agent act without asking.", exactly)).toBeInTheDocument();
+    expect(screen.getByText("Says “go.” Lets the agent act without asking.", exactly)).toBeInTheDocument();
+    expect(screen.getByText("自动批准所有工具。 Lets the agent act without asking.", exactly)).toBeInTheDocument();
+  });
+
+  it("says only its own sentence for a blank description, and gives a plain option no empty line", () => {
+    const options: DropdownOption[] = [
+      { value: "a", label: "Yolo", description: "   ", risky: true },
+      { value: "b", label: "Plain", description: " " },
+    ];
+    render(<OptionDropdown label="Mode" options={options} selected="a" isOpen onToggle={() => {}} onSelect={() => {}} />);
+    expect(screen.getByText("Lets the agent act without asking.", exactly)).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Plain" }).textContent).toBe("Plain");
   });
 });
 

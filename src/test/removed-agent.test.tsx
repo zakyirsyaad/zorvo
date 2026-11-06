@@ -119,7 +119,8 @@ describe("A saved session of a removed agent", () => {
     await openRemovedAgentSession();
 
     const card = await screen.findByRole("region", { name: REMOVED_NOTICE });
-    const anchor = document.querySelector("article > .relative.h-0");
+    // The anchor sits in the main area's column, next to the card, as the composer it anchors to does.
+    const anchor = document.querySelector("[data-main-column] > .relative.h-0");
     expect(anchor).not.toBeNull();
     expect(anchor!.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });

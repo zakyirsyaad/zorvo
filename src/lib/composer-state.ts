@@ -128,7 +128,8 @@ function reviewOwnerNote({ title, isArchived, cannotContinue }: ReviewOwner): st
 }
 
 /**
- * The line under the prompt: why Send is blocked. The reason stays while the user types (the placeholder does
+ * The composer's note: whom held review comments are for, what a compare run is (shown in the row; it blocks
+ * nothing), or why Send is blocked (under the prompt). The reason stays while the user types (the placeholder does
  * not). While the agent's options load, skeleton chips and an sr-only status say so instead (`ComposerDock`).
  */
 export function composerNote(state: {

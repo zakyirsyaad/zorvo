@@ -44,9 +44,11 @@ describe("OptionDropdown rows", () => {
   it("marks only the risky row, in words and with a shield in the attention color, before it is picked", () => {
     renderDropdown(options);
 
-    const shields = screen.getAllByRole("img", { name: "Lets the agent act without asking" });
+    // The shield is seen; the words are read once, from the line, not again from the shield.
+    const shields = document.querySelectorAll("svg.text-status-attention");
     expect(shields).toHaveLength(1);
-    expect(shields[0]).toHaveClass("text-status-attention");
+    expect(shields[0]).toHaveAttribute("aria-hidden", "true");
+    expect(screen.queryByRole("img", { name: "Lets the agent act without asking" })).toBeNull();
     const risky = screen.getByRole("option", { name: /YOLO/ });
     expect(risky.contains(shields[0])).toBe(true);
     expect(within(risky).getByText(/Lets the agent act without asking\.$/)).toHaveClass("text-fg-subtle");

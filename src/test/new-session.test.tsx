@@ -231,38 +231,51 @@ describe("Starting a new session", () => {
     expect(screen.getByRole("textbox", { name: "Prompt" })).toBe(draftPrompt);
   });
 
-  it("docks the draft's composer in its column, and a session's 20px above the bottom", async () => {
+  it("docks the draft's composer in a column that can scroll inside a still frame, in a draft and in a session", async () => {
     await act(async () => {
       render(<App />);
     });
-    const dock = () => screen.getByRole("textbox", { name: "Prompt" }).closest("footer")!.parentElement!;
+    const prompt = () => screen.getByRole("textbox", { name: "Prompt" });
+    const dock = () => prompt().closest("footer")!.parentElement!;
+    const tokens = (element: Element) => element.className.split(/\s+/);
+    // The frame never scrolls, so what is positioned against it (the drop overlay) stays over what is on screen.
+    const frame = () => prompt().closest("article")!;
+    // The column scrolls only when what it holds does not fit (a short window, a sign-in panel), so Send stays
+    // reachable; it never scrolls sideways.
+    const column = () => prompt().closest("[data-main-column]")!;
     expect(dock().className).toContain("px-6");
     expect(dock().className).not.toContain("pb-5");
+    expect(tokens(frame())).toContain("overflow-hidden");
+    expect(column().parentElement).toBe(frame());
+    expect(tokens(column())).toEqual(expect.arrayContaining(["min-h-0", "flex-1", "overflow-y-auto", "overflow-x-hidden"]));
+    // A draft keeps room for its scrollbar, so the centred column does not jump when one appears.
+    expect(tokens(column())).toContain("[scrollbar-gutter:stable]");
 
     await sendFirst();
 
-    expect(dock().className).toContain("px-6");
     expect(dock().className).toContain("pb-5");
+    expect(tokens(frame())).toContain("overflow-hidden");
+    expect(tokens(column())).toEqual(expect.arrayContaining(["overflow-y-auto", "overflow-x-hidden"]));
+    expect(tokens(column())).not.toContain("[scrollbar-gutter:stable]");
   });
 
-  it("scrolls the whole draft column in a short window, and leaves a session's chat its own scroll", async () => {
-    // Heading, chips, a panel and the card have fixed heights: in a short window Send would end up below the
-    // article, out of reach, if only the session list under them scrolled.
+  it("shows a new draft or session from the top of the column, never where the last one was scrolled", async () => {
     await act(async () => {
       render(<App />);
     });
-    const classes = (element: Element) => element.className.split(/\s+/);
-    const article = () => screen.getByRole("textbox", { name: "Prompt" }).closest("article")!;
-    expect(classes(article())).toContain("overflow-y-auto");
-    expect(classes(article())).not.toContain("overflow-hidden");
-    const below = classes(article().lastElementChild!);
-    expect(below).toContain("flex-1");
-    expect(below).not.toContain("overflow-y-auto");
+    const column = screen.getByRole("textbox", { name: "Prompt" }).closest("[data-main-column]") as HTMLElement;
+    let scrollTop = 240;
+    Object.defineProperty(column, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value;
+      },
+    });
 
     await sendFirst();
 
-    expect(classes(article())).toContain("overflow-hidden");
-    expect(classes(article())).not.toContain("overflow-y-auto");
+    expect(scrollTop).toBe(0);
   });
 
   it("starts a session in the workspace and with the agent picked from its + menu", async () => {

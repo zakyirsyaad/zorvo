@@ -1,7 +1,29 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { Popover, PopoverHeader, PopoverOption, PopoverSearch } from "../components/ui/Popover";
+import { Popover, PopoverGroup, PopoverHeader, PopoverOption, PopoverSearch } from "../components/ui/Popover";
+
+describe("a group of options under a heading", () => {
+  it("is named by its heading, which is shown but not read a second time inside the group", () => {
+    render(
+      <Popover isOpen onClose={() => {}} label="More options" trigger={<button type="button">More</button>}>
+        <PopoverGroup heading="Collaboration">
+          <PopoverOption onSelect={() => {}}>Pair</PopoverOption>
+        </PopoverGroup>
+      </Popover>,
+    );
+    const group = screen.getByRole("group", { name: "Collaboration" });
+    expect(group).not.toHaveAttribute("aria-label");
+    const heading = screen.getByText("Collaboration");
+    expect(heading.closest("[aria-hidden='true']")).not.toBeNull();
+    expect(heading.parentElement).toHaveClass("text-caption", "font-medium", "text-fg-muted");
+  });
+
+  it("names the group by the heading alone, never by a hint beside it", () => {
+    render(<PopoverHeader labelId="h" aside="Pick more than one">Agents</PopoverHeader>);
+    expect(document.getElementById("h")).toHaveTextContent(/^Agents$/);
+  });
+});
 
 /** The rows of the composer's and draft's menus, as `ComposerMenus` and `DraftPickers` draw them. */
 describe("popover rows as drawn", () => {

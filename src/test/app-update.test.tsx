@@ -101,6 +101,25 @@ describe("AppUpdateNotice", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("brings itself into view when an update arrives, so a scrolled draft still shows it", () => {
+    const reveal = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = reveal;
+    try {
+      const { rerender } = render(<AppUpdateNotice {...base} update={null} />);
+      expect(reveal).not.toHaveBeenCalled();
+
+      rerender(<AppUpdateNotice {...base} update={info("0.9.0")} />);
+      expect(reveal).toHaveBeenCalledTimes(1);
+      expect(reveal).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" });
+
+      rerender(<AppUpdateNotice {...base} update={info("0.9.0")} isInstalling progress={{ phase: "installing" }} />);
+      expect(reveal).toHaveBeenCalledTimes(1);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it("shows the percent while installing and disables the button", () => {
     render(
       <AppUpdateNotice {...base} update={info("0.6.0")} isInstalling progress={{ phase: "downloading", downloaded: 50, total: 200 }} />,

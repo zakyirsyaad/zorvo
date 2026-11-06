@@ -1,4 +1,5 @@
 import type { ChatMessage } from '../types';
+import { asSentence } from './sentence';
 
 /** One failed request is routine (the agent retries); this many in a row is worth saying. */
 export const STALL_MIN_FAILURES = 2;
@@ -63,10 +64,6 @@ export function nextFailures(prev: AgentFailures | undefined, report: FailureRep
   };
 }
 
-/** The agent's own words, closed with a full stop when they have no end punctuation. */
-function asSentence(text: string): string {
-  return /[.!?…]$/.test(text) ? text : `${text}.`;
-}
 
 export interface StallState {
   failures?: AgentFailures;

@@ -22,10 +22,6 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **Clearer cards when something stands in the way.** A compare run shows one card per agent and asks before Pick keeps one. Installing, signing in and a removed agent each get a card by the message box with the agent's logo, and signing in lists every way the agent offers. The terminal sign-in is wider, the empty window asks for a folder, and a Zorvo update shows as a card.
 - **Notices appear as a card in the bottom right corner** instead of a strip across the top of the chat, so they no longer push the conversation down. A long message wraps inside the card, and **Dismiss notice** closes it as before.
 
-### Fixed
-
-- **A new session stays usable in a short window.** The draft's whole column now scrolls, so with a sign-in panel above the message box, or in a window about 600px tall, Send no longer ends up out of reach. In the model menu, models without a provider come first, so none looks like part of the provider above it, and a screen reader names each provider once.
-
 ## [0.8.1] - 2026-11-04
 
 ### Fixed

@@ -538,7 +538,7 @@ describe("the draft check while several agents are ticked", () => {
 
 describe("composerNote with several agents", () => {
   it("says what a run costs, ahead of any other note", () => {
-    expect(composerNote({ continuesSession: false, compareCount: 3, agentLoading: "Qwen Code" })).toBe(
+    expect(composerNote({ continuesSession: false, compareCount: 3, agentToSignIn: "Qwen Code" })).toBe(
       "Each agent starts in its safest mode, in its own worktree.",
     );
     expect(composerNote({ continuesSession: false, compareCount: 1 })).toBeUndefined();

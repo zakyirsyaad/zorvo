@@ -128,8 +128,8 @@ function reviewOwnerNote({ title, isArchived, cannotContinue }: ReviewOwner): st
 }
 
 /**
- * The line under the prompt: why Send is blocked, else that the agent's options are loading. The
- * reason stays while the user types (the placeholder does not), and outranks the loading line.
+ * The line under the prompt: why Send is blocked. The reason stays while the user types (the placeholder does
+ * not). While the agent's options load, skeleton chips and an sr-only status say so instead (`ComposerDock`).
  */
 export function composerNote(state: {
   /** Whom the comments in the composer are for, while that keeps them from going out here; outranks every other note. */
@@ -142,14 +142,11 @@ export function composerNote(state: {
   agentToSignIn?: string;
   /** The next message continues a session rather than starting one. */
   continuesSession: boolean;
-  /** The draft agent's name while its models and commands are being asked for. */
-  agentLoading?: string;
 }): string | undefined {
   if (state.reviewOwner) return reviewOwnerNote(state.reviewOwner);
   if (state.compareCount !== undefined && state.compareCount >= 2) return COMPARE_NOTE;
   if (state.agentToInstall) return installPlaceholder(state.agentToInstall, state.continuesSession);
   if (state.agentToSignIn) return signInPlaceholder(state.agentToSignIn, state.continuesSession);
-  if (state.agentLoading) return `Loading ${state.agentLoading}'s models and commands…`;
   return undefined;
 }
 

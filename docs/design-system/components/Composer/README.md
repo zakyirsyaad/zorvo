@@ -6,7 +6,7 @@ The consumer provides the controls and the send handler. Without a placeholder o
 
 - **Dock.** 24px at the sides and 20px under the card in a session. A draft's composer sits inside its column, with no bottom padding.
 - **Card.** A column with a 10px gap and 12px padding, on `surface-2` with a `border` edge, `radius-xl` and `shadow-popover`. The edge turns `border-strong` while focused.
-- **Text.** The prompt starts two lines tall (44px) in `body` on `fg`, with the placeholder in `fg-subtle`. The note under it is `caption` in `fg-muted`: why Send is blocked, else that the agent's options are loading.
+- **Text.** The prompt starts two lines tall (44px) in `body` on `fg`, with the placeholder in `fg-subtle`. The note under it is `caption` in `fg-muted`: why Send is blocked. While the agent's options load, skeleton chips say so instead (below).
 - **Attachments.** Images show above the textarea as 96×64 thumbnails, with an 18px round remove button inside the corner. Clicking one opens `ImagePreviewDialog`. Other files are name chips.
 - **Bottom row, left.** No divider above it; its controls sit 4px apart.
   - Attach is a 28px paperclip button in `fg-muted`.

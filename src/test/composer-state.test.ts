@@ -201,14 +201,11 @@ describe("composerNote", () => {
     expect(composerNote({ continuesSession: true, agentToSignIn: "Qwen Code" })).toBe("Sign in to Qwen Code to continue this session.");
   });
 
-  it("puts the install or sign-in reason before the loading line, and the loading line before nothing", () => {
-    expect(composerNote({ continuesSession: false, agentToSignIn: "Qwen Code", agentLoading: "Qwen Code" })).toBe(
-      "Sign in to Qwen Code to send a message.",
-    );
-    expect(composerNote({ continuesSession: false, agentToInstall: "Gemini CLI", agentToSignIn: "Qwen Code", agentLoading: "Qwen Code" })).toBe(
+  it("puts the install reason before the sign-in one, and says nothing when nothing blocks Send", () => {
+    expect(composerNote({ continuesSession: false, agentToInstall: "Gemini CLI", agentToSignIn: "Qwen Code" })).toBe(
       "Install Gemini CLI to start a session.",
     );
-    expect(composerNote({ continuesSession: false, agentLoading: "Qwen Code" })).toBe("Loading Qwen Code's models and commands…");
+    // Loading the agent's options is shown by skeleton chips in the row, never by this line.
     expect(composerNote({ continuesSession: false })).toBeUndefined();
   });
 

@@ -38,6 +38,7 @@ function facts(n: number, overrides: Partial<RowFacts> = {}): RowFacts {
     needsSignIn: false,
     failed: false,
     turnStartedAt: NOW - 20 * MIN,
+    finishedAt: null,
     hasUnread: false,
     ...overrides,
   };

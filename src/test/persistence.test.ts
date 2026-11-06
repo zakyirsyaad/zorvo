@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canonicalAgentId, dropTerminalSessions, loadTranscript, normalizePersistedState } from "../lib/persistence";
+import { canonicalAgentId, dropTerminalSessions, loadTranscript, normalizePersistedState, normalizeTranscript } from "../lib/persistence";
 
 const base = { id: "s-1", name: "Fix login", profileId: "claude-code", cwd: "/w/api", status: "terminated", createdAt: 1 };
 
@@ -381,5 +381,19 @@ describe("loadTranscript", () => {
       expect(message.elicitation).not.toHaveProperty("errors");
       expect(message.elicitation?.host).toBe("example.com");
     }
+  });
+});
+
+describe("a saved turn-end time", () => {
+  const reply = { id: "a", role: "agent", content: "Done.", timestamp: 1_000, isComplete: true };
+
+  it("keeps a numeric completedAt", () => {
+    expect(normalizeTranscript([{ ...reply, completedAt: 9_000 }])[0].completedAt).toBe(9_000);
+  });
+
+  it("drops a completedAt that is not a number", () => {
+    const [message] = normalizeTranscript([{ ...reply, completedAt: "soon" }]);
+    expect(message).toBeDefined();
+    expect("completedAt" in message).toBe(false);
   });
 });

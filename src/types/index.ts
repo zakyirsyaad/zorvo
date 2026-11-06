@@ -315,6 +315,8 @@ export interface ChatMessage {
   plan?: PlanEntry[];
   /** Set when the agent's turn ended; the next reply starts a new message. */
   isComplete?: boolean;
+  /** When the turn ended, for a reply whose time is known; `timestamp` is when the reply began. */
+  completedAt?: number;
   /** Files the user sent with the message (ACP agents). */
   attachments?: string[];
   /** The agent's `messageId` for a user message replayed by `session/load`; its chunks share it. */

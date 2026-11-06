@@ -634,3 +634,28 @@ describe("applyReplayUpdate", () => {
     expect(message.hasKnownTime).toBeUndefined();
   });
 });
+
+describe("when a turn ends", () => {
+  const MIN = 60_000;
+
+  it("stamps the closing reply with the turn-end time", () => {
+    const reply = applyAcpUpdate([], text("Done."), { ...ctx(), now: 2 * MIN });
+
+    const [closed] = closeTurn(reply, 40 * MIN);
+
+    expect(closed.isComplete).toBe(true);
+    expect(closed.completedAt).toBe(40 * MIN);
+    expect(closed.timestamp).toBe(2 * MIN);
+  });
+
+  it("keeps the first end time when a turn is closed twice", () => {
+    const once = closeTurn(applyAcpUpdate([], text("Done."), ctx()), 5_000);
+    expect(closeTurn(once, 9_000)[0].completedAt).toBe(5_000);
+  });
+
+  it("gives a replayed reply no end time", () => {
+    const replayed = applyReplayUpdate([], text("Earlier."), { ...ctx(), hasKnownTime: false });
+    expect(closeImportedTurn(replayed)[0].completedAt).toBeUndefined();
+    expect(closeTurn(replayed, 9_000)[0].completedAt).toBeUndefined();
+  });
+});

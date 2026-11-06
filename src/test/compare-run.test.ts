@@ -18,6 +18,7 @@ import {
   type RowFacts,
   type RunRowStatus,
 } from "../lib/compare-run";
+import { applyAcpUpdate, closeTurn } from "../lib/acp-events";
 import type { ActionCard, ChatMessage, Session } from "../types";
 
 function session(overrides: Partial<Session> = {}): Session {
@@ -43,6 +44,7 @@ function facts(overrides: Partial<RowFacts> = {}): RowFacts {
     needsSignIn: false,
     failed: false,
     turnStartedAt: 1,
+    finishedAt: null,
     hasUnread: false,
     ...overrides,
   };
@@ -308,12 +310,33 @@ describe("how long a compare agent has worked", () => {
   });
 });
 
-describe("review fixes", () => {
-  it("a finished row reads Finished, since no turn-end time is stored", () => {
-    const run = { id: "r", name: "Compare", sessions: [session({ createdAt: 0 })] };
-    const transcripts = { "s-1": [timed("user", 1_000), timed("agent", 2_000, { isComplete: true })] };
-    const [row] = rowFactsOf(run, { isBusy: () => false, transcripts, failedTurns: {}, signInNeeded: new Map() });
+describe("how long a finished turn took", () => {
+  const folded = (startAt: number, chunkAt: number, endAt: number): ChatMessage[] => {
+    let n = 0;
+    const ctxAt = (now: number) => ({ sessionId: "s-1", now, createId: (prefix: string) => `${prefix}-${++n}` });
+    const reply = applyAcpUpdate([timed("user", startAt)], { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "On it." } }, ctxAt(chunkAt));
+    return closeTurn(reply, endAt);
+  };
+  const rowOf = (messages: ChatMessage[]) =>
+    rowFactsOf({ id: "r", name: "Compare", sessions: [session({ createdAt: 0 })] }, {
+      isBusy: () => false,
+      transcripts: { "s-1": messages },
+      failedTurns: {},
+      signInNeeded: new Map(),
+    })[0];
 
-    expect(rowStatusWords(row, "done", 60 * 60_000)).toBe("Finished");
+  it("runs from the prompt to the turn's end, not to the reply's first chunk", () => {
+    const row = rowOf(folded(MIN, MIN + 20_000, 41 * MIN));
+    expect(rowStatusWords(row, "done", 60 * MIN)).toBe("Finished · 40 min");
+  });
+
+  it("a reply with no end time reads Finished alone", () => {
+    const transcripts = [timed("user", 1_000), timed("agent", 2_000, { isComplete: true })];
+    expect(rowStatusWords(rowOf(transcripts), "done", 60 * MIN)).toBe("Finished");
+  });
+
+  it("a replayed prompt gives no duration", () => {
+    const messages = folded(MIN, 2 * MIN, 10 * MIN).map((message) => (message.role === "user" ? { ...message, hasKnownTime: false } : message));
+    expect(rowStatusWords(rowOf(messages), "done", 60 * MIN)).toBe("Finished");
   });
 });

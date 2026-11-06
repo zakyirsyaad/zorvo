@@ -242,6 +242,13 @@ function isMessage(value: unknown): value is ChatMessage {
   );
 }
 
+/** A turn-end time that is not a finite number is dropped, so no figure is made from it. */
+function withValidEndTime(message: ChatMessage): ChatMessage {
+  if (!('completedAt' in message) || Number.isFinite(message.completedAt)) return message;
+  const { completedAt: _dropped, ...rest } = message;
+  return rest;
+}
+
 /**
  * Keeps every well-formed saved message, dropping a `parts` list that does not
  * match the shape and dropping entries that are not messages. Messages saved
@@ -249,8 +256,9 @@ function isMessage(value: unknown): value is ChatMessage {
  */
 export function normalizeTranscript(raw: unknown): ChatMessage[] {
   if (!Array.isArray(raw)) return [];
-  return raw.flatMap((message): ChatMessage[] => {
-    if (!isMessage(message)) return [];
+  return raw.flatMap((raw): ChatMessage[] => {
+    if (!isMessage(raw)) return [];
+    const message = withValidEndTime(raw);
     if (!('parts' in message)) return [message];
     const { parts, ...rest } = message;
     const isWellFormed = Array.isArray(parts) && parts.length > 0 && parts.every(isMessagePart);

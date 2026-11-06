@@ -8,13 +8,17 @@ export interface NewSessionHeadingProps {
 }
 
 /**
- * The top of the draft's 680px column, from 120px down and left-aligned as the canvas draws it: the title,
- * and a line only when something stops the session from starting. The chips under it say the rest.
+ * The top of the draft's 680px column, left-aligned as the canvas draws it: the title, and a line only when
+ * something stops the session from starting. The chips under it say the rest.
+ *
+ * The canvas puts it 120px down in an 800px frame. A taller window would leave its lower half empty, so the
+ * offset grows with the window (24vh, between 120px and 260px), putting the composer a little above the middle.
+ * It is not centred: content that arrives below (the agent's sessions, a sign-in panel) would make it jump.
  */
 export function NewSessionHeading({ workspace, unavailableReason }: NewSessionHeadingProps) {
   return (
     // The gutter outside the column, as the composer's and the session list's are, so all of them line up.
-    <div className="px-6 pt-[120px] pb-4">
+    <div className="px-6 pt-[clamp(120px,24vh,260px)] pb-4">
       <div className="mx-auto w-full max-w-chat">
         <h1 className="text-xl font-semibold tracking-[-0.02em] text-fg">{`New session in ${workspace.name}`}</h1>
         {unavailableReason && <p className="mt-1 text-ui text-fg-muted">{unavailableReason}</p>}

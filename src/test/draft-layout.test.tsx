@@ -16,7 +16,7 @@ const folder: FolderControl = {
 };
 
 describe("the draft's column", () => {
-  it("heads the 680px column from 120px down, left-aligned, at 20/28 600", () => {
+  it("heads the 680px column from 120px down in a short window, lower in a tall one, left-aligned, at 20/28 600", () => {
     render(<NewSessionHeading workspace={{ name: "agent-desktop", path: "/w/agent-desktop" }} />);
     const heading = screen.getByRole("heading", { name: "New session in agent-desktop" });
     expect(heading).toHaveClass("text-xl", "font-semibold", "tracking-[-0.02em]");
@@ -26,7 +26,7 @@ describe("the draft's column", () => {
     expect(column).toHaveClass("mx-auto", "w-full", "max-w-chat");
     expect(column).not.toHaveClass("px-6");
     const gutter = column.parentElement!;
-    expect(gutter).toHaveClass("px-6", "pt-[120px]", "pb-4");
+    expect(gutter).toHaveClass("px-6", "pt-[clamp(120px,24vh,260px)]", "pb-4");
     expect(gutter).not.toHaveClass("flex-1");
     expect(gutter).not.toHaveClass("items-center");
   });

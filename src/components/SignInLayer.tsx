@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { AuthPanel } from "./AuthPanel";
 import { TerminalSignInDialog } from "./TerminalSignInDialog";
 import { authCopy } from "../lib/acp-auth";
@@ -12,10 +13,15 @@ export interface SignInLayerProps {
   agentId: string | undefined;
   /** False while Settings is open: it draws the login's dialog itself, above its own panel. */
   showTerminal?: boolean;
+  /**
+   * Where the panel goes instead of here: a draft's slot between its chips and its card. Only the panel moves;
+   * the live region and the login's dialog stay mounted here, so nothing is lost when the draft becomes a session.
+   */
+  panelTarget?: HTMLElement | null;
 }
 
 /** The sign-in panel above the chat, and an agent's terminal login over the app while it runs. */
-export function SignInLayer({ signIn, agents, agentId, showTerminal = true }: SignInLayerProps) {
+export function SignInLayer({ signIn, agents, agentId, showTerminal = true, panelTarget }: SignInLayerProps) {
   const { auth, closeDialog, terminal } = signIn;
   const { authRequest } = auth;
   // The method the dialog's Try again runs once more.
@@ -32,25 +38,27 @@ export function SignInLayer({ signIn, agents, agentId, showTerminal = true }: Si
   const agentName = authRequest ? (agents.find((a) => a.id === authRequest.profileId)?.name ?? authRequest.profileId) : "";
   // Said when the panel appears: a live region that is already there announces what it is given, a new one does not.
   const appeared = authRequest && isForVisibleAgent && authRequest.status !== "signed-in" ? `Sign-in needed. ${authCopy(agentName, authRequest.methods).lead}` : "";
+  const panel =
+    authRequest && isForVisibleAgent ? (
+      <AuthPanel
+        agentName={agentName}
+        profileId={authRequest.profileId}
+        methods={authRequest.methods}
+        status={authRequest.status}
+        error={authRequest.error}
+        hasReturnedMessage={authRequest.pending !== undefined}
+        onSignIn={signInWith}
+        onCheckAgain={auth.recheck}
+        onDismiss={auth.dismiss}
+      />
+    ) : null;
 
   return (
     <>
       <p role="status" className="sr-only">
         {appeared}
       </p>
-      {authRequest && isForVisibleAgent && (
-        <AuthPanel
-          agentName={agentName}
-          profileId={authRequest.profileId}
-          methods={authRequest.methods}
-          status={authRequest.status}
-          error={authRequest.error}
-          hasReturnedMessage={authRequest.pending !== undefined}
-          onSignIn={signInWith}
-          onCheckAgain={auth.recheck}
-          onDismiss={auth.dismiss}
-        />
-      )}
+      {panel && (panelTarget ? createPortal(panel, panelTarget) : panel)}
       {terminal.dialog && showTerminal && (
         <TerminalSignInDialog
           state={terminal.dialog}

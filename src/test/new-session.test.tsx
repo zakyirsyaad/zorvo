@@ -179,6 +179,9 @@ describe("Starting a new session", () => {
     const prompt = screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement;
     expect(heading.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(card.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Under the draft's chips, not between the heading and them.
+    const folderChip = screen.getByRole("button", { name: /^Folder:/ });
+    expect(folderChip.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(prompt.disabled).toBe(false);
     // As wide as the composer's card: the 680px column with its 24px gutter outside it.
     const column = card.closest(".max-w-chat")!;

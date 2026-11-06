@@ -39,6 +39,8 @@ The consumer provides the controls and the send handler. Without a placeholder o
     - Each row is a 14px checkbox, filled `fg` when ticked, then the logo, the name and a status: "Ready" (`fg-muted`), "Not checked" (`fg-subtle`), "Needs sign-in" (`status-attention`, after a dot) or "Not installed" (`fg-subtle`).
     - An agent that cannot join is at 55% opacity, and its status describes its checkbox.
     - The footer says "With two or more agents, each runs in its own worktree in its safest mode."
+- **While the agent's options load.** A draft asks its agent what it offers. Meanwhile, three skeleton chips (28px, `radius-md`, `surface-hover`, pulsing only with motion allowed, about 72, 96 and 56px wide) sit in the row where the model, mode and effort chips will land, so nothing moves when they arrive. A screen reader hears "Loading <Agent>'s models and commands…" from an `sr-only` status. No line shows under the prompt. This is not on the canvas.
+- **Panels that hold a draft back.** The sign-in and install panels sit between the draft's chips and its card, 12px above the card, so the draft reads heading, chips, what is needed, then the message. In a session they sit right above the composer.
 - **Compare note.** With two or more agents ticked, "Each agent starts in its safest mode, in its own worktree." sits in the control row after attach, in `caption` and `fg-subtle`. Every other note stays under the prompt.
 - **The agent's sessions.** Once asked for, a header reads "Continue a session from <Agent>" (`caption`, 500, `fg-muted`) with "N in this folder" (`fg-subtle`) on the right.
   - Each session is a plain 44px row, `radius-lg`, in `fg-secondary`, with its time in `caption` and `fg-subtle`.

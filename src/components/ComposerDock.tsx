@@ -27,6 +27,9 @@ const MAX_PROMPT_HEIGHT_PX = 180;
 /** What an empty composer says when the parent gives no placeholder: a running session or a popout. */
 const replyPlaceholder = (agentName: string | undefined) => `Reply to ${agentName ?? "the agent"}`;
 
+/** The skeletons' widths while a draft's chips load: about a model's, a mode's and an effort's. */
+const SKELETON_CHIP_WIDTHS = ["w-18", "w-24", "w-14"] as const;
+
 /** Keys that only move the caret; the menu's own keys (Escape, Enter, up and down) are not among them. */
 const CARET_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
 
@@ -117,6 +120,13 @@ export interface ComposerDockProps {
   note?: string;
   /** The note sits in the control row, after attach, as the canvas draws a compare run's note; else under the prompt. */
   noteInRow?: boolean;
+  /** A draft is asking its agent what it offers: its chips show as skeletons in the row until they arrive. */
+  isLoadingControls?: boolean;
+  /**
+   * A draft's slot between its chips and its card, for the panels that hold it back (sign-in, install), so they
+   * read in order under the chips. The parent portals them in; the slot takes no room while empty.
+   */
+  aboveCardRef?: Ref<HTMLDivElement>;
   /** Before a new session starts: the folder it starts in. */
   folder?: FolderControl;
   /** Before a new session starts: the agent it runs. */
@@ -155,6 +165,8 @@ export function ComposerDock({
   contextUsage,
   note,
   noteInRow = false,
+  isLoadingControls = false,
+  aboveCardRef,
   folder,
   agent,
   agents,
@@ -414,6 +426,7 @@ export function ComposerDock({
           onClose={(name) => setOpenDropdown((current) => (current === name ? null : current))}
         />
       )}
+      {aboveCardRef && <div ref={aboveCardRef} data-above-card="" className="mb-3 w-full space-y-3 empty:hidden" />}
       <div
         data-composer-card=""
         className="relative flex w-full flex-col gap-2.5 rounded-xl border border-border bg-surface-2 p-3 shadow-popover transition-all focus-within:border-border-strong"
@@ -483,6 +496,22 @@ export function ComposerDock({
                 <AgentLogo profileId={sessionAgent.profileId} name="" size={16} />
                 <span className="truncate">{sessionAgent.name}</span>
               </span>
+            )}
+
+            {isLoadingControls && (
+              <>
+                <span role="status" className="sr-only">{`Loading ${agentName ?? "the agent"}'s models and commands…`}</span>
+                {/* Where the agent's chips will land, so nothing moves when they arrive. */}
+                {agentControls.length === 0 &&
+                  SKELETON_CHIP_WIDTHS.map((width) => (
+                    <span
+                      key={width}
+                      data-skeleton-chip=""
+                      aria-hidden="true"
+                      className={`h-7 ${width} rounded-md bg-surface-hover motion-safe:animate-pulse`}
+                    />
+                  ))}
+              </>
             )}
 
             {inlineControls.map((entry) => (

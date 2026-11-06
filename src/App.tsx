@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
@@ -202,12 +203,16 @@ export default function App() {
   const activeAgentRemoved = removedAgentNameFor(activeSession, agents, state.settings);
   // Hidden, not unmounted: a look at either must not cost the message being written.
   const isComposerHidden = Boolean(activeRun) || activeAgentRemoved !== null;
+  // The draft composer's slot between its chips and its card, where the sign-in and install panels go.
+  const [draftBlockerSlotElement, setDraftBlockerSlotElement] = useState<HTMLDivElement | null>(null);
   // An agent not installed yet is offered too: picking it shows its Install panel.
   const pickableAgents = agentsInUse;
   const defaultAgentId = resolveDraftAgentId(agentsInUse, state.settings.defaultAgentId, pickableAgents);
   const primaryAgentId = pickableAgents.find((a) => a.id === pickedAgentId)?.id ?? defaultAgentId;
   // No session is selected and no run is open: the window shows a new one, not started until its first message.
   const isNewSessionDraft = !activeSession && !activeRun;
+  // Only a draft uses the slot: its composer is never hidden, so a panel there is never hidden with it.
+  const draftBlockerSlot = isNewSessionDraft ? draftBlockerSlotElement : null;
   // A session shows the folder it runs in, even one no longer in the recents.
   const shownFolderPath = activeSession?.cwd ?? activeWorkspacePath;
   const workspaceDetails = useWorkspaceDetails(shownFolderPath, reportError, branchCheck);
@@ -889,7 +894,6 @@ export default function App() {
     agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
     agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
     continuesSession: isResumable || Boolean(activeSession),
-    agentLoading: !isActiveRunning && draftAgent && agentCheck.isProbing(draftAgent.id) ? draftAgent.name : undefined,
   });
   const composerCommands = composerCommandsFor({
     isRunning: isActiveRunning,
@@ -1108,8 +1112,9 @@ export default function App() {
                   />
                 </div>
               )}
-              {/* The draft's blockers sit right above the composer, which stays: a prompt can be written meanwhile. */}
+              {/* The blockers sit right above the composer, which stays: a prompt can be written meanwhile. */}
               {/* As wide as the composer's card: the gutter sits outside the 680px column, as the dock's does. */}
+              {/* In a draft the panels go into the composer's slot under its chips, so they read in order. */}
               <div className="px-6">
                 <div className="mx-auto w-full max-w-chat space-y-3">
                   <SignInLayer
@@ -1117,8 +1122,13 @@ export default function App() {
                     agents={agents}
                     agentId={activeSession?.profileId ?? (activeRun ? undefined : newSessionAgent?.id)}
                     showTerminal={settingsTab === null}
+                    panelTarget={draftBlockerSlot}
                   />
-                  {installPanelAgent ? <AgentInstallPanel agent={installPanelAgent} /> : null}
+                  {installPanelAgent
+                    ? draftBlockerSlot
+                      ? createPortal(<AgentInstallPanel agent={installPanelAgent} />, draftBlockerSlot)
+                      : <AgentInstallPanel agent={installPanelAgent} />
+                    : null}
                 </div>
               </div>
               {/* 24px at the sides and 20px under it, as the canvas draws the composer's dock. */}
@@ -1154,6 +1164,9 @@ export default function App() {
                   note={composerNoteText}
                   // Only a compare run's note sits in the row, as drawn; a reason or a loading line is a sentence for under the prompt.
                   noteInRow={composerNoteText === COMPARE_NOTE}
+                  // While the draft asks its agent what it offers, its chips show as skeletons in the row.
+                  isLoadingControls={Boolean(!isActiveRunning && draftAgent && agentCheck.isProbing(draftAgent.id))}
+                  aboveCardRef={setDraftBlockerSlotElement}
                   contextUsage={isActiveRunning ? acp.info[activeSessionId]?.usage : undefined}
                   mentions={filesFolder ? { root: filesFolder.path, loadFiles: () => shell.loadWorkspaceFiles(filesFolder.path) } : undefined}
                   folder={

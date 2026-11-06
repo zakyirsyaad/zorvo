@@ -317,10 +317,25 @@ describe("TerminalSignInDialog", () => {
     return { output, ...handlers };
   }
 
-  it("names the agent and the method", () => {
+  it("names the agent, at 16/24, with no method line under it", () => {
     renderDialog("running");
     expect(screen.getByRole("dialog", { name: "Sign in to Qwen Code" })).toBeTruthy();
-    expect(screen.getByText("Log in with Qwen")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "Sign in to Qwen Code" }).className).toContain("text-base");
+    expect(screen.queryByText("Log in with Qwen")).toBeNull();
+  });
+
+  it("puts the status left of Close in the footer", () => {
+    renderDialog("running");
+    const status = screen.getByRole("status");
+    expect(status.parentElement).toBe(screen.getByRole("button", { name: "Close" }).parentElement);
+    expect(status.className).toContain("flex-1");
+  });
+
+  it("pads the terminal 14/16", () => {
+    renderDialog("running");
+    const box = screen.getByRole("dialog").querySelector(".h-\\[380px\\]");
+    expect(box?.className).toContain("px-4");
+    expect(box?.className).toContain("py-3.5");
   });
 
   it.each([
@@ -378,7 +393,7 @@ describe("TerminalSignInDialog", () => {
     );
 
     expect(screen.getByRole("dialog", { name: "Set up Qwen Code" })).toBeTruthy();
-    expect(screen.getByText("Qwen Code's own setup")).toBeTruthy();
+    expect(screen.queryByText("Qwen Code's own setup")).toBeNull();
   });
 
   it("lets a login's own note replace the running line", () => {

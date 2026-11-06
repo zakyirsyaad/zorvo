@@ -5,7 +5,9 @@ import {
   formatCheckedAgo,
   matchesQuery,
   pendingUpdates,
+  availableLine,
   rowActions,
+  sourceLine,
   statusLine,
   unavailableReasonText,
   unavailableSection,
@@ -273,5 +275,50 @@ describe("time formatting", () => {
     expect(formatCheckedAgo(now - 3 * 86400, now)).toBe("3 days ago");
     expect(formatCheckedAgo(now - 5, now)).toBe("just now");
     expect(formatCheckedAgo(now - 90, now)).toBe("1 minute ago");
+  });
+});
+
+describe("sourceLine", () => {
+  const agent = (overrides: Parameters<typeof makeCatalogAgent>[0]) => makeCatalogAgent(overrides);
+
+  it("puts the version before where the agent comes from", () => {
+    expect(sourceLine(agent({ id: "a", name: "A", version: "0.93.0", status: "by_zorvo" }))).toBe("0.93.0 · installed by Zorvo");
+    expect(sourceLine(agent({ id: "a", name: "A", version: "0.64.0", status: "on_your_mac" }))).toBe("0.64.0 · on this Mac");
+    expect(sourceLine(agent({ id: "a", name: "A", version: "0.2.0", status: "not_installed" }))).toBe("0.2.0 · not installed");
+    expect(sourceLine(agent({ id: "a", name: "A", status: "unsupported" }))).toBe("not available for this Mac");
+  });
+
+  it("is the source alone without a version", () => {
+    expect(sourceLine(agent({ id: "a", name: "A", status: "ready", distribution: "npx" }))).toBe("runs with npx");
+  });
+
+  it("leaves out the version of a program found outside Zorvo, which may not be the registry's", () => {
+    expect(sourceLine(agent({ id: "a", name: "A", version: "0.64.0", status: "on_your_mac", location: "/opt/homebrew/bin/gemini" }))).toBe("on this Mac");
+  });
+
+  it("says when the registry no longer lists the agent", () => {
+    expect(sourceLine(agent({ id: "a", name: "A", version: "1.0.0", status: "by_zorvo", listed: false }))).toBe("1.0.0 · installed by Zorvo · no longer listed");
+  });
+});
+
+describe("availableLine", () => {
+  const plan: InstallStep[] = [
+    { kind: "node", name: "Node.js", version: "24.11.1", download_bytes: 51_380_224 },
+    { kind: "agent", name: "Pi", version: "0.9.0", download_bytes: null },
+  ];
+
+  it("says what Add would install, before the description", () => {
+    expect(availableLine(makeCatalogAgent({ id: "pi", name: "Pi", description: "A coding agent", status: "not_installed" }), plan)).toBe(
+      "Installs Node.js 24.11.1 (49 MB) and Pi 0.9.0 into Zorvo's folder",
+    );
+  });
+
+  it("is the description with nothing to install", () => {
+    expect(availableLine(makeCatalogAgent({ id: "q", name: "Q", description: "Alibaba's coding assistant" }), null)).toBe("Alibaba's coding assistant");
+  });
+
+  it("says why an agent cannot be used, with no description", () => {
+    expect(availableLine(makeCatalogAgent({ id: "u", name: "U", status: "unsupported" }), null)).toBe("Not available for this Mac");
+    expect(availableLine(makeCatalogAgent({ id: "r", name: "R", status: "ready" }), null)).toBe("");
   });
 });

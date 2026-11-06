@@ -181,3 +181,38 @@ export function formatCheckedAgo(seconds: number, now: number): string {
   if (elapsed < SECONDS_PER_DAY) return RELATIVE_FORMAT.format(-Math.floor(elapsed / SECONDS_PER_HOUR), 'hour');
   return RELATIVE_FORMAT.format(-Math.floor(elapsed / SECONDS_PER_DAY), 'day');
 }
+
+/** Where an agent in use comes from, after its version: the mono line under its name in Settings → Agents. */
+function sourceWords(agent: CatalogAgent): string {
+  switch (agent.status) {
+    case 'by_zorvo':
+      return 'installed by Zorvo';
+    case 'on_your_mac':
+      return 'on this Mac';
+    case 'ready':
+      return `runs with ${agent.distribution}`;
+    case 'not_installed':
+      return 'not installed';
+    case 'waiting':
+      return agent.availableFrom === null ? 'not available yet' : `available from ${formatAvailableFrom(agent.availableFrom)}`;
+    case 'unsupported':
+      return 'not available for this Mac';
+  }
+}
+
+/**
+ * "0.93.0 · installed by Zorvo": an agent in use's version and source. A program found outside Zorvo at a
+ * known place shows no version, since it may not be the registry's.
+ */
+export function sourceLine(agent: CatalogAgent): string {
+  const version = agent.location === null ? agent.version : null;
+  const line = version ? `${version} · ${sourceWords(agent)}` : sourceWords(agent);
+  return agent.listed ? line : `${line} · no longer listed`;
+}
+
+/** An available agent's line: what Add would install, else its description, else why it cannot be used. */
+export function availableLine(agent: CatalogAgent, plan: readonly InstallStep[] | null): string {
+  if (plan && plan.length > 0) return `Installs ${describePlan(plan)} into Zorvo's folder`;
+  if (agent.description) return agent.description;
+  return agent.status === 'waiting' || agent.status === 'unsupported' ? baseStatusLine(agent, plan, false) : '';
+}

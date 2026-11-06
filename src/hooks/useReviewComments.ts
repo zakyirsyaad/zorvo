@@ -23,6 +23,8 @@ export type DraftKey = string;
 export type CommentAnchor = Omit<ReviewComment, 'id' | 'body' | 'createdAt' | 'lineHash' | 'quote' | 'oldFile' | 'sentAt'>;
 
 export interface ReviewComments {
+  /** Whose comments these are; a box keeps its own text only for its session. */
+  sessionId: string;
   comments: readonly ReviewComment[];
   /** This session's open boxes, so one whose row has left the diff can still be shown. */
   draftKeys: readonly DraftKey[];
@@ -93,6 +95,7 @@ export function useReviewComments(
   };
 
   return {
+    sessionId: session,
     comments: list,
     draftKeys: Object.keys(sessionDrafts()),
     draftFor: (key) => sessionDrafts()[key],

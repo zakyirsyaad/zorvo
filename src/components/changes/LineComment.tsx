@@ -33,6 +33,11 @@ const UNDER_ROW: Record<DiffDensity, string> = {
   review: "ml-[104px] mr-4 mt-1.5 mb-2",
   card: "ml-[38px] mr-2.5 mb-2.5",
 };
+/** The comments of a file listed away from their rows, in its section or card. */
+const LISTED: Record<DiffDensity, string> = {
+  review: "mx-4 my-2",
+  card: "mx-2.5 my-2.5",
+};
 /** How long Delete waits for its confirming second click. */
 const CONFIRM_DELETE_MS = 4000;
 
@@ -140,12 +145,15 @@ function Dot() {
 }
 
 /** One saved comment: under its row, or with `location` and its quote in a list, where no row explains it. */
-export function LineComment({ comment, status, review, adder, location, onRemoved }: {
+export function LineComment({ comment, status, review, adder, location, isQuoted = location !== undefined, onRemoved }: {
   comment: ReviewComment;
   status: CommentStatus;
   review: ReviewComments;
   adder?: CommentAdder;
+  /** The file and line, for a comment in the comments bar, where nothing else says which file. */
   location?: string;
+  /** Shows the quoted line: a comment listed away from its row has no row to read it from. */
+  isQuoted?: boolean;
   onRemoved: () => void;
 }) {
   const editKey = editDraftKeyOf(comment.id);
@@ -170,7 +178,7 @@ export function LineComment({ comment, status, review, adder, location, onRemove
       <LineCommentBox
         ref={box}
         label={`Edit comment on line ${comment.line}`}
-        location={location?.startsWith("Line ") ? undefined : location}
+        location={location}
         initialBody={edit.body}
         onChange={(body) => review.setDraftBody(editKey, body)}
         onSave={(body) => {
@@ -186,8 +194,9 @@ export function LineComment({ comment, status, review, adder, location, onRemove
   }
 
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-border bg-surface-3 p-2.5 font-sans text-ui">
-      <div className={`flex min-w-0 flex-1 flex-col gap-1 ${isSent ? "opacity-60" : ""}`}>
+    // In a narrow Changes card the buttons go under the text rather than squeeze it.
+    <div className="flex flex-wrap items-start gap-2 rounded-lg border border-border bg-surface-3 p-2.5 font-sans text-ui">
+      <div className={`flex min-w-0 flex-[1_1_12rem] flex-col gap-1 ${isSent ? "opacity-60" : ""}`}>
         <p className="flex flex-wrap items-center gap-x-1 text-caption text-fg-subtle">
           <span className="min-w-0 truncate font-medium text-fg-secondary">{location ?? `Line ${comment.line}`}</span>
           {/* Spaces as text, so the line copies as "Line 42 · Current"; the gap draws them. */}
@@ -196,10 +205,11 @@ export function LineComment({ comment, status, review, adder, location, onRemove
           {isInMessage && <><Dot /><span>In message</span></>}
           {isSent && <><Dot /><span>Sent</span></>}
         </p>
-        {location && <p className="truncate font-mono text-caption text-fg-subtle">{comment.quote}</p>}
+        {isQuoted && <p className="truncate font-mono text-caption text-fg-subtle">{comment.quote}</p>}
         {status === "outdated" && <p className="text-caption text-fg-subtle">{GONE_NOTE}</p>}
         <p className="whitespace-pre-wrap break-words text-fg-secondary">{comment.body}</p>
       </div>
+      <div className="ml-auto flex shrink-0 items-start gap-2">
       {adder && addLabel && (
         <Button
           variant="outline"
@@ -229,6 +239,7 @@ export function LineComment({ comment, status, review, adder, location, onRemove
           review.deleteComment(comment.id);
         }}
       />
+      </div>
     </div>
   );
 }
@@ -245,7 +256,9 @@ export function DraftBox({ review, place, location, onDone }: {
   const [isFull, setIsFull] = useState(false);
   if (!draft) return null;
   return (
+    // A view kept on screen across a session switch (the Changes tab) must not show one session's text in another's box.
     <LineCommentBox
+      key={review.sessionId}
       label={`Comment on line ${place.line}`}
       location={location}
       initialBody={draft.body}
@@ -350,11 +363,12 @@ export function rowReviewOf(
 }
 
 /** What a file's rows do not show: comments with no row to sit under, and boxes whose row has left the diff. */
-export function FileComments({ file, change, rows }: {
+export function FileComments({ file, change, rows, density = "review" }: {
   file: FileReview;
   change: FileNames;
   /** The rows comments can sit under. */
   rows: readonly UnifiedRow[];
+  density?: DiffDensity;
 }) {
   const { review, target, onFocusLost } = file;
   if (file.checked.length === 0 && review.draftKeys.length === 0) return null;
@@ -367,7 +381,7 @@ export function FileComments({ file, change, rows }: {
   });
   if (listed.length === 0 && boxes.length === 0) return null;
   return (
-    <div className="mx-1.5 mb-1.5 flex flex-col gap-1">
+    <div className={`${LISTED[density]} flex flex-col gap-1.5`}>
       {listed.map(({ comment, status }) => (
         <LineComment
           key={comment.id}
@@ -375,7 +389,7 @@ export function FileComments({ file, change, rows }: {
           status={status}
           review={review}
           adder={file.adder}
-          location={`Line ${comment.line}`}
+          isQuoted
           onRemoved={onFocusLost}
         />
       ))}

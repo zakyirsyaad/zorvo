@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useSessionChanges, type SessionChanges } from "./useSessionChanges";
 import { useDiffStats, useDiffTargets } from "./useDiffStats";
+import type { DiffTargets } from "../lib/diff-stats";
 import { useInspectorWidth } from "./useInspectorWidth";
 import { isCrowded, shownInspectorWidth, type InspectorTab } from "../lib/inspector";
 import type { FileStat } from "../lib/diff-stats";
@@ -39,6 +40,10 @@ export interface InspectorState {
    * until it loads): diff stats name repository paths, the Files tab the folder's own.
    */
   filesPrefix: string;
+  /** The repository's root and the folder's prefix, which word a comment's path in the Changes tab. */
+  targets: DiffTargets;
+  /** The last read of `targets` failed, so they know no root. */
+  targetsFailed: boolean;
   /** The file open in the Files tab, relative to its folder; null shows the tree. Another folder closes it. */
   viewedFile: string | null;
   /** Opens a file in the Files tab; the inspector widens like the Terminal tab, the sidebar giving way if it must. */
@@ -84,7 +89,8 @@ export function useInspector(
   const [width, setWidth] = useInspectorWidth();
   const changes = useSessionChanges(folderPath, isRepository, turnsEnded, onError);
   const { stats: headStats, hasFailed: headStatsFailed } = useDiffStats(folderPath, isRepository, "head", changes.version, onError);
-  const filesPrefix = useDiffTargets(folderPath, isRepository, changes.version, onError).targets.prefix ?? "";
+  const { targets, hasFailed: targetsFailed } = useDiffTargets(folderPath, isRepository, changes.version, onError);
+  const filesPrefix = targets.prefix ?? "";
 
   const shownTab = tab !== null && layout.offered.includes(tab) ? tab : null;
 
@@ -165,6 +171,8 @@ export function useInspector(
     headStats,
     headStatsFailed,
     filesPrefix,
+    targets,
+    targetsFailed,
     viewedFile: isViewingFile ? viewedFile : null,
     viewFile,
     closeFile: () => setViewedFile(null),

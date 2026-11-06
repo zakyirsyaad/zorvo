@@ -1328,9 +1328,10 @@ export default function App() {
                     onOpenDiff={() => inspector.openDiff()}
                     stats={inspector.headStats ?? undefined}
                     statsFailed={inspector.headStatsFailed}
+                    targets={inspector.targets}
+                    targetsFailed={inspector.targetsFailed}
                     review={activeSession ? review.review : undefined}
                     addReview={activeSession ? review.addReview : undefined}
-                    onError={reportError}
                   />
                 )}
                 {inspectorTab === "activity" && activeSession && (

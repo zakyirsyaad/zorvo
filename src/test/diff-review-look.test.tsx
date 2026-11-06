@@ -113,3 +113,14 @@ describe("the full diff review as drawn", () => {
     expect(header.textContent).toContain("src/lib/removed.ts");
   });
 });
+
+describe("the file header in a narrow review", () => {
+  it("cuts the hint before the path", async () => {
+    await renderView();
+
+    const hint = screen.getAllByText("Click a line number to comment")[0];
+    const path = hint.parentElement!.querySelector<HTMLElement>(".font-mono")!;
+    expect(path.classList.contains("shrink-0") || path.className.includes("shrink-[")).toBe(false);
+    expect(hint.className).toContain("shrink-[999]");
+  });
+});

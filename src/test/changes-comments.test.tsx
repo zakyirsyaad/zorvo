@@ -166,4 +166,19 @@ describe("Line comments in the Changes tab", () => {
     expect(add).toBeDisabled();
     await waitFor(() => expect(add).toHaveAccessibleDescription(NOT_LOADED));
   });
+
+  it("the Changes tab reads no diff targets of its own", async () => {
+    seed([sessionOf("s-a", "Alpha work", [commentOf()])]);
+    const spy = vi.mocked(tauriInternals().invoke);
+    await act(async () => {
+      render(<App />);
+    });
+    const readsOf = (name: string) => spy.mock.calls.filter(([cmd]) => cmd === name).length;
+
+    await openInspectorTab("Changes");
+    await within(changes()).findByRole("button", { name: "Add 1 comment to message" });
+
+    // The inspector reads the targets with each list of counts; the tab reads none of its own.
+    expect(readsOf("session_diff_targets")).toBe(readsOf("session_diff_stats"));
+  });
 });

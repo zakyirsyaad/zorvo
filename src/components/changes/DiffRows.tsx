@@ -217,12 +217,14 @@ export function DiffRows({ rows, label, review, density = "review" }: {
             isActive={isActive}
             control={
               isActive && review?.canComment(row) ? (
-                // Sits over the row without widening it: a row is 20px and the button 28px.
+                // Sits over the row without widening it, centred on it: a review row is 20px and the
+                // button 28px, a card row 18px and the button 24px.
                 <span role="gridcell" className="sticky left-0 z-10 w-0 shrink-0">
                   <IconButton
                     label={`Comment on line ${lineOf(row)}`}
+                    size={density === "card" ? "sm" : "md"}
                     tabIndex={-1}
-                    className="absolute -top-1 left-0 bg-surface-3 shadow-popover"
+                    className={`absolute left-0 bg-surface-3 shadow-popover ${density === "card" ? "-top-[3px]" : "-top-1"}`}
                     onClick={() => openBox(index)}
                   >
                     <MessageSquarePlus size={14} />

@@ -1,7 +1,8 @@
 import { ChevronRight } from "lucide-react";
 import { FileDiff } from "./FileDiff";
 import { commentSummary, FileComments, type FileReview } from "./LineComment";
-import { formatLineCount, MINUS, type DiffTargetId, type FileStat } from "../../lib/diff-stats";
+import type { DiffTargetId, FileStat } from "../../lib/diff-stats";
+import { LineCounts } from "./LineCounts";
 
 /** The id of a file's section in the diff view, which the review's file list scrolls to. */
 export function diffSectionId(rootPath: string, path: string): string {
@@ -36,18 +37,13 @@ export function DiffFileSection({ rootPath, stat, target, startCommit, version, 
         <span className="min-w-0 truncate font-mono text-ui-sm text-fg">{stat.path}</span>
         {/* The rows say it to a screen reader: each offers "Comment on line N". */}
         {isOpen && takesComments && (
-          <span aria-hidden="true" className="min-w-0 truncate text-caption text-fg-subtle">
+          // It gives way long before the path, which is what names the file.
+          <span aria-hidden="true" className="min-w-0 shrink-[999] truncate text-caption text-fg-subtle">
             Click a line number to comment
           </span>
         )}
-        <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-caption tabular-nums">
-          {stat.added > 0 && <span className="text-status-running">+{formatLineCount(stat.added)}</span>}
-          {stat.removed > 0 && (
-            <span className="text-danger">
-              {MINUS}
-              {formatLineCount(stat.removed)}
-            </span>
-          )}
+        <span className="ml-auto flex shrink-0 items-center gap-2">
+          <LineCounts added={stat.added} removed={stat.removed} />
         </span>
         {review && review.checked.length > 0 && (
           <span className="shrink-0 text-caption text-fg-muted">{commentSummary(review)}</span>

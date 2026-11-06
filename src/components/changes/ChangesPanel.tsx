@@ -1,13 +1,13 @@
 import { useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight, Maximize2, RefreshCw } from "lucide-react";
-import { formatLineCount, MINUS, type FileStat } from "../../lib/diff-stats";
+import { formatLineCount, type DiffTargets, type FileStat } from "../../lib/diff-stats";
 import { commitPathsOf, type ChangeKind, type FileChange } from "../../lib/git-changes";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { FileDiff } from "./FileDiff";
+import { LineCounts } from "./LineCounts";
 import { ReviewCommentsBar } from "./ReviewCommentsBar";
-import { useDiffTargets } from "../../hooks/useDiffStats";
 import { DIFF_NOT_LOADED, useFileReviews } from "../../hooks/useFileReviews";
 import type { ReviewComments } from "../../hooks/useReviewComments";
 import type { AddReview } from "../../hooks/useReviewWiring";
@@ -39,8 +39,10 @@ export interface ChangesPanelProps {
   review?: ReviewComments;
   /** Puts this session's comments in the message. */
   addReview?: AddReview;
-  /** Says why the diff's paths could not be read. */
-  onError?: (message: string) => void;
+  /** The repository's root and the folder's prefix, read by the inspector; a comment's path is worded from them. */
+  targets?: DiffTargets;
+  /** The last read of `targets` failed. */
+  targetsFailed?: boolean;
   /** The last read of `stats` failed, so comments cannot be checked or added. */
   statsFailed?: boolean;
 }
@@ -48,7 +50,9 @@ export interface ChangesPanelProps {
 /** The Changes tab lists what Commit would take, so its comments are always on the diff against HEAD. */
 const TARGET = "head";
 const ONLY_HEAD = [TARGET] as const;
-const ignoreError = () => {};
+/** Until the inspector has read them: no root, so Add waits. */
+const NO_TARGETS: DiffTargets = { base: null, root: "", prefix: "" };
+const noop = () => {};
 
 const KIND_LABEL: Record<ChangeKind, { letter: string; name: string; style: string }> = {
   modified: { letter: "M", name: "Modified", style: "text-fg-muted" },
@@ -57,21 +61,6 @@ const KIND_LABEL: Record<ChangeKind, { letter: string; name: string; style: stri
   deleted: { letter: "D", name: "Deleted", style: "text-danger" },
   renamed: { letter: "R", name: "Renamed", style: "text-fg-secondary" },
 };
-
-/** `+N` and `−N`, each only when it is not zero. */
-function Counts({ added, removed }: { added: number; removed: number }) {
-  return (
-    <>
-      {added > 0 && <span className="shrink-0 font-mono text-caption tabular-nums text-status-running">+{formatLineCount(added)}</span>}
-      {removed > 0 && (
-        <span className="shrink-0 font-mono text-caption tabular-nums text-danger">
-          {MINUS}
-          {formatLineCount(removed)}
-        </span>
-      )}
-    </>
-  );
-}
 
 type CommitState = { status: "idle" } | { status: "committing" } | { status: "done"; hash: string } | { status: "failed"; error: string };
 
@@ -98,7 +87,7 @@ function ChangeCard({ change, stat, commentCount, isChecked, isOpen, onCheck, on
           checked={isChecked}
           onChange={(e) => onCheck(e.target.checked)}
           aria-label={`Include ${change.path} in the commit`}
-          className="size-3 shrink-0 accent-primary"
+          className="size-3 shrink-0 accent-primary focus-ring"
         />
         <button
           type="button"
@@ -118,7 +107,7 @@ function ChangeCard({ change, stat, commentCount, isChecked, isOpen, onCheck, on
         <span title={kind.name} aria-label={kind.name} className={`w-3 shrink-0 text-center font-mono text-micro ${kind.style}`}>
           {kind.letter}
         </span>
-        {stat && !stat.isBinary && <Counts added={stat.added} removed={stat.removed} />}
+        {stat && !stat.isBinary && <LineCounts added={stat.added} removed={stat.removed} />}
       </div>
       {/* A long line scrolls here, never widening the inspector. */}
       {isOpen && <div className="overflow-x-auto">{children}</div>}
@@ -145,7 +134,8 @@ export function ChangesPanel({
   stats,
   review,
   addReview,
-  onError,
+  targets = NO_TARGETS,
+  targetsFailed = false,
   statsFailed = false,
 }: ChangesPanelProps) {
   // Files left out of the commit; any new change is included by default.
@@ -158,8 +148,6 @@ export function ChangesPanel({
   const statOf = useMemo(() => new Map((stats ?? []).map((stat) => [stat.path, stat])), [stats]);
   const panel = useRef<HTMLElement>(null);
   const focusPanel = () => panel.current?.focus({ preventScroll: true });
-  // The root and the folder's prefix word a comment's path; only read when comments are offered.
-  const { targets, hasFailed: haveTargetsFailed } = useDiffTargets(rootPath, review !== undefined, version, onError ?? ignoreError);
   const { checked, reads, adder, fileReviewFor } = useFileReviews({
     rootPath,
     review,
@@ -168,7 +156,7 @@ export function ChangesPanel({
     targets,
     stats: stats ?? null,
     refreshes: version,
-    blockedReason: haveTargetsFailed || statsFailed ? DIFF_NOT_LOADED : undefined,
+    blockedReason: targetsFailed || statsFailed ? DIFF_NOT_LOADED : undefined,
     onFocusLost: focusPanel,
   });
   // Another target's comments belong to the full review, which can show that target.
@@ -236,7 +224,7 @@ export function ChangesPanel({
                 ? "No uncommitted changes."
                 : `${list.length} ${list.length === 1 ? "file" : "files"} changed`}
           </p>
-          {diffStats && <Counts added={diffStats.added} removed={diffStats.removed} />}
+          {diffStats && <LineCounts added={diffStats.added} removed={diffStats.removed} />}
           <span className="flex-1" />
           {diffStats && (diffStats.added > 0 || diffStats.removed > 0) && onOpenDiff && (
             <Button
@@ -292,7 +280,7 @@ export function ChangesPanel({
           options={ONLY_HEAD}
           reads={reads}
           listed={stats ?? null}
-          onTargetChange={ignoreError}
+          onTargetChange={noop}
           onFocusLost={focusPanel}
         />
       )}

@@ -66,7 +66,7 @@ export function FileDiff({ rootPath, change, version, target = "head", startComm
   };
   return (
     <>
-      {fileReview && <FileComments file={fileReview} change={change} rows={rowReview ? shownRows : []} />}
+      {fileReview && <FileComments file={fileReview} change={change} rows={rowReview ? shownRows : []} density={density} />}
       {body()}
     </>
   );

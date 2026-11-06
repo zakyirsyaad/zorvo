@@ -111,3 +111,11 @@ describe("the Changes tab as drawn", () => {
     expect(screen.queryByRole("button", { name: /Create pull request/ })).toBeNull();
   });
 });
+
+describe("the Changes tab's controls", () => {
+  it("the include checkbox shows the focus ring", () => {
+    renderPanel();
+
+    expect(screen.getByRole("checkbox", { name: "Include src/app.ts in the commit" }).classList.contains("focus-ring")).toBe(true);
+  });
+});

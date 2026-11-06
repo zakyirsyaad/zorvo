@@ -7,6 +7,8 @@ import type { DiffTargetId, DiffTargets, FileStat } from "../lib/diff-stats";
 import { commentStatus, sortComments, type CheckedComment, type FileRead } from "../lib/review-comments";
 import type { ReviewComment } from "../types";
 
+const NONE: readonly CheckedComment[] = [];
+
 /** Why Add is off when a view's diff could not be read. */
 export const DIFF_NOT_LOADED = "The diff has not loaded, so comments cannot be added. Refresh to try again.";
 
@@ -61,7 +63,14 @@ export function useFileReviews({
     () => comments.map((comment) => ({ comment, status: commentStatus(comment, target, reads[comment.file]) })),
     [comments, reads, target],
   );
-  const onTarget = useMemo(() => checked.filter(({ comment }) => comment.target === target), [checked, target]);
+  // By file, once per change: both views ask for every listed file on every redraw.
+  const byFile = useMemo(() => {
+    const files = new Map<string, CheckedComment[]>();
+    for (const item of checked) {
+      if (item.comment.target === target) files.set(item.comment.file, [...(files.get(item.comment.file) ?? []), item]);
+    }
+    return files;
+  }, [checked, target]);
   const reasonId = useId();
   const adder: CommentAdder | undefined = addReview && {
     inMessage: addReview.inMessage,
@@ -77,7 +86,7 @@ export function useFileReviews({
       review,
       adder,
       target,
-      checked: onTarget.filter(({ comment }) => comment.file === path),
+      checked: byFile.get(path) ?? NONE,
       read: reads[path],
       onFocusLost,
     };

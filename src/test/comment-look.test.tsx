@@ -2,7 +2,9 @@ import { useState } from "react";
 import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { DiffView } from "../components/changes/DiffView";
-import { LineComment } from "../components/changes/LineComment";
+import { DraftBox, LineComment } from "../components/changes/LineComment";
+import { draftKeyOf, type ReviewComments } from "../hooks/useReviewComments";
+import type { UnifiedRow } from "../lib/git-changes";
 import { ReviewCommentsBar } from "../components/changes/ReviewCommentsBar";
 import { useReviewComments } from "../hooks/useReviewComments";
 import type { AddReview } from "../hooks/useReviewWiring";
@@ -192,5 +194,75 @@ describe("the comments bar as drawn", () => {
     const add = screen.getByRole("button", { name: "Add 2 comments to message" });
     expect(add.textContent).toBe("Add 2");
     expect(add.className).not.toContain("bg-primary");
+  });
+});
+
+describe("comments after the review", () => {
+  it("a draft box shows its own session's text after a session switch", () => {
+    const place = { target: "head", file: FILE, side: "new", line: 42 } as const;
+    const key = draftKeyOf(place);
+    const row: UnifiedRow = { kind: "added", text: "const x", newLine: 42 };
+    let review: ReviewComments | undefined;
+    let showSession: (id: string) => void = () => {};
+    function Box() {
+      const [session, setSession] = useState("s-a");
+      showSession = setSession;
+      review = useReviewComments(session, [], () => {});
+      return review.draftFor(key) ? <DraftBox review={review} place={place} onDone={() => {}} /> : null;
+    }
+    render(<Box />);
+    act(() => {
+      review!.openDraft(key, row);
+      review!.setDraftBody(key, "Rename this");
+    });
+    act(() => showSession("s-b"));
+    act(() => {
+      review!.openDraft(key, row);
+      review!.setDraftBody(key, "Add a test");
+    });
+    expect(screen.getByRole("textbox", { name: "Comment on line 42" })).toHaveProperty("value", "Add a test");
+
+    // Both sessions have a box on this line, so the box stays on screen across the switch.
+    act(() => showSession("s-a"));
+    expect(screen.getByRole("textbox", { name: "Comment on line 42" })).toHaveProperty("value", "Rename this");
+  });
+
+  it("editing a comment in the bar keeps its file, whatever the file is called", () => {
+    const comment = commentOf({ file: "Line notes.md", target: "base" });
+    function Bar() {
+      const review = useReviewComments("s-a", [comment], () => {});
+      return (
+        <ReviewCommentsBar
+          review={review}
+          checked={[{ comment, status: "elsewhere" }]}
+          target="head"
+          targets={{ base: null, root: "/w", prefix: "" }}
+          options={["head"]}
+          reads={{}}
+          listed={[STAT]}
+          onTargetChange={() => {}}
+          onFocusLost={() => {}}
+        />
+      );
+    }
+    render(<Bar />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("textbox", { name: "Edit comment on line 42" })).toBeDefined();
+    expect(screen.getByText("Line notes.md:42")).toBeDefined();
+  });
+
+  it("a saved comment lets its buttons wrap under a narrow text", async () => {
+    await renderView([commentOf()]);
+
+    const card = screen.getByText("Use AuthError here.").closest<HTMLElement>(".bg-surface-3")!;
+    expect(card.classList.contains("flex-wrap")).toBe(true);
+  });
+
+  it("a comment with no row to sit under keeps the review's indent", async () => {
+    await renderView([commentOf({ lineHash: lineHash("gone") })]);
+
+    const card = screen.getByText("Use AuthError here.").closest<HTMLElement>(".bg-surface-3")!;
+    expect(card.parentElement?.classList.contains("mx-4")).toBe(true);
   });
 });

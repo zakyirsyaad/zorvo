@@ -75,3 +75,14 @@ describe("diff rows as drawn", () => {
     expect(rowOf("added").className).not.toContain("shadow-[inset_2px_0_0_var(--color-fg)]");
   });
 });
+
+describe("the comment control in a card", () => {
+  it("fits an 18px card row", () => {
+    const review: RowReview = { badge: () => null, canComment: () => true, openBox: vi.fn(), under: () => null };
+    render(<DiffRows rows={ROWS} label="Diff of a.ts" review={review} density="card" />);
+
+    fireEvent.mouseOver(rowOf("context"));
+    const control = document.querySelector<HTMLElement>('[aria-label="Comment on line 10"]')!;
+    expect(control.classList.contains("h-6")).toBe(true);
+  });
+});

@@ -1,4 +1,5 @@
-import { formatLineCount, MINUS, type FileStat } from "../../lib/diff-stats";
+import type { FileStat } from "../../lib/diff-stats";
+import { LineCounts } from "./LineCounts";
 
 export interface DiffFileListProps {
   /** The files the review shows, already narrowed by Search files. */
@@ -30,13 +31,7 @@ export function DiffFileList({ stats, selectedPath, onSelect }: DiffFileListProp
             className={`${ROW} ${isSelected ? "bg-surface-hover text-fg" : "text-fg-secondary hover:bg-surface-hover"}`}
           >
             <span className="min-w-0 flex-1 truncate">{name}</span>
-            {stat.added > 0 && <span className="shrink-0 tabular-nums text-status-running">+{formatLineCount(stat.added)}</span>}
-            {stat.removed > 0 && (
-              <span className="shrink-0 tabular-nums text-danger">
-                {MINUS}
-                {formatLineCount(stat.removed)}
-              </span>
-            )}
+            <LineCounts added={stat.added} removed={stat.removed} />
           </button>
         );
       })}

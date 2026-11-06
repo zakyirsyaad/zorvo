@@ -52,7 +52,9 @@
 4. **"Registry checked 8 hours ago" stays**, as a `caption` `fg-subtle` line under the search row. The canvas leaves it out, but it is the only place that says how fresh the list is.
 5. **Group headings follow the canvas:** "In use" and "Available", without counts. "Not available (N)" keeps its count. "All agents" becomes "Available".
 6. **`authCopy`'s `cliHint` and `keysNote` stay**, as `ui-sm` `fg-subtle` lines above the methods card. 8d ruled the same.
-7. **A program found outside Zorvo** reads "0.64.0 · on this Mac". When Zorvo knows its location, the location is the line's `title`, not more words in the row.
+7. **A program found outside Zorvo** reads "0.64.0 · on this Mac". When Zorvo knows where it lives, the line reads "on this Mac" with no version, because that program may not be the registry's version (today's rule, `shownVersion`). The location is then the line's `title`, not more words in the row.
+8. **An available agent that Add would install reads Install**, and its line says what gets installed ("Installs Node.js 24.11.1 (49 MB) and Pi into Zorvo's folder"). This follows the spec ("**Add** or **Install** (with what gets installed)") and the canvas's Pi row. The button does what Add does today (`onAdd`, which installs), and its accessible name is its text. An available agent with nothing to install reads Add, under its description.
+9. **Check again is `Button size="lg"`, 13px**, where the canvas draws 12px at 32px. The 28px size was aligned app-wide in PR #154; the 32px size is the same kind of app-wide gap, and it is left to a separate change.
 
 ## Review Focus
 
@@ -86,23 +88,23 @@ Most likely first:
   | `waiting` | "not available yet", or "available from {date}" |
   | `unsupported` | "not available for this Mac" |
 
-  An unlisted agent ends in " · no longer listed".
+  An unlisted agent ends in " · no longer listed". The version is left out when `agent.location !== null`, as `AgentCatalogRow` does today.
 - Produces `availableLine(agent: CatalogAgent, plan: readonly InstallStep[] | null): string`, an available row's line:
-  - the agent's description;
-  - else, with a plan, "Installs {describePlan(plan)} into Zorvo's folder";
-  - else, `statusLine`'s words for `waiting` or `unsupported`.
+  - with a non-empty plan, "Installs {describePlan(plan)} into Zorvo's folder" (ruling 8);
+  - else the agent's description;
+  - else `statusLine`'s words for `waiting` or `unsupported`, or "" when there is nothing to say.
 - `statusLine` stays, for the install job line.
 
 - [ ] **Step 1: Failing tests**:
   - `sourceLine`:
     - "0.93.0 · installed by Zorvo";
-    - "0.64.0 · on this Mac";
+    - "0.64.0 · on this Mac" with no location, and "on this Mac" alone with one;
     - "runs with npx" with no version;
     - "0.2.0 · not installed";
     - an unlisted agent ends in " · no longer listed".
   - `availableLine`:
-    - the description when there is one;
-    - "Installs Node.js 24.11.1 (49 MB) and Pi into Zorvo's folder" with no description and a plan;
+    - "Installs Node.js 24.11.1 (49 MB) and Pi into Zorvo's folder" with a plan, even when there is a description;
+    - the description with no plan;
     - "Not available for this Mac" for an unsupported agent with no description.
 - [ ] **Step 2: Run** `pnpm vitest run src/test/agent-catalog.test.ts`. Expected: FAIL (not exported).
 - [ ] **Step 3: Implement** both helpers.
@@ -163,7 +165,7 @@ Most likely first:
 **Interfaces:** Consumes `sourceLine` and `availableLine` (Task 1), and `SignInChip` and `AgentSignIn` (Task 2). `AgentCatalogRowProps` are unchanged.
 
 **Canvas values:**
-- **Row**: `li aria-label={agent.name}`, `flex flex-col border-b border-border last:border-b-0`. It adds `bg-surface-1` while open or installing.
+- **Row**: `li aria-label={agent.name}`, `flex flex-col border-b border-border last:border-b-0 first:rounded-t-xl last:rounded-b-xl`. It adds `bg-surface-1` while open or installing. The rounded corners are needed because the group card no longer clips its content (part 1's popover fix), so a filled first or last row would otherwise show square corners outside the card's border.
 - **Line**: `flex items-center gap-3 px-4 py-3`.
   - **Logo tile**: `flex size-7 shrink-0 items-center justify-center rounded-[7px] bg-surface-hover`, holding `AgentLogo size={16}` (`aria-hidden`).
   - **Label column**: `flex min-w-0 flex-1 flex-col gap-0.5`, with the name (`truncate text-ui text-fg`) over:
@@ -172,7 +174,8 @@ Most likely first:
   - **Controls**: `flex shrink-0 items-center gap-2`, in this order. Every outline label below is in `span.text-fg`.
     - `SignInChip`, when the agent can start and `signIn` is given.
     - **Update to x.y.z** (outline md).
-    - **Add** or **Install** (outline md, no icon). Install's `title` is the plan's words.
+    - For an available agent, **Install** when its plan is non-empty, else **Add** (outline md, no icon). Both call `onAdd` (ruling 8).
+    - For an agent in use that is not installed, **Install** (today's `actions.install`, `job.install`).
     - **Retry** (outline md) after a failure.
     - The sign-in chevron (`IconButton`, `ChevronDown` / `ChevronUp`), when the agent can start and `signIn` is given.
     - ⋯ (`IconButton` "More actions for X", `MoreHorizontal`), when `actions.remove`. It opens a `Popover` (`role="menu"`, `align="end"`) with the `PopoverOption` "Remove".
@@ -182,7 +185,8 @@ Most likely first:
 - **Under the line**, indented to the label column with `ml-14 mr-4 mb-3.5` (56px = 16 + 28 + 12), in this order:
   - the opened `AgentSignIn`;
   - the remove confirmation: a `div` with `flex flex-col gap-2 rounded-lg border border-border-strong bg-surface-2 px-3 py-2.5`, holding the question (`text-ui text-fg-secondary`), then Cancel (ghost md) and Remove (danger md, focused when it opens);
-  - a failure or remove error as `text-ui-sm text-danger` (`role="alert"` for the remove error, as today).
+  - a failed install or update, in `statusLine`'s words with the job ("Install failed · …", "Update failed · …"), as `text-ui-sm text-danger`;
+  - a remove error as `text-ui-sm text-danger`, with `role="alert"` as today.
 - **Opening the sign-in**:
   - `isOpen` starts as `state === "needed"`;
   - an effect opens the row when the state becomes `needed`;
@@ -196,7 +200,9 @@ Most likely first:
     - "Sign-in: Ready";
     - an outline "Update to …";
     - "More actions for …".
-  - `an available row has its description and an outline Add`.
+  - `an available row has its description and an outline Add`, for Qwen Code (nothing to install).
+  - `an available agent Add would install reads Install, with what gets installed`: Gemini CLI, with its profile's plan, shows "Installs … into Zorvo's folder" and an "Install" button that adds it, just as Add did.
+  - `an opened last row keeps the card's rounded corners`: the last row has `last:rounded-b-xl` and the first has `first:rounded-t-xl`.
   - `a row opens its sign-in when the agent needs one`:
     - the group "… sign-in" is shown;
     - the row has `bg-surface-1`;
@@ -206,11 +212,16 @@ Most likely first:
     - ⋯ → Remove shows the question ending "Its open sessions stop.";
     - the danger Remove has focus;
     - Cancel closes the question and focus returns to ⋯.
-  - `an install runs inside its row`: the progress event, as in `agent-catalog-ui.test.tsx`, shows the step in a `role="status"` without bytes, the bar, and Cancel.
+  - `an install runs inside its row`: the progress event, as in `agent-catalog-ui.test.tsx`, shows:
+    - the step in a `role="status"` without bytes;
+    - `getByRole("progressbar", { name: "Node.js download" })`;
+    - Cancel.
   - `a failed install offers Retry`, with the error in `text-danger`.
   - `onboarding's rows show no chip and no sign-in`: with no `signIn`, there is no "Sign-in:" text and no chevron.
   
-  In `agent-catalog-ui.test.tsx`, the Remove steps go through ⋯ → menuitem Remove → confirm.
+  In `agent-catalog-ui.test.tsx`:
+  - the Remove steps go through ⋯ → menuitem Remove → confirm;
+  - the steps that press "Add" on Gemini CLI, which is not installed and has a plan, press "Install". Qwen Code's Add stays.
 - [ ] **Step 2: Run** `pnpm vitest run src/test/settings-agents-look.test.tsx`. Expected: FAIL.
 - [ ] **Step 3: Implement** the rewrite.
 - [ ] **Step 4: Run** `pnpm vitest run src/test/settings-agents-look.test.tsx src/test/agent-catalog-ui.test.tsx src/test/agent-install.test.tsx src/test/settings-sign-in.test.tsx`. Expected: PASS.
@@ -228,7 +239,7 @@ Most likely first:
   - The search is a `label` with `flex h-8 flex-1 items-center gap-2 rounded-lg border border-border-strong bg-surface-2 px-2.5 text-fg-subtle focus-ring-within`, holding a 14px `Search` icon and the `input` (`text-ui text-fg placeholder:text-fg-subtle`, `aria-label="Search agents"`).
   - **Check again** is `Button size="lg"` with a 12px `RefreshCw` that spins while it runs.
   - Under the row: the registry line (`text-caption text-fg-subtle`), and errors as `role="alert"` `text-ui-sm text-danger`.
-- **Groups**: "In use" and "Available", each `SettingsGroup` (its heading style, its card with no clip) around a `ul` of rows.
+- **Groups**: "In use" and "Available", each `SettingsGroup` (its heading style, its card with no clip) around a `ul` of rows. A group with no rows is not drawn, as today's `CatalogSection` returns null.
 - **Not available**:
   - a toggle `button`: `flex h-7 items-center gap-1.5 self-start rounded px-1 text-ui-sm text-fg-muted focus-ring`, with a 12px `ChevronRight` / `ChevronDown`, "Not available (N)", `aria-expanded` and `aria-controls`;
   - opened, a card of rows: logo tile, name, and `unavailableReasonText` in `text-ui-sm text-fg-subtle`;

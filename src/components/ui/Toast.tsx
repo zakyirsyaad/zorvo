@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { CircleAlert, Info, X } from "lucide-react";
+import { useRevealWhenShown } from "../../hooks/useRevealWhenShown";
 import { Button } from "./Button";
 import { IconButton } from "./IconButton";
 
@@ -27,8 +28,10 @@ const TONES = {
 /** A notice in the corner of the main area: an error is spoken at once, the rest politely. */
 export function Toast({ tone = "warning", message, action, onDismiss }: ToastProps) {
   const { border, text, icon } = TONES[tone];
+  const cardRef = useRef<HTMLDivElement>(null);
+  useRevealWhenShown(cardRef, message);
   return (
-    <div role={tone === "error" ? "alert" : "status"} className={`${CARD} ${border}`}>
+    <div ref={cardRef} role={tone === "error" ? "alert" : "status"} className={`${CARD} ${border}`}>
       <span aria-hidden="true" className="mt-0.5 flex shrink-0">
         {icon}
       </span>

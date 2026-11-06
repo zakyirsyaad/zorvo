@@ -6,7 +6,7 @@ The consumer provides the controls and the send handler. Without a placeholder o
 
 - **Dock.** 24px at the sides and 20px under the card in a session. A draft's composer sits inside its column, with no bottom padding.
 - **Card.** A column with a 10px gap and 12px padding, on `surface-2` with a `border` edge, `radius-xl` and `shadow-popover`. The edge turns `border-strong` while focused.
-- **Text.** The prompt starts two lines tall (44px) in `body` on `fg`, with the placeholder in `fg-subtle`. The note under it is `caption` in `fg-muted`: why Send is blocked, else that the agent's options are loading.
+- **Text.** The prompt starts two lines tall (44px) in `body` on `fg`, with the placeholder in `fg-subtle`. The note under it is `caption` in `fg-muted`: why Send is blocked. While the agent's options load, skeleton chips say so instead (below).
 - **Attachments.** Images show above the textarea as 96×64 thumbnails, with an 18px round remove button inside the corner. Clicking one opens `ImagePreviewDialog`. Other files are name chips.
 - **Bottom row, left.** No divider above it; its controls sit 4px apart.
   - Attach is a 28px paperclip button in `fg-muted`.
@@ -25,10 +25,10 @@ The consumer provides the controls and the send handler. Without a placeholder o
   - The mode menu is headed "Mode". A risky mode shows its shield after its name, and "Lets the agent act without asking." on its line.
   - A list over 10 choices gets the 30px "Search <label>" field, with the matches in bold and "N of M <label>s" under it in `fg-subtle`.
   - A menu whose choices have a line under them is 300px wide; a short plain list is as wide as its words.
-- **`/` and `@`.** These open lists above the prompt with the popover's look. The prompt keeps focus, and ↑ ↓, Return, Tab and Escape drive the list.
+- **`/` and `@`.** These open lists with the popover's look: above the card in a session, under it in a draft, whose card sits near the top of its column. The prompt keeps focus, and ↑ ↓, Return, Tab and Escape drive the list.
   - "Commands from <Agent>": each command in mono 12 over its description in 11/15 `fg-subtle`.
   - "Files in <folder>": a file icon, the name in mono 12 with the match in bold, and its folder in mono 11 `fg-subtle`.
-- **New-session draft.** A left-aligned 680px column, 24vh down (at least 120px as the canvas draws it, at most 260px), so in a tall window the composer sits a little above the middle; it is not centred, so nothing jumps when the agent's sessions or a sign-in panel appear below: "New session in <folder>" at 20/28, 600, `-0.02em`. Then the chips, the card, and 24px under it the agent's own sessions.
+- **New-session draft.** A left-aligned 680px column, 24vh down (at least 120px as the canvas draws it, at most 260px), so in a tall window the composer sits a little above the middle; it is not centred, so nothing jumps when the agent's sessions or a sign-in panel appear below: "New session in <folder>" at 20/28, 600, `-0.02em`. Then the chips, the card, and 24px under it the agent's own sessions, which scroll in their own list (at least 160px of it) so the card stays put. When the window is too short for the rest, or a sign-in panel sits above the card, the main column scrolls instead, so Send is never out of reach; it keeps room for its scrollbar so nothing jumps sideways, never scrolls sideways, and each draft opens at its top. The drop overlay and the update banner stay on the still frame around it, and a notice that appears while the column is scrolled brings itself into view.
 - **Draft chips.** 28px, `radius-lg` (8px), a `border` edge on `surface-1`, `ui-sm` in `fg-secondary`, 8px apart and 16px above the card. A 12px leading icon and chevron are in `fg-muted`. An open chip is filled `surface-hover`, edged `border-strong`, in `fg`.
   - **Folder:** search, "Recent folders", **Open another folder…**.
   - **Branch** (in a repository): the branch name in mono 11, and "· new worktree" in `fg-subtle` while that switch is on.

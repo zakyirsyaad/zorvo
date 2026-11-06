@@ -70,9 +70,19 @@ function folderNameOf(path: string): string {
   return path.replace(/\/+$/, "").split("/").pop() || path;
 }
 
+/**
+ * Grows the prompt to its text. It is measured at `height: auto`, and in a column that scrolls (a draft in a short
+ * window) that brief shrink lets the browser clamp the column's scroll position; setting the height back does not
+ * undo it, so each edit would carry Send out of view. The scrolled ancestors' offsets are put back.
+ */
 function fitToText(field: HTMLTextAreaElement) {
+  const scrolled: [HTMLElement, number][] = [];
+  for (let node = field.parentElement; node; node = node.parentElement) {
+    if (node.scrollTop > 0) scrolled.push([node, node.scrollTop]);
+  }
   field.style.height = "auto";
   field.style.height = `${Math.min(field.scrollHeight, MAX_PROMPT_HEIGHT_PX)}px`;
+  for (const [node, top] of scrolled) node.scrollTop = top;
 }
 
 /** What other parts of the window can do to the composer. */
@@ -130,8 +140,8 @@ export interface ComposerDockProps {
   /** How much of the agent's context window is used; the meter shows once the agent reports it. */
   contextUsage?: ContextUsage;
   /**
-   * A short status under the prompt, e.g. while the agent's options load; a slash command's hint wins,
-   * except while `sendDisabled`: then the note says why and the Send button points to it.
+   * A short line under the prompt, e.g. why Send is blocked; a slash command's hint wins, except while
+   * `sendDisabled`: then the note says why and the Send button points to it.
    */
   note?: string;
   /** The note sits in the control row, after attach, as the canvas draws a compare run's note; else under the prompt. */
@@ -467,10 +477,17 @@ export function ComposerDock({
             onPick={pickFile}
             folderName={folderNameOf(mentions?.root ?? "")}
             query={mentionMenu.mention?.query ?? ""}
+            side={menuSide}
           />
         ) : (
           menuCommands.length > 0 && (
-            <SlashCommandMenu commands={menuCommands} highlighted={highlighted} onPick={pickCommand} agentName={agentName} />
+            <SlashCommandMenu
+              commands={menuCommands}
+              highlighted={highlighted}
+              onPick={pickCommand}
+              agentName={agentName}
+              side={menuSide}
+            />
           )
         )}
         <textarea

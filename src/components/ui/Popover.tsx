@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEventHandler, type ReactNode, type Ref } from "react";
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEventHandler, type ReactNode, type Ref } from "react";
 import { Check, Search } from "lucide-react";
 import { useDismiss } from "../../hooks/useDismiss";
 import { clippingBounds, fitPanel, type PanelFit } from "../../lib/popover-fit";
@@ -60,12 +60,27 @@ export function Popover({
   useDismiss(wrapperRef, isOpen, onClose);
 
   // Before paint, so the panel never shows where it is cut off: the asked-for side when it fits there, else the
-  // side with more room, capped to that room. `scrollHeight` is the content's height even while capped.
+  // side with more room, capped to that room. `scrollHeight` is the content's height even while capped. It is
+  // measured again while open when a box around it scrolls (the main column in a short window) or the window
+  // resizes, since the trigger then moves; a scroll inside the panel's own list moves nothing.
   useLayoutEffect(() => {
-    const wrapper = wrapperRef.current;
-    const panel = panelRef.current;
-    if (!isOpen || panelClassName || !wrapper || !panel) return;
-    setFit(fitPanel(wrapper.getBoundingClientRect(), clippingBounds(wrapper), panel.scrollHeight, side));
+    if (!isOpen || panelClassName) return;
+    const measure = () => {
+      const wrapper = wrapperRef.current;
+      const panel = panelRef.current;
+      if (wrapper && panel) setFit(fitPanel(wrapper.getBoundingClientRect(), clippingBounds(wrapper), panel.scrollHeight, side));
+    };
+    const measureOnScroll = (event: Event) => {
+      const wrapper = wrapperRef.current;
+      if (wrapper && event.target instanceof Node && event.target !== wrapper && event.target.contains(wrapper)) measure();
+    };
+    measure();
+    document.addEventListener("scroll", measureOnScroll, true);
+    window.addEventListener("resize", measure);
+    return () => {
+      document.removeEventListener("scroll", measureOnScroll, true);
+      window.removeEventListener("resize", measure);
+    };
   }, [isOpen, panelClassName, side]);
 
   useEffect(() => {
@@ -86,7 +101,8 @@ export function Popover({
   const shownSide = fit?.side ?? side;
   const maxHeight = panelClassName ? undefined : fit?.maxHeight;
   const placement = panelClassName ?? `${SIDES[shownSide]} ${ALIGNS[align]}`;
-  const capped = maxHeight === undefined ? undefined : "overflow-y-auto";
+  // Its scrolling stays its own: reaching its end does not go on to scroll the column around it.
+  const capped = maxHeight === undefined ? undefined : "overflow-y-auto overscroll-contain";
   const panelClasses = [PANEL, placement, capped, className].filter(Boolean).join(" ");
   return (
     // With its own placement the panel is positioned against a box further out, so the wrapper is not one.
@@ -111,12 +127,32 @@ export function Popover({
   );
 }
 
-/** A small muted heading over a group of options; `aside` sits on its right, as the agent menu's hint does. */
-export function PopoverHeader({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+/**
+ * A small muted heading over a group of options; `aside` sits on its right, as the agent menu's hint does. With
+ * `labelId` it names a group (`PopoverGroup`): the heading alone carries the id, and the row is hidden from screen
+ * readers, which already read it as the group's name.
+ */
+export function PopoverHeader({ children, aside, labelId }: { children: ReactNode; aside?: ReactNode; labelId?: string }) {
   return (
-    <div className="flex items-baseline gap-2 px-2 pt-1.5 pb-1 text-caption font-medium text-fg-muted">
-      <span className="min-w-0 flex-1">{children}</span>
+    <div
+      aria-hidden={labelId ? true : undefined}
+      className="flex items-baseline gap-2 px-2 pt-1.5 pb-1 text-caption font-medium text-fg-muted"
+    >
+      <span id={labelId} className="min-w-0 flex-1">
+        {children}
+      </span>
       {aside && <span className="font-normal text-fg-subtle">{aside}</span>}
+    </div>
+  );
+}
+
+/** A group of options under a heading that names it, so a screen reader reads the heading once, as the name. */
+export function PopoverGroup({ heading, className, children }: { heading: ReactNode; className?: string; children: ReactNode }) {
+  const headingId = useId();
+  return (
+    <div role="group" aria-labelledby={headingId} className={className}>
+      <PopoverHeader labelId={headingId}>{heading}</PopoverHeader>
+      {children}
     </div>
   );
 }

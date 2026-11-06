@@ -1,12 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { Popover } from "../components/ui/Popover";
 import { fitPanel } from "../lib/popover-fit";
 
 /**
  * A menu opens on its own side when it fits there, else on the side with more room, and is capped to that room
- * and scrolls, so no part of it is cut off by the box that clips it (the draft's `overflow-hidden` article).
+ * and scrolls, so no part of it is cut off by the box that clips it (the main area's scrolling column).
  */
 const box = (top: number, bottom: number) => ({ top, bottom });
 
@@ -76,6 +76,40 @@ describe("a Popover inside a box that clips", () => {
     const menu = renderMenu();
     expect(menu).toHaveClass("bottom-full", "overflow-y-auto");
     expect(menu.style.maxHeight).toBe("388px");
+  });
+
+  it("measures again when the box around it scrolls or the window resizes, so it never stays cut off", () => {
+    layout({ triggerTop: 100, panelHeight: 300 });
+    renderMenu();
+    expect(screen.getByRole("menu", { name: "Model" })).toHaveClass("top-full");
+
+    // The column scrolled: the chip is now low in it, with no room under it.
+    layout({ triggerTop: 400, panelHeight: 300 });
+    act(() => {
+      document.querySelector("[data-clip]")!.dispatchEvent(new Event("scroll"));
+    });
+    expect(screen.getByRole("menu", { name: "Model" })).toHaveClass("bottom-full");
+
+    layout({ triggerTop: 100, panelHeight: 300 });
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+    expect(screen.getByRole("menu", { name: "Model" })).toHaveClass("top-full");
+  });
+
+  it("does not move for a scroll inside its own list", () => {
+    layout({ triggerTop: 100, panelHeight: 300 });
+    renderMenu();
+    layout({ triggerTop: 400, panelHeight: 300 });
+    act(() => {
+      screen.getByRole("menu", { name: "Model" }).dispatchEvent(new Event("scroll"));
+    });
+    expect(screen.getByRole("menu", { name: "Model" })).toHaveClass("top-full");
+  });
+
+  it("keeps a capped panel's scrolling to itself, so reaching its end does not scroll the column", () => {
+    layout({ triggerTop: 400, panelHeight: 500 });
+    expect(renderMenu()).toHaveClass("overflow-y-auto", "overscroll-contain");
   });
 
   it("keeps its side and its full height when it fits", () => {

@@ -556,6 +556,26 @@ describe("Highlighted", () => {
 });
 
 describe("Toast", () => {
+  it("brings a new notice into view once, so one that appears in a column scrolled away from it is seen", () => {
+    const reveal = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = reveal;
+    try {
+      const { rerender } = render(<Toast message="Could not create a worktree." onDismiss={() => {}} />);
+      expect(reveal).toHaveBeenCalledTimes(1);
+      expect(reveal).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" });
+      expect(reveal.mock.contexts[0]).toBe(screen.getByRole("status"));
+
+      rerender(<Toast message="Could not create a worktree." onDismiss={() => {}} />);
+      expect(reveal).toHaveBeenCalledTimes(1);
+
+      rerender(<Toast message="Could not save." onDismiss={() => {}} />);
+      expect(reveal).toHaveBeenCalledTimes(2);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it("shows the message with a dismiss button", () => {
     const onDismiss = vi.fn();
     render(<Toast message="Could not open the link." onDismiss={onDismiss} />);

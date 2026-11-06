@@ -37,6 +37,25 @@ describe("the draft's column", () => {
     expect(inner).toHaveClass("mx-auto", "w-full", "max-w-chat", "mt-6");
     expect(inner.parentElement).toHaveClass("flex-1", "px-6");
   });
+
+  it("scrolls a long list of sessions inside itself, so the composer above it stays put", () => {
+    // At least 160px of it stays, so in a short window the column scrolls to it instead of hiding it.
+    render(<NewSessionBelow sessionList={<p>sessions</p>} />);
+    const list = screen.getByText("sessions").parentElement!.parentElement!;
+    expect(list).toHaveClass("overflow-y-auto", "min-h-40");
+    expect(list).not.toHaveClass("min-h-0");
+  });
+
+  it("lets the empty space under a draft with no sessions shrink away", () => {
+    const { container } = render(<NewSessionBelow />);
+    expect(container.firstElementChild).toHaveClass("flex-1", "min-h-0");
+    expect(container.firstElementChild).not.toHaveClass("min-h-40");
+  });
+
+  it("wraps a long folder name in the heading instead of widening the column", () => {
+    render(<NewSessionHeading workspace={{ name: "a".repeat(120), path: "/w/long" }} />);
+    expect(screen.getByRole("heading")).toHaveClass("break-words");
+  });
 });
 
 describe("the draft's chips", () => {

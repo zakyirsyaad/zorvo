@@ -37,9 +37,10 @@ describe("the mode menu", () => {
     openDropdown("Permission mode", modes, { heading: "Mode" });
     const option = screen.getByRole("option", { name: /Accept edits/ });
     const name = within(option).getByText("Accept edits");
-    const shield = within(option).getByRole("img", { name: "Lets the agent act without asking" });
+    // Seen, not read: the line under the name already says it.
+    const shield = option.querySelector("svg.text-status-attention")!;
+    expect(shield).toHaveAttribute("aria-hidden", "true");
     expect(name.compareDocumentPosition(shield) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(shield).toHaveClass("text-status-attention");
     expect(within(option).getByText("Edits files without asking. Lets the agent act without asking.")).toHaveClass("text-fg-subtle");
     expect(option.querySelector(".text-danger")).toBeNull();
   });

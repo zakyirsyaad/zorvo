@@ -55,6 +55,23 @@ describe("Dropping files onto the window", () => {
     expect((screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement).value).toBe("");
   });
 
+  it("puts the drop area on the main area's still frame, so a scrolled draft still shows it over what is on screen", async () => {
+    await act(async () => {
+      render(<App />);
+    });
+
+    await act(async () => {
+      dragHandler({ payload: { type: "enter", paths: ["/Users/test/shot.png"] } });
+    });
+
+    // The draft's column scrolls; the article around it does not, and the overlay is placed against the article.
+    const column = screen.getByRole("textbox", { name: "Prompt" }).closest("[data-main-column]");
+    expect(column).not.toBeNull();
+    const overlay = screen.getByText("Drop files to add them to your message").closest(".absolute")!;
+    expect(overlay.parentElement).toBe(column!.parentElement);
+    expect(column!.contains(overlay)).toBe(false);
+  });
+
   it("adds nothing to the message from a compare run's panel, which shows no message", async () => {
     const session = (id: string, profileId: string) => ({
       id,

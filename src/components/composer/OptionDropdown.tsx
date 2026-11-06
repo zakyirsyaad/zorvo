@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLatest } from "../../hooks/useLatest";
 import { ChevronDown, ShieldAlert } from "lucide-react";
-import { Popover, PopoverHeader, PopoverList, PopoverOption, PopoverSearch } from "../ui/Popover";
+import { asSentence } from "../../lib/sentence";
+import { Popover, PopoverGroup, PopoverHeader, PopoverList, PopoverOption, PopoverSearch } from "../ui/Popover";
 import { Highlighted } from "../ui/Highlighted";
 import { COMPOSER_CHIP, RISKY_LINE, pluralOf } from "./chip-style";
 
@@ -78,18 +79,24 @@ interface TagGroup {
 }
 
 /**
- * The options grouped by their tag, each group where its first option was, so a long model list reads by name
- * under one heading per provider instead of repeating the provider on every row. Untagged options keep their place.
+ * The options grouped by their tag, so a long model list reads by name under one heading per provider instead of
+ * repeating the provider on every row. The untagged options come first, in their order: after a group they would
+ * read as part of it. The tagged groups follow in the order their first option had.
  */
 function groupByTag(options: readonly DropdownOption[]): TagGroup[] {
+  const untagged: DropdownOption[] = [];
   const groups: TagGroup[] = [];
   for (const option of options) {
     const { tag } = splitTag(option.label);
+    if (tag === undefined) {
+      untagged.push(option);
+      continue;
+    }
     const group = groups.find((candidate) => candidate.tag === tag);
     if (group) group.options.push(option);
     else groups.push({ tag, options: [option] });
   }
-  return groups;
+  return untagged.length > 0 ? [{ options: untagged }, ...groups] : groups;
 }
 
 function matches(option: DropdownOption, query: string): boolean {
@@ -101,13 +108,15 @@ function matches(option: DropdownOption, query: string): boolean {
   );
 }
 
-/** The line under an option: what it does, and for a risky mode that it acts without asking, on one subtle line. */
+/**
+ * The line under an option: what it does, and for a risky mode that it acts without asking, on one subtle line. A
+ * blank description is no line; an agent's that stops without a full stop ("Automatically approve all tools") is
+ * ended before the risky sentence joins it.
+ */
 function detailOf(option: DropdownOption): string | undefined {
-  if (!option.risky) return option.description;
-  if (!option.description) return `${RISKY_LINE}.`;
-  // An agent's description may stop without a full stop ("Automatically approve all tools"): end it first.
-  const description = /[.!?]$/.test(option.description) ? option.description : `${option.description}.`;
-  return `${description} ${RISKY_LINE}.`;
+  const description = option.description?.trim() || undefined;
+  if (!option.risky) return description;
+  return description ? `${asSentence(description)} ${RISKY_LINE}.` : `${RISKY_LINE}.`;
 }
 
 interface OptionRowsProps {
@@ -138,7 +147,8 @@ function OptionRow({ option, current, query, onSelect, renderIcon }: Omit<Option
           <Highlighted text={name} query={query} />
         </span>
         {option.risky && (
-          <ShieldAlert size={12} role="img" aria-label={RISKY_LINE} className="shrink-0 text-status-attention" />
+          // Seen, not read: the line under the name already says the agent acts without asking.
+          <ShieldAlert size={12} aria-hidden="true" className="shrink-0 text-status-attention" />
         )}
       </span>
     </PopoverOption>
@@ -147,17 +157,19 @@ function OptionRow({ option, current, query, onSelect, renderIcon }: Omit<Option
 
 function OptionRows({ options, ...row }: OptionRowsProps) {
   return (
-    <div className="max-h-72 overflow-y-auto">
+    // Its scrolling stays its own: reaching the end of a long list does not go on to scroll the column around it.
+    <div className="max-h-72 overflow-y-auto overscroll-contain">
       {groupByTag(options).map((group) =>
         group.tag === undefined ? (
           group.options.map((option) => <OptionRow key={option.value ?? "__default"} option={option} {...row} />)
         ) : (
-          <div key={`tag:${group.tag}`} role="group" aria-label={group.tag}>
-            <PopoverHeader>{group.tag}</PopoverHeader>
+          // Named by its heading, so the provider is read once. The heading marks a search that matched the tag,
+          // since the rows then show nothing that matched.
+          <PopoverGroup key={`tag:${group.tag}`} heading={<Highlighted text={group.tag} query={row.query} />}>
             {group.options.map((option) => (
               <OptionRow key={option.value ?? "__default"} option={option} {...row} />
             ))}
-          </div>
+          </PopoverGroup>
         ),
       )}
       {options.length === 0 && <p className="px-2 py-1 text-ui-sm text-fg-muted">No matches</p>}
@@ -237,7 +249,7 @@ export function OptionDropdown({
   const hasStatus = status !== undefined && status !== null;
   const hasSearch = !hasStatus && options.length > SEARCH_THRESHOLD;
   // Options with a line under them wrap at the canvas's 300px; a short plain list stays as wide as its words.
-  const isWide = hasStatus || hasSearch || options.some((option) => option.description || option.risky);
+  const isWide = hasStatus || hasSearch || options.some((option) => detailOf(option) !== undefined);
   const onOpenRef = useLatest(onOpen);
 
   // Once per opening, never on a re-render while it stays open.

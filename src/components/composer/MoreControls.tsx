@@ -1,6 +1,6 @@
 import { MoreHorizontal } from "lucide-react";
 import { IconButton } from "../ui/IconButton";
-import { Popover, PopoverHeader, PopoverOption } from "../ui/Popover";
+import { Popover, PopoverGroup, PopoverOption } from "../ui/Popover";
 import type { ComposerControl } from "../../lib/composer-controls";
 
 /** One of the agent's controls that did not fit in the composer's row. */
@@ -58,8 +58,7 @@ export function MoreControls({ controls, isOpen, onToggle, onClose, onPicked, si
     >
       <div className="max-h-80 overflow-y-auto">
         {controls.map(({ id, label, control }) => (
-          <div key={id} role="group" aria-label={label} className="not-first:mt-1 not-first:border-t not-first:border-border not-first:pt-1">
-            <PopoverHeader>{label}</PopoverHeader>
+          <PopoverGroup key={id} heading={label} className="not-first:mt-1 not-first:border-t not-first:border-border not-first:pt-1">
             {control.options.map((option) => (
               <PopoverOption
                 key={option.value ?? "__default"}
@@ -74,7 +73,7 @@ export function MoreControls({ controls, isOpen, onToggle, onClose, onPicked, si
                 {option.label}
               </PopoverOption>
             ))}
-          </div>
+          </PopoverGroup>
         ))}
       </div>
     </Popover>

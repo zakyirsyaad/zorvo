@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+import { useRevealWhenShown } from '../hooks/useRevealWhenShown';
 import { downloadPercent, restartWarning, type AppUpdateInfo, type AppUpdateProgress } from '../lib/app-update';
 import { Button } from './ui/Button';
 
@@ -23,11 +25,13 @@ export function AppUpdateNotice({
   onInstall,
   onLater,
 }: AppUpdateNoticeProps) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  useRevealWhenShown(cardRef, update?.version);
   if (!update) return null;
   const percent = downloadPercent(progress);
   const warning = restartWarning(busyCount, terminalCount);
   return (
-    <div role="status" className="w-[340px] rounded-xl border border-border bg-surface-2 p-4 shadow-popover">
+    <div ref={cardRef} role="status" className="w-[340px] rounded-xl border border-border bg-surface-2 p-4 shadow-popover">
       <p className="text-ui font-medium text-fg">{`Zorvo ${update.version} is ready`}</p>
       {warning && <p className="mt-1 text-ui-sm text-fg-muted">{warning}</p>}
       {isInstalling && (

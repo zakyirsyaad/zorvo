@@ -4,7 +4,7 @@ export type ButtonVariant = "primary" | "outline" | "ghost" | "danger";
 
 /**
  * The canvas's button heights: 24px for a small action in a row, 26px (`row`) in the inspector's path bars,
- * 28px by default, 32px for a lead action.
+ * 28px by default (12px text), 32px for a lead action (13px text, always weight 500).
  */
 export type ButtonSize = "sm" | "row" | "md" | "lg";
 
@@ -20,7 +20,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const BASE =
-  "inline-flex items-center gap-1.5 rounded-lg border font-medium transition-colors " +
+  "inline-flex items-center gap-1.5 rounded-lg border transition-colors " +
   "focus-ring disabled:cursor-not-allowed";
 
 const ALIGNS = { center: "justify-center", start: "justify-start" } as const;
@@ -28,9 +28,19 @@ const ALIGNS = { center: "justify-center", start: "justify-start" } as const;
 const SIZES: Record<ButtonSize, string> = {
   sm: "h-6 px-2 text-ui-sm",
   row: "h-6.5 px-2 text-ui-sm",
-  md: "h-7 px-3 text-ui",
+  md: "h-7 px-3 text-ui-sm",
   lg: "h-8 px-3 text-ui",
 };
+
+/**
+ * The canvas draws outline and ghost labels at weight 400 and primary and danger ones at 500; the
+ * large lead action (the sidebar's New session) is 500 whatever its variant. One class is picked
+ * here, so `font-normal` and `font-medium` never sit on one element.
+ */
+function weightClass(variant: ButtonVariant, size: ButtonSize): string {
+  const isEmphasised = variant === "primary" || variant === "danger" || size === "lg";
+  return isEmphasised ? "font-medium" : "font-normal";
+}
 
 // A faded primary fill still reads as a light, pressable button, so a disabled
 // primary turns into a flat neutral one instead of dimming.
@@ -58,7 +68,17 @@ export function Button({
   ...rest
 }: ButtonProps) {
   const toneClass = variant === "ghost" ? GHOST_TONES[tone] : undefined;
-  const classes = [BASE, ALIGNS[align], SIZES[size], VARIANTS[variant], toneClass, className].filter(Boolean).join(" ");
+  const classes = [
+    BASE,
+    ALIGNS[align],
+    SIZES[size],
+    weightClass(variant, size),
+    VARIANTS[variant],
+    toneClass,
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
     <button type={type} className={classes} {...rest}>
       {icon}

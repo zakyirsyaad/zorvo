@@ -13,15 +13,50 @@ import { Chip } from "../components/ui/Chip";
 import { Tabs, tabIds, type TabItem } from "../components/ui/Tabs";
 
 describe("primitive sizes from the canvas", () => {
-  it("Button is 28px with 13px text by default, 24px small and 32px large", () => {
+  it("Button is 28px with 12px text by default, 24px small and 32px large with 13px text", () => {
     const { rerender } = render(<Button>Go</Button>);
-    expect(screen.getByRole("button", { name: "Go" })).toHaveClass("h-7", "text-ui");
+    const md = screen.getByRole("button", { name: "Go" });
+    expect(md).toHaveClass("h-7", "text-ui-sm");
+    expect(md).not.toHaveClass("text-ui");
 
     rerender(<Button size="sm">Go</Button>);
     expect(screen.getByRole("button", { name: "Go" })).toHaveClass("h-6", "text-ui-sm");
 
     rerender(<Button size="lg">Go</Button>);
     expect(screen.getByRole("button", { name: "Go" })).toHaveClass("h-8", "text-ui");
+  });
+
+  it("Button text is weight 400 for outline and ghost, 500 for primary and danger", () => {
+    const { rerender } = render(<Button variant="outline">Go</Button>);
+    const weightOf = () => screen.getByRole("button", { name: "Go" });
+    expect(weightOf()).toHaveClass("font-normal");
+    expect(weightOf()).not.toHaveClass("font-medium");
+
+    rerender(<Button variant="ghost">Go</Button>);
+    expect(weightOf()).toHaveClass("font-normal");
+    expect(weightOf()).not.toHaveClass("font-medium");
+
+    rerender(<Button variant="primary">Go</Button>);
+    expect(weightOf()).toHaveClass("font-medium");
+    expect(weightOf()).not.toHaveClass("font-normal");
+
+    rerender(<Button variant="danger">Go</Button>);
+    expect(weightOf()).toHaveClass("font-medium");
+    expect(weightOf()).not.toHaveClass("font-normal");
+  });
+
+  it("the weight follows the variant at every size, except that a large lead action is always 500", () => {
+    const { rerender } = render(<Button size="sm" variant="outline">Go</Button>);
+    expect(screen.getByRole("button", { name: "Go" })).toHaveClass("font-normal");
+
+    rerender(<Button size="row" variant="ghost">Go</Button>);
+    expect(screen.getByRole("button", { name: "Go" })).toHaveClass("font-normal");
+
+    // The sidebar's New session: an outline button the canvas draws at 13px and weight 500.
+    rerender(<Button size="lg" variant="outline">Go</Button>);
+    const lead = screen.getByRole("button", { name: "Go" });
+    expect(lead).toHaveClass("font-medium");
+    expect(lead).not.toHaveClass("font-normal");
   });
 
   it("Button has a 26px size, and a ghost one can take the secondary text colour", () => {

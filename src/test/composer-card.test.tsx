@@ -110,7 +110,7 @@ describe("the composer's chips", () => {
   it("words a compare run's Start, with an arrow after it", () => {
     renderDock({ sendLabel: "Start 2 sessions" });
     const start = screen.getByRole("button", { name: "Start 2 sessions" });
-    expect(start).toHaveClass("h-7", "text-ui", "font-medium");
+    expect(start).toHaveClass("h-7", "text-ui-sm", "font-medium");
     const arrow = start.lastElementChild!;
     expect(arrow).toHaveClass("lucide-arrow-up");
     expect(arrow).toHaveAttribute("width", "12");

@@ -68,7 +68,7 @@ export function AppearanceSection({ titleRef, titleId, appearance, onChange }: A
 
   return (
     <div className="flex flex-col gap-4">
-      <SettingsHeader title="Appearance" titleRef={titleRef} id={titleId}>
+      <SettingsHeader title="Appearance" titleRef={titleRef} titleId={titleId}>
         The terminal stays dark in every theme, since agents color their output for a dark ground.
       </SettingsHeader>
       <div role="radiogroup" aria-label="Theme" onKeyDown={handleKeyDown} className="flex gap-3">

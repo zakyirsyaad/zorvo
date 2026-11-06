@@ -5,17 +5,17 @@ export function SettingsHeader({
   title,
   children,
   titleRef,
-  id,
+  titleId,
 }: {
   title: string;
   children: ReactNode;
   titleRef?: Ref<HTMLHeadingElement>;
   /** The title's id, for the region it names. */
-  id?: string;
+  titleId?: string;
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <h1 ref={titleRef} id={id} tabIndex={-1} className="text-xl font-semibold tracking-[-0.02em] text-fg outline-none">
+      <h1 ref={titleRef} id={titleId} tabIndex={-1} className="text-xl font-semibold tracking-[-0.02em] text-fg outline-none">
         {title}
       </h1>
       <p className="text-ui text-fg-muted">{children}</p>

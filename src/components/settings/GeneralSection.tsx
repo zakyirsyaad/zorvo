@@ -50,14 +50,31 @@ export function versionStatus(update: GeneralAppUpdate, appVersion: string | und
   return { status: "idle", words: own("Not checked yet") };
 }
 
+/**
+ * What the About row announces: one sentence per state, without the minutes since the check or the
+ * download's percent, which change all the time (the visible line has them).
+ */
+export function versionAnnouncement(update: GeneralAppUpdate): string {
+  const { available } = update;
+  if (available && update.isInstalling) {
+    return update.progress?.phase === "installing" ? `Installing Zorvo ${available.version}.` : `Downloading Zorvo ${available.version}.`;
+  }
+  if (available) return `Zorvo ${available.version} is ready.`;
+  if (update.isChecking) return "Checking for updates.";
+  if (update.checkFailed) return "Could not check for updates.";
+  if (update.checkedAt !== null) return "Zorvo is up to date.";
+  return "";
+}
+
 function VersionRow({ appUpdate, appVersion, restartNote }: Pick<GeneralSectionProps, "appUpdate" | "appVersion" | "restartNote">) {
   const now = useNow();
   const { status, words } = versionStatus(appUpdate, appVersion, now);
   const description = (
     <span className="flex flex-col gap-0.5">
-      {/* The visible line is the live region, so a finished check is announced once. */}
-      <span role="status">
-        <StatusLine status={status}>{words}</StatusLine>
+      <StatusLine status={status}>{words}</StatusLine>
+      {/* Announced once per state; the visible line changes every minute and every percent. */}
+      <span role="status" className="sr-only">
+        {versionAnnouncement(appUpdate)}
       </span>
       {appUpdate.available && restartNote && <span>{restartNote}</span>}
     </span>
@@ -90,7 +107,7 @@ export function GeneralSection({
 }: GeneralSectionProps) {
   return (
     <div className="flex flex-col gap-7">
-      <SettingsHeader title="General" titleRef={titleRef} id={titleId}>
+      <SettingsHeader title="General" titleRef={titleRef} titleId={titleId}>
         How new sessions start, and the folders Zorvo remembers.
       </SettingsHeader>
 

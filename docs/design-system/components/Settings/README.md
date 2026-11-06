@@ -29,7 +29,7 @@ Settings is a page in the main window, not a dialog. It takes the place of the s
 - **General**:
   - **New sessions → Default agent**: an outline button with the agent's logo in a 16px tile, its name and a chevron. It opens a listbox of the ready agents. It reads "Choose an agent" with none, and "No agents are installed yet." with no ready agent.
   - **Recent folders**: the name, the path in mono `caption`, and a ghost **Remove** ("Remove agent-desktop from recent folders").
-  - **About → Zorvo version**: a status line, which is also the live region:
+  - **About → Zorvo version**: a status line. An sr-only live region beside it announces each state once ("Zorvo is up to date.", "Downloading Zorvo 0.9.0."), never the minutes or the percent:
     - "0.8.0 · Up to date · checked 2 h ago", with a still green dot (`StatusLine` `ready`);
     - "Checking for updates…";
     - "Could not check for updates";

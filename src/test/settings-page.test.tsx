@@ -79,6 +79,15 @@ describe("Settings page", () => {
     expect(region.firstElementChild).toHaveAttribute("data-tauri-drag-region");
   });
 
+  it("names the content region by every section's title", async () => {
+    await renderApp();
+    await click(settingsButton());
+    for (const name of ["General", "Appearance", "Agents", "GitHub"]) {
+      await click(within(nav()).getByRole("link", { name: new RegExp(`^${name}`) }));
+      expect(screen.getByRole("region", { name })).toHaveAttribute("data-settings-content");
+    }
+  });
+
   it("keeps the composer's text across a visit to Settings", async () => {
     await renderApp();
     const prompt = screen.getByRole("textbox", { name: "Prompt" });

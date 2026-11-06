@@ -137,7 +137,7 @@ function ConnectionRow({ status, isChecking, onCheck, onConnect, onOpenUrl }: Gi
 export function GithubSection({ ref, titleRef, titleId, ...props }: GithubSectionProps) {
   return (
     <div ref={ref} tabIndex={-1} className="flex flex-col gap-4 rounded-xl outline-none">
-      <SettingsHeader title="GitHub" titleRef={titleRef} id={titleId}>
+      <SettingsHeader title="GitHub" titleRef={titleRef} titleId={titleId}>
         Optional. Zorvo reads pull requests through your own <code className="font-mono text-ui-sm">gh</code> and keeps no
         token.
       </SettingsHeader>

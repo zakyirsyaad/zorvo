@@ -481,9 +481,9 @@ export default function App() {
   const agentOptions = withRewound(state.agentOptions, draftAgent?.id, rewound);
   const startChoices = draftAgent ? withPreferred(acpChoices, agentOptions?.[draftAgent.id]) : acpChoices;
 
-  /** Nothing goes into a message that is not on screen. */
+  /** Nothing goes into a message that is not on screen: not behind a run's panel, nor behind Settings. */
   const insertPaths = (paths: string[]) => {
-    if (!isComposerHidden) composerRef.current?.insertPaths(paths);
+    if (!isComposerHidden && settingsPage.section === null) composerRef.current?.insertPaths(paths);
   };
 
   /** Dropped files are added to the message; a name with control characters is left out. */

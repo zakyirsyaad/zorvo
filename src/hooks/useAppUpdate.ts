@@ -65,6 +65,8 @@ export function useAppUpdate(
       if (isMountedRef.current && !isInstallingRef.current) {
         setFound(info ?? null);
         setCheckedAt(Date.now());
+        // Any answer, a scheduled one too, ends an earlier "could not check".
+        setCheckFailed(false);
       }
       return true;
     } catch {

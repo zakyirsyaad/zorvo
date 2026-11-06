@@ -163,9 +163,18 @@ describe("General section", () => {
     expect(within(about()).getByText("Installing 0.9.0…")).toBeInTheDocument();
   });
 
-  it("announces the version line", () => {
-    renderGeneral({ appUpdate: update({ checkFailed: true }) });
-    expect(within(about()).getByRole("status")).toHaveTextContent("0.8.0 · Could not check for updates");
+  it("announces each state once, not each minute or percent", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    const { rerender } = render(<GeneralSection {...renderProps()} appUpdate={update({ checkedAt: NOW - 2 * 60_000 })} />);
+    const status = within(about()).getByRole("status");
+    expect(status).toHaveTextContent(/^Zorvo is up to date\.$/);
+    // The visible line, which changes every minute, is not inside the live region.
+    expect(status).not.toContainElement(within(about()).getByText("0.8.0 · Up to date · checked 2 min ago"));
+    rerender(<GeneralSection {...renderProps()} appUpdate={update({ available: { version: "0.9.0" }, isInstalling: true, progress: { phase: "downloading", downloaded: 42, total: 100 } })} />);
+    expect(within(about()).getByRole("status")).toHaveTextContent(/^Downloading Zorvo 0\.9\.0\.$/);
+    rerender(<GeneralSection {...renderProps()} appUpdate={update({ checkFailed: true })} />);
+    expect(within(about()).getByRole("status")).toHaveTextContent(/^Could not check for updates\.$/);
   });
 
   it("Run setup again calls onRunOnboarding", () => {

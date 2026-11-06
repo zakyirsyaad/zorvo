@@ -404,6 +404,18 @@ describe("useAppUpdate checkNow", () => {
     expect(result.current.checkedAt).toBe(T + FIRST_CHECK_DELAY_MS);
   });
 
+  it("a later check that answers clears checkFailed", async () => {
+    let answer: () => unknown = () => { throw new Error("offline"); };
+    mockBackend({ app_update_check: () => answer() });
+    const { result } = renderUpdate();
+    await advance(FIRST_CHECK_DELAY_MS);
+    await act(() => result.current.checkNow());
+    expect(result.current.checkFailed).toBe(true);
+    answer = () => null;
+    await advance(RETRY_AFTER_FAILURE_MS);
+    expect(result.current.checkFailed).toBe(false);
+  });
+
   it("available keeps an update hidden by Later", async () => {
     mockBackend({ app_update_check: () => info("0.9.0") });
     const { result } = renderUpdate();

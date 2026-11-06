@@ -123,13 +123,12 @@ describe("First run and project folders", () => {
 
     // Settings lives in the sidebar footer.
     await click(screen.getByRole("button", { name: /^Settings/ }));
-    const dialog = within(screen.getByRole("dialog"));
-    await act(async () => {
-      fireEvent.change(dialog.getByLabelText("Default agent"), { target: { value: "qwen-code" } });
-    });
+    const general = within(screen.getByRole("region", { name: "General" }));
+    await click(within(general.getByRole("region", { name: "New sessions" })).getByRole("button"));
+    await click(screen.getByRole("option", { name: /Qwen Code/ }));
     await waitFor(() => expect(fakeStore().state.settings.defaultAgentId).toBe("qwen-code"));
 
-    await click(dialog.getByRole("button", { name: "Run setup again" }));
+    await click(general.getByRole("button", { name: "Run setup again" }));
     expect(screen.getByRole("heading", { name: "Check your agents" })).toBeDefined();
   });
 });

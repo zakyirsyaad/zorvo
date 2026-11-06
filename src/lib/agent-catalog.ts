@@ -181,3 +181,59 @@ export function formatCheckedAgo(seconds: number, now: number): string {
   if (elapsed < SECONDS_PER_DAY) return RELATIVE_FORMAT.format(-Math.floor(elapsed / SECONDS_PER_HOUR), 'hour');
   return RELATIVE_FORMAT.format(-Math.floor(elapsed / SECONDS_PER_DAY), 'day');
 }
+
+/** Where an agent in use comes from, after its version: the mono line under its name in Settings → Agents. */
+function sourceWords(agent: CatalogAgent): string {
+  switch (agent.status) {
+    case 'by_zorvo':
+      return 'installed by Zorvo';
+    case 'on_your_mac':
+      return 'on this Mac';
+    case 'ready':
+      return `runs with ${agent.distribution}`;
+    case 'not_installed':
+      return 'not installed';
+    case 'waiting':
+      return agent.availableFrom === null ? 'not available yet' : `available from ${formatAvailableFrom(agent.availableFrom)}`;
+    case 'unsupported':
+      return 'not available for this Mac';
+  }
+}
+
+/**
+ * "0.93.0 · installed by Zorvo": an agent in use's version and source. A program found outside Zorvo at a
+ * known place shows no version, since it may not be the registry's.
+ */
+export function sourceLine(agent: CatalogAgent): string {
+  const version = agent.location === null ? agent.version : null;
+  const line = version ? `${version} · ${sourceWords(agent)}` : sourceWords(agent);
+  return agent.listed ? line : `${line} · no longer listed`;
+}
+
+/** What an available agent's line says first, before its description: why it cannot be used, or that it is already here. */
+function availableReason(agent: CatalogAgent): string | null {
+  switch (agent.status) {
+    case 'waiting':
+    case 'unsupported':
+      return baseStatusLine(agent, null, false);
+    case 'on_your_mac':
+      return 'On this Mac';
+    case 'by_zorvo':
+      return 'Installed by Zorvo';
+    default:
+      return null;
+  }
+}
+
+/**
+ * An available agent's line: what Add would install; else why it cannot be used, or that it is already
+ * on this Mac (so Add installs nothing), then its description; and whether the registry still lists it.
+ */
+export function availableLine(agent: CatalogAgent, plan: readonly InstallStep[] | null): string {
+  const line =
+    plan && plan.length > 0
+      ? `Installs ${describePlan(plan)} into Zorvo's folder`
+      : [availableReason(agent), agent.description].filter(Boolean).join(' · ');
+  if (agent.listed) return line;
+  return line ? `${line} · No longer listed` : 'No longer listed';
+}

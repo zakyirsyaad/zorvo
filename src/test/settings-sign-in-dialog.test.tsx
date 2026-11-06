@@ -25,7 +25,8 @@ vi.mock("@xterm/xterm", () => ({
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit() {} } }));
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
-import { AppSettingsDialog } from "../components/AppSettingsDialog";
+import { SettingsPage } from "../components/settings/SettingsPage";
+import { idleAppUpdate, pageAt } from "./fixtures/settings-page";
 import { SignInLayer } from "../components/SignInLayer";
 import type { SettingsSignIn } from "../hooks/useSettingsSignIn";
 import type { useAgentSignIn } from "../hooks/useAgentSignIn";
@@ -67,9 +68,8 @@ function renderSettings(signIn: SettingsSignIn, isOpen = true) {
   const updateState = vi.fn();
   const state = { settings: { enabledAgents: ["claude-acp"], signedInAgents: [] } as unknown as Settings, sessions: [] };
   render(
-    <AppSettingsDialog
-      isOpen={isOpen}
-      initialTab="agents"
+    <SettingsPage
+      page={pageAt(isOpen ? "agents" : null)}
       persisted={{ state: state as never, updateState }}
       agents={fakeProfiles}
       refreshAgents={() => Promise.resolve()}
@@ -78,7 +78,9 @@ function renderSettings(signIn: SettingsSignIn, isOpen = true) {
       recentFolders={[]}
       onRemoveRecentFolder={() => {}}
       onRunOnboarding={() => {}}
-      onClose={() => {}}
+      updateCount={0}
+      appUpdate={idleAppUpdate}
+      restartNote={null}
       agentSignIn={signIn}
     />,
   );

@@ -67,7 +67,8 @@ import { useDraftInstall } from "./hooks/useDraftInstall";
 import { useWorkspaceSelection } from "./hooks/useWorkspaceSelection";
 import { AgentCatalogPanel } from "./components/agents/AgentCatalogPanel";
 import { Onboarding, type OnboardingResult } from "./components/Onboarding";
-import { AppSettingsDialog, type SettingsTab } from "./components/AppSettingsDialog";
+import { SettingsPage } from "./components/settings/SettingsPage";
+import { useSettingsPage } from "./hooks/useSettingsPage";
 import { useAgentCatalog } from "./hooks/useAgentCatalog";
 import { useAgentCatalogActions } from "./hooks/useAgentCatalogActions";
 import { useAutoEnabledAgents } from "./hooks/useAutoEnabledAgents";
@@ -75,6 +76,7 @@ import { useShellActions } from "./hooks/useShellActions";
 import { useAgentUpdates } from "./hooks/useAgentUpdates";
 import { UpdateNotice } from "./components/UpdateNotice";
 import { AppUpdateNotice } from "./components/AppUpdateNotice";
+import { restartWarning } from "./lib/app-update";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { ProfileFooter } from "./components/ProfileFooter";
 import { AgentsMenu } from "./components/sidebar/AgentsMenu";
@@ -148,7 +150,9 @@ export default function App() {
   /** Bumped after each of the active agent's turns, so its folder's branch is read again. */
   const [branchCheck, setBranchCheck] = useState(0);
   const [acpChoices, setAcpChoices] = useState<AcpChoices>(NO_CHOICES);
-  const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
+  // The footer's Settings button: focus comes back to it from Settings when what opened Settings is gone.
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const settingsPage = useSettingsPage(settingsButtonRef);
   const [isSidebarHidden, setSidebarHidden] = useState(false);
   const composerRef = useRef<ComposerHandle>(null);
   // The top bar's Inspector button: focus goes back to it when the inspector closes from its own button.
@@ -477,9 +481,9 @@ export default function App() {
   const agentOptions = withRewound(state.agentOptions, draftAgent?.id, rewound);
   const startChoices = draftAgent ? withPreferred(acpChoices, agentOptions?.[draftAgent.id]) : acpChoices;
 
-  /** Nothing goes into a message that is not on screen. */
+  /** Nothing goes into a message that is not on screen: not behind a run's panel, nor behind Settings. */
   const insertPaths = (paths: string[]) => {
-    if (!isComposerHidden) composerRef.current?.insertPaths(paths);
+    if (!isComposerHidden && settingsPage.section === null) composerRef.current?.insertPaths(paths);
   };
 
   /** Dropped files are added to the message; a name with control characters is left out. */
@@ -698,7 +702,7 @@ export default function App() {
   };
 
   const handleRunOnboarding = () => {
-    setSettingsTab(null);
+    settingsPage.close();
     updateSettings({ onboardingCompleted: false });
   };
 
@@ -932,6 +936,10 @@ export default function App() {
     agentOptions: state.agentOptions,
   });
 
+  // Shown in the sessions' column, or on the Settings page while that hides the column; never both.
+  const noticeToast = notice && <Toast tone={notice.tone} message={notice.message} onDismiss={() => setNotice(null)} />;
+  const busyCount = sessions.filter((session) => isSessionBusy(session.id)).length;
+
   if (isLoaded && !state.settings.onboardingCompleted) {
     return (
       <Onboarding
@@ -948,7 +956,8 @@ export default function App() {
 
   return (
     <main className="flex h-screen w-screen flex-col bg-bg text-fg-secondary">
-      <section className="flex flex-1 overflow-hidden">
+      {/* Hidden, not unmounted, while Settings shows: a draft, its comments and the terminals stay as they were. */}
+      <section hidden={settingsPage.section !== null} className="flex flex-1 overflow-hidden">
         <Sidebar
           isHidden={isSidebarHidden}
           onHide={() => setSidebarHidden(true)}
@@ -977,7 +986,8 @@ export default function App() {
               email={userProfile.email}
               github={github.status}
               updateCount={agentUpdates.updateCount}
-              onOpenSettings={() => setSettingsTab("general")}
+              onOpenSettings={() => settingsPage.open("general")}
+              settingsButtonRef={settingsButtonRef}
               agents={
                 <AgentsMenu
                   agents={agents}
@@ -988,7 +998,7 @@ export default function App() {
                     // Asks again even when this agent is already the draft's: its panel may have been dismissed.
                     agentCheck.reprobe(profileId);
                   }}
-                  onManageAgents={() => setSettingsTab("agents")}
+                  onManageAgents={() => settingsPage.open("agents")}
                 />
               }
             />
@@ -1043,7 +1053,7 @@ export default function App() {
               {isDraggingFiles && <FileDropOverlay />}
               <UpdateNotice
                 agents={agentUpdates.unnotified}
-                onShow={() => { agentUpdates.acknowledge(); setSettingsTab("agents"); }}
+                onShow={() => { agentUpdates.acknowledge(); settingsPage.open("agents"); }}
                 onDismiss={agentUpdates.acknowledge}
               />
               {/* The chat or the draft. It scrolls only when what it holds does not fit (a short window, a sign-in panel
@@ -1134,14 +1144,14 @@ export default function App() {
                   <ToastStack>
                     <AppUpdateNotice
                       update={appUpdate.update}
-                      busyCount={sessions.filter((session) => isSessionBusy(session.id)).length}
+                      busyCount={busyCount}
                       terminalCount={terminals.liveCount}
                       isInstalling={appUpdate.isInstalling}
                       progress={appUpdate.progress}
                       onInstall={() => void appUpdate.install()}
                       onLater={appUpdate.dismiss}
                     />
-                    {notice && <Toast tone={notice.tone} message={notice.message} onDismiss={() => setNotice(null)} />}
+                    {settingsPage.section === null && noticeToast}
                   </ToastStack>
                 </div>
                 {activeAgentRemoved !== null && (
@@ -1162,7 +1172,7 @@ export default function App() {
                       signIn={signIn}
                       agents={agents}
                       agentId={activeSession?.profileId ?? (activeRun ? undefined : newSessionAgent?.id)}
-                      showTerminal={settingsTab === null}
+                      showTerminal={settingsPage.section === null}
                       panelTarget={draftSignInSlot}
                     />
                     {installPanelAgent
@@ -1323,7 +1333,7 @@ export default function App() {
                     pullRequests={repoPullRequests}
                     onOpenPullRequest={openPullRequest}
                     githubProblem={githubProblem}
-                    onOpenGithubSettings={() => setSettingsTab("general")}
+                    onOpenGithubSettings={() => settingsPage.open("github")}
                     diffStats={diffStats}
                     onOpenDiff={() => inspector.openDiff()}
                     stats={inspector.headStats ?? undefined}
@@ -1385,18 +1395,21 @@ export default function App() {
           </div>
         </div>
       </section>
-      <AppSettingsDialog
-        isOpen={settingsTab !== null}
-        initialTab={settingsTab ?? undefined}
+      <SettingsPage
+        page={settingsPage}
         persisted={{ state, updateState }}
         agents={agents}
         refreshAgents={refreshAgents}
         catalog={agentCatalog}
         actions={catalogActions}
+        updateCount={agentUpdates.updateCount}
         recentFolders={workspaces}
         onRemoveRecentFolder={removeFolder}
         onRunOnboarding={handleRunOnboarding}
-        onClose={() => setSettingsTab(null)}
+        appVersion={userProfile.version}
+        appUpdate={appUpdate}
+        restartNote={restartWarning(busyCount, terminals.liveCount) || null}
+        notice={settingsPage.section !== null && noticeToast}
         github={github}
         agentSignIn={settingsSignIn}
         onOpenUrl={openLink}

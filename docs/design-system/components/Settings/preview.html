@@ -1,0 +1,74 @@
+<!-- @dsCard group="Layout" height=620 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Settings — preview</title>
+<style>
+.z-settings { display: flex; width: 960px; height: 580px; overflow: hidden; background: var(--bg); color: var(--fg); font: 400 13px/18px var(--font-sans); }
+.z-settings-nav { box-sizing: border-box; flex: none; width: 220px; display: flex; flex-direction: column; gap: 2px; padding: 0 10px; background: var(--surface-1); border-right: 1px solid var(--border); }
+.z-settings-lights { height: 48px; }
+.z-settings-item { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: var(--radius-md); color: var(--fg-secondary); }
+.z-settings-item--back { color: var(--fg-muted); margin-bottom: 10px; }
+.z-settings-item--current { background: var(--surface-hover); color: var(--fg); font-weight: 500; }
+.z-settings-item--soon { color: var(--fg-subtle); }
+.z-settings-tag { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: var(--radius-md); background: var(--surface-hover); color: var(--fg); font-size: 11px; display: flex; align-items: center; justify-content: center; }
+.z-settings-tag--soon { color: var(--fg-muted); }
+.z-settings-main { flex: 1; min-width: 0; padding: 56px 40px; overflow: hidden; }
+.z-settings-column { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+.z-settings-head { display: flex; flex-direction: column; gap: 4px; }
+.z-settings-title { margin: 0; font: 600 20px/28px var(--font-sans); letter-spacing: -0.02em; color: var(--fg); }
+.z-settings-lead { margin: 0; color: var(--fg-muted); }
+.z-settings-gh { padding: 0 4px 8px; font-size: 11px; font-weight: 500; color: var(--fg-muted); }
+.z-settings-group { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface-2); }
+.z-settings-row { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.z-settings-row:last-child { border-bottom: 0; }
+.z-settings-label { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.z-settings-desc { font-size: 12px; line-height: 16px; color: var(--fg-subtle); display: flex; align-items: center; gap: 6px; }
+.z-settings-mono { font-family: var(--font-mono); font-size: 11px; }
+.z-settings-dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--status-running); }
+.z-btn { height: 28px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: none; color: var(--fg-secondary); font: 500 13px/18px var(--font-sans); white-space: nowrap; }
+.z-btn--ghost { border-color: transparent; color: var(--fg-muted); }
+</style>
+</head>
+<body>
+<div class="z-stage">
+  <div class="z-settings">
+    <nav class="z-settings-nav" aria-label="Settings">
+      <div class="z-settings-lights" aria-hidden="true"></div>
+      <a class="z-settings-item z-settings-item--back">Back to sessions</a>
+      <a class="z-settings-item z-settings-item--current" aria-current="page">General</a>
+      <a class="z-settings-item">Appearance</a>
+      <a class="z-settings-item">Agents<span class="z-settings-tag" aria-hidden="true">2</span></a>
+      <div class="z-settings-item z-settings-item--soon">MCP servers<span class="z-settings-tag z-settings-tag--soon" aria-hidden="true">Soon</span></div>
+      <a class="z-settings-item">GitHub</a>
+    </nav>
+    <section class="z-settings-main" aria-label="General">
+      <div class="z-settings-column">
+        <div class="z-settings-head">
+          <h1 class="z-settings-title">General</h1>
+          <p class="z-settings-lead">How new sessions start, and the folders Zorvo remembers.</p>
+        </div>
+        <section>
+          <div class="z-settings-gh">New sessions</div>
+          <div class="z-settings-group">
+            <div class="z-settings-row"><span class="z-settings-label"><span>Default agent</span><span class="z-settings-desc">New sessions start with this agent. You can switch in each draft.</span></span><button type="button" class="z-btn">Claude Code</button></div>
+          </div>
+        </section>
+        <section>
+          <div class="z-settings-gh">Recent folders</div>
+          <div class="z-settings-group">
+            <div class="z-settings-row"><span class="z-settings-label"><span>agent-desktop</span><span class="z-settings-desc z-settings-mono">~/developer/agent-desktop</span></span><button type="button" class="z-btn z-btn--ghost">Remove</button></div>
+          </div>
+        </section>
+        <section>
+          <div class="z-settings-gh">About</div>
+          <div class="z-settings-group">
+            <div class="z-settings-row"><span class="z-settings-label"><span>Zorvo version</span><span class="z-settings-desc"><span class="z-settings-dot"></span>0.8.0 · Up to date · checked 2 h ago</span></span><button type="button" class="z-btn">Check now</button></div>
+            <div class="z-settings-row"><span class="z-settings-label"><span>Setup</span><span class="z-settings-desc">Pick agents and a folder again.</span></span><button type="button" class="z-btn">Run setup again</button></div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </div>
+</div>
+</body>
+</html>

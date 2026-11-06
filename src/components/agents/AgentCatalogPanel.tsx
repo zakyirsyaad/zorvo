@@ -29,7 +29,7 @@ export function AgentCatalogPanel({ agents, settings, refreshAgents, catalog, ac
     }
   };
 
-  // When the agents tab opens (never at app start, never on window focus), agents that can say who is
+  // When the Agents section opens (never at app start, never on window focus), agents that can say who is
   // signed in are asked, in a way that opens no session; the chip then reads Ready or Sign in.
   const sweep = signIn?.sweep;
   const startable = (catalog.catalog?.agents ?? [])

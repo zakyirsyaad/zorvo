@@ -13,6 +13,16 @@ import {
 export interface AppUpdate {
   /** A newer Zorvo the user has not hidden for this run; null when none. */
   update: AppUpdateInfo | null;
+  /** The newer Zorvo found, even when Later hid its notice (Settings still offers it). */
+  available: AppUpdateInfo | null;
+  /** A check made with `checkNow` is running. */
+  isChecking: boolean;
+  /** When the backend last answered a check (epoch ms), or null before the first answer. */
+  checkedAt: number | null;
+  /** The last check made with `checkNow` could not be made; automatic ones stay silent. */
+  checkFailed: boolean;
+  /** Checks now (Settings' Check now). Does nothing while a check or an install runs. */
+  checkNow: () => Promise<void>;
   isInstalling: boolean;
   progress: AppUpdateProgress | null;
   /** Downloads the update, installs it, writes what the page holds and restarts Zorvo. A failure goes to `onError`. */
@@ -39,23 +49,41 @@ export function useAppUpdate(
   const [hiddenVersion, setHiddenVersion] = useState<string | null>(null);
   const [isInstalling, setIsInstalling] = useState(false);
   const [progress, setProgress] = useState<AppUpdateProgress | null>(null);
+  const [isChecking, setIsChecking] = useState(false);
+  const [checkedAt, setCheckedAt] = useState<number | null>(null);
+  const [checkFailed, setCheckFailed] = useState(false);
   const isInstallingRef = useRef(false);
+  const isCheckingRef = useRef(false);
+  const isMountedRef = useRef(true);
+
+  /** True when the backend answered (also "no update"), false when the question could not be asked. */
+  const check = useCallback(async (): Promise<boolean> => {
+    if (isInstallingRef.current) return true;
+    try {
+      const info = await invoke<AppUpdateInfo | null>('app_update_check');
+      // An install that started meanwhile owns the banner: an answer arriving now could remove it.
+      if (isMountedRef.current && !isInstallingRef.current) {
+        setFound(info ?? null);
+        setCheckedAt(Date.now());
+        // Any answer, a scheduled one too, ends an earlier "could not check".
+        setCheckFailed(false);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
     let timer: number | undefined;
-    /** True when the backend answered (also "no update"), false when the question could not be asked. */
-    const check = async (): Promise<boolean> => {
-      if (isInstallingRef.current) return true;
-      try {
-        const info = await invoke<AppUpdateInfo | null>('app_update_check');
-        // An install that started meanwhile owns the banner: an answer arriving now could remove it.
-        if (isMounted && !isInstallingRef.current) setFound(info ?? null);
-        return true;
-      } catch {
-        return false;
-      }
-    };
     const checkAndSchedule = async () => {
       const answered = await check();
       if (!isMounted) return;
@@ -69,7 +97,20 @@ export function useAppUpdate(
       isMounted = false;
       window.clearTimeout(timer);
     };
-  }, []);
+  }, [check]);
+
+  const checkNow = useCallback(async () => {
+    if (isCheckingRef.current || isInstallingRef.current) return;
+    isCheckingRef.current = true;
+    setIsChecking(true);
+    try {
+      const answered = await check();
+      if (isMountedRef.current) setCheckFailed(!answered);
+    } finally {
+      isCheckingRef.current = false;
+      if (isMountedRef.current) setIsChecking(false);
+    }
+  }, [check]);
 
   useEffect(() => {
     let isMounted = true;
@@ -109,5 +150,5 @@ export function useAppUpdate(
   const dismiss = useCallback(() => setHiddenVersion(found?.version ?? null), [found]);
 
   const update = found && found.version !== hiddenVersion ? found : null;
-  return { update, isInstalling, progress, install, dismiss };
+  return { update, available: found, isChecking, checkedAt, checkFailed, checkNow, isInstalling, progress, install, dismiss };
 }

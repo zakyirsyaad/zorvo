@@ -65,10 +65,14 @@ async function click(element: HTMLElement) {
   });
 }
 
+/** Opens Settings on its GitHub section and returns that section's region. */
 async function openSettings() {
   await click(screen.getByRole("button", { name: /^Settings/ }));
-  return screen.getByRole("dialog", { name: "Settings" });
+  await click(within(screen.getByRole("navigation", { name: "Settings" })).getByRole("link", { name: "GitHub" }));
+  return githubSettings();
 }
+
+const githubSettings = () => screen.getByRole("region", { name: "GitHub" });
 
 /** The sidebar's profile footer: the one footer inside the sidebar. */
 const footer = () => within(within(screen.getByRole("complementary")).getAllByRole("contentinfo").at(-1)!);
@@ -110,7 +114,7 @@ describe("GitHub and the Changes panel", () => {
     expect(await within(panel).findByText("Pull requests need you to be connected to GitHub.")).toBeInTheDocument();
     await click(within(panel).getByRole("button", { name: "Open GitHub settings" }));
 
-    const settings = screen.getByRole("dialog", { name: "Settings" });
+    const settings = githubSettings();
     expect(within(settings).getByRole("button", { name: "Connect" })).toBeInTheDocument();
   });
 
@@ -155,8 +159,8 @@ describe("GitHub in the app", () => {
     expect(footer().queryByText("Test User")).toBeNull();
 
     const settings = await openSettings();
-    expect(within(settings).getByText("Connected to GitHub")).toBeInTheDocument();
-    expect(within(settings).getByText("@octocat")).toBeInTheDocument();
+    expect(within(settings).getByText("The Octocat")).toBeInTheDocument();
+    expect(within(settings).getByText("Connected as @octocat on github.com")).toBeInTheDocument();
   });
 
   it("keeps git's name in the footer when signed out, and offers Connect in Settings", async () => {
@@ -165,7 +169,7 @@ describe("GitHub in the app", () => {
     expect(await footer().findByText("Test User")).toBeInTheDocument();
     expect(footer().queryByRole("img", { name: "Connected to GitHub" })).toBeNull();
     const settings = await openSettings();
-    expect(within(settings).getByText("You are not connected to GitHub.")).toBeInTheDocument();
+    expect(within(settings).getByText("Not connected")).toBeInTheDocument();
     expect(within(settings).getByRole("button", { name: "Connect" })).toBeInTheDocument();
   });
 
@@ -174,7 +178,7 @@ describe("GitHub in the app", () => {
 
     const settings = await openSettings();
 
-    expect(within(settings).getByText("The GitHub CLI is not installed.")).toBeInTheDocument();
+    expect(within(settings).getByText("Install the GitHub CLI first")).toBeInTheDocument();
     expect(within(settings).getByText("brew install gh")).toBeInTheDocument();
   });
 
@@ -182,7 +186,7 @@ describe("GitHub in the app", () => {
     const spy = await renderApp([NOT_INSTALLED]);
     const settings = await openSettings();
 
-    await click(within(settings).getByRole("button", { name: "Get gh from cli.github.com" }));
+    await click(within(settings).getByRole("button", { name: "cli.github.com" }));
 
     expect(callsTo(spy, "open_external_url")).toEqual([["open_external_url", { url: "https://cli.github.com" }]]);
   });
@@ -202,8 +206,10 @@ describe("GitHub in the app", () => {
     });
 
     expect(screen.queryByRole("dialog", { name: "Sign in to GitHub" })).toBeNull();
+    expect(await within(githubSettings()).findByText("Connected as @octocat on github.com")).toBeInTheDocument();
+    // The footer is in the sidebar, which Settings hides: go back to the sessions to see it.
+    await click(within(screen.getByRole("navigation", { name: "Settings" })).getByRole("link", { name: "Back to sessions" }));
     expect(await footer().findByText("The Octocat")).toBeInTheDocument();
-    expect(within(screen.getByRole("dialog", { name: "Settings" })).getByText("Connected to GitHub")).toBeInTheDocument();
   });
 
   it("closes only the sign-in terminal on Escape, and ends its login", async () => {
@@ -217,7 +223,7 @@ describe("GitHub in the app", () => {
     });
 
     expect(screen.queryByRole("dialog", { name: "Sign in to GitHub" })).toBeNull();
-    expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Settings" })).toBeInTheDocument();
     expect(callsTo(spy, "terminate_session")).toEqual([["terminate_session", { sessionId: args?.terminalId }]]);
   });
 
@@ -245,22 +251,23 @@ describe("GitHub in the app", () => {
       listeners.get("github-sign-in-terminal")?.({ payload: { terminalId: args?.terminalId, kind: "exit", exitCode: 0 } });
     });
 
-    await within(screen.getByRole("dialog", { name: "Settings" })).findByText("Connected to GitHub");
+    await within(githubSettings()).findByText("Connected as @octocat on github.com");
     expect(screen.queryByRole("dialog", { name: "Sign in to GitHub" })).toBeNull();
     expect(document.activeElement).not.toBe(document.body);
-    expect(within(screen.getByRole("dialog", { name: "Settings" })).getByRole("region", { name: "GitHub" })).toContainElement(
+    expect(githubSettings()).toContainElement(
       document.activeElement as HTMLElement,
     );
   });
 
   it("checks again from Settings", async () => {
-    const spy = await renderApp([SIGNED_OUT, SIGNED_IN]);
+    // Signed out offers only Connect (gh is re-read on window focus); a missing gh offers Check again.
+    const spy = await renderApp([NOT_INSTALLED, SIGNED_IN]);
     const settings = await openSettings();
     const readsBefore = callsTo(spy, "github_status").length;
 
     await click(within(settings).getByRole("button", { name: "Check again" }));
 
     expect(callsTo(spy, "github_status")).toHaveLength(readsBefore + 1);
-    expect(await within(settings).findByText("Connected to GitHub")).toBeInTheDocument();
+    expect(await within(settings).findByText("Connected as @octocat on github.com")).toBeInTheDocument();
   });
 });

@@ -104,6 +104,24 @@ describe("Dropping files onto the window", () => {
     expect(screen.queryByRole("list", { name: "Attachments" })).toBeNull();
   });
 
+  it("adds nothing to the message while Settings shows, which hides the message", async () => {
+    await act(async () => {
+      render(<App />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^Settings/ }));
+    });
+
+    await act(async () => {
+      dragHandler({ payload: { type: "drop", paths: ["/Users/test/shot.png"] } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("link", { name: "Back to sessions" }));
+    });
+
+    expect(screen.queryByRole("list", { name: "Attachments" })).toBeNull();
+  });
+
   it("lists the session folder's files after an @ in the prompt", async () => {
     const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) =>
       cmd === "workspace_files" ? Promise.resolve(["src/App.tsx", "README.md"]) : fakeTauriInvoke(cmd, args)

@@ -161,7 +161,7 @@ describe("App - update notice", () => {
       fireEvent.click(screen.getByRole("button", { name: "Show" }));
     });
 
-    expect(screen.getByRole("tab", { name: /Agents/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("link", { name: /^Agents/ })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByText("Claude Code 1.3.0 is available.")).toBeNull();
     await waitFor(() => expect(savedSettings().notifiedUpdates).toEqual({ "claude-acp": "1.3.0" }));
   });
@@ -177,7 +177,7 @@ describe("App - update notice", () => {
     });
 
     expect(screen.queryByText("Claude Code 1.3.0 is available.")).toBeNull();
-    expect(screen.queryByRole("tab", { name: /Agents/ })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Settings" })).toBeNull();
     await waitFor(() => expect(savedSettings().notifiedUpdates).toEqual({ "claude-acp": "1.3.0" }));
   });
 });

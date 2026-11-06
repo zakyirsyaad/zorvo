@@ -804,10 +804,10 @@ describe("a sign-in inside a compare run", () => {
     const sessionId = sessionOf(spy, "qwen-code");
 
     await click(screen.getByRole("button", { name: /^Settings/ }));
-    await click(await screen.findByRole("tab", { name: /Agents/ }));
+    await click(await screen.findByRole("link", { name: /^Agents/ }));
     await waitFor(() => expect(calls(spy, "acp_probe_sign_in").length).toBeGreaterThan(0));
     await settle();
-    await click(screen.getByRole("button", { name: /^Close/ }));
+    await click(screen.getByRole("link", { name: "Back to sessions" }));
 
     expect(within(rowOf("Qwen Code")).getByText("Needs sign-in")).toBeInTheDocument();
     expect(signInPanel("Qwen Code")).toBeNull();

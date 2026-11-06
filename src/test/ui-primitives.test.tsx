@@ -59,6 +59,29 @@ describe("primitive sizes from the canvas", () => {
     expect(lead).not.toHaveClass("font-normal");
   });
 
+  it.each([
+    ["primary", "sm", "font-medium"],
+    ["primary", "row", "font-medium"],
+    ["primary", "md", "font-medium"],
+    ["primary", "lg", "font-medium"],
+    ["danger", "sm", "font-medium"],
+    ["danger", "md", "font-medium"],
+    ["danger", "lg", "font-medium"],
+    ["outline", "sm", "font-normal"],
+    ["outline", "row", "font-normal"],
+    ["outline", "md", "font-normal"],
+    ["outline", "lg", "font-medium"],
+    ["ghost", "sm", "font-normal"],
+    ["ghost", "row", "font-normal"],
+    ["ghost", "md", "font-normal"],
+    ["ghost", "lg", "font-medium"],
+  ] as const)("a %s %s Button carries exactly one weight class, %s", (variant, size, expected) => {
+    render(<Button variant={variant} size={size}>Go</Button>);
+    const button = screen.getByRole("button", { name: "Go" });
+    const weights = ["font-normal", "font-medium"].filter((name) => button.classList.contains(name));
+    expect(weights).toEqual([expected]);
+  });
+
   it("Button has a 26px size, and a ghost one can take the secondary text colour", () => {
     render(<Button size="row" variant="ghost" tone="secondary">Files</Button>);
     const back = screen.getByRole("button", { name: "Files" });

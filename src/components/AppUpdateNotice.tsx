@@ -31,23 +31,29 @@ export function AppUpdateNotice({
   const percent = downloadPercent(progress);
   const warning = restartWarning(busyCount, terminalCount);
   return (
-    <div ref={cardRef} role="status" className="w-[340px] rounded-xl border border-border bg-surface-2 p-4 shadow-popover">
-      <p className="text-ui font-medium text-fg">{`Zorvo ${update.version} is ready`}</p>
-      {warning && <p className="mt-1 text-ui-sm text-fg-muted">{warning}</p>}
-      {isInstalling && (
-        <p className="mt-1 text-ui-sm text-fg-muted">
-          {progress?.phase === 'installing' ? 'Installing…' : 'Downloading…'}
-          {/* Shown, not announced: a screen reader would read every percent of the download. */}
-          {percent !== null && <span aria-hidden="true"> {percent}%</span>}
-        </p>
-      )}
-      <div className="mt-3 flex justify-end gap-2">
+    <div
+      ref={cardRef}
+      role="status"
+      className="flex w-[340px] flex-col gap-3 rounded-xl border border-border bg-surface-3 px-4 py-3.5 shadow-popover"
+    >
+      <div className="flex flex-col gap-1">
+        <p className="text-ui font-semibold text-fg">{`Zorvo ${update.version} is ready`}</p>
+        {warning && <p className="text-ui-sm text-fg-muted">{warning}</p>}
+        {isInstalling && (
+          <p className="text-ui-sm text-fg-muted">
+            {progress?.phase === 'installing' ? 'Installing…' : 'Downloading…'}
+            {/* Shown, not announced: a screen reader would read every percent of the download. */}
+            {percent !== null && <span aria-hidden="true"> {percent}%</span>}
+          </p>
+        )}
+      </div>
+      <div className="flex justify-end gap-2">
         {!isInstalling && (
-          <Button variant="ghost" onClick={onLater}>
+          <Button variant="ghost" tone="secondary" onClick={onLater}>
             Later
           </Button>
         )}
-        <Button onClick={onInstall} disabled={isInstalling}>
+        <Button onClick={onInstall} disabled={isInstalling} className="text-fg">
           Update &amp; restart
         </Button>
       </div>

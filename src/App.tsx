@@ -101,6 +101,8 @@ import { isAgentReady, isAgentRunnable, noAgentNotice, resolveDraftAgentId } fro
 import { isInUse, removedAgentName, removedAgentNameFor } from "./lib/enabled-agents";
 import { useCompareDraft } from "./hooks/useCompareDraft";
 import { useCompareRun, useCompareRunRows } from "./hooks/useCompareRun";
+import { useCompareModelProbe } from "./hooks/useCompareModelProbe";
+import { compareModelControls } from "./lib/compare-models";
 import { lastOfRun, runOf } from "./lib/compare-run";
 import { compareAgentOptions } from "./lib/composer-controls";
 import { COMPARE_NOTE, composerCommandsFor, composerNote, composerPlaceholder, composerStateFor } from "./lib/composer-state";
@@ -367,6 +369,23 @@ export default function App() {
       ...prev,
       agentOptions: { ...prev.agentOptions, [profileId]: withProbed(prev.agentOptions?.[profileId], probed) },
     }));
+  // A compare draft's model chips: an agent whose models are unknown is asked only when its chip opens.
+  const compareAgentIdsRef = useLatest(compare.agentIds);
+  const compareModelProbe = useCompareModelProbe({
+    cwd: shownFolderPath ?? undefined,
+    agentOptions: state.agentOptions,
+    onProbed: rememberProbed,
+    onSignedIn: signInStatus.markSignedIn,
+    onNeedsSignIn: (profileId) => {
+      // Marked as needing a sign-in, it can no longer be ticked, so it leaves the run; say so only if it was in it.
+      const wasInRun = compareAgentIdsRef.current.includes(profileId);
+      signInStatus.markNeeded(profileId);
+      if (wasInRun) {
+        const name = agents.find((a) => a.id === profileId)?.name ?? profileId;
+        setNotice(`${name} needs a sign-in, so it left the run. Pick it alone to sign in.`);
+      }
+    },
+  });
   // Settings → Agents shows the same sign-in state as the sidebar, and checks and fixes it.
   const settingsSignIn = useSettingsSignIn({
     cwd: shownFolderPath ?? workspaces[0]?.path,
@@ -1161,6 +1180,17 @@ export default function App() {
                   sendLabel={compare.agentIds.length >= 2 ? `Start ${compare.agentIds.length} sessions` : undefined}
                   agentName={activeSession ? activeAgent?.name : newSessionAgent?.name}
                   sessionAgent={activeSession && activeAgent ? { profileId: activeAgent.id, name: activeAgent.name } : undefined}
+                  compareModels={
+                    compare.isCompare
+                      ? compareModelControls(
+                          compare.agentIds.map((id) => ({ id, name: agents.find((a) => a.id === id)?.name ?? id })),
+                          state.agentOptions,
+                          compareModelProbe.stateOf,
+                          { pickModel: rememberModelPick, pickConfig: rememberPick },
+                        )
+                      : undefined
+                  }
+                  onOpenCompareModel={compareModelProbe.ask}
                   note={composerNoteText}
                   // Only a compare run's note sits in the row, as drawn; a reason or a loading line is a sentence for under the prompt.
                   noteInRow={composerNoteText === COMPARE_NOTE}

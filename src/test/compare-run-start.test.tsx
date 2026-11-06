@@ -74,6 +74,8 @@ interface Setup {
   files?: boolean;
   /** Models every started agent reports. */
   models?: Array<{ modelId: string; name: string }>;
+  /** Answers `acp_probe_agent` for an agent, or undefined to leave it to the fake. */
+  probe?: (profileId: string) => Promise<unknown> | undefined;
 }
 
 async function renderApp(setup: Setup = {}) {
@@ -98,6 +100,10 @@ async function renderApp(setup: Setup = {}) {
         ...(started as object),
         models: { currentModelId: "default", availableModels: setup.models },
       }));
+    }
+    if (cmd === "acp_probe_agent" && setup.probe) {
+      const answer = setup.probe(String((args as { profileId: string }).profileId));
+      if (answer) return answer;
     }
     if (cmd === "list_directory" && setup.files) {
       return Promise.resolve([{ name: "README.md", relativePath: "README.md", isDir: false }]);
@@ -263,6 +269,104 @@ describe("starting a compare run", () => {
     const picks = calls(spy, "acp_set_model").map((a) => [agentOfSession.get(a.sessionId), a.modelId]);
     expect(picks).toEqual(expect.arrayContaining([["claude-acp", "claude-fast"], ["qwen-code", "qwen-fast"]]));
     expect(picks).toHaveLength(2);
+  });
+
+  describe("choosing each agent's model", () => {
+    const modelsOf = (id: string): AgentOptions => ({
+      modes: null,
+      configOptions: [],
+      models: {
+        currentModelId: `${id}-default`,
+        availableModels: [
+          { modelId: `${id}-default`, name: `${id} default` },
+          { modelId: `${id}-fast`, name: `${id} fast` },
+        ],
+      },
+    });
+    const startedModels = [
+      { modelId: "claude-default", name: "claude default" },
+      { modelId: "qwen-default", name: "qwen default" },
+      { modelId: "qwen-fast", name: "qwen fast" },
+    ];
+    const PROBED = { modes: null, configOptions: [], commands: [], models: modelsOf("qwen").models, signInChecked: false, canListSessions: false };
+    const probesFor = (spy: { mock: { calls: unknown[][] } }, id: string) => calls(spy, "acp_probe_agent").filter((a) => a.profileId === id);
+    const notice = "Qwen Code needs a sign-in, so it left the run. Pick it alone to sign in.";
+
+    it("starts each agent on the model picked in its chip", async () => {
+      const spy = await renderApp({ models: startedModels, agentOptions: { "claude-acp": modelsOf("claude"), "qwen-code": modelsOf("qwen") } });
+      await tickAgents("Qwen Code");
+      await click(await screen.findByRole("button", { name: "Qwen Code model: qwen default" }));
+      await click(screen.getByRole("option", { name: "qwen fast" }));
+      expect(screen.getByRole("button", { name: "Qwen Code model: qwen fast" })).toBeInTheDocument();
+      await send();
+      await waitFor(() => expect(calls(spy, "acp_start_session")).toHaveLength(2));
+      await waitFor(() => expect(calls(spy, "acp_set_model").length).toBeGreaterThanOrEqual(1));
+
+      const agentOfSession = new Map(calls(spy, "acp_start_session").map((a) => [a.sessionId, a.profileId]));
+      const picks = calls(spy, "acp_set_model").map((a) => [agentOfSession.get(a.sessionId), a.modelId]);
+      expect(picks).toEqual([["qwen-code", "qwen-fast"]]);
+    });
+
+    it("makes the pick that agent's model in its next single draft", async () => {
+      await renderApp({ agentOptions: { "claude-acp": modelsOf("claude"), "qwen-code": modelsOf("qwen") } });
+      await tickAgents("Qwen Code");
+      await click(await screen.findByRole("button", { name: "Qwen Code model: qwen default" }));
+      await click(screen.getByRole("option", { name: "qwen fast" }));
+      // Untick Claude Code: Qwen Code is the draft's only agent now.
+      await tickAgents("Claude Code");
+      expect(await screen.findByRole("button", { name: "Model: qwen fast" })).toBeInTheDocument();
+    });
+
+    it("asks a never-used agent only when its chip opens", async () => {
+      const spy = await renderApp({
+        agentOptions: { "claude-acp": modelsOf("claude") },
+        probe: (id) => (id === "qwen-code" ? Promise.resolve(PROBED) : undefined),
+      });
+      await tickAgents("Qwen Code");
+      expect(probesFor(spy, "qwen-code")).toHaveLength(0);
+      await click(await screen.findByRole("button", { name: "Qwen Code model: Default" }));
+      await waitFor(() => expect(probesFor(spy, "qwen-code")).toHaveLength(1));
+      expect(probesFor(spy, "qwen-code")[0]).toMatchObject({ needsOptions: true });
+    });
+
+    it("drops an agent that needs a sign-in from the run, and says so", async () => {
+      await renderApp({
+        agentOptions: { "claude-acp": modelsOf("claude") },
+        probe: (id) => (id === "qwen-code" ? Promise.reject(`ACP_AUTH_REQUIRED:${JSON.stringify([{ id: "x", name: "X" }])}`) : undefined),
+      });
+      await tickAgents("Qwen Code");
+      await click(await screen.findByRole("button", { name: "Qwen Code model: Default" }));
+      expect(await screen.findByText(notice)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^Qwen Code model:/ })).toBeNull();
+    });
+
+    it("says nothing about leaving when the agent was already unticked", async () => {
+      const answer = deferred<unknown>();
+      await renderApp({
+        agentOptions: { "claude-acp": modelsOf("claude") },
+        probe: (id) => (id === "qwen-code" ? answer.promise : undefined),
+      });
+      await tickAgents("Qwen Code");
+      await click(await screen.findByRole("button", { name: "Qwen Code model: Default" }));
+      await tickAgents("Qwen Code");
+      await act(async () => answer.reject(`ACP_AUTH_REQUIRED:${JSON.stringify([{ id: "x", name: "X" }])}`));
+      expect(screen.queryByText(notice)).toBeNull();
+    });
+
+    it("still starts a run on an agent's default when asking for its models failed", async () => {
+      const spy = await renderApp({
+        models: startedModels,
+        agentOptions: { "claude-acp": modelsOf("claude") },
+        probe: (id) => (id === "qwen-code" ? Promise.reject("boom") : undefined),
+      });
+      await tickAgents("Qwen Code");
+      await click(await screen.findByRole("button", { name: "Qwen Code model: Default" }));
+      expect(await screen.findByText("Could not ask Qwen Code for its models.")).toBeInTheDocument();
+      await send();
+      await waitFor(() => expect(calls(spy, "acp_start_session")).toHaveLength(2));
+      const qwenSession = calls(spy, "acp_start_session").find((a) => a.profileId === "qwen-code")?.sessionId;
+      expect(calls(spy, "acp_set_model").filter((a) => a.sessionId === qwenSession)).toHaveLength(0);
+    });
   });
 
   it("points each agent's attachments into its own worktree", async () => {

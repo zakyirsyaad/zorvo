@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { DiffView } from "../components/changes/DiffView";
 import { LineComment } from "../components/changes/LineComment";
+import { ReviewCommentsBar } from "../components/changes/ReviewCommentsBar";
 import { useReviewComments } from "../hooks/useReviewComments";
 import type { AddReview } from "../hooks/useReviewWiring";
 import type { FileStat } from "../lib/diff-stats";
@@ -111,5 +112,54 @@ describe("comments as drawn", () => {
     render(<One />);
 
     expect(screen.getByText("Use AuthError here.").closest(".bg-surface-3")!.textContent).toContain("Line 42 · Unknown");
+  });
+});
+
+describe("the comments bar as drawn", () => {
+  const two = [commentOf(), commentOf({ id: "c-2", body: "And here." })];
+
+  it("the bar is a floating card that counts comments not in a message", async () => {
+    await renderView(two);
+
+    const bar = screen.getByRole("region", { name: "Review comments" });
+    expect(bar.textContent).toContain("2 comments not in a message");
+    for (const name of ["rounded-lg", "border-border", "bg-surface-2", "mx-4", "mb-4"]) {
+      expect(bar.classList.contains(name), name).toBe(true);
+    }
+    expect(bar.classList.contains("border-t")).toBe(false);
+  });
+
+  it("its Add keeps the full name", async () => {
+    await renderView(two);
+
+    const add = screen.getByRole("button", { name: "Add 2 comments to message" });
+    expect(add.textContent).toBe("Add 2 to message");
+    expect(add.className).toContain("bg-primary");
+  });
+
+  it("the card variant reads Add 2", () => {
+    function Bar() {
+      const review = useReviewComments("s-a", two, () => {});
+      return (
+        <ReviewCommentsBar
+          variant="card"
+          review={review}
+          adder={{ inMessage: new Set(), blockedReason: undefined, reasonId: "why", isWaiting: false, add: () => {} }}
+          checked={two.map((comment) => ({ comment, status: "current" as const }))}
+          target="head"
+          targets={{ base: null, root: "/w", prefix: "" }}
+          options={["head"]}
+          reads={{}}
+          listed={[STAT]}
+          onTargetChange={() => {}}
+          onFocusLost={() => {}}
+        />
+      );
+    }
+    render(<Bar />);
+
+    const add = screen.getByRole("button", { name: "Add 2 comments to message" });
+    expect(add.textContent).toBe("Add 2");
+    expect(add.className).not.toContain("bg-primary");
   });
 });

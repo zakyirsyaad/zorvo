@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { isCommentableFile, unifiedDiffRows, type FileChange } from "../../lib/git-changes";
 import type { DiffTargetId } from "../../lib/diff-stats";
-import { DiffRows } from "./DiffRows";
+import { DiffRows, type DiffDensity } from "./DiffRows";
 import { againstRows, FileComments, rowReviewOf, type FileReview } from "./LineComment";
 import { readFileDiff } from "../../lib/diff-read";
 
 type DiffState = { status: "loading" } | { status: "ready"; diff: string; key: string } | { status: "failed"; error: string; key: string };
 
 /** One changed file's diff against `target` (the last commit unless told otherwise), read when it is opened. */
-export function FileDiff({ rootPath, change, version, target = "head", startCommit, review, takesComments = false }: {
+export function FileDiff({ rootPath, change, version, target = "head", startCommit, review, takesComments = false, density = "review" }: {
   rootPath: string;
   change: FileChange;
   /** The diff is read again whenever this changes. */
@@ -20,6 +20,8 @@ export function FileDiff({ rootPath, change, version, target = "head", startComm
   review?: FileReview;
   /** Whether its lines can take a new comment; a nested repository's cannot. */
   takesComments?: boolean;
+  /** `card` in the Changes tab, `review` in the full diff review. */
+  density?: DiffDensity;
 }) {
   const [state, setState] = useState<DiffState>({ status: "loading" });
 
@@ -60,7 +62,7 @@ export function FileDiff({ rootPath, change, version, target = "head", startComm
       );
     }
     if (rows.length === 0) return <p className="px-3 py-1.5 text-[11px] text-fg-subtle">No text changes.</p>;
-    return <DiffRows rows={rows} label={`Diff of ${change.path}`} review={rowReview} />;
+    return <DiffRows rows={rows} label={`Diff of ${change.path}`} review={rowReview} density={density} />;
   };
   return (
     <>

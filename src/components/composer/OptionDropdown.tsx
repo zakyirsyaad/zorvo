@@ -25,6 +25,13 @@ export interface OptionDropdownProps {
   trailing?: ReactNode;
   /** The chip's look: the composer row's by default, `DRAFT_CHIP` above a draft's card. */
   chipClassName?: string;
+  /**
+   * Which way the menu opens: up from a session's composer at the bottom of the window (the default), down
+   * in a draft, whose composer sits near the top with its column's room below.
+   */
+  side?: "top" | "bottom";
+  /** A small mark before each row's name: the agent dropdown's logos. */
+  renderIcon?: (option: DropdownOption) => ReactNode;
   options: readonly DropdownOption[];
   selected: string | undefined;
   isOpen: boolean;
@@ -50,7 +57,34 @@ const SEARCH_THRESHOLD = 10;
  * Code's model names carry one), so the narrow chip shows the model itself.
  */
 function chipLabelOf(label: string): string {
-  return label.replace(/^\[[^\]]*\]\s*/, "") || label;
+  return splitTag(label).name;
+}
+
+/** A label's leading "[Provider]" tag, if any, and the name after it: "[OpenRouter] kimi-k2" gives OpenRouter and kimi-k2. */
+function splitTag(label: string): { tag?: string; name: string } {
+  const match = /^\[([^\]]+)\]\s*(.*)$/.exec(label);
+  if (!match || match[2] === "") return { name: label };
+  return { tag: match[1], name: match[2] };
+}
+
+interface TagGroup {
+  tag?: string;
+  options: DropdownOption[];
+}
+
+/**
+ * The options grouped by their tag, each group where its first option was, so a long model list reads by name
+ * under one heading per provider instead of repeating the provider on every row. Untagged options keep their place.
+ */
+function groupByTag(options: readonly DropdownOption[]): TagGroup[] {
+  const groups: TagGroup[] = [];
+  for (const option of options) {
+    const { tag } = splitTag(option.label);
+    const group = groups.find((candidate) => candidate.tag === tag);
+    if (group) group.options.push(option);
+    else groups.push({ tag, options: [option] });
+  }
+  return groups;
 }
 
 function matches(option: DropdownOption, query: string): boolean {
@@ -65,7 +99,10 @@ function matches(option: DropdownOption, query: string): boolean {
 /** The line under an option: what it does, and for a risky mode that it acts without asking, on one subtle line. */
 function detailOf(option: DropdownOption): string | undefined {
   if (!option.risky) return option.description;
-  return option.description ? `${option.description} ${RISKY_LINE}.` : `${RISKY_LINE}.`;
+  if (!option.description) return `${RISKY_LINE}.`;
+  // An agent's description may stop without a full stop ("Automatically approve all tools"): end it first.
+  const description = /[.!?]$/.test(option.description) ? option.description : `${option.description}.`;
+  return `${description} ${RISKY_LINE}.`;
 }
 
 interface OptionRowsProps {
@@ -73,28 +110,51 @@ interface OptionRowsProps {
   current: DropdownOption | undefined;
   query: string;
   onSelect: (value: string | undefined) => void;
+  renderIcon?: (option: DropdownOption) => ReactNode;
 }
 
-function OptionRows({ options, current, query, onSelect }: OptionRowsProps) {
+function OptionRow({ option, current, query, onSelect, renderIcon }: Omit<OptionRowsProps, "options"> & { option: DropdownOption }) {
+  const { tag, name } = splitTag(option.label);
+  return (
+    <PopoverOption
+      selected={option.value === current?.value}
+      onSelect={() => onSelect(option.value)}
+      description={detailOf(option)}
+      // The full label, tag and all, for a name cut short.
+      title={tag ? option.label : undefined}
+    >
+      <span className="flex items-center gap-1.5">
+        {renderIcon && (
+          <span data-option-icon="" aria-hidden="true" className="flex shrink-0">
+            {renderIcon(option)}
+          </span>
+        )}
+        <span className="truncate">
+          <Highlighted text={name} query={query} />
+        </span>
+        {option.risky && (
+          <ShieldAlert size={12} role="img" aria-label={RISKY_LINE} className="shrink-0 text-status-attention" />
+        )}
+      </span>
+    </PopoverOption>
+  );
+}
+
+function OptionRows({ options, ...row }: OptionRowsProps) {
   return (
     <div className="max-h-72 overflow-y-auto">
-      {options.map((option) => (
-        <PopoverOption
-          key={option.value ?? "__default"}
-          selected={option.value === current?.value}
-          onSelect={() => onSelect(option.value)}
-          description={detailOf(option)}
-        >
-          <span className="flex items-center gap-1.5">
-            <span className="truncate">
-              <Highlighted text={option.label} query={query} />
-            </span>
-            {option.risky && (
-              <ShieldAlert size={12} role="img" aria-label={RISKY_LINE} className="shrink-0 text-status-attention" />
-            )}
-          </span>
-        </PopoverOption>
-      ))}
+      {groupByTag(options).map((group) =>
+        group.tag === undefined ? (
+          group.options.map((option) => <OptionRow key={option.value ?? "__default"} option={option} {...row} />)
+        ) : (
+          <div key={`tag:${group.tag}`} role="group" aria-label={group.tag}>
+            <PopoverHeader>{group.tag}</PopoverHeader>
+            {group.options.map((option) => (
+              <OptionRow key={option.value ?? "__default"} option={option} {...row} />
+            ))}
+          </div>
+        ),
+      )}
       {options.length === 0 && <p className="px-2 py-1 text-ui-sm text-fg-muted">No matches</p>}
     </div>
   );
@@ -106,15 +166,18 @@ function SearchableOptions({
   options,
   current,
   onSelect,
+  renderIcon,
 }: {
   label: string;
   options: readonly DropdownOption[];
   current: DropdownOption | undefined;
   onSelect: (value: string | undefined) => void;
+  renderIcon?: (option: DropdownOption) => ReactNode;
 }) {
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
-  const visible = options.filter((option) => matches(option, query));
+  // In the order the rows show, grouped by tag, so Return picks the first row you see.
+  const visible = groupByTag(options.filter((option) => matches(option, query))).flatMap((group) => group.options);
   useEffect(() => searchRef.current?.focus(), []);
 
   return (
@@ -133,7 +196,7 @@ function SearchableOptions({
         placeholder={`Search ${label.toLowerCase()}`}
       />
       <PopoverList label={label}>
-        <OptionRows options={visible} current={current} query={query} onSelect={onSelect} />
+        <OptionRows options={visible} current={current} query={query} onSelect={onSelect} renderIcon={renderIcon} />
       </PopoverList>
       <p className="px-2 pt-1.5 pb-0.5 text-caption text-fg-subtle">
         {visible.length} of {options.length} {pluralOf(label)}
@@ -158,6 +221,8 @@ export function OptionDropdown({
   heading,
   trailing,
   chipClassName = COMPOSER_CHIP,
+  side = "top",
+  renderIcon,
 }: OptionDropdownProps) {
   const current = options.find((o) => o.value === selected) ?? options[0];
   const valueLabel = current?.label ?? "";
@@ -172,7 +237,7 @@ export function OptionDropdown({
       onClose={onClose}
       label={label}
       role={hasSearch ? "dialog" : "listbox"}
-      side="top"
+      side={side}
       align={align === "left" ? "start" : "end"}
       className={isWide ? "w-75" : "w-max min-w-40 max-w-80"}
       trigger={
@@ -195,9 +260,9 @@ export function OptionDropdown({
     >
       {heading && <PopoverHeader>{heading}</PopoverHeader>}
       {hasSearch ? (
-        <SearchableOptions label={label} options={options} current={current} onSelect={onSelect} />
+        <SearchableOptions label={label} options={options} current={current} onSelect={onSelect} renderIcon={renderIcon} />
       ) : (
-        <OptionRows options={options} current={current} query="" onSelect={onSelect} />
+        <OptionRows options={options} current={current} query="" onSelect={onSelect} renderIcon={renderIcon} />
       )}
     </Popover>
   );

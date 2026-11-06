@@ -36,7 +36,7 @@ describe("OptionDropdown rows", () => {
 
     expect(within(screen.getByRole("option", { name: /Default/ })).getByText("Prompts for approval")).toBeTruthy();
     expect(
-      within(screen.getByRole("option", { name: /YOLO/ })).getByText("Auto-approves all tools Lets the agent act without asking."),
+      within(screen.getByRole("option", { name: /YOLO/ })).getByText("Auto-approves all tools. Lets the agent act without asking."),
     ).toBeTruthy();
     expect(screen.getByRole("option", { name: "Plan" }).textContent).toBe("Plan");
   });

@@ -386,6 +386,9 @@ export function ComposerDock({
     ),
   ];
   const { inline: inlineControls, overflow: overflowControls } = splitControls(agentControls);
+  // A draft's composer sits near the top of its column with room below; a session's sits at the window's bottom.
+  const isDraft = Boolean(folder || agent || agents);
+  const menuSide = isDraft ? "bottom" : "top";
 
   return (
     <footer ref={containerRef} className="w-full max-w-chat flex flex-col items-center select-none">
@@ -399,7 +402,9 @@ export function ComposerDock({
                 label="Agent"
                 align="left"
                 chipClassName={DRAFT_CHIP}
+                side="bottom"
                 icon={<AgentLogo profileId={agent.selected ?? ""} name="" size={16} />}
+                renderIcon={(option) => <AgentLogo profileId={option.value ?? ""} name="" size={16} />}
                 {...dropdownProps("agent", agent)}
               />
             ) : undefined
@@ -489,12 +494,14 @@ export function ComposerDock({
                 description={entry.description}
                 showLabel={entry.showLabel}
                 heading={entry.heading}
+                side={menuSide}
                 {...dropdownProps(entry.id, entry.control)}
               />
             ))}
 
             {overflowControls.length > 0 && (
               <MoreControls
+                side={menuSide}
                 controls={overflowControls}
                 isOpen={openDropdown === "more"}
                 onToggle={() => toggle("more")}

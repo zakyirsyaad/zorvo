@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent, act, within } from "@testing-library/react";
 import { createRef, type ComponentProps } from "react";
 import { ComposerDock, type ComposerHandle } from "../components/ComposerDock";
 import type { ComposerControls } from "../lib/composer-controls";
@@ -449,7 +449,7 @@ describe("ComposerDock", () => {
     expect(screen.queryByRole("listbox", { name: "Model" })).toBeNull();
   });
 
-  it("shows a model's own name on the chip, its provider in the list and the tooltip", () => {
+  it("shows a model's own name on the chip and its row, its provider as the list's group and in the tooltips", () => {
     render(
       <ComposerDock
         onSendMessage={() => {}}
@@ -470,7 +470,8 @@ describe("ComposerDock", () => {
     expect(chip.textContent).toBe("qwen3.8-max");
     expect(chip.getAttribute("title")).toBe("[ModelStudio Token Plan] qwen3.8-max");
     fireEvent.click(chip);
-    expect(screen.getByRole("option", { name: "[ModelStudio Token Plan] qwen3-coder" })).toBeDefined();
+    const coder = within(screen.getByRole("group", { name: "ModelStudio Token Plan" })).getByRole("option", { name: "qwen3-coder" });
+    expect(coder.getAttribute("title")).toBe("[ModelStudio Token Plan] qwen3-coder");
   });
 });
 

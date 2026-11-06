@@ -167,6 +167,8 @@ export interface PopoverOptionProps {
   /** Shown at the right edge, before the check (a hint such as a count). */
   trailing?: ReactNode;
   disabled?: boolean;
+  /** A tooltip with more than the row shows (a model's full name, its provider tag included). */
+  title?: string;
   children: ReactNode;
 }
 
@@ -184,6 +186,7 @@ export function PopoverOption({
   isRadio = false,
   trailing,
   disabled,
+  title,
   children,
 }: PopoverOptionProps) {
   const popoverRole = useContext(PopoverRoleContext);
@@ -200,6 +203,7 @@ export function PopoverOption({
       aria-selected={role === "option" ? isSelected : undefined}
       aria-checked={role === "menuitemradio" ? isSelected : undefined}
       disabled={disabled}
+      title={title}
       onClick={onSelect}
       className={classes.filter(Boolean).join(" ")}
     >

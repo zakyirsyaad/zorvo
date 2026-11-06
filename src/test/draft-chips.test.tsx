@@ -11,7 +11,7 @@ const folders = [
 ];
 
 function branchControl(overrides: Partial<BranchControl> = {}): BranchControl {
-  return { current: "main", branches: ["feature/login", "main"], onOpen: vi.fn(), onPick: vi.fn(), ...overrides };
+  return { current: "main", checkedOut: "main", branches: ["feature/login", "main"], onOpen: vi.fn(), onPick: vi.fn(), ...overrides };
 }
 
 function folderControl(overrides: Partial<FolderControl> = {}): FolderControl {
@@ -91,7 +91,7 @@ describe("the branch chip", () => {
     const dialog = within(screen.getByRole("dialog", { name: "Choose a branch" }));
     expect(dialog.getByRole("textbox", { name: "Search branches" })).toBeInTheDocument();
     expect(dialog.getByText("Local branches")).toBeInTheDocument();
-    expect(dialog.getByRole("option", { name: "main" })).toHaveAttribute("aria-selected", "true");
+    expect(dialog.getByRole("option", { name: /^main/ })).toHaveAttribute("aria-selected", "true");
   });
 
   it("picks nothing on Return while the search is empty, so a stray key cannot switch the checkout", () => {

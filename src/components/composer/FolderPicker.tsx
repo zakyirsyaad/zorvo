@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, Folder, FolderPlus } from "lucide-react";
-import { Popover, PopoverHeader, PopoverList, PopoverOption } from "../ui/Popover";
+import { Popover, PopoverHeader, PopoverList, PopoverOption, PopoverSearch } from "../ui/Popover";
 import { DRAFT_CHIP } from "./chip-style";
 import type { Workspace } from "../../types";
 
@@ -25,6 +25,8 @@ export interface FolderControl {
 /** The branch chip: the folder's own branch, or a worktree's starting branch while New worktree is on. */
 export interface BranchControl {
   current: string;
+  /** The folder's own checked-out branch, named "checked out" in the list; `current` is it unless a worktree base was picked. */
+  checkedOut: string;
   /** The local branches, most recently committed first; null until they are loaded. */
   branches: readonly string[] | null;
   /** Called when the branch list opens, to load it. */
@@ -83,17 +85,14 @@ export function FolderPicker({ folders, selectedPath, onSelect, onOpenFolder, is
         </button>
       }
     >
-      <input
+      <PopoverSearch
         autoFocus
-        type="text"
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={setQuery}
         onKeyDown={(e) => {
           if (e.key === "Enter" && shown[0]) pick(shown[0].path);
         }}
         placeholder="Search folders"
-        aria-label="Search folders"
-        className="focus-ring mb-1 w-full rounded border border-border bg-surface-2 px-2 py-1 text-ui-sm text-fg placeholder-fg-subtle outline-none"
       />
       <PopoverHeader>Recent folders</PopoverHeader>
       <div className="max-h-64 overflow-y-auto">

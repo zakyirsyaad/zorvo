@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, GitBranch } from "lucide-react";
-import { Popover, PopoverHeader, PopoverList, PopoverOption } from "../ui/Popover";
+import { Popover, PopoverHeader, PopoverList, PopoverOption, PopoverSearch } from "../ui/Popover";
 import { DRAFT_CHIP } from "./chip-style";
 import type { BranchControl, FolderControl } from "./FolderPicker";
 
@@ -34,7 +34,7 @@ export function BranchPicker({ branch, worktree, isOpen, onToggle, onClose }: Br
       role="dialog"
       side="bottom"
       align="start"
-      className="w-72"
+      className="w-90"
       trigger={
         <button
           type="button"
@@ -58,18 +58,15 @@ export function BranchPicker({ branch, worktree, isOpen, onToggle, onClose }: Br
     >
       {branch && (
         <>
-          <input
+          <PopoverSearch
             autoFocus
-            type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={setQuery}
             onKeyDown={(e) => {
               // Only with something typed: a pick here can switch the folder's own checkout.
               if (e.key === "Enter" && needle !== "" && shown[0]) pick(shown[0]);
             }}
             placeholder="Search branches"
-            aria-label="Search branches"
-            className="focus-ring mb-1 w-full rounded border border-border bg-surface-2 px-2 py-1 text-ui-sm text-fg placeholder-fg-subtle outline-none"
           />
           <PopoverHeader>Local branches</PopoverHeader>
           <div className="max-h-56 overflow-y-auto">
@@ -80,8 +77,12 @@ export function BranchPicker({ branch, worktree, isOpen, onToggle, onClose }: Br
             <PopoverList label="Local branches">
               {shown.map((name) => (
                 <span key={name} title={name} className="block">
-                  <PopoverOption selected={name === branch.current} onSelect={() => pick(name)}>
-                    {name}
+                  <PopoverOption
+                    selected={name === branch.current}
+                    onSelect={() => pick(name)}
+                    trailing={name === branch.checkedOut ? "checked out" : undefined}
+                  >
+                    <span className="font-mono text-ui-sm">{name}</span>
                   </PopoverOption>
                 </span>
               ))}
@@ -89,16 +90,28 @@ export function BranchPicker({ branch, worktree, isOpen, onToggle, onClose }: Br
           </div>
         </>
       )}
-      {worktree && <WorktreeSwitch worktree={worktree} from={current} />}
+      {worktree && <WorktreeSwitch worktree={worktree} from={current} hasListAbove={Boolean(branch)} />}
     </Popover>
   );
 }
 
-/** "New worktree": the session works on its own copy, so the folder's checkout is left alone. */
-function WorktreeSwitch({ worktree, from }: { worktree: NonNullable<FolderControl["worktree"]>; from: string }) {
+/**
+ * "New worktree": the session works on its own copy, so the folder's checkout is left alone. The switch sits on
+ * the left with its label over what it does, as the canvas draws it.
+ */
+function WorktreeSwitch({
+  worktree,
+  from,
+  hasListAbove,
+}: {
+  worktree: NonNullable<FolderControl["worktree"]>;
+  from: string;
+  hasListAbove: boolean;
+}) {
   const isLocked = worktree.lockedReason !== undefined;
   return (
-    <div className="mt-1 border-t border-border px-2 pb-1 pt-2">
+    <>
+      {hasListAbove && <div aria-hidden="true" className="my-1.5 h-px bg-border" />}
       <button
         type="button"
         role="switch"
@@ -106,21 +119,23 @@ function WorktreeSwitch({ worktree, from }: { worktree: NonNullable<FolderContro
         aria-label="New worktree"
         disabled={isLocked}
         onClick={() => worktree.onChange(!worktree.isOn)}
-        className="focus-ring flex w-full items-center justify-between gap-2 rounded text-left text-ui text-fg disabled:cursor-default"
+        className="focus-ring flex w-full items-start gap-2.5 rounded px-2 py-1.5 text-left text-ui text-fg disabled:cursor-default"
       >
-        <span>New worktree</span>
         <span
           aria-hidden="true"
-          className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${worktree.isOn ? "bg-fg" : "bg-border-strong"}`}
+          className={`relative mt-px h-4 w-7 shrink-0 rounded-full transition-colors ${worktree.isOn ? "bg-fg" : "bg-border-strong"}`}
         >
           <span
             className={`absolute top-0.5 h-3 w-3 rounded-full transition-transform ${worktree.isOn ? "translate-x-3.5 bg-bg" : "translate-x-0.5 bg-fg"}`}
           />
         </span>
+        <span className="flex min-w-0 flex-col">
+          <span>New worktree</span>
+          <span className="text-caption text-fg-subtle">
+            {worktree.lockedReason ?? `Works on its own copy from ${from}. Your checkout stays as it is.`}
+          </span>
+        </span>
       </button>
-      <p className="mt-1 text-caption text-fg-muted">
-        {worktree.lockedReason ?? `Works on its own copy from ${from}. Your checkout stays as it is.`}
-      </p>
-    </div>
+    </>
   );
 }

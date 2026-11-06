@@ -12,7 +12,7 @@ const folder: FolderControl = {
   selectedPath: "/w/agent-desktop",
   onSelect: vi.fn(),
   worktree: { isOn: true, onChange: vi.fn() },
-  branch: { current: "main", branches: ["main"], onOpen: vi.fn(), onPick: vi.fn() },
+  branch: { current: "main", checkedOut: "main", branches: ["main"], onOpen: vi.fn(), onPick: vi.fn() },
 };
 
 describe("the draft's column", () => {

@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "../ui/Button";
 import { useNow } from "../../hooks/useNow";
 import { CompareRunRow } from "./CompareRunRow";
-import { othersToStop, pickQuestion, stopsLine, type CompareRun, type RowFacts } from "../../lib/compare-run";
+import { othersToStop, pickQuestion, rowStatus, stopsLine, type CompareRun, type RowFacts } from "../../lib/compare-run";
 import { formatRelativeTime } from "../../lib/relative-time";
 
 export interface CompareRunPanelProps {
@@ -29,7 +29,9 @@ function startedLine(run: CompareRun): string {
 export function CompareRunPanel({ run, rows, version, agentName, onOpen, onReview, onChoose, onPick }: CompareRunPanelProps) {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [isPickRunning, setIsPickRunning] = useState(false);
-  const now = useNow();
+  // Only a working row shows a time, so the clock runs only while one does.
+  const now = useNow(undefined, rows.some((row) => rowStatus(row) === "working"));
+  const barId = useId();
   const panelRef = useRef<HTMLElement>(null);
   const barPickRef = useRef<HTMLButtonElement>(null);
   // Every Pick asks: the question takes focus, or it would come and go unheard below the list.
@@ -86,6 +88,7 @@ export function CompareRunPanel({ run, rows, version, agentName, onOpen, onRevie
                 version={version}
                 isPickDisabled={isPickRunning}
                 isPicking={confirming === facts.session.id}
+                confirmBarId={barId}
                 now={now}
                 onOpen={onOpen}
                 onReview={onReview}
@@ -98,6 +101,7 @@ export function CompareRunPanel({ run, rows, version, agentName, onOpen, onRevie
       </div>
       {confirmedRow && (
         <div
+          id={barId}
           role="group"
           aria-label="Confirm pick"
           className="absolute inset-x-6 bottom-6 mx-auto flex max-w-chat items-center gap-3 rounded-xl border border-border bg-surface-3 px-4 py-3.5 shadow-popover"

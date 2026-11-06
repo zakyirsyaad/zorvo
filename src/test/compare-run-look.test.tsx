@@ -97,6 +97,8 @@ describe("the compare run as drawn", () => {
 
     expect(within(cardOf("Claude Code")).getByText("Finished")).toBeInTheDocument();
     expect(cardOf("Claude Code").querySelector(".bg-status-unread")).not.toBeNull();
+    // Not by colour alone: the words say it too.
+    expect(cardOf("Claude Code")).toHaveTextContent("Finished, unread");
   });
 
   it("the working time moves on with the clock", async () => {
@@ -127,7 +129,9 @@ describe("the compare run as drawn", () => {
     fireEvent.click(pick);
 
     expect(cardOf("Claude Code")).toHaveClass("border-border-strong");
-    expect(pick).toHaveAttribute("aria-pressed", "true");
+    expect(pick).toHaveAttribute("aria-expanded", "true");
+    expect(pick).not.toHaveAttribute("aria-pressed");
+    expect(pick.getAttribute("aria-controls")).toBe(screen.getByRole("group", { name: "Confirm pick" }).id);
     expect(cardOf("Qwen Code")).not.toHaveClass("border-border-strong");
   });
 
@@ -152,5 +156,12 @@ describe("the compare run as drawn", () => {
     const name = within(cardOf("Claude Code")).getByText("Claude Code");
     expect(name).toHaveClass("truncate");
     expect(name.parentElement).toHaveClass("min-w-0", "flex-1");
+  });
+
+  it("runs its clock only while an agent works", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    answerDiffs({});
+    await renderPanel([facts(1)]);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

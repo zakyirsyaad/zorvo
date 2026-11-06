@@ -16,6 +16,8 @@ export interface CompareRunRowProps {
   isPickDisabled: boolean;
   /** This row's Pick opened the confirm bar. */
   isPicking: boolean;
+  /** The confirm bar Pick opens. */
+  confirmBarId?: string;
   /** The panel's clock, for the time in the status words. */
   now: number;
   onOpen: (sessionId: string) => void;
@@ -75,6 +77,7 @@ export function CompareRunRow({
   version,
   isPickDisabled,
   isPicking,
+  confirmBarId,
   now,
   onOpen,
   onReview,
@@ -102,6 +105,8 @@ export function CompareRunRow({
           <span className="truncate text-ui font-medium text-fg">{agentName}</span>
           <StatusLine status={runStatusDot(status, facts.hasUnread)} className="text-ui-sm text-fg-secondary">
             {rowStatusWords(facts, status, now)}
+            {/* The dot is not the only sign of it. */}
+            {status === "done" && facts.hasUnread && <span className="sr-only">, unread</span>}
           </StatusLine>
         </span>
         <Changes stats={stats} error={error} agentName={agentName} onReview={() => onReview(session.id)} />
@@ -111,7 +116,9 @@ export function CompareRunRow({
         <Button
           aria-label={`Pick ${agentName}`}
           variant="outline"
-          aria-pressed={isPicking || undefined}
+          // It opens the confirm bar, so it says so, rather than turning into a toggle while the bar is open.
+          aria-expanded={isPicking}
+          aria-controls={isPicking ? confirmBarId : undefined}
           className={isPicking ? "bg-surface-hover" : undefined}
           disabled={isPickDisabled || hasNoChanges}
           title={hasNoChanges ? NO_CHANGES_TITLE : undefined}

@@ -19,10 +19,15 @@ function stepParts(progress: InstallProgress | null, action: InstallAction): { s
 }
 
 /** "Downloading Node.js · 18 MB of 42 MB": only the step is a live region, so each step is announced and no byte is. */
-export function InstallStatus({ progress, action = "install" }: { progress: InstallProgress | null; action?: InstallAction }) {
+export function InstallStatus({ progress, action = "install", isCompact = false }: {
+  progress: InstallProgress | null;
+  action?: InstallAction;
+  /** In a list row (Settings' agents), at the row's caption size rather than a card's body size. */
+  isCompact?: boolean;
+}) {
   const { step, size } = stepParts(progress, action);
   return (
-    <p className="text-ui text-fg-muted">
+    <p className={`${isCompact ? "text-caption" : "text-ui"} text-fg-muted`}>
       <span role="status">{step}</span>
       {size && <span aria-hidden="true"> · {size}</span>}
     </p>
@@ -64,7 +69,7 @@ export interface InstallProgressLineProps {
 export function InstallProgressLine({ progress, onCancel, action = "install" }: InstallProgressLineProps) {
   return (
     <div className="mt-2 flex flex-col gap-2">
-      <InstallStatus progress={progress} action={action} />
+      <InstallStatus progress={progress} action={action} isCompact />
       <InstallBar progress={progress} />
       <InstallCancel onCancel={onCancel} />
     </div>

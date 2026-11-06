@@ -18,6 +18,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 import App from "../App";
+import { InstallProgressLine } from "../components/InstallProgressLine";
 import { AgentInstallPanel } from "../components/AgentInstallPanel";
 import { forgetFailedInstalls, installEntryOf, resetAgentInstalls, startInstall } from "../lib/agent-installs";
 
@@ -537,5 +538,10 @@ describe("Installing an agent from the new-session draft", () => {
       expect(status.textContent).toBe("Downloading Node.js");
       expect(status.parentElement?.textContent).toBe("Downloading Node.js · 256 bytes of 1 KB");
     });
+  });
+
+  it("Settings' row keeps its step line at caption size", () => {
+    render(<InstallProgressLine progress={null} onCancel={() => {}} />);
+    expect(screen.getByRole("status").parentElement?.classList.contains("text-caption")).toBe(true);
   });
 });

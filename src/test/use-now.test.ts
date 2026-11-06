@@ -17,4 +17,10 @@ describe("useNow", () => {
     unmount();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it("does not tick while it is not running", () => {
+    vi.useFakeTimers();
+    renderHook(() => useNow(60_000, false));
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

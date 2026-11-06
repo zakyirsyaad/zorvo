@@ -331,11 +331,10 @@ describe("TerminalSignInDialog", () => {
     expect(status.className).toContain("flex-1");
   });
 
-  it("pads the terminal 14/16", () => {
+  it("pads the terminal once, with TerminalView's own inset", () => {
     renderDialog("running");
     const box = screen.getByRole("dialog").querySelector(".h-\\[380px\\]");
-    expect(box?.className).toContain("px-4");
-    expect(box?.className).toContain("py-3.5");
+    expect(box?.className).not.toMatch(/\bp[xy]-/);
   });
 
   it.each([

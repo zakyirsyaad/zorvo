@@ -93,7 +93,8 @@ export function TerminalSignInDialog({
           </IconButton>
         </header>
 
-        <div className="mx-5 flex h-[380px] overflow-hidden rounded-lg border border-border bg-terminal-bg px-4 py-3.5">
+        {/* TerminalView insets xterm itself (14/12), so the box adds no padding of its own. */}
+        <div className="mx-5 flex h-[380px] overflow-hidden rounded-lg border border-border bg-terminal-bg">
           <TerminalView
             sessionId={state.terminalId}
             output={output}

@@ -1126,6 +1126,7 @@ export default function App() {
                     // Comments held for another session say nothing about whether this one can continue.
                     isSendBlocked: isSendWaiting,
                     isEndedSession: Boolean(activeSession),
+                    isAwaitingAnswer: isAwaitingUser(currentMessages),
                   })}
                   onSendMessage={handleSendMessage}
                   attachAsFiles

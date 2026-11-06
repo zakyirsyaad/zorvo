@@ -110,6 +110,14 @@ describe("Popout windows", () => {
     });
   });
 
+  it("replies to its agent by name", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", { sessionId: "s-1", session: runningSession, messages: [] });
+    expect(screen.getByRole("textbox", { name: "Prompt" }).getAttribute("placeholder")).toBe("Reply to Claude Code");
+  });
+
   it("shows the session's plan from the snapshot it is sent", async () => {
     await act(async () => {
       render(<PopoutApp sessionId="s-1" />);

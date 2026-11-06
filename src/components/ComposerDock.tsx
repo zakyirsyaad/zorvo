@@ -23,8 +23,8 @@ import { useLatest } from "../hooks/useLatest";
 import type { ContextUsage, SlashCommand } from "../types";
 
 const MAX_PROMPT_HEIGHT_PX = 180;
-const PLACEHOLDER = "Prompt the agent...";
-const PLACEHOLDER_WITH_COMMANDS = "Type / for commands, or prompt the agent...";
+/** What an empty composer says when the parent gives no placeholder: a running session or a popout. */
+const replyPlaceholder = (agentName: string | undefined) => `Reply to ${agentName ?? "the agent"}`;
 
 /** Keys that only move the caret; the menu's own keys (Escape, Enter, up and down) are not among them. */
 const CARET_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
@@ -438,7 +438,7 @@ export function ComposerDock({
           onClick={(e) => followCaret(e.currentTarget)}
           onKeyDown={handleKeyDown}
           disabled={disabled}
-          placeholder={placeholder ?? (commands.length > 0 ? PLACEHOLDER_WITH_COMMANDS : PLACEHOLDER)}
+          placeholder={placeholder ?? replyPlaceholder(agentName)}
           aria-label="Prompt"
           autoCorrect="off"
           autoCapitalize="off"

@@ -6,6 +6,13 @@ import { TRANSPORT_ACP, type AgentProfile, type Session, type SlashCommand } fro
 const IDLE = { isRunning: false, isCreatingWorktree: false, isResumable: false, canStartSession: false };
 
 describe("composerPlaceholder", () => {
+  it("asks for the waiting request's answer while a running session waits on you", () => {
+    expect(composerPlaceholder({ ...IDLE, isRunning: true, isAwaitingAnswer: true })).toBe("Answer the request above to continue");
+    expect(COMPOSER_PLACEHOLDERS.answerRequest).toBe("Answer the request above to continue");
+    // Once answered, the composer's own "Reply to <Agent>" shows again.
+    expect(composerPlaceholder({ ...IDLE, isRunning: true })).toBeUndefined();
+  });
+
   it("shows none in a running session, and says what the next message does otherwise", () => {
     expect(composerPlaceholder({ ...IDLE, isRunning: true, isCreatingWorktree: true })).toBeUndefined();
     expect(composerPlaceholder({ ...IDLE, isCreatingWorktree: true, isResumable: true })).toBe(

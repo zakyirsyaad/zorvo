@@ -75,6 +75,7 @@ export const COMPOSER_PLACEHOLDERS = {
   newSession: 'Message the agent to start a new session...',
   resume: 'Message the agent to continue this session...',
   creatingWorktree: 'Creating a worktree for the session...',
+  answerRequest: 'Answer the request above to continue',
 } as const;
 
 const installPlaceholder = (agentName: string, continuesSession: boolean) =>
@@ -93,8 +94,11 @@ export function composerPlaceholder(state: {
   isSendBlocked?: boolean;
   /** An ended session is shown: once its agent is ready, the next message continues it. */
   isEndedSession?: boolean;
+  /** A running session's permission or question card waits for your answer. */
+  isAwaitingAnswer?: boolean;
 }): string | undefined {
-  if (state.isRunning) return undefined;
+  // A running session otherwise reads the composer's own "Reply to <Agent>".
+  if (state.isRunning) return state.isAwaitingAnswer ? COMPOSER_PLACEHOLDERS.answerRequest : undefined;
   if (state.isCreatingWorktree) return COMPOSER_PLACEHOLDERS.creatingWorktree;
   if (!state.isResumable && !state.canStartSession) return COMPOSER_PLACEHOLDERS.noWorkspace;
   // An ended session whose agent cannot run yet is not resumable, but the note says the next message

@@ -28,6 +28,15 @@
   - The canvas's `.ob` button (28px tall, 12px text, `border-strong`, radius 8) is `Button variant="outline" size="md"`; 8d ruled the same way.
   - A caller's className never sets padding, height or text size on a `Button`.
   - An outline label that must read `fg` is wrapped in `<span className="text-fg">`, because a className colour loses to the variant's colour in the built CSS.
+  - **Known gap, kept app-wide:** the canvas's 28px buttons have 12px text at weight 400, and `Button size="md"` has 13px at weight 500. Every 28px button since phase 8 has the same gap. Closing it means changing `Button`'s `md` size for the whole app, which is not part of this plan.
+- **Gaps differ per section, as drawn:**
+  - General: 28px between the header and the groups and between groups (`gap-7`).
+  - Appearance and GitHub: 16px between the header and their content (`gap-4`).
+  - Agents: 24px (`gap-6`).
+  
+  Each section component owns its own column. The page adds no gap of its own.
+- **Row gaps are drawn two ways:** 16px in General (`gap-4`) and 12px in GitHub and Agents (`gap-3`). `SettingsRow` takes `isTight` for the second.
+- **A green dot that does not pulse:** "Up to date" and "Connected as …" have a still green dot on the canvas. `StatusLine`'s `running` pulses, since it means working. Task 2 adds a `ready` status: the same colour, with no pulse.
 - Every focusable control has `focus-ring`. Copy is in sentence case, uses "you", and names the agents.
 - No keyboard shortcuts. Escape no longer closes Settings: it is a page, not a dialog (see Rulings).
 - The app never asks for or stores tokens. GitHub stays read through the user's own `gh`.
@@ -37,7 +46,7 @@
 ## Rulings made while planning (the user can overturn them at plan review)
 
 1. **Kept mounted.** The sidebar-and-main `<section>` is hidden, not unmounted, while Settings shows. The composer's text, review comments in a message, scroll positions and terminal views therefore survive a visit to Settings. The spec's "sessions keep running; Back returns to the session that was on screen" then holds with no extra state.
-2. **No MCP servers item.** The spec says the section "is not shown (no placeholder page)" until its backend lands. The nav therefore shows General, Appearance, Agents and GitHub, and `SettingsTab` gains `appearance` and `github` only.
+2. **No MCP servers item yet.** The canvas nav draws "MCP servers", but the spec says the section "is not shown (no placeholder page)" until its backend lands. The spec decides behavior, so the nav shows General, Appearance, Agents and GitHub, and `SettingsTab` gains `appearance` and `github` only. The item comes with part 4.
 3. **Agents uses today's catalog.** The Agents section shows today's `AgentCatalogPanel` under the page heading "Agents" and one sentence. Part 2 restyles it.
 4. **Run setup again is kept.** It becomes a row in General's About group ("Setup", "Pick agents and a folder again.", **Run setup again**). The canvas does not draw it, but it is the only way back to onboarding; this follows the audit's "keep a function, restyle it".
 5. **Escape no longer closes Settings.** A page has **Back to sessions** instead. No other key is added.
@@ -51,6 +60,11 @@
    - Opening Settings moves focus to the section's `h1`, which has `tabIndex={-1}`.
    - A nav click keeps focus on the link.
    - Back gives focus to the control that opened Settings when it is still in the document. Otherwise it goes to the sidebar footer's Settings button, which is the case for the Agents menu's Manage agents, whose popover has closed.
+10. **Two nav icons are drawn by hand.**
+    - lucide has no glyph matching the canvas's Appearance icon (a circle with its left half filled) or its GitHub icon (three circles and a bent line, no arrow).
+    - `SettingsNav` therefore draws both as inline SVGs copied from the artboard (`viewBox="0 0 24 24"`, stroke 1.75, round caps and joins, 14px).
+    - General (`Settings2`), Agents (`LayoutGrid`) and Back (`ChevronLeft`) match lucide.
+11. **One update count.** The Agents badge shows `agentUpdates.updateCount`, the count the sidebar footer shows, as the spec says ("from `useAgentUpdates`"). Today's dialog computed its own `pendingUpdates(...)`.
 
 ## Review Focus
 
@@ -99,6 +113,7 @@ Most likely first:
 
 **Files:**
 - Create: `src/components/settings/SettingsNav.tsx`, `src/components/settings/SettingsGroup.tsx`
+- Modify: `src/components/ui/StatusLine.tsx` (status `ready`)
 - Test: `src/test/settings-parts.test.tsx`
 
 **Interfaces:**
@@ -109,7 +124,8 @@ Most likely first:
 - Produces in `SettingsGroup.tsx`:
   - `SettingsHeader({ title, children, titleRef }: { title: string; children: ReactNode; titleRef?: Ref<HTMLHeadingElement> })`;
   - `SettingsGroup({ heading, children }: { heading: string; children: ReactNode })`;
-  - `SettingsRow({ label, description, control, leading }: { label: ReactNode; description?: ReactNode; control?: ReactNode; leading?: ReactNode })`.
+  - `SettingsRow({ label, description, control, leading, isTight }: { label: ReactNode; description?: ReactNode; control?: ReactNode; leading?: ReactNode; isTight?: boolean })`.
+- Produces in `StatusLine.tsx`: `Status` gains `"ready"`, whose dot is `bg-status-running` with no pulse.
 
 **Canvas values (SettingsGeneral):**
 - **Nav:**
@@ -118,7 +134,11 @@ Most likely first:
   - **Items**: an `a` with `flex h-8 items-center gap-2.5 rounded-md px-2.5 text-ui text-fg-secondary hover:bg-surface-hover focus-ring`, and a 14px icon with `aria-hidden`.
   - **Back to sessions**: `ChevronLeft`, `text-fg-muted`, `mb-2.5`, `href="#sessions"`.
   - The **current item** adds `bg-surface-hover text-fg font-medium` and `aria-current="page"`.
-  - **Icons**: General is `Settings2`, Appearance is `Contrast`, Agents is `LayoutGrid` and GitHub is `GitPullRequest`.
+  - **Icons**:
+    - General is lucide `Settings2`, Agents is lucide `LayoutGrid`, Back is lucide `ChevronLeft`.
+    - Appearance is inline: `<circle cx="12" cy="12" r="9"/>` and `<path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/>`.
+    - GitHub is inline: circles at (6,6), (6,18) and (18,18) with r 2.5, and `<path d="M6 8.5v7M18 15.5V9a3 3 0 0 0-3-3h-3"/>`.
+    - Both inline icons use `fill="none" stroke="currentColor" strokeWidth={1.75}`, round caps and joins, size 14, and `aria-hidden`.
   - **Agents badge**, shown only when `updateCount > 0`: `ml-auto flex h-4.5 min-w-4.5 items-center justify-center rounded-md bg-surface-hover px-1.25 text-caption text-fg`, with `aria-hidden` plus a sr-only `, N update(s)`.
 - **Header**: `flex flex-col gap-1`. The `h1` is `text-xl font-semibold tracking-[-0.02em] text-fg` with `tabIndex={-1}` and `outline-none`. The sentence below it is `text-ui text-fg-muted`.
 - **Group**:
@@ -126,7 +146,7 @@ Most likely first:
   - its heading is a `div` with `px-1 pb-2 text-caption font-medium text-fg-muted`;
   - its card is `flex flex-col overflow-hidden rounded-xl border border-border bg-surface-2`.
 - **Row**:
-  - the row is `flex items-center gap-4 border-b border-border px-4 py-3 last:border-b-0`;
+  - the row is `flex items-center gap-4 border-b border-border px-4 py-3 last:border-b-0`, or `gap-3` with `isTight`;
   - the label column is `flex min-w-0 flex-1 flex-col gap-0.5`, with the label in `text-ui text-fg` and the description in `text-ui-sm text-fg-subtle`;
   - `leading` is drawn before the label column, and the control after it with `shrink-0`.
 
@@ -136,10 +156,13 @@ Most likely first:
   - `the Agents link counts updates in words`: with `updateCount=2`, the link's accessible name is "Agents, 2 updates". With 1 it is "Agents, 1 update". With 0 there is no badge.
   - `a group is a labelled card of rows`: `getByRole("region", { name: "Recent folders" })` holds a card with `rounded-xl` and `bg-surface-2`. Each row has `px-4` and `py-3`, and its description has `text-fg-subtle`.
   - `the header's title can take focus`: `titleRef.current` has `tabIndex === -1` and the class `text-xl`.
+  - `a tight row has the narrower gap`: `isTight` gives `gap-3`, and the default gives `gap-4`.
+  - `the hand-drawn icons match the canvas`: the Appearance link's svg holds a path with `d="M12 3a9 9 0 0 0 0 18z"`, and the GitHub link's svg holds three circles.
+  - `ready is a still green dot`: `StatusLine status="ready"`'s dot has `bg-status-running` and no `animate-pulse`.
 - [ ] **Step 2: Run** `pnpm vitest run src/test/settings-parts.test.tsx`. Expected: FAIL (module not found).
 - [ ] **Step 3: Implement** both files from the values above.
 - [ ] **Step 4: Run** the same command. Expected: PASS.
-- [ ] **Step 5: Commit**: `git add src/components/settings/SettingsNav.tsx src/components/settings/SettingsGroup.tsx src/test/settings-parts.test.tsx && git commit -m "feat: settings navigation, header, groups and rows"`
+- [ ] **Step 5: Commit**: `git add src/components/settings/SettingsNav.tsx src/components/settings/SettingsGroup.tsx src/components/ui/StatusLine.tsx src/test/settings-parts.test.tsx && git commit -m "feat: settings navigation, header, groups and rows"`
 
 ### Task 3: General section
 
@@ -157,11 +180,12 @@ Most likely first:
   - `recentFolders: readonly FolderOption[]` and `onRemoveRecentFolder(path)`;
   - `appVersion?: string`;
   - `appUpdate: Pick<AppUpdate, "available" | "isChecking" | "checkedAt" | "checkFailed" | "checkNow" | "install" | "isInstalling" | "progress">`;
-  - `restartNote: string | null`: `restartWarning(busy, terminals)`, or null when nothing would stop;
+  - `restartNote: string | null`: `restartWarning(busy, terminals) || null`, since `restartWarning` returns `''` when nothing would stop;
   - `onRunOnboarding()`.
 
 **Canvas values and copy:**
-- **Header**: "General", and below it "How new sessions start, and the folders Zorvo remembers." The column gap is `gap-7` (28px).
+- **Header**: "General", and below it "How new sessions start, and the folders Zorvo remembers."
+- The section's root is `flex flex-col gap-7` (28px between the header and each group).
 - **New sessions** group, row "Default agent":
   - Its description is "New sessions start with this agent. You can switch in each draft."
   - **Control**: a `Popover` (`role="listbox"`, `label="Default agent"`, `align="end"`) whose trigger is `Button outline size="md"`, with `aria-haspopup="listbox"` and `aria-expanded`. The trigger holds:
@@ -169,18 +193,19 @@ Most likely first:
     - the name in `span.text-fg`;
     - a `ChevronDown` at 12px in `text-fg-muted`.
   - The list holds one `PopoverOption` per `readyAgents(agents)`, `selected` on the default, each with `AgentLogo size={12}`.
-  - With `defaultAgentId === null` the trigger reads "Choose an agent".
+  - The trigger names the agent `defaultAgentId` points to, looked up in `agents`, even when that agent is not ready. With `defaultAgentId === null`, or an id no agent in use has, it reads "Choose an agent" with no logo tile.
   - With no ready agent the control is `<span className="text-ui-sm text-fg-subtle">No agents are installed yet.</span>`.
 - **Recent folders** group:
   - one row per folder: label = `folder.name`, description = `folder.path` in `font-mono text-caption`, control = `Button ghost tone="muted" size="md"` "Remove" with `aria-label="Remove {name} from recent folders"`;
   - with no folders, a single row labelled "No recent folders yet." in `text-fg-subtle`, with no control.
 - **About** group:
-  - Row "Zorvo version". Its description is a `StatusLine`, which reads:
-    - up to date, checked: `running`, "{version} · Up to date · checked {checkedWords(now - checkedAt)}";
+  - Row "Zorvo version". Its description is a `StatusLine`. The first state that applies wins:
+    - installing: `idle`, "Downloading {available.version} · {p}%" while `progress.phase` is `downloading` and `downloadPercent(progress)` is a number, "Downloading {available.version}…" without a percent, and "Installing {available.version}…" in the `installing` phase;
+    - available: `attention`, "{available.version} is ready";
     - checking: `idle`, "{version} · Checking for updates…";
     - failed: `attention`, "{version} · Could not check for updates";
-    - available: `attention`, "{available.version} is ready";
-    - installing: `idle`, "Installing {available.version}…".
+    - checked: `ready` (the still dot), "{version} · Up to date · checked {checkedWords(now - checkedAt)}";
+    - not checked yet (the first 8 s after start): `idle`, "{version} · Not checked yet".
   - `now` comes from `useNow()`. The version part is left out when `appVersion` is undefined.
   - Its control:
     - **Check now** (`Button outline size="md"`, disabled while checking or installing);
@@ -195,7 +220,11 @@ Most likely first:
   - `with no ready agent the row says so`: "No agents are installed yet." and no button.
   - `Remove takes a folder out`: the button named "Remove agent-desktop from recent folders" calls `onRemoveRecentFolder("/Users/me/agent-desktop")`. The path text has the class `font-mono`.
   - `no recent folders reads as a row`: "No recent folders yet."
-  - `About reads up to date with the time of the check`: with `checkedAt = now - 2h`, the text is "0.8.0 · Up to date · checked 2 h ago", and the dot is `bg-status-running`.
+  - `About reads up to date with the time of the check`: with `checkedAt = now - 2h`, the text is "0.8.0 · Up to date · checked 2 h ago", and the dot is `bg-status-running` with no `animate-pulse`.
+  - `before the first check About says so`: "0.8.0 · Not checked yet".
+  - `an install shows its download`: with `isInstalling` and progress `{phase:"downloading", downloaded:42, total:100}`, the line is "Downloading 0.9.0 · 42%". With `{phase:"installing"}` it is "Installing 0.9.0…".
+  - `a default agent that is not ready is still named`: the trigger reads its name.
+  - `the section spaces its groups 28px apart`: the root has `gap-7`.
   - `Check now asks again`: a click calls `checkNow`. While `isChecking` the button is disabled and the line reads "0.8.0 · Checking for updates…".
   - `a failed check says so`: "0.8.0 · Could not check for updates".
   - `shows an update hidden by Later with Update & restart`: with `available={version:"0.9.0"}`, the line is "0.9.0 is ready", **Update & restart** calls `install`, and the restart note "Restarting stops 2 agents mid-turn and 1 shell." shows.
@@ -217,17 +246,19 @@ Most likely first:
 
 **Canvas values (SettingsAppearanceGithub):**
 - **Header**: "Appearance", and below it "The terminal stays dark in every theme, since agents color their output for a dark ground."
+- The section's root is `flex flex-col gap-4` (16px from the header to the tiles).
 - **Radio group**: `div role="radiogroup" aria-label="Theme" className="flex gap-3"`.
 - **Each tile** is a `button role="radio"` with:
   - `aria-checked`, and a roving `tabIndex` (0 on the checked tile, -1 on the others);
   - the classes `flex flex-1 flex-col gap-2 rounded-[10px] border border-border bg-surface-2 p-2 text-left focus-ring`;
   - when checked, `border-fg ring-1 ring-fg`.
-- **Label**:
-  - System is `text-fg font-medium` "System", followed by `span.text-ui-sm.text-fg-subtle.font-normal` "· follows your Mac";
-  - Light and Dark are `text-fg-secondary` (and `text-fg` while checked).
+- **Label**, `flex items-center gap-1.5`:
+  - The checked tile's label is `text-fg font-medium`, and the others' are `text-fg-secondary`. The canvas shows System checked; the style goes with the selection, not with the tile.
+  - System adds `span.text-ui-sm.text-fg-subtle.font-normal` "· follows your Mac".
 - **Arrow keys**: Left/Up and Right/Down move to the previous/next tile with wrap. They select it (`onChange`) and focus it, as a native radio group does.
 - **Preview** (`aria-hidden`):
   - The box is `flex h-21 overflow-hidden rounded-md border` (84px).
+  - Its border follows the canvas: Light in its own line colour (`theme-sample-light border-(--sample-line)`), Dark and System in the dark line colour (`theme-sample-dark border-(--sample-line)` on the box).
   - Light and Dark: one `ThemeSample` filling the box, in the class `theme-sample-light` or `theme-sample-dark`:
     - a sidebar strip, 28% wide, in `--sample-side` with a right border in `--sample-line`;
     - a content area in `--sample-bg` with `p-2.5 flex flex-col gap-1.25`, holding two 5px bars (70% in `--sample-bar`, 50% in `--sample-bar-2`, `rounded-xs`) and a bottom card (`mt-auto h-4 rounded border`, `--sample-card` filled, `--sample-line` border).
@@ -254,6 +285,7 @@ Most likely first:
   - `arrow keys move and select`: with focus on System, ArrowRight calls `onChange("light")` and focuses "Light". ArrowLeft from System wraps to "Dark".
   - `only the checked tile is in the tab order`.
   - `previews use the fixed samples`: the System radio holds `.theme-sample-light` and `.theme-sample-dark`, and the Dark radio holds only `.theme-sample-dark`.
+  - `the checked tile's label is the bright one`: with `appearance="dark"`, the label "Dark" has `text-fg` and `font-medium`, and "System" has `text-fg-secondary`.
   - The header sentence is present.
 - [ ] **Step 2: Run** `pnpm vitest run src/test/settings-appearance.test.tsx`. Expected: FAIL (module not found).
 - [ ] **Step 3: Implement** the component and the CSS.
@@ -271,19 +303,20 @@ Most likely first:
 
 **Canvas values and copy:**
 - **Header**: "GitHub", and below it "Optional. Zorvo reads pull requests through your own <code>gh</code> and keeps no token." `gh` is `font-mono text-ui-sm`.
-- **Group** "Connection", one row:
+- The section's root is `flex flex-col gap-4` (16px from the header to the group).
+- **Group** "Connection", one row with `isTight` (12px gaps, as drawn):
   - **Checking** (`status === null`): label "Checking your GitHub connection…" in `text-fg-subtle`, no control.
   - **Signed in**:
     - `leading` is a `size-8 rounded-full bg-surface-hover text-ui-sm font-semibold text-fg-secondary` circle with the initials. Take `initialsFromName` out of `ProfileFooter.tsx` into `src/lib/initials.ts` and use it in both places. A login with no name gives the login's first letter uppercased.
     - The label is the name, or `@login`.
-    - The description is a `StatusLine status="running"` reading "Connected as @{login} on github.com".
+    - The description is a `StatusLine status="ready"` (a still dot) reading "Connected as @{login} on github.com".
     - The control is **Check again** (`Button outline size="md"`). While checking it reads "Checking…" and is disabled.
   - **Signed out**: label "Not connected"; description "Connect to see pull requests in the Changes tab and the top bar."; control **Connect** (`Button primary size="md"`).
   - **Not installed**:
     - Label "Install the GitHub CLI first".
     - Description "Run `brew install gh` in a terminal, or get it from cli.github.com. Then check again.":
       - the command is `font-mono text-caption text-fg-secondary select-text`;
-      - "cli.github.com" is a `button` styled as a link (`text-fg-secondary underline-offset-2 hover:underline focus-ring`) calling `onOpenUrl(GITHUB_CLI_URL)`.
+      - "cli.github.com" is a `button` styled as a link, always underlined as the canvas's `<a>` is (`text-fg-secondary underline underline-offset-2 focus-ring`), calling `onOpenUrl(GITHUB_CLI_URL)`.
     - Control: **Check again**.
   - **Unknown**: label "Could not check GitHub"; description `status.message`; controls **Connect** (primary, only when `canConnect !== false`) and **Check again**.
 - The sr-only `role="status"` announcement (`announcementOf`) stays, with "Connected to GitHub as …" unchanged.
@@ -291,7 +324,7 @@ Most likely first:
 
 - [ ] **Step 1: Update the tests first**:
   - Import from `../components/settings/GithubSection`.
-  - `signed in shows initials, name and the connection line`: "ZI", "Zaky Irsyad" and "Connected as @zakyirsyaad on github.com", with the dot `bg-status-running`.
+  - `signed in shows initials, name and the connection line`: "ZI", "Zaky Irsyad" and "Connected as @zakyirsyaad on github.com", with the dot `bg-status-running` and no `animate-pulse`. The row has `gap-3`.
   - `signed out offers only Connect`: there is no "Check again" button.
   - `not installed shows the command as text and a link`: "brew install gh" has `select-text`, and the button "cli.github.com" calls `onOpenUrl("https://cli.github.com")`. Delete the Copy tests.
   - `unknown hides Connect when canConnect is false`.
@@ -324,13 +357,15 @@ Most likely first:
   - `SettingsPage(props: SettingsPageProps)`. The props are today's `AppSettingsDialogProps` with `isOpen`, `initialTab` and `onClose` replaced by `page: SettingsPage`, plus `appVersion?: string`, `appUpdate`, `restartNote: string | null`, and `notice?: ReactNode` (a toast).
   - When `page.section === null` it returns only the GitHub sign-in dialog, as today.
   - Otherwise it renders:
-    - a `div className="relative flex h-full min-w-0 flex-1"`;
+    - a `div className="relative flex min-h-0 min-w-0 flex-1"`;
     - inside it, `SettingsNav`;
-    - then a `main` with `aria-labelledby` (the title id), `min-w-0 flex-1 overflow-y-auto px-10 py-14` and `data-settings-content`;
-    - inside the `main`, a `div className="mx-auto flex max-w-[720px] flex-col gap-7"`;
-    - the section that is open; for `agents`, `SettingsHeader` "Agents" with "The agents you use and the ones the ACP registry offers." over `AgentCatalogPanel`;
+    - then a `section` (not a `main`, since `App.tsx`'s outer element is already the one `<main>`) with `aria-labelledby` (the title id), `relative min-w-0 flex-1 overflow-y-auto px-10 py-14` and `data-settings-content`;
+    - as the section's first child, an `absolute inset-x-0 top-0 h-12` strip with `data-tauri-drag-region`, so the window can be dragged from the top of the content as well as from the nav;
+    - inside the section, a `div className="mx-auto max-w-[720px]"` with no gap of its own (each section sets its own);
+    - the section that is open. For `agents` this is a `flex flex-col gap-6` holding `SettingsHeader` "Agents", with the artboard's sentence "The agents Zorvo can run. Zorvo installs them in its own folder, or uses the ones already on this Mac.", over `AgentCatalogPanel`;
     - `notice` inside a `ToastStack`;
     - the GitHub and agent sign-in dialogs.
+  - `updateCount` is `agentUpdates.updateCount`, the footer's count.
   - On mount, and when it opens from closed, it focuses the section's `h1`.
 
 **`App.tsx` changes:**
@@ -342,8 +377,12 @@ Most likely first:
 - Hand-written `main` outer containers keep `h-screen`, and the page fills it.
 - The props for `appUpdate` and `restartNote` are built once:
   - `const busyCount = sessions.filter(…).length`, which `AppUpdateNotice` also reads;
-  - `restartNote = busyCount + terminals.liveCount > 0 ? restartWarning(busyCount, terminals.liveCount) : null`.
-- The notice element is built once and passed to both the main column's `ToastStack` and the page.
+  - `restartNote = restartWarning(busyCount, terminals.liveCount) || null`.
+- The notice toast is built once and drawn in one place only:
+  - the main column's `ToastStack` while Settings is closed;
+  - the page's `ToastStack` while it shows.
+  
+  It is never mounted twice, which would run its timers twice.
 - `appVersion` is `userProfile.version`. `useUserProfile` already reads it through `getAppVersion()`, which is undefined in jsdom and in a plain browser.
 
 - [ ] **Step 1: Write the failing tests**:
@@ -355,7 +394,10 @@ Most likely first:
     - `the nav switches sections`: click "Appearance" and the radiogroup "Theme" shows; click "GitHub" and the heading "GitHub" shows.
     - `a notice raised in Settings shows on the page`: make `reportError` fire, for example a failed `app_update_install` after **Update & restart**. Its text is visible while the page shows.
     - `the GitHub sign-in dialog stays after Back`: start Connect from the GitHub section, then click Back. The dialog "Sign in to GitHub" is still in the document.
-  - In `github-app.test.tsx`: replace `getByRole("dialog", { name: "Settings" })` with the main region labelled by the open section's title. The Changes notice's settings link now opens on the GitHub section.
+    - `the page has one main landmark`: while Settings shows, `getAllByRole("main")` has length 1, and the content is `getByRole("region", { name: "General" })`.
+    - `the top of the content drags the window`: the content region's first child has `data-tauri-drag-region`.
+    - `the Agents section reads the canvas sentence`: "The agents Zorvo can run. Zorvo installs them in its own folder, or uses the ones already on this Mac."
+  - In `github-app.test.tsx`: replace `getByRole("dialog", { name: "Settings" })` with the region labelled by the open section's title. The Changes notice's settings link now opens on the GitHub section.
   - In `agent-updates.test.tsx`:
     - lines 164 and 180 use `getByRole("link", { name: /Agents/ })` with `aria-current="page"`;
     - the "not open" case reads no navigation "Settings".

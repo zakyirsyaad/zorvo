@@ -214,13 +214,14 @@ it("parses config from env vars", () => {
   - `status.ts`: `type TopupStatus = "created" | "paid" | "credited" | "expired" | "failed" | "paid_waiting_stock"` and `canMove(from: TopupStatus, to: TopupStatus): boolean`, true exactly for created→paid, created→expired, created→failed, created→paid_waiting_stock, expired→paid, expired→paid_waiting_stock, paid_waiting_stock→paid, paid→credited.
   - `Ledger.createTopup(deviceId: string, packageUsd: number, now: number): Promise<{ topupId: string; sessionUrl: string; expiresAt: string } | { error: "stock" | "device_cap" | "upstream" }>` — `reserve` → `createSession` (`customerReference = deviceId`, `recipient = cfg.operatorAccount`, success and cancel URLs pointing at a static page in the README) → store `ping_session_id`, `reserved_until = expiresAt + 10 min`; on failure release the reservation and mark `failed`.
   - `Ledger.onSessionEvent(sessionId: string, eventId: string | null, now: number): Promise<void>` — idempotent by `eventId` when given (`events`); re-reads the session from PingPay; `COMPLETED` with a payment whose status is `SUCCESS` → `paid` (or `paid_waiting_stock` when its reservation is gone and stock cannot cover it) and enqueues `credit`; `EXPIRED`/`CANCELLED` → `expired` and release; a move `canMove` refuses is ignored.
-  - Routes: `POST /v1/topups {packageUsd}` (unknown package → 400), `GET /v1/topups/:id` → `{ status, credits }` (another device's id → 404), `POST /v1/webhooks/pingpay` (bad signature → 401; `checkout.session.completed` and `checkout.session.expired` call `onSessionEvent(resourceId, id)`; other types → 200, ignored).
+  - Routes: `POST /v1/topups {packageUsd}` (unknown package → 400), `GET /v1/topups/:id` → `{ status, credits }` (another device's id → 404), `POST /v1/topups/:id/cancel` (another device's id → 404; a `created` top-up moves to `expired` and its reservation is released; any other status → 200 unchanged; a payment that still arrives follows `expired → paid`), `POST /v1/webhooks/pingpay` (bad signature → 401; `checkout.session.completed` and `checkout.session.expired` call `onSessionEvent(resourceId, id)`; other types → 200, ignored).
   - Secrets: `PINGPAY_API_KEY`, `PINGPAY_WEBHOOK_SECRET`.
 
 - [ ] **Step 1: Write the failing tests:**
   - `verifyWebhook`: valid signature passes; timestamp 4 minutes ahead passes; 6 minutes old fails; a changed body fails.
   - Flow with stubbed PingPay: `POST /v1/topups {packageUsd: 5}` → 201 with `sessionUrl`; webhook `checkout.session.completed` → `GET /v1/topups/:id` says `paid`; one `credit` item queued.
   - Race 4: the same event delivered twice → one queue item; `checkout.session.expired` after `paid` → stays `paid`.
+  - Cancel: `POST /v1/topups/:id/cancel` on a `created` top-up → `expired` and the stock is back; a later `checkout.session.completed` with `SUCCESS` still ends `paid` or `paid_waiting_stock`.
   - Race 3: the reservation expired and its stock went to another device, then `COMPLETED` arrives → `paid_waiting_stock`, no `credit` queued.
   - `createSession` fails → 502 `upstream`, reservation released, top-up `failed`.
 - [ ] **Step 2: Run** — expected FAIL.
@@ -288,7 +289,7 @@ it("parses config from env vars", () => {
 - Consumes: `reserve`, the queue (Task 6), `createKey`, `revokeKey`, `sha256Hex`.
 - Produces:
   - Admin route `POST /v1/admin/promos {code, credits, maxUses}` guarded by `Authorization: Bearer <ADMIN_TOKEN>` (a secret); stores `sha256Hex(code)`.
-  - `POST /v1/promo {code}` → `reserve(credits)` (stock and device cap apply), top-up `paid` with `package_usd = 0`, enqueue `credit`; unknown or used-up code → 400; more than 5 attempts per device per hour → 429.
+  - `POST /v1/promo {code}` → `reserve(credits)` (stock and device cap apply), top-up `paid` with `package_usd = 0`, enqueue `credit`, answer 201 `{ topupId, credits }`; unknown or used-up code → 400; more than 5 attempts per device per hour → 429.
   - `POST /v1/recover {recoveryCode, newSecretHash}` (no Bearer) → in one synchronous block find the device by `sha256Hex(recoveryCode)`, set `secret_hash = newSecretHash`, enqueue `rotate_key`; unknown code → 400; more than 5 attempts per IP per hour → 429.
   - Queue item `rotate_key`: `createKey` with `spendLimitNano(credits_bought)` into `pending_keys`, then `revokeKey(old)`, then update `nearai_key_id`.
 

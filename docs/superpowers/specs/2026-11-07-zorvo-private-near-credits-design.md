@@ -68,7 +68,7 @@ The screens are drawn in the design canvas "Zorvo redesign layouts" (https://cla
 
 - Picking a package only selects it (a radio group); a confirm row "1,000 credits for $10" with **Pay $10** opens checkout. Nothing opens on a single click.
 - After Pay: "Opening checkout" → the browser → "Payment received · adding credits" → "+N credits". Failure cases: closed without paying (hold released by Cancel or after 25 minutes), payment failed (no credits, PingPay handles any refund), paid while NEAR AI is slow (retrying, never pay again), paid after the hold ran out (first in line at restock). If Zorvo was closed meanwhile, it checks the top-up when it opens.
-- Balance card: "Updated N min ago" and **Refresh** (section 7.4), and a collapsible "Used by" breakdown per agent and model; one balance serves every private session on the Mac.
+- Balance card: "Updated N min ago" and **Refresh** (section 7.4), and a collapsible "Used by" breakdown per agent and model, shown once extension E gives per-session cost (the core shows the total used); one balance serves every private session on the Mac.
 - First run: "0 credits · No key yet" with a promo hint; a draft with Private on and 0 credits shows "Add credits to start a private session" and keeps Start off.
 - After the first top-up a one-time dialog "Save your recovery code" (Copy, a checkbox "I saved it somewhere safe" that enables Done, "Remind me later" leaves a note on the balance card).
 - Session limit defaults to **No limit**; the menu offers 100 / 200 / 500 credits.
@@ -159,8 +159,9 @@ All under `/v1`. Device auth unless noted.
 | `GET /models` | TEE allowlist ∩ live `verifiable: true`, with prices; cached 10 minutes. |
 | `POST /topups` `{packageUsd}` | Reserve, create the PingPay session, return `{topupId, sessionUrl, expiresAt}`. |
 | `GET /topups/{id}` | `{status, credits}`. |
+| `POST /topups/{id}/cancel` | Cancel in Zorvo: a `created` top-up becomes `expired` and its hold is released; a payment that still arrives is handled as a late payment. |
 | `GET /key` | Hand over the NEAR AI key once, then delete it from `pending_keys`. |
-| `POST /promo` `{code}` | Redeem; same reservation and fulfilment path with `package_usd = 0`. |
+| `POST /promo` `{code}` | Redeem; same reservation and fulfilment path with `package_usd = 0`; returns `{topupId, credits}`. |
 | `POST /recover` `{recoveryCode, newSecretHash}` (no Bearer; the code is the credential; rate limited) | Replace the device's secret hash with this Mac's new one, so the old secret stops working; enqueue `rotate_key`. |
 | `POST /webhooks/pingpay` (signature auth) | Record the event; enqueue `credit`; answer 200 fast. |
 
@@ -216,7 +217,8 @@ Settings (`wrangler.toml`): credits per USD paid (100), burn per USD of cost (12
 | `device.rs` | Create the device secret; read and write it and the NEAR AI key in the macOS Keychain (new dependency: `keyring` with its Apple-native backend, which uses the Security framework). |
 | `client.rs` | `ureq` client for the Credits Worker; the base URL is a compile-time constant and the only host it calls. |
 | `models.rs` | Cached `GET /models`; validates a model id before launch. |
-| `commands.rs` | `private_status`, `private_stock`, `private_create_topup`, `private_topup_status`, `private_redeem_promo`, `private_recovery_code`, `private_recover`. Network commands are `#[tauri::command(async)]`. |
+| `service.rs`, `local_state.rs`, `launch.rs` | The logic behind the commands; `<app data>/private/state.json` (recovery flags, pending top-up, last balance, last model list), kept apart from `state.json`; the private launch. |
+| `commands.rs` | `private_status`, `private_stock`, `private_models`, `private_create_topup`, `private_open_checkout`, `private_topup_status`, `private_cancel_topup`, `private_redeem_promo`, `private_recovery_code`, `private_mark_recovery`, `private_recover`, `private_forget_device`. All are `#[tauri::command(async)]`. Rust opens the checkout URL itself, and only on `pay.pingpay.io`. |
 
 Launch: `acp_start_session` gains an optional `private_model_id`. When set and the agent is `qwen-code`, `launch_for` appends `--auth-type openai --openai-base-url https://cloud-api.near.ai/v1 --model <id>` after validating the id against `models.rs`, and the spawn gets `OPENAI_API_KEY` from the Keychain in that process's env only. The UI still sends ids, never arguments. Any other agent with a private model id is refused.
 

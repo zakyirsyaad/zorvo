@@ -120,7 +120,7 @@ describe("comparing agents in the composer", () => {
     await tick("Qwen Code");
 
     expect(screen.getByText(QUOTA_NOTE)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Agent: 2 agents" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Agent: .*, compare$/ })).toBeInTheDocument();
   });
 
   it("words the primary button by how many sessions it starts", async () => {
@@ -189,7 +189,7 @@ describe("comparing agents in the composer", () => {
 
     const fifth = screen.getByRole("checkbox", { name: /^Compare Goose/ });
     expect(fifth).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Agent: 4 agents" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Agent: (.*, ){3}.*, compare$/ })).toBeInTheDocument();
     expect(screen.getByText("Each agent starts in its safest mode, in its own worktree.")).toBeInTheDocument();
   });
 
@@ -312,7 +312,7 @@ describe("comparing agents in the composer", () => {
 
     await act(async () => {});
     expect(screen.getByText(QUOTA_NOTE)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Agent: 2 agents" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Agent: .*, compare$/ })).toBeInTheDocument();
   });
 
   it("Send is blocked while a compare draft's folder is loading", async () => {

@@ -1,5 +1,5 @@
 import { useRef, type KeyboardEvent } from "react";
-import { Bot, Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { AgentLogo } from "../AgentLogo";
 import { Popover } from "../ui/Popover";
 import { DRAFT_CHIP } from "./chip-style";
@@ -23,10 +23,9 @@ export interface AgentMultiPickerProps {
 
 const LIMIT_REASON = `You can compare up to ${MAX_COMPARE_AGENTS} agents.`;
 
-/** The chip's words: the agent's name, or how many are ticked. */
-function chipLabel(options: readonly AgentChoice[], selected: readonly string[]): string {
-  if (selected.length === 1) return options.find((o) => o.value === selected[0])?.label ?? "";
-  return `${selected.length} agents`;
+/** The ticked agents, in the order they were ticked: each one's id and plain name. */
+function tickedAgents(options: readonly AgentChoice[], selected: readonly string[]): { id: string; name: string }[] {
+  return selected.map((id) => ({ id, name: options.find((o) => o.value === id)?.name ?? id }));
 }
 
 /**
@@ -35,7 +34,9 @@ function chipLabel(options: readonly AgentChoice[], selected: readonly string[])
  */
 export function AgentMultiPicker({ options, selected, isOpen, onToggle, onClose = onToggle, onChange, onPick }: AgentMultiPickerProps) {
   const menuRef = useRef<HTMLDivElement>(null);
-  const label = chipLabel(options, selected);
+  const ticked = tickedAgents(options, selected);
+  const names = ticked.map((agent) => agent.name).join(", ");
+  const isCompare = ticked.length >= 2;
   const isFull = selected.length >= MAX_COMPARE_AGENTS;
   // The only agent needs an install or a sign-in: its own panel comes before any compare.
   const onlyAgent = selected.length === 1 ? options.find((o) => o.value === selected[0]) : undefined;
@@ -62,15 +63,21 @@ export function AgentMultiPicker({ options, selected, isOpen, onToggle, onClose 
       trigger={
         <button
           type="button"
-          aria-label={`Agent: ${label}`}
+          aria-label={`Agent: ${names}${isCompare ? ", compare" : ""}`}
           aria-haspopup="dialog"
           aria-expanded={isOpen}
           onClick={onToggle}
-          title={label}
+          title={names}
           className={DRAFT_CHIP}
         >
-          <Bot size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
-          <span className="max-w-[140px] truncate">{label}</span>
+          {/* Each ticked agent's logo, overlapping, as the canvas draws a compare run's chip. */}
+          <span data-agent-logos="" aria-hidden="true" className="flex shrink-0">
+            {ticked.map((agent, index) => (
+              <AgentLogo key={agent.id} profileId={agent.id} name="" size={16} className={index > 0 ? "-ml-1" : ""} />
+            ))}
+          </span>
+          <span className="min-w-0 truncate">{names}</span>
+          {isCompare && <span className="shrink-0 text-fg-subtle"> · compare</span>}
           <ChevronDown size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
         </button>
       }

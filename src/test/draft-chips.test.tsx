@@ -153,7 +153,14 @@ describe("the agent chip", () => {
   const agents: AgentChoice[] = [
     { value: "claude-acp", label: "Claude Code", name: "Claude Code", signIn: "ready" },
     { value: "codex-acp", label: "Codex", name: "Codex", signIn: "unchecked" },
-    { value: "qwen-code", label: "Qwen Code", name: "Qwen Code", signIn: "needed", disabledReason: "You need to sign in first." },
+    {
+      value: "qwen-code",
+      label: "Qwen Code",
+      name: "Qwen Code",
+      signIn: "needed",
+      blockedBy: "sign-in",
+      disabledReason: "You need to sign in first.",
+    },
   ];
 
   it("lists each agent with its logo, name and readiness, and says how a compare run works", () => {
@@ -161,8 +168,8 @@ describe("the agent chip", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Agent: Claude Code" }));
     const dialog = within(screen.getByRole("dialog", { name: "Choose agents" }));
-    expect(dialog.getByText("Pick more than one to compare them in a run.")).toBeInTheDocument();
-    expect(dialog.getByText("Each agent runs in its own worktree, in its safest mode.")).toBeInTheDocument();
+    expect(dialog.getByText("Pick more than one to compare")).toBeInTheDocument();
+    expect(dialog.getByText("With two or more agents, each runs in its own worktree in its safest mode.")).toBeInTheDocument();
     expect(dialog.getByText("Ready")).toBeInTheDocument();
     expect(dialog.getByText("Not checked")).toBeInTheDocument();
     expect(dialog.getByRole("option", { name: "Codex" }).querySelector("img, [aria-hidden='true']")).not.toBeNull();
@@ -174,8 +181,9 @@ describe("the agent chip", () => {
     fireEvent.click(screen.getByRole("button", { name: "Agent: Claude Code" }));
     const box = screen.getByRole("checkbox", { name: "Compare Qwen Code" });
     expect(box).toBeDisabled();
-    expect(box).toHaveAccessibleDescription("You need to sign in first.");
-    expect(screen.getByRole("option", { name: "Qwen Code" })).toHaveClass("text-fg-muted");
+    // The row's status word says why, and the whole row is dimmed.
+    expect(box).toHaveAccessibleDescription("Needs sign-in");
+    expect(screen.getByRole("option", { name: "Qwen Code" }).closest("[data-agent-row]")).toHaveClass("opacity-55");
   });
 
   it("closes on Escape and gives focus back to the chip", () => {

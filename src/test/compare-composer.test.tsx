@@ -198,7 +198,7 @@ describe("comparing agents in the composer", () => {
     await openAgentMenu();
 
     expect(screen.getByRole("checkbox", { name: /^Compare Codex/ })).toBeDisabled();
-    expect(screen.getByText("You need to install it first.")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /^Compare Codex/ })).toHaveAccessibleDescription("Not installed");
   });
 
   it("a Not checked agent can be ticked", async () => {
@@ -270,7 +270,7 @@ describe("comparing agents in the composer", () => {
     await renderDraft({ profiles: [uninstalledClaude, ...ALL.slice(1)] });
     await openAgentMenu();
     await act(async () => {
-      fireEvent.click(screen.getByRole("option", { name: "Claude Code (not installed)" }));
+      fireEvent.click(screen.getByRole("option", { name: "Claude Code" }));
     });
     await openAgentMenu();
 
@@ -292,7 +292,8 @@ describe("comparing agents in the composer", () => {
     await openAgentMenu();
 
     await waitFor(() => expect(screen.getByRole("checkbox", { name: /^Compare Qwen Code/ })).toBeDisabled());
-    expect(screen.getByText("You need to sign in first.", { selector: "p" })).toBeInTheDocument();
+    // The only agent's own row says it needs a sign-in.
+    expect(screen.getByText("Needs sign-in")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /^Compare Qwen Code/ })).toHaveAccessibleDescription("Set up Claude Code first.");
     expect(screen.queryByText(QUOTA_NOTE)).toBeNull();
     // With something to send, Send still waits for the sign-in.
@@ -364,6 +365,7 @@ describe("compareAgentOptions", () => {
       label: "Codex (not installed)",
       name: "Codex",
       signIn: "unchecked",
+      blockedBy: "install",
       disabledReason: "You need to install it first.",
     });
   });
@@ -409,11 +411,11 @@ describe("AgentMultiPicker", () => {
     const first = screen.getByRole("option", { name: "Alpha" });
     first.focus();
 
-    // Alpha is the only one ticked, so its own checkbox is disabled and skipped.
+    // Each row is checkbox then name; Alpha is the only one ticked, so its own checkbox is disabled and skipped.
     fireEvent.keyDown(first, { key: "ArrowDown" });
-    expect(document.activeElement).toBe(screen.getByRole("option", { name: "Beta" }));
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown" });
     expect(document.activeElement).toBe(screen.getByRole("checkbox", { name: "Compare Beta" }));
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(screen.getByRole("option", { name: "Beta" }));
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowUp" });
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowUp" });
     expect(document.activeElement).toBe(first);

@@ -5,7 +5,7 @@
 **Goal:** Make the main column's other states match the design canvas: the compare run panel, the install, sign-in, setup and removed-agent cards, the terminal sign-in dialog, the empty window and the update card.
 
 **Architecture:**
-- The compare run gets one-row cards. Its status words carry the elapsed time and an unread dot, which come from facts the row already reads (`Session.createdAt`, `hasUnread`, the transcript's last finished reply) plus a minute clock.
+- The compare run gets one-row cards. Its status words carry the time of the current or last turn and an unread dot, which come from facts the row already reads (the transcript's message times, `Session.createdAt`, `hasUnread`) plus a minute clock.
 - `ui/BlockerCard` changes once: a padded shadowed card, a logo tile, and the main button on its own row under the body. The four cards then change only their own copy and rows.
 - The dialog, the empty state and the update card are restyled where they are. `restartWarning` gains counts.
 
@@ -39,7 +39,9 @@
 
 ## Review Focus
 
-1. **An elapsed time that never moves.** A compare card that reads "Working · 12 min" must reach "13 min" a minute later with no agent output, so the panel needs its own clock. Task 1's `useNow` test and Task 2's "the working time moves on with the clock" pin this.
+1. **An elapsed time that never moves, or counts the wrong span.**
+   - A compare card that reads "Working · 12 min" must reach "13 min" a minute later with no agent output, so the panel needs its own clock. Task 1's `useNow` test and Task 2's "the working time moves on with the clock" pin this.
+   - A run continued hours later must not read "Working · 3 h": the time counts from the prompt that started the turn. Task 1 test "a later turn counts from its own prompt".
 2. **A transcript with no known times.** An imported or replayed reply has `hasKnownTime: false`. A finished card then reads plain "Finished", never a duration made from a replay's timestamp. Task 1 test "a finished row with no known reply time shows no duration".
 3. **Install progress announced byte by byte.** The visible line becomes "Downloading Node.js · 18 of 42 MB", but the `role="status"` region must still announce each step, never each byte. Task 4 test "the status announces the step, not the bytes".
 4. **Long names and copy in the narrow column.**
@@ -76,16 +78,17 @@
 **Interfaces:**
 - Produces:
   - `useNow(intervalMs?: number): number`. `Date.now()`, updated every `intervalMs` (default `60_000`) while mounted.
-  - `RowFacts` gains two fields:
-    - `finishedAt: number | null`: the timestamp of the last agent message with `isComplete` and `hasKnownTime !== false`, else null;
+  - `RowFacts` gains three fields:
+    - `turnStartedAt: number`: the timestamp of the last user message with `hasKnownTime !== false`, else `session.createdAt`;
+    - `finishedAt: number | null`: the timestamp of the last agent message after that user message with `isComplete` and `hasKnownTime !== false`, else null;
     - `hasUnread: boolean`: `session.hasUnread === true`.
   - `elapsedWords(ms: number): string`:
     - "1 min" under two minutes;
     - "N min" under an hour;
     - "H h" or "H h M min" from an hour.
   - `rowStatusWords(facts: RowFacts, status: RunRowStatus, now: number): string`:
-    - `working` reads `Working · ${elapsedWords(now - session.createdAt)}`;
-    - `done` reads `Finished · ${elapsedWords(finishedAt - session.createdAt)}` when `finishedAt` is set, else `Finished`;
+    - `working` reads `Working · ${elapsedWords(now - turnStartedAt)}`;
+    - `done` reads `Finished · ${elapsedWords(finishedAt - turnStartedAt)}` when `finishedAt` is set, else `Finished`;
     - any other status reads its label.
   - `runStatusDot(status: RunRowStatus, hasUnread = false): Status` returns `"unread"` for `done` with `hasUnread`; everything else is unchanged.
   - `stopsLine(names: readonly string[]): string`:
@@ -100,8 +103,9 @@
       - `elapsedWords(12 * 60_000)` is `"12 min"`;
       - `elapsedWords(65 * 60_000)` is `"1 h 5 min"`;
       - `elapsedWords(120 * 60_000)` is `"2 h"`.
-    - `rowStatusWords` for working: `"Working · 12 min"` with `createdAt = now − 12 min`.
-    - `rowStatusWords` for done: `"Finished · 8 min"` from `finishedAt`.
+    - `rowStatusWords` for working: `"Working · 12 min"` with the last user message 12 min before `now`.
+    - "a later turn counts from its own prompt": `createdAt` 3 h ago, the last user message 2 min ago, reads `"Working · 2 min"`.
+    - `rowStatusWords` for done: `"Finished · 8 min"`, its last complete reply 8 min after the prompt.
     - "a finished row with no known reply time shows no duration": a transcript whose last agent message has `hasKnownTime: false` reads `"Finished"`.
     - `runStatusDot("done", true)` is `"unread"`, and `runStatusDot("done")` is `"idle"`.
     - `stopsLine(["Qwen Code"])` is `"Qwen Code is still working and will be stopped."`.
@@ -110,7 +114,7 @@
   - in `use-now.test.ts`, with fake timers: the value moves by 60 s after `vi.advanceTimersByTime(60_000)`, and the interval is cleared on unmount.
 - [ ] **Step 2: Run** `pnpm vitest run src/test/compare-run.test.ts src/test/use-now.test.ts`. Expected: FAIL.
 - [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** them, plus `compare-run-panel.test.tsx` and `compare-run-start.test.tsx`. Migrate their "Done" and "This stops … mid-turn." assertions to the new words. Expected: PASS.
+- [ ] **Step 4: Run** them, plus `compare-run-panel.test.tsx`, `compare-run-start.test.tsx` and the sidebar tests that show a run's agents (`grep -rl "Done" src/test/*sidebar* src/test/*compare*`). Migrate their "Done" and "This stops … mid-turn." assertions to the new words. Expected: PASS.
 - [ ] **Step 5: Commit** `feat: say how long each compare agent has worked, and who Pick stops`.
 
 ### Task 2: The compare run panel and its one-row cards
@@ -127,7 +131,8 @@
 
 **Values** (`CompareRun.dc.html`):
 - **Panel.**
-  - Root `relative flex flex-1 flex-col overflow-y-auto px-6 pt-10 pb-28`. The bottom padding leaves room for the floating bar.
+  - Root `<section aria-label="Compare run">` is `relative flex min-h-0 flex-1 flex-col`; it does not scroll.
+  - Inside it, a scroller `min-h-0 flex-1 overflow-y-auto px-6 pt-10 pb-28` holds the content. The bottom padding leaves room for the bar, which sits outside the scroller so it stays put while the cards scroll.
   - Inner `mx-auto flex w-full max-w-chat flex-col gap-4`.
   - Title `text-xl font-semibold tracking-[-0.02em] text-fg`.
   - Subtitle `text-ui text-fg-muted`, under it with `gap-1`.
@@ -150,7 +155,7 @@
   - The pending permission card (`ActionCard`) stays, under the row: the card becomes `flex-col`, with the row as its first child.
 - **Confirm bar.**
   - `role="group" aria-label="Confirm pick"`, kept.
-  - `absolute bottom-6 left-1/2 flex w-[min(680px,calc(100%-48px))] -translate-x-1/2 items-center gap-3 rounded-xl border border-border bg-surface-3 px-4 py-3.5 shadow-popover`.
+  - A child of the root, after the scroller: `absolute inset-x-6 bottom-6 mx-auto flex max-w-chat items-center gap-3 rounded-xl border border-border bg-surface-3 px-4 py-3.5 shadow-popover`.
   - The text is one sentence `min-w-0 flex-1 text-ui text-fg`: `pickQuestion(name)` and `stopsLine(working)` joined with a space.
   - Cancel is `Button ghost tone="secondary"`, Pick <agent> is `Button primary` (`md`). Focus handling and Escape are unchanged.
 
@@ -160,7 +165,7 @@
   - "the working time moves on with the clock": with fake timers, "Working · 12 min", then "Working · 13 min" after 60 s.
   - "with no changes the card reads No changes yet".
   - "picking marks the card and its Pick": the card has `border-border-strong`, and Pick has `aria-pressed="true"`.
-  - "the confirm bar floats as one sentence": the bar has `absolute` and `bg-surface-3`, and its text is "Keep Codex's work and archive the others? Claude Code is still working and will be stopped.".
+  - "the confirm bar floats as one sentence": the bar has `absolute` and `bg-surface-3`, it is not inside the element with `overflow-y-auto`, and its text is "Keep Codex's work and archive the others? Claude Code is still working and will be stopped.".
   - "the card keeps its buttons when the name is long": the name has `truncate`, its column has `min-w-0`, and the buttons are `shrink-0` or Buttons.
 - [ ] **Step 2: Run** `pnpm vitest run src/test/compare-run-look.test.tsx`. Expected: FAIL.
 - [ ] **Step 3: Implement.** `CompareRunPanel` calls `useNow()` once and passes `now` and `isPicking` to each row.
@@ -218,8 +223,8 @@
 - **Failed.** As today ("Install failed: …"), with Retry as `Button primary` and no icon.
 - **`InstallProgressLine`.** It keeps its props, and Settings' catalog row uses it too.
   - Status: `<p role="status" className="text-ui text-fg-muted">`.
-    - It reads `describePhase(...)` without its trailing "…".
-    - When `totalBytes` is known it adds `<span aria-hidden="true"> · {formatSize(received)} of {formatSize(total)}</span>`, so the visible line is "Downloading Node.js · 18 of 42 MB".
+    - When `totalBytes` is known it reads `describePhase(...)` without its trailing "…", then `<span aria-hidden="true"> · {formatSize(received)} of {formatSize(total)}</span>`, so the visible line is "Downloading Node.js · 18 of 42 MB".
+    - Without a size it reads `describePhase(...)` as today, "…" included.
     - Before the first report it reads "Starting the install…" as today.
   - Bar:
     - a `<progress>` kept for its role and name, with `h-1 w-full appearance-none overflow-hidden rounded-full bg-surface-hover`;
@@ -282,7 +287,7 @@
   - "a setup method in the sign-in list keeps its own label": methods `[setup, oauth]` give a sign-in card whose setup row's button reads "Open setup in terminal".
 - [ ] **Step 2: Run** `pnpm vitest run src/test/auth-panel.test.tsx`. Expected: FAIL.
 - [ ] **Step 3: Implement.**
-- [ ] **Step 4: Migrate** the copy in the test files listed under **Files** (the lead, the added period, "Already set up?"). Run them, plus `agent-sign-in-settings.test.tsx` if it pins the lead. Expected: PASS.
+- [ ] **Step 4: Migrate** the copy in the test files listed under **Files** (the lead, the added period, "Already set up?"). Run them, plus `settings-sign-in.test.tsx` and `settings-sign-in-dialog.test.tsx`, which may pin the lead. Expected: PASS.
 - [ ] **Step 5: Commit** `feat: draw the sign-in, setup and removed-agent cards as on the canvas`.
 
 ### Task 6: The terminal dialog
@@ -370,16 +375,16 @@
 ## Rulings in this plan
 
 - **The update card stays in the shared notice stack above the composer.**
-  - The artboard puts it in the window's corner, 20/20. It draws the empty window, though, where the stack already sits in that corner, since there is no composer.
-  - In a session the corner is the composer's Send button, and covering Send is worse than sitting 20px above it.
+  - The artboard puts it in the window's corner, 20/20, drawn over the empty window.
+  - In the app a composer shows there too (the draft's), and the corner is its Send button. Covering Send is worse than sitting 20px above the composer, where the stack is anchored today.
   - *Cost if wrong:* moving the stack's anchor.
 - **The setup card names no providers.** The artboard lists Qwen Code's providers (QwenCloud, Alibaba ModelStudio, …). That list belongs to Qwen Code and changes with its releases, so the copy says "connects to a provider you pick in its own setup". *Cost if wrong:* one agent-specific sentence.
 - **`cliHint` and `keysNote` stay on the sign-in card.** The artboard has neither. They are the only words for an agent that lists no method, and the only place that says Zorvo never stores keys. *Cost if wrong:* two sentences.
-- **Elapsed time and its start.**
-  - A working card counts from the session's start, `createdAt`, which is when the run started.
-  - A finished card counts to its last finished reply with a known time.
+- **Elapsed time is the turn's.**
+  - A working card counts from the prompt that started the turn (the last user message with a known time, else the session's start).
+  - A finished card shows how long that turn took.
   - Status words other than Working and Finished carry no time.
-  - *Cost if wrong:* another start point (the current turn's), which no stored fact gives today.
+  - *Cost if wrong:* counting from the run's start instead, a one-line change.
 - **"Done" becomes "Finished"**, as the artboard and the sidebar's "Finished, unread" say.
 - **The confirm bar stays `role="group"`**, not the artboard's `dialog`: it is not modal, and the cards stay usable. *Cost if wrong:* none to the look.
 - **The install line drops the trailing "…" only when it shows the size.** "Downloading Node.js · 18 of 42 MB" reads as a measure, and "Starting the install…" keeps its ellipsis.

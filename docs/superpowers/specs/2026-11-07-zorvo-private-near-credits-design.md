@@ -220,21 +220,21 @@ Errors: for a private session, an ACP error `-32603` whose details carry `402` /
 
 ### 8.3 Extensions
 
-Built in tiers after the core (sections 7 and 8.1–8.2) works end to end; each tier has a cut date in section 14. Effort figures are estimates.
+Built as milestones M6–M8 (section 14) after the core works end to end. Sizes (S, M, L) are relative estimates, not schedules.
 
-**A. Agents know their credits (tier 2, `agents`, ~1 day).** For private sessions Zorvo passes one stdio MCP server in `session/new` `mcpServers` (today it sends `[]`, `acp/manager.rs`). The server offers `credits_balance` (credits left, ≈ turns left on the current model) and `private_models` (TEE models with price per 1M tokens and ≈ credits per turn). It reads them from the Credits Worker with the device secret, which it gets in its process env only. An agent can then plan its work, or suggest a cheaper model when credits run low.
+**A. Agents know their credits (M6, `agents`, size M).** For private sessions Zorvo passes one stdio MCP server in `session/new` `mcpServers` (today it sends `[]`, `acp/manager.rs`). The server offers `credits_balance` (credits left, ≈ turns left on the current model) and `private_models` (TEE models with price per 1M tokens and ≈ credits per turn). It reads them from the Credits Worker with the device secret, which it gets in its process env only. An agent can then plan its work, or suggest a cheaper model when credits run low.
 
-**B. "Verified in TEE" per answer (tier 2, `privacy`, ~1–1.5 days).** Zorvo starts private Qwen Code with `--openai-logging-dir <per-session folder in the app data dir>`, reads the completion ids from those logs, calls `GET /v1/signature/{id}` with the device's key, and verifies the `provider_tee` ECDSA signature over `model:sha256(request):sha256(response)`. The answer gets a "Verified in TEE" badge, with the signer address and a link to NEAR AI's Verification Center. First task: check the log format and whether the logs store prompts; if they do, Zorvo deletes each log file once the id is read, and the folder is removed with the session.
+**B. "Verified in TEE" per answer (M6, `privacy`, size M).** Zorvo starts private Qwen Code with `--openai-logging-dir <per-session folder in the app data dir>`, reads the completion ids from those logs, calls `GET /v1/signature/{id}` with the device's key, and verifies the `provider_tee` ECDSA signature over `model:sha256(request):sha256(response)`. The answer gets a "Verified in TEE" badge, with the signer address and a link to NEAR AI's Verification Center. First task: check the log format and whether the logs store prompts; if they do, Zorvo deletes each log file once the id is read, and the folder is removed with the session.
 
-**C. Low-balance warning (tier 2, ~2–3 hours).** Below 50 credits the composer note warns and a system notification fires once per crossing.
+**C. Low-balance warning (M6, size S).** Below 50 credits the composer note warns and a system notification fires once per crossing.
 
-**D. Per-session spending cap enforced by NEAR AI (tier 3, `agents` and `security`, ~1.5–2 days).** A private draft can set "at most N credits for this session". The Ledger splits the device budget: it creates a session key whose spend limit is N / 120 USD and lowers the device key's limit by the same amount; unused budget returns to the device key when the session ends. The cap is enforced by the NEAR AI gateway (`402`), not by Zorvo. If built, the submission also lists the `security` track.
+**D. Per-session spending cap enforced by NEAR AI (M7, `agents` and `security`, size L).** A private draft can set "at most N credits for this session". The Ledger splits the device budget: it creates a session key whose spend limit is N / 120 USD and lowers the device key's limit by the same amount; unused budget returns to the device key when the session ends. The cap is enforced by the NEAR AI gateway (`402`), not by Zorvo. If built, the submission also lists the `security` track.
 
-**E. Usage per session (tier 3, `agents`, ~0.5–1 day).** Two sources: with D, the session key's own usage; otherwise the completion ids from B sent to `POST /v1/billing/costs` (accepts an inference API key) for their cost in nano-USD. Shown in the session's inspector as credits used. Depends on B or D.
+**E. Usage per session (M7, `agents`, size S).** Two sources: with D, the session key's own usage; otherwise the completion ids from B sent to `POST /v1/billing/costs` (accepts an inference API key) for their cost in nano-USD. Shown in the session's inspector as credits used. Depends on B or D.
 
-**F. Secret guard before sending (tier 3, `privacy`, ~1 day).** Before a private message goes out, Zorvo scans the composer text and attached files locally (no network) for secret patterns: private key blocks, `AKIA…`, `ghp_…`/`github_pat_…`, `sk-…`, `xox[bp]-…`, `.env`-style `KEY=` lines with long random values. On a hit it shows what matched, masked, with Send anyway / Edit. Limit, stated in the UI: the agent can still read files in the folder itself; the guard covers only what the user sends.
+**F. Secret guard before sending (M7, `privacy`, size M).** Before a private message goes out, Zorvo scans the composer text and attached files locally (no network) for secret patterns: private key blocks, `AKIA…`, `ghp_…`/`github_pat_…`, `sk-…`, `xox[bp]-…`, `.env`-style `KEY=` lines with long random values. On a hit it shows what matched, masked, with Send anyway / Edit. Limit, stated in the UI: the agent can still read files in the folder itself; the guard covers only what the user sends.
 
-**G. Bring your own NEAR AI key, for NEAR holders who stake (tier 4, `open`, ~0.5–1 day).** A user who stakes NEAR in the NEAR AI dashboard earns credits in their own organization, non-custodially. Settings → Private mode offers "Use my own NEAR AI key": the user creates a key in their dashboard and pastes it; Zorvo checks it with `POST /v1/check_api_key`, stores it in the Keychain, and private sessions use it instead of Zorvo Credits (no top-up, no Ledger). Wallet sign-in from the desktop app (NEP-413) is out of scope; pasting a key avoids it.
+**G. Bring your own NEAR AI key, for NEAR holders who stake (M8, `open`, size S).** A user who stakes NEAR in the NEAR AI dashboard earns credits in their own organization, non-custodially. Settings → Private mode offers "Use my own NEAR AI key": the user creates a key in their dashboard and pastes it; Zorvo checks it with `POST /v1/check_api_key`, stores it in the Keychain, and private sessions use it instead of Zorvo Credits (no top-up, no Ledger). Wallet sign-in from the desktop app (NEP-413) is out of scope; pasting a key avoids it.
 
 ## 9. Credit math
 
@@ -286,28 +286,31 @@ Built in tiers after the core (sections 7 and 8.1–8.2) works end to end; each 
 - An X post draft with @NEARProtocol and #NEARHackathon for the user to publish.
 - The submission payload is printed for the user's confirmation before anything is sent.
 
-## 14. Schedule (2026-11-07 → 2026-11-14)
+## 14. Milestones
 
-Tiers: 1 = core (sections 7, 8.1–8.2, promo, recovery), 2 = A, B, C, 3 = D, E, F, 4 = G. A tier starts only when the one before it works end to end; a tier not done by its cut date is dropped from the submission, not half-shipped. Server, Rust and frontend work can run as parallel sessions (separate worktrees, separate files), which the implementation plan will lay out.
+No calendar: each milestone is done when its checks pass, at the pace the work allows. The only fixed date is external: the hackathon accepts submissions until 2026-11-14T23:59Z, and whatever milestones are done by then are what gets submitted.
 
-| Day | Target | Cut date |
+| Milestone | Contents | Done when |
 | --- | --- | --- |
-| Nov 7 | `server/` skeleton, Ledger tables, stock and reservation with tests; operator login script | |
-| Nov 8 | NEAR AI key create and absolute spend limit, token refresh, queue; PingPay session and webhook | |
-| Nov 9 | Rust `private_mode/`, Keychain, launch flags, error mapping | |
-| Nov 10 | Frontend: Settings section, packages, draft option, composer note; promo, recovery | tier 1 complete |
-| Nov 11 | Deploy, operator funding, one real $5 top-up end to end; measure credits per turn; C | |
-| Nov 12 | A, B | tier 2 cut |
-| Nov 13 | D, E, F, G as time allows; README, video, X post draft, tags | tiers 3–4 cut (midday) |
-| Nov 14 | Buffer; the user submits before 23:59 UTC | |
+| M1. Ledger | `server/` skeleton, Ledger tables, stock, reservations, device cap, races 1–8 as tests; operator login script | Server tests pass; the login script yields a refresh token |
+| M2. Money path | NEAR AI key create and absolute spend limit, token refresh, queue; PingPay session and webhook; promo; recovery | With stubs, a top-up goes created → paid → credited, and a recovery rotates the key |
+| M3. Zorvo backend | Rust `private_mode/`, Keychain, launch flags, `PRIVATE_CREDITS` mapping | Rust tests pass; a private Qwen session starts with the key only in its env |
+| M4. Zorvo UI | Settings section with stock and packages, draft option, composer note, recovery UI | Frontend tests pass; the flow works against the deployed Worker |
+| M5. Live | Deploy, operator funding, one real $5 top-up end to end, credits per turn measured | A real payment ends as credits and an agent answer from a TEE model |
+| M6. Extensions A, B, C | Agents know their credits; "Verified in TEE"; low-balance warning | Each passes its tests and works in the real app |
+| M7. Extensions D, E, F | Per-session cap; usage per session; secret guard | Same |
+| M8. Extension G | Own NEAR AI key for staking holders | Same |
+| M9. Submission | README for judges, video, X post draft, tags `pre-hackathon` and `hackathon-submission` | The user has reviewed all of it; the user sends the submission |
+
+Order: M1 → M2 → M5 need each other; M3 and M4 can run beside M1–M2 (separate files, parallel sessions in separate worktrees, laid out in the implementation plan). M6–M8 start only after M5, in that order, each only when the one before it works end to end. M9 can start any time and is finished last. When the submission time comes, unfinished milestones are left out, never half-shipped, and the core (M1–M5) is never traded for an extension.
 
 ## 15. Risks and open questions
 
-- Scope: the core plus seven extensions is more than one person can build in eight days. The tiers and cut dates in section 14 decide what ships; the core is never traded for an extension.
+- Scope: the core plus seven extensions is a lot for one person before the hackathon closes. Milestone order (section 14) decides what ships; the core is never traded for an extension.
 - G stores a key the user pasted, which `main` forbids; like the rest, it lives only on the branch.
 - `POST /v1/auth/near` is undocumented and may change; the fallback is a hand-copied refresh token.
-- PingPay's platform fee, merchant onboarding and whether `pk_test_` keys are a true test mode are unknown; check in the PingPay dashboard on day 1.
+- PingPay's platform fee, merchant onboarding and whether `pk_test_` keys are a true test mode are unknown; check in the PingPay dashboard before M2.
 - The minimum PingPay amount is unknown; the $5 package may need adjusting.
-- Coding quality of the TEE models is untested beyond a short answer; measured on day 11.
+- Coding quality of the TEE models is untested beyond a short answer; measured in M5.
 - Stored-value obligations of custodial credits; mitigated by small caps, clear "credits are non-refundable" wording and branch-only scope. Not legal advice.
 - The NEAR AI organization balance is restocked by hand; a long absence pauses sales (never fails paid users).

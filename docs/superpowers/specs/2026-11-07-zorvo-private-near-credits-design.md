@@ -8,7 +8,7 @@ Zorvo Private lets a Zorvo user run a coding agent (Qwen Code first) on private 
 
 It is an opt-in mode for developers whose code must not go to OpenAI or Anthropic (client code under NDA, regulated data, repositories holding secrets). Users who do not turn it on see no change.
 
-This is Zorvo's entry for NEAR HACKATHON (development ends 2026-11-14T23:59Z). Primary track `privacy`, secondary `agents`.
+This is Zorvo's entry for NEAR HACKATHON (development ends 2026-11-14T23:59Z). One submission may list every track it fits. Tracks: `privacy` (primary: NEAR AI Cloud TEE inference), `open` (open innovation: private AI paid from any chain inside a desktop agent app; the track invites entering "alongside any other"), and `agents` (weaker fit: a person, not the agent, pays for compute).
 
 ## 2. Goals and non-goals
 

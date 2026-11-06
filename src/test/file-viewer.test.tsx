@@ -60,7 +60,7 @@ describe("FileViewer — header", () => {
   it("shows the path as a mono breadcrumb with its marker", async () => {
     await renderViewer({ marker: "modified" });
 
-    const path = screen.getByRole("navigation", { name: "Path" });
+    const path = screen.getByRole("heading", { level: 3, name: /a\.ts/ });
     expect(path).toHaveTextContent("src/a.ts");
     expect(path).toHaveClass("font-mono");
     expect(within(path).getByText("M")).toHaveClass("text-status-attention");

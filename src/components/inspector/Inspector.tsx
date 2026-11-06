@@ -54,6 +54,8 @@ export function Inspector({ tab, tabs, width, counts, isViewingFile = false, onS
   const widthFor = (px: number) => Math.max(min, clampInspectorWidth(px));
 
   const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    // Only the main button drags: a right-click's menu would swallow the pointerup that ends it.
+    if (event.button !== 0) return;
     dragRef.current = { startX: event.clientX, startWidth: shown };
     setIsDragging(true);
     let last = shown;
@@ -70,10 +72,15 @@ export function Inspector({ tab, tabs, width, counts, isViewingFile = false, onS
       setIsDragging(false);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("blur", stop);
     };
     stopDragRef.current = stop;
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
+    // A mouse let go outside the window sends no pointerup: a cancelled pointer or the window losing focus ends it.
+    window.addEventListener("pointercancel", stop);
+    window.addEventListener("blur", stop);
   };
 
   const resizeByKey = (event: KeyboardEvent<HTMLDivElement>) => {

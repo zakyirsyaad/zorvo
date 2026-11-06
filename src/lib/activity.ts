@@ -17,6 +17,8 @@ export type ActivityEntry = EntryBase &
         path: string;
         isNamed: boolean;
         action: 'read' | 'changed' | 'touched';
+        /** A search tool: it read the file or folder to look in it, which the row says as a search. */
+        isSearch?: boolean;
         status: ToolExecution['status'];
       }
     | { kind: 'command'; command: string; status: ToolExecution['status'] }
@@ -64,7 +66,8 @@ function entriesOfTool(tool: ToolExecution, message: ChatMessage): ActivityEntry
     : [];
   const action = actionOf(tool);
   const paths = pathsOf(tool);
-  const files = paths.map((path): ActivityEntry => ({ ...base, key: `${toolKey}:file:${path}`, kind: 'file', path, isNamed: true, action, status: tool.status }));
+  const isSearch = tool.kind === 'search';
+  const files = paths.map((path): ActivityEntry => ({ ...base, key: `${toolKey}:file:${path}`, kind: 'file', path, isNamed: true, action, isSearch, status: tool.status }));
   // A change that names no file is still a change: it must not vanish from the list.
   const unnamed: ActivityEntry[] =
     paths.length === 0 && CHANGING_KINDS.has(tool.kind ?? '')

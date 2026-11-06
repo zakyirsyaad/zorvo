@@ -41,4 +41,21 @@ describe("the inspector's frame as drawn", () => {
     fireEvent.pointerUp(window);
     expect(edge).not.toHaveAttribute("data-dragging");
   });
+
+  it("a drag ends when the pointer is cancelled or the window loses focus, and only the main button starts one", () => {
+    renderInspector();
+    const edge = screen.getByRole("separator", { name: "Resize inspector" });
+
+    fireEvent.pointerDown(edge, { clientX: 100, button: 2 });
+    expect(edge).not.toHaveAttribute("data-dragging");
+
+    fireEvent.pointerDown(edge, { clientX: 100, button: 0 });
+    fireEvent.pointerCancel(window);
+    expect(edge).not.toHaveAttribute("data-dragging");
+
+    fireEvent.pointerDown(edge, { clientX: 100, button: 0 });
+    // A mouse released outside the window sends no pointerup here; the window losing focus ends it instead.
+    fireEvent.blur(window);
+    expect(edge).not.toHaveAttribute("data-dragging");
+  });
 });

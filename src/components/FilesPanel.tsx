@@ -50,7 +50,7 @@ const BASE_INDENT_PX = 4;
 const INDENT_STEP_PX = 16;
 const FILE_INDENT_PX = 18;
 const ROW =
-  "group flex h-[26px] items-center gap-1.5 rounded pr-1.5 text-fg-secondary hover:bg-surface-hover hover:text-fg focus-within:bg-surface-hover";
+  "group relative flex h-[26px] items-center gap-1.5 rounded pr-1.5 text-fg-secondary hover:bg-surface-hover hover:text-fg focus-within:bg-surface-hover";
 const ROW_BUTTON = "flex h-[26px] min-w-0 flex-1 items-center gap-1.5 text-left focus-ring";
 const MARKER_SLOT = "w-3 shrink-0 text-center text-micro font-semibold";
 const NOTE = "py-1 pr-2 text-caption";
@@ -128,8 +128,11 @@ function FileRow({ entry, depth, view }: { entry: DirEntryInfo; depth: number; v
             aria-label={`Add ${entry.name} to prompt`}
             title="Add to prompt"
             onClick={() => onInsertPath(joinWorkspacePath(view.rootPath, entry.relativePath))}
-            // Out of the layout until then, so the hidden pill does not cut every file name short.
-            className="hidden h-5 shrink-0 items-center gap-1 rounded border border-border-strong px-1.5 font-sans text-caption text-fg group-hover:flex group-focus-within:flex focus-ring"
+            // Laid over the row's end, out of its flow, so it cuts no file name short while unseen; faded rather than
+            // display:none, so a screen reader's cursor and Shift+Tab still reach it. Its fill covers the name under it.
+            className={`absolute top-1/2 flex h-5 -translate-y-1/2 items-center gap-1 rounded border border-border-strong bg-surface-hover px-1.5 font-sans text-caption text-fg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-ring ${
+              marker ? "right-6" : "right-1.5"
+            }`}
           >
             <Plus size={10} aria-hidden="true" />
             Add to prompt

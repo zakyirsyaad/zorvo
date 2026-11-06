@@ -54,17 +54,40 @@ describe("the file view as drawn", () => {
     expect(screen.getByRole("button", { name: "Open in editor" })).toHaveClass("h-6.5");
   });
 
-  it("the breadcrumb is subtle mono with the name in fg", async () => {
+  it("the breadcrumb is a subtle mono heading with the name in fg", async () => {
     await renderViewer();
-    const path = screen.getByRole("navigation", { name: "Path" });
+    // A heading, as before: it names the open file for heading navigation; it holds no links to be a nav.
+    const path = screen.getByRole("heading", { level: 3, name: /a\.ts/ });
     expect(path).toHaveClass("font-mono", "text-caption", "text-fg-subtle");
-    expect(screen.getByText("sidebar")).not.toHaveClass("text-fg-muted");
-    expect(screen.getByText("a.ts", { selector: "nav span" })).toHaveClass("text-fg");
+    expect(screen.queryByRole("navigation")).toBeNull();
+    expect(screen.getByText("a.ts", { selector: "h3 span" })).toHaveClass("text-fg");
   });
 
-  it("the body is a 12/20 well on bg", async () => {
+  it("a long path cuts its folders, never the file name", async () => {
     await renderViewer();
-    expect(screen.getByRole("region", { name: "Contents of a.ts" })).toHaveClass("bg-bg", "leading-5", "text-ui-sm", "py-2.5");
+    const path = screen.getByRole("heading", { level: 3, name: /a\.ts/ });
+    expect(screen.getByText("a.ts", { selector: "h3 span" })).toHaveClass("shrink-0");
+    expect(path.querySelector(".truncate")).toHaveTextContent("src/sidebar/");
+  });
+
+  it("the body is a 12/20 well on bg, its padding and line height from the card's own numbers", async () => {
+    await renderViewer();
+    const body = screen.getByRole("region", { name: "Contents of a.ts" });
+    expect(body).toHaveClass("bg-bg", "text-ui-sm");
+    expect(body.style.paddingTop).toBe("10px");
+    expect(body.style.lineHeight).toBe("20px");
+  });
+
+  it("a selection made upward gets its card above its first line", async () => {
+    await renderViewer();
+    const body = screen.getByRole("region", { name: "Contents of a.ts" });
+    const codeOf = (line: number) => body.querySelector(`[data-line="${line}"]`)!.lastElementChild!;
+    // From the end of line 4 back to the start of line 3, as a drag upward makes it.
+    window.getSelection()!.setBaseAndExtent(codeOf(4), codeOf(4).childNodes.length, codeOf(3), 0);
+    fireEvent.mouseUp(body);
+    const card = screen.getByRole("button", { name: "Add lines 3–4 to prompt" }).parentElement!;
+    expect(card.style.top).toBe(`${10 + 2 * 20 - 4}px`);
+    expect(card).toHaveClass("-translate-y-full");
   });
 
   it("selected lines are tinted", async () => {
@@ -83,6 +106,7 @@ describe("the file view as drawn", () => {
     expect(card.style.top).toBe("94px");
     expect(card.style.left).toBe("56px");
     expect(card).toHaveClass("bg-surface-3", "shadow-popover");
+    expect(card).not.toHaveClass("-translate-y-full");
     expect(screen.getByRole("region", { name: "Contents of a.ts" }).contains(card)).toBe(true);
   });
 

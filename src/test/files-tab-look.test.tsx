@@ -97,7 +97,10 @@ describe("the Files tab as drawn", () => {
     await renderPanel();
     await openTo("src", "components");
     const add = screen.getByRole("button", { name: "Add SessionList.tsx to prompt" });
-    expect(add).toHaveClass("hidden", "group-hover:flex", "group-focus-within:flex");
-    expect(add).not.toHaveClass("opacity-0");
+    // Laid over the row's end rather than in its flow, and never display:none, so a screen reader's cursor and
+    // Shift+Tab still reach it while it is not shown.
+    expect(add).toHaveClass("absolute", "opacity-0", "group-hover:opacity-100", "group-focus-within:opacity-100");
+    expect(add).not.toHaveClass("hidden");
+    expect(add.parentElement).toHaveClass("relative");
   });
 });

@@ -24,6 +24,7 @@ const FILTERS: { id: Filter; label: string }[] = [
 
 const ignoreError = () => {};
 const NO_ENTRIES: readonly ActivityEntry[] = [];
+const NO_FILES: readonly string[] = [];
 
 export interface ActivityPanelProps {
   messages: readonly ChatMessage[] | undefined;
@@ -83,7 +84,8 @@ function Unreported({ files, agentName, compared, onShowChanges }: {
 function TurnGroup({ turn, isBusy, onJump }: { turn: ActivityTurn; isBusy: boolean; onJump: (messageId: string) => void }) {
   const headingId = `activity-turn-${turn.number ?? "earlier"}`;
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-0.5">
+    // A group, not a section: a named section is a region landmark, and a long session would add one per turn.
+    <div role="group" aria-labelledby={headingId} className="flex flex-col gap-0.5">
       {/* The heading is the turn alone: a long prompt would become the heading's and the region's name. */}
       <div className="flex items-baseline gap-1.5 pb-1.5">
         <h3 id={headingId} className="shrink-0 text-ui-sm font-semibold text-fg">
@@ -99,7 +101,7 @@ function TurnGroup({ turn, isBusy, onJump }: { turn: ActivityTurn; isBusy: boole
           <ActivityEntryRow key={entry.key} entry={entry} isBusy={isBusy} onJump={onJump} />
         ))}
       </ul>
-    </section>
+    </div>
   );
 }
 
@@ -127,7 +129,11 @@ export function ActivityPanel({ messages, transcript, session, agentName, isRepo
 
   const hasCheck = isRepository && !session.historyElsewhere && list !== null && isLoaded && !targetsFailed && stats !== null && !statsFailed;
   const showsFiles = filter === "all" || filter === "file";
-  const unreported = hasCheck && stats ? unreportedFiles(entries, stats, targets, session.cwd) : [];
+  // Checked only while the card can show, and once per change of what it compares, not on every streamed frame.
+  const unreported = useMemo(
+    () => (showsFiles && hasCheck && stats ? unreportedFiles(entries, stats, targets, session.cwd) : NO_FILES),
+    [showsFiles, hasCheck, entries, stats, targets, session.cwd],
+  );
 
   return (
     <aside aria-label="Activity panel" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui text-fg-secondary">

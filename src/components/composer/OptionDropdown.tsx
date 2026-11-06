@@ -132,9 +132,9 @@ interface OptionRowsProps {
  * What a search matched in a tag's heading: found in the full label ("[OpenRouter] kimi-k2"), so a query that runs
  * across the "] " ("router] ki") marks the end of the tag too. Taken from the group's first option that matched there.
  */
-function tagRangesOf(group: Required<TagGroup>, query: string): Array<[number, number]> {
-  const end = 1 + group.tag.length;
-  for (const option of group.options) {
+function tagRangesOf(tag: string, options: readonly DropdownOption[], query: string): Array<[number, number]> {
+  const end = 1 + tag.length;
+  for (const option of options) {
     const ranges = rangesWithin(matchRanges(option.label, query), 1, end);
     if (ranges.length > 0) return ranges;
   }
@@ -162,7 +162,8 @@ function OptionRow({ option, current, query, onSelect, renderIcon }: Omit<Option
           </span>
         )}
         <span className="truncate">
-          {tag ? <Highlighted text={name} ranges={nameRanges} /> : <Highlighted text={name} query={query} />}
+          {/* Untagged, the name is the whole label, so these are the label's own matches. */}
+          <Highlighted text={name} ranges={nameRanges} />
         </span>
         {option.risky && (
           // Seen, not read: the line under the name already says the agent acts without asking.
@@ -183,7 +184,7 @@ function OptionRows({ options, ...row }: OptionRowsProps) {
         ) : (
           // Named by its heading, so the provider is read once. The heading marks a search that matched the tag,
           // since the rows then show nothing that matched.
-          <PopoverGroup key={`tag:${group.tag}`} heading={<Highlighted text={group.tag} ranges={tagRangesOf({ tag: group.tag, options: group.options }, row.query)} />}>
+          <PopoverGroup key={`tag:${group.tag}`} heading={<Highlighted text={group.tag} ranges={tagRangesOf(group.tag, group.options, row.query)} />}>
             {group.options.map((option) => (
               <OptionRow key={option.value ?? "__default"} option={option} {...row} />
             ))}

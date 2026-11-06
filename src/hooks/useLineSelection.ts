@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState, type RefObject } from "react";
 export interface LineRange {
   first: number;
   last: number;
+  /** The selection was made upward, so its moving end (where you are looking) is at `first`. */
+  isBackward?: boolean;
 }
 
 /** The row a selection end sits in: its closest `[data-line]` inside `body`. */
@@ -38,8 +40,14 @@ function readRange(body: HTMLElement): LineRange | null {
   let last = Number(endRow.dataset.line);
   if (!Number.isInteger(first) || !Number.isInteger(last)) return null;
   if (last > first && endsBeforeCode(endRow, range.endContainer, range.endOffset)) last -= 1;
-  return { first: Math.min(first, last), last: Math.max(first, last) };
+  // The focus is the end that moved: above the anchor for a drag upward or Shift+Up.
+  const anchorLine = Number(rowOf(selection.anchorNode, body)?.dataset.line);
+  const focusLine = Number(rowOf(selection.focusNode, body)?.dataset.line);
+  const isBackward = Number.isInteger(anchorLine) && Number.isInteger(focusLine) && focusLine < anchorLine;
+  return { first: Math.min(first, last), last: Math.max(first, last), isBackward };
 }
+
+const sameRange = (a: LineRange, b: LineRange) => a.first === b.first && a.last === b.last && a.isBackward === b.isBackward;
 
 /**
  * The range of lines selected in the viewer's `body`, read when the mouse or a key lets go inside it
@@ -58,7 +66,7 @@ export function useLineSelection(body: RefObject<HTMLElement | null>): { range: 
       if (event instanceof KeyboardEvent && event.key === "Escape") return;
       const next = readRange(element);
       // The same lines keep the same range, so the viewer's memoized rows are not drawn again.
-      setRange((current) => (current && next && current.first === next.first && current.last === next.last ? current : next));
+      setRange((current) => (current && next && sameRange(current, next) ? current : next));
     };
     element.addEventListener("mouseup", read);
     element.addEventListener("keyup", read);

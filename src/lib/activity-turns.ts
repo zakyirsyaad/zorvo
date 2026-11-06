@@ -39,6 +39,7 @@ const VERBS = {
   read: ['Read', 'Read'],
   changed: ['Edited', 'Edit'],
   touched: ['Touched', 'Touch'],
+  search: ['Searched', 'Search'],
   command: ['Ran', 'Run'],
 } as const;
 
@@ -48,7 +49,8 @@ const VERBS = {
  */
 export function activityVerb(entry: ActivityEntry): string {
   if (entry.kind === 'permission') return 'Asked';
-  const [done, meant] = VERBS[entry.kind === 'file' ? entry.action : 'command'];
+  const kind = entry.kind === 'command' ? 'command' : entry.isSearch ? 'search' : entry.action;
+  const [done, meant] = VERBS[kind];
   return entry.status === 'completed' ? done : meant;
 }
 

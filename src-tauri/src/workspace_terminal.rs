@@ -176,12 +176,11 @@ pub struct OpenedTerminal {
 }
 
 /// The file name of the shell program (`zsh` for `/bin/zsh`), for a tab's name;
-/// "shell" when the path names no file.
+/// "shell" when the path names no file (`file_name` is `None` for "", "/" and "..").
 pub fn shell_name(path: &str) -> String {
     Path::new(path)
         .file_name()
         .and_then(|name| name.to_str())
-        .filter(|name| !name.is_empty())
         .map_or_else(|| "shell".to_string(), str::to_string)
 }
 

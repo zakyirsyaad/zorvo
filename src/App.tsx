@@ -1090,7 +1090,7 @@ export default function App() {
                     // session's note sits above its first message.
                     header={
                       activeSession.historyElsewhere ? (
-                        <HistoryElsewhereNote agentName={activeAgent?.name ?? "the agent"} />
+                        <HistoryElsewhereNote agentName={agentNameOr(activeAgent)} />
                       ) : undefined
                     }
                     // A turn that failed says so under its last message, with Try again.
@@ -1341,7 +1341,7 @@ export default function App() {
                     headStats={inspector.headStats}
                     headStatsFailed={inspector.headStatsFailed}
                     onJump={(messageId) => setChatJump((prev) => ({ messageId, nonce: (prev?.nonce ?? 0) + 1 }))}
-                    agentName={agentNameOr(agents, activeSession.profileId)}
+                    agentName={agentNameOr(activeAgent)}
                     onShowChanges={() => inspector.show("changes")}
                   />
                 )}

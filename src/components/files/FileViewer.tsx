@@ -51,18 +51,22 @@ const isGone = (message: string) => message.includes("not accessible");
 
 function Breadcrumb({ relativePath, marker }: { relativePath: string; marker?: FileMarker }) {
   const segments = relativePath.split("/");
+  const folders = segments.slice(0, -1);
+  const name = segments[segments.length - 1];
   return (
-    <nav
-      aria-label="Path"
-      title={relativePath}
-      className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap font-mono text-caption text-fg-subtle"
-    >
-      {segments.map((segment, index) => (
-        <Fragment key={index}>
-          {index > 0 && <span aria-hidden="true">/</span>}
-          <span className={index === segments.length - 1 ? "text-fg" : undefined}>{segment}</span>
-        </Fragment>
-      ))}
+    // A heading, so the open file can be found by heading; its folders give way first on a long path, never its name.
+    <h3 title={relativePath} className="flex min-w-0 flex-1 items-center whitespace-nowrap font-mono text-caption text-fg-subtle">
+      {folders.length > 0 && (
+        <span className="min-w-0 truncate">
+          {folders.map((folder, index) => (
+            <Fragment key={index}>
+              {folder}
+              <span aria-hidden="true" className="mx-1">/</span>
+            </Fragment>
+          ))}
+        </span>
+      )}
+      <span className="shrink-0 text-fg">{name}</span>
       {marker && (
         <>
           <span aria-hidden="true" className={`ml-1 shrink-0 font-semibold ${MARKER_COLOR[marker]}`}>
@@ -71,7 +75,7 @@ function Breadcrumb({ relativePath, marker }: { relativePath: string; marker?: F
           <span className="sr-only">{MARKER_WORD[marker]}</span>
         </>
       )}
-    </nav>
+    </h3>
   );
 }
 
@@ -105,7 +109,9 @@ export const FileLines = memo(function FileLines({
       role="region"
       tabIndex={0}
       aria-label={`Contents of ${name}`}
-      className="focus-ring relative min-h-0 flex-1 overflow-auto bg-bg py-2.5 font-mono text-ui-sm leading-5 select-text"
+      // Padding and line height come from the numbers the add-lines card is placed by, so the two cannot drift.
+      style={BODY_STYLE}
+      className="focus-ring relative min-h-0 flex-1 overflow-auto bg-bg font-mono text-ui-sm select-text"
     >
       {lines.map((_, index) => {
         const line = index + 1;
@@ -138,9 +144,10 @@ export const FileLines = memo(function FileLines({
   );
 });
 
-/** The code's top padding and line height, for placing the add-lines card under a selection. */
+/** The code's top padding and line height (12px on 20px rows, as drawn), which also place the add-lines card. */
 const BODY_PADDING_PX = 10;
 const LINE_HEIGHT_PX = 20;
+const BODY_STYLE = { paddingTop: BODY_PADDING_PX, paddingBottom: BODY_PADDING_PX, lineHeight: `${LINE_HEIGHT_PX}px` } as const;
 /** Just right of the 40px number gutter and its change bar. */
 const ADD_LINES_LEFT_PX = 56;
 const ADD_LINES_GAP_PX = 4;
@@ -221,8 +228,17 @@ export function FileViewer({
     if (!canInsertText || !range) return null;
     return (
       <div
-        style={{ top: BODY_PADDING_PX + range.last * LINE_HEIGHT_PX + ADD_LINES_GAP_PX, left: ADD_LINES_LEFT_PX }}
-        className="absolute flex rounded-lg border border-border bg-surface-3 p-0.5 font-sans shadow-popover select-none"
+        // Beside the end you moved, where you are looking: under the last line, or above the first for a selection
+        // made upward (which on a long file would otherwise leave the card far below the view).
+        style={{
+          top: range.isBackward
+            ? BODY_PADDING_PX + (range.first - 1) * LINE_HEIGHT_PX - ADD_LINES_GAP_PX
+            : BODY_PADDING_PX + range.last * LINE_HEIGHT_PX + ADD_LINES_GAP_PX,
+          left: ADD_LINES_LEFT_PX,
+        }}
+        className={`absolute flex rounded-lg border border-border bg-surface-3 p-0.5 font-sans shadow-popover select-none ${
+          range.isBackward ? "-translate-y-full" : ""
+        }`}
       >
         <Button
           variant="ghost"

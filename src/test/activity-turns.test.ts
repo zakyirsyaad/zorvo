@@ -83,6 +83,15 @@ describe("activityVerb", () => {
     expect(activityVerb(commandEntry("failed"))).toBe("Run");
     expect(activityVerb(permissionEntry("waiting"))).toBe("Asked");
   });
+
+  it("a search reads as a search, not a read", () => {
+    const [entry] = activityOf([reply("r1", [{ kind: "search", locations: ["/w/src"] }])]).entries;
+    expect(activityVerb(entry)).toBe("Searched");
+    const [running] = activityOf([reply("r2", [{ kind: "search", locations: ["/w/src"], status: "running" }])]).entries;
+    expect(activityVerb(running)).toBe("Search");
+    const [read] = activityOf([reply("r3", [{ kind: "read", locations: ["/w/a.ts"] }])]).entries;
+    expect(activityVerb(read)).toBe("Read");
+  });
 });
 
 describe("activityResult", () => {

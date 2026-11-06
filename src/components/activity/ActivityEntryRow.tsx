@@ -51,6 +51,10 @@ function Target({ entry }: { entry: ActivityEntry }) {
 const textOf = (entry: ActivityEntry) =>
   entry.kind === "file" ? entry.path : entry.kind === "command" ? entry.command : (entry.command ?? entry.prompt);
 
+/** Everything the row cuts short: every line of the command, and for a permission what the agent asked too. */
+const fullTextOf = (entry: ActivityEntry) =>
+  entry.kind === "permission" && entry.command ? `${entry.prompt}\n${entry.command}` : textOf(entry);
+
 /** One thing the agent reported, on the turn's timeline: verb, what it was about, how it ended. Text only. */
 export const ActivityEntryRow = memo(function ActivityEntryRow({ entry, isBusy, onJump }: {
   entry: ActivityEntry;
@@ -64,7 +68,7 @@ export const ActivityEntryRow = memo(function ActivityEntryRow({ entry, isBusy, 
   return (
     // The whole command, every line, for a row that shows only its first.
     <li
-      title={textOf(entry).split("\n").map(escapeVisible).join("\n")}
+      title={fullTextOf(entry).split("\n").map(escapeVisible).join("\n")}
       className="relative flex items-start gap-2.5 py-[5px] pl-[22px] before:absolute before:inset-y-0 before:left-1.5 before:w-px before:bg-border">
       <span
         aria-hidden="true"

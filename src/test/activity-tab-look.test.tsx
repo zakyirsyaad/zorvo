@@ -87,14 +87,14 @@ describe("the Activity tab as drawn", () => {
       expect.stringContaining("Turn 2"),
       expect.stringContaining("Turn 1"),
     ]);
-    expect(screen.getByRole("region", { name: /Turn 2/ })).toHaveTextContent("· Try again");
+    expect(screen.getByRole("group", { name: /Turn 2/ })).toHaveTextContent("· Try again");
   });
 
   it("a turn's heading names the turn alone, so a long prompt is not read as its name", async () => {
     const long = "Refactor the sidebar ".repeat(200);
     await show({ messages: [user("u1", long), reply("r1", [{ kind: "read", locations: ["/r/a.ts"] }])] });
     expect(screen.getByRole("heading", { level: 3, name: "Turn 1" }).textContent).toBe("Turn 1");
-    expect(screen.getByRole("region", { name: "Turn 1" })).toHaveTextContent("· Refactor the sidebar");
+    expect(screen.getByRole("group", { name: "Turn 1" })).toHaveTextContent("· Refactor the sidebar");
   });
 
   it("a row shows verb, target and result", async () => {
@@ -139,7 +139,8 @@ describe("the Activity tab as drawn", () => {
 
     const result = screen.getByRole("button", { name: /Allowed/ });
     expect(result).toHaveAccessibleName(expect.stringContaining("Allow always"));
-    expect(result.closest("li")).toHaveAttribute("title", "pnpm test\n--run");
+    // What the agent asked as well as the command: the row shows only the command.
+    expect(result.closest("li")).toHaveAttribute("title", "Run tests\npnpm test\n--run");
     expect(screen.getByRole("button", { name: /^ls, Done/ }).closest("li")).toHaveAttribute("title", "ls\n-la");
   });
 

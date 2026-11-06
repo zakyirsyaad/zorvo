@@ -267,10 +267,10 @@ it("parses config from env vars", () => {
 **Interfaces:**
 - Consumes: `listKeys` results from the snapshot, `balanceCredits`, `creditsFromNano`, `verifiableModels`.
 - Produces:
-  - `GET /v1/balance` → `{ credits: number; usedCredits: number; keyReady: boolean }` from the device's row in `key_usage` (`credits = balanceCredits(limit, usage)`, `usedCredits = creditsFromNano(usage)`, `keyReady` = a key exists and is not waiting in `pending_keys`); a device without a key gets `{ credits: 0, usedCredits: 0, keyReady: false }`. A key credited since the last snapshot uses `spendLimitNano(credits_bought)` and zero usage until the next snapshot.
+  - `GET /v1/balance` → `{ credits: number; usedCredits: number; keyReady: boolean; updatedAt: string }` from the device's row in `key_usage`. With `?fresh=1` the Ledger first reads this key's usage from NEAR AI (one `listKeys` page lookup or `GET …/api-keys/{key}/usage/history`, whichever the implementer finds cheaper) and updates its `key_usage` row, at most once per 30 s per device (`ratelimits` key `fresh:<deviceId>`; a call inside the window returns the cached row) (`credits = balanceCredits(limit, usage)`, `usedCredits = creditsFromNano(usage)`, `keyReady` = a key exists and is not waiting in `pending_keys`); a device without a key gets `{ credits: 0, usedCredits: 0, keyReady: false }`. A key credited since the last snapshot uses `spendLimitNano(credits_bought)` and zero usage until the next snapshot.
   - `GET /v1/models` → `{ models: { id: string; inputPerM: number; outputPerM: number }[] }` = `cfg.models` ∩ `verifiableModels()`, cached 10 minutes in the Ledger.
 
-- [ ] **Step 1: Write the failing tests:** after a credited `$5` and $1 of usage the balance is `balanceCredits(4166666666n, 1000000000n, cfg)`; an allowlisted model that upstream marks `verifiable: false` is absent; a second `/v1/models` call within 10 minutes makes no upstream request.
+- [ ] **Step 1: Write the failing tests:** after a credited `$5` and $1 of usage the balance is `balanceCredits(4166666666n, 1000000000n, cfg)`; `?fresh=1` makes one NEAR AI request and returns the new usage, and a second `?fresh=1` within 30 s makes none; an allowlisted model that upstream marks `verifiable: false` is absent; a second `/v1/models` call within 10 minutes makes no upstream request.
 - [ ] **Step 2: Run** — expected FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** — expected PASS.

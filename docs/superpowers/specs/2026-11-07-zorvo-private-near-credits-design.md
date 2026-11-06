@@ -64,6 +64,20 @@ Non-goals (hackathon scope):
 
 Package availability is shown before checkout (section 7.3). A package is disabled when the stock cannot cover it or when it would take the device over its cap.
 
+The screens are drawn in the design canvas "Zorvo redesign layouts" (https://claude.ai/artifact/3phT51j88Vx28KT2EpXjjz), section 7 "Private mode": the flow, refresh and operator flows, Settings, the draft, a running session, after Pay (success and failure), first run, verification and errors, the remaining states, and paying with your own key. The artboards decide the look; this spec decides behaviour. Decisions taken in the design review:
+
+- Picking a package only selects it (a radio group); a confirm row "1,000 credits for $10" with **Pay $10** opens checkout. Nothing opens on a single click.
+- After Pay: "Opening checkout" → the browser → "Payment received · adding credits" → "+N credits". Failure cases: closed without paying (hold released by Cancel or after 25 minutes), payment failed (no credits, PingPay handles any refund), paid while NEAR AI is slow (retrying, never pay again), paid after the hold ran out (first in line at restock). If Zorvo was closed meanwhile, it checks the top-up when it opens.
+- Balance card: "Updated N min ago" and **Refresh** (section 7.4), and a collapsible "Used by" breakdown per agent and model; one balance serves every private session on the Mac.
+- First run: "0 credits · No key yet" with a promo hint; a draft with Private on and 0 credits shows "Add credits to start a private session" and keeps Start off.
+- After the first top-up a one-time dialog "Save your recovery code" (Copy, a checkbox "I saved it somewhere safe" that enables Done, "Remind me later" leaves a note on the balance card).
+- Session limit defaults to **No limit**; the menu offers 100 / 200 / 500 credits.
+- Credits run out: only private calls stop; history stays, the message returns to the box; actions Top up or "Continue with another agent", which says it leaves the TEE.
+- Verification badge has four states: Checking the signature, Verified in TEE, Not signed (cut off, e.g. Stop), Didn't verify (signature mismatch, counted in the inspector).
+- The Private tab exists only in private sessions; private sessions carry a shield in the sidebar; the Private chip is disabled for agents other than Qwen Code, with the reason.
+- Settings explains "How credits work" (1 credit = $0.01 bought; NEAR AI's model price + 20% when used) and shows promo results inline.
+- Credits server unreachable: "Balance unavailable", last known value, private sessions keep working; checkout that cannot open says nothing was held or charged.
+
 ## 6. Architecture
 
 ```text
@@ -141,7 +155,7 @@ All under `/v1`. Device auth unless noted.
 | --- | --- |
 | `POST /devices` (no auth, rate limited) | Register `{secretHash}`; returns `deviceId`. |
 | `GET /stock` | Section 7.3. |
-| `GET /balance` | `{credits, usedCredits, keyReady}`; credits = (limit − usage) × 120. |
+| `GET /balance` | `{credits, usedCredits, keyReady, updatedAt}`; credits = (limit − usage) × 120, from the last snapshot. `?fresh=1` (Refresh) reads this device's key usage from NEAR AI first, at most once per 30 s per device; a call within 30 s returns the cached value. |
 | `GET /models` | TEE allowlist ∩ live `verifiable: true`, with prices; cached 10 minutes. |
 | `POST /topups` `{packageUsd}` | Reserve, create the PingPay session, return `{topupId, sessionUrl, expiresAt}`. |
 | `GET /topups/{id}` | `{status, credits}`. |
@@ -214,7 +228,9 @@ Errors: for a private session, an ACP error `-32603` whose details carry `402` /
 - `hooks/usePrivateCredits.ts`: status, stock and top-up polling (every 3 s while a checkout is open, stopped when it ends).
 - `lib/private-credits.ts`: credit math and wording.
 - Draft: a **Private (TEE)** option for Qwen Code; the model chip lists `GET /models`, labelled **Private · TEE**.
-- `lib/composer-state.ts` `composerNote`: "Your credits ran out. Top up to continue." for `PRIVATE_CREDITS` sessions.
+- `lib/composer-state.ts` `composerNote`: "Your credits ran out. Top up to continue." for `PRIVATE_CREDITS` sessions; the message is given back to the box as for other refusals.
+- One `paymentSource: "credits" | "ownKey"` (Settings, kept in `settings`) decides every screen that talks about balance, limits or running out, so they cannot disagree: with `ownKey` the composer reads "Paying with your NEAR AI key", the Session limit chip is disabled with its reason, running out shows "Your NEAR AI key ran out of credits" (Switch to Zorvo credits / Open NEAR AI dashboard), and the Private tab shows the session's cost in dollars.
+- Recovery-code dialog after the first top-up, balance Refresh, the four verification states and the other review decisions in section 5.
 - Session record: an optional `privateMode: { modelId }`, read leniently in `lib/persistence.ts`; `STATE_VERSION` unchanged.
 - Copy follows the design-system rules (sentence case, "you", agents named).
 
@@ -228,13 +244,13 @@ Built as milestones M6–M8 (section 14) after the core works end to end. Sizes 
 
 **C. Low-balance warning (M6, size S).** Below 50 credits the composer note warns and a system notification fires once per crossing.
 
-**D. Per-session spending cap enforced by NEAR AI (M7, `agents` and `security`, size L).** A private draft can set "at most N credits for this session". The Ledger splits the device budget: it creates a session key whose spend limit is N / 120 USD and lowers the device key's limit by the same amount; unused budget returns to the device key when the session ends. The cap is enforced by the NEAR AI gateway (`402`), not by Zorvo. If built, the submission also lists the `security` track.
+**D. Per-session spending cap enforced by NEAR AI (M7, `agents` and `security`, size L).** A private draft can set "at most N credits for this session". The Ledger splits the device budget: it creates a session key whose spend limit is N / 120 USD and lowers the device key's limit by the same amount; unused budget returns to the device key when the session ends. The cap is enforced by the NEAR AI gateway (`402`), not by Zorvo. If built, the submission also lists the `security` track. The default is No limit, and a session without a limit uses the device key (no session key). Not available with `paymentSource: "ownKey"`: the server cannot make keys in the user's organization.
 
 **E. Usage per session (M7, `agents`, size S).** Two sources: with D, the session key's own usage; otherwise the completion ids from B sent to `POST /v1/billing/costs` (accepts an inference API key) for their cost in nano-USD. Shown in the session's inspector as credits used. Depends on B or D.
 
 **F. Secret guard before sending (M7, `privacy`, size M).** Before a private message goes out, Zorvo scans the composer text and attached files locally (no network) for secret patterns: private key blocks, `AKIA…`, `ghp_…`/`github_pat_…`, `sk-…`, `xox[bp]-…`, `.env`-style `KEY=` lines with long random values. On a hit it shows what matched, masked, with Send anyway / Edit. Limit, stated in the UI: the agent can still read files in the folder itself; the guard covers only what the user sends.
 
-**G. Bring your own NEAR AI key, for NEAR holders who stake (M8, `open`, size S).** A user who stakes NEAR in the NEAR AI dashboard earns credits in their own organization, non-custodially. Settings → Private mode offers "Use my own NEAR AI key": the user creates a key in their dashboard and pastes it; Zorvo checks it with `POST /v1/check_api_key`, stores it in the Keychain, and private sessions use it instead of Zorvo Credits (no top-up, no Ledger). Wallet sign-in from the desktop app (NEP-413) is out of scope; pasting a key avoids it.
+**G. Bring your own NEAR AI key, for NEAR holders who stake (M8, `open`, size S).** A user who stakes NEAR in the NEAR AI dashboard earns credits in their own organization, non-custodially. Settings → Private mode offers "Use my own NEAR AI key": the user creates a key in their dashboard and pastes it; Zorvo checks it with `POST /v1/check_api_key`, stores it in the Keychain, and private sessions use it instead of Zorvo Credits (no top-up, no Ledger). Wallet sign-in from the desktop app (NEP-413) is out of scope; pasting a key avoids it. Settings then offers "Private sessions pay with: Zorvo credits / My NEAR AI key" and Remove key; the key is never sent to the credits server. `check_api_key` is not known to return a balance, so Zorvo shows none for this key; `credits_balance` (A) answers that the balance isn't visible; per-session cost comes from `POST /v1/billing/costs` (E) in dollars. A recovery does not move this key.
 
 ## 9. Credit math
 

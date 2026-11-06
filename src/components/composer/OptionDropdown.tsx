@@ -4,6 +4,7 @@ import { ChevronDown, ShieldAlert } from "lucide-react";
 import { asSentence } from "../../lib/sentence";
 import { Popover, PopoverGroup, PopoverHeader, PopoverList, PopoverOption, PopoverSearch } from "../ui/Popover";
 import { Highlighted } from "../ui/Highlighted";
+import { matchRanges, rangesWithin } from "../../lib/match-segments";
 import { COMPOSER_CHIP, RISKY_LINE, pluralOf } from "./chip-style";
 
 export interface DropdownOption {
@@ -127,13 +128,30 @@ interface OptionRowsProps {
   renderIcon?: (option: DropdownOption) => ReactNode;
 }
 
+/**
+ * What a search matched in a tag's heading: found in the full label ("[OpenRouter] kimi-k2"), so a query that runs
+ * across the "] " ("router] ki") marks the end of the tag too. Taken from the group's first option that matched there.
+ */
+function tagRangesOf(group: Required<TagGroup>, query: string): Array<[number, number]> {
+  const end = 1 + group.tag.length;
+  for (const option of group.options) {
+    const ranges = rangesWithin(matchRanges(option.label, query), 1, end);
+    if (ranges.length > 0) return ranges;
+  }
+  return [];
+}
+
 function OptionRow({ option, current, query, onSelect, renderIcon }: Omit<OptionRowsProps, "options"> & { option: DropdownOption }) {
   const { tag, name } = splitTag(option.label);
+  // Matched in the full label, then cut to the name the row shows, so a match that starts in the tag still marks the name.
+  const nameRanges = rangesWithin(matchRanges(option.label, query), option.label.length - name.length, option.label.length);
+  const detail = detailOf(option);
   return (
     <PopoverOption
       selected={option.value === current?.value}
       onSelect={() => onSelect(option.value)}
-      description={detailOf(option)}
+      // A choice found by its description shows why it is listed.
+      description={detail && query.trim() !== "" ? <Highlighted text={detail} query={query} /> : detail}
       // The full label, tag and all, for a name cut short.
       title={tag ? option.label : undefined}
     >
@@ -144,7 +162,7 @@ function OptionRow({ option, current, query, onSelect, renderIcon }: Omit<Option
           </span>
         )}
         <span className="truncate">
-          <Highlighted text={name} query={query} />
+          {tag ? <Highlighted text={name} ranges={nameRanges} /> : <Highlighted text={name} query={query} />}
         </span>
         {option.risky && (
           // Seen, not read: the line under the name already says the agent acts without asking.
@@ -165,7 +183,7 @@ function OptionRows({ options, ...row }: OptionRowsProps) {
         ) : (
           // Named by its heading, so the provider is read once. The heading marks a search that matched the tag,
           // since the rows then show nothing that matched.
-          <PopoverGroup key={`tag:${group.tag}`} heading={<Highlighted text={group.tag} query={row.query} />}>
+          <PopoverGroup key={`tag:${group.tag}`} heading={<Highlighted text={group.tag} ranges={tagRangesOf({ tag: group.tag, options: group.options }, row.query)} />}>
             {group.options.map((option) => (
               <OptionRow key={option.value ?? "__default"} option={option} {...row} />
             ))}

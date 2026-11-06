@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { Wordmark } from "../components/onboarding/Wordmark";
 import { AgentChoices, type AgentChoicesProps } from "../components/onboarding/AgentChoices";
+import { FolderChoice } from "../components/onboarding/FolderChoice";
 import { resetAgentInstalls, startInstall } from "../lib/agent-installs";
 import type { SignInState } from "../lib/agent-sign-in";
 import { fakeCatalog, makeCatalogAgent } from "./fixtures/catalog";
@@ -109,5 +110,73 @@ describe("agents you'll use", () => {
     fireEvent.click(toggle);
     expect(screen.getByRole("checkbox", { name: "Use Agent c" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show fewer agents" })).toHaveAttribute("aria-expanded", "true");
+  });
+});
+
+describe("project folder", () => {
+  const recent = [{ name: "zorvo", path: "/Users/me/zorvo" }];
+  const suggested = [
+    { name: "zorvo", path: "/Users/me/zorvo" },
+    { name: "site", path: "/Users/me/developer/site" },
+  ];
+
+  it("a chosen folder shows its path and Change", () => {
+    const onPickFolder = vi.fn(() => Promise.resolve(null));
+    render(<FolderChoice folder={recent[0]} recentFolders={recent} suggestedFolders={suggested} onChoose={vi.fn()} onPickFolder={onPickFolder} />);
+    expect(screen.getByRole("heading", { level: 2, name: "Project folder" })).toBeInTheDocument();
+    expect(screen.getByText("/Users/me/zorvo")).toHaveClass("font-mono", "text-caption");
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    expect(onPickFolder).toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: /^Use / })).toBeNull();
+  });
+
+  it("with none chosen, recent and suggested folders are offered once each, then Open folder", () => {
+    render(<FolderChoice folder={null} recentFolders={recent} suggestedFolders={suggested} onChoose={vi.fn()} onPickFolder={vi.fn()} />);
+    expect(screen.getAllByRole("button", { name: /^Use / }).map((b) => b.getAttribute("aria-label"))).toEqual(["Use zorvo", "Use site"]);
+    expect(screen.getByText("Another folder")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument();
+  });
+
+  it("offers at most four folders", () => {
+    const many = ["a", "b", "c", "d", "e"].map((name) => ({ name, path: `/p/${name}` }));
+    render(<FolderChoice folder={null} recentFolders={[]} suggestedFolders={many} onChoose={vi.fn()} onPickFolder={vi.fn()} />);
+    expect(screen.getAllByRole("button", { name: /^Use / })).toHaveLength(4);
+  });
+
+  it("Use chooses a folder", () => {
+    const onChoose = vi.fn();
+    render(<FolderChoice folder={null} recentFolders={recent} suggestedFolders={suggested} onChoose={onChoose} onPickFolder={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Use site" }));
+    expect(onChoose).toHaveBeenCalledWith({ name: "site", path: "/Users/me/developer/site" });
+  });
+
+  it("Open folder chooses what the dialog returns", async () => {
+    const onChoose = vi.fn();
+    render(<FolderChoice folder={null} recentFolders={[]} suggestedFolders={[]} onChoose={onChoose} onPickFolder={() => Promise.resolve({ name: "x", path: "/x" })} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
+    });
+    expect(onChoose).toHaveBeenCalledWith({ name: "x", path: "/x" });
+  });
+
+  it("a failed dialog says so and keeps the choice", async () => {
+    const onChoose = vi.fn();
+    render(<FolderChoice folder={recent[0]} recentFolders={recent} suggestedFolders={[]} onChoose={onChoose} onPickFolder={() => Promise.reject(new Error("no"))} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("Couldn't open the folder dialog. Try again.");
+    expect(onChoose).not.toHaveBeenCalled();
+    expect(screen.getByText("/Users/me/zorvo")).toBeInTheDocument();
+  });
+
+  it("a cancelled dialog changes nothing", async () => {
+    const onChoose = vi.fn();
+    render(<FolderChoice folder={null} recentFolders={[]} suggestedFolders={[]} onChoose={onChoose} onPickFolder={() => Promise.resolve(null)} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
+    });
+    expect(onChoose).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

@@ -23,6 +23,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **Read a file without leaving Zorvo.** The Files tab marks changed files (M, A) and the folders that hold them. Click a file to read it in the inspector, with its changed lines marked; select lines to add them to your message.
 - **Set up Qwen Code from Zorvo.** When Qwen Code needs a provider, the new session shows **Set up Qwen Code**, which opens Qwen Code's own setup in a terminal, so you pick the provider there. Closing a sign-in or setup terminal now checks again whether you are signed in.
 - **Clearer cards when something stands in the way.** A compare run shows one card per agent and asks before Pick keeps one. Installing, signing in and a removed agent each get a card by the message box with the agent's logo, and signing in lists every way the agent offers. The terminal sign-in is wider, the empty window asks for a folder, and a Zorvo update shows as a card.
+- **The Changes tab and the full diff review look as designed:** each changed file is a card with its counts, the review has a file list with the picked file marked, and comments read where they stand ("Line 42 · Current").
+- **Comment on lines in the Changes tab too,** and add them to your message from there.
 - **Notices appear as a card in the bottom right corner** instead of a strip across the top of the chat, so they no longer push the conversation down. A long message wraps inside the card, and **Dismiss notice** closes it as before.
 
 ## [0.8.1] - 2026-11-04

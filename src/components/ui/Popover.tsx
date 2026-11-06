@@ -112,9 +112,10 @@ export function Popover({
 }
 
 /** A small muted heading over a group of options; `aside` sits on its right, as the agent menu's hint does. */
-export function PopoverHeader({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+export function PopoverHeader({ children, aside, id }: { children: ReactNode; aside?: ReactNode; id?: string }) {
   return (
-    <div className="flex items-baseline gap-2 px-2 pt-1.5 pb-1 text-caption font-medium text-fg-muted">
+    // `id` lets a group around it be named by the heading (`aria-labelledby`) rather than repeat its text.
+    <div id={id} className="flex items-baseline gap-2 px-2 pt-1.5 pb-1 text-caption font-medium text-fg-muted">
       <span className="min-w-0 flex-1">{children}</span>
       {aside && <span className="font-normal text-fg-subtle">{aside}</span>}
     </div>

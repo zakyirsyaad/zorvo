@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useLatest } from "../../hooks/useLatest";
 import { ChevronDown, ShieldAlert } from "lucide-react";
 import { Popover, PopoverHeader, PopoverList, PopoverOption, PopoverSearch } from "../ui/Popover";
@@ -78,18 +78,24 @@ interface TagGroup {
 }
 
 /**
- * The options grouped by their tag, each group where its first option was, so a long model list reads by name
- * under one heading per provider instead of repeating the provider on every row. Untagged options keep their place.
+ * The options grouped by their tag, so a long model list reads by name under one heading per provider instead of
+ * repeating the provider on every row. The untagged options come first, in their order: after a group they would
+ * read as part of it. The tagged groups follow in the order their first option had.
  */
 function groupByTag(options: readonly DropdownOption[]): TagGroup[] {
+  const untagged: DropdownOption[] = [];
   const groups: TagGroup[] = [];
   for (const option of options) {
     const { tag } = splitTag(option.label);
+    if (tag === undefined) {
+      untagged.push(option);
+      continue;
+    }
     const group = groups.find((candidate) => candidate.tag === tag);
     if (group) group.options.push(option);
     else groups.push({ tag, options: [option] });
   }
-  return groups;
+  return untagged.length > 0 ? [{ options: untagged }, ...groups] : groups;
 }
 
 function matches(option: DropdownOption, query: string): boolean {
@@ -105,8 +111,10 @@ function matches(option: DropdownOption, query: string): boolean {
 function detailOf(option: DropdownOption): string | undefined {
   if (!option.risky) return option.description;
   if (!option.description) return `${RISKY_LINE}.`;
-  // An agent's description may stop without a full stop ("Automatically approve all tools"): end it first.
-  const description = /[.!?]$/.test(option.description) ? option.description : `${option.description}.`;
+  // An agent's description may stop without a full stop ("Automatically approve all tools"): end it first. One
+  // that ends in a stop before a closing quote or bracket ('Says "go."') already has one.
+  const trimmed = option.description.trim();
+  const description = /[.!?]["')\]]*$/.test(trimmed) ? trimmed : `${trimmed}.`;
   return `${description} ${RISKY_LINE}.`;
 }
 
@@ -146,14 +154,19 @@ function OptionRow({ option, current, query, onSelect, renderIcon }: Omit<Option
 }
 
 function OptionRows({ options, ...row }: OptionRowsProps) {
+  const headingId = useId();
   return (
     <div className="max-h-72 overflow-y-auto">
-      {groupByTag(options).map((group) =>
+      {groupByTag(options).map((group, index) =>
         group.tag === undefined ? (
           group.options.map((option) => <OptionRow key={option.value ?? "__default"} option={option} {...row} />)
         ) : (
-          <div key={`tag:${group.tag}`} role="group" aria-label={group.tag}>
-            <PopoverHeader>{group.tag}</PopoverHeader>
+          // Named by its heading, so the provider is read once. The heading marks a search that matched the tag,
+          // since the rows then show nothing that matched.
+          <div key={`tag:${group.tag}`} role="group" aria-labelledby={`${headingId}-${index}`}>
+            <PopoverHeader id={`${headingId}-${index}`}>
+              <Highlighted text={group.tag} query={row.query} />
+            </PopoverHeader>
             {group.options.map((option) => (
               <OptionRow key={option.value ?? "__default"} option={option} {...row} />
             ))}

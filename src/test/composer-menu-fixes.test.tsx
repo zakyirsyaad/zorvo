@@ -72,11 +72,38 @@ describe("model names with a provider tag", () => {
     expect(screen.getByRole("option", { name: "local-model" }).closest("[role=group]")).toBeNull();
   });
 
-  it("still finds a model by its tag", () => {
+  it("still finds a model by its tag, and marks the match in the group's heading", () => {
     const many: DropdownOption[] = Array.from({ length: 12 }, (_, n) => ({ value: `m${n}`, label: `${TAG} qwen-${n}` }));
     render(<OptionDropdown label="Model" options={[...many, { value: "k", label: "[OpenRouter] kimi-k2" }]} selected="m0" isOpen onToggle={() => {}} onSelect={() => {}} />);
     fireEvent.change(screen.getByRole("searchbox", { name: "Search model" }), { target: { value: "openrouter" } });
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["kimi-k2"]);
+    // Nothing in the row matched, so the heading shows why the row is here.
+    const group = screen.getByRole("group", { name: "OpenRouter" });
+    expect(group.querySelector("mark")).toHaveTextContent("OpenRouter");
+  });
+
+  it("puts the untagged models first, so none reads as part of the group above it", () => {
+    render(
+      <OptionDropdown
+        label="Model"
+        options={[{ value: "x", label: "[A] x" }, { value: "y", label: "y" }]}
+        selected="x"
+        isOpen
+        onToggle={() => {}}
+        onSelect={() => {}}
+      />,
+    );
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["y", "x"]);
+    expect(screen.getByRole("option", { name: "y" }).closest("[role=group]")).toBeNull();
+  });
+
+  it("names each group by its heading, so the provider is read once", () => {
+    open();
+    const group = screen.getByRole("group", { name: "OpenRouter" });
+    expect(group).not.toHaveAttribute("aria-label");
+    const heading = document.getElementById(group.getAttribute("aria-labelledby") ?? "");
+    expect(heading).toHaveTextContent("OpenRouter");
+    expect(group).toContainElement(heading);
   });
 });
 
@@ -93,6 +120,18 @@ describe("a risky mode's line", () => {
       />,
     );
     expect(screen.getByText("Automatically approve all tools. Lets the agent act without asking.")).toBeInTheDocument();
+  });
+
+  it("adds no second full stop after trailing spaces, a closing quote or a bracket", () => {
+    const options: DropdownOption[] = [
+      { value: "a", label: "A", description: "Runs anything. ", risky: true },
+      { value: "b", label: "B", description: 'Says "go."', risky: true },
+      { value: "c", label: "C", description: "Skips checks (all of them.)", risky: true },
+    ];
+    render(<OptionDropdown label="Mode" options={options} selected="a" isOpen onToggle={() => {}} onSelect={() => {}} />);
+    expect(screen.getByText("Runs anything. Lets the agent act without asking.")).toBeInTheDocument();
+    expect(screen.getByText('Says "go." Lets the agent act without asking.')).toBeInTheDocument();
+    expect(screen.getByText("Skips checks (all of them.) Lets the agent act without asking.")).toBeInTheDocument();
   });
 });
 

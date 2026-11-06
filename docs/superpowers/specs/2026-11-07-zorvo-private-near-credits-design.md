@@ -214,7 +214,7 @@ Settings (`wrangler.toml`): credits per USD paid (100), burn per USD of cost (12
 
 | File | Responsibility |
 | --- | --- |
-| `device.rs` | Create the device secret; read and write it and the NEAR AI key in the macOS Keychain (new dependency: `keyring` with its Apple-native backend, which uses the Security framework). |
+| `device.rs` | Create the device secret; read and write it and the NEAR AI key in the macOS Keychain (through `security-framework`'s `passwords` module, a crate already in the dependency tree; `keyring` 4 moved its macOS backend into separate crates). |
 | `client.rs` | `ureq` client for the Credits Worker; the base URL is a compile-time constant and the only host it calls. |
 | `models.rs` | Cached `GET /models`; validates a model id before launch. |
 | `service.rs`, `local_state.rs`, `launch.rs` | The logic behind the commands; `<app data>/private/state.json` (recovery flags, pending top-up, last balance, last model list), kept apart from `state.json`; the private launch. |

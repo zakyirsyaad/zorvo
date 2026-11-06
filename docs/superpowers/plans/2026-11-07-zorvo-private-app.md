@@ -6,7 +6,7 @@
 
 **Architecture:** A new Rust module `src-tauri/src/private_mode/` owns everything private: the Keychain (behind a `SecretStore` trait), the HTTP client for the Worker (behind a `CreditsApi` trait), a small local state file and the Tauri commands. `acp_start_session` and `acp_reopen_session` take an optional private model id; the launch adds Qwen Code's OpenAI flags and the key, and the ACP manager turns NEAR AI's `402`/`401` into a `PRIVATE_CREDITS:` error the UI reads like `ACP_AUTH_REQUIRED:`. The frontend reads everything through `hooks/usePrivateCredits.ts` and pure helpers in `lib/private-credits.ts`; the webview still makes no network request and never sends a URL, an argument or a key.
 
-**Tech Stack:** Rust (Tauri 2, `ureq` 3, `sha2`, new `keyring` with the Apple-native backend, `serde`), React 19 + Tailwind 4, Vitest + Testing Library, the fake ACP agent fixture.
+**Tech Stack:** Rust (Tauri 2, `ureq` 3, `sha2`, `security-framework` 3.7 for the Keychain and `getrandom` 0.3, both already in the dependency tree, `serde`), React 19 + Tailwind 4, Vitest + Testing Library, the fake ACP agent fixture.
 
 **Spec:** `docs/superpowers/specs/2026-11-07-zorvo-private-near-credits-design.md`, sections 5, 6, 8.1, 8.2, 9, 10, 11, 12. The server's API contract is section 7.4 and `docs/superpowers/plans/2026-11-07-zorvo-credits-server.md` (Tasks 2–8). The look of every screen is the canvas "Zorvo redesign layouts" (https://claude.ai/artifact/3phT51j88Vx28KT2EpXjjz), section 7: artboards `PrivateSettings`, `PrivateDraft`, `PrivateSession`, `PrivateStates`, `PrivateTopupSteps`, `PrivateFirstRun`, `PrivateErrors`. Read the spec and open the artboard named in a task before starting it.
 
@@ -17,10 +17,11 @@
 - The webview's CSP is unchanged: it makes no network request. The Rust backend talks to exactly one new host, the Credits Worker, whose base URL is a compile-time constant: `option_env!("ZORVO_CREDITS_URL")`, default `http://127.0.0.1:8787` (`wrangler dev`); M5 sets the deployed URL. It must be `https://` or `http://127.0.0.1`.
 - The UI sends ids, package amounts and codes the user typed, never a URL, a command-line argument, an env var or a key. Checkout URLs come from the Worker and are opened by Rust only when they are `https://pay.pingpay.io/…`.
 - The NEAR AI key lives only in the Keychain and in the env of a private Qwen Code process. It is never logged, never returned to the webview, never written to a file and never put in argv.
-- Keychain: service `xyz.zorvo.desktop.private`, accounts `device-secret` and `nearai-key`.
+- Keychain through `security_framework::passwords` (`set_generic_password`, `get_generic_password`, `delete_generic_password`; `errSecItemNotFound` = -25300 means absent), not the `keyring` crate: `keyring` 4 moved its macOS backend into separate store crates, while `security-framework` 3.7.0 is already compiled for the updater. Service `xyz.zorvo.desktop.private`; debug builds append `.` and the first 8 hex characters of the SHA-256 of the app data dir, so scratch `HOME`s in tests and Task 11 never share one device. Accounts `device-secret`, `device-secret-next` (a recovery in flight) and `nearai-key`.
 - Recovery code = device secret: `ZRV-` then four groups of four Crockford base32 characters (`0123456789ABCDEFGHJKMNPQRSTVWXYZ`), 80 random bits from `getrandom`. Input is normalized: trim, uppercase, drop spaces and dashes after the `ZRV` prefix, `O`→`0`, `I`/`L`→`1`. `secretHash` = lowercase hex SHA-256 of the canonical form `ZRV-XXXX-XXXX-XXXX-XXXX`.
 - Private launch, only for agent id `qwen-code` (after `canonical_agent_id`): the registry args, then `--auth-type openai --openai-base-url https://cloud-api.near.ai/v1 --model <id>`; env with `OPENAI_API_KEY` = the Keychain key, and `OPENAI_BASE_URL`, `OPENAI_MODEL` removed. Any other agent with a private model id is refused.
 - Model ids from the UI must match `^[A-Za-z0-9._/-]{1,100}$` and be in the last model list the Worker returned (cached 10 minutes in memory, last good list also kept in the state file).
+- A private session never runs without its private launch. Every path that starts or continues a session with `privateMode` (start, resume, retry, rewind, fork, import) passes its model id; if the private launch cannot be built, the start fails with a plain reason. Nothing falls back to the user's own Qwen Code sign-in.
 - Error markers: `PRIVATE_CREDITS:{"reason":"empty"}` (NEAR AI `402` / `api_key_limit_exceeded`, or no key at launch) and `PRIVATE_CREDITS:{"reason":"key"}` (`401`), only for private sessions.
 - Credit math (spec 9): 1 credit = $0.01 bought; 120 credits per $1 of NEAR AI cost. "≈ turns" estimates a turn as 20,000 input + 1,000 output tokens until M5 replaces these two constants with the measured averages.
 - Local state file `<app data>/private/state.json`, written atomically, owned by `private_mode` (not `state.json`'s `Settings`, whose typed struct would drop unknown fields).
@@ -30,10 +31,10 @@
 
 ## Review Focus
 
-1. **The key arrives but the Keychain write fails.** `GET /v1/key` hands the key over once and the server deletes it. Expected: Zorvo writes it, reads it back, and only then treats it as saved; otherwise the status says "Couldn't save your key in the Keychain. Restore with your recovery code to get a new one." and nothing claims the key is ready. Test in Task 3.
-2. **A private session reopened after a restart, or while the Worker is down.** Expected: it relaunches private with the saved model id (from the state file's last model list when the Worker cannot be reached), and if the model cannot be validated it refuses to start; it never falls back to the user's own Qwen Code sign-in, which would send the code outside the TEE. Tests in Task 4 and Task 9.
+1. **A secret or key is accepted by the server but not saved on this Mac.** `GET /v1/key` hands the key over once; `POST /v1/recover` kills the old code at once. Expected: the key is written, read back, and only then reported ready, else the status says "Couldn't save your key in the Keychain. Restore with your recovery code to get a new one."; a recovery stores the new code under `device-secret-next` before it calls the server, so a failed write afterwards can still be finished on the next start. Tests in Task 3.
+2. **A private conversation leaves the TEE by a side door.** A fork of a private session (native or handoff), a reopen after a restart, a rewind, or a start while the Worker is down. Expected: each runs private with the session's model, or refuses with a reason; none starts Qwen Code on the user's own sign-in with the conversation. Tests in Task 4 and Task 9.
 3. **The user's shell already exports `OPENAI_API_KEY` / `OPENAI_BASE_URL`** (for Codex or a local model). Expected: a private launch replaces them with the Zorvo key and NEAR AI; a non-private launch of any agent is byte-for-byte what it was and never carries the Zorvo key. Test in Task 4.
-4. **The credits moved to another Mac.** After a recovery elsewhere this Mac's secret gets `401`. Expected: Settings reads "Your credits moved to another Mac" with **Forget on this Mac**, private drafts cannot start, and nothing retries in a loop. Tests in Task 3 and Task 8.
+4. **Restoring on a Mac that has credits of its own, and the Mac the credits left.** Expected: Restore refuses while this Mac's own balance is above 0 or a top-up is pending (it would orphan them), and says why; the old Mac gets `401` and reads "Your credits moved to another Mac" with **Forget on this Mac**, with no retry loop. Tests in Task 3 and Task 8.
 5. **Zorvo is quit during checkout.** Expected: the pending top-up is in the state file; on the next start Settings resumes polling it, shows the result (credited, failed, expired or paid-waiting) and, after a first credit, the recovery dialog. Test in Task 7.
 
 ---
@@ -68,27 +69,28 @@ M3 is Tasks 1–5 (Rust); M4 is Tasks 6–10 (frontend) and Task 11 (end to end)
 
 **Files:**
 - Create: `src-tauri/src/private_mode/mod.rs`, `src-tauri/src/private_mode/device.rs`
-- Modify: `src-tauri/Cargo.toml` (`keyring` pinned exactly, features `apple-native` only, default features off; `getrandom` if not already a direct dependency), `src-tauri/src/lib.rs` (`pub mod private_mode;`)
+- Modify: `src-tauri/Cargo.toml` (under `[target.'cfg(target_os = "macos")'.dependencies]`: `security-framework = "=3.7.0"`; under `[dependencies]`: `getrandom = "=0.3.4"`, both the versions already in `Cargo.lock`), `src-tauri/src/lib.rs` (`pub mod private_mode;`)
 - Test: unit tests in `device.rs`
 
 **Interfaces:**
 - Produces:
-  - `pub const KEYCHAIN_SERVICE: &str = "xyz.zorvo.desktop.private"`, `DEVICE_SECRET: &str = "device-secret"`, `NEARAI_KEY: &str = "nearai-key"`
+  - `pub fn keychain_service(app_data_dir: &Path) -> String` (the suffix rule of Global Constraints), `DEVICE_SECRET: &str = "device-secret"`, `DEVICE_SECRET_NEXT: &str = "device-secret-next"`, `NEARAI_KEY: &str = "nearai-key"`
   - `pub fn new_recovery_code() -> String`
   - `pub fn normalize_recovery_code(input: &str) -> Option<String>` — canonical form or `None`
   - `pub fn secret_hash(code: &str) -> String` — hex SHA-256 of the canonical code
   - `pub trait SecretStore: Send + Sync { fn get(&self, account: &str) -> Result<Option<String>, PrivateError>; fn set(&self, account: &str, value: &str) -> Result<(), PrivateError>; fn delete(&self, account: &str) -> Result<(), PrivateError>; }`
-  - `pub struct KeychainStore;` (keyring `Entry::new(KEYCHAIN_SERVICE, account)`; `NoEntry` → `Ok(None)` / delete is a no-op)
+  - `pub struct KeychainStore { service: String }` over `security_framework::passwords`; not found → `Ok(None)`, delete of a missing item is a no-op, values are UTF-8
   - `pub struct MemoryStore` with `MemoryStore::failing_writes() -> Self` for tests
-  - In `mod.rs`: `#[derive(Debug, Clone, PartialEq, Eq, Serialize)] #[serde(rename_all = "snake_case")] pub enum PrivateError { Unreachable, Unauthorized, BadRequest, NotFound, Stock, DeviceCap, RateLimited, Upstream, Keychain, NoKey, BadCode, NotQwen, UnknownModel, BadCheckoutUrl }`, `impl From<PrivateError> for String` giving the snake_case code (commands return `Err(String)` with that code). `pub const PRIVATE_CREDITS_PREFIX: &str = "PRIVATE_CREDITS:"`.
+  - In `mod.rs`: `#[derive(Debug, Clone, PartialEq, Eq, Serialize)] #[serde(rename_all = "snake_case")] pub enum PrivateError { Unreachable, Unauthorized, BadRequest, NotFound, Stock, DeviceCap, RateLimited, Upstream, Keychain, NoDevice, NoKey, BadCode, NotQwen, UnknownModel, BadCheckoutUrl, HasOwnCredits }`, `impl From<PrivateError> for String` giving the snake_case code (commands return `Err(String)` with that code). `pub const PRIVATE_CREDITS_PREFIX: &str = "PRIVATE_CREDITS:"`.
 
 - [ ] **Step 1: Write the failing tests**
   - `new_recovery_code` matches `^ZRV-[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){3}$`; 1,000 codes are all distinct.
   - `normalize_recovery_code(" zrv 4k9p-2m7q 8hxd-7f2q ") == Some("ZRV-4K9P-2M7Q-8HXD-7F2Q")`; `"ZRV-4K9P-2M7Q-8HXD-7F2O"` → ends `-7F20`; `"ZRV-IL00-…"` maps `I`,`L` to `1`; wrong length, missing prefix or a `U` → `None`.
   - `secret_hash` of two spellings of one code is equal and 64 hex chars.
   - `MemoryStore`: set then get returns the value; delete then get is `None`; `failing_writes()` returns `Err(PrivateError::Keychain)` on `set`.
+  - `keychain_service` has no suffix in release and an 8-hex suffix that differs for two dirs in debug (`cfg!(debug_assertions)`).
 - [ ] **Step 2: Run** `cargo test --lib private_mode::device` — FAIL (module missing).
-- [ ] **Step 3: Implement** the functions and both stores. `KeychainStore` is not unit-tested (it touches the real Keychain); keep it a thin mapping over `keyring::Entry`.
+- [ ] **Step 3: Implement** the functions and both stores. `KeychainStore` is not unit-tested (it touches the real Keychain); keep it a thin mapping over `security_framework::passwords`.
 - [ ] **Step 4: Run** `cargo test --lib private_mode::device` — PASS; `cargo clippy --all-targets -- -D warnings` clean.
 - [ ] **Step 5: Commit** `feat(private): add device recovery code and Keychain store`
 
@@ -129,22 +131,23 @@ M3 is Tasks 1–5 (Rust); M4 is Tasks 6–10 (frontend) and Task 11 (end to end)
 - Test: unit tests in `service.rs` with `MemoryStore` and a `FakeCredits: CreditsApi` (in the test module; records calls, returns scripted answers)
 
 **Interfaces:**
-- Consumes: Tasks 1–2; `windows::open_url` (the function behind `open_external_url`) to open a checkout.
+- Consumes: Tasks 1–2; `windows::open_url(url: &str) -> Result<(), String>` (`pub(crate)`, runs `open`) to open a checkout.
 - Produces:
-  - `pub struct PrivateMode { store: Box<dyn SecretStore>, api: Box<dyn CreditsApi>, dir: PathBuf, models: Mutex<Option<(Instant, Vec<ModelPrice>)>>, checkouts: Mutex<HashMap<String, String>>, registered: AtomicBool }` with `PrivateMode::new(store, api, dir)`.
+  - `pub struct PrivateMode { store: Box<dyn SecretStore>, api: Box<dyn CreditsApi>, dir: PathBuf, open: Box<dyn Fn(&str) -> Result<(), String> + Send + Sync>, models: Mutex<Option<(Instant, Vec<ModelPrice>)>>, checkouts: Mutex<HashMap<String, String>>, registered: AtomicBool, handover: Mutex<()> }` with `PrivateMode::new(store, api, dir, open)`.
+  - `fn ensure_device(&self) -> Result<String, PrivateError>` — the secret; when there is none, a new code is `set` first and then registered. Called by `stock`, `models`, `create_topup` and `redeem_promo`, so opening Settings → Private mode or turning on the draft's Private chip creates the device; app start and `status` never do.
   - `#[serde(rename_all = "camelCase")] pub struct PrivateStatus { device: DeviceState, key_ready: bool, key_error: Option<PrivateError>, balance: Option<Balance>, balance_error: Option<PrivateError>, last_balance: Option<LastBalance>, recovery_saved: bool, recovery_prompted: bool, pending_topup: Option<PendingTopup> }`, `#[serde(rename_all = "snake_case")] pub enum DeviceState { None, Ready, Moved }`.
   - Methods (each a command of the same name prefixed `private_`):
-    - `status(&self, fresh: bool) -> PrivateStatus` — no secret → `DeviceState::None` and no network call; else ensure registered, `balance(fresh)`; `401` → `Moved`; other errors → `balance_error` with `last_balance`; success updates `last_balance`. When `key_ready` is false locally (no `nearai-key`) and the device exists, `take_key`; a key is `set`, then `get` and compared; any mismatch or error → `key_error: Some(Keychain)`.
+    - `status(&self, fresh: bool) -> PrivateStatus` — first finishes a recovery left in `device-secret-next` (a `balance` call with it that succeeds promotes it to `device-secret`; a `401` deletes it); no secret → `DeviceState::None` and no network call; else ensure registered, `balance(fresh)`; `401` → `Moved`; other errors → `balance_error` with `last_balance`; success updates `last_balance`. When `key_ready` is false locally (no `nearai-key`) and the device exists, `take_key` under the `handover` lock; a key is `set`, then `get` and compared; any mismatch or error → `key_error: Some(Keychain)`.
     - `stock(&self) -> Result<Stock, PrivateError>`
     - `models(&self) -> Result<Vec<ModelPrice>, PrivateError>` — memory cache for 10 minutes, then the Worker; success also saved as `CachedModels`; Worker error → the state file's list when present, else the error.
-    - `create_topup(&self, package_usd: u32) -> Result<PendingTopup, PrivateError>` — creates the device first when there is none (new code, `set` it, `register`); calls the Worker; checks `session_url` is `https` with host `pay.pingpay.io` (else `BadCheckoutUrl`, nothing opened); keeps the URL in `checkouts`, saves `pending_topup` (`credits = package_usd × 100`), opens the URL.
+    - `create_topup(&self, package_usd: u32) -> Result<PendingTopup, PrivateError>` — creates the device first when there is none (new code, `set` it, `register`); calls the Worker; checks `session_url` is `https` with host `pay.pingpay.io` (else `BadCheckoutUrl`, nothing opened); keeps the URL in `checkouts`, saves `pending_topup` (`credits = package_usd × 100`), opens it with `open`.
     - `open_checkout(&self, topup_id: &str) -> Result<(), PrivateError>` — only a URL in `checkouts` (`NotFound` otherwise).
     - `topup_status(&self, topup_id: &str) -> Result<TopupState, PrivateError>` — `credited`, `failed` or `expired` clears `pending_topup` and the checkout URL; `credited` also runs the key handover of `status`.
     - `cancel_topup(&self, topup_id: &str) -> Result<(), PrivateError>` — Worker cancel, then clears it locally.
     - `redeem_promo(&self, code: &str) -> Result<PromoResult, PrivateError>` — trims, rejects empty or over 64 chars as `BadCode`, creates the device if needed, maps `BadRequest` → `BadCode`; saves the result as `pending_topup` so the same polling finishes it.
-    - `recovery_code(&self) -> Result<String, PrivateError>` — the secret; `NoKey` when there is no device.
+    - `recovery_code(&self) -> Result<String, PrivateError>` — the secret; `NoDevice` when there is none.
     - `mark_recovery(&self, saved: bool) -> Result<(), PrivateError>` — sets `recovery_prompted = true`, and `recovery_saved = saved`.
-    - `recover(&self, input: &str) -> Result<String, PrivateError>` — `normalize_recovery_code` or `BadCode`; new code; `api.recover(old, secret_hash(new))` (`BadRequest` → `BadCode`); then `set` the new secret, `delete` `nearai-key`, set `recovery_saved = false`, `recovery_prompted = false`; returns the new code so the UI can show it at once. The rotated key arrives through the next `status`.
+    - `recover(&self, input: &str) -> Result<String, PrivateError>` — `normalize_recovery_code` or `BadCode`; `HasOwnCredits` when this Mac has a device whose last balance is above 0 or a pending top-up; new code `set` under `device-secret-next`; `api.recover(old, secret_hash(new))` (`BadRequest` → `BadCode`, and `device-secret-next` deleted); on success `set` `device-secret` to it, delete `device-secret-next` and `nearai-key`, set `recovery_saved = false`, `recovery_prompted = false`; returns the new code so the UI can show it at once. The rotated key arrives through the next `status`.
     - `forget_device(&self) -> Result<(), PrivateError>` — deletes both Keychain items and resets the state file.
     - `launch_key(&self) -> Result<String, PrivateError>` — the Keychain key or `NoKey` (used by Task 4, not a command).
 
@@ -154,10 +157,12 @@ M3 is Tasks 1–5 (Rust); M4 is Tasks 6–10 (frontend) and Task 11 (end to end)
   - `status` with `take_key` returning `"sk-test"` stores it and reports `key_ready: true`; with `MemoryStore::failing_writes()` it reports `key_error: Some(Keychain)` and `key_ready: false` (Review Focus 1).
   - `balance` → `Unauthorized` gives `DeviceState::Moved` (Review Focus 4); → `Unreachable` gives `balance_error: Some(Unreachable)` and the previous `last_balance`.
   - `models` returns the state file's list when the Worker is unreachable and nothing is cached in memory (Review Focus 2); with neither, `Err(Unreachable)`.
-  - `recover("zrv 4k9p 2m7q 8hxd 7f2q")` sends the canonical old code and the new code's hash, replaces `device-secret`, deletes `nearai-key`, and returns the new code; a Worker `BadRequest` → `BadCode` and the store unchanged.
+  - `recover("zrv 4k9p 2m7q 8hxd 7f2q")` sends the canonical old code and the new code's hash, replaces `device-secret`, deletes `nearai-key`, and returns the new code; a Worker `BadRequest` → `BadCode` and the store unchanged; with a last balance of 50 → `HasOwnCredits` and no call (Review Focus 4).
+  - A store holding `device-secret-next` whose `balance` succeeds: `status` promotes it to `device-secret` (Review Focus 1); one whose `balance` is `401` is deleted.
+  - `stock()` with an empty store creates and registers a device; `status(false)` with an empty store still makes no call.
   - `topup_status` returning `credited` clears `pending_topup` and runs the key handover.
 - [ ] **Step 2: Run** `cargo test --lib private_mode::service` — FAIL.
-- [ ] **Step 3: Implement** `PrivateMode` and `commands.rs` (`#[tauri::command(async)]`, each `State<'_, PrivateMode>` and returning `Result<T, String>` via `PrivateError`'s code). In `lib.rs` build it with `KeychainStore`, `HttpCredits::new(CREDITS_BASE_URL)` and `<app data dir>/private`.
+- [ ] **Step 3: Implement** `PrivateMode` and `commands.rs` (`#[tauri::command(async)]`, each `State<'_, PrivateMode>` and returning `Result<T, String>` via `PrivateError`'s code). In `lib.rs` (in `setup`, where the app data dir is known) build it with `KeychainStore { service: keychain_service(&dir) }`, `HttpCredits::new(CREDITS_BASE_URL)`, `<app data dir>/private` and `windows::open_url`.
 - [ ] **Step 4: Run** `cargo test --lib private_mode` — PASS; `cargo clippy --all-targets -- -D warnings` clean.
 - [ ] **Step 5: Commit** `feat(private): add private-mode commands for balance, top-ups and recovery`
 
@@ -165,11 +170,11 @@ M3 is Tasks 1–5 (Rust); M4 is Tasks 6–10 (frontend) and Task 11 (end to end)
 
 **Files:**
 - Create: `src-tauri/src/private_mode/launch.rs`
-- Modify: `src-tauri/src/acp/manager.rs` (`AcpLaunch` gains `pub private: bool`, every constructor sets `false`), `src-tauri/src/acp/commands.rs` (`acp_start_session` and `acp_reopen_session` gain `private_model_id: Option<String>`)
+- Modify: `src-tauri/src/acp/manager.rs` (`AcpLaunch` gains `pub private: bool`; its 16 struct literals in `acp/manager.rs`, `acp/commands.rs`, `acp/terminal_auth.rs`, `tests/it/common/mod.rs`, `tests/it/acp_manager_test.rs` and `tests/it/acp_session_list_test.rs` set `private: false`), `src-tauri/src/acp/commands.rs` (`acp_start_session` and `acp_reopen_session` gain `private_model_id: Option<String>`)
 - Test: unit tests in `launch.rs`; `acp/commands.rs` tests for the refusal paths
 
 **Interfaces:**
-- Consumes: `PrivateMode::models`, `PrivateMode::launch_key` (Task 3); `launch_in_workspace`, `canonical_agent_id` (`acp/commands.rs`).
+- Consumes: `PrivateMode::models`, `PrivateMode::launch_key` (Task 3); `launch_in_workspace` (`acp/commands.rs`), `registry::resolve::canonical_agent_id`.
 - Produces:
   - `pub fn private_launch(launch: AcpLaunch, profile_id: &str, model_id: &str, models: &[ModelPrice], key: &str) -> Result<AcpLaunch, PrivateError>` — `NotQwen` unless `canonical_agent_id(profile_id) == "qwen-code"`; `UnknownModel` unless the id matches the charset and is in `models`; returns the launch with the four flags appended, `OPENAI_BASE_URL` and `OPENAI_MODEL` removed, `OPENAI_API_KEY` set to `key`, and `private: true`.
   - `fn launch_for_session(store, private: &PrivateMode, cwd, profile_id, private_model_id: Option<&str>) -> Result<AcpLaunch, String>` in `acp/commands.rs`, used by both commands: `None` → today's `launch_in_workspace` unchanged; `Some` → `launch_in_workspace`, then `models()`, `launch_key()` (`NoKey` → the string `PRIVATE_CREDITS:{"reason":"empty"}`), then `private_launch`.
@@ -223,7 +228,7 @@ M3 is Tasks 1–5 (Rust); M4 is Tasks 6–10 (frontend) and Task 11 (end to end)
   - `modelLabel(id: string): string` — the part after the last `/`, hyphens to spaces (`Qwen/Qwen3.8-27B` → `Qwen3.8 27B`)
   - `formatCredits(n: number): string` (`1240` → `1,240 credits`, `1` → `1 credit`), `perTurnLabel(model)` (`≈ 0.3 credit a turn`, `≈ 9 credits a turn`)
   - `packageReason(reason?: string): string | undefined` — `stock` → `Not enough stock right now`, `device_cap` → `Over your 5,000-credit limit`
-  - `privateErrorText(code: PrivateErrorCode | string): string` — `unreachable` → `Couldn't reach the credits server.`; `stock` → `Top-ups are paused for now.`; `device_cap` → `That would take you over your 5,000-credit limit.`; `rate_limited` → `Too many tries. Wait a few minutes and try again.`; `bad_code` → `That code didn't work. Check it and try again.`; `keychain` → `Couldn't save your key in the Keychain. Restore with your recovery code to get a new one.`; `bad_checkout_url` / `upstream` → `Couldn't open checkout. Nothing was held or charged.`; anything else → `Something went wrong. Try again.`
+  - `privateErrorText(code: PrivateErrorCode | string): string` — `unreachable` → `Couldn't reach the credits server.`; `stock` → `Top-ups are paused for now.`; `device_cap` → `That would take you over your 5,000-credit limit.`; `rate_limited` → `Too many tries. Wait a few minutes and try again.`; `bad_code` → `That code didn't work. Check it and try again.`; `keychain` → `Couldn't save your key in the Keychain. Restore with your recovery code to get a new one.`; `bad_checkout_url` / `upstream` → `Couldn't open checkout. Nothing was held or charged.`; `unknown_model` → `That model isn't offered anymore. Start a new private session to pick another.`; `has_own_credits` → `This Mac has credits of its own. Spend them, or restore this Mac's code on the other one instead.`; `no_device` / `no_key` → `This Mac has no private credits yet.`; anything else → `Something went wrong. Try again.`
   - `updatedAgo(iso: string, now: number): string` via the existing `lib/relative-time.ts`
 
 - [ ] **Step 1: Write the failing tests** for each function above with those exact strings; `parsePrivateCredits('PRIVATE_CREDITS:{"reason":"empty"}')` → `{reason:'empty'}`, a malformed JSON tail or another reason → `null`, an `Error` object whose message has the prefix is read too; `creditsPerTurn({id:'k', inputPerM: 3.3, outputPerM: 16.5})` ≈ `9.9`; persistence keeps `privateMode: {modelId:'a'}` and drops `privateMode: {modelId: 3}`.
@@ -248,7 +253,7 @@ M3 is Tasks 1–5 (Rust); M4 is Tasks 6–10 (frontend) and Task 11 (end to end)
   - `buy(usd: number)`, `openCheckout()`, `cancel()`, `dismiss()`, `redeem(code: string): Promise<{ ok: true; credits: number } | { ok: false; text: string }>`, `recover(code: string): Promise<{ ok: true; newCode: string } | { ok: false; text: string }>`, `revealCode(): Promise<string>`, `markRecovery(saved: boolean)`, `forget()`
   - `creditsOut: Readonly<Record<string, 'empty' | 'key'>>`, `markCreditsOut(sessionId, reason)`; an entry `empty` is dropped when a status shows `credits > 0`, `key` when `keyReady` turns true.
   - `needsRecoveryDialog: boolean` — true after a first credit while `!recoverySaved && !recoveryPrompted`.
-- Behaviour: polls `private_topup_status` every 3 s while `waiting` or `paid` (server statuses `created` → waiting, `paid` → paid, `paid_waiting_stock` → waiting-stock, `credited` → credited then `refresh(true)`, `failed` → failed, `expired` → expired), and stops on any other kind or unmount. On mount, a `pendingTopup` in the status resumes polling (Review Focus 5). `redeem` uses the same polling through its `topupId`. One instance is built in `App.tsx` and passed down, like `agentSignIn`.
+- Behaviour: polls `private_topup_status` every 3 s while `waiting` or `paid` (server statuses `created` → waiting, `paid` → paid, `paid_waiting_stock` → waiting-stock, `credited` → credited then `refresh(true)`, `failed` → failed, `expired` → expired), and stops on any other kind or unmount. On mount, a `pendingTopup` in the status resumes polling (Review Focus 5). A credit that lands while the window is not focused calls `notifyIfAway` (`lib/notify.ts`) with `+N credits` / `Private sessions can use them now.` `redeem` uses the same polling through its `topupId`. One instance is built in `App.tsx` and passed down, like `agentSignIn`.
 
 - [ ] **Step 1: Write the failing tests** (fake timers): buy → `opening` → `waiting`; the fake answers `paid`, then `credited` → `credited` with the package's credits and one `private_status { fresh: true }` call; `failed` and `expired` end polling (no call after 10 s more); mount with `pendingTopup` set and the fake answering `credited` → `credited` without any `buy` (Review Focus 5); `needsRecoveryDialog` true after the first credit and false after `markRecovery(true)`; `markCreditsOut('s1','empty')` is cleared by a refresh that shows 300 credits; `buy` rejected with `stock` → `{kind:'error', code:'stock'}`.
 - [ ] **Step 2: Run** `pnpm vitest run src/test/use-private-credits.test.tsx` — FAIL.
@@ -288,7 +293,7 @@ What each part shows (exact copy from the artboards):
 
 **Files:**
 - Create: `src/components/private/PrivateChip.tsx`, `src/components/private/PrivateModelMenu.tsx`, `src/lib/private-draft.ts`
-- Modify: the new-session draft that renders `AgentMultiPicker` (adds the chip and, when on, swaps the model chip for `PrivateModelMenu`), `src/hooks/useAcpSessions.ts` (`start(sessionId, cwd, profileId, privateModelId?)`, `reopen(…, privateModelId?)` → `invoke(…, { …, privateModelId })`), `src/hooks/session-engine/useAcpEngine.ts` (start and resume pass `session.privateMode?.modelId`; a fork that starts a fresh session copies the source's `privateMode` only when the target agent is the same `qwen-code`), `src/App.tsx` (a private draft creates its session with `privateMode: { modelId }`), the sidebar row component (a `Shield` icon with `aria-label="Private session"` for sessions with `privateMode`)
+- Modify: the new-session draft that renders `AgentMultiPicker` (adds the chip and, when on, swaps the model chip for `PrivateModelMenu`), `src/hooks/useAcpSessions.ts` (`start(sessionId, cwd, profileId, privateModelId?)`, `reopen(…, privateModelId?)` → `invoke(…, { …, privateModelId })`), `src/hooks/session-engine/useAcpEngine.ts` (every start and resume, including retry and rewind, passes `session.privateMode?.modelId`), `src/App.tsx` (a private draft creates its session with `privateMode: { modelId }`; while the draft's Private chip is on, `draftNeedsSignIn` is false and no sign-in panel opens, since the private launch never uses Qwen Code's own sign-in; the install check stays), `src/hooks/useSessionFork.ts` and `SessionSpec` (a fork copies the source's `privateMode`, so both a native fork and a handoff fork stay private), the sidebar row component (a `Shield` icon with `aria-label="Private session"` for sessions with `privateMode`)
 - Test: `src/test/private-draft.test.ts`, `src/test/private-chip.test.tsx`, the existing `useAcpSessions` / engine tests for the extra argument
 
 Artboards: `PrivateDraft`, `PrivateFirstRun` (draft part), `PrivateMore` (other agents, sidebar).
@@ -300,7 +305,7 @@ Artboards: `PrivateDraft`, `PrivateFirstRun` (draft part), `PrivateMore` (other 
   - `PrivateChip` label `Private · TEE`, a toggle; `PrivateModelMenu` lists `models` as `modelLabel` and `$in / $out · perTurnLabel`, header `Private models · run in a TEE`, footer `Claude, GPT and Gemini aren't offered here: they don't run in a TEE.`; default pick = the first model.
   - The draft note goes into `composerNote` (Task 10) so Send's `aria-describedby` reads it; the composer's credits line `N credits left`.
 
-- [ ] **Step 1: Write the failing tests:** every row of `privateDraftState`; the chip's disabled reason is announced; starting a private draft calls `acp_start_session` with `privateModelId: 'Qwen/Qwen3.8-27B'` and the new session carries `privateMode`; resuming a saved private session calls `acp_reopen_session` with its `privateModelId` (Review Focus 2); a non-private start sends no `privateModelId` key.
+- [ ] **Step 1: Write the failing tests:** every row of `privateDraftState`; the chip's disabled reason is announced; starting a private draft calls `acp_start_session` with `privateModelId: 'Qwen/Qwen3.8-27B'` and the new session carries `privateMode`; resuming a saved private session calls `acp_reopen_session` with its `privateModelId`; a handoff fork of a private session starts with the same `privateModelId` and its record carries `privateMode` (Review Focus 2); with Private on and Qwen Code reported signed out, the draft shows no sign-in panel and Start follows only the credits; a non-private start sends no `privateModelId` key.
 - [ ] **Step 2: Run** `pnpm vitest run src/test/private-draft.test.ts src/test/private-chip.test.tsx` and the touched engine test — FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** the same and `pnpm lint` — PASS.
@@ -310,7 +315,7 @@ Artboards: `PrivateDraft`, `PrivateFirstRun` (draft part), `PrivateMore` (other 
 
 **Files:**
 - Create: `src/components/private/PrivateInspector.tsx`
-- Modify: `src/lib/composer-state.ts` (`composerNote` input gains `privateNote?: string`, ranked after `agentToSignIn`), `src/hooks/session-engine/useAcpEngine.ts` (`onTurnEnd` and the open-error path: `parsePrivateCredits(error)` → `onPrivateCreditsOut(sessionId, reason)` and the message is given back like a sign-in refusal, before `turnEndNotice`), `src/App.tsx` (wires `onPrivateCreditsOut` to `markCreditsOut`; blocks Send for a session in `creditsOut`; the note's actions), `src/lib/inspector.ts` (`InspectorTab` adds `"private"`, offered only for a session with `privateMode`), the inspector's tab list
+- Modify: `src/lib/composer-state.ts` (`composerNote` input gains `privateNote?: string`, ranked after `agentToSignIn`), `src/hooks/session-engine/useAcpEngine.ts` (`onTurnEnd` and the open-error path: `parsePrivateCredits(error)` → `onPrivateCreditsOut(sessionId, reason)` and the message is given back like a sign-in refusal, before `turnEndNotice`), `src/App.tsx` (wires `onPrivateCreditsOut` to `markCreditsOut`; blocks Send for a session in `creditsOut`; the note's actions), `src/lib/inspector.ts` (`InspectorTab` adds `"private"`, offered only for a session with `privateMode`), the inspector's tab list, `src/lib/popout-bridge.ts` (`SessionLiveStatus.privateCreditsOut?: 'empty' | 'key'`, so a popout shows the note and blocks its Send too)
 - Test: `src/test/composer-state.test.ts`, `src/test/private-credits-out.test.tsx`, `src/test/private-inspector.test.tsx`
 
 Artboards: `PrivateStates` (credits out), `PrivateSession` (Private tab), `PrivateErrors`.
@@ -332,7 +337,7 @@ Artboards: `PrivateStates` (credits out), `PrivateSession` (Private tab), `Priva
 
 Needs the server plan done and M5's first step (the Worker deployed, the operator organization funded, its refresh token set). It uses promo codes, so no payment is needed; the real $5 top-up stays in M5. No new code unless this finds a bug (then fix it in the task that owns the code, with a test).
 
-- [ ] **Step 1:** Create two promo codes with the admin route: one of 300 credits and one of 1 credit (a spend limit of about $0.008, which one turn on Kimi K3 exceeds). Build Zorvo with `ZORVO_CREDITS_URL=<deployed Worker URL>` (`pnpm tauri dev`).
+- [ ] **Step 1:** Create two promo codes with the admin route: one of 300 credits and one of 1 credit (a spend limit of about $0.008, which one turn on Kimi K3 exceeds). Build Zorvo with `ZORVO_CREDITS_URL=<deployed Worker URL>` (`pnpm tauri dev`). First confirm the Keychain works under a scratch `HOME` (Settings → Private mode creates a device and `security find-generic-password -s xyz.zorvo.desktop.private.<suffix> -a device-secret` finds it); if a scratch `HOME` cannot reach the login keychain, use a second macOS user for the second "Mac" instead. A scratch `HOME` has no `~/.qwen`, which also checks that the flags alone are enough for Qwen Code.
 - [ ] **Step 2:** In the real app with a scratch `HOME` (the project's real-app E2E harness): Settings → Private mode shows `0 credits · No key yet`; redeem the 300-credit code → `+300 credits added`, `Key ready`, the recovery dialog; start a private Qwen Code draft on Qwen 3.8 27B and get an answer; confirm with `ps eww <pid>` that the agent's env has `OPENAI_API_KEY` and its argv has the four flags but no key.
 - [ ] **Step 3:** On a second scratch `HOME`, redeem the 1-credit code, start a private session on Kimi K3 and send two turns → NEAR AI's real `402` shows the credits-out note and the message returns to the box.
 - [ ] **Step 4:** Restore the first `HOME`'s recovery code on the second: the first one reads `Your credits moved to another Mac`, and the second gets a working key.

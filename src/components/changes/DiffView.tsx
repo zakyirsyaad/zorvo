@@ -4,7 +4,7 @@ import { DiffFileSection, diffSectionId } from "./DiffFileSection";
 import { DiffViewHeader } from "./DiffViewHeader";
 import { ReviewCommentsBar } from "./ReviewCommentsBar";
 import { useDiffTargets, useTargetStats } from "../../hooks/useDiffStats";
-import { useFileReviews } from "../../hooks/useFileReviews";
+import { DIFF_NOT_LOADED, useFileReviews } from "../../hooks/useFileReviews";
 import type { ReviewComments } from "../../hooks/useReviewComments";
 import type { AddReview } from "../../hooks/useReviewWiring";
 import { defaultTarget, targetOptions, type DiffTargetId } from "../../lib/diff-stats";
@@ -13,7 +13,6 @@ import { defaultTarget, targetOptions, type DiffTargetId } from "../../lib/diff-
 const AUTO_OPEN_LIMIT = 25;
 
 const START_LOST = "The start of this worktree is no longer in this repository.";
-const NOT_LOADED = "The diff has not loaded, so comments cannot be added. Refresh to try again.";
 /** What the backend says (`checked_commit`) when git does not have the start commit; any other failure is not that. */
 const BACKEND_START_LOST = "This repository does not have the start commit";
 
@@ -104,7 +103,7 @@ export function DiffView({
     stats,
     startCommit,
     refreshes,
-    blockedReason: haveTargetsFailed || hasListFailed ? NOT_LOADED : undefined,
+    blockedReason: haveTargetsFailed || hasListFailed ? DIFF_NOT_LOADED : undefined,
     onFocusLost: focusPanel,
   });
   const [isSearching, setIsSearching] = useState(false);

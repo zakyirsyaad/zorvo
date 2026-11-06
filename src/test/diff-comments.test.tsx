@@ -136,7 +136,7 @@ beforeAll(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("Where comments are offered", () => {
-  it("the Changes panel shows no comment controls", async () => {
+  it("the Changes panel without a session's comments shows no comment controls", async () => {
     vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd) =>
       Promise.resolve(cmd === "session_file_diff" ? DIFF : undefined),
     );

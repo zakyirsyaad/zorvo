@@ -1,4 +1,4 @@
-import { useId, useMemo, useState, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight, Maximize2, RefreshCw } from "lucide-react";
 import { formatLineCount, MINUS, type FileStat } from "../../lib/diff-stats";
@@ -6,6 +6,11 @@ import { commitPathsOf, type ChangeKind, type FileChange } from "../../lib/git-c
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { FileDiff } from "./FileDiff";
+import { ReviewCommentsBar } from "./ReviewCommentsBar";
+import { useDiffTargets } from "../../hooks/useDiffStats";
+import { DIFF_NOT_LOADED, useFileReviews } from "../../hooks/useFileReviews";
+import type { ReviewComments } from "../../hooks/useReviewComments";
+import type { AddReview } from "../../hooks/useReviewWiring";
 import { PullRequestList } from "./PullRequestList";
 import type { PullRequestSummary } from "../../hooks/useRepoPullRequests";
 
@@ -30,7 +35,18 @@ export interface ChangesPanelProps {
   onOpenDiff?: () => void;
   /** Each file's counts against HEAD, shown on its card. */
   stats?: readonly FileStat[];
+  /** The comments of the session on screen; lines take comments only with them, as in the full review. */
+  review?: ReviewComments;
+  /** Puts this session's comments in the message. */
+  addReview?: AddReview;
+  /** Says why the diff's paths could not be read. */
+  onError?: (message: string) => void;
 }
+
+/** The Changes tab lists what Commit would take, so its comments are always on the diff against HEAD. */
+const TARGET = "head";
+const ONLY_HEAD = [TARGET] as const;
+const ignoreError = () => {};
 
 const KIND_LABEL: Record<ChangeKind, { letter: string; name: string; style: string }> = {
   modified: { letter: "M", name: "Modified", style: "text-fg-muted" },
@@ -57,10 +73,12 @@ function Counts({ added, removed }: { added: number; removed: number }) {
 
 type CommitState = { status: "idle" } | { status: "committing" } | { status: "done"; hash: string } | { status: "failed"; error: string };
 
-function ChangeCard({ change, stat, isChecked, isOpen, onCheck, onOpen, children }: {
+function ChangeCard({ change, stat, commentCount, isChecked, isOpen, onCheck, onOpen, children }: {
   change: FileChange;
   /** The file's counts against HEAD, once read. */
   stat: FileStat | undefined;
+  /** How many of the session's comments are on this file. */
+  commentCount: number;
   isChecked: boolean;
   isOpen: boolean;
   onCheck: (isChecked: boolean) => void;
@@ -90,6 +108,11 @@ function ChangeCard({ change, stat, isChecked, isOpen, onCheck, onOpen, children
           <Chevron size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
           <span className="min-w-0 flex-1 truncate font-mono text-caption text-fg-secondary">{change.path}</span>
         </button>
+        {commentCount > 0 && (
+          <span className="shrink-0 text-caption text-fg-muted">
+            {commentCount} {commentCount === 1 ? "comment" : "comments"}
+          </span>
+        )}
         <span title={kind.name} aria-label={kind.name} className={`w-3 shrink-0 text-center font-mono text-micro ${kind.style}`}>
           {kind.letter}
         </span>
@@ -118,6 +141,9 @@ export function ChangesPanel({
   diffStats,
   onOpenDiff,
   stats,
+  review,
+  addReview,
+  onError,
 }: ChangesPanelProps) {
   // Files left out of the commit; any new change is included by default.
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(() => new Set());
@@ -127,6 +153,23 @@ export function ChangesPanel({
 
   const messageId = useId();
   const statOf = useMemo(() => new Map((stats ?? []).map((stat) => [stat.path, stat])), [stats]);
+  const panel = useRef<HTMLElement>(null);
+  const focusPanel = () => panel.current?.focus({ preventScroll: true });
+  // The root and the folder's prefix word a comment's path; only read when comments are offered.
+  const { targets, hasFailed: haveTargetsFailed } = useDiffTargets(rootPath, review !== undefined, version, onError ?? ignoreError);
+  const { checked, reads, adder, fileReviewFor } = useFileReviews({
+    rootPath,
+    review,
+    addReview,
+    target: TARGET,
+    targets,
+    stats: stats ?? null,
+    refreshes: version,
+    blockedReason: haveTargetsFailed ? DIFF_NOT_LOADED : undefined,
+    onFocusLost: focusPanel,
+  });
+  // Another target's comments belong to the full review, which can show that target.
+  const onHead = useMemo(() => checked.filter(({ comment }) => comment.target === TARGET), [checked]);
   const list = changes ?? [];
   const chosen = list.filter((change) => !excluded.has(change.path));
   const canCommit = chosen.length > 0 && message.trim() !== "" && commit.status !== "committing";
@@ -159,8 +202,10 @@ export function ChangesPanel({
 
   return (
     <aside
+      ref={panel}
       aria-label="Changes panel"
-      className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui text-fg-secondary select-none"
+      tabIndex={review ? -1 : undefined}
+      className={`flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui text-fg-secondary select-none${review ? " focus-ring" : ""}`}
     >
       {pullRequests && onOpenPullRequest && (
         <div className="max-h-[45%] shrink-0 overflow-y-auto">
@@ -206,21 +251,48 @@ export function ChangesPanel({
           </IconButton>
         </div>
         <ul aria-label={`Changes in ${rootName}`} className="flex flex-col gap-2">
-          {list.map((change) => (
+          {list.map((change) => {
+            const fileReview = fileReviewFor(change.path);
+            return (
             <ChangeCard
               key={change.path}
               change={change}
               stat={statOf.get(change.path)}
+              commentCount={fileReview?.checked.length ?? 0}
               isChecked={!excluded.has(change.path)}
               isOpen={openPath === change.path}
               onCheck={(isChecked) => setIncluded(change.path, isChecked)}
               onOpen={() => setOpenPath((current) => (current === change.path ? null : change.path))}
             >
-              <FileDiff rootPath={rootPath} change={change} version={version} density="card" />
+              <FileDiff
+                rootPath={rootPath}
+                change={change}
+                version={version}
+                target={TARGET}
+                density="card"
+                review={fileReview}
+                takesComments={!change.path.endsWith("/")}
+              />
             </ChangeCard>
-          ))}
+            );
+          })}
         </ul>
       </div>
+      {review && (
+        <ReviewCommentsBar
+          variant="card"
+          review={review}
+          adder={adder}
+          checked={onHead}
+          target={TARGET}
+          targets={targets}
+          options={ONLY_HEAD}
+          reads={reads}
+          listed={stats ?? null}
+          onTargetChange={ignoreError}
+          onFocusLost={focusPanel}
+        />
+      )}
 
       {list.length > 0 && (
         <div className="flex flex-col gap-2 border-t border-border px-4 py-3">

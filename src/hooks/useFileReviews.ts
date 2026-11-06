@@ -7,6 +7,9 @@ import type { DiffTargetId, DiffTargets, FileStat } from "../lib/diff-stats";
 import { commentStatus, sortComments, type CheckedComment, type FileRead } from "../lib/review-comments";
 import type { ReviewComment } from "../types";
 
+/** Why Add is off when a view's diff could not be read. */
+export const DIFF_NOT_LOADED = "The diff has not loaded, so comments cannot be added. Refresh to try again.";
+
 export interface FileReviewsInput {
   rootPath: string;
   /** The comments of the session on screen; without them nothing is offered. */

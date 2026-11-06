@@ -67,7 +67,7 @@ describe("diff rows as drawn", () => {
   });
 
   it("the active row shows a 2px fg bar", () => {
-    const review: RowReview = { canComment: () => true, openBox: vi.fn(), under: () => null };
+    const review: RowReview = { badge: () => null, canComment: () => true, openBox: vi.fn(), under: () => null };
     render(<DiffRows rows={ROWS} label="Diff of a.ts" review={review} />);
 
     fireEvent.mouseOver(rowOf("context"));

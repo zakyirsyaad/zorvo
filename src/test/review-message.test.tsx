@@ -325,7 +325,7 @@ describe("Adding comments to the message", () => {
 
     // Select-all and typing never empties the composer, so the slot stays.
     typeInPrompt("Start over: look at this.");
-    await press("Add");
+    await press("Add to message");
 
     expect(prompt().value).toBe(
       `Start over: look at this.\n\n${HEADING}\n\nsrc/app.ts:42 (this line is no longer here in the diff)\n> gone by now\nThis one is old.`,
@@ -338,7 +338,7 @@ describe("Adding comments to the message", () => {
     await addAll();
 
     typeInPrompt(`${prompt().value}\n\nAnd a word of mine.`);
-    await press("Add");
+    await press("Add to message");
 
     expect(prompt().value.split(HEADING)).toHaveLength(2);
   });
@@ -384,10 +384,10 @@ describe("Adding comments to the message", () => {
     await addAll();
     expect(prompt().value).not.toContain("This one is old.");
 
-    await press("Add");
+    await press("Add to message");
 
     expect(prompt().value).toContain("src/app.ts:42 (this line is no longer here in the diff)\n> gone by now\nThis one is old.");
-    expect(screen.queryByRole("button", { name: "Add" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add to message" })).toBeNull();
     expect(within(panel()).getAllByText("In message")).toHaveLength(2);
   });
 
@@ -410,7 +410,7 @@ describe("Adding comments to the message", () => {
 
     expect(await within(panel()).findAllByText("Not in this diff")).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "Add again" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Add" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add to message" })).toBeNull();
     expect(addButton()).toBeNull();
   });
 

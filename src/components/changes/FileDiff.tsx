@@ -49,7 +49,7 @@ export function FileDiff({ rootPath, change, version, target = "head", startComm
   // A comment just saved reads against the rows on screen until its own read answers.
   const fileReview = review && (review.read || shownRows.length === 0 ? review : againstRows(review, shownRows));
   const rowReview = fileReview && takesComments && shownRows.length > 0 && isCommentableFile(shownRows)
-    ? rowReviewOf(fileReview, change, shownRows)
+    ? rowReviewOf(fileReview, change, shownRows, density)
     : undefined;
 
   const body = () => {

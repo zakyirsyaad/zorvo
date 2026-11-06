@@ -1,5 +1,5 @@
 import { memo, useEffect, useId, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
-import { MessageSquarePlus } from "lucide-react";
+import { MessageSquare, MessageSquarePlus } from "lucide-react";
 import { IconButton } from "../ui/IconButton";
 import { MINUS } from "../../lib/diff-stats";
 import type { UnifiedRow, UnifiedRowKind } from "../../lib/git-changes";
@@ -34,6 +34,8 @@ const LIST: Record<DiffDensity, string> = {
   review: "overflow-x-auto py-2 font-mono text-ui-sm leading-5 text-fg-secondary",
   card: "max-h-80 overflow-auto py-1 font-mono text-caption leading-[18px] text-fg-secondary",
 };
+const BADGE =
+  "ml-4 inline-flex h-[18px] shrink-0 items-center gap-1 self-center rounded border border-border bg-surface-3 px-1.5 font-sans text-caption text-fg-secondary";
 /** As wide as its line, so the control beside it stays in view when the diff scrolls sideways. */
 const GRID_ROW = "w-max min-w-full";
 /** The row the arrow keys are on: the grid holds the focus, so the row has to show it. */
@@ -41,6 +43,8 @@ const ACTIVE_ROW = "group-focus-visible/grid:shadow-[inset_2px_0_0_var(--color-f
 
 /** What rows need to take comments. With it the diff is a grid, one Tab stop, with one control for the row in use. */
 export interface RowReview {
+  /** What the row's badge says about the comments on its line ("1 comment · Current"), or null. */
+  badge: (row: UnifiedRow) => string | null;
   /** Whether the row can take a new comment now: it has a line, and no open box. */
   canComment: (row: UnifiedRow) => boolean;
   openBox: (row: UnifiedRow) => void;
@@ -63,9 +67,11 @@ function rowName(row: UnifiedRow): string {
   return `Line ${lineOf(row)}, ${ROW_KIND[row.kind]}: ${text}`;
 }
 
-const DiffRow = memo(function DiffRow({ row, density, rowKey, rowId, isActive, control, under }: {
+const DiffRow = memo(function DiffRow({ row, density, rowKey, rowId, isActive, control, badge, under }: {
   row: UnifiedRow;
   density: DiffDensity;
+  /** Shown at the end of the row in the review; the comments themselves are rows under it. */
+  badge: string | null;
   rowKey: string;
   /** Set when the rows form a grid. */
   rowId?: string;
@@ -104,6 +110,12 @@ const DiffRow = memo(function DiffRow({ row, density, rowKey, rowId, isActive, c
           {ROW_SIGN[row.kind]}
         </span>
         <span role={isGridRow ? "gridcell" : undefined}>{row.text}</span>
+        {badge && density === "review" && (
+          <span aria-hidden="true" className={BADGE}>
+            <MessageSquare size={10} />
+            {badge}
+          </span>
+        )}
       </div>
       {under && (
         // A sticky box travels only inside its parent, and the grid is the one parent as wide as the long lines.
@@ -218,6 +230,7 @@ export function DiffRows({ rows, label, review, density = "review" }: {
                 </span>
               ) : null
             }
+            badge={review?.badge(row) ?? null}
             under={review?.under(row, takeFocusBack) ?? null}
           />
         );

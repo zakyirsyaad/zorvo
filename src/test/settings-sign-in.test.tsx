@@ -190,13 +190,13 @@ describe("the catalog", () => {
     };
     const { rerender } = render(<AgentCatalog {...props} signIn={fakeSignIn()} />);
 
-    // Gemini is in use but not installed: nothing to check yet.
-    expect(screen.getAllByRole("group", { name: /sign-in$/ }).map((g) => g.getAttribute("aria-label"))).toEqual([
-      "Claude Code sign-in",
+    // Gemini is in use but not installed: nothing to check yet. A row's sign-in opens from its chevron.
+    expect(screen.getAllByRole("button", { name: /^Show sign-in for/ }).map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Show sign-in for Claude Code",
     ]);
 
     rerender(<AgentCatalog {...props} />);
-    expect(screen.queryByRole("group", { name: /sign-in$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /sign-in for/ })).toBeNull();
   });
 
   it("asks the agents when the panel opens, once the catalog is loaded", () => {

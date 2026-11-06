@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useRef, type FocusEvent, type KeyboardEventHandler, type ReactNode, type Ref } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEventHandler, type ReactNode, type Ref } from "react";
 import { Check, Search } from "lucide-react";
 import { useDismiss } from "../../hooks/useDismiss";
+import { clippingBounds, fitPanel, type PanelFit } from "../../lib/popover-fit";
 
 type PopoverRole = "menu" | "listbox" | "dialog";
 
@@ -53,8 +54,19 @@ export function Popover({
 }: PopoverProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLSpanElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const hasFocusInside = useRef(false);
+  const [fit, setFit] = useState<PanelFit | null>(null);
   useDismiss(wrapperRef, isOpen, onClose);
+
+  // Before paint, so the panel never shows where it is cut off: the asked-for side when it fits there, else the
+  // side with more room, capped to that room. `scrollHeight` is the content's height even while capped.
+  useLayoutEffect(() => {
+    const wrapper = wrapperRef.current;
+    const panel = panelRef.current;
+    if (!isOpen || panelClassName || !wrapper || !panel) return;
+    setFit(fitPanel(wrapper.getBoundingClientRect(), clippingBounds(wrapper), panel.scrollHeight, side));
+  }, [isOpen, panelClassName, side]);
 
   useEffect(() => {
     if (isOpen || !hasFocusInside.current) return;
@@ -71,19 +83,24 @@ export function Popover({
     if (next && !event.currentTarget.contains(next)) hasFocusInside.current = false;
   };
 
-  const placement = panelClassName ?? `${SIDES[side]} ${ALIGNS[align]}`;
-  const panelClasses = [PANEL, placement, className].filter(Boolean).join(" ");
+  const shownSide = fit?.side ?? side;
+  const maxHeight = panelClassName ? undefined : fit?.maxHeight;
+  const placement = panelClassName ?? `${SIDES[shownSide]} ${ALIGNS[align]}`;
+  const capped = maxHeight === undefined ? undefined : "overflow-y-auto";
+  const panelClasses = [PANEL, placement, capped, className].filter(Boolean).join(" ");
   return (
     // With its own placement the panel is positioned against a box further out, so the wrapper is not one.
-    <div ref={wrapperRef} className={[panelClassName ? undefined : "relative", wrapperClassName].filter(Boolean).join(" ") || undefined}>
+    <div ref={wrapperRef} data-popover="" className={[panelClassName ? undefined : "relative", wrapperClassName].filter(Boolean).join(" ") || undefined}>
       <span ref={triggerRef} className="contents">
         {trigger}
       </span>
       {isOpen && (
         <div
+          ref={panelRef}
           role={role}
           aria-label={label}
           className={panelClasses}
+          style={maxHeight === undefined ? undefined : { maxHeight }}
           onFocus={() => (hasFocusInside.current = true)}
           onBlur={handleBlur}
         >

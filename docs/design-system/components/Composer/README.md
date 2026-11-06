@@ -20,7 +20,7 @@ The consumer provides the controls and the send handler. Without a placeholder o
   - Send is the only primary control: 28px, `radius-lg`, with an arrow up. It is disabled while the text is empty, and while Send is blocked it is `aria-describedby` the note.
   - `sendLabel` words it ("Start 2 sessions"), at 13/500 with a 12px arrow up after the label.
   - While the agent works, Stop takes its place: an outline icon button with an 11px square.
-- **Menus.** The mode, model and other chips open `Popover`s with the check on the left and descriptions in `fg-subtle`. In a session they open above the chip, from the bottom of the window; in a draft, whose composer sits near the top of its column, every menu opens below.
+- **Menus.** The mode, model and other chips open `Popover`s with the check on the left and descriptions in `fg-subtle`. In a session they open above the chip, from the bottom of the window. In a draft, whose composer sits near the top of its column, they open below. In both cases a menu flips to the other side when that side has more room, and is capped and scrolls when neither side holds it, so it is never cut off.
   - A model named with a provider tag ("[OpenRouter] kimi-k2") shows its own name on its row, under one heading per provider; search still matches the tag, and the row's tooltip holds the full name.
   - The mode menu is headed "Mode". A risky mode shows its shield after its name, and "Lets the agent act without asking." on its line.
   - A list over 10 choices gets the 30px "Search <label>" field, with the matches in bold and "N of M <label>s" under it in `fg-subtle`.

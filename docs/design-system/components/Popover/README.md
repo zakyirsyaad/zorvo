@@ -13,7 +13,7 @@ The one popover style, for every menu and picker that opens from a control: the 
 - `PopoverSearch`: the 30px search field at the top of a long menu, with its 12px icon, on `surface-2` with a `border` edge and `radius-sm`. Its placeholder is its name ("Search branches"). The field's edge takes the focus ring (`focus-ring-within`).
 - Roles: `menu` (the default) makes each option a `menuitem`; `listbox` makes each one an `option` with `aria-selected`; `dialog` is for a panel with its own fields, such as a search box over a list.
 - `side="top"` opens above the trigger (the composer, at the bottom of the window); `align="end"` lines the panel up with the trigger's right edge.
-- The panel is positioned against the trigger, so place the popover inside an ancestor that does not clip (`overflow-hidden` cuts it off).
+- The panel is positioned against the trigger. When it opens, it measures the room it has: the viewport, narrowed by every ancestor that clips (`overflow-hidden`). It opens on its `side` when it fits there, else on the side with more room. When it fits on neither side, it is capped to the room on the larger side (never under 96px) and scrolls. `fitPanel` in `lib/popover-fit.ts` makes that call. A panel with its own `panelClassName` is left where it is put.
 
 - `PopoverList` puts a `listbox` inside a `dialog` popover, beside a search field the listbox cannot hold. Its `PopoverOption`s are `option`s.
 - `isRadio` makes an option in a `menu` a `menuitemradio`, checked while `selected`. This is for a set of choices rather than commands, like the composer's **More options** menu.

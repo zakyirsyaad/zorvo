@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { AgentCatalogPanel } from "./agents/AgentCatalogPanel";
-import { GithubSection } from "./GithubSection";
+import { GithubSection } from "./settings/GithubSection";
 import { SettingsPanel, type SettingsTab } from "./SettingsPanel";
 import { TerminalSignInDialog } from "./TerminalSignInDialog";
 import type { FolderOption } from "./onboarding/types";

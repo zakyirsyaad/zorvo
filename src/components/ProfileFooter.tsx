@@ -3,6 +3,7 @@ import { Settings2, User } from "lucide-react";
 import type { GithubStatus } from "../lib/github";
 import { GithubMark } from "./GithubMark";
 import { IconButton } from "./ui/IconButton";
+import { initialsFromName } from "../lib/initials";
 
 export interface ProfileFooterProps {
   /** `git config --global user.name`, when the user has one set. */
@@ -19,16 +20,6 @@ export interface ProfileFooterProps {
 }
 
 const FALLBACK_DISPLAY_NAME = "Local user";
-
-/** Uppercased initials taken from up to the first two words of `name`. */
-function initialsFromName(name?: string): string | null {
-  const words = (name ?? "").trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return null;
-  return words
-    .slice(0, 2)
-    .map((word) => word.charAt(0).toUpperCase())
-    .join("");
-}
 
 /** Uppercased first alphanumeric character of the email's local part. */
 function initialFromEmail(email?: string): string | null {

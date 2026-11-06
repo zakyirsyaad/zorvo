@@ -187,7 +187,7 @@ describe("Workspace terminal in the app", () => {
     await openSession("Fix login");
 
     expect(callsTo(spy, "workspace_terminal_open")).toHaveLength(1);
-    expect(screen.getByRole("tab", { name: /zorvo/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "shell" })).toBeInTheDocument();
     expect(screen.getByTestId("view-shell-1")).toBeInTheDocument();
     expect(callsTo(spy, "workspace_terminal_close")).toHaveLength(0);
   });

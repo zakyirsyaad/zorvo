@@ -149,10 +149,11 @@ export interface ComposerDockProps {
   /** A draft is asking its agent what it offers: its chips show as skeletons in the row until they arrive. */
   isLoadingControls?: boolean;
   /**
-   * A draft's slot between its chips and its card, for the panels that hold it back (sign-in, install), so they
-   * read in order under the chips. The parent portals them in; the slot takes no room while empty.
+   * A draft's slot between its chips and its card, for the panels that hold it back, so they read in order under
+   * the chips. The parent portals each panel into its own place: install above sign-in, whichever showed first
+   * (two portals into one node would keep the order they mounted in). The slot takes no room while both are empty.
    */
-  aboveCardRef?: Ref<HTMLDivElement>;
+  aboveCardSlots?: { install: Ref<HTMLDivElement>; signIn: Ref<HTMLDivElement> };
   /** Before a new session starts: the folder it starts in. */
   folder?: FolderControl;
   /** Before a new session starts: the agent it runs. */
@@ -196,7 +197,7 @@ export function ComposerDock({
   note,
   noteInRow = false,
   isLoadingControls = false,
-  aboveCardRef,
+  aboveCardSlots,
   folder,
   agent,
   agents,
@@ -459,7 +460,13 @@ export function ComposerDock({
           onClose={(name) => setOpenDropdown((current) => (current === name ? null : current))}
         />
       )}
-      {aboveCardRef && <div ref={aboveCardRef} data-above-card="" className="mb-3 w-full space-y-3 empty:hidden" />}
+      {aboveCardSlots && (
+        // Hidden while neither place holds a panel; `empty:` no longer applies, since the two places are always there.
+        <div data-above-card="" className="mb-3 flex w-full flex-col gap-3 [&:not(:has(>:not(:empty)))]:hidden">
+          <div ref={aboveCardSlots.install} data-slot="install" className="empty:hidden" />
+          <div ref={aboveCardSlots.signIn} data-slot="sign-in" className="empty:hidden" />
+        </div>
+      )}
       <div
         data-composer-card=""
         className="relative flex w-full flex-col gap-2.5 rounded-xl border border-border bg-surface-2 p-3 shadow-popover transition-all focus-within:border-border-strong"

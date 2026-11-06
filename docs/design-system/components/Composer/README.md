@@ -23,7 +23,7 @@ The consumer provides the controls and the send handler. Without a placeholder o
 - **Menus.** The mode, model and other chips open `Popover`s with the check on the left and descriptions in `fg-subtle`. In a session they open above the chip, from the bottom of the window. In a draft, whose composer sits near the top of its column, they open below. In both cases a menu flips to the other side when that side has more room, and is capped and scrolls when neither side holds it, so it is never cut off.
   - A model named with a provider tag ("[OpenRouter] kimi-k2") shows its own name on its row, under one heading per provider; search still matches the tag, and the row's tooltip holds the full name.
   - The mode menu is headed "Mode". A risky mode shows its shield after its name, and "Lets the agent act without asking." on its line.
-  - A list over 10 choices gets the 30px "Search <label>" field, with the matches in bold and "N of M <label>s" under it in `fg-subtle`.
+  - A list over 10 choices gets the 30px "Search <label>" field, with the matches in bold and "N of M <label>s" under it in `fg-subtle`. A match is found in the full name, provider tag and all, so one that runs across the tag ("router] ki") is bold in both the heading and the row; a choice found by its description has the match bold there.
   - A menu whose choices have a line under them is 300px wide; a short plain list is as wide as its words.
 - **`/` and `@`.** These open lists with the popover's look: above the card in a session, under it in a draft, whose card sits near the top of its column. The prompt keeps focus, and ↑ ↓, Return, Tab and Escape drive the list.
   - "Commands from <Agent>": each command in mono 12 over its description in 11/15 `fg-subtle`.

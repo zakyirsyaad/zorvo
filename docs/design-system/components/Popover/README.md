@@ -19,6 +19,6 @@ The one popover style, for every menu and picker that opens from a control: the 
 - `PopoverList` puts a `listbox` inside a `dialog` popover, beside a search field the listbox cannot hold. Its `PopoverOption`s are `option`s.
 - `isRadio` makes an option in a `menu` a `menuitemradio`, checked while `selected`. This is for a set of choices rather than commands, like the composer's **More options** menu.
 - `POPOVER_PANEL_STYLE` is the panel's look without its position. The `/` and `@` lists use it, since they keep focus in the prompt and so cannot be a `Popover`.
-- `Highlighted` shows what a search matched in bold (`mark`, `font-semibold`, `fg`). It matches case-insensitively, as plain text.
+- `Highlighted` shows what a search matched in bold (`mark`, `font-semibold`, `fg`). It matches case-insensitively, as plain text. Given `ranges` instead of a query, it bolds those offsets, for a part of a longer text the search ran over (`matchRanges` and `rangesWithin` in `lib/match-segments.ts`).
 
 On it so far: `DiffViewHeader`, `OptionDropdown`, `MoreControls`, `FolderPicker`, `BranchPicker`, `AgentMultiPicker`, `PlanMenu` and `BackgroundTasksMenu`. `SlashCommandMenu` and `MentionMenu` share its look through `POPOVER_PANEL_STYLE`.

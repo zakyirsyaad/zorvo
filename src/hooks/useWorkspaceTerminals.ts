@@ -10,6 +10,8 @@ export interface WorkspaceTerminalTab {
   folderPath: string;
   /** 1-based, per folder; kept while the tab is open, so closing tab 1 does not rename tab 2. */
   number: number;
+  /** The shell's program name ("zsh"), which names the tab. */
+  shell: string;
   status: 'live' | 'exited';
 }
 
@@ -31,10 +33,11 @@ type WorkspaceTerminalEvent =
   | { terminalId: string; kind: 'output'; data: string }
   | { terminalId: string; kind: 'exit'; exitCode: number | null };
 
-/** What `workspace_terminal_open` answers: the shell's id and the canonical folder it runs in. */
+/** What `workspace_terminal_open` answers: the shell's id, the canonical folder it runs in, and the shell's name. */
 interface OpenedTerminal {
   id: string;
   folder: string;
+  shell?: string;
 }
 
 const NO_TABS: WorkspaceTerminalTab[] = [];
@@ -109,11 +112,12 @@ export function useWorkspaceTerminals(onNotice: (message: string) => void): Work
         return null;
       }
       const { id, folder } = opened;
+      const shell = typeof opened.shell === 'string' && opened.shell !== '' ? opened.shell : 'shell';
       foldersRef.current.set(normalizePath(path), folder);
       const inFolder = tabsRef.current.filter((tab) => tab.folderPath === folder);
       const number = inFolder.reduce((highest, tab) => Math.max(highest, tab.number), 0) + 1;
       const status = exitedRef.current.has(id) ? 'exited' : 'live';
-      commit([...tabsRef.current, { id, folderPath: folder, number, status }]);
+      commit([...tabsRef.current, { id, folderPath: folder, number, status, shell }]);
       return id;
     },
     [commit],

@@ -8,6 +8,7 @@ import { HistoryElsewhereNote } from "./components/chat/HistoryElsewhereNote";
 import { ComposerDock, type ComposerHandle } from "./components/ComposerDock";
 import { RemovedAgentPanel } from "./components/RemovedAgentPanel";
 import { ActivityPanel } from "./components/activity/ActivityPanel";
+import { agentNameOr } from "./lib/agent-name";
 import { FilesPanel } from "./components/FilesPanel";
 import { markersOf } from "./lib/file-markers";
 import { EmptyFolderState, FileDropOverlay } from "./components/AppPlaceholders";
@@ -205,8 +206,10 @@ export default function App() {
   const activeAgentRemoved = removedAgentNameFor(activeSession, agents, state.settings);
   // Hidden, not unmounted: a look at either must not cost the message being written.
   const isComposerHidden = Boolean(activeRun) || activeAgentRemoved !== null;
-  // The draft composer's slot between its chips and its card, where the sign-in and install panels go.
-  const [draftBlockerSlotElement, setDraftBlockerSlotElement] = useState<HTMLDivElement | null>(null);
+  // The draft composer's places between its chips and its card, where the install and sign-in panels go, in that order.
+  const [draftInstallSlotElement, setDraftInstallSlotElement] = useState<HTMLDivElement | null>(null);
+  const [draftSignInSlotElement, setDraftSignInSlotElement] = useState<HTMLDivElement | null>(null);
+  const draftBlockerSlots = useMemo(() => ({ install: setDraftInstallSlotElement, signIn: setDraftSignInSlotElement }), []);
   // An agent not installed yet is offered too: picking it shows its Install panel.
   const pickableAgents = agentsInUse;
   const defaultAgentId = resolveDraftAgentId(agentsInUse, state.settings.defaultAgentId, pickableAgents);
@@ -221,7 +224,8 @@ export default function App() {
     if (mainColumnRef.current) mainColumnRef.current.scrollTop = 0;
   }, [activeSessionId, activeRun?.id, draftWorkspace?.path]);
   // Only a draft uses the slot: its composer is never hidden, so a panel there is never hidden with it.
-  const draftBlockerSlot = isNewSessionDraft ? draftBlockerSlotElement : null;
+  const draftInstallSlot = isNewSessionDraft ? draftInstallSlotElement : null;
+  const draftSignInSlot = isNewSessionDraft ? draftSignInSlotElement : null;
   // A session shows the folder it runs in, even one no longer in the recents.
   const shownFolderPath = activeSession?.cwd ?? activeWorkspacePath;
   const workspaceDetails = useWorkspaceDetails(shownFolderPath, reportError, branchCheck);
@@ -1086,7 +1090,7 @@ export default function App() {
                     // session's note sits above its first message.
                     header={
                       activeSession.historyElsewhere ? (
-                        <HistoryElsewhereNote agentName={activeAgent?.name ?? "the agent"} />
+                        <HistoryElsewhereNote agentName={agentNameOr(activeAgent)} />
                       ) : undefined
                     }
                     // A turn that failed says so under its last message, with Try again.
@@ -1159,11 +1163,11 @@ export default function App() {
                       agents={agents}
                       agentId={activeSession?.profileId ?? (activeRun ? undefined : newSessionAgent?.id)}
                       showTerminal={settingsTab === null}
-                      panelTarget={draftBlockerSlot}
+                      panelTarget={draftSignInSlot}
                     />
                     {installPanelAgent
-                      ? draftBlockerSlot
-                        ? createPortal(<AgentInstallPanel agent={installPanelAgent} />, draftBlockerSlot)
+                      ? draftInstallSlot
+                        ? createPortal(<AgentInstallPanel agent={installPanelAgent} />, draftInstallSlot)
                         : <AgentInstallPanel agent={installPanelAgent} />
                       : null}
                   </div>
@@ -1230,7 +1234,7 @@ export default function App() {
                     noteInRow={composerNoteText === COMPARE_NOTE}
                     // While the draft asks its agent what it offers, its chips show as skeletons in the row.
                     isLoadingControls={Boolean(!isActiveRunning && draftAgent && agentCheck.isProbing(draftAgent.id))}
-                    aboveCardRef={setDraftBlockerSlotElement}
+                    aboveCardSlots={draftBlockerSlots}
                     contextUsage={isActiveRunning ? acp.info[activeSessionId]?.usage : undefined}
                     mentions={filesFolder ? { root: filesFolder.path, loadFiles: () => shell.loadWorkspaceFiles(filesFolder.path) } : undefined}
                     folder={
@@ -1337,7 +1341,8 @@ export default function App() {
                     headStats={inspector.headStats}
                     headStatsFailed={inspector.headStatsFailed}
                     onJump={(messageId) => setChatJump((prev) => ({ messageId, nonce: (prev?.nonce ?? 0) + 1 }))}
-                    onOpenDiff={() => inspector.openDiff()}
+                    agentName={agentNameOr(activeAgent)}
+                    onShowChanges={() => inspector.show("changes")}
                   />
                 )}
                 {inspectorTab === "files" && filesFolder && (
@@ -1365,7 +1370,6 @@ export default function App() {
                   <TerminalDrawer
                     folderPath={filesFolder.path}
                     folderName={filesFolder.name}
-                    branch={workspaceDetails?.branch ?? undefined}
                     terminals={terminals}
                     startingFor={terminalDrawer.startingFor}
                     onStartShell={terminalDrawer.startShell}

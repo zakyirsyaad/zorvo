@@ -60,7 +60,8 @@ describe("FileViewer — header", () => {
   it("shows the path as a mono breadcrumb with its marker", async () => {
     await renderViewer({ marker: "modified" });
 
-    const path = screen.getByRole("heading", { name: /src\/a\.ts/ });
+    const path = screen.getByRole("heading", { level: 3, name: /a\.ts/ });
+    expect(path).toHaveTextContent("src/a.ts");
     expect(path).toHaveClass("font-mono");
     expect(within(path).getByText("M")).toHaveClass("text-status-attention");
     expect(within(path).getByText("Modified")).toHaveClass("sr-only");
@@ -72,7 +73,7 @@ describe("FileViewer — header", () => {
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     const { props } = await renderViewer();
 
-    fireEvent.click(screen.getByRole("button", { name: "Add to prompt" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add a.ts to prompt" }));
     expect(props.onInsertPath).toHaveBeenCalledWith(`${ROOT}/src/a.ts`);
 
     fireEvent.click(screen.getByRole("button", { name: "Open in editor" }));

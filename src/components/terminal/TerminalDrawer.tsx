@@ -9,8 +9,6 @@ import type { WorkspaceTerminals, WorkspaceTerminalTab } from "../../hooks/useWo
 export interface TerminalDrawerProps {
   folderPath: string;
   folderName: string;
-  /** The folder's current branch, read at render. */
-  branch?: string;
   terminals: WorkspaceTerminals;
   /** The folder whose first shell is starting, if any: the drawer says so and focuses that shell once it is there. */
   startingFor: string | null;
@@ -27,7 +25,6 @@ export interface TerminalDrawerProps {
 export function TerminalDrawer({
   folderPath,
   folderName,
-  branch,
   terminals,
   startingFor,
   onStartShell,
@@ -35,6 +32,8 @@ export function TerminalDrawer({
 }: TerminalDrawerProps) {
   const tabs = terminals.tabsFor(folderPath);
   const [activeByFolder, setActiveByFolder] = useState<Record<string, string>>({});
+  // Each shell's size as xterm last fit it, for the strip's readout: none until a fit.
+  const [sizes, setSizes] = useState<Record<string, { cols: number; rows: number }>>({});
   const activeTab = pickActive(tabs, activeByFolder[folderPath]);
   // The tab whose view takes keyboard focus when it mounts: set by an action in
   // the drawer (opening it, New terminal, picking a tab, Start a new shell),
@@ -71,7 +70,13 @@ export function TerminalDrawer({
     setRestoreFocus(false);
   }, [restoreFocus]);
 
-  const labelOf = (tab: WorkspaceTerminalTab) => tabLabel(folderName, branch, tab.number);
+  const labelOf = (tab: WorkspaceTerminalTab) => tabLabel(tab.shell, tab.number);
+  const activeSize = activeTab ? sizes[activeTab.id] : undefined;
+
+  const resizeTab = (id: string, cols: number, rows: number) => {
+    setSizes((current) => (current[id]?.cols === cols && current[id]?.rows === rows ? current : { ...current, [id]: { cols, rows } }));
+    terminals.resize(id, cols, rows);
+  };
 
   const select = (id: string) => {
     setActiveByFolder((current) => ({ ...current, [folderPath]: id }));
@@ -82,6 +87,12 @@ export function TerminalDrawer({
 
   const closeTab = (id: string) => {
     terminals.close(id);
+    // Ids never come back, so a closed shell's size would only sit in memory.
+    setSizes((current) => {
+      if (!(id in current)) return current;
+      const { [id]: _closed, ...rest } = current;
+      return rest;
+    });
     const remaining = tabs.filter((tab) => tab.id !== id);
     const next = pickActive(remaining, undefined);
     if (id === activeTab?.id && next) setFocusTabId(next.id);
@@ -102,32 +113,45 @@ export function TerminalDrawer({
   const addShell = () => openWith(terminals.open);
   const startShell = () => openWith(onStartShell);
 
-  // Only the terminal itself stays dark in both themes; the drawer's own controls follow the theme.
+  // As drawn, the drawer is the terminal's own dark in both themes while it holds shells. The empty and starting
+  // states are not a terminal: they keep the theme's surface, so their text and button read in light mode.
+  const hasTabs = tabs.length > 0;
   return (
-    <section aria-label="Terminal" className="flex min-h-0 flex-1 flex-col bg-surface-1">
-      <div className="flex items-center gap-1 border-b border-border px-2">
-        <div ref={tabListRef} role="tablist" aria-label="Terminals" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-          {tabs.map((tab) => (
-            <TabItem
-              key={tab.id}
-              label={labelOf(tab)}
-              selected={tab.id === activeTab?.id}
-              onSelect={() => select(tab.id)}
-              onClose={() => closeTab(tab.id)}
-            />
-          ))}
+    <section aria-label="Terminal" className={`flex min-h-0 flex-1 flex-col ${hasTabs ? "bg-terminal-bg" : "bg-surface-1"}`}>
+      {(hasTabs || onHide) && (
+        // The theme's focus ring turns dark in light mode, which would vanish on this strip: it takes the terminal's fixed grey.
+        <div className="flex h-9 shrink-0 items-center gap-1 border-b border-terminal-surface bg-terminal-bg pr-2 pl-3 [--color-focus-ring:var(--color-terminal-fg-muted)]">
+          <div ref={tabListRef} role="tablist" aria-label="Terminals" className="flex min-w-0 flex-initial items-center gap-1 overflow-x-auto">
+            {tabs.map((tab) => (
+              <TabItem
+                key={tab.id}
+                label={labelOf(tab)}
+                folderName={folderName}
+                selected={tab.id === activeTab?.id}
+                onSelect={() => select(tab.id)}
+                onClose={() => closeTab(tab.id)}
+              />
+            ))}
+          </div>
+          {/* After the tablist, not in it: a tablist owns only tabs. */}
+          {activeTab && (
+            <IconButton label="New terminal" variant="terminal" size="sm" onClick={addShell}>
+              <Plus size={12} aria-hidden />
+            </IconButton>
+          )}
+          <span className="flex-1" />
+          {activeSize && (
+            <span className="shrink-0 text-caption tabular-nums text-terminal-fg-subtle">
+              {activeSize.cols} × {activeSize.rows}
+            </span>
+          )}
+          {onHide && (
+            <IconButton label="Hide terminal" variant="terminal" size="sm" onClick={onHide}>
+              <ChevronDown size={12} aria-hidden />
+            </IconButton>
+          )}
         </div>
-        {activeTab && (
-          <IconButton label="New terminal" onClick={addShell}>
-            <Plus size={14} aria-hidden />
-          </IconButton>
-        )}
-        {onHide && (
-          <IconButton label="Hide terminal" onClick={onHide}>
-            <ChevronDown size={14} aria-hidden />
-          </IconButton>
-        )}
-      </div>
+      )}
       <div role="tabpanel" className="flex min-h-0 flex-1 flex-col">
         {activeTab ? (
           <>
@@ -138,12 +162,12 @@ export function TerminalDrawer({
               output={terminals.output}
               isLive={activeTab.status === "live"}
               onInput={(data) => terminals.send(activeTab.id, data)}
-              onResize={(cols, rows) => terminals.resize(activeTab.id, cols, rows)}
+              onResize={(cols, rows) => resizeTab(activeTab.id, cols, rows)}
               autoFocus={activeTab.id === focusTabId || focusFirst}
-              label={labelOf(activeTab)}
+              label={`${labelOf(activeTab)} · ${folderName}`}
             />
             {activeTab.status === "exited" && (
-              <div className="flex items-center gap-3 border-t border-border px-3 py-2 text-xs text-fg-muted">
+              <div className="flex items-center gap-3 border-t border-border bg-surface-1 px-3 py-2 text-ui-sm text-fg-muted">
                 <span>The shell exited.</span>
                 <Button onClick={startShell}>Start a new shell</Button>
               </div>
@@ -173,24 +197,35 @@ function pickActive(tabs: WorkspaceTerminalTab[], pickedId: string | undefined):
 
 interface TabItemProps {
   label: string;
+  /** Shown on the selected tab, in mono, as drawn; every tab of the strip is in this folder. */
+  folderName: string;
   selected: boolean;
   onSelect: () => void;
   onClose: () => void;
 }
 
-function TabItem({ label, selected, onSelect, onClose }: TabItemProps) {
+function TabItem({ label, folderName, selected, onSelect, onClose }: TabItemProps) {
   return (
-    <div className={`flex shrink-0 items-center rounded-md ${selected ? "bg-surface-hover" : ""}`}>
+    <div className="flex shrink-0 items-center">
       <button
         type="button"
         role="tab"
         aria-selected={selected}
         onClick={onSelect}
-        className={`focus-ring rounded-md px-2 py-1 text-xs ${selected ? "text-fg" : "text-fg-muted hover:text-fg"}`}
+        className={`focus-ring flex h-6 items-center gap-1.5 rounded-md px-2.5 text-ui-sm ${
+          selected ? "bg-terminal-surface text-terminal-fg-strong" : "text-terminal-fg-muted hover:text-terminal-fg-strong"
+        }`}
       >
         {label}
+        {/* Seen, not read: the folder is the same for every tab here, and the terminal's own name says it. */}
+        {selected && (
+          // terminal-fg-muted: -subtle is about 4.4:1 on the selected tab's fill, under 4.5 for 11px text.
+          <span aria-hidden="true" className="font-mono text-caption text-terminal-fg-muted">
+            {folderName}
+          </span>
+        )}
       </button>
-      <IconButton label={`Close ${label}`} onClick={onClose} className="h-6 w-6">
+      <IconButton label={`Close ${label}`} variant="terminal" size="xs" onClick={onClose}>
         <X size={12} aria-hidden />
       </IconButton>
     </div>

@@ -27,7 +27,7 @@ vi.mock("../components/TerminalView", () => ({
 import { TerminalDrawer } from "../components/terminal/TerminalDrawer";
 
 function tab(id: string, folderPath: string, number: number, status: "live" | "exited" = "live"): WorkspaceTerminalTab {
-  return { id, folderPath, number, status };
+  return { id, folderPath, number, status, shell: "zsh" };
 }
 
 function fakeTerminals(tabs: WorkspaceTerminalTab[], overrides: Partial<WorkspaceTerminals> = {}): WorkspaceTerminals {
@@ -47,7 +47,6 @@ function fakeTerminals(tabs: WorkspaceTerminalTab[], overrides: Partial<Workspac
 const baseProps = {
   folderPath: "/work/zorvo",
   folderName: "zorvo",
-  branch: "main",
   startingFor: null as string | null,
   onStartShell: vi.fn(async (_folderPath: string): Promise<string | null> => null),
   onHide: vi.fn(),
@@ -125,12 +124,18 @@ describe("TerminalDrawer", () => {
     expect(mounts.at(-1)).toMatchObject({ sessionId: "shell-1", autoFocus: false });
   });
 
-  it("the drawer's section keeps the terminal's dark fill to the terminal", () => {
+  it("the drawer is the terminal's dark while it holds shells, and the exited bar keeps the theme", () => {
     render(<TerminalDrawer {...baseProps} terminals={fakeTerminals([tab("shell-1", "/work/zorvo", 1, "exited")])} />);
 
-    expect(screen.getByRole("region", { name: "Terminal" })).not.toHaveClass("bg-terminal-bg");
-    expect(screen.getByRole("tablist").parentElement).not.toHaveClass("bg-terminal-bg");
-    expect(screen.getByText("The shell exited.").parentElement).not.toHaveClass("bg-terminal-bg");
+    expect(screen.getByRole("region", { name: "Terminal" })).toHaveClass("bg-terminal-bg");
+    expect(screen.getByRole("tablist").parentElement).toHaveClass("bg-terminal-bg");
+    expect(screen.getByText("The shell exited.").parentElement).toHaveClass("bg-surface-1");
+  });
+
+  it("an empty drawer keeps the theme's surface", () => {
+    render(<TerminalDrawer {...baseProps} terminals={fakeTerminals([])} />);
+
+    expect(screen.getByRole("region", { name: "Terminal" })).toHaveClass("bg-surface-1");
   });
 
   it("puts the terminal straight into the panel's flex column, so its height comes from the drawer and not from its output", () => {
@@ -146,13 +151,13 @@ describe("TerminalDrawer", () => {
 
     const hide = screen.getByRole("button", { name: "Hide terminal" });
     expect(hide.querySelector("svg")).toHaveClass("lucide-chevron-down");
-    expect(screen.getByRole("button", { name: "Close zorvo · main" }).querySelector("svg")).toHaveClass("lucide-x");
+    expect(screen.getByRole("button", { name: "Close zsh" }).querySelector("svg")).toHaveClass("lucide-x");
   });
 
   it("picking the tab that is already in front focuses its shell", async () => {
     render(<TerminalDrawer {...baseProps} terminals={fakeTerminals([tab("shell-1", "/work/zorvo", 1)])} />);
 
-    await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "zorvo · main" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("tab", { name: "zsh" })); });
 
     expect(focusCalls).toEqual(["shell-1"]);
     expect(mounts).toHaveLength(1);
@@ -162,7 +167,7 @@ describe("TerminalDrawer", () => {
     render(<StatefulDrawer initial={[tab("shell-1", "/work/zorvo", 1), tab("shell-2", "/work/zorvo", 2)]} />);
     mounts.length = 0;
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Close zorvo · main 2" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Close zsh 2" })); });
 
     expect(mounts).toEqual([expect.objectContaining({ sessionId: "shell-1", autoFocus: true })]);
   });
@@ -170,15 +175,15 @@ describe("TerminalDrawer", () => {
   it("closing a tab behind the one in front puts focus on the tab strip", async () => {
     render(<StatefulDrawer initial={[tab("shell-1", "/work/zorvo", 1), tab("shell-2", "/work/zorvo", 2)]} />);
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Close zorvo · main" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Close zsh" })); });
 
-    expect(screen.getByRole("tab", { name: "zorvo · main 2" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "zsh 2" })).toHaveFocus();
   });
 
   it("closing the last tab puts focus on New terminal", async () => {
     render(<StatefulDrawer initial={[tab("shell-1", "/work/zorvo", 1)]} />);
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Close zorvo · main" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Close zsh" })); });
 
     expect(screen.getByRole("button", { name: "New terminal" })).toHaveFocus();
   });
@@ -187,20 +192,20 @@ describe("TerminalDrawer", () => {
     const terminals = fakeTerminals([tab("shell-1", "/work/zorvo", 1), tab("shell-2", "/work/zorvo", 2)]);
     render(<TerminalDrawer {...baseProps} terminals={terminals} />);
 
-    const first = screen.getByRole("tab", { name: "zorvo · main" });
-    const second = screen.getByRole("tab", { name: "zorvo · main 2" });
+    const first = screen.getByRole("tab", { name: "zsh" });
+    const second = screen.getByRole("tab", { name: "zsh 2" });
     // The newest tab is the one in front until you pick another.
     expect(second).toHaveAttribute("aria-selected", "true");
     expect(first).toHaveAttribute("aria-selected", "false");
 
     await act(async () => { fireEvent.click(first); });
     expect(first).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByLabelText("zorvo · main")).toBeInTheDocument();
+    expect(screen.getByLabelText("zsh · zorvo")).toBeInTheDocument();
     expect(screen.queryByTestId("view-shell-2")).not.toBeInTheDocument();
 
     await act(async () => { fireEvent.click(second); });
     expect(second).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByTestId("view-shell-2")).toHaveAttribute("aria-label", "zorvo · main 2");
+    expect(screen.getByTestId("view-shell-2")).toHaveAttribute("aria-label", "zsh 2 · zorvo");
   });
 
   it("New terminal adds a tab, and its view takes focus", async () => {
@@ -219,7 +224,7 @@ describe("TerminalDrawer", () => {
     rerender(<TerminalDrawer {...baseProps} terminals={{ ...terminals }} />);
 
     expect(terminals.open).toHaveBeenCalledWith("/work/zorvo");
-    expect(screen.getByRole("tab", { name: "zorvo · main 2" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "zsh 2" })).toHaveAttribute("aria-selected", "true");
     expect(mounts.at(-1)).toMatchObject({ sessionId: "shell-2", autoFocus: true });
   });
 
@@ -235,10 +240,10 @@ describe("TerminalDrawer", () => {
     const { rerender } = render(<TerminalDrawer {...baseProps} terminals={terminals} />);
 
     rerender(
-      <TerminalDrawer {...baseProps} folderPath="/work/other" folderName="other" branch="dev" terminals={terminals} />,
+      <TerminalDrawer {...baseProps} folderPath="/work/other" folderName="other" terminals={terminals} />,
     );
 
-    expect(mounts.at(-1)).toMatchObject({ sessionId: "shell-2", label: "other · dev", autoFocus: false });
+    expect(mounts.at(-1)).toMatchObject({ sessionId: "shell-2", label: "zsh · other", autoFocus: false });
   });
 
   it("does not take focus again when you return to a folder after the first mount", () => {
@@ -254,7 +259,7 @@ describe("TerminalDrawer", () => {
     const terminals = fakeTerminals([tab("shell-1", "/work/zorvo", 1), tab("shell-2", "/work/zorvo", 2)]);
     render(<TerminalDrawer {...baseProps} terminals={terminals} />);
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Close zorvo · main 2" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Close zsh 2" })); });
 
     expect(terminals.close).toHaveBeenCalledWith("shell-2");
   });

@@ -115,4 +115,22 @@ describe("light theme contrast", () => {
     const r = ratio(fixed("terminal-fg-subtle"), fixed("terminal-bg"));
     expect(r, `terminal-fg-subtle on terminal-bg is ${r.toFixed(2)}:1, needs 4.5:1`).toBeGreaterThanOrEqual(4.5);
   });
+
+  it("the terminal strip's focus ring (terminal-fg-muted) shows on its fill and its selected tab", () => {
+    const fixed = (name: string) => {
+      const m = css.match(new RegExp(`--color-${name}:\\s*(#[0-9a-fA-F]{6})\\s*;`));
+      if (!m) throw new Error(`@theme has no hex --color-${name}`);
+      return m[1];
+    };
+    for (const fill of ["terminal-bg", "terminal-surface"]) {
+      const r = ratio(fixed("terminal-fg-muted"), fixed(fill));
+      expect(r, `terminal-fg-muted on ${fill} is ${r.toFixed(2)}:1, needs 3:1`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("the selected terminal tab's folder name (terminal-fg-muted, 11px) is readable on terminal-surface", () => {
+    const fixed = (name: string) => css.match(new RegExp(`--color-${name}:\\s*(#[0-9a-fA-F]{6})\\s*;`))![1];
+    const r = ratio(fixed("terminal-fg-muted"), fixed("terminal-surface"));
+    expect(r, `terminal-fg-muted on terminal-surface is ${r.toFixed(2)}:1, needs 4.5:1`).toBeGreaterThanOrEqual(4.5);
+  });
 });

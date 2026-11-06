@@ -1,17 +1,20 @@
 import { Fragment } from "react";
-import { matchSegments } from "../../lib/match-segments";
+import { matchSegments, segmentsOf, type MatchRange } from "../../lib/match-segments";
 
 export interface HighlightedProps {
   text: string;
   /** What was searched for; its matches in `text` show in bold. */
-  query: string;
+  query?: string;
+  /** The matches as [start, end) offsets into `text`, when they were found in a longer text; wins over `query`. */
+  ranges?: readonly MatchRange[];
 }
 
 /** A text with the matches of a search in bold, for menus that filter as you type. */
-export function Highlighted({ text, query }: HighlightedProps) {
+export function Highlighted({ text, query = "", ranges }: HighlightedProps) {
+  const segments = ranges ? segmentsOf(text, ranges) : matchSegments(text, query);
   return (
     <>
-      {matchSegments(text, query).map((segment, index) =>
+      {segments.map((segment, index) =>
         segment.isMatch ? (
           <mark key={index} className="bg-transparent font-semibold text-fg">
             {segment.text}

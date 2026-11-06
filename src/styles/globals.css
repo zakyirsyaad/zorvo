@@ -32,8 +32,14 @@
   --color-terminal-bg: #0a0a0b;
   --color-terminal-fg: #d4d4d8;
   --color-terminal-fg-subtle: #8b8b94;
+  /* The terminal tab's strip, in both themes: its line and the selected tab, its tab names. */
+  --color-terminal-surface: #27272a;
+  --color-terminal-fg-strong: #fafafa;
+  --color-terminal-fg-muted: #a1a1aa;
   /* Selected text, in both themes: zinc-400 at 32%, as the canvas draws it. */
   --color-selection: rgba(161, 161, 170, 0.32);
+  /* Rows of code the selection covers in the file view. */
+  --color-line-selected: rgba(161, 161, 170, 0.18);
 
   /* The chat's column: messages, cards, notices and the composer share it. */
   --container-chat: 680px;
@@ -90,6 +96,7 @@
     --color-diff-added: rgba(4, 120, 87, 0.08);
     --color-diff-removed: rgba(185, 28, 28, 0.08);
     --color-selection: rgba(161, 161, 170, 0.32);
+    --color-line-selected: rgba(82, 82, 91, 0.14);
     --elevation-popover: 0 12px 32px -8px rgba(9, 9, 11, 0.18);
     --elevation-dialog: 0 24px 64px -12px rgba(9, 9, 11, 0.25);
   }

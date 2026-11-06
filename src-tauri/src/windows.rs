@@ -20,6 +20,9 @@ pub const SESSION_WINDOW_LABEL_PREFIX: &str = "session-";
 pub const SESSION_WINDOW_TITLE: &str = "Zorvo";
 pub const SESSION_WINDOW_WIDTH: f64 = 900.0;
 pub const SESSION_WINDOW_HEIGHT: f64 = 700.0;
+/// A popout keeps room for its chat and composer: below this the composer's Send would be out of reach.
+pub const SESSION_WINDOW_MIN_WIDTH: f64 = 480.0;
+pub const SESSION_WINDOW_MIN_HEIGHT: f64 = 560.0;
 
 /// Whether `session_id` is safe to embed in a window label and a URL query.
 ///
@@ -85,7 +88,8 @@ pub fn open_session_window(app: AppHandle, session_id: String) -> Result<(), Str
 
     let builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App(url.into()))
         .title(SESSION_WINDOW_TITLE)
-        .inner_size(SESSION_WINDOW_WIDTH, SESSION_WINDOW_HEIGHT);
+        .inner_size(SESSION_WINDOW_WIDTH, SESSION_WINDOW_HEIGHT)
+        .min_inner_size(SESSION_WINDOW_MIN_WIDTH, SESSION_WINDOW_MIN_HEIGHT);
 
     // Match the main window's chrome so the popout gets native traffic lights
     // floating over the same TopBar inset instead of a duplicate title bar.

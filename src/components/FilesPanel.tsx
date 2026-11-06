@@ -1,15 +1,6 @@
 import { useMemo, useState } from "react";
-import {
-  ChevronRight,
-  File,
-  Folder,
-  FolderOpen,
-  FolderSearch,
-  Plus,
-  RefreshCw,
-  Search,
-  X,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, File, Folder, Plus, RefreshCw, Search, X } from "lucide-react";
+import { IconButton } from "./ui/IconButton";
 import { useFileTree, type FileTree } from "../hooks/useFileTree";
 import {
   errorMessage,
@@ -54,12 +45,14 @@ const MARKER_COLOR: Record<FileMarker, string> = {
   added: "text-status-running",
 };
 
-const BASE_INDENT_PX = 8;
-const INDENT_STEP_PX = 12;
-const HEADER_BUTTON =
-  "rounded p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg-secondary focus-ring";
+// As drawn: a folder 4px in plus 16px a level; a file past its folder's 12px chevron and 6px gap, so the icons line up.
+const BASE_INDENT_PX = 4;
+const INDENT_STEP_PX = 16;
+const FILE_INDENT_PX = 18;
 const ROW =
-  "group flex items-center rounded-md text-fg-muted hover:bg-surface-hover hover:text-fg-secondary";
+  "group relative flex h-[26px] items-center gap-1.5 rounded pr-1.5 text-fg-secondary hover:bg-surface-hover hover:text-fg focus-within:bg-surface-hover";
+const ROW_BUTTON = "flex h-[26px] min-w-0 flex-1 items-center gap-1.5 text-left focus-ring";
+const MARKER_SLOT = "w-3 shrink-0 text-center text-micro font-semibold";
 const NOTE = "py-1 pr-2 text-caption";
 
 interface TreeView {
@@ -72,8 +65,8 @@ interface TreeView {
   markers?: FileMarkers;
 }
 
-function indent(depth: number): { paddingLeft: number } {
-  return { paddingLeft: BASE_INDENT_PX + depth * INDENT_STEP_PX };
+function indent(depth: number, extra = 0): { paddingLeft: number } {
+  return { paddingLeft: BASE_INDENT_PX + depth * INDENT_STEP_PX + extra };
 }
 
 function hasVisibleDescendant(visible: Set<string>, folder: string): boolean {
@@ -84,28 +77,21 @@ function hasVisibleDescendant(visible: Set<string>, folder: string): boolean {
 function FolderRow({ entry, depth, view }: { entry: DirEntryInfo; depth: number; view: TreeView }) {
   const path = entry.relativePath;
   const expanded = view.visible ? hasVisibleDescendant(view.visible, path) : view.tree.isExpanded(path);
-  const Icon = expanded ? FolderOpen : Folder;
+  const Chevron = expanded ? ChevronDown : ChevronRight;
   const hasChanges = view.markers?.folders.has(path) ?? false;
   return (
     <li role="treeitem" aria-label={hasChanges ? `${entry.name}, contains changes` : entry.name} aria-expanded={expanded}>
       <div className={ROW}>
-        <button
-          type="button"
-          onClick={() => view.tree.toggleFolder(path)}
-          title={path}
-          style={indent(depth)}
-          className="flex min-w-0 flex-1 items-center gap-1.5 py-1 pr-2 text-left focus-ring"
-        >
-          <ChevronRight
-            size={12}
-            aria-hidden="true"
-            className={`shrink-0 text-fg-muted transition-transform ${expanded ? "rotate-90" : ""}`}
-          />
-          <Icon size={13} aria-hidden="true" className="shrink-0 text-fg-muted" />
+        <button type="button" onClick={() => view.tree.toggleFolder(path)} title={path} style={indent(depth)} className={ROW_BUTTON}>
+          <Chevron size={12} aria-hidden="true" className="shrink-0 text-fg-subtle" />
+          {/* The folder icon stays closed, as drawn: the chevron says whether it is open. */}
+          <Folder size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
           <span className="truncate font-mono">{entry.name}</span>
         </button>
         {hasChanges && (
-          <span role="img" aria-label="Contains changes" className="mr-2.5 size-1.5 shrink-0 rounded-full bg-status-attention" />
+          <span role="img" aria-label="Contains changes" className={`${MARKER_SLOT} text-status-attention`}>
+            •
+          </span>
         )}
       </div>
       {expanded && (
@@ -127,31 +113,35 @@ function FileRow({ entry, depth, view }: { entry: DirEntryInfo; depth: number; v
           type="button"
           onClick={() => view.onOpenFile(entry)}
           title={`Open ${entry.relativePath}`}
-          // Files line up with folder names, past the folder chevron.
-          style={indent(depth + 1)}
-          className="flex min-w-0 flex-1 items-center gap-1.5 py-1 pr-2 text-left focus-ring"
+          // Files line up with folder icons, past the folder chevron and its gap.
+          style={indent(depth, FILE_INDENT_PX)}
+          className={ROW_BUTTON}
         >
-          <File size={13} aria-hidden="true" className="shrink-0 text-fg-muted" />
+          <File size={14} aria-hidden="true" className="shrink-0 text-fg-subtle" />
           <span className="truncate font-mono">{entry.name}</span>
-          {marker && (
-            <>
-              <span aria-hidden="true" className={`ml-auto shrink-0 font-mono text-caption ${MARKER_COLOR[marker]}`}>
-                {MARKER_LETTER[marker]}
-              </span>
-              <span className="sr-only">{MARKER_WORD[marker]}</span>
-            </>
-          )}
+          {marker && <span className="sr-only">{MARKER_WORD[marker]}</span>}
         </button>
         {onInsertPath && (
+          // Shown on the row's hover or focus, before the marker, as drawn.
           <button
             type="button"
             aria-label={`Add ${entry.name} to prompt`}
             title="Add to prompt"
             onClick={() => onInsertPath(joinWorkspacePath(view.rootPath, entry.relativePath))}
-            className="mr-1 rounded p-1 text-fg-muted opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-fg focus-ring"
+            // Laid over the row's end, out of its flow, so it cuts no file name short while unseen; faded rather than
+            // display:none, so a screen reader's cursor and Shift+Tab still reach it. Its fill covers the name under it.
+            className={`absolute top-1/2 flex h-5 -translate-y-1/2 items-center gap-1 rounded border border-border-strong bg-surface-hover px-1.5 font-sans text-caption text-fg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-ring ${
+              marker ? "right-6" : "right-1.5"
+            }`}
           >
-            <Plus size={12} aria-hidden="true" />
+            <Plus size={10} aria-hidden="true" />
+            Add to prompt
           </button>
+        )}
+        {marker && (
+          <span aria-hidden="true" className={`${MARKER_SLOT} ${MARKER_COLOR[marker]}`}>
+            {MARKER_LETTER[marker]}
+          </span>
         )}
       </div>
     </li>
@@ -213,45 +203,39 @@ interface PanelHeaderProps {
 
 function PanelHeader({ rootName, rootPath, query, onQueryChange, onRefresh, onRevealRoot, onClose }: PanelHeaderProps) {
   return (
-    <div className="flex flex-col gap-2 border-b border-border p-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <h2 className="text-caption font-semibold uppercase tracking-wider text-fg-subtle">Files</h2>
-          <span title={rootPath} className="truncate font-mono text-caption text-fg-muted">
-            {rootName}
+    <div className="flex shrink-0 flex-col gap-2.5 pt-3 pr-3 pb-2 pl-4">
+      <div className="flex items-center gap-1.5">
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-ui font-semibold text-fg">{rootName}</span>
+          <span title={rootPath} className="truncate font-mono text-caption text-fg-subtle">
+            {rootPath}
           </span>
-        </div>
-        <div className="flex shrink-0 items-center gap-0.5">
-          <button type="button" onClick={onRefresh} aria-label="Refresh files" title="Refresh" className={HEADER_BUTTON}>
-            <RefreshCw size={13} aria-hidden="true" />
-          </button>
-          {onRevealRoot && (
-            <button type="button" onClick={onRevealRoot} aria-label="Reveal in Finder" title="Reveal in Finder" className={HEADER_BUTTON}>
-              <FolderSearch size={13} aria-hidden="true" />
-            </button>
-          )}
-          {onClose && (
-            <button type="button" onClick={onClose} aria-label="Close files panel" title="Close" className={HEADER_BUTTON}>
-              <X size={14} aria-hidden="true" />
-            </button>
-          )}
-        </div>
+        </span>
+        <IconButton label="Refresh files" title="Refresh" size="row" onClick={onRefresh}>
+          <RefreshCw size={14} aria-hidden="true" />
+        </IconButton>
+        {onRevealRoot && (
+          <IconButton label="Reveal in Finder" title="Reveal in Finder" size="row" onClick={onRevealRoot}>
+            <ExternalLink size={14} aria-hidden="true" />
+          </IconButton>
+        )}
+        {onClose && (
+          <IconButton label="Close files panel" title="Close" size="row" onClick={onClose}>
+            <X size={14} aria-hidden="true" />
+          </IconButton>
+        )}
       </div>
-      <div className="relative">
-        <Search
-          size={13}
-          aria-hidden="true"
-          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-subtle"
-        />
+      <label className="flex h-[30px] items-center gap-2 rounded-lg border border-border-strong bg-surface-2 px-2.5 text-fg-subtle focus-ring-within">
+        <Search size={14} aria-hidden="true" className="shrink-0" />
         <input
           type="text"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder="Filter files"
           aria-label="Filter files"
-          className="w-full rounded-md border border-border-strong bg-surface-2 py-1.5 pl-8 pr-3 text-ui-sm text-fg-secondary placeholder-fg-subtle focus-ring"
+          className="min-w-0 flex-1 bg-transparent text-ui-sm text-fg placeholder-fg-subtle outline-none"
         />
-      </div>
+      </label>
     </div>
   );
 }
@@ -327,8 +311,8 @@ export function FilesPanel({
           {openError}
         </p>
       )}
-      <div className="flex-1 overflow-y-auto p-1.5">
-        <ul role="tree" aria-label={`Files in ${rootName}`}>
+      <div className="flex-1 overflow-y-auto px-2 pb-3">
+        <ul role="tree" aria-label={`Files in ${rootName}`} className="font-mono">
           <FolderChildren folder={ROOT_FOLDER} depth={0} view={view} />
         </ul>
         {visible?.size === 0 && (

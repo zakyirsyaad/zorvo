@@ -8,7 +8,7 @@ export interface Token {
 
 /** Monochrome, per the spec: keywords brighter, strings muted, comments subtle italic. */
 export const TOKEN_STYLE: Record<TokenKind, string> = {
-  keyword: "text-fg",
+  keyword: "text-fg font-medium",
   string: "text-fg-muted",
   comment: "text-fg-subtle italic",
   number: "text-fg",

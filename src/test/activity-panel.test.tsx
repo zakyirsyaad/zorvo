@@ -29,13 +29,14 @@ function stubBackend(overrides: Record<string, () => Promise<unknown>> = {}) {
 }
 
 async function show(props: Partial<Parameters<typeof ActivityPanel>[0]> = {}) {
-  const handlers = { onJump: vi.fn(), onOpenDiff: vi.fn(), onClose: vi.fn() };
+  const handlers = { onJump: vi.fn(), onShowChanges: vi.fn() };
   await act(async () => {
     render(
       <ActivityPanel
         messages={[]}
         transcript="ready"
         session={SESSION}
+        agentName="Qwen Code"
         isRepository
         isBusy={false}
         version={1}
@@ -53,7 +54,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("ActivityPanel inside the inspector", () => {
   it("has no close button of its own inside the inspector", async () => {
-    await show({ onClose: undefined });
+    await show();
     expect(screen.queryByRole("button", { name: "Close activity panel" })).toBeNull();
     expect(screen.getByRole("complementary", { name: "Activity panel" }).className).not.toContain("w-80");
   });
@@ -63,8 +64,7 @@ describe("ActivityPanel", () => {
   it("always says whose report this is, and what rewinding does", async () => {
     stubBackend();
     await show();
-    expect(screen.getByText("Agents report this themselves. Zorvo can only check file changes against git.")).toBeDefined();
-    expect(screen.getByText("Rewinding removes activity from this list.")).toBeDefined();
+    expect(screen.getByText("This is Qwen Code's own report of what it did. Rewinding the chat removes its entries too.")).toBeDefined();
   });
 
   it("does not read as empty while the transcript loads", async () => {
@@ -95,13 +95,14 @@ describe("ActivityPanel", () => {
     expect(screen.getByText("Write (no file named)")).toBeDefined();
   });
 
-  it("shows when an entry happened, and nothing for a replayed one", async () => {
+  it("shows when a turn started, and nothing for a replayed one", async () => {
     stubBackend();
-    await show({ messages: [reply([{ kind: "execute", command: "ls", startedAt: 1000 }])] });
-    expect(document.querySelector("time")).not.toBeNull();
+    const prompt = (patch: Partial<ChatMessage> = {}): ChatMessage => ({ id: "u-1", role: "user", content: "List", timestamp: Date.now() - 120_000, ...patch });
+    await show({ messages: [prompt(), reply([{ kind: "execute", command: "ls" }])] });
+    expect(screen.getByText("2 minutes ago")).toBeDefined();
     cleanup();
-    await show({ messages: [reply([{ kind: "execute", command: "ls" }], { hasKnownTime: false })] });
-    expect(document.querySelector("time")).toBeNull();
+    await show({ messages: [prompt({ hasKnownTime: false }), reply([{ kind: "execute", command: "ls" }], { hasKnownTime: false })] });
+    expect(screen.queryByText("2 minutes ago")).toBeNull();
   });
 
   it("names a row by its first line, kept short", async () => {
@@ -139,9 +140,9 @@ describe("ActivityPanel", () => {
   it("lists a file git shows that the agent did not, and says what it compared", async () => {
     stubBackend();
     await show({ headStats: [stat("sneaky.ts")] });
-    const section = screen.getByRole("region", { name: "Not reported by the agent" });
-    expect(within(section).getByRole("button", { name: "sneaky.ts" })).toBeDefined();
-    expect(within(section).getByText("These changed in git, but the agent did not list them. A command, a rewind, you, or another session may have changed them.")).toBeDefined();
+    const section = screen.getByRole("region", { name: "Unreported changes" });
+    expect(within(section).getByText("sneaky.ts")).toBeDefined();
+    expect(within(section).getByText("1 file changed that Qwen Code didn't report")).toBeDefined();
     expect(within(section).getByText("Compared with uncommitted changes.")).toBeDefined();
   });
 
@@ -149,15 +150,15 @@ describe("ActivityPanel", () => {
     stubBackend({ session_diff_stats_since: () => Promise.resolve([stat("b.ts")]) });
     const session = { ...SESSION, worktree: { repoPath: "/m", path: "/r", branch: "agent/x", startCommit: "a".repeat(40) } } as Session;
     await show({ session, headStats: [] });
-    const section = screen.getByRole("region", { name: "Not reported by the agent" });
+    const section = screen.getByRole("region", { name: "Unreported changes" });
     expect(within(section).getByText("Compared since this worktree began.")).toBeDefined();
-    expect(within(section).getByRole("button", { name: "b.ts" })).toBeDefined();
+    expect(within(section).getByText("b.ts")).toBeDefined();
   });
 
-  it("says when nothing is unreported", async () => {
+  it("shows no card when nothing is unreported", async () => {
     stubBackend();
     await show({ messages: [reply([{ kind: "edit", locations: ["/r/a.ts"] }])], headStats: [stat("a.ts")] });
-    expect(screen.getByText("Nothing unreported.")).toBeDefined();
+    expect(screen.queryByRole("region", { name: "Unreported changes" })).toBeNull();
   });
 
   it("says it could not check when the stats failed", async () => {
@@ -215,51 +216,28 @@ describe("ActivityPanel", () => {
     expect(screen.getByText("rm \\u202Efdp.exe")).toBeDefined();
   });
 
-  it("keeps a multi-line command's lines and clamps it until opened", async () => {
+  it("shows a multi-line command's first line, marked as cut", async () => {
     stubBackend();
     await show({ messages: [reply([{ kind: "execute", command: "one\ntwo\nthree\nfour" }])] });
-    const shown = screen.getByText(/^one/);
-    expect(shown.textContent).toBe("one\ntwo\nthree");
-    fireEvent.click(screen.getByRole("button", { name: "Show all 4 lines" }));
-    expect(screen.getByText(/^one/).textContent).toBe("one\ntwo\nthree\nfour");
+    expect(screen.getByText(/^one/).textContent).toBe("one …");
   });
 
-  it("keeps an opened command with its own row when the filter changes", async () => {
-    stubBackend();
-    await show({
-      messages: [
-        reply([
-          { kind: "read", locations: ["/r/a.ts"] },
-          { kind: "execute", command: "first\ntwo\nthree\nfour" },
-          { kind: "execute", command: "second\ntwo\nthree\nfour" },
-        ]),
-      ],
-    });
-    fireEvent.click(within(screen.getByText(/^first/).closest("li") as HTMLElement).getByRole("button", { name: "Show all 4 lines" }));
-
-    fireEvent.click(screen.getByRole("button", { name: "Commands, 2" }));
-
-    expect(screen.getByText(/^first/).textContent).toBe("first\ntwo\nthree\nfour");
-    expect(screen.getByText(/^second/).textContent).toBe("second\ntwo\nthree");
-  });
-
-  it("keeps an opened command with its own row when an earlier tool reports another file", async () => {
+  it("keeps each row when an earlier tool reports another file", async () => {
     stubBackend();
     const message = (locations: string[]) =>
       reply([
         { id: "edit", kind: "edit", status: "running", locations },
-        { id: "long", kind: "execute", command: "one\ntwo\nthree\nfour" },
         { id: "short", kind: "execute", command: "short" },
       ]);
-    const props = { transcript: "ready" as const, session: SESSION, isRepository: true, isBusy: false, version: 1, headStats: [], headStatsFailed: false, onJump: vi.fn(), onOpenDiff: vi.fn(), onClose: vi.fn() };
+    const props = { transcript: "ready" as const, session: SESSION, agentName: "Qwen Code", isRepository: true, isBusy: false, version: 1, headStats: [], headStatsFailed: false, onJump: vi.fn(), onShowChanges: vi.fn() };
     const view = render(<ActivityPanel {...props} messages={[message(["/r/a.ts"])]} />);
-    fireEvent.click(screen.getByRole("button", { name: "Show all 4 lines" }));
     await act(async () => {
       view.rerender(<ActivityPanel {...props} messages={[message(["/r/a.ts", "/r/b.ts"])]} />);
     });
 
     await screen.findByText("/r/b.ts");
-    expect(screen.queryByRole("button", { name: "Show all 4 lines" })).toBeNull();
+    expect(screen.getByText("/r/a.ts")).toBeDefined();
+    expect(screen.getByText("short")).toBeDefined();
   });
 
   it("renders markdown as text", async () => {
@@ -283,10 +261,10 @@ describe("ActivityPanel", () => {
     expect(onJump).toHaveBeenCalledWith("m-1");
   });
 
-  it("opens the diff from an unreported file", async () => {
+  it("shows the Changes tab from the unreported card", async () => {
     stubBackend();
-    const { onOpenDiff } = await show({ headStats: [stat("a.ts")] });
-    fireEvent.click(screen.getByRole("button", { name: "a.ts" }));
-    expect(onOpenDiff).toHaveBeenCalledOnce();
+    const { onShowChanges } = await show({ headStats: [stat("a.ts")] });
+    fireEvent.click(screen.getByRole("button", { name: "Show in Changes" }));
+    expect(onShowChanges).toHaveBeenCalledOnce();
   });
 });

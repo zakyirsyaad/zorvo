@@ -10,7 +10,7 @@ export interface UnavailableAgentsProps {
   isSearching: boolean;
 }
 
-/** The registry agents Zorvo cannot offer, collapsed by default, each with why. They have no buttons. */
+/** The registry agents Zorvo cannot offer, folded under a quiet toggle, each with why. They have no buttons. */
 export function UnavailableAgents({ agents, isSearching }: UnavailableAgentsProps) {
   const headingId = useId();
   const listId = useId();
@@ -19,36 +19,36 @@ export function UnavailableAgents({ agents, isSearching }: UnavailableAgentsProp
   const isOpen = isExpanded || isSearching;
   const Chevron = isOpen ? ChevronDown : ChevronRight;
   return (
-    <section aria-labelledby={headingId}>
-      <h3 id={headingId} className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
+    <section aria-labelledby={headingId} className="flex flex-col gap-2">
+      <h3 id={headingId} className="self-start">
         <button
           type="button"
           aria-expanded={isOpen}
           aria-controls={listId}
           aria-disabled={isSearching}
           onClick={() => !isSearching && setIsExpanded(!isExpanded)}
-          className="focus-ring flex items-center gap-1 rounded uppercase tracking-wider aria-disabled:cursor-default"
+          className="flex h-7 items-center gap-1.5 rounded px-1 text-ui-sm text-fg-muted focus-ring aria-disabled:cursor-default"
         >
           <Chevron size={12} aria-hidden="true" />
           {`Not available (${agents.length})`}
         </button>
       </h3>
-      <ul id={listId} hidden={!isOpen} className="flex flex-col gap-1.5">
+      <ul id={listId} hidden={!isOpen} className="flex flex-col rounded-xl border border-border bg-surface-2">
         {isOpen &&
           agents.map((agent) => (
             <li
               key={agent.id}
               aria-label={agent.name}
-              className="flex gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-xs"
+              className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"
             >
-              <AgentLogo profileId={agent.id} name="" size={20} className="mt-0.5" />
-              <div className="min-w-0 flex-1">
-                <span className="block truncate font-medium text-fg">{agent.name}</span>
-                <p className="mt-0.5 text-[11px] text-fg-muted">{unavailableReasonText(agent.reason)}</p>
-                {agent.description && (
-                  <p className="mt-1 line-clamp-2 text-[11px] text-fg-subtle">{agent.description}</p>
-                )}
-              </div>
+              <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-[7px] bg-surface-hover">
+                <AgentLogo profileId={agent.id} name="" size={16} />
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="truncate text-ui text-fg">{agent.name}</span>
+                <span className="text-ui-sm text-fg-subtle">{unavailableReasonText(agent.reason)}</span>
+                {agent.description && <span className="line-clamp-2 text-ui-sm text-fg-subtle">{agent.description}</span>}
+              </span>
             </li>
           ))}
       </ul>

@@ -93,9 +93,9 @@ describe("AgentCatalog", () => {
   it("lists the agents in use and all the others in two sections", () => {
     renderCatalog();
 
-    expect(within(section(/^In use \(3\)$/)).getAllByRole("listitem").map((item) => item.getAttribute("aria-label")))
+    expect(within(section(/^In use$/)).getAllByRole("listitem").map((item) => item.getAttribute("aria-label")))
       .toEqual(["Claude Code", "Codex", "Qwen Code"]);
-    expect(within(section(/^All agents \(1\)$/)).getByRole("listitem", { name: "Gemini CLI" })).toBeInTheDocument();
+    expect(within(section(/^Available$/)).getByRole("listitem", { name: "Gemini CLI" })).toBeInTheDocument();
   });
 
   it("shows each agent's version, status line and description", () => {
@@ -566,7 +566,7 @@ describe("Catalog actions — Remove", () => {
     await waitFor(() => expect(callsTo(spy, "remove_agent_install")).toEqual([["remove_agent_install", { agentId: "codex-acp" }]]));
     expect(savedSettings().enabledAgents).toEqual(["claude-acp", "qwen-code"]);
     expect(savedSettings().removedAgents).toEqual(["codex-acp"]);
-    expect(within(section(/^All agents/)).getByRole("listitem", { name: "Codex" })).toBeInTheDocument();
+    expect(within(section(/^Available$/)).getByRole("listitem", { name: "Codex" })).toBeInTheDocument();
   });
 
   it("saves the removal before the backend deletes the copy", async () => {
@@ -591,7 +591,7 @@ describe("Catalog actions — Remove", () => {
     await removeFromRow("Codex");
 
     expect(await within(row("Codex")).findByText("Could not delete Zorvo's copy: busy")).toBeInTheDocument();
-    expect(within(section(/^All agents/)).getByRole("listitem", { name: "Codex" })).toBeInTheDocument();
+    expect(within(section(/^Available$/)).getByRole("listitem", { name: "Codex" })).toBeInTheDocument();
     await waitFor(() => expect(savedSettings().enabledAgents).toEqual(["claude-acp", "qwen-code"]));
   });
 

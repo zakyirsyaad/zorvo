@@ -159,3 +159,49 @@ describe("an agent's row as drawn", () => {
     expect(screen.queryByRole("button", { name: /sign-in for/ })).toBeNull();
   });
 });
+
+describe("the Agents section as drawn", () => {
+  const unavailable = [{ id: "broken", name: "Broken Agent", description: null, reason: "invalid_entry" as const }];
+
+  it("the search row is drawn at 32px", () => {
+    renderCatalog();
+    const search = screen.getByRole("searchbox", { name: "Search agents" }).closest("label") as HTMLElement;
+    expect(search).toHaveClass("h-8", "border-border-strong", "bg-surface-2");
+    expect(screen.getByRole("button", { name: "Check again" })).toHaveClass("h-8");
+  });
+
+  it("groups read In use and Available, without counts, as cards", () => {
+    renderCatalog();
+    const inUse = screen.getByRole("region", { name: "In use" });
+    expect(within(inUse).getAllByRole("listitem").map((item) => item.getAttribute("aria-label"))).toEqual(["Claude Code", "Codex"]);
+    expect(inUse.querySelector(".rounded-xl.bg-surface-2")).not.toBeNull();
+    expect(screen.getByRole("region", { name: "Available" })).toBeInTheDocument();
+    expect(screen.queryByText(/All agents/)).toBeNull();
+    expect(screen.queryByText(/\(\d+\)$/)).toBeNull();
+  });
+
+  it("draws no empty group", () => {
+    renderCatalog({ enabledIds: [] });
+    expect(screen.queryByRole("region", { name: "In use" })).toBeNull();
+  });
+
+  it("search narrows both groups and opens Not available", () => {
+    renderCatalog({ catalog: { lastChecked: null, agents: fakeCatalog, unavailable } });
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search agents" }), { target: { value: "gem" } });
+    expect(screen.queryByRole("region", { name: "In use" })).toBeNull();
+    expect(within(screen.getByRole("region", { name: "Available" })).getAllByRole("listitem")).toHaveLength(1);
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search agents" }), { target: { value: "broken" } });
+    expect(screen.getByRole("listitem", { name: "Broken Agent" })).toBeVisible();
+  });
+
+  it("Not available is a quiet toggle that opens a card of rows", () => {
+    renderCatalog({ catalog: { lastChecked: null, agents: fakeCatalog, unavailable } });
+    const toggle = screen.getByRole("button", { name: "Not available (1)" });
+    expect(toggle).toHaveClass("text-fg-muted", "h-7");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
+    const broken = screen.getByRole("listitem", { name: "Broken Agent" });
+    expect(broken.querySelector(".size-7.bg-surface-hover")).not.toBeNull();
+    expect(broken.closest(".rounded-xl")).toHaveClass("bg-surface-2");
+  });
+});

@@ -171,7 +171,10 @@ describe("the Agents section as drawn", () => {
     renderCatalog();
     const search = screen.getByRole("searchbox", { name: "Search agents" }).closest("label") as HTMLElement;
     expect(search).toHaveClass("h-8", "border-border-strong", "bg-surface-2");
-    expect(screen.getByRole("button", { name: "Check again" })).toHaveClass("h-8");
+    // The canvas draws Check again 32px tall to sit beside the field, with an outline button's 12px regular text.
+    const checkAgain = screen.getByRole("button", { name: "Check again" });
+    expect(checkAgain).toHaveClass("h-8", "text-ui-sm", "font-normal");
+    expect(checkAgain).not.toHaveClass("font-medium");
   });
 
   it("groups read In use and Available, without counts, as cards", () => {

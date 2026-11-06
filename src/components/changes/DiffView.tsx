@@ -1,15 +1,13 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DiffFileList } from "./DiffFileList";
 import { DiffFileSection, diffSectionId } from "./DiffFileSection";
 import { DiffViewHeader } from "./DiffViewHeader";
-import type { CommentAdder, FileReview } from "./LineComment";
 import { ReviewCommentsBar } from "./ReviewCommentsBar";
-import { useCommentedFileReads } from "../../hooks/useCommentedFileReads";
 import { useDiffTargets, useTargetStats } from "../../hooks/useDiffStats";
+import { useFileReviews } from "../../hooks/useFileReviews";
 import type { ReviewComments } from "../../hooks/useReviewComments";
 import type { AddReview } from "../../hooks/useReviewWiring";
 import { defaultTarget, targetOptions, type DiffTargetId } from "../../lib/diff-stats";
-import { commentStatus, sortComments } from "../../lib/review-comments";
 
 /** Above this many files the sections start collapsed, so a large diff does not read them all. */
 const AUTO_OPEN_LIMIT = 25;
@@ -95,35 +93,20 @@ export function DiffView({
     reloadTargets();
     reload();
   };
-  const comments = useMemo(() => sortComments(review?.comments ?? []), [review?.comments]);
-  const { reads, isReading } = useCommentedFileReads(rootPath, comments, target, stats, startCommit, refreshes);
-  // Each status can scan a whole file's rows, and an agent's every chunk redraws this panel.
-  const checked = useMemo(
-    () => comments.map((comment) => ({ comment, status: commentStatus(comment, target, reads[comment.file]) })),
-    [comments, reads, target],
-  );
-  const onTarget = useMemo(() => checked.filter(({ comment }) => comment.target === target), [checked, target]);
   const panel = useRef<HTMLElement>(null);
   const focusPanel = () => panel.current?.focus({ preventScroll: true });
-  const addReasonId = useId();
-  const adder: CommentAdder | undefined = addReview && {
-    inMessage: addReview.inMessage,
-    blockedReason: addReview.blockedReason ?? (haveTargetsFailed || hasListFailed ? NOT_LOADED : undefined),
-    reasonId: addReasonId,
-    // Until the root is known (loading, or the targets failed) a path cannot be worded from the agent's folder.
-    isWaiting: isReading || targets.root === "",
-    add: (checked) =>
-      addReview.add(checked, target, { root: targets.root, prefix: targets.prefix, baseName: targets.base?.name ?? null }),
-  };
-  const fileReviewOf = (path: string): FileReview | undefined =>
-    review && {
-      review,
-      adder,
-      target,
-      checked: onTarget.filter(({ comment }) => comment.file === path),
-      read: reads[path],
-      onFocusLost: focusPanel,
-    };
+  const { checked, reads, adder, fileReviewFor: fileReviewOf } = useFileReviews({
+    rootPath,
+    review,
+    addReview,
+    target,
+    targets,
+    stats,
+    startCommit,
+    refreshes,
+    blockedReason: haveTargetsFailed || hasListFailed ? NOT_LOADED : undefined,
+    onFocusLost: focusPanel,
+  });
   const [isSearching, setIsSearching] = useState(false);
   const [search, setSearch] = useState("");
   // Each target's first list decides what starts open; after that the user's

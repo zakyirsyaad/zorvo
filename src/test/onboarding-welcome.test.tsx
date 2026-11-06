@@ -21,6 +21,7 @@ function renderChoices(overrides: Partial<AgentChoicesProps> = {}) {
     signInStateOf: () => "ready" as SignInState,
     isSetupOnly: () => false,
     onTick: vi.fn(),
+    onInstall: vi.fn(),
     onUntick: vi.fn(),
     onMakeDefault: vi.fn(),
     ...overrides,
@@ -88,9 +89,10 @@ describe("agents you'll use", () => {
     expect(rowOf("Codex")).toHaveTextContent("Installed by Zorvo · Sign in when you start");
   });
 
-  it("an agent not installed says Zorvo installs it when you tick it", () => {
+  it("an agent not installed says Zorvo can install it, and offers nothing to press until ticked", () => {
     renderChoices();
-    expect(rowOf("Gemini CLI")).toHaveTextContent("Zorvo installs it when you tick it");
+    expect(rowOf("Gemini CLI")).toHaveTextContent("Not installed · Zorvo can install it");
+    expect(within(rowOf("Gemini CLI")).queryByRole("button", { name: /Install/ })).toBeNull();
   });
 
   it("an install shows its step and bar in the row", async () => {
@@ -189,7 +191,8 @@ describe("review fixes", () => {
     const claude = rowOf("Claude Code");
     expect(claude).toHaveTextContent("Not installed yet");
     fireEvent.click(within(claude).getByRole("button", { name: "Install Claude Code" }));
-    expect(props.onTick).toHaveBeenCalledWith("claude-acp");
+    expect(props.onInstall).toHaveBeenCalledWith("claude-acp");
+    expect(props.onTick).not.toHaveBeenCalled();
   });
 
   it("says the agents are loading, and why they could not be", () => {

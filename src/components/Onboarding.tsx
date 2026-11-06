@@ -22,8 +22,10 @@ export interface OnboardingProps {
   signInStateOf: (id: string) => SignInState;
   /** True for an agent whose only way in is its own setup (Qwen Code). */
   isSetupOnly: (id: string) => boolean;
-  /** Puts an agent in use, installing it when it needs to be. */
+  /** Puts an agent in use; it installs nothing. */
   onTick: (id: string) => void;
+  /** Installs a ticked agent that is not installed. */
+  onInstall: (id: string) => void;
   /** Takes an agent out of use and stops its install; never deletes it. */
   onUntick: (id: string) => void;
   onMakeDefault: (id: string) => void;
@@ -70,6 +72,7 @@ export function Onboarding({
   signInStateOf,
   isSetupOnly,
   onTick,
+  onInstall,
   onUntick,
   onMakeDefault,
   recentFolders,
@@ -134,6 +137,7 @@ export function Onboarding({
           signInStateOf={signInStateOf}
           isSetupOnly={isSetupOnly}
           onTick={onTick}
+          onInstall={onInstall}
           onUntick={onUntick}
           onMakeDefault={onMakeDefault}
           order={order ?? undefined}

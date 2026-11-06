@@ -12,9 +12,9 @@ The welcome screen: one page before any session, and again from Settings → Run
 - **Sections**: an `h2` with its number in a 20px ring (`border-strong`, `caption`), 10px above a Settings card of rows (`surface-2`, `border`, `radius-xl`; rows 12px 16px with 12px gaps and hairlines between them).
 - **1. Agents you'll use**:
   - each row holds a real 16px checkbox (radius 4, a 1.5px `border-strong` edge, filled `fg` with a check when ticked, named "Use Claude Code"), the 28px logo tile, the name, and a line under it;
-  - the line reads "On this Mac · Ready" (with a still green dot), "Installed by Zorvo · Not checked", "Runs with npx · Sign in when you start", "… · Set up when you start", or "Zorvo installs it when you tick it";
+  - the line reads "On this Mac · Ready" (with a still green dot), "Installed by Zorvo · Not checked", "Runs with npx · Sign in when you start", "… · Set up when you start", "Not installed · Zorvo can install it", or, once ticked, "Not installed yet" with an **Install** button;
   - the default row carries a "Default" tag (18px, `border`, 10px at 500, `fg-muted`). The other ticked rows offer **Make default** while hovered or focused;
-  - an install runs in its row (the step in a live region, then a 4px bar). A failed one shows its words in `danger`, with **Retry**;
+  - after Install, the install runs in its row (the step in a live region, then a 4px bar). A failed one shows its words in `danger`, with **Retry**;
   - the agents in use or on this Mac come first, then Claude Code, Codex, Gemini CLI and Qwen Code, five rows in all. **Show all agents** shows the rest. Agents Zorvo cannot offer yet are left out.
 - **2. Project folder**:
   - when chosen: a folder tile, the name, the path in mono `caption`, and **Change**, which opens the system dialog;
@@ -24,7 +24,7 @@ The welcome screen: one page before any session, and again from Settings → Run
 
 ## Rules
 
-- **Ticking** puts an agent in use and installs it when it needs to, through the same `install_agent` path as Settings. **Unticking** only takes it out of use and stops its install; Zorvo never deletes an agent's files here.
+- **Ticking** only puts an agent in use; it downloads nothing. A ticked agent that is not installed shows **Install**, which installs it through the same `install_agent` path as Settings, so nothing is downloaded without that press. **Unticking** only takes it out of use and stops its install; Zorvo never deletes an agent's files here.
 - **The default** is the saved default while it is ticked, else the first ticked row.
 - **Start** needs a ticked agent that can run now and a folder. It opens a new-session draft in that folder with the default, or with the first ready agent while the default still installs, and saves that agent as the default. The note says what is missing, in this order:
   - "Tick an agent to continue.";

@@ -103,7 +103,7 @@ import { isAgentReady, isAgentRunnable, noAgentNotice, resolveDraftAgentId } fro
 import { enabledAgentIds, isInUse, removedAgentName, removedAgentNameFor } from "./lib/enabled-agents";
 import { cancelInstall, installEntryOf } from "./lib/agent-installs";
 import { isSetupOnly } from "./lib/acp-auth";
-import { withAgentRemoved } from "./lib/agent-catalog";
+import { withAgentAdded, withAgentRemoved } from "./lib/agent-catalog";
 import { loadAgentIcons } from "./lib/agent-icons";
 import { useCompareDraft } from "./hooks/useCompareDraft";
 import { useCompareRun, useCompareRunRows } from "./hooks/useCompareRun";
@@ -715,6 +715,12 @@ export default function App() {
     }
   };
 
+  /** Onboarding's tick: in use, and nothing installed; a ticked agent that needs it shows its own Install. */
+  const tickAgent = (id: string) => {
+    const version = agentCatalog.catalog?.agents.find((agent) => agent.id === id)?.version ?? null;
+    updateState((prev) => ({ ...prev, settings: withAgentAdded(prev.settings, id, enabledAgentIds(prev.settings), version) }));
+  };
+
   /** Onboarding's untick: out of use, and its install stopped. Zorvo's copy of it is never deleted here. */
   const untickAgent = (id: string) => {
     if (installEntryOf(id).status === "installing") cancelInstall(id);
@@ -968,7 +974,8 @@ export default function App() {
         settings={state.settings}
         signInStateOf={signInStatus.stateOf}
         isSetupOnly={(id) => isSetupOnly(settingsSignIn.methodsOf(id))}
-        onTick={catalogActions.addAgent}
+        onTick={tickAgent}
+        onInstall={catalogActions.addAgent}
         onUntick={untickAgent}
         onMakeDefault={(defaultAgentId) => updateSettings({ defaultAgentId })}
         recentFolders={workspaces}

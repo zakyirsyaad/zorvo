@@ -33,6 +33,7 @@ function renderOnboarding(overrides: Partial<OnboardingProps> = {}) {
     signInStateOf: () => "ready",
     isSetupOnly: () => false,
     onTick: vi.fn(),
+    onInstall: vi.fn(),
     onUntick: vi.fn(),
     onMakeDefault: vi.fn(),
     recentFolders: [FOLDER],

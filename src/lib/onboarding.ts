@@ -54,11 +54,11 @@ function sourceOf(agent: CatalogAgent): string {
 }
 
 /**
- * A welcome-screen row's line: where the agent runs and its sign-in; for one not installed, that ticking
- * installs it, or, once ticked (a default agent, or an install that was stopped), that it is not yet.
+ * A welcome-screen row's line: where the agent runs and its sign-in; for one not installed, that Zorvo
+ * can install it, or, once ticked (its Install button is then beside it), that it is not installed yet.
  */
 export function rowWords(agent: CatalogAgent, signIn: SignInState, isSetupOnly: boolean, isTicked = false): string {
-  if (agent.status === 'not_installed') return isTicked ? 'Not installed yet' : 'Zorvo installs it when you tick it';
+  if (agent.status === 'not_installed') return isTicked ? 'Not installed yet' : 'Not installed · Zorvo can install it';
   const state = isSetupOnly && signIn !== 'ready' ? 'Set up when you start' : SIGN_IN_WORDS[signIn];
   return `${sourceOf(agent)} · ${state}`;
 }

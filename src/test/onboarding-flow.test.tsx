@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, waitFor, within } from "@testing-library/react";
 import { fakeTauriInvoke, type FakeTauriStore } from "./setup";
+import { resetAgentInstalls } from "../lib/agent-installs";
 
 const openDialog = vi.fn();
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: (...args: unknown[]) => openDialog(...args) }));
@@ -44,6 +45,8 @@ describe("First run and project folders", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     openDialog.mockReset();
+    // Installs live in a module-level store: one test's pending install must not reach the next.
+    resetAgentInstalls();
   });
 
   it("walks a first-time user through setup and saves the result", async () => {
@@ -149,6 +152,21 @@ describe("First run and project folders", () => {
     expect(await screen.findByText(/Could not open the folder dialog/)).toBeDefined();
   });
 
+  it("ticking an agent that is not installed only marks it, and Install installs it", async () => {
+    fakeStore().state.settings.onboardingCompleted = false;
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) =>
+      cmd === "install_agent" ? new Promise(() => {}) : fakeTauriInvoke(cmd, args),
+    );
+    await renderApp();
+
+    await click(await screen.findByRole("checkbox", { name: "Use Gemini CLI" }));
+    await waitFor(() => expect((fakeStore().state.settings as { enabledAgents?: string[] }).enabledAgents ?? []).toContain("gemini"));
+    expect(spy.mock.calls.some(([cmd]) => cmd === "install_agent")).toBe(false);
+
+    await click(screen.getByRole("button", { name: "Install Gemini CLI" }));
+    await waitFor(() => expect(spy.mock.calls.some(([cmd]) => cmd === "install_agent")).toBe(true));
+  });
+
   it("unticking an installing agent cancels it and keeps its files", async () => {
     fakeStore().state.settings.onboardingCompleted = false;
     const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) =>
@@ -158,6 +176,7 @@ describe("First run and project folders", () => {
     const gemini = await screen.findByRole("checkbox", { name: "Use Gemini CLI" });
 
     await click(gemini);
+    await click(await screen.findByRole("button", { name: "Install Gemini CLI" }));
     await waitFor(() => expect(spy.mock.calls.some(([cmd]) => cmd === "install_agent")).toBe(true));
     await waitFor(() => expect((fakeStore().state.settings as { enabledAgents?: string[] }).enabledAgents ?? []).toContain("gemini"));
 

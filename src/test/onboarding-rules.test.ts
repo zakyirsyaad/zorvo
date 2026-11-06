@@ -61,7 +61,7 @@ describe("rowWords", () => {
   });
 
   it("says Zorvo installs an agent that is not installed", () => {
-    expect(rowWords(agent("a", { id: "a", name: "A", status: "not_installed" }), "unchecked", false)).toBe("Zorvo installs it when you tick it");
+    expect(rowWords(agent("a", { id: "a", name: "A", status: "not_installed" }), "unchecked", false)).toBe("Not installed · Zorvo can install it");
   });
 
   it("says a ticked agent that is not installed is not installed yet", () => {

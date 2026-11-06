@@ -17,7 +17,10 @@ export interface AgentChoicesProps {
   defaultId: string | null;
   signInStateOf: (id: string) => SignInState;
   isSetupOnly: (id: string) => boolean;
+  /** Puts an agent in use; it installs nothing. */
   onTick: (id: string) => void;
+  /** Installs a ticked agent that is not installed (its row's Install). */
+  onInstall: (id: string) => void;
   onUntick: (id: string) => void;
   onMakeDefault: (id: string) => void;
   /** The rows' order, fixed when the screen first had agents, so a row never moves under the pointer. */
@@ -55,11 +58,12 @@ interface ChoiceRowProps {
   signIn: SignInState;
   isSetupOnly: boolean;
   onTick: () => void;
+  onInstall: () => void;
   onUntick: () => void;
   onMakeDefault: () => void;
 }
 
-function ChoiceRow({ agent, isTicked, isDefault, signIn, isSetupOnly, onTick, onUntick, onMakeDefault }: ChoiceRowProps) {
+function ChoiceRow({ agent, isTicked, isDefault, signIn, isSetupOnly, onTick, onInstall, onUntick, onMakeDefault }: ChoiceRowProps) {
   const job = useAgentInstall(agent.id);
   const isInstalling = job.status === "installing";
   const hasFailed = job.status === "failed" && isTicked;
@@ -85,7 +89,7 @@ function ChoiceRow({ agent, isTicked, isDefault, signIn, isSetupOnly, onTick, on
       <span className="text-fg">Retry</span>
     </Button>
   ) : needsInstall ? (
-    <Button size="md" onClick={onTick} aria-label={`Install ${agent.name}`}>
+    <Button size="md" onClick={onInstall} aria-label={`Install ${agent.name}`}>
       <span className="text-fg">Install</span>
     </Button>
   ) : isTicked && !isDefault ? (
@@ -145,7 +149,7 @@ function ChoiceRow({ agent, isTicked, isDefault, signIn, isSetupOnly, onTick, on
   );
 }
 
-/** Section 1 of the welcome screen: tick the agents you'll use; ticking one Zorvo must install installs it. */
+/** Section 1 of the welcome screen: tick the agents you'll use; a ticked one that is not installed offers Install. */
 export function AgentChoices({
   catalog,
   enabledIds,
@@ -153,6 +157,7 @@ export function AgentChoices({
   signInStateOf,
   isSetupOnly,
   onTick,
+  onInstall,
   onUntick,
   onMakeDefault,
   order,
@@ -222,6 +227,7 @@ export function AgentChoices({
               keep(agent.id);
               onTick(agent.id);
             }}
+            onInstall={() => onInstall(agent.id)}
             onUntick={() => {
               keep(agent.id);
               onUntick(agent.id);

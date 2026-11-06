@@ -398,6 +398,7 @@ export function ComposerDock({
     ),
   ];
   const { inline: inlineControls, overflow: overflowControls } = splitControls(agentControls);
+  const isShowingSkeletons = Boolean(isLoadingControls) && agentControls.length === 0;
   // A draft's composer sits near the top of its column with room below; a session's sits at the window's bottom.
   const isDraft = Boolean(folder || agent || agents);
   const menuSide = isDraft ? "bottom" : "top";
@@ -498,21 +499,21 @@ export function ComposerDock({
               </span>
             )}
 
-            {isLoadingControls && (
-              <>
-                <span role="status" className="sr-only">{`Loading ${agentName ?? "the agent"}'s models and commands…`}</span>
-                {/* Where the agent's chips will land, so nothing moves when they arrive. */}
-                {agentControls.length === 0 &&
-                  SKELETON_CHIP_WIDTHS.map((width) => (
-                    <span
-                      key={width}
-                      data-skeleton-chip=""
-                      aria-hidden="true"
-                      className={`h-7 ${width} rounded-md bg-surface-hover motion-safe:animate-pulse`}
-                    />
-                  ))}
-              </>
-            )}
+            {/* Always mounted: a live region inserted with its text is often not read out. A probe while the
+                chips are already there (a sign-in re-check) loads nothing the user waits for, so it stays empty. */}
+            <span role="status" className="sr-only">
+              {isShowingSkeletons ? `Loading ${agentName ?? "the agent"}'s models and commands…` : ""}
+            </span>
+            {/* Where the agent's chips will land, so nothing moves when they arrive. */}
+            {isShowingSkeletons &&
+              SKELETON_CHIP_WIDTHS.map((width) => (
+                <span
+                  key={width}
+                  data-skeleton-chip=""
+                  aria-hidden="true"
+                  className={`h-7 ${width} rounded-md bg-surface-hover motion-safe:animate-pulse`}
+                />
+              ))}
 
             {inlineControls.map((entry) => (
               <OptionDropdown

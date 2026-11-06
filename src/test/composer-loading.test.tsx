@@ -38,15 +38,27 @@ describe("the composer while the agent's options load", () => {
     expect(status).toHaveClass("sr-only");
   });
 
-  it("draws no skeleton once the agent's chips are known", () => {
+  it("draws no skeleton once the agent's chips are known, and says nothing is loading", () => {
+    // A sign-in re-check also probes, while the chips are already there: nothing is loading then.
     renderDock({ isLoadingControls: true, controls: { model } });
     expect(skeletons()).toHaveLength(0);
     expect(screen.getByRole("button", { name: "Model: Opus" })).toBeInTheDocument();
+    expect(screen.getByRole("status").textContent).toBe("");
   });
 
-  it("draws nothing when nothing loads", () => {
+  it("draws nothing when nothing loads, but keeps its empty status mounted", () => {
     renderDock();
     expect(skeletons()).toHaveLength(0);
-    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("status").textContent).toBe("");
+  });
+
+  it("announces through the region that was already there, not a new one", () => {
+    // A live region inserted with its text is often not read out; one already mounted is.
+    const view = renderDock();
+    const before = screen.getByRole("status");
+    view.rerender(<ComposerDock onSendMessage={vi.fn()} onAttach={async () => []} agentName="Claude Agent" isLoadingControls />);
+    const after = screen.getByRole("status");
+    expect(after).toBe(before);
+    expect(after).toHaveTextContent("Loading Claude Agent's models and commands…");
   });
 });

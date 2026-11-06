@@ -38,7 +38,8 @@ export function SelectionToolbar({ selection, blockedReason, onReply }: {
         aria-describedby={blockedReason ? reasonId : undefined}
         onClick={onReply}
       >
-        <span className="text-fg">Reply</span>
+        {/* The canvas sets Reply at 13px, a step above a 28px button's 12px, so the label carries it. */}
+        <span className="text-ui text-fg">Reply</span>
       </Button>
       {blockedReason && (
         <span id={reasonId} className="sr-only">

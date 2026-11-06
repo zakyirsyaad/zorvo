@@ -488,7 +488,7 @@ function settleTools(tools: ToolExecution[] | undefined): ToolExecution[] | unde
  * Tools still running keep their real state: a live turn can end while one is
  * genuinely running (the user stopped it, or it runs in the background).
  */
-export function closeTurn(messages: ChatMessage[]): ChatMessage[] {
+export function closeTurn(messages: ChatMessage[], now: number = Date.now()): ChatMessage[] {
   const lastIndex = messages.length - 1;
   return messages.map((message, index) => {
     const card = isPendingRequest(message.actionCard)
@@ -496,10 +496,14 @@ export function closeTurn(messages: ChatMessage[]): ChatMessage[] {
       : message.actionCard;
     const isLastReply = index === lastIndex && message.role === 'agent';
     if (card === message.actionCard && !isLastReply) return message;
+    // The turn's end, once: a turn closed again (Stop, then its turn end) keeps the first time, and a
+    // replayed reply, whose times are not known, gets none.
+    const completedAt = isLastReply && message.hasKnownTime !== false ? (message.completedAt ?? now) : undefined;
     return {
       ...message,
       actionCard: card,
       ...(isLastReply ? { isComplete: true } : {}),
+      ...(completedAt === undefined ? {} : { completedAt }),
     };
   });
 }

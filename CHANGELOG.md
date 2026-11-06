@@ -25,7 +25,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **Clearer cards when something stands in the way.** A compare run shows one card per agent and asks before Pick keeps one. Installing, signing in and a removed agent each get a card by the message box with the agent's logo, and signing in lists every way the agent offers. The terminal sign-in is wider, the empty window asks for a folder, and a Zorvo update shows as a card.
 - **The Changes tab and the full diff review look as designed:** each changed file is a card with its counts, the review has a file list with the picked file marked, and comments read where they stand ("Line 42 · Current").
 - **Comment on lines in the Changes tab too,** and add them to your message from there.
-- **A compare run, the cards that stand in the way, the sign-in terminal, the empty window and the update card look as designed:** each compare agent says how long it has worked ("Working · 12 min"), sign-in methods are listed with their own buttons, and the update card says what a restart stops ("2 agents mid-turn and 1 shell").
+- **A compare run, the cards that stand in the way, the sign-in terminal, the empty window and the update card look as designed:** each compare agent says how long its turn has run ("Working · 12 min") or took ("Finished · 8 min"), sign-in methods are listed with their own buttons, and the update card says what a restart stops ("2 agents mid-turn and 1 shell").
 - **Notices appear as a card in the bottom right corner** instead of a strip across the top of the chat, so they no longer push the conversation down. A long message wraps inside the card, and **Dismiss notice** closes it as before.
 
 ## [0.8.1] - 2026-11-04

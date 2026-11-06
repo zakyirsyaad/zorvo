@@ -99,7 +99,7 @@ describe("authCopy", () => {
   const login: AuthMethod = { id: "chat-gpt", name: "ChatGPT", kind: "agent" };
 
   it("asks for a sign-in when the agent offers one", () => {
-    expect(authCopy("Codex", [key, login])).toMatchObject({ lead: "Codex needs you to sign in before it can start.", cliHint: null });
+    expect(authCopy("Codex", [key, login])).toMatchObject({ lead: "Pick how Codex signs in. It uses its own tool; Zorvo never sees your password or key.", cliHint: null });
   });
 
   it("does not ask an agent whose only method is a key to sign in", () => {
@@ -134,7 +134,7 @@ describe("an agent's own setup", () => {
   });
 
   it("counts the setup among the ways in, not among the keys", () => {
-    expect(authCopy("Qwen Code", [setup, agent]).lead).toBe("Qwen Code needs you to sign in before it can start.");
+    expect(authCopy("Qwen Code", [setup, agent]).lead).toBe("Pick how Qwen Code signs in. It uses its own tool; Zorvo never sees your password or key.");
     expect(authCopy("Qwen Code", [setup, agent]).keysNote).toBeNull();
   });
 });

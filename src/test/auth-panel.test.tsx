@@ -158,16 +158,15 @@ describe("AuthPanel", () => {
 
       const card = within(screen.getByRole("region", { name: "Set up Qwen Code" }));
       expect(card.getByRole("heading", { level: 2, name: "Set up Qwen Code" })).toBeInTheDocument();
-      expect(card.getByText("Qwen Code picks its provider in its own setup, which Zorvo opens in a terminal.")).toBeInTheDocument();
+      expect(card.getByText(/^Qwen Code connects to a provider you pick in its own setup/)).toBeInTheDocument();
       fireEvent.click(card.getByRole("button", { name: "Open setup in terminal" }));
       expect(onSignIn).toHaveBeenCalledWith("openai");
     });
 
-    it("asks Already set up? beside Check again, with Dismiss, and no field or sign-in button", () => {
+    it("keeps Check again and Dismiss in the footer, with no field or sign-in button", () => {
       renderPanel({ agentName: "Qwen Code", methods: [setup] });
 
       const footer = screen.getByRole("status").closest<HTMLElement>(".border-t")!;
-      expect(within(footer).getByText("Already set up?")).toBeInTheDocument();
       expect(within(footer).getByRole("button", { name: "Check again" })).toBeInTheDocument();
       expect(within(footer).getByRole("button", { name: "Dismiss sign-in" })).toBeInTheDocument();
       expect(screen.queryByRole("textbox")).toBeNull();
@@ -203,5 +202,61 @@ describe("AuthPanel", () => {
       "Check again",
     ]);
     expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  describe("as drawn", () => {
+    const setup: AuthMethod = { id: "openai", name: "Use OpenAI API key", kind: "setup" };
+
+    it("leads by asking how the agent signs in", () => {
+      renderPanel();
+
+      expect(screen.getByText("Pick how Claude Code signs in. It uses its own tool; Zorvo never sees your password or key.")).toBeInTheDocument();
+    });
+
+    it("methods are a bordered list with outline buttons", () => {
+      renderPanel({ methods: [terminal, explain] });
+
+      expect(screen.getByRole("list", { name: "Sign-in methods" })).toHaveClass("divide-y", "rounded-lg", "border");
+      const button = screen.getByRole("button", { name: "Sign in with Claude Subscription" });
+      expect(button.className).toContain("border-border-strong");
+      expect(button.querySelector("svg")).toBeNull();
+    });
+
+    it("In your shell sits at the row's end", () => {
+      renderPanel({ methods: [terminal, explain] });
+
+      const item = screen.getAllByRole("listitem").find((li) => li.textContent?.includes("API Key"))!;
+      expect(item.lastElementChild).toHaveTextContent("In your shell");
+      expect(item.lastElementChild).toHaveClass("shrink-0");
+    });
+
+    it("the waiting line has an attention dot and ends with a period", () => {
+      renderPanel({ hasReturnedMessage: true });
+
+      const status = screen.getByRole("status");
+      expect(status).toHaveTextContent(/^Your message will be sent again after you sign in\.$/);
+      expect(status.querySelector(".bg-status-attention")).not.toBeNull();
+    });
+
+    it("the setup card opens the setup from its body", () => {
+      renderPanel({ agentName: "Qwen Code", methods: [setup] });
+
+      expect(
+        screen.getByText("Qwen Code connects to a provider you pick in its own setup, and keeps the choice and the key in its settings."),
+      ).toBeInTheDocument();
+      const open = screen.getByRole("button", { name: "Open setup in terminal" });
+      expect(open.className).toContain("border-border-strong");
+      expect(open.closest(".border-t")).toBeNull();
+      expect(open.parentElement).toHaveTextContent("Already set up in Qwen Code? Check again.");
+      expect(screen.getByRole("status")).toHaveTextContent("Not checked yet.");
+      expect(screen.queryByText("Already set up?")).toBeNull();
+    });
+
+    it("a setup method in the sign-in list keeps its own label", () => {
+      renderPanel({ agentName: "Qwen Code", methods: [setup, agent] });
+
+      expect(screen.getByRole("region", { name: "Sign in to Qwen Code" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Open setup in terminal" }).className).toContain("border-border-strong");
+    });
   });
 });

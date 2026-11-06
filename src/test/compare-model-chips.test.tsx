@@ -38,14 +38,27 @@ describe("a compare draft's model chips", () => {
     }
   });
 
-  it("asks an unknown agent when its chip opens, and shows the skeleton", () => {
+  it("asks an unknown agent when its chip opens", () => {
     const onOpen = renderDock([opus, codex("unknown")]);
     const chip = screen.getByRole("button", { name: "Codex model: Default" });
     fireEvent.click(chip);
     expect(onOpen).toHaveBeenCalledWith("codex");
+    expect(chip.closest("div.relative")!.querySelector("[role=listbox]")).toHaveClass("top-full");
+  });
+
+  it("shows the skeleton only while the agent is being asked", () => {
+    renderDock([codex("asking")]);
+    fireEvent.click(screen.getByRole("button", { name: "Codex model: Default" }));
     expect(screen.getByText("Asking Codex for its models…")).toBeInTheDocument();
     expect(document.querySelectorAll("[data-skeleton-row]")).toHaveLength(3);
-    expect(chip.closest("div.relative")!.querySelector("[role=listbox]")).toHaveClass("top-full");
+  });
+
+  it("says so when the agent offers no model choice, instead of asking for ever", () => {
+    renderDock([codex("none")]);
+    fireEvent.click(screen.getByRole("button", { name: "Codex model: Default" }));
+    expect(screen.getByText("Codex does not offer a model choice. It starts on its default.")).toBeInTheDocument();
+    expect(document.querySelectorAll("[data-skeleton-row]")).toHaveLength(0);
+    expect(screen.queryByText(/Asking Codex/)).toBeNull();
   });
 
   it("offers Try again when asking failed", () => {

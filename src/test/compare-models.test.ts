@@ -68,6 +68,16 @@ describe("compareModelControls", () => {
     expect(qwen.control).toBeUndefined();
   });
 
+  it("says none for an agent that reported its options but no model", () => {
+    const modesOnly: AgentOptions = {
+      modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default" }] },
+      configOptions: [],
+    };
+    const [entry] = compareModelControls([{ id: "pi", name: "Pi" }], { pi: modesOnly }, () => "asking", actions());
+    expect(entry.state).toBe("none");
+    expect(entry.control).toBeUndefined();
+  });
+
   it("carries an unknown agent's ask state through", () => {
     const options = { "claude-acp": modelsOf("claude") };
     const asking = compareModelControls(agents, options, (id) => (id === "qwen-code" ? "asking" : undefined), actions());

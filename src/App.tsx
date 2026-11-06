@@ -1186,7 +1186,23 @@ export default function App() {
                           compare.agentIds.map((id) => ({ id, name: agents.find((a) => a.id === id)?.name ?? id })),
                           state.agentOptions,
                           compareModelProbe.stateOf,
-                          { pickModel: rememberModelPick, pickConfig: rememberPick },
+                          {
+                            // A pick is the agent's remembered model. For the draft's own agent, its single-draft pick
+                            // is dropped too, or it would outrank this one once the agent is alone again.
+                            pickModel: (profileId, modelId) => {
+                              rememberModelPick(profileId, modelId);
+                              if (profileId === draftAgent?.id) setAcpChoices(({ modelId: _dropped, ...rest }) => rest);
+                            },
+                            pickConfig: (profileId, configId, value) => {
+                              rememberPick(profileId, configId, value);
+                              if (profileId === draftAgent?.id) {
+                                setAcpChoices((current) => ({
+                                  ...current,
+                                  config: Object.fromEntries(Object.entries(current.config).filter(([id]) => id !== configId)),
+                                }));
+                              }
+                            },
+                          },
                         )
                       : undefined
                   }

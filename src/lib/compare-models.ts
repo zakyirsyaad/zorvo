@@ -1,8 +1,11 @@
 import { acpControls, type ComposerControl } from './composer-controls';
 import { NO_CHOICES, draftInfo, hasReportedOptions, withPreferred, type AgentOptions } from './acp-draft';
 
-/** Whether a compare agent's model list is known, being asked for, or could not be asked for. */
-export type CompareModelState = 'known' | 'unknown' | 'asking' | 'failed';
+/**
+ * Whether a compare agent's model list is known, not known yet, being asked for, could not be asked for, or known
+ * to hold no model at all (the agent reported its options without one).
+ */
+export type CompareModelState = 'known' | 'unknown' | 'asking' | 'failed' | 'none';
 
 /** One agent's model chip in a compare draft. */
 export interface CompareModelControl {
@@ -38,6 +41,8 @@ export function compareModelControls(
           }).model
         : undefined;
     if (control) return { profileId: id, name, state: 'known', control };
+    // It answered, without a model: there is nothing to ask for, and nothing to choose.
+    if (options && hasReportedOptions(options)) return { profileId: id, name, state: 'none' };
     return { profileId: id, name, state: askStateOf(id) ?? 'unknown' };
   });
 }

@@ -561,7 +561,10 @@ export function ComposerDock({
                   onClose={() => setOpenDropdown((current) => (current === key ? null : current))}
                   onSelect={() => setOpenDropdown(null)}
                   onOpen={ask}
-                  status={<CompareModelStatus name={entry.name} state={entry.state} onRetry={ask} />}
+                  // Not yet asked: the plain "Default" row, until the ask this opening starts shows its skeleton.
+                  status={
+                    entry.state === "unknown" ? undefined : <CompareModelStatus name={entry.name} state={entry.state} onRetry={ask} />
+                  }
                 />
               );
             })}

@@ -317,6 +317,19 @@ describe("starting a compare run", () => {
       expect(await screen.findByRole("button", { name: "Model: qwen fast" })).toBeInTheDocument();
     });
 
+    it("makes a compare pick for the draft's own agent its model in the single draft again", async () => {
+      await renderApp({ agentOptions: { "claude-acp": modelsOf("claude"), "qwen-code": modelsOf("qwen") } });
+      // Picked in the single draft first, then changed in the compare chip.
+      await click(await screen.findByRole("button", { name: "Model: claude default" }));
+      await click(screen.getByRole("option", { name: "claude fast" }));
+      await tickAgents("Qwen Code");
+      await click(await screen.findByRole("button", { name: "Claude Code model: claude fast" }));
+      await click(screen.getByRole("option", { name: "claude default" }));
+      // Untick Qwen Code: Claude Code is alone again, on the model last picked for it.
+      await tickAgents("Qwen Code");
+      expect(await screen.findByRole("button", { name: "Model: claude default" })).toBeInTheDocument();
+    });
+
     it("asks a never-used agent only when its chip opens", async () => {
       const spy = await renderApp({
         agentOptions: { "claude-acp": modelsOf("claude") },

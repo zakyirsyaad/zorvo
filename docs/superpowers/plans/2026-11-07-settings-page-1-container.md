@@ -46,7 +46,11 @@
 ## Rulings made while planning (the user can overturn them at plan review)
 
 1. **Kept mounted.** The sidebar-and-main `<section>` is hidden, not unmounted, while Settings shows. The composer's text, review comments in a message, scroll positions and terminal views therefore survive a visit to Settings. The spec's "sessions keep running; Back returns to the session that was on screen" then holds with no extra state.
-2. **No MCP servers item yet.** The canvas nav draws "MCP servers", but the spec says the section "is not shown (no placeholder page)" until its backend lands. The spec decides behavior, so the nav shows General, Appearance, Agents and GitHub, and `SettingsTab` gains `appearance` and `github` only. The item comes with part 4.
+2. **MCP servers shows as "Soon"** (the user's choice, 2026-11-07).
+   - The nav draws "MCP servers" where the canvas puts it, between Agents and GitHub. It is dimmed, carries a "Soon" tag, and cannot be clicked: it is not a link and is not in the Tab order.
+   - A screen reader reads it as "MCP servers, coming soon".
+   - There is still no placeholder page, as the spec says, and `SettingsTab` gains `appearance` and `github` only.
+   - Part 4 removes the tag and makes it a link.
 3. **Agents uses today's catalog.** The Agents section shows today's `AgentCatalogPanel` under the page heading "Agents" and one sentence. Part 2 restyles it.
 4. **Run setup again is kept.** It becomes a row in General's About group ("Setup", "Pick agents and a folder again.", **Run setup again**). The canvas does not draw it, but it is the only way back to onboarding; this follows the audit's "keep a function, restyle it".
 5. **Escape no longer closes Settings.** A page has **Back to sessions** instead. No other key is added.
@@ -60,9 +64,9 @@
    - Opening Settings moves focus to the section's `h1`, which has `tabIndex={-1}`.
    - A nav click keeps focus on the link.
    - Back gives focus to the control that opened Settings when it is still in the document. Otherwise it goes to the sidebar footer's Settings button, which is the case for the Agents menu's Manage agents, whose popover has closed.
-10. **Two nav icons are drawn by hand.**
-    - lucide has no glyph matching the canvas's Appearance icon (a circle with its left half filled) or its GitHub icon (three circles and a bent line, no arrow).
-    - `SettingsNav` therefore draws both as inline SVGs copied from the artboard (`viewBox="0 0 24 24"`, stroke 1.75, round caps and joins, 14px).
+10. **Three nav icons are drawn by hand.**
+    - lucide has no glyph matching the canvas's Appearance icon (a circle with its left half filled), its GitHub icon (three circles and a bent line, no arrow) or its MCP plug.
+    - `SettingsNav` therefore draws all three as inline SVGs copied from the artboard (`viewBox="0 0 24 24"`, stroke 1.75, round caps and joins, 14px).
     - General (`Settings2`), Agents (`LayoutGrid`) and Back (`ChevronLeft`) match lucide.
 11. **One update count.** The Agents badge shows `agentUpdates.updateCount`, the count the sidebar footer shows, as the spec says ("from `useAgentUpdates`"). Today's dialog computed its own `pendingUpdates(...)`.
 
@@ -138,7 +142,12 @@ Most likely first:
     - General is lucide `Settings2`, Agents is lucide `LayoutGrid`, Back is lucide `ChevronLeft`.
     - Appearance is inline: `<circle cx="12" cy="12" r="9"/>` and `<path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/>`.
     - GitHub is inline: circles at (6,6), (6,18) and (18,18) with r 2.5, and `<path d="M6 8.5v7M18 15.5V9a3 3 0 0 0-3-3h-3"/>`.
+    - MCP servers is inline: `<path d="M9 7V3M15 7V3M6 7h12v4a6 6 0 0 1-12 0zM12 17v4"/>`.
     - Both inline icons use `fill="none" stroke="currentColor" strokeWidth={1.75}`, round caps and joins, size 14, and `aria-hidden`.
+  - **MCP servers (Soon)**, between Agents and GitHub:
+    - a `div` (not a link, no `tabIndex`) with the item's layout but no hover, in `text-fg-subtle`;
+    - the tag "Soon" uses the badge's shape (`ml-auto flex h-4.5 items-center rounded-md bg-surface-hover px-1.5 text-caption text-fg-muted`) and is `aria-hidden`;
+    - a sr-only ", coming soon" follows the name.
   - **Agents badge**, shown only when `updateCount > 0`: `ml-auto flex h-4.5 min-w-4.5 items-center justify-center rounded-md bg-surface-hover px-1.25 text-caption text-fg`, with `aria-hidden` plus a sr-only `, N update(s)`.
 - **Header**: `flex flex-col gap-1`. The `h1` is `text-xl font-semibold tracking-[-0.02em] text-fg` with `tabIndex={-1}` and `outline-none`. The sentence below it is `text-ui text-fg-muted`.
 - **Group**:
@@ -156,6 +165,11 @@ Most likely first:
   - `the Agents link counts updates in words`: with `updateCount=2`, the link's accessible name is "Agents, 2 updates". With 1 it is "Agents, 1 update". With 0 there is no badge.
   - `a group is a labelled card of rows`: `getByRole("region", { name: "Recent folders" })` holds a card with `rounded-xl` and `bg-surface-2`. Each row has `px-4` and `py-3`, and its description has `text-fg-subtle`.
   - `the header's title can take focus`: `titleRef.current` has `tabIndex === -1` and the class `text-xl`.
+  - `MCP servers shows as coming soon`:
+    - the text "MCP servers" sits between the "Agents" and "GitHub" links;
+    - `queryByRole("link", { name: /MCP servers/ })` is null;
+    - the item's text content reads "MCP servers, coming soon" (with "Soon" `aria-hidden`);
+    - tabbing from "Agents" lands on "GitHub".
   - `a tight row has the narrower gap`: `isTight` gives `gap-3`, and the default gives `gap-4`.
   - `the hand-drawn icons match the canvas`: the Appearance link's svg holds a path with `d="M12 3a9 9 0 0 0 0 18z"`, and the GitHub link's svg holds three circles.
   - `ready is a still green dot`: `StatusLine status="ready"`'s dot has `bg-status-running` and no `animate-pulse`.
@@ -419,7 +433,7 @@ Most likely first:
 - [ ] **Step 1: Write the README**:
   - the page anatomy: the nav values and the header, group and row values from Task 2;
   - the General, Appearance and GitHub rows with their copy;
-  - the rulings that shape behavior: kept mounted, no Escape, focus on Back, notices on the page, MCP hidden until its backend lands.
+  - the rulings that shape behavior: kept mounted, no Escape, focus on Back, notices on the page, MCP servers shown as "Soon" until its backend lands.
   
   Write the preview: the General section and the theme tiles, built from `var(--color-…)`.
 - [ ] **Step 2: Edit `CLAUDE.md`.** In "Which agents are ready" and "GitHub connection":

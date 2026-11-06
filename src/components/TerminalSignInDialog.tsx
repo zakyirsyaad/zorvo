@@ -77,28 +77,24 @@ export function TerminalSignInDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="flex w-full max-w-[760px] flex-col gap-3 rounded-xl border border-border bg-surface-1 p-5 text-fg-secondary shadow-dialog"
+        className="flex w-full max-w-[760px] flex-col overflow-hidden rounded-xl border border-border bg-surface-1 text-fg-secondary shadow-dialog"
       >
-        <header className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            {profileId && <AgentLogo profileId={profileId} name="" size={24} />}
-            <div className="min-w-0">
-              <h2 id={titleId} className="text-ui font-semibold text-fg">
-                {state.isSetup ? `Set up ${state.agentName}` : `Sign in to ${state.agentName}`}
-              </h2>
-              <p className="truncate text-caption text-fg-subtle">{state.methodName}</p>
-            </div>
-          </div>
+        <header className="flex items-center gap-2.5 px-5 py-4">
+          {profileId && (
+            <span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center rounded-md bg-surface-hover">
+              <AgentLogo profileId={profileId} name="" size={14} />
+            </span>
+          )}
+          <h2 id={titleId} className="min-w-0 flex-1 truncate text-base font-semibold text-fg">
+            {state.isSetup ? `Set up ${state.agentName}` : `Sign in to ${state.agentName}`}
+          </h2>
           <IconButton label="Cancel sign-in" onClick={onClose}>
-            <X size={15} aria-hidden="true" />
+            <X size={14} aria-hidden="true" />
           </IconButton>
         </header>
 
-        <p role="status" className={`text-ui-sm ${isFailed ? "text-danger" : "text-fg-muted"}`}>
-          {statusText(state)}
-        </p>
-
-        <div className="flex h-[380px] overflow-hidden rounded-lg border border-border bg-terminal-bg">
+        {/* TerminalView insets xterm itself (14/12), so the box adds no padding of its own. */}
+        <div className="mx-5 flex h-[380px] overflow-hidden rounded-lg border border-border bg-terminal-bg">
           <TerminalView
             sessionId={state.terminalId}
             output={output}
@@ -108,9 +104,12 @@ export function TerminalSignInDialog({
           />
         </div>
 
-        <footer className="flex justify-end gap-2">
+        <footer className="flex items-center gap-3 px-5 py-4">
+          <p role="status" className={`min-w-0 flex-1 text-ui-sm ${isFailed ? "text-danger" : "text-fg-muted"}`}>
+            {statusText(state)}
+          </p>
           <Button ref={isFailed && canTryAgain ? undefined : primaryRef} onClick={onClose}>
-            Close
+            <span className="text-fg">Close</span>
           </Button>
           {isFailed && canTryAgain && (
             <Button ref={primaryRef} variant="primary" onClick={onTryAgain}>

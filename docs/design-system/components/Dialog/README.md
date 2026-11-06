@@ -13,8 +13,8 @@ The consumer provides the title, the fields and the actions.
 
 An agent's own login, or its own setup (Qwen Code: pick a provider), run in a terminal inside the dialog (`TerminalSignInDialog`).
 
-- 760px wide (`max-w-[760px]`), with the agent's logo at 24px beside the title ("Sign in to Qwen Code", or "Set up Qwen Code") and the method's name under it in `caption` ("Qwen Code's own setup" for a setup). The GitHub sign-in uses the same dialog without a logo.
-- A `role="status"` line under the header. While the program runs it reads "Pick with ↑ ↓ and Return, here in the terminal. Zorvo checks again when you close this.", unless the login has its own note; then "Checking your sign-in…", or the failure in `danger`.
+- 760px wide (`max-w-[760px]`), the parts carrying their own padding. The header (16px 20px) has the agent's logo in a 24px `surface-hover` tile (radius 6) and the title at 16/24 600 ("Sign in to Qwen Code", or "Set up Qwen Code"), with no method line under it. The GitHub sign-in uses the same dialog without a logo.
+- A `role="status"` line in the footer, left of Close, in `ui-sm` `fg-muted`. While the program runs it reads "Pick with ↑ ↓ and Return, here in the terminal. Zorvo checks again when you close this.", unless the login has its own note; then "Checking your sign-in…", or the failure in `danger`.
 - Zorvo checks the sign-in when the program ends, and when **Close** ends it while it runs. Close during the check only hides the dialog, and the check finishes and sends a held message; Close while it starts or after it failed only cancels. A setup's exit always counts as done, whatever its code, since the user quits the agent's app.
-- The terminal is 380px tall on `terminal-bg`, and has focus while the login runs.
-- The footer has **Close**, and **Try again** (primary) after a failure, which then takes focus; otherwise Close does. Escape closes, and the header's X is "Cancel sign-in".
+- The terminal is 380px tall on `terminal-bg`, 20px in from the dialog's sides, with xterm inset 14px 12px inside it, and has focus while the login runs.
+- The footer (16px 20px) has the status line, **Close** (outline, in `fg`), and **Try again** (primary) after a failure, which then takes focus; otherwise Close does. Escape closes, and the header's X is "Cancel sign-in".

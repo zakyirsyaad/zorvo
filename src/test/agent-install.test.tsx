@@ -18,6 +18,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 import App from "../App";
+import { InstallProgressLine } from "../components/InstallProgressLine";
 import { AgentInstallPanel } from "../components/AgentInstallPanel";
 import { forgetFailedInstalls, installEntryOf, resetAgentInstalls, startInstall } from "../lib/agent-installs";
 
@@ -123,7 +124,9 @@ describe("Installing an agent from the new-session draft", () => {
     await renderPanel();
 
     expect(screen.getByRole("region", { name: "Install Codex" })).toBeDefined();
-    expect(screen.getByText("Codex needs Node.js 24.11.1 (49 MB) and Codex 0.4.2 before it can start.")).toBeDefined();
+    expect(
+      screen.getByText("Zorvo downloads Node.js 24.11.1 (49 MB) and Codex 0.4.2 into its own folder. Once it is installed, Zorvo checks whether you are signed in."),
+    ).toBeDefined();
 
     await click("Install Codex");
 
@@ -168,7 +171,7 @@ describe("Installing an agent from the new-session draft", () => {
 
     const bar = screen.getByRole("progressbar", { name: "Node.js download" }) as HTMLProgressElement;
     expect(bar.value / bar.max).toBe(0.5);
-    expect(screen.getByRole("status").textContent).toBe("Downloading Node.js… (1 KB)");
+    expect(screen.getByRole("status").parentElement?.textContent).toBe("Downloading Node.js · 512 bytes of 1 KB");
 
     // Another agent's progress is not this one's.
     await deliver("agent-install-progress", {
@@ -256,7 +259,7 @@ describe("Installing an agent from the new-session draft", () => {
     await renderPanel();
     const bar = screen.getByRole("progressbar", { name: "Node.js download" }) as HTMLProgressElement;
     expect(bar.value / bar.max).toBe(0.25);
-    expect(screen.getByRole("status").textContent).toBe("Downloading Node.js… (1 KB)");
+    expect(screen.getByRole("status").parentElement?.textContent).toBe("Downloading Node.js · 256 bytes of 1 KB");
 
     await act(async () => settle().reject("Checksum mismatch for Node.js"));
     expect(screen.getByText("Install failed: Checksum mismatch for Node.js")).toBeDefined();
@@ -465,5 +468,80 @@ describe("Installing an agent from the new-session draft", () => {
     await waitFor(() => expect(screen.getByRole("region", { name: "Install Codex" })).toBeDefined());
     expect(screen.getByRole("button", { name: "Install Codex" })).toBeDefined();
     expect(screen.queryByText(/Checksum mismatch/)).toBeNull();
+  });
+
+  describe("as drawn", () => {
+    it("Install has no icon", async () => {
+      mockInstall();
+      await renderPanel();
+
+      expect(screen.getByRole("button", { name: "Install Codex" }).querySelector("svg")).toBeNull();
+    });
+
+    it("while installing the title says so, over a 4px bar", async () => {
+      mockInstall();
+      await renderPanel();
+      await click("Install Codex");
+      await deliver("agent-install-progress", nodeDownload);
+
+      expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Installing Codex");
+      expect(screen.queryByText(/Zorvo downloads/)).toBeNull();
+      const bar = screen.getByRole("progressbar", { name: "Node.js download" });
+      expect(bar.classList.contains("h-1") && bar.classList.contains("bg-surface-hover")).toBe(true);
+    });
+
+    it("the status announces the step, not the bytes", async () => {
+      mockInstall();
+      await renderPanel();
+      await click("Install Codex");
+      await deliver("agent-install-progress", nodeDownload);
+
+      const status = screen.getByRole("status").cloneNode(true) as HTMLElement;
+      status.querySelectorAll("[aria-hidden='true']").forEach((part) => part.remove());
+      expect(status.textContent).toBe("Downloading Node.js");
+    });
+
+    it("Cancel is a ghost on its own row", async () => {
+      mockInstall();
+      await renderPanel();
+      await click("Install Codex");
+
+      const cancel = screen.getByRole("button", { name: "Cancel" });
+      expect(cancel.className).toContain("border-transparent");
+      expect(cancel.parentElement?.classList.contains("justify-end")).toBe(true);
+    });
+  });
+
+  describe("review fixes", () => {
+    it("says why Cancel failed while the install goes on", async () => {
+      const { spy } = mockInstall();
+      spy.mockImplementation((cmd, args) => {
+        if (cmd === "cancel_agent_install") return Promise.reject("the installer is not answering");
+        if (cmd === "install_agent") return new Promise(() => {});
+        return fakeTauriInvoke(cmd, args);
+      });
+      await renderPanel();
+      await click("Install Codex");
+      await click("Cancel");
+
+      expect(screen.getByText(/Could not cancel the install/)).toBeDefined();
+      expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Installing Codex");
+    });
+
+    it("keeps the changing size out of the live region", async () => {
+      mockInstall();
+      await renderPanel();
+      await click("Install Codex");
+      await deliver("agent-install-progress", nodeDownload);
+
+      const status = screen.getByRole("status");
+      expect(status.textContent).toBe("Downloading Node.js");
+      expect(status.parentElement?.textContent).toBe("Downloading Node.js · 256 bytes of 1 KB");
+    });
+  });
+
+  it("Settings' row keeps its step line at caption size", () => {
+    render(<InstallProgressLine progress={null} onCancel={() => {}} />);
+    expect(screen.getByRole("status").parentElement?.classList.contains("text-caption")).toBe(true);
   });
 });

@@ -7,9 +7,14 @@ import {
   othersToStop,
   pendingPermission,
   pickableAgentIds,
+  elapsedWords,
+  rowFactsOf,
   rowStatus,
+  rowStatusWords,
   runOf,
+  runStatusDot,
   statusLabel,
+  stopsLine,
   type RowFacts,
   type RunRowStatus,
 } from "../lib/compare-run";
@@ -37,6 +42,8 @@ function facts(overrides: Partial<RowFacts> = {}): RowFacts {
     hasOpenForm: false,
     needsSignIn: false,
     failed: false,
+    turnStartedAt: 1,
+    hasUnread: false,
     ...overrides,
   };
 }
@@ -159,7 +166,7 @@ describe("statusLabel", () => {
       "needs-you": "Needs you",
       "needs-sign-in": "Needs sign-in",
       failed: "Failed",
-      done: "Done",
+      done: "Finished",
       stopped: "Stopped",
     };
     for (const [status, label] of Object.entries(labels)) {
@@ -241,5 +248,72 @@ describe("pickableAgentIds", () => {
 
     expect(pickableAgentIds(full, "extra")).toEqual(full);
     expect(pickableAgentIds(full, "agent-0")).toHaveLength(MAX_COMPARE_AGENTS - 1);
+  });
+});
+
+const MIN = 60_000;
+const NOW = 1_000 * MIN;
+
+const timed = (role: "user" | "agent", timestamp: number, extra: Partial<ChatMessage> = {}): ChatMessage => ({
+  id: `${role}-${timestamp}`,
+  role,
+  content: "",
+  timestamp,
+  ...extra,
+});
+
+describe("how long a compare agent has worked", () => {
+  it("words a span in minutes, then hours", () => {
+    expect(elapsedWords(30_000)).toBe("1 min");
+    expect(elapsedWords(12 * MIN)).toBe("12 min");
+    expect(elapsedWords(65 * MIN)).toBe("1 h 5 min");
+    expect(elapsedWords(120 * MIN)).toBe("2 h");
+  });
+
+  it("a working row counts from its prompt", () => {
+    expect(rowStatusWords(facts({ turnStartedAt: NOW - 12 * MIN }), "working", NOW)).toBe("Working · 12 min");
+  });
+
+  it("other statuses read their word alone", () => {
+    expect(rowStatusWords(facts(), "needs-sign-in", NOW)).toBe("Needs sign-in");
+  });
+
+  it("a later turn counts from its own prompt", () => {
+    const run = { id: "r", name: "Compare", sessions: [session({ createdAt: NOW - 180 * MIN })] };
+    const transcripts = { "s-1": [timed("user", NOW - 180 * MIN), timed("agent", NOW - 170 * MIN, { isComplete: true }), timed("user", NOW - 2 * MIN)] };
+    const [row] = rowFactsOf(run, { isBusy: () => true, transcripts, failedTurns: {}, signInNeeded: new Map() });
+
+    expect(rowStatusWords(row, "working", NOW)).toBe("Working · 2 min");
+  });
+
+  it("a replayed prompt with no known time counts from the session's start", () => {
+    const run = { id: "r", name: "Compare", sessions: [session({ createdAt: NOW - 30 * MIN, hasUnread: true })] };
+    const transcripts = { "s-1": [timed("user", NOW - 2 * MIN, { hasKnownTime: false })] };
+    const [row] = rowFactsOf(run, { isBusy: () => true, transcripts, failedTurns: {}, signInNeeded: new Map() });
+
+    expect(rowStatusWords(row, "working", NOW)).toBe("Working · 30 min");
+    expect(row.hasUnread).toBe(true);
+  });
+
+  it("a finished unread row shows the unread dot", () => {
+    expect(runStatusDot("done", true)).toBe("unread");
+    expect(runStatusDot("done")).toBe("idle");
+    expect(runStatusDot("working", true)).toBe("running");
+  });
+
+  it("says who Pick stops", () => {
+    expect(stopsLine(["Qwen Code"])).toBe("Qwen Code is still working and will be stopped.");
+    expect(stopsLine(["Qwen Code", "Kimi CLI"])).toBe("Qwen Code and Kimi CLI are still working and will be stopped.");
+    expect(statusLabel("done")).toBe("Finished");
+  });
+});
+
+describe("review fixes", () => {
+  it("a finished row reads Finished, since no turn-end time is stored", () => {
+    const run = { id: "r", name: "Compare", sessions: [session({ createdAt: 0 })] };
+    const transcripts = { "s-1": [timed("user", 1_000), timed("agent", 2_000, { isComplete: true })] };
+    const [row] = rowFactsOf(run, { isBusy: () => false, transcripts, failedTurns: {}, signInNeeded: new Map() });
+
+    expect(rowStatusWords(row, "done", 60 * 60_000)).toBe("Finished");
   });
 });

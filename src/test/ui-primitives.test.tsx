@@ -219,13 +219,41 @@ describe("BlockerCard", () => {
     );
 
     const card = screen.getByRole("region", { name: "Install Codex" });
-    expect(card).toHaveClass("rounded-xl", "border", "bg-surface-2", "p-4");
-    expect(screen.getByRole("heading", { level: 2, name: "Codex isn't installed yet" })).toBeInTheDocument();
-    expect(screen.getByText("Codex needs Node.js before it can start.")).toBeInTheDocument();
+    // Padded 18px, with the popover shadow, as drawn.
+    expect(card).toHaveClass("rounded-xl", "border", "bg-surface-2", "p-[18px]", "shadow-popover", "gap-3.5");
+    const heading = screen.getByRole("heading", { level: 2, name: "Codex isn't installed yet" });
+    expect(heading).toHaveClass("font-semibold");
+    expect(screen.getByText("Codex needs Node.js before it can start.")).toHaveClass("text-ui", "text-fg-muted");
     expect(screen.getByRole("button", { name: "Install Codex" })).toBeInTheDocument();
-    expect(screen.getByText("Footer line").parentElement).toHaveClass("border-t", "pt-3", "mt-3");
+    const footer = screen.getByText("Footer line").parentElement;
+    expect(footer).toHaveClass("border-t", "pt-3");
+    expect(footer).not.toHaveClass("mt-3");
     // Codex's official logo is a decorative img: the heading already names the agent.
     expect(card.querySelector("img[alt='']")).not.toBeNull();
+  });
+
+  it("puts its logo in a 32px tile", () => {
+    render(
+      <BlockerCard label="Install Codex" profileId="codex-acp" title="Codex isn't installed yet">
+        Body
+      </BlockerCard>,
+    );
+
+    const tile = screen.getByRole("region", { name: "Install Codex" }).querySelector("img[alt='']")?.parentElement;
+    expect(tile).toHaveClass("size-8", "rounded-lg", "bg-surface-hover");
+  });
+
+  it("puts the main button on its own row under the body", () => {
+    render(
+      <BlockerCard label="Install Codex" title="Codex isn't installed yet" actions={<Button>Install Codex</Button>}>
+        Body
+      </BlockerCard>,
+    );
+
+    const row = screen.getByRole("button", { name: "Install Codex" }).parentElement as HTMLElement;
+    expect(row).toHaveClass("justify-end");
+    expect(row.contains(screen.getByRole("heading", { level: 2 }))).toBe(false);
+    expect(row.parentElement).toBe(screen.getByRole("region", { name: "Install Codex" }));
   });
 
   it("leaves out the logo, actions and footer it is not given", () => {

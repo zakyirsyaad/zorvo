@@ -298,7 +298,7 @@ describe("a sign-in inside a compare run", () => {
 
     expect(await screen.findByRole("region", { name: "Sign in to Qwen Code" })).toBeInTheDocument();
     expect(prompt().value).toBe("fix the login");
-    expect(screen.getByText("Your message will be sent again after you sign in")).toBeInTheDocument();
+    expect(screen.getByText("Your message will be sent again after you sign in.")).toBeInTheDocument();
     await pressSignIn("Qwen Code");
 
     await waitFor(() => expect(promptsTo(spy, sessionId)).toHaveLength(2));

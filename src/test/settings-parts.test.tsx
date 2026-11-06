@@ -90,7 +90,9 @@ describe("SettingsGroup and SettingsRow", () => {
     );
     const region = screen.getByRole("region", { name: "Recent folders" });
     const card = region.querySelector(".rounded-xl") as HTMLElement;
-    expect(card).toHaveClass("bg-surface-2", "border", "border-border", "overflow-hidden");
+    expect(card).toHaveClass("bg-surface-2", "border", "border-border");
+    // A row's popover must open past the card, so the card clips nothing.
+    expect(card).not.toHaveClass("overflow-hidden");
     const row = within(region).getByText("agent-desktop").closest("[data-settings-row]") as HTMLElement;
     expect(row).toHaveClass("px-4", "py-3", "gap-4", "border-b", "last:border-b-0");
     expect(within(region).getByText("~/developer/agent-desktop")).toHaveClass("text-ui-sm", "text-fg-subtle");

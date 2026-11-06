@@ -1,4 +1,4 @@
-import type { Ref } from "react";
+import { useEffect, useRef, useState, type Ref } from "react";
 import type { AppUpdate } from "../../hooks/useAppUpdate";
 import { useNow } from "../../hooks/useNow";
 import type { AgentSummary } from "../../lib/agent-readiness";
@@ -91,6 +91,65 @@ function VersionRow({ appUpdate, appVersion, restartNote }: Pick<GeneralSectionP
   return <SettingsRow label="Zorvo version" description={description} control={control} />;
 }
 
+/**
+ * One recent folder. Remove asks in the row first ("Its files and sessions stay"), with the
+ * confirming button focused; Cancel puts focus back on Remove.
+ */
+function RecentFolderRow({ folder, onRemove }: { folder: FolderOption; onRemove: (path: string) => void }) {
+  const [isConfirming, setIsConfirming] = useState(false);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const removeRef = useRef<HTMLButtonElement>(null);
+  const wasConfirming = useRef(false);
+  useEffect(() => {
+    if (isConfirming) confirmRef.current?.focus();
+    else if (wasConfirming.current) removeRef.current?.focus();
+    wasConfirming.current = isConfirming;
+  }, [isConfirming]);
+
+  const path = <span className="font-mono text-caption">{folder.path}</span>;
+  if (!isConfirming) {
+    return (
+      <SettingsRow
+        label={folder.name}
+        description={path}
+        control={
+          <Button
+            ref={removeRef}
+            variant="ghost"
+            size="md"
+            onClick={() => setIsConfirming(true)}
+            aria-label={`Remove ${folder.name} from recent folders`}
+          >
+            Remove
+          </Button>
+        }
+      />
+    );
+  }
+  return (
+    <SettingsRow
+      label={folder.name}
+      description="Remove from recent folders? Its files and sessions stay."
+      control={
+        <>
+          <Button variant="ghost" size="md" onClick={() => setIsConfirming(false)}>
+            Cancel
+          </Button>
+          <Button
+            ref={confirmRef}
+            variant="danger"
+            size="md"
+            onClick={() => onRemove(folder.path)}
+            aria-label={`Remove ${folder.name}`}
+          >
+            Remove
+          </Button>
+        </>
+      }
+    />
+  );
+}
+
 /** Settings → General: the default agent, the folders Zorvo remembers, and About. */
 export function GeneralSection({
   titleRef,
@@ -123,23 +182,7 @@ export function GeneralSection({
         {recentFolders.length === 0 ? (
           <SettingsRow label={<span className="text-fg-subtle">No recent folders yet.</span>} />
         ) : (
-          recentFolders.map((folder) => (
-            <SettingsRow
-              key={folder.path}
-              label={folder.name}
-              description={<span className="font-mono text-caption">{folder.path}</span>}
-              control={
-                <Button
-                  variant="ghost"
-                  size="md"
-                  onClick={() => onRemoveRecentFolder(folder.path)}
-                  aria-label={`Remove ${folder.name} from recent folders`}
-                >
-                  Remove
-                </Button>
-              }
-            />
-          ))
+          recentFolders.map((folder) => <RecentFolderRow key={folder.path} folder={folder} onRemove={onRemoveRecentFolder} />)
         )}
       </SettingsGroup>
 

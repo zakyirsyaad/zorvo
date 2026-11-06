@@ -31,7 +31,8 @@ export function SettingsGroup({ heading, children }: { heading: string; children
       <div id={headingId} className="px-1 pb-2 text-caption font-medium text-fg-muted">
         {heading}
       </div>
-      <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-surface-2">{children}</div>
+      {/* No overflow clip: a row's popover (the default agent list) opens past the card's edge. */}
+      <div className="flex flex-col rounded-xl border border-border bg-surface-2">{children}</div>
     </section>
   );
 }

@@ -28,7 +28,8 @@ Settings is a page in the main window, not a dialog. It takes the place of the s
 
 - **General**:
   - **New sessions → Default agent**: an outline button with the agent's logo in a 16px tile, its name and a chevron. It opens a listbox of the ready agents. It reads "Choose an agent" with none, and "No agents are installed yet." with no ready agent.
-  - **Recent folders**: the name, the path in mono `caption`, and a ghost **Remove** ("Remove agent-desktop from recent folders").
+  - **Recent folders**: the name, the path in mono `caption`, and a ghost **Remove** ("Remove agent-desktop from recent folders"). Remove asks in the row first: the line reads "Remove from recent folders? Its files and sessions stay.", with **Cancel** and a danger **Remove**, which is focused.
+- **Group cards do not clip**, so a row's popover (the default agent list) opens past the card's edge.
   - **About → Zorvo version**: a status line. An sr-only live region beside it announces each state once ("Zorvo is up to date.", "Downloading Zorvo 0.9.0."), never the minutes or the percent:
     - "0.8.0 · Up to date · checked 2 h ago", with a still green dot (`StatusLine` `ready`);
     - "Checking for updates…";

@@ -93,11 +93,40 @@ describe("General section", () => {
     expect(within(group).queryByRole("button")).toBeNull();
   });
 
-  it("Remove takes a folder out", () => {
+  it("the default agent list is not clipped by its group", () => {
+    renderGeneral();
+    fireEvent.click(screen.getByRole("button", { name: /Claude Code/ }));
+    let node: HTMLElement | null = screen.getByRole("listbox", { name: "Default agent" });
+    while (node) {
+      expect(node.className).not.toMatch(/\boverflow-(hidden|clip)\b/);
+      node = node.parentElement;
+    }
+  });
+
+  it("Remove asks first, and removes a folder only when confirmed", () => {
+    const props = renderGeneral();
+    expect(screen.getByText("/Users/me/agent-desktop")).toHaveClass("font-mono", "text-caption");
+    fireEvent.click(screen.getByRole("button", { name: "Remove agent-desktop from recent folders" }));
+
+    expect(props.onRemoveRecentFolder).not.toHaveBeenCalled();
+    const folders = screen.getByRole("region", { name: "Recent folders" });
+    expect(within(folders).getByText("Remove from recent folders? Its files and sessions stay.")).toBeInTheDocument();
+    const confirm = within(folders).getByRole("button", { name: "Remove agent-desktop" });
+    expect(confirm).toHaveFocus();
+    expect(confirm.className).toContain("text-danger");
+
+    fireEvent.click(confirm);
+    expect(props.onRemoveRecentFolder).toHaveBeenCalledWith("/Users/me/agent-desktop");
+  });
+
+  it("Cancel keeps the folder and gives focus back to its Remove", () => {
     const props = renderGeneral();
     fireEvent.click(screen.getByRole("button", { name: "Remove agent-desktop from recent folders" }));
-    expect(props.onRemoveRecentFolder).toHaveBeenCalledWith("/Users/me/agent-desktop");
-    expect(screen.getByText("/Users/me/agent-desktop")).toHaveClass("font-mono", "text-caption");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(props.onRemoveRecentFolder).not.toHaveBeenCalled();
+    expect(screen.queryByText("Remove from recent folders? Its files and sessions stay.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Remove agent-desktop from recent folders" })).toHaveFocus();
   });
 
   it("no recent folders reads as a row", () => {

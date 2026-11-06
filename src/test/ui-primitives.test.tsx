@@ -24,6 +24,11 @@ describe("primitive sizes from the canvas", () => {
     expect(screen.getByRole("button", { name: "Go" })).toHaveClass("h-8", "text-ui");
   });
 
+  it("IconButton has a 26px size for the inspector's bars", () => {
+    render(<IconButton label="Refresh" size="row">x</IconButton>);
+    expect(screen.getByRole("button", { name: "Refresh" })).toHaveClass("h-6.5", "w-6.5");
+  });
+
   it("IconButton comes in 22, 24 and 28px, muted or secondary", () => {
     const { rerender } = render(<IconButton label="Stop">x</IconButton>);
     expect(screen.getByRole("button", { name: "Stop" })).toHaveClass("h-7", "w-7", "text-fg-muted");

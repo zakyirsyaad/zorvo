@@ -4,8 +4,8 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
   label: string;
   /** Outline: a second action beside the view's one primary (Stop, where Send was). */
   variant?: "ghost" | "primary" | "outline";
-  /** 22px and 24px for actions inside a row, 28px (the default) for bars. */
-  size?: "xs" | "sm" | "md";
+  /** 22px and 24px for actions inside a row, 26px (`row`) for the inspector's header and path bars, 28px (the default) for bars. */
+  size?: "xs" | "sm" | "row" | "md";
   /** A ghost button's colour: muted (the default) or the secondary text colour the canvas gives row actions. */
   tone?: "muted" | "secondary";
   children: ReactNode;
@@ -21,6 +21,7 @@ const BASE =
 const SIZES: Record<NonNullable<IconButtonProps["size"]>, string> = {
   xs: "h-5.5 w-5.5",
   sm: "h-6 w-6",
+  row: "h-6.5 w-6.5",
   md: "h-7 w-7",
 };
 

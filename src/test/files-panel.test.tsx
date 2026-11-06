@@ -103,10 +103,10 @@ beforeEach(() => {
 });
 
 describe("FilesPanel — header", () => {
-  it("shows the title, filter, refresh, reveal and close controls", async () => {
+  it("shows the folder, filter, refresh, reveal and close controls", async () => {
     const props = await renderPanel();
 
-    expect(screen.getByRole("heading", { name: "Files" })).toBeInTheDocument();
+    expect(screen.getByText("proj", { selector: "span" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Filter files" })).toHaveAttribute(
       "placeholder",
       "Filter files"

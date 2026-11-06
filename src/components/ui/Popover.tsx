@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useRef, type FocusEvent, type ReactNode } from "react";
-import { Check } from "lucide-react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEventHandler, type ReactNode, type Ref } from "react";
+import { Check, Search } from "lucide-react";
 import { useDismiss } from "../../hooks/useDismiss";
+import { clippingBounds, fitPanel, type PanelFit } from "../../lib/popover-fit";
 
 type PopoverRole = "menu" | "listbox" | "dialog";
 
@@ -20,6 +21,11 @@ export interface PopoverProps {
    */
   panelClassName?: string;
   className?: string;
+  /**
+   * Classes on the wrapper around the trigger: a chip in a wrapping row passes `min-w-0 max-w-full`, so the
+   * wrapper (a flex item) can shrink and its chip truncate instead of widening the row.
+   */
+  wrapperClassName?: string;
   children: ReactNode;
 }
 
@@ -43,12 +49,24 @@ export function Popover({
   align = "start",
   panelClassName,
   className,
+  wrapperClassName,
   children,
 }: PopoverProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLSpanElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const hasFocusInside = useRef(false);
+  const [fit, setFit] = useState<PanelFit | null>(null);
   useDismiss(wrapperRef, isOpen, onClose);
+
+  // Before paint, so the panel never shows where it is cut off: the asked-for side when it fits there, else the
+  // side with more room, capped to that room. `scrollHeight` is the content's height even while capped.
+  useLayoutEffect(() => {
+    const wrapper = wrapperRef.current;
+    const panel = panelRef.current;
+    if (!isOpen || panelClassName || !wrapper || !panel) return;
+    setFit(fitPanel(wrapper.getBoundingClientRect(), clippingBounds(wrapper), panel.scrollHeight, side));
+  }, [isOpen, panelClassName, side]);
 
   useEffect(() => {
     if (isOpen || !hasFocusInside.current) return;
@@ -65,19 +83,24 @@ export function Popover({
     if (next && !event.currentTarget.contains(next)) hasFocusInside.current = false;
   };
 
-  const placement = panelClassName ?? `${SIDES[side]} ${ALIGNS[align]}`;
-  const panelClasses = [PANEL, placement, className].filter(Boolean).join(" ");
+  const shownSide = fit?.side ?? side;
+  const maxHeight = panelClassName ? undefined : fit?.maxHeight;
+  const placement = panelClassName ?? `${SIDES[shownSide]} ${ALIGNS[align]}`;
+  const capped = maxHeight === undefined ? undefined : "overflow-y-auto";
+  const panelClasses = [PANEL, placement, capped, className].filter(Boolean).join(" ");
   return (
     // With its own placement the panel is positioned against a box further out, so the wrapper is not one.
-    <div ref={wrapperRef} className={panelClassName ? undefined : "relative"}>
+    <div ref={wrapperRef} data-popover="" className={[panelClassName ? undefined : "relative", wrapperClassName].filter(Boolean).join(" ") || undefined}>
       <span ref={triggerRef} className="contents">
         {trigger}
       </span>
       {isOpen && (
         <div
+          ref={panelRef}
           role={role}
           aria-label={label}
           className={panelClasses}
+          style={maxHeight === undefined ? undefined : { maxHeight }}
           onFocus={() => (hasFocusInside.current = true)}
           onBlur={handleBlur}
         >
@@ -88,9 +111,48 @@ export function Popover({
   );
 }
 
-/** A small muted heading over a group of options. */
-export function PopoverHeader({ children }: { children: ReactNode }) {
-  return <div className="px-2 pt-1 pb-1.5 text-caption font-medium text-fg-muted">{children}</div>;
+/** A small muted heading over a group of options; `aside` sits on its right, as the agent menu's hint does. */
+export function PopoverHeader({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+  return (
+    <div className="flex items-baseline gap-2 px-2 pt-1.5 pb-1 text-caption font-medium text-fg-muted">
+      <span className="min-w-0 flex-1">{children}</span>
+      {aside && <span className="font-normal text-fg-subtle">{aside}</span>}
+    </div>
+  );
+}
+
+export interface PopoverSearchProps {
+  value: string;
+  onChange: (value: string) => void;
+  /** Also the field's accessible name: "Search branches". */
+  placeholder: string;
+  /** `search` where a list filters as you type and Escape may clear it (the model menu). */
+  type?: "search" | "text";
+  autoFocus?: boolean;
+  inputRef?: Ref<HTMLInputElement>;
+  onKeyDown?: KeyboardEventHandler<HTMLInputElement>;
+}
+
+/** The 30px search field at the top of a long menu, with its icon, as the canvas draws the branch and model menus. */
+export function PopoverSearch({ value, onChange, placeholder, type = "text", autoFocus, inputRef, onKeyDown }: PopoverSearchProps) {
+  return (
+    <label className="focus-ring-within mb-1 flex h-7.5 items-center gap-2 rounded border border-border bg-surface-2 px-2 text-fg-subtle">
+      <Search size={12} aria-hidden="true" className="shrink-0" />
+      <input
+        ref={inputRef}
+        type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={onKeyDown}
+        autoFocus={autoFocus}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        autoComplete="off"
+        spellCheck={false}
+        className="min-w-0 flex-1 bg-transparent text-ui-sm text-fg placeholder-fg-subtle outline-none"
+      />
+    </label>
+  );
 }
 
 /** A popover's title row, as the canvas draws the Plan and Background tasks headers: the title, and a count on the right. */
@@ -122,41 +184,56 @@ export interface PopoverOptionProps {
   /** Shown at the right edge, before the check (a hint such as a count). */
   trailing?: ReactNode;
   disabled?: boolean;
+  /** A tooltip with more than the row shows (a model's full name, its provider tag included). */
+  title?: string;
   children: ReactNode;
 }
 
 const OPTION =
-  "focus-ring flex min-h-7.5 w-full items-center gap-2 rounded px-2 py-1 text-left text-ui text-fg transition-colors enabled:hover:bg-surface-hover disabled:text-fg-subtle";
+  "focus-ring flex min-h-7.5 w-full gap-2 rounded px-2 text-left text-ui text-fg transition-colors enabled:hover:bg-surface-hover disabled:text-fg-subtle";
+// A row with a line under its label tops its check and grows; a one-line row is centred in 30px.
+const OPTION_TWO_LINES = "items-start py-1.75";
+const OPTION_ONE_LINE = "items-center py-1.5";
 
 /** One row of a popover: an option in a listbox, a menu item in a menu. */
 export function PopoverOption({
-  selected = false,
+  selected,
   onSelect,
   description,
   isRadio = false,
   trailing,
   disabled,
+  title,
   children,
 }: PopoverOptionProps) {
   const popoverRole = useContext(PopoverRoleContext);
   const menuRole = isRadio ? "menuitemradio" : "menuitem";
   const role = popoverRole === "listbox" ? "option" : popoverRole === "menu" ? menuRole : undefined;
+  const isSelected = selected ?? false;
+  // A row you can check keeps its check's place on the left; a command (Rename, Delete) has none.
+  const isCheckable = selected !== undefined || role === "option" || role === "menuitemradio";
+  const classes = [OPTION, description ? OPTION_TWO_LINES : OPTION_ONE_LINE, isSelected && "bg-surface-hover"];
   return (
     <button
       type="button"
       role={role}
-      aria-selected={role === "option" ? selected : undefined}
-      aria-checked={role === "menuitemradio" ? selected : undefined}
+      aria-selected={role === "option" ? isSelected : undefined}
+      aria-checked={role === "menuitemradio" ? isSelected : undefined}
       disabled={disabled}
+      title={title}
       onClick={onSelect}
-      className={[OPTION, selected && "bg-surface-hover"].filter(Boolean).join(" ")}
+      className={classes.filter(Boolean).join(" ")}
     >
+      {isCheckable && (
+        <span data-check-slot="" aria-hidden="true" className="flex w-3.5 shrink-0 justify-center pt-0.5">
+          {isSelected && <Check className="size-3.5 text-fg" />}
+        </span>
+      )}
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate">{children}</span>
-        {description && <span className="text-caption text-fg-muted">{description}</span>}
+        {description && <span className="text-caption leading-[15px] text-fg-subtle">{description}</span>}
       </span>
       {trailing && <span className="shrink-0 text-caption text-fg-muted">{trailing}</span>}
-      {selected && <Check aria-hidden="true" className="size-3.5 shrink-0 text-fg" />}
     </button>
   );
 }

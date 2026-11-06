@@ -18,6 +18,8 @@ export interface MoreControlsProps {
   onClose: () => void;
   /** After a pick has been sent: the menu closes. */
   onPicked: () => void;
+  /** Which way it opens: up from a session's composer (the default), down in a draft. */
+  side?: "top" | "bottom";
 }
 
 /** What the hidden controls are set to, so a Plan or Fast mode behind ⋯ is not invisible: "Fast mode: On, Agent: Default". */
@@ -31,14 +33,14 @@ function currentValues(controls: readonly OverflowControl[]): string {
 }
 
 /** The composer's ⋯ menu: each control that did not fit, as a group of choices with the current one checked. */
-export function MoreControls({ controls, isOpen, onToggle, onClose, onPicked }: MoreControlsProps) {
+export function MoreControls({ controls, isOpen, onToggle, onClose, onPicked, side = "top" }: MoreControlsProps) {
   return (
     <Popover
       isOpen={isOpen}
       onClose={onClose}
       label="More options"
       role="menu"
-      side="top"
+      side={side}
       align="start"
       className="w-max min-w-48 max-w-80"
       trigger={

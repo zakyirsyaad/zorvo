@@ -72,11 +72,11 @@ describe("Composer slash commands", () => {
     expect(screen.queryByRole("listbox", { name: "Slash commands" })).toBeNull();
   });
 
-  it("only mentions slash commands in the placeholder when the agent has some", () => {
-    const { rerender } = render(<ComposerDock onSendMessage={() => {}} />);
-    expect(prompt().placeholder).not.toContain("/");
+  it("replies to the agent in the placeholder whether or not it has commands, as the canvas words it", () => {
+    const { rerender } = render(<ComposerDock onSendMessage={() => {}} agentName="Claude Code" />);
+    expect(prompt().placeholder).toBe("Reply to Claude Code");
 
-    rerender(<ComposerDock onSendMessage={() => {}} commands={commands} />);
-    expect(prompt().placeholder).toContain("/");
+    rerender(<ComposerDock onSendMessage={() => {}} agentName="Claude Code" commands={commands} />);
+    expect(prompt().placeholder).toBe("Reply to Claude Code");
   });
 });

@@ -1,5 +1,7 @@
 import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
-import { Plus, CornerDownLeft, Shield, ShieldAlert, Sparkles, Gauge, SlidersHorizontal, Square, Bot } from "lucide-react";
+import { ArrowUp, Paperclip, ShieldAlert, Square } from "lucide-react";
+import { DRAFT_CHIP } from "./composer/chip-style";
+import { AgentLogo } from "./AgentLogo";
 import { Button } from "./ui/Button";
 import { IconButton } from "./ui/IconButton";
 import { OptionDropdown } from "./composer/OptionDropdown";
@@ -22,8 +24,11 @@ import { useLatest } from "../hooks/useLatest";
 import type { ContextUsage, SlashCommand } from "../types";
 
 const MAX_PROMPT_HEIGHT_PX = 180;
-const PLACEHOLDER = "Prompt the agent...";
-const PLACEHOLDER_WITH_COMMANDS = "Type / for commands, or prompt the agent...";
+/** What an empty composer says when the parent gives no placeholder: a running session or a popout. */
+const replyPlaceholder = (agentName: string | undefined) => `Reply to ${agentName ?? "the agent"}`;
+
+/** The skeletons' widths while a draft's chips load: about a model's, a mode's and an effort's. */
+const SKELETON_CHIP_WIDTHS = ["w-18", "w-24", "w-14"] as const;
 
 /** Keys that only move the caret; the menu's own keys (Escape, Enter, up and down) are not among them. */
 const CARET_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
@@ -36,9 +41,12 @@ interface ControlEntry {
   id: "model" | "permission" | "effort" | `option:${string}`;
   label: string;
   control: ComposerControl;
-  icon: ReactNode;
+  /** After the value on the chip: a risky mode's shield. */
+  trailing?: ReactNode;
   description?: string;
   showLabel?: boolean;
+  /** A visible heading over the open menu: the mode menu reads "Mode". */
+  heading?: string;
 }
 
 /** A folder's own name, the last part of its path: "/w/agent-desktop/" gives "agent-desktop". */
@@ -110,12 +118,23 @@ export interface ComposerDockProps {
    * except while `sendDisabled`: then the note says why and the Send button points to it.
    */
   note?: string;
+  /** The note sits in the control row, after attach, as the canvas draws a compare run's note; else under the prompt. */
+  noteInRow?: boolean;
+  /** A draft is asking its agent what it offers: its chips show as skeletons in the row until they arrive. */
+  isLoadingControls?: boolean;
+  /**
+   * A draft's slot between its chips and its card, for the panels that hold it back (sign-in, install), so they
+   * read in order under the chips. The parent portals them in; the slot takes no room while empty.
+   */
+  aboveCardRef?: Ref<HTMLDivElement>;
   /** Before a new session starts: the folder it starts in. */
   folder?: FolderControl;
   /** Before a new session starts: the agent it runs. */
   agent?: ComposerControl;
   /** Before a new session starts, in a git repository: the agent chip with a checkbox to tick several; replaces `agent`. */
   agents?: Omit<AgentMultiPickerProps, "isOpen" | "onToggle" | "onClose">;
+  /** A running session's agent, named first in the row; drafts name theirs with the `agent`/`agents` chip. */
+  sessionAgent?: { profileId: string; name: string };
   /** The workspace whose files `@` lists; mentions are off when absent. */
   mentions?: MentionSource;
   /**
@@ -145,9 +164,13 @@ export function ComposerDock({
   attachAsFiles = false,
   contextUsage,
   note,
+  noteInRow = false,
+  isLoadingControls = false,
+  aboveCardRef,
   folder,
   agent,
   agents,
+  sessionAgent,
   mentions,
   onTextChange,
   onRestored,
@@ -347,23 +370,23 @@ export function ComposerDock({
   const selectedPermission = permission?.options.find((o) => o.value === permission.selected);
   const isRiskyPermission = selectedPermission?.risky ?? isRiskyMode(permission?.selected);
   // The agent's controls in the row's order; those past the first few go into the ⋯ menu.
+  // The canvas draws the chips without leading icons; only a risky mode keeps a mark, after its name.
   const agentControls: ControlEntry[] = [
-    ...(model ? [{ id: "model", label: "Model", control: model, icon: <Sparkles size={12} className="text-fg-muted" /> } as const] : []),
+    ...(model ? [{ id: "model", label: "Model", control: model } as const] : []),
     ...(permission
       ? [
           {
             id: "permission",
             label: "Permission mode",
+            heading: "Mode",
             control: permission,
-            icon: isRiskyPermission ? (
-              <ShieldAlert size={13} className="text-danger" data-testid="risky-permission-icon" />
-            ) : (
-              <Shield size={13} className="text-status-running" />
-            ),
+            trailing: isRiskyPermission ? (
+              <ShieldAlert size={12} aria-hidden="true" className="shrink-0 text-status-attention" data-testid="risky-permission-icon" />
+            ) : undefined,
           } as const,
         ]
       : []),
-    ...(effort ? [{ id: "effort", label: "Effort", control: effort, icon: <Gauge size={12} className="text-fg-muted" /> } as const] : []),
+    ...(effort ? [{ id: "effort", label: "Effort", control: effort } as const] : []),
     ...extras.map(
       (extra): ControlEntry => ({
         id: `option:${extra.id}`,
@@ -371,14 +394,17 @@ export function ComposerDock({
         control: extra,
         description: extra.description,
         showLabel: true,
-        icon: <SlidersHorizontal size={12} className="text-fg-muted" />,
       }),
     ),
   ];
   const { inline: inlineControls, overflow: overflowControls } = splitControls(agentControls);
+  const isShowingSkeletons = Boolean(isLoadingControls) && agentControls.length === 0;
+  // A draft's composer sits near the top of its column with room below; a session's sits at the window's bottom.
+  const isDraft = Boolean(folder || agent || agents);
+  const menuSide = isDraft ? "bottom" : "top";
 
   return (
-    <footer ref={containerRef} className="w-full max-w-chat flex flex-col items-center px-4 select-none">
+    <footer ref={containerRef} className="w-full max-w-chat flex flex-col items-center select-none">
       {(folder || agents || agent) && (
         <DraftChips
           folder={folder}
@@ -388,7 +414,10 @@ export function ComposerDock({
               <OptionDropdown
                 label="Agent"
                 align="left"
-                icon={<Bot size={12} className="text-fg-muted" />}
+                chipClassName={DRAFT_CHIP}
+                side="bottom"
+                icon={<AgentLogo profileId={agent.selected ?? ""} name="" size={16} />}
+                renderIcon={(option) => <AgentLogo profileId={option.value ?? ""} name="" size={16} />}
                 {...dropdownProps("agent", agent)}
               />
             ) : undefined
@@ -398,16 +427,16 @@ export function ComposerDock({
           onClose={(name) => setOpenDropdown((current) => (current === name ? null : current))}
         />
       )}
+      {aboveCardRef && <div ref={aboveCardRef} data-above-card="" className="mb-3 w-full space-y-3 empty:hidden" />}
       <div
-        className="relative w-full rounded-xl border border-border bg-surface-2 p-3 shadow-popover transition-all focus-within:border-border-strong"
+        data-composer-card=""
+        className="relative flex w-full flex-col gap-2.5 rounded-xl border border-border bg-surface-2 p-3 shadow-popover transition-all focus-within:border-border-strong"
       >
         {attachments.length > 0 && (
-          <div className="mb-2">
-            <AttachmentChips
-              paths={attachments}
-              onRemove={(path) => setAttachments((current) => current.filter((p) => p !== path))}
-            />
-          </div>
+          <AttachmentChips
+            paths={attachments}
+            onRemove={(path) => setAttachments((current) => current.filter((p) => p !== path))}
+          />
         )}
         {mentionMenu.files.length > 0 ? (
           <MentionMenu
@@ -424,7 +453,7 @@ export function ComposerDock({
         )}
         <textarea
           ref={textareaRef}
-          rows={1}
+          rows={2}
           value={text}
           onChange={handleTextChange}
           onKeyUp={(e) => {
@@ -433,22 +462,23 @@ export function ComposerDock({
           onClick={(e) => followCaret(e.currentTarget)}
           onKeyDown={handleKeyDown}
           disabled={disabled}
-          placeholder={placeholder ?? (commands.length > 0 ? PLACEHOLDER_WITH_COMMANDS : PLACEHOLDER)}
+          placeholder={placeholder ?? replyPlaceholder(agentName)}
           aria-label="Prompt"
           autoCorrect="off"
           autoCapitalize="off"
           spellCheck={false}
-          className="w-full bg-transparent text-body text-fg placeholder-fg-subtle outline-none resize-none min-h-[26px] max-h-[180px]"
+          // Two lines tall to start (44px), as the canvas draws it, growing with the text.
+          className="w-full resize-none bg-transparent px-1 text-body text-fg placeholder-fg-subtle outline-none min-h-11 max-h-[180px]"
         />
 
-        {shownNote && (
-          <p id={noteId} className="mt-1 text-caption text-fg-muted">
+        {shownNote && !noteInRow && (
+          <p id={noteId} className="text-caption text-fg-muted">
             {shownNote}
           </p>
         )}
 
         {/* Wraps instead of overflowing: a draft can show folder, agent, mode, model and effort at once. */}
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-border pt-2 text-xs">
+        <div data-composer-row="" className="flex flex-wrap items-center gap-1 text-ui-sm">
           <div className="flex min-w-0 flex-wrap items-center gap-1">
             {onAttach && (
               <IconButton
@@ -457,30 +487,63 @@ export function ComposerDock({
                 onClick={() => void handleAttach()}
                 disabled={disabled}
               >
-                <Plus size={15} />
+                <Paperclip size={14} />
               </IconButton>
             )}
+
+            {sessionAgent && !agent && !agents && (
+              // A running session's agent, named first: a label, since a session cannot change its agent.
+              <span data-agent-chip="" className="inline-flex h-7 min-w-0 items-center gap-1.5 px-2 text-ui-sm text-fg-secondary">
+                <AgentLogo profileId={sessionAgent.profileId} name="" size={16} />
+                <span className="truncate">{sessionAgent.name}</span>
+              </span>
+            )}
+
+            {/* Always mounted: a live region inserted with its text is often not read out. A probe while the
+                chips are already there (a sign-in re-check) loads nothing the user waits for, so it stays empty. */}
+            <span role="status" className="sr-only">
+              {isShowingSkeletons ? `Loading ${agentName ?? "the agent"}'s models and commands…` : ""}
+            </span>
+            {/* Where the agent's chips will land, so nothing moves when they arrive. */}
+            {isShowingSkeletons &&
+              SKELETON_CHIP_WIDTHS.map((width) => (
+                <span
+                  key={width}
+                  data-skeleton-chip=""
+                  aria-hidden="true"
+                  className={`h-7 ${width} rounded-md bg-surface-hover motion-safe:animate-pulse`}
+                />
+              ))}
 
             {inlineControls.map((entry) => (
               <OptionDropdown
                 key={entry.id}
                 label={entry.label}
                 align="left"
-                icon={entry.icon}
+                trailing={entry.trailing}
                 description={entry.description}
                 showLabel={entry.showLabel}
+                heading={entry.heading}
+                side={menuSide}
                 {...dropdownProps(entry.id, entry.control)}
               />
             ))}
 
             {overflowControls.length > 0 && (
               <MoreControls
+                side={menuSide}
                 controls={overflowControls}
                 isOpen={openDropdown === "more"}
                 onToggle={() => toggle("more")}
                 onClose={() => setOpenDropdown((current) => (current === "more" ? null : current))}
                 onPicked={() => setOpenDropdown(null)}
               />
+            )}
+
+            {shownNote && noteInRow && (
+              <p id={noteId} className="pl-1 text-caption text-fg-subtle">
+                {shownNote}
+              </p>
             )}
           </div>
 
@@ -494,7 +557,7 @@ export function ComposerDock({
                 title="Stop the agent's current turn"
                 onClick={onStop}
               >
-                <Square size={12} fill="currentColor" />
+                <Square size={11} />
               </IconButton>
             ) : sendLabel ? (
               <Button
@@ -504,6 +567,7 @@ export function ComposerDock({
                 disabled={isSendEmpty || !canSend}
               >
                 {sendLabel}
+                <ArrowUp size={12} aria-hidden="true" />
               </Button>
             ) : (
               <IconButton
@@ -513,7 +577,7 @@ export function ComposerDock({
                 onClick={handleSend}
                 disabled={isSendEmpty || !canSend}
               >
-                <CornerDownLeft size={14} />
+                <ArrowUp size={14} />
               </IconButton>
             )}
           </div>

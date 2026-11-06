@@ -179,7 +179,14 @@ describe("Starting a new session", () => {
     const prompt = screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement;
     expect(heading.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(card.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Under the draft's chips, not between the heading and them.
+    const folderChip = screen.getByRole("button", { name: /^Folder:/ });
+    expect(folderChip.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(prompt.disabled).toBe(false);
+    // As wide as the composer's card: the 680px column with its 24px gutter outside it.
+    const column = card.closest(".max-w-chat")!;
+    expect(column.className).not.toContain("px-4");
+    expect(column.parentElement!.className).toContain("px-6");
   });
 
   it("does not start an agent until the new session's first message", async () => {
@@ -222,6 +229,20 @@ describe("Starting a new session", () => {
     expect(invokeSpy.mock.calls.find(([cmd]) => cmd === "acp_start_session")).toBeDefined();
     expect(screen.queryByRole("heading", { name: /^New session/ })).toBeNull();
     expect(screen.getByRole("textbox", { name: "Prompt" })).toBe(draftPrompt);
+  });
+
+  it("docks the draft's composer in its column, and a session's 20px above the bottom", async () => {
+    await act(async () => {
+      render(<App />);
+    });
+    const dock = () => screen.getByRole("textbox", { name: "Prompt" }).closest("footer")!.parentElement!;
+    expect(dock().className).toContain("px-6");
+    expect(dock().className).not.toContain("pb-5");
+
+    await sendFirst();
+
+    expect(dock().className).toContain("px-6");
+    expect(dock().className).toContain("pb-5");
   });
 
   it("starts a session in the workspace and with the agent picked from its + menu", async () => {

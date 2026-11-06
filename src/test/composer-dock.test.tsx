@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent, act, within } from "@testing-library/react";
 import { createRef, type ComponentProps } from "react";
 import { ComposerDock, type ComposerHandle } from "../components/ComposerDock";
 import type { ComposerControls } from "../lib/composer-controls";
@@ -287,11 +287,11 @@ describe("ComposerDock", () => {
       expect(meter.getAttribute("title")).toContain("74,485 of 1,000,000 tokens");
     });
 
-    it("draws no arc at 0%, and shows just the token count when the window size is unknown", () => {
+    it("draws no ring, only words, and shows just the token count when the window size is unknown", () => {
       const { container, rerender } = render(
         <ComposerDock onSendMessage={() => {}} contextUsage={{ used: 2_000, size: 1_000_000 }} />
       );
-      expect(container.querySelectorAll("svg circle")).toHaveLength(1);
+      expect(container.querySelector("[role=meter] svg")).toBeNull();
 
       rerender(<ComposerDock onSendMessage={() => {}} contextUsage={{ used: 180_000, size: 0 }} />);
       expect(screen.queryByRole("meter", { name: "Context used" })).toBeNull();
@@ -348,6 +348,7 @@ describe("ComposerDock", () => {
     const folders = [{ name: "api", path: "/w/api" }];
     const branchControl = (overrides: Partial<BranchControl> = {}): BranchControl => ({
       current: "main",
+      checkedOut: "main",
       branches: ["feature/login", "main", "release"],
       onOpen: vi.fn(),
       onPick: vi.fn(),
@@ -372,8 +373,8 @@ describe("ComposerDock", () => {
 
       expect(branch.onOpen).toHaveBeenCalled();
       const options = screen.getAllByRole("option", { name: /feature|main|release/ });
-      expect(options.map((o) => o.textContent)).toEqual(["feature/login", "main", "release"]);
-      expect(screen.getByRole("option", { name: "main" }).getAttribute("aria-selected")).toBe("true");
+      expect(options.map((o) => o.querySelector(".font-mono")?.textContent)).toEqual(["feature/login", "main", "release"]);
+      expect(screen.getByRole("option", { name: /^main/ }).getAttribute("aria-selected")).toBe("true");
     });
 
     it("says the branches are loading until they arrive", () => {
@@ -448,7 +449,7 @@ describe("ComposerDock", () => {
     expect(screen.queryByRole("listbox", { name: "Model" })).toBeNull();
   });
 
-  it("shows a model's own name on the chip, its provider in the list and the tooltip", () => {
+  it("shows a model's own name on the chip and its row, its provider as the list's group and in the tooltips", () => {
     render(
       <ComposerDock
         onSendMessage={() => {}}
@@ -469,7 +470,8 @@ describe("ComposerDock", () => {
     expect(chip.textContent).toBe("qwen3.8-max");
     expect(chip.getAttribute("title")).toBe("[ModelStudio Token Plan] qwen3.8-max");
     fireEvent.click(chip);
-    expect(screen.getByRole("option", { name: "[ModelStudio Token Plan] qwen3-coder" })).toBeDefined();
+    const coder = within(screen.getByRole("group", { name: "ModelStudio Token Plan" })).getByRole("option", { name: "qwen3-coder" });
+    expect(coder.getAttribute("title")).toBe("[ModelStudio Token Plan] qwen3-coder");
   });
 });
 

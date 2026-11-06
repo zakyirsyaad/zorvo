@@ -67,7 +67,8 @@ describe("AgentSessionList", () => {
     fireEvent.click(untitled);
     expect(onImport).toHaveBeenLastCalledWith(sessions[1]);
 
-    expect(screen.getByRole("button", { name: "Bad date" }).textContent).toBe("Bad date");
+    // No time for a date that cannot be read: the row's name is the title alone (Continue is hidden from it).
+    expect(screen.getByRole("button", { name: "Bad date" })).toBeInTheDocument();
   });
 
   it("says when the list was cut short, and when some sessions could not be listed", () => {

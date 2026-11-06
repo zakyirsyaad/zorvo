@@ -142,6 +142,8 @@ export interface AgentChoice {
   /** Whether it was seen signed in, for the picker's readiness word ("Ready", "Not checked"). */
   signIn?: SignInState;
   disabledReason?: string;
+  /** What keeps it out of a compare run, for the status word on its row ("Not installed", "Needs sign-in"). */
+  blockedBy?: 'install' | 'sign-in';
 }
 
 export const NOT_INSTALLED_REASON = 'You need to install it first.';
@@ -157,17 +159,14 @@ export function compareAgentOptions(
 ): AgentChoice[] {
   return agents.map((agent) => {
     const signIn = signInStateOf(agent.id);
-    const disabledReason = !isAgentRunnable(agent)
-      ? NOT_INSTALLED_REASON
-      : signIn === 'needed'
-        ? NEEDS_SIGN_IN_REASON
-        : undefined;
+    const blockedBy = !isAgentRunnable(agent) ? 'install' : signIn === 'needed' ? 'sign-in' : undefined;
+    const disabledReason = blockedBy === 'install' ? NOT_INSTALLED_REASON : blockedBy === 'sign-in' ? NEEDS_SIGN_IN_REASON : undefined;
     return {
       value: agent.id,
       label: pickerLabelOf(agent),
       name: agent.name,
       signIn,
-      ...(disabledReason ? { disabledReason } : {}),
+      ...(blockedBy ? { blockedBy, disabledReason } : {}),
     };
   });
 }

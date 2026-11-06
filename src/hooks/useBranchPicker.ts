@@ -72,6 +72,7 @@ export function useBranchPicker({
   return {
     control: {
       current: baseBranch ?? checkedOut,
+      checkedOut,
       branches,
       onOpen: load,
       onPick: (branch) => {

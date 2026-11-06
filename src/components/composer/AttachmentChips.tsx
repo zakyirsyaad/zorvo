@@ -10,16 +10,17 @@ export interface AttachmentChipsProps {
   onRemove?: (path: string) => void;
 }
 
-/** The remove button shared by a thumbnail and a chip. */
-function RemoveButton({ name, onRemove }: { name: string; onRemove: () => void }) {
+const REMOVE_PLACEMENTS = {
+  // An 18px circle inside the thumbnail's corner, as the canvas draws it.
+  inside: "absolute right-1 top-1 flex size-4.5 items-center justify-center rounded-full bg-surface-3 text-fg-secondary hover:text-fg focus-ring",
+  inline: "rounded-full bg-surface-3 text-fg-subtle hover:text-fg focus-ring",
+} as const;
+
+/** The remove button shared by a thumbnail (inside it) and a chip (after its name). */
+function RemoveButton({ name, onRemove, placement = "inline" }: { name: string; onRemove: () => void; placement?: keyof typeof REMOVE_PLACEMENTS }) {
   return (
-    <button
-      type="button"
-      aria-label={`Remove ${name}`}
-      onClick={onRemove}
-      className="rounded-full bg-surface-3 text-fg-subtle hover:text-fg focus-ring"
-    >
-      <X size={12} />
+    <button type="button" aria-label={`Remove ${name}`} onClick={onRemove} className={REMOVE_PLACEMENTS[placement]}>
+      <X size={placement === "inside" ? 10 : 12} />
     </button>
   );
 }
@@ -49,11 +50,7 @@ function ImageAttachment({
         >
           <img src={preview.src} alt={name} className="h-16 w-24 object-cover" />
         </button>
-        {onRemove && (
-          <span className="absolute -right-1.5 -top-1.5">
-            <RemoveButton name={name} onRemove={() => onRemove(path)} />
-          </span>
-        )}
+        {onRemove && <RemoveButton name={name} placement="inside" onRemove={() => onRemove(path)} />}
       </li>
     );
   }

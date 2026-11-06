@@ -535,12 +535,19 @@ describe("signing in to an ACP agent from the app", () => {
   });
 
   it("does not send into another session", async () => {
-    const { spy, panel } = await sendRefused();
+    const { spy } = await sendRefused();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
 
-    await signInInTerminal(spy, panel);
+    // In the draft the panel moves under its chips, right above the card it holds back.
+    const region = screen.getByRole("region", { name: "Sign in to Qwen Code" });
+    const follows = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(region.closest("[data-above-card]")).not.toBeNull();
+    expect(follows(screen.getByRole("button", { name: /^Folder:/ }), region)).toBe(true);
+    expect(follows(region, prompt())).toBe(true);
+
+    await signInInTerminal(spy, within(region));
 
     expect(await screen.findByText("Signed in to Qwen Code. Send your message again.")).toBeDefined();
     expect(callsTo(spy, "acp_start_session")).toHaveLength(1);

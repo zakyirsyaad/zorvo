@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
@@ -102,7 +103,7 @@ import { useCompareDraft } from "./hooks/useCompareDraft";
 import { useCompareRun, useCompareRunRows } from "./hooks/useCompareRun";
 import { lastOfRun, runOf } from "./lib/compare-run";
 import { compareAgentOptions } from "./lib/composer-controls";
-import { composerCommandsFor, composerNote, composerPlaceholder, composerStateFor } from "./lib/composer-state";
+import { COMPARE_NOTE, composerCommandsFor, composerNote, composerPlaceholder, composerStateFor } from "./lib/composer-state";
 import {
   NO_CHOICES,
   rememberedChoice,
@@ -202,12 +203,16 @@ export default function App() {
   const activeAgentRemoved = removedAgentNameFor(activeSession, agents, state.settings);
   // Hidden, not unmounted: a look at either must not cost the message being written.
   const isComposerHidden = Boolean(activeRun) || activeAgentRemoved !== null;
+  // The draft composer's slot between its chips and its card, where the sign-in and install panels go.
+  const [draftBlockerSlotElement, setDraftBlockerSlotElement] = useState<HTMLDivElement | null>(null);
   // An agent not installed yet is offered too: picking it shows its Install panel.
   const pickableAgents = agentsInUse;
   const defaultAgentId = resolveDraftAgentId(agentsInUse, state.settings.defaultAgentId, pickableAgents);
   const primaryAgentId = pickableAgents.find((a) => a.id === pickedAgentId)?.id ?? defaultAgentId;
   // No session is selected and no run is open: the window shows a new one, not started until its first message.
   const isNewSessionDraft = !activeSession && !activeRun;
+  // Only a draft uses the slot: its composer is never hidden, so a panel there is never hidden with it.
+  const draftBlockerSlot = isNewSessionDraft ? draftBlockerSlotElement : null;
   // A session shows the folder it runs in, even one no longer in the recents.
   const shownFolderPath = activeSession?.cwd ?? activeWorkspacePath;
   const workspaceDetails = useWorkspaceDetails(shownFolderPath, reportError, branchCheck);
@@ -883,6 +888,13 @@ export default function App() {
   // The note promises one worktree each, so while the folder is not known to be a repository (still loading, or unreadable) Send waits too.
   const isSendWaiting = compare.isCompare ? !canUseWorktree : draftNeedsInstall || draftNeedsSignIn;
   const isSendBlocked = isSendWaiting || review.blocksSend;
+  const composerNoteText = composerNote({
+    reviewOwner: review.reviewOwner,
+    compareCount: compare.agentIds.length,
+    agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
+    agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
+    continuesSession: isResumable || Boolean(activeSession),
+  });
   const composerCommands = composerCommandsFor({
     isRunning: isActiveRunning,
     liveCommands: acp.info[activeSessionId]?.commands,
@@ -1100,17 +1112,28 @@ export default function App() {
                   />
                 </div>
               )}
-              {/* The draft's blockers sit right above the composer, which stays: a prompt can be written meanwhile. */}
-              <div className="mx-auto w-full max-w-chat space-y-3 px-4">
-                <SignInLayer
-                  signIn={signIn}
-                  agents={agents}
-                  agentId={activeSession?.profileId ?? (activeRun ? undefined : newSessionAgent?.id)}
-                  showTerminal={settingsTab === null}
-                />
-                {installPanelAgent ? <AgentInstallPanel agent={installPanelAgent} /> : null}
+              {/* The blockers sit right above the composer, which stays: a prompt can be written meanwhile. */}
+              {/* As wide as the composer's card: the gutter sits outside the 680px column, as the dock's does. */}
+              {/* In a draft the panels go into the composer's slot under its chips, so they read in order. */}
+              <div className="px-6">
+                <div className="mx-auto w-full max-w-chat space-y-3">
+                  <SignInLayer
+                    signIn={signIn}
+                    agents={agents}
+                    agentId={activeSession?.profileId ?? (activeRun ? undefined : newSessionAgent?.id)}
+                    showTerminal={settingsTab === null}
+                    panelTarget={draftBlockerSlot}
+                  />
+                  {installPanelAgent
+                    ? draftBlockerSlot
+                      ? createPortal(<AgentInstallPanel agent={installPanelAgent} />, draftBlockerSlot)
+                      : <AgentInstallPanel agent={installPanelAgent} />
+                    : null}
+                </div>
               </div>
-              <div hidden={isComposerHidden} className="p-4 flex justify-center">
+              {/* 24px at the sides and 20px under it, as the canvas draws the composer's dock. */}
+              {/* A draft's composer sits inside its column, with the agent's sessions right under it. */}
+              <div hidden={isComposerHidden} className={`flex justify-center px-6 ${isNewSessionDraft ? "" : "pb-5"}`}>
                 <ComposerDock
                   controls={compare.isCompare ? {} : composer.controls}
                   isThinking={Boolean(activeSession) && isSessionBusy(activeSessionId)}
@@ -1125,6 +1148,7 @@ export default function App() {
                     // Comments held for another session say nothing about whether this one can continue.
                     isSendBlocked: isSendWaiting,
                     isEndedSession: Boolean(activeSession),
+                    isAwaitingAnswer: isAwaitingUser(currentMessages),
                   })}
                   onSendMessage={handleSendMessage}
                   attachAsFiles
@@ -1136,14 +1160,13 @@ export default function App() {
                   commands={compare.isCompare ? [] : composerCommands}
                   sendLabel={compare.agentIds.length >= 2 ? `Start ${compare.agentIds.length} sessions` : undefined}
                   agentName={activeSession ? activeAgent?.name : newSessionAgent?.name}
-                  note={composerNote({
-                    reviewOwner: review.reviewOwner,
-                    compareCount: compare.agentIds.length,
-                    agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
-                    agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
-                    continuesSession: isResumable || Boolean(activeSession),
-                    agentLoading: !isActiveRunning && draftAgent && agentCheck.isProbing(draftAgent.id) ? draftAgent.name : undefined,
-                  })}
+                  sessionAgent={activeSession && activeAgent ? { profileId: activeAgent.id, name: activeAgent.name } : undefined}
+                  note={composerNoteText}
+                  // Only a compare run's note sits in the row, as drawn; a reason or a loading line is a sentence for under the prompt.
+                  noteInRow={composerNoteText === COMPARE_NOTE}
+                  // While the draft asks its agent what it offers, its chips show as skeletons in the row.
+                  isLoadingControls={Boolean(!isActiveRunning && draftAgent && agentCheck.isProbing(draftAgent.id))}
+                  aboveCardRef={setDraftBlockerSlotElement}
                   contextUsage={isActiveRunning ? acp.info[activeSessionId]?.usage : undefined}
                   mentions={filesFolder ? { root: filesFolder.path, loadFiles: () => shell.loadWorkspaceFiles(filesFolder.path) } : undefined}
                   folder={

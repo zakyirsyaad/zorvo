@@ -36,7 +36,7 @@ const codex = makeProfile({
 });
 const ALL = [...fakeProfiles, kimi, gemini, goose, codex];
 
-const QUOTA_NOTE = "Each agent starts in its safest mode, in its own worktree, and uses its own quota.";
+const QUOTA_NOTE = "Each agent starts in its safest mode, in its own worktree.";
 
 interface DraftOptions {
   /** Every folder is a plain folder. */
@@ -120,7 +120,7 @@ describe("comparing agents in the composer", () => {
     await tick("Qwen Code");
 
     expect(screen.getByText(QUOTA_NOTE)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Agent: 2 agents" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Agent: .*, compare$/ })).toBeInTheDocument();
   });
 
   it("words the primary button by how many sessions it starts", async () => {
@@ -189,8 +189,8 @@ describe("comparing agents in the composer", () => {
 
     const fifth = screen.getByRole("checkbox", { name: /^Compare Goose/ });
     expect(fifth).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Agent: 4 agents" })).toBeInTheDocument();
-    expect(screen.getByText("Each agent starts in its safest mode, in its own worktree, and uses its own quota.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Agent: (.*, ){3}.*, compare$/ })).toBeInTheDocument();
+    expect(screen.getByText("Each agent starts in its safest mode, in its own worktree.")).toBeInTheDocument();
   });
 
   it("an uninstalled agent cannot be ticked and says why", async () => {
@@ -198,7 +198,7 @@ describe("comparing agents in the composer", () => {
     await openAgentMenu();
 
     expect(screen.getByRole("checkbox", { name: /^Compare Codex/ })).toBeDisabled();
-    expect(screen.getByText("You need to install it first.")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /^Compare Codex/ })).toHaveAccessibleDescription("Not installed");
   });
 
   it("a Not checked agent can be ticked", async () => {
@@ -270,7 +270,7 @@ describe("comparing agents in the composer", () => {
     await renderDraft({ profiles: [uninstalledClaude, ...ALL.slice(1)] });
     await openAgentMenu();
     await act(async () => {
-      fireEvent.click(screen.getByRole("option", { name: "Claude Code (not installed)" }));
+      fireEvent.click(screen.getByRole("option", { name: "Claude Code" }));
     });
     await openAgentMenu();
 
@@ -292,7 +292,8 @@ describe("comparing agents in the composer", () => {
     await openAgentMenu();
 
     await waitFor(() => expect(screen.getByRole("checkbox", { name: /^Compare Qwen Code/ })).toBeDisabled());
-    expect(screen.getByText("You need to sign in first.", { selector: "p" })).toBeInTheDocument();
+    // The only agent's own row says it needs a sign-in.
+    expect(screen.getByText("Needs sign-in")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /^Compare Qwen Code/ })).toHaveAccessibleDescription("Set up Claude Code first.");
     expect(screen.queryByText(QUOTA_NOTE)).toBeNull();
     // With something to send, Send still waits for the sign-in.
@@ -312,7 +313,7 @@ describe("comparing agents in the composer", () => {
 
     await act(async () => {});
     expect(screen.getByText(QUOTA_NOTE)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Agent: 2 agents" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Agent: .*, compare$/ })).toBeInTheDocument();
   });
 
   it("Send is blocked while a compare draft's folder is loading", async () => {
@@ -364,6 +365,7 @@ describe("compareAgentOptions", () => {
       label: "Codex (not installed)",
       name: "Codex",
       signIn: "unchecked",
+      blockedBy: "install",
       disabledReason: "You need to install it first.",
     });
   });
@@ -409,11 +411,11 @@ describe("AgentMultiPicker", () => {
     const first = screen.getByRole("option", { name: "Alpha" });
     first.focus();
 
-    // Alpha is the only one ticked, so its own checkbox is disabled and skipped.
+    // Each row is checkbox then name; Alpha is the only one ticked, so its own checkbox is disabled and skipped.
     fireEvent.keyDown(first, { key: "ArrowDown" });
-    expect(document.activeElement).toBe(screen.getByRole("option", { name: "Beta" }));
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown" });
     expect(document.activeElement).toBe(screen.getByRole("checkbox", { name: "Compare Beta" }));
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(screen.getByRole("option", { name: "Beta" }));
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowUp" });
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowUp" });
     expect(document.activeElement).toBe(first);
@@ -537,7 +539,7 @@ describe("the draft check while several agents are ticked", () => {
 describe("composerNote with several agents", () => {
   it("says what a run costs, ahead of any other note", () => {
     expect(composerNote({ continuesSession: false, compareCount: 3, agentLoading: "Qwen Code" })).toBe(
-      "Each agent starts in its safest mode, in its own worktree, and uses its own quota.",
+      "Each agent starts in its safest mode, in its own worktree.",
     );
     expect(composerNote({ continuesSession: false, compareCount: 1 })).toBeUndefined();
   });

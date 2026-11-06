@@ -44,7 +44,30 @@ Settings is a page in the main window, not a dialog. It takes the place of the s
   - System, Light and Dark form a radio group of tiles: 8px padding, radius 10, `surface-2`, 12px apart. The picked tile has an `fg` border and ring, and its label is `fg` at 500.
   - Arrow keys move and pick, as in a native radio group.
   - Each tile previews its theme in an 84px window, whose colours are fixed (`.theme-sample-light` and `.theme-sample-dark` in `globals.css`), so a preview shows its theme whatever theme is in use. System is half light, half dark.
-- **Agents**: "The agents Zorvo can run. Zorvo installs them in its own folder, or uses the ones already on this Mac." over the agent catalog. The catalog's own new layout comes with Settings part 2.
+- **Agents**: "The agents Zorvo can run. Zorvo installs them in its own folder, or uses the ones already on this Mac.", 24px between its parts.
+  - **Search row**: a 32px search (`border-strong`, `surface-2`, radius 8, 14px icon) and **Check again** (`Button size="lg"` with a 12px refresh icon). Under it, "Registry checked 8 hours ago" in `caption` `fg-subtle`.
+  - **Groups** "In use" and "Available", with no counts, each a card of rows. A group with no rows is not drawn.
+  - **Row**: one line, 12px 16px padding, 12px gaps.
+    - A 28px `surface-hover` logo tile (radius 7), the name, and under it:
+      - for an agent in use, a mono `caption` line "0.93.0 · installed by Zorvo" / "on this Mac" (a program found outside Zorvo shows no version, and its location is the tooltip);
+      - for an available agent, what Add would install ("Installs Node.js 24.11.1 (49 MB) and Pi 0.9.0 into Zorvo's folder") or its description.
+    - Then, at the end of the line:
+      - the sign-in chip (22px, radius 6, `border`, `caption`): Ready with a green dot, Sign in in the attention colour, Not checked muted with no dot;
+      - **Update to x.y.z**;
+      - **Install** (when Add would install) or **Add**;
+      - **Retry** after a failure;
+      - a chevron for the sign-in;
+      - ⋯ with Remove.
+    - First and last rows round their own corners, since the card does not clip.
+  - **Sign-in in the row**: every in-use agent that can start has a chevron ("Show sign-in for X"). The row opens by itself when the agent needs a sign-in, and stays open once it is ready, so the result shows. Opened, the row is `surface-1`, and under the line, indented 56px:
+    - the methods, in a bordered card (radius 8, rows 9px 12px): an outline button for a method Zorvo runs, "In your shell" for one it cannot;
+    - what checking may do, beside **Check sign-in**;
+    - the result in a live region.
+    
+    There is no Open setup here: the agent setup terminal opens from the draft and the session only (the user's choice of 2026-11-05).
+  - **Installing**: the row is `surface-1`. The step is a live region (the bytes are not announced) over a 4px bar, with **Cancel** at the line's end and ⋯ still there, since removing ends the install. A failure shows its words in `danger` under the line.
+  - **Remove** (from ⋯) asks under the line: "Remove X? Zorvo deletes its copy. Saved sessions stay readable." and "Its open sessions stop." when they would, with Cancel and a focused danger Remove. Cancel gives focus back to ⋯.
+  - **Not available (N)**: a quiet 28px toggle in `ui-sm` `fg-muted`. Opened, it shows a card of rows with the reason, and it stays open while a search is typed.
 - **GitHub**:
   - "Optional. Zorvo reads pull requests through your own `gh` and keeps no token."
   - One **Connection** row:

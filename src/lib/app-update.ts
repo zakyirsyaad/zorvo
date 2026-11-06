@@ -1,3 +1,5 @@
+import { elapsedWords } from './compare-run';
+
 /** What `app_update_check` reports about a newer Zorvo. */
 export interface AppUpdateInfo {
   version: string;
@@ -30,4 +32,11 @@ export function downloadPercent(progress: AppUpdateProgress | null): number | nu
   if (progress?.phase !== 'downloading' || !progress.total) return null;
   // Multiply first: `(57 / 100) * 100` is 56.99999999999999, which floors to 56.
   return Math.min(100, Math.floor((progress.downloaded * 100) / progress.total));
+}
+
+const MINUTE_MS = 60_000;
+
+/** When the last check was, in words: "just now" under a minute, else "5 min ago", "2 h ago". */
+export function checkedWords(ms: number): string {
+  return ms < MINUTE_MS ? 'just now' : `${elapsedWords(ms)} ago`;
 }

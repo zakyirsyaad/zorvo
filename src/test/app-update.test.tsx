@@ -9,6 +9,7 @@ import {
   FIRST_CHECK_DELAY_MS,
   RETRY_AFTER_FAILURE_MS,
   downloadPercent,
+  checkedWords,
   restartWarning,
 } from "../lib/app-update";
 
@@ -367,5 +368,78 @@ describe("useAppUpdate install", () => {
     await flush();
     expect(callsOf(invoke, "app_update_restart")).toBe(1);
     expect(result.current.isInstalling).toBe(false);
+  });
+});
+
+describe("useAppUpdate checkNow", () => {
+  const T = Date.UTC(2026, 10, 7, 12);
+
+  it("checkNow asks the backend and records checkedAt", async () => {
+    vi.setSystemTime(T);
+    const invoke = mockBackend({ app_update_check: () => null });
+    const { result } = renderUpdate();
+    await act(() => result.current.checkNow());
+    expect(callsOf(invoke, "app_update_check")).toBe(1);
+    expect(result.current.checkedAt).toBe(T);
+    expect(result.current.isChecking).toBe(false);
+    expect(result.current.checkFailed).toBe(false);
+  });
+
+  it("a failed checkNow sets checkFailed, a failed automatic check does not", async () => {
+    mockBackend({ app_update_check: () => { throw new Error("offline"); } });
+    const { result } = renderUpdate();
+    await advance(FIRST_CHECK_DELAY_MS);
+    expect(result.current.checkFailed).toBe(false);
+    await act(() => result.current.checkNow());
+    expect(result.current.checkFailed).toBe(true);
+    expect(result.current.checkedAt).toBeNull();
+  });
+
+  it("an automatic check that answers records checkedAt", async () => {
+    vi.setSystemTime(T);
+    mockBackend({ app_update_check: () => null });
+    const { result } = renderUpdate();
+    expect(result.current.checkedAt).toBeNull();
+    await advance(FIRST_CHECK_DELAY_MS);
+    expect(result.current.checkedAt).toBe(T + FIRST_CHECK_DELAY_MS);
+  });
+
+  it("available keeps an update hidden by Later", async () => {
+    mockBackend({ app_update_check: () => info("0.9.0") });
+    const { result } = renderUpdate();
+    await advance(FIRST_CHECK_DELAY_MS);
+    act(() => result.current.dismiss());
+    expect(result.current.update).toBeNull();
+    expect(result.current.available?.version).toBe("0.9.0");
+  });
+
+  it("checkNow does nothing while installing", async () => {
+    const install = deferred<void>();
+    const invoke = mockBackend({ app_update_check: () => info("0.9.0"), app_update_install: () => install.promise });
+    const { result } = renderUpdate();
+    await advance(FIRST_CHECK_DELAY_MS);
+    act(() => { void result.current.install(); });
+    await flush();
+    await act(() => result.current.checkNow());
+    expect(callsOf(invoke, "app_update_check")).toBe(1);
+  });
+
+  it("isChecking is true while the check is in flight", async () => {
+    const answer = deferred<null>();
+    mockBackend({ app_update_check: () => answer.promise });
+    const { result } = renderUpdate();
+    let done!: Promise<void>;
+    act(() => { done = result.current.checkNow(); });
+    expect(result.current.isChecking).toBe(true);
+    await act(async () => { answer.resolve(null); await done; });
+    expect(result.current.isChecking).toBe(false);
+  });
+});
+
+describe("checkedWords", () => {
+  it("says just now under a minute, then how long ago", () => {
+    expect(checkedWords(30_000)).toBe("just now");
+    expect(checkedWords(5 * 60_000)).toBe("5 min ago");
+    expect(checkedWords(2 * 3_600_000)).toBe("2 h ago");
   });
 });

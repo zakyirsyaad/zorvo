@@ -307,7 +307,7 @@ describe("Installing an agent from the new-session draft", () => {
       fireEvent.click(screen.getByRole("button", { name: /^Agent:/ }));
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("option", { name: "Codex (not installed)" }));
+      fireEvent.click(screen.getByRole("option", { name: "Codex" }));
     });
     expect(screen.getByRole("region", { name: "Install Codex" })).toBeDefined();
   });
@@ -386,7 +386,7 @@ describe("Installing an agent from the new-session draft", () => {
       fireEvent.click(screen.getByRole("button", { name: /^Agent:/ }));
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("option", { name: "Codex (not installed)" }));
+      fireEvent.click(screen.getByRole("option", { name: "Codex" }));
     });
 
     expect(screen.getByRole("region", { name: "Install Codex" })).toBeDefined();
@@ -448,7 +448,7 @@ describe("Installing an agent from the new-session draft", () => {
       fireEvent.click(screen.getByRole("button", { name: /^Agent:/ }));
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("option", { name: "Codex (not installed)" }));
+      fireEvent.click(screen.getByRole("option", { name: "Codex" }));
     });
     await click("Install Codex");
     await act(async () => settle().reject("Checksum mismatch for Node.js"));

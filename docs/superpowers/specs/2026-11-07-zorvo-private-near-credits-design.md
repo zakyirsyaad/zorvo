@@ -8,7 +8,7 @@ Zorvo Private lets a Zorvo user run a coding agent (Qwen Code first) on private 
 
 It is an opt-in mode for developers whose code must not go to OpenAI or Anthropic (client code under NDA, regulated data, repositories holding secrets). Users who do not turn it on see no change.
 
-This is Zorvo's entry for NEAR HACKATHON (development ends 2026-11-14T23:59Z). One submission may list every track it fits. Tracks: `privacy` (primary: NEAR AI Cloud TEE inference), `open` (open innovation: private AI paid from any chain inside a desktop agent app; the track invites entering "alongside any other"), and `agents` (weaker fit: a person, not the agent, pays for compute).
+This is Zorvo's entry for NEAR HACKATHON (development ends 2026-11-14T23:59Z). One submission may list every track it fits. Tracks: `privacy` (primary: NEAR AI Cloud TEE inference), `open` (open innovation: private AI paid from any chain inside a desktop agent app; the track invites entering "alongside any other"), and `agents` (agents see their own credits and, with extension D, run under a spending cap the NEAR AI gateway enforces). If extension D ships, `security` is listed too.
 
 ## 2. Goals and non-goals
 
@@ -218,9 +218,23 @@ Errors: for a private session, an ACP error `-32603` whose details carry `402` /
 - Session record: an optional `privateMode: { modelId }`, read leniently in `lib/persistence.ts`; `STATE_VERSION` unchanged.
 - Copy follows the design-system rules (sentence case, "you", agents named).
 
-### 8.3 Stretch: "Verified in TEE" per answer
+### 8.3 Extensions
 
-Qwen Code's `--openai-logging-dir` could write API logs to a per-session folder from which Zorvo reads completion ids, then calls `GET /v1/signature/{id}` with the user's key and checks the `provider_tee` ECDSA signature. Unverified: the log format, and whether the logs hold prompts that must not be kept. Built only after everything else works.
+Built in tiers after the core (sections 7 and 8.1–8.2) works end to end; each tier has a cut date in section 14. Effort figures are estimates.
+
+**A. Agents know their credits (tier 2, `agents`, ~1 day).** For private sessions Zorvo passes one stdio MCP server in `session/new` `mcpServers` (today it sends `[]`, `acp/manager.rs`). The server offers `credits_balance` (credits left, ≈ turns left on the current model) and `private_models` (TEE models with price per 1M tokens and ≈ credits per turn). It reads them from the Credits Worker with the device secret, which it gets in its process env only. An agent can then plan its work, or suggest a cheaper model when credits run low.
+
+**B. "Verified in TEE" per answer (tier 2, `privacy`, ~1–1.5 days).** Zorvo starts private Qwen Code with `--openai-logging-dir <per-session folder in the app data dir>`, reads the completion ids from those logs, calls `GET /v1/signature/{id}` with the device's key, and verifies the `provider_tee` ECDSA signature over `model:sha256(request):sha256(response)`. The answer gets a "Verified in TEE" badge, with the signer address and a link to NEAR AI's Verification Center. First task: check the log format and whether the logs store prompts; if they do, Zorvo deletes each log file once the id is read, and the folder is removed with the session.
+
+**C. Low-balance warning (tier 2, ~2–3 hours).** Below 50 credits the composer note warns and a system notification fires once per crossing.
+
+**D. Per-session spending cap enforced by NEAR AI (tier 3, `agents` and `security`, ~1.5–2 days).** A private draft can set "at most N credits for this session". The Ledger splits the device budget: it creates a session key whose spend limit is N / 120 USD and lowers the device key's limit by the same amount; unused budget returns to the device key when the session ends. The cap is enforced by the NEAR AI gateway (`402`), not by Zorvo. If built, the submission also lists the `security` track.
+
+**E. Usage per session (tier 3, `agents`, ~0.5–1 day).** Two sources: with D, the session key's own usage; otherwise the completion ids from B sent to `POST /v1/billing/costs` (accepts an inference API key) for their cost in nano-USD. Shown in the session's inspector as credits used. Depends on B or D.
+
+**F. Secret guard before sending (tier 3, `privacy`, ~1 day).** Before a private message goes out, Zorvo scans the composer text and attached files locally (no network) for secret patterns: private key blocks, `AKIA…`, `ghp_…`/`github_pat_…`, `sk-…`, `xox[bp]-…`, `.env`-style `KEY=` lines with long random values. On a hit it shows what matched, masked, with Send anyway / Edit. Limit, stated in the UI: the agent can still read files in the folder itself; the guard covers only what the user sends.
+
+**G. Bring your own NEAR AI key, for NEAR holders who stake (tier 4, `open`, ~0.5–1 day).** A user who stakes NEAR in the NEAR AI dashboard earns credits in their own organization, non-custodially. Settings → Private mode offers "Use my own NEAR AI key": the user creates a key in their dashboard and pastes it; Zorvo checks it with `POST /v1/check_api_key`, stores it in the Keychain, and private sessions use it instead of Zorvo Credits (no top-up, no Ledger). Wallet sign-in from the desktop app (NEP-413) is out of scope; pasting a key avoids it.
 
 ## 9. Credit math
 
@@ -261,6 +275,7 @@ Qwen Code's `--openai-logging-dir` could write API logs to a per-session folder 
 - Server (Vitest with the Workers pool / Miniflare): credit math, stock formula, reservation and device cap, the eight races as scripted interleavings, HMAC verification, idempotent webhooks, absolute spend-limit updates, token refresh order, queue backoff. NEAR AI and PingPay are mocked with `fetch` stubs.
 - Rust: launch arguments for a private Qwen session (flags present, key only in env, unknown model refused, other agents refused), the `PRIVATE_CREDITS` mapping, Keychain wrapper behind a trait with an in-memory fake. The fake ACP agent gets `FAKE_ACP_PRIVATE_ERROR=<401|402>`.
 - Frontend (Vitest, targeted files): Private mode section, package availability and reasons, draft option, composer note.
+- Extensions: A — MCP tool results against a stubbed Worker; B — signature verification against a recorded real signature, and log files removed after reading; D — budget split and return in the Ledger, with races 1–8 rerun; E — cost sum from stubbed `/v1/billing/costs`; F — the secret patterns, including no hit on ordinary code; G — a pasted key validated, stored in the fake Keychain, and used at launch instead of the Credits key.
 - Manual on mainnet: one real $5 top-up, one promo redemption, one recovery on a scratch profile, and real coding tasks on each allowlisted model with the NEAR Builders key to measure credits per turn.
 
 ## 13. Demo and submission
@@ -273,19 +288,23 @@ Qwen Code's `--openai-logging-dir` could write API logs to a per-session folder 
 
 ## 14. Schedule (2026-11-07 → 2026-11-14)
 
-| Day | Target |
-| --- | --- |
-| Nov 7 | `server/` skeleton, Ledger tables, stock and reservation with tests; operator login script |
-| Nov 8 | NEAR AI key create and absolute spend limit, token refresh, queue; PingPay session and webhook |
-| Nov 9 | Rust `private_mode/`, Keychain, launch flags, error mapping |
-| Nov 10 | Frontend: Settings section, packages, draft option, composer note |
-| Nov 11 | Deploy, operator funding, one real $5 top-up end to end; measure credits per turn |
-| Nov 12 | Promo codes, recovery, error paths; stretch TEE badge if time allows |
-| Nov 13 | README, video, X post draft, tags |
-| Nov 14 | Buffer; the user submits before 23:59 UTC |
+Tiers: 1 = core (sections 7, 8.1–8.2, promo, recovery), 2 = A, B, C, 3 = D, E, F, 4 = G. A tier starts only when the one before it works end to end; a tier not done by its cut date is dropped from the submission, not half-shipped. Server, Rust and frontend work can run as parallel sessions (separate worktrees, separate files), which the implementation plan will lay out.
+
+| Day | Target | Cut date |
+| --- | --- | --- |
+| Nov 7 | `server/` skeleton, Ledger tables, stock and reservation with tests; operator login script | |
+| Nov 8 | NEAR AI key create and absolute spend limit, token refresh, queue; PingPay session and webhook | |
+| Nov 9 | Rust `private_mode/`, Keychain, launch flags, error mapping | |
+| Nov 10 | Frontend: Settings section, packages, draft option, composer note; promo, recovery | tier 1 complete |
+| Nov 11 | Deploy, operator funding, one real $5 top-up end to end; measure credits per turn; C | |
+| Nov 12 | A, B | tier 2 cut |
+| Nov 13 | D, E, F, G as time allows; README, video, X post draft, tags | tiers 3–4 cut (midday) |
+| Nov 14 | Buffer; the user submits before 23:59 UTC | |
 
 ## 15. Risks and open questions
 
+- Scope: the core plus seven extensions is more than one person can build in eight days. The tiers and cut dates in section 14 decide what ships; the core is never traded for an extension.
+- G stores a key the user pasted, which `main` forbids; like the rest, it lives only on the branch.
 - `POST /v1/auth/near` is undocumented and may change; the fallback is a hand-copied refresh token.
 - PingPay's platform fee, merchant onboarding and whether `pk_test_` keys are a true test mode are unknown; check in the PingPay dashboard on day 1.
 - The minimum PingPay amount is unknown; the $5 package may need adjusting.

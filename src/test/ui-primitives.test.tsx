@@ -24,6 +24,13 @@ describe("primitive sizes from the canvas", () => {
     expect(screen.getByRole("button", { name: "Go" })).toHaveClass("h-8", "text-ui");
   });
 
+  it("Button has a 26px size, and a ghost one can take the secondary text colour", () => {
+    render(<Button size="row" variant="ghost" tone="secondary">Files</Button>);
+    const back = screen.getByRole("button", { name: "Files" });
+    expect(back).toHaveClass("h-6.5", "text-ui-sm", "text-fg-secondary");
+    expect(back).not.toHaveClass("text-fg-muted");
+  });
+
   it("IconButton has a 26px size for the inspector's bars", () => {
     render(<IconButton label="Refresh" size="row">x</IconButton>);
     expect(screen.getByRole("button", { name: "Refresh" })).toHaveClass("h-6.5", "w-6.5");

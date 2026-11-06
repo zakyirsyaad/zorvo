@@ -1,5 +1,5 @@
-import { Fragment, memo, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { ArrowLeft, Check, Copy, ExternalLink, Plus } from "lucide-react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { Check, ChevronLeft, Copy, ExternalLink, Plus } from "lucide-react";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { useFileContent } from "../../hooks/useFileContent";
@@ -51,22 +51,26 @@ const isGone = (message: string) => message.includes("not accessible");
 function Breadcrumb({ relativePath, marker }: { relativePath: string; marker?: FileMarker }) {
   const segments = relativePath.split("/");
   return (
-    <h3 title={relativePath} className="flex min-w-0 items-center gap-0.5 truncate font-mono text-caption">
+    <nav
+      aria-label="Path"
+      title={relativePath}
+      className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap font-mono text-caption text-fg-subtle"
+    >
       {segments.map((segment, index) => (
         <Fragment key={index}>
-          {index > 0 && <span className="text-fg-subtle">/</span>}
-          <span className={index === segments.length - 1 ? "text-fg" : "text-fg-muted"}>{segment}</span>
+          {index > 0 && <span aria-hidden="true">/</span>}
+          <span className={index === segments.length - 1 ? "text-fg" : undefined}>{segment}</span>
         </Fragment>
       ))}
       {marker && (
         <>
-          <span aria-hidden="true" className={`ml-1.5 shrink-0 ${MARKER_COLOR[marker]}`}>
+          <span aria-hidden="true" className={`ml-1 shrink-0 font-semibold ${MARKER_COLOR[marker]}`}>
             {MARKER_LETTER[marker]}
           </span>
           <span className="sr-only">{MARKER_WORD[marker]}</span>
         </>
       )}
-    </h3>
+    </nav>
   );
 }
 
@@ -80,12 +84,18 @@ export const FileLines = memo(function FileLines({
   tokens,
   changes,
   bodyRef,
+  selected,
+  overlay,
 }: {
   name: string;
   lines: readonly string[];
   tokens: readonly Token[][];
   changes: ReadonlyMap<number, LineChange>;
   bodyRef: RefObject<HTMLDivElement | null>;
+  /** The lines a selection covers, tinted. */
+  selected?: { first: number; last: number } | null;
+  /** Drawn inside the scrolling code, so it moves with the lines (the add-lines card). */
+  overlay?: ReactNode;
 }) {
   return (
     // Focusable: WebKit does not let the keyboard into a scroll container, and Shift with the arrows selects lines here.
@@ -94,15 +104,19 @@ export const FileLines = memo(function FileLines({
       role="region"
       tabIndex={0}
       aria-label={`Contents of ${name}`}
-      className="focus-ring min-h-0 flex-1 overflow-auto py-1 font-mono text-ui-sm select-text"
+      className="focus-ring relative min-h-0 flex-1 overflow-auto bg-bg py-2.5 font-mono text-ui-sm leading-5 select-text"
     >
       {lines.map((_, index) => {
-        const change = changes.get(index + 1);
+        const line = index + 1;
+        const change = changes.get(line);
+        const isSelected = selected != null && line >= selected.first && line <= selected.last;
         return (
-          <div key={index} data-line={index + 1} className="flex min-w-max">
-            <span className="w-12 shrink-0 select-none pr-2 text-right tabular-nums text-fg-subtle">{index + 1}</span>
-            <span className="mr-2 w-0.5 shrink-0 select-none">
-              {change && <span data-gutter="" aria-hidden="true" className={`block h-full w-0.5 ${GUTTER_COLOR[change]}`} />}
+          <div key={index} data-line={line} className={`flex min-w-max ${isSelected ? "bg-line-selected" : ""}`}>
+            <span className={`w-10 shrink-0 select-none pr-3 text-right tabular-nums ${isSelected ? "text-fg" : "text-fg-subtle"}`}>
+              {line}
+            </span>
+            <span className="mr-2.5 w-[3px] shrink-0 select-none">
+              {change && <span data-gutter="" aria-hidden="true" className={`block h-full w-[3px] ${GUTTER_COLOR[change]}`} />}
             </span>
             <span className="whitespace-pre pr-4 text-fg-secondary">
               {tokens[index].map((token, at) =>
@@ -118,9 +132,17 @@ export const FileLines = memo(function FileLines({
           </div>
         );
       })}
+      {overlay}
     </div>
   );
 });
+
+/** The code's top padding and line height, for placing the add-lines card under a selection. */
+const BODY_PADDING_PX = 10;
+const LINE_HEIGHT_PX = 20;
+/** Just right of the 40px number gutter and its change bar. */
+const ADD_LINES_LEFT_PX = 56;
+const ADD_LINES_GAP_PX = 4;
 
 /** Why there is nothing to read: binary, too large, gone, or another failure. */
 function Unshown({ content, failure }: { content?: FileContent; failure?: string }) {
@@ -189,73 +211,86 @@ export function FileViewer({
     });
   };
 
+  const range = selection.range;
+  // Built once per selection: a new element each render would rebuild every row of the memoized lines.
+  const addLines = useMemo(() => {
+    if (!onInsertText || !range) return null;
+    return (
+      <div
+        style={{ top: BODY_PADDING_PX + range.last * LINE_HEIGHT_PX + ADD_LINES_GAP_PX, left: ADD_LINES_LEFT_PX }}
+        className="absolute flex rounded-lg border border-border bg-surface-3 p-0.5 font-sans shadow-popover select-none"
+      >
+        <Button
+          variant="ghost"
+          tone="secondary"
+          icon={<Plus size={14} aria-hidden="true" />}
+          // mousedown, not click, would end the selection the click is about.
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            onInsertText(lineQuote(relativePath, range.first, range.last, lines.slice(range.first - 1, range.last), language.fence));
+            selection.clear();
+            window.getSelection()?.removeAllRanges();
+          }}
+        >
+          {lineRangeLabel(range.first, range.last)}
+        </Button>
+      </div>
+    );
+  }, [onInsertText, range, relativePath, lines, language.fence, selection]);
+
   return (
     <section aria-label="File viewer" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1">
-      <div className="flex flex-col gap-1.5 border-b border-border p-3">
-        <div className="flex items-center justify-between gap-2">
-          <Button variant="ghost" icon={<ArrowLeft size={13} aria-hidden="true" />} onClick={onBack} size="sm" className="-ml-2">
-            Files
-          </Button>
-          <div className="flex shrink-0 items-center gap-0.5">
-            <IconButton label="Add to prompt" onClick={() => onInsertPath(absolutePath)}>
-              <Plus size={14} />
-            </IconButton>
-            <IconButton label="Open in editor" onClick={openInEditor}>
-              <ExternalLink size={14} />
-            </IconButton>
-            <IconButton label={isCopied ? "Path copied" : "Copy path"} onClick={copyPath}>
-              {isCopied ? <Check size={14} /> : <Copy size={14} />}
-            </IconButton>
-          </div>
-        </div>
+      <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-border px-2">
+        <Button variant="ghost" tone="secondary" size="row" icon={<ChevronLeft size={14} aria-hidden="true" />} onClick={onBack}>
+          Files
+        </Button>
         <Breadcrumb relativePath={relativePath} marker={marker} />
-        {text !== null && (
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-caption text-fg-muted">
-              {language.name} · {lines.length} {lines.length === 1 ? "line" : "lines"} · Read only
-            </p>
-            {marker && (
-              <label className="flex shrink-0 items-center gap-1.5 text-caption text-fg-muted">
-                <input
-                  type="checkbox"
-                  checked={isMarking}
-                  onChange={(event) => setIsMarking(event.target.checked)}
-                  className="focus-ring accent-fg"
-                />
-                Mark changed lines
-              </label>
-            )}
-          </div>
-        )}
-        {openError && (
-          <p role="alert" className="text-caption text-danger">
-            {openError}
-          </p>
-        )}
+        <IconButton label={`Add ${name} to prompt`} title="Add to prompt" size="row" onClick={() => onInsertPath(absolutePath)}>
+          <Plus size={14} />
+        </IconButton>
+        <IconButton label="Open in editor" title="Open in editor" size="row" onClick={openInEditor}>
+          <ExternalLink size={14} />
+        </IconButton>
+        <IconButton label={isCopied ? "Path copied" : "Copy path"} title="Copy path" size="row" onClick={copyPath}>
+          {isCopied ? <Check size={14} /> : <Copy size={14} />}
+        </IconButton>
       </div>
+      {text !== null && (
+        <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border pr-3 pl-4 text-caption text-fg-subtle">
+          <span className="min-w-0 flex-1 truncate">
+            {language.name} · {lines.length} {lines.length === 1 ? "line" : "lines"} · Read only
+          </span>
+          {marker && (
+            <label className="flex shrink-0 items-center gap-1.5 text-fg-secondary">
+              <input
+                type="checkbox"
+                checked={isMarking}
+                onChange={(event) => setIsMarking(event.target.checked)}
+                className="focus-ring size-3 accent-fg"
+              />
+              Mark changed lines
+            </label>
+          )}
+        </div>
+      )}
+      {openError && (
+        <p role="alert" className="border-b border-border px-4 py-1.5 text-caption text-danger">
+          {openError}
+        </p>
+      )}
       {read.status === "loading" && <p className="px-3 py-4 text-ui-sm text-fg-muted">Loading…</p>}
       {read.status === "failed" && <Unshown failure={read.message} />}
       {read.status === "ready" &&
         (text !== null ? (
-          <div className="relative flex min-h-0 flex-1 flex-col">
-            <FileLines name={name} lines={lines} tokens={tokens} changes={isMarking ? changes : NO_CHANGES} bodyRef={bodyRef} />
-            {onInsertText && selection.range && (
-              <Button
-                variant="outline"
-                className="absolute right-3 top-2 bg-surface-2 shadow-popover"
-                // mousedown, not click, would end the selection the click is about.
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  const { first, last } = selection.range!;
-                  onInsertText(lineQuote(relativePath, first, last, lines.slice(first - 1, last), language.fence));
-                  selection.clear();
-                  window.getSelection()?.removeAllRanges();
-                }}
-              >
-                {lineRangeLabel(selection.range.first, selection.range.last)}
-              </Button>
-            )}
-          </div>
+          <FileLines
+            name={name}
+            lines={lines}
+            tokens={tokens}
+            changes={isMarking ? changes : NO_CHANGES}
+            bodyRef={bodyRef}
+            selected={onInsertText ? range : null}
+            overlay={addLines}
+          />
         ) : (
           <Unshown content={read.content} />
         ))}

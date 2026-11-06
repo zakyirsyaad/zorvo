@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useId, useMemo, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronRight, GitBranch, RefreshCw, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Maximize2, RefreshCw } from "lucide-react";
+import { formatLineCount, MINUS, type FileStat } from "../../lib/diff-stats";
 import { commitPathsOf, type ChangeKind, type FileChange } from "../../lib/git-changes";
 import { Button } from "../ui/Button";
-import { DiffStatChip } from "./DiffStatChip";
+import { IconButton } from "../ui/IconButton";
 import { FileDiff } from "./FileDiff";
 import { PullRequestList } from "./PullRequestList";
 import type { PullRequestSummary } from "../../hooks/useRepoPullRequests";
@@ -12,14 +13,11 @@ export interface ChangesPanelProps {
   /** The folder the session works in; its whole repository's changes are listed. */
   rootPath: string;
   rootName: string;
-  branch?: string;
   /** null while the first list is read. */
   changes: FileChange[] | null;
   /** Goes up with every list read; open diffs read again then. */
   version: number;
   onReload: () => void;
-  /** Shows a close button; inside the inspector the inspector closes it. */
-  onClose?: () => void;
   /** The user's pull requests in this repository, newest first; none shown when null (gh missing, not on GitHub). */
   pullRequests?: PullRequestSummary[] | null;
   onOpenPullRequest?: (url: string) => void;
@@ -27,9 +25,11 @@ export interface ChangesPanelProps {
   githubProblem?: "not-installed" | "signed-out";
   /** Opens the GitHub section of Settings, where the user fixes `githubProblem`. */
   onOpenGithubSettings?: () => void;
-  /** Lines added and removed against HEAD; a chip that opens the diff view shows when set. */
+  /** Lines added and removed against HEAD; **Open the diff** shows when there are any. */
   diffStats?: { added: number; removed: number };
   onOpenDiff?: () => void;
+  /** Each file's counts against HEAD, shown on its card. */
+  stats?: readonly FileStat[];
 }
 
 const KIND_LABEL: Record<ChangeKind, { letter: string; name: string; style: string }> = {
@@ -40,46 +40,64 @@ const KIND_LABEL: Record<ChangeKind, { letter: string; name: string; style: stri
   renamed: { letter: "R", name: "Renamed", style: "text-fg-secondary" },
 };
 
-const HEADER_BUTTON =
-  "rounded p-1 text-fg-subtle hover:bg-surface-hover hover:text-fg-secondary focus-ring";
+/** `+N` and `−N`, each only when it is not zero. */
+function Counts({ added, removed }: { added: number; removed: number }) {
+  return (
+    <>
+      {added > 0 && <span className="shrink-0 font-mono text-caption tabular-nums text-status-running">+{formatLineCount(added)}</span>}
+      {removed > 0 && (
+        <span className="shrink-0 font-mono text-caption tabular-nums text-danger">
+          {MINUS}
+          {formatLineCount(removed)}
+        </span>
+      )}
+    </>
+  );
+}
 
 type CommitState = { status: "idle" } | { status: "committing" } | { status: "done"; hash: string } | { status: "failed"; error: string };
 
-function ChangeRow({ change, isChecked, isOpen, onCheck, onOpen }: {
+function ChangeCard({ change, stat, isChecked, isOpen, onCheck, onOpen, children }: {
   change: FileChange;
+  /** The file's counts against HEAD, once read. */
+  stat: FileStat | undefined;
   isChecked: boolean;
   isOpen: boolean;
   onCheck: (isChecked: boolean) => void;
   onOpen: () => void;
+  /** The file's diff, while it is open. */
+  children?: ReactNode;
 }) {
   const kind = KIND_LABEL[change.kind];
-  const slash = change.path.lastIndexOf("/");
-  const name = change.path.slice(slash + 1);
-  const folder = slash > 0 ? change.path.slice(0, slash) : "";
+  const Chevron = isOpen ? ChevronDown : ChevronRight;
   return (
-    <div className="group flex items-center gap-1.5 rounded-md px-1.5 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary">
-      <input
-        type="checkbox"
-        checked={isChecked}
-        onChange={(e) => onCheck(e.target.checked)}
-        aria-label={`Include ${change.path} in the commit`}
-        className="h-3 w-3 shrink-0 accent-primary"
-      />
-      <button
-        type="button"
-        onClick={onOpen}
-        aria-expanded={isOpen}
-        title={change.oldPath ? `${change.oldPath} → ${change.path}` : change.path}
-        className="flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left"
-      >
-        <ChevronRight size={11} aria-hidden="true" className={`shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`} />
-        <span className="truncate text-fg-secondary">{name}</span>
-        {folder && <span className="truncate text-[10px] text-fg-muted">{folder}</span>}
-      </button>
-      <span title={kind.name} aria-label={kind.name} className={`w-3 shrink-0 text-center font-mono text-[10px] ${kind.style}`}>
-        {kind.letter}
-      </span>
-    </div>
+    <li className={`min-w-0 overflow-hidden rounded-lg border border-border ${isOpen ? "bg-surface-2" : ""}`}>
+      <div className={`flex items-center gap-2 px-2.5 py-2 ${isOpen ? "border-b border-border" : ""}`}>
+        <input
+          type="checkbox"
+          checked={isChecked}
+          onChange={(e) => onCheck(e.target.checked)}
+          aria-label={`Include ${change.path} in the commit`}
+          className="size-3 shrink-0 accent-primary"
+        />
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-expanded={isOpen}
+          title={change.oldPath ? `${change.oldPath} → ${change.path}` : change.path}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded text-left focus-ring"
+        >
+          <Chevron size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
+          <span className="min-w-0 flex-1 truncate font-mono text-caption text-fg-secondary">{change.path}</span>
+        </button>
+        <span title={kind.name} aria-label={kind.name} className={`w-3 shrink-0 text-center font-mono text-micro ${kind.style}`}>
+          {kind.letter}
+        </span>
+        {stat && !stat.isBinary && <Counts added={stat.added} removed={stat.removed} />}
+      </div>
+      {/* A long line scrolls here, never widening the inspector. */}
+      {isOpen && <div className="overflow-x-auto">{children}</div>}
+    </li>
   );
 }
 
@@ -90,17 +108,16 @@ function ChangeRow({ change, isChecked, isOpen, onCheck, onOpen }: {
 export function ChangesPanel({
   rootPath,
   rootName,
-  branch,
   changes,
   version,
   onReload,
-  onClose,
   pullRequests,
   onOpenPullRequest,
   githubProblem,
   onOpenGithubSettings,
   diffStats,
   onOpenDiff,
+  stats,
 }: ChangesPanelProps) {
   // Files left out of the commit; any new change is included by default.
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(() => new Set());
@@ -108,6 +125,8 @@ export function ChangesPanel({
   const [message, setMessage] = useState("");
   const [commit, setCommit] = useState<CommitState>({ status: "idle" });
 
+  const messageId = useId();
+  const statOf = useMemo(() => new Map((stats ?? []).map((stat) => [stat.path, stat])), [stats]);
   const list = changes ?? [];
   const chosen = list.filter((change) => !excluded.has(change.path));
   const canCommit = chosen.length > 0 && message.trim() !== "" && commit.status !== "committing";
@@ -141,38 +160,8 @@ export function ChangesPanel({
   return (
     <aside
       aria-label="Changes panel"
-      className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-xs text-fg-secondary select-none"
+      className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui text-fg-secondary select-none"
     >
-      <div className="flex items-center gap-1.5 border-b border-border px-3 py-2">
-        <div className="min-w-0 flex-1">
-          <p className="font-medium text-fg-secondary">
-            Changes {changes && <span className="text-fg-subtle">({list.length})</span>}
-          </p>
-          <p className="flex items-center gap-1 truncate text-[10px] text-fg-subtle" title={rootPath}>
-            {rootName}
-            {branch && (
-              <>
-                <GitBranch size={10} aria-hidden="true" className="ml-1" />
-                <span className="truncate font-mono">{branch}</span>
-              </>
-            )}
-          </p>
-        </div>
-        <button type="button" onClick={onReload} aria-label="Refresh changes" title="Refresh" className={HEADER_BUTTON}>
-          <RefreshCw size={12} />
-        </button>
-        {onClose && (
-          <button type="button" onClick={onClose} aria-label="Close changes panel" className={HEADER_BUTTON}>
-            <X size={13} />
-          </button>
-        )}
-      </div>
-
-      {diffStats && (diffStats.added > 0 || diffStats.removed > 0) && onOpenDiff && (
-        <div className="flex border-b border-border px-3 py-1.5">
-          <DiffStatChip added={diffStats.added} removed={diffStats.removed} onOpen={onOpenDiff} />
-        </div>
-      )}
       {pullRequests && onOpenPullRequest && (
         <div className="max-h-[45%] shrink-0 overflow-y-auto">
           <PullRequestList pullRequests={pullRequests} onOpen={onOpenPullRequest} />
@@ -180,7 +169,7 @@ export function ChangesPanel({
       )}
       {!pullRequests && githubProblem && onOpenGithubSettings && (
         <section aria-label="Pull requests" className="border-b border-border px-3 py-2">
-          <p className="text-[11px] text-fg-subtle">
+          <p className="text-caption text-fg-subtle">
             {githubProblem === "not-installed"
               ? "Pull requests need the GitHub CLI, which is not installed."
               : "Pull requests need you to be connected to GitHub."}
@@ -190,36 +179,61 @@ export function ChangesPanel({
           </Button>
         </section>
       )}
-      <div className="flex-1 overflow-y-auto p-1.5">
-        {changes === null && <p className="px-2 py-1.5 text-[11px] text-fg-subtle">Reading the changes…</p>}
-        {changes !== null && list.length === 0 && (
-          <p className="px-2 py-1.5 text-[11px] text-fg-subtle">No uncommitted changes.</p>
-        )}
-        <ul aria-label={`Changes in ${rootName}`} className="space-y-0.5">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+        <div className="flex items-center gap-2">
+          <p className={changes !== null && list.length > 0 ? "font-semibold text-fg" : "text-fg-subtle"}>
+            {changes === null
+              ? "Reading the changes…"
+              : list.length === 0
+                ? "No uncommitted changes."
+                : `${list.length} ${list.length === 1 ? "file" : "files"} changed`}
+          </p>
+          {diffStats && <Counts added={diffStats.added} removed={diffStats.removed} />}
+          <span className="flex-1" />
+          {diffStats && (diffStats.added > 0 || diffStats.removed > 0) && onOpenDiff && (
+            <Button
+              variant="ghost"
+              size="row"
+              aria-label={`${formatLineCount(diffStats.added)} lines added, ${formatLineCount(diffStats.removed)} removed. Open the diff`}
+              icon={<Maximize2 size={12} aria-hidden="true" />}
+              onClick={onOpenDiff}
+            >
+              Open the diff
+            </Button>
+          )}
+          <IconButton label="Refresh changes" size="row" onClick={onReload}>
+            <RefreshCw size={14} />
+          </IconButton>
+        </div>
+        <ul aria-label={`Changes in ${rootName}`} className="flex flex-col gap-2">
           {list.map((change) => (
-            <li key={change.path}>
-              <ChangeRow
-                change={change}
-                isChecked={!excluded.has(change.path)}
-                isOpen={openPath === change.path}
-                onCheck={(isChecked) => setIncluded(change.path, isChecked)}
-                onOpen={() => setOpenPath((current) => (current === change.path ? null : change.path))}
-              />
-              {openPath === change.path && <FileDiff rootPath={rootPath} change={change} version={version} />}
-            </li>
+            <ChangeCard
+              key={change.path}
+              change={change}
+              stat={statOf.get(change.path)}
+              isChecked={!excluded.has(change.path)}
+              isOpen={openPath === change.path}
+              onCheck={(isChecked) => setIncluded(change.path, isChecked)}
+              onOpen={() => setOpenPath((current) => (current === change.path ? null : change.path))}
+            >
+              <FileDiff rootPath={rootPath} change={change} version={version} density="card" />
+            </ChangeCard>
           ))}
         </ul>
       </div>
 
       {list.length > 0 && (
-        <div className="space-y-2 border-t border-border p-2.5">
+        <div className="flex flex-col gap-2 border-t border-border px-4 py-3">
+          <label htmlFor={messageId} className="sr-only">
+            Commit message
+          </label>
           <textarea
+            id={messageId}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             rows={2}
             placeholder="Commit message"
-            aria-label="Commit message"
-            className="w-full resize-none rounded-md border border-border-strong bg-surface-2 px-2 py-1.5 text-xs text-fg-secondary placeholder-fg-subtle focus-ring"
+            className="w-full resize-none rounded-lg border border-border-strong bg-bg px-2.5 py-2 text-ui text-fg placeholder-fg-subtle focus-ring"
           />
           <Button
             variant="primary"
@@ -234,12 +248,12 @@ export function ChangesPanel({
         </div>
       )}
       {commit.status === "done" && (
-        <p role="status" className="border-t border-border px-3 py-1.5 text-[11px] text-status-running">
+        <p role="status" className="border-t border-border px-4 py-1.5 text-caption text-status-running">
           Committed {commit.hash}.
         </p>
       )}
       {commit.status === "failed" && (
-        <p role="alert" className="border-t border-border px-3 py-1.5 text-[11px] text-danger">
+        <p role="alert" className="border-t border-border px-4 py-1.5 text-caption text-danger">
           {commit.error}
         </p>
       )}

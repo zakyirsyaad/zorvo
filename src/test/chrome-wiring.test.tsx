@@ -226,7 +226,7 @@ describe("Window chrome wiring", () => {
     // Showing the tab reads the list afresh, not the one from before.
     expect(reads()).toBeGreaterThan(readsBefore);
     const panel = within(screen.getByRole("complementary", { name: "Changes panel" }));
-    expect(panel.getByText("app.ts")).toBeDefined();
+    expect(panel.getByText("src/app.ts")).toBeDefined();
 
     await openInspectorTab("Files");
     expect(screen.queryByRole("complementary", { name: "Changes panel" })).toBeNull();

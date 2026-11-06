@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { IconButton } from "../ui/IconButton";
 import { Tabs, tabIds, type TabItem } from "../ui/Tabs";
@@ -35,6 +35,8 @@ export function Inspector({ tab, tabs, width, counts, isViewingFile = false, onS
   const onResizeRef = useLatest(onResize);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const stopDragRef = useRef<() => void>(() => {});
+  // The edge shows its line and grip while it is dragged, as well as on hover.
+  const [isDragging, setIsDragging] = useState(false);
 
   // A drag in progress ends with the inspector.
   useEffect(() => () => stopDragRef.current(), []);
@@ -53,6 +55,7 @@ export function Inspector({ tab, tabs, width, counts, isViewingFile = false, onS
 
   const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     dragRef.current = { startX: event.clientX, startWidth: shown };
+    setIsDragging(true);
     let last = shown;
     const move = (moveEvent: PointerEvent) => {
       const drag = dragRef.current;
@@ -64,6 +67,7 @@ export function Inspector({ tab, tabs, width, counts, isViewingFile = false, onS
     };
     const stop = () => {
       dragRef.current = null;
+      setIsDragging(false);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
     };
@@ -86,7 +90,7 @@ export function Inspector({ tab, tabs, width, counts, isViewingFile = false, onS
     <section
       aria-label="Inspector"
       style={{ width: shown }}
-      className="relative flex shrink-0 flex-col border-l border-border bg-surface-1"
+      className="relative flex shrink-0 flex-col border-l border-border bg-surface-1 text-ui text-fg"
     >
       <div
         role="separator"
@@ -96,14 +100,25 @@ export function Inspector({ tab, tabs, width, counts, isViewingFile = false, onS
         aria-valuemax={INSPECTOR_WIDTH.max}
         aria-valuenow={shown}
         tabIndex={0}
+        data-dragging={isDragging ? "" : undefined}
         onPointerDown={startDrag}
         onKeyDown={resizeByKey}
-        className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize focus-ring"
-      />
-      <div className="flex h-10 shrink-0 items-stretch justify-between border-b border-border pr-1.5 pl-2">
+        className="group absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize focus-ring"
+      >
+        {/* As drawn: a 3px line over the border and a 10×36 grip, shown on hover and while dragged. */}
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-0 left-0.5 w-[3px] bg-border-strong opacity-0 transition-opacity group-hover:opacity-100 group-data-[dragging]:opacity-100"
+        />
+        <span
+          aria-hidden="true"
+          className="absolute top-1/2 -left-0.5 -mt-[18px] h-9 w-2.5 rounded-[5px] bg-border-strong opacity-0 transition-opacity group-hover:opacity-100 group-data-[dragging]:opacity-100"
+        />
+      </div>
+      <div className="flex h-12 shrink-0 items-stretch justify-between border-b border-border pr-2 pl-3">
         <Tabs tabs={items} selected={tab} onSelect={onSelect} label="Inspector" idPrefix={ID_PREFIX} />
         <div className="flex items-center">
-          <IconButton label="Close inspector" onClick={onClose}>
+          <IconButton label="Close inspector" size="sm" onClick={onClose}>
             <X size={14} />
           </IconButton>
         </div>

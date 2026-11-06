@@ -65,7 +65,6 @@ import { useTranscripts } from "./hooks/useTranscripts";
 import { useAgentProfiles, useSuggestedFolders } from "./hooks/useDiscovery";
 import { useDraftInstall } from "./hooks/useDraftInstall";
 import { useWorkspaceSelection } from "./hooks/useWorkspaceSelection";
-import { AgentCatalogPanel } from "./components/agents/AgentCatalogPanel";
 import { Onboarding, type OnboardingResult } from "./components/Onboarding";
 import { SettingsPage } from "./components/settings/SettingsPage";
 import { useSettingsPage } from "./hooks/useSettingsPage";
@@ -101,7 +100,10 @@ import { attentionBody, notifyIfAway } from "./lib/notify";
 import { pickFiles } from "./lib/file-picker";
 import { useFileDrop } from "./hooks/useFileDrop";
 import { isAgentReady, isAgentRunnable, noAgentNotice, resolveDraftAgentId } from "./lib/agent-readiness";
-import { isInUse, removedAgentName, removedAgentNameFor } from "./lib/enabled-agents";
+import { enabledAgentIds, isInUse, removedAgentName, removedAgentNameFor } from "./lib/enabled-agents";
+import { cancelInstall, installEntryOf } from "./lib/agent-installs";
+import { isSetupOnly } from "./lib/acp-auth";
+import { withAgentRemoved } from "./lib/agent-catalog";
 import { useCompareDraft } from "./hooks/useCompareDraft";
 import { useCompareRun, useCompareRunRows } from "./hooks/useCompareRun";
 import { useCompareModelProbe } from "./hooks/useCompareModelProbe";
@@ -699,6 +701,14 @@ export default function App() {
   const handleOnboardingComplete = ({ defaultAgentId, folder }: OnboardingResult) => {
     updateSettings({ onboardingCompleted: true, defaultAgentId });
     rememberFolder(folder);
+    // Start opens a new-session draft in that folder with the agent it started with.
+    openNewSession(folder.path, defaultAgentId);
+  };
+
+  /** Onboarding's untick: out of use, and its install stopped. Zorvo's copy of it is never deleted here. */
+  const untickAgent = (id: string) => {
+    if (installEntryOf(id).status === "installing") cancelInstall(id);
+    updateState((prev) => ({ ...prev, settings: withAgentRemoved(prev.settings, id, enabledAgentIds(prev.settings)) }));
   };
 
   const handleRunOnboarding = () => {
@@ -943,11 +953,16 @@ export default function App() {
   if (isLoaded && !state.settings.onboardingCompleted) {
     return (
       <Onboarding
+        catalog={agentCatalog.catalog}
         agents={agents}
         settings={state.settings}
+        signInStateOf={signInStatus.stateOf}
+        isSetupOnly={(id) => isSetupOnly(settingsSignIn.methodsOf(id))}
+        onTick={catalogActions.addAgent}
+        onUntick={untickAgent}
+        onMakeDefault={(defaultAgentId) => updateSettings({ defaultAgentId })}
         recentFolders={workspaces}
         suggestedFolders={suggestedFolders}
-        agentsPanel={<AgentCatalogPanel agents={agents} settings={state.settings} refreshAgents={refreshAgents} catalog={agentCatalog} actions={catalogActions} />}
         onPickFolder={openFolder}
         onComplete={handleOnboardingComplete}
       />

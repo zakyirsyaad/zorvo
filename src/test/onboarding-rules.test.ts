@@ -10,8 +10,8 @@ import {
 } from "../lib/onboarding";
 import { makeCatalogAgent } from "./fixtures/catalog";
 
-const agent = (id: string, overrides: Parameters<typeof makeCatalogAgent>[0] = { id, name: id }) =>
-  makeCatalogAgent({ id, name: id, ...overrides });
+/** A catalog agent; the first argument only labels the call, `overrides` carries the id and name. */
+const agent = (_label: string, overrides: Parameters<typeof makeCatalogAgent>[0]) => makeCatalogAgent(overrides);
 
 const FOLDER = { name: "zorvo", path: "/Users/me/zorvo" };
 

@@ -20,7 +20,7 @@ export function UnavailableAgents({ agents, isSearching }: UnavailableAgentsProp
   const Chevron = isOpen ? ChevronDown : ChevronRight;
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-2">
-      <h3 id={headingId} className="self-start">
+      <h2 id={headingId} className="self-start">
         <button
           type="button"
           aria-expanded={isOpen}
@@ -32,7 +32,7 @@ export function UnavailableAgents({ agents, isSearching }: UnavailableAgentsProp
           <Chevron size={12} aria-hidden="true" />
           {`Not available (${agents.length})`}
         </button>
-      </h3>
+      </h2>
       <ul id={listId} hidden={!isOpen} className="flex flex-col rounded-xl border border-border bg-surface-2">
         {isOpen &&
           agents.map((agent) => (

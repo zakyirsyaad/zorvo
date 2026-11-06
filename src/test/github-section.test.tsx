@@ -50,6 +50,8 @@ describe("GithubSection", () => {
     renderSection({ state: "signed-in", login: "octocat" }, { ref });
     ref.current?.focus();
     expect(document.activeElement).toBe(ref.current);
+    // Focus put there by a keyboard user's sign-in is visible.
+    expect(ref.current).toHaveClass("focus-ring");
   });
 
   describe("when signed in", () => {

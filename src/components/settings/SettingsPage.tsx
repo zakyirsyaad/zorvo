@@ -179,7 +179,9 @@ export function SettingsPage({
   return (
     <div data-settings-page className="relative flex min-h-0 min-w-0 flex-1">
       <SettingsNav current={section} onSelect={page.select} onBack={page.close} updateCount={updateCount} />
+      {/* Keyed by section: a new section is a new scroller, so it opens at its top. */}
       <section
+        key={section}
         aria-labelledby={titleId}
         data-settings-content
         className="relative min-w-0 flex-1 overflow-y-auto px-10 py-14"

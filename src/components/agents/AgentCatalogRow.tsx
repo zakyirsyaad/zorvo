@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { ChevronDown, ChevronUp, MoreHorizontal } from "lucide-react";
 import { AgentLogo } from "../AgentLogo";
 import { InstallBar, InstallStatus } from "../InstallProgressLine";
-import { AgentSignIn } from "./AgentSignIn";
+import { AgentSignIn, signInStatus } from "./AgentSignIn";
 import { SignInChip } from "./SignInChip";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { Popover, PopoverOption } from "../ui/Popover";
 import type { SettingsSignIn } from "../../hooks/useSettingsSignIn";
 import { useAgentInstall } from "../../hooks/useAgentInstall";
+import { useConfirmFocus } from "../../hooks/useConfirmFocus";
 import { availableLine, rowActions, sourceLine, statusLine } from "../../lib/agent-catalog";
 import type { CatalogAgent, InstallStep } from "../../types";
 
@@ -36,9 +37,9 @@ function removeQuestion(name: string, runningSessionCount: number): string {
 }
 
 /** An outline button whose label reads `fg`, as the canvas's row buttons do. */
-function RowButton({ onClick, title, children }: { onClick: () => void; title?: string; children: string }) {
+function RowButton({ onClick, children }: { onClick: () => void; children: string }) {
   return (
-    <Button size="md" onClick={onClick} title={title}>
+    <Button size="md" onClick={onClick}>
       <span className="text-fg">{children}</span>
     </Button>
   );
@@ -79,17 +80,12 @@ export function AgentCatalogRow({
     if (signInState === "needed") setIsSignInOpen(true);
   }
   const isOpen = canCheckSignIn && isSignInOpen;
+  // An install or update hides the chevron, so the panel steps aside with it until the job ends.
+  const showsPanel = isOpen && !isBusy;
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isConfirmingRemove, setIsConfirmingRemove] = useState(false);
-  const moreRef = useRef<HTMLButtonElement>(null);
-  const confirmRef = useRef<HTMLButtonElement>(null);
-  const wasConfirming = useRef(false);
-  useEffect(() => {
-    if (isConfirmingRemove) confirmRef.current?.focus();
-    else if (wasConfirming.current) moreRef.current?.focus();
-    wasConfirming.current = isConfirmingRemove;
-  }, [isConfirmingRemove]);
+  const { confirmRef, returnRef: moreRef } = useConfirmFocus(isConfirmingRemove);
 
   const secondLine = isBusy ? (
     <>
@@ -98,7 +94,7 @@ export function AgentCatalogRow({
         <InstallBar progress={job.progress} />
       </div>
     </>
-  ) : isInUse && agent.status !== "not_installed" ? (
+  ) : isInUse && (agent.status !== "not_installed" || !hasPlan) ? (
     <span className="truncate font-mono text-caption text-fg-subtle" title={agent.location ?? undefined}>
       {sourceLine(agent)}
     </span>
@@ -166,7 +162,9 @@ export function AgentCatalogRow({
   );
 
   const failure = hasFailed ? statusLine(agent, plan, isInUse, job) : isBusy ? job.error : null;
-  const hasUnder = isOpen || isConfirmingRemove || failure !== null || removeError !== null;
+  const hasUnder = showsPanel || isConfirmingRemove || failure !== null || removeError !== null;
+  // While the panel is closed, a check's result is still read out, from the row.
+  const closedStatus = canCheckSignIn && !showsPanel ? signInStatus(agent.name, signIn, agent.id).text : null;
 
   return (
     <li
@@ -186,9 +184,14 @@ export function AgentCatalogRow({
         <div className="flex shrink-0 items-center gap-2">{controls}</div>
       </div>
 
+      {closedStatus !== null && (
+        <p role="status" className="sr-only">
+          {closedStatus}
+        </p>
+      )}
       {hasUnder && (
         <div className="mb-3.5 ml-14 mr-4 flex flex-col gap-2.5">
-          {isOpen && signIn && <AgentSignIn agentId={agent.id} agentName={agent.name} signIn={signIn} />}
+          {showsPanel && signIn && <AgentSignIn agentId={agent.id} agentName={agent.name} signIn={signIn} />}
           {isConfirmingRemove && (
             <div className="flex flex-col gap-2 rounded-lg border border-border-strong bg-surface-2 px-3 py-2.5">
               <p className="text-ui text-fg-secondary">{removeQuestion(agent.name, runningSessionCount)}</p>

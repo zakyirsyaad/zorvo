@@ -120,6 +120,15 @@ describe("Settings page", () => {
     expect(settingsButton()).toHaveFocus();
   });
 
+  it("each section opens at its top", async () => {
+    await renderApp();
+    await click(settingsButton());
+    await click(within(nav()).getByRole("link", { name: /^Agents/ }));
+    screen.getByRole("region", { name: "Agents" }).scrollTop = 400;
+    await click(within(nav()).getByRole("link", { name: "General" }));
+    expect(screen.getByRole("region", { name: "General" }).scrollTop).toBe(0);
+  });
+
   it("the nav switches sections", async () => {
     await renderApp();
     await click(settingsButton());

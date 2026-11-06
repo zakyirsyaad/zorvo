@@ -28,9 +28,9 @@ export function SettingsGroup({ heading, children }: { heading: string; children
   const headingId = useId();
   return (
     <section aria-labelledby={headingId}>
-      <div id={headingId} className="px-1 pb-2 text-caption font-medium text-fg-muted">
+      <h2 id={headingId} className="px-1 pb-2 text-caption font-medium text-fg-muted">
         {heading}
-      </div>
+      </h2>
       {/* No overflow clip: a row's popover (the default agent list) opens past the card's edge. */}
       <div className="flex flex-col rounded-xl border border-border bg-surface-2">{children}</div>
     </section>

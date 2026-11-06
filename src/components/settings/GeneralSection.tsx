@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type Ref } from "react";
+import { useState, type Ref } from "react";
 import type { AppUpdate } from "../../hooks/useAppUpdate";
+import { useConfirmFocus } from "../../hooks/useConfirmFocus";
 import { useNow } from "../../hooks/useNow";
 import type { AgentSummary } from "../../lib/agent-readiness";
 import { checkedWords, downloadPercent } from "../../lib/app-update";
@@ -97,14 +98,7 @@ function VersionRow({ appUpdate, appVersion, restartNote }: Pick<GeneralSectionP
  */
 function RecentFolderRow({ folder, onRemove }: { folder: FolderOption; onRemove: (path: string) => void }) {
   const [isConfirming, setIsConfirming] = useState(false);
-  const confirmRef = useRef<HTMLButtonElement>(null);
-  const removeRef = useRef<HTMLButtonElement>(null);
-  const wasConfirming = useRef(false);
-  useEffect(() => {
-    if (isConfirming) confirmRef.current?.focus();
-    else if (wasConfirming.current) removeRef.current?.focus();
-    wasConfirming.current = isConfirming;
-  }, [isConfirming]);
+  const { confirmRef, returnRef: removeRef } = useConfirmFocus(isConfirming);
 
   const path = <span className="font-mono text-caption">{folder.path}</span>;
   if (!isConfirming) {

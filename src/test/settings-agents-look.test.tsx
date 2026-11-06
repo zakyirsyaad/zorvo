@@ -6,10 +6,14 @@ import type { AgentCatalogActions } from "../hooks/useAgentCatalogActions";
 import type { AgentCheck, SettingsSignIn } from "../hooks/useSettingsSignIn";
 import type { SignInState } from "../lib/agent-sign-in";
 import type { AgentCatalog as Catalog } from "../types";
+import { resetAgentInstalls, startInstall } from "../lib/agent-installs";
 import { fakeCatalog, makeCatalogAgent } from "./fixtures/catalog";
 import { fakeProfiles, makeProfile } from "./fixtures/agents";
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  resetAgentInstalls();
+});
 
 const NO_ACTIONS: AgentCatalogActions = {
   addAgent: () => {},
@@ -203,5 +207,36 @@ describe("the Agents section as drawn", () => {
     const broken = screen.getByRole("listitem", { name: "Broken Agent" });
     expect(broken.querySelector(".size-7.bg-surface-hover")).not.toBeNull();
     expect(broken.closest(".rounded-xl")).toHaveClass("bg-surface-2");
+  });
+});
+
+describe("code review fixes", () => {
+  it("hides an open sign-in while the agent installs or updates", async () => {
+    const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: (cmd: string) => Promise<unknown> } }).__TAURI_INTERNALS__;
+    vi.spyOn(internals, "invoke").mockImplementation(() => new Promise(() => {}));
+    renderCatalog();
+    fireEvent.click(within(row("Claude Code")).getByRole("button", { name: "Show sign-in for Claude Code" }));
+    expect(within(row("Claude Code")).getByRole("group", { name: "Claude Code sign-in" })).toBeInTheDocument();
+    await act(async () => startInstall("claude-acp"));
+    expect(within(row("Claude Code")).queryByRole("group", { name: "Claude Code sign-in" })).toBeNull();
+  });
+
+  it("announces a sign-in result in a closed row", () => {
+    const signIn = { ...fakeSignIn(), checkOf: () => ({ phase: "idle", message: "Signed in to Claude Code." }) as AgentCheck };
+    renderCatalog({ signIn });
+    expect(within(row("Claude Code")).queryByRole("group", { name: "Claude Code sign-in" })).toBeNull();
+    expect(within(row("Claude Code")).getByRole("status")).toHaveTextContent("Signed in to Claude Code.");
+  });
+
+  it("says an agent in use is not installed when Zorvo does not know what Install adds", () => {
+    renderCatalog({ enabledIds: ["claude-acp", "gemini"] });
+    expect(row("Gemini CLI")).toHaveTextContent("not installed");
+  });
+
+  it("group headings are level 2, Not available's too", () => {
+    renderCatalog({ catalog: { lastChecked: null, agents: fakeCatalog, unavailable: [{ id: "x", name: "X", description: null, reason: "invalid_entry" }] } });
+    expect(screen.getByRole("heading", { level: 2, name: "In use" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Available" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Not available (1)" })).toBeInTheDocument();
   });
 });

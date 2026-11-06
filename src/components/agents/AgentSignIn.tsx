@@ -32,7 +32,7 @@ export function sessionWarning(agentName: string, reportsStatus: boolean | undef
 }
 
 /** What the live region says: the sign-in under way, else the last check's result. */
-function statusText(agentName: string, signIn: SettingsSignIn, agentId: string): { text: string; isError: boolean } {
+export function signInStatus(agentName: string, signIn: SettingsSignIn, agentId: string): { text: string; isError: boolean } {
   const check = signIn.checkOf(agentId);
   const request = signIn.requestOf(agentId);
   if (check.phase === "checking") return { text: `Checking ${agentName}…`, isError: false };
@@ -65,7 +65,7 @@ export function AgentSignIn({ agentId, agentName, signIn }: AgentSignInProps) {
   const isSigningIn = request?.status === "signing-in" || request?.status === "checking";
   // One sign-in at a time: another agent's running login would be cut off by this one.
   const isBusy = check.phase === "checking" || isSigningIn || signIn.busyAgentId !== null;
-  const { text, isError } = statusText(agentName, signIn, agentId);
+  const { text, isError } = signInStatus(agentName, signIn, agentId);
   const copy = authCopy(agentName, methods);
 
   // Back to this row when the login's dialog closes and the button that opened it is gone (the agent is ready now).

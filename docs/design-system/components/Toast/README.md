@@ -10,3 +10,12 @@ A notice in the bottom right corner of the main area, over the chat: a failure y
 - One action at most, as a 24px outline `Button` under the message ("Try again"), its label in `fg`. Dismiss is a 22px `IconButton` with a 12px icon, named "Dismiss notice".
 - The message says what happened in a short sentence ("Could not open the link."); the agent's raw error goes after it, never alone.
 - Toasts stack upward with 10px between them.
+
+## The update card
+
+A newer Zorvo shows as a card in the same stack, above any toast (`AppUpdateNotice`).
+
+- 340px, `surface-3`, `border`, `radius-xl`, `shadow-popover`, 14px 16px, `role="status"`.
+- "Zorvo 0.9.0 is ready" in `ui` at 600, then what a restart ends, counted, in `ui-sm` `fg-muted` ("Restarting stops 2 agents mid-turn and 1 shell."), nothing when it ends nothing.
+- **Later** (ghost, `fg-secondary`) and **Update & restart** (outline, in `fg`) at the right. While it installs, Later goes and the line reads "Downloading…" with its percent shown but not announced, then "Installing…".
+- It stays above the composer, where the stack sits, rather than in the window's very corner, which is the composer's Send button.

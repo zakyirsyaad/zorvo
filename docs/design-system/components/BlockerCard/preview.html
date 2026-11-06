@@ -1,25 +1,30 @@
-<!-- @dsCard group="Feedback" height=540 -->
+<!-- @dsCard group="Feedback" height=860 -->
 <!doctype html>
 <html>
 <head><meta charset="utf-8"><title>BlockerCard — preview</title>
 <style>
-.z-blockers { display: flex; flex-direction: column; gap: var(--space-3); width: 560px; }
-.z-blocker { box-sizing: border-box; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface-2); font-family: var(--font-sans); }
+.z-blockers { display: flex; flex-direction: column; gap: var(--space-5); width: 560px; }
+.z-blocker { box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface-2); box-shadow: var(--shadow-popover); font-family: var(--font-sans); }
 .z-blocker-head { display: flex; align-items: flex-start; gap: var(--space-3); }
-.z-blocker-logo { flex-shrink: 0; width: 24px; height: 24px; margin-top: 2px; border-radius: var(--radius-sm); background: var(--surface-3); }
-.z-blocker-text { flex: 1; min-width: 0; }
-.z-blocker-title { margin: 0; color: var(--fg); font: 500 13px/18px var(--font-sans); }
-.z-blocker-body { margin: var(--space-1) 0 0; color: var(--fg-muted); font: 400 12px/16px var(--font-sans); }
-.z-blocker-actions { display: flex; flex-shrink: 0; gap: var(--space-2); }
-.z-blocker-foot { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
-.z-blocker-status { flex: 1; margin: 0; color: var(--fg-muted); font: 400 11px/14px var(--font-sans); }
-.z-blocker-methods { margin: var(--space-3) 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--space-2); }
-.z-blocker-method { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); color: var(--fg-muted); font: 400 12px/16px var(--font-sans); }
-.z-blocker-method b { color: var(--fg-secondary); font-weight: 500; }
-.z-blocker-where { margin-left: var(--space-1); color: var(--fg-subtle); font-size: 11px; }
-.z-btn { padding: var(--space-1) var(--space-3); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: none; color: var(--fg-secondary); font: 500 12px/16px var(--font-sans); white-space: nowrap; }
+.z-blocker-logo { flex-shrink: 0; width: 32px; height: 32px; border-radius: var(--radius-lg); background: var(--surface-hover); }
+.z-blocker-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.z-blocker-title { margin: 0; color: var(--fg); font: 600 13px/18px var(--font-sans); }
+.z-blocker-body { margin: 0; color: var(--fg-muted); font: 400 13px/18px var(--font-sans); }
+.z-blocker-row { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.z-blocker-row--start { justify-content: flex-start; }
+.z-blocker-foot { display: flex; align-items: center; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.z-blocker-status { display: flex; align-items: center; gap: var(--space-2); flex: 1; margin: 0; color: var(--fg-secondary); font: 400 12px/16px var(--font-sans); }
+.z-blocker-dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--status-attention); }
+.z-blocker-methods { margin: 0; padding: 0; list-style: none; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.z-blocker-method { display: flex; align-items: center; gap: 10px; padding: 10px 12px; font: 400 13px/18px var(--font-sans); }
+.z-blocker-method + .z-blocker-method { border-top: 1px solid var(--border); }
+.z-blocker-method span { flex: 1; display: flex; flex-direction: column; color: var(--fg); }
+.z-blocker-method small { color: var(--fg-subtle); font-size: 12px; line-height: 16px; }
+.z-blocker-where { flex-shrink: 0; color: var(--fg-subtle); font-size: 11px; }
+.z-blocker-hint { color: var(--fg-subtle); font: 400 12px/16px var(--font-sans); }
+.z-btn { height: 28px; padding: 0 var(--space-3); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: none; color: var(--fg); font: 500 13px/18px var(--font-sans); white-space: nowrap; }
 .z-btn--primary { border-color: transparent; background: var(--primary); color: var(--on-primary); }
-.z-btn--ghost { border-color: transparent; color: var(--fg-muted); }
+.z-btn--ghost { border-color: transparent; color: var(--fg-secondary); }
 </style>
 </head>
 <body>
@@ -30,10 +35,10 @@
         <span class="z-blocker-logo" aria-hidden="true"></span>
         <div class="z-blocker-text">
           <h2 class="z-blocker-title">Codex isn't installed yet</h2>
-          <p class="z-blocker-body">Codex needs Node.js 24.11.1 (49 MB) and Codex 0.4.2 before it can start.</p>
+          <p class="z-blocker-body">Zorvo downloads Node.js 24.11.1 (49 MB) and Codex 0.4.2 into its own folder. Once it is installed, Zorvo checks whether you are signed in.</p>
         </div>
-        <div class="z-blocker-actions"><button type="button" class="z-btn z-btn--primary">Install Codex</button></div>
       </div>
+      <div class="z-blocker-row"><button type="button" class="z-btn z-btn--primary">Install Codex</button></div>
     </section>
 
     <section class="z-blocker" aria-label="Sign in to Gemini CLI">
@@ -41,15 +46,15 @@
         <span class="z-blocker-logo" aria-hidden="true"></span>
         <div class="z-blocker-text">
           <h2 class="z-blocker-title">Sign in to Gemini CLI</h2>
-          <p class="z-blocker-body">Gemini CLI needs you to sign in before it can start.</p>
-          <ul class="z-blocker-methods">
-            <li class="z-blocker-method"><span><b>Log in with Google</b></span><button type="button" class="z-btn z-btn--primary">Log in with Google</button></li>
-            <li class="z-blocker-method"><span><b>Gemini API key</b><span class="z-blocker-where">In your shell</span><br>Set GEMINI_API_KEY, then check again.</span></li>
-          </ul>
+          <p class="z-blocker-body">Pick how Gemini CLI signs in. It uses its own tool; Zorvo never sees your password or key.</p>
         </div>
       </div>
+      <ul class="z-blocker-methods">
+        <li class="z-blocker-method"><span>Log in with Google<small>Opens your browser</small></span><button type="button" class="z-btn">Log in with Google</button></li>
+        <li class="z-blocker-method"><span>Gemini API key<small>Set the key in your shell, then check again.</small></span><span class="z-blocker-where">In your shell</span></li>
+      </ul>
       <div class="z-blocker-foot">
-        <p class="z-blocker-status" role="status">Your message will be sent again after you sign in</p>
+        <p class="z-blocker-status" role="status"><span class="z-blocker-dot" aria-hidden="true"></span>Your message will be sent again after you sign in.</p>
         <button type="button" class="z-btn z-btn--ghost">Dismiss</button>
         <button type="button" class="z-btn">Check again</button>
       </div>
@@ -60,14 +65,16 @@
         <span class="z-blocker-logo" aria-hidden="true"></span>
         <div class="z-blocker-text">
           <h2 class="z-blocker-title">Set up Qwen Code</h2>
-          <p class="z-blocker-body">Qwen Code picks its provider in its own setup, which Zorvo opens in a terminal.</p>
+          <p class="z-blocker-body">Qwen Code connects to a provider you pick in its own setup, and keeps the choice and the key in its settings.</p>
         </div>
-        <div class="z-blocker-actions"><button type="button" class="z-btn z-btn--primary">Open setup in terminal</button></div>
+      </div>
+      <div class="z-blocker-row z-blocker-row--start">
+        <button type="button" class="z-btn">Open setup in terminal</button>
+        <span class="z-blocker-hint">Already set up in Qwen Code? Check again.</span>
       </div>
       <div class="z-blocker-foot">
-        <p class="z-blocker-status" role="status"></p>
+        <p class="z-blocker-status" role="status">Not checked yet.</p>
         <button type="button" class="z-btn z-btn--ghost">Dismiss</button>
-        <span class="z-blocker-where">Already set up?</span>
         <button type="button" class="z-btn">Check again</button>
       </div>
     </section>
@@ -79,8 +86,8 @@
           <h2 class="z-blocker-title">Gemini CLI is no longer in use</h2>
           <p class="z-blocker-body">Add it again to continue this session. Its messages stay here either way.</p>
         </div>
-        <div class="z-blocker-actions"><button type="button" class="z-btn z-btn--primary">Add Gemini CLI</button></div>
       </div>
+      <div class="z-blocker-row"><button type="button" class="z-btn z-btn--primary">Add Gemini CLI</button></div>
     </section>
   </div>
 </div>

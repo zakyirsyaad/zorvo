@@ -53,15 +53,15 @@ export function FileDiff({ rootPath, change, version, target = "head", startComm
     : undefined;
 
   const body = () => {
-    if (state.status === "loading" || isStale) return <p className="px-3 py-1.5 text-[11px] text-fg-subtle">Loading the diff…</p>;
+    if (state.status === "loading" || isStale) return <p className="px-4 py-1.5 text-caption text-fg-subtle">Loading the diff…</p>;
     if (state.status === "failed") {
       return (
-        <p role="alert" className="px-3 py-1.5 text-[11px] text-danger">
+        <p role="alert" className="px-4 py-1.5 text-caption text-danger">
           Could not show the diff: {state.error}
         </p>
       );
     }
-    if (rows.length === 0) return <p className="px-3 py-1.5 text-[11px] text-fg-subtle">No text changes.</p>;
+    if (rows.length === 0) return <p className="px-4 py-1.5 text-caption text-fg-subtle">No text changes.</p>;
     return <DiffRows rows={rows} label={`Diff of ${change.path}`} review={rowReview} density={density} />;
   };
   return (

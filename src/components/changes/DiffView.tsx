@@ -169,7 +169,11 @@ export function DiffView({
   );
   // A file chosen in the list opens, and is scrolled to once its section has rendered open.
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
+  // The file marked in the list: the last one picked there while it is still listed, else the first.
+  const [pickedPath, setPickedPath] = useState<string | null>(null);
+  const selectedPath = visible.some((s) => s.path === pickedPath) ? pickedPath : (visible[0]?.path ?? null);
   const selectFile = (path: string) => {
+    setPickedPath(path);
     setOpenPaths((prev) => (prev.has(path) ? prev : new Set(prev).add(path)));
     setScrollTarget(path);
   };
@@ -184,7 +188,7 @@ export function DiffView({
       ref={panel}
       aria-label="Diff view"
       tabIndex={review ? -1 : undefined}
-      className={`flex h-full flex-col border-l border-border bg-surface-1 ${isExpanded ? "flex-1" : "w-1/2 min-w-[480px] shrink-0"}${review ? " focus-ring" : ""}`}
+      className={`flex h-full flex-col border-l border-border bg-bg text-ui ${isExpanded ? "flex-1" : "w-1/2 min-w-[480px] shrink-0"}${review ? " focus-ring" : ""}`}
     >
       <DiffViewHeader
         target={target}
@@ -204,17 +208,14 @@ export function DiffView({
         totals={totals}
       />
       <div className="flex min-h-0 flex-1">
-        {isExpanded && stats && stats.length > 0 && <DiffFileList stats={visible} onSelect={selectFile} />}
-        <div className="min-h-0 flex-1 overflow-y-auto p-2 text-xs">
-        {review && stats && stats.length > 0 && (
-          <p className="px-1.5 pb-1.5 text-caption text-fg-muted">Click a line number to comment</p>
-        )}
+        {isExpanded && stats && stats.length > 0 && <DiffFileList stats={visible} selectedPath={selectedPath} onSelect={selectFile} />}
+        <div className="min-h-0 flex-1 overflow-y-auto">
         {stats === null ? (
-          <p className="px-2 py-3 text-fg-subtle">Reading the changes…</p>
+          <p className="px-4 py-3 text-fg-subtle">Reading the changes…</p>
         ) : stats.length === 0 ? (
-          <p className="px-2 py-3 text-fg-subtle">{noChanges}</p>
+          <p className="px-4 py-3 text-fg-subtle">{noChanges}</p>
         ) : visible.length === 0 ? (
-          <p className="px-2 py-3 text-fg-subtle">No files match “{search.trim()}”.</p>
+          <p className="px-4 py-3 text-fg-subtle">No files match “{search.trim()}”.</p>
         ) : (
           visible.map((stat) => (
             <DiffFileSection

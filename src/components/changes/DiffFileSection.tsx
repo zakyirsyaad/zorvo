@@ -1,4 +1,4 @@
-import { ChevronRight, File } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { FileDiff } from "./FileDiff";
 import { commentSummary, FileComments, type FileReview } from "./LineComment";
 import { formatLineCount, MINUS, type DiffTargetId, type FileStat } from "../../lib/diff-stats";
@@ -22,38 +22,42 @@ export function DiffFileSection({ rootPath, stat, target, startCommit, version, 
   /** The file's comments, for a session on screen. */
   review?: FileReview;
 }) {
-  // A nested repository is listed as a folder, "vendor/lib/": named by its last part.
-  const shown = stat.path.replace(/\/+$/, "");
-  const slash = shown.lastIndexOf("/");
-  const name = shown.slice(slash + 1);
-  const folder = slash > 0 ? shown.slice(0, slash) : "";
+  const takesComments = review !== undefined && !stat.isBinary && !stat.path.endsWith("/");
   return (
-    <section id={diffSectionId(rootPath, stat.path)} className="scroll-mt-2">
+    <section id={diffSectionId(rootPath, stat.path)} className="scroll-mt-0">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={isOpen}
         title={stat.oldPath ? `${stat.oldPath} → ${stat.path}` : stat.path}
-        className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-fg-muted hover:bg-surface-hover hover:text-fg-secondary focus-ring"
+        className="flex h-9 w-full items-center gap-2 border-b border-border px-4 text-left hover:bg-surface-hover focus-ring"
       >
-        <ChevronRight size={11} aria-hidden="true" className={`shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`} />
-        <File size={11} aria-hidden="true" className="shrink-0" />
-        <span className="min-w-0 truncate text-fg-secondary">{name}</span>
-        {folder && <span className="min-w-0 flex-1 truncate text-[10px] text-fg-subtle">{folder}</span>}
-        <span className="ml-auto shrink-0 text-[11px] tabular-nums text-status-running">+{formatLineCount(stat.added)}</span>
-        <span className="shrink-0 text-[11px] tabular-nums text-danger">
-          {MINUS}
-          {formatLineCount(stat.removed)}
+        <ChevronRight size={12} aria-hidden="true" className={`shrink-0 text-fg-subtle transition-transform ${isOpen ? "rotate-90" : ""}`} />
+        <span className="min-w-0 truncate font-mono text-ui-sm text-fg">{stat.path}</span>
+        {/* The rows say it to a screen reader: each offers "Comment on line N". */}
+        {isOpen && takesComments && (
+          <span aria-hidden="true" className="min-w-0 truncate text-caption text-fg-subtle">
+            Click a line number to comment
+          </span>
+        )}
+        <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-caption tabular-nums">
+          {stat.added > 0 && <span className="text-status-running">+{formatLineCount(stat.added)}</span>}
+          {stat.removed > 0 && (
+            <span className="text-danger">
+              {MINUS}
+              {formatLineCount(stat.removed)}
+            </span>
+          )}
         </span>
         {review && review.checked.length > 0 && (
-          <span className="shrink-0 text-[11px] text-fg-muted">{commentSummary(review)}</span>
+          <span className="shrink-0 text-caption text-fg-muted">{commentSummary(review)}</span>
         )}
       </button>
       {isOpen &&
         (stat.isBinary ? (
           <>
             {review && <FileComments file={review} change={stat} rows={[]} />}
-            <p className="px-3 py-1.5 text-[11px] text-fg-subtle">Binary file</p>
+            <p className="px-4 py-2 text-caption text-fg-subtle">Binary file</p>
           </>
         ) : (
           <FileDiff

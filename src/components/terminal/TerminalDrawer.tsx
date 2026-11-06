@@ -87,6 +87,12 @@ export function TerminalDrawer({
 
   const closeTab = (id: string) => {
     terminals.close(id);
+    // Ids never come back, so a closed shell's size would only sit in memory.
+    setSizes((current) => {
+      if (!(id in current)) return current;
+      const { [id]: _closed, ...rest } = current;
+      return rest;
+    });
     const remaining = tabs.filter((tab) => tab.id !== id);
     const next = pickActive(remaining, undefined);
     if (id === activeTab?.id && next) setFocusTabId(next.id);
@@ -115,7 +121,7 @@ export function TerminalDrawer({
       {(hasTabs || onHide) && (
         // The theme's focus ring turns dark in light mode, which would vanish on this strip: it takes the terminal's fixed grey.
         <div className="flex h-9 shrink-0 items-center gap-1 border-b border-terminal-surface bg-terminal-bg pr-2 pl-3 [--color-focus-ring:var(--color-terminal-fg-muted)]">
-          <div ref={tabListRef} role="tablist" aria-label="Terminals" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+          <div ref={tabListRef} role="tablist" aria-label="Terminals" className="flex min-w-0 flex-initial items-center gap-1 overflow-x-auto">
             {tabs.map((tab) => (
               <TabItem
                 key={tab.id}
@@ -126,12 +132,14 @@ export function TerminalDrawer({
                 onClose={() => closeTab(tab.id)}
               />
             ))}
-            {activeTab && (
-              <IconButton label="New terminal" variant="terminal" size="sm" onClick={addShell}>
-                <Plus size={12} aria-hidden />
-              </IconButton>
-            )}
           </div>
+          {/* After the tablist, not in it: a tablist owns only tabs. */}
+          {activeTab && (
+            <IconButton label="New terminal" variant="terminal" size="sm" onClick={addShell}>
+              <Plus size={12} aria-hidden />
+            </IconButton>
+          )}
+          <span className="flex-1" />
           {activeSize && (
             <span className="shrink-0 text-caption tabular-nums text-terminal-fg-subtle">
               {activeSize.cols} × {activeSize.rows}
@@ -211,7 +219,8 @@ function TabItem({ label, folderName, selected, onSelect, onClose }: TabItemProp
         {label}
         {/* Seen, not read: the folder is the same for every tab here, and the terminal's own name says it. */}
         {selected && (
-          <span aria-hidden="true" className="font-mono text-caption text-terminal-fg-subtle">
+          // terminal-fg-muted: -subtle is about 4.4:1 on the selected tab's fill, under 4.5 for 11px text.
+          <span aria-hidden="true" className="font-mono text-caption text-terminal-fg-muted">
             {folderName}
           </span>
         )}

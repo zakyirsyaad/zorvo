@@ -8,6 +8,7 @@ import { HistoryElsewhereNote } from "./components/chat/HistoryElsewhereNote";
 import { ComposerDock, type ComposerHandle } from "./components/ComposerDock";
 import { RemovedAgentPanel } from "./components/RemovedAgentPanel";
 import { ActivityPanel } from "./components/activity/ActivityPanel";
+import { agentNameOr } from "./lib/agent-name";
 import { FilesPanel } from "./components/FilesPanel";
 import { markersOf } from "./lib/file-markers";
 import { EmptyFolderState, FileDropOverlay } from "./components/AppPlaceholders";
@@ -1340,7 +1341,7 @@ export default function App() {
                     headStats={inspector.headStats}
                     headStatsFailed={inspector.headStatsFailed}
                     onJump={(messageId) => setChatJump((prev) => ({ messageId, nonce: (prev?.nonce ?? 0) + 1 }))}
-                    agentName={agents.find((agent) => agent.id === activeSession.profileId)?.name ?? activeSession.profileId}
+                    agentName={agentNameOr(agents, activeSession.profileId)}
                     onShowChanges={() => inspector.show("changes")}
                   />
                 )}

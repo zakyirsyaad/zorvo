@@ -47,13 +47,15 @@ describe("the terminal tab as drawn", () => {
     const second = screen.getByRole("tab", { name: "zsh 2" });
     expect(second).toHaveAttribute("aria-selected", "true");
     expect(second).toHaveClass("bg-terminal-surface", "text-terminal-fg-strong");
-    expect(screen.getByText("agent-desktop", { selector: "span" })).toHaveClass("font-mono", "text-terminal-fg-subtle");
+    // terminal-fg-muted, not -subtle: 11px text on the selected tab's fill needs 4.5:1, and -subtle gives about 4.4.
+    expect(screen.getByText("agent-desktop", { selector: "span" })).toHaveClass("font-mono", "text-terminal-fg-muted");
     expect(screen.getByRole("tab", { name: "zsh" })).toHaveClass("text-terminal-fg-muted");
   });
 
-  it("New terminal is 24px with a 12px icon", () => {
+  it("New terminal is 24px with a 12px icon, after the tablist rather than in it", () => {
     renderDrawer([tab("shell-1", 1)]);
     const add = screen.getByRole("button", { name: "New terminal" });
+    expect(screen.getByRole("tablist", { name: "Terminals" }).contains(add)).toBe(false);
     expect(add).toHaveClass("h-6", "w-6");
     expect(add.querySelector("svg")).toHaveAttribute("width", "12");
   });

@@ -90,6 +90,13 @@ describe("the Activity tab as drawn", () => {
     expect(screen.getByRole("region", { name: /Turn 2/ })).toHaveTextContent("· Try again");
   });
 
+  it("a turn's heading names the turn alone, so a long prompt is not read as its name", async () => {
+    const long = "Refactor the sidebar ".repeat(200);
+    await show({ messages: [user("u1", long), reply("r1", [{ kind: "read", locations: ["/r/a.ts"] }])] });
+    expect(screen.getByRole("heading", { level: 3, name: "Turn 1" }).textContent).toBe("Turn 1");
+    expect(screen.getByRole("region", { name: "Turn 1" })).toHaveTextContent("· Refactor the sidebar");
+  });
+
   it("a row shows verb, target and result", async () => {
     const rejected: ActionCard = {
       id: "c-1",

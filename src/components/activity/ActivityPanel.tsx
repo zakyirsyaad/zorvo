@@ -23,6 +23,7 @@ const FILTERS: { id: Filter; label: string }[] = [
 ];
 
 const ignoreError = () => {};
+const NO_ENTRIES: readonly ActivityEntry[] = [];
 
 export interface ActivityPanelProps {
   messages: readonly ChatMessage[] | undefined;
@@ -83,13 +84,16 @@ function TurnGroup({ turn, isBusy, onJump }: { turn: ActivityTurn; isBusy: boole
   const headingId = `activity-turn-${turn.number ?? "earlier"}`;
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-0.5">
-      <h3 id={headingId} className="flex items-baseline gap-1.5 pb-1.5">
-        <span className="text-ui-sm font-semibold text-fg">{turn.number === null ? "Earlier" : `Turn ${turn.number}`}</span>
-        {turn.startedAt !== null && <span className="text-caption text-fg-subtle">{formatRelativeTime(turn.startedAt)}</span>}
+      {/* The heading is the turn alone: a long prompt would become the heading's and the region's name. */}
+      <div className="flex items-baseline gap-1.5 pb-1.5">
+        <h3 id={headingId} className="shrink-0 text-ui-sm font-semibold text-fg">
+          {turn.number === null ? "Earlier" : `Turn ${turn.number}`}
+        </h3>
+        {turn.startedAt !== null && <span className="shrink-0 text-caption text-fg-subtle">{formatRelativeTime(turn.startedAt)}</span>}
         {turn.prompt !== "" && (
           <span className="min-w-0 flex-1 truncate text-caption text-fg-muted">· {escapeVisible(turn.prompt)}</span>
         )}
-      </h3>
+      </div>
       <ul>
         {turn.entries.map((entry) => (
           <ActivityEntryRow key={entry.key} entry={entry} isBusy={isBusy} onJump={onJump} />
@@ -111,12 +115,15 @@ export function ActivityPanel({ messages, transcript, session, agentName, isRepo
   const stats = startCommit ? since.stats : headStats;
   const statsFailed = startCommit ? since.hasFailed : headStatsFailed;
 
-  const entries = list?.entries ?? [];
+  const entries = list?.entries ?? NO_ENTRIES;
   const counts = (id: Filter) => (id === "all" ? entries.length : entries.filter((entry) => entry.kind === id).length);
-  const matching = filter === "all" ? entries : entries.filter((entry) => entry.kind === filter);
-  // The newest entries, cut before grouping, so a long session's cap says how much it leaves out.
-  const shown = matching.slice(-MAX_ACTIVITY_ROWS);
-  const turns = activityTurns(shown, deferredMessages ?? []);
+  // Grouped once per transcript and filter: the panel renders on every streamed frame of a turn.
+  const { matching, shown, turns } = useMemo(() => {
+    const matching = filter === "all" ? entries : entries.filter((entry) => entry.kind === filter);
+    // The newest entries, cut before grouping, so a long session's cap says how much it leaves out.
+    const shown = matching.slice(-MAX_ACTIVITY_ROWS);
+    return { matching, shown, turns: activityTurns(shown, deferredMessages ?? []) };
+  }, [entries, filter, deferredMessages]);
 
   const hasCheck = isRepository && !session.historyElsewhere && list !== null && isLoaded && !targetsFailed && stats !== null && !statsFailed;
   const showsFiles = filter === "all" || filter === "file";

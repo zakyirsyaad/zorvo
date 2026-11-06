@@ -127,4 +127,10 @@ describe("light theme contrast", () => {
       expect(r, `terminal-fg-muted on ${fill} is ${r.toFixed(2)}:1, needs 3:1`).toBeGreaterThanOrEqual(3);
     }
   });
+
+  it("the selected terminal tab's folder name (terminal-fg-muted, 11px) is readable on terminal-surface", () => {
+    const fixed = (name: string) => css.match(new RegExp(`--color-${name}:\\s*(#[0-9a-fA-F]{6})\\s*;`))![1];
+    const r = ratio(fixed("terminal-fg-muted"), fixed("terminal-surface"));
+    expect(r, `terminal-fg-muted on terminal-surface is ${r.toFixed(2)}:1, needs 4.5:1`).toBeGreaterThanOrEqual(4.5);
+  });
 });

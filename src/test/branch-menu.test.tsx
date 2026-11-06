@@ -20,6 +20,12 @@ function renderMenu(branch: Partial<BranchControl> = {}) {
 }
 
 describe("the branch menu", () => {
+  it("lets a long branch name truncate inside the chips row", () => {
+    renderMenu();
+    const chip = screen.getByRole("button", { name: /^Branch:/ });
+    expect(chip.closest("div.relative")).toHaveClass("min-w-0", "max-w-full");
+  });
+
   it("is 360 wide, with the 30px search field", () => {
     renderMenu();
     expect(screen.getByRole("dialog", { name: "Choose a branch" })).toHaveClass("w-90");

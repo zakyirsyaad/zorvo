@@ -180,6 +180,10 @@ describe("Starting a new session", () => {
     expect(heading.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(card.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(prompt.disabled).toBe(false);
+    // As wide as the composer's card: the 680px column with its 24px gutter outside it.
+    const column = card.closest(".max-w-chat")!;
+    expect(column.className).not.toContain("px-4");
+    expect(column.parentElement!.className).toContain("px-6");
   });
 
   it("does not start an agent until the new session's first message", async () => {

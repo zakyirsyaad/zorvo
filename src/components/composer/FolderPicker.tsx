@@ -69,6 +69,7 @@ export function FolderPicker({ folders, selectedPath, onSelect, onOpenFolder, is
       side="bottom"
       align="start"
       className="w-64"
+      wrapperClassName="min-w-0 max-w-full"
       trigger={
         <button
           type="button"

@@ -13,9 +13,12 @@ export interface NewSessionHeadingProps {
  */
 export function NewSessionHeading({ workspace, unavailableReason }: NewSessionHeadingProps) {
   return (
-    <div className="mx-auto w-full max-w-chat px-6 pt-[120px] pb-4">
-      <h1 className="text-xl font-semibold tracking-[-0.02em] text-fg">{`New session in ${workspace.name}`}</h1>
-      {unavailableReason && <p className="mt-1 text-ui text-fg-muted">{unavailableReason}</p>}
+    // The gutter outside the column, as the composer's and the session list's are, so all of them line up.
+    <div className="px-6 pt-[120px] pb-4">
+      <div className="mx-auto w-full max-w-chat">
+        <h1 className="text-xl font-semibold tracking-[-0.02em] text-fg">{`New session in ${workspace.name}`}</h1>
+        {unavailableReason && <p className="mt-1 text-ui text-fg-muted">{unavailableReason}</p>}
+      </div>
     </div>
   );
 }

@@ -35,6 +35,7 @@ export function BranchPicker({ branch, worktree, isOpen, onToggle, onClose }: Br
       side="bottom"
       align="start"
       className="w-90"
+      wrapperClassName="min-w-0 max-w-full"
       trigger={
         <button
           type="button"

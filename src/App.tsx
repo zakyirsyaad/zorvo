@@ -1109,14 +1109,17 @@ export default function App() {
                 </div>
               )}
               {/* The draft's blockers sit right above the composer, which stays: a prompt can be written meanwhile. */}
-              <div className="mx-auto w-full max-w-chat space-y-3 px-4">
-                <SignInLayer
-                  signIn={signIn}
-                  agents={agents}
-                  agentId={activeSession?.profileId ?? (activeRun ? undefined : newSessionAgent?.id)}
-                  showTerminal={settingsTab === null}
-                />
-                {installPanelAgent ? <AgentInstallPanel agent={installPanelAgent} /> : null}
+              {/* As wide as the composer's card: the gutter sits outside the 680px column, as the dock's does. */}
+              <div className="px-6">
+                <div className="mx-auto w-full max-w-chat space-y-3">
+                  <SignInLayer
+                    signIn={signIn}
+                    agents={agents}
+                    agentId={activeSession?.profileId ?? (activeRun ? undefined : newSessionAgent?.id)}
+                    showTerminal={settingsTab === null}
+                  />
+                  {installPanelAgent ? <AgentInstallPanel agent={installPanelAgent} /> : null}
+                </div>
               </div>
               {/* 24px at the sides and 20px under it, as the canvas draws the composer's dock. */}
               {/* A draft's composer sits inside its column, with the agent's sessions right under it. */}

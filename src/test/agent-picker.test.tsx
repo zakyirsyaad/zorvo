@@ -115,5 +115,8 @@ describe("the draft's agent chip", () => {
     const chip = screen.getByRole("button", { name: /, compare$/ });
     expect(chip).toHaveClass("max-w-full");
     expect(within(chip).getByText([1, 2, 3, 4].map(long).join(", "))).toHaveClass("truncate");
+    // jsdom cannot measure: what lets the chip truncate in a real row is its popover wrapper, a flex item,
+    // shrinking below its content (min-w-0) and staying within the row (max-w-full).
+    expect(chip.closest("div.relative")).toHaveClass("min-w-0", "max-w-full");
   });
 });

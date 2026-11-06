@@ -20,10 +20,15 @@ describe("the draft's column", () => {
     render(<NewSessionHeading workspace={{ name: "agent-desktop", path: "/w/agent-desktop" }} />);
     const heading = screen.getByRole("heading", { name: "New session in agent-desktop" });
     expect(heading).toHaveClass("text-xl", "font-semibold", "tracking-[-0.02em]");
-    const wrapper = heading.parentElement!;
-    expect(wrapper).toHaveClass("mx-auto", "w-full", "max-w-chat", "px-6", "pt-[120px]", "pb-4");
-    expect(wrapper).not.toHaveClass("flex-1");
-    expect(wrapper).not.toHaveClass("items-center");
+    // As the artboard nests it: the 24px gutter outside the 680px column, so the heading lines up with the
+    // chips, the card and the session list, whose gutters are outside their columns too.
+    const column = heading.parentElement!;
+    expect(column).toHaveClass("mx-auto", "w-full", "max-w-chat");
+    expect(column).not.toHaveClass("px-6");
+    const gutter = column.parentElement!;
+    expect(gutter).toHaveClass("px-6", "pt-[120px]", "pb-4");
+    expect(gutter).not.toHaveClass("flex-1");
+    expect(gutter).not.toHaveClass("items-center");
   });
 
   it("puts the agent's sessions 24px under the composer, in the same column", () => {

@@ -77,6 +77,7 @@ export function AgentMultiPicker({ options, selected, isOpen, onToggle, onClose 
       side="bottom"
       align="start"
       className="w-95"
+      wrapperClassName="min-w-0 max-w-full"
       trigger={
         <button
           type="button"

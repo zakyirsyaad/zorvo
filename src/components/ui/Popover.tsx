@@ -20,6 +20,11 @@ export interface PopoverProps {
    */
   panelClassName?: string;
   className?: string;
+  /**
+   * Classes on the wrapper around the trigger: a chip in a wrapping row passes `min-w-0 max-w-full`, so the
+   * wrapper (a flex item) can shrink and its chip truncate instead of widening the row.
+   */
+  wrapperClassName?: string;
   children: ReactNode;
 }
 
@@ -43,6 +48,7 @@ export function Popover({
   align = "start",
   panelClassName,
   className,
+  wrapperClassName,
   children,
 }: PopoverProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -69,7 +75,7 @@ export function Popover({
   const panelClasses = [PANEL, placement, className].filter(Boolean).join(" ");
   return (
     // With its own placement the panel is positioned against a box further out, so the wrapper is not one.
-    <div ref={wrapperRef} className={panelClassName ? undefined : "relative"}>
+    <div ref={wrapperRef} className={[panelClassName ? undefined : "relative", wrapperClassName].filter(Boolean).join(" ") || undefined}>
       <span ref={triggerRef} className="contents">
         {trigger}
       </span>

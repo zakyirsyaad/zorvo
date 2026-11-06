@@ -1110,7 +1110,8 @@ export default function App() {
                 />
                 {installPanelAgent ? <AgentInstallPanel agent={installPanelAgent} /> : null}
               </div>
-              <div hidden={isComposerHidden} className="p-4 flex justify-center">
+              {/* 24px at the sides and 20px under it, as the canvas draws the composer's dock. */}
+              <div hidden={isComposerHidden} className="flex justify-center px-6 pb-5">
                 <ComposerDock
                   controls={compare.isCompare ? {} : composer.controls}
                   isThinking={Boolean(activeSession) && isSessionBusy(activeSessionId)}
@@ -1136,6 +1137,7 @@ export default function App() {
                   commands={compare.isCompare ? [] : composerCommands}
                   sendLabel={compare.agentIds.length >= 2 ? `Start ${compare.agentIds.length} sessions` : undefined}
                   agentName={activeSession ? activeAgent?.name : newSessionAgent?.name}
+                  sessionAgent={activeSession && activeAgent ? { profileId: activeAgent.id, name: activeAgent.name } : undefined}
                   note={composerNote({
                     reviewOwner: review.reviewOwner,
                     compareCount: compare.agentIds.length,

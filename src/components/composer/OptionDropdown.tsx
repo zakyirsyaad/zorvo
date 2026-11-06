@@ -21,6 +21,8 @@ export interface OptionDropdownProps {
   icon?: ReactNode;
   /** A visible heading over the options: "Mode". */
   heading?: string;
+  /** After the value on the chip: a risky mode's shield. */
+  trailing?: ReactNode;
   options: readonly DropdownOption[];
   selected: string | undefined;
   isOpen: boolean;
@@ -152,6 +154,7 @@ export function OptionDropdown({
   showLabel = false,
   description,
   heading,
+  trailing,
 }: OptionDropdownProps) {
   const current = options.find((o) => o.value === selected) ?? options[0];
   const valueLabel = current?.label ?? "";
@@ -182,7 +185,8 @@ export function OptionDropdown({
           {icon}
           {showLabel && <span className="text-fg-subtle">{label}</span>}
           <span className="max-w-[140px] truncate">{chipLabelOf(valueLabel)}</span>
-          <ChevronDown size={11} aria-hidden="true" className="shrink-0 text-fg-subtle" />
+          {trailing}
+          <ChevronDown size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
         </button>
       }
     >

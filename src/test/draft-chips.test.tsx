@@ -35,7 +35,7 @@ describe("the draft's chips", () => {
     const chip = screen.getByRole("button", { name: "Folder: agent-desktop" });
     const prompt = screen.getByRole("textbox", { name: "Prompt" });
     expect(chip.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Branch: main" })).toHaveClass("h-6", "rounded-md");
+    expect(screen.getByRole("button", { name: "Branch: main" })).toHaveClass("h-7");
   });
 });
 

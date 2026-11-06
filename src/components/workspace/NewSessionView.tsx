@@ -27,10 +27,13 @@ export function NewSessionHeading({ workspace, unavailableReason }: NewSessionHe
   );
 }
 
-/** Under the draft's composer, in the same column: the agent's other sessions in the folder, to continue one. */
+/**
+ * Under the draft's composer, in the same column: the agent's other sessions in the folder, to continue one. It
+ * has no scroll of its own: the draft's whole column scrolls, so the card above it stays reachable.
+ */
 export function NewSessionBelow({ sessionList }: { sessionList?: ReactNode }) {
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto px-6 pb-6">
+    <div className="flex flex-1 flex-col px-6 pb-6">
       {sessionList && <div className="mx-auto mt-6 w-full max-w-chat">{sessionList}</div>}
     </div>
   );

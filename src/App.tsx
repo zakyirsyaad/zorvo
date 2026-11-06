@@ -1026,7 +1026,10 @@ export default function App() {
             planSource={activeAgent?.name}
           />
           <div className="flex min-h-0 flex-1">
-            <article className={`${isDiffOpen && inspector.isDiffExpanded ? "hidden" : "flex"} flex-1 flex-col bg-bg relative overflow-hidden`}>
+            {/* A draft's column (heading, chips, a panel, the card, its sessions) scrolls as one, so a short window
+                never puts Send out of reach; a session's chat keeps its own scroll. Only the class changes, so the
+                composer keeps its place in the tree. */}
+            <article className={`${isDiffOpen && inspector.isDiffExpanded ? "hidden" : "flex"} flex-1 flex-col bg-bg relative ${isNewSessionDraft && activeWorkspace ? "overflow-y-auto" : "overflow-hidden"}`}>
               {isDraggingFiles && <FileDropOverlay />}
               <UpdateNotice
                 agents={agentUpdates.unnotified}

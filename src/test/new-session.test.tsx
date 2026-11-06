@@ -245,6 +245,26 @@ describe("Starting a new session", () => {
     expect(dock().className).toContain("pb-5");
   });
 
+  it("scrolls the whole draft column in a short window, and leaves a session's chat its own scroll", async () => {
+    // Heading, chips, a panel and the card have fixed heights: in a short window Send would end up below the
+    // article, out of reach, if only the session list under them scrolled.
+    await act(async () => {
+      render(<App />);
+    });
+    const classes = (element: Element) => element.className.split(/\s+/);
+    const article = () => screen.getByRole("textbox", { name: "Prompt" }).closest("article")!;
+    expect(classes(article())).toContain("overflow-y-auto");
+    expect(classes(article())).not.toContain("overflow-hidden");
+    const below = classes(article().lastElementChild!);
+    expect(below).toContain("flex-1");
+    expect(below).not.toContain("overflow-y-auto");
+
+    await sendFirst();
+
+    expect(classes(article())).toContain("overflow-hidden");
+    expect(classes(article())).not.toContain("overflow-y-auto");
+  });
+
   it("starts a session in the workspace and with the agent picked from its + menu", async () => {
     const invokeSpy = vi.spyOn(tauriInternals(), "invoke");
     await act(async () => {

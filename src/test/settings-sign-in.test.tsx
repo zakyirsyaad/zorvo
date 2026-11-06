@@ -4,6 +4,7 @@ import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-li
 import { AgentCatalog } from "../components/agents/AgentCatalog";
 import { AgentCatalogPanel } from "../components/agents/AgentCatalogPanel";
 import { AgentSignIn, sessionWarning } from "../components/agents/AgentSignIn";
+import { SignInChip } from "../components/agents/SignInChip";
 import { plainReason } from "../lib/agent-sign-in";
 import { useAgentSignIn } from "../hooks/useAgentSignIn";
 import { useAgentSignInStatus } from "../hooks/useAgentSignInStatus";
@@ -51,15 +52,24 @@ function fakeSignIn(overrides: Partial<SettingsSignIn> = {}): SettingsSignIn {
   };
 }
 
+/** The chip and the opened panel, as an agent's row draws them. */
 function renderRow(signIn: SettingsSignIn, agentName = "Claude Agent") {
-  render(<AgentSignIn agentId="claude-acp" agentName={agentName} signIn={signIn} />);
+  render(
+    <>
+      <SignInChip state={signIn.stateOf("claude-acp")} />
+      <AgentSignIn agentId="claude-acp" agentName={agentName} signIn={signIn} />
+    </>,
+  );
 }
+
+/** The chip's words, as a screen reader reads them. */
+const chip = () => screen.getByText(/^Sign-in:/).parentElement as HTMLElement;
 
 describe("the sign-in of an agent row", () => {
   it("shows Ready for an agent seen signed in", () => {
     renderRow(fakeSignIn({ stateOf: () => "ready" }));
 
-    expect(screen.getByRole("group", { name: "Claude Agent sign-in" })).toHaveTextContent("Ready");
+    expect(chip()).toHaveTextContent("Sign-in: Ready");
     expect(screen.queryByRole("button", { name: /^Sign in with/ })).toBeNull();
   });
 
@@ -67,7 +77,7 @@ describe("the sign-in of an agent row", () => {
     const signIn = fakeSignIn();
     renderRow(signIn);
 
-    expect(screen.getByRole("group", { name: "Claude Agent sign-in" })).toHaveTextContent("Not checked");
+    expect(chip()).toHaveTextContent("Sign-in: Not checked");
     fireEvent.click(screen.getByRole("button", { name: "Check sign-in" }));
 
     expect(signIn.check).toHaveBeenCalledWith("claude-acp");
@@ -77,7 +87,7 @@ describe("the sign-in of an agent row", () => {
     const signIn = fakeSignIn({ stateOf: () => "needed", methodsOf: () => [claudeLogin, apiKey] });
     renderRow(signIn);
 
-    expect(screen.getByRole("group", { name: "Claude Agent sign-in" })).toHaveTextContent("Sign in");
+    expect(chip()).toHaveTextContent("Sign-in: Sign in");
     fireEvent.click(screen.getByRole("button", { name: "Sign in with Claude Subscription" }));
 
     expect(signIn.signInWith).toHaveBeenCalledWith("claude-acp", "claude-ai-login");
@@ -938,5 +948,47 @@ describe("Try again after a failed login from Settings", () => {
 
     const sent = { profileId: "claude-acp", cwd: CWD, methodId: "oauth-personal" };
     expect(argsOf(spy, "acp_authenticate")).toEqual([sent, sent]);
+  });
+});
+
+describe("the sign-in panel as drawn", () => {
+  it("methods are a bordered list with outline buttons", () => {
+    const { container } = render(
+      <AgentSignIn agentId="claude-acp" agentName="Claude Agent" signIn={fakeSignIn({ stateOf: () => "needed", methodsOf: () => [claudeLogin, apiKey] })} />,
+    );
+    const button = screen.getByRole("button", { name: "Sign in with Claude Subscription" });
+    const list = button.closest("ul") as HTMLElement;
+    expect(list).toHaveClass("rounded-lg", "border", "border-border", "bg-surface-2");
+    expect(button.className).toContain("border-border-strong");
+    expect(button.querySelector("svg")).toBeNull();
+    expect(container.querySelector(".bg-attention-surface")).toBeNull();
+  });
+
+  it("a method Zorvo cannot run reads In your shell", () => {
+    render(<AgentSignIn agentId="claude-acp" agentName="Claude Agent" signIn={fakeSignIn({ stateOf: () => "needed", methodsOf: () => [claudeLogin, apiKey] })} />);
+    const row = screen.getByText("API Key").closest("li") as HTMLElement;
+    expect(row).toHaveTextContent("In your shell");
+    expect(row.querySelector("button")).toBeNull();
+  });
+
+  it("Check sign-in sits beside the warning", () => {
+    render(<AgentSignIn agentId="claude-acp" agentName="Claude Agent" signIn={fakeSignIn()} />);
+    const button = screen.getByRole("button", { name: "Check sign-in" });
+    const warning = document.getElementById(button.getAttribute("aria-describedby") ?? "") as HTMLElement;
+    expect(warning).not.toBeNull();
+    expect(warning.parentElement).toBe(button.parentElement);
+    expect(button.querySelector("svg")).toBeNull();
+  });
+
+  it("the chip shows each state", () => {
+    const { rerender, container } = render(<SignInChip state="ready" />);
+    expect(container.firstElementChild).toHaveTextContent("Sign-in: Ready");
+    expect(container.querySelector(".bg-status-running")).not.toBeNull();
+    rerender(<SignInChip state="needed" />);
+    expect(container.firstElementChild).toHaveClass("border-status-attention", "text-status-attention");
+    expect(container.querySelector(".bg-status-attention")).not.toBeNull();
+    rerender(<SignInChip state="unchecked" />);
+    expect(container.firstElementChild).toHaveTextContent("Sign-in: Not checked");
+    expect(container.querySelector("[class*='bg-']")).toBeNull();
   });
 });

@@ -137,7 +137,7 @@ export function TerminalView({
   // would grow by a row on every fit.
   return (
     <div data-testid="terminal-view" aria-label={label} className="relative min-h-0 flex-1 overflow-hidden bg-terminal-bg">
-      <div ref={containerRef} className="absolute inset-x-3 inset-y-2" />
+      <div ref={containerRef} className="absolute inset-x-3.5 inset-y-3" />
     </div>
   );
 }

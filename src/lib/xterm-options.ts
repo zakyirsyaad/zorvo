@@ -3,8 +3,10 @@ import type { ITerminalOptions } from '@xterm/xterm';
 /** The app's terminal look, shared by the main terminal view and the drawer. */
 export const XTERM_OPTIONS: ITerminalOptions = {
   cursorBlink: true,
-  cursorStyle: 'bar',
+  cursorStyle: 'block',
   fontSize: 12,
+  // 18px rows at 12px, as drawn.
+  lineHeight: 1.5,
   // --font-mono
   fontFamily: '"Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace',
   theme: {

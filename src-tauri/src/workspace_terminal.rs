@@ -164,13 +164,25 @@ pub fn pty_event_route(id: &str) -> Option<PtyRoute> {
     }
 }
 
-/// A shell that was started: its id, and the folder it runs in as the backend
-/// resolved it (symlinks followed), which is how the UI keys the shell's tab.
+/// A shell that was started: its id, the folder it runs in as the backend
+/// resolved it (symlinks followed), which is how the UI keys the shell's tab,
+/// and the shell's program name, which names the tab.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenedTerminal {
     pub id: String,
     pub folder: String,
+    pub shell: String,
+}
+
+/// The file name of the shell program (`zsh` for `/bin/zsh`), for a tab's name;
+/// "shell" when the path names no file.
+pub fn shell_name(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .map_or_else(|| "shell".to_string(), str::to_string)
 }
 
 /// Starts a login shell in `folder`, resolved to its canonical path, with the
@@ -185,10 +197,12 @@ pub fn open_shell(
         .ok_or_else(|| format!("Folder {} is not valid UTF-8", folder.display()))?;
     let folder = canonical_root(folder)?;
     let id = next_terminal_id();
-    start_shell(manager, &id, &folder, &shell_from(env))?;
+    let shell = shell_from(env);
+    start_shell(manager, &id, &folder, &shell)?;
     Ok(OpenedTerminal {
         id,
         folder: folder.to_string_lossy().into_owned(),
+        shell: shell_name(&shell),
     })
 }
 

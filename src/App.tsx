@@ -1369,7 +1369,6 @@ export default function App() {
                   <TerminalDrawer
                     folderPath={filesFolder.path}
                     folderName={filesFolder.name}
-                    branch={workspaceDetails?.branch ?? undefined}
                     terminals={terminals}
                     startingFor={terminalDrawer.startingFor}
                     onStartShell={terminalDrawer.startShell}

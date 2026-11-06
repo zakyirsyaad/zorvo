@@ -31,6 +31,13 @@ describe("primitive sizes from the canvas", () => {
     expect(back).not.toHaveClass("text-fg-muted");
   });
 
+  it("IconButton has a terminal variant that stays light on the dark strip", () => {
+    render(<IconButton label="New terminal" variant="terminal" size="sm">x</IconButton>);
+    const add = screen.getByRole("button", { name: "New terminal" });
+    expect(add).toHaveClass("text-terminal-fg-muted", "enabled:hover:bg-terminal-surface");
+    expect(add).not.toHaveClass("text-fg-muted");
+  });
+
   it("IconButton has a 26px size for the inspector's bars", () => {
     render(<IconButton label="Refresh" size="row">x</IconButton>);
     expect(screen.getByRole("button", { name: "Refresh" })).toHaveClass("h-6.5", "w-6.5");

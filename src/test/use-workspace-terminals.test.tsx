@@ -49,7 +49,7 @@ beforeEach(() => {
   attached.length = 0;
   nextShell = 1;
   canonicalFolders = {};
-  openImpl = async (path) => ({ id: `shell-${nextShell++}`, folder: canonical(path) });
+  openImpl = async (path) => ({ id: `shell-${nextShell++}`, folder: canonical(path), shell: "zsh" });
   closeImpl = async () => undefined;
   sweepImpl = async () => 0;
   const real = internals().invoke;
@@ -97,7 +97,7 @@ describe("useWorkspaceTerminals", () => {
     expect(id).toBe("shell-1");
     expect(callsTo(invokeSpy, "workspace_terminal_open")[0][1]).toEqual({ path: "/w/a" });
     expect(result.current.tabsFor("/w/a")).toEqual([
-      { id: "shell-1", folderPath: "/w/a", number: 1, status: "live" },
+      { id: "shell-1", folderPath: "/w/a", number: 1, status: "live", shell: "zsh" },
     ]);
   });
 
@@ -138,7 +138,7 @@ describe("useWorkspaceTerminals", () => {
     await open(result, "/link");
 
     expect(result.current.tabsFor("/link")).toEqual([
-      { id: "shell-1", folderPath: "/real", number: 1, status: "live" },
+      { id: "shell-1", folderPath: "/real", number: 1, status: "live", shell: "zsh" },
     ]);
     expect(result.current.tabsFor("/real")).toHaveLength(1);
 

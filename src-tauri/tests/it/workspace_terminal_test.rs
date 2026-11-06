@@ -10,7 +10,8 @@ use zorvo_lib::background_processes::{read_processes, subtree_of};
 use zorvo_lib::pty_session::{PtyEvent, PtySessionManager};
 use zorvo_lib::workspace_terminal::{
     close, end_all, end_all_sessions, end_sessions, event_payload, is_workspace_terminal_id,
-    next_terminal_id, open_shell, pty_event_route, shell_from, start_shell, PtyRoute, EVENT,
+    next_terminal_id, open_shell, pty_event_route, shell_from, shell_name, start_shell, PtyRoute,
+    EVENT,
 };
 
 const WAIT: Duration = Duration::from_secs(5);
@@ -400,14 +401,34 @@ fn opening_a_shell_refuses_a_folder_that_is_not_there() {
 }
 
 #[test]
-fn the_open_result_serializes_its_id_and_folder() {
+fn the_open_result_serializes_its_id_folder_and_shell() {
     let opened = zorvo_lib::workspace_terminal::OpenedTerminal {
         id: "shell-1".to_string(),
         folder: "/w/a".to_string(),
+        shell: "zsh".to_string(),
     };
 
     assert_eq!(
         serde_json::to_value(&opened).expect("json"),
-        json!({ "id": "shell-1", "folder": "/w/a" })
+        json!({ "id": "shell-1", "folder": "/w/a", "shell": "zsh" })
     );
+}
+
+#[test]
+fn opened_terminal_names_its_shell() {
+    assert_eq!(shell_name("/bin/zsh"), "zsh");
+    assert_eq!(shell_name("/usr/local/bin/fish"), "fish");
+    assert_eq!(shell_name(""), "shell");
+}
+
+#[cfg(unix)]
+#[test]
+fn opening_a_shell_reports_the_shell_it_started() {
+    let folder = unique_dir("named");
+    let manager = PtySessionManager::new(Box::new(|_| {}));
+
+    let opened = open_shell(&manager, &folder, &env_with_shell("/bin/sh")).expect("open");
+    let _ = manager.kill_session(&opened.id);
+
+    assert_eq!(opened.shell, "sh");
 }

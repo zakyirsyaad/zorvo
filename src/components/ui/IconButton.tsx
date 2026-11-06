@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes, ReactNode, Ref } from "react";
 export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   label: string;
   /** Outline: a second action beside the view's one primary (Stop, where Send was). */
-  variant?: "ghost" | "primary" | "outline";
+  variant?: "ghost" | "primary" | "outline" | "terminal";
   /** 22px and 24px for actions inside a row, 26px (`row`) for the inspector's header and path bars, 28px (the default) for bars. */
   size?: "xs" | "sm" | "row" | "md";
   /** A ghost button's colour: muted (the default) or the secondary text colour the canvas gives row actions. */
@@ -37,6 +37,9 @@ const VARIANTS: Record<NonNullable<IconButtonProps["variant"]>, string> = {
     "rounded-lg bg-primary text-on-primary enabled:hover:bg-primary-hover " +
     "disabled:bg-surface-hover disabled:text-fg-muted",
   outline: "rounded-lg border border-border-strong text-fg enabled:hover:bg-surface-hover disabled:opacity-40",
+  // On the terminal's strip, which stays dark in both themes.
+  terminal:
+    "rounded-md text-terminal-fg-muted enabled:hover:bg-terminal-surface enabled:hover:text-terminal-fg-strong disabled:opacity-40",
 };
 
 export function IconButton({

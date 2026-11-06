@@ -45,7 +45,7 @@ Settings is a page in the main window, not a dialog. It takes the place of the s
   - Arrow keys move and pick, as in a native radio group.
   - Each tile previews its theme in an 84px window, whose colours are fixed (`.theme-sample-light` and `.theme-sample-dark` in `globals.css`), so a preview shows its theme whatever theme is in use. System is half light, half dark.
 - **Agents**: "The agents Zorvo can run. Zorvo installs them in its own folder, or uses the ones already on this Mac.", 24px between its parts.
-  - **Search row**: a 32px search (`border-strong`, `surface-2`, radius 8, 14px icon) and **Check again** (`Button size="lg"` with a 12px refresh icon). Under it, "Registry checked 8 hours ago" in `caption` `fg-subtle`.
+  - **Search row**: a 32px search (`border-strong`, `surface-2`, radius 8, 14px icon) and **Check again** (`Button size="field"`: 32px, 12px regular text, with a 12px refresh icon). Under it, "Registry checked 8 hours ago" in `caption` `fg-subtle`.
   - **Groups** "In use" and "Available", with no counts, each a card of rows. A group with no rows is not drawn.
   - **Row**: one line, 12px 16px padding, 12px gaps.
     - A 28px `surface-hover` logo tile (radius 7), the name, and under it:

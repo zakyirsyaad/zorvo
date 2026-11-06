@@ -76,6 +76,7 @@ describe("primitive sizes from the canvas", () => {
     ["ghost", "md", "font-normal"],
     ["ghost", "lg", "font-medium"],
     ["primary", "field", "font-medium"],
+    ["danger", "field", "font-medium"],
     ["outline", "field", "font-normal"],
     ["ghost", "field", "font-normal"],
   ] as const)("a %s %s Button carries exactly one weight class, %s", (variant, size, expected) => {

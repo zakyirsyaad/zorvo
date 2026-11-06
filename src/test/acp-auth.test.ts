@@ -115,6 +115,41 @@ describe("authCopy", () => {
   });
 });
 
+describe("GLM Agent's methods", () => {
+  // As glm-acp-agent 1.15.0 reports them in `initialize`: one with no type, one `env_var`.
+  const glm = [
+    {
+      id: "z-ai-api-key",
+      name: "Z.AI API key",
+      description: "Set Z_AI_API_KEY in the environment, or run `glm-acp-agent --setup` once to store the key on disk.",
+    },
+    {
+      type: "env_var",
+      id: "z_ai_api_key",
+      name: "Z.AI API key",
+      description: "API key for the Z.AI / Zhipu AI service.",
+      link: "https://z.ai/manage-apikey/apikey-list",
+      vars: [{ name: "Z_AI_API_KEY", label: "Z.AI API key", secret: true, optional: false }],
+    },
+  ];
+
+  it("explains both, so the panel shows no button and no key field", () => {
+    const methods = parseAuthRequired(`ACP_AUTH_REQUIRED:${JSON.stringify(glm)}`);
+
+    expect(methods?.map((method) => method.kind)).toEqual(["explain", "explain"]);
+    expect(methods?.[0].description).toBe("Set Z_AI_API_KEY in the environment, or run glm-acp-agent --setup once to store the key on disk.");
+  });
+
+  it("leads with the key it needs and says Zorvo never stores it", () => {
+    const methods = parseAuthRequired(`ACP_AUTH_REQUIRED:${JSON.stringify(glm)}`) ?? [];
+
+    const copy = authCopy("GLM Agent", methods);
+
+    expect(copy.lead).toBe("GLM Agent needs an API key or another account setting before it can start.");
+    expect(copy.keysNote).toMatch(/^Zorvo never stores keys\./);
+  });
+});
+
 describe("an agent's own setup", () => {
   const setup: AuthMethod = { id: "openai", name: "Use OpenAI API key", kind: "setup" };
   const agent: AuthMethod = { id: "browser", name: "Sign in", kind: "agent" };

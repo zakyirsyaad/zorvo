@@ -1,0 +1,180 @@
+//! Whether an agent's refusal is a request to sign in.
+
+use serde_json::Value;
+
+/// ACP's "authentication required" error code.
+const AUTH_REQUIRED: i64 = -32000;
+/// JSON-RPC's "internal error", which GLM Agent answers a prompt with when it has no API key.
+const INTERNAL_ERROR: i64 = -32603;
+
+/// Words that make a refusal's message one about signing in, once everything but
+/// letters is dropped: "Not logged in", "log-in", "signed in", "API key is
+/// missing" (Gemini CLI) and "No credentials" all match.
+const SIGN_IN_WORDS: [&str; 7] = [
+    "auth",
+    "login",
+    "loggedin",
+    "signin",
+    "signedin",
+    "apikey",
+    "credential",
+];
+
+/// Whether an agent's refusal says it needs a sign-in. ACP's code for that is `-32000`
+/// ("Authentication required"), but it does not fix the message, and the code is also
+/// JSON-RPC's generic server error. So an answer counts when its message is about
+/// signing in, or when the agent offers sign-in methods (`offers_sign_in`) and the
+/// refusal is of a request ACP says may fail for want of one: a session that cannot
+/// open, or a prompt. Gemini CLI, for one, words it "API key is missing".
+///
+/// GLM Agent opens sessions without a key and fails the first prompt with `-32603`
+/// ("Internal error"), naming the key only in `data.details`. That code means nothing
+/// by itself, so such a refusal counts only when the agent offers methods for the
+/// request (`offers_sign_in`) and its message, `data.details` or `data.message` has a
+/// word from [`SIGN_IN_WORDS`].
+pub(super) fn is_auth_required(error: &Value, offers_sign_in: bool) -> bool {
+    match error["code"].as_i64() {
+        Some(AUTH_REQUIRED) => offers_sign_in || mentions_sign_in(&error["message"]),
+        Some(INTERNAL_ERROR) => {
+            offers_sign_in
+                && [
+                    &error["message"],
+                    &error["data"]["details"],
+                    &error["data"]["message"],
+                ]
+                .into_iter()
+                .any(mentions_sign_in)
+        }
+        _ => false,
+    }
+}
+
+/// Whether `text` (a JSON string; anything else never does) has a sign-in word.
+fn mentions_sign_in(text: &Value) -> bool {
+    // Letters only, so spacing and punctuation do not matter.
+    let letters: String = text
+        .as_str()
+        .unwrap_or_default()
+        .chars()
+        .filter(char::is_ascii_alphabetic)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    SIGN_IN_WORDS.iter().any(|word| letters.contains(word))
+}
+
+/// Whether `auth_methods` (from `initialize`) lists at least one way to sign in.
+pub(super) fn offers_sign_in(auth_methods: &Value) -> bool {
+    auth_methods
+        .as_array()
+        .is_some_and(|methods| !methods.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    /// What `glm-acp-agent@1.15.0` answers the first prompt with when `Z_AI_API_KEY` is unset.
+    fn glm_refusal() -> Value {
+        json!({
+            "code": -32603,
+            "message": "Internal error",
+            "data": {
+                "details": "No API key found. Set the Z_AI_API_KEY environment variable, or run `glm-acp-agent --setup` to store one."
+            }
+        })
+    }
+
+    #[test]
+    fn counts_glms_missing_key_refusal_when_the_agent_offers_methods() {
+        assert!(is_auth_required(&glm_refusal(), true));
+    }
+
+    #[test]
+    fn counts_a_32603_whose_data_message_names_the_sign_in() {
+        let error = json!({
+            "code": -32603,
+            "message": "Internal error",
+            "data": { "message": "Not logged in" }
+        });
+
+        assert!(is_auth_required(&error, true));
+    }
+
+    #[test]
+    fn counts_a_32603_whose_own_message_names_the_sign_in() {
+        let error = json!({ "code": -32603, "message": "Invalid API key" });
+
+        assert!(is_auth_required(&error, true));
+    }
+
+    #[test]
+    fn ignores_a_32603_without_a_sign_in_word() {
+        let error = json!({
+            "code": -32603,
+            "message": "Internal error",
+            "data": { "details": "Cannot read properties of undefined" }
+        });
+
+        assert!(!is_auth_required(&error, true));
+    }
+
+    #[test]
+    fn ignores_a_32603_with_no_details_at_all() {
+        let error = json!({ "code": -32603, "message": "Internal error" });
+
+        assert!(!is_auth_required(&error, true));
+    }
+
+    #[test]
+    fn ignores_a_32603_from_an_agent_that_offers_no_methods() {
+        assert!(!is_auth_required(&glm_refusal(), false));
+    }
+
+    #[test]
+    fn ignores_details_that_are_not_text() {
+        let error = json!({
+            "code": -32603,
+            "message": "Internal error",
+            "data": { "details": { "hint": "No API key found" } }
+        });
+
+        assert!(!is_auth_required(&error, true));
+    }
+
+    #[test]
+    fn ignores_other_codes_even_with_a_sign_in_word() {
+        let error = json!({
+            "code": -32602,
+            "message": "Internal error",
+            "data": { "details": "No API key found" }
+        });
+
+        assert!(!is_auth_required(&error, true));
+    }
+
+    #[test]
+    fn keeps_the_32000_rules() {
+        let plain = json!({ "code": -32000, "message": "Internal error: disk full" });
+        let worded = json!({ "code": -32000, "message": "Not logged in" });
+        // A 32000 reads its message only: the sign-in word in `data.details` is not enough.
+        let hidden = json!({
+            "code": -32000,
+            "message": "Internal error",
+            "data": { "details": "No API key found" }
+        });
+
+        assert!(is_auth_required(&plain, true));
+        assert!(!is_auth_required(&plain, false));
+        assert!(is_auth_required(&worded, false));
+        assert!(!is_auth_required(&hidden, false));
+    }
+
+    #[test]
+    fn offers_sign_in_only_for_a_non_empty_method_list() {
+        assert!(offers_sign_in(&json!([{ "id": "z-ai-api-key" }])));
+        assert!(!offers_sign_in(&json!([])));
+        assert!(!offers_sign_in(&Value::Null));
+    }
+}

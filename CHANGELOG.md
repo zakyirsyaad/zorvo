@@ -31,6 +31,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **A compare run, the cards that stand in the way, the sign-in terminal, the empty window and the update card look as designed:** each compare agent says how long its turn has run ("Working · 12 min") or took ("Finished · 8 min"), sign-in methods are listed with their own buttons, and the update card says what a restart stops ("2 agents mid-turn and 1 shell").
 - **Notices appear as a card in the bottom right corner** instead of a strip across the top of the chat, so they no longer push the conversation down. A long message wraps inside the card, and **Dismiss notice** closes it as before.
 
+### Fixed
+
+- **GLM Agent without an API key now asks you to sign in.** It opens a session without a key and fails the first message with a generic "Internal error" that names the key only in its details. Zorvo now reads that as a sign-in request: the agent's chip turns to Sign in, the panel explains that it needs `Z_AI_API_KEY` in your shell (Zorvo never stores keys), and your message is sent again after you check.
+
 ## [0.8.1] - 2026-11-04
 
 ### Fixed

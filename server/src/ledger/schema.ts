@@ -64,6 +64,13 @@ const STATEMENTS = [
     outstanding_usd INTEGER NOT NULL,
     taken_at INTEGER NOT NULL
   )`,
+  // Replaced on every snapshot refresh with the keys that belong to devices (nano-USD).
+  // limit_nano is NULL for a key without a spend limit.
+  `CREATE TABLE IF NOT EXISTS key_usage (
+    key_id TEXT PRIMARY KEY,
+    limit_nano INTEGER,
+    usage_nano INTEGER
+  )`,
   // Fixed-window counters, e.g. key 'devices:<ip>'.
   `CREATE TABLE IF NOT EXISTS ratelimits (
     key TEXT PRIMARY KEY,

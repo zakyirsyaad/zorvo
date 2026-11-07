@@ -1,11 +1,25 @@
 import { DurableObject } from "cloudflare:workers";
 import { parseConfig, type Config, type Env } from "../config";
 import { creditsForPackage } from "../credits";
+import { decrypt, encrypt } from "../crypto";
+import { NearAiClient } from "../nearai";
 import { applySchema } from "./schema";
 import { computeStock, type StockView } from "./stock";
 
 const RESERVATION_MS = 30 * 60 * 1000;
 const SNAPSHOT_ID = 1;
+const OPERATOR_ID = 1;
+/** How long a fresh access token is trusted; the operator session is refreshed on a 30-minute cadence (spec 7.6). */
+const ACCESS_TOKEN_TTL_MS = 30 * 60 * 1000;
+/** A cached access token is renewed this long before it expires. */
+const ACCESS_TOKEN_MARGIN_MS = 60 * 1000;
+const MAX_STORABLE = BigInt(Number.MAX_SAFE_INTEGER);
+
+/** Brings an upstream amount into the range `setSnapshot` and SQLite accept, so one odd value cannot stop updates. */
+function clampNano(nano: bigint): bigint {
+  if (nano < 0n) return 0n;
+  return nano > MAX_STORABLE ? MAX_STORABLE : nano;
+}
 
 /** SQLite hands back plain numbers, so an amount must stay exactly representable as one. */
 function storable(nano: bigint): number {
@@ -21,6 +35,9 @@ function storable(nano: bigint): number {
 export class Ledger extends DurableObject<Env> {
   private readonly sql: SqlStorage;
   private parsedConfig: Config | undefined;
+  private refreshing: Promise<string> | undefined;
+  /** The `fetch` used for NEAR AI calls; tests replace it. */
+  fetcher: typeof fetch = (input, init) => fetch(input, init);
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -166,5 +183,101 @@ export class Ledger extends DurableObject<Env> {
   /** Gives a reservation's credits back to the stock and to the device's room. */
   releaseReservation(topupId: string): void {
     this.sql.exec("DELETE FROM reservations WHERE topup_id = ?", topupId);
+  }
+
+  private secret(name: "KEY_ENCRYPTION_KEY" | "OPERATOR_REFRESH_TOKEN"): string {
+    const value = this.env[name];
+    if (value === undefined || value === "") throw new Error(`Missing secret ${name}`);
+    return value;
+  }
+
+  private nearAi(): NearAiClient {
+    return new NearAiClient(this.config().nearAiBase, this.fetcher);
+  }
+
+  /**
+   * A NEAR AI access token for the operator. The cached one is used while it has more than a minute
+   * left; otherwise it is refreshed, with at most one refresh in flight, because every refresh
+   * spends the refresh token (spec 7.5, race 6).
+   */
+  accessToken(now: number): Promise<string> {
+    const row = this.sql
+      .exec<{ access_token: string | null; access_expires_at: number | null }>(
+        "SELECT access_token, access_expires_at FROM operator WHERE id = ?",
+        OPERATOR_ID,
+      )
+      .toArray()[0];
+    if (row?.access_token && row.access_expires_at !== null && row.access_expires_at - ACCESS_TOKEN_MARGIN_MS > now) {
+      return Promise.resolve(row.access_token);
+    }
+    this.refreshing ??= this.refreshOperator(now).finally(() => {
+      this.refreshing = undefined;
+    });
+    return this.refreshing;
+  }
+
+  /** The stored refresh token, seeded from the `OPERATOR_REFRESH_TOKEN` secret the first time. */
+  private async operatorRefreshToken(): Promise<string> {
+    const keyB64 = this.secret("KEY_ENCRYPTION_KEY");
+    const row = this.sql
+      .exec<{ refresh_token_ciphertext: string }>("SELECT refresh_token_ciphertext FROM operator WHERE id = ?", OPERATOR_ID)
+      .toArray()[0];
+    if (row) return decrypt(keyB64, row.refresh_token_ciphertext);
+    const seed = this.secret("OPERATOR_REFRESH_TOKEN");
+    this.sql.exec(
+      "INSERT INTO operator (id, refresh_token_ciphertext, version) VALUES (?, ?, 0)",
+      OPERATOR_ID,
+      await encrypt(keyB64, seed),
+    );
+    return seed;
+  }
+
+  private async refreshOperator(now: number): Promise<string> {
+    const refreshToken = await this.operatorRefreshToken();
+    const fresh = await this.nearAi().refresh(refreshToken);
+    // The old refresh token is spent: store the new one before anyone can use the new access token.
+    this.sql.exec(
+      `UPDATE operator SET refresh_token_ciphertext = ?, access_token = ?, access_expires_at = ?, version = version + 1
+       WHERE id = ?`,
+      await encrypt(this.secret("KEY_ENCRYPTION_KEY"), fresh.refreshToken),
+      fresh.accessToken,
+      now + ACCESS_TOKEN_TTL_MS,
+      OPERATOR_ID,
+    );
+    return fresh.accessToken;
+  }
+
+  /**
+   * Reads the organization balance and the device keys from NEAR AI and records them: the stock
+   * snapshot, and each device key's limit and usage in `key_usage`. The device list is read after
+   * the calls, so a key created meanwhile is not mistaken for a stranger's.
+   */
+  async refreshSnapshot(now: number): Promise<void> {
+    const cfg = this.config();
+    const client = this.nearAi();
+    const access = await this.accessToken(now);
+    const remaining = await client.orgRemainingNano(access, cfg.organizationId);
+    const keys = await client.listKeys(access, cfg.workspaceId);
+
+    const deviceKeys = new Set(
+      this.sql
+        .exec<{ nearai_key_id: string }>("SELECT nearai_key_id FROM devices WHERE nearai_key_id IS NOT NULL")
+        .toArray()
+        .map((row) => row.nearai_key_id),
+    );
+    const ours = keys.filter((key) => deviceKeys.has(key.id));
+    // Keys the server creates always have a limit; a key without one counts as 0 outstanding.
+    const outstanding = ours.reduce((sum, key) => (key.limitNano !== null && key.limitNano > key.usageNano ? sum + key.limitNano - key.usageNano : sum), 0n);
+
+    this.sql.exec("DELETE FROM key_usage");
+    for (const key of ours) {
+      this.sql.exec(
+        "INSERT INTO key_usage (key_id, limit_nano, usage_nano) VALUES (?, ?, ?)",
+        key.id,
+        key.limitNano === null ? null : Number(clampNano(key.limitNano)),
+        Number(clampNano(key.usageNano)),
+      );
+    }
+    this.setSnapshot(clampNano(remaining), clampNano(outstanding), now);
   }
 }

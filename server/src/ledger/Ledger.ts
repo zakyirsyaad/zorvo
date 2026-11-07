@@ -1,10 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
 import { parseConfig, type Config, type Env } from "../config";
-import { balanceCredits, creditsForPackage, creditsFromNano, spendLimitNano, usdcAmount } from "../credits";
-import { decrypt, encrypt, sha256Hex } from "../crypto";
+import { creditsForPackage, creditsFromNano, usdcAmount } from "../credits";
+import { decrypt } from "../crypto";
 import { UPSTREAM_TIMEOUT_MS } from "../http";
-import { NearAiClient, NearAiError } from "../nearai";
+import { NearAiClient } from "../nearai";
 import { chargesUsdc, PingPayClient } from "../pingpay";
+import { balanceFor, loadModels, models, type BalanceContext, type BalanceView, type ModelInfo, type ModelsContext } from "./balance";
 import {
   ALARM_INTERVAL_MS,
   describeError,
@@ -15,6 +16,7 @@ import {
   type FulfilmentContext,
   type SessionOutcome,
 } from "./fulfilment";
+import { operatorSession, refreshOperator, withAccessToken, type OperatorContext, type OperatorSession } from "./operator";
 import { promoRefusal, recoverDevice, redeemPromo, savePromo, type PromoContext, type PromoResult } from "./promo-recover";
 import { applySchema } from "./schema";
 import { canMove, type TopupStatus } from "./status";
@@ -33,21 +35,10 @@ const CHECKOUT_CANCELLED_URL = "https://github.com/zakyirsyaad/zorvo/blob/main/s
 const FINAL_UNPAID = new Set(["FAILED", "REFUNDED"]);
 
 const SNAPSHOT_ID = 1;
-const OPERATOR_ID = 1;
-/** The operator's NEAR AI access token and the version of the `operator` row it was read at. */
-type OperatorSession = { token: string; version: number };
-/** How long a fresh access token is trusted; the operator session is refreshed on a 30-minute cadence (spec 7.6). */
-const ACCESS_TOKEN_TTL_MS = 30 * 60 * 1000;
-/** A cached access token is renewed this long before it expires. */
-const ACCESS_TOKEN_MARGIN_MS = 60 * 1000;
 const MAX_STORABLE = BigInt(Number.MAX_SAFE_INTEGER);
 /** A top-up is refused for stock when the snapshot is this old and cannot be refreshed. */
 const SNAPSHOT_FAIL_CLOSED_MS = 10 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
-/** A device's Refresh reads NEAR AI at most this often, and so does the server as a whole. */
-const FRESH_BALANCE_MS = 30 * 1000;
-/** How long the model list is served without asking NEAR AI again. */
-const MODELS_CACHE_MS = 10 * 60 * 1000;
 /** An alert POST gives up after this long, so a slow hook cannot hold the alarm. */
 const ALERT_TIMEOUT_MS = 10 * 1000;
 
@@ -64,15 +55,7 @@ function storable(nano: bigint): number {
   return value;
 }
 
-export type BalanceView = {
-  credits: number;
-  usedCredits: number;
-  keyReady: boolean;
-  /** When the snapshot behind the numbers was taken, ISO-8601. */
-  updatedAt: string;
-};
-
-export type ModelInfo = { id: string; inputPerM: number; outputPerM: number };
+export type { BalanceView, ModelInfo } from "./balance";
 
 /**
  * The only writer of money state. Every method runs its reads and writes synchronously (SQLite
@@ -222,90 +205,42 @@ export class Ledger extends DurableObject<Env> {
     return { availableCredits, yourRoomCredits, packages, updatedAt: new Date(takenAt).toISOString() };
   }
 
-  /**
-   * The device's balance from its `key_usage` row. A key credited since the last snapshot normally
-   * has a row from `recordKeyLimit`; without one the limit for the credits bought and no usage is
-   * used. With `fresh` the snapshot is refreshed first (see `refreshForBalance`).
-   */
-  async balanceFor(deviceId: string, fresh = false, now: number = Date.now()): Promise<BalanceView> {
-    if (fresh) await this.refreshForBalance(deviceId, now);
-    const cfg = this.config();
-    const device = this.sql
-      .exec<{ nearai_key_id: string | null; credits_bought: number; waiting: number }>(
-        `SELECT nearai_key_id, credits_bought,
-                EXISTS (SELECT 1 FROM pending_keys WHERE device_id = devices.id) AS waiting
-         FROM devices WHERE id = ?`,
-        deviceId,
-      )
-      .toArray()[0];
-    if (!device) throw new Error("unknown device");
-    const updatedAt = new Date(this.snapshotTakenAt()).toISOString();
-    if (device.nearai_key_id === null) return { credits: 0, usedCredits: 0, keyReady: false, updatedAt };
+  /** The device's balance; with `fresh` the snapshot is refreshed first, within limits (see `balance.ts`). */
+  balanceFor(deviceId: string, fresh = false, now: number = Date.now()): Promise<BalanceView> {
+    return balanceFor(this.balanceContext(), deviceId, fresh, now);
+  }
 
-    const row = this.sql
-      .exec<{ limit_nano: number | null; usage_nano: number | null }>(
-        "SELECT limit_nano, usage_nano FROM key_usage WHERE key_id = ?",
-        device.nearai_key_id,
-      )
-      .toArray()[0];
-    const limit = row?.limit_nano != null ? BigInt(row.limit_nano) : spendLimitNano(device.credits_bought, cfg);
-    const usage = BigInt(row?.usage_nano ?? 0);
+  /** The models users may pick, cached 10 minutes (see `balance.ts`). */
+  models(now: number = Date.now()): Promise<{ models: ModelInfo[] } | { error: "upstream" }> {
+    return models(this.modelsContext(), now);
+  }
+
+  private balanceContext(): BalanceContext {
     return {
-      credits: balanceCredits(limit, usage, cfg),
-      usedCredits: creditsFromNano(usage, cfg),
-      keyReady: device.waiting === 0,
-      updatedAt,
+      sql: this.sql,
+      config: () => this.config(),
+      rateLimit: (key, limit, windowMs, now) => this.rateLimit(key, limit, windowMs, now),
+      snapshotTakenAt: () => this.snapshotTakenAt(),
+      refreshSnapshotOnce: (now) => this.refreshSnapshotOnce(now),
     };
   }
 
-  /**
-   * Refresh in the app. NEAR AI has no per-key total cheaper than the key list, so this reuses
-   * `refreshSnapshot` (its race guard and access-token retry included), and is bounded so devices
-   * cannot turn Refresh into a stream of key-list reads: once per 30 s per device, once per 30 s
-   * for the server as a whole, and not at all when the snapshot is already that young. A device
-   * without a key has nothing to read. A NEAR AI failure is logged and the cached row is served,
-   * never an error: the balance on screen stays usable.
-   */
-  private async refreshForBalance(deviceId: string, now: number): Promise<void> {
-    const hasKey = this.sql.exec("SELECT 1 FROM devices WHERE id = ? AND nearai_key_id IS NOT NULL", deviceId).toArray().length > 0;
-    if (!hasKey) return;
-    if (!this.rateLimit(`fresh:${deviceId}`, 1, FRESH_BALANCE_MS, now).allowed) return;
-    if (now - this.snapshotTakenAt() < FRESH_BALANCE_MS) return;
-    if (!this.rateLimit("fresh:all", 1, FRESH_BALANCE_MS, now).allowed) return;
-    try {
-      await this.refreshSnapshotOnce(now);
-    } catch (error) {
-      console.error(`Balance refresh failed: ${describeError(error)}`);
-    }
-  }
-
-  /**
-   * The models users may pick: the configured allowlist that NEAR AI marks verifiable, cached 10
-   * minutes. When NEAR AI cannot be read the last list is served however old; `upstream` only when
-   * there never was one.
-   */
-  async models(now: number = Date.now()): Promise<{ models: ModelInfo[] } | { error: "upstream" }> {
-    const cached = this.modelsCache;
-    if (cached && now - cached.at < MODELS_CACHE_MS) return { models: cached.models };
-    try {
-      this.modelsLoading ??= this.loadModels().finally(() => {
-        this.modelsLoading = undefined;
-      });
-      const models = await this.modelsLoading;
-      this.modelsCache = { models, at: now };
-      return { models };
-    } catch (error) {
-      console.error(`Reading the NEAR AI model list failed: ${describeError(error)}`);
-      return this.modelsCache ? { models: this.modelsCache.models } : { error: "upstream" };
-    }
-  }
-
-  private async loadModels(): Promise<ModelInfo[]> {
-    const verifiable = new Map((await this.nearAi().verifiableModels()).map((model) => [model.id, model]));
-    return this.config().models.flatMap((id) => {
-      const model = verifiable.get(id);
-      return model ? [model] : [];
-    });
+  private modelsContext(): ModelsContext {
+    const context: ModelsContext = {
+      config: () => this.config(),
+      nearAi: () => this.nearAi(),
+      cachedModels: () => this.modelsCache,
+      rememberModels: (cache) => {
+        this.modelsCache = cache;
+      },
+      loadModelsOnce: () => {
+        this.modelsLoading ??= loadModels(context).finally(() => {
+          this.modelsLoading = undefined;
+        });
+        return this.modelsLoading;
+      },
+    };
+    return context;
   }
 
   /** For tests: forgets the cached model list. */
@@ -397,111 +332,31 @@ export class Ledger extends DurableObject<Env> {
   /**
    * A NEAR AI access token for the operator. The cached one is used while it has more than a minute
    * left; otherwise it is refreshed, with at most one refresh in flight, because every refresh
-   * spends the refresh token (spec 7.5, race 6).
+   * spends the refresh token (spec 7.5, race 6). See `operator.ts`.
    */
   async accessToken(now: number): Promise<string> {
-    return (await this.operatorSession(now)).token;
+    return (await operatorSession(this.operator(), now)).token;
   }
 
-  /** The access token and the `version` of the operator row it belongs to. */
-  private async operatorSession(now: number): Promise<OperatorSession> {
-    const cached = await this.cachedSession(now);
-    if (cached) return cached;
-    this.refreshing ??= this.refreshOperator(now).finally(() => {
-      this.refreshing = undefined;
-    });
-    return this.refreshing;
+  /** Runs an operator call with the cached access token, retried once after a 401 (see `operator.ts`). */
+  private withAccessToken<T>(now: number, call: (access: string) => Promise<T>): Promise<T> {
+    return withAccessToken(this.operator(), now, call);
   }
 
-  /** The stored access token while it has more than a minute left; one that cannot be decrypted counts as expired. */
-  private async cachedSession(now: number): Promise<OperatorSession | null> {
-    const row = this.sql
-      .exec<{ access_token: string | null; access_expires_at: number | null; version: number }>(
-        "SELECT access_token, access_expires_at, version FROM operator WHERE id = ?",
-        OPERATOR_ID,
-      )
-      .toArray()[0];
-    if (!row?.access_token || row.access_expires_at === null || row.access_expires_at - ACCESS_TOKEN_MARGIN_MS <= now) return null;
-    try {
-      return { token: await decrypt(this.secret("KEY_ENCRYPTION_KEY"), row.access_token), version: row.version };
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * The refresh token to spend. The `OPERATOR_REFRESH_TOKEN` secret seeds it the first time, and
-   * again whenever the secret's value changes (its hash differs from `seed_hash`): that is how the
-   * operator replaces a dead session. An unchanged secret never overwrites the rotated token. It
-   * runs inside the single refresh in flight, so it cannot race a rotation.
-   */
-  private async operatorRefreshToken(): Promise<string> {
-    const keyB64 = this.secret("KEY_ENCRYPTION_KEY");
-    const row = this.sql
-      .exec<{ refresh_token_ciphertext: string; seed_hash: string | null }>(
-        "SELECT refresh_token_ciphertext, seed_hash FROM operator WHERE id = ?",
-        OPERATOR_ID,
-      )
-      .toArray()[0];
-    const seed = this.env.OPERATOR_REFRESH_TOKEN;
-    if (seed === undefined || seed === "") {
-      if (row) return decrypt(keyB64, row.refresh_token_ciphertext);
-      return this.secret("OPERATOR_REFRESH_TOKEN");
-    }
-    const seedHash = await sha256Hex(seed);
-    if (row && row.seed_hash === seedHash) return decrypt(keyB64, row.refresh_token_ciphertext);
-    const sealed = await encrypt(keyB64, seed);
-    if (row) {
-      this.sql.exec(
-        `UPDATE operator SET refresh_token_ciphertext = ?, seed_hash = ?, access_token = NULL, access_expires_at = NULL,
-         version = version + 1 WHERE id = ?`,
-        sealed,
-        seedHash,
-        OPERATOR_ID,
-      );
-    } else {
-      this.sql.exec(
-        "INSERT INTO operator (id, refresh_token_ciphertext, seed_hash, version) VALUES (?, ?, ?, 0)",
-        OPERATOR_ID,
-        sealed,
-        seedHash,
-      );
-    }
-    return seed;
-  }
-
-  private async refreshOperator(now: number): Promise<OperatorSession> {
-    const refreshToken = await this.operatorRefreshToken();
-    const fresh = await this.nearAi().refresh(refreshToken);
-    const keyB64 = this.secret("KEY_ENCRYPTION_KEY");
-    // The old refresh token is spent: store the new one before anyone can use the new access token.
-    this.sql.exec(
-      `UPDATE operator SET refresh_token_ciphertext = ?, access_token = ?, access_expires_at = ?, version = version + 1
-       WHERE id = ?`,
-      await encrypt(keyB64, fresh.refreshToken),
-      await encrypt(keyB64, fresh.accessToken),
-      now + ACCESS_TOKEN_TTL_MS,
-      OPERATOR_ID,
-    );
-    const { version } = this.sql.exec<{ version: number }>("SELECT version FROM operator WHERE id = ?", OPERATOR_ID).one();
-    return { token: fresh.accessToken, version };
-  }
-
-  /**
-   * Runs an operator call with the cached access token. If NEAR AI refuses that token (401) the
-   * cache is dropped and the call is retried once with a freshly refreshed token, so a lifetime
-   * shorter than assumed costs one refresh, not a run of failures. A second refusal is surfaced.
-   */
-  private async withAccessToken<T>(now: number, call: (access: string) => Promise<T>): Promise<T> {
-    const session = await this.operatorSession(now);
-    try {
-      return await call(session.token);
-    } catch (error) {
-      if (!(error instanceof NearAiError) || error.status !== 401) throw error;
-      // Only the token that failed is dropped: a caller that already refreshed past it keeps its new one.
-      this.sql.exec("UPDATE operator SET access_expires_at = NULL WHERE id = ? AND version = ?", OPERATOR_ID, session.version);
-      return call(await this.accessToken(now));
-    }
+  private operator(): OperatorContext {
+    const context: OperatorContext = {
+      sql: this.sql,
+      env: this.env,
+      secret: (name) => this.secret(name),
+      nearAi: () => this.nearAi(),
+      refreshOnce: (now) => {
+        this.refreshing ??= refreshOperator(context, now).finally(() => {
+          this.refreshing = undefined;
+        });
+        return this.refreshing;
+      },
+    };
+    return context;
   }
 
   /**

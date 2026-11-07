@@ -61,7 +61,7 @@ fn last_api_error_in(base: &Path, acp_session_id: &str, since_ms: u64) -> Option
 }
 
 /// Qwen's session ids are UUIDs; anything else never reaches a path.
-fn is_valid_session_id(id: &str) -> bool {
+pub(crate) fn is_valid_session_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= MAX_ID_LEN
         && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')

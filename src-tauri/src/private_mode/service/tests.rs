@@ -959,6 +959,16 @@ fn a_noted_private_session_is_known_as_private_and_others_are_not() {
 }
 
 #[test]
+fn a_private_session_is_known_in_any_letter_case() {
+    let h = Harness::new();
+    h.mode.note_private_session("Acp-1").expect("noted");
+
+    assert!(h.mode.is_private_acp_session("acp-1"));
+    assert!(h.mode.is_private_acp_session("ACP-1"));
+    assert_eq!(h.state().private_sessions, ["acp-1"]);
+}
+
+#[test]
 fn noting_a_private_session_twice_keeps_one_record() {
     let h = Harness::new();
     h.mode.note_private_session("acp-1").expect("first");

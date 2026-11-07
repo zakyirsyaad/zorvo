@@ -21,6 +21,9 @@ const DIR_MODE: u32 = 0o700;
 const FILE_MODE: u32 = 0o600;
 
 /// How many private ACP session ids are remembered; the oldest go first.
+/// Accepted limit: once more than this many private sessions exist, the oldest
+/// id is forgotten and that session could be opened plainly (the guard fails
+/// open for it).
 pub const MAX_PRIVATE_SESSIONS: usize = 1000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -59,9 +62,11 @@ pub struct LocalState {
     pub rotation_expected_until: Option<i64>,
     /// The server answered `401` to this Mac's secret: its credits moved.
     pub moved: bool,
-    /// ACP session ids started privately, oldest first. The agent keeps those
+    /// ACP session ids started privately, lower-cased (the agent's store is
+    /// read case-insensitively on macOS), oldest first. The agent keeps those
     /// sessions in its own store, so this is how Zorvo knows to never open one
-    /// without private mode. Ids only, no secret.
+    /// without private mode. Ids only, no secret. Accepted limit: a state file
+    /// that is malformed reads as empty, so the record is lost with it.
     pub private_sessions: Vec<String>,
 }
 
@@ -72,16 +77,18 @@ fn field<T: DeserializeOwned>(object: &Map<String, Value>, key: &str) -> Option<
         .and_then(|value| serde_json::from_value(value.clone()).ok())
 }
 
-/// The string items of `privateSessions`, without empty ones or repeats, newest
-/// `MAX_PRIVATE_SESSIONS` kept; anything but an array is no sessions.
+/// The string items of `privateSessions`, lower-cased, without empty ones or
+/// repeats, newest `MAX_PRIVATE_SESSIONS` kept; anything but an array is no
+/// sessions.
 fn private_sessions_of(object: &Map<String, Value>) -> Vec<String> {
     let Some(Value::Array(items)) = object.get("privateSessions") else {
         return Vec::new();
     };
     let mut ids: Vec<String> = Vec::new();
     for id in items.iter().filter_map(Value::as_str) {
-        if !id.is_empty() && !ids.iter().any(|seen| seen == id) {
-            ids.push(id.to_string());
+        let id = id.to_ascii_lowercase();
+        if !id.is_empty() && !ids.contains(&id) {
+            ids.push(id);
         }
     }
     let excess = ids.len().saturating_sub(MAX_PRIVATE_SESSIONS);
@@ -111,14 +118,16 @@ impl LocalState {
         }
     }
 
-    /// This state with `acp_session_id` recorded as private: appended unless
-    /// already there, and the oldest dropped past [`MAX_PRIVATE_SESSIONS`].
+    /// This state with `acp_session_id` recorded as private, lower-cased:
+    /// appended unless already there, and the oldest dropped past
+    /// [`MAX_PRIVATE_SESSIONS`].
     pub fn with_private_session(self, acp_session_id: &str) -> LocalState {
-        if self.private_sessions.iter().any(|id| id == acp_session_id) {
+        let id = acp_session_id.to_ascii_lowercase();
+        if self.private_sessions.contains(&id) {
             return self;
         }
         let mut private_sessions = self.private_sessions;
-        private_sessions.push(acp_session_id.to_string());
+        private_sessions.push(id);
         let excess = private_sessions.len().saturating_sub(MAX_PRIVATE_SESSIONS);
         private_sessions.drain(..excess);
         LocalState {
@@ -293,6 +302,22 @@ mod tests {
         let loaded = load_text(r#"{"privateSessions":["a",1,null,"b",{"x":1},"a",""]}"#);
 
         assert_eq!(loaded.private_sessions, ["a", "b"]);
+    }
+
+    #[test]
+    fn stored_private_session_ids_load_lower_cased_and_without_case_repeats() {
+        let loaded = load_text(r#"{"privateSessions":["ABC-1","b","abc-1","B"]}"#);
+
+        assert_eq!(loaded.private_sessions, ["abc-1", "b"]);
+    }
+
+    #[test]
+    fn with_private_session_stores_lower_case_and_sees_another_case_as_a_repeat() {
+        let state = LocalState::default()
+            .with_private_session("ACP-1")
+            .with_private_session("acp-1");
+
+        assert_eq!(state.private_sessions, ["acp-1"]);
     }
 
     #[test]

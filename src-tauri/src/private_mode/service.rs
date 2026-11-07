@@ -112,7 +112,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 /// The state file could not be written; what it holds is a convenience (the
 /// Keychain and the server are the truth), so the command goes on.
-fn report_storage_failure() {
+pub(crate) fn report_storage_failure() {
     eprintln!("private mode: couldn't save the local state file");
 }
 
@@ -524,12 +524,14 @@ impl PrivateMode {
             .map(|_| ())
     }
 
-    /// Whether `acp_session_id` was recorded by [`Self::note_private_session`].
+    /// Whether `acp_session_id` was recorded by [`Self::note_private_session`],
+    /// in any letter case.
     pub fn is_private_acp_session(&self, acp_session_id: &str) -> bool {
-        self.private_acp_sessions().contains(acp_session_id)
+        self.private_acp_sessions()
+            .contains(&acp_session_id.to_ascii_lowercase())
     }
 
-    /// Every recorded private ACP session id.
+    /// Every recorded private ACP session id, lower-cased.
     pub fn private_acp_sessions(&self) -> HashSet<String> {
         self.load_state().private_sessions.into_iter().collect()
     }

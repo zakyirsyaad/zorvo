@@ -26,7 +26,17 @@ const MODEL_VARIABLE: &str = "OPENAI_MODEL";
 
 /// Flags Zorvo sets itself; a base launch that already has one is refused, so
 /// that "ours wins" never depends on how Qwen treats a repeated flag.
-const OWN_FLAGS: [&str; 3] = ["--auth-type", "--openai-base-url", "--model"];
+/// Qwen reads its options with yargs, which also accepts the camel-case
+/// spellings, so those count too, and so do the key flags.
+const OWN_FLAGS: [&str; 7] = [
+    "--auth-type",
+    "--authType",
+    "--openai-base-url",
+    "--openaiBaseUrl",
+    "--openai-api-key",
+    "--openaiApiKey",
+    "--model",
+];
 const OWN_SHORT_FLAG: &str = "-m";
 
 /// Fails unless `profile_id` is Qwen Code (a legacy id counts).
@@ -52,6 +62,7 @@ fn is_model_id(id: &str) -> bool {
 /// `--flag=value`.
 fn is_own_flag(arg: &str) -> bool {
     arg == OWN_SHORT_FLAG
+        || arg.starts_with("-m=")
         || OWN_FLAGS.iter().any(|flag| {
             arg == *flag
                 || arg
@@ -235,6 +246,15 @@ mod tests {
             vec!["--model", "m"],
             vec!["--model=m"],
             vec!["-m", "m"],
+            vec!["-m=m"],
+            vec!["--authType", "oauth"],
+            vec!["--authType=openai"],
+            vec!["--openaiBaseUrl", "http://x"],
+            vec!["--openaiBaseUrl=http://x"],
+            vec!["--openaiApiKey", "k"],
+            vec!["--openaiApiKey=k"],
+            vec!["--openai-api-key", "k"],
+            vec!["--openai-api-key=k"],
         ];
         for extra in flags {
             let mut with_flags = base(&[]);

@@ -8,30 +8,37 @@
 //! unless the open is private again, and never offers one for import.
 
 use super::manager::{AcpLaunch, StartedSession};
+use super::qwen_log::is_valid_session_id;
 use super::session_list::ListedSessions;
-use crate::private_mode::service::PrivateMode;
+use crate::private_mode::service::{report_storage_failure, PrivateMode};
 use crate::private_mode::PrivateError;
 
 /// Records the ACP session `result` opened when `is_private`. A failed open
-/// records nothing. A record that cannot be saved is ignored: the session
-/// already runs, and the error carries nothing worth showing the user.
+/// records nothing. A record that cannot be saved does not fail the session,
+/// which already runs; it is reported on stderr with a fixed line.
 pub fn note_if_private(
     private: &PrivateMode,
     is_private: bool,
     result: Result<StartedSession, String>,
 ) -> Result<StartedSession, String> {
     let started = result?;
-    if is_private {
-        // Best effort: see above.
-        let _ = private.note_private_session(&started.acp_session_id);
+    if is_private
+        && private
+            .note_private_session(&started.acp_session_id)
+            .is_err()
+    {
+        report_storage_failure();
     }
     Ok(started)
 }
 
 /// Opens the agent's session `acp_session_id` (a reopen, or an import with no
-/// `private_model_id`). A recorded private session is refused with
-/// `private_session` before `launch` runs, let alone a process, unless
-/// `private_model_id` makes the open private again. `launch` builds the launch
+/// `private_model_id`). The id comes from the webview and goes into the agent's
+/// file paths, so one that is not plain (`is_valid_session_id`: letters, digits
+/// and `-`) is refused with `bad_request`. A recorded private session, in any
+/// letter case, is refused with `private_session`. Both happen before `launch`
+/// runs, let alone a process, unless `private_model_id` makes the open private
+/// again (the `private_session` refusal only). `launch` builds the launch
 /// and `open` starts it; a private open is recorded.
 pub fn open_session(
     private: &PrivateMode,
@@ -40,6 +47,9 @@ pub fn open_session(
     launch: impl FnOnce() -> Result<AcpLaunch, String>,
     open: impl FnOnce(&AcpLaunch) -> Result<StartedSession, String>,
 ) -> Result<StartedSession, String> {
+    if !is_valid_session_id(acp_session_id) {
+        return Err(PrivateError::BadRequest.into());
+    }
     if private_model_id.is_none() && private.is_private_acp_session(acp_session_id) {
         return Err(PrivateError::PrivateSession.into());
     }
@@ -63,7 +73,7 @@ pub fn without_hidden(listed: ListedSessions, is_hidden: impl Fn(&str) -> bool) 
 /// offer for import.
 pub fn without_private(listed: ListedSessions, private: &PrivateMode) -> ListedSessions {
     let recorded = private.private_acp_sessions();
-    without_hidden(listed, |id| recorded.contains(id))
+    without_hidden(listed, |id| recorded.contains(&id.to_ascii_lowercase()))
 }
 
 #[cfg(test)]
@@ -296,5 +306,104 @@ mod tests {
 
         assert_eq!(shown.sessions.len(), 1);
         assert_eq!(shown.sessions[0].acp_session_id, "a");
+    }
+
+    #[test]
+    fn a_plain_open_of_a_recorded_id_in_another_letter_case_is_refused() {
+        let harness = Harness::new();
+        harness.mode.note_private_session("acp-1").expect("noted");
+        let launches = Cell::new(0);
+        let opens = Cell::new(0);
+
+        let result = open_session(
+            &harness.mode,
+            "ACP-1",
+            None,
+            || {
+                launches.set(launches.get() + 1);
+                Ok(launch())
+            },
+            |_| {
+                opens.set(opens.get() + 1);
+                Ok(started("ACP-1"))
+            },
+        );
+
+        assert_eq!(result.unwrap_err(), "private_session");
+        assert_eq!(launches.get(), 0);
+        assert_eq!(opens.get(), 0);
+    }
+
+    #[test]
+    fn an_id_that_is_not_plain_is_refused_before_any_launch_for_every_kind_of_open() {
+        let harness = Harness::new();
+        let too_long = "a".repeat(200);
+        let odd = [
+            "./acp-1",
+            "../x",
+            "acp-1 ",
+            " acp-1",
+            "acp/1",
+            "acp-1\n",
+            "acp_1",
+            "",
+            too_long.as_str(),
+        ];
+        for model in [None, MODEL] {
+            for id in odd {
+                let launches = Cell::new(0);
+                let opens = Cell::new(0);
+
+                let result = open_session(
+                    &harness.mode,
+                    id,
+                    model,
+                    || {
+                        launches.set(launches.get() + 1);
+                        Ok(launch())
+                    },
+                    |_| {
+                        opens.set(opens.get() + 1);
+                        Ok(started("acp-1"))
+                    },
+                );
+
+                assert_eq!(result.unwrap_err(), "bad_request", "{id:?} {model:?}");
+                assert_eq!(launches.get(), 0, "{id:?}");
+                assert_eq!(opens.get(), 0, "{id:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_private_open_of_a_recorded_id_in_another_letter_case_is_allowed() {
+        let harness = Harness::new();
+        harness.mode.note_private_session("acp-1").expect("noted");
+        let opens = Cell::new(0);
+
+        let result = open_session(
+            &harness.mode,
+            "ACP-1",
+            MODEL,
+            || Ok(launch()),
+            |_| {
+                opens.set(opens.get() + 1);
+                Ok(started("ACP-1"))
+            },
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(opens.get(), 1);
+    }
+
+    #[test]
+    fn the_listing_filter_removes_a_recorded_id_in_another_letter_case() {
+        let harness = Harness::new();
+        harness.mode.note_private_session("acp-1").expect("noted");
+
+        let shown = without_private(listed(&["ACP-1", "b"]), &harness.mode);
+
+        assert_eq!(shown.sessions.len(), 1);
+        assert_eq!(shown.sessions[0].acp_session_id, "b");
     }
 }

@@ -377,6 +377,8 @@ pub fn run() {
             app.manage(AppInstaller::new(ToolsDir::new(&data_dir)));
             // Reads two small files; fetching and `npm` wait for the thread below.
             registry::install(Catalog::open(data_dir.clone(), registry::BUNDLED_HISTORY));
+            // Builds clients only: no Keychain read and no request at start.
+            app.manage(private_mode::commands::private_mode_for(&data_dir));
             let (store, migration) = data_migration::open_store(data_dir);
             app.manage(store);
             if let Err(error) = migration {
@@ -467,7 +469,19 @@ pub fn run() {
             installer::commands::update_agent,
             installer::commands::install_runtime,
             installer::commands::cancel_agent_install,
-            installer::commands::remove_agent_install
+            installer::commands::remove_agent_install,
+            private_mode::commands::private_status,
+            private_mode::commands::private_stock,
+            private_mode::commands::private_models,
+            private_mode::commands::private_create_topup,
+            private_mode::commands::private_open_checkout,
+            private_mode::commands::private_topup_status,
+            private_mode::commands::private_cancel_topup,
+            private_mode::commands::private_redeem_promo,
+            private_mode::commands::private_recovery_code,
+            private_mode::commands::private_mark_recovery,
+            private_mode::commands::private_recover,
+            private_mode::commands::private_forget_device
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

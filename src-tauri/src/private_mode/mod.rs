@@ -2,8 +2,12 @@
 //! Keychain, a client for the Zorvo Credits Worker and private Qwen Code sessions.
 
 pub mod client;
+pub mod commands;
 pub mod device;
 pub mod local_state;
+pub mod service;
+#[cfg(test)]
+pub(crate) mod testing;
 
 use serde::Serialize;
 

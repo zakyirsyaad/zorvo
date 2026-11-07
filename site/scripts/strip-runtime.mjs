@@ -2,15 +2,16 @@
 // hydrates what is already there. After `next build`, this removes that runtime from each page
 // in out/ (script tags, their preloads and the inline flight data), so a visitor downloads no
 // JavaScript. Structured data (`application/ld+json`) is data, not script, and stays.
+import { realpathSync } from "node:fs";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse, serialize } from "parse5";
 
-/** @typedef {{ nodeName: string, attrs?: { name: string, value: string }[], childNodes?: Node[], content?: Node }} Node */
+/** @typedef {import("parse5").DefaultTreeAdapterMap["node"]} Node */
 
 /** @param {Node} node @param {string} name */
-const attr = (node, name) => node.attrs?.find((entry) => entry.name === name)?.value;
+const attr = (node, name) => ("attrs" in node ? node.attrs.find((entry) => entry.name === name)?.value : undefined);
 
 /** A script that runs, or a hint to fetch one; structured data is a script element but never runs. */
 function isRuntime(/** @type {Node} */ node) {
@@ -19,24 +20,29 @@ function isRuntime(/** @type {Node} */ node) {
   return false;
 }
 
-/** Drops runtime nodes from a parsed tree, template contents included. @param {Node} node */
+/** Drops runtime nodes from a parsed tree, template contents included, and says how many went. @param {Node} node @returns {number} */
 function prune(node) {
-  if (node.content) prune(node.content);
-  if (!node.childNodes) return;
-  node.childNodes = node.childNodes.filter((child) => !isRuntime(child));
-  node.childNodes.forEach(prune);
+  let removed = "content" in node ? prune(node.content) : 0;
+  if (!("childNodes" in node)) return removed;
+  const kept = node.childNodes.filter((child) => !isRuntime(child));
+  removed += node.childNodes.length - kept.length;
+  node.childNodes = kept;
+  return kept.reduce((total, child) => total + prune(child), removed);
 }
 
 /**
  * Parses the page as a browser would, removes its scripts and script preloads, and writes it back,
  * so what is removed is exactly what a browser would have run.
- * @param {string} html @returns {string}
+ * @param {string} html @returns {{ html: string, removed: number }}
  */
-export function stripRuntime(html) {
+export function stripPage(html) {
   const document = parse(html);
-  prune(/** @type {Node} */ (/** @type {unknown} */ (document)));
-  return serialize(document);
+  const removed = prune(document);
+  return { html: serialize(document), removed };
 }
+
+/** @param {string} html @returns {string} */
+export const stripRuntime = (html) => stripPage(html).html;
 
 /** @param {string} dir @returns {AsyncGenerator<string>} */
 async function* htmlFiles(dir) {
@@ -49,21 +55,20 @@ async function* htmlFiles(dir) {
 
 async function main() {
   const out = fileURLToPath(new URL("../out/", import.meta.url));
-  let count = 0;
+  let pages = 0;
   for await (const file of htmlFiles(out)) {
-    const html = await readFile(file, "utf8");
-    const stripped = stripRuntime(html);
-    if (stripped === html) continue;
-    // A page that still names a runtime chunk would mean a script form this does not know.
-    if (/\/_next\/static\/chunks\/[^"']+\.js["']/.test(stripped)) {
-      throw new Error(`${file} still references a script after stripping`);
-    }
-    await writeFile(file, stripped);
-    count++;
+    const { html, removed } = stripPage(await readFile(file, "utf8"));
+    // Parse the result again: anything still runnable means a form this does not know, so stop the build.
+    if (stripPage(html).removed > 0) throw new Error(`${file} still has a script after stripping`);
+    if (removed === 0) continue;
+    await writeFile(file, html);
+    pages++;
   }
-  console.log(`Removed the React runtime from ${count} pages.`);
+  console.log(`Removed the React runtime from ${pages} pages.`);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// Compare real paths: Node gives argv[1] as typed, import.meta.url resolved, so a symlinked
+// checkout would otherwise skip the step and still exit 0.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await main();
 }

@@ -2,6 +2,9 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import type { ReactNode } from "react";
 // Self-hosted, the same packages the app ships: the page loads nothing from a font CDN.
+// The fontsource faces stay as a fallback for characters beyond Latin-1, which the preloaded file
+// below leaves out; a browser fetches them only when the page uses such a character.
+import "@fontsource-variable/instrument-sans";
 import "@fontsource-variable/geist-mono";
 import "./globals.css";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, siteUrl } from "../lib/site";

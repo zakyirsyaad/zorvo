@@ -1275,3 +1275,18 @@ fn a_restore_of_this_macs_own_code_keeps_its_last_balance_when_the_read_fails() 
     assert_eq!(h.state().last_balance.map(|b| b.credits), Some(50));
     assert_eq!(h.mode.forget_device(), Err(PrivateError::HasOwnCredits));
 }
+
+#[test]
+fn a_restore_goes_through_when_this_mac_lost_its_device_secret() {
+    // The Keychain item is gone, but the state file still holds credits.
+    let h = Harness::new();
+    h.set_state(&LocalState {
+        pending_topup: Some(pending("t2")),
+        ..state_with_balance(50)
+    });
+
+    let new = h.mode.recover(CODE).expect("not refused");
+
+    assert_eq!(h.secret(DEVICE_SECRET), Some(new));
+    assert_eq!(h.api.count(|c| matches!(c, Call::Recover { .. })), 1);
+}

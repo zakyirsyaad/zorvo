@@ -88,7 +88,11 @@ impl PrivateMode {
             return Ok(promoted);
         }
         let same_device = self.is_own_code(&typed)?;
-        if !same_device && has_own_credits(&self.load_state()) {
+        // Only a secret this Mac still holds has credits to orphan: with the
+        // Keychain item lost, a leftover balance in the state file must not
+        // block the restore that brings the credits back.
+        let has_own_secret = self.store.get(DEVICE_SECRET)?.is_some();
+        if !same_device && has_own_secret && has_own_credits(&self.load_state()) {
             return Err(PrivateError::HasOwnCredits);
         }
         let new = new_recovery_code()?;

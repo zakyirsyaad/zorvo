@@ -160,14 +160,15 @@ impl PrivateMode {
 
     /// A fresh code in the Keychain. The state file is reset first (keeping
     /// the model list), so another device's balance, top-up and recovery flags
-    /// never show for this one, and a failed reset creates nothing.
+    /// never show for this one, and a failed reset creates nothing. The code
+    /// is made before the reset, so a random source that fails changes nothing.
     fn create_secret(&self) -> Result<String, PrivateError> {
+        let code = new_recovery_code()?;
         self.update_state(|old| LocalState {
             models: old.models,
             private_sessions: old.private_sessions,
             ..LocalState::default()
         })?;
-        let code = new_recovery_code();
         self.store.set(DEVICE_SECRET, &code)?;
         self.registered.store(false, Ordering::SeqCst);
         Ok(code)
@@ -240,7 +241,13 @@ impl PrivateMode {
             Err(error) => DeviceReport {
                 key_ready: self.has_local_key().unwrap_or(false),
                 balance_error: Some(error),
-                ..DeviceReport::new(DeviceState::Ready)
+                // Another Worker call met a 401 since the last balance: the
+                // device stays moved until a balance says otherwise.
+                ..DeviceReport::new(if self.load_state().moved {
+                    DeviceState::Moved
+                } else {
+                    DeviceState::Ready
+                })
             },
         }
     }
@@ -309,7 +316,7 @@ impl PrivateMode {
         let unsaved = lock(&self.unsaved_key).take();
         let key = match unsaved {
             Some(key) => key,
-            None => match self.api.take_key(&self.device_secret()?)? {
+            None => match self.worker(self.api.take_key(&self.device_secret()?))? {
                 Some(key) => key,
                 None if server_key_ready && !self.rotation_expected() => {
                     return Err(PrivateError::KeyLost)
@@ -437,15 +444,29 @@ impl PrivateMode {
             return Ok(promoted);
         }
         self.refuse_if_own_credits(&typed)?;
-        let new = new_recovery_code();
+        let new = new_recovery_code()?;
         self.store.set(DEVICE_SECRET_NEXT, &new)?;
         match self.api.recover(&typed, &secret_hash(&new)) {
-            Ok(()) => self.promote(&new).map(|()| new),
+            Ok(()) => {
+                self.promote(&new)?;
+                self.remember_recovered_balance(&new);
+                Ok(new)
+            }
             Err(PrivateError::BadRequest) => {
                 self.store.delete(DEVICE_SECRET_NEXT)?;
                 Err(PrivateError::BadCode)
             }
             Err(error) => Err(error),
+        }
+    }
+
+    /// Reads and keeps the balance of the device a recovery just brought here,
+    /// so its credits guard Forget and another restore before the next status.
+    /// Best effort: the recovery has happened either way, and the next status
+    /// reads the balance again.
+    fn remember_recovered_balance(&self, secret: &str) {
+        if let Ok(balance) = self.api.balance(secret, false) {
+            self.remember_balance(&balance);
         }
     }
 
@@ -540,7 +561,7 @@ impl PrivateMode {
 
     pub fn stock(&self) -> Result<Stock, PrivateError> {
         let secret = self.ensure_device()?;
-        self.api.stock(&secret)
+        self.worker(self.api.stock(&secret))
     }
 
     /// The memory copy for 10 minutes, then the Worker; when the Worker fails,
@@ -551,7 +572,7 @@ impl PrivateMode {
         }
         match self
             .ensure_device()
-            .and_then(|secret| self.api.models(&secret))
+            .and_then(|secret| self.worker(self.api.models(&secret)))
         {
             Ok(list) => {
                 self.remember_models(&list);
@@ -591,12 +612,13 @@ impl PrivateMode {
     /// kept; the normalized URL is kept, never the server's raw text.
     pub fn create_topup(&self, package_usd: u32) -> Result<PendingTopup, PrivateError> {
         let secret = self.ensure_device()?;
-        let created = self.api.create_topup(&secret, package_usd)?;
+        let created = self.worker(self.api.create_topup(&secret, package_usd))?;
         let checkout = checkout_url(&created.session_url).ok_or(PrivateError::BadCheckoutUrl)?;
         let pending = PendingTopup {
             topup_id: created.topup_id.clone(),
             expires_at: created.expires_at,
             credits: u64::from(package_usd) * CREDITS_PER_USD,
+            bought_before: Some(self.bought_so_far()),
         };
         self.keep_pending(&pending);
         lock(&self.checkouts).insert(created.topup_id, checkout);
@@ -616,7 +638,7 @@ impl PrivateMode {
     /// The top-up's status; a settled one is cleared here, and a credit also
     /// collects the key the server made for it.
     pub fn topup_status(&self, topup_id: &str) -> Result<TopupState, PrivateError> {
-        let state = self.api.topup(&self.device_secret()?, topup_id)?;
+        let state = self.worker(self.api.topup(&self.device_secret()?, topup_id))?;
         if SETTLED.contains(&state.status.as_str()) {
             let credited = (state.status == CREDITED).then_some(state.credits);
             self.settle_topup(topup_id, credited);
@@ -634,7 +656,7 @@ impl PrivateMode {
     }
 
     pub fn cancel_topup(&self, topup_id: &str) -> Result<(), PrivateError> {
-        self.api.cancel_topup(&self.device_secret()?, topup_id)?;
+        self.worker(self.api.cancel_topup(&self.device_secret()?, topup_id))?;
         self.settle_topup(topup_id, None);
         Ok(())
     }
@@ -646,17 +668,17 @@ impl PrivateMode {
             return Err(PrivateError::BadCode);
         }
         let secret = self.ensure_device()?;
-        let result = self
-            .api
-            .redeem_promo(&secret, code)
-            .map_err(|error| match error {
-                PrivateError::BadRequest => PrivateError::BadCode,
-                other => other,
-            })?;
+        let result =
+            self.worker(self.api.redeem_promo(&secret, code))
+                .map_err(|error| match error {
+                    PrivateError::BadRequest => PrivateError::BadCode,
+                    other => other,
+                })?;
         self.keep_pending(&PendingTopup {
             topup_id: result.topup_id.clone(),
             expires_at: iso_from_unix(now_secs() + PROMO_HOLD_SECS),
             credits: result.credits,
+            bought_before: Some(self.bought_so_far()),
         });
         Ok(result)
     }
@@ -670,9 +692,16 @@ impl PrivateMode {
         });
     }
 
+    /// Credits bought so far, as the last balance shows them: what is left
+    /// plus what was used, which a use does not change and a credit raises.
+    fn bought_so_far(&self) -> u64 {
+        self.load_state().last_balance.as_ref().map_or(0, bought_of)
+    }
+
     /// Clears a settled top-up. A credited one is first added to the last
     /// balance (the server's amount, else the pending one's), so this Mac
-    /// still reads as having credits of its own before the next balance.
+    /// still reads as having credits of its own before the next balance,
+    /// unless a balance read since the top-up started already shows it.
     /// A top-up no longer pending (already settled) changes nothing.
     fn settle_topup(&self, topup_id: &str, credited: Option<u64>) {
         lock(&self.checkouts).remove(topup_id);
@@ -684,10 +713,15 @@ impl PrivateMode {
             else {
                 return old;
             };
-            let last_balance = match credited {
-                Some(0) => Some(with_credit(old.last_balance.clone(), pending.credits)),
-                Some(credits) => Some(with_credit(old.last_balance.clone(), credits)),
-                None => old.last_balance.clone(),
+            let credit = match credited {
+                Some(0) => Some(pending.credits),
+                other => other,
+            };
+            let last_balance = match credit {
+                Some(credits) if !is_counted(pending, old.last_balance.as_ref(), credits) => {
+                    Some(with_credit(old.last_balance.clone(), credits))
+                }
+                _ => old.last_balance.clone(),
             };
             LocalState {
                 pending_topup: None,
@@ -695,6 +729,16 @@ impl PrivateMode {
                 ..old
             }
         });
+    }
+
+    /// A Worker call's answer. A `401` to the device secret means the server
+    /// no longer knows it: the device is marked moved, whichever call heard it,
+    /// so the next status says so even when it cannot read the balance.
+    fn worker<T>(&self, answer: Result<T, PrivateError>) -> Result<T, PrivateError> {
+        if answer.as_ref().err() == Some(&PrivateError::Unauthorized) {
+            self.change_state(|old| LocalState { moved: true, ..old });
+        }
+        answer
     }
 
     // ---- the state file ----
@@ -730,6 +774,24 @@ fn has_own_credits(state: &LocalState) -> bool {
             .as_ref()
             .is_some_and(|last| last.credits > 0)
             || state.pending_topup.is_some())
+}
+
+/// Credits bought as a balance shows them: left plus used.
+fn bought_of(last: &LastBalance) -> u64 {
+    last.credits.saturating_add(last.used_credits)
+}
+
+/// Whether `last`, read after `pending` started, already holds its credit of
+/// `credits`: the credits bought rose by more than half of it since (whole
+/// credits round down on the server, so the rise can be a credit short).
+/// Unknown without a baseline (a file from before it was kept), so the credit
+/// is added, as before.
+fn is_counted(pending: &PendingTopup, last: Option<&LastBalance>, credits: u64) -> bool {
+    let (Some(before), Some(last)) = (pending.bought_before, last) else {
+        return false;
+    };
+    let rise = bought_of(last).saturating_sub(before);
+    rise.saturating_mul(2) > credits
 }
 
 fn with_credit(last: Option<LastBalance>, credits: u64) -> LastBalance {

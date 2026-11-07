@@ -24,67 +24,62 @@ pub const CREDITS_BASE_URL: &str = match option_env!("ZORVO_CREDITS_URL") {
     None => "http://127.0.0.1:8787",
 };
 
-/// Everything a private-mode command can fail with. Commands hand the UI only
-/// the snake_case code (see `From<PrivateError> for String`), never a message
-/// that could carry a secret.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PrivateError {
-    Unreachable,
-    Unauthorized,
-    BadRequest,
-    NotFound,
-    Stock,
-    DeviceCap,
-    RateLimited,
-    Upstream,
-    Keychain,
-    NoDevice,
-    NoKey,
-    /// The server says a key is ready but it never reached this Mac.
-    KeyLost,
-    BadCode,
-    NotQwen,
-    UnknownModel,
-    BadCheckoutUrl,
-    HasOwnCredits,
-    /// This Mac's own state file could not be written.
-    Storage,
-    /// The system browser did not open the checkout; its hold stands.
-    OpenFailed,
-    /// An agent session that ran privately may only be opened privately.
-    PrivateSession,
-    /// A private session keeps the model Zorvo launched it on.
-    ModelLocked,
+/// Declares [`PrivateError`] with each variant's code, and the list of every
+/// variant, from one table, so the code, the serde form and the list cannot
+/// drift apart (tests check the serde form against the code).
+macro_rules! private_errors {
+    ($($(#[$doc:meta])* $variant:ident => $code:literal,)+) => {
+        /// Everything a private-mode command can fail with. Commands hand the UI only
+        /// the snake_case code (see `From<PrivateError> for String`), never a message
+        /// that could carry a secret.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+        #[serde(rename_all = "snake_case")]
+        pub enum PrivateError {
+            $($(#[$doc])* $variant,)+
+        }
+
+        impl PrivateError {
+            /// Every variant, in declaration order.
+            #[cfg(test)]
+            pub(crate) const ALL: &'static [PrivateError] = &[$(Self::$variant,)+];
+
+            /// The snake_case code, identical to the serde form.
+            pub fn code(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $code,)+
+                }
+            }
+        }
+    };
 }
 
-impl PrivateError {
-    /// The snake_case code, identical to the serde form.
-    pub fn code(self) -> &'static str {
-        match self {
-            Self::Unreachable => "unreachable",
-            Self::Unauthorized => "unauthorized",
-            Self::BadRequest => "bad_request",
-            Self::NotFound => "not_found",
-            Self::Stock => "stock",
-            Self::DeviceCap => "device_cap",
-            Self::RateLimited => "rate_limited",
-            Self::Upstream => "upstream",
-            Self::Keychain => "keychain",
-            Self::NoDevice => "no_device",
-            Self::NoKey => "no_key",
-            Self::KeyLost => "key_lost",
-            Self::BadCode => "bad_code",
-            Self::NotQwen => "not_qwen",
-            Self::UnknownModel => "unknown_model",
-            Self::BadCheckoutUrl => "bad_checkout_url",
-            Self::HasOwnCredits => "has_own_credits",
-            Self::Storage => "storage",
-            Self::OpenFailed => "open_failed",
-            Self::PrivateSession => "private_session",
-            Self::ModelLocked => "model_locked",
-        }
-    }
+private_errors! {
+    Unreachable => "unreachable",
+    Unauthorized => "unauthorized",
+    BadRequest => "bad_request",
+    NotFound => "not_found",
+    Stock => "stock",
+    DeviceCap => "device_cap",
+    RateLimited => "rate_limited",
+    Upstream => "upstream",
+    Keychain => "keychain",
+    NoDevice => "no_device",
+    NoKey => "no_key",
+    /// The server says a key is ready but it never reached this Mac.
+    KeyLost => "key_lost",
+    BadCode => "bad_code",
+    NotQwen => "not_qwen",
+    UnknownModel => "unknown_model",
+    BadCheckoutUrl => "bad_checkout_url",
+    HasOwnCredits => "has_own_credits",
+    /// This Mac's own state file could not be written.
+    Storage => "storage",
+    /// The system browser did not open the checkout; its hold stands.
+    OpenFailed => "open_failed",
+    /// An agent session that ran privately may only be opened privately.
+    PrivateSession => "private_session",
+    /// A private session keeps the model Zorvo launched it on.
+    ModelLocked => "model_locked",
 }
 
 impl From<PrivateError> for String {
@@ -97,36 +92,21 @@ impl From<PrivateError> for String {
 mod tests {
     use super::*;
 
-    const ALL: [PrivateError; 21] = [
-        PrivateError::Unreachable,
-        PrivateError::Unauthorized,
-        PrivateError::BadRequest,
-        PrivateError::NotFound,
-        PrivateError::Stock,
-        PrivateError::DeviceCap,
-        PrivateError::RateLimited,
-        PrivateError::Upstream,
-        PrivateError::Keychain,
-        PrivateError::NoDevice,
-        PrivateError::NoKey,
-        PrivateError::KeyLost,
-        PrivateError::BadCode,
-        PrivateError::NotQwen,
-        PrivateError::UnknownModel,
-        PrivateError::BadCheckoutUrl,
-        PrivateError::HasOwnCredits,
-        PrivateError::Storage,
-        PrivateError::OpenFailed,
-        PrivateError::PrivateSession,
-        PrivateError::ModelLocked,
-    ];
-
     #[test]
     fn code_matches_the_serde_form_for_every_variant() {
-        for error in ALL {
+        // `ALL` comes from the same macro call as the enum, so it cannot miss a variant.
+        for error in PrivateError::ALL {
             let json = serde_json::to_value(error).expect("serializes");
             assert_eq!(json, serde_json::Value::String(error.code().to_string()));
         }
+    }
+
+    #[test]
+    fn every_variant_has_a_code_of_its_own() {
+        let codes: std::collections::HashSet<&str> =
+            PrivateError::ALL.iter().map(|error| error.code()).collect();
+        assert_eq!(codes.len(), PrivateError::ALL.len());
+        assert!(PrivateError::ALL.contains(&PrivateError::ModelLocked));
     }
 
     #[test]

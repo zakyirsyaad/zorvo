@@ -48,6 +48,12 @@ fn a_loopback_base_bypasses_the_proxy_environment() {
         // SAFETY: this binary has one test, so nothing else touches the environment.
         unsafe { std::env::set_var(name, &proxy_url) };
     }
+    // An ambient NO_PROXY that covers 127.0.0.1 would bypass the proxy by
+    // itself and let this test pass whatever the client does.
+    for name in ["NO_PROXY", "no_proxy"] {
+        // SAFETY: as above.
+        unsafe { std::env::remove_var(name) };
+    }
 
     let api = HttpCredits::new(&base).expect("loopback base");
     let balance = api

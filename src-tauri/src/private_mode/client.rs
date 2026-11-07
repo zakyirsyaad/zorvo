@@ -105,7 +105,9 @@ struct ErrorBody {
 /// token; `register` and `recover` carry no bearer.
 pub trait CreditsApi: Send + Sync {
     /// Registers the hash of this Mac's secret. A duplicate 80-bit hash can
-    /// only be this Mac, so "already registered" counts as success.
+    /// only be this Mac, so "already registered" counts as success. The Worker
+    /// words it `400 {"error":"bad_request"}`, its answer to a malformed hash
+    /// too, which Zorvo never sends.
     fn register(&self, secret_hash: &str) -> Result<(), PrivateError>;
     fn balance(&self, secret: &str, fresh: bool) -> Result<Balance, PrivateError>;
     fn stock(&self, secret: &str) -> Result<Stock, PrivateError>;
@@ -119,6 +121,10 @@ pub trait CreditsApi: Send + Sync {
     /// Moves the device behind `code` to a new secret. Sends no bearer.
     fn recover(&self, code: &str, new_secret_hash: &str) -> Result<(), PrivateError>;
 }
+
+// The service holds the Worker as `Box<dyn CreditsApi>`: a method that made
+// the trait unusable as an object must fail here, not at a distant use.
+const _: Option<&dyn CreditsApi> = None;
 
 /// Maps a failed answer to a code. The status decides for 401, 404 and 5xx;
 /// otherwise the body's `error` code does, then the status. The body is parsed
@@ -147,6 +153,14 @@ pub fn error_from(status: u16, body: &str) -> PrivateError {
             _ => PrivateError::Upstream,
         },
     }
+}
+
+/// Whether `body` is the Worker's `{"error":"bad_request"}`.
+fn is_bad_request_body(body: &str) -> bool {
+    serde_json::from_str::<ErrorBody>(body)
+        .ok()
+        .and_then(|parsed| parsed.error)
+        .is_some_and(|code| code == "bad_request")
 }
 
 /// Reads a success body; a body that is not the expected shape is the
@@ -276,9 +290,13 @@ impl CreditsApi for HttpCredits {
     fn register(&self, secret_hash: &str) -> Result<(), PrivateError> {
         let body = json!({ "secretHash": secret_hash });
         let (status, text) = self.request(Method::POST, "/v1/devices", None, Some(body))?;
-        match status {
-            201 | 400 => Ok(()),
-            _ => Err(error_from(status, &text)),
+        match (status, error_from(status, &text)) {
+            (201, _) => Ok(()),
+            // The Worker answers a hash it already holds with this, and the
+            // hash Zorvo sends is always well formed. A 400 without the
+            // Worker's own code (a proxy's page, an empty body) is a failure.
+            (400, PrivateError::BadRequest) if is_bad_request_body(&text) => Ok(()),
+            (_, error) => Err(error),
         }
     }
 
@@ -549,11 +567,9 @@ mod tests {
             request.starts_with("GET /v1/balance?fresh=1 HTTP/1.1\r\n"),
             "{request}"
         );
-        assert!(
-            request.to_ascii_lowercase().contains(&format!(
-                "authorization: bearer {}\r\n",
-                SECRET.to_ascii_lowercase()
-            )),
+        assert_eq!(
+            header_value(&request, "authorization"),
+            Some(format!("Bearer {SECRET}").as_str()),
             "{request}"
         );
     }
@@ -597,6 +613,52 @@ mod tests {
     }
 
     #[test]
+    fn register_counts_only_the_workers_own_400_as_already_registered() {
+        // A 400 that is not the Worker's `{"error":"bad_request"}` (a proxy's
+        // page, an empty body, another code) is a failed register.
+        let cases: [&[u8]; 4] = [
+            b"",
+            b"<html>Bad Request</html>",
+            br#"{"error":"rate_limited"}"#,
+            br#"{"message":"bad_request"}"#,
+        ];
+        for body in cases {
+            let (base, _served) = serve_once(http("400 Bad Request", body));
+            assert!(
+                client(&base).register(HASH).is_err(),
+                "{}",
+                String::from_utf8_lossy(body)
+            );
+        }
+        let (base, _served) = serve_once(http("400 Bad Request", b"nope"));
+        assert_eq!(client(&base).register(HASH), Err(PrivateError::BadRequest));
+    }
+
+    /// The value of the request's `name` header, the name read in any case
+    /// (HTTP header names are), the value exactly as sent.
+    fn header_value<'a>(request: &'a str, name: &str) -> Option<&'a str> {
+        request.lines().find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            key.eq_ignore_ascii_case(name).then(|| value.trim())
+        })
+    }
+
+    #[test]
+    fn the_bearer_header_carries_the_secret_exactly() {
+        let body = br#"{"credits":0,"usedCredits":0,"keyReady":false,"updatedAt":"t"}"#;
+        let (base, served) = serve_once(http("200 OK", body));
+
+        client(&base).balance(SECRET, false).expect("balance");
+
+        let request = served.join().expect("stub");
+        assert_eq!(
+            header_value(&request, "authorization"),
+            Some(format!("Bearer {SECRET}").as_str()),
+            "{request}"
+        );
+    }
+
+    #[test]
     fn register_reports_a_rate_limit() {
         let (base, _served) = serve_once(http(
             "429 Too Many Requests",
@@ -619,9 +681,11 @@ mod tests {
             request.starts_with("POST /v1/topups HTTP/1.1\r\n"),
             "{request}"
         );
-        assert!(request
-            .to_ascii_lowercase()
-            .contains("authorization: bearer "));
+        assert_eq!(
+            header_value(&request, "authorization"),
+            Some(format!("Bearer {SECRET}").as_str()),
+            "{request}"
+        );
         assert!(request.ends_with(r#"{"packageUsd":10}"#), "{request}");
     }
 

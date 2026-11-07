@@ -42,12 +42,28 @@ pub fn keychain_service(app_data_dir: &Path) -> String {
     format!("{RELEASE_SERVICE}.{}", &digest[..SERVICE_SUFFIX_HEX_CHARS])
 }
 
-/// A fresh `ZRV-XXXX-XXXX-XXXX-XXXX` code with 80 random bits.
-pub fn new_recovery_code() -> String {
+/// A fresh `ZRV-XXXX-XXXX-XXXX-XXXX` code with 80 random bits from the OS.
+/// An OS random source that fails is `Keychain`: no secret could be made, so
+/// nothing is stored, and the command fails like any other secret-store error.
+pub fn new_recovery_code() -> Result<String, PrivateError> {
+    new_recovery_code_with(getrandom::fill)
+}
+
+/// [`new_recovery_code`] with the random source as a parameter, for tests.
+fn new_recovery_code_with(
+    fill: impl FnOnce(&mut [u8]) -> Result<(), getrandom::Error>,
+) -> Result<String, PrivateError> {
     let mut bytes = [0u8; CODE_RANDOM_BYTES];
-    // The OS random source failing is not recoverable and not something a
-    // caller could act on, so stop here rather than mint a weak secret.
-    getrandom::fill(&mut bytes).expect("the OS random source is unavailable");
+    if fill(&mut bytes).is_err() {
+        eprintln!("private mode: the OS random source failed; no recovery code was made");
+        return Err(PrivateError::Keychain);
+    }
+    Ok(encode_code(&bytes))
+}
+
+/// The code for 80 bits: each character is the next 5 bits, most significant
+/// first, as a Crockford base32 digit.
+fn encode_code(bytes: &[u8; CODE_RANDOM_BYTES]) -> String {
     let bits = bytes
         .iter()
         .fold(0u128, |all, byte| (all << 8) | u128::from(*byte));
@@ -62,14 +78,17 @@ pub fn new_recovery_code() -> String {
 }
 
 /// The canonical form of a code the user typed, or `None` when it is not one.
-/// Trims, uppercases, drops spaces and dashes after the `ZRV` prefix and reads
-/// `O` as `0` and `I`/`L` as `1`.
+/// Trims, uppercases, drops spaces and dashes after the `ZRV` prefix (a
+/// no-break space and a non-breaking hyphen, as a pasted code may hold, count
+/// as a space and a dash) and reads `O` as `0` and `I`/`L` as `1`. Any other
+/// non-ASCII character, a look-alike from another script included, makes the
+/// text not a code.
 pub fn normalize_recovery_code(input: &str) -> Option<String> {
     let upper = input.trim().to_ascii_uppercase();
     let body = upper.strip_prefix(CODE_PREFIX)?;
     let chars: Vec<char> = body
         .chars()
-        .filter(|c| !matches!(c, ' ' | '-'))
+        .filter(|c| !matches!(c, ' ' | '-' | '\u{A0}' | '\u{2011}'))
         .map(|c| match c {
             'O' => '0',
             'I' | 'L' => '1',
@@ -131,16 +150,39 @@ impl KeychainStore {
 #[cfg(target_os = "macos")]
 const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
 
+/// The log line of a failed Keychain call: what was done, to which item, and
+/// the `OSStatus`. Never the value: none is passed in.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn keychain_failure_line(operation: &str, account: &str, status: i32) -> String {
+    format!("private mode: Keychain {operation} of {account} failed: OSStatus {status}")
+}
+
+/// Logs a failed Keychain call with its `OSStatus` (the UI only ever gets the
+/// `keychain` code) and returns that code.
+#[cfg(target_os = "macos")]
+fn keychain_error(
+    operation: &str,
+    account: &str,
+    error: &security_framework::base::Error,
+) -> PrivateError {
+    eprintln!(
+        "{}",
+        keychain_failure_line(operation, account, error.code())
+    );
+    PrivateError::Keychain
+}
+
 #[cfg(target_os = "macos")]
 impl SecretStore for KeychainStore {
     fn get(&self, account: &str) -> Result<Option<String>, PrivateError> {
         use security_framework::passwords::get_generic_password;
         match get_generic_password(&self.service, account) {
-            Ok(bytes) => String::from_utf8(bytes)
-                .map(Some)
-                .map_err(|_| PrivateError::Keychain),
+            Ok(bytes) => String::from_utf8(bytes).map(Some).map_err(|_| {
+                eprintln!("private mode: Keychain item {account} is not UTF-8");
+                PrivateError::Keychain
+            }),
             Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(None),
-            Err(_) => Err(PrivateError::Keychain),
+            Err(error) => Err(keychain_error("read", account, &error)),
         }
     }
 
@@ -150,14 +192,14 @@ impl SecretStore for KeychainStore {
             account,
             value.as_bytes(),
         )
-        .map_err(|_| PrivateError::Keychain)
+        .map_err(|error| keychain_error("write", account, &error))
     }
 
     fn delete(&self, account: &str) -> Result<(), PrivateError> {
         match security_framework::passwords::delete_generic_password(&self.service, account) {
             Ok(()) => Ok(()),
             Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(()),
-            Err(_) => Err(PrivateError::Keychain),
+            Err(error) => Err(keychain_error("delete", account, &error)),
         }
     }
 }
@@ -225,7 +267,7 @@ mod tests {
             .expect("valid regex");
         let mut seen = std::collections::HashSet::new();
         for _ in 0..1000 {
-            let code = new_recovery_code();
+            let code = new_recovery_code().expect("the OS random source works");
             assert!(shape.is_match(&code), "bad shape: {code}");
             assert!(seen.insert(code), "duplicate code");
         }
@@ -233,8 +275,83 @@ mod tests {
 
     #[test]
     fn a_new_code_is_already_canonical() {
-        let code = new_recovery_code();
+        let code = new_recovery_code().expect("the OS random source works");
         assert_eq!(normalize_recovery_code(&code), Some(code));
+    }
+
+    #[test]
+    fn a_failing_random_source_is_a_keychain_error_not_a_panic() {
+        let failing = |_: &mut [u8]| Err(getrandom::Error::UNSUPPORTED);
+        assert_eq!(new_recovery_code_with(failing), Err(PrivateError::Keychain));
+    }
+
+    #[test]
+    fn a_new_code_is_the_encoding_of_the_random_bytes() {
+        let fixed = |bytes: &mut [u8]| {
+            bytes.copy_from_slice(&[0x00, 0x44, 0x32, 0x14, 0xc7, 0x42, 0x54, 0xb6, 0x35, 0xcf]);
+            Ok(())
+        };
+        assert_eq!(
+            new_recovery_code_with(fixed).as_deref(),
+            Ok("ZRV-0123-4567-89AB-CDEF")
+        );
+    }
+
+    #[test]
+    fn encode_code_packs_five_bits_per_character_most_significant_first() {
+        let cases: [([u8; 10], &str); 3] = [
+            ([0x00; 10], "ZRV-0000-0000-0000-0000"),
+            ([0xff; 10], "ZRV-ZZZZ-ZZZZ-ZZZZ-ZZZZ"),
+            (
+                [0xf8, 0x3e, 0x0f, 0x83, 0xe0, 0xf8, 0x3e, 0x0f, 0x83, 0xe0],
+                "ZRV-Z0Z0-Z0Z0-Z0Z0-Z0Z0",
+            ),
+        ];
+        for (bytes, code) in cases {
+            assert_eq!(encode_code(&bytes), code, "{bytes:02x?}");
+            assert_eq!(normalize_recovery_code(code).as_deref(), Some(code));
+            assert_eq!(
+                normalize_recovery_code(&code.to_ascii_lowercase().replace('-', " ")).as_deref(),
+                Some(code)
+            );
+        }
+    }
+
+    #[test]
+    fn look_alike_characters_from_other_scripts_are_never_read_as_a_code() {
+        // Cyrillic О and І, full-width ７ and a combining acute accent: none is
+        // mapped to an ASCII character, so each makes the text not a code.
+        for text in [
+            "ZRV-4K9P-2M7Q-8HXD-7F2\u{41E}",
+            "ZRV-4K9P-2M7Q-8HXD-7F2\u{406}",
+            "ZRV-4K9P-2M7Q-8HXD-7F2\u{FF17}",
+            "ZRV-4K9P-2M7Q-8HXD-7F2Q\u{301}",
+            "ZRV-4K9P-2M7Q-8HXD-7F\u{301}2",
+            "\u{417}RV-4K9P-2M7Q-8HXD-7F2Q",
+        ] {
+            assert_eq!(normalize_recovery_code(text), None, "{text:?}");
+            assert_ne!(secret_hash(text), SHA256_OF_SAMPLE_CODE, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn a_no_break_space_and_a_non_breaking_hyphen_read_as_a_space_and_a_hyphen() {
+        assert_eq!(
+            normalize_recovery_code("ZRV\u{A0}4K9P\u{2011}2M7Q\u{A0}8HXD\u{2011}7F2Q").as_deref(),
+            Some("ZRV-4K9P-2M7Q-8HXD-7F2Q")
+        );
+        assert_eq!(
+            normalize_recovery_code("\u{A0}zrv\u{2011}4k9p 2m7q-8hxd\u{A0}7f2q\u{A0}").as_deref(),
+            Some("ZRV-4K9P-2M7Q-8HXD-7F2Q")
+        );
+    }
+
+    #[test]
+    fn a_keychain_failure_line_names_the_status_and_never_a_value() {
+        let line = keychain_failure_line("write", DEVICE_SECRET, -25299);
+        assert!(line.contains("-25299"), "{line}");
+        assert!(line.contains("write"), "{line}");
+        assert!(line.contains(DEVICE_SECRET), "{line}");
     }
 
     #[test]

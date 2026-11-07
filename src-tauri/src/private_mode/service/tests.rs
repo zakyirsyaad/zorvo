@@ -25,6 +25,7 @@ fn pending(id: &str) -> PendingTopup {
         topup_id: id.into(),
         expires_at: "2026-11-07T02:00:00Z".into(),
         credits: 1000,
+        bought_before: None,
     }
 }
 
@@ -578,10 +579,16 @@ fn recover_sends_the_canonical_old_code_and_the_new_hash_and_replaces_the_secret
     assert_ne!(new, CODE);
     assert_eq!(
         h.api.calls(),
-        vec![Call::Recover {
-            code: CODE.into(),
-            new_hash: secret_hash(&new)
-        }]
+        vec![
+            Call::Recover {
+                code: CODE.into(),
+                new_hash: secret_hash(&new)
+            },
+            Call::Balance {
+                secret: new.clone(),
+                fresh: false
+            }
+        ]
     );
     assert_eq!(h.secret(DEVICE_SECRET), Some(new));
     assert_eq!(h.secret(DEVICE_SECRET_NEXT), None);
@@ -715,7 +722,14 @@ fn forget_deletes_a_moved_device_and_resets_the_state_file() {
     h.mode.create_topup(10).expect("top-up");
     h.api.balance.then(Err(PrivateError::Unauthorized));
     assert_eq!(h.mode.status(false).device, DeviceState::Moved);
+    // A recovery left behind that the server never took is settled and dropped too.
+    h.store.set(DEVICE_SECRET_NEXT, OTHER_CODE).expect("seed");
+    h.api.balance.then(Err(PrivateError::Unauthorized));
     h.mode.forget_device().expect("forgotten");
+    assert!(h.api.calls().contains(&Call::Balance {
+        secret: OTHER_CODE.into(),
+        fresh: false
+    }));
     for account in [DEVICE_SECRET, DEVICE_SECRET_NEXT, NEARAI_KEY] {
         assert_eq!(h.secret(account), None, "{account}");
     }
@@ -896,12 +910,13 @@ fn a_moved_device_can_recover_another_code_and_forget_cleans_up() {
     assert!(h.state().moved);
     assert_eq!(h.api.count(|c| matches!(c, Call::Register { .. })), 0);
 
+    h.api.balance.then(Ok(balance(50, false)));
     let new = h.mode.recover(CODE).expect("recovered");
     assert_eq!(h.secret(DEVICE_SECRET), Some(new));
     assert!(!h.state().moved);
 
-    // the recovered device is ready: the last balance (still 50) keeps it
-    // from Forget until a balance reads 0, then Forget leaves a clean state
+    // the recovered device is ready: its balance (50, read by the recovery)
+    // keeps it from Forget until a balance reads 0, then Forget leaves a clean state
     assert_eq!(h.mode.forget_device(), Err(PrivateError::HasOwnCredits));
     h.api.balance.then(Ok(balance(0, false)));
     h.mode.status(false);
@@ -1040,4 +1055,156 @@ fn iso_dates_are_utc_calendar_dates() {
     assert_eq!(iso_from_unix(0), "1970-01-01T00:00:00Z");
     assert_eq!(iso_from_unix(1_730_678_400), "2024-11-04T00:00:00Z");
     assert_eq!(iso_from_unix(951_782_400 + 3_661), "2000-02-29T01:01:01Z");
+}
+
+// ---- deferred minors ----
+
+fn credited(credits: u64) -> TopupState {
+    TopupState {
+        status: "credited".into(),
+        credits,
+    }
+}
+
+#[test]
+fn a_credit_a_balance_read_already_shows_is_not_added_again() {
+    let h = Harness::with_device(OTHER_CODE);
+    h.set_state(&state_with_balance(50));
+    h.mode.create_topup(10).expect("top-up");
+    // The status reads the balance after the credit landed (10 used since).
+    h.api.balance.then(Ok(Balance {
+        credits: 1040,
+        used_credits: 10,
+        key_ready: false,
+        updated_at: "2026-11-07T01:05:00Z".into(),
+    }));
+    h.mode.status(false);
+    h.api.topup.always(Ok(credited(1000)));
+
+    h.mode.topup_status(TOPUP_ID).expect("status");
+
+    assert_eq!(h.state().pending_topup, None);
+    assert_eq!(h.state().last_balance.map(|b| b.credits), Some(1040));
+}
+
+#[test]
+fn a_credit_a_balance_read_did_not_show_yet_is_added() {
+    let h = Harness::with_device(OTHER_CODE);
+    h.set_state(&state_with_balance(50));
+    h.mode.create_topup(10).expect("top-up");
+    // Read while the payment was still on its way.
+    h.api.balance.then(Ok(balance(50, false)));
+    h.mode.status(false);
+    h.api.topup.always(Ok(credited(1000)));
+
+    h.mode.topup_status(TOPUP_ID).expect("status");
+
+    assert_eq!(h.state().last_balance.map(|b| b.credits), Some(1050));
+}
+
+#[test]
+fn a_promo_credit_a_balance_read_already_shows_is_not_added_again() {
+    let h = Harness::with_device(OTHER_CODE);
+    h.mode.redeem_promo("HACK300").expect("redeemed");
+    h.api.balance.then(Ok(balance(300, false)));
+    h.mode.status(false);
+    h.api.topup.always(Ok(credited(300)));
+
+    h.mode.topup_status("p1").expect("status");
+
+    assert_eq!(h.state().last_balance.map(|b| b.credits), Some(300));
+}
+
+/// Each Worker call that sends the device secret, scripted to answer 401.
+fn refuse_with_401(h: &Harness, call: &str) -> Result<(), PrivateError> {
+    const REFUSED: PrivateError = PrivateError::Unauthorized;
+    match call {
+        "stock" => {
+            h.api.stock.then(Err(REFUSED));
+            h.mode.stock().map(|_| ())
+        }
+        "models" => {
+            h.api.models.then(Err(REFUSED));
+            h.mode.models().map(|_| ())
+        }
+        "create_topup" => {
+            h.api.create_topup.then(Err(REFUSED));
+            h.mode.create_topup(10).map(|_| ())
+        }
+        "topup_status" => {
+            h.api.topup.then(Err(REFUSED));
+            h.mode.topup_status(TOPUP_ID).map(|_| ())
+        }
+        "cancel_topup" => {
+            h.api.cancel_topup.then(Err(REFUSED));
+            h.mode.cancel_topup(TOPUP_ID)
+        }
+        "redeem_promo" => {
+            h.api.redeem_promo.then(Err(REFUSED));
+            h.mode.redeem_promo("HACK300").map(|_| ())
+        }
+        other => panic!("unknown call {other}"),
+    }
+}
+
+#[test]
+fn a_401_from_any_worker_call_marks_the_device_moved() {
+    for call in [
+        "stock",
+        "models",
+        "create_topup",
+        "topup_status",
+        "cancel_topup",
+        "redeem_promo",
+    ] {
+        let h = Harness::with_device(CODE);
+        h.set_state(&state_with_balance(0));
+
+        assert_eq!(
+            refuse_with_401(&h, call),
+            Err(PrivateError::Unauthorized),
+            "{call}"
+        );
+
+        assert!(h.state().moved, "{call}");
+    }
+}
+
+#[test]
+fn a_device_a_worker_call_found_moved_reads_moved_while_its_balance_cannot_be_read() {
+    let h = Harness::with_device(CODE);
+    h.set_state(&state_with_balance(0));
+    assert_eq!(
+        refuse_with_401(&h, "stock"),
+        Err(PrivateError::Unauthorized)
+    );
+    h.api.balance.then(Err(PrivateError::Unreachable));
+
+    let status = h.mode.status(false);
+
+    assert_eq!(status.device, DeviceState::Moved);
+    assert_eq!(status.balance_error, Some(PrivateError::Unreachable));
+}
+
+#[test]
+fn a_recovery_remembers_the_recovered_devices_balance() {
+    let h = Harness::new();
+    h.api.balance.then(Ok(balance(700, true)));
+
+    h.mode.recover(CODE).expect("recovered");
+
+    assert_eq!(h.state().last_balance.map(|b| b.credits), Some(700));
+    // so a stray Forget cannot drop the credits the recovery just brought here
+    assert_eq!(h.mode.forget_device(), Err(PrivateError::HasOwnCredits));
+}
+
+#[test]
+fn a_recovery_whose_balance_read_fails_still_succeeds() {
+    let h = Harness::new();
+    h.api.balance.then(Err(PrivateError::Unreachable));
+
+    let new = h.mode.recover(CODE).expect("recovered");
+
+    assert_eq!(h.secret(DEVICE_SECRET), Some(new));
+    assert_eq!(h.state().last_balance, None);
 }

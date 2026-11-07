@@ -8,6 +8,7 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,9 @@ use super::PrivateError;
 const STATE_FILE: &str = "state.json";
 const DIR_MODE: u32 = 0o700;
 const FILE_MODE: u32 = 0o600;
+const TMP_SUFFIX: &str = ".tmp";
+/// How old a temp file must be before a load counts it as left behind.
+const STALE_TMP_AGE: Duration = Duration::from_secs(60);
 
 /// How many private ACP session ids are remembered; the oldest go first.
 /// Accepted limit: once more than this many private sessions exist, the oldest
@@ -32,6 +36,11 @@ pub struct PendingTopup {
     pub topup_id: String,
     pub expires_at: String,
     pub credits: u64,
+    /// Credits bought before this top-up, as the last balance read then
+    /// showed them (credits left plus used): a balance read since that shows
+    /// the credit already counts it. `None` in a file from before it existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bought_before: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -98,8 +107,10 @@ fn private_sessions_of(object: &Map<String, Value>) -> Vec<String> {
 
 impl LocalState {
     /// `<dir>/state.json`. A missing or malformed file is the default; a field
-    /// of the wrong type is its default and the others are kept.
+    /// of the wrong type is its default and the others are kept. Temp files a
+    /// save that never finished left behind are removed first.
     pub fn load(dir: &Path) -> LocalState {
+        remove_stale_temp_files(dir);
         let parsed = fs::read_to_string(dir.join(STATE_FILE))
             .ok()
             .and_then(|text| serde_json::from_str::<Value>(&text).ok());
@@ -156,7 +167,35 @@ impl LocalState {
 fn unique_tmp_name() -> String {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    format!("{STATE_FILE}.{}.{n}.tmp", std::process::id())
+    format!("{STATE_FILE}.{}.{n}{TMP_SUFFIX}", std::process::id())
+}
+
+/// Removes the temp files of saves that never finished (the app quit or
+/// crashed between the write and the rename). A save writes and renames in
+/// well under a second, so only files older than [`STALE_TMP_AGE`] go: one a
+/// save in another thread or app process is writing right now stays. Best
+/// effort: a file that cannot be read or removed is left for the next load.
+fn remove_stale_temp_files(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let prefix = format!("{STATE_FILE}.");
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !(name.starts_with(&prefix) && name.ends_with(TMP_SUFFIX)) {
+            continue;
+        }
+        let is_stale = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age > STALE_TMP_AGE);
+        if is_stale {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -216,6 +255,7 @@ mod tests {
                 topup_id: "t1".into(),
                 expires_at: "2026-11-07T02:00:00Z".into(),
                 credits: 1000,
+                bought_before: Some(900),
             }),
             last_balance: Some(LastBalance {
                 credits: 900,
@@ -427,6 +467,73 @@ mod tests {
             })
             .collect();
         assert_eq!(names, vec![STATE_FILE.to_string()]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn names_in(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .expect("dir")
+            .map(|entry| {
+                entry
+                    .expect("entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect();
+        names.sort();
+        names
+    }
+
+    fn write_aged(path: &Path, age: std::time::Duration) {
+        std::fs::write(path, "{}").expect("write");
+        let then = std::time::SystemTime::now() - age;
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .expect("open")
+            .set_modified(then)
+            .expect("age the file");
+    }
+
+    #[test]
+    fn load_removes_temp_files_a_crashed_save_left_behind() {
+        let dir = scratch_dir();
+        sample().save(&dir).expect("saves");
+        let old = std::time::Duration::from_secs(10 * 60);
+        write_aged(&dir.join("state.json.4242.0.tmp"), old);
+        write_aged(&dir.join("state.json.4242.1.tmp"), old);
+
+        assert_eq!(LocalState::load(&dir), sample());
+
+        assert_eq!(names_in(&dir), vec![STATE_FILE.to_string()]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_keeps_a_fresh_temp_file_and_other_files() {
+        // A save in another thread or app process may be writing it right now.
+        let dir = scratch_dir();
+        sample().save(&dir).expect("saves");
+        let old = std::time::Duration::from_secs(10 * 60);
+        write_aged(
+            &dir.join("state.json.4242.0.tmp"),
+            std::time::Duration::ZERO,
+        );
+        write_aged(&dir.join("notes.tmp"), old);
+        write_aged(&dir.join("other.json"), old);
+
+        LocalState::load(&dir);
+
+        assert_eq!(
+            names_in(&dir),
+            vec![
+                "notes.tmp",
+                "other.json",
+                "state.json",
+                "state.json.4242.0.tmp"
+            ]
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

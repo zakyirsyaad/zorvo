@@ -5,7 +5,7 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -291,6 +291,11 @@ impl TestStore {
         lock(&self.failing).insert(account.to_string());
     }
 
+    /// Lets writes to `account` succeed again.
+    pub(crate) fn allow_writes_to(&self, account: &str) {
+        lock(&self.failing).remove(account);
+    }
+
     pub(crate) fn garble_reads_of(&self, account: &str) {
         lock(&self.garbled).insert(account.to_string());
     }
@@ -346,6 +351,7 @@ pub(crate) struct Harness {
     pub(crate) api: Arc<FakeCredits>,
     pub(crate) dir: PathBuf,
     opened: Arc<Mutex<Vec<String>>>,
+    opens_fail: Arc<AtomicBool>,
 }
 
 impl Harness {
@@ -355,11 +361,16 @@ impl Harness {
         let opened = Arc::new(Mutex::new(Vec::new()));
         let dir = scratch_dir();
         let recorder = Arc::clone(&opened);
+        let opens_fail = Arc::new(AtomicBool::new(false));
+        let failing = Arc::clone(&opens_fail);
         let mode = PrivateMode::new(
             Box::new(Arc::clone(&store)),
             Box::new(Arc::clone(&api)),
             dir.join("private"),
             Box::new(move |url: &str| {
+                if failing.load(Ordering::SeqCst) {
+                    return Err("open failed".to_string());
+                }
                 lock(&recorder).push(url.to_string());
                 Ok(())
             }),
@@ -370,6 +381,7 @@ impl Harness {
             api,
             dir,
             opened,
+            opens_fail,
         }
     }
 
@@ -378,6 +390,11 @@ impl Harness {
         let harness = Self::new();
         harness.store.set(DEVICE_SECRET, code).expect("seed secret");
         harness
+    }
+
+    /// Makes the opener fail from now on.
+    pub(crate) fn fail_opens(&self) {
+        self.opens_fail.store(true, Ordering::SeqCst);
     }
 
     pub(crate) fn opened(&self) -> Vec<String> {

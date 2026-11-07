@@ -43,7 +43,7 @@ mod workspaces_test;
 mod worktrees_test;
 
 /// Test files that are binaries of their own, directly in `tests/`.
-const OWN_BINARIES: &[&str] = &["installer_state_test.rs"];
+const OWN_BINARIES: &[&str] = &["installer_state_test.rs", "private_proxy_test.rs"];
 
 /// The `.rs` file names directly in `dir`.
 fn rust_files_in(dir: &std::path::Path) -> Vec<String> {

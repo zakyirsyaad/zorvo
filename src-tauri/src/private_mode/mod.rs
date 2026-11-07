@@ -49,6 +49,8 @@ pub enum PrivateError {
     HasOwnCredits,
     /// This Mac's own state file could not be written.
     Storage,
+    /// The system browser did not open the checkout; its hold stands.
+    OpenFailed,
 }
 
 impl PrivateError {
@@ -73,6 +75,7 @@ impl PrivateError {
             Self::BadCheckoutUrl => "bad_checkout_url",
             Self::HasOwnCredits => "has_own_credits",
             Self::Storage => "storage",
+            Self::OpenFailed => "open_failed",
         }
     }
 }
@@ -87,7 +90,7 @@ impl From<PrivateError> for String {
 mod tests {
     use super::*;
 
-    const ALL: [PrivateError; 18] = [
+    const ALL: [PrivateError; 19] = [
         PrivateError::Unreachable,
         PrivateError::Unauthorized,
         PrivateError::BadRequest,
@@ -106,6 +109,7 @@ mod tests {
         PrivateError::BadCheckoutUrl,
         PrivateError::HasOwnCredits,
         PrivateError::Storage,
+        PrivateError::OpenFailed,
     ];
 
     #[test]
@@ -120,5 +124,6 @@ mod tests {
     fn converts_to_the_snake_case_code() {
         assert_eq!(String::from(PrivateError::HasOwnCredits), "has_own_credits");
         assert_eq!(String::from(PrivateError::KeyLost), "key_lost");
+        assert_eq!(String::from(PrivateError::OpenFailed), "open_failed");
     }
 }

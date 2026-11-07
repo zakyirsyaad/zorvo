@@ -51,6 +51,11 @@ pub struct LocalState {
     pub pending_topup: Option<PendingTopup>,
     pub last_balance: Option<LastBalance>,
     pub models: Option<CachedModels>,
+    /// Epoch ms until which a rotated key is expected after a recovery: a key
+    /// missing before then is on its way, not lost.
+    pub rotation_expected_until: Option<i64>,
+    /// The server answered `401` to this Mac's secret: its credits moved.
+    pub moved: bool,
 }
 
 /// One field of the file, or `None` when it is absent or has the wrong shape.
@@ -76,6 +81,8 @@ impl LocalState {
             pending_topup: field(&object, "pendingTopup"),
             last_balance: field(&object, "lastBalance"),
             models: field(&object, "models"),
+            rotation_expected_until: field(&object, "rotationExpectedUntil"),
+            moved: field(&object, "moved").unwrap_or_default(),
         }
     }
 
@@ -173,6 +180,8 @@ mod tests {
                     output_per_m: 0.6,
                 }],
             }),
+            rotation_expected_until: Some(1_762_480_800_000),
+            moved: true,
         }
     }
 
@@ -205,7 +214,8 @@ mod tests {
         std::fs::write(
             dir.join(STATE_FILE),
             r#"{"recoverySaved":true,"recoveryPrompted":"yes","pendingTopup":7,
-                "lastBalance":{"credits":"many"},"models":{"at":"t","list":[]}}"#,
+                "lastBalance":{"credits":"many"},"models":{"at":"t","list":[]},
+                "rotationExpectedUntil":"soon","moved":"maybe"}"#,
         )
         .expect("write");
 
@@ -215,6 +225,8 @@ mod tests {
         assert!(!loaded.recovery_prompted);
         assert_eq!(loaded.pending_topup, None);
         assert_eq!(loaded.last_balance, None);
+        assert_eq!(loaded.rotation_expected_until, None);
+        assert!(!loaded.moved);
         assert_eq!(
             loaded.models,
             Some(CachedModels {

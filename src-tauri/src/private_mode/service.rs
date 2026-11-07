@@ -33,6 +33,11 @@ const CREDITED: &str = "credited";
 /// Top-up statuses after which there is nothing left to wait for.
 const SETTLED: [&str; 3] = [CREDITED, "failed", "expired"];
 const SECONDS_PER_DAY: u64 = 86_400;
+/// After a recovery the server rotates the key in a queued job; until then it
+/// says the key was handed over while there is none to take.
+const ROTATION_WINDOW_MS: i64 = 15 * 60 * 1000;
+/// A promo credit is held like a checkout; the server sends no expiry for it.
+const PROMO_HOLD_SECS: u64 = 25 * 60;
 
 /// Opens a checkout URL in the system browser.
 pub type Opener = Box<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
@@ -94,6 +99,9 @@ pub struct PrivateMode {
     /// The current secret is known to the server, this run.
     registered: AtomicBool,
     handover: Mutex<()>,
+    /// A one-time key the server handed over that the Keychain refused; the
+    /// next collection writes it again instead of asking for it.
+    unsaved_key: Mutex<Option<String>>,
     /// Serializes read-modify-write of the state file.
     state: Mutex<()>,
 }
@@ -124,6 +132,7 @@ impl PrivateMode {
             checkouts: Mutex::new(HashMap::new()),
             registered: AtomicBool::new(false),
             handover: Mutex::new(()),
+            unsaved_key: Mutex::new(None),
             state: Mutex::new(()),
         }
     }
@@ -223,7 +232,10 @@ impl PrivateMode {
         };
         match answer {
             Ok(balance) => self.ready_report(balance),
-            Err(PrivateError::Unauthorized) => DeviceReport::new(DeviceState::Moved),
+            Err(PrivateError::Unauthorized) => {
+                self.change_state(|old| LocalState { moved: true, ..old });
+                DeviceReport::new(DeviceState::Moved)
+            }
             Err(error) => DeviceReport {
                 key_ready: self.has_local_key().unwrap_or(false),
                 balance_error: Some(error),
@@ -266,13 +278,11 @@ impl PrivateMode {
             used_credits: balance.used_credits,
             at: balance.updated_at.clone(),
         };
-        let saved = self.update_state(|old| LocalState {
+        self.change_state(|old| LocalState {
             last_balance: Some(last),
+            moved: false,
             ..old
         });
-        if saved.is_err() {
-            report_storage_failure();
-        }
     }
 
     // ---- the key handover ----
@@ -285,7 +295,8 @@ impl PrivateMode {
     /// The server hands a key over once (`keyReady` is false while it waits),
     /// so collection runs under `handover` and checks again inside it: two
     /// callers never both take it. `None` from the server while it says the
-    /// key was handed over (`keyReady`) means it never got here: `KeyLost`.
+    /// key was handed over (`keyReady`) means it never got here: `KeyLost`,
+    /// unless a recovery's rotated key is still expected.
     fn collect_key(&self, server_key_ready: bool) -> Result<bool, PrivateError> {
         if self.has_local_key()? {
             return Ok(true);
@@ -294,11 +305,40 @@ impl PrivateMode {
         if self.has_local_key()? {
             return Ok(true);
         }
-        match self.api.take_key(&self.device_secret()?)? {
-            Some(key) => self.save_key(&key).map(|()| true),
-            None if server_key_ready => Err(PrivateError::KeyLost),
-            None => Ok(false),
+        let unsaved = lock(&self.unsaved_key).take();
+        let key = match unsaved {
+            Some(key) => key,
+            None => match self.api.take_key(&self.device_secret()?)? {
+                Some(key) => key,
+                None if server_key_ready && !self.rotation_expected() => {
+                    return Err(PrivateError::KeyLost)
+                }
+                None => return Ok(false),
+            },
+        };
+        self.keep_key(key).map(|()| true)
+    }
+
+    /// Saves a taken key. One the Keychain refused stays in memory for the
+    /// next try, since the server will not hand it over again.
+    fn keep_key(&self, key: String) -> Result<(), PrivateError> {
+        if let Err(error) = self.save_key(&key) {
+            *lock(&self.unsaved_key) = Some(key);
+            return Err(error);
         }
+        if self.load_state().rotation_expected_until.is_some() {
+            self.change_state(|old| LocalState {
+                rotation_expected_until: None,
+                ..old
+            });
+        }
+        Ok(())
+    }
+
+    fn rotation_expected(&self) -> bool {
+        self.load_state()
+            .rotation_expected_until
+            .is_some_and(|until| now_millis() < until)
     }
 
     /// Writes the key and reads it back; only a key that reads back the same
@@ -360,23 +400,24 @@ impl PrivateMode {
     }
 
     /// Makes `next` this Mac's secret once the server holds its hash. The old
-    /// key is dropped (the server revokes it and hands over a new one), and the
-    /// new code has not been saved by the user yet.
+    /// key is dropped (the server revokes it and rotates a new one in, which
+    /// is expected for a while), the device is no longer moved, and the new
+    /// code has not been saved by the user yet.
     fn promote(&self, next: &str) -> Result<(), PrivateError> {
         self.store.delete(NEARAI_KEY)?;
         self.store.set(DEVICE_SECRET, next)?;
         self.registered.store(true, Ordering::SeqCst);
+        *lock(&self.unsaved_key) = None;
         // A leftover copy equals the secret now; `finish_recovery_locked`
         // deletes it next time without promoting it again.
         let _ = self.store.delete(DEVICE_SECRET_NEXT);
-        let saved = self.update_state(|old| LocalState {
+        self.change_state(|old| LocalState {
             recovery_saved: false,
             recovery_prompted: false,
+            moved: false,
+            rotation_expected_until: Some(now_millis() + ROTATION_WINDOW_MS),
             ..old
         });
-        if saved.is_err() {
-            report_storage_failure();
-        }
         Ok(())
     }
 
@@ -405,7 +446,7 @@ impl PrivateMode {
 
     /// Restoring another Mac's code here would orphan this Mac's own credits
     /// or top-up. This Mac's own code is allowed: it re-issues a key that was
-    /// never collected.
+    /// never collected. A moved device has nothing left here to orphan.
     fn refuse_if_own_credits(&self, typed: &str) -> Result<(), PrivateError> {
         let Some(own) = self.store.get(DEVICE_SECRET)? else {
             return Ok(());
@@ -414,6 +455,9 @@ impl PrivateMode {
             return Ok(());
         }
         let state = self.load_state();
+        if state.moved {
+            return Ok(());
+        }
         let has_credits = state.last_balance.is_some_and(|last| last.credits > 0)
             || state.pending_topup.is_some();
         if has_credits {
@@ -436,13 +480,22 @@ impl PrivateMode {
         .map(|_| ())
     }
 
-    /// Deletes every Keychain item and resets the state file.
+    /// Deletes every Keychain item and resets the state file. A recovery in
+    /// flight is settled first; while it cannot be, nothing is deleted, since
+    /// `device-secret-next` may be the only working secret. There is no other
+    /// guard here: the UI offers Forget only for a moved device.
     pub fn forget_device(&self) -> Result<(), PrivateError> {
         let _guard = lock(&self.handover);
+        self.finish_recovery_locked(false)
+            .map_err(|error| match error {
+                PrivateError::Keychain => PrivateError::Keychain,
+                _ => PrivateError::Unreachable,
+            })?;
         for account in [NEARAI_KEY, DEVICE_SECRET_NEXT, DEVICE_SECRET] {
             self.store.delete(account)?;
         }
         self.registered.store(false, Ordering::SeqCst);
+        *lock(&self.unsaved_key) = None;
         lock(&self.checkouts).clear();
         self.update_state(|_| LocalState::default()).map(|_| ())
     }
@@ -489,46 +542,39 @@ impl PrivateMode {
             at: now_iso(),
             list: list.to_vec(),
         };
-        let saved = self.update_state(|old| LocalState {
+        self.change_state(|old| LocalState {
             models: Some(cached),
             ..old
         });
-        if saved.is_err() {
-            report_storage_failure();
-        }
     }
 
     // ---- top-ups ----
 
-    /// Creates a top-up and opens its checkout, which must be on
-    /// `https://pay.pingpay.io`; otherwise nothing is opened or kept.
+    /// Creates a top-up and keeps its checkout for `open_checkout`. The
+    /// checkout must be on `https://pay.pingpay.io`, otherwise nothing is
+    /// kept; the normalized URL is kept, never the server's raw text.
     pub fn create_topup(&self, package_usd: u32) -> Result<PendingTopup, PrivateError> {
         let secret = self.ensure_device()?;
         let created = self.api.create_topup(&secret, package_usd)?;
-        if !is_checkout_url(&created.session_url) {
-            return Err(PrivateError::BadCheckoutUrl);
-        }
+        let checkout = checkout_url(&created.session_url).ok_or(PrivateError::BadCheckoutUrl)?;
         let pending = PendingTopup {
             topup_id: created.topup_id.clone(),
             expires_at: created.expires_at,
             credits: u64::from(package_usd) * CREDITS_PER_USD,
         };
         self.keep_pending(&pending);
-        lock(&self.checkouts).insert(created.topup_id, created.session_url.clone());
-        if (self.open)(&created.session_url).is_err() {
-            // The top-up stands; the UI can open it again with open_checkout.
-            eprintln!("private mode: couldn't open the checkout in the browser");
-        }
+        lock(&self.checkouts).insert(created.topup_id, checkout);
         Ok(pending)
     }
 
-    /// Opens a checkout this run created; any other id is `NotFound`.
+    /// Opens a checkout this run created; any other id is `NotFound`. A
+    /// browser that does not open it is `OpenFailed`: the hold stands.
     pub fn open_checkout(&self, topup_id: &str) -> Result<(), PrivateError> {
         let url = lock(&self.checkouts)
             .get(topup_id)
             .cloned()
             .ok_or(PrivateError::NotFound)?;
-        (self.open)(&url).map_err(|_| PrivateError::Upstream)
+        (self.open)(&url).map_err(|_| PrivateError::OpenFailed)
     }
 
     /// The top-up's status; a settled one is cleared here, and a credit also
@@ -536,7 +582,8 @@ impl PrivateMode {
     pub fn topup_status(&self, topup_id: &str) -> Result<TopupState, PrivateError> {
         let state = self.api.topup(&self.device_secret()?, topup_id)?;
         if SETTLED.contains(&state.status.as_str()) {
-            self.drop_topup(topup_id);
+            let credited = (state.status == CREDITED).then_some(state.credits);
+            self.settle_topup(topup_id, credited);
         }
         if state.status == CREDITED {
             if let Err(error) = self.collect_key(false) {
@@ -552,7 +599,7 @@ impl PrivateMode {
 
     pub fn cancel_topup(&self, topup_id: &str) -> Result<(), PrivateError> {
         self.api.cancel_topup(&self.device_secret()?, topup_id)?;
-        self.drop_topup(topup_id);
+        self.settle_topup(topup_id, None);
         Ok(())
     }
 
@@ -572,7 +619,7 @@ impl PrivateMode {
             })?;
         self.keep_pending(&PendingTopup {
             topup_id: result.topup_id.clone(),
-            expires_at: now_iso(),
+            expires_at: iso_from_unix(now_secs() + PROMO_HOLD_SECS),
             credits: result.credits,
         });
         Ok(result)
@@ -581,26 +628,37 @@ impl PrivateMode {
     /// Saves the top-up so a restart resumes polling it. A failed save does
     /// not stop the payment: polling goes on from the UI meanwhile.
     fn keep_pending(&self, pending: &PendingTopup) {
-        let saved = self.update_state(|old| LocalState {
+        self.change_state(|old| LocalState {
             pending_topup: Some(pending.clone()),
             ..old
         });
-        if saved.is_err() {
-            report_storage_failure();
-        }
     }
 
-    fn drop_topup(&self, topup_id: &str) {
+    /// Clears a settled top-up. A credited one is first added to the last
+    /// balance (the server's amount, else the pending one's), so this Mac
+    /// still reads as having credits of its own before the next balance.
+    /// A top-up no longer pending (already settled) changes nothing.
+    fn settle_topup(&self, topup_id: &str, credited: Option<u64>) {
         lock(&self.checkouts).remove(topup_id);
-        let saved = self.update_state(|old| LocalState {
-            pending_topup: old
+        self.change_state(|old| {
+            let Some(pending) = old
                 .pending_topup
-                .filter(|pending| pending.topup_id != topup_id),
-            ..old
+                .as_ref()
+                .filter(|pending| pending.topup_id == topup_id)
+            else {
+                return old;
+            };
+            let last_balance = match credited {
+                Some(0) => Some(with_credit(old.last_balance.clone(), pending.credits)),
+                Some(credits) => Some(with_credit(old.last_balance.clone(), credits)),
+                None => old.last_balance.clone(),
+            };
+            LocalState {
+                pending_topup: None,
+                last_balance,
+                ..old
+            }
         });
-        if saved.is_err() {
-            report_storage_failure();
-        }
     }
 
     // ---- the state file ----
@@ -618,25 +676,66 @@ impl PrivateMode {
         next.save(&self.dir)?;
         Ok(next)
     }
+
+    /// `update_state` for what is only a convenience: a failed save is
+    /// reported and the command goes on.
+    fn change_state(&self, change: impl FnOnce(LocalState) -> LocalState) {
+        if self.update_state(change).is_err() {
+            report_storage_failure();
+        }
+    }
 }
 
-/// `https://pay.pingpay.io/…` exactly: no other scheme, host, port or
-/// credentials.
-fn is_checkout_url(raw: &str) -> bool {
-    Url::parse(raw).is_ok_and(|url| {
-        url.scheme() == "https"
-            && url.host_str() == Some(CHECKOUT_HOST)
-            && url.port().is_none()
-            && url.username().is_empty()
-            && url.password().is_none()
-    })
+fn with_credit(last: Option<LastBalance>, credits: u64) -> LastBalance {
+    match last {
+        Some(last) => LastBalance {
+            credits: last.credits.saturating_add(credits),
+            ..last
+        },
+        None => LastBalance {
+            credits,
+            used_credits: 0,
+            at: now_iso(),
+        },
+    }
+}
+
+/// The normalized form of a `https://pay.pingpay.io/…` checkout, or `None`.
+/// Text with a backslash, a control character or whitespace is refused before
+/// parsing: the WHATWG parser and macOS's `open` read such text differently
+/// (`https://pay.pingpay.io\@evil.com/`), and the parser drops tabs and
+/// newlines silently. The URL then needs scheme `https`, host exactly
+/// `pay.pingpay.io`, the default port and no credentials, and only its
+/// re-serialized form is ever kept or opened.
+fn checkout_url(raw: &str) -> Option<String> {
+    let suspicious = |c: char| c == '\\' || c.is_control() || c.is_whitespace();
+    if raw.chars().any(suspicious) {
+        return None;
+    }
+    let url = Url::parse(raw).ok()?;
+    let valid = url.scheme() == "https"
+        && url.host_str() == Some(CHECKOUT_HOST)
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none();
+    valid.then(|| url.as_str().to_string())
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
+}
+
+fn now_millis() -> i64 {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis());
+    i64::try_from(millis).unwrap_or(i64::MAX)
 }
 
 fn now_iso() -> String {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |since| since.as_secs());
-    iso_from_unix(secs)
+    iso_from_unix(now_secs())
 }
 
 /// `YYYY-MM-DDTHH:MM:SSZ` in UTC (Howard Hinnant's civil-from-days).

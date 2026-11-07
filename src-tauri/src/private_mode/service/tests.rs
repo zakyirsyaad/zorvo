@@ -330,7 +330,7 @@ fn models_without_a_saved_list_return_the_error() {
 // ---- top-ups ----
 
 #[test]
-fn a_first_top_up_creates_the_device_saves_the_top_up_and_opens_checkout() {
+fn a_first_top_up_creates_the_device_and_saves_the_top_up_without_opening_it() {
     let h = Harness::new();
     let topup = h.mode.create_topup(10).expect("top-up");
     let code = h.secret(DEVICE_SECRET).expect("device created");
@@ -347,9 +347,51 @@ fn a_first_top_up_creates_the_device_saves_the_top_up_and_opens_checkout() {
     assert_eq!(topup.credits, 1000);
     assert_eq!(topup.topup_id, TOPUP_ID);
     assert_eq!(h.state().pending_topup, Some(topup));
+    assert!(h.opened().is_empty(), "create_topup opens nothing");
+    h.mode.open_checkout(TOPUP_ID).expect("opens");
     assert_eq!(h.opened(), vec![CHECKOUT_URL.to_string()]);
-    h.mode.open_checkout(TOPUP_ID).expect("opens again");
-    assert_eq!(h.opened().len(), 2);
+}
+
+#[test]
+fn a_checkout_the_browser_cannot_open_reads_open_failed() {
+    let h = Harness::with_device(CODE);
+    h.mode.create_topup(10).expect("top-up");
+    h.fail_opens();
+    assert_eq!(
+        h.mode.open_checkout(TOPUP_ID),
+        Err(PrivateError::OpenFailed)
+    );
+    assert!(h.state().pending_topup.is_some(), "the hold stands");
+}
+
+fn script_checkout(h: &Harness, url: &str) {
+    h.api
+        .create_topup
+        .always(Ok(crate::private_mode::client::CreatedTopup {
+            topup_id: TOPUP_ID.into(),
+            session_url: url.into(),
+            expires_at: "2026-11-07T02:00:00Z".into(),
+        }));
+}
+
+#[test]
+fn a_checkout_url_is_stored_and_opened_in_its_normalized_form() {
+    for (raw, normalized) in [
+        (
+            "https://PAY.PINGPAY.IO/checkout/cs_1",
+            "https://pay.pingpay.io/checkout/cs_1",
+        ),
+        (
+            "https://pay.pingpay.io:443/checkout/cs_1",
+            "https://pay.pingpay.io/checkout/cs_1",
+        ),
+    ] {
+        let h = Harness::with_device(CODE);
+        script_checkout(&h, raw);
+        h.mode.create_topup(10).expect(raw);
+        h.mode.open_checkout(TOPUP_ID).expect(raw);
+        assert_eq!(h.opened(), vec![normalized.to_string()], "{raw}");
+    }
 }
 
 #[test]
@@ -360,16 +402,17 @@ fn a_checkout_url_off_pingpay_is_refused_and_never_opened() {
         "http://pay.pingpay.io/x",
         "https://user@pay.pingpay.io/x",
         "https://pay.pingpay.io:8443/x",
+        "https://pay.pingpay.io\\@evil.com/",
+        "https://pay.pingpay.io./x",
+        "https://pay.pingpay.io/\tx",
+        "https://pay.pingpay.io/\nx",
+        "https://pay.pingpay.io/a b",
+        " https://pay.pingpay.io/x",
+        "https://user:pw@pay.pingpay.io/x",
         "not a url",
     ] {
         let h = Harness::with_device(CODE);
-        h.api
-            .create_topup
-            .always(Ok(crate::private_mode::client::CreatedTopup {
-                topup_id: TOPUP_ID.into(),
-                session_url: url.into(),
-                expires_at: "2026-11-07T02:00:00Z".into(),
-            }));
+        script_checkout(&h, url);
         assert_eq!(
             h.mode.create_topup(10),
             Err(PrivateError::BadCheckoutUrl),
@@ -690,6 +733,157 @@ fn status_serializes_in_camel_case_with_snake_case_codes() {
     assert_eq!(json["keyReady"], false);
     assert!(json.get("balanceError").is_some());
     assert!(!json.to_string().contains(CODE));
+}
+
+// ---- fix round 1 ----
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("after 1970")
+        .as_secs()
+}
+
+/// A recovery whose answer was lost: the server took NEXT, this Mac never heard.
+fn lose_a_recovery(h: &Harness) -> String {
+    h.api.recover.then(Err(PrivateError::Unreachable));
+    assert_eq!(h.mode.recover(CODE), Err(PrivateError::Unreachable));
+    h.secret(DEVICE_SECRET_NEXT).expect("next kept")
+}
+
+#[test]
+fn forget_refuses_while_a_recovery_is_unresolved_and_works_once_it_settles() {
+    let h = Harness::with_device(OTHER_CODE);
+    let next = lose_a_recovery(&h);
+    h.api.balance.then(Err(PrivateError::Unreachable));
+    assert_eq!(h.mode.forget_device(), Err(PrivateError::Unreachable));
+    assert_eq!(h.secret(DEVICE_SECRET_NEXT), Some(next));
+    assert_eq!(h.secret(DEVICE_SECRET).as_deref(), Some(OTHER_CODE));
+
+    h.api.balance.then(Ok(balance(70, false)));
+    h.mode.forget_device().expect("forgotten after the settle");
+    for account in [DEVICE_SECRET, DEVICE_SECRET_NEXT, NEARAI_KEY] {
+        assert_eq!(h.secret(account), None, "{account}");
+    }
+}
+
+#[test]
+fn a_credited_top_up_counts_as_own_credits_for_recovery() {
+    let h = Harness::with_device(OTHER_CODE);
+    h.set_state(&state_with_balance(50));
+    h.mode.create_topup(10).expect("top-up");
+    h.api.topup.always(Ok(TopupState {
+        status: "credited".into(),
+        credits: 1000,
+    }));
+    h.mode.topup_status(TOPUP_ID).expect("status");
+    h.mode.topup_status(TOPUP_ID).expect("polled twice");
+    assert_eq!(h.state().pending_topup, None);
+    assert_eq!(h.state().last_balance.map(|b| b.credits), Some(1050));
+    assert_eq!(h.mode.recover(CODE), Err(PrivateError::HasOwnCredits));
+}
+
+#[test]
+fn a_first_credit_creates_the_last_balance() {
+    let h = Harness::with_device(OTHER_CODE);
+    h.mode.create_topup(5).expect("top-up");
+    h.api.topup.always(Ok(TopupState {
+        status: "credited".into(),
+        credits: 0,
+    }));
+    h.mode.topup_status(TOPUP_ID).expect("status");
+    // the server sent no amount, so the pending top-up's credits count
+    assert_eq!(h.state().last_balance.map(|b| b.credits), Some(500));
+    assert_eq!(h.mode.recover(CODE), Err(PrivateError::HasOwnCredits));
+}
+
+#[test]
+fn a_recovery_expects_a_rotated_key_before_reporting_key_lost() {
+    let h = Harness::new();
+    h.mode.recover(CODE).expect("recovered");
+    let until = h
+        .state()
+        .rotation_expected_until
+        .expect("rotation expected");
+    let now_ms = i64::try_from(now_secs() * 1000).expect("fits");
+    assert!(until > now_ms + 14 * 60 * 1000 && until <= now_ms + 15 * 60 * 1000 + 1000);
+
+    h.api.balance.always(Ok(balance(70, true)));
+    let status = h.mode.status(false);
+    assert_eq!(status.key_error, None);
+    assert!(!status.key_ready);
+
+    h.api.take_key.then(Ok(Some("sk-new".into())));
+    let status = h.mode.status(false);
+    assert!(status.key_ready);
+    assert_eq!(h.secret(NEARAI_KEY).as_deref(), Some("sk-new"));
+    assert_eq!(h.state().rotation_expected_until, None);
+}
+
+#[test]
+fn a_key_still_missing_after_the_rotation_window_reads_key_lost() {
+    let h = Harness::with_device(CODE);
+    let past = i64::try_from(now_secs() * 1000).expect("fits") - 1;
+    h.set_state(&LocalState {
+        rotation_expected_until: Some(past),
+        ..LocalState::default()
+    });
+    h.api.balance.always(Ok(balance(70, true)));
+    assert_eq!(h.mode.status(false).key_error, Some(PrivateError::KeyLost));
+}
+
+#[test]
+fn a_moved_device_can_recover_another_code_and_forget_cleans_up() {
+    let h = Harness::with_device(OTHER_CODE);
+    h.set_state(&state_with_balance(50));
+    h.api.balance.then(Err(PrivateError::Unauthorized));
+    assert_eq!(h.mode.status(false).device, DeviceState::Moved);
+    assert!(h.state().moved);
+    assert_eq!(h.api.count(|c| matches!(c, Call::Register { .. })), 0);
+
+    let new = h.mode.recover(CODE).expect("recovered");
+    assert_eq!(h.secret(DEVICE_SECRET), Some(new));
+    assert!(!h.state().moved);
+
+    h.mode.forget_device().expect("forgotten");
+    assert_eq!(h.state(), LocalState::default());
+}
+
+#[test]
+fn a_later_balance_clears_moved() {
+    let h = Harness::with_device(OTHER_CODE);
+    h.api.balance.then(Err(PrivateError::Unauthorized));
+    h.mode.status(false);
+    assert!(h.state().moved);
+    h.mode.status(false);
+    assert!(!h.state().moved);
+}
+
+#[test]
+fn a_promo_top_up_expires_25_minutes_from_now() {
+    let h = Harness::with_device(CODE);
+    let before = iso_from_unix(now_secs() + 24 * 60);
+    h.mode.redeem_promo("HACK300").expect("redeemed");
+    let expires = h.state().pending_topup.expect("pending").expires_at;
+    assert!(expires > before, "{expires} should be ~25 min ahead");
+    assert!(expires <= iso_from_unix(now_secs() + 25 * 60));
+}
+
+#[test]
+fn a_taken_key_the_keychain_refused_is_written_again_on_the_next_status() {
+    let h = Harness::with_device(CODE);
+    h.api.balance.always(Ok(balance(300, false)));
+    h.store.fail_writes_to(NEARAI_KEY);
+    h.api.take_key.then(Ok(Some("sk-test".into())));
+    assert_eq!(h.mode.status(false).key_error, Some(PrivateError::Keychain));
+
+    h.api.balance.always(Ok(balance(300, true)));
+    h.store.allow_writes_to(NEARAI_KEY);
+    let status = h.mode.status(false);
+    assert_eq!(status.key_error, None);
+    assert!(status.key_ready);
+    assert_eq!(h.secret(NEARAI_KEY).as_deref(), Some("sk-test"));
+    assert_eq!(h.api.count(|c| matches!(c, Call::TakeKey { .. })), 1);
 }
 
 #[test]

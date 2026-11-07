@@ -19,6 +19,7 @@ pub fn fake_agent() -> AcpLaunch {
             env!("CARGO_MANIFEST_DIR")
         )],
         env: vec![],
+        private: false,
     }
 }
 

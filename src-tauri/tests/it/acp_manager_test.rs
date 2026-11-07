@@ -423,6 +423,7 @@ fn rejects_bad_starts_and_unknown_sessions() {
         program: "/nonexistent/agent".into(),
         args: vec![],
         env: vec![],
+        private: false,
     };
     assert!(manager.start("s-2", &cwd(), &missing).is_err());
     assert!(manager.prompt("nope", "hi", &[]).is_err());
@@ -996,6 +997,7 @@ fn agent_copied_under(tag: &str) -> (AgentDir, AcpLaunch) {
         program: script.to_string_lossy().to_string(),
         args: vec![],
         env: vec![],
+        private: false,
     };
     (AgentDir(dir), launch)
 }
@@ -1975,6 +1977,7 @@ fn agent_setup_runs_the_setup_launch_as_given_when_the_agent_offers_a_setup() {
         program: "node".to_string(),
         args: vec!["setup.mjs".to_string()],
         env: vec![("A".to_string(), "1".to_string())],
+        private: false,
     };
 
     let run = manager
@@ -1995,6 +1998,7 @@ fn agent_setup_is_refused_for_an_agent_that_offers_none() {
         program: "node".to_string(),
         args: vec![],
         env: vec![],
+        private: false,
     };
 
     let error = manager

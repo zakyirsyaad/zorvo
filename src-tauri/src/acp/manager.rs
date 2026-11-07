@@ -49,6 +49,9 @@ pub struct AcpLaunch {
     pub program: String,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
+    /// A Zorvo Private session: the env holds the NEAR AI key. Only
+    /// `private_mode::launch::private_launch` sets this.
+    pub private: bool,
 }
 
 /// What `authenticate` says for a method that signs in through a terminal.

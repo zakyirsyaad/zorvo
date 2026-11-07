@@ -4,6 +4,7 @@
 pub mod client;
 pub mod commands;
 pub mod device;
+pub mod launch;
 pub mod local_state;
 pub mod service;
 #[cfg(test)]

@@ -16,6 +16,9 @@ use super::terminal_auth::{is_sign_in_terminal_id, CANCELLED_MESSAGE};
 use crate::env_resolver::cached_user_env;
 use crate::files::ensure_known_workspace;
 use crate::installer::commands::versions_in_use;
+use crate::private_mode::launch::{ensure_qwen, private_launch};
+use crate::private_mode::service::PrivateMode;
+use crate::private_mode::{PrivateError, PRIVATE_CREDITS_PREFIX};
 use crate::profiles::{agent_profile_from, with_system_tools, AgentProfile};
 use crate::pty_session::PtySessionManager;
 use crate::registry::{
@@ -155,6 +158,7 @@ fn launch_from(
         program,
         args: profile.acp_args,
         env: env.into_iter().collect(),
+        private: false,
     })
 }
 
@@ -198,6 +202,53 @@ fn launch_in_workspace(store: &AppStore, cwd: &str, profile_id: &str) -> Result<
     launch_with_store(store, profile_id)
 }
 
+/// What a private launch reports when there is no key to run on: the same
+/// error text the agent process gives when credits run out.
+fn credits_empty_error() -> String {
+    format!("{PRIVATE_CREDITS_PREFIX}{}", json!({ "reason": "empty" }))
+}
+
+/// The launch of a session: `base()` (today's [`launch_in_workspace`]) for
+/// `None`, byte for byte. For `Some(model)` it is `base()` first (the workspace
+/// and install checks), then a private Qwen Code launch on NEAR AI. Once a
+/// private model is named, every failure is an error: this never falls back to a
+/// plain launch, which would run the session on the user's own account.
+fn session_launch(
+    base: impl FnOnce() -> Result<AcpLaunch, String>,
+    private: &PrivateMode,
+    profile_id: &str,
+    private_model_id: Option<&str>,
+) -> Result<AcpLaunch, String> {
+    let launch = base()?;
+    let Some(model_id) = private_model_id else {
+        return Ok(launch);
+    };
+    // Before anything is read or asked: another agent never sees the key.
+    ensure_qwen(profile_id)?;
+    let models = private.models()?;
+    let key = private.launch_key().map_err(|error| match error {
+        PrivateError::NoKey | PrivateError::NoDevice => credits_empty_error(),
+        other => other.into(),
+    })?;
+    Ok(private_launch(launch, profile_id, model_id, &models, &key)?)
+}
+
+/// [`launch_in_workspace`] for a session that may be private.
+fn launch_for_session(
+    store: &AppStore,
+    private: &PrivateMode,
+    cwd: &str,
+    profile_id: &str,
+    private_model_id: Option<&str>,
+) -> Result<AcpLaunch, String> {
+    session_launch(
+        || launch_in_workspace(store, cwd, profile_id),
+        private,
+        profile_id,
+        private_model_id,
+    )
+}
+
 /// The ACP launch of `profile_id` in `cwd`, and the same program without the registry entry's own
 /// arguments (`setup_args`), which runs the agent's interactive setup. Both come from the registry
 /// alone; `cwd` must be one of the user's workspaces.
@@ -215,18 +266,29 @@ fn setup_launches_in_workspace(
     Ok((launch_of(profile)?, launch_of(setup)?))
 }
 
+/// Starts app session `session_id`. A `private_model_id` makes it a Zorvo
+/// Private session on that model (Qwen Code only); the key never leaves the
+/// backend.
 #[tauri::command(async)]
 pub fn acp_start_session(
     manager: State<'_, AcpManager>,
     store: State<'_, AppStore>,
+    private: State<'_, PrivateMode>,
     session_id: String,
     cwd: String,
     profile_id: String,
+    private_model_id: Option<String>,
 ) -> Result<StartedSession, String> {
     manager.start(
         &session_id,
         &cwd,
-        &launch_in_workspace(&store, &cwd, &profile_id)?,
+        &launch_for_session(
+            &store,
+            &private,
+            &cwd,
+            &profile_id,
+            private_model_id.as_deref(),
+        )?,
     )
 }
 
@@ -279,20 +341,30 @@ pub fn acp_authenticate(
 
 /// Reopens the agent's earlier session `acp_session_id` as app session
 /// `session_id`, with `session/resume` or `session/load`, whichever the agent
-/// offers.
+/// offers. A private session is reopened with its `private_model_id` again.
+// A command's arguments are the names the webview sends, so they stay separate.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command(async)]
 pub fn acp_reopen_session(
     manager: State<'_, AcpManager>,
     store: State<'_, AppStore>,
+    private: State<'_, PrivateMode>,
     session_id: String,
     cwd: String,
     profile_id: String,
     acp_session_id: String,
+    private_model_id: Option<String>,
 ) -> Result<StartedSession, String> {
     manager.reopen(
         &session_id,
         &cwd,
-        &launch_in_workspace(&store, &cwd, &profile_id)?,
+        &launch_for_session(
+            &store,
+            &private,
+            &cwd,
+            &profile_id,
+            private_model_id.as_deref(),
+        )?,
         &acp_session_id,
         ReopenPurpose::Continue,
     )
@@ -588,6 +660,8 @@ mod tests {
 
     use super::*;
     use crate::installer::{plan::InstalledTools, runtimes::MIN_USER_NODE_MAJOR};
+    use crate::private_mode::device::{SecretStore, NEARAI_KEY};
+    use crate::private_mode::testing::Harness;
     use crate::registry::{resolve::SystemTools, Catalog, BUNDLED_HISTORY};
 
     #[test]
@@ -1037,5 +1111,202 @@ mod tests {
             profile_to_launch(&catalog, &tools, "linuxy", &BTreeMap::new(), FIXED_NOW).unwrap_err();
 
         assert_eq!(err, "Linuxy is not available for this Mac");
+    }
+
+    fn plain_launch(env: &[(&str, &str)]) -> AcpLaunch {
+        AcpLaunch {
+            program: "npx".to_string(),
+            args: vec!["-y".to_string(), "@qwen-code/qwen-code@0.26.1".to_string()],
+            env: env
+                .iter()
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .collect(),
+            private: false,
+        }
+    }
+
+    fn harness_with_key() -> Harness {
+        let harness = Harness::new();
+        harness
+            .store
+            .set(NEARAI_KEY, "sk-zorvo")
+            .expect("seed the key");
+        harness
+    }
+
+    #[test]
+    fn a_plain_session_launch_is_the_plain_launch_and_never_touches_private_mode() {
+        let harness = Harness::new();
+        let base = plain_launch(&[("PATH", "/usr/bin")]);
+
+        let launch = session_launch(|| Ok(base.clone()), &harness.mode, "qwen-code", None)
+            .expect("launches");
+
+        assert_eq!(launch, base);
+        assert!(!launch.private);
+        assert!(launch.env.iter().all(|(key, _)| key != "OPENAI_API_KEY"));
+        assert!(harness.api.calls().is_empty());
+    }
+
+    #[test]
+    fn a_plain_session_of_any_agent_is_untouched_by_a_stored_key() {
+        let harness = harness_with_key();
+        for id in ["qwen-code", "claude-acp", "codex-acp"] {
+            let base = plain_launch(&[("OPENAI_API_KEY", "user")]);
+
+            let launch =
+                session_launch(|| Ok(base.clone()), &harness.mode, id, None).expect("launches");
+
+            assert_eq!(launch, base, "{id}");
+        }
+    }
+
+    #[test]
+    fn a_plain_session_launch_error_is_passed_on() {
+        let harness = Harness::new();
+
+        let err = session_launch(
+            || Err("Qwen Code is not installed".to_string()),
+            &harness.mode,
+            "qwen-code",
+            None,
+        )
+        .unwrap_err();
+
+        assert_eq!(err, "Qwen Code is not installed");
+    }
+
+    #[test]
+    fn a_private_session_runs_on_the_zorvo_key_and_the_near_endpoint() {
+        let harness = harness_with_key();
+        let base = plain_launch(&[("OPENAI_API_KEY", "user"), ("OPENAI_BASE_URL", "http://x")]);
+
+        let launch = session_launch(
+            || Ok(base.clone()),
+            &harness.mode,
+            "qwen-code",
+            Some("Qwen/Qwen3.8-27B"),
+        )
+        .expect("launches");
+
+        assert!(launch.private);
+        assert_eq!(
+            launch.env,
+            [("OPENAI_API_KEY".to_string(), "sk-zorvo".to_string())]
+        );
+        assert_eq!(
+            &launch.args[2..],
+            [
+                "--auth-type",
+                "openai",
+                "--openai-base-url",
+                "https://cloud-api.near.ai/v1",
+                "--model",
+                "Qwen/Qwen3.8-27B",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_private_session_without_a_key_asks_for_credits() {
+        let harness = Harness::new();
+
+        let err = session_launch(
+            || Ok(plain_launch(&[])),
+            &harness.mode,
+            "qwen-code",
+            Some("Qwen/Qwen3.8-27B"),
+        )
+        .unwrap_err();
+
+        assert_eq!(err, "PRIVATE_CREDITS:{\"reason\":\"empty\"}");
+        assert!(err.starts_with(PRIVATE_CREDITS_PREFIX));
+    }
+
+    #[test]
+    fn a_private_session_never_falls_back_to_a_plain_launch() {
+        let harness = harness_with_key();
+        harness.api.models.always(Err(PrivateError::Unreachable));
+
+        let err = session_launch(
+            || Ok(plain_launch(&[])),
+            &harness.mode,
+            "qwen-code",
+            Some("Qwen/Qwen3.8-27B"),
+        )
+        .unwrap_err();
+
+        assert_eq!(err, "unreachable");
+    }
+
+    #[test]
+    fn a_private_model_the_list_does_not_offer_is_refused() {
+        let harness = harness_with_key();
+
+        let err = session_launch(
+            || Ok(plain_launch(&[])),
+            &harness.mode,
+            "qwen-code",
+            Some("Other/Model-1"),
+        )
+        .unwrap_err();
+
+        assert_eq!(err, "unknown_model");
+    }
+
+    #[test]
+    fn a_private_session_of_another_agent_is_refused_before_the_key_is_read() {
+        let harness = harness_with_key();
+        for id in ["claude-acp", "codex-acp"] {
+            let err = session_launch(
+                || Ok(plain_launch(&[])),
+                &harness.mode,
+                id,
+                Some("Qwen/Qwen3.8-27B"),
+            )
+            .unwrap_err();
+
+            assert_eq!(err, "not_qwen", "{id}");
+        }
+        assert!(harness.api.calls().is_empty());
+    }
+
+    #[test]
+    fn a_private_session_in_an_agent_that_cannot_start_reports_that_first() {
+        let harness = harness_with_key();
+
+        let err = session_launch(
+            || Err("Qwen Code is not installed".to_string()),
+            &harness.mode,
+            "qwen-code",
+            Some("Qwen/Qwen3.8-27B"),
+        )
+        .unwrap_err();
+
+        assert_eq!(err, "Qwen Code is not installed");
+        assert!(harness.api.calls().is_empty());
+    }
+
+    #[test]
+    fn a_private_session_is_checked_against_the_workspaces_like_any_other() {
+        let scratch = Scratch::new("private-workspace");
+        let harness = harness_with_key();
+
+        for model in [None, Some("Qwen/Qwen3.8-27B")] {
+            let err = launch_for_session(
+                &scratch.store(),
+                &harness.mode,
+                &scratch.folder(),
+                "qwen-code",
+                model,
+            )
+            .unwrap_err();
+
+            assert!(
+                err.contains("is not one of your workspaces"),
+                "{model:?}: {err}"
+            );
+        }
+        assert!(harness.api.calls().is_empty());
     }
 }

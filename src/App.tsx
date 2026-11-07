@@ -87,6 +87,7 @@ import { useNavigationHistory } from "./hooks/useNavigationHistory";
 import { useUserProfile } from "./hooks/useUserProfile";
 import { useGithubConnection } from "./hooks/useGithubConnection";
 import { usePrivateCredits } from "./hooks/usePrivateCredits";
+import { usePrivateCreditedNotice } from "./hooks/usePrivateCreditedNotice";
 import { usePrivateDraft } from "./hooks/usePrivateDraft";
 import { usePrivateRecoveryDialog } from "./hooks/usePrivateRecoveryDialog";
 import { useWorkspaceDetails } from "./hooks/useWorkspaceDetails";
@@ -191,6 +192,7 @@ export default function App() {
   const userProfile = useUserProfile();
   const github = useGithubConnection();
   const privateCredits = usePrivateCredits();
+  usePrivateCreditedNotice(privateCredits.flow, settingsPage.section === "private", setNotice);
   const recoveryDialog = usePrivateRecoveryDialog();
   // What stops pull requests being read, when the GitHub connection explains it.
   const githubBlocker =

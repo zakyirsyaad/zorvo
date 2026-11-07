@@ -3,7 +3,7 @@ import { RefreshCw } from "lucide-react";
 import { useNow } from "../../hooks/useNow";
 import type { ActionResult, PrivateCredits } from "../../hooks/usePrivateCredits";
 import { formatRelativeTime } from "../../lib/relative-time";
-import { formatCredits, privateErrorText, updatedAgo, type PrivateStatus } from "../../lib/private-credits";
+import { formatCredits, parseIsoTime, privateErrorText, updatedAgo, type PrivateStatus } from "../../lib/private-credits";
 import { Button } from "../ui/Button";
 import { StatusLine } from "../ui/StatusLine";
 import { SettingsGroup, SettingsRow } from "../settings/SettingsGroup";
@@ -100,7 +100,7 @@ export function BalanceCard({ status, refresh, forget, onShowRecoveryCode }: Bal
 
   const { balance, lastBalance } = status;
   if (balance === null && status.balanceError !== null) {
-    const when = lastBalance ? formatRelativeTime(Date.parse(lastBalance.at), now).toLowerCase() : null;
+    const when = lastBalance ? formatRelativeTime(parseIsoTime(lastBalance.at), now).toLowerCase() : null;
     return (
       <SettingsGroup heading="Balance">
         <SettingsRow

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { privateDraftState, type PrivateDraftState } from '../lib/private-draft';
+import { PRIVATE_DRAFT_TEXT, privateDraftState, type PrivateDraftState } from '../lib/private-draft';
 import { formatCredits, type ModelPrice } from '../lib/private-credits';
 import type { PrivateCredits } from './usePrivateCredits';
 
@@ -14,6 +14,8 @@ export interface PrivateChipControl {
   /** Why a disabled chip is disabled. */
   reason?: string;
   onToggle: () => void;
+  /** Loads the private models again; only while the chip is on and they failed to load. */
+  onRetry?: () => void;
 }
 
 export interface PrivateModelChoice {
@@ -77,14 +79,19 @@ export function usePrivateDraft({ credits, agentIds }: PrivateDraftDeps): Privat
     setPickedModelId(null);
   }
 
-  const turnOn = useCallback(() => {
-    setIsTurnedOn(true);
+  // Only while the chip is on (turning it on, or its Retry): the catalog is never asked for otherwise.
+  const loadModels = useCallback(() => {
     setIsLoadingModels(true);
-    void refresh(true);
     void loadCatalog().finally(() => {
       if (isAlive.current) setIsLoadingModels(false);
     });
-  }, [loadCatalog, refresh]);
+  }, [loadCatalog]);
+
+  const turnOn = useCallback(() => {
+    setIsTurnedOn(true);
+    void refresh(true);
+    loadModels();
+  }, [loadModels, refresh]);
 
   const onToggle = () => {
     if (state.chip === 'off') turnOn();
@@ -101,7 +108,15 @@ export function usePrivateDraft({ credits, agentIds }: PrivateDraftDeps): Privat
     blocksSend: isOn && !state.canStart,
     note: isOn ? state.note : undefined,
     creditsLine: isOn && state.canStart ? `${formatCredits(creditsOf(status))} left` : undefined,
-    chip: state.chip === 'hidden' ? undefined : { kind: state.chip, reason: state.reason, onToggle },
+    chip:
+      state.chip === 'hidden'
+        ? undefined
+        : {
+            kind: state.chip,
+            reason: state.reason,
+            onToggle,
+            onRetry: isOn && state.note === PRIVATE_DRAFT_TEXT.modelsFailed ? loadModels : undefined,
+          },
     modelMenu:
       isOn && modelId !== undefined ? { models: offered, selected: modelId, onSelect: setPickedModelId } : undefined,
   };

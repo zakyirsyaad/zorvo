@@ -3,9 +3,11 @@ import { invoke } from '@tauri-apps/api/core';
 import { notifyIfAway } from '../lib/notify';
 import { TOPUP_UNCHECKED } from '../lib/private-flow';
 import {
+  PRIVATE_ERROR_CODES,
   actionError,
-  formatCredits,
-  privateErrorText,
+  creditedNoticeText,
+  isPricedModel,
+  parseIsoTime,
   type ModelPrice,
   type PendingTopup,
   type PrivateStatus,
@@ -81,6 +83,16 @@ const GIVE_UP_UNKNOWN_HOLD_MS = 90 * 60_000;
 /** Errors that pass by themselves; any other error code ends the polling. */
 const TRANSIENT_POLL_ERRORS: ReadonlySet<string> = new Set(['unreachable', 'upstream', 'rate_limited']);
 
+const KNOWN_ERROR_CODES: ReadonlySet<string> = new Set(PRIVATE_ERROR_CODES);
+
+/**
+ * A poll error that may pass by itself: a transient code, or a rejection that is not one of the
+ * backend's codes at all (an unknown shape says nothing lasting about the top-up).
+ */
+function isTransientPollError(code: string): boolean {
+  return TRANSIENT_POLL_ERRORS.has(code) || !KNOWN_ERROR_CODES.has(code);
+}
+
 const ONE_TOPUP_AT_A_TIME = 'Finish or cancel your current top-up first.';
 const STILL_OPENING = 'Wait a moment, then cancel.';
 
@@ -96,6 +108,14 @@ function creditsOf(status: PrivateStatus): number {
   return status.balance?.credits ?? status.lastBalance?.credits ?? 0;
 }
 
+/**
+ * Credits a read of the balance itself showed: a read that failed falls back to the last known
+ * balance in `creditsOf`, which says nothing about a refusal that came after it.
+ */
+function freshCreditsOf(status: PrivateStatus): number {
+  return status.balance?.credits ?? 0;
+}
+
 function toppedUp(flow: TopupFlow): PendingTopup | null {
   return flow.kind === 'waiting' || flow.kind === 'paid' || flow.kind === 'waiting-stock' ? flow.topup : null;
 }
@@ -107,14 +127,14 @@ function isTopupInProgress(flow: TopupFlow): boolean {
 
 /** When polling a waiting top-up the server cannot answer about stops, for polling that started at `startedAt`. */
 function giveUpAt(topup: PendingTopup, startedAt: number): number {
-  const holdEnds = Date.parse(topup.expiresAt);
+  const holdEnds = parseIsoTime(topup.expiresAt);
   return Number.isNaN(holdEnds)
     ? startedAt + GIVE_UP_UNKNOWN_HOLD_MS
     : Math.max(holdEnds, startedAt) + GIVE_UP_AFTER_HOLD_MS;
 }
 
 function pruneCreditsOut(marks: CreditsOut, status: PrivateStatus): CreditsOut {
-  const hasCredits = creditsOf(status) > 0;
+  const hasCredits = freshCreditsOf(status) > 0;
   const keyFixed = status.keyReady && status.keyError === null;
   const kept = Object.entries(marks).filter(([, reason]) => !(reason === 'empty' ? hasCredits : keyFixed));
   return kept.length === Object.keys(marks).length ? marks : Object.fromEntries(kept);
@@ -125,7 +145,7 @@ function notifyCredits(credits: number) {
   try {
     void notifyIfAway({
       title: 'Zorvo',
-      body: `+${formatCredits(credits)}. Private sessions can use them now.`,
+      body: creditedNoticeText(credits),
     }).catch(() => undefined);
   } catch {
     // Same: nothing to do.
@@ -154,6 +174,8 @@ export function usePrivateCredits(): PrivateCredits {
   // The top-ups a credit notification was sent for: one per top-up, however often its credit is seen.
   const notifiedTopups = useRef<Set<string>>(new Set());
   const isResumed = useRef(false);
+  // A promo redeem is on its way: it will make the pending top-up, so no buy or second redeem may start.
+  const isRedeeming = useRef(false);
 
   useEffect(() => {
     isAlive.current = true;
@@ -220,7 +242,8 @@ export function usePrivateCredits(): PrivateCredits {
     try {
       const next = await invoke<ModelPrice[]>('private_models');
       if (!isAlive.current) return;
-      setModels(next);
+      // A model whose price is not a usable number could never be priced or offered.
+      setModels(next.filter(isPricedModel));
       setModelsError(undefined);
     } catch (error) {
       if (isAlive.current) setModelsError(actionError('models', codeOf(error)));
@@ -302,10 +325,12 @@ export function usePrivateCredits(): PrivateCredits {
         const state = await invoke<TopupState>('private_topup_status', { topupId });
         if (!isStopped) settle(topupId, state);
       } catch (error) {
+        // A cancel or a dismiss may have taken this top-up away before the effect stopped.
+        if (toppedUp(flowRef.current)?.topupId !== topupId) return;
         const code = codeOf(error);
         // A server out of reach or too busy shows nothing new: the next poll asks again. Any other
         // error will not pass by itself, so the flow says so instead of polling on for nothing.
-        if (!isStopped && !TRANSIENT_POLL_ERRORS.has(code)) {
+        if (!isStopped && !isTransientPollError(code)) {
           updateFlow(() => ({ kind: 'error', code }));
           if (code === 'unauthorized') void refresh();
         } else if (!isStopped && flowRef.current.kind === 'waiting' && Date.now() > stopAt) {
@@ -348,7 +373,7 @@ export function usePrivateCredits(): PrivateCredits {
   const buy = useCallback(
     async (usd: number) => {
       // One top-up at a time: a second hold would charge nothing but would be lost track of.
-      if (isTopupInProgress(flowRef.current)) return;
+      if (isTopupInProgress(flowRef.current) || isRedeeming.current) return;
       if (!Number.isInteger(usd) || usd <= 0) {
         updateFlow(() => ({ kind: 'error', code: 'bad_request' }));
         return;
@@ -408,11 +433,15 @@ export function usePrivateCredits(): PrivateCredits {
   const redeem = useCallback(
     async (code: string) => {
       // The backend keeps one pending top-up and a promo replaces it: a hold in progress would be lost.
-      if (isTopupInProgress(flowRef.current)) return { ok: false as const, text: ONE_TOPUP_AT_A_TIME };
+      if (isTopupInProgress(flowRef.current) || isRedeeming.current) {
+        return { ok: false as const, text: ONE_TOPUP_AT_A_TIME };
+      }
       let result: PromoResult;
+      isRedeeming.current = true;
       try {
         result = await invoke<PromoResult>('private_redeem_promo', { code });
       } catch (error) {
+        isRedeeming.current = false;
         const errorCode = codeOf(error);
         if (errorCode === 'unauthorized') void refresh();
         return { ok: false as const, text: actionError('redeem', errorCode) };
@@ -422,6 +451,8 @@ export function usePrivateCredits(): PrivateCredits {
       const saved = read?.pendingTopup?.topupId === result.topupId ? read.pendingTopup : null;
       const topup = saved ?? { topupId: result.topupId, expiresAt: '', credits: result.credits };
       updateFlow(() => ({ kind: 'paid', topup }));
+      // Held until the flow follows the promo's top-up, which then blocks a buy by itself.
+      isRedeeming.current = false;
       return { ok: true as const, credits: result.credits };
     },
     [loadStatus, refresh, updateFlow],
@@ -448,7 +479,7 @@ export function usePrivateCredits(): PrivateCredits {
       try {
         await invoke('private_mark_recovery', { saved });
       } catch (error) {
-        return { ok: false, text: privateErrorText(codeOf(error)) };
+        return { ok: false, text: actionError('mark', codeOf(error)) };
       }
       await loadStatus(false);
       return { ok: true };
@@ -473,7 +504,7 @@ export function usePrivateCredits(): PrivateCredits {
       if (reason !== 'empty') return;
       // The balance shown elsewhere (the Private tab, Settings) must not contradict the refusal.
       void loadStatus(true).then((next) => {
-        if (next !== null && creditsOf(next) > 0) onBalanceLagging?.();
+        if (next !== null && freshCreditsOf(next) > 0) onBalanceLagging?.();
       });
     },
     [loadStatus],

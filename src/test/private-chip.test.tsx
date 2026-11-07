@@ -36,6 +36,17 @@ const MODEL_CONTROL = {
 };
 
 describe("PrivateChip", () => {
+  it("shows a Retry button beside an on chip whose models failed, and only then", () => {
+    const onRetry = vi.fn();
+    const { rerender } = render(<PrivateChip kind="on" onToggle={vi.fn()} onRetry={onRetry} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    rerender(<PrivateChip kind="on" onToggle={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
   it("is a toggle that says whether it is on", () => {
     const onToggle = vi.fn();
     const { rerender } = render(<PrivateChip kind="off" onToggle={onToggle} />);

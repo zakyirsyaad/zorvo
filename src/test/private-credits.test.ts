@@ -8,7 +8,11 @@ import {
   TURN_OUTPUT_TOKENS,
   creditsPerTurn,
   formatCredits,
+  creditedNoticeText,
+  isPricedModel,
   modelLabel,
+  normalizeIsoTime,
+  parseIsoTime,
   packageReason,
   parsePrivateCredits,
   perTurnLabel,
@@ -311,5 +315,61 @@ describe("actionError", () => {
     expect(actionError("forget", "keychain")).toBe(privateErrorText("keychain"));
     expect(actionError("recover", "upstream")).toBe(FALLBACK);
     expect(actionError("recover", "has_own_credits")).toBe(privateErrorText("has_own_credits"));
+  });
+});
+
+describe("deferred minors: credit counts, prices and timestamps", () => {
+  it("formatCredits rounds to whole credits and never prints -0", () => {
+    expect(formatCredits(1.6)).toBe("2 credits");
+    expect(formatCredits(1.4)).toBe("1 credit");
+    expect(formatCredits(0.4)).toBe("0 credits");
+    expect(formatCredits(1234.5)).toBe("1,235 credits");
+    expect(formatCredits(-0)).toBe("0 credits");
+    expect(formatCredits(-0.4)).toBe("0 credits");
+  });
+
+  it("isPricedModel accepts finite, non-negative prices only", () => {
+    expect(isPricedModel(model(0.15, 0.6))).toBe(true);
+    expect(isPricedModel(model(0, 0))).toBe(true);
+    for (const [input, output] of [
+      [Number.NaN, 0.6],
+      [0.15, Number.POSITIVE_INFINITY],
+      [-0.01, 0.6],
+      [0.15, -1],
+    ]) {
+      expect(isPricedModel(model(input, output))).toBe(false);
+    }
+    expect(isPricedModel({ id: "x", inputPerM: "0.1", outputPerM: 1 } as unknown as ModelPrice)).toBe(false);
+  });
+
+  it("normalizeIsoTime cuts a fraction past milliseconds, which WebKit may refuse", () => {
+    expect(normalizeIsoTime("2026-11-07T01:00:00.123456789Z")).toBe("2026-11-07T01:00:00.123Z");
+    expect(normalizeIsoTime("2026-11-07T01:00:00.5+07:00")).toBe("2026-11-07T01:00:00.5+07:00");
+    expect(normalizeIsoTime("2026-11-07T01:00:00.1234-02:30")).toBe("2026-11-07T01:00:00.123-02:30");
+    expect(normalizeIsoTime("2026-11-07T01:00:00Z")).toBe("2026-11-07T01:00:00Z");
+    expect(normalizeIsoTime("not a date")).toBe("not a date");
+  });
+
+  it("parseIsoTime reads nanosecond timestamps to the millisecond", () => {
+    expect(parseIsoTime("2026-11-07T01:00:00.123456789Z")).toBe(Date.UTC(2026, 10, 7, 1, 0, 0, 123));
+    expect(parseIsoTime("2026-11-07T01:00:00.999999999Z")).toBe(Date.UTC(2026, 10, 7, 1, 0, 0, 999));
+    expect(parseIsoTime("2026-11-07T08:00:00.000000001+07:00")).toBe(Date.UTC(2026, 10, 7, 1, 0, 0, 0));
+    expect(Number.isNaN(parseIsoTime("soon"))).toBe(true);
+  });
+
+  it("updatedAgo reads a nanosecond timestamp", () => {
+    const now = Date.UTC(2026, 10, 7, 1, 2, 30);
+    expect(updatedAgo("2026-11-07T01:00:00.123456789Z", now)).toBe("Updated 2 min ago");
+  });
+
+  it("creditedNoticeText is the credited notification's own words", () => {
+    expect(creditedNoticeText(500)).toBe("+500 credits. Private sessions can use them now.");
+  });
+
+  it("actionError words a failed recovery-code answer as such", () => {
+    const text = "Couldn't save your answer. Try again.";
+    expect(actionError("mark", "storage")).toBe(text);
+    expect(actionError("mark", "")).toBe(text);
+    expect(actionError("mark", "keychain")).toBe(text);
   });
 });

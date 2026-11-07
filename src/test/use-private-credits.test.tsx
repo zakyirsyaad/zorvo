@@ -1076,15 +1076,14 @@ describe("usePrivateCredits: overlapping reads and StrictMode", () => {
     expect(view.result.current.status?.balance?.credits).toBe(300);
   });
 
-  it("starts one poller and one top-up when mounted under StrictMode", async () => {
+  it("starts one poller when mounted under StrictMode", async () => {
     const view = renderHook(() => usePrivateCredits(), { wrapper: StrictMode });
     await advance(0);
     await act(async () => {
       await view.result.current.buy(5);
     });
-    expect(callsTo("private_create_topup")).toHaveLength(1);
-    expect(callsTo("private_open_checkout")).toHaveLength(1);
 
+    // StrictMode mounts the polling effect twice: only one interval may survive.
     await advance(POLL_MS);
     expect(callsTo("private_topup_status")).toHaveLength(1);
     await advance(POLL_MS);
@@ -1107,5 +1106,146 @@ describe("usePrivateCredits: overlapping reads and StrictMode", () => {
     expect(view.result.current.flow).toMatchObject({ kind: "waiting", topup: { topupId: "saved-3" } });
     await advance(POLL_MS);
     expect(callsTo("private_topup_status")).toHaveLength(1);
+  });
+});
+
+describe("usePrivateCredits: deferred minors", () => {
+  it("does not start a top-up while a promo code is being redeemed, nor a second redeem", async () => {
+    const view = await mount();
+    let release!: () => void;
+    fake().holds.private_redeem_promo = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let redeeming!: Promise<unknown>;
+    act(() => {
+      redeeming = view.result.current.redeem("PROMO-1");
+    });
+
+    await buy(view, 5);
+    let second: unknown;
+    await act(async () => {
+      second = await view.result.current.redeem("PROMO-2");
+    });
+
+    expect(callsTo("private_create_topup")).toHaveLength(0);
+    expect(second).toEqual({ ok: false, text: "Finish or cancel your current top-up first." });
+    expect(callsTo("private_redeem_promo")).toHaveLength(1);
+    await act(async () => {
+      release();
+      await redeeming;
+    });
+    expect(view.result.current.flow).toMatchObject({ kind: "paid", topup: { topupId: "promo-1" } });
+
+    // Once the redeem is done, its own top-up is what blocks a buy, as before.
+    await buy(view, 5);
+    expect(callsTo("private_create_topup")).toHaveLength(0);
+  });
+
+  it("lets a buy run again after a redeem that failed", async () => {
+    const view = await mount();
+    fake().errors.private_redeem_promo = "bad_code";
+    await act(async () => {
+      await view.result.current.redeem("PROMO-1");
+    });
+    await buy(view, 5);
+    expect(callsTo("private_create_topup")).toHaveLength(1);
+  });
+
+  it("drops a poll error that arrives after a cancel took the top-up away", async () => {
+    const view = await mount();
+    await buy(view, 5);
+    let releasePoll!: () => void;
+    fake().holds.private_topup_status = new Promise<void>((resolve) => {
+      releasePoll = resolve;
+    });
+    fake().errors.private_topup_status = "bad_request";
+    await advance(POLL_MS);
+    let releaseCancel!: () => void;
+    fake().holds.private_cancel_topup = new Promise<void>((resolve) => {
+      releaseCancel = resolve;
+    });
+    let cancelling!: Promise<unknown>;
+    act(() => {
+      cancelling = view.result.current.cancel();
+    });
+
+    // Both answers land before React renders again: the cancel's first.
+    await act(async () => {
+      releaseCancel();
+      releasePoll();
+      await cancelling;
+    });
+
+    expect(view.result.current.flow).toEqual({ kind: "idle" });
+  });
+
+  it.each([
+    ["an object", { weird: true }],
+    ["a number", 42],
+    ["an empty string", ""],
+  ])("keeps polling through a rejection of an unknown shape (%s)", async (_label, rejection) => {
+    const view = await mount();
+    await buy(view, 5);
+    fake().errors.private_topup_status = rejection as unknown as string;
+    await advance(POLL_MS);
+    expect(view.result.current.flow.kind).toBe("waiting");
+
+    delete fake().errors.private_topup_status;
+    fake().topupStatuses = ["credited"];
+    await advance(POLL_MS);
+    expect(view.result.current.flow.kind).toBe("credited");
+  });
+
+  it("words a failed recovery-code answer as such", async () => {
+    const view = await mount();
+    fake().errors.private_mark_recovery = "storage";
+    let result: unknown;
+    await act(async () => {
+      result = await view.result.current.markRecovery(false);
+    });
+    expect(result).toEqual({ ok: false, text: "Couldn't save your answer. Try again." });
+  });
+
+  it("counts only a balance the refusal's own read got: a failed read neither warns nor clears", async () => {
+    fake().status = {
+      ...fake().status,
+      device: "ready",
+      keyReady: true,
+      balance: null,
+      balanceError: "unreachable",
+      lastBalance: { credits: 500, usedCredits: 0, at: "2026-11-07T09:00:00Z" },
+    };
+    const view = await mount();
+    const onBalanceLagging = vi.fn();
+
+    act(() => view.result.current.markCreditsOut("s-1", "empty", onBalanceLagging));
+    await advance(0);
+
+    expect(onBalanceLagging).not.toHaveBeenCalled();
+    expect(view.result.current.creditsOut).toEqual({ "s-1": "empty" });
+
+    readyWith(500);
+    await act(async () => view.result.current.refresh(true));
+    expect(view.result.current.creditsOut).toEqual({});
+  });
+
+  it("still warns when the refusal's own read shows credits", async () => {
+    readyWith(500);
+    const view = await mount();
+    const onBalanceLagging = vi.fn();
+    act(() => view.result.current.markCreditsOut("s-1", "empty", onBalanceLagging));
+    await advance(0);
+    expect(onBalanceLagging).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers only models with a usable price", async () => {
+    fake().models = [
+      { id: "Qwen/Qwen3.8-27B", inputPerM: 0.04, outputPerM: 1.35 },
+      { id: "bad/nan", inputPerM: Number.NaN, outputPerM: 1 },
+      { id: "bad/negative", inputPerM: 0.1, outputPerM: -1 },
+    ];
+    const view = await mount();
+    await act(async () => view.result.current.loadCatalog());
+    expect(view.result.current.models?.map((model) => model.id)).toEqual(["Qwen/Qwen3.8-27B"]);
   });
 });

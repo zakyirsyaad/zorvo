@@ -156,4 +156,32 @@ describe("usePrivateDraft", () => {
     expect(result.current.privateMode).toBeUndefined();
     expect(result.current.blocksSend).toBe(false);
   });
+
+  it("offers Retry when the models failed to load, and Retry loads the catalog again", async () => {
+    const loadCatalog = vi.fn(() => Promise.resolve());
+    const { result } = renderDraft({ credits: credits({ models: null, loadCatalog }), agentIds: ["qwen-code"] });
+    await act(async () => result.current.chip?.onToggle());
+    expect(result.current.note).toBe("Couldn't load the private models. Try again.");
+    expect(loadCatalog).toHaveBeenCalledTimes(1);
+
+    await act(async () => result.current.chip?.onRetry?.());
+
+    expect(loadCatalog).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers no Retry while off, while loading, or once the models are there", async () => {
+    let finish: () => void = () => {};
+    const loadCatalog = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+    const { result } = renderDraft({ credits: credits({ models: null, loadCatalog }), agentIds: ["qwen-code"] });
+    expect(result.current.chip?.onRetry).toBeUndefined();
+
+    await act(async () => result.current.chip?.onToggle());
+    expect(result.current.chip?.onRetry).toBeUndefined();
+    await act(async () => finish());
+    expect(result.current.chip?.onRetry).toBeInstanceOf(Function);
+
+    const loaded = renderDraft({ credits: credits(), agentIds: ["qwen-code"] });
+    await act(async () => loaded.result.current.chip?.onToggle());
+    expect(loaded.result.current.chip?.onRetry).toBeUndefined();
+  });
 });

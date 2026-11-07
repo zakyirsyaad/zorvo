@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 
-/** An error is something that failed; a warning asks the user to do something first. */
-export type NoticeTone = "error" | "warning";
+/** An error is something that failed; a warning asks the user to do something first; info only tells. */
+export type NoticeTone = "error" | "warning" | "info";
 
 export interface Notice {
   message: string;

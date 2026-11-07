@@ -132,10 +132,19 @@ export const TURN_OUTPUT_TOKENS = 1_000;
 /** Credits charged per US dollar of model cost. */
 export const CREDITS_PER_USD_COST = 120;
 
+function isUsablePrice(price: unknown): boolean {
+  return typeof price === 'number' && Number.isFinite(price) && price >= 0;
+}
+
+/** A model whose prices are finite and not negative; any other is never offered. */
+export function isPricedModel(model: ModelPrice): boolean {
+  return isUsablePrice(model.inputPerM) && isUsablePrice(model.outputPerM);
+}
+
 /** Credits one turn costs; 0 for a price that is negative or not a finite number. */
 export function creditsPerTurn(model: ModelPrice): number {
   const { inputPerM, outputPerM } = model;
-  if (![inputPerM, outputPerM].every((price) => Number.isFinite(price) && price >= 0)) return 0;
+  if (!isPricedModel(model)) return 0;
   const usd = (inputPerM * TURN_INPUT_TOKENS + outputPerM * TURN_OUTPUT_TOKENS) / 1e6;
   const credits = usd * CREDITS_PER_USD_COST;
   return Number.isFinite(credits) ? credits : 0;
@@ -153,9 +162,37 @@ export function modelLabel(id: string): string {
   return (id.split('/').pop() || id).replaceAll('-', ' ');
 }
 
+/** Whole credits, rounded: "1,240 credits", "1 credit"; anything not a positive number reads as 0. */
 export function formatCredits(n: number): string {
   if (!Number.isFinite(n) || n < 0) return '0 credits';
-  return `${n.toLocaleString('en-US')} ${n === 1 ? 'credit' : 'credits'}`;
+  // `|| 0` turns the -0 that rounding a small negative gives into 0.
+  const whole = Math.round(n) || 0;
+  return `${whole.toLocaleString('en-US')} ${whole === 1 ? 'credit' : 'credits'}`;
+}
+
+/** What Zorvo says once a top-up's credits land: the notification's and the in-app notice's words. */
+export function creditedNoticeText(credits: number): string {
+  return `+${formatCredits(credits)}. Private sessions can use them now.`;
+}
+
+/** An RFC 3339 time with a fraction of seconds: the fraction, then the zone. */
+const ISO_FRACTION = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})\.(\d+)(Z|[+-]\d{2}:\d{2})$/i;
+
+/**
+ * The time with its fraction cut to milliseconds. Servers may send nanoseconds, which the date
+ * parser of every engine need not accept (ECMAScript only promises three digits); text that is not
+ * such a time is returned as it is.
+ */
+export function normalizeIsoTime(iso: string): string {
+  const match = ISO_FRACTION.exec(iso);
+  if (!match) return iso;
+  const [, seconds, fraction, zone] = match;
+  return `${seconds}.${fraction.slice(0, 3)}${zone}`;
+}
+
+/** Epoch milliseconds of an RFC 3339 time, nanosecond ones included; NaN when it is not one. */
+export function parseIsoTime(iso: string): number {
+  return Date.parse(normalizeIsoTime(iso));
 }
 
 /** Below this, one decimal would round a paid model down to 0. */
@@ -180,7 +217,7 @@ export function packageReason(reason?: string): string | undefined {
 
 /** "Updated just now", "Updated 1 min ago", "Updated 2 hours ago". */
 export function updatedAgo(iso: string, now: number): string {
-  const at = Date.parse(iso);
+  const at = parseIsoTime(iso);
   if (Number.isNaN(at)) return 'Updated recently';
   const ago = formatRelativeTime(at, now).toLowerCase().replace(/\bminutes?\b/, 'min');
   return `Updated ${ago}`;
@@ -220,17 +257,19 @@ export function privateErrorText(code: string): string {
   return Object.hasOwn(ERROR_TEXT, code) ? ERROR_TEXT[code as PrivateErrorCode] : GENERIC_ERROR;
 }
 
-export type PrivateAction = 'models' | 'stock' | 'cancel' | 'redeem' | 'forget' | 'recover';
+export type PrivateAction = 'models' | 'stock' | 'cancel' | 'redeem' | 'forget' | 'recover' | 'mark';
 
 const MODELS_FAILED = "Couldn't load the private models. Try again.";
 const STOCK_FAILED = "Couldn't load the packages. Try again.";
 const CANCEL_FAILED = "Couldn't cancel the checkout. Try again.";
 const REDEEM_FAILED = "Couldn't redeem the code. Try again.";
+const MARK_FAILED = "Couldn't save your answer. Try again.";
 
 /**
  * Plain words for a command error in the context of one action. `privateErrorText`'s `upstream`
  * says nothing was held or charged, which is right when a checkout fails to open and wrong for
- * loading prices, cancelling a hold, redeeming a code or restoring, so those say what failed instead.
+ * loading prices, cancelling a hold, redeeming a code, restoring or answering the recovery-code
+ * dialog, so those say what failed instead.
  */
 export function actionError(action: PrivateAction, code: string): string {
   if (code === 'unauthorized') return privateErrorText(code);
@@ -244,6 +283,9 @@ export function actionError(action: PrivateAction, code: string): string {
     case 'redeem':
       // The other codes tell the user what to change (a wrong code, too many tries).
       return code === 'upstream' || code === 'unreachable' ? REDEEM_FAILED : privateErrorText(code);
+    case 'mark':
+      // Only this Mac's state file is written: whatever the code, the answer was not kept.
+      return MARK_FAILED;
     case 'forget':
     case 'recover':
       return code === 'upstream' ? GENERIC_ERROR : privateErrorText(code);

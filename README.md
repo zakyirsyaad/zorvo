@@ -19,6 +19,10 @@
 <p align="center">
   <a href="https://github.com/zakyirsyaad/zorvo/releases/latest/download/Zorvo-mac.dmg"><strong>Download for Mac</strong></a>
   ·
+  <a href="https://zorvolabs.xyz">Website</a>
+  ·
+  <a href="https://zorvolabs.xyz/docs/">Docs</a>
+  ·
   <a href="https://github.com/zakyirsyaad/zorvo/releases">All releases</a>
   ·
   <a href="CHANGELOG.md">Changelog</a>

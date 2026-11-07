@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "zorvo-credits-server",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-22",
+  "durable_objects": {
+    "bindings": [{ "name": "LEDGER", "class_name": "Ledger" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Ledger"] }],
+  // Every variable is parsed by src/config.ts (parseConfig), which documents each one.
+  // Secrets are not listed here: set them with `wrangler secret put`.
+  "vars": {
+    "CREDITS_PER_USD_PAID": "100",
+    "BURN_PER_USD_COST": "120",
+    "PACKAGES_USD": "5,10,25",
+    "DEVICE_CAP_CREDITS": "5000",
+    "STOCK_BUFFER_NANO": "2000000000",
+    "MODELS": "Qwen/Qwen3.8-27B,qwen/qwen3.5-397b-a17b,z-ai/glm-5.3,z-ai/glm-5.3-flash,moonshotai/kimi-k3,deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    "WORKSPACE_ID": "set-me",
+    "ORGANIZATION_ID": "set-me",
+    "OPERATOR_ACCOUNT": "set-me",
+    "NEAR_AI_BASE": "https://cloud-api.near.ai/v1",
+    "PINGPAY_BASE": "https://pay.pingpay.io/api"
+  }
+}

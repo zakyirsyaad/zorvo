@@ -14,7 +14,8 @@ export default mergeConfig(
       // A passing test still ends as soon as it is done; only a stuck one waits this long.
       testTimeout: 20_000,
       // Agent worktrees under .claude/ hold copies of the tests; run only this checkout's.
-      exclude: [...configDefaults.exclude, ".claude/**"],
+      // server/ is its own package with its own Vitest setup (Workers runtime).
+      exclude: [...configDefaults.exclude, ".claude/**", "server/**"],
     },
   }),
 );

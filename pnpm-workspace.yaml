@@ -2,6 +2,7 @@
 packages:
   - "."
   - "site"
+  - "server"
 
 # Supply-chain policy for every install, here and in CI.
 # Wait a week before installing a newly published version (in minutes); with
@@ -63,6 +64,8 @@ minimumReleaseAgeExclude:
 
 allowBuilds:
   esbuild: true
+  # server/ runs its tests and `wrangler dev` on the Workers runtime; its install script links the binary.
+  workerd: true
   # Its install script would write git hooks unasked: run `pnpm lefthook install` to opt in.
   lefthook: false
   # Next.js image optimizer; the site exports static images unoptimized, so it is not needed.

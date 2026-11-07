@@ -444,8 +444,7 @@ describe("POST /v1/recover", () => {
 
   it("carries only what is left: the new key does not give back what the old one spent", async () => {
     const { deviceId, secret } = await keyedDevice();
-    near.keys.get("key-1")!.usageNano = (100n * USD) / 120n + 1n;
-    expect(creditsFromNano(near.keys.get("key-1")!.usageNano, cfg)).toBe(100);
+    near.keys.get("key-1")!.usageNano = (100n * USD) / 120n;
 
     expect((await recover(secret, randomSecret())).status).toBe(200);
     await tick(NOW + MINUTE_MS);
@@ -454,13 +453,112 @@ describe("POST /v1/recover", () => {
     expect((await rows()).devices.find((d) => d.id === deviceId)).toMatchObject({ nearai_key_id: "key-2", credits_bought: 400 });
   });
 
-  it("never asks for a zero limit when everything was spent", async () => {
+  it("rounds what is left down: a fraction of a credit spent costs the whole credit, and repeated recoveries never add any", async () => {
+    const { deviceId, secret } = await keyedDevice();
+    // 0.99 of a credit used.
+    near.keys.get("key-1")!.usageNano = 8_250_000n;
+    const second = randomSecret();
+    expect((await recover(secret, second)).status).toBe(200);
+    await tick(NOW + MINUTE_MS);
+    expect((await rows()).devices.find((d) => d.id === deviceId)).toMatchObject({ nearai_key_id: "key-2", credits_bought: 499 });
+    expect(near.keys.get("key-2")?.limitNano).toBe(spendLimitNano(499, cfg));
+
+    // The new key has used nothing: recovering again keeps 499, it does not drift up.
+    expect((await recover(second, randomSecret())).status).toBe(200);
+    await tick(NOW + 2 * MINUTE_MS);
+    expect((await rows()).devices.find((d) => d.id === deviceId)).toMatchObject({ nearai_key_id: "key-3", credits_bought: 499 });
+    expect(near.keys.get("key-3")?.limitNano).toBe(spendLimitNano(499, cfg));
+  });
+
+  it("freezes the old key before it reads the usage it carries: patch, list, create, revoke", async () => {
     const { secret } = await keyedDevice();
-    // A little over the limit, so even the rounding leaves nothing.
-    near.keys.get("key-1")!.usageNano = near.keys.get("key-1")!.limitNano + USD / 100n;
+    expect((await recover(secret, randomSecret())).status).toBe(200);
+    const seen = near.calls.length;
+
+    await tick(NOW + MINUTE_MS);
+
+    const routes = near.calls.slice(seen).map((call) => call.route).filter((route) => ["list", "patch", "create", "revoke"].includes(route));
+    expect(routes).toEqual(["list", "patch", "list", "create", "revoke"]);
+    const patch = near.calls.slice(seen).find((call) => call.route === "patch")!;
+    expect(patch.path).toBe(`/workspaces/${cfg.workspaceId}/api-keys/key-1/spend-limit`);
+    expect(patch.body).toEqual({ spendLimit: { amount: 1, currency: "USD" } });
+  });
+
+  it("counts usage that grows between the first read and the freeze", async () => {
+    const { deviceId, secret } = await keyedDevice();
+    expect((await recover(secret, randomSecret())).status).toBe(200);
+    const hold = near.hold("patch");
+
+    await runInDurableObject(stub(), async (ledger: Ledger) => {
+      const running = ledger.runAlarm(NOW + MINUTE_MS);
+      await hold.started;
+      near.keys.get("key-1")!.usageNano = (50n * USD) / 120n;
+      hold.release();
+      await running;
+    });
+
+    expect((await rows()).devices.find((d) => d.id === deviceId)).toMatchObject({ nearai_key_id: "key-2", credits_bought: 450 });
+    expect(near.keys.get("key-2")?.limitNano).toBe(spendLimitNano(450, cfg));
+  });
+
+  it("records the frozen limit, so the key's outstanding amount drops at once", async () => {
+    const { secret } = await keyedDevice();
+    expect((await recover(secret, randomSecret())).status).toBe(200);
+    near.status.create = 503;
+    await tick(NOW + MINUTE_MS);
+    const state = await runInDurableObject(stub(), (_ledger, s) => ({
+      outstanding: s.storage.sql.exec<{ outstanding_usd: number }>("SELECT outstanding_usd FROM snapshot").one().outstanding_usd,
+      keyUsage: s.storage.sql.exec<{ key_id: string; limit_nano: number }>("SELECT key_id, limit_nano FROM key_usage").toArray(),
+    }));
+    expect(state.keyUsage).toEqual([{ key_id: "key-1", limit_nano: 1 }]);
+    expect(state.outstanding).toBe(1);
+  });
+
+  it("treats a key NEAR AI no longer knows as frozen and carries the usage it had on record", async () => {
+    const { deviceId, secret } = await keyedDevice();
+    await runInDurableObject(stub(), (_ledger, s) => {
+      s.storage.sql.exec("UPDATE key_usage SET usage_nano = ? WHERE key_id = 'key-1'", Number((100n * USD) / 120n));
+    });
+    near.keys.delete("key-1");
     expect((await recover(secret, randomSecret())).status).toBe(200);
     await tick(NOW + MINUTE_MS);
-    expect(near.keys.get("key-2")?.limitNano).toBe(1n);
+    expect((await rows()).devices.find((d) => d.id === deviceId)).toMatchObject({ nearai_key_id: "key-2", credits_bought: 400 });
+  });
+
+  it("creates no key when nothing is left: the old key is revoked and the next credit makes a new one", async () => {
+    const { deviceId, secret } = await keyedDevice();
+    near.keys.get("key-1")!.usageNano = near.keys.get("key-1")!.limitNano;
+    const next = randomSecret();
+    expect((await recover(secret, next)).status).toBe(200);
+
+    await tick(NOW + MINUTE_MS);
+
+    expect(near.count("create")).toBe(1);
+    expect(near.keys.size).toBe(0);
+    expect(near.calls.filter((call) => call.route === "revoke").map((call) => call.path)).toEqual([`/workspaces/${cfg.workspaceId}/api-keys/key-1`]);
+    const state = await rows();
+    expect(state.devices.find((d) => d.id === deviceId)).toMatchObject({ nearai_key_id: null, credits_bought: 0 });
+    expect(state.pendingKeys).toEqual([]);
+    expect(state.keyUsage).toEqual([]);
+    expect(state.queue).toEqual([]);
+    expect(await (await call("/v1/balance", { secret: next })).json()).toMatchObject({ credits: 0, usedCredits: 0, keyReady: false });
+    expect((await call("/v1/key", { secret: next })).status).toBe(404);
+
+    await addPromo(CODE, 300, 1);
+    expect((await redeem(next, CODE)).status).toBe(201);
+    await tick(NOW + 2 * MINUTE_MS);
+    expect((await rows()).devices.find((d) => d.id === deviceId)).toMatchObject({ nearai_key_id: "key-2", credits_bought: 300 });
+    expect(near.keys.get("key-2")?.limitNano).toBe(spendLimitNano(300, cfg));
+    expect(await (await call("/v1/key", { secret: next })).json()).toEqual({ key: "sk-secret-2" });
+  });
+
+  it("holds back the pending key of the old secret at once", async () => {
+    const { secret } = await keyedDevice();
+    expect((await rows()).pendingKeys).toHaveLength(1);
+    const next = randomSecret();
+    expect((await recover(secret, next)).status).toBe(200);
+    expect((await rows()).pendingKeys).toEqual([]);
+    expect((await call("/v1/key", { secret: next })).status).toBe(404);
   });
 
   it("replaces a pending key nobody collected, and recovering with the device's own current code works", async () => {
@@ -649,26 +747,41 @@ describe("POST /v1/recover", () => {
 });
 
 describe("rotate_key next to credit", () => {
-  it.each([["credit first", "a", "z"], ["rotate first", "z", "a"]])("ends on one key with the right limit when the %s", async (_name, creditId, rotateId) => {
+  it("defers a device's credit while its rotation is queued, then lands it on the new key", async () => {
     const { deviceId, secret } = await keyedDevice();
     await addPromo(CODE, 500, 1);
     expect((await redeem(secret, CODE)).status).toBe(201);
     const next = randomSecret();
     expect((await recover(secret, next)).status).toBe(200);
-    await runInDurableObject(stub(), (_ledger, state) => {
-      state.storage.sql.exec("UPDATE queue SET id = ? WHERE kind = 'credit'", creditId);
-      state.storage.sql.exec("UPDATE queue SET id = ? WHERE kind = 'rotate_key'", rotateId);
-    });
+    near.status.create = 503;
+    const queuedCredit = (await rows()).queue.find((item) => item.kind === "credit")!;
 
     await tick(NOW + MINUTE_MS);
 
-    const state = await rows();
+    // The rotation failed after freezing the old key; the credit did not lift the freeze.
+    expect(near.calls.filter((call) => call.route === "patch")).toHaveLength(1);
+    expect(near.keys.get("key-1")?.limitNano).toBe(1n);
+    let state = await rows();
+    expect(state.queue.find((item) => item.kind === "credit")).toEqual(queuedCredit);
+    expect(state.queue.find((item) => item.kind === "rotate_key")).toMatchObject({ attempts: 1 });
+    expect(state.devices.find((d) => d.id === deviceId)).toMatchObject({ credits_bought: 500, nearai_key_id: "key-1" });
+
+    delete near.status.create;
+    await tick(NOW + MINUTE_MS + 30 * SECOND_MS);
+    state = await rows();
+    expect(state.devices.find((d) => d.id === deviceId)).toMatchObject({ credits_bought: 500, nearai_key_id: "key-2" });
+    expect(state.queue.map((item) => item.kind)).toEqual(["credit"]);
+    expect(state.queue[0]).toMatchObject({ attempts: 0 });
+
+    await tick(NOW + MINUTE_MS + 31 * SECOND_MS);
+    state = await rows();
     expect(state.queue).toEqual([]);
     expect(state.topups.map((t) => t.status)).toContain("credited");
     expect(state.devices.find((d) => d.id === deviceId)).toMatchObject({ credits_bought: 1000, nearai_key_id: "key-2" });
     expect([...near.keys.keys()]).toEqual(["key-2"]);
     expect(near.keys.get("key-2")?.limitNano).toBe(spendLimitNano(1000, cfg));
-    expect(near.count("create")).toBe(2);
+    // The original key, the refused attempt, and the new key.
+    expect(near.count("create")).toBe(3);
     expect(await (await call("/v1/key", { secret: next })).json()).toEqual({ key: "sk-secret-2" });
   });
 });

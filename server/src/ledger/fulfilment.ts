@@ -1,5 +1,5 @@
 import type { Config } from "../config";
-import { creditsFromNano, spendLimitNano } from "../credits";
+import { creditsFromNano, creditsLeft, spendLimitNano } from "../credits";
 import { encrypt } from "../crypto";
 import { NearAiError, type NearAiClient } from "../nearai";
 import type { TopupStatus } from "./status";
@@ -210,7 +210,14 @@ const QUEUE_KINDS = ["credit", "rotate_key", "revoke_key"];
 async function runQueue(ctx: FulfilmentContext, now: number): Promise<void> {
   const kinds = QUEUE_KINDS.map((kind) => `'${kind}'`).join(", ");
   const due = ctx.sql
-    .exec<{ id: string; kind: string }>(`SELECT id, kind FROM queue WHERE kind IN (${kinds}) AND next_at <= ? ORDER BY next_at, id LIMIT ?`, now, CREDITS_PER_TICK)
+    .exec<{ id: string; kind: string }>(
+      `SELECT id, kind FROM queue WHERE kind IN (${kinds}) AND next_at <= ?
+         AND NOT (kind = 'credit' AND EXISTS (
+           SELECT 1 FROM topups t JOIN queue r ON r.kind = 'rotate_key' AND r.ref = t.device_id WHERE t.id = queue.ref))
+       ORDER BY next_at, id LIMIT ?`,
+      now,
+      CREDITS_PER_TICK,
+    )
     .toArray();
   for (const { id, kind } of due) {
     if (kind === "credit") await creditItem(ctx, id, now);
@@ -286,6 +293,10 @@ function claimCredit(ctx: FulfilmentContext, itemId: string, now: number): Claim
   if (topup?.status !== "paid") return null;
   const deviceKnown = ctx.sql.exec("SELECT 1 FROM devices WHERE id = ?", topup.device_id).toArray().length > 0;
   if (!deviceKnown) return null;
+  // A credit would lift the spend limit of a key a rotation has frozen: it waits, untouched, for
+  // the rotation and then lands on the new key.
+  const rotating = ctx.sql.exec("SELECT 1 FROM queue WHERE kind = 'rotate_key' AND ref = ?", topup.device_id).toArray().length > 0;
+  if (rotating) return null;
 
   const attempts = item.attempts + 1;
   ctx.transaction(() => {
@@ -403,8 +414,8 @@ async function revokeQuietly(ctx: FulfilmentContext, keyId: string, now: number)
   }
 }
 
-/** A key with no spend left still gets a positive limit: a limit of 0 might read as "no limit" upstream. */
-const MIN_KEY_LIMIT_NANO = 1n;
+/** An old key is frozen at its usage, but never at 0, which a key might read as "no limit". */
+const MIN_FROZEN_LIMIT_NANO = 1n;
 
 /**
  * One `rotate_key` item (spec 7.5, Recovery): the device's secret is already replaced, so this
@@ -443,44 +454,47 @@ function claimRotate(ctx: FulfilmentContext, itemId: string, now: number): { dev
 }
 
 /**
- * Creates the new key and swaps it in. The new limit is what the old key has left, not the credits
- * bought: a new key starts with no usage, so carrying the full total would give back what was spent.
- * `credits_bought` becomes that remainder, so later absolute totals stay right on the new key.
- * Returns the `revoke_key` item queued for the old key, or null when the rotation did not happen
- * (the device changed meanwhile; the item stays and its retry decides again).
+ * Replaces the device's key (spec 7.5, Recovery). Every attempt starts by freezing the old key, so
+ * nothing more can be spent on it, and reads its usage after that; the new key gets what was left
+ * (`creditsLeft`, rounded down) and `credits_bought` becomes that remainder, so later absolute
+ * totals stay right on the new key. With nothing left no key is made: the device ends without one
+ * and its next credit creates one. Returns the `revoke_key` item queued for the old key, or null
+ * when the rotation did not happen (the device changed meanwhile; the item stays for its retry).
  */
 async function rotateKey(ctx: FulfilmentContext, deviceId: string, itemId: string, now: number): Promise<string | null> {
   const cfg = ctx.config();
-  const client = ctx.nearAi();
   const before = readDevice(ctx.sql, deviceId);
   if (!before?.nearai_key_id) return null;
   const oldKeyId = before.nearai_key_id;
 
-  const keys = await ctx.withAccessToken(now, (access) => client.listKeys(access, cfg.workspaceId));
-  const stored = ctx.sql.exec<{ usage_nano: number | null }>("SELECT usage_nano FROM key_usage WHERE key_id = ?", oldKeyId).toArray()[0];
-  const usageNano = keys.find((key) => key.id === oldKeyId)?.usageNano ?? BigInt(stored?.usage_nano ?? 0);
-  const remaining = Math.max(0, before.credits_bought - creditsFromNano(usageNano, cfg));
-  const spendLimit = spendLimitNano(remaining, cfg);
-  const limitNano = spendLimit > MIN_KEY_LIMIT_NANO ? spendLimit : MIN_KEY_LIMIT_NANO;
+  const usageNano = await freezeKey(ctx, oldKeyId, now);
+  const remaining = creditsLeft(before.credits_bought, usageNano, cfg);
 
-  // The encryption key is tried first, so a bad one fails before a key exists upstream. createKey is
-  // not routed through withAccessToken: a second create is not obviously safe.
-  const keyB64 = ctx.keyEncryptionKey();
-  await encrypt(keyB64, "");
-  const created = await client.createKey(await ctx.accessToken(now), cfg.workspaceId, `zorvo-${deviceId}`, limitNano);
-  const ciphertext = await encrypt(keyB64, created.key);
+  let created: { id: string; ciphertext: string } | null = null;
+  if (remaining > 0) {
+    // The encryption key is tried first, so a bad one fails before a key exists upstream. createKey
+    // is not routed through withAccessToken: a second create is not obviously safe.
+    const keyB64 = ctx.keyEncryptionKey();
+    await encrypt(keyB64, "");
+    const key = await ctx.nearAi().createKey(await ctx.accessToken(now), cfg.workspaceId, `zorvo-${deviceId}`, spendLimitNano(remaining, cfg));
+    created = { id: key.id, ciphertext: await encrypt(keyB64, key.key) };
+  }
 
   const after = readDevice(ctx.sql, deviceId);
   if (!after || after.nearai_key_id !== oldKeyId || after.credits_bought !== before.credits_bought) {
-    await revokeQuietly(ctx, created.id, now);
+    if (created) await revokeQuietly(ctx, created.id, now);
     return null;
   }
   const revokeItemId = crypto.randomUUID();
   ctx.transaction(() => {
-    ctx.sql.exec("UPDATE devices SET nearai_key_id = ?, credits_bought = ? WHERE id = ?", created.id, remaining, deviceId);
-    ctx.sql.exec("INSERT OR REPLACE INTO pending_keys (device_id, key_ciphertext, expires_at) VALUES (?, ?, ?)", deviceId, ciphertext, now + PENDING_KEY_TTL_MS);
+    ctx.sql.exec("UPDATE devices SET nearai_key_id = ?, credits_bought = ? WHERE id = ?", created?.id ?? null, remaining, deviceId);
     forgetKeyLimit(ctx.sql, oldKeyId);
-    recordKeyLimit(ctx.sql, created.id, limitNano);
+    if (created) {
+      ctx.sql.exec("INSERT OR REPLACE INTO pending_keys (device_id, key_ciphertext, expires_at) VALUES (?, ?, ?)", deviceId, created.ciphertext, now + PENDING_KEY_TTL_MS);
+      recordKeyLimit(ctx.sql, created.id, spendLimitNano(remaining, cfg));
+    } else {
+      ctx.sql.exec("DELETE FROM pending_keys WHERE device_id = ?", deviceId);
+    }
     ctx.sql.exec("DELETE FROM queue WHERE id = ?", itemId);
     ctx.sql.exec(
       "INSERT INTO queue (id, kind, ref, attempts, next_at, created_at) VALUES (?, 'revoke_key', ?, 0, ?, ?)",
@@ -491,6 +505,32 @@ async function rotateKey(ctx: FulfilmentContext, deviceId: string, itemId: strin
     );
   });
   return revokeItemId;
+}
+
+/**
+ * Stops further spend on `keyId` and returns what it has used. The key's usage is read, its limit
+ * is set to that (an absolute PATCH, safe to repeat; the key then refuses new requests), recorded
+ * at once so the outstanding amount is right, and the usage is read again after the freeze. A key
+ * NEAR AI no longer knows (404) cannot be spent on: the usage on record is taken.
+ */
+async function freezeKey(ctx: FulfilmentContext, keyId: string, now: number): Promise<bigint> {
+  const cfg = ctx.config();
+  const client = ctx.nearAi();
+  const usageOf = async () => (await ctx.withAccessToken(now, (access) => client.listKeys(access, cfg.workspaceId))).find((key) => key.id === keyId)?.usageNano ?? null;
+  const stored = BigInt(ctx.sql.exec<{ usage_nano: number | null }>("SELECT usage_nano FROM key_usage WHERE key_id = ?", keyId).toArray()[0]?.usage_nano ?? 0);
+
+  const first = await usageOf();
+  const frozenAt = (first ?? stored) > MIN_FROZEN_LIMIT_NANO ? (first ?? stored) : MIN_FROZEN_LIMIT_NANO;
+  try {
+    await client.setSpendLimit(await ctx.accessToken(now), cfg.workspaceId, keyId, frozenAt);
+  } catch (error) {
+    if (error instanceof NearAiError && error.status === 404) return first ?? stored;
+    throw error;
+  }
+  ctx.transaction(() => recordKeyLimit(ctx.sql, keyId, frozenAt));
+  const second = await usageOf();
+  const read = [first, second].filter((usage): usage is bigint => usage !== null);
+  return read.length === 0 ? stored : read.reduce((most, usage) => (usage > most ? usage : most));
 }
 
 function readDevice(sql: SqlStorage, deviceId: string): { nearai_key_id: string | null; credits_bought: number } | undefined {

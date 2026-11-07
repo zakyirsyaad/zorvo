@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseConfig, type Env } from "../src/config";
-import { balanceCredits, creditsForPackage, creditsFromNano, spendLimitNano, usdcAmount } from "../src/credits";
+import { balanceCredits, creditsForPackage, creditsFromNano, creditsLeft, spendLimitNano, usdcAmount } from "../src/credits";
 
 // The same values as the vars in wrangler.jsonc.
 const env = {
@@ -24,6 +24,14 @@ describe("credit math", () => {
   });
   it("never rounds a spend limit up", () => {
     expect(spendLimitNano(500, cfg)).toBe(4_166_666_666n);
+  });
+  it("counts what is left after a rotation without rounding it up", () => {
+    expect(creditsLeft(500, 0n, cfg)).toBe(500);
+    // 0.99 and 0.01 of a credit used both cost a whole credit.
+    expect(creditsLeft(500, 8_250_000n, cfg)).toBe(499);
+    expect(creditsLeft(500, 83_334n, cfg)).toBe(499);
+    expect(creditsLeft(500, 4_166_666_667n, cfg)).toBe(0);
+    expect(creditsLeft(500, 10n ** 12n, cfg)).toBe(0);
   });
   it("shows a balance no larger than what was bought", () => {
     expect(balanceCredits(spendLimitNano(500, cfg), 0n, cfg)).toBe(499);

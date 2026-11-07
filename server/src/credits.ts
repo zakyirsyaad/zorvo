@@ -18,6 +18,16 @@ export function creditsFromNano(nano: bigint, cfg: Config): number {
   return Number((nano * BigInt(cfg.burnPerUsdCost)) / NANO_PER_USD);
 }
 
+/**
+ * Whole credits left of `creditsBought` after `usageNano` of NEAR AI cost. The used part rounds up,
+ * so the result is never more than the user really has left (0.99 of a credit used costs a credit).
+ */
+export function creditsLeft(creditsBought: number, usageNano: bigint, cfg: Config): number {
+  const used = (usageNano * BigInt(cfg.burnPerUsdCost) + NANO_PER_USD - 1n) / NANO_PER_USD;
+  const left = BigInt(creditsBought) - used;
+  return left > 0n ? Number(left) : 0;
+}
+
 /** Credits left under a spend limit; never negative. */
 export function balanceCredits(limitNano: bigint, usageNano: bigint, cfg: Config): number {
   const left = limitNano - usageNano;

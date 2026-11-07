@@ -65,7 +65,7 @@ export function savePromo(sql: SqlStorage, codeHash: string, credits: number, ma
 /**
  * Recovery: the device whose secret hashes to `recoveryHash` (a revoked one is not found, and looks
  * the same as an unknown one) gets `newSecretHash` in the same block, so its old secret stops
- * authenticating at once. A rotation is queued only when there is a key to rotate (or a pending
+ * authenticating at once and its uncollected key is dropped. A rotation is queued only when there is a key to rotate (or a pending
  * one), and only when none is queued already: it re-reads the device when it runs.
  */
 export function recoverDevice(
@@ -87,6 +87,9 @@ export function recoverDevice(
     const taken = ctx.sql.exec("SELECT 1 FROM devices WHERE secret_hash = ?", newSecretHash).toArray().length > 0;
     if (taken) return;
     ctx.sql.exec("UPDATE devices SET secret_hash = ? WHERE id = ?", newSecretHash, device.id);
+    // The old key is about to be revoked: the new secret's holder must not be handed it, and its
+    // encrypted copy is not kept longer than needed. The rotation makes a new one.
+    ctx.sql.exec("DELETE FROM pending_keys WHERE device_id = ?", device.id);
     if (device.has_key === 1) {
       ctx.sql.exec(
         `INSERT INTO queue (id, kind, ref, attempts, next_at, created_at)

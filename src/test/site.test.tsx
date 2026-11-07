@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -245,6 +246,18 @@ describe("search engines", () => {
     // trailingSlash redirects any path without a file extension, so the shared image needs one.
     expect(OG_IMAGE.url).toMatch(/\.png$/);
     expect(existsSync(join(ROOT, "site", "app", "opengraph-image.tsx"))).toBe(false);
+  });
+
+  it("always builds production, and skips only previews that change nothing the site uses", () => {
+    const { ignoreCommand } = JSON.parse(readFileSync(join(ROOT, "site", "vercel.json"), "utf8"));
+    // Vercel skips the build when the command exits 0. Comparing HEAD with itself is a commit that changes nothing.
+    const run = (env: string) =>
+      spawnSync("sh", ["-c", ignoreCommand], {
+        cwd: join(ROOT, "site"),
+        env: { ...process.env, VERCEL_ENV: env, VERCEL_GIT_PREVIOUS_SHA: "HEAD" },
+      }).status;
+    expect(run("production")).toBe(1);
+    expect(run("preview")).toBe(0);
   });
 
   it("refuses to build for production without an address, rather than publish localhost links", () => {

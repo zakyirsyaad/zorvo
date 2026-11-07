@@ -27,8 +27,10 @@ rest comes from `vercel.json`: no framework preset, so Vercel serves `out/` as p
 files (the Next.js preset would deploy its own build from `.next/`, which keeps React's
 runtime and drops the headers below), install and build with pnpm 12 (the version
 the workspace's settings need), security headers including a CSP that only
-allows the site's own origin, and a skipped build when a commit touches
-nothing the site uses.
+allows the site's own origin, and a skipped preview build when a commit touches
+nothing the site uses. Production always builds: a redeploy after changing an
+environment variable such as `SITE_URL` has no new commit to compare, and would
+otherwise be skipped.
 
 The canonical URL, sitemap and Open Graph links use `SITE_URL` if set,
 otherwise Vercel's production domain, so adding a custom domain in Vercel

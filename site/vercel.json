@@ -5,7 +5,7 @@
   "trailingSlash": true,
   "installCommand": "npx --yes pnpm@12.10.1 install --frozen-lockfile",
   "buildCommand": "npx --yes pnpm@12.10.1 run build",
-  "ignoreCommand": "git diff --quiet \"${VERCEL_GIT_PREVIOUS_SHA:-HEAD^}\" HEAD -- . ../package.json ../pnpm-lock.yaml ../pnpm-workspace.yaml ../src/assets/agents",
+  "ignoreCommand": "[ \"$VERCEL_ENV\" != \"production\" ] && git diff --quiet \"${VERCEL_GIT_PREVIOUS_SHA:-HEAD^}\" HEAD -- . ../package.json ../pnpm-lock.yaml ../pnpm-workspace.yaml ../src/assets/agents",
   "headers": [
     {
       "source": "/(.*)",

@@ -35,13 +35,17 @@ async function registerDevice(req: Request, env: Env): Promise<Response> {
   return "error" in result ? error(result.error, 400) : json({ deviceId: result.deviceId }, 201);
 }
 
-/** Each top-up opens a PingPay checkout the alarm then polls, so a device gets 10 an hour. Cancel is not limited. */
+/**
+ * Each top-up opens a PingPay checkout the alarm then polls, so a device gets 10 an hour. A malformed
+ * request is refused before it counts; a refused one (409, 502) still counts, since it may have read
+ * NEAR AI's stock or asked PingPay. Cancel is not limited.
+ */
 async function createTopup(req: Request, env: Env, deviceId: string): Promise<Response> {
-  const { allowed } = await ledgerOf(env).rateLimit(`topups:${deviceId}`, TOPUPS_PER_HOUR, HOUR_MS);
-  if (!allowed) return error("rate_limited", 429);
   const body: unknown = await req.json().catch(() => null);
   const packageUsd = (body as { packageUsd?: unknown } | null)?.packageUsd;
   if (typeof packageUsd !== "number" || !parseConfig(env).packagesUsd.includes(packageUsd)) return error("bad_request", 400);
+  const { allowed } = await ledgerOf(env).rateLimit(`topups:${deviceId}`, TOPUPS_PER_HOUR, HOUR_MS);
+  if (!allowed) return error("rate_limited", 429);
 
   const result = await ledgerOf(env).createTopup(deviceId, packageUsd, Date.now());
   if (!("error" in result)) return json(result, 201);
@@ -134,51 +138,66 @@ async function pingPayWebhook(req: Request, env: Env): Promise<Response> {
   return error("upstream", result.error === "retry" ? 503 : 502);
 }
 
-export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
-    const { pathname } = new URL(req.url);
-    if (req.method === "POST" && pathname === "/v1/devices") return registerDevice(req, env);
+/** An error as `Name: message`. Our errors and the clients' name the request and status, never a secret. */
+function describe(failure: unknown): string {
+  return failure instanceof Error ? `${failure.name}: ${failure.message}` : String(failure);
+}
 
-    if (req.method === "GET" && pathname === "/v1/balance") {
-      const device = await authDevice(req, env);
-      if (device instanceof Response) return device;
-      return json(await ledgerOf(env).balanceFor(device.deviceId, new URL(req.url).searchParams.get("fresh") === "1"));
+export default {
+  /** Every route; anything a route throws becomes a logged `502 {"error":"upstream"}`, never a bare 500. */
+  async fetch(req: Request, env: Env): Promise<Response> {
+    try {
+      return await route(req, env);
+    } catch (failure) {
+      console.error(`${req.method} ${new URL(req.url).pathname} failed: ${describe(failure)}`);
+      return error("upstream", 502);
     }
-    if (req.method === "GET" && pathname === "/v1/models") {
-      const device = await authDevice(req, env);
-      if (device instanceof Response) return device;
-      const result = await ledgerOf(env).models();
-      return "error" in result ? error("upstream", 502) : json(result);
-    }
-    if (req.method === "GET" && pathname === "/v1/stock") {
-      const device = await authDevice(req, env);
-      if (device instanceof Response) return device;
-      return json(await ledgerOf(env).stockFor(device.deviceId));
-    }
-    if (req.method === "GET" && pathname === "/v1/key") {
-      const device = await authDevice(req, env);
-      if (device instanceof Response) return device;
-      return handOverKey(env, device.deviceId);
-    }
-    if (req.method === "POST" && pathname === "/v1/admin/promos") return adminPromo(req, env);
-    if (req.method === "POST" && pathname === "/v1/recover") return recoverRoute(req, env);
-    if (req.method === "POST" && pathname === "/v1/promo") {
-      const device = await authDevice(req, env);
-      if (device instanceof Response) return device;
-      return redeemPromoRoute(req, env, device.deviceId);
-    }
-    if (req.method === "POST" && pathname === "/v1/webhooks/pingpay") return pingPayWebhook(req, env);
-    if (req.method === "POST" && pathname === "/v1/topups") {
-      const device = await authDevice(req, env);
-      if (device instanceof Response) return device;
-      return createTopup(req, env, device.deviceId);
-    }
-    const topup = TOPUP_PATH.exec(pathname);
-    if (topup && (topup[2] ? req.method === "POST" : req.method === "GET")) {
-      const device = await authDevice(req, env);
-      if (device instanceof Response) return device;
-      return topupRoute(env, device.deviceId, topup[1]!, topup[2] !== undefined);
-    }
-    return error("not_found", 404);
   },
 } satisfies ExportedHandler<Env>;
+
+async function route(req: Request, env: Env): Promise<Response> {
+  const { pathname } = new URL(req.url);
+  if (req.method === "POST" && pathname === "/v1/devices") return registerDevice(req, env);
+
+  if (req.method === "GET" && pathname === "/v1/balance") {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    return json(await ledgerOf(env).balanceFor(device.deviceId, new URL(req.url).searchParams.get("fresh") === "1"));
+  }
+  if (req.method === "GET" && pathname === "/v1/models") {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    const result = await ledgerOf(env).models();
+    return "error" in result ? error("upstream", 502) : json(result);
+  }
+  if (req.method === "GET" && pathname === "/v1/stock") {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    return json(await ledgerOf(env).stockFor(device.deviceId));
+  }
+  if (req.method === "GET" && pathname === "/v1/key") {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    return handOverKey(env, device.deviceId);
+  }
+  if (req.method === "POST" && pathname === "/v1/admin/promos") return adminPromo(req, env);
+  if (req.method === "POST" && pathname === "/v1/recover") return recoverRoute(req, env);
+  if (req.method === "POST" && pathname === "/v1/promo") {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    return redeemPromoRoute(req, env, device.deviceId);
+  }
+  if (req.method === "POST" && pathname === "/v1/webhooks/pingpay") return pingPayWebhook(req, env);
+  if (req.method === "POST" && pathname === "/v1/topups") {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    return createTopup(req, env, device.deviceId);
+  }
+  const topup = TOPUP_PATH.exec(pathname);
+  if (topup && (topup[2] ? req.method === "POST" : req.method === "GET")) {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    return topupRoute(env, device.deviceId, topup[1]!, topup[2] !== undefined);
+  }
+  return error("not_found", 404);
+}

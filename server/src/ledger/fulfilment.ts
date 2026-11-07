@@ -2,7 +2,8 @@ import type { Config } from "../config";
 import { creditsFromNano, creditsLeft, spendLimitNano } from "../credits";
 import { encrypt } from "../crypto";
 import { NearAiError, type NearAiClient } from "../nearai";
-import type { TopupStatus } from "./status";
+import { RESERVATION_GRACE_MS, RESERVATION_MS } from "./checkout";
+import type { SessionOutcome, TopupStatus } from "./status";
 
 /**
  * The Ledger's alarm (spec 7.5, 7.6): the operator token, the stock snapshot, the PingPay poll,
@@ -11,8 +12,6 @@ import type { TopupStatus } from "./status";
  */
 
 export type AlertKind = "refresh_failed" | "low_stock" | "stuck_queue" | "attempts_exhausted" | "payment_mismatch";
-/** What a PingPay session comes to; `retry` and `mismatch` change nothing and are tried again later. */
-export type SessionOutcome = "paid" | "expired" | "nothing" | "retry" | "mismatch";
 
 const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -182,11 +181,16 @@ function nextPoll(sql: SqlStorage, topupId: string, outcome: SessionOutcome | "f
   sql.exec("UPDATE topups SET next_poll_at = ?, polls = ? WHERE id = ?", now + delay, polls, topupId);
 }
 
+/** A `created` top-up still without a checkout session this long after it was made never got one. */
+const NO_CHECKOUT_AFTER_MS = RESERVATION_MS + RESERVATION_GRACE_MS;
+
 /**
  * Releases reservations past their time and deletes key secrets never collected. A paid top-up's
  * hold never expires (it is released by its credit), and the status check keeps it so regardless.
- * A `created` top-up whose hold ended over 7 days ago becomes `expired`. Rate-limit windows older
- * than a day (every limiter's window is at most an hour) and event ids older than 30 days go.
+ * A `created` top-up whose hold ended over 7 days ago becomes `expired`; one that never got a
+ * checkout session (its request died while PingPay was asked) is `failed` once its hold has passed,
+ * since no payment can ever be matched to it. Rate-limit windows older than a day (every limiter's
+ * window is at most an hour) and event ids older than 30 days go.
  */
 function sweepExpired(ctx: FulfilmentContext, now: number): void {
   ctx.sql.exec(
@@ -195,10 +199,19 @@ function sweepExpired(ctx: FulfilmentContext, now: number): void {
   );
   ctx.sql.exec("DELETE FROM pending_keys WHERE expires_at <= ?", now);
   const abandoned = ctx.sql
-    .exec<{ id: string }>("SELECT id FROM topups WHERE status = 'created' AND reserved_until < ?", now - ABANDONED_AFTER_MS)
+    .exec<{ id: string }>(
+      "SELECT id FROM topups WHERE status = 'created' AND ping_session_id IS NOT NULL AND COALESCE(reserved_until, created_at) < ?",
+      now - ABANDONED_AFTER_MS,
+    )
     .toArray();
   for (const { id } of abandoned) {
     if (ctx.move(id, "expired", now)) ctx.releaseReservation(id);
+  }
+  const neverOpened = ctx.sql
+    .exec<{ id: string }>("SELECT id FROM topups WHERE status = 'created' AND ping_session_id IS NULL AND created_at < ?", now - NO_CHECKOUT_AFTER_MS)
+    .toArray();
+  for (const { id } of neverOpened) {
+    if (ctx.move(id, "failed", now)) ctx.releaseReservation(id);
   }
   ctx.sql.exec("DELETE FROM ratelimits WHERE window_start < ?", now - RATELIMIT_KEEP_MS);
   ctx.sql.exec("DELETE FROM events WHERE received_at < ?", now - EVENTS_KEEP_MS);

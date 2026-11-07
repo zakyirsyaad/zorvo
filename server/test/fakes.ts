@@ -34,6 +34,12 @@ export class FakePingPay {
   answerAmount = (requested: unknown): Record<string, unknown> => ({ assetId: NEAR_USDC_ASSET_ID, amount: requested });
   /** How long a new session lives, from the `now` it is given. */
   expiresAt = (): number => Date.now() + 15 * MINUTE_MS;
+  /** A new session's answer leaves out `expiresAt`. */
+  omitExpiry = false;
+  /** The payee a new session's answer names; by default the operator account. */
+  recipient: string = cfg.operatorAccount;
+  /** Every new session gets this id instead of a fresh one. */
+  fixedSessionId: string | null = null;
   private next = 0;
 
   readonly fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -43,7 +49,7 @@ export class FakePingPay {
     if (method === "POST" && url.pathname.endsWith("/checkout/sessions")) {
       if (this.failCreate) return json({ code: "INTERNAL", message: "down" }, 503);
       this.next += 1;
-      const sessionId = `cs_${this.next}`;
+      const sessionId = this.fixedSessionId ?? `cs_${this.next}`;
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       const amount = this.answerAmount(body.amount);
       this.sessions.set(sessionId, { status: "CREATED", paymentId: null, body, amount });
@@ -53,9 +59,9 @@ export class FakePingPay {
           status: "CREATED",
           paymentId: null,
           amount,
-          recipient: { address: cfg.operatorAccount },
+          recipient: { address: this.recipient },
           createdAt: new Date().toISOString(),
-          expiresAt: new Date(this.expiresAt()).toISOString(),
+          ...(this.omitExpiry ? {} : { expiresAt: new Date(this.expiresAt()).toISOString() }),
         },
         sessionUrl: `https://checkout.pingpay.test/session/${sessionId}`,
       });
@@ -96,6 +102,20 @@ export class FakePingPay {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`no session ${sessionId}`);
     this.sessions.set(sessionId, { ...session, amount });
+  }
+
+  /** The session reads `status`, with no payment. */
+  setStatus(sessionId: string, status: SessionStatus): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error(`no session ${sessionId}`);
+    this.sessions.set(sessionId, { ...session, status, paymentId: null });
+  }
+
+  /** The session's answers leave out `amount` from now on. */
+  dropAmount(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error(`no session ${sessionId}`);
+    this.sessions.set(sessionId, { ...session, amount: undefined as unknown as Record<string, unknown> });
   }
 
   expire(sessionId: string): void {

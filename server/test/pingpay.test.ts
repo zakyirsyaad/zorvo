@@ -98,7 +98,7 @@ describe("PingPayClient", () => {
     await expect(new PingPayClient(BASE, KEY, fetcher).createSession(sessionInput)).resolves.toMatchObject({ sessionId: "cs_1" });
   });
 
-  it("refuses a session answer without a usable expiry", async () => {
+  it("answers a null expiry when the session answer has no usable one", async () => {
     const { fetcher } = stubFetch(() =>
       json({
         session: {
@@ -110,7 +110,7 @@ describe("PingPayClient", () => {
         sessionUrl: "https://c.test/s",
       }),
     );
-    await expect(new PingPayClient(BASE, KEY, fetcher).createSession(sessionInput)).rejects.toThrow(/expiresAt/);
+    expect(await new PingPayClient(BASE, KEY, fetcher).createSession(sessionInput)).toMatchObject({ sessionId: "cs_1", expiresAt: null });
   });
 
   const usdc = { assetId: NEAR_USDC_ASSET_ID, amount: "5000000" };
@@ -128,12 +128,12 @@ describe("PingPayClient", () => {
     expect(calls[0]?.headers.get("x-api-key")).toBe(KEY);
   });
 
-  it("reads a session without a payment yet", async () => {
-    const { fetcher } = stubFetch(() => json({ session: { sessionId: "cs_1", status: "CREATED", paymentId: null, amount: usdc } }));
-    expect(await new PingPayClient(BASE, KEY, fetcher).getSession("cs_1")).toEqual({ status: "CREATED", paymentId: null, amount: usdc });
+  it("reads a session without a payment yet, and needs no amount before it is completed", async () => {
+    const { fetcher } = stubFetch(() => json({ session: { sessionId: "cs_1", status: "CREATED", paymentId: null } }));
+    expect(await new PingPayClient(BASE, KEY, fetcher).getSession("cs_1")).toEqual({ status: "CREATED", paymentId: null, amount: null });
   });
 
-  it("rejects a session without an amount", async () => {
+  it("rejects a completed session without an amount", async () => {
     const { fetcher } = stubFetch(() => json({ session: { sessionId: "cs_1", status: "COMPLETED", paymentId: "pay_1" } }));
     await expect(new PingPayClient(BASE, KEY, fetcher).getSession("cs_1")).rejects.toThrow(/amount/);
   });

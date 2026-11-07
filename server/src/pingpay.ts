@@ -133,7 +133,7 @@ export class PingPayClient {
     topupId: string;
     successUrl: string;
     cancelUrl: string;
-  }): Promise<{ sessionId: string; sessionUrl: string; expiresAt: string }> {
+  }): Promise<{ sessionId: string; sessionUrl: string; expiresAt: string | null }> {
     const body = await this.request("POST", "/checkout/sessions", {
       amount: input.amountUsdc,
       asset: { chain: "NEAR", symbol: "USDC" },
@@ -149,18 +149,20 @@ export class PingPayClient {
       return unexpected("session pays another recipient than the operator account");
     }
     if (!chargesUsdc(amountOf(session), input.amountUsdc)) return unexpected("session amount is not the requested USDC amount");
+    // `expiresAt` is optional in the schema: a missing or unreadable one is null, and the Ledger assumes a lifetime.
     const { expiresAt } = session;
-    if (typeof expiresAt !== "string" || !Number.isFinite(Date.parse(expiresAt))) return unexpected("session expiresAt");
-    return { sessionId: session.sessionId as string, sessionUrl, expiresAt };
+    const usable = typeof expiresAt === "string" && Number.isFinite(Date.parse(expiresAt));
+    return { sessionId: session.sessionId as string, sessionUrl, expiresAt: usable ? expiresAt : null };
   }
 
-  async getSession(id: string): Promise<{ status: SessionStatus; paymentId: string | null; amount: SessionAmount }> {
+  /** A session's status and payment; its amount is read (and required) only once it is COMPLETED, the one status that is credited. */
+  async getSession(id: string): Promise<{ status: SessionStatus; paymentId: string | null; amount: SessionAmount | null }> {
     const session = sessionOf(await this.request("GET", `/checkout/sessions/${encodeURIComponent(id)}`));
     const status = SESSION_STATUSES.find((known) => known === session.status);
     if (status === undefined) return unexpected("session status");
     const { paymentId } = session;
     if (paymentId != null && typeof paymentId !== "string") return unexpected("session paymentId");
-    return { status, paymentId: paymentId ?? null, amount: amountOf(session) };
+    return { status, paymentId: paymentId ?? null, amount: status === "COMPLETED" ? amountOf(session) : null };
   }
 
   /** A payment's status; it is final when `SUCCESS` or `FAILED`. */

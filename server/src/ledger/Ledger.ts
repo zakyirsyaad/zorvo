@@ -5,7 +5,7 @@ import { creditsForPackage, creditsFromNano, usdcAmount } from "../credits";
 import { decrypt } from "../crypto";
 import { UPSTREAM_TIMEOUT_MS } from "../http";
 import { NearAiClient } from "../nearai";
-import { chargesUsdc, PingPayClient } from "../pingpay";
+import { PingPayClient } from "../pingpay";
 import { balanceFor, loadModels, models, type BalanceContext, type BalanceView, type ModelInfo, type ModelsContext } from "./balance";
 import {
   ALARM_INTERVAL_MS,
@@ -15,27 +15,16 @@ import {
   SNAPSHOT_MAX_AGE_MS,
   type AlertKind,
   type FulfilmentContext,
-  type SessionOutcome,
 } from "./fulfilment";
+import { checkoutWindow, readSession, RESERVATION_MS } from "./checkout";
 import { operatorSession, refreshOperator, withAccessToken, type OperatorContext, type OperatorSession } from "./operator";
 import { promoRefusal, recoverDevice, redeemPromo, savePromo, type PromoContext, type PromoResult } from "./promo-recover";
 import { applySchema } from "./schema";
-import { canMove, type TopupStatus } from "./status";
+import { canMove, type SessionOutcome, type TopupStatus } from "./status";
 import { computeStock, type StockView } from "./stock";
 
-/** How long `reserve` holds credits until `createTopup` sets the hold from the checkout's expiry. */
-const RESERVATION_MS = 30 * 60 * 1000;
-/** A reservation outlives its checkout session by this much, for a payment that lands at the last moment. */
-const RESERVATION_GRACE_MS = 10 * 60 * 1000;
-/** A checkout's hold never lasts longer than this, whatever expiry PingPay states. */
-const RESERVATION_MAX_MS = 60 * 60 * 1000;
 /** The `expires_at` of a paid top-up's reservation: it holds the stock until the credit releases it. */
 const HELD_UNTIL_CREDITED = Number.MAX_SAFE_INTEGER;
-/** Where PingPay sends the payer after the checkout; the README's "After a checkout" section. */
-const CHECKOUT_PAID_URL = "https://github.com/zakyirsyaad/zorvo/blob/main/server/README.md#checkout-paid";
-const CHECKOUT_CANCELLED_URL = "https://github.com/zakyirsyaad/zorvo/blob/main/server/README.md#checkout-cancelled";
-/** Payment statuses that are final without the money arriving. They change nothing: the payer may retry in the same session. */
-const FINAL_UNPAID = new Set(["FAILED", "REFUNDED"]);
 
 const SNAPSHOT_ID = 1;
 const MAX_STORABLE = BigInt(Number.MAX_SAFE_INTEGER);
@@ -465,22 +454,28 @@ export class Ledger extends DurableObject<Env> {
     if ("error" in reserved) return reserved;
     const { topupId } = reserved;
 
-    let session: { sessionId: string; sessionUrl: string; expiresAt: string };
+    let session: { sessionId: string; sessionUrl: string; expiresAt: string | null };
     try {
       session = await client.createSession({
         amountUsdc: usdcAmount(packageUsd),
         recipient: cfg.operatorAccount,
         customerReference: deviceId,
         topupId,
-        successUrl: CHECKOUT_PAID_URL,
-        cancelUrl: CHECKOUT_CANCELLED_URL,
+        successUrl: cfg.checkoutPaidUrl,
+        cancelUrl: cfg.checkoutCancelledUrl,
       });
-    } catch {
-      if (this.move(topupId, "failed", now)) this.releaseReservation(topupId);
-      return { error: "upstream" };
+    } catch (error) {
+      console.error(`PingPay checkout for top-up ${topupId} failed: ${describeError(error)}`);
+      return this.failTopup(topupId, now);
+    }
+    // No await from here on. A session id another top-up already holds would break the unique index:
+    // this top-up fails cleanly instead, and the session stays the other top-up's.
+    if (this.sql.exec("SELECT 1 FROM topups WHERE ping_session_id = ?", session.sessionId).toArray().length > 0) {
+      console.error(`PingPay session for top-up ${topupId} already belongs to another top-up; not opened`);
+      return this.failTopup(topupId, now);
     }
 
-    const reservedUntil = Math.min(Date.parse(session.expiresAt) + RESERVATION_GRACE_MS, now + RESERVATION_MAX_MS);
+    const { expiresAt, reservedUntil } = checkoutWindow(session.expiresAt, now);
     this.sql.exec(
       "UPDATE topups SET ping_session_id = ?, reserved_until = ?, updated_at = ? WHERE id = ?",
       session.sessionId,
@@ -489,7 +484,13 @@ export class Ledger extends DurableObject<Env> {
       topupId,
     );
     this.sql.exec("UPDATE reservations SET expires_at = ? WHERE topup_id = ?", reservedUntil, topupId);
-    return { topupId, sessionUrl: session.sessionUrl, expiresAt: session.expiresAt };
+    return { topupId, sessionUrl: session.sessionUrl, expiresAt };
+  }
+
+  /** A top-up whose checkout could not be opened: `failed`, its hold released. */
+  private failTopup(topupId: string, now: number): { error: "upstream" } {
+    if (this.move(topupId, "failed", now)) this.releaseReservation(topupId);
+    return { error: "upstream" };
   }
 
   /** A device's own top-up, or null for an unknown id or another device's. */
@@ -551,7 +552,7 @@ export class Ledger extends DurableObject<Env> {
       .toArray()[0];
     if (!found) return "nothing";
 
-    const outcome = await this.readSession(found.id, usdcAmount(found.package_usd), sessionId);
+    const outcome = await readSession(this.pingPay(), found.id, usdcAmount(found.package_usd), sessionId);
     if (outcome.kind === "retry" || outcome.kind === "mismatch") return outcome.kind;
 
     // From here on nothing awaits: the rows are re-read, since a request may have changed them meanwhile.
@@ -567,29 +568,6 @@ export class Ledger extends DurableObject<Env> {
       if (this.move(topupId, "expired", now)) this.releaseReservation(topupId);
     }
     return outcome.kind;
-  }
-
-  /** Reads a session and its payment from PingPay and says what they come to for this top-up. */
-  private async readSession(
-    topupId: string,
-    amountUsdc: string,
-    sessionId: string,
-  ): Promise<{ kind: "paid"; paymentId: string } | { kind: Exclude<SessionOutcome, "paid"> }> {
-    const client = this.pingPay();
-    const session = await client.getSession(sessionId);
-    if (session.status === "EXPIRED" || session.status === "CANCELLED") return { kind: "expired" };
-    if (session.status !== "COMPLETED" || session.paymentId === null) return { kind: "retry" };
-
-    const payment = await client.getPayment(session.paymentId);
-    if (FINAL_UNPAID.has(payment.status)) return { kind: "nothing" };
-    if (payment.status !== "SUCCESS") return { kind: "retry" };
-    if (!chargesUsdc(session.amount, amountUsdc)) {
-      console.error(
-        `PingPay session for top-up ${topupId} charged ${session.amount.amount} of ${session.amount.assetId}, expected ${amountUsdc} USDC; not credited`,
-      );
-      return { kind: "mismatch" };
-    }
-    return { kind: "paid", paymentId: session.paymentId };
   }
 
   /**

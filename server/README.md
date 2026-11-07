@@ -194,8 +194,13 @@ and check each, in this order:
   were not documented. Check the dashboard before advertising the $5 package.
 - **Where payers land.** The success and cancel pages PingPay sends the payer to are the two sections at the
   end of this file, as `https://github.com/zakyirsyaad/zorvo/blob/main/server/README.md#checkout-paid` and
-  `#checkout-cancelled` (constants in `src/ledger/Ledger.ts`). That file only exists at that address once
-  it is on `main`, or after you change those two constants to where it is published.
+  `#checkout-cancelled`, unless the optional variables `CHECKOUT_PAID_URL` and `CHECKOUT_CANCELLED_URL`
+  (https only; add them to `vars`) name other pages. The README only exists at that address once it is on
+  `main`, so set the two variables while it is not.
+- **Session expiry.** The server holds a checkout's stock until the session's `expiresAt` plus 10 minutes,
+  at most 70 minutes. If PingPay's answer states no usable `expiresAt` (it is optional in its schema), a
+  30-minute session is assumed and the app is told that expiry; a payment that lands later is still credited,
+  from stock or after a restock (`paid_waiting_stock`).
 
 ## Running it
 
@@ -264,6 +269,9 @@ The app shows a payer "Payment received, adding credits" until the credit lands.
   succeeds). After an hour a `stuck_queue` alert fires; after 10 attempts, `attempts_exhausted`. Fix the
   cause and the queue finishes by itself; nothing needs to be re-sent and the payer must not pay again.
 - `paid_waiting_stock`: restock.
+- `failed` with no checkout: the request died while PingPay was being asked (or PingPay answered a session
+  id another top-up already holds, which is logged). The sweep fails such a top-up 40 minutes after it was
+  made and gives its stock back; no payment can be matched to it, and the app starts a new top-up.
 
 ### Recovery and the 24-hour key rule
 

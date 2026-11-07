@@ -188,15 +188,15 @@ describe("POST /v1/topups", () => {
     expect(await statusOf(secret, topupId)).toEqual({ status: "created", credits: 500 });
   });
 
-  it("holds the stock at most an hour when PingPay's checkout lives longer", async () => {
+  it("holds the stock at most an hour plus the grace when PingPay's checkout lives longer", async () => {
     await seedStock(10_000);
     const { deviceId } = await newDevice();
     ping.expiresAt = () => NOW + 30 * 24 * 60 * MINUTE_MS;
     const created = await stub().createTopup(deviceId, 5, NOW);
     if ("error" in created) throw new Error(`could not create a top-up: ${created.error}`);
     const { topups, reservations } = await rows();
-    expect(topups).toEqual([expect.objectContaining({ id: created.topupId, reserved_until: NOW + 60 * MINUTE_MS })]);
-    expect(reservations).toEqual([expect.objectContaining({ topup_id: created.topupId, expires_at: NOW + 60 * MINUTE_MS })]);
+    expect(topups).toEqual([expect.objectContaining({ id: created.topupId, reserved_until: NOW + 70 * MINUTE_MS })]);
+    expect(reservations).toEqual([expect.objectContaining({ topup_id: created.topupId, expires_at: NOW + 70 * MINUTE_MS })]);
   });
 
   it("answers 502 upstream when PingPay's session charges another amount or asset, releasing the stock", async () => {

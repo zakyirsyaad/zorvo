@@ -14,3 +14,6 @@ const MOVES: Record<TopupStatus, readonly TopupStatus[]> = {
 export function canMove(from: TopupStatus, to: TopupStatus): boolean {
   return MOVES[from].includes(to);
 }
+
+/** What a PingPay session comes to; `retry` and `mismatch` change nothing and are tried again later. */
+export type SessionOutcome = "paid" | "expired" | "nothing" | "retry" | "mismatch";

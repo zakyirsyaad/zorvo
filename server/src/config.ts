@@ -27,6 +27,10 @@ export interface Env {
   NEAR_AI_BASE: string;
   /** PingPay API base, e.g. "https://pay.pingpay.io/api". */
   PINGPAY_BASE: string;
+  /** Optional https page PingPay sends a payer to after paying; the README's "Checkout paid" section by default. */
+  CHECKOUT_PAID_URL?: string;
+  /** Optional https page PingPay sends a payer to after cancelling; the README's "Checkout cancelled" section by default. */
+  CHECKOUT_CANCELLED_URL?: string;
 
   LEDGER: DurableObjectNamespace<Ledger>;
 
@@ -52,7 +56,13 @@ export type Config = {
   operatorAccount: string;
   nearAiBase: string;
   pingPayBase: string;
+  checkoutPaidUrl: string;
+  checkoutCancelledUrl: string;
 };
+
+/** Where PingPay sends the payer after the checkout unless configured: the README's "After a checkout" section. */
+const DEFAULT_CHECKOUT_PAID_URL = "https://github.com/zakyirsyaad/zorvo/blob/main/server/README.md#checkout-paid";
+const DEFAULT_CHECKOUT_CANCELLED_URL = "https://github.com/zakyirsyaad/zorvo/blob/main/server/README.md#checkout-cancelled";
 
 /** The plain variables `parseConfig` reads: the required strings of `Env`, never a binding or a secret. */
 type VarName = { [K in keyof Env]-?: undefined extends Env[K] ? never : Env[K] extends string ? K : never }[keyof Env];
@@ -91,6 +101,20 @@ function text(env: Env, name: VarName): string {
   return value;
 }
 
+/** An optional https URL variable, or `fallback` when it is unset or empty. */
+function httpsUrl(env: Env, name: "CHECKOUT_PAID_URL" | "CHECKOUT_CANCELLED_URL", fallback: string): string {
+  const raw = String(env[name] ?? "").trim();
+  if (raw === "") return fallback;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return invalid(name, "expected an https URL");
+  }
+  if (url.protocol !== "https:") invalid(name, "expected an https URL");
+  return url.toString();
+}
+
 export function parseConfig(env: Env): Config {
   const packagesUsd = list(env, "PACKAGES_USD").map(Number);
   if (!packagesUsd.every((usd) => Number.isInteger(usd) && usd > 0)) {
@@ -108,5 +132,7 @@ export function parseConfig(env: Env): Config {
     operatorAccount: text(env, "OPERATOR_ACCOUNT"),
     nearAiBase: text(env, "NEAR_AI_BASE"),
     pingPayBase: text(env, "PINGPAY_BASE"),
+    checkoutPaidUrl: httpsUrl(env, "CHECKOUT_PAID_URL", DEFAULT_CHECKOUT_PAID_URL),
+    checkoutCancelledUrl: httpsUrl(env, "CHECKOUT_CANCELLED_URL", DEFAULT_CHECKOUT_CANCELLED_URL),
   };
 }

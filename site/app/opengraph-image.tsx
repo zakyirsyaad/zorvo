@@ -51,7 +51,7 @@ export default async function OpenGraphImage() {
             <span>One desktop.</span>
           </div>
           <span style={{ fontSize: 30, fontWeight: 500, color: COLOR["fg-muted"] }}>
-            Claude Code, Codex and Qwen Code in one native app.
+            A Mac app for Claude Code, Codex, Qwen Code and every ACP agent.
           </span>
         </div>
         <div
@@ -65,7 +65,7 @@ export default async function OpenGraphImage() {
             color: COLOR["fg-subtle"],
           }}
         >
-          <span>Free for macOS · No lock-in, no API keys</span>
+          <span>Free and open source · No lock-in, no API keys</span>
           <span>v{appPackage.version}</span>
         </div>
       </div>

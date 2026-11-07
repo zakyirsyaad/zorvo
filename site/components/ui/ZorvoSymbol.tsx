@@ -32,11 +32,11 @@ export function ZorvoSymbol({ size, className }: ZorvoSymbolProps) {
   );
 }
 
-/** Symbol and `zorvo` wordmark, linking to the top of the page. */
-export function ZorvoLockup() {
+/** Symbol and `zorvo` wordmark, linking to the top of the home page (`anchorBase` "/" from other pages). */
+export function ZorvoLockup({ anchorBase = "" }: { anchorBase?: "" | "/" }) {
   return (
     <a
-      href="#top"
+      href={`${anchorBase}#top`}
       aria-label="Zorvo home"
       className="focus-ring inline-flex items-center gap-[7px] rounded-sm text-fg no-underline"
     >

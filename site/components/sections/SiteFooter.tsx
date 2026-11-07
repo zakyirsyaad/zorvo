@@ -17,8 +17,11 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
   {
     title: "Docs",
     links: [
+      { label: "Quickstart", href: LINKS.quickstart },
       { label: "Install", href: LINKS.installGuide },
       { label: "Supported agents", href: LINKS.agentsGuide },
+      { label: "Compare agents", href: LINKS.compareGuide },
+      { label: "Review changes", href: LINKS.reviewGuide },
       { label: "Troubleshooting", href: LINKS.troubleshooting },
     ],
   },
@@ -34,13 +37,14 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
   },
 ];
 
-export function SiteFooter() {
+/** `anchorBase` is "/" on pages other than the home page, so the section links lead back to it. */
+export function SiteFooter({ anchorBase = "" }: { anchorBase?: "" | "/" }) {
   return (
     <footer className="mt-auto border-t border-border bg-surface-1">
       <div className="site-wrap flex flex-col gap-10 pt-12 pb-10">
         <div className="flex flex-wrap justify-between gap-10">
           <div className="flex max-w-[280px] flex-col gap-3">
-            <ZorvoLockup />
+            <ZorvoLockup anchorBase={anchorBase} />
             <p className="t-body m-0">Every coding agent. One desktop.</p>
           </div>
           <div className="flex flex-wrap gap-16">
@@ -52,7 +56,7 @@ export function SiteFooter() {
                 <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
                   {links.map(({ label, href }) => (
                     <li key={label}>
-                      <a className={TEXT_LINK} href={href}>
+                      <a className={TEXT_LINK} href={href.startsWith("#") ? `${anchorBase}${href}` : href}>
                         {label}
                       </a>
                     </li>

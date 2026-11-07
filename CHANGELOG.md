@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- **Private mode, opt in.** Qwen Code can run on NEAR AI models inside secure hardware (TEE), paid with prepaid credits you top up in Settings → Private mode. Turn it on with the Private chip of a Qwen Code draft; until you do, nothing changes.
+
 ### Changed
 
 - **The landing page shows Zorvo 0.9.** The hero picture is the new window: the two-line sidebar with a compare run, the top bar's chips, the chat and composer, and the inspector on its Changes tab. New sections show a compare run, from ticking agents to Pick, and the diff review with a comment on its line. The features, the agents' Settings rows, the plan and the permission card follow the app as it looks now.

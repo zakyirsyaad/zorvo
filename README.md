@@ -281,7 +281,10 @@ before it edits files or runs commands. Pick another mode in the composer.
 
 - **Your keys stay with the agents.** Zorvo never asks for or stores API keys
   or tokens. Agents sign in with their own tools, and pull request data comes
-  from your own `gh` login.
+  from your own `gh` login. The one exception is Private mode, which you turn
+  on yourself: Zorvo then keeps this Mac's credits secret and the NEAR AI key
+  its private Qwen Code sessions use in your macOS Keychain, and hands the key
+  only to those sessions.
 - **GitHub stays in your `gh`.** Zorvo asks your `gh` whether you are signed in
   to github.com and reads only your login and name, to show them in the sidebar
   and in Settings. It stores neither, never reads or keeps a token, and
@@ -297,6 +300,9 @@ before it edits files or runs commands. Pick another mode in the composer.
     missing or older than 22;
   - `uv`'s releases on GitHub, when you install an agent that runs with `uvx`
     and you have no `uvx`;
+  - the Zorvo Credits server, only for Private mode: once you open Settings →
+    Private mode or turn on a draft's Private chip, and then at start to read
+    your balance. It sees this Mac's credits, never your prompts or code;
   - this repository's releases on GitHub, to ask whether a newer Zorvo exists
     (`github.com/zakyirsyaad/zorvo`, shortly after Zorvo starts, then
     about once a day) and, when you click **Update & restart**, to download it

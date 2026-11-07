@@ -6,7 +6,7 @@
 
 use zorvo_lib::acp::manager::{AcpEvent, AcpLaunch, AcpManager, ReopenPurpose};
 
-use crate::common::{called_methods, cwd, fake_agent_with, manager, wait_for};
+use crate::common::{agent_text, called_methods, cwd, fake_agent_with, manager, wait_for};
 
 /// The fake agent as a private launch, refusing every prompt with the given
 /// NEAR AI status (`"402"` or `"401"`).
@@ -215,6 +215,9 @@ fn a_private_session_refuses_the_model_and_auth_commands_before_the_agent_sees_t
         "/\nmodel x",
         "/model\u{FEFF}gpt-x hi",
         "/\u{FEFF}model x",
+        "/\u{00A0}auth",
+        "/\u{3000}login x",
+        "/model\u{2028}x",
     ] {
         let result = manager.prompt("p-1", text, &[]);
 
@@ -320,4 +323,128 @@ fn an_ordinary_session_sends_model_changes_to_its_agent() {
     assert_ne!(by_option, Err("model_locked".to_string()));
     assert!(called_methods(&log).contains(&"session/set_config_option".to_string()));
     manager.stop("s-1");
+}
+
+const EMPTY: &str = "PRIVATE_CREDITS:{\"reason\":\"empty\"}";
+const KEY: &str = "PRIVATE_CREDITS:{\"reason\":\"key\"}";
+
+/// A private launch of the fake agent that refuses `methods` (comma-separated)
+/// with the given NEAR AI status, as Qwen Code reports it. It offers
+/// `session/resume` too, so a Continue resumes.
+fn refusing_private_launch(status: &str, methods: &str) -> AcpLaunch {
+    AcpLaunch {
+        private: true,
+        ..fake_agent_with(&[
+            ("FAKE_ACP_PRIVATE_ERROR", status),
+            ("FAKE_ACP_PRIVATE_REFUSE", methods),
+            ("FAKE_ACP_RESUME", "1"),
+        ])
+    }
+}
+
+#[test]
+fn a_private_session_refused_by_session_new_reads_as_credits() {
+    let (manager, _rx) = manager();
+
+    let empty = manager.start(
+        "p-1",
+        &cwd(),
+        &refusing_private_launch("402", "session/new"),
+    );
+    let key = manager.start(
+        "p-2",
+        &cwd(),
+        &refusing_private_launch("401", "session/new"),
+    );
+
+    assert_eq!(empty.err().as_deref(), Some(EMPTY));
+    assert_eq!(key.err().as_deref(), Some(KEY));
+}
+
+#[test]
+fn a_private_session_refused_by_session_load_or_resume_reads_as_credits() {
+    let (manager, _rx) = manager();
+
+    let loaded = manager.reopen(
+        "p-1",
+        &cwd(),
+        &refusing_private_launch("402", "session/load"),
+        "fake-earlier",
+        ReopenPurpose::Import,
+    );
+    let resumed = manager.reopen(
+        "p-2",
+        &cwd(),
+        &refusing_private_launch("401", "session/resume"),
+        "fake-earlier",
+        ReopenPurpose::Continue,
+    );
+
+    assert_eq!(loaded.err().as_deref(), Some(EMPTY));
+    assert_eq!(resumed.err().as_deref(), Some(KEY));
+}
+
+#[test]
+fn the_same_open_refusal_of_an_ordinary_session_keeps_its_own_text() {
+    let (manager, _rx) = manager();
+    let launch = fake_agent_with(&[
+        ("FAKE_ACP_PRIVATE_ERROR", "402"),
+        ("FAKE_ACP_PRIVATE_REFUSE", "session/new"),
+        ("FAKE_ACP_NO_AUTH_METHODS", "1"),
+    ]);
+
+    let error = manager.start("s-1", &cwd(), &launch).expect_err("refused");
+
+    assert!(!error.starts_with("PRIVATE_CREDITS:"), "{error}");
+    assert!(error.contains("402 api_key_limit_exceeded"), "{error}");
+}
+
+#[test]
+fn a_fork_of_a_private_session_refused_for_credits_reads_as_credits() {
+    let (manager, _rx) = manager();
+    manager
+        .start(
+            "p-1",
+            &cwd(),
+            &refusing_private_launch("402", "session/fork"),
+        )
+        .unwrap();
+
+    let forked = manager.fork("p-1", "p-2", &cwd());
+
+    assert_eq!(forked.err().as_deref(), Some(EMPTY));
+    assert!(!manager.is_private_session("p-2"));
+    manager.stop("p-1");
+}
+
+#[test]
+fn a_refused_fork_of_an_ordinary_session_keeps_its_own_text() {
+    let (manager, _rx) = manager();
+    let launch = fake_agent_with(&[
+        ("FAKE_ACP_PRIVATE_ERROR", "402"),
+        ("FAKE_ACP_PRIVATE_REFUSE", "session/fork"),
+    ]);
+    manager.start("s-1", &cwd(), &launch).unwrap();
+
+    let error = manager.fork("s-1", "s-2", &cwd()).expect_err("refused");
+
+    assert!(error.starts_with("session/fork failed: "), "{error}");
+    manager.stop("s-1");
+}
+
+#[test]
+fn a_private_session_sends_a_model_command_after_leading_spaces_as_a_prompt() {
+    let (manager, rx) = manager();
+    let log = call_log("spaced-model");
+    manager
+        .start("p-1", &cwd(), &logged_private_launch(&log))
+        .unwrap();
+
+    assert_eq!(manager.prompt("p-1", "  /model x", &[]), Ok(()));
+
+    let echoed = wait_for(&rx, |e| agent_text(e).is_some());
+    assert_eq!(agent_text(&echoed).as_deref(), Some("echo:   /model x"));
+    wait_for(&rx, |e| matches!(e, AcpEvent::TurnEnded { .. }));
+    assert!(called_methods(&log).contains(&"session/prompt".to_string()));
+    manager.stop("p-1");
 }

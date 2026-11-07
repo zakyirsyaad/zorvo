@@ -242,7 +242,7 @@ impl AcpManager {
                 init,
                 "session/new",
                 json!({ "cwd": cwd, "mcpServers": [] }),
-                launch.private,
+                launch,
                 self.route_on_answer(key, app_session_id, None, true, false),
             )?;
             started_session(session, init["agentCapabilities"].clone()).map_err(OpenError::Agent)
@@ -367,12 +367,22 @@ impl AcpManager {
         if !capabilities["sessionCapabilities"]["fork"].is_object() {
             return Err("This agent cannot fork sessions".to_string());
         }
-        let response = connection.request_with(
-            "session/fork",
-            json!({ "sessionId": acp_id, "cwd": cwd, "mcpServers": [] }),
-            SESSION_REQUEST_TIMEOUT,
-            self.route_on_answer(connection_key, new_app_id, None, false, false),
-        )?;
+        let private = traits.private;
+        let response = connection
+            .request_raw_with(
+                "session/fork",
+                json!({ "sessionId": acp_id, "cwd": cwd, "mcpServers": [] }),
+                SESSION_REQUEST_TIMEOUT,
+                self.route_on_answer(connection_key, new_app_id, None, false, false),
+            )?
+            // A private source's fork runs on NEAR AI too: its credit and key
+            // refusals read as `PRIVATE_CREDITS:` like an open's.
+            .map_err(|error| {
+                private
+                    .then(|| private_credits_error(&error))
+                    .flatten()
+                    .unwrap_or_else(|| format!("session/fork failed: {}", error_message(&error)))
+            })?;
         let started = started_session(response, capabilities)?;
         self.register(
             new_app_id,
@@ -735,16 +745,17 @@ impl AcpManager {
     }
 }
 
-/// Opens a session; an "authentication required" answer becomes an error
-/// carrying [`AUTH_REQUIRED_PREFIX`] and the agent's auth methods. A
-/// successful answer also goes to `on_answer`, on the reader thread.
-/// `private` is whether the launch is a Zorvo Private one (see [`agent_error`]).
+/// Opens a session for `launch`; an "authentication required" answer becomes
+/// an error carrying [`AUTH_REQUIRED_PREFIX`] and the agent's auth methods,
+/// and a Zorvo Private launch's credit or key refusal a `PRIVATE_CREDITS:` one
+/// (see [`agent_error`]). A successful answer also goes to `on_answer`, on the
+/// reader thread.
 pub(super) fn open_request(
     connection: &AcpConnection,
     init: &Value,
     method: &str,
     params: Value,
-    private: bool,
+    launch: &AcpLaunch,
     on_answer: impl FnOnce(&Value) + Send + 'static,
 ) -> Result<Value, OpenError> {
     match connection
@@ -752,7 +763,12 @@ pub(super) fn open_request(
         .map_err(OpenError::Transport)?
     {
         Ok(result) => Ok(result),
-        Err(error) => Err(OpenError::Agent(agent_error(method, init, &error, private))),
+        Err(error) => Err(OpenError::Agent(agent_error(
+            method,
+            init,
+            &error,
+            launch.private,
+        ))),
     }
 }
 

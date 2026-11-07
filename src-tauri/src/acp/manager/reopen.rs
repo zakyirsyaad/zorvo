@@ -70,7 +70,7 @@ impl AcpManager {
                 init,
                 method.acp_method(),
                 json!({ "sessionId": acp_session_id, "cwd": cwd, "mcpServers": [] }),
-                launch.private,
+                launch,
                 self.route_on_answer(
                     key,
                     app_session_id,

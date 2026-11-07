@@ -45,6 +45,9 @@
 //   FAKE_ACP_PRIVATE_ERROR=<401|402> -> every session/prompt is refused as Qwen Code reports NEAR AI's
 //                         HTTP status: -32603 "Internal error" with data.details "402 api_key_limit_exceeded"
 //                         (credits used up) or "401 Invalid or expired API key"
+//   FAKE_ACP_PRIVATE_REFUSE=<methods> -> with FAKE_ACP_PRIVATE_ERROR, also refuses each method in
+//                         the comma-separated list (session/new, session/load, session/resume,
+//                         session/fork) the same way
 // (each other FAKE_ACP_* flag is documented where it is read below)
 import { appendFileSync, closeSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -123,13 +126,19 @@ function elicit(promptId, sessionId, requests, doneOnAccept = null) {
   requests.forEach((params, i) => send({ id: `elic-${i + 1}`, method: "elicitation/create", params }));
 }
 
-function handlePrompt(id, params) {
-  const privateError = {
+// NEAR AI's refusal as Qwen Code reports it, for FAKE_ACP_PRIVATE_ERROR's status; null without it.
+function privateRefusal() {
+  const details = {
     402: "402 api_key_limit_exceeded",
     401: "401 Invalid or expired API key",
   }[process.env.FAKE_ACP_PRIVATE_ERROR];
+  return details ? { code: -32603, message: "Internal error", data: { details } } : null;
+}
+
+function handlePrompt(id, params) {
+  const privateError = privateRefusal();
   if (privateError) {
-    send({ id, error: { code: -32603, message: "Internal error", data: { details: privateError } } });
+    send({ id, error: privateError });
     return;
   }
   const text = params.prompt.map((block) => block.text ?? "").join("");
@@ -587,6 +596,11 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   }
   // A reply to a request with nothing waiting on it (an after-open permission).
   if (message.method === undefined) return;
+  const refused = (process.env.FAKE_ACP_PRIVATE_REFUSE ?? "").split(",").includes(message.method);
+  if (refused && privateRefusal()) {
+    send({ id: message.id, error: privateRefusal() });
+    return;
+  }
   const handler = handlers[message.method];
   if (handler) handler(message.id, message.params);
   else if (message.id !== undefined) send({ id: message.id, error: { code: -32601, message: "Method not found" } });

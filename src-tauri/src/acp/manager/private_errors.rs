@@ -66,34 +66,44 @@ pub(super) fn is_model_option(config_id: &str, model_options: &[String]) -> bool
     id == MODEL_OPTION_ID || model_options.contains(&id)
 }
 
+/// Fields that hold an HTTP status as a number.
+const STATUS_KEYS: [&str; 3] = ["status", "statusCode", "status_code"];
+
+/// Words that say the number after them is an HTTP status.
+const STATUS_WORDS: [&str; 3] = ["status", "code", "http"];
+
 /// Why a private session's request was refused, as `PRIVATE_CREDITS:` carries
 /// it: `"empty"` when the credits are used up (HTTP 402), `"key"` when NEAR AI
 /// refused the key (HTTP 401). `None` for any other error.
 ///
 /// Qwen Code reports the HTTP status inside a JSON-RPC `-32603`, in whichever
 /// of `message`, `data` or `data.details` it likes, so every text the error
-/// holds is read. A status counts as a whole word (`4021` and `x402y` are
-/// not 402), and `empty` wins when both appear.
+/// holds is read. A status counts only where an HTTP client puts one (see
+/// [`statuses_in_text`]) or as a number in a `status` field, so a `402` in
+/// other words (a tool's output, a file count) does not; NEAR AI's own phrases
+/// count anywhere. `empty` wins when both appear.
 pub(super) fn private_credits_reason(error: &Value) -> Option<&'static str> {
     if !error.is_object() {
         return None;
     }
-    let mut text = String::new();
-    collect_text(error, &mut text);
-    let text = text.to_lowercase();
-    let has_token = |wanted: &str| {
-        text.split(|c: char| !c.is_alphanumeric())
-            .any(|token| token == wanted)
+    let mut texts = Vec::new();
+    let mut statuses = Vec::new();
+    collect(error, None, &mut texts, &mut statuses);
+    let has_phrase = |phrases: &[&str]| {
+        texts
+            .iter()
+            .any(|text| phrases.iter().any(|phrase| text.contains(phrase)))
     };
-    if text.contains("api_key_limit_exceeded")
-        || has_token("402")
-        || text.contains("insufficient credit")
-        || text.contains("credit limit")
+    if statuses.contains(&402)
+        || has_phrase(&[
+            "api_key_limit_exceeded",
+            "insufficient credit",
+            "credit limit",
+        ])
     {
         Some("empty")
-    } else if has_token("401")
-        || text.contains("invalid or expired api key")
-        || text.contains("invalid api key")
+    } else if statuses.contains(&401)
+        || has_phrase(&["invalid or expired api key", "invalid api key"])
     {
         Some("key")
     } else {
@@ -108,23 +118,59 @@ pub(super) fn private_credits_error(error: &Value) -> Option<String> {
         .map(|reason| format!("{PRIVATE_CREDITS_PREFIX}{{\"reason\":\"{reason}\"}}"))
 }
 
-/// Appends every string and number in `value` to `out`, each after a space,
-/// so no word runs into the next one (reading the JSON text instead would
-/// glue an escape such as `\n` to the word after it).
-fn collect_text(value: &Value, out: &mut String) {
+/// Walks `value`: every string goes to `texts` (lower-cased) and the statuses
+/// it names to `statuses`; a number under one of [`STATUS_KEYS`] is a status.
+/// Each string is read on its own, so no word runs into the next one.
+fn collect(value: &Value, key: Option<&str>, texts: &mut Vec<String>, statuses: &mut Vec<u64>) {
     match value {
         Value::String(text) => {
-            out.push(' ');
-            out.push_str(text);
+            let text = text.to_lowercase();
+            statuses.extend(statuses_in_text(&text));
+            texts.push(text);
         }
-        Value::Number(number) => {
-            out.push(' ');
-            out.push_str(&number.to_string());
+        Value::Number(number) if key.is_some_and(|key| STATUS_KEYS.contains(&key)) => {
+            statuses.extend(number.as_u64());
         }
-        Value::Array(items) => items.iter().for_each(|item| collect_text(item, out)),
-        Value::Object(map) => map.values().for_each(|item| collect_text(item, out)),
-        Value::Null | Value::Bool(_) => {}
+        Value::Array(items) => items
+            .iter()
+            .for_each(|item| collect(item, None, texts, statuses)),
+        Value::Object(map) => map
+            .iter()
+            .for_each(|(key, item)| collect(item, Some(key), texts, statuses)),
+        Value::Number(_) | Value::Null | Value::Bool(_) => {}
     }
+}
+
+/// The 401 and 402 statuses `text` (lower-cased) names where an HTTP client
+/// puts one: as its first word (`402 Payment Required`, the OpenAI SDK's
+/// form), after `status`, `code` or `http` (`Request failed with status code
+/// 402`, `HTTP 401`), or before the status's own reason phrase (`got 402
+/// Payment Required`). A status is a whole word: `4021` and `x402y` are not.
+fn statuses_in_text(text: &str) -> Vec<u64> {
+    let words: Vec<&str> = text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect();
+    words
+        .iter()
+        .enumerate()
+        .filter_map(|(index, word)| {
+            let status = match *word {
+                "401" => 401,
+                "402" => 402,
+                _ => return None,
+            };
+            let reason: &[&str] = if status == 402 {
+                &["payment", "required"]
+            } else {
+                &["unauthorized"]
+            };
+            let first = index == 0;
+            let after_word = index > 0 && STATUS_WORDS.contains(&words[index - 1]);
+            let before_reason = words[index + 1..].starts_with(reason);
+            (first || after_word || before_reason).then_some(status)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -244,6 +290,50 @@ mod tests {
         assert_eq!(private_credits_reason(&longer), None);
         assert_eq!(private_credits_reason(&glued), None);
         assert_eq!(private_credits_reason(&prefixed), None);
+    }
+
+    #[test]
+    fn a_status_number_in_prose_is_not_a_status() {
+        for error in [
+            internal_error("Tool failed: read 402 lines of issue 401"),
+            json!({ "code": -32603, "message": "See RFC 402 and section 401 for details" }),
+            json!({ "message": "Internal error", "data": "wrote 402 files, 401 left" }),
+            json!({ "message": "Internal error", "data": { "tokens": 402, "lines": 401 } }),
+        ] {
+            assert_eq!(private_credits_reason(&error), None, "{error}");
+        }
+    }
+
+    #[test]
+    fn a_status_counts_where_qwen_and_http_libraries_put_it() {
+        let cases = [
+            (internal_error("402 Payment Required"), "empty"),
+            (internal_error("401 status code (no body)"), "key"),
+            (
+                json!({ "message": "Request failed with status code 402" }),
+                "empty",
+            ),
+            (
+                json!({ "message": "Internal error", "data": "HTTP 401" }),
+                "key",
+            ),
+            (json!({ "message": "Error: 402 Payment Required" }), "empty"),
+            (
+                json!({ "message": "upstream said 401 Unauthorized" }),
+                "key",
+            ),
+            (
+                json!({ "message": "Internal error", "data": { "status": 402 } }),
+                "empty",
+            ),
+            (
+                json!({ "message": "Internal error", "data": { "statusCode": 401 } }),
+                "key",
+            ),
+        ];
+        for (error, reason) in cases {
+            assert_eq!(private_credits_reason(&error), Some(reason), "{error}");
+        }
     }
 
     #[test]

@@ -19,7 +19,7 @@ import { SignInLayer } from "./components/SignInLayer";
 import { RecoveryCodeLayer } from "./components/private/RecoveryCodeLayer";
 import { PrivateCreditsOut, PrivateCreditsOutStatus } from "./components/private/PrivateCreditsOut";
 import { PrivateInspector } from "./components/private/PrivateInspector";
-import { creditsOutText } from "./lib/private-session";
+import { CREDITS_MAY_BE_UPDATING, creditsOutText } from "./lib/private-session";
 import { AgentInstallPanel } from "./components/AgentInstallPanel";
 import { pickerLabelOf } from "./lib/install-plan";
 import { installPanelAgentOf } from "./lib/install-panel";
@@ -473,7 +473,9 @@ export default function App() {
     },
     onTurnFailed: (sessionId, error) =>
       error ? setFailedTurns((prev) => ({ ...prev, [sessionId]: error })) : clearFailedTurn(sessionId),
-    onPrivateCreditsOut: privateCredits.markCreditsOut,
+    // A balance read that already shows credits clears the panel at once: say why the message came back.
+    onPrivateCreditsOut: (sessionId, reason) =>
+      privateCredits.markCreditsOut(sessionId, reason, () => setNotice(CREDITS_MAY_BE_UPDATING, "warning")),
     giveBack: (sessionId, message) => giveBackMessage(sessionId, message.text, message.attachments),
   });
   // The one instance of Add, Update and Remove: Settings, saved sessions of a removed agent and popouts use it.

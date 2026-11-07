@@ -109,7 +109,11 @@ async function emit(payload: Record<string, unknown>) {
 const endTurn = (sessionId: string, error: string) => emit({ sessionId, kind: "turn-end", error });
 
 /** Starts a private Qwen Code session and ends its first turn with a refusal for credits or a key. */
-async function runOutOfCredits(reason: "empty" | "key", overrides: Record<string, Override> = {}) {
+async function runOutOfCredits(
+  reason: "empty" | "key",
+  overrides: Record<string, Override> = {},
+  { isBalanceLagging = false }: { isBalanceLagging?: boolean } = {},
+) {
   withCredits();
   const spy = await renderApp(overrides);
   // A saved session shows first: the private one starts from a new draft.
@@ -128,7 +132,7 @@ async function runOutOfCredits(reason: "empty" | "key", overrides: Record<string
   await send("review the payment module");
   await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(2));
   // The server's balance is empty now; the session's turn is refused.
-  if (reason === "empty") setCredits(0);
+  if (reason === "empty" && !isBalanceLagging) setCredits(0);
   await endTurn(sessionId, `PRIVATE_CREDITS:{"reason":"${reason}"}`);
   return spy;
 }
@@ -221,6 +225,23 @@ describe("a private session that runs out of credits", () => {
     const continued = storedSessions().find((s) => s.profileId === "claude-acp");
     expect(continued).toBeDefined();
     expect(continued).not.toHaveProperty("privateMode");
+  });
+
+  it("says the balance may still be updating when the fresh read after the refusal still shows credits", async () => {
+    await runOutOfCredits("empty", {}, { isBalanceLagging: true });
+
+    expect(
+      await screen.findByText("NEAR AI refused for credits; your balance may still be updating. Try again in a minute."),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(prompt().value).toBe("review the payment module"));
+    expect(screen.queryByRole("region", { name: "Private credits" })).toBeNull();
+  });
+
+  it("says nothing about a lagging balance when the fresh read agrees the credits ran out", async () => {
+    await runOutOfCredits("empty");
+
+    await waitFor(() => expect(screen.getByRole("region", { name: "Private credits" })).toBeInTheDocument());
+    expect(screen.queryByText(/balance may still be updating/)).toBeNull();
   });
 
   it("announces the refusal in a status region that is not part of the panel", async () => {

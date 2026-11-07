@@ -68,6 +68,9 @@ describe("composerCommandsFor: a private session or draft", () => {
     { name: "auth", description: "Change the auth method" },
     { name: "review", description: "Review" },
     { name: "Model", description: "Upper case" },
+    { name: "login", description: "Another name of auth" },
+    { name: "connect", description: "Another name of auth" },
+    { name: "models", description: "Not the model command" },
   ];
   const qwen = { id: "qwen-code" } as AgentProfile;
   const options = { "qwen-code": { modes: null, configOptions: [], commands } };
@@ -80,7 +83,7 @@ describe("composerCommandsFor: a private session or draft", () => {
       agentOptions: options,
       isPrivate: true,
     });
-    expect(offered?.map((command) => command.name)).toEqual(["review"]);
+    expect(offered?.map((command) => command.name)).toEqual(["review", "models"]);
   });
 
   it("leaves them out of a private draft too", () => {
@@ -91,7 +94,7 @@ describe("composerCommandsFor: a private session or draft", () => {
       agentOptions: options,
       isPrivate: true,
     });
-    expect(offered?.map((command) => command.name)).toEqual(["review"]);
+    expect(offered?.map((command) => command.name)).toEqual(["review", "models"]);
   });
 
   it("offers every command of an ordinary session", () => {

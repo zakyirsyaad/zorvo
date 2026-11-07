@@ -915,6 +915,27 @@ describe("usePrivateCredits: loading", () => {
     expect(view.result.current.status).not.toBeNull();
   });
 
+  it("stops saying the read failed while a retry is on its way", async () => {
+    fake().errors.private_status = "unreachable";
+    const view = await mount();
+    expect(view.result.current.statusFailed).toBe(true);
+
+    delete fake().errors.private_status;
+    let release: () => void = () => {};
+    fake().holds.private_status = new Promise<void>((resolve) => (release = resolve));
+    let retry: Promise<void> = Promise.resolve();
+    act(() => {
+      retry = view.result.current.refresh(true);
+    });
+    expect(view.result.current.statusFailed).toBe(false);
+
+    await act(async () => {
+      release();
+      await retry;
+    });
+    expect(view.result.current.status).not.toBeNull();
+  });
+
   it("keeps the last status when a later read fails", async () => {
     readyWith(300);
     const view = await mount();

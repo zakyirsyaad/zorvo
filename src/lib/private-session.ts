@@ -7,6 +7,9 @@ import type { Session } from '../types';
 
 export const CREDITS_RAN_OUT = 'Your credits ran out. Top up to continue.';
 export const PRIVATE_KEY_STOPPED = "This Mac's private key stopped working. Restore it in Settings → Private mode.";
+/** NEAR AI refused for credits, but the balance read right after still shows some: it may lag the refusal. */
+export const CREDITS_MAY_BE_UPDATING =
+  'NEAR AI refused for credits; your balance may still be updating. Try again in a minute.';
 /** A private session's agent asked for a sign-in: Zorvo signs it in, so the user can only check Private mode. */
 export const PRIVATE_SIGN_IN_FAILED = "Private mode couldn't sign in. Check Settings → Private mode.";
 

@@ -169,10 +169,11 @@ export function composerNote(state: {
 }
 
 /**
- * Qwen Code's commands that switch the model or the provider of the running process: in a private
- * session they would take its history out of the TEE (the backend refuses them too).
+ * Qwen Code's commands that switch the model or the provider of the running process (`login` and
+ * `connect` are names of `auth`): in a private session they would take its history out of the TEE
+ * (the backend refuses them too).
  */
-const PRIVATE_HIDDEN_COMMANDS: ReadonlySet<string> = new Set(['model', 'auth']);
+const PRIVATE_HIDDEN_COMMANDS: ReadonlySet<string> = new Set(['model', 'auth', 'login', 'connect']);
 
 /**
  * The slash commands the composer offers: a live ACP session's own; before

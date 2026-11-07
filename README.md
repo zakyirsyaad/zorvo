@@ -302,7 +302,8 @@ before it edits files or runs commands. Pick another mode in the composer.
     and you have no `uvx`;
   - the Zorvo Credits server, only for Private mode: once you open Settings →
     Private mode or turn on a draft's Private chip, and then at start to read
-    your balance. It sees this Mac's credits, never your prompts or code;
+    your balance and to follow a top-up still waiting from before. It sees this
+    Mac's credits, never your prompts or code;
   - this repository's releases on GitHub, to ask whether a newer Zorvo exists
     (`github.com/zakyirsyaad/zorvo`, shortly after Zorvo starts, then
     about once a day) and, when you click **Update & restart**, to download it

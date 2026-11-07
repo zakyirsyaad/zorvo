@@ -204,10 +204,17 @@ fn a_private_session_refuses_the_model_and_auth_commands_before_the_agent_sees_t
     for text in [
         "/model openai:gpt-4o",
         "/model",
-        "  /MODEL x",
-        "\n/Model\tx",
+        "/MODEL x",
+        "/Model\tx",
         "/auth",
         "/AUTH openai",
+        "/login",
+        "/connect x",
+        "/ model gpt-x hi",
+        "/\tmodel x",
+        "/\nmodel x",
+        "/model\u{FEFF}gpt-x hi",
+        "/\u{FEFF}model x",
     ] {
         let result = manager.prompt("p-1", text, &[]);
 
@@ -228,7 +235,17 @@ fn a_private_session_still_sends_other_commands_and_text_that_mentions_model() {
         .start("p-1", &cwd(), &private_launch("402"))
         .unwrap();
 
-    for text in ["/review", "/models", "explain /model to me"] {
+    for text in [
+        "/review",
+        "/models",
+        "explain /model to me",
+        "/modeling",
+        "/models/x.rs",
+        "/model-x",
+        // Qwen Code reads a slash command only at the very start of the raw text.
+        "  /model x",
+        "\n/model x",
+    ] {
         assert_eq!(manager.prompt("p-1", text, &[]), Ok(()), "{text:?}");
         wait_for(&rx, |e| matches!(e, AcpEvent::TurnEnded { .. }));
     }

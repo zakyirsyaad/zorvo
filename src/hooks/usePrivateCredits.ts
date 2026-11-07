@@ -61,7 +61,11 @@ export interface PrivateCredits {
   forget: () => Promise<ActionResult>;
   /** Sessions whose turn was refused for lack of credits or a key, until the status shows it is fixed. */
   creditsOut: Readonly<Record<string, 'empty' | 'key'>>;
-  markCreditsOut: (sessionId: string, reason: 'empty' | 'key') => void;
+  /**
+   * Marks the session; for `empty` reads the balance afresh and calls `onBalanceLagging` when that read
+   * already shows credits (the server's balance lags NEAR AI's refusal), which clears the mark at once.
+   */
+  markCreditsOut: (sessionId: string, reason: 'empty' | 'key', onBalanceLagging?: () => void) => void;
   /** True once this Mac holds credits and the user has not yet been asked to save the recovery code. */
   needsRecoveryDialog: boolean;
 }
@@ -184,6 +188,7 @@ export function usePrivateCredits(): PrivateCredits {
   const loadStatus = useCallback(
     async (fresh: boolean): Promise<PrivateStatus | null> => {
       const read = ++latestStatusRead.current;
+      if (isAlive.current) setStatusFailed(false);
       try {
         const next = await invoke<PrivateStatus>('private_status', { fresh });
         if (!isAlive.current || read !== latestStatusRead.current) return null;
@@ -463,12 +468,15 @@ export function usePrivateCredits(): PrivateCredits {
   }, [refresh, updateFlow]);
 
   const markCreditsOut = useCallback(
-    (sessionId: string, reason: 'empty' | 'key') => {
+    (sessionId: string, reason: 'empty' | 'key', onBalanceLagging?: () => void) => {
       setCreditsOut((prev) => (prev[sessionId] === reason ? prev : { ...prev, [sessionId]: reason }));
+      if (reason !== 'empty') return;
       // The balance shown elsewhere (the Private tab, Settings) must not contradict the refusal.
-      if (reason === 'empty') void refresh(true);
+      void loadStatus(true).then((next) => {
+        if (next !== null && creditsOf(next) > 0) onBalanceLagging?.();
+      });
     },
-    [refresh],
+    [loadStatus],
   );
 
   const needsRecoveryDialog =

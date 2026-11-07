@@ -6,20 +6,44 @@ use serde_json::Value;
 
 use crate::private_mode::PRIVATE_CREDITS_PREFIX;
 
-/// Qwen Code's slash commands that switch the model or the provider of the
-/// running process, which would take a private session's history out of the TEE.
-const MODEL_COMMANDS: [&str; 2] = ["/model", "/auth"];
+/// Qwen Code's slash commands (and their other names) that switch the model or
+/// the provider of the running process, which would take a private session's
+/// history out of the TEE: `login` and `connect` are names of `auth`.
+const MODEL_COMMANDS: [&str; 4] = ["model", "auth", "login", "connect"];
 
 /// The option id Qwen Code gives its model, refused even when the session's
 /// answer reported no options (a resume answer omits them).
 const MODEL_OPTION_ID: &str = "model";
 
-/// Whether `text`, as a prompt, runs one of [`MODEL_COMMANDS`]: its first word,
-/// after leading whitespace, in any letter case.
+/// Whether `c` is whitespace to JavaScript's `\s`, which Qwen Code splits a
+/// command with: ASCII whitespace (with the vertical tab), U+00A0, U+1680,
+/// U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and U+FEFF. Rust's
+/// `char::is_whitespace` differs (U+0085 is in it, U+FEFF is not).
+fn is_js_whitespace(c: char) -> bool {
+    matches!(
+        c,
+        '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200A}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202F}'
+                | '\u{205F}'
+                | '\u{3000}'
+                | '\u{FEFF}'
+    )
+}
+
+/// Whether `text`, as a prompt, runs one of [`MODEL_COMMANDS`], parsed as
+/// Qwen Code 0.26.1 does: a command only when the raw text starts with `/`
+/// (leading whitespace makes it an ordinary prompt), its name the first word
+/// after the slash and any whitespace, in any letter case.
 pub(super) fn is_model_command(text: &str) -> bool {
-    text.split_whitespace()
-        .next()
-        .is_some_and(|first| MODEL_COMMANDS.iter().any(|c| first.eq_ignore_ascii_case(c)))
+    let Some(rest) = text.strip_prefix('/') else {
+        return false;
+    };
+    rest.split(is_js_whitespace)
+        .find(|word| !word.is_empty())
+        .is_some_and(|name| MODEL_COMMANDS.iter().any(|c| name.eq_ignore_ascii_case(c)))
 }
 
 /// The ids, lower-cased, of the `model` category options in a session
@@ -111,17 +135,45 @@ mod tests {
 
     #[test]
     fn the_model_and_auth_commands_are_model_commands_in_any_case_and_spacing() {
+        // As Qwen Code 0.26.1 parses a prompt: a leading `/` in the raw text, then the
+        // first word after any JavaScript whitespace (U+FEFF included).
         for text in [
             "/model",
             "/model x",
-            "  /MODEL x",
-            "\n/Model\tx",
+            "/MODEL x",
+            "/Model\tx",
             "/auth",
             "/Auth openai",
+            "/login",
+            "/CONNECT x",
+            "/ model gpt-x hi",
+            "/\tmodel x",
+            "/\nmodel x",
+            "/model\u{FEFF}gpt-x hi",
+            "/\u{FEFF}model x",
+            "/\u{00A0}auth",
+            "/\u{3000}login x",
+            "/model\u{2028}x",
         ] {
             assert!(is_model_command(text), "{text:?}");
         }
-        for text in ["", "/models", "/review", "model", "say /model", "/modelx"] {
+        for text in [
+            "",
+            "/",
+            "/models",
+            "/review",
+            "model",
+            "say /model",
+            "/modelx",
+            "/modeling",
+            "/models/x.rs",
+            "/model-x",
+            "/authors",
+            "  /model x",
+            "\n/model x",
+            "\u{FEFF}/model x",
+            "/\u{85}model x",
+        ] {
             assert!(!is_model_command(text), "{text:?}");
         }
     }

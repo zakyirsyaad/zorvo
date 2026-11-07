@@ -96,9 +96,11 @@ What is known and what is not (**unverified until you run it**):
   session NEAR AI revoked.
 - **Re-seeding.** The `OPERATOR_REFRESH_TOKEN` secret seeds the stored token the first time, and again
   whenever its value changes (the server compares a hash of it with the last one it took in). To replace a
-  dead session: run the login again, `wrangler secret put OPERATOR_REFRESH_TOKEN` with the new value, and the
-  next alarm tick (within about a minute) picks it up. Putting the same value again does nothing, and an
-  unchanged secret never overwrites the rotated token.
+  dead session: run the login again and `wrangler secret put OPERATOR_REFRESH_TOKEN` with the new value. The
+  new seed is read at the next token refresh: for a dead session that is the next alarm tick, within about a
+  minute; while the cached access token is still healthy it is the next scheduled refresh, up to about 30
+  minutes later. Putting the same value again does nothing, and an unchanged secret never overwrites the
+  rotated token.
 - **Unverified: that the server can refresh.** After the first deploy, register a device (the app's Private
   mode does it, or `POST /v1/devices` with a secret hash), which starts the alarm. Within about a minute,
   `wrangler tail` should show no `Alert refresh_failed`. `GET /v1/stock` cannot detect a failed refresh: it
@@ -153,10 +155,11 @@ pnpm --filter zorvo-credits-server run deploy   # the package script, `wrangler 
   stock calls. That can pass the **Free** plan's 50 subrequests per invocation; on Free, ticks would fail
   part-way and top-ups would be credited late.
 - The Ledger uses SQLite-backed Durable Object storage (`new_sqlite_classes` in `wrangler.jsonc`).
-- **Migrations: the first deploy is the only safe one for the current schema.** Tables are created with
-  `CREATE TABLE IF NOT EXISTS` and there are no `ALTER` migrations. Any schema change after the first
-  deploy (a new column, a new index) needs a migration written and tested first; deploying a changed
-  schema as it is would leave old objects without the new column and fail at runtime.
+- **Migrations: only a new column needs one.** Every statement in `src/ledger/schema.ts` is
+  `CREATE ... IF NOT EXISTS` and runs in the Ledger's constructor, so a new **table** or **index** is created
+  on the next start after a deploy, and is safe at any time. A new **column** on an existing table is not:
+  the table already exists, so the statement changes nothing and old objects would fail at runtime. Write
+  and test an `ALTER TABLE` migration first for that.
 
 ### 7. Verify on the first live checkout
 
@@ -177,6 +180,16 @@ and check each, in this order:
   couple of minutes, the webhook did not match and the alarm's polling credited it instead.
 - **Webhook timestamp unit.** `x-ping-timestamp` is accepted as seconds or milliseconds and must be within
   5 minutes of now. The docs do not say which; a `401` on every webhook points here or at the secret.
+- **`payment_mismatch` on the very first paid checkout.** The checkout opened (so the POST answer named the
+  asset as `NEAR_USDC_ASSET_ID` expects) but reading the paid session back with GET reported the asset under
+  another id. Fix `NEAR_USDC_ASSET_ID` in `src/pingpay.ts` (its `chargesUsdc` check reads both answers) so it
+  accepts the id the GET answer uses. The money is safe: nothing is credited and nothing is dropped, and the
+  top-up settles on a later poll of the alarm once the constant is right and deployed (a mismatched session
+  is asked about again every hour, for 7 days after its checkout).
+- **A key handover lost in transit.** The server deletes the pending key when it answers `GET /v1/key`; if that
+  answer never reaches the app, the key is gone from the server and not on the Mac. It is the same case as the
+  24-hour rule (see "Recovery and the 24-hour key rule"): recover with the device's own code, which issues a
+  fresh key against the remaining balance.
 - **Fees, minimums and test mode.** What PingPay charges, its minimum amount and whether it has a test mode
   were not documented. Check the dashboard before advertising the $5 package.
 - **Where payers land.** The success and cancel pages PingPay sends the payer to are the two sections at the

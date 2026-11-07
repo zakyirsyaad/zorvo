@@ -51,7 +51,7 @@ Non-goals (hackathon scope):
 | `GET /v1/organizations/{id}/usage/balance` returns `remaining` (nano-USD). No API buys credits. | NEAR AI OpenAPI (93 paths). |
 | The public `GET /v1/model/list` marks each model `verifiable` / `attestationSupported` and gives per-token prices. | Live call. |
 | Credits are bought in the NEAR AI dashboard through PingPay (crypto) for NEAR-wallet accounts; Stripe auto top-up only for Google/GitHub accounts. | Dashboard screenshots. |
-| PingPay `POST /checkout/sessions` takes `amount`, `asset`, `recipient`, `customerReference`, `metadata`, `successUrl`, `cancelUrl`, `paymentMethods`; returns `sessionUrl` and `expiresAt`; webhooks `payment.success`, `payment.failed`, `checkout.session.completed`, signed with HMAC-SHA256 (`x-ping-signature`). | pingpay.gitbook.io docs. |
+| PingPay `POST /checkout/sessions` takes `amount`, `asset`, `customerReference`, `metadata`, `successUrl`, `cancelUrl`, `paymentMethods`; returns `sessionUrl` and `expiresAt`; webhooks `payment.success`, `payment.failed`, `checkout.session.completed`, signed with HMAC-SHA256 (`x-ping-signature`). The request has **no** `recipient` field: the payee is the PingPay dashboard's Default Recipient Address, and the answer's `recipient.address` says who it is. | pingpay.gitbook.io docs, read 2026-11-07. |
 | SQLite-backed Durable Objects are on the Workers Free plan; each object is single-threaded with transactional, strongly consistent storage. | Cloudflare docs. |
 
 ## 5. User experience
@@ -108,13 +108,18 @@ One instance (`idFromName("ledger")`) owns every record that can race. Its SQLit
 | Table | Columns (main) |
 | --- | --- |
 | `devices` | `id`, `secret_hash`, `nearai_key_id`, `credits_bought`, `created_at`, `revoked_at` |
-| `topups` | `id`, `device_id`, `package_usd`, `credits`, `status`, `ping_session_id`, `ping_payment_id`, `reserved_until`, `created_at`, `updated_at` |
+| `topups` | `id`, `device_id`, `package_usd`, `credits`, `status`, `ping_session_id` (unique), `ping_payment_id`, `reserved_until`, `created_at`, `updated_at`, `next_poll_at`, `polls` (the alarm's PingPay poll and its backoff) |
 | `reservations` | `topup_id`, `device_id`, `credits`, `expires_at` |
-| `queue` | `id`, `kind` (`credit`, `rotate_key`), `ref`, `attempts`, `next_at` |
+| `queue` | `id`, `kind` (`credit`, `rotate_key`, `revoke_key`), `ref`, `attempts`, `next_at`, `counted` (a credit's credits are already in `credits_bought`), `created_at` |
 | `promos` | `code_hash`, `credits`, `max_uses`, `uses` |
+| `promo_redemptions` | `code_hash`, `device_id` (a device redeems each code once) |
 | `pending_keys` | `device_id`, `key_ciphertext`, `expires_at` |
-| `operator` | `refresh_token_ciphertext`, `access_token`, `access_expires_at`, `version` |
+| `operator` | `refresh_token_ciphertext`, `seed_hash` (hash of the `OPERATOR_REFRESH_TOKEN` secret last taken in), `access_token` (encrypted, like the refresh token), `access_expires_at`, `version` |
 | `snapshot` | `org_remaining_usd`, `outstanding_usd`, `taken_at` |
+| `key_usage` | `key_id`, `limit_nano`, `usage_nano` (each device key, from the last snapshot or the last recorded limit) |
+| `limits_version` | `version` (bumped by every recorded key limit, so a snapshot read before it does not overwrite it) |
+| `ratelimits` | `key`, `count`, `window_start` (fixed windows; rows older than a day are purged) |
+| `events` | `id`, `received_at` (webhook event ids already applied; kept 30 days) |
 
 Every state change runs synchronously inside the object (SQLite calls are synchronous), so two requests cannot interleave a read and a write of stock. Outbound calls (`fetch` to NEAR AI or PingPay) can let other requests in while they wait; the rule is to decide and record first, call out second, and re-read after the call (section 7.5, race 7).
 
@@ -147,6 +152,8 @@ availableCredits = floor(available × 120 / 100) × 100               (rounded d
 
 `reason` is `stock` or `device_cap`. Rounding hides the operator's exact balance.
 
+`yourRoomCredits` is the device cap (5,000) minus what the device already holds or has coming: `(credits_bought − credits used)` (never below 0; used from its key's usage) `+` that device's active reservations `+` its own `paid_waiting_stock` credits.
+
 ### 7.4 Endpoints
 
 All under `/v1`. Device auth unless noted.
@@ -155,15 +162,16 @@ All under `/v1`. Device auth unless noted.
 | --- | --- |
 | `POST /devices` (no auth, rate limited) | Register `{secretHash}`; returns `deviceId`. |
 | `GET /stock` | Section 7.3. |
-| `GET /balance` | `{credits, usedCredits, keyReady, updatedAt}`; credits = (limit − usage) × 120, from the last snapshot. `?fresh=1` (Refresh) reads this device's key usage from NEAR AI first, at most once per 30 s per device; a call within 30 s returns the cached value. |
+| `GET /balance` | `{credits, usedCredits, keyReady, updatedAt}`; credits = (limit − usage) × 120, from the last snapshot. `?fresh=1` (Refresh) refreshes the whole snapshot first (organization balance and key list; NEAR AI has no cheaper per-key read), at most once per 30 s per device and once per 30 s for the server, and not when the snapshot is under 30 s old; otherwise, or when NEAR AI fails, the cached value is returned. |
 | `GET /models` | TEE allowlist ∩ live `verifiable: true`, with prices; cached 10 minutes. |
-| `POST /topups` `{packageUsd}` | Reserve, create the PingPay session, return `{topupId, sessionUrl, expiresAt}`. |
+| `POST /topups` `{packageUsd}` | Reserve, create the PingPay session, return `{topupId, sessionUrl, expiresAt}`. At most 10 per hour per device (429 `rate_limited`). |
 | `GET /topups/{id}` | `{status, credits}`. |
 | `POST /topups/{id}/cancel` | Cancel in Zorvo: a `created` top-up becomes `expired` and its hold is released; a payment that still arrives is handled as a late payment. |
 | `GET /key` | Hand over the NEAR AI key once, then delete it from `pending_keys`. |
-| `POST /promo` `{code}` | Redeem; same reservation and fulfilment path with `package_usd = 0`; returns `{topupId, credits}`. |
-| `POST /recover` `{recoveryCode, newSecretHash}` (no Bearer; the code is the credential; rate limited) | Replace the device's secret hash with this Mac's new one, so the old secret stops working; enqueue `rotate_key`. |
-| `POST /webhooks/pingpay` (signature auth) | Record the event; enqueue `credit`; answer 200 fast. |
+| `POST /promo` `{code}` | Redeem; same reservation and fulfilment path with `package_usd = 0`; returns `{topupId, credits}`. At most 5 attempts per hour per device (429). |
+| `POST /recover` `{recoveryCode, newSecretHash}` (no Bearer; the code is the credential; at most 5 attempts per hour per IP, 429) | Replace the device's secret hash with this Mac's new one, so the old secret stops working; drop its pending key; enqueue `rotate_key`. |
+| `POST /admin/promos` `{code, credits, maxUses}` (Bearer `ADMIN_TOKEN`, compared in constant time; with the secret unset or empty every call is 401) | Create or update a promo code, stored by its hash. |
+| `POST /webhooks/pingpay` (signature auth) | Read the session from PingPay, apply it, record the event; enqueue `credit`; answer 200. A session that is not settled yet (or whose amount or asset differs) answers 503 and records nothing, so PingPay redelivers. |
 
 ### 7.5 Flows and races
 
@@ -171,8 +179,11 @@ Top-up:
 
 ```text
 POST /topups → Ledger: snapshot fresh? → check stock and device cap → insert topup(created) + reservation
-            → fetch PingPay session (customerReference = deviceId, metadata.topupId, recipient = operator account)
-            → ok: store session id, reserved_until = expiresAt + 10 min · fail: delete reservation, topup failed
+            → fetch PingPay session (customerReference = deviceId, metadata.topupId; no recipient field:
+              the payee is the dashboard's Default Recipient Address, and an answer whose
+              recipient.address is not OPERATOR_ACCOUNT fails closed with 502)
+            → ok: store session id, reserved_until = min(expiresAt + 10 min, now + 60 min)
+            · fail: delete reservation, topup failed
 webhook payment.success → Ledger: idempotent by payment id → topup paid → enqueue credit
 alarm → credit: device has no key → create key with spendLimit; else PATCH spend limit
        to the absolute value credits_bought / 120 → topup credited, reservation released
@@ -181,9 +192,9 @@ alarm → credit: device has no key → create key with spendLimit; else PATCH s
 | # | Race | Handling |
 | --- | --- | --- |
 | 1 | Two devices buy the last stock at once | Check and reserve in one synchronous step in the Ledger; the second sees no stock. |
-| 2 | One device opens several checkouts | The device cap counts balance plus that device's active reservations. |
+| 2 | One device opens several checkouts | The device cap counts `(credits_bought − credits used)` plus that device's active reservations plus its own `paid_waiting_stock` credits (section 7.3). |
 | 3 | Payment arrives after the reservation expired and the stock was sold | The top-up goes to `paid_waiting_stock`, a FIFO served before any new reservation after restock; the operator is alerted. Never refused, never lost. |
-| 4 | Duplicate or out-of-order webhooks | Idempotent by payment id; status only moves forward: `created → paid → credited`, `created → expired → paid`, `created → failed`. `credited` never changes. |
+| 4 | Duplicate or out-of-order webhooks | Idempotent by event id, and the session is always read again from PingPay; status only moves forward: `created → paid → credited`, `created → expired → paid`, `created → failed`, `created → paid_waiting_stock`, `expired → paid_waiting_stock`, `paid_waiting_stock → paid`. `credited` never changes. A `paid` top-up keeps its hold until it is credited. A payment `FAILED` or `REFUNDED` on a session changes nothing (the session may still be paid). A `COMPLETED` session whose payment is not final, or whose amount or asset differs from the package, is answered 503 and checked again (webhook redelivery and the alarm's bounded poll). |
 | 5 | Two credits for one device update its spend limit | The limit is always set to the absolute total from `devices.credits_bought`, never incremented, so order and repeats do not matter. |
 | 6 | Two token refreshes at once | Only the Ledger refreshes, one at a time; the new refresh token is stored before the new access token is used. |
 | 7 | A request slips in while the Ledger awaits NEAR AI or PingPay | State is recorded before the call; after the call the Ledger re-reads the rows it changes instead of trusting values read before the await. |
@@ -193,7 +204,7 @@ Queue retry: exponential backoff from 30 s to 30 min; after 10 attempts the item
 
 Key handover: when a key is created, the Ledger encrypts the secret (AES-GCM, key from a Worker secret) into `pending_keys` for 24 hours. `GET /key` returns it once and deletes the row. The Ledger never stores a usable key after handover; only `nearai_key_id`.
 
-Recovery: the recovery code is the current device secret. The new Mac generates a fresh secret and sends `POST /recover {recoveryCode, newSecretHash}`. The Ledger checks the code's hash, replaces `secret_hash` with the new one in the same step (so the old secret, wherever it still lives, can no longer call `GET /key` or anything else), and enqueues `rotate_key`: create a new key with the same absolute limit, hand it over to the new Mac, revoke the old key. Zorvo then shows the new recovery code; the old one is dead.
+Recovery: the recovery code is the current device secret. The new Mac generates a fresh secret and sends `POST /recover {recoveryCode, newSecretHash}`. The Ledger checks the code's hash, replaces `secret_hash` with the new one in the same step (so the old secret, wherever it still lives, can no longer call `GET /key` or anything else), drops any pending key, and enqueues `rotate_key`. The rotation first **freezes** the old key (PATCH its spend limit to its current usage), reads the usage again, and creates a new key carrying only the **remaining** credits: `credits_bought := credits_bought − ceil(credits used)`, the new key's limit from that. A remainder of 0 makes no key; the device's next credit or promo creates one. The old key is then revoked through a `revoke_key` queue item, retried on its own. Zorvo then shows the new recovery code; the old one is dead. A pending key not collected within 24 hours is deleted; recovering with the device's own current code re-issues a key against the remaining balance.
 
 Promo: a code redeems a fixed number of credits through the same reservation and credit path (no payment). Codes are stored hashed, with `max_uses`.
 
@@ -202,11 +213,12 @@ Promo: a code redeems a fixed number of credits through the same reservation and
 - A local, one-off script (`server/scripts/operator-login.mjs`) signs a NEP-413 message for `cloud.near.ai` with the operator account's key on the operator's Mac, calls `POST /v1/auth/near`, and prints the refresh token, which the operator stores with `wrangler secret put`. The full-access key never reaches the server.
 - Fallback when that undocumented route fails: copy a refresh token from a dashboard session by hand.
 - The Ledger refreshes the access token every 30 minutes by alarm and persists each new refresh token before use.
-- The operator is alerted (log plus an optional webhook URL secret) when a refresh fails, stock is below $3, or the queue has an item older than 1 hour.
+- `OPERATOR_REFRESH_TOKEN` seeds the stored session and re-seeds it whenever its value changes (its hash is compared with `operator.seed_hash`); an unchanged secret never overwrites the rotated token.
+- The operator is alerted (log plus an optional webhook URL secret): `refresh_failed` (token or stock refresh failed), `low_stock` (below $3), `stuck_queue` (an item older than 1 hour), `attempts_exhausted` (an item failed 10 times; it keeps retrying), `payment_mismatch` (a paid session charged another amount or asset; not credited).
 
 ### 7.7 Configuration and secrets
 
-Settings (`wrangler.toml`): credits per USD paid (100), burn per USD of cost (120), packages, device cap (5,000), stock buffer ($2), model allowlist, NEAR AI workspace id, operator NEAR account (PingPay recipient). Secrets (`wrangler secret`): PingPay API key, PingPay webhook secret, operator refresh token, key-encryption key, optional alert URL. Nothing secret is committed; the repository is public.
+Settings (`wrangler.jsonc`): credits per USD paid (100), burn per USD of cost (120), packages, device cap (5,000), stock buffer ($2), model allowlist, NEAR AI workspace and organization ids, operator NEAR account (`OPERATOR_ACCOUNT`: not sent to PingPay, which pays the dashboard's Default Recipient Address; each session answer's `recipient.address` is checked against it and a different payee fails closed with 502). Secrets (`wrangler secret`): PingPay API key, PingPay webhook secret, operator refresh token, key-encryption key, `ADMIN_TOKEN` for `POST /admin/promos` (unset or empty: nobody is admin), optional alert URL. Nothing secret is committed; the repository is public.
 
 ## 8. Zorvo app
 
@@ -270,18 +282,20 @@ Built as milestones M6–M8 (section 14) after the core works end to end. Sizes 
 | --- | --- |
 | Not enough stock | `POST /topups` → 409 `stock`; Zorvo shows "Top-ups are paused for now". No checkout is created. |
 | Over device cap | 409 `device_cap`. |
-| Checkout expired or failed | Top-up `expired` / `failed`; reservation released. |
+| Checkout expired or failed | Top-up `expired` / `failed`; reservation released. A `created` top-up whose hold ended over 7 days ago is moved to `expired` by the alarm. |
+| Webhook for a session not settled yet | 503; nothing recorded; PingPay redelivers and the alarm polls. |
 | Paid, NEAR AI unreachable or session lost | `paid` stays in the queue and retries; Zorvo shows "Paid, credits on the way". |
 | Paid late, stock sold | `paid_waiting_stock`, served first after restock. |
 | Credits run out mid-session | `PRIVATE_CREDITS` note and Top up. |
 | Credits server down | Top-up unavailable; running private sessions keep working while credits last. |
 | Keychain lost | Restore with the recovery code. |
+| Key not collected within 24 hours, or its handover lost | The pending key is deleted; recovering with the device's own code re-issues one against the remaining balance. |
 | Wrong recovery or promo code | Plain message; rate limited. |
 
 ## 11. Security and privacy
 
 - Prompts never pass through the Credits server.
-- The server stores only hashes of device secrets and promo codes, NEAR AI key ids, and an encrypted key for at most 24 hours until handover.
+- The server stores only hashes of device secrets and promo codes, NEAR AI key ids, an encrypted key for at most 24 hours until handover, and the operator's NEAR AI access and refresh tokens, both encrypted with the key-encryption key, plus a hash of the refresh-token secret (to notice a replaced seed).
 - A leaked database exposes no usable key and no device secret.
 - The NEAR AI key lives in the Keychain and only in the env of a private Qwen Code process; flags in argv carry no secret.
 - PingPay webhooks are accepted only with a valid, fresh signature.
@@ -329,6 +343,8 @@ Order: M1 → M2 → M5 need each other; M3 and M4 can run beside M1–M2 (separ
 - `POST /v1/auth/near` is undocumented and may change; the fallback is a hand-copied refresh token.
 - PingPay's platform fee, merchant onboarding and whether `pk_test_` keys are a true test mode are unknown; check in the PingPay dashboard before M2.
 - The minimum PingPay amount is unknown; the $5 package may need adjusting.
+- PingPay's payee is the dashboard's Default Recipient Address, not a request field. A wrong setting cannot send money elsewhere unnoticed: the server checks each session answer's `recipient.address` against `OPERATOR_ACCOUNT` and refuses (502) any other.
+- Unverified until the first live checkout: the NEAR USDC asset id constant (`NEAR_USDC_ASSET_ID`, from the implementer's knowledge; PingPay's docs name none) and PingPay's auth header name (the docs give both `x-api-key` and `x-publishable-key`; the client sends `x-api-key`). Both fail closed.
 - Coding quality of the TEE models is untested beyond a short answer; measured in M5.
 - Stored-value obligations of custodial credits; mitigated by small caps, clear "credits are non-refundable" wording and branch-only scope. Not legal advice.
 - The NEAR AI organization balance is restocked by hand; a long absence pauses sales (never fails paid users).

@@ -12,16 +12,17 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-use super::connection::{error_message, AcpConnection, ConnectionEvent, EventSink};
+use super::connection::{error_message, AcpConnection, EventSink};
 use super::elicitation::{Pending, PendingElicitations};
 use super::permission_response::permission_response;
 use super::prompt_blocks::prompt_blocks;
-use super::terminal_auth::{terminal_method, SignInAttempts, TerminalMethodError};
+use super::terminal_auth::SignInAttempts;
 use crate::private_mode::PrivateError;
 use crate::pty_session::validate_cwd;
 use private_errors::{is_model_command, is_model_option, model_option_ids, private_credits_error};
 
 mod elicitation_routes;
+mod handshake;
 mod private_errors;
 mod reopen;
 mod routing;
@@ -30,8 +31,13 @@ mod sign_in;
 pub use elicitation_routes::{
     UrlOpener, ELICITATION_GONE, ELICITATION_INVALID_PREFIX, ELICITATION_UNDELIVERED,
 };
+pub(super) use handshake::{
+    agent_error, auth_methods_of, auth_required_error, failure_message, initialize, open_request,
+    spawn_unrouted,
+};
+use handshake::{is_terminal_method, started_session};
 pub use reopen::{ReopenMethod, ReopenPurpose};
-use routing::{answer, route_event};
+use routing::route_event;
 use sign_in::{is_auth_required, offers_sign_in};
 
 /// ACP protocol version this client speaks.
@@ -745,235 +751,5 @@ impl AcpManager {
     }
 }
 
-/// Opens a session for `launch`; an "authentication required" answer becomes
-/// an error carrying [`AUTH_REQUIRED_PREFIX`] and the agent's auth methods,
-/// and a Zorvo Private launch's credit or key refusal a `PRIVATE_CREDITS:` one
-/// (see [`agent_error`]). A successful answer also goes to `on_answer`, on the
-/// reader thread.
-pub(super) fn open_request(
-    connection: &AcpConnection,
-    init: &Value,
-    method: &str,
-    params: Value,
-    launch: &AcpLaunch,
-    on_answer: impl FnOnce(&Value) + Send + 'static,
-) -> Result<Value, OpenError> {
-    match connection
-        .request_raw_with(method, params, HANDSHAKE_TIMEOUT, on_answer)
-        .map_err(OpenError::Transport)?
-    {
-        Ok(result) => Ok(result),
-        Err(error) => Err(OpenError::Agent(agent_error(
-            method,
-            init,
-            &error,
-            launch.private,
-        ))),
-    }
-}
-
-/// The error a request the agent refused reads as: for a `private` launch
-/// whose credits are used up or whose key was refused, `PRIVATE_CREDITS:`
-/// (never a sign-in, since NEAR AI has none to offer); else the sign-in error
-/// the UI parses when it is about signing in; else `<method> failed: <its message>`.
-pub(super) fn agent_error(method: &str, init: &Value, error: &Value, private: bool) -> String {
-    if let Some(credits) = private.then(|| private_credits_error(error)).flatten() {
-        return credits;
-    }
-    let auth_methods = auth_methods_of(init);
-    // Only a request that opens a session may be refused for want of a sign-in on its code alone.
-    let may_need_sign_in = matches!(method, "session/new" | "session/load" | "session/resume");
-    if is_auth_required(error, may_need_sign_in && offers_sign_in(&auth_methods)) {
-        auth_required_error(&auth_methods)
-    } else {
-        format!("{} failed: {}", method, error_message(error))
-    }
-}
-
-/// Whether `method_id` is a `type: "terminal"` method, which only a terminal can run.
-fn is_terminal_method(init: &Value, method_id: &str) -> bool {
-    // Refused or not, a method found here is one only a terminal can run.
-    !matches!(
-        terminal_method(init, method_id),
-        Err(TerminalMethodError::NotOffered)
-    )
-}
-
-/// The sign-in methods `initialize` reported, always as a JSON array.
-pub(super) fn auth_methods_of(init: &Value) -> Value {
-    match &init["authMethods"] {
-        Value::Array(methods) => Value::Array(methods.clone()),
-        _ => Value::Array(Vec::new()),
-    }
-}
-
-/// The error the UI reads as "sign in first": [`AUTH_REQUIRED_PREFIX`] and the methods.
-pub(super) fn auth_required_error(auth_methods: &Value) -> String {
-    format!("{}{}", AUTH_REQUIRED_PREFIX, auth_methods)
-}
-
-/// Ends a connection that failed to open and says why. A transport failure
-/// gets the agent's stderr tail; an agent's own answer (sign-in JSON
-/// included, which the UI parses) is kept as it is.
-pub(super) fn failure_message(connection: &AcpConnection, error: OpenError) -> String {
-    let stderr = connection.stderr_tail();
-    connection.kill();
-    match error {
-        OpenError::Agent(message) => message,
-        OpenError::Transport(message) if stderr.is_empty() => message,
-        OpenError::Transport(message) => format!("{}\n{}", message, stderr),
-    }
-}
-
-/// Spawns an agent that hosts no app session (a sign-in or a probe). Its
-/// requests are refused here (an elicitation is cancelled), so the agent
-/// never waits on us; its notifications go to `on_notification`.
-pub(super) fn spawn_unrouted(
-    cwd: &str,
-    launch: &AcpLaunch,
-    on_notification: impl Fn(&str, &Value) + Send + Sync + 'static,
-) -> Result<Arc<AcpConnection>, String> {
-    AcpConnection::spawn(
-        &launch.program,
-        &launch.args,
-        cwd,
-        &launch.env,
-        |connection| -> EventSink {
-            Arc::new(move |event| match event {
-                ConnectionEvent::Request { id, method, .. } if method == "elicitation/create" => {
-                    elicitation_routes::cancel_request(&connection, id)
-                }
-                ConnectionEvent::Request { id, .. } => answer(&connection, move |c| {
-                    c.respond_error(&id, METHOD_NOT_FOUND, "Not available here")
-                }),
-                ConnectionEvent::Notification { method, params } => {
-                    on_notification(&method, &params)
-                }
-                ConnectionEvent::Exited { .. } => {}
-            })
-        },
-    )
-}
-
-/// Initializes ACP and returns the agent's answer: capabilities and auth methods.
-pub(super) fn initialize(connection: &AcpConnection) -> Result<Value, String> {
-    connection.request(
-        "initialize",
-        json!({
-            "protocolVersion": PROTOCOL_VERSION,
-            "clientCapabilities": { "fs": { "readTextFile": false, "writeTextFile": false }, "terminal": false, "auth": { "terminal": true }, "elicitation": { "form": {}, "url": {} } },
-            "clientInfo": { "name": "zorvo", "version": env!("CARGO_PKG_VERSION") },
-        }),
-        HANDSHAKE_TIMEOUT,
-    )
-}
-
-fn started_session(response: Value, agent_capabilities: Value) -> Result<StartedSession, String> {
-    let acp_session_id = response["sessionId"]
-        .as_str()
-        .ok_or("The agent did not return a session id")?
-        .to_string();
-    Ok(StartedSession {
-        acp_session_id,
-        agent_capabilities,
-        modes: response["modes"].clone(),
-        models: response["models"].clone(),
-        config_options: response["configOptions"].clone(),
-        reopened_with: None,
-    })
-}
-
 #[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::*;
-
-    fn credits_error() -> Value {
-        json!({ "code": -32603, "message": "Internal error",
-                "data": { "details": "402 api_key_limit_exceeded" } })
-    }
-
-    fn init_with_methods() -> Value {
-        json!({ "authMethods": [{ "id": "browser", "name": "Browser" }] })
-    }
-
-    #[test]
-    fn a_private_launch_reports_a_credit_refusal_of_a_session_request_as_private_credits() {
-        for method in ["session/new", "session/load", "session/resume"] {
-            let message = agent_error(method, &init_with_methods(), &credits_error(), true);
-
-            assert_eq!(
-                message, "PRIVATE_CREDITS:{\"reason\":\"empty\"}",
-                "{method}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_private_launch_reports_a_refused_key_as_the_key_reason() {
-        let error = json!({ "code": -32603, "message": "Internal error",
-                            "data": { "details": "401 Invalid or expired API key" } });
-
-        let message = agent_error("session/new", &init_with_methods(), &error, true);
-
-        assert_eq!(message, "PRIVATE_CREDITS:{\"reason\":\"key\"}");
-    }
-
-    /// An agent with no sign-in methods: since main's `-32603` rule, "api_key" in the
-    /// details reads as a sign-in for an agent that offers methods, whatever the launch.
-    #[test]
-    fn an_ordinary_launch_keeps_the_agents_error_text() {
-        let message = agent_error("session/new", &json!({}), &credits_error(), false);
-
-        assert_eq!(
-            message,
-            "session/new failed: Internal error (402 api_key_limit_exceeded)"
-        );
-    }
-
-    #[test]
-    fn a_private_launch_keeps_the_old_rules_for_other_errors() {
-        let sign_in = json!({ "code": -32000, "message": "Authentication required" });
-        let plain = json!({ "code": -32603, "message": "Internal error" });
-
-        let needs_sign_in = agent_error("session/new", &init_with_methods(), &sign_in, true);
-        let failed = agent_error("session/new", &init_with_methods(), &plain, true);
-
-        assert!(
-            needs_sign_in.starts_with(AUTH_REQUIRED_PREFIX),
-            "{needs_sign_in}"
-        );
-        assert_eq!(failed, "session/new failed: Internal error");
-    }
-
-    #[test]
-    fn debug_of_a_launch_shows_env_names_only_never_values() {
-        let launch = AcpLaunch {
-            program: "npx".to_string(),
-            args: vec!["--acp".to_string()],
-            env: vec![
-                ("OPENAI_API_KEY".to_string(), "sk-secret".to_string()),
-                ("PATH".to_string(), "/usr/bin".to_string()),
-            ],
-            private: true,
-        };
-
-        let text = format!("{launch:?} {launch:#?}");
-
-        assert!(!text.contains("sk-secret"), "{text}");
-        assert!(!text.contains("/usr/bin"), "{text}");
-        assert!(text.contains("OPENAI_API_KEY"), "{text}");
-        assert!(text.contains("npx") && text.contains("--acp"), "{text}");
-        assert!(text.contains("private: true"), "{text}");
-    }
-
-    #[test]
-    fn a_credit_refusal_that_arrives_as_32000_is_not_a_sign_in_for_a_private_launch() {
-        let error = json!({ "code": -32000, "message": "402 api_key_limit_exceeded" });
-
-        let message = agent_error("session/new", &init_with_methods(), &error, true);
-
-        assert_eq!(message, "PRIVATE_CREDITS:{\"reason\":\"empty\"}");
-    }
-}
+mod tests;

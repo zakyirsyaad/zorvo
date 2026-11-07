@@ -880,9 +880,11 @@ mod tests {
         assert_eq!(message, "PRIVATE_CREDITS:{\"reason\":\"key\"}");
     }
 
+    /// An agent with no sign-in methods: since main's `-32603` rule, "api_key" in the
+    /// details reads as a sign-in for an agent that offers methods, whatever the launch.
     #[test]
     fn an_ordinary_launch_keeps_the_agents_error_text() {
-        let message = agent_error("session/new", &init_with_methods(), &credits_error(), false);
+        let message = agent_error("session/new", &json!({}), &credits_error(), false);
 
         assert_eq!(
             message,

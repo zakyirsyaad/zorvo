@@ -61,13 +61,16 @@ fn a_private_session_whose_key_is_refused_ends_its_turn_with_the_key_reason() {
     manager.stop("p-1");
 }
 
+/// The agent offers no sign-in method here: since main's `-32603` rule, "api_key" in the
+/// details reads as a sign-in for an agent that offers one, whatever the launch.
 #[test]
 fn the_same_agent_launched_without_privacy_keeps_its_own_error_text() {
     let (manager, rx) = manager();
-    let launch = AcpLaunch {
-        private: false,
-        ..private_launch("402")
-    };
+    let launch = fake_agent_with(&[
+        ("FAKE_ACP_PRIVATE_ERROR", "402"),
+        ("FAKE_ACP_NO_AUTH_METHODS", "1"),
+    ]);
+    assert!(!launch.private);
     manager.start("s-1", &cwd(), &launch).unwrap();
 
     let error = turn_error(&manager, &rx, "s-1");

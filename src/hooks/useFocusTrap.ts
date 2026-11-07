@@ -17,12 +17,37 @@ function wrapTarget(container: HTMLElement, isBackward: boolean): HTMLElement | 
 }
 
 /**
+ * The open modals' containers, each with where its focus goes back to (its opener first, then its
+ * fallbacks). A modal opened from inside another one inherits that one's list: the outer modal may
+ * close first and take the opener with it.
+ */
+const openTraps = new Map<HTMLElement, readonly HTMLElement[]>();
+
+function returnTargets(opener: HTMLElement | null): readonly HTMLElement[] {
+  if (opener === null) return [];
+  const outer = [...openTraps].find(([container]) => container.contains(opener));
+  return [opener, ...(outer?.[1] ?? [])];
+}
+
+/**
  * Keeps Tab inside a modal while it is open, and gives focus back to what had
- * it before once the modal closes.
+ * it before once the modal closes; when that is gone (it was inside a modal that
+ * closed meanwhile), to what that modal would have given it back to.
  */
 export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
   // Read as the modal first renders: its children may take focus before its own effects run.
-  const [opener] = useState(() => (document.activeElement instanceof HTMLElement ? document.activeElement : null));
+  const [targets] = useState(() =>
+    returnTargets(document.activeElement instanceof HTMLElement ? document.activeElement : null),
+  );
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    openTraps.set(container, targets);
+    return () => {
+      openTraps.delete(container);
+    };
+  }, [containerRef, targets]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -39,8 +64,8 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
 
   useEffect(
     () => () => {
-      if (opener?.isConnected) opener.focus();
+      targets.find((target) => target.isConnected)?.focus();
     },
-    [opener],
+    [targets],
   );
 }

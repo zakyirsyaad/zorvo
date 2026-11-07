@@ -187,6 +187,46 @@ describe("one dialog at a time around a restore", () => {
     expect(callsTo("private_recovery_code")).toHaveLength(0);
   });
 
+  it("Escape on a restore's new code marks nothing and keeps the code on screen", async () => {
+    emptyDevice();
+    fake().statusAfterRecover = creditsLanded();
+    await mount();
+    const { dialog } = await openRestore();
+    await typeAndRestore(dialog, "ZRV-GOOD");
+    const newCode = screen.getByRole("dialog", { name: "Save your recovery code" });
+
+    await pressEscape();
+
+    expect(callsTo("private_mark_recovery")).toHaveLength(0);
+    expect(newCode).toBeInTheDocument();
+    expect(within(newCode).getByText("ZRV-NEW-CODE")).toBeInTheDocument();
+  });
+
+  it("Escape on the stored code's prompt still means Remind me later", async () => {
+    emptyDevice({ recoverySaved: false, recoveryPrompted: true });
+    await mount();
+    await click(await screen.findByRole("button", { name: "Save your recovery code" }));
+    await screen.findByText("ZRV-FAKE-CODE");
+
+    await pressEscape();
+
+    expect(callsTo("private_mark_recovery").map((call) => call.args)).toEqual([{ saved: false }]);
+  });
+
+  it("gives focus back to Restore… once the restore's new code is dealt with", async () => {
+    emptyDevice();
+    fake().statusAfterRecover = creditsLanded();
+    await mount();
+    const { opener, dialog } = await openRestore();
+    await typeAndRestore(dialog, "ZRV-GOOD");
+    const newCode = screen.getByRole("dialog", { name: "Save your recovery code" });
+
+    await click(within(newCode).getByRole("button", { name: "Remind me later" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(opener).toHaveFocus();
+  });
+
   it("a credit that lands under an open Restore dialog adds no second dialog", async () => {
     emptyDevice();
     await mount();

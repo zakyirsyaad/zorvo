@@ -143,9 +143,11 @@ export function TopupProgress({ flow, balanceCredits, onOpenCheckout, onCancel, 
               Cancel
             </Button>
           )}
-          {canReopen && <Button disabled={isReopening} onClick={() => void reopen()}>
+          {canReopen && (
+            <Button disabled={isReopening} onClick={() => void reopen()}>
               Open checkout again
-            </Button>}
+            </Button>
+          )}
           {isEnded && (
             <Button variant="primary" onClick={onDismiss}>
               {flow.kind === "credited" ? "Done" : "Try again"}

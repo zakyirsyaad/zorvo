@@ -107,23 +107,24 @@ export function RecoveryCard({ revealCode, isAvailable, restoreBlockedReason, on
       />
       <SettingsRow
         label="Restore on this Mac"
-        description="Enter a code from another Mac. That Mac stops using these credits, and you get a new code."
-        control={
+        description={
           <>
+            Enter a code from another Mac. That Mac stops using these credits, and you get a new code.
             {restoreBlockedReason && (
-              <span id={reasonId} className="sr-only">
+              <span id={reasonId} className="mt-1 block text-fg-secondary">
                 {restoreBlockedReason}
               </span>
             )}
-            <Button
-              disabled={restoreBlockedReason !== undefined}
-              title={restoreBlockedReason}
-              aria-describedby={restoreBlockedReason ? reasonId : undefined}
-              onClick={onRestore}
-            >
-              Restore…
-            </Button>
           </>
+        }
+        control={
+          <Button
+            disabled={restoreBlockedReason !== undefined}
+            aria-describedby={restoreBlockedReason ? reasonId : undefined}
+            onClick={onRestore}
+          >
+            Restore…
+          </Button>
         }
       />
     </SettingsGroup>

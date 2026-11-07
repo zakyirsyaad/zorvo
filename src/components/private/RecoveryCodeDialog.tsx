@@ -90,7 +90,9 @@ export function RecoveryCodeDialog({ revealCode, markRecovery, initialCode, onCl
     <PrivateDialog
       title="Save your recovery code"
       initialFocusRef={copyRef}
-      onEscape={() => void finish(false)}
+      // Escape is Remind me later for the stored code. A restore's new code is shown here for the first
+      // time, so a stray key must not count as an answer: only a button does.
+      onEscape={initialCode === undefined ? () => void finish(false) : undefined}
       footer={
         <>
           <Button variant="ghost" tone="secondary" disabled={isBusy} onClick={() => void finish(false)}>

@@ -859,6 +859,10 @@ describe("Private mode: one hold at a time", () => {
     const restore = await screen.findByRole("button", { name: "Restore…" });
     expect(restore).toBeDisabled();
     expect(restore).toHaveAccessibleDescription("Finish or cancel your top-up first.");
+    // The reason is on screen too, not only for a screen reader or on hover.
+    const reason = screen.getByText("Finish or cancel your top-up first.");
+    expect(reason.closest(".sr-only")).toBeNull();
+    expect(restore).not.toHaveAttribute("title");
   });
 
   it("Open checkout again takes one press at a time", async () => {

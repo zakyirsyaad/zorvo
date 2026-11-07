@@ -5,23 +5,37 @@
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse, serialize } from "parse5";
 
-const SCRIPT = /<script\b(?![^>]*\btype="application\/ld\+json")[^>]*>[\s\S]*?<\/script>/g;
-const SCRIPT_PRELOAD = /<link\b[^>]*\b(?:rel="modulepreload"|as="script")[^>]*\/?>/g;
+/** @typedef {{ nodeName: string, attrs?: { name: string, value: string }[], childNodes?: Node[], content?: Node }} Node */
+
+/** @param {Node} node @param {string} name */
+const attr = (node, name) => node.attrs?.find((entry) => entry.name === name)?.value;
+
+/** A script that runs, or a hint to fetch one; structured data is a script element but never runs. */
+function isRuntime(/** @type {Node} */ node) {
+  if (node.nodeName === "script") return attr(node, "type") !== "application/ld+json";
+  if (node.nodeName === "link") return attr(node, "rel") === "modulepreload" || attr(node, "as") === "script";
+  return false;
+}
+
+/** Drops runtime nodes from a parsed tree, template contents included. @param {Node} node */
+function prune(node) {
+  if (node.content) prune(node.content);
+  if (!node.childNodes) return;
+  node.childNodes = node.childNodes.filter((child) => !isRuntime(child));
+  node.childNodes.forEach(prune);
+}
 
 /**
- * Removes scripts and script preloads until none is left: one pass could join the pieces around a
- * removed tag into a new one (`<scr<script></script>ipt>`), so it repeats until nothing changes.
+ * Parses the page as a browser would, removes its scripts and script preloads, and writes it back,
+ * so what is removed is exactly what a browser would have run.
  * @param {string} html @returns {string}
  */
 export function stripRuntime(html) {
-  let previous;
-  let stripped = html;
-  do {
-    previous = stripped;
-    stripped = stripped.replace(SCRIPT, "").replace(SCRIPT_PRELOAD, "");
-  } while (stripped !== previous);
-  return stripped;
+  const document = parse(html);
+  prune(/** @type {Node} */ (/** @type {unknown} */ (document)));
+  return serialize(document);
 }
 
 /** @param {string} dir @returns {AsyncGenerator<string>} */

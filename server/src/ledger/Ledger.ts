@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { parseConfig, type Config, type Env } from "../config";
-import { creditsForPackage, usdcAmount } from "../credits";
+import { balanceCredits, creditsForPackage, creditsFromNano, spendLimitNano, usdcAmount } from "../credits";
 import { decrypt, encrypt } from "../crypto";
 import { UPSTREAM_TIMEOUT_MS } from "../http";
 import { NearAiClient, NearAiError } from "../nearai";
@@ -41,6 +41,10 @@ const MAX_STORABLE = BigInt(Number.MAX_SAFE_INTEGER);
 /** A top-up is refused for stock when the snapshot is this old and cannot be refreshed. */
 const SNAPSHOT_FAIL_CLOSED_MS = 10 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
+/** A device's Refresh reads NEAR AI at most this often, and so does the server as a whole. */
+const FRESH_BALANCE_MS = 30 * 1000;
+/** How long the model list is served without asking NEAR AI again. */
+const MODELS_CACHE_MS = 10 * 60 * 1000;
 /** An alert POST gives up after this long, so a slow hook cannot hold the alarm. */
 const ALERT_TIMEOUT_MS = 10 * 1000;
 
@@ -57,6 +61,16 @@ function storable(nano: bigint): number {
   return value;
 }
 
+export type BalanceView = {
+  credits: number;
+  usedCredits: number;
+  keyReady: boolean;
+  /** When the snapshot behind the numbers was taken, ISO-8601. */
+  updatedAt: string;
+};
+
+export type ModelInfo = { id: string; inputPerM: number; outputPerM: number };
+
 /**
  * The only writer of money state. Every method runs its reads and writes synchronously (SQLite
  * calls are synchronous), so two requests can never interleave a read and a write.
@@ -66,6 +80,9 @@ export class Ledger extends DurableObject<Env> {
   private parsedConfig: Config | undefined;
   private refreshing: Promise<string> | undefined;
   private snapshotting: Promise<void> | undefined;
+  /** The last model list and when it was read; plain memory, read again after an eviction. */
+  private modelsCache: { models: ModelInfo[]; at: number } | undefined;
+  private modelsLoading: Promise<ModelInfo[]> | undefined;
   private ticking: Promise<void> | undefined;
   /** The `fetch` used for NEAR AI and PingPay calls; tests replace it. */
   fetcher: typeof fetch = (input, init) => fetch(input, init);
@@ -159,16 +176,23 @@ export class Ledger extends DurableObject<Env> {
   }
 
   /**
-   * How many more credits the device may buy or reserve before it reaches the per-device cap. The one
-   * calculation behind `stockFor` and `reserve`: credits bought, plus active reservations (a paid
-   * top-up's is held until credited), plus the device's paid top-ups waiting for stock, which are in
-   * neither of the other two.
+   * How many more credits the device may buy or reserve before it reaches the per-device cap (spec:
+   * balance plus active reservations at most the cap). The one calculation behind `stockFor` and
+   * `reserve`: the credits it still holds (bought, minus what its key has used, never below 0),
+   * plus active reservations (a paid top-up's is held until credited), plus the device's paid
+   * top-ups waiting for stock, which are in neither of the other two.
    */
   private roomCredits(deviceId: string, now: number): number {
     const device = this.sql
-      .exec<{ credits_bought: number }>("SELECT credits_bought FROM devices WHERE id = ?", deviceId)
+      .exec<{ credits_bought: number; usage_nano: number | null }>(
+        `SELECT d.credits_bought, k.usage_nano FROM devices d
+         LEFT JOIN key_usage k ON k.key_id = d.nearai_key_id WHERE d.id = ?`,
+        deviceId,
+      )
       .toArray()[0];
     if (!device) throw new Error("unknown device");
+    const used = creditsFromNano(BigInt(device.usage_nano ?? 0), this.config());
+    const held = Math.max(0, device.credits_bought - used);
     const reserved = this.sum(
       "SELECT COALESCE(SUM(credits), 0) AS total FROM reservations WHERE device_id = ? AND expires_at > ?",
       deviceId,
@@ -178,7 +202,7 @@ export class Ledger extends DurableObject<Env> {
       "SELECT COALESCE(SUM(credits), 0) AS total FROM topups WHERE device_id = ? AND status = 'paid_waiting_stock'",
       deviceId,
     );
-    return Math.max(0, this.config().deviceCapCredits - device.credits_bought - reserved - waiting);
+    return Math.max(0, this.config().deviceCapCredits - held - reserved - waiting);
   }
 
   /** What `deviceId` can buy right now (spec 7.3). The device cap is checked before the stock. */
@@ -193,6 +217,98 @@ export class Ledger extends DurableObject<Env> {
       return { usd, credits, available: true };
     });
     return { availableCredits, yourRoomCredits, packages, updatedAt: new Date(takenAt).toISOString() };
+  }
+
+  /**
+   * The device's balance from its `key_usage` row. A key credited since the last snapshot normally
+   * has a row from `recordKeyLimit`; without one the limit for the credits bought and no usage is
+   * used. With `fresh` the snapshot is refreshed first (see `refreshForBalance`).
+   */
+  async balanceFor(deviceId: string, fresh = false, now: number = Date.now()): Promise<BalanceView> {
+    if (fresh) await this.refreshForBalance(deviceId, now);
+    const cfg = this.config();
+    const device = this.sql
+      .exec<{ nearai_key_id: string | null; credits_bought: number; waiting: number }>(
+        `SELECT nearai_key_id, credits_bought,
+                EXISTS (SELECT 1 FROM pending_keys WHERE device_id = devices.id) AS waiting
+         FROM devices WHERE id = ?`,
+        deviceId,
+      )
+      .toArray()[0];
+    if (!device) throw new Error("unknown device");
+    const updatedAt = new Date(this.snapshotTakenAt()).toISOString();
+    if (device.nearai_key_id === null) return { credits: 0, usedCredits: 0, keyReady: false, updatedAt };
+
+    const row = this.sql
+      .exec<{ limit_nano: number | null; usage_nano: number | null }>(
+        "SELECT limit_nano, usage_nano FROM key_usage WHERE key_id = ?",
+        device.nearai_key_id,
+      )
+      .toArray()[0];
+    const limit = row?.limit_nano != null ? BigInt(row.limit_nano) : spendLimitNano(device.credits_bought, cfg);
+    const usage = BigInt(row?.usage_nano ?? 0);
+    return {
+      credits: balanceCredits(limit, usage, cfg),
+      usedCredits: creditsFromNano(usage, cfg),
+      keyReady: device.waiting === 0,
+      updatedAt,
+    };
+  }
+
+  /**
+   * Refresh in the app. NEAR AI has no per-key total cheaper than the key list, so this reuses
+   * `refreshSnapshot` (its race guard and access-token retry included), and is bounded so devices
+   * cannot turn Refresh into a stream of key-list reads: once per 30 s per device, once per 30 s
+   * for the server as a whole, and not at all when the snapshot is already that young. A device
+   * without a key has nothing to read. A NEAR AI failure is logged and the cached row is served,
+   * never an error: the balance on screen stays usable.
+   */
+  private async refreshForBalance(deviceId: string, now: number): Promise<void> {
+    const hasKey = this.sql.exec("SELECT 1 FROM devices WHERE id = ? AND nearai_key_id IS NOT NULL", deviceId).toArray().length > 0;
+    if (!hasKey) return;
+    if (!this.rateLimit(`fresh:${deviceId}`, 1, FRESH_BALANCE_MS, now).allowed) return;
+    if (now - this.snapshotTakenAt() < FRESH_BALANCE_MS) return;
+    if (!this.rateLimit("fresh:all", 1, FRESH_BALANCE_MS, now).allowed) return;
+    try {
+      await this.refreshSnapshotOnce(now);
+    } catch (error) {
+      console.error(`Balance refresh failed: ${describeError(error)}`);
+    }
+  }
+
+  /**
+   * The models users may pick: the configured allowlist that NEAR AI marks verifiable, cached 10
+   * minutes. When NEAR AI cannot be read the last list is served however old; `upstream` only when
+   * there never was one.
+   */
+  async models(now: number = Date.now()): Promise<{ models: ModelInfo[] } | { error: "upstream" }> {
+    const cached = this.modelsCache;
+    if (cached && now - cached.at < MODELS_CACHE_MS) return { models: cached.models };
+    try {
+      this.modelsLoading ??= this.loadModels().finally(() => {
+        this.modelsLoading = undefined;
+      });
+      const models = await this.modelsLoading;
+      this.modelsCache = { models, at: now };
+      return { models };
+    } catch (error) {
+      console.error(`Reading the NEAR AI model list failed: ${describeError(error)}`);
+      return this.modelsCache ? { models: this.modelsCache.models } : { error: "upstream" };
+    }
+  }
+
+  private async loadModels(): Promise<ModelInfo[]> {
+    const verifiable = new Map((await this.nearAi().verifiableModels()).map((model) => [model.id, model]));
+    return this.config().models.flatMap((id) => {
+      const model = verifiable.get(id);
+      return model ? [model] : [];
+    });
+  }
+
+  /** For tests: forgets the cached model list. */
+  resetModelsCache(): void {
+    this.modelsCache = undefined;
+    this.modelsLoading = undefined;
   }
 
   /**

@@ -85,7 +85,13 @@ export default {
     if (req.method === "GET" && pathname === "/v1/balance") {
       const device = await authDevice(req, env);
       if (device instanceof Response) return device;
-      return json({ error: "not_implemented" }, 501); // Replaced by the balance endpoint.
+      return json(await ledgerOf(env).balanceFor(device.deviceId, new URL(req.url).searchParams.get("fresh") === "1"));
+    }
+    if (req.method === "GET" && pathname === "/v1/models") {
+      const device = await authDevice(req, env);
+      if (device instanceof Response) return device;
+      const result = await ledgerOf(env).models();
+      return "error" in result ? error("upstream", 502) : json(result);
     }
     if (req.method === "GET" && pathname === "/v1/stock") {
       const device = await authDevice(req, env);

@@ -105,7 +105,7 @@ export class FakePingPay {
   }
 }
 
-type NearAiRoute = "refresh" | "balance" | "list" | "create" | "patch" | "revoke";
+type NearAiRoute = "refresh" | "balance" | "list" | "create" | "patch" | "revoke" | "models";
 
 /** A stand-in for NEAR AI Cloud: the operator's tokens, the organization balance, the workspace keys and every request it saw. */
 export class FakeNearAi {
@@ -113,6 +113,8 @@ export class FakeNearAi {
   keys = new Map<string, { name: string; limitNano: bigint; usageNano: bigint; secret: string }>();
   /** What the organization has left, nano-USD. */
   remainingNano = 1_000_000_000_000n;
+  /** The models `/model/list` answers with; prices are dollars per token. */
+  modelList: { id: string; verifiable: boolean; inputPerToken: number; outputPerToken: number }[] = [];
   /** A status to answer a route with instead of serving it. */
   status: Partial<Record<NearAiRoute, number>> = {};
   /** Routes that never answer; the request fails only when its signal aborts. */
@@ -162,6 +164,7 @@ export class FakeNearAi {
 
   private route(method: string, path: string): NearAiRoute {
     if (path === "/users/me/access-tokens") return "refresh";
+    if (path === "/model/list") return "models";
     if (path.endsWith("/usage/balance")) return "balance";
     if (method === "PATCH") return "patch";
     if (method === "DELETE") return "revoke";
@@ -178,6 +181,15 @@ export class FakeNearAi {
         return json({ access_token: `acc-${this.nextToken}`, refresh_token: `ref-${this.nextToken}` });
       case "balance":
         return json({ remaining: { amount: Number(this.remainingNano), scale: 9 } });
+      case "models":
+        return json({
+          models: this.modelList.map((model) => ({
+            modelId: model.id,
+            inputCostPerToken: { amount: Math.round(model.inputPerToken * 1e12), scale: 12 },
+            outputCostPerToken: { amount: Math.round(model.outputPerToken * 1e12), scale: 12 },
+            metadata: { verifiable: model.verifiable },
+          })),
+        });
       case "list": {
         const keys = [...this.keys].map(([id, key]) => ({
           id,

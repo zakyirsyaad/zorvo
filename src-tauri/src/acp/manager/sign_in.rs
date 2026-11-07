@@ -30,8 +30,8 @@ const SIGN_IN_WORDS: [&str; 7] = [
 /// GLM Agent opens sessions without a key and fails the first prompt with `-32603`
 /// ("Internal error"), naming the key only in `data.details`. That code means nothing
 /// by itself, so such a refusal counts only when the agent offers methods for the
-/// request (`offers_sign_in`) and its message, `data.details` or `data.message` has a
-/// word from [`SIGN_IN_WORDS`].
+/// request (`offers_sign_in`) and its message, a text `data`, `data.details` or
+/// `data.message` has a word from [`SIGN_IN_WORDS`].
 pub(super) fn is_auth_required(error: &Value, offers_sign_in: bool) -> bool {
     match error["code"].as_i64() {
         Some(AUTH_REQUIRED) => offers_sign_in || mentions_sign_in(&error["message"]),
@@ -39,6 +39,7 @@ pub(super) fn is_auth_required(error: &Value, offers_sign_in: bool) -> bool {
             offers_sign_in
                 && [
                     &error["message"],
+                    &error["data"],
                     &error["data"]["details"],
                     &error["data"]["message"],
                 ]
@@ -57,8 +58,8 @@ fn mentions_sign_in(text: &Value) -> bool {
         .unwrap_or_default()
         .chars()
         .filter(char::is_ascii_alphabetic)
-        .collect::<String>()
-        .to_ascii_lowercase();
+        .map(|c| c.to_ascii_lowercase())
+        .collect();
     SIGN_IN_WORDS.iter().any(|word| letters.contains(word))
 }
 
@@ -107,6 +108,34 @@ mod tests {
         let error = json!({ "code": -32603, "message": "Invalid API key" });
 
         assert!(is_auth_required(&error, true));
+    }
+
+    #[test]
+    fn counts_a_32603_whose_data_is_the_text_naming_the_sign_in() {
+        let error =
+            json!({ "code": -32603, "message": "Internal error", "data": "No API key found" });
+
+        assert!(is_auth_required(&error, true));
+    }
+
+    /// `agent_error` only lets the agent's offered methods count for a request that opens a
+    /// session, so a `-32603` from `session/list` stays a plain failure.
+    #[test]
+    fn reads_a_32603_refusal_to_open_a_session_as_a_sign_in_but_not_a_listing() {
+        let init = json!({ "authMethods": [{ "id": "z-ai-api-key", "name": "Z.AI API key" }] });
+
+        for method in ["session/new", "session/load", "session/resume"] {
+            let error = super::super::agent_error(method, &init, &glm_refusal());
+            assert!(
+                error.starts_with(super::super::AUTH_REQUIRED_PREFIX),
+                "{method}: {error}"
+            );
+        }
+        let listing = super::super::agent_error("session/list", &init, &glm_refusal());
+        assert!(
+            !listing.starts_with(super::super::AUTH_REQUIRED_PREFIX),
+            "{listing}"
+        );
     }
 
     #[test]

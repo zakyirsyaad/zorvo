@@ -157,7 +157,7 @@ pnpm --filter zorvo-credits-server run deploy   # the package script, `wrangler 
 - The Ledger uses SQLite-backed Durable Object storage (`new_sqlite_classes` in `wrangler.jsonc`).
 - **Migrations: only a new column needs one.** Every statement in `src/ledger/schema.ts` is
   `CREATE ... IF NOT EXISTS` and runs in the Ledger's constructor, so a new **table** or **index** is created
-  on the next start after a deploy, and is safe at any time. A new **column** on an existing table is not:
+  on the next start after a deploy, and is safe to add (a UNIQUE index fails the Ledger's start if existing rows already break it, so check the data first). A new **column** on an existing table is not:
   the table already exists, so the statement changes nothing and old objects would fail at runtime. Write
   and test an `ALTER TABLE` migration first for that.
 

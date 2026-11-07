@@ -218,7 +218,7 @@ Promo: a code redeems a fixed number of credits through the same reservation and
 
 ### 7.7 Configuration and secrets
 
-Settings (`wrangler.jsonc`): credits per USD paid (100), burn per USD of cost (120), packages, device cap (5,000), stock buffer ($2), model allowlist, NEAR AI workspace and organization ids, operator NEAR account (`OPERATOR_ACCOUNT`: not sent to PingPay, which pays the dashboard's Default Recipient Address; each session answer's `recipient.address` is checked against it and a different payee fails closed with 502). Secrets (`wrangler secret`): PingPay API key, PingPay webhook secret, operator refresh token, key-encryption key, `ADMIN_TOKEN` for `POST /admin/promos` (unset or empty: nobody is admin), optional alert URL. Nothing secret is committed; the repository is public.
+Settings (`wrangler.jsonc`): credits per USD paid (100), burn per USD of cost (120), packages, device cap (5,000), stock buffer ($2), model allowlist, NEAR AI workspace and organization ids, operator NEAR account (`OPERATOR_ACCOUNT`: not sent to PingPay, which pays the dashboard's Default Recipient Address; the answer that creates each checkout session has its `recipient.address` checked against it and a different payee fails closed with 502). Secrets (`wrangler secret`): PingPay API key, PingPay webhook secret, operator refresh token, key-encryption key, `ADMIN_TOKEN` for `POST /admin/promos` (unset or empty: nobody is admin), optional alert URL. Nothing secret is committed; the repository is public.
 
 ## 8. Zorvo app
 
@@ -343,7 +343,7 @@ Order: M1 → M2 → M5 need each other; M3 and M4 can run beside M1–M2 (separ
 - `POST /v1/auth/near` is undocumented and may change; the fallback is a hand-copied refresh token.
 - PingPay's platform fee, merchant onboarding and whether `pk_test_` keys are a true test mode are unknown; check in the PingPay dashboard before M2.
 - The minimum PingPay amount is unknown; the $5 package may need adjusting.
-- PingPay's payee is the dashboard's Default Recipient Address, not a request field. A wrong setting cannot send money elsewhere unnoticed: the server checks each session answer's `recipient.address` against `OPERATOR_ACCOUNT` and refuses (502) any other.
+- PingPay's payee is the dashboard's Default Recipient Address, not a request field. A wrong setting cannot send money elsewhere unnoticed: the server checks the `recipient.address` in the answer that creates each checkout session against `OPERATOR_ACCOUNT` and refuses (502) any other.
 - Unverified until the first live checkout: the NEAR USDC asset id constant (`NEAR_USDC_ASSET_ID`, from the implementer's knowledge; PingPay's docs name none) and PingPay's auth header name (the docs give both `x-api-key` and `x-publishable-key`; the client sends `x-api-key`). Both fail closed.
 - Coding quality of the TEE models is untested beyond a short answer; measured in M5.
 - Stored-value obligations of custodial credits; mitigated by small caps, clear "credits are non-refundable" wording and branch-only scope. Not legal advice.

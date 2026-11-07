@@ -56,9 +56,11 @@ type ReportedLists = Pick<AgentOptions, 'configOptions' | 'models'>;
 
 const isEffort = (option: AcpConfigOption) => option.category === 'thought_level';
 
+const modelConfigOf = (configOptions: readonly AcpConfigOption[]) => configOptions.find((o) => o.category === 'model');
+
 /** The model the agent ran when it reported these lists: its model option's value, else its `models` pick. */
 function reportedModelOf(lists: ReportedLists): string | undefined {
-  return lists.configOptions.find((o) => o.category === 'model')?.currentValue ?? lists.models?.currentModelId;
+  return modelConfigOf(lists.configOptions)?.currentValue ?? lists.models?.currentModelId;
 }
 
 /** `known` with the effort list in `reported` kept under the model it was reported for. */
@@ -76,7 +78,7 @@ export function withReported(known: AgentOptions | undefined, update: Partial<Ag
 
 /** The model a draft will start on: picked for this session, else the agent's reported one. */
 function draftModelOf(options: AgentOptions, choices: AcpChoices): string | undefined {
-  const modelConfig = options.configOptions.find((o) => o.category === 'model');
+  const modelConfig = modelConfigOf(options.configOptions);
   return (modelConfig && choices.config[modelConfig.id]) ?? choices.modelId ?? reportedModelOf(options);
 }
 
@@ -101,23 +103,29 @@ export function keptConfigOf(configOptions: readonly AcpConfigOption[]): Record<
  * session only, so without this every new session would start on its defaults.
  */
 export function withPreferred(choices: AcpChoices, options: AgentOptions | undefined): AcpChoices {
+  if (!options) return choices;
   const isOffered = (lists: readonly AcpConfigOption[], configId: string, value: string) =>
     lists.find((o) => o.id === configId)?.options.some((c) => c.value === value) ?? false;
-  // The model goes first: whether an effort is offered depends on the model the session starts on.
-  const modelConfig = options?.configOptions.find((o) => o.category === 'model');
-  const preferredModelPick = modelConfig && options?.preferredConfig?.[modelConfig.id];
-  const startModel =
-    (modelConfig && choices.config[modelConfig.id]) ??
-    (preferredModelPick && isOffered(options.configOptions, modelConfig.id, preferredModelPick) ? preferredModelPick : undefined);
-  const lists = options ? listsForModel(options, startModel ?? choices.modelId ?? options.preferredModelId) : [];
-  const preferred = Object.entries(options?.preferredConfig ?? {}).filter(([configId, value]) =>
-    isOffered(lists, configId, value),
-  );
-  const preferredModel = options?.preferredModelId;
+  const preferredModel = options.preferredModelId;
   const modelId =
-    choices.modelId === undefined && preferredModel && options?.models?.availableModels.some((m) => m.modelId === preferredModel)
+    choices.modelId === undefined && preferredModel && options.models?.availableModels.some((m) => m.modelId === preferredModel)
       ? preferredModel
       : undefined;
+  // The model goes first: whether an effort is offered depends on the model the session starts on.
+  const modelConfig = modelConfigOf(options.configOptions);
+  const preferredModelPick = modelConfig && options.preferredConfig?.[modelConfig.id];
+  const startModel =
+    (modelConfig && choices.config[modelConfig.id]) ??
+    (preferredModelPick && isOffered(options.configOptions, modelConfig.id, preferredModelPick) ? preferredModelPick : undefined) ??
+    choices.modelId ??
+    modelId;
+  const lists = listsForModel(options, startModel);
+  // An effort for a model whose list is not known yet stays: the agent's own list is checked once the model is set.
+  const isUnknownEffort = (configId: string) =>
+    options.configOptions.some((o) => o.id === configId && isEffort(o)) && !lists.some((o) => o.id === configId);
+  const preferred = Object.entries(options.preferredConfig ?? {}).filter(
+    ([configId, value]) => isOffered(lists, configId, value) || isUnknownEffort(configId),
+  );
   if (preferred.length === 0 && modelId === undefined) return choices;
   return {
     ...choices,

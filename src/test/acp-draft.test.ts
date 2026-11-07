@@ -346,6 +346,32 @@ describe("an effort list follows its model", () => {
     expect(effortOf(draftInfo(withEffortList(onKimi), NO_CHOICES))).toEqual(kimiEffort);
   });
 
+  it("keeps the effort picked last for a model whose list is not known yet, for the agent to check once it runs", () => {
+    const draft = { ...withEffortList(onKimi), preferredConfig: { model: "deepseek", reasoning_effort: "max" } };
+
+    expect(withPreferred(NO_CHOICES, draft).config).toEqual({ model: "deepseek", reasoning_effort: "max" });
+  });
+
+  it("follows the model of an agent that reports `models`, as Gemini CLI does", () => {
+    const geminiEffort = { ...kimiEffort, id: "thinking", currentValue: "low", options: [{ value: "low", name: "Low" }, { value: "max", name: "Max" }] };
+    const models = {
+      currentModelId: "flash",
+      availableModels: [
+        { modelId: "flash", name: "Flash" },
+        { modelId: "pro", name: "Pro" },
+      ],
+    };
+    const known = withEffortList(
+      withEffortList({ modes: null, models, configOptions: [kimiEffort] }),
+      { models: { ...models, currentModelId: "pro" }, configOptions: [geminiEffort] },
+    );
+
+    expect(effortOf(draftInfo(known, { modelId: "pro", config: {} }))).toEqual(geminiEffort);
+    // A remembered model the agent no longer offers is not the one the session starts on.
+    const gone = { ...known, preferredModelId: "retired", preferredConfig: { reasoning_effort: "default" } };
+    expect(withPreferred(NO_CHOICES, gone).config).toEqual({ reasoning_effort: "default" });
+  });
+
   it("remembers what a session or probe reports, keeping the lists of the other models", () => {
     const afterKimi = withReported(undefined, { configOptions: [modelOption("kimi"), kimiEffort] });
     const afterDeepseek = withReported(afterKimi, { configOptions: [modelOption("deepseek"), deepseekEffort] });

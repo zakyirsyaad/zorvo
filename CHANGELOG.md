@@ -4,6 +4,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-07
+
 ### Changed
 
 - **First run is one welcome screen.** Tick the agents you'll use (one that is not installed offers Install; ticking downloads nothing), pick a project folder (the folders it finds are offered), and press Start, which opens a new session there. Signing in waits for the first session, as before.
@@ -257,7 +259,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.6.1...v0.7.0

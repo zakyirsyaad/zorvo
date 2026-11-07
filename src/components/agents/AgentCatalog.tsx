@@ -125,7 +125,7 @@ export function AgentCatalog({ catalog, error, agents, enabledIds, actions, sign
             />
           </label>
           <Button
-            size="lg"
+            size="field"
             disabled={isChecking}
             onClick={checkAgain}
             icon={<RefreshCw size={12} className={isChecking ? "animate-spin" : undefined} aria-hidden="true" />}

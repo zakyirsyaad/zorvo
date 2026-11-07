@@ -75,11 +75,32 @@ describe("primitive sizes from the canvas", () => {
     ["ghost", "row", "font-normal"],
     ["ghost", "md", "font-normal"],
     ["ghost", "lg", "font-medium"],
+    ["primary", "field", "font-medium"],
+    ["danger", "field", "font-medium"],
+    ["outline", "field", "font-normal"],
+    ["ghost", "field", "font-normal"],
   ] as const)("a %s %s Button carries exactly one weight class, %s", (variant, size, expected) => {
     render(<Button variant={variant} size={size}>Go</Button>);
     const button = screen.getByRole("button", { name: "Go" });
     const weights = ["font-normal", "font-medium"].filter((name) => button.classList.contains(name));
     expect(weights).toEqual([expected]);
+  });
+
+  it("Button's `lg` is the 13px lead action and `field` is a 32px button with 12px text", () => {
+    const { rerender } = render(<Button size="lg">Go</Button>);
+    const lead = screen.getByRole("button", { name: "Go" });
+    expect(lead).toHaveClass("h-8", "px-3", "text-ui", "font-medium");
+    expect(lead).not.toHaveClass("text-ui-sm");
+
+    // Settings → Agents' Check again: 32px to sit beside the search field, drawn like any other outline button.
+    rerender(<Button size="field">Go</Button>);
+    const beside = screen.getByRole("button", { name: "Go" });
+    expect(beside).toHaveClass("h-8", "px-3", "text-ui-sm", "font-normal");
+    expect(beside).not.toHaveClass("text-ui");
+    expect(beside).not.toHaveClass("font-medium");
+
+    rerender(<Button size="field" variant="primary">Go</Button>);
+    expect(screen.getByRole("button", { name: "Go" })).toHaveClass("h-8", "text-ui-sm", "font-medium");
   });
 
   it("Button has a 26px size, and a ghost one can take the secondary text colour", () => {

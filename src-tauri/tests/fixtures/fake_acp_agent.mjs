@@ -31,6 +31,8 @@
 //                         session/list answers no sessions
 //   FAKE_ACP_LIST_FAIL_AT=<n> -> page n answers with a server error
 //   FAKE_ACP_AUTH_REQUIRED -> session/new and session/list refuse with an auth-required error
+//   FAKE_ACP_PROMPT_ERROR_DETAILS=<text> -> refuses a plain prompt with -32603 "Internal error"
+//                         and <text> in data.details, as GLM Agent does without an API key
 //   FAKE_ACP_CALL_LOG -> appends every received method name to the file it names
 //   FAKE_ACP_SLOW_INIT=<ms> -> answers initialize only after that many milliseconds
 //                         (ten seconds when set without a delay)
@@ -227,6 +229,19 @@ function handlePrompt(id, params) {
   }
   if (text === "needs-login") {
     send({ id, error: { code: -32000, message: "Authentication required" } });
+    return;
+  }
+  // FAKE_ACP_PROMPT_ERROR_DETAILS: refuses every other prompt the way GLM Agent does without
+  // a key: -32603 "Internal error", the reason only in data.details.
+  if (process.env.FAKE_ACP_PROMPT_ERROR_DETAILS) {
+    send({
+      id,
+      error: {
+        code: -32603,
+        message: "Internal error",
+        data: { details: process.env.FAKE_ACP_PROMPT_ERROR_DETAILS },
+      },
+    });
     return;
   }
   say(params.sessionId, `echo: ${text}`);

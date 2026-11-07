@@ -4,9 +4,10 @@ export type ButtonVariant = "primary" | "outline" | "ghost" | "danger";
 
 /**
  * The canvas's button heights: 24px for a small action in a row, 26px (`row`) in the inspector's path bars,
- * 28px by default (12px text), 32px for a lead action (13px text, always weight 500).
+ * 28px by default (12px text), 32px for a lead action (13px text, always weight 500), and 32px (`field`)
+ * for a button that sits beside a 32px field, with the 12px text of any other button.
  */
-export type ButtonSize = "sm" | "row" | "md" | "lg";
+export type ButtonSize = "sm" | "row" | "md" | "lg" | "field";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -30,6 +31,7 @@ const SIZES: Record<ButtonSize, string> = {
   row: "h-6.5 px-2 text-ui-sm",
   md: "h-7 px-3 text-ui-sm",
   lg: "h-8 px-3 text-ui",
+  field: "h-8 px-3 text-ui-sm",
 };
 
 /**

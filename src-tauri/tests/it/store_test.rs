@@ -6,8 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::json;
 
 use zorvo_lib::store::{
-    data_dir_for, AppStore, PersistedState, RecentFolder, SessionRecord, SessionWorktreeRecord,
-    Settings, STATE_VERSION,
+    data_dir_for, AppStore, PersistedState, PrivateModeRecord, RecentFolder, SessionRecord,
+    SessionWorktreeRecord, Settings, STATE_VERSION,
 };
 
 /// Builds a root path that is unique to this process and this call, so tests
@@ -74,6 +74,7 @@ fn session(id: &str, status: &str) -> SessionRecord {
         has_unread: false,
         compare_run_id: None,
         review_comments: Vec::new(),
+        private_mode: None,
     }
 }
 
@@ -938,4 +939,47 @@ fn a_dev_build_keeps_its_data_beside_the_installed_apps() {
         data_dir_for(base, true),
         Path::new("/Users/me/Library/Application Support/xyz.zorvo.desktop.dev")
     );
+}
+
+#[test]
+fn keeps_a_private_sessions_model_through_a_save() {
+    let root = unique_temp_root("private-mode");
+    let store = AppStore::new(root.clone());
+    let mut state = populated_state();
+    state.sessions[0].private_mode = Some(PrivateModeRecord {
+        model_id: "Qwen/Qwen3.8-27B".to_string(),
+    });
+
+    store.save_state(&state).expect("save state");
+    let raw = fs::read_to_string(root.join("state.json")).expect("read state file");
+    let loaded = store.load_state().expect("load state");
+
+    assert_eq!(loaded, state);
+    assert!(raw.contains("\"privateMode\""), "{raw}");
+    assert!(raw.contains("\"modelId\""), "{raw}");
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn drops_a_malformed_private_mode_but_keeps_the_saved_session() {
+    let root = unique_temp_root("bad-private-mode");
+    fs::create_dir_all(&root).expect("create root");
+    fs::write(
+        root.join("state.json"),
+        r#"{"version":2,"settings":{"onboardingCompleted":true},"recentFolders":[],
+            "sessions":[{"id":"s-1","name":"Fix login","profileId":"qwen-code","cwd":"/tmp/project",
+                         "status":"terminated","createdAt":1,"privateMode":"x"}]}"#,
+    )
+    .expect("write state file");
+    let store = AppStore::new(root.clone());
+
+    let state = store.load_state().expect("load state");
+
+    assert_eq!(
+        state.sessions.len(),
+        1,
+        "the session survives its bad privateMode"
+    );
+    assert_eq!(state.sessions[0].private_mode, None);
+    fs::remove_dir_all(&root).ok();
 }

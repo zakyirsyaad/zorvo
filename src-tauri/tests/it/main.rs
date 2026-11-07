@@ -6,6 +6,7 @@ mod common;
 
 mod acp_jsonrpc_test;
 mod acp_manager_test;
+mod acp_private_errors_test;
 mod acp_prompt_blocks_test;
 mod acp_session_list_test;
 mod acp_session_reopen_test;

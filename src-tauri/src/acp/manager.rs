@@ -18,8 +18,10 @@ use super::permission_response::permission_response;
 use super::prompt_blocks::prompt_blocks;
 use super::terminal_auth::{terminal_method, SignInAttempts, TerminalMethodError};
 use crate::pty_session::validate_cwd;
+use private_errors::private_credits_error;
 
 mod elicitation_routes;
+mod private_errors;
 mod reopen;
 mod routing;
 
@@ -124,6 +126,16 @@ struct SessionEntry {
     auth_methods: Value,
     /// The folder the session works in.
     cwd: PathBuf,
+    /// A Zorvo Private session: NEAR AI's credit and key refusals are reported
+    /// as `PRIVATE_CREDITS:` errors, and the session is never offered a sign-in.
+    private: bool,
+}
+
+/// What opening a session learned that its entry keeps: the sign-in methods
+/// the agent reported, and whether the launch was private.
+struct EntryTraits {
+    auth_methods: Value,
+    private: bool,
 }
 
 #[derive(Default)]
@@ -208,6 +220,7 @@ impl AcpManager {
                 init,
                 "session/new",
                 json!({ "cwd": cwd, "mcpServers": [] }),
+                launch.private,
                 self.route_on_answer(key, app_session_id, None, true, false),
             )?;
             started_session(session, init["agentCapabilities"].clone()).map_err(OpenError::Agent)
@@ -256,12 +269,16 @@ impl AcpManager {
                 return Err(failure_message(&connection, error));
             }
         };
+        let traits = EntryTraits {
+            auth_methods,
+            private: launch.private,
+        };
         self.register(
             app_session_id,
             connection,
             connection_key,
             &started,
-            auth_methods,
+            traits,
             cwd,
         );
         self.set_opening(connection_key, None);
@@ -310,14 +327,18 @@ impl AcpManager {
         new_app_id: &str,
         cwd: &str,
     ) -> Result<StartedSession, String> {
-        let (connection, connection_key, acp_id, capabilities, auth_methods) =
+        let (connection, connection_key, acp_id, capabilities, traits) =
             self.with_entry(source_app_id, |e| {
                 (
                     Arc::clone(&e.connection),
                     e.connection_key,
                     e.acp_session_id.clone(),
                     e.agent_capabilities.clone(),
-                    e.auth_methods.clone(),
+                    // The fork lives in its source's process, so it is as private as its source.
+                    EntryTraits {
+                        auth_methods: e.auth_methods.clone(),
+                        private: e.private,
+                    },
                 )
             })?;
         // The UI offers fork only when the agent can, but don't rely on it.
@@ -336,7 +357,7 @@ impl AcpManager {
             connection,
             connection_key,
             &started,
-            auth_methods,
+            traits,
             cwd,
         );
         Ok(started)
@@ -349,13 +370,14 @@ impl AcpManager {
         text: &str,
         attachments: &[String],
     ) -> Result<(), String> {
-        let (connection, acp_id, capabilities, auth_methods) =
+        let (connection, acp_id, capabilities, auth_methods, private) =
             self.with_entry(app_session_id, |e| {
                 (
                     Arc::clone(&e.connection),
                     e.acp_session_id.clone(),
                     e.agent_capabilities.clone(),
                     e.auth_methods.clone(),
+                    e.private,
                 )
             })?;
         let supports_images = capabilities["promptCapabilities"]["image"] == Value::Bool(true);
@@ -368,10 +390,15 @@ impl AcpManager {
             Box::new(move |result| {
                 // An agent can open a session signed out and refuse only the
                 // prompt (Claude Code does): the UI then asks for a sign-in.
+                // A private session is never asked to sign in: used-up credits
+                // and a refused key come first, as `PRIVATE_CREDITS:` errors.
                 let stop_reason = result
                     .map(|r| r["stopReason"].as_str().unwrap_or("end_turn").to_string())
                     .map_err(|e| {
-                        if is_auth_required(&e, offers_sign_in(&auth_methods)) {
+                        if let Some(credits) = private.then(|| private_credits_error(&e)).flatten()
+                        {
+                            credits
+                        } else if is_auth_required(&e, offers_sign_in(&auth_methods)) {
                             auth_required_error(&auth_methods)
                         } else {
                             error_message(&e)
@@ -455,6 +482,13 @@ impl AcpManager {
     pub fn acp_session_id(&self, app_session_id: &str) -> Option<String> {
         self.with_entry(app_session_id, |e| e.acp_session_id.clone())
             .ok()
+    }
+
+    /// Whether the running session `app_session_id` is a Zorvo Private session
+    /// (false for an unknown id).
+    pub fn is_private_session(&self, app_session_id: &str) -> bool {
+        self.with_entry(app_session_id, |e| e.private)
+            .unwrap_or(false)
     }
 
     /// The app session ids of every running session, in no particular order.
@@ -569,7 +603,7 @@ impl AcpManager {
         connection: Arc<AcpConnection>,
         key: u64,
         started: &StartedSession,
-        auth_methods: Value,
+        traits: EntryTraits,
         cwd: &str,
     ) {
         if let Ok(mut routes) = self.routes.lock() {
@@ -584,8 +618,9 @@ impl AcpManager {
                     connection_key: key,
                     acp_session_id: started.acp_session_id.clone(),
                     agent_capabilities: started.agent_capabilities.clone(),
-                    auth_methods,
+                    auth_methods: traits.auth_methods,
                     cwd: PathBuf::from(cwd),
+                    private: traits.private,
                 },
             );
         }
@@ -702,11 +737,13 @@ fn offers_sign_in(auth_methods: &Value) -> bool {
 /// Opens a session; an "authentication required" answer becomes an error
 /// carrying [`AUTH_REQUIRED_PREFIX`] and the agent's auth methods. A
 /// successful answer also goes to `on_answer`, on the reader thread.
+/// `private` is whether the launch is a Zorvo Private one (see [`agent_error`]).
 pub(super) fn open_request(
     connection: &AcpConnection,
     init: &Value,
     method: &str,
     params: Value,
+    private: bool,
     on_answer: impl FnOnce(&Value) + Send + 'static,
 ) -> Result<Value, OpenError> {
     match connection
@@ -714,13 +751,18 @@ pub(super) fn open_request(
         .map_err(OpenError::Transport)?
     {
         Ok(result) => Ok(result),
-        Err(error) => Err(OpenError::Agent(agent_error(method, init, &error))),
+        Err(error) => Err(OpenError::Agent(agent_error(method, init, &error, private))),
     }
 }
 
-/// The error a request the agent refused reads as: the sign-in error the UI
-/// parses when it is about signing in, else `<method> failed: <its message>`.
-pub(super) fn agent_error(method: &str, init: &Value, error: &Value) -> String {
+/// The error a request the agent refused reads as: for a `private` launch
+/// whose credits are used up or whose key was refused, `PRIVATE_CREDITS:`
+/// (never a sign-in, since NEAR AI has none to offer); else the sign-in error
+/// the UI parses when it is about signing in; else `<method> failed: <its message>`.
+pub(super) fn agent_error(method: &str, init: &Value, error: &Value, private: bool) -> String {
+    if let Some(credits) = private.then(|| private_credits_error(error)).flatten() {
+        return credits;
+    }
     let auth_methods = auth_methods_of(init);
     // Only a request that opens a session may be refused for want of a sign-in on its code alone.
     let may_need_sign_in = matches!(method, "session/new" | "session/load" | "session/resume");
@@ -822,4 +864,76 @@ fn started_session(response: Value, agent_capabilities: Value) -> Result<Started
         config_options: response["configOptions"].clone(),
         reopened_with: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn credits_error() -> Value {
+        json!({ "code": -32603, "message": "Internal error",
+                "data": { "details": "402 api_key_limit_exceeded" } })
+    }
+
+    fn init_with_methods() -> Value {
+        json!({ "authMethods": [{ "id": "browser", "name": "Browser" }] })
+    }
+
+    #[test]
+    fn a_private_launch_reports_a_credit_refusal_of_a_session_request_as_private_credits() {
+        for method in ["session/new", "session/load", "session/resume"] {
+            let message = agent_error(method, &init_with_methods(), &credits_error(), true);
+
+            assert_eq!(
+                message, "PRIVATE_CREDITS:{\"reason\":\"empty\"}",
+                "{method}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_private_launch_reports_a_refused_key_as_the_key_reason() {
+        let error = json!({ "code": -32603, "message": "Internal error",
+                            "data": { "details": "401 Invalid or expired API key" } });
+
+        let message = agent_error("session/new", &init_with_methods(), &error, true);
+
+        assert_eq!(message, "PRIVATE_CREDITS:{\"reason\":\"key\"}");
+    }
+
+    #[test]
+    fn an_ordinary_launch_keeps_the_agents_error_text() {
+        let message = agent_error("session/new", &init_with_methods(), &credits_error(), false);
+
+        assert_eq!(
+            message,
+            "session/new failed: Internal error (402 api_key_limit_exceeded)"
+        );
+    }
+
+    #[test]
+    fn a_private_launch_keeps_the_old_rules_for_other_errors() {
+        let sign_in = json!({ "code": -32000, "message": "Authentication required" });
+        let plain = json!({ "code": -32603, "message": "Internal error" });
+
+        let needs_sign_in = agent_error("session/new", &init_with_methods(), &sign_in, true);
+        let failed = agent_error("session/new", &init_with_methods(), &plain, true);
+
+        assert!(
+            needs_sign_in.starts_with(AUTH_REQUIRED_PREFIX),
+            "{needs_sign_in}"
+        );
+        assert_eq!(failed, "session/new failed: Internal error");
+    }
+
+    #[test]
+    fn a_credit_refusal_that_arrives_as_32000_is_not_a_sign_in_for_a_private_launch() {
+        let error = json!({ "code": -32000, "message": "402 api_key_limit_exceeded" });
+
+        let message = agent_error("session/new", &init_with_methods(), &error, true);
+
+        assert_eq!(message, "PRIVATE_CREDITS:{\"reason\":\"empty\"}");
+    }
 }

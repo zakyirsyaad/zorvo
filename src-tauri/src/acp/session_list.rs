@@ -152,7 +152,7 @@ fn read_pages(connection: &AcpConnection, cwd: &str) -> Result<ListedSessions, S
                 }
             }
             Ok(Err(error)) if pages == 0 => {
-                return Err(agent_error("session/list", &init, &error));
+                return Err(agent_error("session/list", &init, &error, false));
             }
             Ok(Err(_)) => return Ok(incomplete(sessions)),
             Err(message) if pages == 0 => return Err(message),

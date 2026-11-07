@@ -137,6 +137,7 @@ impl AcpManager {
                     &init,
                     "session/new",
                     json!({ "cwd": cwd, "mcpServers": [] }),
+                    launch.private,
                     |_| {},
                 )?;
                 let awaited = Awaited {

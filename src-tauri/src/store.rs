@@ -179,6 +179,21 @@ pub struct SessionRecord {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub review_comments: Vec<ReviewCommentRecord>,
+    /// Set for a Zorvo Private session: the NEAR AI model it runs on. The key
+    /// is never saved; the backend makes the launch again from the model.
+    #[serde(
+        deserialize_with = "lenient_private_mode",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub private_mode: Option<PrivateModeRecord>,
+}
+
+/// What a saved Zorvo Private session remembers about its privacy mode.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateModeRecord {
+    /// The NEAR AI model id the session runs on.
+    pub model_id: String,
 }
 
 /// One comment on a line of a session's diff. The UI checks the values of
@@ -266,6 +281,16 @@ pub struct AppStore {
 fn lenient_worktree<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<SessionWorktreeRecord>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| serde_json::from_value(value).ok()))
+}
+
+/// A saved private-mode record, or none when it is malformed: a session that
+/// lost its record reads as an ordinary one, which is better than losing the
+/// whole state file.
+fn lenient_private_mode<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<PrivateModeRecord>, D::Error> {
     let value = Option::<serde_json::Value>::deserialize(deserializer)?;
     Ok(value.and_then(|value| serde_json::from_value(value).ok()))
 }
@@ -729,6 +754,49 @@ mod tests {
         assert_eq!(saved["sentAt"], 20);
         assert_eq!(saved["lineHash"], "deadbeef");
         assert_eq!(saved["createdAt"], 10);
+    }
+
+    #[test]
+    fn a_private_mode_record_round_trips_as_camel_case() {
+        let record: SessionRecord = serde_json::from_value(session_json(serde_json::json!({
+            "privateMode": { "modelId": "Qwen/Qwen3.8-27B" }
+        })))
+        .expect("deserialize");
+
+        assert_eq!(
+            record.private_mode,
+            Some(PrivateModeRecord {
+                model_id: "Qwen/Qwen3.8-27B".to_string()
+            })
+        );
+        let value = serde_json::to_value(&record).expect("serialize");
+        assert_eq!(value["privateMode"]["modelId"], "Qwen/Qwen3.8-27B");
+    }
+
+    #[test]
+    fn a_malformed_private_mode_loads_as_none_and_keeps_the_session() {
+        for bad in [
+            serde_json::json!("x"),
+            serde_json::json!(5),
+            serde_json::json!({}),
+            serde_json::json!({ "modelId": 3 }),
+            serde_json::Value::Null,
+        ] {
+            let record: SessionRecord =
+                serde_json::from_value(session_json(serde_json::json!({ "privateMode": bad })))
+                    .expect("a bad privateMode must not fail the record");
+
+            assert_eq!(record.private_mode, None, "{bad}");
+            assert_eq!(record.id, "s-1");
+            assert_eq!(record.name, "Fix login");
+        }
+    }
+
+    #[test]
+    fn a_session_without_private_mode_does_not_write_the_field() {
+        let value = serde_json::to_value(SessionRecord::default()).expect("serialize");
+
+        assert!(value.get("privateMode").is_none(), "{value}");
     }
 
     #[test]

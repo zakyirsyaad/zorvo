@@ -40,6 +40,9 @@
 //   FAKE_ACP_WRITE_FILES -> a JSON object of relative paths and contents, written into the
 //                         session's folder when a "permission" prompt is answered "allow",
 //                         and by "crash" just before it exits
+//   FAKE_ACP_PRIVATE_ERROR=<401|402> -> every session/prompt is refused as Qwen Code reports NEAR AI's
+//                         HTTP status: -32603 "Internal error" with data.details "402 api_key_limit_exceeded"
+//                         (credits used up) or "401 Invalid or expired API key"
 // (each other FAKE_ACP_* flag is documented where it is read below)
 import { appendFileSync, closeSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -119,6 +122,14 @@ function elicit(promptId, sessionId, requests, doneOnAccept = null) {
 }
 
 function handlePrompt(id, params) {
+  const privateError = {
+    402: "402 api_key_limit_exceeded",
+    401: "401 Invalid or expired API key",
+  }[process.env.FAKE_ACP_PRIVATE_ERROR];
+  if (privateError) {
+    send({ id, error: { code: -32603, message: "Internal error", data: { details: privateError } } });
+    return;
+  }
   const text = params.prompt.map((block) => block.text ?? "").join("");
   if (elicitations[text]) {
     elicit(id, params.sessionId, elicitations[text](params.sessionId));

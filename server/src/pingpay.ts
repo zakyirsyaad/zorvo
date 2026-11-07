@@ -21,6 +21,17 @@ import { hmacSha256Hex, timingSafeEqual } from "./crypto";
  */
 
 const SESSION_STATUSES = ["CREATED", "PENDING", "COMPLETED", "EXPIRED", "CANCELLED"] as const;
+
+/**
+ * NEAR's native USDC as PingPay names a NEP-141 asset: `nep141:<token contract>`, the form PingPay's
+ * docs show for wNEAR (`nep141:wrap.near`). The docs (read 2026-11-07) name no id for USDC; the
+ * contract is Circle's native USDC on NEAR mainnet. Confirm it on the first live checkout.
+ */
+export const NEAR_USDC_ASSET_ID = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
+const USDC_DECIMALS = 6;
+
+/** What a session charges: `amount` base units of `assetId`. */
+export type SessionAmount = { assetId: string; amount: string };
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
 
 /** How far a webhook's timestamp may be from now, either way. */
@@ -54,6 +65,23 @@ function sessionOf(body: unknown): Json {
   return body.session;
 }
 
+function amountOf(session: Json): SessionAmount {
+  const { amount } = session;
+  if (!isRecord(amount) || typeof amount.assetId !== "string" || typeof amount.amount !== "string" || !/^[0-9]+$/.test(amount.amount)) {
+    return unexpected("session amount");
+  }
+  // `decimals` is optional in the schema; when given for NEAR USDC it must be USDC's.
+  if (amount.assetId === NEAR_USDC_ASSET_ID && amount.decimals !== undefined && amount.decimals !== USDC_DECIMALS) {
+    return unexpected("session amount decimals");
+  }
+  return { assetId: amount.assetId, amount: amount.amount };
+}
+
+/** Whether a session charges exactly `amountUsdc` base units of NEAR USDC. */
+export function chargesUsdc(amount: SessionAmount, amountUsdc: string): boolean {
+  return amount.assetId === NEAR_USDC_ASSET_ID && amount.amount === amountUsdc;
+}
+
 export class PingPayClient {
   private readonly base: string;
 
@@ -84,7 +112,8 @@ export class PingPayClient {
 
   /**
    * A hosted checkout for `amountUsdc` USDC base units on NEAR. `recipient` is the account the money
-   * must reach: PingPay takes the payee from the dashboard, so a session paying anyone else is refused.
+   * must reach: PingPay takes the payee from the dashboard, so a session paying anyone else is refused,
+   * as is one that charges another amount or asset.
    */
   async createSession(input: {
     amountUsdc: string;
@@ -108,18 +137,19 @@ export class PingPayClient {
     if (!isRecord(session.recipient) || session.recipient.address !== input.recipient) {
       return unexpected("session pays another recipient than the operator account");
     }
+    if (!chargesUsdc(amountOf(session), input.amountUsdc)) return unexpected("session amount is not the requested USDC amount");
     const { expiresAt } = session;
     if (typeof expiresAt !== "string" || !Number.isFinite(Date.parse(expiresAt))) return unexpected("session expiresAt");
     return { sessionId: session.sessionId as string, sessionUrl, expiresAt };
   }
 
-  async getSession(id: string): Promise<{ status: SessionStatus; paymentId: string | null }> {
+  async getSession(id: string): Promise<{ status: SessionStatus; paymentId: string | null; amount: SessionAmount }> {
     const session = sessionOf(await this.request("GET", `/checkout/sessions/${encodeURIComponent(id)}`));
     const status = SESSION_STATUSES.find((known) => known === session.status);
     if (status === undefined) return unexpected("session status");
     const { paymentId } = session;
     if (paymentId != null && typeof paymentId !== "string") return unexpected("session paymentId");
-    return { status, paymentId: paymentId ?? null };
+    return { status, paymentId: paymentId ?? null, amount: amountOf(session) };
   }
 
   /** A payment's status; it is final when `SUCCESS` or `FAILED`. */

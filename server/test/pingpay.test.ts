@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { hmacSha256Hex } from "../src/crypto";
-import { PingPayClient, PingPayError, verifyWebhook } from "../src/pingpay";
+import { NEAR_USDC_ASSET_ID, PingPayClient, PingPayError, verifyWebhook } from "../src/pingpay";
 
 const BASE = "https://ping.test/api";
 const KEY = "pk-test-secret";
@@ -38,13 +38,13 @@ const sessionInput = {
   cancelUrl: "https://example.test/cancelled",
 };
 
-function createdSession(recipient = "operator.near") {
+function createdSession(recipient = "operator.near", amount: Record<string, unknown> = { assetId: NEAR_USDC_ASSET_ID, amount: "5000000" }) {
   return json({
     session: {
       sessionId: "cs_1",
       status: "CREATED",
       paymentId: null,
-      amount: { assetId: "nep141:usdc.near", amount: "5000000" },
+      amount,
       recipient: { address: recipient },
       createdAt: "2027-01-15T08:00:00.000Z",
       expiresAt: "2027-01-15T08:15:00.000Z",
@@ -82,29 +82,63 @@ describe("PingPayClient", () => {
     await expect(new PingPayClient(BASE, KEY, fetcher).createSession(sessionInput)).rejects.toThrow(/recipient/);
   });
 
+  it.each([
+    ["another amount", { assetId: NEAR_USDC_ASSET_ID, amount: "500000" }],
+    ["another asset", { assetId: "nep141:wrap.near", amount: "5000000" }],
+    ["other decimals", { assetId: NEAR_USDC_ASSET_ID, amount: "5000000", decimals: 18 }],
+    ["no amount", null],
+  ])("refuses a session that would charge %s", async (_name, amount) => {
+    const { fetcher } = stubFetch(() => createdSession("operator.near", amount as Record<string, unknown>));
+    await expect(new PingPayClient(BASE, KEY, fetcher).createSession(sessionInput)).rejects.toThrow(/amount/);
+  });
+
+  it("accepts a session answer that states USDC's 6 decimals", async () => {
+    const { fetcher } = stubFetch(() => createdSession("operator.near", { assetId: NEAR_USDC_ASSET_ID, amount: "5000000", decimals: 6 }));
+    await expect(new PingPayClient(BASE, KEY, fetcher).createSession(sessionInput)).resolves.toMatchObject({ sessionId: "cs_1" });
+  });
+
   it("refuses a session answer without a usable expiry", async () => {
     const { fetcher } = stubFetch(() =>
-      json({ session: { sessionId: "cs_1", status: "CREATED", recipient: { address: "operator.near" } }, sessionUrl: "https://c.test/s" }),
+      json({
+        session: {
+          sessionId: "cs_1",
+          status: "CREATED",
+          amount: { assetId: NEAR_USDC_ASSET_ID, amount: "5000000" },
+          recipient: { address: "operator.near" },
+        },
+        sessionUrl: "https://c.test/s",
+      }),
     );
     await expect(new PingPayClient(BASE, KEY, fetcher).createSession(sessionInput)).rejects.toThrow(/expiresAt/);
   });
 
-  it("reads a session's status and payment id", async () => {
+  const usdc = { assetId: NEAR_USDC_ASSET_ID, amount: "5000000" };
+
+  it("reads a session's status, payment id and amount", async () => {
     const { fetcher, calls } = stubFetch(() =>
-      json({ session: { sessionId: "cs_1", status: "COMPLETED", paymentId: "pay_1", recipient: { address: "operator.near" } } }),
+      json({ session: { sessionId: "cs_1", status: "COMPLETED", paymentId: "pay_1", amount: usdc, recipient: { address: "operator.near" } } }),
     );
-    expect(await new PingPayClient(BASE, KEY, fetcher).getSession("cs_1")).toEqual({ status: "COMPLETED", paymentId: "pay_1" });
+    expect(await new PingPayClient(BASE, KEY, fetcher).getSession("cs_1")).toEqual({
+      status: "COMPLETED",
+      paymentId: "pay_1",
+      amount: { assetId: NEAR_USDC_ASSET_ID, amount: "5000000" },
+    });
     expect(calls[0]).toMatchObject({ url: `${BASE}/checkout/sessions/cs_1`, method: "GET" });
     expect(calls[0]?.headers.get("x-api-key")).toBe(KEY);
   });
 
   it("reads a session without a payment yet", async () => {
-    const { fetcher } = stubFetch(() => json({ session: { sessionId: "cs_1", status: "CREATED", paymentId: null } }));
-    expect(await new PingPayClient(BASE, KEY, fetcher).getSession("cs_1")).toEqual({ status: "CREATED", paymentId: null });
+    const { fetcher } = stubFetch(() => json({ session: { sessionId: "cs_1", status: "CREATED", paymentId: null, amount: usdc } }));
+    expect(await new PingPayClient(BASE, KEY, fetcher).getSession("cs_1")).toEqual({ status: "CREATED", paymentId: null, amount: usdc });
+  });
+
+  it("rejects a session without an amount", async () => {
+    const { fetcher } = stubFetch(() => json({ session: { sessionId: "cs_1", status: "COMPLETED", paymentId: "pay_1" } }));
+    await expect(new PingPayClient(BASE, KEY, fetcher).getSession("cs_1")).rejects.toThrow(/amount/);
   });
 
   it("rejects a session status it does not know", async () => {
-    const { fetcher } = stubFetch(() => json({ session: { sessionId: "cs_1", status: "PAID", paymentId: null } }));
+    const { fetcher } = stubFetch(() => json({ session: { sessionId: "cs_1", status: "PAID", paymentId: null, amount: usdc } }));
     await expect(new PingPayClient(BASE, KEY, fetcher).getSession("cs_1")).rejects.toThrow(/session/);
   });
 

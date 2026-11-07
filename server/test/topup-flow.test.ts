@@ -1,10 +1,11 @@
 import { runInDurableObject } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseConfig, type Env } from "../src/config";
 import { hmacSha256Hex, randomSecret, sha256Hex } from "../src/crypto";
 import type { Ledger } from "../src/ledger/Ledger";
 import { canMove, type TopupStatus } from "../src/ledger/status";
+import { NEAR_USDC_ASSET_ID } from "../src/pingpay";
 
 const ledgerEnv = env as unknown as Env;
 const cfg = parseConfig(ledgerEnv);
@@ -23,11 +24,16 @@ type SessionStatus = "CREATED" | "PENDING" | "COMPLETED" | "EXPIRED" | "CANCELLE
 
 /** A stand-in for PingPay: sessions it created, their payments, and every request it saw. */
 class FakePingPay {
-  sessions = new Map<string, { status: SessionStatus; paymentId: string | null; body: Record<string, unknown> }>();
+  sessions = new Map<
+    string,
+    { status: SessionStatus; paymentId: string | null; body: Record<string, unknown>; amount: Record<string, unknown> }
+  >();
   payments = new Map<string, string>();
   calls: { method: string; url: string; apiKey: string | null }[] = [];
   failCreate = false;
   failReads = false;
+  /** The amount a new session's answer states; by default what was asked, in NEAR USDC. */
+  answerAmount = (requested: unknown): Record<string, unknown> => ({ assetId: NEAR_USDC_ASSET_ID, amount: requested });
   /** How long a new session lives, from the `now` it is given. */
   expiresAt = (): number => Date.now() + 15 * MINUTE_MS;
   private next = 0;
@@ -41,13 +47,14 @@ class FakePingPay {
       this.next += 1;
       const sessionId = `cs_${this.next}`;
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      this.sessions.set(sessionId, { status: "CREATED", paymentId: null, body });
+      const amount = this.answerAmount(body.amount);
+      this.sessions.set(sessionId, { status: "CREATED", paymentId: null, body, amount });
       return json({
         session: {
           sessionId,
           status: "CREATED",
           paymentId: null,
-          amount: { assetId: "nep141:usdc", amount: body.amount },
+          amount,
           recipient: { address: cfg.operatorAccount },
           createdAt: new Date().toISOString(),
           expiresAt: new Date(this.expiresAt()).toISOString(),
@@ -59,7 +66,9 @@ class FakePingPay {
     const session = /\/checkout\/sessions\/([^/]+)$/.exec(url.pathname);
     if (method === "GET" && session) {
       const found = this.sessions.get(decodeURIComponent(session[1]!));
-      return found ? json({ session: { sessionId: session[1], status: found.status, paymentId: found.paymentId } }) : json({}, 404);
+      return found
+        ? json({ session: { sessionId: session[1], status: found.status, paymentId: found.paymentId, amount: found.amount } })
+        : json({}, 404);
     }
     const payment = /\/payments\/([^/]+)$/.exec(url.pathname);
     if (method === "GET" && payment) {
@@ -75,6 +84,20 @@ class FakePingPay {
     const paymentId = `pay_${sessionId}`;
     this.sessions.set(sessionId, { ...session, status: "COMPLETED", paymentId });
     this.payments.set(paymentId, status);
+  }
+
+  /** The session reads COMPLETED before PingPay has attached a payment to it. */
+  completeWithoutPayment(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error(`no session ${sessionId}`);
+    this.sessions.set(sessionId, { ...session, status: "COMPLETED", paymentId: null });
+  }
+
+  /** Changes the amount PingPay reports for a session from now on. */
+  restate(sessionId: string, amount: Record<string, unknown>): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error(`no session ${sessionId}`);
+    this.sessions.set(sessionId, { ...session, amount });
   }
 
   expire(sessionId: string): void {
@@ -148,12 +171,20 @@ async function statusOf(secret: string, topupId: string): Promise<{ status: stri
   return (await res.json()) as { status: string; credits: number };
 }
 
+let consoleError: ReturnType<typeof vi.spyOn>;
+
 beforeEach(async () => {
+  // The Ledger logs PingPay failures; a test that expects one asserts on this spy, the rest stay quiet.
+  consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
   ping = new FakePingPay();
   await runInDurableObject(stub(), (ledger: Ledger, state) => {
     for (const table of ["snapshot", "reservations", "topups", "queue", "events"]) state.storage.sql.exec(`DELETE FROM ${table}`);
     ledger.fetcher = ping.fetcher;
   });
+});
+
+afterEach(() => {
+  consoleError.mockRestore();
 });
 
 describe("canMove", () => {
@@ -233,6 +264,20 @@ describe("POST /v1/topups", () => {
     expect(topups).toEqual([expect.objectContaining({ id: topupId, status: "created", ping_session_id: sessionId, reserved_until: until })]);
     expect(reservations).toEqual([expect.objectContaining({ topup_id: topupId, expires_at: until })]);
     expect(await statusOf(secret, topupId)).toEqual({ status: "created", credits: 500 });
+  });
+
+  it("answers 502 upstream when PingPay's session charges another amount or asset, releasing the stock", async () => {
+    await seedStock(500, Date.now());
+    const { deviceId, secret } = await newDevice();
+    ping.answerAmount = () => ({ assetId: NEAR_USDC_ASSET_ID, amount: "50000" });
+    expect((await topUp(secret, 5)).status).toBe(502);
+    ping.answerAmount = (requested) => ({ assetId: "nep141:wrap.near", amount: requested });
+    expect((await topUp(secret, 5)).status).toBe(502);
+
+    const { topups, reservations } = await rows();
+    expect(topups.map((t) => t.status)).toEqual(["failed", "failed"]);
+    expect(reservations).toEqual([]);
+    expect((await stub().stockFor(deviceId)).availableCredits).toBe(500);
   });
 
   it("answers 502 upstream when PingPay fails, releasing the stock and failing the top-up", async () => {
@@ -320,25 +365,92 @@ describe("POST /v1/webhooks/pingpay", () => {
     expect((await stub().stockFor(deviceId)).availableCredits).toBe(500);
   });
 
-  it("fails a top-up whose payment failed", async () => {
+  it("a failed payment changes nothing, and a later success in the same session pays", async () => {
     await seedStock(500, Date.now());
     const { secret } = await newDevice();
     const { topupId, sessionId } = await topUpOk(secret);
     ping.pay(sessionId, "FAILED");
-    await webhook("checkout.session.completed", sessionId, "evt_1");
-    expect(await statusOf(secret, topupId)).toEqual({ status: "failed", credits: 500 });
-    expect((await rows()).reservations).toEqual([]);
-    expect((await rows()).queue).toEqual([]);
+    expect((await webhook("checkout.session.completed", sessionId, "evt_1")).status).toBe(200);
+    expect(await statusOf(secret, topupId)).toEqual({ status: "created", credits: 500 });
+    const afterFailure = await rows();
+    expect(afterFailure.reservations).toHaveLength(1);
+    expect(afterFailure.queue).toEqual([]);
+    expect(afterFailure.events.map((e) => e.id)).toEqual(["evt_1"]);
+
+    ping.pay(sessionId, "SUCCESS");
+    expect((await webhook("checkout.session.completed", sessionId, "evt_2")).status).toBe(200);
+    expect(await statusOf(secret, topupId)).toEqual({ status: "paid", credits: 500 });
+    expect((await rows()).queue).toHaveLength(1);
   });
 
-  it("leaves a completed checkout whose payment is not final unchanged", async () => {
+  it("a cancelled top-up whose payment failed stays expired and still ends paid on a later success", async () => {
     await seedStock(500, Date.now());
     const { secret } = await newDevice();
     const { topupId, sessionId } = await topUpOk(secret);
-    ping.pay(sessionId, "PROCESSING");
-    await webhook("checkout.session.completed", sessionId, "evt_1");
+    await call(`/v1/topups/${topupId}/cancel`, { method: "POST", secret });
+    ping.pay(sessionId, "FAILED");
+    expect((await webhook("checkout.session.completed", sessionId, "evt_1")).status).toBe(200);
+    expect(await statusOf(secret, topupId)).toEqual({ status: "expired", credits: 500 });
+
+    ping.pay(sessionId, "SUCCESS");
+    expect((await webhook("checkout.session.completed", sessionId, "evt_2")).status).toBe(200);
+    expect(await statusOf(secret, topupId)).toEqual({ status: "paid", credits: 500 });
+  });
+
+  it.each([
+    ["is still processing", "PROCESSING"],
+    ["is pending", "PENDING"],
+    ["has an incomplete deposit", "INCOMPLETE_DEPOSIT"],
+  ])("asks for a redelivery while the payment %s, then pays exactly once", async (_name, paymentStatus) => {
+    await seedStock(500, Date.now());
+    const { secret } = await newDevice();
+    const { topupId, sessionId } = await topUpOk(secret);
+    await call(`/v1/topups/${topupId}/cancel`, { method: "POST", secret });
+    ping.pay(sessionId, paymentStatus);
+    const early = await webhook("checkout.session.completed", sessionId, "evt_1");
+    expect(early.status).toBe(503);
+    expect(await early.json()).toEqual({ error: "upstream" });
+    expect(await statusOf(secret, topupId)).toEqual({ status: "expired", credits: 500 });
+    expect((await rows()).events).toEqual([]);
+
+    ping.pay(sessionId, "SUCCESS");
+    expect((await webhook("checkout.session.completed", sessionId, "evt_1")).status).toBe(200);
+    expect((await webhook("checkout.session.completed", sessionId, "evt_1")).status).toBe(200);
+    expect(await statusOf(secret, topupId)).toEqual({ status: "paid", credits: 500 });
+    const { queue, events } = await rows();
+    expect(queue).toEqual([expect.objectContaining({ kind: "credit", ref: topupId })]);
+    expect(events.map((e) => e.id)).toEqual(["evt_1"]);
+  });
+
+  it("asks for a redelivery while a completed session has no payment yet", async () => {
+    await seedStock(500, Date.now());
+    const { secret } = await newDevice();
+    const { topupId, sessionId } = await topUpOk(secret);
+    ping.completeWithoutPayment(sessionId);
+    expect((await webhook("checkout.session.completed", sessionId, "evt_1")).status).toBe(503);
     expect(await statusOf(secret, topupId)).toEqual({ status: "created", credits: 500 });
-    expect((await rows()).queue).toEqual([]);
+    expect((await rows()).events).toEqual([]);
+  });
+
+  it.each([
+    ["another amount", { assetId: NEAR_USDC_ASSET_ID, amount: "1000000" }],
+    ["another asset", { assetId: "nep141:wrap.near", amount: "5000000" }],
+  ])("neither credits nor drops a successful payment of %s, and logs it", async (_name, amount) => {
+    await seedStock(500, Date.now());
+    const { secret } = await newDevice();
+    const { topupId, sessionId } = await topUpOk(secret);
+    ping.pay(sessionId);
+    ping.restate(sessionId, amount);
+    expect((await webhook("checkout.session.completed", sessionId, "evt_1")).status).toBe(503);
+    expect(await statusOf(secret, topupId)).toEqual({ status: "created", credits: 500 });
+    const { queue, events, reservations } = await rows();
+    expect([queue, events]).toEqual([[], []]);
+    expect(reservations).toHaveLength(1);
+    const logged = consoleError.mock.calls.map((args: unknown[]) => args.join(" ")).join("\n");
+    expect(logged).toContain(topupId);
+    expect(logged).toContain("5000000");
+    expect(logged).toContain(String(amount.amount));
+    expect(logged).not.toContain("test-pingpay-key");
   });
 
   it("answers 401 to a bad or stale signature and changes nothing", async () => {
@@ -398,6 +510,10 @@ describe("POST /v1/webhooks/pingpay", () => {
     ping.failReads = true;
     expect((await webhook("checkout.session.completed", sessionId, "evt_1")).status).toBe(502);
     expect((await rows()).events).toEqual([]);
+    const logged = consoleError.mock.calls.map((args: unknown[]) => args.join(" ")).join("\n");
+    expect(logged).toContain("PingPayError");
+    expect(logged).toContain("503");
+    expect(logged).not.toContain("test-pingpay-key");
 
     ping.failReads = false;
     expect((await webhook("checkout.session.completed", sessionId, "evt_1")).status).toBe(200);

@@ -60,7 +60,9 @@ async function pingPayWebhook(req: Request, env: Env): Promise<Response> {
   if (typeof resourceId !== "string" || resourceId === "") return error("bad_request", 400);
 
   const result = await ledgerOf(env).webhookEvent(resourceId, id, Date.now());
-  return "error" in result ? error("upstream", 502) : json({ received: true });
+  if (!("error" in result)) return json({ received: true });
+  // 502: PingPay could not be read. 503: the session is not settled yet. Either way PingPay redelivers.
+  return error("upstream", result.error === "retry" ? 503 : 502);
 }
 
 export default {

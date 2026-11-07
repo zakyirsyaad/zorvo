@@ -6,7 +6,7 @@ export type ErrorCode =
   | "stock" // 409
   | "device_cap" // 409
   | "rate_limited" // 429
-  | "upstream"; // 502
+  | "upstream"; // 502, or 503 when a webhook should be delivered again later
 
 export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

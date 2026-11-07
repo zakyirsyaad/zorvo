@@ -3,7 +3,7 @@ import { parseConfig, type Config, type Env } from "../config";
 import { creditsForPackage, usdcAmount } from "../credits";
 import { decrypt, encrypt } from "../crypto";
 import { NearAiClient, NearAiError } from "../nearai";
-import { PingPayClient } from "../pingpay";
+import { chargesUsdc, PingPayClient } from "../pingpay";
 import { applySchema } from "./schema";
 import { canMove, type TopupStatus } from "./status";
 import { computeStock, type StockView } from "./stock";
@@ -17,6 +17,11 @@ const HELD_UNTIL_CREDITED = Number.MAX_SAFE_INTEGER;
 /** Where PingPay sends the payer after the checkout; the README's "After a checkout" section. */
 const CHECKOUT_PAID_URL = "https://github.com/zakyirsyaad/zorvo/blob/main/server/README.md#checkout-paid";
 const CHECKOUT_CANCELLED_URL = "https://github.com/zakyirsyaad/zorvo/blob/main/server/README.md#checkout-cancelled";
+/** Payment statuses that are final without the money arriving. They change nothing: the payer may retry in the same session. */
+const FINAL_UNPAID = new Set(["FAILED", "REFUNDED"]);
+
+/** What a session event comes to once PingPay was read; `retry` is not recorded, so a redelivery is handled. */
+type SessionOutcome = "paid" | "expired" | "nothing" | "retry";
 const SNAPSHOT_ID = 1;
 const OPERATOR_ID = 1;
 /** How long a fresh access token is trusted; the operator session is refreshed on a 30-minute cadence (spec 7.6). */
@@ -410,46 +415,80 @@ export class Ledger extends DurableObject<Env> {
 
   /**
    * Applies what PingPay says about a checkout session, read again from PingPay rather than taken
-   * from the event. Idempotent by `eventId` when one is given. The event is recorded only once the
-   * session was read, in the same synchronous block as the change, so a failed read can be retried
-   * by a redelivery; a duplicate arriving meanwhile is caught by the second check.
+   * from the event. Idempotent by `eventId` when one is given.
    */
   async onSessionEvent(sessionId: string, eventId: string | null, now: number): Promise<void> {
-    if (eventId !== null && this.seenEvent(eventId)) return;
-    const found = this.sql.exec<{ id: string }>("SELECT id FROM topups WHERE ping_session_id = ?", sessionId).toArray()[0];
-    if (!found) return;
+    await this.applySessionEvent(sessionId, eventId, now);
+  }
 
-    const client = this.pingPay();
-    const session = await client.getSession(sessionId);
-    const payment = session.status === "COMPLETED" && session.paymentId !== null ? await client.getPayment(session.paymentId) : null;
-
-    // From here on nothing awaits: the rows are re-read, since a request may have changed them meanwhile.
-    if (eventId !== null) {
-      if (this.seenEvent(eventId)) return;
-      this.sql.exec("INSERT INTO events (id, received_at) VALUES (?, ?)", eventId, now);
-    }
-    const topupId = found.id;
-    if (payment?.status === "SUCCESS") {
-      this.sql.exec("UPDATE topups SET ping_payment_id = ? WHERE id = ?", session.paymentId, topupId);
-      this.settlePaid(topupId, now);
-    } else if (payment?.status === "FAILED") {
-      if (this.move(topupId, "failed", now)) this.releaseReservation(topupId);
-    } else if (session.status === "EXPIRED" || session.status === "CANCELLED") {
-      if (this.move(topupId, "expired", now)) this.releaseReservation(topupId);
+  /**
+   * `onSessionEvent` for the webhook route, with the outcome as a value rather than a throw across
+   * RPC: `upstream` when PingPay could not be read, `retry` when the session is not settled yet (or
+   * its amount is wrong). Neither records the event, so PingPay's redelivery is handled.
+   */
+  async webhookEvent(sessionId: string, eventId: string, now: number): Promise<{ ok: true } | { error: "upstream" | "retry" }> {
+    try {
+      return (await this.applySessionEvent(sessionId, eventId, now)) === "retry" ? { error: "retry" } : { ok: true };
+    } catch (error) {
+      // PingPay's error messages name the request and status only; headers and the key are never logged.
+      const { name, message } = error instanceof Error ? error : { name: "Error", message: String(error) };
+      console.error(`PingPay webhook for session ${sessionId} failed: ${name}: ${message}`);
+      return { error: "upstream" };
     }
   }
 
   /**
-   * `onSessionEvent` for the webhook route: a PingPay failure comes back as a value, not a throw
-   * across RPC. The event is then not recorded, so PingPay's redelivery is handled.
+   * The event is recorded only once its outcome is decided, in the same synchronous block as the
+   * change, so a failed read or an unsettled session is retried by a redelivery; a duplicate arriving
+   * meanwhile is caught by the second check. Returns `retry` without recording anything when the
+   * session is not settled yet or charges another amount than the top-up's.
    */
-  async webhookEvent(sessionId: string, eventId: string, now: number): Promise<{ ok: true } | { error: "upstream" }> {
-    try {
-      await this.onSessionEvent(sessionId, eventId, now);
-      return { ok: true };
-    } catch {
-      return { error: "upstream" };
+  private async applySessionEvent(sessionId: string, eventId: string | null, now: number): Promise<SessionOutcome> {
+    if (eventId !== null && this.seenEvent(eventId)) return "nothing";
+    const found = this.sql
+      .exec<{ id: string; package_usd: number }>("SELECT id, package_usd FROM topups WHERE ping_session_id = ?", sessionId)
+      .toArray()[0];
+    if (!found) return "nothing";
+
+    const outcome = await this.readSession(found.id, usdcAmount(found.package_usd), sessionId);
+    if (outcome.kind === "retry") return "retry";
+
+    // From here on nothing awaits: the rows are re-read, since a request may have changed them meanwhile.
+    if (eventId !== null) {
+      if (this.seenEvent(eventId)) return "nothing";
+      this.sql.exec("INSERT INTO events (id, received_at) VALUES (?, ?)", eventId, now);
     }
+    const topupId = found.id;
+    if (outcome.kind === "paid") {
+      this.sql.exec("UPDATE topups SET ping_payment_id = ? WHERE id = ?", outcome.paymentId, topupId);
+      this.settlePaid(topupId, now);
+    } else if (outcome.kind === "expired") {
+      if (this.move(topupId, "expired", now)) this.releaseReservation(topupId);
+    }
+    return outcome.kind;
+  }
+
+  /** Reads a session and its payment from PingPay and says what they come to for this top-up. */
+  private async readSession(
+    topupId: string,
+    amountUsdc: string,
+    sessionId: string,
+  ): Promise<{ kind: "paid"; paymentId: string } | { kind: Exclude<SessionOutcome, "paid"> }> {
+    const client = this.pingPay();
+    const session = await client.getSession(sessionId);
+    if (session.status === "EXPIRED" || session.status === "CANCELLED") return { kind: "expired" };
+    if (session.status !== "COMPLETED" || session.paymentId === null) return { kind: "retry" };
+
+    const payment = await client.getPayment(session.paymentId);
+    if (FINAL_UNPAID.has(payment.status)) return { kind: "nothing" };
+    if (payment.status !== "SUCCESS") return { kind: "retry" };
+    if (!chargesUsdc(session.amount, amountUsdc)) {
+      console.error(
+        `PingPay session for top-up ${topupId} charged ${session.amount.amount} of ${session.amount.assetId}, expected ${amountUsdc} USDC; not credited`,
+      );
+      return { kind: "retry" };
+    }
+    return { kind: "paid", paymentId: session.paymentId };
   }
 
   /**

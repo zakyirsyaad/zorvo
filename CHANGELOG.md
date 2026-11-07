@@ -4,12 +4,11 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-11-08
+
 ### Changed
 
 - **The site is easier to find and lighter to load.** The home page's title and description name the app and the agents it runs (Claude Code, Codex, Qwen Code), the docs pages carry a breadcrumb and article data for search engines, the landing page links its Compare and Review sections to their docs, and a missing page shows a proper 404 that is never indexed. Pages ship no JavaScript: the site has none of its own, so the build drops React's runtime, and the headline font is preloaded with a matched fallback so the page does not shift as it loads.
-
-### Changed
-
 - **The landing page shows Zorvo 0.9.** The hero picture is the new window: the two-line sidebar with a compare run, the top bar's chips, the chat and composer, and the inspector on its Changes tab. New sections show a compare run, from ticking agents to Pick, and the diff review with a comment on its line. The features, the agents' Settings rows, the plan and the permission card follow the app as it looks now.
 - **The landing page links to the source.** GitHub sits in the header, and the footer's Project column lists the source, releases, changelog, issues and the Apache 2.0 license.
 - **The docs describe Zorvo 0.9.** New pages explain compare runs and reviewing changes (comments on lines, Reply, the file view, Activity). The quickstart starts from the welcome screen and walks the sidebar, top bar and inspector; Terminal lives in the inspector; signing in covers the Agents menu, Set up Qwen Code and agents whose key lives in a variable; and the update card and failed-turn row are drawn as they look now.
@@ -273,7 +272,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.7.0...v0.8.0

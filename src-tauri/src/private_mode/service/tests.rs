@@ -708,11 +708,13 @@ fn a_failed_write_of_next_stops_before_the_server() {
 // ---- forget ----
 
 #[test]
-fn forget_device_deletes_every_item_and_resets_the_state_file() {
+fn forget_deletes_a_moved_device_and_resets_the_state_file() {
     let h = Harness::with_device(CODE);
     h.store.set(NEARAI_KEY, "sk-test").expect("seed");
-    h.store.set(DEVICE_SECRET_NEXT, OTHER_CODE).expect("seed");
+    h.set_state(&state_with_balance(50));
     h.mode.create_topup(10).expect("top-up");
+    h.api.balance.then(Err(PrivateError::Unauthorized));
+    assert_eq!(h.mode.status(false).device, DeviceState::Moved);
     h.mode.forget_device().expect("forgotten");
     for account in [DEVICE_SECRET, DEVICE_SECRET_NEXT, NEARAI_KEY] {
         assert_eq!(h.secret(account), None, "{account}");
@@ -720,6 +722,41 @@ fn forget_device_deletes_every_item_and_resets_the_state_file() {
     assert_eq!(h.state(), LocalState::default());
     assert_eq!(h.mode.open_checkout(TOPUP_ID), Err(PrivateError::NotFound));
     assert_eq!(h.mode.status(false).device, DeviceState::None);
+}
+
+#[test]
+fn forget_deletes_a_ready_device_without_credits() {
+    let h = Harness::with_device(CODE);
+    h.store.set(NEARAI_KEY, "sk-test").expect("seed");
+    h.set_state(&state_with_balance(0));
+    h.mode.forget_device().expect("forgotten");
+    for account in [DEVICE_SECRET, NEARAI_KEY] {
+        assert_eq!(h.secret(account), None, "{account}");
+    }
+}
+
+#[test]
+fn forget_without_a_device_is_a_no_op() {
+    let h = Harness::new();
+    h.mode.forget_device().expect("nothing to forget");
+    assert!(h.api.calls().is_empty());
+    assert_eq!(h.secret(DEVICE_SECRET), None);
+}
+
+#[test]
+fn forget_refuses_a_ready_device_with_credits_or_a_top_up() {
+    let h = Harness::with_device(CODE);
+    h.store.set(NEARAI_KEY, "sk-test").expect("seed");
+    h.set_state(&state_with_balance(50));
+    assert_eq!(h.mode.forget_device(), Err(PrivateError::HasOwnCredits));
+    assert_eq!(h.secret(DEVICE_SECRET).as_deref(), Some(CODE));
+    assert_eq!(h.secret(NEARAI_KEY).as_deref(), Some("sk-test"));
+
+    let h = Harness::with_device(CODE);
+    h.mode.create_topup(10).expect("top-up");
+    assert_eq!(h.mode.forget_device(), Err(PrivateError::HasOwnCredits));
+    assert_eq!(h.secret(DEVICE_SECRET).as_deref(), Some(CODE));
+    assert!(h.state().pending_topup.is_some());
 }
 
 // ---- the serialized status ----
@@ -752,19 +789,25 @@ fn lose_a_recovery(h: &Harness) -> String {
 }
 
 #[test]
-fn forget_refuses_while_a_recovery_is_unresolved_and_works_once_it_settles() {
+fn forget_never_deletes_a_recovery_it_had_to_settle() {
     let h = Harness::with_device(OTHER_CODE);
     let next = lose_a_recovery(&h);
     h.api.balance.then(Err(PrivateError::Unreachable));
     assert_eq!(h.mode.forget_device(), Err(PrivateError::Unreachable));
-    assert_eq!(h.secret(DEVICE_SECRET_NEXT), Some(next));
+    assert_eq!(h.secret(DEVICE_SECRET_NEXT), Some(next.clone()));
     assert_eq!(h.secret(DEVICE_SECRET).as_deref(), Some(OTHER_CODE));
 
+    // NEXT's balance succeeds: the recovery is promoted, and nothing deleted
     h.api.balance.then(Ok(balance(70, false)));
-    h.mode.forget_device().expect("forgotten after the settle");
-    for account in [DEVICE_SECRET, DEVICE_SECRET_NEXT, NEARAI_KEY] {
-        assert_eq!(h.secret(account), None, "{account}");
-    }
+    assert_eq!(h.mode.forget_device(), Err(PrivateError::Unreachable));
+    assert_eq!(h.secret(DEVICE_SECRET), Some(next.clone()));
+    assert_eq!(h.secret(DEVICE_SECRET_NEXT), None);
+    let state = h.state();
+    assert!(!state.recovery_saved && !state.recovery_prompted);
+
+    // a second stray call finds a ready device with credits and keeps it
+    assert_eq!(h.mode.forget_device(), Err(PrivateError::HasOwnCredits));
+    assert_eq!(h.secret(DEVICE_SECRET), Some(next));
 }
 
 #[test]
@@ -833,6 +876,18 @@ fn a_key_still_missing_after_the_rotation_window_reads_key_lost() {
 }
 
 #[test]
+fn a_clock_set_backwards_does_not_stretch_the_rotation_window() {
+    let h = Harness::with_device(CODE);
+    let now_ms = i64::try_from(now_secs() * 1000).expect("fits");
+    h.set_state(&LocalState {
+        rotation_expected_until: Some(now_ms + 2 * 15 * 60 * 1000),
+        ..LocalState::default()
+    });
+    h.api.balance.always(Ok(balance(70, true)));
+    assert_eq!(h.mode.status(false).key_error, Some(PrivateError::KeyLost));
+}
+
+#[test]
 fn a_moved_device_can_recover_another_code_and_forget_cleans_up() {
     let h = Harness::with_device(OTHER_CODE);
     h.set_state(&state_with_balance(50));
@@ -845,6 +900,11 @@ fn a_moved_device_can_recover_another_code_and_forget_cleans_up() {
     assert_eq!(h.secret(DEVICE_SECRET), Some(new));
     assert!(!h.state().moved);
 
+    // the recovered device is ready: the last balance (still 50) keeps it
+    // from Forget until a balance reads 0, then Forget leaves a clean state
+    assert_eq!(h.mode.forget_device(), Err(PrivateError::HasOwnCredits));
+    h.api.balance.then(Ok(balance(0, false)));
+    h.mode.status(false);
     h.mode.forget_device().expect("forgotten");
     assert_eq!(h.state(), LocalState::default());
 }

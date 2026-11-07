@@ -335,10 +335,13 @@ impl PrivateMode {
         Ok(())
     }
 
+    /// A deadline further ahead than the window means the clock was set
+    /// back; it then counts as passed, so `KeyLost` is never held off longer.
     fn rotation_expected(&self) -> bool {
+        let now = now_millis();
         self.load_state()
             .rotation_expected_until
-            .is_some_and(|until| now_millis() < until)
+            .is_some_and(|until| now < until && until.saturating_sub(now) <= ROTATION_WINDOW_MS)
     }
 
     /// Writes the key and reads it back; only a key that reads back the same
@@ -389,6 +392,7 @@ impl PrivateMode {
         match self.api.balance(&next, fresh) {
             Ok(balance) => {
                 self.promote(&next)?;
+                self.remember_balance(&balance);
                 Ok(Some((next, balance)))
             }
             Err(PrivateError::Unauthorized) => {
@@ -415,7 +419,7 @@ impl PrivateMode {
             recovery_saved: false,
             recovery_prompted: false,
             moved: false,
-            rotation_expected_until: Some(now_millis() + ROTATION_WINDOW_MS),
+            rotation_expected_until: Some(now_millis().saturating_add(ROTATION_WINDOW_MS)),
             ..old
         });
         Ok(())
@@ -454,13 +458,7 @@ impl PrivateMode {
         if normalize_recovery_code(&own).as_deref() == Some(typed) {
             return Ok(());
         }
-        let state = self.load_state();
-        if state.moved {
-            return Ok(());
-        }
-        let has_credits = state.last_balance.is_some_and(|last| last.credits > 0)
-            || state.pending_topup.is_some();
-        if has_credits {
+        if has_own_credits(&self.load_state()) {
             return Err(PrivateError::HasOwnCredits);
         }
         Ok(())
@@ -480,17 +478,27 @@ impl PrivateMode {
         .map(|_| ())
     }
 
-    /// Deletes every Keychain item and resets the state file. A recovery in
-    /// flight is settled first; while it cannot be, nothing is deleted, since
-    /// `device-secret-next` may be the only working secret. There is no other
-    /// guard here: the UI offers Forget only for a moved device.
+    /// Deletes every Keychain item and resets the state file. The UI offers
+    /// it only for a moved device; these guards keep a stray call from
+    /// wiping credits:
+    /// - a recovery in flight that cannot be settled: `Unreachable`, since
+    ///   `device-secret-next` may be the only working secret;
+    /// - a recovery settled by this very call: `Unreachable`, since the user
+    ///   has not seen the recovered device's code yet (the next status shows it);
+    /// - a device that is not moved and has credits or a top-up: `HasOwnCredits`.
+    ///
+    /// Without a device it only resets the state file.
     pub fn forget_device(&self) -> Result<(), PrivateError> {
         let _guard = lock(&self.handover);
-        self.finish_recovery_locked(false)
-            .map_err(|error| match error {
-                PrivateError::Keychain => PrivateError::Keychain,
-                _ => PrivateError::Unreachable,
-            })?;
+        match self.finish_recovery_locked(false) {
+            Ok(None) => {}
+            Ok(Some(_)) => return Err(PrivateError::Unreachable),
+            Err(PrivateError::Keychain) => return Err(PrivateError::Keychain),
+            Err(_) => return Err(PrivateError::Unreachable),
+        }
+        if self.store.get(DEVICE_SECRET)?.is_some() && has_own_credits(&self.load_state()) {
+            return Err(PrivateError::HasOwnCredits);
+        }
         for account in [NEARAI_KEY, DEVICE_SECRET_NEXT, DEVICE_SECRET] {
             self.store.delete(account)?;
         }
@@ -684,6 +692,16 @@ impl PrivateMode {
             report_storage_failure();
         }
     }
+}
+
+/// This Mac's device still holds credits or a top-up (and has not moved).
+fn has_own_credits(state: &LocalState) -> bool {
+    !state.moved
+        && (state
+            .last_balance
+            .as_ref()
+            .is_some_and(|last| last.credits > 0)
+            || state.pending_topup.is_some())
 }
 
 fn with_credit(last: Option<LastBalance>, credits: u64) -> LastBalance {

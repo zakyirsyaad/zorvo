@@ -52,6 +52,11 @@ describe("modelLabel", () => {
     expect(modelLabel("a/b/Some-Model-1")).toBe("Some Model 1");
     expect(modelLabel("plain-id")).toBe("plain id");
   });
+
+  it("falls back to the whole id when nothing follows the last slash", () => {
+    expect(modelLabel("a/")).toBe("a/");
+    expect(modelLabel("")).toBe("");
+  });
 });
 
 describe("formatCredits", () => {
@@ -80,6 +85,59 @@ describe("perTurnLabel", () => {
   it("uses the singular when it rounds to exactly one", () => {
     expect(perTurnLabel(model(0.4, 2.0))).toBe("≈ 1 credit a turn"); // 1.2 credits
     expect(perTurnLabel(model(0.33, 1.65))).toBe("≈ 1 credit a turn"); // 0.99 credit
+  });
+});
+
+describe("perTurnLabel boundaries", () => {
+  // Output-only price: credits per turn = outputPerM * 0.12.
+  const costing = (credits: number): ModelPrice => model(0, credits / 0.12);
+
+  it("never reads as free for a model that costs something", () => {
+    expect(perTurnLabel(model(0.01, 0.02))).toBe("< 0.1 credit a turn");
+    expect(perTurnLabel(costing(0.0264))).toBe("< 0.1 credit a turn");
+    expect(perTurnLabel(costing(0.04))).toBe("< 0.1 credit a turn");
+  });
+
+  it.each([
+    [0.05, "≈ 0.1 credit a turn"],
+    [0.95, "≈ 1 credit a turn"],
+    [0.96, "≈ 1 credit a turn"],
+    [1.49, "≈ 1 credit a turn"],
+    [1.5, "≈ 2 credits a turn"],
+    [1.96, "≈ 2 credits a turn"],
+    [2, "≈ 2 credits a turn"],
+  ])("words %s credits a turn as %s", (credits, label) => {
+    expect(perTurnLabel(costing(credits))).toBe(label);
+  });
+
+  it("prints 0 credits only for a model that costs nothing", () => {
+    expect(perTurnLabel(model(0, 0))).toBe("≈ 0 credits a turn");
+    for (const credits of [0.0264, 0.04, 0.05, 0.95, 0.96, 1.49, 1.5, 1.96, 2]) {
+      expect(perTurnLabel(costing(credits))).not.toContain("0 credits");
+    }
+  });
+});
+
+describe("non-finite and negative input", () => {
+  const bad = [model(Number.NaN, 1), model(1, Number.POSITIVE_INFINITY), model(-1, 1), model(1, -5), model(Number.MAX_VALUE, Number.MAX_VALUE)];
+
+  it("prices such a model at 0 credits a turn, never NaN or Infinity", () => {
+    for (const price of bad) {
+      expect(creditsPerTurn(price)).toBe(0);
+      expect(turnsFor(100, price)).toBe(0);
+      expect(perTurnLabel(price)).toBe("≈ 0 credits a turn");
+    }
+  });
+
+  it("formats a non-finite or negative amount as 0 credits", () => {
+    expect(formatCredits(Number.NaN)).toBe("0 credits");
+    expect(formatCredits(Number.POSITIVE_INFINITY)).toBe("0 credits");
+    expect(formatCredits(-3)).toBe("0 credits");
+  });
+
+  it("returns 0 turns for a non-finite balance", () => {
+    expect(turnsFor(Number.POSITIVE_INFINITY, model(3.3, 16.5))).toBe(0);
+    expect(turnsFor(Number.NaN, model(3.3, 16.5))).toBe(0);
   });
 });
 

@@ -131,30 +131,39 @@ export const TURN_OUTPUT_TOKENS = 1_000;
 /** Credits charged per US dollar of model cost. */
 export const CREDITS_PER_USD_COST = 120;
 
+/** Credits one turn costs; 0 for a price that is negative or not a finite number. */
 export function creditsPerTurn(model: ModelPrice): number {
-  const usd = (model.inputPerM * TURN_INPUT_TOKENS + model.outputPerM * TURN_OUTPUT_TOKENS) / 1e6;
-  return usd * CREDITS_PER_USD_COST;
+  const { inputPerM, outputPerM } = model;
+  if (![inputPerM, outputPerM].every((price) => Number.isFinite(price) && price >= 0)) return 0;
+  const usd = (inputPerM * TURN_INPUT_TOKENS + outputPerM * TURN_OUTPUT_TOKENS) / 1e6;
+  const credits = usd * CREDITS_PER_USD_COST;
+  return Number.isFinite(credits) ? credits : 0;
 }
 
 /** Whole turns a balance buys; 0 for a model with no price. */
 export function turnsFor(credits: number, model: ModelPrice): number {
   const perTurn = creditsPerTurn(model);
-  if (!(perTurn > 0) || credits <= 0) return 0;
+  if (perTurn === 0 || !Number.isFinite(credits) || credits <= 0) return 0;
   // The epsilon keeps 99 / 9.9 from landing just under 10.
   return Math.floor(credits / perTurn + 1e-9);
 }
 
 export function modelLabel(id: string): string {
-  return (id.split('/').pop() ?? id).replaceAll('-', ' ');
+  return (id.split('/').pop() || id).replaceAll('-', ' ');
 }
 
 export function formatCredits(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return '0 credits';
   return `${n.toLocaleString('en-US')} ${n === 1 ? 'credit' : 'credits'}`;
 }
 
-/** "≈ 0.3 credit a turn" under one credit, whole credits from there. */
+/** Below this, one decimal would round a paid model down to 0. */
+const MIN_SHOWN_PER_TURN = 0.05;
+
+/** "≈ 0.3 credit a turn" under one credit, whole credits from there; "< 0.1" never reads as free. */
 export function perTurnLabel(model: ModelPrice): string {
   const perTurn = creditsPerTurn(model);
+  if (perTurn > 0 && perTurn < MIN_SHOWN_PER_TURN) return '< 0.1 credit a turn';
   const shown = perTurn < 1 ? Math.round(perTurn * 10) / 10 : Math.round(perTurn);
   return `≈ ${shown} ${shown > 0 && shown <= 1 ? 'credit' : 'credits'} a turn`;
 }

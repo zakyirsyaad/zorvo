@@ -13,6 +13,12 @@ export interface AgentOptions {
   preferredConfig?: Readonly<Record<string, string>>;
   /** The model the user picked last among `models`, to start the next session with. */
   preferredModelId?: string;
+  /**
+   * Each model's effort option, as the agent reported it while that model was on: an agent reports the
+   * effort list of the model it runs only (Qwen Code: Low, High and Max for one model, Thinking on for
+   * another), so a draft that picks another model shows that model's list.
+   */
+  effortsByModel?: Readonly<Record<string, AcpConfigOption>>;
 }
 
 /** What the user picked in the composer before the agent runs: a mode, a model and config values by id. */
@@ -46,6 +52,44 @@ export function hasModelConfig(configOptions: readonly AcpConfigOption[]): boole
   return configOptions.some((o) => o.category === 'model' && o.options.length > 0);
 }
 
+type ReportedLists = Pick<AgentOptions, 'configOptions' | 'models'>;
+
+const isEffort = (option: AcpConfigOption) => option.category === 'thought_level';
+
+/** The model the agent ran when it reported these lists: its model option's value, else its `models` pick. */
+function reportedModelOf(lists: ReportedLists): string | undefined {
+  return lists.configOptions.find((o) => o.category === 'model')?.currentValue ?? lists.models?.currentModelId;
+}
+
+/** `known` with the effort list in `reported` kept under the model it was reported for. */
+export function withEffortList(known: AgentOptions, reported: ReportedLists = known): AgentOptions {
+  const model = reportedModelOf(reported);
+  const effort = reported.configOptions.find(isEffort);
+  if (!model || !effort) return known;
+  return { ...known, effortsByModel: { ...known.effortsByModel, [model]: effort } };
+}
+
+/** The remembered options after an update from a session, a pick or a probe, with its effort list kept under its model. */
+export function withReported(known: AgentOptions | undefined, update: Partial<AgentOptions>): AgentOptions {
+  return withEffortList({ modes: null, configOptions: [], ...known, ...update });
+}
+
+/** The model a draft will start on: picked for this session, else the agent's reported one. */
+function draftModelOf(options: AgentOptions, choices: AcpChoices): string | undefined {
+  const modelConfig = options.configOptions.find((o) => o.category === 'model');
+  return (modelConfig && choices.config[modelConfig.id]) ?? choices.modelId ?? reportedModelOf(options);
+}
+
+/**
+ * The agent's reported lists for a draft on `model`: on another model than the agent reported, the effort
+ * list is that model's, or none while it is unknown, never the reported model's.
+ */
+function listsForModel(options: AgentOptions, model: string | undefined): AcpConfigOption[] {
+  if (model === undefined || model === reportedModelOf(options)) return options.configOptions;
+  const effort = options.effortsByModel?.[model];
+  return options.configOptions.flatMap((o) => (isEffort(o) ? (effort ? [effort] : []) : [o]));
+}
+
 /** The model and effort a session runs with now, by config id. */
 export function keptConfigOf(configOptions: readonly AcpConfigOption[]): Record<string, string> {
   return Object.fromEntries(configOptions.filter(isKept).map((o): [string, string] => [o.id, o.currentValue]));
@@ -57,8 +101,17 @@ export function keptConfigOf(configOptions: readonly AcpConfigOption[]): Record<
  * session only, so without this every new session would start on its defaults.
  */
 export function withPreferred(choices: AcpChoices, options: AgentOptions | undefined): AcpChoices {
+  const isOffered = (lists: readonly AcpConfigOption[], configId: string, value: string) =>
+    lists.find((o) => o.id === configId)?.options.some((c) => c.value === value) ?? false;
+  // The model goes first: whether an effort is offered depends on the model the session starts on.
+  const modelConfig = options?.configOptions.find((o) => o.category === 'model');
+  const preferredModelPick = modelConfig && options?.preferredConfig?.[modelConfig.id];
+  const startModel =
+    (modelConfig && choices.config[modelConfig.id]) ??
+    (preferredModelPick && isOffered(options.configOptions, modelConfig.id, preferredModelPick) ? preferredModelPick : undefined);
+  const lists = options ? listsForModel(options, startModel ?? choices.modelId ?? options.preferredModelId) : [];
   const preferred = Object.entries(options?.preferredConfig ?? {}).filter(([configId, value]) =>
-    options?.configOptions.find((o) => o.id === configId)?.options.some((c) => c.value === value),
+    isOffered(lists, configId, value),
   );
   const preferredModel = options?.preferredModelId;
   const modelId =
@@ -102,9 +155,12 @@ export function draftInfo(options: AgentOptions, choices: AcpChoices): AcpOption
     ...options.modes,
     currentModeId: choices.modeId ?? (safe?.kind === 'mode' ? safe.modeId : options.modes.currentModeId),
   };
-  const configOptions = options.configOptions.map((option) => {
+  const configOptions = listsForModel(options, draftModelOf(options, choices)).map((option) => {
     const safeValue = safe?.kind === 'config' && safe.configId === option.id ? safe.value : undefined;
-    return { ...option, currentValue: choices.config[option.id] ?? safeValue ?? option.currentValue };
+    // A pick made on another model's list (an effort that model offered) is not shown on this one.
+    const picked = choices.config[option.id];
+    const pick = option.options.some((c) => c.value === picked) ? picked : undefined;
+    return { ...option, currentValue: pick ?? safeValue ?? option.currentValue };
   });
   const models = options.models
     ? { ...options.models, currentModelId: choices.modelId ?? options.models.currentModelId }

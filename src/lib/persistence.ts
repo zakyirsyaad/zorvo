@@ -111,6 +111,16 @@ function toPreferredModelId(raw: unknown): Pick<AgentOptions, 'preferredModelId'
   return typeof raw === 'string' ? { preferredModelId: raw } : {};
 }
 
+/** Each model's effort option, keeping only well-formed ones. */
+function toEffortsByModel(raw: unknown): Pick<AgentOptions, 'effortsByModel'> {
+  if (!isObject(raw)) return {};
+  const efforts = Object.entries(raw).flatMap(([model, option]) => {
+    const [valid] = toConfigOptions([option]);
+    return valid ? [[model, valid] as const] : [];
+  });
+  return efforts.length > 0 ? { effortsByModel: Object.fromEntries(efforts) } : {};
+}
+
 function toOneAgentOptions(options: Record<string, unknown>): AgentOptions {
   const models = toModels(options.models);
   return {
@@ -120,6 +130,7 @@ function toOneAgentOptions(options: Record<string, unknown>): AgentOptions {
     commands: toCommands(options.commands),
     ...toPreferredConfig(options.preferredConfig),
     ...toPreferredModelId(options.preferredModelId),
+    ...toEffortsByModel(options.effortsByModel),
   };
 }
 

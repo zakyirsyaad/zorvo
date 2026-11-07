@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { AcpConfigOption } from "../hooks/useAcpSessions";
 import {
   changesToApply,
   draftInfo,
@@ -7,6 +8,8 @@ import {
   NO_CHOICES,
   rememberedChoice,
   withPreferred,
+  withEffortList,
+  withReported,
   withProbed,
   type AgentOptions,
 } from "../lib/acp-draft";
@@ -272,5 +275,93 @@ describe("hasReportedOptions", () => {
     expect(hasReportedOptions({ modes: null, configOptions: [], preferredConfig: { model: "fast" } })).toBe(false);
     expect(hasReportedOptions({ modes: null, configOptions: [], commands: [{ name: "init", description: "Set up" }] })).toBe(true);
     expect(hasReportedOptions({ modes: { currentModeId: "default", availableModes: [] }, configOptions: [] })).toBe(true);
+  });
+});
+
+describe("an effort list follows its model", () => {
+  const toggle = { value: "default", name: "Thinking on" };
+  const kimiEffort = {
+    id: "reasoning_effort",
+    name: "Reasoning effort",
+    category: "thought_level",
+    currentValue: "default",
+    options: [toggle],
+  };
+  const deepseekEffort = {
+    ...kimiEffort,
+    currentValue: "high",
+    options: [
+      { value: "low", name: "Low" },
+      { value: "high", name: "High" },
+      { value: "max", name: "Max" },
+    ],
+  };
+  const modelOption = (currentValue: string) => ({
+    id: "model",
+    name: "Model",
+    category: "model",
+    currentValue,
+    options: [
+      { value: "kimi", name: "Kimi" },
+      { value: "deepseek", name: "DeepSeek" },
+      { value: "glm", name: "GLM" },
+    ],
+  });
+  const onKimi: AgentOptions = { modes: null, configOptions: [modelOption("kimi"), kimiEffort] };
+  const effortOf = (options: { configOptions: AcpConfigOption[] }) =>
+    options.configOptions.find((o) => o.category === "thought_level");
+
+  it("remembers the effort list under the model it was reported for", () => {
+    const remembered = withEffortList(withEffortList(onKimi), { configOptions: [modelOption("deepseek"), deepseekEffort] });
+
+    expect(remembered.effortsByModel).toEqual({ kimi: kimiEffort, deepseek: deepseekEffort });
+  });
+
+  it("shows the picked model's own effort list in a draft", () => {
+    const known = withEffortList(withEffortList(onKimi), { configOptions: [modelOption("deepseek"), deepseekEffort] });
+    const draft = { ...known, configOptions: [modelOption("kimi"), kimiEffort] };
+
+    const info = draftInfo(draft, { config: { model: "deepseek", reasoning_effort: "max" } });
+
+    expect(effortOf(info)?.options.map((o) => o.value)).toEqual(["low", "high", "max"]);
+    expect(effortOf(info)?.currentValue).toBe("max");
+  });
+
+  it("shows the picked model's own effort when the effort picked earlier is not on its list", () => {
+    const known = withEffortList(withEffortList(onKimi), { configOptions: [modelOption("deepseek"), deepseekEffort] });
+    const draft = { ...known, configOptions: [modelOption("kimi"), kimiEffort] };
+
+    const info = draftInfo(draft, { config: { reasoning_effort: "default", model: "deepseek" } });
+
+    expect(effortOf(info)?.currentValue).toBe("high");
+  });
+
+  it("shows no effort for a picked model whose list is not known yet, rather than another model's", () => {
+    const info = draftInfo(withEffortList(onKimi), { config: { model: "glm" } });
+
+    expect(effortOf(info)).toBeUndefined();
+  });
+
+  it("keeps the reported list while the draft stays on the model it came from", () => {
+    expect(effortOf(draftInfo(withEffortList(onKimi), NO_CHOICES))).toEqual(kimiEffort);
+  });
+
+  it("remembers what a session or probe reports, keeping the lists of the other models", () => {
+    const afterKimi = withReported(undefined, { configOptions: [modelOption("kimi"), kimiEffort] });
+    const afterDeepseek = withReported(afterKimi, { configOptions: [modelOption("deepseek"), deepseekEffort] });
+
+    expect(afterDeepseek.configOptions).toEqual([modelOption("deepseek"), deepseekEffort]);
+    expect(afterDeepseek.effortsByModel).toEqual({ kimi: kimiEffort, deepseek: deepseekEffort });
+  });
+
+  it("starts with the effort picked last when the model picked last offers it", () => {
+    const known = withEffortList(withEffortList(onKimi), { configOptions: [modelOption("deepseek"), deepseekEffort] });
+    const draft = {
+      ...known,
+      configOptions: [modelOption("kimi"), kimiEffort],
+      preferredConfig: { model: "deepseek", reasoning_effort: "max" },
+    };
+
+    expect(withPreferred(NO_CHOICES, draft).config).toEqual({ model: "deepseek", reasoning_effort: "max" });
   });
 });

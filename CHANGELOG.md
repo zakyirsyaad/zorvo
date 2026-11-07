@@ -10,6 +10,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **The landing page links to the source.** GitHub sits in the header, and the footer's Project column lists the source, releases, changelog, issues and the Apache 2.0 license.
 - **The docs describe Zorvo 0.9.** New pages explain compare runs and reviewing changes (comments on lines, Reply, the file view, Activity). The quickstart starts from the welcome screen and walks the sidebar, top bar and inspector; Terminal lives in the inspector; signing in covers the Agents menu, Set up Qwen Code and agents whose key lives in a variable; and the update card and failed-turn row are drawn as they look now.
 
+### Fixed
+
+- **A new session's effort list follows the model you pick.** An agent reports the efforts of the model it is on, so picking another model in a new session kept the old model's list: Qwen Code with DeepSeek V4.1 Flash offered only "Thinking on" instead of Low, High and Max. Zorvo now remembers each model's list once the agent has reported it and shows the picked model's own; for a model it has not seen yet, the effort chip waits until the session starts. The effort you picked last is kept for the model that offers it.
+
 ## [0.9.0] - 2026-11-07
 
 ### Changed

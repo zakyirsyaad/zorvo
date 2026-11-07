@@ -1107,6 +1107,8 @@ fn a_credit_a_balance_read_did_not_show_yet_is_added() {
 #[test]
 fn a_promo_credit_a_balance_read_already_shows_is_not_added_again() {
     let h = Harness::with_device(OTHER_CODE);
+    // A balance was read before the promo, so its baseline (0) is known.
+    h.set_state(&state_with_balance(0));
     h.mode.redeem_promo("HACK300").expect("redeemed");
     h.api.balance.then(Ok(balance(300, false)));
     h.mode.status(false);
@@ -1209,4 +1211,67 @@ fn a_recovery_whose_balance_read_fails_still_succeeds() {
 
     assert_eq!(h.secret(DEVICE_SECRET), Some(new));
     assert_eq!(h.state().last_balance, None);
+}
+
+// ---- review of the deferred minors ----
+
+#[test]
+fn a_401_to_a_secret_a_restore_replaced_does_not_mark_the_new_device_moved() {
+    let h = Harness::with_device(OTHER_CODE);
+    let new = h.mode.recover(CODE).expect("recovered");
+    assert!(!h.state().moved);
+
+    // A call made with the old secret before the restore answers 401 after it.
+    let stale: Result<(), PrivateError> =
+        h.mode.worker(OTHER_CODE, Err(PrivateError::Unauthorized));
+
+    assert_eq!(stale, Err(PrivateError::Unauthorized));
+    assert!(!h.state().moved);
+    let current: Result<(), PrivateError> = h.mode.worker(&new, Err(PrivateError::Unauthorized));
+    assert_eq!(current, Err(PrivateError::Unauthorized));
+    assert!(h.state().moved);
+}
+
+#[test]
+fn a_top_up_made_without_a_known_balance_has_no_baseline_and_its_credit_is_added() {
+    let h = Harness::with_device(OTHER_CODE);
+
+    let pending = h.mode.create_topup(10).expect("top-up");
+    assert_eq!(pending.bought_before, None);
+    h.mode.redeem_promo("HACK300").expect("redeemed");
+    assert_eq!(h.state().pending_topup.and_then(|p| p.bought_before), None);
+
+    // A balance read since shows credits, but nothing says they include the promo's.
+    h.api.balance.then(Ok(balance(300, false)));
+    h.mode.status(false);
+    h.api.topup.always(Ok(credited(300)));
+    h.mode.topup_status("p1").expect("status");
+    assert_eq!(h.state().last_balance.map(|b| b.credits), Some(600));
+}
+
+#[test]
+fn a_promotion_drops_the_previous_devices_last_balance() {
+    let h = Harness::with_device(OTHER_CODE);
+    h.set_state(&LocalState {
+        moved: true,
+        ..state_with_balance(40)
+    });
+    h.api.balance.then(Err(PrivateError::Unreachable));
+
+    h.mode.recover(CODE).expect("recovered");
+
+    assert_eq!(h.state().last_balance, None);
+}
+
+#[test]
+fn a_restore_of_this_macs_own_code_keeps_its_last_balance_when_the_read_fails() {
+    let h = Harness::with_device(CODE);
+    h.set_state(&state_with_balance(50));
+    h.api.balance.then(Err(PrivateError::Unreachable));
+
+    h.mode.recover(CODE).expect("re-issued");
+
+    // The same device, so its credits still guard Forget.
+    assert_eq!(h.state().last_balance.map(|b| b.credits), Some(50));
+    assert_eq!(h.mode.forget_device(), Err(PrivateError::HasOwnCredits));
 }

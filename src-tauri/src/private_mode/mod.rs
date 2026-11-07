@@ -106,7 +106,6 @@ mod tests {
         let codes: std::collections::HashSet<&str> =
             PrivateError::ALL.iter().map(|error| error.code()).collect();
         assert_eq!(codes.len(), PrivateError::ALL.len());
-        assert!(PrivateError::ALL.contains(&PrivateError::ModelLocked));
     }
 
     #[test]

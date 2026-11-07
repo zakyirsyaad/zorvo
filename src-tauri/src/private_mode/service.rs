@@ -315,7 +315,7 @@ impl PrivateMode {
         let unsaved = lock(&self.unsaved_key).take();
         let key = match unsaved {
             Some(key) => key,
-            None => match self.worker(self.api.take_key(&self.device_secret()?))? {
+            None => match self.worker_call(|secret| self.api.take_key(secret))? {
                 Some(key) => key,
                 None if server_key_ready && !self.rotation_expected() => {
                     return Err(PrivateError::KeyLost)
@@ -398,7 +398,7 @@ impl PrivateMode {
 
     pub fn stock(&self) -> Result<Stock, PrivateError> {
         let secret = self.ensure_device()?;
-        self.worker(self.api.stock(&secret))
+        self.worker(&secret, self.api.stock(&secret))
     }
 
     /// The memory copy for 10 minutes, then the Worker; when the Worker fails,
@@ -409,7 +409,7 @@ impl PrivateMode {
         }
         match self
             .ensure_device()
-            .and_then(|secret| self.worker(self.api.models(&secret)))
+            .and_then(|secret| self.worker(&secret, self.api.models(&secret)))
         {
             Ok(list) => {
                 self.remember_models(&list);
@@ -449,13 +449,13 @@ impl PrivateMode {
     /// kept; the normalized URL is kept, never the server's raw text.
     pub fn create_topup(&self, package_usd: u32) -> Result<PendingTopup, PrivateError> {
         let secret = self.ensure_device()?;
-        let created = self.worker(self.api.create_topup(&secret, package_usd))?;
+        let created = self.worker(&secret, self.api.create_topup(&secret, package_usd))?;
         let checkout = checkout_url(&created.session_url).ok_or(PrivateError::BadCheckoutUrl)?;
         let pending = PendingTopup {
             topup_id: created.topup_id.clone(),
             expires_at: created.expires_at,
             credits: u64::from(package_usd) * CREDITS_PER_USD,
-            bought_before: Some(self.bought_so_far()),
+            bought_before: self.bought_so_far(),
         };
         self.keep_pending(&pending);
         lock(&self.checkouts).insert(created.topup_id, checkout);
@@ -475,7 +475,7 @@ impl PrivateMode {
     /// The top-up's status; a settled one is cleared here, and a credit also
     /// collects the key the server made for it.
     pub fn topup_status(&self, topup_id: &str) -> Result<TopupState, PrivateError> {
-        let state = self.worker(self.api.topup(&self.device_secret()?, topup_id))?;
+        let state = self.worker_call(|secret| self.api.topup(secret, topup_id))?;
         if SETTLED.contains(&state.status.as_str()) {
             let credited = (state.status == CREDITED).then_some(state.credits);
             self.settle_topup(topup_id, credited);
@@ -493,7 +493,7 @@ impl PrivateMode {
     }
 
     pub fn cancel_topup(&self, topup_id: &str) -> Result<(), PrivateError> {
-        self.worker(self.api.cancel_topup(&self.device_secret()?, topup_id))?;
+        self.worker_call(|secret| self.api.cancel_topup(secret, topup_id))?;
         self.settle_topup(topup_id, None);
         Ok(())
     }
@@ -505,17 +505,17 @@ impl PrivateMode {
             return Err(PrivateError::BadCode);
         }
         let secret = self.ensure_device()?;
-        let result =
-            self.worker(self.api.redeem_promo(&secret, code))
-                .map_err(|error| match error {
-                    PrivateError::BadRequest => PrivateError::BadCode,
-                    other => other,
-                })?;
+        let result = self
+            .worker(&secret, self.api.redeem_promo(&secret, code))
+            .map_err(|error| match error {
+                PrivateError::BadRequest => PrivateError::BadCode,
+                other => other,
+            })?;
         self.keep_pending(&PendingTopup {
             topup_id: result.topup_id.clone(),
             expires_at: iso_from_unix(now_secs() + PROMO_HOLD_SECS),
             credits: result.credits,
-            bought_before: Some(self.bought_so_far()),
+            bought_before: self.bought_so_far(),
         });
         Ok(result)
     }
@@ -531,8 +531,10 @@ impl PrivateMode {
 
     /// Credits bought so far, as the last balance shows them: what is left
     /// plus what was used, which a use does not change and a credit raises.
-    fn bought_so_far(&self) -> u64 {
-        self.load_state().last_balance.as_ref().map_or(0, bought_of)
+    /// `None` without a last balance: an unknown baseline, so a credit is
+    /// always added (never taken as already counted).
+    fn bought_so_far(&self) -> Option<u64> {
+        self.load_state().last_balance.as_ref().map(bought_of)
     }
 
     /// Clears a settled top-up. A credited one is first added to the last
@@ -568,14 +570,26 @@ impl PrivateMode {
         });
     }
 
-    /// A Worker call's answer. A `401` to the device secret means the server
-    /// no longer knows it: the device is marked moved, whichever call heard it,
-    /// so the next status says so even when it cannot read the balance.
-    fn worker<T>(&self, answer: Result<T, PrivateError>) -> Result<T, PrivateError> {
-        if answer.as_ref().err() == Some(&PrivateError::Unauthorized) {
+    /// The answer of a Worker call made with `secret`. A `401` means the
+    /// server no longer knows that secret: the device is marked moved,
+    /// whichever call heard it, so the next status says so even when it cannot
+    /// read the balance. Only while `secret` is still this Mac's: a call made
+    /// before a restore replaced it says nothing about the new device.
+    fn worker<T>(&self, secret: &str, answer: Result<T, PrivateError>) -> Result<T, PrivateError> {
+        let is_current = || matches!(self.store.get(DEVICE_SECRET), Ok(Some(now)) if now == secret);
+        if answer.as_ref().err() == Some(&PrivateError::Unauthorized) && is_current() {
             self.change_state(|old| LocalState { moved: true, ..old });
         }
         answer
+    }
+
+    /// [`Self::worker`] for a call that needs only the device secret.
+    fn worker_call<T>(
+        &self,
+        call: impl FnOnce(&str) -> Result<T, PrivateError>,
+    ) -> Result<T, PrivateError> {
+        let secret = self.device_secret()?;
+        self.worker(&secret, call(&secret))
     }
 
     // ---- the state file ----

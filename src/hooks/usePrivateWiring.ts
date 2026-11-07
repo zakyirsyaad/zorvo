@@ -14,6 +14,8 @@ export interface PrivateWiringDeps {
   /** Settings → Private mode is on screen: a top-up shows its own result there. */
   isTopupShown: boolean;
   setNotice: (message: string, tone?: NoticeTone) => void;
+  /** Shows a notice unless an error is on screen (`useNotice().offerNotice`). */
+  offerNotice: (message: string, tone?: NoticeTone) => void;
   /** The agents the new-session draft would start; empty while no draft is shown. */
   draftAgentIds: readonly string[];
   activeSession: Session | undefined;
@@ -23,9 +25,15 @@ export interface PrivateWiringDeps {
  * What App needs of Private mode before the engine exists: the credits, the recovery dialog, the draft's
  * Private chip, and the few rules the rest of App asks of them.
  */
-export function usePrivateWiring({ isTopupShown, setNotice, draftAgentIds, activeSession }: PrivateWiringDeps) {
+export function usePrivateWiring({
+  isTopupShown,
+  setNotice,
+  offerNotice,
+  draftAgentIds,
+  activeSession,
+}: PrivateWiringDeps) {
   const credits = usePrivateCredits();
-  usePrivateCreditedNotice(credits.flow, isTopupShown, setNotice);
+  usePrivateCreditedNotice(credits.flow, isTopupShown, offerNotice);
   const recoveryDialog = usePrivateRecoveryDialog();
   // The draft's Private chip: per draft, off by default; while on, the next session runs privately.
   const draft = usePrivateDraft({ credits, agentIds: draftAgentIds });

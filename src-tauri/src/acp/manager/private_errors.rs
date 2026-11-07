@@ -69,8 +69,9 @@ pub(super) fn is_model_option(config_id: &str, model_options: &[String]) -> bool
 /// Fields that hold an HTTP status as a number.
 const STATUS_KEYS: [&str; 3] = ["status", "statusCode", "status_code"];
 
-/// Words that say the number after them is an HTTP status.
-const STATUS_WORDS: [&str; 3] = ["status", "code", "http"];
+/// Words that say the number after them is an HTTP status (`error` as in
+/// Qwen Code's `[API Error: 402 status code (no body)]`).
+const STATUS_WORDS: [&str; 4] = ["status", "code", "http", "error"];
 
 /// Why a private session's request was refused, as `PRIVATE_CREDITS:` carries
 /// it: `"empty"` when the credits are used up (HTTP 402), `"key"` when NEAR AI
@@ -143,9 +144,10 @@ fn collect(value: &Value, key: Option<&str>, texts: &mut Vec<String>, statuses: 
 
 /// The 401 and 402 statuses `text` (lower-cased) names where an HTTP client
 /// puts one: as its first word (`402 Payment Required`, the OpenAI SDK's
-/// form), after `status`, `code` or `http` (`Request failed with status code
-/// 402`, `HTTP 401`), or before the status's own reason phrase (`got 402
-/// Payment Required`). A status is a whole word: `4021` and `x402y` are not.
+/// form), after `status`, `code`, `http` or `error` (`Request failed with
+/// status code 402`, `HTTP 401`, `API Error: 402`), or before the status's
+/// own reason phrase (`got 402 Payment Required`). A status is a whole word:
+/// `4021` and `x402y` are not.
 fn statuses_in_text(text: &str) -> Vec<u64> {
     let words: Vec<&str> = text
         .split(|c: char| !c.is_alphanumeric())
@@ -302,6 +304,27 @@ mod tests {
         ] {
             assert_eq!(private_credits_reason(&error), None, "{error}");
         }
+    }
+
+    #[test]
+    fn qwen_codes_api_error_wording_names_the_status() {
+        for (text, reason) in [
+            ("[API Error: 402 status code (no body)]", "empty"),
+            ("[API Error: 401 status code (no body)]", "key"),
+        ] {
+            assert_eq!(
+                private_credits_reason(&internal_error(text)),
+                Some(reason),
+                "{text}"
+            );
+            let in_message = json!({ "code": -32603, "message": text });
+            assert_eq!(private_credits_reason(&in_message), Some(reason), "{text}");
+        }
+        // An error word before a number that is not a status still names none.
+        assert_eq!(
+            private_credits_reason(&internal_error("error 4021 in step 401b")),
+            None
+        );
     }
 
     #[test]

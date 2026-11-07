@@ -133,7 +133,7 @@ const NO_FOLDER_NOTICE = "Open a project folder first: choose one from the folde
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
 
 export default function App() {
-  const { notice, setNotice } = useNotice();
+  const { notice, setNotice, offerNotice } = useNotice();
   /** The error each session's last turn failed with, shown with a way to try again while that session is open. */
   const [failedTurns, setFailedTurns] = useState<Readonly<Record<string, string>>>({});
   const clearFailedTurn = (sessionId: string) =>
@@ -275,6 +275,7 @@ export default function App() {
   } = usePrivateWiring({
     isTopupShown: settingsPage.section === "private",
     setNotice,
+    offerNotice,
     draftAgentIds: isNewSessionDraft && newSessionAgent ? (compare.isCompare ? compare.agentIds : [newSessionAgent.id]) : [],
     activeSession,
   });

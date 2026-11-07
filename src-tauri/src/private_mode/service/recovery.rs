@@ -39,7 +39,7 @@ impl PrivateMode {
         }
         match self.api.balance(&next, fresh) {
             Ok(balance) => {
-                self.promote(&next)?;
+                self.promote(&next, false)?;
                 self.remember_balance(&balance);
                 Ok(Some((next, balance)))
             }
@@ -54,8 +54,11 @@ impl PrivateMode {
     /// Makes `next` this Mac's secret once the server holds its hash. The old
     /// key is dropped (the server revokes it and rotates a new one in, which
     /// is expected for a while), the device is no longer moved, and the new
-    /// code has not been saved by the user yet.
-    fn promote(&self, next: &str) -> Result<(), PrivateError> {
+    /// code has not been saved by the user yet. The last balance is dropped
+    /// too unless the device is the one this Mac already had (`same_device`,
+    /// its own code restored): another device's balance says nothing about
+    /// this one, and a top-up's baseline must never be read from it.
+    fn promote(&self, next: &str, same_device: bool) -> Result<(), PrivateError> {
         self.store.delete(NEARAI_KEY)?;
         self.store.set(DEVICE_SECRET, next)?;
         self.registered.store(true, Ordering::SeqCst);
@@ -68,6 +71,7 @@ impl PrivateMode {
             recovery_prompted: false,
             moved: false,
             rotation_expected_until: Some(now_millis().saturating_add(ROTATION_WINDOW_MS)),
+            last_balance: if same_device { old.last_balance } else { None },
             ..old
         });
         Ok(())
@@ -83,12 +87,15 @@ impl PrivateMode {
         if let Some((promoted, _)) = self.finish_recovery_locked(false)? {
             return Ok(promoted);
         }
-        self.refuse_if_own_credits(&typed)?;
+        let same_device = self.is_own_code(&typed)?;
+        if !same_device && has_own_credits(&self.load_state()) {
+            return Err(PrivateError::HasOwnCredits);
+        }
         let new = new_recovery_code()?;
         self.store.set(DEVICE_SECRET_NEXT, &new)?;
         match self.api.recover(&typed, &secret_hash(&new)) {
             Ok(()) => {
-                self.promote(&new)?;
+                self.promote(&new, same_device)?;
                 self.remember_recovered_balance(&new);
                 Ok(new)
             }
@@ -110,20 +117,16 @@ impl PrivateMode {
         }
     }
 
-    /// Restoring another Mac's code here would orphan this Mac's own credits
-    /// or top-up. This Mac's own code is allowed: it re-issues a key that was
-    /// never collected. A moved device has nothing left here to orphan.
-    fn refuse_if_own_credits(&self, typed: &str) -> Result<(), PrivateError> {
-        let Some(own) = self.store.get(DEVICE_SECRET)? else {
-            return Ok(());
-        };
-        if normalize_recovery_code(&own).as_deref() == Some(typed) {
-            return Ok(());
-        }
-        if has_own_credits(&self.load_state()) {
-            return Err(PrivateError::HasOwnCredits);
-        }
-        Ok(())
+    /// Whether `typed` (canonical) is this Mac's own code. Restoring another
+    /// Mac's code here would orphan this Mac's own credits or top-up, so
+    /// `recover` refuses that; this Mac's own code is allowed: it re-issues a
+    /// key that was never collected. A moved device has nothing left here to
+    /// orphan.
+    fn is_own_code(&self, typed: &str) -> Result<bool, PrivateError> {
+        Ok(self
+            .store
+            .get(DEVICE_SECRET)?
+            .is_some_and(|own| normalize_recovery_code(&own).as_deref() == Some(typed)))
     }
 
     /// The recovery code, for the UI to show.

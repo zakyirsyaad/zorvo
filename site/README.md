@@ -8,7 +8,7 @@ fonts (`@fontsource-variable`) and its agent logos (`src/assets/agents/`).
 ```bash
 pnpm install                      # from the repository root
 pnpm --filter zorvo-site dev      # http://localhost:3100
-SITE_URL=https://zorvo.xyz pnpm --filter zorvo-site build   # writes site/out/
+SITE_URL=https://zorvohub.xyz pnpm --filter zorvo-site build   # writes site/out/
 ```
 
 `out/` is plain files: any static host serves it. The site has no client components, so the build
@@ -23,7 +23,9 @@ pager, the docs home and the sitemap all read.
 ## Deploying on Vercel
 
 Import the repository in Vercel and set **Root Directory** to `site`. The
-rest comes from `vercel.json`: install and build with pnpm 12 (the version
+rest comes from `vercel.json`: no framework preset, so Vercel serves `out/` as plain
+files (the Next.js preset would deploy its own build from `.next/`, which keeps React's
+runtime and drops the headers below), install and build with pnpm 12 (the version
 the workspace's settings need), security headers including a CSP that only
 allows the site's own origin, and a skipped build when a commit touches
 nothing the site uses.

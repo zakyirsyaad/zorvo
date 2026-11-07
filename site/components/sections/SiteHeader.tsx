@@ -10,7 +10,9 @@ export function SiteHeader({ anchorBase = "" }: { anchorBase?: "" | "/" }) {
     <header>
       <nav
         aria-label="Main"
-        className="site-wrap flex min-h-16 items-center justify-between gap-4 py-3"
+        // Three columns from md up, the outer two equal, so the links sit at the page's centre
+        // however wide the logo and the buttons are; on a phone the links are hidden and it is a row.
+        className="site-wrap flex min-h-16 items-center justify-between gap-4 py-3 md:grid md:grid-cols-[1fr_auto_1fr] md:justify-items-start"
       >
         <ZorvoLockup anchorBase={anchorBase} />
         {/* On a phone the section links live in the footer; Docs and Download stay. */}
@@ -21,11 +23,11 @@ export function SiteHeader({ anchorBase = "" }: { anchorBase?: "" | "/" }) {
           <li><a className={TEXT_LINK} href={`${anchorBase}#features`}>Features</a></li>
           <li><a className={TEXT_LINK} href={LINKS.changelog}>Changelog</a></li>
         </ul>
-        <div className="flex items-center gap-2">
-          {/* On a phone only the mark shows; the hidden word still names the link. */}
+        <div className="flex items-center gap-2 md:justify-self-end">
+          {/* Below lg only the mark shows, so the links stay centred; the hidden word still names the link. */}
           <ButtonLink href={LINKS.repository} variant="ghost">
             <GithubMark size={16} />
-            <span className="max-sm:sr-only">GitHub</span>
+            <span className="max-lg:sr-only">GitHub</span>
           </ButtonLink>
           <ButtonLink href={LINKS.docs} variant="ghost">Docs</ButtonLink>
           <ButtonLink href={LINKS.download} variant="outline">Download</ButtonLink>

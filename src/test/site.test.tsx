@@ -19,6 +19,7 @@ import robots from "../../site/app/robots";
 import sitemap from "../../site/app/sitemap";
 import { OG_COLORS } from "../../site/lib/og-colors";
 import { siteUrl } from "../../site/lib/site";
+import NotFound from "../../site/app/not-found";
 
 const ROOT = join(__dirname, "..", "..");
 const appCss = readFileSync(join(ROOT, "src", "styles", "globals.css"), "utf8");
@@ -156,6 +157,8 @@ describe("landing page", () => {
     expect([...header.querySelectorAll("a")].map((link) => link.textContent)).toContain("Docs");
     expect(header.querySelector(`a[href="${LINKS.repository}"]`)?.textContent).toBe("GitHub");
     expect(document.querySelector(`footer a[href="${LINKS.license}"]`)).not.toBeNull();
+    expect(document.querySelector(`#compare a[href="${LINKS.compareGuide}"]`)).not.toBeNull();
+    expect(document.querySelector(`#review a[href="${LINKS.reviewGuide}"]`)).not.toBeNull();
     expect(copy).toContain("ACP registry");
     expect(copy).not.toMatch(/Aider|Oh-My-Pi/);
   });
@@ -227,6 +230,13 @@ describe("search engines", () => {
     vi.unstubAllEnvs();
   });
 
+  it("sends the 404 page's section links back to the home page", () => {
+    const page = new DOMParser().parseFromString(renderToStaticMarkup(<NotFound />), "text/html");
+    const anchors = [...page.querySelectorAll("a")].map((link) => link.getAttribute("href") ?? "").filter((href) => href.includes("#"));
+    expect(anchors.length).toBeGreaterThan(0);
+    expect(anchors.every((href) => href.startsWith("/#"))).toBe(true);
+  });
+
   it("refuses to build for production without an address, rather than publish localhost links", () => {
     expect(() => siteUrl({ NODE_ENV: "production" })).toThrow(/SITE_URL/);
     expect(siteUrl({ NODE_ENV: "production", VERCEL_PROJECT_PRODUCTION_URL: "zorvo.xyz" }).href).toBe("https://zorvo.xyz/");
@@ -263,6 +273,8 @@ describe("search engines", () => {
       name: "Zorvo",
       operatingSystem: "macOS",
       offers: { price: "0" },
+      isAccessibleForFree: true,
+      publisher: { sameAs: [LINKS.repository] },
     });
   });
 });
@@ -322,7 +334,10 @@ describe("docs pages", () => {
         for (const link of document.querySelectorAll("a")) {
           expect(link.className, link.getAttribute("href") ?? "").toContain("focus-ring");
         }
-        expect(document.querySelectorAll("input, script")).toHaveLength(0);
+        expect(document.querySelectorAll('input, script:not([type="application/ld+json"])')).toHaveLength(0);
+        const data = JSON.parse(document.querySelector('script[type="application/ld+json"]')?.textContent ?? "[]");
+        const trail = data.find((entry: { "@type": string }) => entry["@type"] === "BreadcrumbList");
+        expect(trail.itemListElement.at(-1).item).toBe(new URL(`${href.slice(1)}/`, siteUrl()).href);
         expect(text).not.toMatch(/Aider|Oh-My-Pi|pricing|per month/i);
         expect(text).not.toContain("!");
         expect(text).not.toMatch(/\p{Emoji_Presentation}/u);

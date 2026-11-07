@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import appPackage from "../../../package.json";
 import { DOCS_NAV, DOCS_PAGES } from "../../lib/docs-nav";
+import { docsStructuredData } from "../../lib/docs-structured-data";
 import { LINKS } from "../../lib/links";
 import { ButtonLink } from "../ui/ButtonLink";
 import { Icon } from "../ui/Icon";
@@ -139,8 +140,11 @@ export function DocsShell({ current, title, lead, toc = [], children }: DocsShel
   const group = DOCS_NAV.find((entry) => entry.pages.some((page) => page.href === current));
   const page = group?.pages.find((entry) => entry.href === current);
   if (!group || !page) throw new Error(`${current} is not in DOCS_NAV`);
+  // Static data from the docs list; `<` is escaped so the JSON can never close the script tag.
+  const structuredData = JSON.stringify(docsStructuredData(current, title, page.summary)).replace(/</g, "\\u003c");
   return (
     <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: structuredData }} />
       <a
         href="#main"
         className="focus-ring sr-only rounded-lg bg-primary px-3 py-2 text-sm text-on-primary focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-10"

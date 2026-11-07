@@ -2,9 +2,10 @@ import appPackage from "../../package.json";
 import { LINKS } from "./links";
 
 export const SITE_NAME = "Zorvo";
-export const SITE_TITLE = "Zorvo — every coding agent, one desktop";
+// The tab and search result name the app by what people search for; the tagline stays the h1.
+export const SITE_TITLE = "Zorvo: a Mac app for Claude Code, Codex and Qwen Code";
 export const SITE_DESCRIPTION =
-  "Claude Code, Codex, Qwen Code and the agents of the ACP registry in one native Mac app. Work with one, or send one prompt to four and keep the best. No lock-in, no API keys.";
+  "Free, open-source Mac app for Claude Code, Codex, Qwen Code and every ACP registry agent. Compare agents on one prompt and review their diffs. No API keys.";
 
 const LOCAL_URL = "http://localhost:3100/";
 
@@ -41,6 +42,10 @@ export function softwareApplication(url: URL = siteUrl()) {
     operatingSystem: "macOS",
     softwareVersion: appPackage.version,
     downloadUrl: LINKS.download,
+    image: new URL("opengraph-image", url).href,
+    isAccessibleForFree: true,
+    license: "https://www.apache.org/licenses/LICENSE-2.0",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    publisher: { "@type": "Organization", name: SITE_NAME, url: url.href, sameAs: [LINKS.repository] },
   };
 }

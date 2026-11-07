@@ -9,7 +9,7 @@ const OG_IMAGE = { url: "/opengraph-image", type: "image/png", width: 1200, heig
 export function docsMetadata(href: string): Metadata {
   const page = DOCS_PAGES.find((entry) => entry.href === href);
   if (!page) throw new Error(`${href} is not in DOCS_NAV`);
-  const title = href === "/docs" ? `${SITE_NAME} docs` : `${page.label} · ${SITE_NAME} docs`;
+  const title = href === "/docs" ? `${SITE_NAME} docs: install, agents, compare and review` : `${page.label} · ${SITE_NAME} docs`;
   // The export serves each page from a folder (next.config.ts trailingSlash), so its address ends in a slash.
   const url = `${href}/`;
   return {

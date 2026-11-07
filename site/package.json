@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "NEXT_TELEMETRY_DISABLED=1 next dev --port 3100",
-    "build": "NEXT_TELEMETRY_DISABLED=1 next build",
+    "build": "NEXT_TELEMETRY_DISABLED=1 next build && node scripts/strip-runtime.mjs",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -22,6 +22,7 @@
     "@types/node": "^26.6.5",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
+    "parse5": "8.0.1",
     "tailwindcss": "4.3.3",
     "typescript": "^6.0.3"
   }

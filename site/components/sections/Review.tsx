@@ -1,7 +1,9 @@
 import { DiffRows, FakeButton, LineCounts, type ChangedFile, type DiffLine } from "../mockups/parts";
 import { Chip } from "../ui/Chip";
 import { Icon } from "../ui/Icon";
+import { MoreLink } from "../ui/MoreLink";
 import { type Point, PointList } from "../ui/PointList";
+import { LINKS } from "../../lib/links";
 import { SectionIntro } from "../ui/SectionIntro";
 
 const POINTS: Point[] = [
@@ -127,7 +129,10 @@ export function Review() {
         />
         <div className="flex flex-wrap items-start gap-12 lg:gap-16">
           <ReviewPicture />
-          <PointList points={POINTS} className="min-w-0 flex-[1_1_300px]" />
+          <div className="flex min-w-0 flex-[1_1_300px] flex-col gap-8">
+            <PointList points={POINTS} />
+            <MoreLink href={LINKS.reviewGuide}>How to review an agent&apos;s changes</MoreLink>
+          </div>
         </div>
       </div>
     </section>

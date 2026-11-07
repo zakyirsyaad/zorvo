@@ -11,7 +11,9 @@ pnpm --filter zorvo-site dev      # http://localhost:3100
 SITE_URL=https://zorvo.xyz pnpm --filter zorvo-site build   # writes site/out/
 ```
 
-`out/` is plain files: any static host serves it. Next.js telemetry is off in
+`out/` is plain files: any static host serves it. The site has no client components, so the build
+ends with `scripts/strip-runtime.mjs`, which removes React's hydration runtime from every page: a
+visitor downloads HTML, CSS, fonts and images, and no JavaScript. Structured data stays. Next.js telemetry is off in
 both scripts. The page makes no requests to other sites. Every link comes from
 `lib/links.ts`: the docs links point at the pages under `app/docs/` and the
 downloads and the changelog at the repository, and changing that one file moves

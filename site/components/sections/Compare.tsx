@@ -2,7 +2,9 @@ import type { AgentName } from "../../lib/agent-logos";
 import { FakeButton, LineCounts, LogoStack, StatusLine, type Status } from "../mockups/parts";
 import { AgentLogo } from "../ui/AgentLogo";
 import { Icon } from "../ui/Icon";
+import { MoreLink } from "../ui/MoreLink";
 import { type Point, PointList } from "../ui/PointList";
+import { LINKS } from "../../lib/links";
 import { SectionIntro } from "../ui/SectionIntro";
 
 const POINTS: Point[] = [
@@ -149,6 +151,7 @@ export function Compare() {
           />
           <PointList points={POINTS} />
           <p className="t-caption m-0">Each agent runs on its own sign-in and uses its own quota.</p>
+          <MoreLink href={LINKS.compareGuide}>How a compare run works</MoreLink>
         </div>
         <RunPicture />
       </div>

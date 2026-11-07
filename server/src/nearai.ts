@@ -2,6 +2,8 @@
 
 const NANO_SCALE = 9;
 const PAGE_SIZE = 100;
+/** A key list longer than this many pages is treated as a fault, not paged through. */
+const MAX_KEY_PAGES = 50;
 const TOKENS_PER_MILLION = 1e6;
 
 /** A non-2xx answer from NEAR AI. The message names the request, never a token. */
@@ -97,14 +99,13 @@ export class NearAiClient {
   }
 
   /** Spends `refreshToken` and returns the new pair: the old refresh token is dead afterwards. */
-  async refresh(refreshToken: string): Promise<{ accessToken: string; refreshToken: string; refreshExpiresAt: string }> {
+  async refresh(refreshToken: string): Promise<{ accessToken: string; refreshToken: string; refreshExpiresAt?: string }> {
     const body = await this.request("POST", "/users/me/access-tokens", refreshToken);
     if (!isRecord(body)) return unexpected("refresh answer");
-    const { access_token: accessToken, refresh_token: newRefreshToken, refresh_token_expiration: refreshExpiresAt } = body;
-    if (typeof accessToken !== "string" || typeof newRefreshToken !== "string" || typeof refreshExpiresAt !== "string") {
-      return unexpected("refresh answer fields");
-    }
-    return { accessToken, refreshToken: newRefreshToken, refreshExpiresAt };
+    const { access_token: accessToken, refresh_token: newRefreshToken, refresh_token_expiration: expiration } = body;
+    // Only the two tokens are required: the old refresh token is already spent, so the new pair must never be discarded.
+    if (typeof accessToken !== "string" || typeof newRefreshToken !== "string") return unexpected("refresh answer fields");
+    return { accessToken, refreshToken: newRefreshToken, refreshExpiresAt: typeof expiration === "string" ? expiration : undefined };
   }
 
   async createKey(access: string, ws: string, name: string, limitNano: bigint): Promise<{ id: string; key: string }> {
@@ -121,24 +122,33 @@ export class NearAiClient {
     await this.request("DELETE", `/workspaces/${ws}/api-keys/${keyId}`, access);
   }
 
+  /**
+   * Every key of the workspace. Pages are read by offset, so a key created meanwhile can shift a row
+   * onto the next page; keys are therefore collected by id. Stops on an empty page or one that adds
+   * nothing new (a server that ignores the offset), and throws past `MAX_KEY_PAGES`.
+   */
   async listKeys(access: string, ws: string): Promise<{ id: string; limitNano: bigint | null; usageNano: bigint }[]> {
-    const keys: { id: string; limitNano: bigint | null; usageNano: bigint }[] = [];
+    const keys = new Map<string, { id: string; limitNano: bigint | null; usageNano: bigint }>();
+    let rowsRead = 0;
     let total = Number.POSITIVE_INFINITY;
-    while (keys.length < total) {
-      const page = await this.request("GET", `/workspaces/${ws}/api-keys?limit=${PAGE_SIZE}&offset=${keys.length}`, access);
+    for (let pages = 0; rowsRead < total; pages += 1) {
+      if (pages === MAX_KEY_PAGES) throw new Error(`NEAR AI key list has more than ${MAX_KEY_PAGES} pages`);
+      const page = await this.request("GET", `/workspaces/${ws}/api-keys?limit=${PAGE_SIZE}&offset=${rowsRead}`, access);
       if (!isRecord(page) || !Array.isArray(page.api_keys) || typeof page.total !== "number") return unexpected("key list");
-      if (page.api_keys.length === 0) break;
       total = page.total;
+      const sizeBefore = keys.size;
       for (const item of page.api_keys) {
         if (!isRecord(item) || typeof item.id !== "string") return unexpected("key list item");
-        keys.push({
+        keys.set(item.id, {
           id: item.id,
           limitNano: item.spend_limit == null ? null : toNano(item.spend_limit, "spend_limit"),
           usageNano: item.usage == null ? 0n : toNano(item.usage, "usage"),
         });
       }
+      rowsRead += page.api_keys.length;
+      if (keys.size === sizeBefore) break;
     }
-    return keys;
+    return [...keys.values()];
   }
 
   /** What the organization has left to spend; `null` upstream counts as nothing. */

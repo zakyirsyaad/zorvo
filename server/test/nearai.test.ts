@@ -107,6 +107,50 @@ describe("NearAiClient", () => {
     expect(calls.every((call) => call.method === "GET" && call.headers.get("authorization") === "Bearer acc")).toBe(true);
   });
 
+  it("keeps a new refresh token that arrives without an expiry", async () => {
+    const { fetcher } = stubFetch(() => json({ access_token: "acc-1", refresh_token: "ref-2" }));
+    const result = await new NearAiClient(BASE, fetcher).refresh("ref-1");
+    expect(result).toEqual({ accessToken: "acc-1", refreshToken: "ref-2", refreshExpiresAt: undefined });
+  });
+
+  it("drops a key that reappears on the next page", async () => {
+    const item = (id: string) => ({ id, spend_limit: null, usage: null });
+    const { fetcher } = stubFetch(({ url }) =>
+      new URL(url).searchParams.get("offset") === "0"
+        ? json({ api_keys: [item("a"), item("b")], total: 3 })
+        : json({ api_keys: [item("b"), item("c")], total: 3 }),
+    );
+    const keys = await new NearAiClient(BASE, fetcher).listKeys("acc", "ws-1");
+    expect(keys.map((key) => key.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("stops on an empty page even when total promises more", async () => {
+    const { fetcher, calls } = stubFetch(({ url }) =>
+      new URL(url).searchParams.get("offset") === "0"
+        ? json({ api_keys: [{ id: "a", spend_limit: null, usage: null }], total: 5 })
+        : json({ api_keys: [], total: 5 }),
+    );
+    const keys = await new NearAiClient(BASE, fetcher).listKeys("acc", "ws-1");
+    expect(keys.map((key) => key.id)).toEqual(["a"]);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("stops when the server ignores the offset and repeats the first page", async () => {
+    const { fetcher, calls } = stubFetch(() =>
+      json({ api_keys: [{ id: "a", spend_limit: null, usage: null }, { id: "b", spend_limit: null, usage: null }], total: 10 }),
+    );
+    const keys = await new NearAiClient(BASE, fetcher).listKeys("acc", "ws-1");
+    expect(keys.map((key) => key.id)).toEqual(["a", "b"]);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("throws past the page cap instead of looping", async () => {
+    let n = 0;
+    const { fetcher, calls } = stubFetch(() => json({ api_keys: [{ id: `k${(n += 1)}`, spend_limit: null, usage: null }], total: 1_000_000 }));
+    await expect(new NearAiClient(BASE, fetcher).listKeys("acc", "ws-1")).rejects.toThrow(/more than 50 pages/);
+    expect(calls).toHaveLength(50);
+  });
+
   it("reads the organization balance, with null counting as zero", async () => {
     const { fetcher, calls } = stubFetch(() => json({ remaining: { amount: 12_500_000_000, scale: 9 } }));
     expect(await new NearAiClient(BASE, fetcher).orgRemainingNano("acc", "org-1")).toBe(12_500_000_000n);
@@ -233,6 +277,15 @@ describe("Ledger.accessToken", () => {
     });
   });
 
+  it("stores the new pair when the answer has no refresh expiry", async () => {
+    const { fetcher } = stubFetch(() => json({ access_token: "acc-1", refresh_token: "ref-1" }));
+    await withLedger(fetcher, async (ledger, sql) => {
+      expect(await ledger.accessToken(NOW)).toBe("acc-1");
+      const row = sql.exec<{ refresh_token_ciphertext: string }>("SELECT refresh_token_ciphertext FROM operator").one();
+      expect(await decrypt(KEY, row.refresh_token_ciphertext)).toBe("ref-1");
+    });
+  });
+
   it("allows a later refresh after a failed one", async () => {
     let fail = true;
     const counter = { value: 0 };
@@ -333,6 +386,93 @@ describe("Ledger.refreshSnapshot", () => {
         taken_at: NOW,
       });
       expect(usageRows(sql).find((row) => row.key_id === "k2")).toEqual({ key_id: "k2", limit_nano: null, usage_nano: 3 * USD });
+    });
+  });
+
+  it("completes with the right totals when a key repeats across pages", async () => {
+    const pages: Record<string, unknown[]> = {
+      "0": [key("k1", 5 * USD, 1 * USD), key("k2", 3 * USD, 0)],
+      "2": [key("k2", 3 * USD, 0), key("k3", 2 * USD, 1 * USD)],
+    };
+    const { fetcher } = stubFetch(({ url }) => {
+      if (url.endsWith("/users/me/access-tokens")) return json({ access_token: "acc", refresh_token: "ref" });
+      if (url.includes("/usage/balance")) return json({ remaining: 20 * USD });
+      return json({ api_keys: pages[new URL(url).searchParams.get("offset") ?? ""] ?? [], total: 4 });
+    });
+    await withLedger(fetcher, async (ledger, sql) => {
+      for (const id of ["k1", "k2", "k3"]) addDevice(sql, `d-${id}`, id);
+      await ledger.refreshSnapshot(NOW);
+      expect(snapshotRow(sql)).toEqual({ org_remaining_usd: 20 * USD, outstanding_usd: 8 * USD, taken_at: NOW });
+      expect(usageRows(sql).map((row) => row.key_id)).toEqual(["k1", "k2", "k3"]);
+    });
+  });
+
+  it("leaves the previous key_usage and snapshot intact when the replacement fails midway", async () => {
+    const { fetcher } = stubFetch(nearAiRoute({ amount: 20 * USD, scale: 9 }, [key("k1", 5 * USD, 0), key("k2", 3 * USD, 0)]));
+    await withLedger(fetcher, async (ledger, sql) => {
+      addDevice(sql, "d1", "k1");
+      addDevice(sql, "d2", "k2");
+      await ledger.refreshSnapshot(NOW);
+      const before = { usage: usageRows(sql), snapshot: snapshotRow(sql) };
+      expect(before.usage).toHaveLength(2);
+
+      sql.exec(
+        "CREATE TRIGGER fail_k2 BEFORE INSERT ON key_usage WHEN NEW.key_id = 'k2' BEGIN SELECT RAISE(ABORT, 'boom'); END",
+      );
+      try {
+        await expect(ledger.refreshSnapshot(NOW + 1)).rejects.toThrow(/boom/);
+        expect({ usage: usageRows(sql), snapshot: snapshotRow(sql) }).toEqual(before);
+      } finally {
+        sql.exec("DROP TRIGGER fail_k2");
+      }
+    });
+  });
+
+  describe("when the cached access token is refused", () => {
+    function route(tokens: { refreshes: number }, balanceStatus: (bearer: string | null) => number): Route {
+      return ({ url, headers }) => {
+        if (url.endsWith("/users/me/access-tokens")) {
+          tokens.refreshes += 1;
+          return json({ access_token: `acc-${tokens.refreshes}`, refresh_token: `ref-${tokens.refreshes}` });
+        }
+        if (url.includes("/usage/balance")) {
+          const status = balanceStatus(headers.get("authorization"));
+          return status === 200 ? json({ remaining: 7 * USD }) : json({ error: "invalid_token" }, status);
+        }
+        return json({ api_keys: [], total: 0 });
+      };
+    }
+
+    it("refreshes once and retries the call with the new token", async () => {
+      const tokens = { refreshes: 0 };
+      const { fetcher } = stubFetch(route(tokens, (bearer) => (bearer === "Bearer acc-1" ? 401 : 200)));
+      await withLedger(fetcher, async (ledger, sql) => {
+        expect(await ledger.accessToken(NOW)).toBe("acc-1");
+        await ledger.refreshSnapshot(NOW + 1000);
+        expect(tokens.refreshes).toBe(2);
+        expect(snapshotRow(sql).org_remaining_usd).toBe(7 * USD);
+        expect(await ledger.accessToken(NOW + 2000)).toBe("acc-2");
+        expect(tokens.refreshes).toBe(2);
+      });
+    });
+
+    it("surfaces a second refusal without looping", async () => {
+      const tokens = { refreshes: 0 };
+      const { fetcher } = stubFetch(route(tokens, () => 401));
+      await withLedger(fetcher, async (ledger) => {
+        await expect(ledger.refreshSnapshot(NOW)).rejects.toMatchObject({ name: "NearAiError", status: 401 });
+        expect(tokens.refreshes).toBe(2);
+      });
+    });
+
+    it("makes one refresh when two callers are refused the same token", async () => {
+      const tokens = { refreshes: 0 };
+      const { fetcher } = stubFetch(route(tokens, (bearer) => (bearer === "Bearer acc-1" ? 401 : 200)));
+      await withLedger(fetcher, async (ledger) => {
+        await ledger.accessToken(NOW);
+        await Promise.all([ledger.refreshSnapshot(NOW + 1000), ledger.refreshSnapshot(NOW + 1000)]);
+        expect(tokens.refreshes).toBe(2);
+      });
     });
   });
 });

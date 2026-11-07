@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { parseConfig, type Config, type Env } from "../config";
 import { creditsForPackage } from "../credits";
 import { decrypt, encrypt } from "../crypto";
-import { NearAiClient } from "../nearai";
+import { NearAiClient, NearAiError } from "../nearai";
 import { applySchema } from "./schema";
 import { computeStock, type StockView } from "./stock";
 
@@ -248,16 +248,35 @@ export class Ledger extends DurableObject<Env> {
   }
 
   /**
+   * Runs an operator call with the cached access token. If NEAR AI refuses that token (401) the
+   * cache is dropped and the call is retried once with a freshly refreshed token, so a lifetime
+   * shorter than assumed costs one refresh, not a run of failures. A second refusal is surfaced.
+   */
+  private async withAccessToken<T>(now: number, call: (access: string) => Promise<T>): Promise<T> {
+    const access = await this.accessToken(now);
+    try {
+      return await call(access);
+    } catch (error) {
+      if (!(error instanceof NearAiError) || error.status !== 401) throw error;
+      // Only the token that failed is dropped: a caller that already refreshed past it keeps its new one.
+      this.sql.exec("UPDATE operator SET access_expires_at = NULL WHERE id = ? AND access_token = ?", OPERATOR_ID, access);
+      return call(await this.accessToken(now));
+    }
+  }
+
+  /**
    * Reads the organization balance and the device keys from NEAR AI and records them: the stock
    * snapshot, and each device key's limit and usage in `key_usage`. The device list is read after
-   * the calls, so a key created meanwhile is not mistaken for a stranger's.
+   * the calls, so a key created meanwhile is not mistaken for a stranger's. The replacement of
+   * `key_usage` and the snapshot is one transaction: either both change or neither does.
    */
   async refreshSnapshot(now: number): Promise<void> {
     const cfg = this.config();
     const client = this.nearAi();
-    const access = await this.accessToken(now);
-    const remaining = await client.orgRemainingNano(access, cfg.organizationId);
-    const keys = await client.listKeys(access, cfg.workspaceId);
+    const { remaining, keys } = await this.withAccessToken(now, async (access) => ({
+      remaining: await client.orgRemainingNano(access, cfg.organizationId),
+      keys: await client.listKeys(access, cfg.workspaceId),
+    }));
 
     const deviceKeys = new Set(
       this.sql
@@ -269,15 +288,17 @@ export class Ledger extends DurableObject<Env> {
     // Keys the server creates always have a limit; a key without one counts as 0 outstanding.
     const outstanding = ours.reduce((sum, key) => (key.limitNano !== null && key.limitNano > key.usageNano ? sum + key.limitNano - key.usageNano : sum), 0n);
 
-    this.sql.exec("DELETE FROM key_usage");
-    for (const key of ours) {
-      this.sql.exec(
-        "INSERT INTO key_usage (key_id, limit_nano, usage_nano) VALUES (?, ?, ?)",
-        key.id,
-        key.limitNano === null ? null : Number(clampNano(key.limitNano)),
-        Number(clampNano(key.usageNano)),
-      );
-    }
-    this.setSnapshot(clampNano(remaining), clampNano(outstanding), now);
+    this.ctx.storage.transactionSync(() => {
+      this.sql.exec("DELETE FROM key_usage");
+      for (const key of ours) {
+        this.sql.exec(
+          "INSERT INTO key_usage (key_id, limit_nano, usage_nano) VALUES (?, ?, ?)",
+          key.id,
+          key.limitNano === null ? null : Number(clampNano(key.limitNano)),
+          Number(clampNano(key.usageNano)),
+        );
+      }
+      this.setSnapshot(clampNano(remaining), clampNano(outstanding), now);
+    });
   }
 }

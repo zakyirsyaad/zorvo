@@ -26,34 +26,9 @@ import { isSessionGoneError, isUnknownSessionError } from '../../lib/acp-load-er
 import { writeConversationHandoff } from '../../lib/session-handoff';
 import { applyElicitation, completeElicitation, dismissPendingElicitations } from '../../lib/acp-elicitation';
 import { elicitationActions, type InFlightAnswer } from './elicitation-actions';
-import { parsePrivateCredits } from '../../lib/private-credits';
-import {
-  PRIVATE_SIGN_IN_FAILED,
-  privateModelIdOf,
-  privateOpenError,
-  withoutModelChanges,
-  type CreditsOutReason,
-} from '../../lib/private-session';
-
-const NOT_ENDED_NORMALLY = new Set(['refusal', 'max_tokens', 'max_turn_requests']);
-
-function turnEndNotice(stopReason: string | undefined, error: string | undefined): string | null {
-  if (error) return `The agent's turn failed: ${error}`;
-  if (stopReason && NOT_ENDED_NORMALLY.has(stopReason)) return `The agent stopped early (${stopReason}).`;
-  return null;
-}
-
-function isCommandsUpdate(update: unknown): update is { availableCommands: unknown } {
-  return typeof update === 'object' && update !== null && (update as { sessionUpdate?: unknown }).sessionUpdate === 'available_commands_update';
-}
-
-/** The title in a session_info_update, if it carries a usable one. */
-function sessionTitleOf(update: unknown): string | undefined {
-  if (typeof update !== 'object' || update === null) return undefined;
-  const { sessionUpdate, title } = update as { sessionUpdate?: unknown; title?: unknown };
-  if (sessionUpdate !== 'session_info_update' || typeof title !== 'string') return undefined;
-  return title.trim() || undefined;
-}
+import { privateModelIdOf, privateOpenError, withoutModelChanges, type CreditsOutReason } from '../../lib/private-session';
+import { privateOpenOutcome, privateTurnRefusal } from './private-engine';
+import { isCommandsUpdate, sessionTitleOf, turnEndNotice } from './update-readers';
 
 /** The message a session starts (or resumes) with. */
 export interface FirstMessage {
@@ -227,22 +202,16 @@ export function useAcpEngine({
       updateNow(sessionId, closeTurn);
       saveSoon?.(sessionId);
       // Only a private session's agent is launched to report credits; an ordinary one's text is its own.
-      const creditsOut = isPrivateSession(sessionId) ? parsePrivateCredits(error) : null;
-      if (creditsOut) {
-        // The panel above the composer says it; a failure notice would only repeat it.
+      const refusal = isPrivateSession(sessionId) ? privateTurnRefusal(error) : null;
+      if (refusal) {
+        // The panel above the composer says credits ran out; a failure notice would only repeat it.
         handBackRefused(sessionId);
-        onPrivateCreditsOut?.(sessionId, creditsOut.reason);
+        if ('creditsOut' in refusal) onPrivateCreditsOut?.(sessionId, refusal.creditsOut);
+        else reportError(refusal.report);
         onAttention?.(sessionId, 'failed');
         return;
       }
       const authMethods = parseAuthRequired(error);
-      if (authMethods && isPrivateSession(sessionId)) {
-        // Zorvo signs a private session's agent in: there is no sign-in of the user's to offer.
-        handBackRefused(sessionId);
-        reportError(PRIVATE_SIGN_IN_FAILED);
-        onAttention?.(sessionId, 'failed');
-        return;
-      }
       if (authMethods) {
         handBackForSignIn(sessionId, authMethods);
         return;
@@ -436,22 +405,14 @@ export function useAcpEngine({
         if (options.first?.context) unsentContextRef.current.set(session.id, options.first.context);
         patchSession(session.id, { status: 'terminated', endedAt: Date.now() });
         // Zorvo Private's refusals are said in plain words, never as the backend's marker or code.
-        const privateError = privateOpenError(error, isPrivate);
-        if (privateError?.creditsOut && onPrivateCreditsOut) {
-          // The session is marked, and the panel above its composer says it: a notice would only repeat it.
-          onPrivateCreditsOut(session.id, privateError.creditsOut);
-          return false;
-        }
-        if (privateError) {
-          reportError(privateError.text);
+        const outcome = privateOpenOutcome(error, isPrivate, onPrivateCreditsOut !== undefined);
+        if (outcome) {
+          // Marked out of credits, the panel above the composer says it: a notice would only repeat it.
+          if ('creditsOut' in outcome) onPrivateCreditsOut?.(session.id, outcome.creditsOut);
+          else reportError(outcome.report);
           return false;
         }
         const authMethods = parseAuthRequired(error);
-        if (authMethods && isPrivate) {
-          // Zorvo signs a private session's agent in: no sign-in panel, and the caller gives the message back.
-          reportError(PRIVATE_SIGN_IN_FAILED);
-          return false;
-        }
         if (authMethods) {
           refusedChoicesRef.current.set(session.id, options.choices);
           onAuthRequired(session, authMethods, options.first);

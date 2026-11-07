@@ -35,7 +35,7 @@ export default function SigningInPage() {
     >
       <H2 id="status">Where each agent stands</H2>
       <P>
-        The sidebar&apos;s detected agents and Settings, Agents show the same status: <B>Ready</B> when Zorvo saw you
+        The <B>Agents</B> button next to Settings, at the bottom of the sidebar, and Settings, Agents show the same status: <B>Ready</B> when Zorvo saw you
         signed in, <B>Sign in</B> when the agent asked for it, and <B>Not checked</B> when Zorvo has not asked yet.
       </P>
       <Picture label="Settings, Agents: Claude Code asking you to sign in, Codex ready, Qwen Code not checked, each with a Check sign-in button, and a note that checking Qwen Code opens a session">
@@ -62,8 +62,8 @@ export default function SigningInPage() {
           CLI and Qwen Code cannot, so the button says first that it opens one.
         </li>
         <li>
-          Click an agent that is not ready to start a new session with it: Zorvo checks it and shows the sign-in panel
-          before you type, and the message box waits until you are signed in.
+          Start a new session with an agent that is not ready: Zorvo checks it and shows a sign-in card above the
+          message box, which waits until you are signed in. The card lists every way the agent offers to sign in.
         </li>
       </UL>
       <H2 id="in-zorvo">In Zorvo</H2>
@@ -73,6 +73,17 @@ export default function SigningInPage() {
         key, for example), the panel explains it and you set it up outside Zorvo, then click <B>Check again</B> in the sign-in
         panel, or <B>Check sign-in</B> in Settings. Zorvo reads your
         shell&apos;s settings again before it asks the agent, so a key you just added to <Chip isCode>~/.zshrc</Chip> is found.
+      </P>
+      <P>
+        <B>Set up Qwen Code.</B> When Qwen Code needs a provider, the new session shows <B>Set up Qwen Code</B>, which
+        opens Qwen Code&apos;s own setup in a terminal, so you pick the provider there. Closing a sign-in or setup
+        terminal checks again whether you are signed in.
+      </P>
+      <P>
+        Some agents cannot say who is signed in and keep their key in a variable, such as GLM Agent with{" "}
+        <Chip isCode>Z_AI_API_KEY</Chip>. While that variable is not set in your shell, the agent reads{" "}
+        <B>Not checked</B>, not Ready, and its row says what to do. Zorvo only looks whether the variable is set, never at
+        its value.
       </P>
       <H2 id="in-terminal">In your terminal</H2>
       <P>Sign in once in a terminal, then send your message again.</P>

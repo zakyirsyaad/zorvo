@@ -7,12 +7,12 @@ const FEATURES: { icon: IconName; title: string; body: ReactNode }[] = [
   {
     icon: "layers",
     title: "The agent's own data",
-    body: "Its real modes and models, permission requests with its own choices, slash commands and context usage. Sessions resume after a restart.",
+    body: "Its real modes and models, permission requests with its own choices, its questions, slash commands and context use. Sessions resume after a restart.",
   },
   {
     icon: "sliders-horizontal",
     title: "Every choice the agent offers",
-    body: "Models, modes and other settings each get a chip with the agent's own description: Codex's Plan mode, Claude's fast mode, Gemini's models. A mode that skips approvals carries a shield.",
+    body: "Models, modes and other settings each get a chip with the agent's own description: Codex's Plan mode, Claude's fast mode, Gemini's models. What does not fit goes under ⋯.",
   },
   {
     icon: "download",
@@ -22,26 +22,35 @@ const FEATURES: { icon: IconName; title: string; body: ReactNode }[] = [
   {
     icon: "key-round",
     title: "See which agents are ready",
-    body: "The sidebar and Settings show Ready, Sign in or Not checked for each agent. An agent's own login runs in a terminal in the app, and your message is sent once you are signed in.",
+    body: "The Agents menu and Settings show Ready, Sign in or Not checked for each agent. Its own login, or Qwen Code's own setup, runs in a terminal in the app, and your message is sent once you are signed in.",
   },
   {
-    icon: "folder",
-    title: "Workspaces and sessions",
-    body: "Sessions group by folder and title themselves from the first message. Rename, pin and archive them, or continue one you started in the agent's own CLI.",
+    icon: "square-check",
+    title: "One welcome screen",
+    body: "Tick the agents you'll use, pick a project folder and press Start. Signing in waits for your first session.",
   },
   {
-    icon: "square-terminal",
-    title: "A terminal where the agent works",
-    body: "Open a shell in the session's folder, or its worktree, in a drawer under the chat. Each folder keeps its own tabs.",
+    icon: "message-square",
+    title: "A sidebar that says who waits",
+    body: "Each session reads its agent and what it does: Working, Waiting for you, Finished, unread. A folded folder still says 1 waiting. Hide the sidebar to give the chat the room.",
+  },
+  {
+    icon: "panel-right",
+    title: "One inspector",
+    body: "Changes, Activity, Files and Terminal in one panel beside the chat. Drag it wider; its shells keep running when you switch tabs or close it.",
+  },
+  {
+    icon: "file-text",
+    title: "Read a file in place",
+    body: "The Files tab marks what changed. Click a file to read it with its changed lines marked, and add the lines you select to your message.",
   },
   {
     icon: "git-branch",
     title: "Branches and worktrees",
     body: (
       <>
-        Pick the branch a session starts from. Or give it its own worktree on an{" "}
-        <Chip isCode>agent/&lt;title&gt;</Chip> branch, so agents in one repository never edit the
-        same files.
+        Start from the branch you pick, or turn on New worktree to give the session its own copy on an{" "}
+        <Chip isCode>agent/&lt;title&gt;</Chip> branch.
       </>
     ),
   },
@@ -51,55 +60,32 @@ const FEATURES: { icon: IconName; title: string; body: ReactNode }[] = [
     body: "Fork any reply into a new session. Or rewind to before one of your messages and send it again, edited.",
   },
   {
-    icon: "image",
-    title: "The composer",
-    body: "Mention files with @, drop files and pictures onto the window, and see an attached image as a thumbnail before you send it.",
-  },
-  {
-    icon: "git-pull-request",
-    title: "Review and commit",
-    body: (
-      <>
-        Read each changed file&apos;s diff and commit the files you choose. The top bar shows the
-        branch&apos;s pull request and its checks, read with your own <Chip isCode>gh</Chip>.
-        Settings shows whether your <Chip isCode>gh</Chip> is signed in, and Connect signs you in.
-      </>
-    ),
-  },
-  {
     icon: "circle-alert",
     title: "When a turn goes wrong",
-    body: "A failed turn says what happened in plain words, with Try again to send your message once more. An agent that seems stuck gets a notice with Stop.",
+    body: "A failed turn says what happened in plain words, with Try again. An agent that has sent nothing for a while gets a notice with Stop, and a message that did not reach the agent comes back to its box.",
   },
   {
     icon: "refresh-cw",
     title: "Zorvo updates itself",
-    body: "When a new version is out, a notice offers Update & restart. Zorvo checks the update's signature before it installs it, and tells you first if a restart would stop a working agent.",
+    body: "A card offers Update & restart and says what a restart would stop, such as 2 agents mid-turn. Zorvo checks the update's signature before it installs it.",
   },
 ];
 
 export function Features() {
   return (
-    <section
-      id="features"
-      aria-labelledby="features-title"
-      className="border-t border-border py-[72px] md:py-28"
-    >
+    <section id="features" aria-labelledby="features-title" className="border-t border-border py-[72px] md:py-28">
       <div className="site-wrap flex flex-col gap-14">
         <SectionIntro
           id="features-title"
           eyebrow="features"
           title="One app. Each agent as it really is."
-          lead="Sessions, worktrees, a terminal, diffs and pull requests sit around the agent, never in its way."
+          lead="Sessions, worktrees, a terminal, files and diffs sit around the agent, never in its way."
           className="max-w-[640px]"
         />
         {/* Hairline grid: the list draws the top and left edges, each cell its right and bottom. */}
         <ul className="m-0 grid list-none grid-cols-1 border-t border-l border-border p-0 md:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map(({ icon, title, body }) => (
-            <li
-              key={title}
-              className="flex flex-col gap-3.5 border-r border-b border-border px-5 py-7 sm:px-7 sm:py-8"
-            >
+            <li key={title} className="flex flex-col gap-3.5 border-r border-b border-border px-5 py-7 sm:px-7 sm:py-8">
               <span className="grid size-9 place-items-center rounded-lg border border-border bg-surface-2 text-fg">
                 <Icon name={icon} size={18} />
               </span>

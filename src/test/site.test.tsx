@@ -5,9 +5,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import Home from "../../site/app/page";
 import DocsHome from "../../site/app/docs/page";
 import AgentsDocs from "../../site/app/docs/agents/page";
+import CompareDocs from "../../site/app/docs/compare/page";
 import InstallDocs from "../../site/app/docs/install/page";
 import PrivacyDocs from "../../site/app/docs/privacy/page";
 import QuickstartDocs from "../../site/app/docs/quickstart/page";
+import ReviewDocs from "../../site/app/docs/review/page";
 import SigningInDocs from "../../site/app/docs/signing-in/page";
 import TerminalDocs from "../../site/app/docs/terminal/page";
 import TroubleshootingDocs from "../../site/app/docs/troubleshooting/page";
@@ -97,11 +99,11 @@ describe("landing page", () => {
     return body.textContent ?? "";
   })();
 
-  it("has the six approved sections in order, and no pricing", () => {
+  it("has the eight approved sections in order, and no pricing", () => {
     const ids = [...document.querySelectorAll("main > section[id], main > div > section[id]")].map(
       (section) => section.id,
     );
-    expect(ids).toEqual(["top", "agents", "features", "control", "privacy", "download"]);
+    expect(ids).toEqual(["top", "agents", "compare", "control", "review", "features", "privacy", "download"]);
     expect(text).not.toMatch(/pricing|per month|\$\d+\s*\/\s*mo/i);
   });
 
@@ -163,34 +165,51 @@ describe("landing page", () => {
       "Every choice the agent offers",
       "Install agents from Zorvo",
       "See which agents are ready",
-      "Workspaces and sessions",
-      "A terminal where the agent works",
+      "One welcome screen",
+      "A sidebar that says who waits",
+      "One inspector",
+      "Read a file in place",
       "Branches and worktrees",
       "Fork and rewind",
-      "The composer",
-      "Review and commit",
       "When a turn goes wrong",
       "Zorvo updates itself",
     ]);
     expect(copy).toContain("Install agents from Zorvo");
-    expect(copy).toContain("A terminal where the agent works");
+    expect(copy).not.toMatch(/drawer/i);
     const registry = document.querySelector('#agents [role="img"]');
     expect(registry?.textContent).toMatch(/Update available.*Installing….*In the registry/s);
   });
 
-  it("shows which detected agents are ready in the hero picture, and says the app updates itself", () => {
+  it("draws the 0.9 window in the hero picture, and says the app updates itself", () => {
     const hero = document.querySelector('#top ~ div [role="img"]');
-    expect(hero?.textContent).toMatch(/Detected agents\s*Claude CodeReady\s*CodexReady\s*Qwen CodeSign in/);
-    expect(copy).toContain("Updates itself");
+    expect(hero?.textContent).toMatch(/Claude Code · Working.*Codex · Waiting for you.*Compare · 3 agents/s);
+    expect(hero?.textContent).toMatch(/Changes\s*3\s*Activity\s*Files\s*Terminal/);
+    expect(hero?.textContent).toContain("38% of context");
+    expect(copy).toContain("Zorvo updates itself");
     expect(copy).toContain("keeps itself up to date");
     expect(copy).toContain("a mode that skips approvals carries a shield");
   });
 
-  it("shows the plan with one step done and the next waiting on the user", () => {
+  it("shows the plan with one step done and the permission the agent waits on", () => {
     const picture = document.querySelector('#control [role="img"]');
-    expect(picture?.textContent).toMatch(/Plan\s*1\/4/);
-    expect(picture?.textContent).toContain("Waiting on you");
+    expect(picture?.textContent).toMatch(/Plan from Codex\s*1 of 4 done/);
+    expect(picture?.textContent).toMatch(/Deny\s*Always allow\s*Allow once/);
     expect(picture?.textContent).not.toContain("Session cost");
+  });
+
+  it("shows a compare run that asks before Pick keeps one agent", () => {
+    const picture = document.querySelector('#compare [role="img"]');
+    expect(picture?.textContent).toContain("Start 3 sessions");
+    expect(picture?.textContent).toMatch(/Claude Code\s*Working.*Codex\s*Finished.*Qwen Code\s*Waiting for you/s);
+    expect(picture?.textContent).toContain("Pick Codex");
+    expect(copy).toContain("uses its own quota");
+  });
+
+  it("shows a review comment that stays on its line and goes into the message", () => {
+    const picture = document.querySelector('#review [role="img"]');
+    expect(picture?.textContent).toContain("Line 42 · Current");
+    expect(picture?.textContent).toContain("Add 2 comments to message");
+    expect(copy).toContain("Outdated");
   });
 
   it("points every in-page link at an element that exists", () => {
@@ -253,6 +272,8 @@ describe("docs pages", () => {
     "/docs/quickstart": QuickstartDocs,
     "/docs/agents": AgentsDocs,
     "/docs/signing-in": SigningInDocs,
+    "/docs/compare": CompareDocs,
+    "/docs/review": ReviewDocs,
     "/docs/terminal": TerminalDocs,
     "/docs/privacy": PrivacyDocs,
     "/docs/troubleshooting": TroubleshootingDocs,
@@ -331,11 +352,12 @@ describe("docs pages", () => {
     ]);
   });
 
-  it("documents the 0.6 and 0.7 additions where the design puts them", () => {
+  it("documents the 0.6 to 0.9 additions where the design puts them", () => {
     const install = parse("/docs/install").body.textContent ?? "";
     expect(install).toContain("Update Zorvo");
     expect(install).toContain("Older copies update once by hand");
-    expect(install).toContain("Settings, General, GitHub");
+    expect(install).toContain("Settings, GitHub");
+    expect(parse("/docs/install").querySelector("#update ~ [role=img]")?.textContent).toContain("Restarting stops 2 agents mid-turn");
     expect(idsOf("/docs/install")).toContain("update");
 
     const agents = parse("/docs/agents");
@@ -354,6 +376,14 @@ describe("docs pages", () => {
     const quickstart = parse("/docs/quickstart");
     expect(quickstart.body.textContent).toContain("Rewind to here");
     expect(idsOf("/docs/quickstart")).toContain("composer");
+    expect(quickstart.body.textContent).toContain("The welcome screen");
+
+    expect(parse("/docs/terminal").body.textContent).toContain("Inspector");
+    expect(parse("/docs/compare").body.textContent).toContain("Pick always asks first");
+    expect(parse("/docs/review").body.textContent).toContain("Outdated");
+    for (const href of Object.keys(PAGES)) {
+      expect(parse(href).body.textContent, href).not.toMatch(/drawer|detected agents|Settings, General, GitHub/i);
+    }
   });
 
   it("names the default agents and says they do not endorse Zorvo", () => {

@@ -7,7 +7,7 @@
 //! secret, a key or a code, except `recovery_code` and `recover`, whose values
 //! the UI is meant to show.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -164,6 +164,7 @@ impl PrivateMode {
     fn create_secret(&self) -> Result<String, PrivateError> {
         self.update_state(|old| LocalState {
             models: old.models,
+            private_sessions: old.private_sessions,
             ..LocalState::default()
         })?;
         let code = new_recovery_code();
@@ -505,7 +506,32 @@ impl PrivateMode {
         self.registered.store(false, Ordering::SeqCst);
         *lock(&self.unsaved_key) = None;
         lock(&self.checkouts).clear();
-        self.update_state(|_| LocalState::default()).map(|_| ())
+        // The record of private sessions belongs to the agent's store, not to
+        // the device: forgetting the device must not unlock those sessions.
+        self.update_state(|old| LocalState {
+            private_sessions: old.private_sessions,
+            ..LocalState::default()
+        })
+        .map(|_| ())
+    }
+
+    // ---- private sessions ----
+
+    /// Records `acp_session_id` as an agent session that ran privately. The
+    /// ids are no secret; a failed save is `Storage`, and the caller goes on.
+    pub fn note_private_session(&self, acp_session_id: &str) -> Result<(), PrivateError> {
+        self.update_state(|old| old.with_private_session(acp_session_id))
+            .map(|_| ())
+    }
+
+    /// Whether `acp_session_id` was recorded by [`Self::note_private_session`].
+    pub fn is_private_acp_session(&self, acp_session_id: &str) -> bool {
+        self.private_acp_sessions().contains(acp_session_id)
+    }
+
+    /// Every recorded private ACP session id.
+    pub fn private_acp_sessions(&self) -> HashSet<String> {
+        self.load_state().private_sessions.into_iter().collect()
     }
 
     // ---- stock and models ----

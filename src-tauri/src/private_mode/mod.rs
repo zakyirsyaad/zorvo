@@ -52,6 +52,8 @@ pub enum PrivateError {
     Storage,
     /// The system browser did not open the checkout; its hold stands.
     OpenFailed,
+    /// An agent session that ran privately may only be opened privately.
+    PrivateSession,
 }
 
 impl PrivateError {
@@ -77,6 +79,7 @@ impl PrivateError {
             Self::HasOwnCredits => "has_own_credits",
             Self::Storage => "storage",
             Self::OpenFailed => "open_failed",
+            Self::PrivateSession => "private_session",
         }
     }
 }
@@ -91,7 +94,7 @@ impl From<PrivateError> for String {
 mod tests {
     use super::*;
 
-    const ALL: [PrivateError; 19] = [
+    const ALL: [PrivateError; 20] = [
         PrivateError::Unreachable,
         PrivateError::Unauthorized,
         PrivateError::BadRequest,
@@ -111,6 +114,7 @@ mod tests {
         PrivateError::HasOwnCredits,
         PrivateError::Storage,
         PrivateError::OpenFailed,
+        PrivateError::PrivateSession,
     ];
 
     #[test]
@@ -126,5 +130,9 @@ mod tests {
         assert_eq!(String::from(PrivateError::HasOwnCredits), "has_own_credits");
         assert_eq!(String::from(PrivateError::KeyLost), "key_lost");
         assert_eq!(String::from(PrivateError::OpenFailed), "open_failed");
+        assert_eq!(
+            String::from(PrivateError::PrivateSession),
+            "private_session"
+        );
     }
 }

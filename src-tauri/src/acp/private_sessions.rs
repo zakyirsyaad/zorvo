@@ -1,0 +1,300 @@
+//! Which ACP sessions ran privately, and what that forbids.
+//!
+//! A private Qwen Code session lives in the same `~/.qwen` store as the user's
+//! plain ones. Reopening it with a plain launch would bring its conversation
+//! back and send the next prompt, code included, to the user's own provider,
+//! outside the TEE. So the backend records every ACP session id it started
+//! privately and, whatever the webview asks, refuses to open a recorded one
+//! unless the open is private again, and never offers one for import.
+
+use super::manager::{AcpLaunch, StartedSession};
+use super::session_list::ListedSessions;
+use crate::private_mode::service::PrivateMode;
+use crate::private_mode::PrivateError;
+
+/// Records the ACP session `result` opened when `is_private`. A failed open
+/// records nothing. A record that cannot be saved is ignored: the session
+/// already runs, and the error carries nothing worth showing the user.
+pub fn note_if_private(
+    private: &PrivateMode,
+    is_private: bool,
+    result: Result<StartedSession, String>,
+) -> Result<StartedSession, String> {
+    let started = result?;
+    if is_private {
+        // Best effort: see above.
+        let _ = private.note_private_session(&started.acp_session_id);
+    }
+    Ok(started)
+}
+
+/// Opens the agent's session `acp_session_id` (a reopen, or an import with no
+/// `private_model_id`). A recorded private session is refused with
+/// `private_session` before `launch` runs, let alone a process, unless
+/// `private_model_id` makes the open private again. `launch` builds the launch
+/// and `open` starts it; a private open is recorded.
+pub fn open_session(
+    private: &PrivateMode,
+    acp_session_id: &str,
+    private_model_id: Option<&str>,
+    launch: impl FnOnce() -> Result<AcpLaunch, String>,
+    open: impl FnOnce(&AcpLaunch) -> Result<StartedSession, String>,
+) -> Result<StartedSession, String> {
+    if private_model_id.is_none() && private.is_private_acp_session(acp_session_id) {
+        return Err(PrivateError::PrivateSession.into());
+    }
+    let launch = launch()?;
+    note_if_private(private, private_model_id.is_some(), open(&launch))
+}
+
+/// `listed` without the sessions `is_hidden` names.
+pub fn without_hidden(listed: ListedSessions, is_hidden: impl Fn(&str) -> bool) -> ListedSessions {
+    ListedSessions {
+        sessions: listed
+            .sessions
+            .into_iter()
+            .filter(|session| !is_hidden(&session.acp_session_id))
+            .collect(),
+        ..listed
+    }
+}
+
+/// `listed` without the recorded private sessions, which the draft must not
+/// offer for import.
+pub fn without_private(listed: ListedSessions, private: &PrivateMode) -> ListedSessions {
+    let recorded = private.private_acp_sessions();
+    without_hidden(listed, |id| recorded.contains(id))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use serde_json::Value;
+
+    use super::*;
+    use crate::acp::session_list::ListedSession;
+    use crate::private_mode::testing::Harness;
+
+    const MODEL: Option<&str> = Some("Qwen/Qwen3.8-27B");
+
+    fn started(acp_session_id: &str) -> StartedSession {
+        StartedSession {
+            acp_session_id: acp_session_id.to_string(),
+            agent_capabilities: Value::Null,
+            modes: Value::Null,
+            models: Value::Null,
+            config_options: Value::Null,
+            reopened_with: None,
+        }
+    }
+
+    fn launch() -> AcpLaunch {
+        AcpLaunch {
+            program: "npx".to_string(),
+            args: Vec::new(),
+            env: Vec::new(),
+            private: false,
+        }
+    }
+
+    fn listed(ids: &[&str]) -> ListedSessions {
+        ListedSessions {
+            sessions: ids
+                .iter()
+                .map(|id| ListedSession {
+                    acp_session_id: id.to_string(),
+                    title: Some(format!("title {id}")),
+                    updated_at: None,
+                })
+                .collect(),
+            truncated: true,
+            incomplete: true,
+        }
+    }
+
+    #[test]
+    fn a_started_private_session_is_recorded() {
+        let harness = Harness::new();
+
+        let result = note_if_private(&harness.mode, true, Ok(started("acp-1")));
+
+        assert_eq!(result.expect("started").acp_session_id, "acp-1");
+        assert!(harness.mode.is_private_acp_session("acp-1"));
+    }
+
+    #[test]
+    fn a_plain_session_and_a_failed_start_record_nothing() {
+        let harness = Harness::new();
+
+        let plain = note_if_private(&harness.mode, false, Ok(started("acp-1")));
+        let failed = note_if_private(&harness.mode, true, Err("boom".to_string()));
+
+        assert!(plain.is_ok());
+        assert_eq!(failed.unwrap_err(), "boom");
+        assert!(harness.state().private_sessions.is_empty());
+    }
+
+    #[test]
+    fn a_session_that_started_stays_started_when_the_record_cannot_be_saved() {
+        let harness = Harness::new();
+        std::fs::create_dir_all(&harness.dir).expect("dir");
+        std::fs::write(harness.dir.join("private"), "a file, not a folder").expect("blocker");
+
+        let result = note_if_private(&harness.mode, true, Ok(started("acp-1")));
+
+        assert_eq!(result.expect("still started").acp_session_id, "acp-1");
+    }
+
+    #[test]
+    fn a_fork_of_a_private_session_is_recorded_and_a_plain_fork_is_not() {
+        let harness = Harness::new();
+
+        note_if_private(&harness.mode, true, Ok(started("fork-private"))).expect("fork");
+        note_if_private(&harness.mode, false, Ok(started("fork-plain"))).expect("fork");
+
+        assert!(harness.mode.is_private_acp_session("fork-private"));
+        assert!(!harness.mode.is_private_acp_session("fork-plain"));
+    }
+
+    #[test]
+    fn a_plain_open_of_a_recorded_session_is_refused_before_anything_is_launched() {
+        let harness = Harness::new();
+        harness.mode.note_private_session("acp-1").expect("noted");
+        let launches = Cell::new(0);
+        let opens = Cell::new(0);
+
+        // Reopen and import both come through here with no private model.
+        let result = open_session(
+            &harness.mode,
+            "acp-1",
+            None,
+            || {
+                launches.set(launches.get() + 1);
+                Ok(launch())
+            },
+            |_| {
+                opens.set(opens.get() + 1);
+                Ok(started("acp-1"))
+            },
+        );
+
+        assert_eq!(result.unwrap_err(), "private_session");
+        assert_eq!(launches.get(), 0);
+        assert_eq!(opens.get(), 0);
+    }
+
+    #[test]
+    fn a_plain_open_of_an_unrecorded_session_goes_ahead_and_records_nothing() {
+        let harness = Harness::new();
+        harness.mode.note_private_session("other").expect("noted");
+
+        let result = open_session(
+            &harness.mode,
+            "acp-1",
+            None,
+            || Ok(launch()),
+            |_| Ok(started("acp-1")),
+        );
+
+        assert_eq!(result.expect("opened").acp_session_id, "acp-1");
+        assert!(!harness.mode.is_private_acp_session("acp-1"));
+    }
+
+    #[test]
+    fn a_private_open_of_a_recorded_session_is_allowed() {
+        let harness = Harness::new();
+        harness.mode.note_private_session("acp-1").expect("noted");
+        let opens = Cell::new(0);
+
+        let result = open_session(
+            &harness.mode,
+            "acp-1",
+            MODEL,
+            || Ok(launch()),
+            |_| {
+                opens.set(opens.get() + 1);
+                Ok(started("acp-1"))
+            },
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(opens.get(), 1);
+        assert!(harness.mode.is_private_acp_session("acp-1"));
+    }
+
+    #[test]
+    fn a_private_open_of_an_unrecorded_session_records_what_the_agent_reports() {
+        let harness = Harness::new();
+
+        open_session(
+            &harness.mode,
+            "acp-1",
+            MODEL,
+            || Ok(launch()),
+            |_| Ok(started("acp-1-reported")),
+        )
+        .expect("opened");
+
+        assert!(harness.mode.is_private_acp_session("acp-1-reported"));
+    }
+
+    #[test]
+    fn a_launch_error_or_a_failed_open_is_passed_on_and_records_nothing() {
+        let harness = Harness::new();
+
+        let no_launch = open_session(
+            &harness.mode,
+            "acp-1",
+            MODEL,
+            || Err("not installed".to_string()),
+            |_| Ok(started("acp-1")),
+        );
+        let no_open = open_session(
+            &harness.mode,
+            "acp-1",
+            MODEL,
+            || Ok(launch()),
+            |_| Err("refused".to_string()),
+        );
+
+        assert_eq!(no_launch.unwrap_err(), "not installed");
+        assert_eq!(no_open.unwrap_err(), "refused");
+        assert!(harness.state().private_sessions.is_empty());
+    }
+
+    #[test]
+    fn recorded_private_sessions_are_left_out_of_a_listing() {
+        let all = listed(&["a", "b", "c"]);
+
+        let shown = without_hidden(all, |id| id == "b");
+
+        let ids: Vec<&str> = shown
+            .sessions
+            .iter()
+            .map(|session| session.acp_session_id.as_str())
+            .collect();
+        assert_eq!(ids, ["a", "c"]);
+        assert_eq!(shown.sessions[0].title.as_deref(), Some("title a"));
+        assert!(shown.truncated);
+        assert!(shown.incomplete);
+    }
+
+    #[test]
+    fn a_listing_without_private_sessions_is_unchanged() {
+        let all = listed(&["a", "b"]);
+
+        assert_eq!(without_hidden(all.clone(), |_| false), all);
+    }
+
+    #[test]
+    fn a_listing_is_filtered_by_what_private_mode_recorded() {
+        let harness = Harness::new();
+        harness.mode.note_private_session("b").expect("noted");
+
+        let shown = without_private(listed(&["a", "b"]), &harness.mode);
+
+        assert_eq!(shown.sessions.len(), 1);
+        assert_eq!(shown.sessions[0].acp_session_id, "a");
+    }
+}

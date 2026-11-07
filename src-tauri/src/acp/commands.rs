@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use tauri::State;
 
 use super::manager::{AcpEvent, AcpLaunch, AcpManager, ReopenPurpose, StartedSession};
+use super::private_sessions::{note_if_private, open_session, without_private};
 use super::probe::{ProbedAgent, SignInProbe};
 use super::qwen_log::{self, QwenApiError};
 use super::session_list::ListedSessions;
@@ -279,16 +280,17 @@ pub fn acp_start_session(
     profile_id: String,
     private_model_id: Option<String>,
 ) -> Result<StartedSession, String> {
-    manager.start(
-        &session_id,
+    let launch = launch_for_session(
+        &store,
+        &private,
         &cwd,
-        &launch_for_session(
-            &store,
-            &private,
-            &cwd,
-            &profile_id,
-            private_model_id.as_deref(),
-        )?,
+        &profile_id,
+        private_model_id.as_deref(),
+    )?;
+    note_if_private(
+        &private,
+        private_model_id.is_some(),
+        manager.start(&session_id, &cwd, &launch),
     )
 }
 
@@ -341,7 +343,8 @@ pub fn acp_authenticate(
 
 /// Reopens the agent's earlier session `acp_session_id` as app session
 /// `session_id`, with `session/resume` or `session/load`, whichever the agent
-/// offers. A private session is reopened with its `private_model_id` again.
+/// offers. A private session is reopened with its `private_model_id` again; a
+/// plain reopen of an id recorded as private is refused (`private_session`).
 // A command's arguments are the names the webview sends, so they stay separate.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command(async)]
@@ -355,51 +358,74 @@ pub fn acp_reopen_session(
     acp_session_id: String,
     private_model_id: Option<String>,
 ) -> Result<StartedSession, String> {
-    manager.reopen(
-        &session_id,
-        &cwd,
-        &launch_for_session(
-            &store,
-            &private,
-            &cwd,
-            &profile_id,
-            private_model_id.as_deref(),
-        )?,
+    open_session(
+        &private,
         &acp_session_id,
-        ReopenPurpose::Continue,
+        private_model_id.as_deref(),
+        || {
+            launch_for_session(
+                &store,
+                &private,
+                &cwd,
+                &profile_id,
+                private_model_id.as_deref(),
+            )
+        },
+        |launch| {
+            manager.reopen(
+                &session_id,
+                &cwd,
+                launch,
+                &acp_session_id,
+                ReopenPurpose::Continue,
+            )
+        },
     )
 }
 
 /// Imports the agent's earlier session `acp_session_id` as app session
 /// `session_id`, with `session/load` when the agent offers it, so the history
-/// Zorvo does not have is replayed into the chat.
+/// Zorvo does not have is replayed into the chat. An import is never private,
+/// so an id recorded as private is refused (`private_session`).
 #[tauri::command(async)]
 pub fn acp_import_session(
     manager: State<'_, AcpManager>,
     store: State<'_, AppStore>,
+    private: State<'_, PrivateMode>,
     session_id: String,
     cwd: String,
     profile_id: String,
     acp_session_id: String,
 ) -> Result<StartedSession, String> {
-    manager.reopen(
-        &session_id,
-        &cwd,
-        &launch_in_workspace(&store, &cwd, &profile_id)?,
+    open_session(
+        &private,
         &acp_session_id,
-        ReopenPurpose::Import,
+        None,
+        || launch_in_workspace(&store, &cwd, &profile_id),
+        |launch| {
+            manager.reopen(
+                &session_id,
+                &cwd,
+                launch,
+                &acp_session_id,
+                ReopenPurpose::Import,
+            )
+        },
     )
 }
 
-/// Lists the agent's sessions in `cwd`, for the draft to offer them.
+/// Lists the agent's sessions in `cwd`, for the draft to offer them, without
+/// the ones that ran privately (they are never imported).
 #[tauri::command(async)]
 pub fn acp_list_sessions(
     manager: State<'_, AcpManager>,
     store: State<'_, AppStore>,
+    private: State<'_, PrivateMode>,
     profile_id: String,
     cwd: String,
 ) -> Result<ListedSessions, String> {
-    manager.list_sessions(&cwd, &launch_in_workspace(&store, &cwd, &profile_id)?)
+    let listed = manager.list_sessions(&cwd, &launch_in_workspace(&store, &cwd, &profile_id)?)?;
+    Ok(without_private(listed, &private))
 }
 
 /// Forks `source_session_id` into `session_id` in `cwd`, which must be one of
@@ -415,15 +441,23 @@ fn fork_in_workspace(
     manager.fork(source_session_id, session_id, cwd)
 }
 
+/// A fork of a private session lives in its source's process, so it is private
+/// too and is recorded as such.
 #[tauri::command(async)]
 pub fn acp_fork_session(
     manager: State<'_, AcpManager>,
     store: State<'_, AppStore>,
+    private: State<'_, PrivateMode>,
     source_session_id: String,
     session_id: String,
     cwd: String,
 ) -> Result<StartedSession, String> {
-    fork_in_workspace(&manager, &store, &source_session_id, &session_id, &cwd)
+    let source_is_private = manager.is_private_session(&source_session_id);
+    note_if_private(
+        &private,
+        source_is_private,
+        fork_in_workspace(&manager, &store, &source_session_id, &session_id, &cwd),
+    )
 }
 
 /// Runs the sign-in command of `profile_id`'s terminal method `method_id` in a
@@ -1192,7 +1226,14 @@ mod tests {
         assert!(launch.private);
         assert_eq!(
             launch.env,
-            [("OPENAI_API_KEY".to_string(), "sk-zorvo".to_string())]
+            [
+                ("OPENAI_API_KEY".to_string(), "sk-zorvo".to_string()),
+                (
+                    "OPENAI_BASE_URL".to_string(),
+                    "https://cloud-api.near.ai/v1".to_string()
+                ),
+                ("OPENAI_MODEL".to_string(), "Qwen/Qwen3.8-27B".to_string()),
+            ]
         );
         assert_eq!(
             &launch.args[2..],

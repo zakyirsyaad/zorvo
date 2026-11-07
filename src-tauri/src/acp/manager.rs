@@ -46,7 +46,7 @@ const AUTHENTICATE_TIMEOUT: Duration = Duration::from_secs(300);
 pub const AUTH_REQUIRED_PREFIX: &str = "ACP_AUTH_REQUIRED:";
 
 /// How to start an ACP agent.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct AcpLaunch {
     pub program: String,
     pub args: Vec<String>,
@@ -54,6 +54,24 @@ pub struct AcpLaunch {
     /// A Zorvo Private session: the env holds the NEAR AI key. Only
     /// `private_mode::launch::private_launch` sets this.
     pub private: bool,
+}
+
+/// Prints the environment's names only: a private launch holds the NEAR AI key
+/// in its env, and no `{:?}` may ever print it.
+impl std::fmt::Debug for AcpLaunch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let env: Vec<(&str, &str)> = self
+            .env
+            .iter()
+            .map(|(name, _)| (name.as_str(), "…"))
+            .collect();
+        f.debug_struct("AcpLaunch")
+            .field("program", &self.program)
+            .field("args", &self.args)
+            .field("env", &env)
+            .field("private", &self.private)
+            .finish()
+    }
 }
 
 /// What `authenticate` says for a method that signs in through a terminal.
@@ -926,6 +944,27 @@ mod tests {
             "{needs_sign_in}"
         );
         assert_eq!(failed, "session/new failed: Internal error");
+    }
+
+    #[test]
+    fn debug_of_a_launch_shows_env_names_only_never_values() {
+        let launch = AcpLaunch {
+            program: "npx".to_string(),
+            args: vec!["--acp".to_string()],
+            env: vec![
+                ("OPENAI_API_KEY".to_string(), "sk-secret".to_string()),
+                ("PATH".to_string(), "/usr/bin".to_string()),
+            ],
+            private: true,
+        };
+
+        let text = format!("{launch:?} {launch:#?}");
+
+        assert!(!text.contains("sk-secret"), "{text}");
+        assert!(!text.contains("/usr/bin"), "{text}");
+        assert!(text.contains("OPENAI_API_KEY"), "{text}");
+        assert!(text.contains("npx") && text.contains("--acp"), "{text}");
+        assert!(text.contains("private: true"), "{text}");
     }
 
     #[test]

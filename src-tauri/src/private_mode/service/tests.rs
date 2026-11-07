@@ -947,6 +947,85 @@ fn a_taken_key_the_keychain_refused_is_written_again_on_the_next_status() {
 }
 
 #[test]
+fn a_noted_private_session_is_known_as_private_and_others_are_not() {
+    let h = Harness::new();
+    assert!(!h.mode.is_private_acp_session("acp-1"));
+
+    h.mode.note_private_session("acp-1").expect("noted");
+
+    assert!(h.mode.is_private_acp_session("acp-1"));
+    assert!(!h.mode.is_private_acp_session("acp-2"));
+    assert_eq!(h.state().private_sessions, ["acp-1"]);
+}
+
+#[test]
+fn noting_a_private_session_twice_keeps_one_record() {
+    let h = Harness::new();
+    h.mode.note_private_session("acp-1").expect("first");
+    h.mode.note_private_session("acp-1").expect("second");
+
+    assert_eq!(h.state().private_sessions, ["acp-1"]);
+}
+
+#[test]
+fn a_thousand_and_one_private_sessions_drop_the_oldest() {
+    let h = Harness::new();
+    for n in 0..=1000 {
+        h.mode
+            .note_private_session(&format!("s{n}"))
+            .expect("noted");
+    }
+
+    assert!(!h.mode.is_private_acp_session("s0"));
+    assert!(h.mode.is_private_acp_session("s1"));
+    assert!(h.mode.is_private_acp_session("s1000"));
+    assert_eq!(h.state().private_sessions.len(), 1000);
+}
+
+#[test]
+fn a_private_session_survives_a_new_run() {
+    let h = Harness::new();
+    h.mode.note_private_session("acp-1").expect("noted");
+
+    let state = LocalState::load(&h.dir.join("private"));
+
+    assert_eq!(state.private_sessions, ["acp-1"]);
+}
+
+#[test]
+fn noting_a_private_session_reports_a_storage_failure() {
+    let h = Harness::new();
+    std::fs::create_dir_all(&h.dir).expect("dir");
+    std::fs::write(h.dir.join("private"), "a file, not a folder").expect("blocker");
+
+    assert_eq!(
+        h.mode.note_private_session("acp-1"),
+        Err(PrivateError::Storage)
+    );
+    assert!(!h.mode.is_private_acp_session("acp-1"));
+}
+
+#[test]
+fn forgetting_the_device_keeps_the_record_of_private_sessions() {
+    let h = Harness::with_device(CODE);
+    h.mode.note_private_session("acp-1").expect("noted");
+
+    h.mode.forget_device().expect("forgotten");
+
+    assert!(h.mode.is_private_acp_session("acp-1"));
+}
+
+#[test]
+fn a_new_device_keeps_the_record_of_private_sessions() {
+    let h = Harness::new();
+    h.mode.note_private_session("acp-1").expect("noted");
+
+    h.mode.ensure_device().expect("device");
+
+    assert!(h.mode.is_private_acp_session("acp-1"));
+}
+
+#[test]
 fn iso_dates_are_utc_calendar_dates() {
     assert_eq!(iso_from_unix(0), "1970-01-01T00:00:00Z");
     assert_eq!(iso_from_unix(1_730_678_400), "2024-11-04T00:00:00Z");

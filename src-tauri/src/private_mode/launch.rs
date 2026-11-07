@@ -1,6 +1,6 @@
 //! Turns a Qwen Code launch into a private one: NEAR AI Cloud as the endpoint,
-//! the Zorvo key in the process env and nothing else from the user's `OPENAI_*`
-//! variables. This is the trust boundary for the key and the endpoint: the
+//! the Zorvo key, endpoint and model in the process env and nothing else from
+//! the user's `OPENAI_*` variables. This is the trust boundary for the key and the endpoint: the
 //! webview only names a model, and only a model Zorvo's own list offers.
 
 use super::client::ModelPrice;
@@ -21,6 +21,13 @@ const QWEN_CODE_ID: &str = "qwen-code";
 const OPENAI_ENV_PREFIX: &str = "OPENAI_";
 
 const KEY_VARIABLE: &str = "OPENAI_API_KEY";
+const BASE_URL_VARIABLE: &str = "OPENAI_BASE_URL";
+const MODEL_VARIABLE: &str = "OPENAI_MODEL";
+
+/// Flags Zorvo sets itself; a base launch that already has one is refused, so
+/// that "ours wins" never depends on how Qwen treats a repeated flag.
+const OWN_FLAGS: [&str; 3] = ["--auth-type", "--openai-base-url", "--model"];
+const OWN_SHORT_FLAG: &str = "-m";
 
 /// Fails unless `profile_id` is Qwen Code (a legacy id counts).
 pub fn ensure_qwen(profile_id: &str) -> Result<(), PrivateError> {
@@ -41,12 +48,26 @@ fn is_model_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'/' | b'-'))
 }
 
+/// Whether `arg` is one of the flags [`private_launch`] sets, alone or as
+/// `--flag=value`.
+fn is_own_flag(arg: &str) -> bool {
+    arg == OWN_SHORT_FLAG
+        || OWN_FLAGS.iter().any(|flag| {
+            arg == *flag
+                || arg
+                    .strip_prefix(flag)
+                    .is_some_and(|rest| rest.starts_with('='))
+        })
+}
+
 /// `launch` for a private session on `model_id`: the registry's own arguments
-/// first, then the flags that point Qwen Code at NEAR AI Cloud (the user's
+/// first (refused if they already pick an auth type, endpoint or model), then
+/// the flags that point Qwen Code at NEAR AI Cloud (the user's
 /// `~/.qwen/settings.json` would otherwise win over the env), and an env that
-/// holds `key` as `OPENAI_API_KEY` and none of the user's other `OPENAI_*`
-/// variables, so nothing of theirs picks the endpoint, model or account. The key
-/// goes in the env only, never in an argument.
+/// sets `OPENAI_API_KEY` to `key`, `OPENAI_BASE_URL` and `OPENAI_MODEL` too
+/// (Qwen reads a workspace `.env` without overriding what is already set, so a
+/// `.env` cannot point the session elsewhere) and has none of the user's other
+/// `OPENAI_*` variables. The key goes in the env only, never in an argument.
 pub fn private_launch(
     launch: AcpLaunch,
     profile_id: &str,
@@ -57,6 +78,9 @@ pub fn private_launch(
     ensure_qwen(profile_id)?;
     if !is_model_id(model_id) || !models.iter().any(|model| model.id == model_id) {
         return Err(PrivateError::UnknownModel);
+    }
+    if launch.args.iter().any(|arg| is_own_flag(arg)) {
+        return Err(PrivateError::BadRequest);
     }
     let mut args = launch.args;
     args.extend(
@@ -75,7 +99,11 @@ pub fn private_launch(
         .into_iter()
         .filter(|(name, _)| !name.starts_with(OPENAI_ENV_PREFIX))
         .collect();
-    env.push((KEY_VARIABLE.to_string(), key.to_string()));
+    env.extend([
+        (KEY_VARIABLE.to_string(), key.to_string()),
+        (BASE_URL_VARIABLE.to_string(), NEAR_AI_BASE_URL.to_string()),
+        (MODEL_VARIABLE.to_string(), model_id.to_string()),
+    ]);
     Ok(AcpLaunch {
         program: launch.program,
         args,
@@ -166,13 +194,70 @@ mod tests {
             ("HOME", "/Users/me"),
         ]);
 
-        let openai: Vec<_> = launched
+        let mut openai: Vec<_> = launched
             .env
             .iter()
             .filter(|(key, _)| key.starts_with("OPENAI_"))
+            .cloned()
             .collect();
-        assert_eq!(openai, [&("OPENAI_API_KEY".to_string(), KEY.to_string())]);
+        openai.sort();
+        assert_eq!(
+            openai,
+            [
+                ("OPENAI_API_KEY".to_string(), KEY.to_string()),
+                (
+                    "OPENAI_BASE_URL".to_string(),
+                    "https://cloud-api.near.ai/v1".to_string()
+                ),
+                ("OPENAI_MODEL".to_string(), MODEL.to_string()),
+            ]
+        );
         assert_eq!(value(&launched, "HOME"), Some("/Users/me"));
+    }
+
+    #[test]
+    fn the_env_names_the_endpoint_and_model_so_a_workspace_env_file_cannot_move_them() {
+        // Qwen loads `.env` without overriding variables that are already set.
+        let launched = launch(&[]);
+
+        assert_eq!(value(&launched, "OPENAI_BASE_URL"), Some(NEAR_AI_BASE_URL));
+        assert_eq!(value(&launched, "OPENAI_MODEL"), Some(MODEL));
+        assert_eq!(value(&launched, "OPENAI_API_KEY"), Some(KEY));
+    }
+
+    #[test]
+    fn a_base_launch_that_already_picks_auth_endpoint_or_model_is_refused() {
+        let flags = [
+            vec!["--auth-type", "oauth"],
+            vec!["--auth-type=openai"],
+            vec!["--openai-base-url", "http://x"],
+            vec!["--openai-base-url=http://x"],
+            vec!["--model", "m"],
+            vec!["--model=m"],
+            vec!["-m", "m"],
+        ];
+        for extra in flags {
+            let mut with_flags = base(&[]);
+            with_flags
+                .args
+                .extend(extra.iter().map(|arg| arg.to_string()));
+
+            let result = private_launch(with_flags, "qwen-code", MODEL, &models(), KEY);
+
+            assert_eq!(result, Err(PrivateError::BadRequest), "{extra:?}");
+        }
+    }
+
+    #[test]
+    fn a_base_launch_with_unrelated_flags_is_fine() {
+        let mut with_flags = base(&[]);
+        with_flags
+            .args
+            .extend(["--experimental-skills", "--model-x", "-mx"].map(String::from));
+
+        let launched = private_launch(with_flags, "qwen-code", MODEL, &models(), KEY);
+
+        assert!(launched.is_ok());
     }
 
     #[test]

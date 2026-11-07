@@ -20,6 +20,9 @@ const STATE_FILE: &str = "state.json";
 const DIR_MODE: u32 = 0o700;
 const FILE_MODE: u32 = 0o600;
 
+/// How many private ACP session ids are remembered; the oldest go first.
+pub const MAX_PRIVATE_SESSIONS: usize = 1000;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingTopup {
@@ -56,6 +59,10 @@ pub struct LocalState {
     pub rotation_expected_until: Option<i64>,
     /// The server answered `401` to this Mac's secret: its credits moved.
     pub moved: bool,
+    /// ACP session ids started privately, oldest first. The agent keeps those
+    /// sessions in its own store, so this is how Zorvo knows to never open one
+    /// without private mode. Ids only, no secret.
+    pub private_sessions: Vec<String>,
 }
 
 /// One field of the file, or `None` when it is absent or has the wrong shape.
@@ -63,6 +70,23 @@ fn field<T: DeserializeOwned>(object: &Map<String, Value>, key: &str) -> Option<
     object
         .get(key)
         .and_then(|value| serde_json::from_value(value.clone()).ok())
+}
+
+/// The string items of `privateSessions`, without empty ones or repeats, newest
+/// `MAX_PRIVATE_SESSIONS` kept; anything but an array is no sessions.
+fn private_sessions_of(object: &Map<String, Value>) -> Vec<String> {
+    let Some(Value::Array(items)) = object.get("privateSessions") else {
+        return Vec::new();
+    };
+    let mut ids: Vec<String> = Vec::new();
+    for id in items.iter().filter_map(Value::as_str) {
+        if !id.is_empty() && !ids.iter().any(|seen| seen == id) {
+            ids.push(id.to_string());
+        }
+    }
+    let excess = ids.len().saturating_sub(MAX_PRIVATE_SESSIONS);
+    ids.drain(..excess);
+    ids
 }
 
 impl LocalState {
@@ -83,6 +107,23 @@ impl LocalState {
             models: field(&object, "models"),
             rotation_expected_until: field(&object, "rotationExpectedUntil"),
             moved: field(&object, "moved").unwrap_or_default(),
+            private_sessions: private_sessions_of(&object),
+        }
+    }
+
+    /// This state with `acp_session_id` recorded as private: appended unless
+    /// already there, and the oldest dropped past [`MAX_PRIVATE_SESSIONS`].
+    pub fn with_private_session(self, acp_session_id: &str) -> LocalState {
+        if self.private_sessions.iter().any(|id| id == acp_session_id) {
+            return self;
+        }
+        let mut private_sessions = self.private_sessions;
+        private_sessions.push(acp_session_id.to_string());
+        let excess = private_sessions.len().saturating_sub(MAX_PRIVATE_SESSIONS);
+        private_sessions.drain(..excess);
+        LocalState {
+            private_sessions,
+            ..self
         }
     }
 
@@ -182,6 +223,7 @@ mod tests {
             }),
             rotation_expected_until: Some(1_762_480_800_000),
             moved: true,
+            private_sessions: vec!["acp-1".into(), "acp-2".into()],
         }
     }
 
@@ -235,6 +277,84 @@ mod tests {
             })
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn load_text(text: &str) -> LocalState {
+        let dir = scratch_dir();
+        std::fs::create_dir_all(&dir).expect("dir");
+        std::fs::write(dir.join(STATE_FILE), text).expect("write");
+        let loaded = LocalState::load(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        loaded
+    }
+
+    #[test]
+    fn private_sessions_skip_items_that_are_not_strings_and_repeats() {
+        let loaded = load_text(r#"{"privateSessions":["a",1,null,"b",{"x":1},"a",""]}"#);
+
+        assert_eq!(loaded.private_sessions, ["a", "b"]);
+    }
+
+    #[test]
+    fn private_sessions_of_the_wrong_shape_are_empty_and_the_rest_is_kept() {
+        for junk in ["\"a\"", "7", "{\"a\":1}", "null", "true"] {
+            let loaded = load_text(&format!(
+                r#"{{"recoverySaved":true,"privateSessions":{junk}}}"#
+            ));
+
+            assert!(loaded.private_sessions.is_empty(), "{junk}");
+            assert!(loaded.recovery_saved, "{junk}");
+        }
+    }
+
+    #[test]
+    fn a_hand_edited_file_with_too_many_private_sessions_keeps_the_newest() {
+        let ids: Vec<String> = (0..MAX_PRIVATE_SESSIONS + 5)
+            .map(|n| format!("\"s{n}\""))
+            .collect();
+        let loaded = load_text(&format!(r#"{{"privateSessions":[{}]}}"#, ids.join(",")));
+
+        assert_eq!(loaded.private_sessions.len(), MAX_PRIVATE_SESSIONS);
+        assert_eq!(
+            loaded.private_sessions.first().map(String::as_str),
+            Some("s5")
+        );
+        assert_eq!(
+            loaded.private_sessions.last().map(String::as_str),
+            Some("s1004")
+        );
+    }
+
+    #[test]
+    fn with_private_session_appends_in_order_and_never_repeats() {
+        let state = LocalState::default()
+            .with_private_session("a")
+            .with_private_session("b")
+            .with_private_session("a");
+
+        assert_eq!(state.private_sessions, ["a", "b"]);
+    }
+
+    #[test]
+    fn with_private_session_drops_the_oldest_past_the_cap() {
+        let mut state = LocalState::default();
+        for n in 0..MAX_PRIVATE_SESSIONS {
+            state = state.with_private_session(&format!("s{n}"));
+        }
+        assert_eq!(state.private_sessions.len(), MAX_PRIVATE_SESSIONS);
+
+        let state = state.with_private_session("newest");
+
+        assert_eq!(state.private_sessions.len(), MAX_PRIVATE_SESSIONS);
+        assert_eq!(
+            state.private_sessions.first().map(String::as_str),
+            Some("s1")
+        );
+        assert_eq!(
+            state.private_sessions.last().map(String::as_str),
+            Some("newest")
+        );
+        assert!(!state.private_sessions.iter().any(|id| id == "s0"));
     }
 
     #[test]

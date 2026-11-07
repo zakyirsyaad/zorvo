@@ -1,8 +1,16 @@
+import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 
 vi.mock("../lib/notify", () => ({ notifyIfAway: vi.fn(() => Promise.resolve()) }));
+vi.mock("@tauri-apps/plugin-notification", () => ({
+  isPermissionGranted: vi.fn(() => Promise.resolve(true)),
+  requestPermission: vi.fn(() => Promise.resolve("granted")),
+  sendNotification: vi.fn(),
+}));
+vi.mock("@tauri-apps/api/window", () => ({ getAllWindows: vi.fn(() => Promise.resolve([])) }));
 
+import { sendNotification } from "@tauri-apps/plugin-notification";
 import { notifyIfAway } from "../lib/notify";
 import { usePrivateCredits } from "../hooks/usePrivateCredits";
 import type { FakePrivate } from "./fixtures/private-backend";
@@ -226,12 +234,14 @@ describe("usePrivateCredits: top-up flow", () => {
     expect(notifyIfAway).not.toHaveBeenCalled();
   });
 
-  it("keeps polling through an unreachable or upstream error", async () => {
+  it("keeps polling through an unreachable, upstream or rate_limited error", async () => {
     const view = await mount();
     await buy(view, 5);
     fake().errors.private_topup_status = "unreachable";
     await advance(POLL_MS);
     fake().errors.private_topup_status = "upstream";
+    await advance(POLL_MS);
+    fake().errors.private_topup_status = "rate_limited";
     await advance(POLL_MS);
     expect(view.result.current.flow.kind).toBe("waiting");
 
@@ -250,6 +260,36 @@ describe("usePrivateCredits: top-up flow", () => {
     expect(view.result.current.flow).toEqual({ kind: "error", code: "unauthorized" });
     expect(callsTo("private_status")).toHaveLength(reads + 1);
 
+    const polls = callsTo("private_topup_status").length;
+    await advance(10_000);
+    expect(callsTo("private_topup_status")).toHaveLength(polls);
+  });
+
+  it.each(["not_found", "no_device", "bad_request", "keychain", "storage"])(
+    "stops polling and shows the error when a poll fails with the lasting error %s",
+    async (code) => {
+      const view = await mount();
+      await buy(view, 5);
+      fake().errors.private_topup_status = code;
+      await advance(POLL_MS);
+      expect(view.result.current.flow).toEqual({ kind: "error", code });
+
+      const polls = callsTo("private_topup_status").length;
+      await advance(10_000);
+      expect(callsTo("private_topup_status")).toHaveLength(polls);
+    },
+  );
+
+  it("resumes a saved top-up whose first poll answers expired", async () => {
+    fake().status = {
+      ...fake().status,
+      device: "ready",
+      pendingTopup: { topupId: "saved-2", expiresAt: "2026-11-07T09:00:00Z", credits: 1_000 },
+    };
+    fake().topupStatuses = ["expired"];
+    const view = await mount();
+    await advance(POLL_MS);
+    expect(view.result.current.flow).toEqual({ kind: "expired", topupId: "saved-2" });
     const polls = callsTo("private_topup_status").length;
     await advance(10_000);
     expect(callsTo("private_topup_status")).toHaveLength(polls);
@@ -309,12 +349,164 @@ describe("usePrivateCredits: errors and ending a flow", () => {
   it("keeps the flow and returns the reason when a cancel fails", async () => {
     const view = await mount();
     await buy(view, 5);
-    fake().errors.private_cancel_topup = "unreachable";
+    fake().errors.private_cancel_topup = "upstream";
     let result: unknown;
     await act(async () => {
       result = await view.result.current.cancel();
     });
-    expect(result).toEqual({ ok: false, text: "Couldn't reach the credits server." });
+    expect(result).toEqual({ ok: false, text: "Couldn't cancel the checkout. Try again." });
+    expect(view.result.current.flow.kind).toBe("waiting");
+  });
+
+  it("treats a cancel the server no longer knows as done", async () => {
+    const view = await mount();
+    await buy(view, 5);
+    fake().errors.private_cancel_topup = "not_found";
+    let result: unknown;
+    await act(async () => {
+      result = await view.result.current.cancel();
+    });
+    expect(result).toEqual({ ok: true });
+    expect(view.result.current.flow).toEqual({ kind: "idle" });
+  });
+
+  it("refreshes the status when a cancel says unauthorized", async () => {
+    const view = await mount();
+    await buy(view, 5);
+    const reads = callsTo("private_status").length;
+    fake().errors.private_cancel_topup = "unauthorized";
+    let result: unknown;
+    await act(async () => {
+      result = await view.result.current.cancel();
+    });
+    expect(result).toEqual({ ok: false, text: "Your credits moved to another Mac." });
+    expect(callsTo("private_status")).toHaveLength(reads + 1);
+  });
+
+  it("refuses to cancel while the top-up is still being created", async () => {
+    const view = await mount();
+    let hold!: () => void;
+    fake().holds.private_create_topup = new Promise<void>((resolve) => {
+      hold = resolve;
+    });
+    let pending!: Promise<void>;
+    act(() => {
+      pending = view.result.current.buy(5);
+    });
+    let result: unknown;
+    await act(async () => {
+      result = await view.result.current.cancel();
+    });
+    expect(result).toEqual({ ok: false, text: "Wait a moment, then cancel." });
+    expect(view.result.current.flow).toEqual({ kind: "opening", usd: 5 });
+    expect(callsTo("private_cancel_topup")).toHaveLength(0);
+    await act(async () => {
+      hold();
+      await pending;
+    });
+    expect(view.result.current.flow.kind).toBe("waiting");
+  });
+
+  it("leaves a flow that moved on during a cancel alone", async () => {
+    const view = await mount();
+    fake().topupStatuses = ["credited"];
+    await buy(view, 5);
+    let release!: () => void;
+    fake().holds.private_cancel_topup = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let result: unknown;
+    let cancelling!: Promise<unknown>;
+    act(() => {
+      cancelling = view.result.current.cancel().then((value) => (result = value));
+    });
+    await advance(POLL_MS);
+    expect(view.result.current.flow.kind).toBe("credited");
+    await act(async () => {
+      release();
+      await cancelling;
+    });
+    expect(result).toEqual({ ok: true });
+    expect(view.result.current.flow).toEqual({ kind: "credited", credits: 500 });
+  });
+
+  it("drops a poll answer that arrives after a cancel", async () => {
+    const view = await mount();
+    fake().topupStatuses = ["credited"];
+    await buy(view, 5);
+    let release!: () => void;
+    fake().holds.private_topup_status = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await advance(POLL_MS);
+    await act(async () => {
+      await view.result.current.cancel();
+    });
+    await act(async () => {
+      release();
+    });
+    expect(view.result.current.flow).toEqual({ kind: "idle" });
+    expect(notifyIfAway).not.toHaveBeenCalled();
+  });
+
+  it("does not let dismiss drop a top-up that is still live", async () => {
+    const view = await mount();
+    await buy(view, 5);
+    act(() => view.result.current.dismiss());
+    expect(view.result.current.flow.kind).toBe("waiting");
+
+    fake().topupStatuses = ["paid"];
+    await advance(POLL_MS);
+    expect(view.result.current.flow.kind).toBe("paid");
+    act(() => view.result.current.dismiss());
+    expect(view.result.current.flow.kind).toBe("paid");
+  });
+
+  it("dismisses a poll that is in flight without losing the hold", async () => {
+    const view = await mount();
+    await buy(view, 5);
+    let release!: () => void;
+    fake().topupStatuses = ["paid"];
+    fake().holds.private_topup_status = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await advance(POLL_MS);
+    act(() => view.result.current.dismiss());
+    await act(async () => {
+      release();
+    });
+    expect(view.result.current.flow.kind).toBe("paid");
+  });
+
+  it.each(["credited", "failed", "expired"] as const)("dismisses a finished top-up (%s)", async (status) => {
+    const view = await mount();
+    fake().topupStatuses = [status];
+    await buy(view, 5);
+    await advance(POLL_MS);
+    expect(view.result.current.flow.kind).toBe(status);
+    act(() => view.result.current.dismiss());
+    expect(view.result.current.flow).toEqual({ kind: "idle" });
+  });
+
+  it("ignores a second buy while a top-up is followed", async () => {
+    const view = await mount();
+    await buy(view, 5);
+    await buy(view, 10);
+    expect(callsTo("private_create_topup")).toHaveLength(1);
+    expect(view.result.current.flow).toMatchObject({ kind: "waiting", topup: { credits: 500 } });
+  });
+
+  it.each([0, -5, 2.5, Number.NaN, Number.POSITIVE_INFINITY])("refuses to buy %s dollars", async (usd) => {
+    const view = await mount();
+    await buy(view, usd);
+    expect(view.result.current.flow).toEqual({ kind: "error", code: "bad_request" });
+    expect(callsTo("private_create_topup")).toHaveLength(0);
+  });
+
+  it("keeps a followed top-up when a bad amount is asked for", async () => {
+    const view = await mount();
+    await buy(view, 5);
+    await buy(view, 0);
     expect(view.result.current.flow.kind).toBe("waiting");
   });
 
@@ -341,6 +533,67 @@ describe("usePrivateCredits: promo, recovery and forgetting", () => {
 
     await advance(POLL_MS);
     expect(view.result.current.flow).toEqual({ kind: "credited", credits: 500 });
+  });
+
+  it("refuses a promo code while a top-up is in progress, without calling the backend", async () => {
+    const view = await mount();
+    const refused = { ok: false, text: "Finish or cancel your current top-up first." };
+
+    // opening
+    let hold!: () => void;
+    fake().holds.private_create_topup = new Promise<void>((resolve) => {
+      hold = resolve;
+    });
+    let pending!: Promise<void>;
+    act(() => {
+      pending = view.result.current.buy(5);
+    });
+    let result: unknown;
+    await act(async () => {
+      result = await view.result.current.redeem("PROMO-1");
+    });
+    expect(result).toEqual(refused);
+    await act(async () => {
+      hold();
+      await pending;
+    });
+
+    // waiting
+    await act(async () => {
+      result = await view.result.current.redeem("PROMO-1");
+    });
+    expect(result).toEqual(refused);
+    expect(view.result.current.flow.kind).toBe("waiting");
+
+    // paid
+    fake().topupStatuses = ["paid"];
+    await advance(POLL_MS);
+    expect(view.result.current.flow.kind).toBe("paid");
+    await act(async () => {
+      result = await view.result.current.redeem("PROMO-1");
+    });
+    expect(result).toEqual(refused);
+
+    // waiting-stock
+    fake().topupStatuses = ["paid_waiting_stock"];
+    await advance(POLL_MS);
+    expect(view.result.current.flow.kind).toBe("waiting-stock");
+    await act(async () => {
+      result = await view.result.current.redeem("PROMO-1");
+    });
+    expect(result).toEqual(refused);
+
+    expect(callsTo("private_redeem_promo")).toHaveLength(0);
+  });
+
+  it.each(["upstream", "unreachable"])("words a %s failure of a promo redeem as a redeem failure", async (code) => {
+    const view = await mount();
+    fake().errors.private_redeem_promo = code;
+    let result: unknown;
+    await act(async () => {
+      result = await view.result.current.redeem("PROMO-1");
+    });
+    expect(result).toEqual({ ok: false, text: "Couldn't redeem the code. Try again." });
   });
 
   it("returns plain words when a promo code is refused, and refreshes on unauthorized", async () => {
@@ -522,7 +775,7 @@ describe("usePrivateCredits: loading", () => {
     expect(view.result.current.status?.balance?.credits).toBe(300);
     expect(view.result.current.stock).toBeNull();
     expect(view.result.current.models).toBeNull();
-    expect(view.result.current.modelsError).toBe("Couldn't open checkout. Nothing was held or charged.");
+    expect(view.result.current.modelsError).toBe("Couldn't load the private models. Try again.");
   });
 
   it("keeps the last status when a later read fails", async () => {
@@ -555,13 +808,78 @@ describe("usePrivateCredits: notification", () => {
     expect(notifyIfAway).not.toHaveBeenCalled();
   });
 
-  it("notifies when a refresh shows the credits rose", async () => {
+  it("never notifies for a status read, even one that shows more credits", async () => {
     readyWith(300);
     const view = await mount();
     readyWith(800);
     await act(async () => view.result.current.refresh(true));
+    expect(notifyIfAway).not.toHaveBeenCalled();
+  });
+
+  it("does not notify when a later status read shows fewer credits than the credit brought", async () => {
+    const view = await mount();
+    fake().topupStatuses = ["credited"];
+    await buy(view, 5);
+    await advance(POLL_MS);
     expect(notifyIfAway).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(notifyIfAway).mock.calls[0][0].body).toBe("+500 credits. Private sessions can use them now.");
+
+    readyWith(100, { balance: null, lastBalance: { credits: 100, usedCredits: 0, at: "2026-11-07T10:06:00Z" } });
+    await act(async () => view.result.current.refresh(false));
+    readyWith(500);
+    await act(async () => view.result.current.refresh(true));
+    await advance(60_000);
+    expect(notifyIfAway).toHaveBeenCalledTimes(1);
+  });
+
+  it("notifies once for a top-up resumed after a restart", async () => {
+    fake().status = {
+      ...fake().status,
+      device: "ready",
+      pendingTopup: { topupId: "saved-9", expiresAt: "2026-11-07T11:00:00Z", credits: 1_000 },
+    };
+    fake().topupStatuses = ["credited"];
+    const view = await mount();
+    await advance(POLL_MS);
+    expect(view.result.current.flow).toEqual({ kind: "credited", credits: 1_000 });
+    await advance(60_000);
+    expect(notifyIfAway).toHaveBeenCalledTimes(1);
+  });
+
+  describe("with the real notifyIfAway", () => {
+    beforeEach(async () => {
+      const actual = await vi.importActual<typeof import("../lib/notify")>("../lib/notify");
+      vi.mocked(notifyIfAway).mockImplementation(actual.notifyIfAway);
+      vi.mocked(sendNotification).mockClear();
+    });
+
+    afterEach(() => {
+      vi.mocked(notifyIfAway).mockImplementation(() => Promise.resolve());
+      vi.restoreAllMocks();
+    });
+
+    it("shows nothing while the app has focus", async () => {
+      vi.spyOn(document, "hasFocus").mockReturnValue(true);
+      const view = await mount();
+      fake().topupStatuses = ["credited"];
+      await buy(view, 5);
+      await advance(POLL_MS);
+      expect(view.result.current.flow.kind).toBe("credited");
+      expect(sendNotification).not.toHaveBeenCalled();
+    });
+
+    it("shows the credit once while the app is away", async () => {
+      vi.spyOn(document, "hasFocus").mockReturnValue(false);
+      const view = await mount();
+      fake().topupStatuses = ["credited"];
+      await buy(view, 5);
+      await advance(POLL_MS);
+      await advance(0);
+      expect(sendNotification).toHaveBeenCalledTimes(1);
+      expect(sendNotification).toHaveBeenCalledWith({
+        title: "Zorvo",
+        body: "+500 credits. Private sessions can use them now.",
+      });
+    });
   });
 
   it("does not break the flow when the notification fails", async () => {
@@ -571,5 +889,65 @@ describe("usePrivateCredits: notification", () => {
     await buy(view, 5);
     await advance(POLL_MS);
     expect(view.result.current.flow).toEqual({ kind: "credited", credits: 500 });
+  });
+});
+
+describe("usePrivateCredits: overlapping reads and StrictMode", () => {
+  it("does not let a late older status answer overwrite a newer one", async () => {
+    readyWith(100);
+    const view = await mount();
+    expect(view.result.current.status?.balance?.credits).toBe(100);
+
+    let release!: () => void;
+    fake().holds.private_status = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let older!: Promise<void>;
+    act(() => {
+      older = view.result.current.refresh();
+    });
+    delete fake().holds.private_status;
+    readyWith(300);
+    await act(async () => view.result.current.refresh());
+    expect(view.result.current.status?.balance?.credits).toBe(300);
+
+    await act(async () => {
+      release();
+      await older;
+    });
+    expect(view.result.current.status?.balance?.credits).toBe(300);
+  });
+
+  it("starts one poller and one top-up when mounted under StrictMode", async () => {
+    const view = renderHook(() => usePrivateCredits(), { wrapper: StrictMode });
+    await advance(0);
+    await act(async () => {
+      await view.result.current.buy(5);
+    });
+    expect(callsTo("private_create_topup")).toHaveLength(1);
+    expect(callsTo("private_open_checkout")).toHaveLength(1);
+
+    await advance(POLL_MS);
+    expect(callsTo("private_topup_status")).toHaveLength(1);
+    await advance(POLL_MS);
+    expect(callsTo("private_topup_status")).toHaveLength(2);
+
+    view.unmount();
+    await advance(60_000);
+    expect(callsTo("private_topup_status")).toHaveLength(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("resumes a saved top-up once under StrictMode", async () => {
+    fake().status = {
+      ...fake().status,
+      device: "ready",
+      pendingTopup: { topupId: "saved-3", expiresAt: "2026-11-07T11:00:00Z", credits: 1_000 },
+    };
+    const view = renderHook(() => usePrivateCredits(), { wrapper: StrictMode });
+    await advance(0);
+    expect(view.result.current.flow).toMatchObject({ kind: "waiting", topup: { topupId: "saved-3" } });
+    await advance(POLL_MS);
+    expect(callsTo("private_topup_status")).toHaveLength(1);
   });
 });

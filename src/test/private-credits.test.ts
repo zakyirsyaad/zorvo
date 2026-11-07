@@ -3,6 +3,7 @@ import {
   CREDITS_PER_USD_COST,
   PRIVATE_CREDITS_PREFIX,
   PRIVATE_ERROR_CODES,
+  actionError,
   TURN_INPUT_TOKENS,
   TURN_OUTPUT_TOKENS,
   creditsPerTurn,
@@ -260,5 +261,48 @@ describe("privateErrorText", () => {
       if (code === "not_found") expect(privateErrorText(code)).toBe(FALLBACK);
       else expect(privateErrorText(code)).not.toBe(FALLBACK);
     }
+  });
+});
+
+describe("actionError", () => {
+  it("keeps the normal text for unauthorized in every action", () => {
+    for (const action of ["models", "cancel", "redeem", "forget", "recover"] as const) {
+      expect(actionError(action, "unauthorized")).toBe(privateErrorText("unauthorized"));
+    }
+  });
+
+  it("never claims a checkout was not held or charged outside a checkout", () => {
+    for (const action of ["models", "cancel", "redeem", "forget", "recover"] as const) {
+      expect(actionError(action, "upstream")).not.toContain("Nothing was held or charged");
+    }
+    for (const action of ["models", "cancel"] as const) {
+      for (const code of PRIVATE_ERROR_CODES) {
+        expect(actionError(action, code)).not.toContain("Nothing was held or charged");
+      }
+    }
+  });
+
+  it("words a models failure as a models failure", () => {
+    expect(actionError("models", "upstream")).toBe("Couldn't load the private models. Try again.");
+    expect(actionError("models", "unreachable")).toBe("Couldn't load the private models. Try again.");
+  });
+
+  it("words a cancel failure as a cancel failure", () => {
+    expect(actionError("cancel", "upstream")).toBe("Couldn't cancel the checkout. Try again.");
+    expect(actionError("cancel", "unreachable")).toBe("Couldn't cancel the checkout. Try again.");
+    expect(actionError("cancel", "rate_limited")).toBe("Couldn't cancel the checkout. Try again.");
+  });
+
+  it("words a redeem failure of the server as a redeem failure, and keeps the rest", () => {
+    expect(actionError("redeem", "upstream")).toBe("Couldn't redeem the code. Try again.");
+    expect(actionError("redeem", "unreachable")).toBe("Couldn't redeem the code. Try again.");
+    expect(actionError("redeem", "bad_code")).toBe(privateErrorText("bad_code"));
+    expect(actionError("redeem", "rate_limited")).toBe(privateErrorText("rate_limited"));
+  });
+
+  it("leaves forget and recover with the normal texts", () => {
+    expect(actionError("forget", "keychain")).toBe(privateErrorText("keychain"));
+    expect(actionError("recover", "upstream")).toBe(FALLBACK);
+    expect(actionError("recover", "has_own_credits")).toBe(privateErrorText("has_own_credits"));
   });
 });

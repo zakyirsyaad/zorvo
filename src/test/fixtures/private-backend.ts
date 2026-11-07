@@ -126,13 +126,17 @@ export function handlePrivateCommand(cmd: string, args: unknown): Promise<unknow
   const state = fake();
   const callArgs = args as Record<string, unknown> | undefined;
   state.calls.push({ cmd, args: callArgs });
+  // The server answers as of the moment of the call; a hold only delays the answer's arrival.
+  const hold = state.holds[cmd];
+  const failure = Object.hasOwn(state.errors, cmd) ? state.errors[cmd] : undefined;
+  if (failure === undefined && cmd === "private_mark_recovery") {
+    state.status = { ...state.status, recoverySaved: callArgs?.saved === true, recoveryPrompted: true };
+  }
+  const result = failure === undefined ? answer(state, cmd, callArgs) : undefined;
   const run = async (): Promise<unknown> => {
-    await state.holds[cmd];
-    if (Object.hasOwn(state.errors, cmd)) throw state.errors[cmd];
-    if (cmd === "private_mark_recovery") {
-      state.status = { ...state.status, recoverySaved: callArgs?.saved === true, recoveryPrompted: true };
-    }
-    return answer(state, cmd, callArgs);
+    await hold;
+    if (failure !== undefined) throw failure;
+    return result;
   };
   return run();
 }

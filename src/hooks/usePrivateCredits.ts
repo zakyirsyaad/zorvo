@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { notifyIfAway } from '../lib/notify';
 import {
+  actionError,
   formatCredits,
   privateErrorText,
   type ModelPrice,
@@ -56,6 +57,12 @@ const POLL_MS = 3_000;
 /** A paid top-up waiting for stock can take long; asking every 3 s would only load the server. */
 const STOCK_POLL_MS = 15_000;
 
+/** Errors that pass by themselves; any other error code ends the polling. */
+const TRANSIENT_POLL_ERRORS: ReadonlySet<string> = new Set(['unreachable', 'upstream', 'rate_limited']);
+
+const ONE_TOPUP_AT_A_TIME = 'Finish or cancel your current top-up first.';
+const STILL_OPENING = 'Wait a moment, then cancel.';
+
 type CreditsOut = Readonly<Record<string, 'empty' | 'key'>>;
 
 /** The backend rejects with a plain snake_case code. */
@@ -70,6 +77,11 @@ function creditsOf(status: PrivateStatus): number {
 
 function toppedUp(flow: TopupFlow): PendingTopup | null {
   return flow.kind === 'waiting' || flow.kind === 'paid' || flow.kind === 'waiting-stock' ? flow.topup : null;
+}
+
+/** A top-up is being created or followed: its hold must not be lost track of. */
+function isTopupInProgress(flow: TopupFlow): boolean {
+  return flow.kind === 'opening' || toppedUp(flow) !== null;
 }
 
 function pruneCreditsOut(marks: CreditsOut, status: PrivateStatus): CreditsOut {
@@ -108,8 +120,8 @@ export function usePrivateCredits(): PrivateCredits {
   // The flow as the async code below needs it: written when it changes, not on the next render.
   const flowRef = useRef<TopupFlow>(flow);
   const latestStatusRead = useRef(0);
-  // The credits the last status showed; null before the first one. A later rise is a credit that landed.
-  const knownCredits = useRef<number | null>(null);
+  // The top-ups a credit notification was sent for: one per top-up, however often its credit is seen.
+  const notifiedTopups = useRef<Set<string>>(new Set());
   const isResumed = useRef(false);
 
   useEffect(() => {
@@ -127,10 +139,6 @@ export function usePrivateCredits(): PrivateCredits {
 
   const applyStatus = useCallback(
     (next: PrivateStatus) => {
-      const credits = creditsOf(next);
-      const known = knownCredits.current;
-      knownCredits.current = credits;
-      if (known !== null && credits > known) notifyCredits(credits - known);
       setStatus(next);
       setCreditsOut((prev) => pruneCreditsOut(prev, next));
       // After a restart, a top-up the backend still holds is followed from where it was left.
@@ -176,7 +184,7 @@ export function usePrivateCredits(): PrivateCredits {
       setModels(next);
       setModelsError(undefined);
     } catch (error) {
-      if (isAlive.current) setModelsError(privateErrorText(codeOf(error)));
+      if (isAlive.current) setModelsError(actionError('models', codeOf(error)));
     }
   }, []);
 
@@ -208,10 +216,11 @@ export function usePrivateCredits(): PrivateCredits {
           break;
         case 'credited': {
           const credits = state.credits > 0 ? state.credits : topup.credits;
-          // The refresh below shows these credits: they are not a second arrival.
-          knownCredits.current = (knownCredits.current ?? 0) + credits;
           updateFlow(() => ({ kind: 'credited', credits }));
-          notifyCredits(credits);
+          if (!notifiedTopups.current.has(topupId)) {
+            notifiedTopups.current.add(topupId);
+            notifyCredits(credits);
+          }
           void refresh(true);
           break;
         }
@@ -240,10 +249,12 @@ export function usePrivateCredits(): PrivateCredits {
         const state = await invoke<TopupState>('private_topup_status', { topupId });
         if (!isStopped) settle(topupId, state);
       } catch (error) {
-        // An unreachable server or a failing upstream shows nothing new: the next poll asks again.
-        if (!isStopped && codeOf(error) === 'unauthorized') {
-          updateFlow(() => ({ kind: 'error', code: 'unauthorized' }));
-          void refresh();
+        const code = codeOf(error);
+        // A server out of reach or too busy shows nothing new: the next poll asks again. Any other
+        // error will not pass by itself, so the flow says so instead of polling on for nothing.
+        if (!isStopped && !TRANSIENT_POLL_ERRORS.has(code)) {
+          updateFlow(() => ({ kind: 'error', code }));
+          if (code === 'unauthorized') void refresh();
         }
       } finally {
         isReading = false;
@@ -277,7 +288,11 @@ export function usePrivateCredits(): PrivateCredits {
   const buy = useCallback(
     async (usd: number) => {
       // One top-up at a time: a second hold would charge nothing but would be lost track of.
-      if (flowRef.current.kind === 'opening' || toppedUp(flowRef.current)) return;
+      if (isTopupInProgress(flowRef.current)) return;
+      if (!Number.isInteger(usd) || usd <= 0) {
+        updateFlow(() => ({ kind: 'error', code: 'bad_request' }));
+        return;
+      }
       updateFlow(() => ({ kind: 'opening', usd }));
       let topup: PendingTopup;
       try {
@@ -300,31 +315,47 @@ export function usePrivateCredits(): PrivateCredits {
   }, [openCheckoutFor]);
 
   const cancel = useCallback(async (): Promise<ActionResult> => {
+    if (flowRef.current.kind === 'opening') return { ok: false, text: STILL_OPENING };
     const topup = toppedUp(flowRef.current);
     if (topup) {
       try {
         await invoke('private_cancel_topup', { topupId: topup.topupId });
       } catch (error) {
         const code = codeOf(error);
-        if (code === 'unauthorized') void refresh();
-        return { ok: false, text: privateErrorText(code) };
+        // The server no longer knows the top-up, so there is nothing left to cancel.
+        if (code !== 'not_found') {
+          if (code === 'unauthorized') void refresh();
+          return { ok: false, text: actionError('cancel', code) };
+        }
       }
     }
-    updateFlow(() => ({ kind: 'idle' }));
+    // A poll may have settled the top-up while the cancel was on its way: that outcome stays.
+    updateFlow((prev) => (topup && toppedUp(prev)?.topupId !== topup.topupId ? prev : { kind: 'idle' }));
     return { ok: true };
   }, [refresh, updateFlow]);
 
-  const dismiss = useCallback(() => updateFlow(() => ({ kind: 'idle' })), [updateFlow]);
+  /** Closes a finished top-up's result. A live hold is never dropped this way: it is cancelled. */
+  const dismiss = useCallback(
+    () =>
+      updateFlow((prev) =>
+        prev.kind === 'credited' || prev.kind === 'failed' || prev.kind === 'expired' || prev.kind === 'error'
+          ? { kind: 'idle' }
+          : prev,
+      ),
+    [updateFlow],
+  );
 
   const redeem = useCallback(
     async (code: string) => {
+      // The backend keeps one pending top-up and a promo replaces it: a hold in progress would be lost.
+      if (isTopupInProgress(flowRef.current)) return { ok: false as const, text: ONE_TOPUP_AT_A_TIME };
       let result: PromoResult;
       try {
         result = await invoke<PromoResult>('private_redeem_promo', { code });
       } catch (error) {
         const errorCode = codeOf(error);
         if (errorCode === 'unauthorized') void refresh();
-        return { ok: false as const, text: privateErrorText(errorCode) };
+        return { ok: false as const, text: actionError('redeem', errorCode) };
       }
       // The backend saved the promo as a pending top-up; its exact record comes from the status.
       const read = await loadStatus(false);
@@ -342,7 +373,7 @@ export function usePrivateCredits(): PrivateCredits {
       try {
         newCode = await invoke<string>('private_recover', { code });
       } catch (error) {
-        return { ok: false as const, text: privateErrorText(codeOf(error)) };
+        return { ok: false as const, text: actionError('recover', codeOf(error)) };
       }
       await refresh(true);
       return { ok: true as const, newCode };
@@ -369,7 +400,7 @@ export function usePrivateCredits(): PrivateCredits {
     try {
       await invoke('private_forget_device');
     } catch (error) {
-      return { ok: false, text: privateErrorText(codeOf(error)) };
+      return { ok: false, text: actionError('forget', codeOf(error)) };
     }
     updateFlow(() => ({ kind: 'idle' }));
     await refresh();

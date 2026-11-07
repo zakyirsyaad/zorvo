@@ -217,3 +217,30 @@ const ERROR_TEXT: Readonly<Record<PrivateErrorCode, string>> = {
 export function privateErrorText(code: string): string {
   return Object.hasOwn(ERROR_TEXT, code) ? ERROR_TEXT[code as PrivateErrorCode] : GENERIC_ERROR;
 }
+
+export type PrivateAction = 'models' | 'cancel' | 'redeem' | 'forget' | 'recover';
+
+const MODELS_FAILED = "Couldn't load the private models. Try again.";
+const CANCEL_FAILED = "Couldn't cancel the checkout. Try again.";
+const REDEEM_FAILED = "Couldn't redeem the code. Try again.";
+
+/**
+ * Plain words for a command error in the context of one action. `privateErrorText`'s `upstream`
+ * says nothing was held or charged, which is right when a checkout fails to open and wrong for
+ * loading prices, cancelling a hold, redeeming a code or restoring, so those say what failed instead.
+ */
+export function actionError(action: PrivateAction, code: string): string {
+  if (code === 'unauthorized') return privateErrorText(code);
+  switch (action) {
+    case 'models':
+      return MODELS_FAILED;
+    case 'cancel':
+      return CANCEL_FAILED;
+    case 'redeem':
+      // The other codes tell the user what to change (a wrong code, too many tries).
+      return code === 'upstream' || code === 'unreachable' ? REDEEM_FAILED : privateErrorText(code);
+    case 'forget':
+    case 'recover':
+      return code === 'upstream' ? GENERIC_ERROR : privateErrorText(code);
+  }
+}

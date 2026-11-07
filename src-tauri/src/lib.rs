@@ -14,6 +14,7 @@ pub mod fork_handoff;
 pub mod git_info;
 pub mod github;
 pub mod installer;
+pub mod private_mode;
 pub mod profiles;
 pub mod pty_session;
 pub mod pull_requests;

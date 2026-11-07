@@ -114,7 +114,8 @@ describe("NearAiClient", () => {
     expect(keys).toEqual([
       { id: "a", limitNano: 5_000_000_000n, usageNano: 250_000_000n },
       { id: "b", limitNano: null, usageNano: 0n },
-      { id: "c", limitNano: 2_000_000_000n, usageNano: 1_234_567_890n },
+      // 1,234,567,890.12 nano-USD of usage rounds up: spend is never under-counted.
+      { id: "c", limitNano: 2_000_000_000n, usageNano: 1_234_567_891n },
     ]);
     expect(calls.map((call) => call.url)).toEqual([
       `${BASE}/workspaces/ws-1/api-keys?limit=100&offset=0`,

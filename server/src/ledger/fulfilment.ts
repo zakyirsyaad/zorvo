@@ -357,8 +357,9 @@ function absorbedCredit(ctx: FulfilmentContext, itemId: string, topupId: string,
 
 /**
  * Sets the device's limit to the absolute total (race 5): a new key for a device without one, else
- * a PATCH, which is safe to repeat. `createKey` is not retried on a refused token, since a second
- * create is not obviously safe; the key secret is encrypted before anything is written.
+ * a PATCH, which is safe to repeat. Both go through `withAccessToken`: a create refused with 401 made
+ * no key, so retrying it once with a refreshed token cannot make two. The key secret is encrypted
+ * before anything is written.
  */
 async function setLimitUpstream(ctx: FulfilmentContext, claim: Claim, now: number): Promise<Upstream> {
   const cfg = ctx.config();
@@ -372,8 +373,7 @@ async function setLimitUpstream(ctx: FulfilmentContext, claim: Claim, now: numbe
   // The encryption key is tried first, so a bad one fails before a key exists upstream.
   const keyB64 = ctx.keyEncryptionKey();
   await encrypt(keyB64, "");
-  const access = await ctx.accessToken(now);
-  const created = await client.createKey(access, cfg.workspaceId, `zorvo-${claim.deviceId}`, limitNano);
+  const created = await ctx.withAccessToken(now, (access) => client.createKey(access, cfg.workspaceId, `zorvo-${claim.deviceId}`, limitNano));
   return { created: true, keyId: created.id, ciphertext: await encrypt(keyB64, created.key), limitNano };
 }
 
@@ -439,13 +439,19 @@ function recordKeyLimit(sql: SqlStorage, keyId: string, limitNano: bigint): void
   sql.exec("UPDATE snapshot SET outstanding_usd = MAX(0, outstanding_usd + ?) WHERE id = 1", Number(left(limitNano) - before));
 }
 
+/** Revokes `keyId` (retried once on a refused token); a failure is logged, never thrown. */
 async function revokeQuietly(ctx: FulfilmentContext, keyId: string, now: number): Promise<void> {
   try {
-    const cfg = ctx.config();
-    await ctx.nearAi().revokeKey(await ctx.accessToken(now), cfg.workspaceId, keyId);
+    await revokeUpstream(ctx, keyId, now);
   } catch (error) {
     console.error(`Revoking the extra NEAR AI key ${keyId} failed: ${describeError(error)}`);
   }
+}
+
+/** DELETE on a key, with the access-token retry of `withAccessToken`; a revoke is safe to repeat. */
+function revokeUpstream(ctx: FulfilmentContext, keyId: string, now: number): Promise<void> {
+  const workspaceId = ctx.config().workspaceId;
+  return ctx.withAccessToken(now, (access) => ctx.nearAi().revokeKey(access, workspaceId, keyId));
 }
 
 /** An old key is frozen at its usage, but never at 0, which a key might read as "no limit". */
@@ -506,11 +512,11 @@ async function rotateKey(ctx: FulfilmentContext, deviceId: string, itemId: strin
 
   let created: { id: string; ciphertext: string } | null = null;
   if (remaining > 0) {
-    // The encryption key is tried first, so a bad one fails before a key exists upstream. createKey
-    // is not routed through withAccessToken: a second create is not obviously safe.
+    // The encryption key is tried first, so a bad one fails before a key exists upstream.
     const keyB64 = ctx.keyEncryptionKey();
     await encrypt(keyB64, "");
-    const key = await ctx.nearAi().createKey(await ctx.accessToken(now), cfg.workspaceId, `zorvo-${deviceId}`, spendLimitNano(remaining, cfg));
+    const limitNano = spendLimitNano(remaining, cfg);
+    const key = await ctx.withAccessToken(now, (access) => ctx.nearAi().createKey(access, cfg.workspaceId, `zorvo-${deviceId}`, limitNano));
     created = { id: key.id, ciphertext: await encrypt(keyB64, key.key) };
   }
 
@@ -556,7 +562,7 @@ async function freezeKey(ctx: FulfilmentContext, keyId: string, now: number): Pr
   const first = await usageOf();
   const frozenAt = (first ?? stored) > MIN_FROZEN_LIMIT_NANO ? (first ?? stored) : MIN_FROZEN_LIMIT_NANO;
   try {
-    await client.setSpendLimit(await ctx.accessToken(now), cfg.workspaceId, keyId, frozenAt);
+    await ctx.withAccessToken(now, (access) => client.setSpendLimit(access, cfg.workspaceId, keyId, frozenAt));
   } catch (error) {
     if (error instanceof NearAiError && error.status === 404) return first ?? stored;
     throw error;
@@ -603,7 +609,7 @@ async function revokeItem(ctx: FulfilmentContext, itemId: string, now: number): 
   const attempts = item.attempts + 1;
   ctx.sql.exec("UPDATE queue SET attempts = ?, next_at = ? WHERE id = ?", attempts, now + backoffMs(attempts), itemId);
   try {
-    await ctx.nearAi().revokeKey(await ctx.accessToken(now), ctx.config().workspaceId, item.ref);
+    await revokeUpstream(ctx, item.ref, now);
   } catch (error) {
     if (!(error instanceof NearAiError && error.status === 404)) {
       console.error(`Revoking the replaced NEAR AI key ${item.ref} failed on attempt ${attempts}: ${describeError(error)}`);

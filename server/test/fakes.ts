@@ -13,7 +13,6 @@ export function json(body: unknown, status = 200): Response {
 
 export type SessionStatus = "CREATED" | "PENDING" | "COMPLETED" | "EXPIRED" | "CANCELLED";
 
-/** A stand-in for PingPay: sessions it created, their payments, and every request it saw. */
 /** A response that never comes: it rejects with the signal's reason once the caller gives up. */
 export function hangUntilAborted(signal: AbortSignal | null | undefined): Promise<Response> {
   return new Promise((_resolve, reject) => {
@@ -21,6 +20,7 @@ export function hangUntilAborted(signal: AbortSignal | null | undefined): Promis
   });
 }
 
+/** A stand-in for PingPay: sessions it created, their payments, and every request it saw. */
 export class FakePingPay {
   sessions = new Map<
     string,
@@ -117,6 +117,10 @@ export class FakeNearAi {
   modelList: { id: string; verifiable: boolean; inputPerToken: number; outputPerToken: number }[] = [];
   /** A status to answer a route with instead of serving it. */
   status: Partial<Record<NearAiRoute, number>> = {};
+  /** A status to answer the next request of a route with, once; later ones are served. */
+  failOnce: Partial<Record<NearAiRoute, number>> = {};
+  /** Key ids the key list leaves out, as a list that lags behind would. */
+  unlisted = new Set<string>();
   /** Routes that never answer; the request fails only when its signal aborts. */
   hang = new Set<NearAiRoute>();
   private holds = new Map<NearAiRoute, { gate: Promise<void>; started: () => void }>();
@@ -152,7 +156,9 @@ export class FakeNearAi {
     const route = this.route(method, path);
     this.calls.push({ route, method, path, auth: new Headers(init?.headers).get("authorization"), body });
     if (this.hang.has(route)) return hangUntilAborted(init?.signal);
-    const status = this.status[route];
+    const once = this.failOnce[route];
+    if (once !== undefined) delete this.failOnce[route];
+    const status = once ?? this.status[route];
     const answer = status !== undefined ? json({ error: "unavailable" }, status) : this.serve(route, path, body);
     const held = this.holds.get(route);
     if (held) {
@@ -191,8 +197,9 @@ export class FakeNearAi {
           })),
         });
       case "list": {
-        const keys = [...this.keys].map(([id, key]) => ({
+        const keys = [...this.keys].filter(([id]) => !this.unlisted.has(id)).map(([id, key]) => ({
           id,
+          name: key.name,
           spend_limit: { amount: Number(key.limitNano), scale: 9 },
           usage: { amount: Number(key.usageNano), scale: 9 },
         }));

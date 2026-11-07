@@ -25,15 +25,24 @@ export interface OperatorContext {
   refreshOnce(now: number): Promise<OperatorSession>;
 }
 
-/** The access token and the `version` of the operator row it belongs to. */
+/**
+ * The access token and the `version` of the operator row it belongs to. Whether the stored token is
+ * still fresh is read synchronously, so an expired one goes to `refreshOnce` with no await in
+ * between and joins a refresh already in flight rather than starting a second.
+ */
 export async function operatorSession(ctx: OperatorContext, now: number): Promise<OperatorSession> {
-  const cached = await cachedSession(ctx, now);
-  if (cached) return cached;
-  return ctx.refreshOnce(now);
+  const row = freshTokenRow(ctx, now);
+  if (!row) return ctx.refreshOnce(now);
+  try {
+    return { token: await decrypt(ctx.secret("KEY_ENCRYPTION_KEY"), row.access_token), version: row.version };
+  } catch {
+    // One that cannot be decrypted (an old plaintext value, a replaced key) counts as expired.
+    return ctx.refreshOnce(now);
+  }
 }
 
-/** The stored access token while it has more than a minute left; one that cannot be decrypted counts as expired. */
-export async function cachedSession(ctx: OperatorContext, now: number): Promise<OperatorSession | null> {
+/** The stored, still encrypted access token while it has more than a minute left. */
+function freshTokenRow(ctx: OperatorContext, now: number): { access_token: string; version: number } | null {
   const row = ctx.sql
     .exec<{ access_token: string | null; access_expires_at: number | null; version: number }>(
       "SELECT access_token, access_expires_at, version FROM operator WHERE id = ?",
@@ -41,11 +50,7 @@ export async function cachedSession(ctx: OperatorContext, now: number): Promise<
     )
     .toArray()[0];
   if (!row?.access_token || row.access_expires_at === null || row.access_expires_at - ACCESS_TOKEN_MARGIN_MS <= now) return null;
-  try {
-    return { token: await decrypt(ctx.secret("KEY_ENCRYPTION_KEY"), row.access_token), version: row.version };
-  } catch {
-    return null;
-  }
+  return { access_token: row.access_token, version: row.version };
 }
 
 /**
@@ -89,10 +94,24 @@ export async function operatorRefreshToken(ctx: OperatorContext): Promise<string
   return seed;
 }
 
+/**
+ * Spends the refresh token and stores the new pair. An answer whose access token is empty still
+ * carries the new refresh token, which is the only live one now: it is stored, the access token is
+ * not, and the call fails, so the next one refreshes with the stored token.
+ */
 export async function refreshOperator(ctx: OperatorContext, now: number): Promise<OperatorSession> {
   const refreshToken = await operatorRefreshToken(ctx);
   const fresh = await ctx.nearAi().refresh(refreshToken);
   const keyB64 = ctx.secret("KEY_ENCRYPTION_KEY");
+  if (fresh.accessToken === "") {
+    ctx.sql.exec(
+      `UPDATE operator SET refresh_token_ciphertext = ?, access_token = NULL, access_expires_at = NULL, version = version + 1
+       WHERE id = ?`,
+      await encrypt(keyB64, fresh.refreshToken),
+      OPERATOR_ID,
+    );
+    throw new Error("NEAR AI answered the refresh with an empty access token");
+  }
   // The old refresh token is spent: store the new one before anyone can use the new access token.
   ctx.sql.exec(
     `UPDATE operator SET refresh_token_ciphertext = ?, access_token = ?, access_expires_at = ?, version = version + 1

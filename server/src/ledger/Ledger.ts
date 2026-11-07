@@ -4,6 +4,15 @@ import { creditsForPackage, usdcAmount } from "../credits";
 import { decrypt, encrypt } from "../crypto";
 import { NearAiClient, NearAiError } from "../nearai";
 import { chargesUsdc, PingPayClient } from "../pingpay";
+import {
+  ALARM_INTERVAL_MS,
+  describeError,
+  runAlarm,
+  SNAPSHOT_MAX_AGE_MS,
+  type AlertKind,
+  type FulfilmentContext,
+  type SessionOutcome,
+} from "./fulfilment";
 import { applySchema } from "./schema";
 import { canMove, type TopupStatus } from "./status";
 import { computeStock, type StockView } from "./stock";
@@ -20,8 +29,6 @@ const CHECKOUT_CANCELLED_URL = "https://github.com/zakyirsyaad/zorvo/blob/main/s
 /** Payment statuses that are final without the money arriving. They change nothing: the payer may retry in the same session. */
 const FINAL_UNPAID = new Set(["FAILED", "REFUNDED"]);
 
-/** What a session event comes to once PingPay was read; `retry` is not recorded, so a redelivery is handled. */
-type SessionOutcome = "paid" | "expired" | "nothing" | "retry";
 const SNAPSHOT_ID = 1;
 const OPERATOR_ID = 1;
 /** How long a fresh access token is trusted; the operator session is refreshed on a 30-minute cadence (spec 7.6). */
@@ -29,6 +36,11 @@ const ACCESS_TOKEN_TTL_MS = 30 * 60 * 1000;
 /** A cached access token is renewed this long before it expires. */
 const ACCESS_TOKEN_MARGIN_MS = 60 * 1000;
 const MAX_STORABLE = BigInt(Number.MAX_SAFE_INTEGER);
+/** A top-up is refused for stock when the snapshot is this old and cannot be refreshed. */
+const SNAPSHOT_FAIL_CLOSED_MS = 10 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+/** An alert POST gives up after this long, so a slow hook cannot hold the alarm. */
+const ALERT_TIMEOUT_MS = 10 * 1000;
 
 /** Brings an upstream amount into the range `setSnapshot` and SQLite accept, so one odd value cannot stop updates. */
 function clampNano(nano: bigint): bigint {
@@ -51,6 +63,8 @@ export class Ledger extends DurableObject<Env> {
   private readonly sql: SqlStorage;
   private parsedConfig: Config | undefined;
   private refreshing: Promise<string> | undefined;
+  private snapshotting: Promise<void> | undefined;
+  private ticking: Promise<void> | undefined;
   /** The `fetch` used for NEAR AI and PingPay calls; tests replace it. */
   fetcher: typeof fetch = (input, init) => fetch(input, init);
 
@@ -61,8 +75,7 @@ export class Ledger extends DurableObject<Env> {
   }
 
   /** Counts one hit on `key` in a fixed window and says whether it is within `limit`. */
-  rateLimit(key: string, limit: number, windowMs: number): { allowed: boolean } {
-    const now = Date.now();
+  rateLimit(key: string, limit: number, windowMs: number, now: number = Date.now()): { allowed: boolean } {
     const row = this.sql
       .exec<{ count: number; window_start: number }>("SELECT count, window_start FROM ratelimits WHERE key = ?", key)
       .toArray()[0];
@@ -79,12 +92,14 @@ export class Ledger extends DurableObject<Env> {
     return { allowed: count <= limit };
   }
 
-  registerDevice(secretHash: string): { deviceId: string } | { error: "bad_request" } {
+  /** The check and the insert run before the first await, so one secret hash can never register twice. */
+  async registerDevice(secretHash: string): Promise<{ deviceId: string } | { error: "bad_request" }> {
     if (!/^[0-9a-f]{64}$/.test(secretHash)) return { error: "bad_request" };
     const taken = this.sql.exec("SELECT 1 FROM devices WHERE secret_hash = ?", secretHash).toArray().length > 0;
     if (taken) return { error: "bad_request" };
     const deviceId = crypto.randomUUID();
     this.sql.exec("INSERT INTO devices (id, secret_hash, created_at) VALUES (?, ?, ?)", deviceId, secretHash, Date.now());
+    await this.ensureAlarm();
     return { deviceId };
   }
 
@@ -116,7 +131,8 @@ export class Ledger extends DurableObject<Env> {
     );
   }
 
-  private availableCredits(now: number): { availableCredits: number; takenAt: number } {
+  /** `ignoreWaiting` leaves out paid top-ups waiting for stock, for serving the oldest of them. */
+  private availableCredits(now: number, ignoreWaiting = false): { availableCredits: number; takenAt: number } {
     const snapshot = this.sql
       .exec<{ org_remaining_usd: number; outstanding_usd: number; taken_at: number }>(
         "SELECT org_remaining_usd, outstanding_usd, taken_at FROM snapshot WHERE id = ?",
@@ -128,7 +144,9 @@ export class Ledger extends DurableObject<Env> {
         orgRemainingNano: BigInt(snapshot?.org_remaining_usd ?? 0),
         outstandingNano: BigInt(snapshot?.outstanding_usd ?? 0),
         reservedCredits: this.sum("SELECT COALESCE(SUM(credits), 0) AS total FROM reservations WHERE expires_at > ?", now),
-        waitingCredits: this.sum("SELECT COALESCE(SUM(credits), 0) AS total FROM topups WHERE status = 'paid_waiting_stock'"),
+        waitingCredits: ignoreWaiting
+          ? 0
+          : this.sum("SELECT COALESCE(SUM(credits), 0) AS total FROM topups WHERE status = 'paid_waiting_stock'"),
         bufferNano: this.config().stockBufferNano,
       },
       this.config(),
@@ -203,6 +221,35 @@ export class Ledger extends DurableObject<Env> {
       reservedUntil,
     );
     return { topupId };
+  }
+
+  /** When the stock snapshot was taken; 0 before the first one. */
+  private snapshotTakenAt(): number {
+    return this.sql.exec<{ taken_at: number }>("SELECT taken_at FROM snapshot WHERE id = ?", SNAPSHOT_ID).toArray()[0]?.taken_at ?? 0;
+  }
+
+  /** The previous refresh's result when one is in flight, so the alarm and a top-up do not both call NEAR AI. */
+  private refreshSnapshotOnce(now: number): Promise<void> {
+    this.snapshotting ??= this.refreshSnapshot(now).finally(() => {
+      this.snapshotting = undefined;
+    });
+    return this.snapshotting;
+  }
+
+  /**
+   * Makes the snapshot fresh enough to sell from (spec 7.3): one older than 2 minutes is refreshed
+   * first. When that fails, a snapshot under 10 minutes old is still used; an older one is not.
+   */
+  private async stockIsCurrent(now: number): Promise<boolean> {
+    const age = now - this.snapshotTakenAt();
+    if (age <= SNAPSHOT_MAX_AGE_MS) return true;
+    try {
+      await this.refreshSnapshotOnce(now);
+      return true;
+    } catch (error) {
+      console.error(`Stock snapshot refresh before a top-up failed: ${describeError(error)}`);
+      return age <= SNAPSHOT_FAIL_CLOSED_MS;
+    }
   }
 
   /** Gives a reservation's credits back to the stock and to the device's room. */
@@ -349,9 +396,9 @@ export class Ledger extends DurableObject<Env> {
   }
 
   /**
-   * Reserves the package and opens a PingPay checkout for it. The stock and cap check and both
-   * inserts happen in the synchronous `reserve`, before the first await. When PingPay fails the
-   * reservation is released and the top-up is `failed`.
+   * Reserves the package and opens a PingPay checkout for it. A stale snapshot is refreshed first;
+   * then the stock and cap check and both inserts happen in the synchronous `reserve`. When PingPay
+   * fails the reservation is released and the top-up is `failed`.
    */
   async createTopup(
     deviceId: string,
@@ -361,6 +408,9 @@ export class Ledger extends DurableObject<Env> {
     const cfg = this.config();
     if (!cfg.packagesUsd.includes(packageUsd)) throw new RangeError("unknown package");
     const client = this.pingPay();
+    await this.ensureAlarm();
+    if (!(await this.stockIsCurrent(now))) return { error: "stock" };
+    // No await between the check and the inserts: `reserve` is synchronous.
     const reserved = this.reserve(deviceId, creditsForPackage(packageUsd, cfg), packageUsd, now);
     if ("error" in reserved) return reserved;
     const { topupId } = reserved;
@@ -415,10 +465,10 @@ export class Ledger extends DurableObject<Env> {
 
   /**
    * Applies what PingPay says about a checkout session, read again from PingPay rather than taken
-   * from the event. Idempotent by `eventId` when one is given.
+   * from the event. Idempotent by `eventId` when one is given. Says what the session came to.
    */
-  async onSessionEvent(sessionId: string, eventId: string | null, now: number): Promise<void> {
-    await this.applySessionEvent(sessionId, eventId, now);
+  onSessionEvent(sessionId: string, eventId: string | null, now: number): Promise<SessionOutcome> {
+    return this.applySessionEvent(sessionId, eventId, now);
   }
 
   /**
@@ -428,7 +478,8 @@ export class Ledger extends DurableObject<Env> {
    */
   async webhookEvent(sessionId: string, eventId: string, now: number): Promise<{ ok: true } | { error: "upstream" | "retry" }> {
     try {
-      return (await this.applySessionEvent(sessionId, eventId, now)) === "retry" ? { error: "retry" } : { ok: true };
+      const outcome = await this.applySessionEvent(sessionId, eventId, now);
+      return outcome === "retry" || outcome === "mismatch" ? { error: "retry" } : { ok: true };
     } catch (error) {
       // PingPay's error messages name the request and status only; headers and the key are never logged.
       const { name, message } = error instanceof Error ? error : { name: "Error", message: String(error) };
@@ -441,7 +492,7 @@ export class Ledger extends DurableObject<Env> {
    * The event is recorded only once its outcome is decided, in the same synchronous block as the
    * change, so a failed read or an unsettled session is retried by a redelivery; a duplicate arriving
    * meanwhile is caught by the second check. Returns `retry` without recording anything when the
-   * session is not settled yet or charges another amount than the top-up's.
+   * session is not settled yet, and `mismatch` when it charged another amount than the top-up's.
    */
   private async applySessionEvent(sessionId: string, eventId: string | null, now: number): Promise<SessionOutcome> {
     if (eventId !== null && this.seenEvent(eventId)) return "nothing";
@@ -451,7 +502,7 @@ export class Ledger extends DurableObject<Env> {
     if (!found) return "nothing";
 
     const outcome = await this.readSession(found.id, usdcAmount(found.package_usd), sessionId);
-    if (outcome.kind === "retry") return "retry";
+    if (outcome.kind === "retry" || outcome.kind === "mismatch") return outcome.kind;
 
     // From here on nothing awaits: the rows are re-read, since a request may have changed them meanwhile.
     if (eventId !== null) {
@@ -486,7 +537,7 @@ export class Ledger extends DurableObject<Env> {
       console.error(
         `PingPay session for top-up ${topupId} charged ${session.amount.amount} of ${session.amount.assetId}, expected ${amountUsdc} USDC; not credited`,
       );
-      return { kind: "retry" };
+      return { kind: "mismatch" };
     }
     return { kind: "paid", paymentId: session.paymentId };
   }
@@ -510,7 +561,16 @@ export class Ledger extends DurableObject<Env> {
         return;
       }
     }
-    this.move(topupId, "paid", now);
+    this.holdForCredit(topupId, now);
+  }
+
+  /**
+   * Moves a top-up to `paid` through `canMove`, holds its stock until the credit releases it, and
+   * queues one `credit`. Shared by a payment and by the alarm's promotion of a waiting top-up.
+   */
+  private holdForCredit(topupId: string, now: number): boolean {
+    const row = this.topup(topupId);
+    if (!row || !this.move(topupId, "paid", now)) return false;
     this.sql.exec(
       `INSERT INTO reservations (topup_id, device_id, credits, expires_at) VALUES (?, ?, ?, ?)
        ON CONFLICT (topup_id) DO UPDATE SET expires_at = excluded.expires_at`,
@@ -521,12 +581,106 @@ export class Ledger extends DurableObject<Env> {
     );
     this.sql.exec("UPDATE topups SET reserved_until = NULL WHERE id = ?", topupId);
     this.sql.exec(
-      `INSERT INTO queue (id, kind, ref, attempts, next_at)
-       SELECT ?, 'credit', ?, 0, ? WHERE NOT EXISTS (SELECT 1 FROM queue WHERE kind = 'credit' AND ref = ?)`,
+      `INSERT INTO queue (id, kind, ref, attempts, next_at, created_at)
+       SELECT ?, 'credit', ?, 0, ?, ? WHERE NOT EXISTS (SELECT 1 FROM queue WHERE kind = 'credit' AND ref = ?)`,
       crypto.randomUUID(),
       topupId,
       now,
+      now,
       topupId,
     );
+    return true;
+  }
+
+  /**
+   * Hands the device its pending key once (spec 7.5). The secret is decrypted first and the row is
+   * deleted afterwards only if it is still the same, in one synchronous block, so two calls at once
+   * hand it over once and a failed decryption loses nothing. Never logged.
+   */
+  async takeKey(deviceId: string, now: number = Date.now()): Promise<string | null> {
+    const row = this.sql
+      .exec<{ key_ciphertext: string }>("SELECT key_ciphertext FROM pending_keys WHERE device_id = ? AND expires_at > ?", deviceId, now)
+      .toArray()[0];
+    if (!row) return null;
+    const key = await decrypt(this.secret("KEY_ENCRYPTION_KEY"), row.key_ciphertext);
+    const still = this.sql
+      .exec("SELECT 1 FROM pending_keys WHERE device_id = ? AND key_ciphertext = ?", deviceId, row.key_ciphertext)
+      .toArray().length > 0;
+    if (!still) return null;
+    this.sql.exec("DELETE FROM pending_keys WHERE device_id = ?", deviceId);
+    return key;
+  }
+
+  /**
+   * Tells the operator: a log line, and a POST of `{ kind, detail }` to `ALERT_URL` when it is set.
+   * Never throws, so a hook that is down cannot stop the alarm. `detail` never holds a token or key.
+   */
+  async alert(kind: AlertKind, detail: string): Promise<void> {
+    console.error(`Alert ${kind}: ${detail}`);
+    const url = this.env.ALERT_URL;
+    if (url === undefined || url === "") return;
+    try {
+      const response = await this.fetcher(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind, detail }),
+        signal: AbortSignal.timeout(ALERT_TIMEOUT_MS),
+      });
+      await response.body?.cancel();
+      if (!response.ok) console.error(`Alert ${kind} was not delivered: the hook answered ${response.status}`);
+    } catch (error) {
+      console.error(`Alert ${kind} was not delivered: ${describeError(error)}`);
+    }
+  }
+
+  private async alertOnce(kind: AlertKind, subject: string, detail: string, now: number): Promise<void> {
+    if (this.rateLimit(`alert:${kind}:${subject}`, 1, HOUR_MS, now).allowed) await this.alert(kind, detail);
+  }
+
+  private async ensureAlarm(): Promise<void> {
+    if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + ALARM_INTERVAL_MS);
+  }
+
+  override async alarm(): Promise<void> {
+    await this.runAlarm(Date.now());
+  }
+
+  /**
+   * One alarm tick at `now` (spec 7.5, race 8): a tick that starts while one runs joins it, so two
+   * never overlap. It always schedules the next tick a minute later.
+   */
+  runAlarm(now: number): Promise<void> {
+    this.ticking ??= (async () => {
+      try {
+        await runAlarm(this.fulfilment(), now);
+      } finally {
+        await this.ctx.storage.setAlarm(now + ALARM_INTERVAL_MS);
+      }
+    })().finally(() => {
+      this.ticking = undefined;
+    });
+    return this.ticking;
+  }
+
+  /** What the alarm's steps may use of the Ledger. */
+  private fulfilment(): FulfilmentContext {
+    return {
+      sql: this.sql,
+      transaction: (body) => this.ctx.storage.transactionSync(body),
+      config: () => this.config(),
+      nearAi: () => this.nearAi(),
+      accessToken: (now) => this.accessToken(now),
+      withAccessToken: (now, call) => this.withAccessToken(now, call),
+      keyEncryptionKey: () => this.secret("KEY_ENCRYPTION_KEY"),
+      snapshotTakenAt: () => this.snapshotTakenAt(),
+      refreshSnapshot: (now) => this.refreshSnapshotOnce(now),
+      availableCredits: (now, ignoreWaiting) => this.availableCredits(now, ignoreWaiting).availableCredits,
+      onSessionEvent: (sessionId, eventId, now) => this.onSessionEvent(sessionId, eventId, now),
+      move: (topupId, to, now) => this.move(topupId, to, now),
+      holdForCredit: (topupId, now) => this.holdForCredit(topupId, now),
+      releaseReservation: (topupId) => this.releaseReservation(topupId),
+      alert: (kind, detail) => this.alert(kind, detail),
+      alertOnce: (kind, subject, detail, now) => this.alertOnce(kind, subject, detail, now),
+    };
   }
 }

@@ -42,6 +42,14 @@ async function topupRoute(env: Env, deviceId: string, topupId: string, cancel: b
   return topup ? json(topup) : error("not_found", 404);
 }
 
+/** The device's NEAR AI key, once: the Ledger deletes it as it hands it over. Never cached on the way. */
+async function handOverKey(env: Env, deviceId: string): Promise<Response> {
+  const key = await ledgerOf(env).takeKey(deviceId);
+  const response = key === null ? error("not_found", 404) : json({ key });
+  response.headers.set("cache-control", "no-store");
+  return response;
+}
+
 /** PingPay webhooks: the signature is checked on the raw body before anything is parsed or changed. */
 async function pingPayWebhook(req: Request, env: Env): Promise<Response> {
   const rawBody = await req.text();
@@ -79,6 +87,11 @@ export default {
       const device = await authDevice(req, env);
       if (device instanceof Response) return device;
       return json(await ledgerOf(env).stockFor(device.deviceId));
+    }
+    if (req.method === "GET" && pathname === "/v1/key") {
+      const device = await authDevice(req, env);
+      if (device instanceof Response) return device;
+      return handOverKey(env, device.deviceId);
     }
     if (req.method === "POST" && pathname === "/v1/webhooks/pingpay") return pingPayWebhook(req, env);
     if (req.method === "POST" && pathname === "/v1/topups") {

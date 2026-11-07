@@ -6,6 +6,7 @@ import { hmacSha256Hex, randomSecret, sha256Hex } from "../src/crypto";
 import type { Ledger } from "../src/ledger/Ledger";
 import { canMove, type TopupStatus } from "../src/ledger/status";
 import { NEAR_USDC_ASSET_ID } from "../src/pingpay";
+import { FakePingPay } from "./fakes";
 
 const ledgerEnv = env as unknown as Env;
 const cfg = parseConfig(ledgerEnv);
@@ -15,97 +16,6 @@ const USD = 1_000_000_000n;
 const WEBHOOK_SECRET = "test-webhook-secret";
 
 const stub = () => ledgerEnv.LEDGER.get(ledgerEnv.LEDGER.idFromName("ledger"));
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-}
-
-type SessionStatus = "CREATED" | "PENDING" | "COMPLETED" | "EXPIRED" | "CANCELLED";
-
-/** A stand-in for PingPay: sessions it created, their payments, and every request it saw. */
-class FakePingPay {
-  sessions = new Map<
-    string,
-    { status: SessionStatus; paymentId: string | null; body: Record<string, unknown>; amount: Record<string, unknown> }
-  >();
-  payments = new Map<string, string>();
-  calls: { method: string; url: string; apiKey: string | null }[] = [];
-  failCreate = false;
-  failReads = false;
-  /** The amount a new session's answer states; by default what was asked, in NEAR USDC. */
-  answerAmount = (requested: unknown): Record<string, unknown> => ({ assetId: NEAR_USDC_ASSET_ID, amount: requested });
-  /** How long a new session lives, from the `now` it is given. */
-  expiresAt = (): number => Date.now() + 15 * MINUTE_MS;
-  private next = 0;
-
-  readonly fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = new URL(String(input));
-    const method = init?.method ?? "GET";
-    this.calls.push({ method, url: url.toString(), apiKey: new Headers(init?.headers).get("x-api-key") });
-    if (method === "POST" && url.pathname.endsWith("/checkout/sessions")) {
-      if (this.failCreate) return json({ code: "INTERNAL", message: "down" }, 503);
-      this.next += 1;
-      const sessionId = `cs_${this.next}`;
-      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      const amount = this.answerAmount(body.amount);
-      this.sessions.set(sessionId, { status: "CREATED", paymentId: null, body, amount });
-      return json({
-        session: {
-          sessionId,
-          status: "CREATED",
-          paymentId: null,
-          amount,
-          recipient: { address: cfg.operatorAccount },
-          createdAt: new Date().toISOString(),
-          expiresAt: new Date(this.expiresAt()).toISOString(),
-        },
-        sessionUrl: `https://checkout.pingpay.test/session/${sessionId}`,
-      });
-    }
-    if (this.failReads) return json({ code: "INTERNAL" }, 503);
-    const session = /\/checkout\/sessions\/([^/]+)$/.exec(url.pathname);
-    if (method === "GET" && session) {
-      const found = this.sessions.get(decodeURIComponent(session[1]!));
-      return found
-        ? json({ session: { sessionId: session[1], status: found.status, paymentId: found.paymentId, amount: found.amount } })
-        : json({}, 404);
-    }
-    const payment = /\/payments\/([^/]+)$/.exec(url.pathname);
-    if (method === "GET" && payment) {
-      const status = this.payments.get(decodeURIComponent(payment[1]!));
-      return status ? json({ payment: { paymentId: payment[1], status } }) : json({}, 404);
-    }
-    return json({}, 404);
-  }) as typeof fetch;
-
-  pay(sessionId: string, status = "SUCCESS"): void {
-    const session = this.sessions.get(sessionId);
-    if (!session) throw new Error(`no session ${sessionId}`);
-    const paymentId = `pay_${sessionId}`;
-    this.sessions.set(sessionId, { ...session, status: "COMPLETED", paymentId });
-    this.payments.set(paymentId, status);
-  }
-
-  /** The session reads COMPLETED before PingPay has attached a payment to it. */
-  completeWithoutPayment(sessionId: string): void {
-    const session = this.sessions.get(sessionId);
-    if (!session) throw new Error(`no session ${sessionId}`);
-    this.sessions.set(sessionId, { ...session, status: "COMPLETED", paymentId: null });
-  }
-
-  /** Changes the amount PingPay reports for a session from now on. */
-  restate(sessionId: string, amount: Record<string, unknown>): void {
-    const session = this.sessions.get(sessionId);
-    if (!session) throw new Error(`no session ${sessionId}`);
-    this.sessions.set(sessionId, { ...session, amount });
-  }
-
-  expire(sessionId: string): void {
-    const session = this.sessions.get(sessionId);
-    if (!session) throw new Error(`no session ${sessionId}`);
-    this.sessions.set(sessionId, { ...session, status: "EXPIRED" });
-  }
-}
 
 let ping: FakePingPay;
 
@@ -575,9 +485,11 @@ describe("Ledger.onSessionEvent", () => {
     if (!("topupId" in first)) throw new Error("expected a top-up");
     const sessionId = first.sessionUrl.split("/").pop()!;
 
-    // The hold ends at NOW + 25 min; the stock then goes to another device.
+    // The hold ends at NOW + 25 min; the stock then goes to another device. The same snapshot is
+    // taken again then, since a top-up is not sold from a snapshot older than 10 minutes.
     const afterHold = NOW + 26 * MINUTE_MS;
     ping.expiresAt = () => afterHold + 15 * MINUTE_MS;
+    await seedStock(500, afterHold);
     expect(await stub().createTopup(quick.deviceId, 5, afterHold)).toEqual(expect.objectContaining({ topupId: expect.any(String) }));
 
     ping.pay(sessionId);
@@ -597,6 +509,7 @@ describe("Ledger.onSessionEvent", () => {
     const sessionId = first.sessionUrl.split("/").pop()!;
     const afterHold = NOW + 26 * MINUTE_MS;
     ping.expiresAt = () => afterHold + 15 * MINUTE_MS;
+    await seedStock(500, afterHold);
     await stub().createTopup(quick.deviceId, 5, afterHold);
     ping.pay(sessionId);
     await stub().onSessionEvent(sessionId, "evt_1", afterHold);

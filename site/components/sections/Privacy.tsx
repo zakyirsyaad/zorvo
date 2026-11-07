@@ -5,7 +5,7 @@ const PROMISES: { icon: IconName; title: string; body: string }[] = [
   {
     icon: "key-round",
     title: "Sign-in stays with the agents",
-    body: "Zorvo never asks for or stores API keys or tokens. Agents sign in with their own tools, even when the login runs inside Zorvo.",
+    body: "Zorvo never asks for or stores API keys or tokens. Agents sign in with their own tools, even when the login runs inside Zorvo, and GitHub goes through your own gh.",
   },
   {
     icon: "globe",

@@ -1,9 +1,11 @@
 import { Agents } from "../components/sections/Agents";
+import { Compare } from "../components/sections/Compare";
 import { Control } from "../components/sections/Control";
 import { Download } from "../components/sections/Download";
 import { Features } from "../components/sections/Features";
 import { Hero } from "../components/sections/Hero";
 import { Privacy } from "../components/sections/Privacy";
+import { Review } from "../components/sections/Review";
 import { SiteFooter } from "../components/sections/SiteFooter";
 import { SiteHeader } from "../components/sections/SiteHeader";
 import { softwareApplication } from "../lib/site";
@@ -24,8 +26,10 @@ export default function Home() {
       <main id="main" className="flex flex-col">
         <Hero />
         <Agents />
-        <Features />
+        <Compare />
         <Control />
+        <Review />
+        <Features />
         <Privacy />
         <Download />
       </main>

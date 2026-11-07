@@ -14,8 +14,9 @@ export function SiteHeader() {
         {/* On a phone the section links live in the footer; Docs and Download stay. */}
         <ul className="m-0 hidden list-none items-center gap-7 p-0 md:flex">
           <li><a className={TEXT_LINK} href="#agents">Agents</a></li>
+          <li><a className={TEXT_LINK} href="#compare">Compare</a></li>
+          <li><a className={TEXT_LINK} href="#review">Review</a></li>
           <li><a className={TEXT_LINK} href="#features">Features</a></li>
-          <li><a className={TEXT_LINK} href="#privacy">Privacy</a></li>
           <li><a className={TEXT_LINK} href={LINKS.changelog}>Changelog</a></li>
         </ul>
         <div className="flex items-center gap-2">

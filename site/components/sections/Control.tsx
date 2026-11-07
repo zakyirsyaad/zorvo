@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { DiffCard, PermissionCard, StatusDot, type DiffLine } from "../mockups/parts";
+import { PermissionCard, Spinner, type ChangedFile } from "../mockups/parts";
 import { Icon, type IconName } from "../ui/Icon";
 import { SectionIntro } from "../ui/SectionIntro";
 
@@ -7,85 +7,71 @@ const POINTS: { icon: IconName; title: string; body: ReactNode }[] = [
   {
     icon: "shield-check",
     title: "Approvals in the chat",
-    body: "Allow once, always allow or deny, as the agent offers. Each session starts in the safest mode its agent has, and a mode that skips approvals carries a shield.",
+    body: "Deny, always allow or allow once, as the agent offers, with the files an edit touches and their changed lines. Each session starts in the safest mode its agent has, and a mode that skips approvals carries a shield.",
   },
   {
-    icon: "file-code",
-    title: "A diff of every change",
-    body: "Tool calls fold into one line, and a part that changes a file opens on its own so you see the diff.",
-  },
-  {
-    icon: "square-check",
+    icon: "list-checks",
     title: "The plan in the top bar",
-    body: "The agent's current plan sits beside Background tasks, with a count of the steps it has done.",
+    body: "The agent's plan shows as 2/4 beside the session's title. Open it to see which step runs now.",
   },
   {
     icon: "server",
     title: "Background tasks",
-    body: "Each running shell command and subagent gets its own row, with its session and how long it has run. Open one, or stop it.",
+    body: "Each running shell command and subagent gets its own row, with how long it has run. Open one, or stop it.",
+  },
+  {
+    icon: "activity",
+    title: "What the agent did, turn by turn",
+    body: "The Activity tab lists the files, commands and permissions the agent reported, with a jump to each in the chat. Files git shows as changed that the agent did not report are listed apart.",
   },
   {
     icon: "gauge",
-    title: "Context in plain numbers",
-    body: "Tokens used, tokens left and the session's cost, one click away.",
+    title: "Context in plain words",
+    body: "The composer reads 38% of context, turns amber from 80%, and opens the numbers behind it.",
   },
 ];
 
-const PIN_DIFF: DiffLine[] = [
-  { kind: "context", number: 41, text: "  const visible = sessions.filter(" },
-  { kind: "removed", number: 42, text: "   (s) => !s.archived," },
-  { kind: "added", number: 42, text: "   (s) => !s.archived || s.pinned," },
-  { kind: "added", number: 43, text: "  );" },
-  { kind: "added", number: 44, text: "  const pinned = visible.filter((s) => s.pinned);" },
-];
-
-type PlanState = "done" | "waiting" | "pending";
+type PlanState = "done" | "current" | "pending";
 
 const PLAN: { step: string; state: PlanState }[] = [
   { step: "Read the session list", state: "done" },
-  { step: "Keep pinned sessions visible", state: "waiting" },
+  { step: "Keep pinned sessions visible", state: "current" },
   { step: "Add a test", state: "pending" },
   { step: "Run the tests", state: "pending" },
 ];
 
-function PlanMarker({ state }: { state: PlanState }) {
-  if (state === "done") return <Icon name="check" className="text-status-running" />;
-  if (state === "waiting") {
-    return (
-      <span className="mx-1 inline-flex">
-        <StatusDot status="attention" />
-      </span>
-    );
-  }
-  return (
-    <span className="inline-grid size-3.5 flex-none place-items-center">
-      <span className="size-2 rounded-full border border-border-strong" />
-    </span>
-  );
-}
+const EDITS: ChangedFile[] = [
+  { path: "src/components/sidebar/SessionList.tsx", added: 3, removed: 1 },
+  { path: "src/test/session-list.test.tsx", added: 14, removed: 0 },
+];
 
-const PLAN_TEXT: Record<PlanState, string> = {
-  done: "text-fg-muted line-through",
-  waiting: "text-fg",
-  pending: "text-fg-subtle",
+const PLAN_ROW: Record<PlanState, string> = {
+  done: "text-fg-muted",
+  current: "bg-surface-hover text-fg",
+  pending: "text-fg-secondary",
 };
 
-/** The agent's plan, as the top bar's popover lists it: one step done, the next one waiting on you. */
+function PlanMarker({ state }: { state: PlanState }) {
+  if (state === "done") return <Icon name="circle-check" className="text-fg-muted" />;
+  if (state === "current") return <Spinner className="mx-px text-status-running" />;
+  return <Icon name="circle" className="text-fg-subtle" />;
+}
+
+/** The agent's plan, as the top bar's popover lists it: one step done, the next one running. */
 function PlanPopover() {
   const done = PLAN.filter(({ state }) => state === "done").length;
   return (
-    <div className="flex w-full max-w-[280px] flex-col gap-2 self-end rounded-lg border border-border bg-surface-3 p-3 shadow-popover">
-      <div className="flex items-center justify-between">
-        <span className="text-xs leading-4 font-medium text-fg">Plan</span>
-        <span className="font-mono text-[11px] leading-4 text-fg-muted">
-          {done}/{PLAN.length}
+    <div className="flex w-full max-w-[340px] flex-col gap-1 self-end rounded-xl border border-border bg-surface-3 p-2 shadow-popover">
+      <div className="flex items-center justify-between px-2 pt-1 pb-1.5 text-xs leading-4">
+        <span className="font-medium text-fg">Plan from Codex</span>
+        <span className="text-fg-subtle">
+          {done} of {PLAN.length} done
         </span>
       </div>
       {PLAN.map(({ step, state }) => (
-        <div key={step} className={`flex items-center gap-2 text-xs leading-4 ${PLAN_TEXT[state]}`}>
+        <div key={step} className={`flex h-[30px] items-center gap-2 rounded-md px-2 text-xs leading-4 ${PLAN_ROW[state]}`}>
           <PlanMarker state={state} />
           <span>{step}</span>
-          {state === "waiting" && <span className="t-caption ml-auto">Waiting on you</span>}
         </div>
       ))}
     </div>
@@ -94,18 +80,14 @@ function PlanPopover() {
 
 export function Control() {
   return (
-    <section
-      id="control"
-      aria-labelledby="control-title"
-      className="border-t border-border py-[72px] md:py-28"
-    >
+    <section id="control" aria-labelledby="control-title" className="border-t border-border py-[72px] md:py-28">
       <div className="site-wrap flex flex-wrap items-center gap-12 lg:gap-16">
         <div className="flex min-w-0 flex-[1_1_420px] flex-col gap-8">
           <SectionIntro
             id="control-title"
             eyebrow="control"
             title="You approve every step."
-            lead="Permission requests arrive with the agent's own choices. Every file it touches comes with a diff, and its plan stays in sight."
+            lead="Permission requests arrive with the agent's own choices. Its plan stays in sight, and every step it took is in its activity."
           />
           <ul className="m-0 flex list-none flex-col gap-5 p-0">
             {POINTS.map(({ icon, title, body }) => (
@@ -122,16 +104,11 @@ export function Control() {
 
         <div
           role="img"
-          aria-label="The agent's plan, one of four steps done and the next waiting on you, the Codex permission request it waits on, and its diff"
-          className="flex min-w-0 flex-[1_1_480px] flex-col gap-3.5 rounded-xl border border-border bg-surface-1 p-4 sm:p-7"
+          aria-label="Codex's plan, one of four steps done and the second running, above the permission request it waits on: Codex wants to edit two files, with their added and removed lines, and Deny, Always allow and Allow once."
+          className="flex min-w-0 flex-[1_1_480px] flex-col gap-4 rounded-xl border border-border bg-surface-1 p-4 sm:p-7"
         >
           <PlanPopover />
-          <PermissionCard
-            title="Codex wants to edit a file"
-            body="It will update the session list so archived sessions stay pinned."
-            command="src/components/SessionList.tsx"
-          />
-          <DiffCard path="src/components/SessionList.tsx" added={3} removed={1} lines={PIN_DIFF} />
+          <PermissionCard title="Codex wants to edit 2 files" files={EDITS} />
         </div>
       </div>
     </section>

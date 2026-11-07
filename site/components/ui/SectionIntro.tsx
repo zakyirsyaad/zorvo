@@ -16,7 +16,7 @@ export function SectionIntro({ id, eyebrow, title, lead, className = "" }: Secti
         </span>
         {eyebrow}
       </p>
-      <h2 id={id} className="t-headline m-0">
+      <h2 id={id} className="t-headline m-0 text-balance">
         {title}
       </h2>
       <p className="t-lead m-0">{lead}</p>

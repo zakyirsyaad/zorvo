@@ -4,7 +4,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::*;
-use crate::private_mode::device::{secret_hash, NEARAI_KEY};
+use crate::private_mode::device::{
+    normalize_recovery_code, secret_hash, DEVICE_SECRET_NEXT, NEARAI_KEY,
+};
 use crate::private_mode::testing::{
     balance, model_list, Call, Harness, CHECKOUT_URL, CODE, OTHER_CODE, TOPUP_ID,
 };

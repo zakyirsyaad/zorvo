@@ -74,7 +74,7 @@ function renderSettings(signIn: SettingsSignIn, isOpen = true) {
       agents={fakeProfiles}
       refreshAgents={() => Promise.resolve()}
       catalog={{ catalog: { lastChecked: null, agents: fakeCatalog, unavailable: [] }, error: null, reload: () => Promise.resolve() } as never}
-      actions={{ addAgent: () => {}, updateAgent: () => {}, removeAgent: () => Promise.resolve(), runningSessionCount: () => 0 }}
+      actions={{ addAgent: () => {}, markAgent: () => {}, unmarkAgent: () => {}, updateAgent: () => {}, removeAgent: () => Promise.resolve(), runningSessionCount: () => 0 }}
       recentFolders={[]}
       onRemoveRecentFolder={() => {}}
       onRunOnboarding={() => {}}

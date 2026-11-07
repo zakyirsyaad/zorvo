@@ -175,7 +175,7 @@ describe("the warning before a check", () => {
   });
 });
 
-const NO_ACTIONS = { addAgent: () => {}, updateAgent: () => {}, removeAgent: () => Promise.resolve(), runningSessionCount: () => 0 };
+const NO_ACTIONS = { addAgent: () => {}, markAgent: () => {}, unmarkAgent: () => {}, updateAgent: () => {}, removeAgent: () => Promise.resolve(), runningSessionCount: () => 0 };
 
 describe("the catalog", () => {
   it("shows the sign-in on agents in use that can start, not on the others or without controls", () => {

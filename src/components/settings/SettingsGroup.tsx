@@ -46,14 +46,16 @@ export interface SettingsRowProps {
   leading?: ReactNode;
   /** 12px gaps, as the GitHub and Agents rows are drawn; 16px otherwise. */
   isTight?: boolean;
+  /** Extra classes on the row (`group`, for a control that shows on hover). */
+  className?: string;
 }
 
 /** One row of a group: label and description on the left, the control on the right, hairlines between rows. */
-export function SettingsRow({ label, description, control, leading, isTight = false }: SettingsRowProps) {
+export function SettingsRow({ label, description, control, leading, isTight = false, className }: SettingsRowProps) {
   return (
     <div
       data-settings-row
-      className={`flex items-center border-b border-border px-4 py-3 last:border-b-0 ${isTight ? "gap-3" : "gap-4"}`}
+      className={`flex items-center border-b border-border px-4 py-3 last:border-b-0 ${isTight ? "gap-3" : "gap-4"} ${className ?? ""}`}
     >
       {leading}
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">

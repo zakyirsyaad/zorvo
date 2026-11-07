@@ -1,0 +1,60 @@
+<!-- @dsCard group="Layout" height=640 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Onboarding — preview</title>
+<style>
+.z-welcome { box-sizing: border-box; width: 760px; padding: 48px 24px; background: var(--bg); color: var(--fg); font: 400 13px/18px var(--font-sans); }
+.z-welcome-col { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+.z-welcome-head { display: flex; flex-direction: column; gap: 12px; }
+.z-welcome-mark { display: flex; align-items: center; gap: 10px; color: var(--fg); font: 600 28px/28px var(--font-sans); letter-spacing: -0.04em; }
+.z-welcome-mark svg { width: 28px; height: 28px; }
+.z-welcome-title { margin: 0; font: 600 28px/34px var(--font-sans); letter-spacing: -0.03em; }
+.z-welcome-lead { margin: 0; color: var(--fg-muted); font-size: 14px; line-height: 22px; }
+.z-welcome-sec { display: flex; flex-direction: column; gap: 10px; }
+.z-welcome-h { display: flex; align-items: center; gap: 8px; margin: 0; font: 600 13px/18px var(--font-sans); }
+.z-welcome-n { width: 20px; height: 20px; box-sizing: border-box; border-radius: 9999px; border: 1px solid var(--border-strong); color: var(--fg-secondary); font-size: 11px; font-weight: 400; display: flex; align-items: center; justify-content: center; }
+.z-welcome-card { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface-2); }
+.z-welcome-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.z-welcome-row:last-child { border-bottom: 0; }
+.z-welcome-cb { width: 16px; height: 16px; box-sizing: border-box; border-radius: 4px; border: 1.5px solid var(--border-strong); flex: none; }
+.z-welcome-cb--on { background: var(--fg); border-color: var(--fg); }
+.z-welcome-tile { width: 28px; height: 28px; border-radius: 7px; background: var(--surface-hover); flex: none; }
+.z-welcome-l { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.z-welcome-d { font-size: 12px; line-height: 16px; color: var(--fg-subtle); display: flex; align-items: center; gap: 6px; }
+.z-welcome-dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--status-running); }
+.z-welcome-tag { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; margin-left: 8px; border-radius: 4px; border: 1px solid var(--border); font-size: 10px; font-weight: 500; color: var(--fg-muted); }
+.z-welcome-mono { font-family: var(--font-mono); font-size: 11px; }
+.z-welcome-foot { display: flex; align-items: center; gap: 12px; padding-top: 8px; }
+.z-welcome-note { flex: 1; font-size: 12px; color: var(--fg-subtle); }
+.z-btn { height: 28px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: none; color: var(--fg); font: 400 12px/16px var(--font-sans); }
+.z-btn--primary { height: 32px; border-color: transparent; background: var(--primary); color: var(--on-primary); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="z-stage">
+  <div class="z-welcome">
+    <div class="z-welcome-col">
+      <div class="z-welcome-head">
+        <div class="z-welcome-mark"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 7l10 7-10 7"/><path d="M18 19l10 7-10 7"/><path d="M30 33h5"/></svg>zorvo</div>
+        <h1 class="z-welcome-title">Every coding agent. One desktop.</h1>
+        <p class="z-welcome-lead">Pick the agents you'll use and a project folder. You can change all of this later in Settings.</p>
+      </div>
+      <section class="z-welcome-sec">
+        <h2 class="z-welcome-h"><span class="z-welcome-n">1</span>Agents you'll use</h2>
+        <div class="z-welcome-card">
+          <div class="z-welcome-row"><span class="z-welcome-cb z-welcome-cb--on"></span><span class="z-welcome-tile"></span><span class="z-welcome-l"><span>Claude Code<span class="z-welcome-tag">Default</span></span><span class="z-welcome-d"><span class="z-welcome-dot"></span>On this Mac · Ready</span></span></div>
+          <div class="z-welcome-row"><span class="z-welcome-cb"></span><span class="z-welcome-tile"></span><span class="z-welcome-l"><span>Gemini CLI</span><span class="z-welcome-d">Not installed · Zorvo can install it</span></span></div>
+        </div>
+      </section>
+      <section class="z-welcome-sec">
+        <h2 class="z-welcome-h"><span class="z-welcome-n">2</span>Project folder</h2>
+        <div class="z-welcome-card">
+          <div class="z-welcome-row"><span class="z-welcome-tile"></span><span class="z-welcome-l"><span>agent-desktop</span><span class="z-welcome-d z-welcome-mono">~/developer/agent-desktop</span></span><button type="button" class="z-btn">Change</button></div>
+        </div>
+      </section>
+      <div class="z-welcome-foot"><span class="z-welcome-note"></span><button type="button" class="z-btn z-btn--primary">Start</button></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

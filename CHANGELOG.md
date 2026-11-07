@@ -6,6 +6,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Changed
 
+- **First run is one welcome screen.** Tick the agents you'll use (one that is not installed offers Install; ticking downloads nothing), pick a project folder (the folders it finds are offered), and press Start, which opens a new session there. Signing in waits for the first session, as before.
 - **Settings is a full page.** It opens in place of the sidebar and the chat, with a left navigation (General, Appearance, Agents, GitHub, and MCP servers marked Soon) and **Back to sessions**, which returns to the session you left with your draft as it was. Appearance shows System, Light and Dark as preview tiles, GitHub has its own section, and About shows when Zorvo last checked for an update, with **Check now**. Agents are one row each, with a sign-in chip, and an agent's sign-in opens inside its row.
 - **Check again in Settings → Agents matches its design.** The button beside the agent search keeps its 32px height, with the 12px regular text of the other outline buttons instead of 13px medium.
 - **Buttons match the design's type.** A 28px button's label is 12px instead of 13px, and outline and ghost buttons are in regular weight (primary and danger stay medium, and so does the sidebar's New session), so rows of buttons look lighter and tidier.

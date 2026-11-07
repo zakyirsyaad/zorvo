@@ -59,6 +59,8 @@ afterEach(() => {
 
 const NO_ACTIONS: AgentCatalogActions = {
   addAgent: () => {},
+  markAgent: () => {},
+  unmarkAgent: () => {},
   updateAgent: () => {},
   removeAgent: () => Promise.resolve(),
   runningSessionCount: () => 0,

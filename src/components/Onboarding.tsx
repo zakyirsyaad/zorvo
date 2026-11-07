@@ -1,207 +1,172 @@
-import { useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, Bot, Check } from "lucide-react";
-import { isAgentUsable, resolveUsableAgentId } from "../lib/agent-readiness";
-import { isInUse, type EnabledSettings } from "../lib/enabled-agents";
-import type { AgentProfile } from "../types";
-import { Button } from "./ui/Button";
-import { AgentsStep } from "./onboarding/AgentsStep";
-import { DefaultAgentStep } from "./onboarding/DefaultAgentStep";
-import { FolderStep } from "./onboarding/FolderStep";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { isAgentRunnable } from "../lib/agent-readiness";
+import { installEntryOf, subscribeToInstalls } from "../lib/agent-installs";
+import type { SignInState } from "../lib/agent-sign-in";
+import { enabledAgentIds, type EnabledSettings } from "../lib/enabled-agents";
+import { arrangedAgents, defaultOf, orderedAgents, startAgentOf, startGate } from "../lib/onboarding";
+import type { AgentCatalog, AgentProfile, Settings } from "../types";
+import { AgentChoices } from "./onboarding/AgentChoices";
+import { FolderChoice } from "./onboarding/FolderChoice";
+import { Wordmark } from "./onboarding/Wordmark";
 import { toFolderOption, type FolderOption, type OnboardingResult } from "./onboarding/types";
+import { Button } from "./ui/Button";
+import { ToastStack } from "./ui/Toast";
 
 export type { FolderOption, OnboardingResult } from "./onboarding/types";
 
 export interface OnboardingProps {
+  catalog: AgentCatalog | null;
+  /** The agent profiles: whether an agent can run now. */
   agents: readonly AgentProfile[];
-  /** Decides which registry agents are in use; the defaults apply when absent. */
-  settings?: EnabledSettings;
+  settings: EnabledSettings & Pick<Settings, "defaultAgentId">;
+  signInStateOf: (id: string) => SignInState;
+  /** True for an agent whose only way in is its own setup (Qwen Code). */
+  isSetupOnly: (id: string) => boolean;
+  /** Puts an agent in use; it installs nothing. */
+  onTick: (id: string) => void;
+  /** Installs a ticked agent that is not installed. */
+  onInstall: (id: string) => void;
+  /** Takes an agent out of use and stops its install; never deletes it. */
+  onUntick: (id: string) => void;
+  onMakeDefault: (id: string) => void;
+  /** Retries an update that failed. */
+  onUpdate?: (id: string) => void;
   recentFolders: readonly FolderOption[];
   suggestedFolders: readonly FolderOption[];
-  /** The agent catalog for the Agents step. */
-  agentsPanel: ReactNode;
   onPickFolder: () => Promise<FolderOption | null>;
   onComplete: (result: OnboardingResult) => void;
+  /** False while the agent profiles load: whether an agent can run is not known yet. */
+  areAgentsLoaded?: boolean;
+  /** Why the agent catalog could not be read, with `onRetryCatalog` to read it again. */
+  catalogError?: string | null;
+  onRetryCatalog?: () => void;
+  /** Reads the agents and the registry again. */
+  onCheckAgain?: () => Promise<void>;
+  /** The app's notice (a folder dialog that failed), drawn here since the main window is not. */
+  notice?: ReactNode;
 }
 
-const STEPS = [
-  {
-    label: "Agents",
-    title: "Check your agents",
-    description: "Zorvo drives coding agents. Add the ones you use and install them here.",
-  },
-  {
-    label: "Folder",
-    title: "Choose a project folder",
-    description: "Sessions start in this folder. You can switch folders later.",
-  },
-  {
-    label: "Default agent",
-    title: "Pick a default agent",
-    description: "New sessions use this agent unless you choose another.",
-  },
-] as const;
+const NOTE_ID = "onboarding-start-note";
 
-const LAST_STEP = STEPS.length - 1;
-const GATE_HINT_ID = "onboarding-gate-hint";
-
-const GATE_MESSAGES = [
-  "Install at least one agent to continue.",
-  "Choose a folder to continue.",
-  "No agent to start with.",
-] as const;
-
-function StepIndicator({ current }: { current: number }) {
-  return (
-    <ol aria-label="Setup progress" className="flex items-center gap-2 text-[11px]">
-      {STEPS.map((step, index) => {
-        const isCurrent = index === current;
-        const isDone = index < current;
-        return (
-          <li
-            key={step.label}
-            aria-current={isCurrent ? "step" : undefined}
-            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 ${
-              isCurrent
-                ? "border-border-strong bg-surface-hover text-fg"
-                : isDone
-                  ? "border-border text-fg-secondary"
-                  : "border-border text-fg-subtle"
-            }`}
-          >
-            {isDone ? (
-              <Check size={11} className="text-status-running" aria-hidden="true" />
-            ) : (
-              <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
-            )}
-            {step.label}
-          </li>
-        );
-      })}
-    </ol>
+/** The install status of each of `ids`, kept in step with the installs store. */
+function useInstalling(ids: readonly string[]): ReadonlySet<string> {
+  const key = useSyncExternalStore(subscribeToInstalls, () =>
+    ids.filter((id) => installEntryOf(id).status === "installing").join(","),
   );
+  return new Set(key === "" ? [] : key.split(","));
 }
 
-interface NavButtonProps {
-  onClick: () => void;
-  disabled?: boolean;
-  primary?: boolean;
-  describedBy?: string;
-  children: ReactNode;
-}
-
-function NavButton({ onClick, disabled, primary, describedBy, children }: NavButtonProps) {
-  return (
-    <Button
-      variant={primary ? "primary" : "outline"}
-      onClick={onClick}
-      disabled={disabled}
-      aria-describedby={describedBy}
-    >
-      {children}
-    </Button>
-  );
-}
-
+/**
+ * The welcome screen, shown before any session (and again from Settings → Run setup again): tick the
+ * agents you'll use, pick a project folder, and Start, which opens a new-session draft there with the
+ * default agent. Sign-in is not asked here; the draft asks when it needs to.
+ */
 export function Onboarding({
-  agents: allAgents,
-  settings = {},
+  catalog,
+  agents,
+  settings,
+  signInStateOf,
+  isSetupOnly,
+  onTick,
+  onInstall,
+  onUntick,
+  onMakeDefault,
+  onUpdate,
   recentFolders,
   suggestedFolders,
-  agentsPanel,
   onPickFolder,
   onComplete,
+  areAgentsLoaded = true,
+  catalogError = null,
+  onRetryCatalog,
+  onCheckAgain,
+  notice,
 }: OnboardingProps) {
-  const [step, setStep] = useState(0);
-  const [folder, setFolder] = useState<FolderOption | null>(null);
-  const [preferredAgentId, setPreferredAgentId] = useState<string | null>(null);
+  const [folder, setFolder] = useState<FolderOption | null>(() =>
+    recentFolders[0] ? toFolderOption(recentFolders[0]) : null,
+  );
+  const enabledIds = enabledAgentIds(settings);
+  const catalogAgents = catalog?.agents ?? [];
+  // The rows' order is fixed once there are agents, so ticking never moves a row under the pointer.
+  const [order, setOrder] = useState<readonly string[] | null>(null);
+  if (order === null && catalogAgents.length > 0) setOrder(orderedAgents(catalogAgents, enabledIds).map((agent) => agent.id));
+  // Ticked agents in the order the screen lists them, so "the first ticked" is the first row ticked.
+  const ticked = arrangedAgents(catalogAgents, enabledIds, order ?? undefined).filter((agent) => enabledIds.includes(agent.id));
+  const tickedIds = ticked.map((agent) => agent.id);
+  const installing = useInstalling(tickedIds);
+  const isReady = (id: string) => {
+    const profile = agents.find((agent) => agent.id === id);
+    return profile !== undefined && isAgentRunnable(profile) && !installing.has(id);
+  };
+  const preferred = settings.defaultAgentId ?? null;
+  const defaultId = defaultOf(tickedIds, preferred);
+  const gate = startGate({
+    ticked: ticked.map((agent) => ({ id: agent.id, name: agent.name, isReady: isReady(agent.id), isInstalling: installing.has(agent.id) })),
+    defaultId,
+    folder,
+    isLoading: catalog === null || !areAgentsLoaded,
+  });
 
-  const agents = allAgents.filter((agent) => isInUse(agent, settings));
-  // An agent Zorvo can install counts: a new Mac without Node.js installs it from the first session.
-  const defaultAgentId = resolveUsableAgentId(agents, preferredAgentId);
-  const canAdvance = [agents.some(isAgentUsable), folder !== null, defaultAgentId !== null][step];
-  const current = STEPS[step];
-
-  const handleSelectFolder = (selected: FolderOption) => setFolder(toFolderOption(selected));
-  const goBack = () => setStep((value) => Math.max(0, value - 1));
-  const goNext = () => setStep((value) => Math.min(LAST_STEP, value + 1));
-  const handleStart = () => {
-    if (folder && defaultAgentId) onComplete({ defaultAgentId, folder });
+  const start = () => {
+    const startId = startAgentOf(tickedIds, preferred, isReady);
+    if (gate.canStart && startId && folder) onComplete({ defaultAgentId: startId, folder });
   };
 
   return (
-    // Top-anchored (not vertically centered) so the header stays put as step heights change.
-    <main className="flex h-screen w-full items-start justify-center overflow-y-auto bg-bg px-4 pt-[12vh] pb-8 text-fg-secondary select-none">
-      <div className="flex w-full max-w-xl flex-col gap-5">
-        <header className="flex flex-col gap-4">
-          <div className="flex items-center gap-2 text-xs text-fg-muted">
-            <Bot size={15} className="text-fg-muted" aria-hidden="true" />
-            <h1 className="font-semibold text-fg-secondary">Set up Zorvo</h1>
-          </div>
-          <StepIndicator current={step} />
+    <main className="relative flex h-screen w-full justify-center overflow-y-auto bg-bg px-6 py-16 text-fg-secondary">
+      {/* The window's own buttons sit here; the strip drags the window. */}
+      <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-12" />
+      <div className="flex w-full max-w-[640px] flex-col gap-7">
+        <header className="flex flex-col gap-3">
+          <Wordmark />
+          <h1 className="text-[28px] leading-[34px] font-semibold tracking-[-0.03em] text-fg">Every coding agent. One desktop.</h1>
+          <p className="text-sm leading-[22px] text-fg-muted">
+            Pick the agents you'll use and a project folder. You can change all of this later in Settings.
+          </p>
         </header>
 
-        <section className="flex flex-col gap-4 rounded-xl border border-border bg-surface-1 p-5 shadow-dialog">
-          <div>
-            <h2 className="text-base font-semibold text-fg">{current.title}</h2>
-            <p className="mt-1 text-xs text-fg-subtle">{current.description}</p>
-          </div>
-          {step === 0 && <AgentsStep agentsPanel={agentsPanel} />}
-          {step === 1 && (
-            <FolderStep
-              recentFolders={recentFolders}
-              suggestedFolders={suggestedFolders}
-              selectedFolder={folder}
-              onSelectFolder={handleSelectFolder}
-              onPickFolder={onPickFolder}
-            />
-          )}
-          {step === 2 && (
-            <DefaultAgentStep
-              agents={agents}
-              selectedAgentId={defaultAgentId}
-              onSelectAgent={setPreferredAgentId}
-            />
-          )}
-        </section>
+        <AgentChoices
+          catalog={catalogAgents}
+          enabledIds={enabledIds}
+          defaultId={defaultId}
+          signInStateOf={signInStateOf}
+          isSetupOnly={isSetupOnly}
+          onTick={onTick}
+          onInstall={onInstall}
+          onUntick={onUntick}
+          onMakeDefault={onMakeDefault}
+          onUpdate={onUpdate}
+          order={order ?? undefined}
+          isLoading={catalog === null}
+          loadError={catalog === null ? catalogError : null}
+          onRetry={onRetryCatalog}
+          onCheckAgain={onCheckAgain}
+        />
 
-        <footer className="flex items-center justify-between gap-3">
-          <div>
-            {step > 0 && (
-              <NavButton onClick={goBack}>
-                <ArrowLeft size={13} aria-hidden="true" />
-                Back
-              </NavButton>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            {!canAdvance && (
-              <p id={GATE_HINT_ID} className="text-[11px] text-fg-subtle">
-                {GATE_MESSAGES[step]}
-              </p>
-            )}
-            {step < LAST_STEP ? (
-              <NavButton
-                primary
-                onClick={goNext}
-                disabled={!canAdvance}
-                describedBy={canAdvance ? undefined : GATE_HINT_ID}
-              >
-                Continue
-                <ArrowRight size={13} aria-hidden="true" />
-              </NavButton>
-            ) : (
-              <NavButton
-                primary
-                onClick={handleStart}
-                disabled={!canAdvance}
-                describedBy={canAdvance ? undefined : GATE_HINT_ID}
-              >
-                Start
-              </NavButton>
-            )}
-          </div>
+        <FolderChoice
+          folder={folder}
+          recentFolders={recentFolders}
+          suggestedFolders={suggestedFolders}
+          onChoose={setFolder}
+          onPickFolder={onPickFolder}
+        />
+
+        <footer className="flex items-center gap-3 pt-2">
+          <p id={NOTE_ID} role="status" className="min-w-0 flex-1 text-ui-sm text-fg-subtle">
+            {gate.note}
+          </p>
+          <Button
+            variant="primary"
+            size="lg"
+            disabled={!gate.canStart}
+            aria-describedby={gate.note ? NOTE_ID : undefined}
+            onClick={start}
+          >
+            Start
+          </Button>
         </footer>
       </div>
+      {notice && <ToastStack>{notice}</ToastStack>}
     </main>
   );
 }

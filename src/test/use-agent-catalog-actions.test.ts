@@ -2,9 +2,14 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { fakeTauriInvoke } from "./setup";
 
-const { startUpdate } = vi.hoisted(() => ({ startUpdate: vi.fn() }));
+const { startUpdate, startInstall, cancelInstall, installEntryOf } = vi.hoisted(() => ({
+  startUpdate: vi.fn(),
+  startInstall: vi.fn(),
+  cancelInstall: vi.fn(),
+  installEntryOf: vi.fn(() => ({ status: "idle" })),
+}));
 
-vi.mock("../lib/agent-installs", () => ({ startInstall: vi.fn(), startUpdate }));
+vi.mock("../lib/agent-installs", () => ({ startInstall, startUpdate, cancelInstall, installEntryOf }));
 
 import { useAgentCatalogActions, type AgentCatalogActionsArgs } from "../hooks/useAgentCatalogActions";
 
@@ -39,6 +44,39 @@ async function rejectionOf(promise: Promise<unknown>): Promise<Error> {
 afterEach(() => {
   vi.restoreAllMocks();
   startUpdate.mockReset();
+  startInstall.mockReset();
+  cancelInstall.mockReset();
+  installEntryOf.mockReset().mockImplementation(() => ({ status: "idle" }));
+});
+
+describe("the welcome screen's tick and untick", () => {
+  const notInstalled = { id: "gemini", name: "Gemini CLI", version: "0.9.0", status: "not_installed" };
+  const catalogOf = () => ({ catalog: { agents: [notInstalled] }, reload: () => Promise.resolve() }) as unknown as AgentCatalogActionsArgs["catalog"];
+  const settingsAfter = (updateState: ReturnType<typeof vi.fn>, before: Record<string, unknown>) =>
+    updateState.mock.calls.reduce((state, [change]) => change(state), { settings: before }).settings;
+
+  it("markAgent puts the agent in use at the catalog's version and installs nothing", () => {
+    const updateState = vi.fn();
+    const actions = renderActions({ updateState, catalog: catalogOf() });
+    actions.markAgent("gemini");
+    expect(settingsAfter(updateState, { enabledAgents: [] })).toMatchObject({ enabledAgents: ["gemini"], agentVersions: { gemini: "0.9.0" } });
+    expect(startInstall).not.toHaveBeenCalled();
+  });
+
+  it("unmarkAgent stops a running install and takes the agent out of use", () => {
+    installEntryOf.mockImplementation(() => ({ status: "installing" }));
+    const updateState = vi.fn();
+    const actions = renderActions({ updateState, catalog: catalogOf() });
+    actions.unmarkAgent("gemini");
+    expect(cancelInstall).toHaveBeenCalledWith("gemini");
+    expect(settingsAfter(updateState, { enabledAgents: ["gemini"] }).enabledAgents).toEqual([]);
+  });
+
+  it("addAgent still installs an agent that is not installed", () => {
+    const actions = renderActions({ catalog: catalogOf() });
+    actions.addAgent("gemini");
+    expect(startInstall).toHaveBeenCalledWith("gemini");
+  });
 });
 
 describe("useAgentCatalogActions keeps the error it wraps", () => {

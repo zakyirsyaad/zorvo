@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, waitFor, within } from "@testing-library/react";
 import { fakeTauriInvoke, type FakeTauriStore } from "./setup";
+import { resetAgentInstalls } from "../lib/agent-installs";
 
 const openDialog = vi.fn();
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: (...args: unknown[]) => openDialog(...args) }));
@@ -44,6 +45,8 @@ describe("First run and project folders", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     openDialog.mockReset();
+    // Installs live in a module-level store: one test's pending install must not reach the next.
+    resetAgentInstalls();
   });
 
   it("walks a first-time user through setup and saves the result", async () => {
@@ -52,16 +55,14 @@ describe("First run and project folders", () => {
     await renderApp();
 
     expect(screen.queryByRole("complementary")).toBeNull();
-    await click(screen.getByRole("button", { name: "Continue" }));
-    await click(
-      within(screen.getByRole("list", { name: "Suggested folders" })).getByRole("button", {
-        name: /zorvo/,
-      })
-    );
-    await click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByRole("heading", { level: 1, name: "Every coding agent. One desktop." })).toBeDefined();
+    // A suggested folder found under ~/developer, then Start.
+    await click(screen.getByRole("button", { name: "Use zorvo" }));
     await click(screen.getByRole("button", { name: "Start" }));
 
     expect(sidebar().getByText("zorvo")).toBeDefined();
+    // Start opens a new-session draft in that folder.
+    expect(screen.getByRole("textbox", { name: "Prompt" })).toBeDefined();
     await waitFor(() => {
       const { settings, recentFolders } = fakeStore().state;
       expect(settings.onboardingCompleted).toBe(true);
@@ -73,7 +74,7 @@ describe("First run and project folders", () => {
   it("skips setup for a returning user and lists their recent folders", async () => {
     await renderApp();
 
-    expect(screen.queryByRole("heading", { name: "Check your agents" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Every coding agent. One desktop." })).toBeNull();
     expect(sidebar().getByText("ai-perpetual-trading")).toBeDefined();
     expect(sidebar().getByText("titan-investment")).toBeDefined();
   });
@@ -129,6 +130,59 @@ describe("First run and project folders", () => {
     await waitFor(() => expect(fakeStore().state.settings.defaultAgentId).toBe("qwen-code"));
 
     await click(general.getByRole("button", { name: "Run setup again" }));
-    expect(screen.getByRole("heading", { name: "Check your agents" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Every coding agent. One desktop." })).toBeDefined();
+  });
+
+  it("Run setup again picks the most recent folder", async () => {
+    await renderApp();
+    await click(screen.getByRole("button", { name: /^Settings/ }));
+    await click(within(screen.getByRole("region", { name: "About" })).getByRole("button", { name: "Run setup again" }));
+
+    expect(screen.getByRole("button", { name: "Change" })).toBeDefined();
+    expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("says so on the welcome screen when the folder dialog fails", async () => {
+    fakeStore().state.settings.onboardingCompleted = false;
+    fakeStore().state.recentFolders = [];
+    openDialog.mockRejectedValue(new Error("denied"));
+    await renderApp();
+    await click(screen.getByRole("button", { name: "Open folder" }));
+
+    expect(await screen.findByText(/Could not open the folder dialog/)).toBeDefined();
+  });
+
+  it("ticking an agent that is not installed only marks it, and Install installs it", async () => {
+    fakeStore().state.settings.onboardingCompleted = false;
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) =>
+      cmd === "install_agent" ? new Promise(() => {}) : fakeTauriInvoke(cmd, args),
+    );
+    await renderApp();
+
+    await click(await screen.findByRole("checkbox", { name: "Use Gemini CLI" }));
+    await waitFor(() => expect((fakeStore().state.settings as { enabledAgents?: string[] }).enabledAgents ?? []).toContain("gemini"));
+    expect(spy.mock.calls.some(([cmd]) => cmd === "install_agent")).toBe(false);
+
+    await click(screen.getByRole("button", { name: "Install Gemini CLI" }));
+    await waitFor(() => expect(spy.mock.calls.some(([cmd]) => cmd === "install_agent")).toBe(true));
+  });
+
+  it("unticking an installing agent cancels it and keeps its files", async () => {
+    fakeStore().state.settings.onboardingCompleted = false;
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) =>
+      cmd === "install_agent" ? new Promise(() => {}) : fakeTauriInvoke(cmd, args),
+    );
+    await renderApp();
+    const gemini = await screen.findByRole("checkbox", { name: "Use Gemini CLI" });
+
+    await click(gemini);
+    await click(await screen.findByRole("button", { name: "Install Gemini CLI" }));
+    await waitFor(() => expect(spy.mock.calls.some(([cmd]) => cmd === "install_agent")).toBe(true));
+    await waitFor(() => expect((fakeStore().state.settings as { enabledAgents?: string[] }).enabledAgents ?? []).toContain("gemini"));
+
+    await click(screen.getByRole("checkbox", { name: "Use Gemini CLI" }));
+    await waitFor(() => expect(spy.mock.calls.some(([cmd]) => cmd === "cancel_agent_install")).toBe(true));
+    expect(spy.mock.calls.some(([cmd]) => cmd === "remove_agent_install")).toBe(false);
+    await waitFor(() => expect((fakeStore().state.settings as { enabledAgents?: string[] }).enabledAgents ?? []).not.toContain("gemini"));
   });
 });

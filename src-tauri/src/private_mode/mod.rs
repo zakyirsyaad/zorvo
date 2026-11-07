@@ -1,7 +1,9 @@
 //! Zorvo Private (hackathon branch only): a device identity kept in the macOS
 //! Keychain, a client for the Zorvo Credits Worker and private Qwen Code sessions.
 
+pub mod client;
 pub mod device;
+pub mod local_state;
 
 use serde::Serialize;
 
@@ -9,6 +11,13 @@ use serde::Serialize;
 /// out or the key was refused. The reason follows as JSON, e.g.
 /// `PRIVATE_CREDITS:{"reason":"empty"}`.
 pub const PRIVATE_CREDITS_PREFIX: &str = "PRIVATE_CREDITS:";
+
+/// The Zorvo Credits Worker, the only host the backend calls for private mode.
+/// Set `ZORVO_CREDITS_URL` when building; the default is the local dev server.
+pub const CREDITS_BASE_URL: &str = match option_env!("ZORVO_CREDITS_URL") {
+    Some(url) => url,
+    None => "http://127.0.0.1:8787",
+};
 
 /// Everything a private-mode command can fail with. Commands hand the UI only
 /// the snake_case code (see `From<PrivateError> for String`), never a message
@@ -34,6 +43,8 @@ pub enum PrivateError {
     UnknownModel,
     BadCheckoutUrl,
     HasOwnCredits,
+    /// This Mac's own state file could not be written.
+    Storage,
 }
 
 impl PrivateError {
@@ -57,6 +68,7 @@ impl PrivateError {
             Self::UnknownModel => "unknown_model",
             Self::BadCheckoutUrl => "bad_checkout_url",
             Self::HasOwnCredits => "has_own_credits",
+            Self::Storage => "storage",
         }
     }
 }
@@ -71,7 +83,7 @@ impl From<PrivateError> for String {
 mod tests {
     use super::*;
 
-    const ALL: [PrivateError; 17] = [
+    const ALL: [PrivateError; 18] = [
         PrivateError::Unreachable,
         PrivateError::Unauthorized,
         PrivateError::BadRequest,
@@ -89,6 +101,7 @@ mod tests {
         PrivateError::UnknownModel,
         PrivateError::BadCheckoutUrl,
         PrivateError::HasOwnCredits,
+        PrivateError::Storage,
     ];
 
     #[test]

@@ -134,6 +134,31 @@ describe("normalizePersistedState - models", () => {
     expect(qwen).not.toHaveProperty("models");
     expect(qwen).not.toHaveProperty("preferredModelId");
   });
+
+  it("keeps each model's effort list, dropping malformed ones", () => {
+    const effort = {
+      id: "reasoning_effort",
+      name: "Reasoning effort",
+      category: "thought_level",
+      currentValue: "high",
+      options: [{ value: "high", name: "High" }, { value: "max", name: "Max" }],
+    };
+    const state = normalizePersistedState({
+      agentOptions: {
+        "qwen-code": { modes: null, configOptions: [], effortsByModel: { deepseek: effort, kimi: "nope", glm: { id: 3 } } },
+        "codex-acp": { modes: null, configOptions: [], effortsByModel: ["nope"] },
+      },
+    });
+
+    expect(state.agentOptions?.["qwen-code"].effortsByModel).toEqual({
+      deepseek: {
+        ...effort,
+        description: undefined,
+        options: effort.options.map((choice) => ({ ...choice, description: undefined })),
+      },
+    });
+    expect(state.agentOptions?.["codex-acp"]).not.toHaveProperty("effortsByModel");
+  });
 });
 
 describe("normalizePersistedState - legacy agent ids", () => {

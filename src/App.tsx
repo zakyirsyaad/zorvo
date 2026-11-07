@@ -113,8 +113,10 @@ import { COMPARE_NOTE, composerCommandsFor, composerNote, composerPlaceholder, c
 import {
   NO_CHOICES,
   rememberedChoice,
+  withEffortList,
   withPreferred,
   withProbed,
+  withReported,
   withRewound,
   type AcpChoices,
   type AgentOptions,
@@ -328,10 +330,10 @@ export default function App() {
   const unsentCommentCount = reviewComments.comments.filter((comment) => comment.sentAt === undefined).length;
 
   const rememberAgentOptions = (profileId: string, options: Partial<AgentOptions>) =>
-    updateState((prev) => {
-      const known = prev.agentOptions?.[profileId] ?? { modes: null, configOptions: [] };
-      return { ...prev, agentOptions: { ...prev.agentOptions, [profileId]: { ...known, ...options } } };
-    });
+    updateState((prev) => ({
+      ...prev,
+      agentOptions: { ...prev.agentOptions, [profileId]: withReported(prev.agentOptions?.[profileId], options) },
+    }));
 
   /** Keeps a model or effort pick (as the agent settled it), so the agent's next session starts with it too. */
   const rememberPick = (profileId: string, configId: string, value: string, reported?: AcpConfigOption[]) => {
@@ -389,7 +391,8 @@ export default function App() {
   const rememberProbed = (profileId: string, probed: ProbedOptions) =>
     updateState((prev) => ({
       ...prev,
-      agentOptions: { ...prev.agentOptions, [profileId]: withProbed(prev.agentOptions?.[profileId], probed) },
+      // A probe's lists are true for the model it ran, even where a session's report wins the shown ones.
+      agentOptions: { ...prev.agentOptions, [profileId]: withEffortList(withProbed(prev.agentOptions?.[profileId], probed), probed) },
     }));
   // A compare draft's model chips: an agent whose models are unknown is asked only when its chip opens.
   const compareAgentIdsRef = useLatest(compare.agentIds);

@@ -8,7 +8,7 @@ fonts (`@fontsource-variable`) and its agent logos (`src/assets/agents/`).
 ```bash
 pnpm install                      # from the repository root
 pnpm --filter zorvo-site dev      # http://localhost:3100
-SITE_URL=https://zorvohub.xyz pnpm --filter zorvo-site build   # writes site/out/
+SITE_URL=https://zorvolabs.xyz pnpm --filter zorvo-site build   # writes site/out/
 ```
 
 `out/` is plain files: any static host serves it. The site has no client components, so the build

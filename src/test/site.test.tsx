@@ -249,7 +249,7 @@ describe("search engines", () => {
 
   it("refuses to build for production without an address, rather than publish localhost links", () => {
     expect(() => siteUrl({ NODE_ENV: "production" })).toThrow(/SITE_URL/);
-    expect(siteUrl({ NODE_ENV: "production", VERCEL_PROJECT_PRODUCTION_URL: "zorvohub.xyz" }).href).toBe("https://zorvohub.xyz/");
+    expect(siteUrl({ NODE_ENV: "production", VERCEL_PROJECT_PRODUCTION_URL: "zorvolabs.xyz" }).href).toBe("https://zorvolabs.xyz/");
   });
 
   it("keeps a sub-path in SITE_URL for the sitemap", () => {
@@ -260,8 +260,8 @@ describe("search engines", () => {
   });
 
   it("takes the site's address from SITE_URL, then Vercel's production domain, then localhost", () => {
-    expect(siteUrl({ SITE_URL: "https://zorvohub.xyz", VERCEL_PROJECT_PRODUCTION_URL: "zorvo.vercel.app" }).href).toBe(
-      "https://zorvohub.xyz/",
+    expect(siteUrl({ SITE_URL: "https://zorvolabs.xyz", VERCEL_PROJECT_PRODUCTION_URL: "zorvo.vercel.app" }).href).toBe(
+      "https://zorvolabs.xyz/",
     );
     expect(siteUrl({ VERCEL_PROJECT_PRODUCTION_URL: "zorvo.vercel.app" }).href).toBe("https://zorvo.vercel.app/");
     expect(siteUrl({}).href).toBe("http://localhost:3100/");

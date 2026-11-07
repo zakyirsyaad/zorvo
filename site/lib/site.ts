@@ -27,7 +27,7 @@ export function siteUrl(env: Record<string, string | undefined> = process.env): 
   if (env.VERCEL_PROJECT_PRODUCTION_URL) return new URL(`https://${env.VERCEL_PROJECT_PRODUCTION_URL}/`);
   if (env.NODE_ENV === "production") {
     throw new Error(
-      "Set SITE_URL to the address the site is served from, e.g. SITE_URL=https://zorvohub.xyz (on Vercel it comes from the production domain).",
+      "Set SITE_URL to the address the site is served from, e.g. SITE_URL=https://zorvolabs.xyz (on Vercel it comes from the production domain).",
     );
   }
   return new URL(LOCAL_URL);

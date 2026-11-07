@@ -31,7 +31,7 @@ not say "any agent, one place, yours", it probably does not belong.
 consonants, an open vowel at the end. It means nothing on its own, so the
 tagline and the symbol carry the meaning.
 
-- **Domain:** the site is `zorvohub.xyz` (chosen 2026-11-08). `zorvo.xyz` was
+- **Domain:** the site is `zorvolabs.xyz` (bought 2026-11-08). `zorvo.xyz` was
   unregistered on 2026-10-18 (registry RDAP) but someone else registered it
   on 2026-11-04, so it is not ours and must not be named as the site.
   `zorvo.dev` had no nameservers. `.com`, `.app`, `.io` and `.ai` are held
@@ -173,7 +173,7 @@ Items 3 and 4 are done and item 6 was dropped; the rest are not, and each
 is its own piece of work:
 
 1. ~~**Buy `zorvo.xyz`**~~ Taken by someone else on 2026-11-04 before it was
-   bought. The site uses `zorvohub.xyz` instead; the app's bundle identifier
+   bought. The site uses `zorvolabs.xyz` instead; the app's bundle identifier
    stays `xyz.zorvo.desktop`, since changing it would move every user's data
    and break updates, and macOS does not check who owns the domain.
 2. **Trademark search** for "Zorvo" in classes 9 and 42 (USPTO, EUIPO)

@@ -356,6 +356,40 @@ describe("Check sign-in", () => {
     );
   });
 
+  it("does not call an agent ready while the key variable it names is not set, and says what to do", async () => {
+    vi.spyOn(internals(), "invoke").mockResolvedValue({ ...PROBED, signInChecked: false, missingEnv: ["Z_AI_API_KEY"] });
+    const { hook, sync, sidebarState } = setupHook();
+    // An earlier check (before the agent named its variable) had recorded it as ready.
+    act(() => hook.result.current.status.markSignedIn("claude-acp"));
+    sync();
+    expect(sidebarState("claude-acp")).toBe("ready");
+
+    act(() => hook.result.current.settingsSignIn.check("claude-acp"));
+    await waitFor(() => expect(hook.result.current.settingsSignIn.checkOf("claude-acp").phase).toBe("done"));
+    sync();
+
+    // Not Ready, and not Sign in either: a key saved by the agent's own setup is not in the environment.
+    expect(hook.result.current.settingsSignIn.stateOf("claude-acp")).toBe("unchecked");
+    expect(sidebarState("claude-acp")).toBe("unchecked");
+    const check = hook.result.current.settingsSignIn.checkOf("claude-acp");
+    expect(check.message).toBe(
+      "Claude Code opened a session, but Zorvo cannot confirm a sign-in: Z_AI_API_KEY is not set in your shell. " +
+        "If you saved a key with Claude Code's own setup, Zorvo cannot see it. " +
+        "Otherwise run that setup or export Z_AI_API_KEY (for example in ~/.zshrc), then check again.",
+    );
+    expect(check.isFailure).toBeUndefined();
+  });
+
+  it("names every variable when the agent needs one of several", async () => {
+    vi.spyOn(internals(), "invoke").mockResolvedValue({ ...PROBED, signInChecked: false, missingEnv: ["KEY_A", "KEY_B"] });
+    const { hook } = setupHook();
+
+    act(() => hook.result.current.settingsSignIn.check("claude-acp"));
+    await waitFor(() => expect(hook.result.current.settingsSignIn.checkOf("claude-acp").phase).toBe("done"));
+
+    expect(hook.result.current.settingsSignIn.checkOf("claude-acp").message).toContain("None of KEY_A, KEY_B is set in your shell.");
+  });
+
   it("turns the row and the sidebar to Sign in and keeps the methods when the agent asks for a sign-in", async () => {
     vi.spyOn(internals(), "invoke").mockRejectedValue(authRequiredError(claudeMethods));
     const { hook, sync, sidebarState } = setupHook();

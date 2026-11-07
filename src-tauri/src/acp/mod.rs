@@ -8,6 +8,7 @@ pub mod commands;
 pub mod connection;
 pub mod elicitation;
 pub mod jsonrpc;
+pub mod key_env;
 pub mod manager;
 pub mod permission_response;
 pub mod probe;

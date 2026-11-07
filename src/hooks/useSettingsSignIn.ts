@@ -8,7 +8,7 @@ import { useLatest } from './useLatest';
 import { parseAuthRequired, type AuthMethod } from '../lib/acp-auth';
 import { refreshLoginEnv } from '../lib/sign-in-check';
 import { hasReportedOptions, type AgentOptions, type ProbedOptions } from '../lib/acp-draft';
-import type { SignInState } from '../lib/agent-sign-in';
+import { unconfirmedMessage, type SignInState } from '../lib/agent-sign-in';
 import type { AgentProfile } from '../types';
 
 /**
@@ -143,6 +143,10 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
                   ? `${name} opened a session, so it looks ready. It cannot confirm who is signed in.`
                   : `${name} looks ready.`;
             setCheck(profileId, { phase: 'done', message });
+          } else if (answer && answer.facts.missingEnv.length > 0) {
+            // It opened a session, which proves nothing for an agent that refuses only the prompt: no Ready.
+            store.markUnconfirmed(profileId);
+            setCheck(profileId, { phase: 'done', message: unconfirmedMessage(name, answer.facts.missingEnv) });
           } else {
             setCheck(profileId, { phase: 'done', message: `${name} did not say whether you are signed in.` });
           }

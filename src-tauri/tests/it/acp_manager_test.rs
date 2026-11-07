@@ -979,6 +979,60 @@ fn probing_does_not_wait_long_for_commands_an_agent_never_sends() {
     assert_eq!(probed.config_options[0]["id"], "model");
 }
 
+/// GLM Agent opens a session without a key, so opening one shows nothing. When it names the
+/// variable its key lives in and that variable is not set, the probe must not call it ready.
+#[test]
+fn an_opened_session_is_not_a_sign_in_while_the_key_variable_the_agent_names_is_missing() {
+    let (manager, _rx) = manager();
+    let launch = with_env(fake_agent(), "FAKE_ACP_ENV_VAR_METHOD", "FAKE_GLM_KEY");
+
+    let probed = manager.probe(&cwd(), &launch, true).expect("probe");
+
+    assert_eq!(probed.config_options[0]["id"], "model");
+    assert!(!probed.sign_in_checked);
+    assert_eq!(probed.missing_env, vec!["FAKE_GLM_KEY"]);
+}
+
+#[test]
+fn an_opened_session_is_a_sign_in_once_the_key_variable_is_set() {
+    let (manager, _rx) = manager();
+    let launch = with_env(
+        with_env(fake_agent(), "FAKE_ACP_ENV_VAR_METHOD", "FAKE_GLM_KEY"),
+        "FAKE_GLM_KEY",
+        "set",
+    );
+
+    let probed = manager.probe(&cwd(), &launch, true).expect("probe");
+
+    assert!(probed.sign_in_checked);
+    assert!(probed.missing_env.is_empty());
+}
+
+#[test]
+fn a_missing_key_variable_does_not_change_an_agent_that_reports_who_is_signed_in() {
+    let (manager, _rx) = manager();
+    let launch = with_env(
+        with_env(fake_agent(), "FAKE_ACP_ENV_VAR_METHOD", "FAKE_GLM_KEY"),
+        "FAKE_ACP_AUTH_STATUS",
+        "account",
+    );
+
+    let probed = manager.probe(&cwd(), &launch, true).expect("probe");
+
+    assert!(probed.sign_in_checked);
+    assert!(probed.missing_env.is_empty());
+}
+
+#[test]
+fn an_agent_with_no_env_var_method_is_checked_as_before() {
+    let (manager, _rx) = manager();
+
+    let probed = manager.probe(&cwd(), &fake_agent(), true).expect("probe");
+
+    assert!(probed.sign_in_checked);
+    assert!(probed.missing_env.is_empty());
+}
+
 #[test]
 fn an_opened_session_does_not_show_a_sign_in_for_an_agent_that_says_nothing_about_it() {
     let (manager, _rx) = manager();

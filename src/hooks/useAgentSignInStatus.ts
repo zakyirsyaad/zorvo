@@ -8,6 +8,11 @@ export interface AgentSignInStatus {
   markNeeded: (profileId: string) => void;
   /** Someone was seen signed in to the agent; remembered across launches. */
   markSignedIn: (profileId: string) => void;
+  /**
+   * A check could not confirm the agent's sign-in (a missing key variable): it stops counting as signed in,
+   * without being told to sign in, since a key saved by its own setup is not visible to Zorvo.
+   */
+  markUnconfirmed: (profileId: string) => void;
 }
 
 export interface UseAgentSignInStatusOptions {
@@ -65,5 +70,21 @@ export function useAgentSignInStatus({ settings, updateState }: UseAgentSignInSt
     [updateState],
   );
 
-  return useMemo(() => ({ stateOf, markNeeded, markSignedIn }), [stateOf, markNeeded, markSignedIn]);
+  const markUnconfirmed = useCallback(
+    (profileId: string) =>
+      updateState((prev) =>
+        prev.settings.signedInAgents?.includes(profileId)
+          ? {
+              ...prev,
+              settings: { ...prev.settings, signedInAgents: prev.settings.signedInAgents.filter((id) => id !== profileId) },
+            }
+          : prev,
+      ),
+    [updateState],
+  );
+
+  return useMemo(
+    () => ({ stateOf, markNeeded, markSignedIn, markUnconfirmed }),
+    [stateOf, markNeeded, markSignedIn, markUnconfirmed],
+  );
 }

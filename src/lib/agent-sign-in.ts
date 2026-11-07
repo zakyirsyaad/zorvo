@@ -26,6 +26,22 @@ export function signInPlaceholder(agentName: string, continuesSession: boolean):
   return `Sign in to ${agentName} to ${continuesSession ? 'continue this session' : 'send a message'}.`;
 }
 
+/**
+ * What a check says about an agent that opened a session but whose key variables are not set: it cannot be
+ * confirmed signed in, and not called signed out either (a key saved by its own setup is not in the environment).
+ */
+export function unconfirmedMessage(agentName: string, variables: readonly string[]): string {
+  const list = variables.join(', ');
+  const isOne = variables.length === 1;
+  const missing = isOne ? `${list} is not set in your shell.` : `None of ${list} is set in your shell.`;
+  const exported = isOne ? `export ${list}` : 'export one of them';
+  return (
+    `${agentName} opened a session, but Zorvo cannot confirm a sign-in: ${missing} ` +
+    `If you saved a key with ${agentName}'s own setup, Zorvo cannot see it. ` +
+    `Otherwise run that setup or ${exported} (for example in ~/.zshrc), then check again.`
+  );
+}
+
 /** Said when a request to sign in to one agent is refused because another agent's sign-in is running. */
 export const SIGN_IN_RUNNING_NOTICE = "Another agent's sign-in is running. Finish it, then try again.";
 

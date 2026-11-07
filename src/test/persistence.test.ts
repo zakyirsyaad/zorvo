@@ -55,6 +55,25 @@ describe("normalizePersistedState", () => {
     expect(state.sessions[1]).not.toHaveProperty("reviewComments");
   });
 
+  it("keeps a session's private mode when it names a model", () => {
+    const state = normalizePersistedState({ sessions: [{ ...base, privateMode: { modelId: "a" } }] });
+
+    expect(state.sessions[0].privateMode).toEqual({ modelId: "a" });
+  });
+
+  it.each([[{ modelId: 3 }], [{ modelId: "" }], [{}], ["x"], [null], [[]]])("drops a malformed private mode %j and keeps the session", (privateMode) => {
+    const state = normalizePersistedState({ sessions: [{ ...base, privateMode }] });
+
+    expect(state.sessions).toHaveLength(1);
+    expect(state.sessions[0]).not.toHaveProperty("privateMode");
+  });
+
+  it("keeps only the model id of a private mode", () => {
+    const state = normalizePersistedState({ sessions: [{ ...base, privateMode: { modelId: "a", key: "secret" } }] });
+
+    expect(state.sessions[0].privateMode).toEqual({ modelId: "a" });
+  });
+
   it("keeps a session's compareRunId and worktree startCommit", () => {
     const worktree = { repoPath: "/w/api", path: "/data/worktrees/api/fix", branch: "agent/fix", startCommit: "abc123" };
 

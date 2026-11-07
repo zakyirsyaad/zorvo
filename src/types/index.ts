@@ -145,6 +145,8 @@ export interface Session {
   compareRunId?: string | null;
   /** Comments written on lines of the session's diff; absent when there are none. */
   reviewComments?: ReviewComment[];
+  /** Set when the session runs privately on Zorvo Private credits; the model it was started with. */
+  privateMode?: { modelId: string };
 }
 
 /** What a diff is compared with: the last commit, the base branch, or where the worktree started. */

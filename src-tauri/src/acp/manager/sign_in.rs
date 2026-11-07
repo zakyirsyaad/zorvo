@@ -31,7 +31,7 @@ const SIGN_IN_WORDS: [&str; 7] = [
 /// ("Internal error"), naming the key only in `data.details`. That code means nothing
 /// by itself, so such a refusal counts only when the agent offers methods for the
 /// request (`offers_sign_in`) and its message, a text `data`, `data.details` or
-/// `data.message` has a word from [`SIGN_IN_WORDS`].
+/// `data.message` has a whole sign-in word or phrase (`mentions_sign_in_phrase`).
 pub(super) fn is_auth_required(error: &Value, offers_sign_in: bool) -> bool {
     match error["code"].as_i64() {
         Some(AUTH_REQUIRED) => offers_sign_in || mentions_sign_in(&error["message"]),
@@ -44,7 +44,7 @@ pub(super) fn is_auth_required(error: &Value, offers_sign_in: bool) -> bool {
                     &error["data"]["message"],
                 ]
                 .into_iter()
-                .any(mentions_sign_in)
+                .any(mentions_sign_in_phrase)
         }
         _ => false,
     }
@@ -61,6 +61,54 @@ fn mentions_sign_in(text: &Value) -> bool {
         .map(|c| c.to_ascii_lowercase())
         .collect();
     SIGN_IN_WORDS.iter().any(|word| letters.contains(word))
+}
+
+/// Single words that are about signing in (compared to whole words, in lower case).
+const SIGN_IN_WHOLE_WORDS: [&str; 15] = [
+    "auth",
+    "authenticate",
+    "authenticated",
+    "authentication",
+    "authorization",
+    "unauthenticated",
+    "unauthorized",
+    "login",
+    "signin",
+    "loggedin",
+    "signedin",
+    "apikey",
+    "apikeys",
+    "credential",
+    "credentials",
+];
+
+/// Two words in a row that are about signing in: "log in", "signed in", "API key".
+const SIGN_IN_PHRASES: [(&str, &str); 6] = [
+    ("log", "in"),
+    ("logged", "in"),
+    ("sign", "in"),
+    ("signed", "in"),
+    ("api", "key"),
+    ("api", "keys"),
+];
+
+/// Whether `text` (a JSON string; anything else never does) says it is about signing in, by
+/// whole words and phrases. A `-32603` is JSON-RPC's generic internal error, so its free text
+/// (a stack, a path, a sentence about something else) is read more strictly than a `-32000`
+/// message: "designing" holds "signin", and "catalog in" joins to "login", but neither is one.
+/// Words are the runs of letters, so "Z_AI_API_KEY", "log-in" and "apiKey" all match.
+fn mentions_sign_in_phrase(text: &Value) -> bool {
+    let lower = text.as_str().unwrap_or_default().to_ascii_lowercase();
+    let words: Vec<&str> = lower
+        .split(|c: char| !c.is_ascii_alphabetic())
+        .filter(|word| !word.is_empty())
+        .collect();
+    words.iter().any(|word| SIGN_IN_WHOLE_WORDS.contains(word))
+        || words.windows(2).any(|pair| {
+            SIGN_IN_PHRASES
+                .iter()
+                .any(|(first, second)| pair[0] == *first && pair[1] == *second)
+        })
 }
 
 /// Whether `auth_methods` (from `initialize`) lists at least one way to sign in.
@@ -147,6 +195,61 @@ mod tests {
         });
 
         assert!(!is_auth_required(&error, true));
+    }
+
+    /// A sign-in word inside another word, or split across two words that merely meet, is
+    /// not about signing in: "designing" holds "signin", "catalog in" joins to "login".
+    #[test]
+    fn ignores_a_32603_whose_sign_in_word_is_part_of_another_word_or_phrase() {
+        for details in [
+            "Error designing the plan",
+            "Cannot find catalog in registry",
+            "Failed to assign index to the list",
+            "author.txt not found",
+            "The authority of this file is unclear",
+            "Designed in Figma",
+            "Unexpected token while processing the dialog in the UI",
+        ] {
+            let error = json!({
+                "code": -32603,
+                "message": "Internal error",
+                "data": { "details": details }
+            });
+
+            assert!(
+                !is_auth_required(&error, true),
+                "{details:?} was read as a sign-in"
+            );
+        }
+    }
+
+    /// Whole words and phrases still count, however the agent spaces or cases them.
+    #[test]
+    fn counts_a_32603_with_a_sign_in_word_or_phrase_however_it_is_written() {
+        for details in [
+            "No API key found. Set the Z_AI_API_KEY environment variable.",
+            "Missing apiKey",
+            "API-KEY is invalid",
+            "Not logged in",
+            "You must be signed in",
+            "Please log-in first",
+            "Login required",
+            "No credentials found",
+            "Authentication failed",
+            "401 Unauthorized",
+            "auth token expired",
+        ] {
+            let error = json!({
+                "code": -32603,
+                "message": "Internal error",
+                "data": { "details": details }
+            });
+
+            assert!(
+                is_auth_required(&error, true),
+                "{details:?} was not read as a sign-in"
+            );
+        }
     }
 
     #[test]

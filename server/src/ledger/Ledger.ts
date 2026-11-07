@@ -1,12 +1,22 @@
 import { DurableObject } from "cloudflare:workers";
 import { parseConfig, type Config, type Env } from "../config";
-import { creditsForPackage } from "../credits";
+import { creditsForPackage, usdcAmount } from "../credits";
 import { decrypt, encrypt } from "../crypto";
 import { NearAiClient, NearAiError } from "../nearai";
+import { PingPayClient } from "../pingpay";
 import { applySchema } from "./schema";
+import { canMove, type TopupStatus } from "./status";
 import { computeStock, type StockView } from "./stock";
 
+/** How long `reserve` holds credits until `createTopup` sets the hold from the checkout's expiry. */
 const RESERVATION_MS = 30 * 60 * 1000;
+/** A reservation outlives its checkout session by this much, for a payment that lands at the last moment. */
+const RESERVATION_GRACE_MS = 10 * 60 * 1000;
+/** The `expires_at` of a paid top-up's reservation: it holds the stock until the credit releases it. */
+const HELD_UNTIL_CREDITED = Number.MAX_SAFE_INTEGER;
+/** Where PingPay sends the payer after the checkout; the README's "After a checkout" section. */
+const CHECKOUT_PAID_URL = "https://github.com/zakyirsyaad/zorvo/blob/main/server/README.md#checkout-paid";
+const CHECKOUT_CANCELLED_URL = "https://github.com/zakyirsyaad/zorvo/blob/main/server/README.md#checkout-cancelled";
 const SNAPSHOT_ID = 1;
 const OPERATOR_ID = 1;
 /** How long a fresh access token is trusted; the operator session is refreshed on a 30-minute cadence (spec 7.6). */
@@ -36,7 +46,7 @@ export class Ledger extends DurableObject<Env> {
   private readonly sql: SqlStorage;
   private parsedConfig: Config | undefined;
   private refreshing: Promise<string> | undefined;
-  /** The `fetch` used for NEAR AI calls; tests replace it. */
+  /** The `fetch` used for NEAR AI and PingPay calls; tests replace it. */
   fetcher: typeof fetch = (input, init) => fetch(input, init);
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -121,7 +131,12 @@ export class Ledger extends DurableObject<Env> {
     return { availableCredits, takenAt: snapshot?.taken_at ?? 0 };
   }
 
-  /** How many more credits the device may buy or reserve before it reaches the per-device cap. */
+  /**
+   * How many more credits the device may buy or reserve before it reaches the per-device cap. The one
+   * calculation behind `stockFor` and `reserve`: credits bought, plus active reservations (a paid
+   * top-up's is held until credited), plus the device's paid top-ups waiting for stock, which are in
+   * neither of the other two.
+   */
   private roomCredits(deviceId: string, now: number): number {
     const device = this.sql
       .exec<{ credits_bought: number }>("SELECT credits_bought FROM devices WHERE id = ?", deviceId)
@@ -132,7 +147,11 @@ export class Ledger extends DurableObject<Env> {
       deviceId,
       now,
     );
-    return Math.max(0, this.config().deviceCapCredits - device.credits_bought - reserved);
+    const waiting = this.sum(
+      "SELECT COALESCE(SUM(credits), 0) AS total FROM topups WHERE device_id = ? AND status = 'paid_waiting_stock'",
+      deviceId,
+    );
+    return Math.max(0, this.config().deviceCapCredits - device.credits_bought - reserved - waiting);
   }
 
   /** What `deviceId` can buy right now (spec 7.3). The device cap is checked before the stock. */
@@ -152,6 +171,7 @@ export class Ledger extends DurableObject<Env> {
   /**
    * Holds `credits` for the device for 30 minutes. The checks and both inserts run in one
    * synchronous block, so two callers can never both take the last stock or the last room.
+   * It must stay synchronous: it must never become async or await anything, or that guarantee is gone.
    */
   reserve(deviceId: string, credits: number, packageUsd: number, now: number): { topupId: string } | { error: "stock" | "device_cap" } {
     if (!Number.isSafeInteger(credits) || credits <= 0) throw new RangeError("credits must be a positive whole number");
@@ -185,10 +205,14 @@ export class Ledger extends DurableObject<Env> {
     this.sql.exec("DELETE FROM reservations WHERE topup_id = ?", topupId);
   }
 
-  private secret(name: "KEY_ENCRYPTION_KEY" | "OPERATOR_REFRESH_TOKEN"): string {
+  private secret(name: "KEY_ENCRYPTION_KEY" | "OPERATOR_REFRESH_TOKEN" | "PINGPAY_API_KEY"): string {
     const value = this.env[name];
     if (value === undefined || value === "") throw new Error(`Missing secret ${name}`);
     return value;
+  }
+
+  private pingPay(): PingPayClient {
+    return new PingPayClient(this.config().pingPayBase, this.secret("PINGPAY_API_KEY"), this.fetcher);
   }
 
   private nearAi(): NearAiClient {
@@ -300,5 +324,170 @@ export class Ledger extends DurableObject<Env> {
       }
       this.setSnapshot(clampNano(remaining), clampNano(outstanding), now);
     });
+  }
+
+  private topup(topupId: string): { id: string; device_id: string; credits: number; status: TopupStatus } | undefined {
+    return this.sql
+      .exec<{ id: string; device_id: string; credits: number; status: TopupStatus }>(
+        "SELECT id, device_id, credits, status FROM topups WHERE id = ?",
+        topupId,
+      )
+      .toArray()[0];
+  }
+
+  /** Moves a top-up to `to` when `canMove` allows it from its current status; says whether it moved. */
+  private move(topupId: string, to: TopupStatus, now: number): boolean {
+    const current = this.topup(topupId);
+    if (!current || !canMove(current.status, to)) return false;
+    this.sql.exec("UPDATE topups SET status = ?, updated_at = ? WHERE id = ?", to, now, topupId);
+    return true;
+  }
+
+  /**
+   * Reserves the package and opens a PingPay checkout for it. The stock and cap check and both
+   * inserts happen in the synchronous `reserve`, before the first await. When PingPay fails the
+   * reservation is released and the top-up is `failed`.
+   */
+  async createTopup(
+    deviceId: string,
+    packageUsd: number,
+    now: number,
+  ): Promise<{ topupId: string; sessionUrl: string; expiresAt: string } | { error: "stock" | "device_cap" | "upstream" }> {
+    const cfg = this.config();
+    if (!cfg.packagesUsd.includes(packageUsd)) throw new RangeError("unknown package");
+    const client = this.pingPay();
+    const reserved = this.reserve(deviceId, creditsForPackage(packageUsd, cfg), packageUsd, now);
+    if ("error" in reserved) return reserved;
+    const { topupId } = reserved;
+
+    let session: { sessionId: string; sessionUrl: string; expiresAt: string };
+    try {
+      session = await client.createSession({
+        amountUsdc: usdcAmount(packageUsd),
+        recipient: cfg.operatorAccount,
+        customerReference: deviceId,
+        topupId,
+        successUrl: CHECKOUT_PAID_URL,
+        cancelUrl: CHECKOUT_CANCELLED_URL,
+      });
+    } catch {
+      if (this.move(topupId, "failed", now)) this.releaseReservation(topupId);
+      return { error: "upstream" };
+    }
+
+    const reservedUntil = Date.parse(session.expiresAt) + RESERVATION_GRACE_MS;
+    this.sql.exec(
+      "UPDATE topups SET ping_session_id = ?, reserved_until = ?, updated_at = ? WHERE id = ?",
+      session.sessionId,
+      reservedUntil,
+      now,
+      topupId,
+    );
+    this.sql.exec("UPDATE reservations SET expires_at = ? WHERE topup_id = ?", reservedUntil, topupId);
+    return { topupId, sessionUrl: session.sessionUrl, expiresAt: session.expiresAt };
+  }
+
+  /** A device's own top-up, or null for an unknown id or another device's. */
+  topupFor(deviceId: string, topupId: string): { status: TopupStatus; credits: number } | null {
+    const row = this.topup(topupId);
+    return row && row.device_id === deviceId ? { status: row.status, credits: row.credits } : null;
+  }
+
+  /**
+   * Cancel in Zorvo: a `created` top-up becomes `expired` and its hold is released; any other status
+   * stays. A payment that still arrives is handled by `onSessionEvent` as a late payment.
+   */
+  cancelTopup(deviceId: string, topupId: string, now: number): { status: TopupStatus; credits: number } | null {
+    const row = this.topupFor(deviceId, topupId);
+    if (!row) return null;
+    if (row.status === "created" && this.move(topupId, "expired", now)) this.releaseReservation(topupId);
+    return this.topupFor(deviceId, topupId);
+  }
+
+  private seenEvent(eventId: string): boolean {
+    return this.sql.exec("SELECT 1 FROM events WHERE id = ?", eventId).toArray().length > 0;
+  }
+
+  /**
+   * Applies what PingPay says about a checkout session, read again from PingPay rather than taken
+   * from the event. Idempotent by `eventId` when one is given. The event is recorded only once the
+   * session was read, in the same synchronous block as the change, so a failed read can be retried
+   * by a redelivery; a duplicate arriving meanwhile is caught by the second check.
+   */
+  async onSessionEvent(sessionId: string, eventId: string | null, now: number): Promise<void> {
+    if (eventId !== null && this.seenEvent(eventId)) return;
+    const found = this.sql.exec<{ id: string }>("SELECT id FROM topups WHERE ping_session_id = ?", sessionId).toArray()[0];
+    if (!found) return;
+
+    const client = this.pingPay();
+    const session = await client.getSession(sessionId);
+    const payment = session.status === "COMPLETED" && session.paymentId !== null ? await client.getPayment(session.paymentId) : null;
+
+    // From here on nothing awaits: the rows are re-read, since a request may have changed them meanwhile.
+    if (eventId !== null) {
+      if (this.seenEvent(eventId)) return;
+      this.sql.exec("INSERT INTO events (id, received_at) VALUES (?, ?)", eventId, now);
+    }
+    const topupId = found.id;
+    if (payment?.status === "SUCCESS") {
+      this.sql.exec("UPDATE topups SET ping_payment_id = ? WHERE id = ?", session.paymentId, topupId);
+      this.settlePaid(topupId, now);
+    } else if (payment?.status === "FAILED") {
+      if (this.move(topupId, "failed", now)) this.releaseReservation(topupId);
+    } else if (session.status === "EXPIRED" || session.status === "CANCELLED") {
+      if (this.move(topupId, "expired", now)) this.releaseReservation(topupId);
+    }
+  }
+
+  /**
+   * `onSessionEvent` for the webhook route: a PingPay failure comes back as a value, not a throw
+   * across RPC. The event is then not recorded, so PingPay's redelivery is handled.
+   */
+  async webhookEvent(sessionId: string, eventId: string, now: number): Promise<{ ok: true } | { error: "upstream" }> {
+    try {
+      await this.onSessionEvent(sessionId, eventId, now);
+      return { ok: true };
+    } catch {
+      return { error: "upstream" };
+    }
+  }
+
+  /**
+   * A successful payment (spec 7.5, races 3 and 4). With its hold still active, or with stock that
+   * still covers it, the top-up is `paid`, its stock is held until it is credited, and one `credit`
+   * is queued. Otherwise it waits as `paid_waiting_stock`, holding no reservation. Never refused.
+   * Only a `created` or `expired` top-up is settled here: one already waiting is promoted by the
+   * alarm in FIFO order, never by a redelivered event.
+   */
+  private settlePaid(topupId: string, now: number): void {
+    const row = this.topup(topupId);
+    if (!row || (row.status !== "created" && row.status !== "expired")) return;
+    const held =
+      this.sql.exec("SELECT 1 FROM reservations WHERE topup_id = ? AND expires_at > ?", topupId, now).toArray().length > 0;
+    if (!held) {
+      this.releaseReservation(topupId);
+      if (row.credits > this.availableCredits(now).availableCredits) {
+        this.move(topupId, "paid_waiting_stock", now);
+        return;
+      }
+    }
+    this.move(topupId, "paid", now);
+    this.sql.exec(
+      `INSERT INTO reservations (topup_id, device_id, credits, expires_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT (topup_id) DO UPDATE SET expires_at = excluded.expires_at`,
+      topupId,
+      row.device_id,
+      row.credits,
+      HELD_UNTIL_CREDITED,
+    );
+    this.sql.exec("UPDATE topups SET reserved_until = NULL WHERE id = ?", topupId);
+    this.sql.exec(
+      `INSERT INTO queue (id, kind, ref, attempts, next_at)
+       SELECT ?, 'credit', ?, 0, ? WHERE NOT EXISTS (SELECT 1 FROM queue WHERE kind = 'credit' AND ref = ?)`,
+      crypto.randomUUID(),
+      topupId,
+      now,
+      topupId,
+    );
   }
 }

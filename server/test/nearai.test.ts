@@ -3,7 +3,7 @@ import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 import { parseConfig, type Env } from "../src/config";
 import { spendLimitNano } from "../src/credits";
-import { decrypt } from "../src/crypto";
+import { decrypt, sha256Hex } from "../src/crypto";
 import type { Ledger } from "../src/ledger/Ledger";
 import { NearAiClient, NearAiError } from "../src/nearai";
 import { hangUntilAborted } from "./fakes";
@@ -310,6 +310,76 @@ describe("Ledger.accessToken", () => {
       expect(await ledger.accessToken(NOW)).toBe("acc-1");
       expect(calls).toHaveLength(2);
       expect(callAt(calls, 1).headers.get("authorization")).toBe(`Bearer ${SEED}`);
+    });
+  });
+
+  it("stores the first seed with its hash, and never the plaintext", async () => {
+    const { fetcher } = stubFetch(refreshRoute({ value: 0 }));
+    await withLedger(fetcher, async (ledger, sql) => {
+      await ledger.accessToken(NOW);
+      const row = sql.exec<{ seed_hash: string }>("SELECT seed_hash FROM operator").one();
+      expect(row.seed_hash).toBe(await sha256Hex(SEED));
+    });
+  });
+
+  it("does not overwrite a rotated token when the secret is unchanged", async () => {
+    const { fetcher, calls } = stubFetch(refreshRoute({ value: 0 }));
+    await withLedger(fetcher, async (ledger) => {
+      await ledger.accessToken(NOW);
+      await ledger.accessToken(NOW + 31 * MINUTE_MS);
+      expect(callAt(calls, 1).headers.get("authorization")).toBe("Bearer ref-1");
+    });
+  });
+
+  it("replaces the stored token when the secret changes, and the next refresh carries the new seed", async () => {
+    const { fetcher, calls } = stubFetch(refreshRoute({ value: 0 }));
+    await withLedger(fetcher, async (ledger, sql) => {
+      await ledger.accessToken(NOW);
+      (ledger as unknown as { env: Env }).env = { ...ledgerEnv, KEY_ENCRYPTION_KEY: KEY, OPERATOR_REFRESH_TOKEN: "seed-2" };
+      // The cached access token is still valid, so nothing is asked until it runs out.
+      expect(await ledger.accessToken(NOW + 10 * MINUTE_MS)).toBe("acc-1");
+      expect(await ledger.accessToken(NOW + 31 * MINUTE_MS)).toBe("acc-2");
+      expect(callAt(calls, 1).headers.get("authorization")).toBe("Bearer seed-2");
+      const row = sql.exec<{ seed_hash: string; refresh_token_ciphertext: string; version: number }>(
+        "SELECT seed_hash, refresh_token_ciphertext, version FROM operator",
+      ).one();
+      expect(row.seed_hash).toBe(await sha256Hex("seed-2"));
+      expect(await decrypt(KEY, row.refresh_token_ciphertext)).toBe("ref-2");
+      expect(row.version).toBe(3);
+    });
+  });
+
+  it("recovers on the next tick when the first seed was dead and the secret is replaced", async () => {
+    const { fetcher, calls } = stubFetch((call) =>
+      call.headers.get("authorization") === `Bearer ${SEED}` ? json({ error: "invalid_token" }, 401) : refreshRoute({ value: 0 })(call),
+    );
+    await withLedger(fetcher, async (ledger) => {
+      await expect(ledger.accessToken(NOW)).rejects.toMatchObject({ status: 401 });
+      (ledger as unknown as { env: Env }).env = { ...ledgerEnv, KEY_ENCRYPTION_KEY: KEY, OPERATOR_REFRESH_TOKEN: "seed-fixed" };
+      expect(await ledger.accessToken(NOW + MINUTE_MS)).toBe("acc-1");
+      expect(callAt(calls, 1).headers.get("authorization")).toBe("Bearer seed-fixed");
+    });
+  });
+
+  it("stores the access token encrypted and still uses the cached one while it is valid", async () => {
+    const { fetcher, calls } = stubFetch(refreshRoute({ value: 0 }));
+    await withLedger(fetcher, async (ledger, sql) => {
+      await ledger.accessToken(NOW);
+      const row = sql.exec<{ access_token: string }>("SELECT access_token FROM operator").one();
+      expect(row.access_token).not.toContain("acc-1");
+      expect(await decrypt(KEY, row.access_token)).toBe("acc-1");
+      expect(await ledger.accessToken(NOW + 5 * MINUTE_MS)).toBe("acc-1");
+      expect(calls).toHaveLength(1);
+    });
+  });
+
+  it("treats an access token it cannot decrypt (an old plaintext value) as expired", async () => {
+    const { fetcher, calls } = stubFetch(refreshRoute({ value: 0 }));
+    await withLedger(fetcher, async (ledger, sql) => {
+      await ledger.accessToken(NOW);
+      sql.exec("UPDATE operator SET access_token = 'plaintext-token'");
+      expect(await ledger.accessToken(NOW + MINUTE_MS)).toBe("acc-2");
+      expect(calls).toHaveLength(2);
     });
   });
 

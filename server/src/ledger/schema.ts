@@ -64,6 +64,9 @@ const STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS operator (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     refresh_token_ciphertext TEXT NOT NULL,
+    -- SHA-256 of the OPERATOR_REFRESH_TOKEN secret last taken in: a changed secret replaces the stored token.
+    seed_hash TEXT,
+    -- Encrypted with KEY_ENCRYPTION_KEY, like the refresh token.
     access_token TEXT,
     access_expires_at INTEGER,
     version INTEGER NOT NULL DEFAULT 0

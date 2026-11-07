@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { parseConfig, type Config, type Env } from "../config";
 import { balanceCredits, creditsForPackage, creditsFromNano, spendLimitNano, usdcAmount } from "../credits";
-import { decrypt, encrypt } from "../crypto";
+import { decrypt, encrypt, sha256Hex } from "../crypto";
 import { UPSTREAM_TIMEOUT_MS } from "../http";
 import { NearAiClient, NearAiError } from "../nearai";
 import { chargesUsdc, PingPayClient } from "../pingpay";
@@ -34,6 +34,8 @@ const FINAL_UNPAID = new Set(["FAILED", "REFUNDED"]);
 
 const SNAPSHOT_ID = 1;
 const OPERATOR_ID = 1;
+/** The operator's NEAR AI access token and the version of the `operator` row it was read at. */
+type OperatorSession = { token: string; version: number };
 /** How long a fresh access token is trusted; the operator session is refreshed on a 30-minute cadence (spec 7.6). */
 const ACCESS_TOKEN_TTL_MS = 30 * 60 * 1000;
 /** A cached access token is renewed this long before it expires. */
@@ -79,7 +81,7 @@ export type ModelInfo = { id: string; inputPerM: number; outputPerM: number };
 export class Ledger extends DurableObject<Env> {
   private readonly sql: SqlStorage;
   private parsedConfig: Config | undefined;
-  private refreshing: Promise<string> | undefined;
+  private refreshing: Promise<OperatorSession> | undefined;
   private snapshotting: Promise<void> | undefined;
   /** The last model list and when it was read; plain memory, read again after an eviction. */
   private modelsCache: { models: ModelInfo[]; at: number } | undefined;
@@ -397,51 +399,92 @@ export class Ledger extends DurableObject<Env> {
    * left; otherwise it is refreshed, with at most one refresh in flight, because every refresh
    * spends the refresh token (spec 7.5, race 6).
    */
-  accessToken(now: number): Promise<string> {
-    const row = this.sql
-      .exec<{ access_token: string | null; access_expires_at: number | null }>(
-        "SELECT access_token, access_expires_at FROM operator WHERE id = ?",
-        OPERATOR_ID,
-      )
-      .toArray()[0];
-    if (row?.access_token && row.access_expires_at !== null && row.access_expires_at - ACCESS_TOKEN_MARGIN_MS > now) {
-      return Promise.resolve(row.access_token);
-    }
+  async accessToken(now: number): Promise<string> {
+    return (await this.operatorSession(now)).token;
+  }
+
+  /** The access token and the `version` of the operator row it belongs to. */
+  private async operatorSession(now: number): Promise<OperatorSession> {
+    const cached = await this.cachedSession(now);
+    if (cached) return cached;
     this.refreshing ??= this.refreshOperator(now).finally(() => {
       this.refreshing = undefined;
     });
     return this.refreshing;
   }
 
-  /** The stored refresh token, seeded from the `OPERATOR_REFRESH_TOKEN` secret the first time. */
+  /** The stored access token while it has more than a minute left; one that cannot be decrypted counts as expired. */
+  private async cachedSession(now: number): Promise<OperatorSession | null> {
+    const row = this.sql
+      .exec<{ access_token: string | null; access_expires_at: number | null; version: number }>(
+        "SELECT access_token, access_expires_at, version FROM operator WHERE id = ?",
+        OPERATOR_ID,
+      )
+      .toArray()[0];
+    if (!row?.access_token || row.access_expires_at === null || row.access_expires_at - ACCESS_TOKEN_MARGIN_MS <= now) return null;
+    try {
+      return { token: await decrypt(this.secret("KEY_ENCRYPTION_KEY"), row.access_token), version: row.version };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The refresh token to spend. The `OPERATOR_REFRESH_TOKEN` secret seeds it the first time, and
+   * again whenever the secret's value changes (its hash differs from `seed_hash`): that is how the
+   * operator replaces a dead session. An unchanged secret never overwrites the rotated token. It
+   * runs inside the single refresh in flight, so it cannot race a rotation.
+   */
   private async operatorRefreshToken(): Promise<string> {
     const keyB64 = this.secret("KEY_ENCRYPTION_KEY");
     const row = this.sql
-      .exec<{ refresh_token_ciphertext: string }>("SELECT refresh_token_ciphertext FROM operator WHERE id = ?", OPERATOR_ID)
+      .exec<{ refresh_token_ciphertext: string; seed_hash: string | null }>(
+        "SELECT refresh_token_ciphertext, seed_hash FROM operator WHERE id = ?",
+        OPERATOR_ID,
+      )
       .toArray()[0];
-    if (row) return decrypt(keyB64, row.refresh_token_ciphertext);
-    const seed = this.secret("OPERATOR_REFRESH_TOKEN");
-    this.sql.exec(
-      "INSERT INTO operator (id, refresh_token_ciphertext, version) VALUES (?, ?, 0)",
-      OPERATOR_ID,
-      await encrypt(keyB64, seed),
-    );
+    const seed = this.env.OPERATOR_REFRESH_TOKEN;
+    if (seed === undefined || seed === "") {
+      if (row) return decrypt(keyB64, row.refresh_token_ciphertext);
+      return this.secret("OPERATOR_REFRESH_TOKEN");
+    }
+    const seedHash = await sha256Hex(seed);
+    if (row && row.seed_hash === seedHash) return decrypt(keyB64, row.refresh_token_ciphertext);
+    const sealed = await encrypt(keyB64, seed);
+    if (row) {
+      this.sql.exec(
+        `UPDATE operator SET refresh_token_ciphertext = ?, seed_hash = ?, access_token = NULL, access_expires_at = NULL,
+         version = version + 1 WHERE id = ?`,
+        sealed,
+        seedHash,
+        OPERATOR_ID,
+      );
+    } else {
+      this.sql.exec(
+        "INSERT INTO operator (id, refresh_token_ciphertext, seed_hash, version) VALUES (?, ?, ?, 0)",
+        OPERATOR_ID,
+        sealed,
+        seedHash,
+      );
+    }
     return seed;
   }
 
-  private async refreshOperator(now: number): Promise<string> {
+  private async refreshOperator(now: number): Promise<OperatorSession> {
     const refreshToken = await this.operatorRefreshToken();
     const fresh = await this.nearAi().refresh(refreshToken);
+    const keyB64 = this.secret("KEY_ENCRYPTION_KEY");
     // The old refresh token is spent: store the new one before anyone can use the new access token.
     this.sql.exec(
       `UPDATE operator SET refresh_token_ciphertext = ?, access_token = ?, access_expires_at = ?, version = version + 1
        WHERE id = ?`,
-      await encrypt(this.secret("KEY_ENCRYPTION_KEY"), fresh.refreshToken),
-      fresh.accessToken,
+      await encrypt(keyB64, fresh.refreshToken),
+      await encrypt(keyB64, fresh.accessToken),
       now + ACCESS_TOKEN_TTL_MS,
       OPERATOR_ID,
     );
-    return fresh.accessToken;
+    const { version } = this.sql.exec<{ version: number }>("SELECT version FROM operator WHERE id = ?", OPERATOR_ID).one();
+    return { token: fresh.accessToken, version };
   }
 
   /**
@@ -450,13 +493,13 @@ export class Ledger extends DurableObject<Env> {
    * shorter than assumed costs one refresh, not a run of failures. A second refusal is surfaced.
    */
   private async withAccessToken<T>(now: number, call: (access: string) => Promise<T>): Promise<T> {
-    const access = await this.accessToken(now);
+    const session = await this.operatorSession(now);
     try {
-      return await call(access);
+      return await call(session.token);
     } catch (error) {
       if (!(error instanceof NearAiError) || error.status !== 401) throw error;
       // Only the token that failed is dropped: a caller that already refreshed past it keeps its new one.
-      this.sql.exec("UPDATE operator SET access_expires_at = NULL WHERE id = ? AND access_token = ?", OPERATOR_ID, access);
+      this.sql.exec("UPDATE operator SET access_expires_at = NULL WHERE id = ? AND version = ?", OPERATOR_ID, session.version);
       return call(await this.accessToken(now));
     }
   }

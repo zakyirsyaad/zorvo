@@ -61,11 +61,22 @@ The dry run prints the account, the public key, the message (`Sign in to NEAR AI
 (`cloud.near.ai`) and the nonce. Compare the public key with the one the dashboard or your wallet shows
 for that account before the live run.
 
-Pipe the live run straight into the secret so the token never sits in your shell history or on screen:
+Keep the token out of your shell history and off the screen, and never upload an empty one when the login
+fails: the token goes into a shell variable first and is only stored when the login succeeded.
 
 ```bash
-node server/scripts/operator-login.mjs <operator-account-id> <path-to-key-file> | pnpm --filter zorvo-credits-server exec wrangler secret put OPERATOR_REFRESH_TOKEN
+token=$(node server/scripts/operator-login.mjs <operator-account-id> <path-to-key-file>) \
+  && [ -n "$token" ] \
+  && printf '%s' "$token" | pnpm --filter zorvo-credits-server exec wrangler secret put OPERATOR_REFRESH_TOKEN
+unset token
 ```
+
+**Run the login right before you deploy.** The refresh token lives 7 days and the server only spends it when
+it first needs NEAR AI (the first alarm tick after the first registration), so a token that was made long
+before the deploy may already be dead.
+
+The login also fails if your Mac's clock is ahead of NEAR AI's: it rejects a nonce whose timestamp is in the
+future (and one older than 5 minutes). Check your clock first if it answers 401.
 
 What is known and what is not (**unverified until you run it**):
 
@@ -78,17 +89,20 @@ What is known and what is not (**unverified until you run it**):
   the fallback: sign in to the NEAR AI Cloud dashboard with the operator account, copy a refresh token from
   that session by hand, and store it with `wrangler secret put OPERATOR_REFRESH_TOKEN`. If it is refused,
   record the answer here.
-- NEAR AI's refresh tokens live 7 days (from its source). The server renews its access token whenever the
-  cached one (trusted for 30 minutes) runs out, spends the refresh token for it, and stores the new refresh
-  token (encrypted) before using it. **The secret is only read once**, to seed that stored token the first
-  time the server needs it; after that the stored one wins and a later `wrangler secret put
-  OPERATOR_REFRESH_TOKEN` is ignored. There is no reset route yet (a known gap): if the stored token ever
-  dies (the server was idle for over 7 days, or NEAR AI revoked it), re-seeding means clearing the Ledger's
-  `operator` row, which needs a small code change or a fresh Durable Object. Keep the server's traffic
-  steady and watch `refresh_failed`.
-- Also unverified: after the first deploy, confirm the server can refresh: the first request that needs
-  NEAR AI (for example `GET /v1/stock` from a registered device) should answer, not 502; a failed refresh
-  logs and raises a `refresh_failed` alert.
+- NEAR AI's refresh tokens live 7 days (from its source). Once the alarm is running (it starts with the
+  first device registration) the server renews its access token about every 30 minutes, whatever the traffic,
+  spends the refresh token for it, and stores the new refresh token (encrypted) before using it. So a
+  session does not die of idleness; a dead one comes from a bad, old or already-spent seed, or from a
+  session NEAR AI revoked.
+- **Re-seeding.** The `OPERATOR_REFRESH_TOKEN` secret seeds the stored token the first time, and again
+  whenever its value changes (the server compares a hash of it with the last one it took in). To replace a
+  dead session: run the login again, `wrangler secret put OPERATOR_REFRESH_TOKEN` with the new value, and the
+  next alarm tick (within about a minute) picks it up. Putting the same value again does nothing, and an
+  unchanged secret never overwrites the rotated token.
+- **Unverified: that the server can refresh.** After the first deploy, register a device (the app's Private
+  mode does it, or `POST /v1/devices` with a secret hash), which starts the alarm. Within about a minute,
+  `wrangler tail` should show no `Alert refresh_failed`. `GET /v1/stock` cannot detect a failed refresh: it
+  answers from the last stock snapshot.
 
 ### 3. Variables
 
@@ -131,7 +145,7 @@ works from the repository root). The command asks for the value; do not put it o
 ### 6. Deploy, on the right plan
 
 ```bash
-pnpm --filter zorvo-credits-server deploy
+pnpm --filter zorvo-credits-server run deploy   # the package script, `wrangler deploy`
 ```
 
 - **Use the Workers Paid plan.** The Ledger's alarm runs every minute. One tick can poll up to 10 PingPay
@@ -179,13 +193,19 @@ or update one with the admin route (credits at most the device cap, 5,000; `maxU
 code is 4 to 64 visible ASCII characters). Only its hash is stored. Keep the token in a shell variable
 read from your password manager, never typed into the command:
 
+The token and the code stay out of every process's argument list: the header comes from a process
+substitution and the body from stdin (bash or zsh). The code is generated, not chosen, so it cannot be guessed:
+
 ```bash
 read -rs ADMIN_TOKEN   # paste the token, press Enter
-curl -sS -X POST "https://<your-worker-url>/v1/admin/promos" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H "content-type: application/json" \
-  -d '{"code":"JUDGE-EXAMPLE-2026","credits":300,"maxUses":20}'
+code="JUDGE-$(openssl rand -hex 8)"
+printf '{"code":"%s","credits":300,"maxUses":20}' "$code" \
+  | curl -sS -X POST "https://<your-worker-url>/v1/admin/promos" \
+      -H @<(printf 'Authorization: Bearer %s\n' "$ADMIN_TOKEN") \
+      -H 'content-type: application/json' \
+      --data-binary @-
 # {"ok":true}
+echo "$code"        # hand this code to the judge
 ```
 
 A promo is paid from your NEAR AI stock like any top-up; if the stock cannot cover it, the redeeming
@@ -212,7 +232,7 @@ Each kind and subject is raised at most once an hour. Details never contain a to
 
 | Kind | Means | Do |
 | --- | --- | --- |
-| `refresh_failed` | The server could not refresh the operator token or read the NEAR AI stock. Credits stop being issued. | Check the NEAR AI status page and the log line. If the stored refresh token is dead, see the note under step 2: a new `OPERATOR_REFRESH_TOKEN` secret is only read when nothing is stored yet. |
+| `refresh_failed` | The server could not refresh the operator token or read the NEAR AI stock. Credits stop being issued. | Check the NEAR AI status page and the log line. If the refresh token is dead, re-seed it: run the login again and `wrangler secret put OPERATOR_REFRESH_TOKEN` (step 2). |
 | `low_stock` | Under about $3 of NEAR AI cost is left to sell. | Restock (above). |
 | `stuck_queue` | A credit, key rotation or revoke has waited over an hour. | See "A paid top-up that does not arrive". |
 | `attempts_exhausted` | An item failed 10 times. It is not dropped: it keeps retrying every 30 minutes. | Read the preceding `Credit for top-up ... failed` log lines for the cause (usually NEAR AI or the token). |
@@ -246,13 +266,15 @@ money: the device recovers with its own code, which issues a fresh key against t
 ## Security
 
 - Stored: SHA-256 hashes of device secrets, promo codes and recovery codes; NEAR AI key ids; top-up
-  and queue state; the operator's refresh token (encrypted with `KEY_ENCRYPTION_KEY`); and a user's NEAR AI
-  key only encrypted, for at most 24 hours, until it is handed over once.
+  and queue state; the operator's refresh token and access token, both encrypted with `KEY_ENCRYPTION_KEY`,
+  and a hash of the refresh-token secret (to notice a replaced secret); and a user's NEAR AI key only
+  encrypted, for at most 24 hours, until it is handed over once.
 - Not stored or seen: prompts and completions (they go from the app to NEAR AI), the operator's NEAR private
   key (it stays on your Mac and is only read by the login script), card or wallet details (PingPay).
 - A leaked database exposes no usable user key and no device secret. It would show key ids, balances and
-  hashes; promo codes are only guessable if they were weak, so use long ones. The operator refresh token
-  is only useful together with `KEY_ENCRYPTION_KEY`, which is a Worker secret, not in the database.
+  hashes; promo codes are only guessable if they were weak, so use long ones. The operator's refresh and
+  access tokens are only useful together with `KEY_ENCRYPTION_KEY`, which is a Worker secret, not in the
+  database.
 - Webhooks are accepted only with a valid HMAC signature and a fresh timestamp. The admin route needs
   `ADMIN_TOKEN` (compared in constant time); without it set, nobody is admin.
 - Registration, top-ups, promo attempts and recovery attempts are rate-limited per device or per address.

@@ -11,9 +11,8 @@
 // sent is the signature of a one-time sign-in message. On success the refresh token is the only
 // thing printed to stdout; everything else goes to stderr.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { pathToFileURL } from "node:url";
 import { KeyPair } from "@near-js/crypto";
 import { buildLoginRequest, buildNep413Payload, LOGIN_MESSAGE, LOGIN_RECIPIENT } from "./nep413.mjs";
 
@@ -40,6 +39,21 @@ function readKeyPair(path) {
     return keyPair.getPublicKey().toString().startsWith("ed25519:") ? keyPair : null;
   } catch {
     return null;
+  }
+}
+
+/** Text from the server, safe to print: control characters removed, cut to `max` characters. */
+function visible(text, max) {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").slice(0, max);
+}
+
+/** True when this file is the one node was started with, also through a symlink. */
+function isMain() {
+  try {
+    return process.argv[1] !== undefined && realpathSync(process.argv[1]) === realpathSync(new URL(import.meta.url));
+  } catch {
+    return false;
   }
 }
 
@@ -85,12 +99,13 @@ async function main(argv) {
 
   const body = await response.json().catch(() => null);
   if (!response.ok || typeof body?.refresh_token !== "string" || body.refresh_token === "") {
-    const code = typeof body?.error === "string" ? ` (${body.error.slice(0, 60)})` : "";
-    return fail(`NEAR AI refused the login: HTTP ${response.status}${code}.\n${FALLBACK}`);
+    const code = typeof body?.error === "string" ? ` (${visible(body.error, 60)})` : "";
+    const why = typeof body?.error_description === "string" ? `: ${visible(body.error_description, 200)}` : "";
+    return fail(`NEAR AI refused the login: HTTP ${response.status}${code}${why}.\n${FALLBACK}`);
   }
   console.log(body.refresh_token);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMain()) {
   await main(process.argv.slice(2));
 }

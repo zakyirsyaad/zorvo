@@ -188,6 +188,17 @@ describe("POST /v1/topups", () => {
     expect(await statusOf(secret, topupId)).toEqual({ status: "created", credits: 500 });
   });
 
+  it("holds the stock at most an hour when PingPay's checkout lives longer", async () => {
+    await seedStock(10_000);
+    const { deviceId } = await newDevice();
+    ping.expiresAt = () => NOW + 30 * 24 * 60 * MINUTE_MS;
+    const created = await stub().createTopup(deviceId, 5, NOW);
+    if ("error" in created) throw new Error(`could not create a top-up: ${created.error}`);
+    const { topups, reservations } = await rows();
+    expect(topups).toEqual([expect.objectContaining({ id: created.topupId, reserved_until: NOW + 60 * MINUTE_MS })]);
+    expect(reservations).toEqual([expect.objectContaining({ topup_id: created.topupId, expires_at: NOW + 60 * MINUTE_MS })]);
+  });
+
   it("answers 502 upstream when PingPay's session charges another amount or asset, releasing the stock", async () => {
     await seedStock(500, Date.now());
     const { deviceId, secret } = await newDevice();
@@ -578,5 +589,30 @@ describe("device cap with a waiting top-up", () => {
     expect(view.yourRoomCredits).toBe(0);
     expect(view.packages.every((p) => p.reason === "device_cap")).toBe(true);
     expect(await stub().reserve(deviceId, 500, 5, NOW)).toEqual({ error: "device_cap" });
+  });
+});
+
+describe("schema indexes", () => {
+  it("refuses a second top-up with the same PingPay session but allows many without one", async () => {
+    await runInDurableObject(stub(), (_ledger, state) => {
+      const insert = (id: string, session: string | null) =>
+        state.storage.sql.exec(
+          `INSERT INTO topups (id, device_id, package_usd, credits, status, ping_session_id, created_at, updated_at)
+           VALUES (?, 'd-1', 5, 500, 'created', ?, ?, ?)`,
+          id,
+          session,
+          NOW,
+          NOW,
+        );
+      insert("t-1", "cs_same");
+      expect(() => insert("t-2", "cs_same")).toThrow();
+      insert("t-3", null);
+      insert("t-4", null);
+      const indexes = state.storage.sql
+        .exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('topups_session', 'queue_kind_ref') ORDER BY name")
+        .toArray()
+        .map((row) => row.name);
+      expect(indexes).toEqual(["queue_kind_ref", "topups_session"]);
+    });
   });
 });

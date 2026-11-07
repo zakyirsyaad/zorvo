@@ -561,7 +561,39 @@ describe("alarm", () => {
     const { reservations } = await rows();
     expect(reservations.map((r) => r.topup_id)).toEqual([paid]);
     expect(await statusOf(paid)).toBe("paid");
-    expect(await statusOf(open.topupId)).toBe("created");
+    // Its hold ended more than 7 days before the tick, so the sweep also expired it.
+    expect(await statusOf(open.topupId)).toBe("expired");
+  });
+
+  it("expires a created top-up whose hold ended more than 7 days ago and keeps a younger one", async () => {
+    await seedStock(10_000);
+    const old = await newDevice();
+    const young = await newDevice();
+    const stale = await checkout(old.deviceId, NOW - 8 * DAY_MS);
+    const recent = await checkout(young.deviceId, NOW - 6 * DAY_MS);
+
+    await tick(NOW);
+
+    expect(await statusOf(stale.topupId)).toBe("expired");
+    expect(await statusOf(recent.topupId)).toBe("created");
+    expect((await rows()).reservations).toEqual([]);
+  });
+
+  it("purges rate-limit windows older than 24 hours and webhook events older than 30 days, keeping younger ones", async () => {
+    await seedStock(10_000);
+    await runInDurableObject(stub(), (_ledger, state) => {
+      const sql = state.storage.sql;
+      sql.exec("INSERT INTO ratelimits (key, count, window_start) VALUES ('old', 1, ?), ('young', 1, ?)", NOW - 25 * HOUR_MS, NOW - 23 * HOUR_MS);
+      sql.exec("INSERT INTO events (id, received_at) VALUES ('evt_old', ?), ('evt_young', ?)", NOW - 31 * DAY_MS, NOW - 29 * DAY_MS);
+    });
+
+    await tick(NOW);
+
+    const left = await runInDurableObject(stub(), (_ledger, state) => ({
+      limits: state.storage.sql.exec<{ key: string }>("SELECT key FROM ratelimits WHERE key IN ('old', 'young')").toArray().map((r) => r.key),
+      events: state.storage.sql.exec<{ id: string }>("SELECT id FROM events ORDER BY id").toArray().map((r) => r.id),
+    }));
+    expect(left).toEqual({ limits: ["young"], events: ["evt_young"] });
   });
 
   it("deletes a pending key once it is 24 hours old", async () => {

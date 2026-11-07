@@ -26,6 +26,8 @@ import { computeStock, type StockView } from "./stock";
 const RESERVATION_MS = 30 * 60 * 1000;
 /** A reservation outlives its checkout session by this much, for a payment that lands at the last moment. */
 const RESERVATION_GRACE_MS = 10 * 60 * 1000;
+/** A checkout's hold never lasts longer than this, whatever expiry PingPay states. */
+const RESERVATION_MAX_MS = 60 * 60 * 1000;
 /** The `expires_at` of a paid top-up's reservation: it holds the stock until the credit releases it. */
 const HELD_UNTIL_CREDITED = Number.MAX_SAFE_INTEGER;
 /** Where PingPay sends the payer after the checkout; the README's "After a checkout" section. */
@@ -460,7 +462,7 @@ export class Ledger extends DurableObject<Env> {
       return { error: "upstream" };
     }
 
-    const reservedUntil = Date.parse(session.expiresAt) + RESERVATION_GRACE_MS;
+    const reservedUntil = Math.min(Date.parse(session.expiresAt) + RESERVATION_GRACE_MS, now + RESERVATION_MAX_MS);
     this.sql.exec(
       "UPDATE topups SET ping_session_id = ?, reserved_until = ?, updated_at = ? WHERE id = ?",
       session.sessionId,

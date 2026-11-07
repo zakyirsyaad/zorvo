@@ -36,6 +36,13 @@ const BACKOFF_MAX_MS = 30 * MINUTE_MS;
 const MAX_ATTEMPTS = 10;
 export const PENDING_KEY_TTL_MS = 24 * HOUR_MS;
 const STUCK_AFTER_MS = HOUR_MS;
+const DAY_MS = 24 * HOUR_MS;
+/** A `created` top-up whose hold ended this long ago is `expired` (it is no longer polled either). */
+const ABANDONED_AFTER_MS = 7 * DAY_MS;
+/** Rate-limit rows older than this are purged; every limiter's window is an hour or less. */
+const RATELIMIT_KEEP_MS = DAY_MS;
+/** Webhook event ids are kept this long for redelivery checks. */
+const EVENTS_KEEP_MS = 30 * DAY_MS;
 /** Stock below $3 of NEAR AI cost raises `low_stock` (spec 7.6). */
 const LOW_STOCK_NANO = 3_000_000_000n;
 
@@ -178,6 +185,8 @@ function nextPoll(sql: SqlStorage, topupId: string, outcome: SessionOutcome | "f
 /**
  * Releases reservations past their time and deletes key secrets never collected. A paid top-up's
  * hold never expires (it is released by its credit), and the status check keeps it so regardless.
+ * A `created` top-up whose hold ended over 7 days ago becomes `expired`. Rate-limit windows older
+ * than a day (every limiter's window is at most an hour) and event ids older than 30 days go.
  */
 function sweepExpired(ctx: FulfilmentContext, now: number): void {
   ctx.sql.exec(
@@ -185,6 +194,14 @@ function sweepExpired(ctx: FulfilmentContext, now: number): void {
     now,
   );
   ctx.sql.exec("DELETE FROM pending_keys WHERE expires_at <= ?", now);
+  const abandoned = ctx.sql
+    .exec<{ id: string }>("SELECT id FROM topups WHERE status = 'created' AND reserved_until < ?", now - ABANDONED_AFTER_MS)
+    .toArray();
+  for (const { id } of abandoned) {
+    if (ctx.move(id, "expired", now)) ctx.releaseReservation(id);
+  }
+  ctx.sql.exec("DELETE FROM ratelimits WHERE window_start < ?", now - RATELIMIT_KEEP_MS);
+  ctx.sql.exec("DELETE FROM events WHERE received_at < ?", now - EVENTS_KEEP_MS);
 }
 
 /**

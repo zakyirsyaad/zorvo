@@ -32,7 +32,7 @@ const STATEMENTS = [
     credits INTEGER NOT NULL,
     expires_at INTEGER NOT NULL
   )`,
-  // kind is 'credit' or 'rotate_key'. counted is 1 once a credit item has added its credits to
+  // kind is 'credit', 'rotate_key' or 'revoke_key'. counted is 1 once a credit item has added its credits to
   // devices.credits_bought, so a retry never adds them twice.
   `CREATE TABLE IF NOT EXISTS queue (
     id TEXT PRIMARY KEY,
@@ -102,6 +102,9 @@ const STATEMENTS = [
     id TEXT PRIMARY KEY,
     received_at INTEGER NOT NULL
   )`,
+  // One top-up per PingPay session; SQLite allows many NULLs, as a promo top-up has no session.
+  "CREATE UNIQUE INDEX IF NOT EXISTS topups_session ON topups(ping_session_id)",
+  "CREATE INDEX IF NOT EXISTS queue_kind_ref ON queue(kind, ref)",
 ];
 
 export function applySchema(sql: SqlStorage): void {

@@ -15,6 +15,7 @@ import {
   type FulfilmentContext,
   type SessionOutcome,
 } from "./fulfilment";
+import { promoRefusal, recoverDevice, redeemPromo, savePromo, type PromoContext, type PromoResult } from "./promo-recover";
 import { applySchema } from "./schema";
 import { canMove, type TopupStatus } from "./status";
 import { computeStock, type StockView } from "./stock";
@@ -721,6 +722,35 @@ export class Ledger extends DurableObject<Env> {
       topupId,
     );
     return true;
+  }
+
+  /**
+   * Redeems a promo code (by its hash) for the device through the reservation and credit path. The
+   * snapshot is made current first, as for a top-up; a use is taken only by the synchronous block.
+   */
+  async redeemPromo(deviceId: string, codeHash: string, now: number = Date.now()): Promise<PromoResult> {
+    if (promoRefusal(this.sql, codeHash, deviceId)) return { error: "bad_request" };
+    await this.ensureAlarm();
+    if (!(await this.stockIsCurrent(now))) return { error: "stock" };
+    const context: PromoContext = {
+      sql: this.sql,
+      transaction: (body) => this.ctx.storage.transactionSync(body),
+      reserve: (id, credits, usd, at) => this.reserve(id, credits, usd, at),
+      holdForCredit: (topupId, at) => this.holdForCredit(topupId, at),
+    };
+    return redeemPromo(context, deviceId, codeHash, now);
+  }
+
+  /** Admin: creates or updates a promo code, stored by its hash. */
+  addPromo(codeHash: string, credits: number, maxUses: number): void {
+    savePromo(this.sql, codeHash, credits, maxUses);
+  }
+
+  /** Recovery: swaps the secret hash of the device that holds `recoveryHash` and queues a key rotation. */
+  async recover(recoveryHash: string, newSecretHash: string, now: number = Date.now()): Promise<{ ok: true } | { error: "bad_request" }> {
+    const result = recoverDevice({ sql: this.sql, transaction: (body) => this.ctx.storage.transactionSync(body) }, recoveryHash, newSecretHash, now);
+    if ("ok" in result) await this.ensureAlarm();
+    return result;
   }
 
   /**

@@ -373,10 +373,10 @@ describe("credit queue", () => {
 
   it("leaves a queue item of a kind it has no handler for untouched", async () => {
     await runInDurableObject(stub(), (_ledger, state) => {
-      state.storage.sql.exec("INSERT INTO queue (id, kind, ref, attempts, next_at) VALUES ('q-1', 'rotate_key', 'device-1', 0, ?)", NOW);
+      state.storage.sql.exec("INSERT INTO queue (id, kind, ref, attempts, next_at) VALUES ('q-1', 'mystery', 'device-1', 0, ?)", NOW);
     });
     await tick(NOW + MINUTE_MS);
-    expect((await rows()).queue).toEqual([{ id: "q-1", kind: "rotate_key", ref: "device-1", attempts: 0, next_at: NOW }]);
+    expect((await rows()).queue).toEqual([{ id: "q-1", kind: "mystery", ref: "device-1", attempts: 0, next_at: NOW }]);
   });
 
   it("race 8: two alarm runs at once process an item once", async () => {

@@ -1,13 +1,21 @@
-import { authDevice, ledgerOf } from "./auth";
+import { authDevice, BEARER, ledgerOf } from "./auth";
 import { parseConfig, type Env } from "./config";
 import { error, json } from "./http";
+import { sha256Hex, timingSafeEqual } from "./crypto";
 import { verifyWebhook } from "./pingpay";
 
 export { Ledger } from "./ledger/Ledger";
 
 const REGISTRATIONS_PER_HOUR = 10;
 const TOPUPS_PER_HOUR = 10;
+const PROMO_ATTEMPTS_PER_HOUR = 5;
+const RECOVER_ATTEMPTS_PER_HOUR = 5;
 const HOUR_MS = 60 * 60 * 1000;
+/** A promo code as the admin may create it: 4 to 64 visible ASCII characters. */
+const PROMO_CODE = /^[\x21-\x7E]{4,64}$/;
+const MAX_PROMO_USES = 10_000;
+/** Longest promo or recovery code the API reads; longer ones cannot be real. */
+const MAX_CODE_LENGTH = 100;
 const SECRET_HASH = /^[0-9a-f]{64}$/;
 const TOPUP_PATH = /^\/v1\/topups\/([0-9a-f-]{36})(\/cancel)?$/;
 /** The PingPay events that settle a checkout; their `resourceId` is the checkout session id. */
@@ -52,6 +60,54 @@ async function handOverKey(env: Env, deviceId: string): Promise<Response> {
   const response = key === null ? error("not_found", 404) : json({ key });
   response.headers.set("cache-control", "no-store");
   return response;
+}
+
+/** A positive whole number up to `max`, or null. */
+function boundedInt(value: unknown, max: number): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= max ? value : null;
+}
+
+/** The admin token is a secret compared in constant time; without one configured nobody is admin. */
+function isAdmin(req: Request, env: Env): boolean {
+  const expected = env.ADMIN_TOKEN;
+  if (expected === undefined || expected === "") return false;
+  const given = BEARER.exec(req.headers.get("Authorization") ?? "")?.[1];
+  return given !== undefined && timingSafeEqual(given, expected);
+}
+
+/** Admin: creates or updates a promo code. Only the code's hash is stored; the code is never logged. */
+async function adminPromo(req: Request, env: Env): Promise<Response> {
+  if (!isAdmin(req, env)) return error("unauthorized", 401);
+  const body = ((await req.json().catch(() => null)) ?? {}) as { code?: unknown; credits?: unknown; maxUses?: unknown };
+  const credits = boundedInt(body.credits, parseConfig(env).deviceCapCredits);
+  const maxUses = boundedInt(body.maxUses, MAX_PROMO_USES);
+  if (typeof body.code !== "string" || !PROMO_CODE.test(body.code) || credits === null || maxUses === null) return error("bad_request", 400);
+  await ledgerOf(env).addPromo(await sha256Hex(body.code), credits, maxUses);
+  return json({ ok: true });
+}
+
+/** Every attempt counts, wrong or malformed, so a code cannot be guessed at more than 5 an hour per device. */
+async function redeemPromoRoute(req: Request, env: Env, deviceId: string): Promise<Response> {
+  const ledger = ledgerOf(env);
+  if (!(await ledger.rateLimit(`promo:${deviceId}`, PROMO_ATTEMPTS_PER_HOUR, HOUR_MS)).allowed) return error("rate_limited", 429);
+  const code = ((await req.json().catch(() => null)) as { code?: unknown } | null)?.code;
+  if (typeof code !== "string" || code === "" || code.length > MAX_CODE_LENGTH) return error("bad_request", 400);
+  const result = await ledger.redeemPromo(deviceId, await sha256Hex(code), Date.now());
+  if (!("error" in result)) return json(result, 201);
+  return result.error === "bad_request" ? error("bad_request", 400) : error(result.error, 409);
+}
+
+/** The recovery code is the credential, so there is no Bearer; attempts are limited per address. */
+async function recoverRoute(req: Request, env: Env): Promise<Response> {
+  const ip = req.headers.get("CF-Connecting-IP") ?? "unknown";
+  const ledger = ledgerOf(env);
+  if (!(await ledger.rateLimit(`recover:${ip}`, RECOVER_ATTEMPTS_PER_HOUR, HOUR_MS)).allowed) return error("rate_limited", 429);
+  const body = (await req.json().catch(() => null)) as { recoveryCode?: unknown; newSecretHash?: unknown } | null;
+  const { recoveryCode, newSecretHash } = body ?? {};
+  if (typeof recoveryCode !== "string" || recoveryCode === "" || recoveryCode.length > MAX_CODE_LENGTH) return error("bad_request", 400);
+  if (typeof newSecretHash !== "string" || !SECRET_HASH.test(newSecretHash)) return error("bad_request", 400);
+  const result = await ledger.recover(await sha256Hex(recoveryCode), newSecretHash, Date.now());
+  return "ok" in result ? json({ ok: true }) : error("bad_request", 400);
 }
 
 /** PingPay webhooks: the signature is checked on the raw body before anything is parsed or changed. */
@@ -102,6 +158,13 @@ export default {
       const device = await authDevice(req, env);
       if (device instanceof Response) return device;
       return handOverKey(env, device.deviceId);
+    }
+    if (req.method === "POST" && pathname === "/v1/admin/promos") return adminPromo(req, env);
+    if (req.method === "POST" && pathname === "/v1/recover") return recoverRoute(req, env);
+    if (req.method === "POST" && pathname === "/v1/promo") {
+      const device = await authDevice(req, env);
+      if (device instanceof Response) return device;
+      return redeemPromoRoute(req, env, device.deviceId);
     }
     if (req.method === "POST" && pathname === "/v1/webhooks/pingpay") return pingPayWebhook(req, env);
     if (req.method === "POST" && pathname === "/v1/topups") {

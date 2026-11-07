@@ -2,7 +2,7 @@ import type { Env } from "./config";
 import { sha256Hex } from "./crypto";
 import { error } from "./http";
 
-const BEARER = /^Bearer (\S+)$/;
+export const BEARER = /^Bearer (\S+)$/;
 
 export function ledgerOf(env: Env) {
   return env.LEDGER.get(env.LEDGER.idFromName("ledger"));

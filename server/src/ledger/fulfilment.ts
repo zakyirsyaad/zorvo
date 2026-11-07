@@ -1,12 +1,12 @@
 import type { Config } from "../config";
 import { creditsFromNano, spendLimitNano } from "../credits";
 import { encrypt } from "../crypto";
-import type { NearAiClient } from "../nearai";
+import { NearAiError, type NearAiClient } from "../nearai";
 import type { TopupStatus } from "./status";
 
 /**
  * The Ledger's alarm (spec 7.5, 7.6): the operator token, the stock snapshot, the PingPay poll,
- * the expiry sweep, the FIFO promotion, the credit queue and the operator alerts. The Ledger owns
+ * the expiry sweep, the FIFO promotion, the queue (credits, key rotations, revokes) and the operator alerts. The Ledger owns
  * the state; these functions reach it through a `FulfilmentContext`.
  */
 
@@ -78,7 +78,7 @@ export async function runAlarm(ctx: FulfilmentContext, now: number): Promise<voi
     ["session poll", () => pollSessions(ctx, now)],
     ["expiry sweep", () => sweepExpired(ctx, now)],
     ["promotion", () => promoteWaiting(ctx, now)],
-    ["credit queue", () => runCreditQueue(ctx, now)],
+    ["queue", () => runQueue(ctx, now)],
     ["stuck queue check", () => alertStuckItems(ctx, now)],
   ];
   for (const [name, step] of steps) {
@@ -203,12 +203,20 @@ function promoteWaiting(ctx: FulfilmentContext, now: number): void {
   }
 }
 
-async function runCreditQueue(ctx: FulfilmentContext, now: number): Promise<void> {
-  // Only kinds with a handler are taken; another kind is left as it is, attempts and all.
+/** Queue kinds that have a handler; an item of any other kind is left as it is, attempts and all. */
+const QUEUE_KINDS = ["credit", "rotate_key", "revoke_key"];
+
+/** Runs the due items one at a time, so a `credit` and a `rotate_key` of one device never overlap. */
+async function runQueue(ctx: FulfilmentContext, now: number): Promise<void> {
+  const kinds = QUEUE_KINDS.map((kind) => `'${kind}'`).join(", ");
   const due = ctx.sql
-    .exec<{ id: string }>("SELECT id FROM queue WHERE kind = 'credit' AND next_at <= ? ORDER BY next_at, id LIMIT ?", now, CREDITS_PER_TICK)
+    .exec<{ id: string; kind: string }>(`SELECT id, kind FROM queue WHERE kind IN (${kinds}) AND next_at <= ? ORDER BY next_at, id LIMIT ?`, now, CREDITS_PER_TICK)
     .toArray();
-  for (const { id } of due) await creditItem(ctx, id, now);
+  for (const { id, kind } of due) {
+    if (kind === "credit") await creditItem(ctx, id, now);
+    else if (kind === "rotate_key") await rotateItem(ctx, id, now);
+    else await revokeItem(ctx, id, now);
+  }
 }
 
 async function alertStuckItems(ctx: FulfilmentContext, now: number): Promise<void> {
@@ -393,4 +401,143 @@ async function revokeQuietly(ctx: FulfilmentContext, keyId: string, now: number)
   } catch (error) {
     console.error(`Revoking the extra NEAR AI key ${keyId} failed: ${describeError(error)}`);
   }
+}
+
+/** A key with no spend left still gets a positive limit: a limit of 0 might read as "no limit" upstream. */
+const MIN_KEY_LIMIT_NANO = 1n;
+
+/**
+ * One `rotate_key` item (spec 7.5, Recovery): the device's secret is already replaced, so this
+ * makes the key the new Mac will fetch and retires the old one. The device is read again here.
+ */
+async function rotateItem(ctx: FulfilmentContext, itemId: string, now: number): Promise<void> {
+  const claim = claimRotate(ctx, itemId, now);
+  if (!claim) return;
+  try {
+    const revokeItemId = await rotateKey(ctx, claim.deviceId, itemId, now);
+    if (revokeItemId !== null) await revokeItem(ctx, revokeItemId, now);
+  } catch (error) {
+    console.error(`Key rotation for device ${claim.deviceId} failed on attempt ${claim.attempts}: ${describeError(error)}`);
+    if (claim.attempts === MAX_ATTEMPTS) {
+      await ctx.alert("attempts_exhausted", `key rotation for device ${claim.deviceId} failed ${MAX_ATTEMPTS} times; it keeps retrying every 30 minutes`);
+    }
+  }
+}
+
+/** Marks the item before anything is called. An item with nothing to rotate (no device, revoked, no key) is dropped. */
+function claimRotate(ctx: FulfilmentContext, itemId: string, now: number): { deviceId: string; attempts: number } | null {
+  const item = ctx.sql
+    .exec<{ ref: string; attempts: number; next_at: number }>("SELECT ref, attempts, next_at FROM queue WHERE id = ? AND kind = 'rotate_key'", itemId)
+    .toArray()[0];
+  if (!item || item.next_at > now) return null;
+  const device = ctx.sql
+    .exec<{ nearai_key_id: string | null }>("SELECT nearai_key_id FROM devices WHERE id = ? AND revoked_at IS NULL", item.ref)
+    .toArray()[0];
+  if (!device?.nearai_key_id) {
+    ctx.sql.exec("DELETE FROM queue WHERE id = ?", itemId);
+    return null;
+  }
+  const attempts = item.attempts + 1;
+  ctx.sql.exec("UPDATE queue SET attempts = ?, next_at = ? WHERE id = ?", attempts, now + backoffMs(attempts), itemId);
+  return { deviceId: item.ref, attempts };
+}
+
+/**
+ * Creates the new key and swaps it in. The new limit is what the old key has left, not the credits
+ * bought: a new key starts with no usage, so carrying the full total would give back what was spent.
+ * `credits_bought` becomes that remainder, so later absolute totals stay right on the new key.
+ * Returns the `revoke_key` item queued for the old key, or null when the rotation did not happen
+ * (the device changed meanwhile; the item stays and its retry decides again).
+ */
+async function rotateKey(ctx: FulfilmentContext, deviceId: string, itemId: string, now: number): Promise<string | null> {
+  const cfg = ctx.config();
+  const client = ctx.nearAi();
+  const before = readDevice(ctx.sql, deviceId);
+  if (!before?.nearai_key_id) return null;
+  const oldKeyId = before.nearai_key_id;
+
+  const keys = await ctx.withAccessToken(now, (access) => client.listKeys(access, cfg.workspaceId));
+  const stored = ctx.sql.exec<{ usage_nano: number | null }>("SELECT usage_nano FROM key_usage WHERE key_id = ?", oldKeyId).toArray()[0];
+  const usageNano = keys.find((key) => key.id === oldKeyId)?.usageNano ?? BigInt(stored?.usage_nano ?? 0);
+  const remaining = Math.max(0, before.credits_bought - creditsFromNano(usageNano, cfg));
+  const spendLimit = spendLimitNano(remaining, cfg);
+  const limitNano = spendLimit > MIN_KEY_LIMIT_NANO ? spendLimit : MIN_KEY_LIMIT_NANO;
+
+  // The encryption key is tried first, so a bad one fails before a key exists upstream. createKey is
+  // not routed through withAccessToken: a second create is not obviously safe.
+  const keyB64 = ctx.keyEncryptionKey();
+  await encrypt(keyB64, "");
+  const created = await client.createKey(await ctx.accessToken(now), cfg.workspaceId, `zorvo-${deviceId}`, limitNano);
+  const ciphertext = await encrypt(keyB64, created.key);
+
+  const after = readDevice(ctx.sql, deviceId);
+  if (!after || after.nearai_key_id !== oldKeyId || after.credits_bought !== before.credits_bought) {
+    await revokeQuietly(ctx, created.id, now);
+    return null;
+  }
+  const revokeItemId = crypto.randomUUID();
+  ctx.transaction(() => {
+    ctx.sql.exec("UPDATE devices SET nearai_key_id = ?, credits_bought = ? WHERE id = ?", created.id, remaining, deviceId);
+    ctx.sql.exec("INSERT OR REPLACE INTO pending_keys (device_id, key_ciphertext, expires_at) VALUES (?, ?, ?)", deviceId, ciphertext, now + PENDING_KEY_TTL_MS);
+    forgetKeyLimit(ctx.sql, oldKeyId);
+    recordKeyLimit(ctx.sql, created.id, limitNano);
+    ctx.sql.exec("DELETE FROM queue WHERE id = ?", itemId);
+    ctx.sql.exec(
+      "INSERT INTO queue (id, kind, ref, attempts, next_at, created_at) VALUES (?, 'revoke_key', ?, 0, ?, ?)",
+      revokeItemId,
+      oldKeyId,
+      now,
+      now,
+    );
+  });
+  return revokeItemId;
+}
+
+function readDevice(sql: SqlStorage, deviceId: string): { nearai_key_id: string | null; credits_bought: number } | undefined {
+  return sql
+    .exec<{ nearai_key_id: string | null; credits_bought: number }>(
+      "SELECT nearai_key_id, credits_bought FROM devices WHERE id = ? AND revoked_at IS NULL",
+      deviceId,
+    )
+    .toArray()[0];
+}
+
+/** Takes a key that is no longer a device's out of the snapshot's outstanding amount and out of `key_usage`. */
+function forgetKeyLimit(sql: SqlStorage, keyId: string): void {
+  const row = sql.exec<{ limit_nano: number | null; usage_nano: number | null }>("SELECT limit_nano, usage_nano FROM key_usage WHERE key_id = ?", keyId).toArray()[0];
+  if (!row) return;
+  const left = row.limit_nano !== null && row.limit_nano > (row.usage_nano ?? 0) ? row.limit_nano - (row.usage_nano ?? 0) : 0;
+  sql.exec("UPDATE snapshot SET outstanding_usd = MAX(0, outstanding_usd - ?) WHERE id = 1", left);
+  sql.exec("DELETE FROM key_usage WHERE key_id = ?", keyId);
+}
+
+/**
+ * One `revoke_key` item: the key a rotation replaced. It is its own item so a failed revoke is
+ * retried without touching the rotation. A key that is some device's current key is never revoked,
+ * and a key NEAR AI no longer knows (404) counts as revoked.
+ */
+async function revokeItem(ctx: FulfilmentContext, itemId: string, now: number): Promise<void> {
+  const item = ctx.sql
+    .exec<{ ref: string; attempts: number; next_at: number }>("SELECT ref, attempts, next_at FROM queue WHERE id = ? AND kind = 'revoke_key'", itemId)
+    .toArray()[0];
+  if (!item || item.next_at > now) return;
+  const inUse = ctx.sql.exec("SELECT 1 FROM devices WHERE nearai_key_id = ?", item.ref).toArray().length > 0;
+  if (inUse) {
+    ctx.sql.exec("DELETE FROM queue WHERE id = ?", itemId);
+    return;
+  }
+  const attempts = item.attempts + 1;
+  ctx.sql.exec("UPDATE queue SET attempts = ?, next_at = ? WHERE id = ?", attempts, now + backoffMs(attempts), itemId);
+  try {
+    await ctx.nearAi().revokeKey(await ctx.accessToken(now), ctx.config().workspaceId, item.ref);
+  } catch (error) {
+    if (!(error instanceof NearAiError && error.status === 404)) {
+      console.error(`Revoking the replaced NEAR AI key ${item.ref} failed on attempt ${attempts}: ${describeError(error)}`);
+      if (attempts === MAX_ATTEMPTS) {
+        await ctx.alert("attempts_exhausted", `revoking the replaced key ${item.ref} failed ${MAX_ATTEMPTS} times; it keeps retrying every 30 minutes`);
+      }
+      return;
+    }
+  }
+  ctx.sql.exec("DELETE FROM queue WHERE id = ?", itemId);
 }

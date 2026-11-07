@@ -49,6 +49,12 @@ const STATEMENTS = [
     max_uses INTEGER NOT NULL,
     uses INTEGER NOT NULL DEFAULT 0
   )`,
+  // One row per device that redeemed a code: a device redeems each code once.
+  `CREATE TABLE IF NOT EXISTS promo_redemptions (
+    code_hash TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    PRIMARY KEY (code_hash, device_id)
+  )`,
   `CREATE TABLE IF NOT EXISTS pending_keys (
     device_id TEXT PRIMARY KEY,
     key_ciphertext TEXT NOT NULL,

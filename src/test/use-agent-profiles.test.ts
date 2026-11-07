@@ -60,6 +60,19 @@ describe("useAgentProfiles", () => {
     listeners.clear();
   });
 
+  it("keeps why the profiles could not be read, until a read works", async () => {
+    const spy = vi.spyOn(internals(), "invoke").mockRejectedValueOnce(new Error("npm missing"));
+    const { result } = renderHook(() => useAgentProfiles(() => {}));
+    await act(async () => {});
+    expect(result.current.isLoaded).toBe(false);
+    expect(result.current.loadError).toBe("Failed to detect agents: Error: npm missing");
+
+    spy.mockResolvedValueOnce([]);
+    await act(async () => result.current.refresh());
+    expect(result.current.isLoaded).toBe(true);
+    expect(result.current.loadError).toBeNull();
+  });
+
   it("stops listening and detects nothing more when unmounted before the listener is ready", async () => {
     let ready: (stop: () => void) => void = () => {};
     const stop = vi.fn();

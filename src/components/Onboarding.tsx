@@ -37,6 +37,8 @@ export interface OnboardingProps {
   onComplete: (result: OnboardingResult) => void;
   /** False while the agent profiles load: whether an agent can run is not known yet. */
   areAgentsLoaded?: boolean;
+  /** Why the agent profiles could not be read; Start then says so instead of waiting in silence. */
+  agentsError?: string | null;
   /** Why the agent catalog could not be read, with `onRetryCatalog` to read it again. */
   catalogError?: string | null;
   onRetryCatalog?: () => void;
@@ -77,6 +79,7 @@ export function Onboarding({
   onPickFolder,
   onComplete,
   areAgentsLoaded = true,
+  agentsError = null,
   catalogError = null,
   onRetryCatalog,
   onCheckAgain,
@@ -105,6 +108,7 @@ export function Onboarding({
     defaultId,
     folder,
     isLoading: catalog === null || !areAgentsLoaded,
+    agentsFailed: !areAgentsLoaded && agentsError !== null,
   });
 
   const start = () => {

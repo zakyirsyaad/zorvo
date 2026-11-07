@@ -163,7 +163,13 @@ export default function App() {
   const { state, isLoaded, updateState, getState, saveNow } = usePersistedState(reportError);
   useAppearance(state.settings.appearance, isLoaded, reportError);
   const { transcripts, transcriptStatus, ensureLoaded, updateMessages, saveSoon, removeTranscript, flush: flushTranscripts } = useTranscripts(reportError);
-  const { agents, isLoaded: areAgentsLoaded, refresh: refreshAgents, reload: reloadAgents } = useAgentProfiles(reportError);
+  const {
+    agents,
+    isLoaded: areAgentsLoaded,
+    loadError: agentsError,
+    refresh: refreshAgents,
+    reload: reloadAgents,
+  } = useAgentProfiles(reportError);
   const agentCatalog = useAgentCatalog();
   const shell = useShellActions(setNotice);
   // An update restarts Zorvo without closing the page, so its exit handlers never write what is still waiting for a timer.
@@ -962,6 +968,7 @@ export default function App() {
         onPickFolder={openFolder}
         onComplete={handleOnboardingComplete}
         areAgentsLoaded={areAgentsLoaded}
+        agentsError={agentsError}
         catalogError={agentCatalog.error}
         onRetryCatalog={() => void agentCatalog.reload()}
         onCheckAgain={() => recheckAgents(refreshAgents, agentCatalog.reload)}

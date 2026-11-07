@@ -9,6 +9,8 @@ export interface AgentProfilesHandle {
   agents: AgentProfile[];
   /** True once a detection has finished: until then an empty list says nothing about this machine. */
   isLoaded: boolean;
+  /** Why the last detection failed (also reported through `onError`); null once one works. */
+  loadError: string | null;
   /** Detects again, e.g. after the user installed an agent during setup. */
   refresh: () => Promise<void>;
   /** Reads the profiles again without refreshing anything first: no registry fetch, no PATH re-read. */
@@ -18,6 +20,7 @@ export interface AgentProfilesHandle {
 export function useAgentProfiles(onError: (message: string) => void): AgentProfilesHandle {
   const [agents, setAgents] = useState<AgentProfile[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const onErrorRef = useLatest(onError);
 
   /** With `refresh`, the backend re-reads the login shell's PATH first (an agent may just have been installed). */
@@ -27,8 +30,11 @@ export function useAgentProfiles(onError: (message: string) => void): AgentProfi
         const profiles = await invoke<AgentProfile[]>('get_agent_profiles', { refresh });
         setAgents(Array.isArray(profiles) ? profiles : []);
         setIsLoaded(true);
+        setLoadError(null);
       } catch (error) {
-        onErrorRef.current(`Failed to detect agents: ${String(error)}`);
+        const message = `Failed to detect agents: ${String(error)}`;
+        setLoadError(message);
+        onErrorRef.current(message);
         throw error;
       }
     },
@@ -64,7 +70,7 @@ export function useAgentProfiles(onError: (message: string) => void): AgentProfi
   const refresh = useCallback(() => detect(true), [detect]);
   const reload = useCallback(() => detect(false), [detect]);
 
-  return { agents, isLoaded, refresh, reload };
+  return { agents, isLoaded, loadError, refresh, reload };
 }
 
 /**

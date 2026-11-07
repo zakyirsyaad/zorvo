@@ -124,6 +124,12 @@ describe("the welcome screen while things load or fail", () => {
     expect(screen.queryByText(/Install one of these agents/)).toBeNull();
   });
 
+  it("says so when the agents' profiles could not be read, instead of a silent Start", () => {
+    renderOnboarding({ areAgentsLoaded: false, agentsError: "Failed to detect agents: npm missing" });
+    expect(start()).toBeDisabled();
+    expect(startNote()).toHaveTextContent("Zorvo could not read your agents. Press Check again.");
+  });
+
   it("says why the agents could not be read, and reads them again", () => {
     const onRetryCatalog = vi.fn();
     renderOnboarding({ catalog: null, catalogError: "network down", onRetryCatalog });

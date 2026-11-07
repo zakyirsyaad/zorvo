@@ -1,9 +1,46 @@
 //! Turns NEAR AI's credit and key refusals, as Qwen Code reports them, into
-//! the error the UI reads for a Zorvo Private session.
+//! the error the UI reads for a Zorvo Private session, and says which requests
+//! would move a private session off its model.
 
 use serde_json::Value;
 
 use crate::private_mode::PRIVATE_CREDITS_PREFIX;
+
+/// Qwen Code's slash commands that switch the model or the provider of the
+/// running process, which would take a private session's history out of the TEE.
+const MODEL_COMMANDS: [&str; 2] = ["/model", "/auth"];
+
+/// The option id Qwen Code gives its model, refused even when the session's
+/// answer reported no options (a resume answer omits them).
+const MODEL_OPTION_ID: &str = "model";
+
+/// Whether `text`, as a prompt, runs one of [`MODEL_COMMANDS`]: its first word,
+/// after leading whitespace, in any letter case.
+pub(super) fn is_model_command(text: &str) -> bool {
+    text.split_whitespace()
+        .next()
+        .is_some_and(|first| MODEL_COMMANDS.iter().any(|c| first.eq_ignore_ascii_case(c)))
+}
+
+/// The ids, lower-cased, of the `model` category options in a session
+/// answer's `configOptions`.
+pub(super) fn model_option_ids(config_options: &Value) -> Vec<String> {
+    config_options
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|option| option["category"] == "model")
+        .filter_map(|option| option["id"].as_str())
+        .map(str::to_ascii_lowercase)
+        .collect()
+}
+
+/// Whether setting `config_id` would change the model: `model`, or an option
+/// the session reported in the `model` category (`model_options`, lower-cased).
+pub(super) fn is_model_option(config_id: &str, model_options: &[String]) -> bool {
+    let id = config_id.to_ascii_lowercase();
+    id == MODEL_OPTION_ID || model_options.contains(&id)
+}
 
 /// Why a private session's request was refused, as `PRIVATE_CREDITS:` carries
 /// it: `"empty"` when the credits are used up (HTTP 402), `"key"` when NEAR AI
@@ -71,6 +108,40 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn the_model_and_auth_commands_are_model_commands_in_any_case_and_spacing() {
+        for text in [
+            "/model",
+            "/model x",
+            "  /MODEL x",
+            "\n/Model\tx",
+            "/auth",
+            "/Auth openai",
+        ] {
+            assert!(is_model_command(text), "{text:?}");
+        }
+        for text in ["", "/models", "/review", "model", "say /model", "/modelx"] {
+            assert!(!is_model_command(text), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn model_options_are_the_model_id_and_those_reported_in_the_model_category() {
+        let reported = model_option_ids(&json!([
+            { "id": "Brain", "category": "model" },
+            { "id": "effort", "category": "thought_level" },
+            { "category": "model" },
+        ]));
+
+        assert_eq!(reported, ["brain"]);
+        assert!(is_model_option("model", &[]));
+        assert!(is_model_option("MODEL", &[]));
+        assert!(is_model_option("brain", &reported));
+        assert!(is_model_option("BRAIN", &reported));
+        assert!(!is_model_option("effort", &reported));
+        assert!(model_option_ids(&Value::Null).is_empty());
+    }
 
     fn internal_error(details: &str) -> Value {
         json!({ "code": -32603, "message": "Internal error", "data": { "details": details } })

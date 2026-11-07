@@ -305,6 +305,38 @@ describe("useAcpEngine with a private session", () => {
     expect(engine.giveBack).not.toHaveBeenCalled();
   });
 
+  it("words a refused model command and hands the message back to the caller", async () => {
+    stub({ acp_prompt: () => Promise.reject("model_locked") });
+    const engine = renderEngine();
+    await act(async () => {
+      await engine.result.current.start(PRIVATE);
+    });
+    let isTaken = true;
+    await act(async () => {
+      isTaken = await engine.result.current.send("s-1", "/model openai:gpt-4o");
+    });
+
+    // False: the caller gives the message back to the composer.
+    expect(isTaken).toBe(false);
+    expect(engine.userMessages()).toEqual([]);
+    expect(engine.reportError).toHaveBeenCalledWith(
+      "Private sessions keep their model. Start a new session to pick another.",
+    );
+  });
+
+  it("never reads a credits refusal into an ordinary session", async () => {
+    stub();
+    const engine = renderEngine(ORDINARY);
+    await act(async () => {
+      await engine.result.current.start(ORDINARY, { text: "hi" });
+    });
+
+    await emit({ kind: "turn-end", error: 'PRIVATE_CREDITS:{"reason":"empty"}' });
+
+    expect(engine.onPrivateCreditsOut).not.toHaveBeenCalled();
+    expect(engine.giveBack).not.toHaveBeenCalled();
+  });
+
   it("keeps an ordinary session's errors as they were", async () => {
     stub({ acp_start_session: () => Promise.reject("spawn failed") });
     const engine = renderEngine(ORDINARY);

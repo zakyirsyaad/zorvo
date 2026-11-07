@@ -17,8 +17,9 @@ use super::elicitation::{Pending, PendingElicitations};
 use super::permission_response::permission_response;
 use super::prompt_blocks::prompt_blocks;
 use super::terminal_auth::{terminal_method, SignInAttempts, TerminalMethodError};
+use crate::private_mode::PrivateError;
 use crate::pty_session::validate_cwd;
-use private_errors::private_credits_error;
+use private_errors::{is_model_command, is_model_option, model_option_ids, private_credits_error};
 
 mod elicitation_routes;
 mod private_errors;
@@ -147,6 +148,9 @@ struct SessionEntry {
     /// A Zorvo Private session: NEAR AI's credit and key refusals are reported
     /// as `PRIVATE_CREDITS:` errors, and the session is never offered a sign-in.
     private: bool,
+    /// The ids, lower-cased, of the options the agent reported in the `model`
+    /// category, which a private session refuses to change.
+    model_options: Vec<String>,
 }
 
 /// What opening a session learned that its entry keeps: the sign-in methods
@@ -398,6 +402,11 @@ impl AcpManager {
                     e.private,
                 )
             })?;
+        // `/model` or `/auth` would move the running process, history and all,
+        // to a provider from the user's own settings, outside the TEE.
+        if private && is_model_command(text) {
+            return Err(PrivateError::ModelLocked.into());
+        }
         let supports_images = capabilities["promptCapabilities"]["image"] == Value::Bool(true);
         let prompt = prompt_blocks(text, attachments, supports_images)?;
         let sink = Arc::clone(&self.sink);
@@ -469,7 +478,11 @@ impl AcpManager {
     /// Sets the model of a session whose agent reported `models` (the unstable
     /// `session/set_model`; agents that moved to a model config option use
     /// `set_config_option` instead). An agent that does not know the model refuses it.
+    /// A private session keeps its model and refuses with `model_locked`.
     pub fn set_model(&self, app_session_id: &str, model_id: &str) -> Result<(), String> {
+        if self.is_private_session(app_session_id) {
+            return Err(PrivateError::ModelLocked.into());
+        }
         let (connection, acp_id) = self.connection_for(app_session_id)?;
         connection
             .request(
@@ -480,14 +493,24 @@ impl AcpManager {
             .map(|_| ())
     }
 
-    /// Sets a session config option (e.g. the model); returns the agent's updated options.
+    /// Sets a session config option (e.g. the model); returns the agent's updated
+    /// options. A private session refuses a model option with `model_locked`.
     pub fn set_config_option(
         &self,
         app_session_id: &str,
         config_id: &str,
         value: &str,
     ) -> Result<Value, String> {
-        let (connection, acp_id) = self.connection_for(app_session_id)?;
+        let (connection, acp_id, model_locked) = self.with_entry(app_session_id, |e| {
+            (
+                Arc::clone(&e.connection),
+                e.acp_session_id.clone(),
+                e.private && is_model_option(config_id, &e.model_options),
+            )
+        })?;
+        if model_locked {
+            return Err(PrivateError::ModelLocked.into());
+        }
         let response = connection.request(
             "session/set_config_option",
             json!({ "sessionId": acp_id, "configId": config_id, "value": value }),
@@ -639,6 +662,7 @@ impl AcpManager {
                     auth_methods: traits.auth_methods,
                     cwd: PathBuf::from(cwd),
                     private: traits.private,
+                    model_options: model_option_ids(&started.config_options),
                 },
             );
         }

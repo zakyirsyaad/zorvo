@@ -79,7 +79,7 @@ export function BalanceCard({ status, refresh, forget, onShowRecoveryCode }: Bal
           label={<span className={SOLO_AMOUNT}>Your credits moved to another Mac</span>}
           description={
             <>
-              This Mac can't use them any more. Forget them here to start again with a top-up, or restore a recovery
+              This Mac can't use them anymore. Forget them here to start again with a top-up, or restore a recovery
               code below.
               {forgetError && (
                 <span role="alert" className="mt-1 block text-danger">

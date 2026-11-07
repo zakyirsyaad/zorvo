@@ -10,6 +10,7 @@ export const PRIVATE_DRAFT_TEXT = {
   qwenOnly: 'Private sessions run Qwen Code only for now.',
   oneAgent: 'Private sessions run one agent.',
   checking: 'Checking your credits…',
+  statusFailed: "Couldn't check your credits. Try again.",
   moved: 'Your credits moved to another Mac.',
   addCredits: 'Add credits to start a private session',
   loadingModels: 'Loading the private models…',
@@ -25,6 +26,8 @@ export interface PrivateDraftInput {
   on: boolean;
   /** null until the first status read answers. */
   status: PrivateStatus | null;
+  /** The last status read failed; only matters while no status was ever read. */
+  statusFailed?: boolean;
   models: ModelPrice[] | null;
   /** A catalog load is running, so missing models are on their way rather than failed. */
   isLoadingModels?: boolean;
@@ -47,7 +50,7 @@ function creditsOf(status: PrivateStatus): number {
 /** What keeps an on chip from starting, or undefined once it can. */
 function waitingFor(input: PrivateDraftInput): string | undefined {
   const { status, models } = input;
-  if (status === null) return PRIVATE_DRAFT_TEXT.checking;
+  if (status === null) return input.statusFailed ? PRIVATE_DRAFT_TEXT.statusFailed : PRIVATE_DRAFT_TEXT.checking;
   if (status.device === 'moved') return PRIVATE_DRAFT_TEXT.moved;
   if (status.device === 'none' || !status.keyReady || creditsOf(status) <= 0) return PRIVATE_DRAFT_TEXT.addCredits;
   if (models === null && input.isLoadingModels) return PRIVATE_DRAFT_TEXT.loadingModels;

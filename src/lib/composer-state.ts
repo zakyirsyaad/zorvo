@@ -169,16 +169,25 @@ export function composerNote(state: {
 }
 
 /**
+ * Qwen Code's commands that switch the model or the provider of the running process: in a private
+ * session they would take its history out of the TEE (the backend refuses them too).
+ */
+const PRIVATE_HIDDEN_COMMANDS: ReadonlySet<string> = new Set(['model', 'auth']);
+
+/**
  * The slash commands the composer offers: a live ACP session's own; before
- * it runs, the ones its agent offered last time.
+ * it runs, the ones its agent offered last time. A private session or draft
+ * (`isPrivate`) is never offered the model and auth commands.
  */
 export function composerCommandsFor(inputs: {
   isRunning: boolean;
   liveCommands: SlashCommand[] | undefined;
   draftAgent: AgentProfile | undefined;
   agentOptions: Readonly<Record<string, AgentOptions>> | undefined;
+  isPrivate?: boolean;
 }): SlashCommand[] | undefined {
-  if (inputs.isRunning) return inputs.liveCommands;
   const agent = inputs.draftAgent;
-  return agent ? inputs.agentOptions?.[agent.id]?.commands : undefined;
+  const commands = inputs.isRunning ? inputs.liveCommands : agent ? inputs.agentOptions?.[agent.id]?.commands : undefined;
+  if (!inputs.isPrivate || !commands) return commands;
+  return commands.filter((command) => !PRIVATE_HIDDEN_COMMANDS.has(command.name.toLowerCase()));
 }

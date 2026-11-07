@@ -25,6 +25,7 @@ export const PRIVATE_ERROR_CODES = [
   'storage',
   'open_failed',
   'private_session',
+  'model_locked',
 ] as const;
 
 export type PrivateErrorCode = (typeof PRIVATE_ERROR_CODES)[number];
@@ -211,6 +212,7 @@ const ERROR_TEXT: Readonly<Record<PrivateErrorCode, string>> = {
   storage: "Couldn't save your settings on this Mac. Try again.",
   open_failed: "Couldn't open your browser. Your checkout is ready: open it again, or cancel.",
   private_session: 'This session ran privately. Reopen it as a private session.',
+  model_locked: 'Private sessions keep their model. Start a new session to pick another.',
 };
 
 /** Plain words for a command error code; anything unknown reads as a generic failure. */

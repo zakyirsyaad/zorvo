@@ -1,5 +1,19 @@
 // Zorvo Private: small rules the Settings screen shares. Pure: no invoke, no React.
 import type { TopupFlow } from '../hooks/usePrivateCredits';
+import { privateErrorText } from './private-credits';
+
+/**
+ * The flow's error code once polling gave up on a waiting top-up the server could not be reached about.
+ * Not a backend code: a later status read that still holds the top-up follows it again, as a restart does.
+ */
+export const TOPUP_UNCHECKED = 'topup_unchecked';
+
+const TOPUP_UNCHECKED_TEXT = "Couldn't check your top-up. Refresh your balance later to check again.";
+
+/** Plain words for the error that stopped a top-up: a backend code, or `TOPUP_UNCHECKED`. */
+export function topupErrorText(code: string): string {
+  return code === TOPUP_UNCHECKED ? TOPUP_UNCHECKED_TEXT : privateErrorText(code);
+}
 
 /** A top-up is being created or followed: the packages and the promo field must stay out of the way. */
 export function isTopupActive(flow: TopupFlow): boolean {

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { creditsOutText, type CreditsOutReason } from "../../lib/private-session";
 import { BlockerCard } from "../ui/BlockerCard";
 import { Button } from "../ui/Button";
@@ -17,6 +17,18 @@ export interface PrivateCreditsOutProps {
   onOpenSettings: () => void;
   /** Continues in a new, ordinary session of the agent picked; called only after the user confirmed it. */
   onContinue: (agentId: string) => void;
+}
+
+/**
+ * Announces a session's refusal for credits or a key. Mounted before the panel and kept mounted, since a
+ * live region that is already there announces what it is given and a new one does not.
+ */
+export function PrivateCreditsOutStatus({ reason }: { reason: CreditsOutReason | undefined }) {
+  return (
+    <p role="status" className="sr-only">
+      {reason ? creditsOutText(reason) : ""}
+    </p>
+  );
 }
 
 /**
@@ -71,10 +83,12 @@ interface ContinueDialogProps {
 function ContinueDialog({ agents, onCancel, onConfirm }: ContinueDialogProps) {
   const [picked, setPicked] = useState(agents[0]?.id ?? "");
   const firstRef = useRef<HTMLInputElement>(null);
+  const warningId = useId();
   return (
     <PrivateDialog
       title="Continue with another agent?"
       initialFocusRef={firstRef}
+      describedBy={warningId}
       onEscape={onCancel}
       footer={
         <>
@@ -87,7 +101,9 @@ function ContinueDialog({ agents, onCancel, onConfirm }: ContinueDialogProps) {
         </>
       }
     >
-      <p className="text-ui text-fg-muted">The conversation so far goes to the agent you pick, outside the TEE.</p>
+      <p id={warningId} className="text-ui text-fg-muted">
+        The conversation so far goes to the agent you pick, outside the TEE.
+      </p>
       <fieldset className="flex flex-col gap-1.5">
         <legend className="pb-1.5 text-ui-sm font-medium text-fg-secondary">Agent</legend>
         {agents.map((agent, index) => (

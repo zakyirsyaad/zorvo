@@ -54,6 +54,8 @@ pub enum PrivateError {
     OpenFailed,
     /// An agent session that ran privately may only be opened privately.
     PrivateSession,
+    /// A private session keeps the model Zorvo launched it on.
+    ModelLocked,
 }
 
 impl PrivateError {
@@ -80,6 +82,7 @@ impl PrivateError {
             Self::Storage => "storage",
             Self::OpenFailed => "open_failed",
             Self::PrivateSession => "private_session",
+            Self::ModelLocked => "model_locked",
         }
     }
 }
@@ -94,7 +97,7 @@ impl From<PrivateError> for String {
 mod tests {
     use super::*;
 
-    const ALL: [PrivateError; 20] = [
+    const ALL: [PrivateError; 21] = [
         PrivateError::Unreachable,
         PrivateError::Unauthorized,
         PrivateError::BadRequest,
@@ -115,6 +118,7 @@ mod tests {
         PrivateError::Storage,
         PrivateError::OpenFailed,
         PrivateError::PrivateSession,
+        PrivateError::ModelLocked,
     ];
 
     #[test]

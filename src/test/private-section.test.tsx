@@ -111,6 +111,17 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("Private mode section: how credits work", () => {
+  it("says what a credit costs and what using one costs", async () => {
+    stockWith();
+    await mount();
+    expect(await screen.findByText("How credits work")).toBeInTheDocument();
+    expect(
+      screen.getByText("1 credit is $0.01 when you buy it. A private session uses NEAR AI's model price plus 20%."),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("Private mode section: balance", () => {
   it("first run shows 0 credits, no key and the first top-up note", async () => {
     stockWith();
@@ -173,6 +184,7 @@ describe("Private mode section: balance", () => {
     fake().status = { ...fake().status, device: "moved", recoverySaved: true, recoveryPrompted: true };
     await mount();
     expect(await screen.findByText("Your credits moved to another Mac")).toBeInTheDocument();
+    expect(screen.getByText(/This Mac can't use them anymore\./)).toBeInTheDocument();
     fake().errors.private_forget_device = "storage";
     await click(button("Forget on this Mac"));
     expect(screen.getByText("Couldn't save your settings on this Mac. Try again.")).toBeInTheDocument();
@@ -483,6 +495,16 @@ describe("TopupProgress", () => {
         "The 25-minute hold ran out and the stock sold out meanwhile. Your payment counts, and you're first in line when stock comes back.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("a top-up it could not check for long says so, and that a payment may still go through", async () => {
+    const props = renderProgress({ kind: "error", code: "topup_unchecked" });
+    expect(
+      screen.getByText("Couldn't check your top-up. Refresh your balance later to check again."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("If you started a payment, it may still go through.")).toBeInTheDocument();
+    await click(button("Try again"));
+    expect(props.onDismiss).toHaveBeenCalledTimes(1);
   });
 
   it("an error before any hold claims nothing about a payment", () => {

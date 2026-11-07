@@ -223,6 +223,59 @@ describe("a private session that runs out of credits", () => {
     expect(continued).not.toHaveProperty("privateMode");
   });
 
+  it("announces the refusal in a status region that is not part of the panel", async () => {
+    await runOutOfCredits("empty");
+
+    const panel = screen.getByRole("region", { name: "Private credits" });
+    const announced = screen.getAllByRole("status").filter((region) => region.textContent === RAN_OUT);
+    expect(announced).toHaveLength(1);
+    expect(panel.contains(announced[0])).toBe(false);
+  });
+
+  it("describes the continue dialog with its TEE warning", async () => {
+    await runOutOfCredits("empty");
+
+    await click(screen.getByRole("button", { name: "Continue with another agent" }));
+
+    expect(screen.getByRole("dialog", { name: "Continue with another agent?" })).toHaveAccessibleDescription(
+      "The conversation so far goes to the agent you pick, outside the TEE.",
+    );
+  });
+
+  it("reads the balance afresh when the credits ran out", async () => {
+    const spy = await runOutOfCredits("empty");
+
+    const calls = spy.mock.calls as unknown as InvokeCall[];
+    const lastPrompt = calls.map(([name]) => name).lastIndexOf("acp_prompt");
+    await waitFor(() =>
+      expect(calls.slice(lastPrompt).some(([name, args]) => name === "private_status" && args?.fresh === true)).toBe(true),
+    );
+  });
+
+  it("closes the continue dialog when another session out of credits is shown", async () => {
+    withCredits();
+    const spy = await renderApp();
+    const startPrivate = async (text: string, count: number) => {
+      if (!screen.queryByRole("button", { name: "Private · TEE" })) await click(screen.getByRole("button", { name: "New session" }));
+      await click(await screen.findByRole("button", { name: "Private · TEE" }));
+      await send(text);
+      await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(count));
+      return String(callsTo(spy, "acp_prompt")[count - 1].sessionId);
+    };
+    const first = await startPrivate("look at the payments folder", 1);
+    const second = await startPrivate("write the release notes", 2);
+    setCredits(0);
+    await endTurn(first, `PRIVATE_CREDITS:{"reason":"empty"}`);
+    await endTurn(second, `PRIVATE_CREDITS:{"reason":"empty"}`);
+    await click(await screen.findByRole("button", { name: "Continue with another agent" }));
+    expect(screen.getByRole("dialog", { name: "Continue with another agent?" })).toBeInTheDocument();
+
+    await click(within(screen.getByRole("complementary")).getByText("look at the payments folder"));
+
+    expect(screen.getByRole("region", { name: "Private credits" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("says the private key stopped working, with Open Settings", async () => {
     await runOutOfCredits("key");
 
@@ -279,5 +332,111 @@ describe("a pick in a running private session", () => {
     await click(screen.getByRole("button", { name: "New session" }));
     expect(await screen.findByRole("button", { name: "Effort: Low" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Effort: High" })).toBeNull();
+  });
+  it("made in a private draft never becomes Qwen Code's remembered options either", async () => {
+    withCredits();
+    const efforts = (current: string) => [
+      {
+        id: "reasoning_effort",
+        name: "Effort",
+        category: "thought_level",
+        currentValue: current,
+        options: [
+          { value: "low", name: "Low" },
+          { value: "high", name: "High" },
+        ],
+      },
+    ];
+    (fakeStore().state as { agentOptions?: Record<string, unknown> }).agentOptions = {
+      "qwen-code": { modes: null, configOptions: efforts("low") },
+    };
+    await renderApp({
+      acp_start_session: (args) =>
+        Promise.resolve({ acpSessionId: `acp-${args?.sessionId}`, agentCapabilities: {}, modes: null, models: null, configOptions: efforts("low") }),
+      acp_set_config_option: (args) => Promise.resolve(efforts(String(args?.value))),
+      acp_probe_agent: () =>
+        Promise.resolve({ modes: null, models: null, configOptions: efforts("low"), commands: [], signInChecked: true }),
+    });
+    await click(await screen.findByRole("button", { name: "Private · TEE" }));
+    await click(await screen.findByRole("button", { name: "Effort: Low" }));
+    await click(screen.getByRole("option", { name: "High" }));
+    await send("review the payment module");
+    await screen.findByRole("img", { name: "Private session" });
+
+    await click(screen.getByRole("button", { name: "New session" }));
+    expect(await screen.findByRole("button", { name: "Effort: Low" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Effort: High" })).toBeNull();
+  });
+});
+
+describe("slash commands in private mode", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    listeners.clear();
+  });
+
+  const offered = () => screen.getAllByRole("option").map((option) => option.getAttribute("data-command"));
+
+  it("a private session offers no model or auth command, and still offers the others", async () => {
+    withCredits();
+    const spy = await renderApp();
+    await click(await screen.findByRole("button", { name: "Private · TEE" }));
+    await send("review the payment module");
+    await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
+    const sessionId = String(callsTo(spy, "acp_prompt")[0].sessionId);
+    await emit({ sessionId, kind: "turn-end", stopReason: "end_turn" });
+    await emit({
+      sessionId,
+      kind: "update",
+      update: {
+        sessionUpdate: "available_commands_update",
+        availableCommands: [
+          { name: "model", description: "Switch the model" },
+          { name: "init", description: "Create a QWEN.md" },
+          { name: "auth", description: "Change the auth method" },
+        ],
+      },
+    });
+
+    await type("/");
+
+    expect(offered()).toEqual(["init"]);
+  });
+
+  it("a private draft offers no model or auth command, and an ordinary draft offers them", async () => {
+    withCredits();
+    (fakeStore().state as { agentOptions?: Record<string, unknown> }).agentOptions = {
+      "qwen-code": {
+        modes: null,
+        configOptions: [],
+        commands: [
+          { name: "model", description: "Switch the model" },
+          { name: "review", description: "Review" },
+          { name: "auth", description: "Change the auth method" },
+        ],
+      },
+    };
+    await renderApp({
+      acp_probe_agent: () =>
+        Promise.resolve({
+          modes: null,
+          models: null,
+          configOptions: [],
+          commands: [
+            { name: "model", description: "Switch the model" },
+            { name: "review", description: "Review" },
+            { name: "auth", description: "Change the auth method" },
+          ],
+          signInChecked: true,
+        }),
+    });
+    await click(await screen.findByRole("button", { name: "Private · TEE" }));
+    await type("/");
+    expect(offered()).toEqual(["review"]);
+
+    await type("");
+    await click(screen.getByRole("button", { name: "Private · TEE" }));
+    await type("/");
+    expect(offered()).toEqual(["model", "review", "auth"]);
   });
 });

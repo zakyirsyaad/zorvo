@@ -4,7 +4,7 @@ import { formatCredits, type ModelPrice } from '../lib/private-credits';
 import type { PrivateCredits } from './usePrivateCredits';
 
 export interface PrivateDraftDeps {
-  credits: Pick<PrivateCredits, 'status' | 'models' | 'loadCatalog' | 'refresh'>;
+  credits: Pick<PrivateCredits, 'status' | 'models' | 'loadCatalog' | 'refresh'> & { statusFailed?: boolean };
   /** The agents the new-session draft would start; empty while no draft is shown. */
   agentIds: readonly string[];
 }
@@ -67,9 +67,15 @@ export function usePrivateDraft({ credits, agentIds }: PrivateDraftDeps): Privat
     setPickedModelId(null);
   }
 
-  const { status, models, loadCatalog, refresh } = credits;
-  const state = privateDraftState({ agentIds, on: isTurnedOn, status, models, isLoadingModels });
+  const { status, statusFailed, models, loadCatalog, refresh } = credits;
+  const state = privateDraftState({ agentIds, on: isTurnedOn, status, statusFailed, models, isLoadingModels });
   const isOn = state.chip === 'on';
+
+  // A disabled chip (another agent, or a compare run) drops the choice too: going back to Qwen Code starts off.
+  if (state.chip === 'disabled' && (isTurnedOn || pickedModelId !== null)) {
+    setIsTurnedOn(false);
+    setPickedModelId(null);
+  }
 
   const turnOn = useCallback(() => {
     setIsTurnedOn(true);

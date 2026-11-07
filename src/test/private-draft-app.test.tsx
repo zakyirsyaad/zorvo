@@ -163,6 +163,8 @@ describe("a private draft in the app", () => {
     withCredits();
     await renderApp({ acp_start_session: () => Promise.reject('PRIVATE_CREDITS:{"reason":"empty"}') });
     await turnOnPrivate();
+    // NEAR AI refused for credits: the balance the refusal makes Zorvo read again is empty too.
+    withCredits(0);
 
     await send("review the payment module");
 

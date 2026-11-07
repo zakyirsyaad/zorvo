@@ -8,7 +8,7 @@ import { RecoveryCard } from "../private/RecoveryCard";
 import { RestoreDialog } from "../private/RestoreDialog";
 import { TopupPicker } from "../private/TopupPicker";
 import { TopupProgress } from "../private/TopupProgress";
-import { SettingsGroup, SettingsHeader } from "./SettingsGroup";
+import { SettingsGroup, SettingsHeader, SettingsRow } from "./SettingsGroup";
 
 export interface PrivateSectionProps {
   titleRef?: Ref<HTMLHeadingElement>;
@@ -87,6 +87,12 @@ export function PrivateSection({
           />
         </div>
         <PromoField redeem={credits.redeem} isBlocked={isActive} onRedeeming={setIsRedeeming} />
+      </SettingsGroup>
+      <SettingsGroup heading="Credits">
+        <SettingsRow
+          label="How credits work"
+          description="1 credit is $0.01 when you buy it. A private session uses NEAR AI's model price plus 20%."
+        />
       </SettingsGroup>
       <RecoveryCard
         revealCode={credits.revealCode}

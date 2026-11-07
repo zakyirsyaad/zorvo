@@ -112,6 +112,30 @@ describe("usePrivateDraft", () => {
     expect(deps.credits.loadCatalog).toHaveBeenCalledTimes(1);
   });
 
+  it("forgets that it was on once the chip turns disabled, so going back to Qwen Code starts off", async () => {
+    const deps = { credits: credits(), agentIds: ["qwen-code"] };
+    const { result, rerender } = renderDraft(deps);
+    await act(async () => result.current.chip?.onToggle());
+
+    rerender({ ...deps, agentIds: ["claude-acp"] });
+    rerender(deps);
+    expect(result.current.chip?.kind).toBe("off");
+    expect(result.current.isOn).toBe(false);
+
+    await act(async () => result.current.chip?.onToggle());
+    rerender({ ...deps, agentIds: ["qwen-code", "codex-acp"] });
+    rerender(deps);
+    expect(result.current.chip?.kind).toBe("off");
+  });
+
+  it("says the credits could not be checked when the status read failed", async () => {
+    const { result } = renderDraft({ credits: credits({ status: null, statusFailed: true }), agentIds: ["qwen-code"] });
+    await act(async () => result.current.chip?.onToggle());
+
+    expect(result.current.note).toBe("Couldn't check your credits. Try again.");
+    expect(result.current.blocksSend).toBe(true);
+  });
+
   it("has no chip without a draft, and the next draft starts off", async () => {
     const deps = { credits: credits(), agentIds: ["qwen-code"] };
     const { result, rerender } = renderDraft(deps);

@@ -294,6 +294,60 @@ describe("usePrivateCredits: top-up flow", () => {
     },
   );
 
+  it("gives up on a waiting top-up the server cannot be reached about, ten minutes after its hold ends", async () => {
+    const expiresAt = new Date(Date.now() + 25 * 60_000).toISOString();
+    fake().status = {
+      ...fake().status,
+      device: "ready",
+      pendingTopup: { topupId: "saved-3", expiresAt, credits: 500 },
+    };
+    fake().errors.private_topup_status = "unreachable";
+    const view = await mount();
+
+    await advance(34 * 60_000);
+    expect(view.result.current.flow.kind).toBe("waiting");
+
+    await advance(2 * 60_000);
+    expect(view.result.current.flow).toEqual({ kind: "error", code: "topup_unchecked" });
+    const polls = callsTo("private_topup_status").length;
+    await advance(10 * 60_000);
+    expect(callsTo("private_topup_status")).toHaveLength(polls);
+  });
+
+  it("gives up after 90 minutes when the hold's end is unknown", async () => {
+    fake().status = {
+      ...fake().status,
+      device: "ready",
+      pendingTopup: { topupId: "saved-4", expiresAt: "", credits: 500 },
+    };
+    fake().errors.private_topup_status = "unreachable";
+    const view = await mount();
+
+    await advance(89 * 60_000);
+    expect(view.result.current.flow.kind).toBe("waiting");
+    await advance(2 * 60_000);
+    expect(view.result.current.flow).toEqual({ kind: "error", code: "topup_unchecked" });
+  });
+
+  it("follows a top-up it gave up on again when a later status read still holds it", async () => {
+    fake().status = {
+      ...fake().status,
+      device: "ready",
+      pendingTopup: { topupId: "saved-5", expiresAt: "2026-11-07T09:00:00Z", credits: 500 },
+    };
+    fake().errors.private_topup_status = "unreachable";
+    const view = await mount();
+    await advance(11 * 60_000);
+    expect(view.result.current.flow).toEqual({ kind: "error", code: "topup_unchecked" });
+
+    delete fake().errors.private_topup_status;
+    fake().topupStatuses = ["credited"];
+    await act(async () => view.result.current.refresh(true));
+    expect(view.result.current.flow).toMatchObject({ kind: "waiting", topup: { topupId: "saved-5" } });
+    await advance(POLL_MS);
+    expect(view.result.current.flow).toEqual({ kind: "credited", credits: 500 });
+  });
+
   it("resumes a saved top-up whose first poll answers expired", async () => {
     fake().status = {
       ...fake().status,
@@ -847,6 +901,18 @@ describe("usePrivateCredits: loading", () => {
     fake().errors.private_stock = "unauthorized";
     await act(async () => view.result.current.loadCatalog());
     expect(view.result.current.stockError).toBe("Your credits moved to another Mac.");
+  });
+
+  it("says a status read failed until a later read succeeds", async () => {
+    fake().errors.private_status = "unreachable";
+    const view = await mount();
+    expect(view.result.current.status).toBeNull();
+    expect(view.result.current.statusFailed).toBe(true);
+
+    delete fake().errors.private_status;
+    await act(async () => view.result.current.refresh(true));
+    expect(view.result.current.statusFailed).toBe(false);
+    expect(view.result.current.status).not.toBeNull();
   });
 
   it("keeps the last status when a later read fails", async () => {

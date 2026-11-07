@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { notifyIfAway } from '../lib/notify';
+import { TOPUP_UNCHECKED } from '../lib/private-flow';
 import {
   actionError,
   formatCredits,
@@ -32,6 +33,8 @@ export type OpenCheckoutResult = { ok: true } | { ok: false; code: string };
 export interface PrivateCredits {
   /** null until the first read answers. */
   status: PrivateStatus | null;
+  /** The last status read failed; cleared by the next one that succeeds. */
+  statusFailed: boolean;
   stock: Stock | null;
   models: ModelPrice[] | null;
   modelsError?: string;
@@ -66,6 +69,10 @@ export interface PrivateCredits {
 const POLL_MS = 3_000;
 /** A paid top-up waiting for stock can take long; asking every 3 s would only load the server. */
 const STOCK_POLL_MS = 15_000;
+/** How long after its hold ends a waiting top-up is still asked about while the server cannot answer. */
+const GIVE_UP_AFTER_HOLD_MS = 10 * 60_000;
+/** The same, for a top-up whose hold's end is unknown, counted from when polling started. */
+const GIVE_UP_UNKNOWN_HOLD_MS = 90 * 60_000;
 
 /** Errors that pass by themselves; any other error code ends the polling. */
 const TRANSIENT_POLL_ERRORS: ReadonlySet<string> = new Set(['unreachable', 'upstream', 'rate_limited']);
@@ -94,6 +101,14 @@ function isTopupInProgress(flow: TopupFlow): boolean {
   return flow.kind === 'opening' || toppedUp(flow) !== null;
 }
 
+/** When polling a waiting top-up the server cannot answer about stops, for polling that started at `startedAt`. */
+function giveUpAt(topup: PendingTopup, startedAt: number): number {
+  const holdEnds = Date.parse(topup.expiresAt);
+  return Number.isNaN(holdEnds)
+    ? startedAt + GIVE_UP_UNKNOWN_HOLD_MS
+    : Math.max(holdEnds, startedAt) + GIVE_UP_AFTER_HOLD_MS;
+}
+
 function pruneCreditsOut(marks: CreditsOut, status: PrivateStatus): CreditsOut {
   const hasCredits = creditsOf(status) > 0;
   const keyFixed = status.keyReady && status.keyError === null;
@@ -120,6 +135,7 @@ function notifyCredits(credits: number) {
  */
 export function usePrivateCredits(): PrivateCredits {
   const [status, setStatus] = useState<PrivateStatus | null>(null);
+  const [statusFailed, setStatusFailed] = useState(false);
   const [stock, setStock] = useState<Stock | null>(null);
   const [models, setModels] = useState<ModelPrice[] | null>(null);
   const [modelsError, setModelsError] = useState<string | undefined>(undefined);
@@ -152,11 +168,13 @@ export function usePrivateCredits(): PrivateCredits {
     (next: PrivateStatus) => {
       setStatus(next);
       setCreditsOut((prev) => pruneCreditsOut(prev, next));
-      // After a restart, a top-up the backend still holds is followed from where it was left.
+      // After a restart, or after polling gave up, a top-up the backend still holds is followed from where it was left.
       if (!isResumed.current) {
         isResumed.current = true;
         const pending = next.pendingTopup;
-        if (pending) updateFlow((prev) => (prev.kind === 'idle' ? { kind: 'waiting', topup: pending } : prev));
+        const isResumable = (prev: TopupFlow) =>
+          prev.kind === 'idle' || (prev.kind === 'error' && prev.code === TOPUP_UNCHECKED);
+        if (pending) updateFlow((prev) => (isResumable(prev) ? { kind: 'waiting', topup: pending } : prev));
       }
     },
     [updateFlow],
@@ -169,10 +187,12 @@ export function usePrivateCredits(): PrivateCredits {
       try {
         const next = await invoke<PrivateStatus>('private_status', { fresh });
         if (!isAlive.current || read !== latestStatusRead.current) return null;
+        setStatusFailed(false);
         applyStatus(next);
         return next;
       } catch {
-        // The last status stays; there is nothing new to show.
+        // The last status stays; the draft says when there never was one.
+        if (isAlive.current && read === latestStatusRead.current) setStatusFailed(true);
         return null;
       }
     },
@@ -267,6 +287,8 @@ export function usePrivateCredits(): PrivateCredits {
     if (topupId === null) return;
     let isStopped = false;
     let isReading = false;
+    const followedTopup = toppedUp(flowRef.current);
+    const stopAt = followedTopup ? giveUpAt(followedTopup, Date.now()) : Number.POSITIVE_INFINITY;
     const poll = async () => {
       // A slow answer is waited for: a second call on top of it would only race the first.
       if (isReading) return;
@@ -281,6 +303,11 @@ export function usePrivateCredits(): PrivateCredits {
         if (!isStopped && !TRANSIENT_POLL_ERRORS.has(code)) {
           updateFlow(() => ({ kind: 'error', code }));
           if (code === 'unauthorized') void refresh();
+        } else if (!isStopped && flowRef.current.kind === 'waiting' && Date.now() > stopAt) {
+          // Long past its hold and still no answer: stop asking every few seconds for the app's lifetime.
+          // A later status read that still holds the top-up follows it again, as a restart does.
+          isResumed.current = false;
+          updateFlow(() => ({ kind: 'error', code: TOPUP_UNCHECKED }));
         }
       } finally {
         isReading = false;
@@ -435,9 +462,14 @@ export function usePrivateCredits(): PrivateCredits {
     return { ok: true };
   }, [refresh, updateFlow]);
 
-  const markCreditsOut = useCallback((sessionId: string, reason: 'empty' | 'key') => {
-    setCreditsOut((prev) => (prev[sessionId] === reason ? prev : { ...prev, [sessionId]: reason }));
-  }, []);
+  const markCreditsOut = useCallback(
+    (sessionId: string, reason: 'empty' | 'key') => {
+      setCreditsOut((prev) => (prev[sessionId] === reason ? prev : { ...prev, [sessionId]: reason }));
+      // The balance shown elsewhere (the Private tab, Settings) must not contradict the refusal.
+      if (reason === 'empty') void refresh(true);
+    },
+    [refresh],
+  );
 
   const needsRecoveryDialog =
     status !== null &&
@@ -449,6 +481,7 @@ export function usePrivateCredits(): PrivateCredits {
 
   return {
     status,
+    statusFailed,
     stock,
     models,
     modelsError,

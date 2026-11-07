@@ -229,6 +229,7 @@ describe("privateErrorText", () => {
     ["upstream", "Couldn't open checkout. Nothing was held or charged."],
     ["open_failed", "Couldn't open your browser. Your checkout is ready: open it again, or cancel."],
     ["unknown_model", "That model isn't offered anymore. Start a new private session to pick another."],
+    ["model_locked", "Private sessions keep their model. Start a new session to pick another."],
     ["has_own_credits", "This Mac has credits of its own. Restoring another code here would lose access to them."],
     ["no_device", "This Mac has no private credits yet."],
     ["no_key", "This Mac has no private credits yet."],
@@ -254,7 +255,7 @@ describe("privateErrorText", () => {
       [
         "unreachable", "unauthorized", "bad_request", "not_found", "stock", "device_cap", "rate_limited",
         "upstream", "keychain", "no_device", "no_key", "key_lost", "bad_code", "not_qwen", "unknown_model",
-        "bad_checkout_url", "has_own_credits", "storage", "open_failed", "private_session",
+        "bad_checkout_url", "has_own_credits", "storage", "open_failed", "private_session", "model_locked",
       ].sort(),
     );
     for (const code of PRIVATE_ERROR_CODES) {

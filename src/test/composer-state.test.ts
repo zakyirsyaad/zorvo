@@ -62,6 +62,45 @@ describe("composerCommandsFor", () => {
   });
 });
 
+describe("composerCommandsFor: a private session or draft", () => {
+  const commands: SlashCommand[] = [
+    { name: "model", description: "Switch the model" },
+    { name: "auth", description: "Change the auth method" },
+    { name: "review", description: "Review" },
+    { name: "Model", description: "Upper case" },
+  ];
+  const qwen = { id: "qwen-code" } as AgentProfile;
+  const options = { "qwen-code": { modes: null, configOptions: [], commands } };
+
+  it("leaves out the model and auth commands of a private session, and keeps the rest", () => {
+    const offered = composerCommandsFor({
+      isRunning: true,
+      liveCommands: commands,
+      draftAgent: undefined,
+      agentOptions: options,
+      isPrivate: true,
+    });
+    expect(offered?.map((command) => command.name)).toEqual(["review"]);
+  });
+
+  it("leaves them out of a private draft too", () => {
+    const offered = composerCommandsFor({
+      isRunning: false,
+      liveCommands: undefined,
+      draftAgent: qwen,
+      agentOptions: options,
+      isPrivate: true,
+    });
+    expect(offered?.map((command) => command.name)).toEqual(["review"]);
+  });
+
+  it("offers every command of an ordinary session", () => {
+    expect(
+      composerCommandsFor({ isRunning: true, liveCommands: commands, draftAgent: undefined, agentOptions: options, isPrivate: false }),
+    ).toBe(commands);
+  });
+});
+
 describe("withRewound", () => {
   const remembered: Record<string, AgentOptions> = {
     qwen: { modes: null, configOptions: [], preferredConfig: { model: "max" }, commands: [] },

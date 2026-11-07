@@ -17,7 +17,7 @@ import { CompareRunPanel } from "./components/compare/CompareRunPanel";
 import { FailedTurnBanner } from "./components/FailedTurnBanner";
 import { SignInLayer } from "./components/SignInLayer";
 import { RecoveryCodeLayer } from "./components/private/RecoveryCodeLayer";
-import { PrivateCreditsOut } from "./components/private/PrivateCreditsOut";
+import { PrivateCreditsOut, PrivateCreditsOutStatus } from "./components/private/PrivateCreditsOut";
 import { PrivateInspector } from "./components/private/PrivateInspector";
 import { creditsOutText } from "./lib/private-session";
 import { AgentInstallPanel } from "./components/AgentInstallPanel";
@@ -351,8 +351,8 @@ export default function App() {
 
   /** Keeps a model or effort pick (as the agent settled it), so the agent's next session starts with it too. */
   const rememberPick = (profileId: string, configId: string, value: string, reported?: AcpConfigOption[]) => {
-    // A private session's options are its TEE model's: they never become the agent's for ordinary drafts.
-    if (activeSession?.privateMode) return;
+    // A private session's or draft's options are its TEE model's: they never become the agent's for ordinary drafts.
+    if (isPrivateLaunch) return;
     const preferredConfig = rememberedChoice(state.agentOptions?.[profileId], configId, value, reported);
     if (!preferredConfig) return;
     // The lists on offer follow too (an effort list depends on its model), so the next draft offers the same.
@@ -361,7 +361,7 @@ export default function App() {
 
   /** Keeps a model pick among an agent's `models`, so the agent's next session starts with it too. */
   const rememberModelPick = (profileId: string, preferredModelId: string) => {
-    if (!activeSession?.privateMode) rememberAgentOptions(profileId, { preferredModelId });
+    if (!isPrivateLaunch) rememberAgentOptions(profileId, { preferredModelId });
   };
 
   const isComposerHiddenRef = useLatest(isComposerHidden);
@@ -999,6 +999,7 @@ export default function App() {
     liveCommands: acp.info[activeSessionId]?.commands,
     draftAgent,
     agentOptions: state.agentOptions,
+    isPrivate: isPrivateLaunch,
   });
 
   // Shown in the sessions' column, or on the Settings page while that hides the column; never both.
@@ -1254,8 +1255,11 @@ export default function App() {
                       showTerminal={settingsPage.section === null}
                       panelTarget={draftSignInSlot}
                     />
+                    <PrivateCreditsOutStatus reason={creditsOutReason} />
                     {activeSession && creditsOutReason && (
                       <PrivateCreditsOut
+                        // One session's confirm never carries over to another's panel.
+                        key={activeSession.id}
                         reason={creditsOutReason}
                         agents={continueAgents.map((agent) => ({ id: agent.id, name: agent.name }))}
                         onOpenSettings={() => settingsPage.open("private")}

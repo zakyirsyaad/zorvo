@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { ActionResult, OpenCheckoutResult, TopupFlow } from "../../hooks/usePrivateCredits";
-import { mayStillBePaid } from "../../lib/private-flow";
+import { mayStillBePaid, topupErrorText } from "../../lib/private-flow";
 import { formatCredits, privateErrorText } from "../../lib/private-credits";
 import { Button } from "../ui/Button";
 
@@ -63,7 +63,7 @@ function viewOf(flow: TopupFlow, balanceCredits: number | null, cannotReopen: bo
         title: "Your top-up stopped",
         body: (
           <>
-            {privateErrorText(flow.code)}
+            {topupErrorText(flow.code)}
             {mayStillBePaid(flow.code) && <span className="mt-1 block">{MAY_STILL_GO_THROUGH}</span>}
           </>
         ),

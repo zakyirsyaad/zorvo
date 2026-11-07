@@ -1238,6 +1238,7 @@ mod tests {
         assert_eq!(
             &launch.args[2..],
             [
+                "--telemetry-log-prompts=false",
                 "--auth-type",
                 "openai",
                 "--openai-base-url",

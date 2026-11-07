@@ -68,6 +68,19 @@ describe("privateDraftState: what an on chip waits for", () => {
   const on = (patch: { status?: PrivateStatus | null; models?: ModelPrice[] | null; isLoadingModels?: boolean }) =>
     privateDraftState({ agentIds: QWEN, on: true, status: status(), models: MODELS, ...patch });
 
+  it("says the credits could not be checked when the status read failed, and cannot start", () => {
+    expect(
+      privateDraftState({ agentIds: QWEN, on: true, status: null, models: MODELS, statusFailed: true }),
+    ).toEqual({ chip: "on", canStart: false, note: "Couldn't check your credits. Try again." });
+    expect(PRIVATE_DRAFT_TEXT.statusFailed).toBe("Couldn't check your credits. Try again.");
+  });
+
+  it("forgets a failed read once a status arrives", () => {
+    expect(
+      privateDraftState({ agentIds: QWEN, on: true, status: status(), models: MODELS, statusFailed: true }),
+    ).toEqual({ chip: "on", canStart: true });
+  });
+
   it("waits while the credits are read", () => {
     expect(on({ status: null })).toEqual({ chip: "on", canStart: false, note: "Checking your credits…" });
   });

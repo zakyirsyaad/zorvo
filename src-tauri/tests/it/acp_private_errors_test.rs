@@ -6,7 +6,7 @@
 
 use zorvo_lib::acp::manager::{AcpEvent, AcpLaunch, AcpManager, ReopenPurpose};
 
-use crate::common::{cwd, fake_agent_with, manager, wait_for};
+use crate::common::{called_methods, cwd, fake_agent_with, manager, wait_for};
 
 /// The fake agent as a private launch, refusing every prompt with the given
 /// NEAR AI status (`"402"` or `"401"`).
@@ -176,4 +176,131 @@ fn a_stopped_session_is_no_longer_private() {
     manager.stop("p-1");
 
     assert!(!manager.is_private_session("p-1"));
+}
+
+/// A file the fake agent appends every method it receives to, fresh for `name`.
+fn call_log(name: &str) -> std::path::PathBuf {
+    let path =
+        std::env::temp_dir().join(format!("zorvo-private-{name}-{}.log", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    path
+}
+
+fn logged_private_launch(log: &std::path::Path) -> AcpLaunch {
+    AcpLaunch {
+        private: true,
+        ..fake_agent_with(&[("FAKE_ACP_CALL_LOG", log.to_str().unwrap())])
+    }
+}
+
+#[test]
+fn a_private_session_refuses_the_model_and_auth_commands_before_the_agent_sees_them() {
+    let (manager, _rx) = manager();
+    let log = call_log("model-command");
+    manager
+        .start("p-1", &cwd(), &logged_private_launch(&log))
+        .unwrap();
+
+    for text in [
+        "/model openai:gpt-4o",
+        "/model",
+        "  /MODEL x",
+        "\n/Model\tx",
+        "/auth",
+        "/AUTH openai",
+    ] {
+        let result = manager.prompt("p-1", text, &[]);
+
+        assert_eq!(result, Err("model_locked".to_string()), "{text:?}");
+    }
+    assert!(
+        !called_methods(&log).contains(&"session/prompt".to_string()),
+        "{:?}",
+        called_methods(&log)
+    );
+    manager.stop("p-1");
+}
+
+#[test]
+fn a_private_session_still_sends_other_commands_and_text_that_mentions_model() {
+    let (manager, rx) = manager();
+    manager
+        .start("p-1", &cwd(), &private_launch("402"))
+        .unwrap();
+
+    for text in ["/review", "/models", "explain /model to me"] {
+        assert_eq!(manager.prompt("p-1", text, &[]), Ok(()), "{text:?}");
+        wait_for(&rx, |e| matches!(e, AcpEvent::TurnEnded { .. }));
+    }
+    manager.stop("p-1");
+}
+
+#[test]
+fn an_ordinary_session_sends_the_model_command_to_its_agent() {
+    let (manager, rx) = manager();
+    manager.start("s-1", &cwd(), &fake_agent_with(&[])).unwrap();
+
+    assert_eq!(manager.prompt("s-1", "/model smart", &[]), Ok(()));
+    wait_for(&rx, |e| matches!(e, AcpEvent::TurnEnded { .. }));
+    manager.stop("s-1");
+}
+
+#[test]
+fn a_private_session_refuses_a_model_change_by_set_model_or_the_model_option() {
+    let (manager, _rx) = manager();
+    let log = call_log("set-model");
+    manager
+        .start("p-1", &cwd(), &logged_private_launch(&log))
+        .unwrap();
+
+    let by_set_model = manager.set_model("p-1", "smart");
+    let by_option = manager.set_config_option("p-1", "model", "smart");
+    let by_option_case = manager.set_config_option("p-1", "MODEL", "smart");
+
+    assert_eq!(by_set_model, Err("model_locked".to_string()));
+    assert_eq!(by_option, Err("model_locked".to_string()));
+    assert_eq!(by_option_case, Err("model_locked".to_string()));
+    let methods = called_methods(&log);
+    assert!(
+        !methods.contains(&"session/set_model".to_string()),
+        "{methods:?}"
+    );
+    assert!(
+        !methods.contains(&"session/set_config_option".to_string()),
+        "{methods:?}"
+    );
+    manager.stop("p-1");
+}
+
+#[test]
+fn a_private_session_still_sends_other_config_options() {
+    let (manager, _rx) = manager();
+    let log = call_log("set-effort");
+    manager
+        .start("p-1", &cwd(), &logged_private_launch(&log))
+        .unwrap();
+
+    // The fake agent does not know the method: what matters is that it was asked.
+    let result = manager.set_config_option("p-1", "effort", "high");
+
+    assert_ne!(result, Err("model_locked".to_string()));
+    assert!(called_methods(&log).contains(&"session/set_config_option".to_string()));
+    manager.stop("p-1");
+}
+
+#[test]
+fn an_ordinary_session_sends_model_changes_to_its_agent() {
+    let (manager, _rx) = manager();
+    let log = call_log("plain-set-model");
+    let launch = fake_agent_with(&[
+        ("FAKE_ACP_MODELS", "1"),
+        ("FAKE_ACP_CALL_LOG", log.to_str().unwrap()),
+    ]);
+    manager.start("s-1", &cwd(), &launch).unwrap();
+
+    let by_option = manager.set_config_option("s-1", "model", "smart");
+
+    assert_ne!(by_option, Err("model_locked".to_string()));
+    assert!(called_methods(&log).contains(&"session/set_config_option".to_string()));
+    manager.stop("s-1");
 }

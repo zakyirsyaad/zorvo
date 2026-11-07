@@ -226,7 +226,8 @@ export function useAcpEngine({
       agentFailures.clear(sessionId);
       updateNow(sessionId, closeTurn);
       saveSoon?.(sessionId);
-      const creditsOut = parsePrivateCredits(error);
+      // Only a private session's agent is launched to report credits; an ordinary one's text is its own.
+      const creditsOut = isPrivateSession(sessionId) ? parsePrivateCredits(error) : null;
       if (creditsOut) {
         // The panel above the composer says it; a failure notice would only repeat it.
         handBackRefused(sessionId);
@@ -343,7 +344,9 @@ export function useAcpEngine({
       lastPromptRef.current.delete(sessionId);
       if (context) unsentContextRef.current.set(sessionId, context);
       updateNow(sessionId, (prev) => withoutMessage(prev, message.id));
-      reportError(`Failed to send the message: ${String(error)}`);
+      // A private session's refusal (a `/model` or `/auth` it keeps out) has plain words of its own.
+      const privateError = privateOpenError(error, isPrivateSession(sessionId));
+      reportError(privateError?.text ?? `Failed to send the message: ${String(error)}`);
       return false;
     }
   };

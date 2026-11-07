@@ -11,10 +11,12 @@ export interface PrivateDialogProps {
   onEscape?: () => void;
   /** The control that takes focus on open; else the dialog itself. */
   initialFocusRef?: RefObject<HTMLElement | null>;
+  /** The id of the text that describes the dialog, read with its title. */
+  describedBy?: string;
 }
 
 /** A modal over the app: focus moves in on open and back on close, Tab stays inside, labelled by its title. */
-export function PrivateDialog({ title, children, footer, onEscape, initialFocusRef }: PrivateDialogProps) {
+export function PrivateDialog({ title, children, footer, onEscape, initialFocusRef, describedBy }: PrivateDialogProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const onEscapeRef = useLatest(onEscape);
@@ -42,6 +44,7 @@ export function PrivateDialog({ title, children, footer, onEscape, initialFocusR
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={describedBy}
         tabIndex={-1}
         className="flex w-full max-w-[440px] flex-col gap-4 rounded-xl border border-border bg-surface-1 p-5 text-fg-secondary shadow-dialog outline-none"
       >

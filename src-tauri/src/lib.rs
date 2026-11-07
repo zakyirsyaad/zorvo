@@ -377,7 +377,9 @@ pub fn run() {
             app.manage(AppInstaller::new(ToolsDir::new(&data_dir)));
             // Reads two small files; fetching and `npm` wait for the thread below.
             registry::install(Catalog::open(data_dir.clone(), registry::BUNDLED_HISTORY));
-            // Builds clients only: no Keychain read and no request at start.
+            // Builds clients only. The UI's first `private_status`, sent at start for
+            // every user, reads the Keychain items; the Worker is asked only once this
+            // Mac has a device.
             app.manage(private_mode::commands::private_mode_for(&data_dir));
             let (store, migration) = data_migration::open_store(data_dir);
             app.manage(store);

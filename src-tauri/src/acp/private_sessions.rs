@@ -8,7 +8,6 @@
 //! unless the open is private again, and never offers one for import.
 
 use super::manager::{AcpLaunch, StartedSession};
-use super::qwen_log::is_valid_session_id;
 use super::session_list::ListedSessions;
 use crate::private_mode::service::{report_storage_failure, PrivateMode};
 use crate::private_mode::PrivateError;
@@ -32,10 +31,28 @@ pub fn note_if_private(
     Ok(started)
 }
 
+/// Longest agent session id Zorvo opens.
+const MAX_SESSION_ID_LEN: usize = 128;
+
+/// Whether `id` can be opened at all. Agents name sessions as they like
+/// (OpenCode's `ses_…` holds `_`, others `.` or `:`), so only an id that could
+/// reach a recorded session by another spelling is refused: empty, over
+/// `MAX_SESSION_ID_LEN`, anything but printable ASCII (whitespace, control
+/// characters, NUL, non-ASCII), a path separator or `..`. Letter case is
+/// handled by the lower-cased comparison with the record.
+fn is_openable_session_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MAX_SESSION_ID_LEN
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_graphic() && b != b'/' && b != b'\\')
+        && !id.contains("..")
+}
+
 /// Opens the agent's session `acp_session_id` (a reopen, or an import with no
-/// `private_model_id`). The id comes from the webview and goes into the agent's
-/// file paths, so one that is not plain (`is_valid_session_id`: letters, digits
-/// and `-`) is refused with `bad_request`. A recorded private session, in any
+/// `private_model_id`). The id comes from the webview and the agent may build
+/// file paths from it, so one that could defeat the record
+/// (`is_openable_session_id`) is refused with `bad_request`. A recorded private session, in any
 /// letter case, is refused with `private_session`. Both happen before `launch`
 /// runs, let alone a process, unless `private_model_id` makes the open private
 /// again (the `private_session` refusal only). `launch` builds the launch
@@ -47,7 +64,7 @@ pub fn open_session(
     launch: impl FnOnce() -> Result<AcpLaunch, String>,
     open: impl FnOnce(&AcpLaunch) -> Result<StartedSession, String>,
 ) -> Result<StartedSession, String> {
-    if !is_valid_session_id(acp_session_id) {
+    if !is_openable_session_id(acp_session_id) {
         return Err(PrivateError::BadRequest.into());
     }
     if private_model_id.is_none() && private.is_private_acp_session(acp_session_id) {
@@ -335,17 +352,21 @@ mod tests {
     }
 
     #[test]
-    fn an_id_that_is_not_plain_is_refused_before_any_launch_for_every_kind_of_open() {
+    fn an_id_that_could_defeat_the_record_is_refused_before_any_launch_for_every_kind_of_open() {
         let harness = Harness::new();
         let too_long = "a".repeat(200);
         let odd = [
             "./acp-1",
             "../x",
+            "..",
+            "a..b",
             "acp-1 ",
             " acp-1",
             "acp/1",
+            "acp\\1",
+            "acp\u{0}1",
             "acp-1\n",
-            "acp_1",
+            "acp\u{7f}1",
             "",
             too_long.as_str(),
         ];
@@ -372,6 +393,56 @@ mod tests {
                 assert_eq!(launches.get(), 0, "{id:?}");
                 assert_eq!(opens.get(), 0, "{id:?}");
             }
+        }
+    }
+
+    #[test]
+    fn ids_with_underscores_dots_and_colons_open_normally_for_a_plain_session() {
+        let harness = Harness::new();
+        let at_limit = "a".repeat(128);
+        for id in ["ses_abc.def:1", "ses_01JABC", "a.b", at_limit.as_str()] {
+            let opens = Cell::new(0);
+
+            let result = open_session(
+                &harness.mode,
+                id,
+                None,
+                || Ok(launch()),
+                |_| {
+                    opens.set(opens.get() + 1);
+                    Ok(started(id))
+                },
+            );
+
+            assert_eq!(result.expect("opened").acp_session_id, id);
+            assert_eq!(opens.get(), 1, "{id:?}");
+        }
+        assert!(harness.state().private_sessions.is_empty());
+    }
+
+    #[test]
+    fn a_recorded_private_id_with_underscores_and_dots_is_refused_in_any_letter_case() {
+        let harness = Harness::new();
+        harness
+            .mode
+            .note_private_session("ses_abc.def:1")
+            .expect("noted");
+        for id in ["ses_abc.def:1", "SES_ABC.DEF:1", "Ses_Abc.Def:1"] {
+            let launches = Cell::new(0);
+
+            let result = open_session(
+                &harness.mode,
+                id,
+                None,
+                || {
+                    launches.set(launches.get() + 1);
+                    Ok(launch())
+                },
+                |_| Ok(started(id)),
+            );
+
+            assert_eq!(result.unwrap_err(), "private_session", "{id:?}");
+            assert_eq!(launches.get(), 0, "{id:?}");
         }
     }
 

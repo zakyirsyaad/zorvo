@@ -39,6 +39,15 @@ const OWN_FLAGS: [&str; 7] = [
 ];
 const OWN_SHORT_FLAG: &str = "-m";
 
+/// Qwen Code's telemetry flags all start so, and `--no-` negates any of them.
+/// A private launch sets prompt logging off itself, so a base launch with any
+/// telemetry flag of its own is refused like the flags above.
+const TELEMETRY_FLAG_PREFIXES: [&str; 2] = ["--telemetry", "--no-telemetry"];
+
+/// Keeps the user's prompts out of telemetry whatever `~/.qwen/settings.json`
+/// or `QWEN_TELEMETRY_LOG_PROMPTS` say: Qwen Code reads this flag first.
+const NO_PROMPT_LOGGING_FLAG: &str = "--telemetry-log-prompts=false";
+
 /// Fails unless `profile_id` is Qwen Code (a legacy id counts).
 pub fn ensure_qwen(profile_id: &str) -> Result<(), PrivateError> {
     if canonical_agent_id(profile_id) == QWEN_CODE_ID {
@@ -59,9 +68,12 @@ fn is_model_id(id: &str) -> bool {
 }
 
 /// Whether `arg` is one of the flags [`private_launch`] sets, alone or as
-/// `--flag=value`.
+/// `--flag=value`, or any telemetry flag.
 fn is_own_flag(arg: &str) -> bool {
-    arg == OWN_SHORT_FLAG
+    TELEMETRY_FLAG_PREFIXES
+        .iter()
+        .any(|prefix| arg.starts_with(prefix))
+        || arg == OWN_SHORT_FLAG
         || arg.starts_with("-m=")
         || OWN_FLAGS.iter().any(|flag| {
             arg == *flag
@@ -72,7 +84,8 @@ fn is_own_flag(arg: &str) -> bool {
 }
 
 /// `launch` for a private session on `model_id`: the registry's own arguments
-/// first (refused if they already pick an auth type, endpoint or model), then
+/// first (refused if they already pick an auth type, endpoint or model, or set
+/// a telemetry flag), then the flag that keeps prompts out of telemetry and
 /// the flags that point Qwen Code at NEAR AI Cloud (the user's
 /// `~/.qwen/settings.json` would otherwise win over the env), and an env that
 /// sets `OPENAI_API_KEY` to `key`, `OPENAI_BASE_URL` and `OPENAI_MODEL` too
@@ -96,6 +109,7 @@ pub fn private_launch(
     let mut args = launch.args;
     args.extend(
         [
+            NO_PROMPT_LOGGING_FLAG,
             "--auth-type",
             "openai",
             "--openai-base-url",
@@ -163,7 +177,7 @@ mod tests {
     }
 
     #[test]
-    fn the_four_flags_follow_the_registrys_own_args() {
+    fn the_private_flags_follow_the_registrys_own_args() {
         let launched = launch(&[]);
 
         assert_eq!(
@@ -172,6 +186,7 @@ mod tests {
                 "-y",
                 "@qwen-code/qwen-code@0.26.1",
                 "--acp",
+                "--telemetry-log-prompts=false",
                 "--auth-type",
                 "openai",
                 "--openai-base-url",
@@ -237,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn a_base_launch_that_already_picks_auth_endpoint_or_model_is_refused() {
+    fn a_base_launch_that_already_picks_auth_endpoint_model_or_telemetry_is_refused() {
         let flags = [
             vec!["--auth-type", "oauth"],
             vec!["--auth-type=openai"],
@@ -255,6 +270,14 @@ mod tests {
             vec!["--openaiApiKey=k"],
             vec!["--openai-api-key", "k"],
             vec!["--openai-api-key=k"],
+            vec!["--telemetry"],
+            vec!["--telemetry-log-prompts"],
+            vec!["--telemetry-log-prompts=true"],
+            vec!["--telemetryLogPrompts", "true"],
+            vec!["--no-telemetry-log-prompts"],
+            vec!["--telemetry-target", "gcp"],
+            vec!["--telemetry-otlp-endpoint=http://x"],
+            vec!["--telemetry-outfile", "/tmp/t"],
         ];
         for extra in flags {
             let mut with_flags = base(&[]);

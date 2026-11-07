@@ -17,9 +17,8 @@ import { CompareRunPanel } from "./components/compare/CompareRunPanel";
 import { FailedTurnBanner } from "./components/FailedTurnBanner";
 import { SignInLayer } from "./components/SignInLayer";
 import { RecoveryCodeLayer } from "./components/private/RecoveryCodeLayer";
-import { PrivateCreditsOut, PrivateCreditsOutStatus } from "./components/private/PrivateCreditsOut";
+import { PrivateCreditsOutLayer } from "./components/private/PrivateCreditsOut";
 import { PrivateInspector } from "./components/private/PrivateInspector";
-import { CREDITS_MAY_BE_UPDATING, creditsOutText } from "./lib/private-session";
 import { AgentInstallPanel } from "./components/AgentInstallPanel";
 import { pickerLabelOf } from "./lib/install-plan";
 import { installPanelAgentOf } from "./lib/install-panel";
@@ -86,10 +85,7 @@ import { AgentsMenu } from "./components/sidebar/AgentsMenu";
 import { useNavigationHistory } from "./hooks/useNavigationHistory";
 import { useUserProfile } from "./hooks/useUserProfile";
 import { useGithubConnection } from "./hooks/useGithubConnection";
-import { usePrivateCredits } from "./hooks/usePrivateCredits";
-import { usePrivateCreditedNotice } from "./hooks/usePrivateCreditedNotice";
-import { usePrivateDraft } from "./hooks/usePrivateDraft";
-import { usePrivateRecoveryDialog } from "./hooks/usePrivateRecoveryDialog";
+import { usePrivateContinue, usePrivateWiring } from "./hooks/usePrivateWiring";
 import { useWorkspaceDetails } from "./hooks/useWorkspaceDetails";
 import { useBranchPicker } from "./hooks/useBranchPicker";
 import { usePopoutHost } from "./hooks/usePopoutHost";
@@ -191,9 +187,6 @@ export default function App() {
   const suggestedFolders = useSuggestedFolders();
   const userProfile = useUserProfile();
   const github = useGithubConnection();
-  const privateCredits = usePrivateCredits();
-  usePrivateCreditedNotice(privateCredits.flow, settingsPage.section === "private", setNotice);
-  const recoveryDialog = usePrivateRecoveryDialog();
   // What stops pull requests being read, when the GitHub connection explains it.
   const githubBlocker =
     github.status?.state === "not-installed" || github.status?.state === "signed-out" ? github.status.state : undefined;
@@ -272,13 +265,19 @@ export default function App() {
     onSingle: setPickedAgentId,
   });
   const newSessionAgent = agents.find((a) => a.id === (compare.agentIds[0] ?? primaryAgentId));
-  // The draft's Private chip: per draft, off by default; while on, the next session runs privately.
-  const privateDraft = usePrivateDraft({
+  const {
     credits: privateCredits,
-    agentIds: isNewSessionDraft && newSessionAgent ? (compare.isCompare ? compare.agentIds : [newSessionAgent.id]) : [],
+    recoveryDialog,
+    draft: privateDraft,
+    isPrivateLaunch,
+    onCreditsOut,
+    refusesSend,
+  } = usePrivateWiring({
+    isTopupShown: settingsPage.section === "private",
+    setNotice,
+    draftAgentIds: isNewSessionDraft && newSessionAgent ? (compare.isCompare ? compare.agentIds : [newSessionAgent.id]) : [],
+    activeSession,
   });
-  // A private launch never uses the agent's own sign-in: no probe, no sign-in panel and no wait for one.
-  const isPrivateLaunch = privateDraft.isOn || Boolean(activeSession?.privateMode);
   // Several agents each run in their own worktree, so Worktree is on whatever it was set to.
   const isWorktreeActive = canUseWorktree && (isWorktreeOn || compare.isCompare);
   const branchPicker = useBranchPicker({
@@ -475,9 +474,7 @@ export default function App() {
     },
     onTurnFailed: (sessionId, error) =>
       error ? setFailedTurns((prev) => ({ ...prev, [sessionId]: error })) : clearFailedTurn(sessionId),
-    // A balance read that already shows credits clears the panel at once: say why the message came back.
-    onPrivateCreditsOut: (sessionId, reason) =>
-      privateCredits.markCreditsOut(sessionId, reason, () => setNotice(CREDITS_MAY_BE_UPDATING, "warning")),
+    onPrivateCreditsOut: onCreditsOut,
     giveBack: (sessionId, message) => giveBackMessage(sessionId, message.text, message.attachments),
   });
   // The one instance of Add, Update and Remove: Settings, saved sessions of a removed agent and popouts use it.
@@ -691,21 +688,16 @@ export default function App() {
     onNotice: setNotice,
   });
 
-  // A private session out of credits or a working key: its Send waits, and it offers a top-up or, once
-  // the user agreed the conversation leaves the TEE, the same conversation with another agent.
-  const creditsOutReason = activeSession ? privateCredits.creditsOut[activeSession.id] : undefined;
-  const continueAgents = activeSession
-    ? agentsInUse.filter((agent) => agent.id !== activeSession.profileId && isAgentRunnable(agent))
-    : [];
-  const continueWithAgent = (agentId: string) => {
-    const agent = agents.find((a) => a.id === agentId);
-    const lastMessage = (transcripts[activeSessionId] ?? []).at(-1);
-    if (!agent || !activeSession) return;
-    // Nothing to hand over yet: a new draft of that agent in the same folder.
-    if (!lastMessage) openNewSession(activeSession.cwd, agent.id);
-    // The new agent starts from what it was last picked with, never the private session's picks.
-    else void forkSession(lastMessage.id, { agent, choices: withPreferred(NO_CHOICES, state.agentOptions?.[agent.id]) });
-  };
+  const { creditsOutReason, creditsOutNote, continueAgents, continueWithAgent } = usePrivateContinue({
+    credits: privateCredits,
+    activeSession,
+    agents,
+    agentsInUse,
+    transcripts,
+    agentOptions: state.agentOptions,
+    openNewSession,
+    forkSession,
+  });
 
   const handleSelectSession = (sessionId: string) => {
     setActiveSessionId(sessionId);
@@ -956,10 +948,7 @@ export default function App() {
     agentCatalog: { agents, settings: state.settings, addAgent: catalogActions.addAgent },
     onAction: (sessionId, action) => {
       if (action.kind === "send") {
-        // The popout's Send waits too; one that raced the refusal is not sent into a refusal again.
-        const reason = privateCredits.creditsOut[sessionId];
-        if (reason) setNotice(creditsOutText(reason));
-        else void sendTo(sessionId, { text: action.text });
+        if (!refusesSend(sessionId)) void sendTo(sessionId, { text: action.text });
       } else if (action.kind === "stop") handleInterrupt(sessionId);
       else if (action.kind === "answer-elicitation") acp.answerElicitation(sessionId, action.key, action.answer);
       else if (action.kind === "reopen-elicitation-url") acp.reopenElicitationUrl(sessionId, action.key);
@@ -995,7 +984,7 @@ export default function App() {
     compareCount: compare.agentIds.length,
     agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
     agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
-    privateNote: privateDraft.note ?? (creditsOutReason && creditsOutText(creditsOutReason)),
+    privateNote: privateDraft.note ?? creditsOutNote,
     continuesSession: isResumable || Boolean(activeSession),
   });
   const composerCommands = composerCommandsFor({
@@ -1259,17 +1248,13 @@ export default function App() {
                       showTerminal={settingsPage.section === null}
                       panelTarget={draftSignInSlot}
                     />
-                    <PrivateCreditsOutStatus reason={creditsOutReason} />
-                    {activeSession && creditsOutReason && (
-                      <PrivateCreditsOut
-                        // One session's confirm never carries over to another's panel.
-                        key={activeSession.id}
-                        reason={creditsOutReason}
-                        agents={continueAgents.map((agent) => ({ id: agent.id, name: agent.name }))}
-                        onOpenSettings={() => settingsPage.open("private")}
-                        onContinue={continueWithAgent}
-                      />
-                    )}
+                    <PrivateCreditsOutLayer
+                      sessionId={activeSession?.id}
+                      reason={creditsOutReason}
+                      agents={continueAgents.map((agent) => ({ id: agent.id, name: agent.name }))}
+                      onOpenSettings={() => settingsPage.open("private")}
+                      onContinue={continueWithAgent}
+                    />
                     {installPanelAgent
                       ? draftInstallSlot
                         ? createPortal(<AgentInstallPanel agent={installPanelAgent} />, draftInstallSlot)

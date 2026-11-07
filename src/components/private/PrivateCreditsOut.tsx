@@ -126,3 +126,19 @@ function ContinueDialog({ agents, onCancel, onConfirm }: ContinueDialogProps) {
     </PrivateDialog>
   );
 }
+
+export interface PrivateCreditsOutLayerProps extends Omit<PrivateCreditsOutProps, 'reason'> {
+  /** The session on screen, if any: one session's confirm never carries over to another's panel. */
+  sessionId: string | undefined;
+  reason: CreditsOutReason | undefined;
+}
+
+/** The status line, kept mounted, and the panel while the session on screen is out of credits or a key. */
+export function PrivateCreditsOutLayer({ sessionId, reason, ...panel }: PrivateCreditsOutLayerProps) {
+  return (
+    <>
+      <PrivateCreditsOutStatus reason={reason} />
+      {sessionId && reason && <PrivateCreditsOut key={sessionId} reason={reason} {...panel} />}
+    </>
+  );
+}

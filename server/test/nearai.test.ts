@@ -74,6 +74,21 @@ describe("NearAiClient", () => {
     expect(callAt(calls, 0).body).toEqual({ spendLimit: { amount: 8333333333, currency: "USD" } });
   });
 
+  it.each([0n, -1n])("refuses a spend limit of %s nano-USD without calling NEAR AI, which could read it as no limit", async (limit) => {
+    const { fetcher, calls } = stubFetch(() => json({ id: "key-1", key: "sk-secret" }));
+    const client = new NearAiClient(BASE, fetcher);
+    await expect(client.createKey("acc", "ws-1", "zorvo-d1", limit)).rejects.toThrow(RangeError);
+    await expect(client.setSpendLimit("acc", "ws-1", "key-1", limit)).rejects.toThrow(RangeError);
+    await expect(client.createKey("acc", "ws-1", "zorvo-d1", limit)).rejects.not.toThrow(/acc/);
+    expect(calls).toEqual([]);
+  });
+
+  it("accepts the smallest spend limit, 1 nano-USD", async () => {
+    const { fetcher, calls } = stubFetch(() => json({}));
+    await new NearAiClient(BASE, fetcher).setSpendLimit("acc", "ws-1", "key-1", 1n);
+    expect(callAt(calls, 0).body).toEqual({ spendLimit: { amount: 1, currency: "USD" } });
+  });
+
   it("revokes a key with DELETE", async () => {
     const { fetcher, calls } = stubFetch(() => new Response(null, { status: 204 }));
     await new NearAiClient(BASE, fetcher).revokeKey("acc", "ws-1", "key-1");

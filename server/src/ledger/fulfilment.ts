@@ -311,6 +311,10 @@ function claimCredit(ctx: FulfilmentContext, itemId: string, now: number): Claim
   const device = ctx.sql
     .exec<{ nearai_key_id: string | null; credits_bought: number }>("SELECT nearai_key_id, credits_bought FROM devices WHERE id = ?", topup.device_id)
     .one();
+  if (device.credits_bought === 0) {
+    absorbedCredit(ctx, itemId, item.ref, now);
+    return null;
+  }
   return {
     itemId,
     topupId: item.ref,
@@ -319,6 +323,19 @@ function claimCredit(ctx: FulfilmentContext, itemId: string, now: number): Claim
     keyId: device.nearai_key_id,
     creditsBought: device.credits_bought,
   };
+}
+
+/**
+ * A counted credit that finds `credits_bought` at 0: a rotation that ran after it was counted found
+ * nothing left, because the old key's overshoot used these credits too. There is no key to raise and
+ * a limit of 0 must never be sent, so the item ends here and the top-up is `credited`.
+ */
+function absorbedCredit(ctx: FulfilmentContext, itemId: string, topupId: string, now: number): void {
+  ctx.transaction(() => {
+    ctx.sql.exec("DELETE FROM queue WHERE id = ?", itemId);
+    if (ctx.move(topupId, "credited", now)) ctx.releaseReservation(topupId);
+  });
+  console.error(`Credit for top-up ${topupId} was absorbed by the replaced key's overshoot; no key to raise`);
 }
 
 /**

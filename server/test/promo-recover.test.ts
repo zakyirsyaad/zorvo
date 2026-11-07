@@ -786,6 +786,42 @@ describe("rotate_key next to credit", () => {
   });
 });
 
+describe("a credit absorbed by a zero-remainder rotation", () => {
+  it("never sends a 0 spend limit: the credit ends credited with nothing queued and no key made", async () => {
+    const { deviceId, secret } = await keyedDevice();
+    await addPromo(CODE, 500, 1);
+    expect((await redeem(secret, CODE)).status).toBe(201);
+    const promoTopup = (await rows()).topups.find((t) => t.package_usd === 0)!;
+    // The credit is counted (credits_bought 1000) but its PATCH fails, so it is still queued.
+    near.status.patch = 503;
+    await tick(NOW + MINUTE_MS);
+    expect((await rows()).devices.find((d) => d.id === deviceId)).toMatchObject({ credits_bought: 1000, nearai_key_id: "key-1" });
+    delete near.status.patch;
+    // The old key overshot its 500-credit limit by the promo's 500: nothing is left to carry.
+    near.keys.get("key-1")!.usageNano = spendLimitNano(1000, cfg);
+    const next = randomSecret();
+    expect((await recover(secret, next)).status).toBe(200);
+
+    await tick(NOW + 2 * MINUTE_MS);
+    expect((await rows()).devices.find((d) => d.id === deviceId)).toMatchObject({ credits_bought: 0, nearai_key_id: null });
+    await tick(NOW + 3 * MINUTE_MS);
+
+    const limits = near.calls
+      .filter((c) => c.route === "create" || c.route === "patch")
+      .map((c) => (c.body as { spendLimit: { amount: number } }).spendLimit.amount);
+    expect(limits).not.toContain(0);
+    expect(near.count("create")).toBe(1);
+    const state = await rows();
+    expect(state.topups.find((t) => t.id === promoTopup.id)?.status).toBe("credited");
+    expect(state.queue).toEqual([]);
+    expect(state.reservations.find((r) => r.topup_id === promoTopup.id)).toBeUndefined();
+    expect(state.devices.find((d) => d.id === deviceId)).toMatchObject({ credits_bought: 0, nearai_key_id: null });
+    expect(state.pendingKeys).toEqual([]);
+    expect(loggedText()).toContain(promoTopup.id);
+    expect((await call("/v1/key", { secret: next })).status).toBe(404);
+  });
+});
+
 describe("queue items without a device to serve", () => {
   it("drops a rotate_key item for a device that has no key and calls nothing", async () => {
     const { deviceId } = await newDevice();

@@ -64,7 +64,12 @@ function dollars(value: unknown, what: string): number {
   return Number(wholeNumber(value.amount, `${what}.amount`)) / 10 ** Number(wholeNumber(value.scale, `${what}.scale`));
 }
 
+/**
+ * A spend limit as NEAR AI takes it. Below 1 nano-USD is refused before any request: NEAR AI reads a
+ * `null` limit as unlimited and does not document 0, so a key must never be sent one.
+ */
 function spendLimitBody(limitNano: bigint): { spendLimit: { amount: number; currency: "USD" } } {
+  if (limitNano < 1n) throw new RangeError("spend limit below 1 nano-USD");
   return { spendLimit: { amount: Number(limitNano), currency: "USD" } };
 }
 

@@ -105,6 +105,12 @@ describe('parseRustCommands', () => {
     ]);
   });
 
+  it('finds the fn however much comment and attribute text sits between it and the macro', () => {
+    const filler = `// ${'x'.repeat(600)}\n`;
+    const source = `#[tauri::command(async)]\n${filler}#[allow(clippy::too_many_arguments)]\n${filler}pub fn spaced(path: String) {}`;
+    expect(parseRustCommands(source, 'a.rs').map((c) => c.name)).toEqual(['spaced']);
+  });
+
   it('refuses rename_all and destructured parameters, which would change the argument keys', () => {
     expect(() => parseRustCommands('#[tauri::command(rename_all = "snake_case")]\nfn a(x_y: String) {}', 'a.rs')).toThrow(
       /rename_all/,
@@ -228,6 +234,41 @@ describe('parseFrontend', () => {
       const run = register(invoke);
     `);
     expect(indirectUses).toEqual([{ file: 'src/x.ts', line: 3, name: 'invoke' }]);
+  });
+
+  it('reports a Tauri function read as an initializer or a default value', () => {
+    const { indirectUses } = parse(`
+      import { invoke } from '@tauri-apps/api/core';
+      const call = invoke;
+      function f(run = invoke, { other = invoke } = {}) {}
+      const invokeLater = () => invoke;
+    `);
+    expect(indirectUses.map((use) => use.line)).toEqual([3, 4, 4, 5]);
+  });
+
+  it('does not take a parameter that shadows a const for that const', () => {
+    const { invokes } = parse(`
+      import { invoke } from '@tauri-apps/api/core';
+      const args = { path };
+      invoke('outer', args);
+      function f(args: Record<string, unknown>) {
+        invoke('inner', args);
+      }
+    `);
+    expect(invokes.map((c) => [c.command, c.keys])).toEqual([
+      ['outer', ['path']],
+      ['inner', null],
+    ]);
+  });
+
+  it('reports a dynamic import of the Tauri API, whose calls are not scanned', () => {
+    const { unsupported } = parse(`
+      async function f() {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await import('./local');
+      }
+    `);
+    expect(unsupported).toEqual([{ file: 'src/x.ts', line: 3, expr: "import('@tauri-apps/api/core')" }]);
   });
 
   it('collects listen, once and emit names, resolving constants', () => {
@@ -419,6 +460,16 @@ describe('checkContract', () => {
       calls: [{ command: 'get_thing', args: ['sessionId'] }],
     });
     expect(checkContract(model)).toEqual([]);
+  });
+
+  it('5: fails when a table call site passes a key its entry does not list', () => {
+    const model = good();
+    model.invokes.push({ file: 'src/f.ts', line: 8, command: null, nameExpr: 'cmd', keys: ['sessionId', 'extra'], maybeKeys: ['more'] });
+    model.nonLiteralTable.push({ file: 'src/f.ts', nameExpr: 'cmd', calls: [{ command: 'get_thing', args: ['sessionId'] }] });
+    expect(checkContract(model)).toEqual([
+      expect.stringContaining('src/f.ts:8 passes "extra" to `cmd`, which its NON_LITERAL_CALLS entry does not list'),
+      expect.stringContaining('src/f.ts:8 passes "more" to `cmd`, which its NON_LITERAL_CALLS entry does not list'),
+    ]);
   });
 
   it('5: checks the table entries like literal calls, and rejects an entry nothing uses', () => {

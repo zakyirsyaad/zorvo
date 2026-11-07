@@ -168,7 +168,14 @@ export function parseHandlerList(source: string): string[] {
 const INJECTED_TYPE =
   /^&?\s*(?:[A-Za-z_]\w*::)*(?:State|AppHandle|Window|WebviewWindow|Webview|Request|CommandScope|GlobalScope)\b/;
 const OPTION_TYPE = /^(?:(?:std|core)::option::)?Option\s*</;
-const FN_HEADER = /^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+([A-Za-z_]\w*)\s*(?:<[^>]*>)?\s*\(/;
+const FN_HEADER = /\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+([A-Za-z_]\w*)\s*(?:<[^>]*>)?\s*\(/y;
+const NEXT_ATTRIBUTE = /\s*#\[/y;
+
+/** Match of a sticky `pattern` exactly at `index`, without copying the rest of the text. */
+function matchAt(pattern: RegExp, text: string, index: number): RegExpExecArray | null {
+  pattern.lastIndex = index;
+  return pattern.exec(text);
+}
 
 /** Index of the first `:` outside brackets that is not half of `::`. */
 function paramColon(param: string): number {
@@ -201,12 +208,10 @@ export function parseRustCommands(source: string, file: string): RustCommand[] {
     const attribute = text.slice(open, findMatching(text, open) + 1);
     if (/rename_all/.test(attribute)) throw new Error(`${file}: rename_all is not supported by the contract test`);
     let at = open + attribute.length;
-    for (;;) {
-      const further = /^\s*#\[/.exec(text.slice(at));
-      if (!further) break;
+    for (let further = matchAt(NEXT_ATTRIBUTE, text, at); further; further = matchAt(NEXT_ATTRIBUTE, text, at)) {
       at = findMatching(text, at + further[0].length - 1) + 1;
     }
-    const header = FN_HEADER.exec(text.slice(at, at + 400));
+    const header = matchAt(FN_HEADER, text, at);
     if (!header) throw new Error(`${file}: no fn after #[tauri::command] at offset ${match.index}`);
     const name = header[1]!;
     const parenOpen = at + header[0].length - 1;
@@ -368,6 +373,10 @@ interface KeyShape {
 /** The initializer of the `const` named by `id`, found in an enclosing block of the same file. */
 function constInitializer(id: ts.Identifier): ts.Expression | null {
   for (let scope: ts.Node | undefined = id.parent; scope; scope = scope.parent) {
+    // A parameter of the same name hides any const further out, and its value is unknown.
+    if (ts.isFunctionLike(scope) && scope.parameters.some((p) => ts.isIdentifier(p.name) && p.name.text === id.text)) {
+      return null;
+    }
     if (!ts.isBlock(scope) && !ts.isSourceFile(scope)) continue;
     for (const statement of scope.statements) {
       if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const)) continue;
@@ -484,62 +493,90 @@ function isValueUse(node: ts.Identifier): boolean {
   if (isCallee(node)) return false;
   if (ts.isPropertyAccessExpression(parent) && parent.name === node) return false;
   if (ts.isPropertyAssignment(parent) && parent.name === node) return false;
-  if (ts.isBindingElement(parent) || ts.isParameter(parent) || ts.isVariableDeclaration(parent)) return false;
+  // A declaration of the same name is a new binding; its initializer or default value is a read.
+  if ((ts.isBindingElement(parent) || ts.isParameter(parent) || ts.isVariableDeclaration(parent)) && parent.name === node) {
+    return false;
+  }
   return true;
+}
+
+interface ScanContext {
+  sf: ts.SourceFile;
+  file: string;
+  imports: TauriImports;
+  consts: Map<string, string>;
+  facts: FrontendFacts;
+}
+
+const lineOf = ({ sf }: ScanContext, node: ts.Node) => sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+
+function eventNameOf(node: ts.Expression | undefined, consts: Map<string, string>): string | null {
+  if (!node) return null;
+  const literal = stringValue(node);
+  if (literal !== null) return literal;
+  const inner = unwrap(node);
+  return ts.isIdentifier(inner) ? (consts.get(inner.text) ?? null) : null;
+}
+
+function recordInvoke(ctx: ScanContext, node: ts.CallExpression): void {
+  const [first, second] = node.arguments;
+  if (!first) return;
+  const shape = second ? keyShapeOf(second) : { always: new Set<string>(), sometimes: new Set<string>() };
+  ctx.facts.invokes.push({
+    file: ctx.file,
+    line: lineOf(ctx, node),
+    command: stringValue(first),
+    nameExpr: first.getText(ctx.sf),
+    keys: shape ? [...shape.always] : null,
+    maybeKeys: shape ? [...shape.sometimes] : [],
+  });
+}
+
+function recordEvent(ctx: ScanContext, node: ts.CallExpression, fn: string): void {
+  const [first, second] = node.arguments;
+  const nameNode = fn === 'emitTo' ? second : first;
+  ctx.facts.events.push({
+    file: ctx.file,
+    line: lineOf(ctx, node),
+    kind: fn === 'emitTo' ? 'emit' : (fn as EventUse['kind']),
+    name: eventNameOf(nameNode, ctx.consts),
+    nameExpr: nameNode ? nameNode.getText(ctx.sf) : '',
+  });
+}
+
+/** Calls the scan cannot follow: event methods on window objects, and dynamic imports of the Tauri API. */
+function recordUnsupported(ctx: ScanContext, node: ts.CallExpression): void {
+  const callee = node.expression;
+  const isWindowEventCall =
+    ctx.imports.hasWindowImport && ts.isPropertyAccessExpression(callee) && EVENT_FUNCTIONS.includes(callee.name.text);
+  const [first] = node.arguments;
+  const isTauriImport =
+    callee.kind === ts.SyntaxKind.ImportKeyword && first !== undefined && (stringValue(first) ?? '').startsWith('@tauri-apps/');
+  if (isWindowEventCall || isTauriImport) {
+    ctx.facts.unsupported.push({ file: ctx.file, line: lineOf(ctx, node), expr: isTauriImport ? node.getText(ctx.sf) : callee.getText(ctx.sf) });
+  }
 }
 
 export function parseFrontend(file: string, text: string, consts: Map<string, string>): FrontendFacts {
   const sf = sourceFileOf(file, text);
   const imports = readImports(sf);
   const facts: FrontendFacts = { invokes: [], events: [], indirectUses: [], unsupported: [] };
-  const lineOf = (node: ts.Node) => sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+  const ctx: ScanContext = { sf, file, imports, consts, facts };
   const localNames = new Set([...imports.invoke, ...imports.events.keys()]);
-
-  const eventName = (node: ts.Expression | undefined): string | null => {
-    if (!node) return null;
-    const literal = stringValue(node);
-    if (literal !== null) return literal;
-    const inner = unwrap(node);
-    return ts.isIdentifier(inner) ? (consts.get(inner.text) ?? null) : null;
-  };
 
   const visit = (node: ts.Node): void => {
     if (ts.isImportDeclaration(node)) return;
     if (ts.isCallExpression(node)) {
       const fn = tauriFunctionOf(node.expression, imports);
-      const [first, second] = node.arguments;
-      if (fn === 'invoke' && first) {
-        const shape = second ? keyShapeOf(second) : { always: new Set<string>(), sometimes: new Set<string>() };
-        facts.invokes.push({
-          file,
-          line: lineOf(node),
-          command: stringValue(first),
-          nameExpr: first.getText(sf),
-          keys: shape ? [...shape.always] : null,
-          maybeKeys: shape ? [...shape.sometimes] : [],
-        });
-      } else if (fn !== null) {
-        const nameNode = fn === 'emitTo' ? second : first;
-        facts.events.push({
-          file,
-          line: lineOf(node),
-          kind: fn === 'emitTo' ? 'emit' : (fn as 'listen' | 'once' | 'emit'),
-          name: eventName(nameNode),
-          nameExpr: nameNode ? nameNode.getText(sf) : '',
-        });
-      } else if (
-        imports.hasWindowImport &&
-        ts.isPropertyAccessExpression(node.expression) &&
-        EVENT_FUNCTIONS.includes(node.expression.name.text)
-      ) {
-        facts.unsupported.push({ file, line: lineOf(node), expr: node.expression.getText(sf) });
-      }
+      if (fn === 'invoke') recordInvoke(ctx, node);
+      else if (fn !== null) recordEvent(ctx, node, fn);
+      else recordUnsupported(ctx, node);
     }
     if (ts.isIdentifier(node) && localNames.has(node.text) && isValueUse(node)) {
-      facts.indirectUses.push({ file, line: lineOf(node), name: node.text });
+      facts.indirectUses.push({ file, line: lineOf(ctx, node), name: node.text });
     }
     if (ts.isPropertyAccessExpression(node) && isNamespaceMember(node, imports) && !isCallee(node)) {
-      facts.indirectUses.push({ file, line: lineOf(node), name: node.getText(sf) });
+      facts.indirectUses.push({ file, line: lineOf(ctx, node), name: node.getText(sf) });
     }
     ts.forEachChild(node, visit);
   };
@@ -596,9 +633,12 @@ function checkArguments(
   }
 }
 
-/** Every violation of the contract in `model`, as sentences; empty when it holds. */
-export function checkContract(model: ContractModel): string[] {
-  const out: string[] = [];
+interface CommandIndex {
+  handlers: Set<string>;
+  commands: Map<string, RustCommand>;
+}
+
+function indexCommands(model: ContractModel, out: string[]): CommandIndex {
   const handlers = new Set(model.handlers);
   const commands = new Map<string, RustCommand>();
   for (const command of model.commands) {
@@ -608,25 +648,42 @@ export function checkContract(model: ContractModel): string[] {
   for (const handler of handlers) {
     if (!commands.has(handler)) out.push(`"${handler}" is registered but no #[tauri::command] fn has that name`);
   }
+  return { handlers, commands };
+}
 
+/** A call whose command is not a literal: it must match a table entry, and pass only keys the entry lists. */
+function checkTableCall(call: InvokeCall, table: NonLiteralEntry[], out: string[]): NonLiteralEntry | null {
+  const where = `${call.file}:${call.line}`;
+  const entry = table.find((e) => e.file === call.file && e.nameExpr === call.nameExpr);
+  if (!entry) {
+    out.push(`${where} invokes \`${call.nameExpr}\`, which is not a string literal: add it to NON_LITERAL_CALLS`);
+    return null;
+  }
+  const listed = new Set(entry.calls.flatMap((c) => c.args));
+  for (const key of call.keys ?? []) {
+    if (!listed.has(key)) out.push(`${where} passes "${key}" to \`${call.nameExpr}\`, which its NON_LITERAL_CALLS entry does not list`);
+  }
+  for (const key of call.maybeKeys ?? []) {
+    if (!listed.has(key)) out.push(`${where} passes "${key}" to \`${call.nameExpr}\`, which its NON_LITERAL_CALLS entry does not list`);
+  }
+  return entry;
+}
+
+function checkInvokes(model: ContractModel, index: CommandIndex, out: string[]): void {
   const usedEntries = new Set<NonLiteralEntry>();
   for (const call of model.invokes) {
     const where = `${call.file}:${call.line}`;
     if (call.command === null) {
-      const entry = model.nonLiteralTable.find((e) => e.file === call.file && e.nameExpr === call.nameExpr);
+      const entry = checkTableCall(call, model.nonLiteralTable, out);
       if (entry) usedEntries.add(entry);
-      else out.push(`${where} invokes \`${call.nameExpr}\`, which is not a string literal: add it to NON_LITERAL_CALLS`);
-      continue;
-    }
-    if (!handlers.has(call.command)) {
+    } else if (!index.handlers.has(call.command)) {
       out.push(`${where} invokes "${call.command}", which is not registered in generate_handler!`);
     } else if (call.keys === null) {
       out.push(`${where} invokes "${call.command}" but its arguments are not a plain object literal`);
     } else {
-      checkArguments(where, call.command, call.keys, commands, out, call.maybeKeys);
+      checkArguments(where, call.command, call.keys, index.commands, out, call.maybeKeys);
     }
   }
-
   for (const entry of model.nonLiteralTable) {
     const where = `table entry ${entry.file} \`${entry.nameExpr}\``;
     if (!usedEntries.has(entry)) {
@@ -634,11 +691,16 @@ export function checkContract(model: ContractModel): string[] {
       continue;
     }
     for (const call of entry.calls) {
-      if (handlers.has(call.command)) checkArguments(where, call.command, call.args, commands, out);
+      if (index.handlers.has(call.command)) checkArguments(where, call.command, call.args, index.commands, out);
       else out.push(`${where} lists "${call.command}", which is not registered in generate_handler!`);
     }
   }
+}
 
+/** Every violation of the contract in `model`, as sentences; empty when it holds. */
+export function checkContract(model: ContractModel): string[] {
+  const out: string[] = [];
+  checkInvokes(model, indexCommands(model, out), out);
   out.push(...checkEvents(model));
   for (const use of model.indirectUses) {
     out.push(`${use.file}:${use.line} uses \`${use.name}\` as a value, so its calls cannot be checked`);

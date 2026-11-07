@@ -164,13 +164,6 @@ fn is_plain_token(id: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-fn body_error(error: ureq::Error) -> PrivateError {
-    match error {
-        ureq::Error::BodyExceedsLimit(_) => PrivateError::Upstream,
-        _ => PrivateError::Unreachable,
-    }
-}
-
 pub struct HttpCredits {
     base: String,
     agent: ureq::Agent,
@@ -194,13 +187,18 @@ impl HttpCredits {
         if !(host_ok && plain) {
             return Err(PrivateError::BadRequest);
         }
-        let agent: ureq::Agent = ureq::Agent::config_builder()
+        let mut config = ureq::Agent::config_builder()
             .timeout_connect(Some(CONNECT_TIMEOUT))
             .timeout_global(Some(TOTAL_TIMEOUT))
             .max_redirects(0)
-            .http_status_as_error(false)
-            .build()
-            .into();
+            .http_status_as_error(false);
+        if url.scheme() == "http" {
+            // The loopback dev base: a proxy would resolve 127.0.0.1 on its own
+            // host and see the bearer secret in the clear. https keeps the
+            // user's proxy settings, where the proxy only sees a CONNECT.
+            config = config.proxy(None);
+        }
+        let agent: ureq::Agent = config.build().into();
         Ok(Self {
             base: url.as_str().trim_end_matches('/').to_string(),
             agent,
@@ -237,13 +235,20 @@ impl HttpCredits {
             .run(request)
             .map_err(|_| PrivateError::Unreachable)?;
         let status = response.status().as_u16();
-        let text = response
+        // ureq's reader errors once the limit is used up, before it sees EOF,
+        // so ask for one byte more: exactly MAX_BODY_BYTES still passes.
+        let read = response
             .body_mut()
             .with_config()
-            .limit(MAX_BODY_BYTES)
-            .read_to_string()
-            .map_err(body_error)?;
-        Ok((status, text))
+            .limit(MAX_BODY_BYTES + 1)
+            .read_to_string();
+        match read {
+            Ok(text) if text.len() as u64 <= MAX_BODY_BYTES => Ok((status, text)),
+            Ok(_) | Err(ureq::Error::BodyExceedsLimit(_)) => Err(PrivateError::Upstream),
+            // The server answered, so its status still says what happened.
+            Err(_) if status >= 400 => Ok((status, String::new())),
+            Err(_) => Err(PrivateError::Upstream),
+        }
     }
 
     /// `request`, then the body of a 2xx answer or the code of any other.
@@ -319,7 +324,10 @@ impl CreditsApi for HttpCredits {
     fn take_key(&self, secret: &str) -> Result<Option<String>, PrivateError> {
         let (status, text) = self.request(Method::GET, "/v1/key", Some(secret), None)?;
         match status {
-            200 => Ok(Some(parse::<KeyAnswer>(&text)?.key)),
+            200 => match parse::<KeyAnswer>(&text)?.key {
+                key if key.is_empty() => Err(PrivateError::Upstream),
+                key => Ok(Some(key)),
+            },
             404 => Ok(None),
             _ => Err(error_from(status, &text)),
         }
@@ -783,5 +791,163 @@ mod tests {
             client(&base).balance(SECRET, false).err(),
             Some(PrivateError::Unreachable)
         );
+    }
+
+    // --- fix round 1 -----------------------------------------------------
+
+    /// A raw response: status line and headers as given, the body as bytes.
+    fn raw(head: &str, body: &[u8]) -> Vec<u8> {
+        let mut out = head.as_bytes().to_vec();
+        out.extend_from_slice(body);
+        out
+    }
+
+    fn json_padded_to(len: usize) -> Vec<u8> {
+        let head = br#"{"credits":1,"usedCredits":0,"keyReady":false,"updatedAt":"t"}"#;
+        let mut body = head.to_vec();
+        body.resize(len, b' ');
+        body
+    }
+
+    #[test]
+    fn a_body_of_exactly_the_cap_passes_and_one_more_byte_does_not() {
+        let cap = MAX_BODY_BYTES as usize;
+        let (base, _served) = serve_once(http("200 OK", &json_padded_to(cap)));
+        assert_eq!(
+            client(&base).balance(SECRET, false).map(|b| b.credits),
+            Ok(1)
+        );
+
+        let (base, _served) = serve_once(http("200 OK", &json_padded_to(cap + 1)));
+        assert_eq!(
+            client(&base).balance(SECRET, false).err(),
+            Some(PrivateError::Upstream)
+        );
+    }
+
+    #[test]
+    fn an_unreadable_error_body_keeps_the_status() {
+        let (base, _served) = serve_once(http("401 Unauthorized", &[0xff, 0xfe, 0xfd]));
+        assert_eq!(
+            client(&base).balance(SECRET, false).err(),
+            Some(PrivateError::Unauthorized)
+        );
+
+        // Promises 100 bytes, sends 5, closes.
+        let truncated = raw(
+            "HTTP/1.1 429 Too Many Requests\r\nContent-Length: 100\r\nConnection: close\r\n\r\n",
+            b"{\"err",
+        );
+        let (base, _served) = serve_once(truncated);
+        assert_eq!(
+            client(&base).balance(SECRET, false).err(),
+            Some(PrivateError::RateLimited)
+        );
+    }
+
+    #[test]
+    fn an_unreadable_success_body_is_upstream() {
+        let (base, _served) = serve_once(http("200 OK", &[0xff, 0xfe, 0xfd]));
+        assert_eq!(
+            client(&base).balance(SECRET, false).err(),
+            Some(PrivateError::Upstream)
+        );
+    }
+
+    #[test]
+    fn an_empty_key_is_never_handed_over() {
+        let (base, _served) = serve_once(http("200 OK", br#"{"key":""}"#));
+        assert_eq!(
+            client(&base).take_key(SECRET).err(),
+            Some(PrivateError::Upstream)
+        );
+    }
+
+    #[test]
+    fn new_rejects_more_odd_bases() {
+        for bad in [
+            "https://x@evil.com",
+            "https://x?q=1",
+            "https://x#f",
+            "http://[::1]:8787",
+        ] {
+            assert_eq!(
+                HttpCredits::new(bad).err(),
+                Some(PrivateError::BadRequest),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn new_reads_an_upper_case_scheme_as_the_same_scheme() {
+        assert!(HttpCredits::new("HTTP://127.0.0.1:8787").is_ok());
+        assert!(HttpCredits::new("HTTPS://x.workers.dev").is_ok());
+        assert_eq!(
+            HttpCredits::new("HTTP://example.com").err(),
+            Some(PrivateError::BadRequest)
+        );
+    }
+
+    #[test]
+    fn a_base_with_a_path_joins_the_routes_without_a_double_slash() {
+        let body = br#"{"credits":0,"usedCredits":0,"keyReady":false,"updatedAt":"t"}"#;
+        let (base, served) = serve_once(http("200 OK", body));
+        client(&format!("{base}/api/"))
+            .balance(SECRET, false)
+            .expect("balance");
+        let request = served.join().expect("stub");
+        assert!(
+            request.starts_with("GET /api/v1/balance HTTP/1.1\r\n"),
+            "{request}"
+        );
+    }
+
+    #[test]
+    fn statuses_reach_error_from_through_the_stub() {
+        let cases: [(&str, &[u8], PrivateError); 4] = [
+            ("500 Internal Server Error", b"boom", PrivateError::Upstream),
+            (
+                "409 Conflict",
+                br#"{"error":"device_cap"}"#,
+                PrivateError::DeviceCap,
+            ),
+            ("400 Bad Request", b"", PrivateError::BadRequest),
+            ("302 Found", b"", PrivateError::Upstream),
+        ];
+        for (status, body, expected) in cases {
+            let (base, _served) = serve_once(http(status, body));
+            assert_eq!(
+                client(&base).balance(SECRET, false).err(),
+                Some(expected),
+                "{status}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_success_body_that_is_not_json_is_upstream() {
+        let (base, _served) = serve_once(http("200 OK", b"<html>hello</html>"));
+        assert_eq!(
+            client(&base).balance(SECRET, false).err(),
+            Some(PrivateError::Upstream)
+        );
+    }
+
+    #[test]
+    fn more_topup_id_injections_never_reach_the_network() {
+        let api = client("http://127.0.0.1:1");
+        for id in ["#", "%2f", "..", "a.b", "a%2Fb"] {
+            assert_eq!(
+                api.topup(SECRET, id).err(),
+                Some(PrivateError::BadRequest),
+                "{id}"
+            );
+            assert_eq!(
+                api.cancel_topup(SECRET, id).err(),
+                Some(PrivateError::BadRequest),
+                "{id}"
+            );
+        }
     }
 }

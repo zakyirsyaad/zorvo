@@ -83,6 +83,13 @@ describe("defaultOf and startAgentOf", () => {
 describe("startGate", () => {
   const row = (id: string, name: string, isReady: boolean, isInstalling = false) => ({ id, name, isReady, isInstalling });
 
+  it("says the agents could not be read rather than waiting in silence", () => {
+    expect(startGate({ ticked: [row("x", "Codex", true)], defaultId: "x", folder: FOLDER, isLoading: true, agentsFailed: true })).toEqual({
+      canStart: false,
+      note: "Zorvo could not read your agents. Press Check again.",
+    });
+  });
+
   it("asks for an agent first", () => {
     expect(startGate({ ticked: [], defaultId: null, folder: FOLDER })).toEqual({ canStart: false, note: "Tick an agent to continue." });
   });

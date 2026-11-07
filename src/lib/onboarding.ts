@@ -93,13 +93,17 @@ export function startGate({
   defaultId,
   folder,
   isLoading = false,
+  agentsFailed = false,
 }: {
   ticked: readonly TickedAgent[];
   defaultId: string | null;
   folder: FolderOption | null;
   /** The agents or their profiles are still loading: nothing to say yet. */
   isLoading?: boolean;
+  /** The agents' profiles could not be read, so whether one can run is not known; Check again reads them. */
+  agentsFailed?: boolean;
 }): { canStart: boolean; note: string } {
+  if (agentsFailed) return { canStart: false, note: 'Zorvo could not read your agents. Press Check again.' };
   if (isLoading) return { canStart: false, note: '' };
   if (ticked.length === 0) return { canStart: false, note: 'Tick an agent to continue.' };
   const installing = ticked.filter((agent) => agent.isInstalling);

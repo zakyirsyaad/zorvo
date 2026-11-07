@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,7 +18,7 @@ import { LINKS } from "../../site/lib/links";
 import robots from "../../site/app/robots";
 import sitemap from "../../site/app/sitemap";
 import { OG_COLORS } from "../../site/lib/og-colors";
-import { siteUrl } from "../../site/lib/site";
+import { OG_IMAGE, siteUrl } from "../../site/lib/site";
 import NotFound from "../../site/app/not-found";
 
 const ROOT = join(__dirname, "..", "..");
@@ -242,8 +242,9 @@ describe("search engines", () => {
     expect(config.framework).toBeNull();
     expect(config.outputDirectory).toBe("out");
     expect(config.trailingSlash).toBe(true);
-    const og = config.headers.find((rule: { source: string }) => rule.source === "/opengraph-image");
-    expect(og.headers).toContainEqual({ key: "Content-Type", value: "image/png" });
+    // trailingSlash redirects any path without a file extension, so the shared image needs one.
+    expect(OG_IMAGE.url).toMatch(/\.png$/);
+    expect(existsSync(join(ROOT, "site", "app", "opengraph-image.tsx"))).toBe(false);
   });
 
   it("refuses to build for production without an address, rather than publish localhost links", () => {

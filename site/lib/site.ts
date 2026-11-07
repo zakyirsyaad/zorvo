@@ -7,6 +7,9 @@ export const SITE_TITLE = "Zorvo: a Mac app for Claude Code, Codex and Qwen Code
 export const SITE_DESCRIPTION =
   "Free, open-source Mac app for Claude Code, Codex, Qwen Code and every ACP registry agent. Compare agents on one prompt and review their diffs. No API keys.";
 
+/** The card shown when a page is shared, drawn by app/og.png/route.tsx at build time. */
+export const OG_IMAGE = { url: "/og.png", type: "image/png", width: 1200, height: 630, alt: SITE_TITLE } as const;
+
 const LOCAL_URL = "http://localhost:3100/";
 
 // A trailing slash keeps a sub-path (https://example.github.io/zorvo/) when relative URLs resolve against it.
@@ -42,7 +45,7 @@ export function softwareApplication(url: URL = siteUrl()) {
     operatingSystem: "macOS",
     softwareVersion: appPackage.version,
     downloadUrl: LINKS.download,
-    image: new URL("opengraph-image", url).href,
+    image: new URL(OG_IMAGE.url.slice(1), url).href,
     isAccessibleForFree: true,
     license: "https://www.apache.org/licenses/LICENSE-2.0",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },

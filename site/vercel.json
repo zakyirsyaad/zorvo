@@ -33,15 +33,6 @@
       ]
     },
     {
-      "source": "/opengraph-image",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "image/png"
-        }
-      ]
-    },
-    {
       "source": "/_next/static/(.*)",
       "headers": [
         {

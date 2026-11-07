@@ -1,10 +1,10 @@
-import type { ReactNode } from "react";
 import { DiffRows, FakeButton, LineCounts, type ChangedFile, type DiffLine } from "../mockups/parts";
 import { Chip } from "../ui/Chip";
-import { Icon, type IconName } from "../ui/Icon";
+import { Icon } from "../ui/Icon";
+import { type Point, PointList } from "../ui/PointList";
 import { SectionIntro } from "../ui/SectionIntro";
 
-const POINTS: { icon: IconName; title: string; body: ReactNode }[] = [
+const POINTS: Point[] = [
   {
     icon: "message-square-text",
     title: "Comment on the lines you want changed",
@@ -127,17 +127,7 @@ export function Review() {
         />
         <div className="flex flex-wrap items-start gap-12 lg:gap-16">
           <ReviewPicture />
-          <ul className="m-0 flex min-w-0 flex-[1_1_300px] list-none flex-col gap-6 p-0">
-            {POINTS.map(({ icon, title, body }) => (
-              <li key={title} className="flex gap-3.5">
-                <Icon name={icon} size={18} className="mt-[3px] text-fg" />
-                <div className="flex flex-col gap-1">
-                  <h3 className="t-heading m-0">{title}</h3>
-                  <p className="t-body m-0">{body}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <PointList points={POINTS} className="min-w-0 flex-[1_1_300px]" />
         </div>
       </div>
     </section>

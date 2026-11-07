@@ -124,7 +124,7 @@ export default function InstallPage() {
             </div>
             <span className="flex justify-end gap-2">
               <FakeButton variant="ghost">Later</FakeButton>
-              <FakeButton variant="outline" className="text-fg">Update &amp; restart</FakeButton>
+              <FakeButton variant="outline" emphasis="strong">Update &amp; restart</FakeButton>
             </span>
           </div>
         </div>

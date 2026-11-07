@@ -74,7 +74,7 @@ function titleLook(session: SessionRow): string {
 function SessionRowPicture({ session }: { session: SessionRow }) {
   return (
     <div className={`flex gap-2.5 rounded-md p-2 ${session.isOpen ? "bg-surface-hover" : ""}`}>
-      <span className="flex w-1.5 flex-none pt-1.5">{session.status && <StatusDot status={session.status} />}</span>
+      <span className="flex w-1.5 flex-none pt-1.5">{session.status && <StatusDot status={session.status} isStill />}</span>
       <span className="flex min-w-0 flex-col gap-0.5">
         <span className={`truncate text-xs leading-[18px] ${titleLook(session)}`}>{session.title}</span>
         <span className={`flex min-w-0 items-center gap-1 text-[11px] leading-4 ${session.isOpen ? "text-fg-muted" : "text-fg-subtle"}`}>
@@ -93,7 +93,7 @@ function CompareRunRowPicture() {
   return (
     <div className="flex items-center gap-2.5 rounded-md p-2">
       <span className="flex w-1.5 flex-none self-start pt-1.5">
-        <StatusDot status="running" />
+        <StatusDot status="running" isStill />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="truncate text-xs leading-[18px] text-fg-secondary">Compare · 3 agents</span>
@@ -165,11 +165,9 @@ function TopBar() {
         <WindowButtons />
       </span>
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        {/* The title keeps its room; the branch gives way first, and the pull request shows only when there is space. */}
-        <span className="min-w-0 shrink-0 truncate text-xs leading-4 font-semibold text-fg max-sm:shrink">
-          Add selected lines to the prompt
-        </span>
-        <span className="hidden min-w-0 items-center gap-1 px-1 font-mono text-[11px] text-fg-muted xl:inline-flex">
+        {/* Both shrink, the branch four times faster, so the title gives way last; the pull request needs a wide screen. */}
+        <span className="min-w-0 truncate text-xs leading-4 font-semibold text-fg">Add selected lines to the prompt</span>
+        <span className="hidden min-w-0 shrink-[4] items-center gap-1 px-1 font-mono text-[11px] text-fg-muted xl:inline-flex">
           <Icon name="git-branch" size={12} />
           <span className="truncate">agent/add-selected-lines</span>
         </span>
@@ -184,7 +182,7 @@ function TopBar() {
             <span className="font-mono">2/4</span>
           </OutlineChip>
         </span>
-        <span className="hidden lg:inline-flex">
+        <span className="hidden xl:inline-flex">
           <OutlineChip>
             <Spinner className="text-status-running" />1 background task
           </OutlineChip>
@@ -264,7 +262,7 @@ function Chat() {
           </div>
           <PermissionCard title="Claude Code wants to run a command" command="pnpm vitest run src/test/line-quote.test.ts" />
           <div className="flex items-center gap-2 text-xs leading-4">
-            <span className="size-1.5 rounded-full bg-status-running ring-4 ring-diff-added" />
+            <span className="size-1.5 rounded-full bg-status-running ring-4 ring-status-running/20" />
             <span className="text-fg-secondary">Claude Code is working</span>
             <span className="text-[11px] text-fg-subtle">12s</span>
           </div>

@@ -18,8 +18,10 @@ const DOT: Record<Status, string> = {
   unread: "bg-status-unread",
 };
 
-export function StatusDot({ status }: { status: Status }) {
-  return <span className={`inline-block size-1.5 flex-none rounded-full ${DOT[status]}`} />;
+/** `isStill` for session rows, whose dot never pulses in the app. */
+export function StatusDot({ status, isStill = false }: { status: Status; isStill?: boolean }) {
+  const look = isStill ? DOT[status].replace(" animate-pulse-dot", "") : DOT[status];
+  return <span className={`inline-block size-1.5 flex-none rounded-full ${look}`} />;
 }
 
 /** A status in words with its dot in front, as session rows and compare cards show it. */
@@ -33,10 +35,10 @@ export function StatusLine({ status, children, className = "" }: { status?: Stat
 }
 
 /** The turning arc the app draws for something that runs. */
-export function Spinner({ className = "" }: { className?: string }) {
+export function Spinner({ size = 12, className = "" }: { size?: 12 | 14; className?: string }) {
   return (
     <span className={`inline-flex motion-safe:animate-spin ${className}`}>
-      <Icon name="arc" size={12} />
+      <Icon name="arc" size={size} />
     </span>
   );
 }
@@ -65,25 +67,32 @@ type FakeButtonVariant = "primary" | "outline" | "ghost" | "danger";
 // As in the app since 0.9: outline and ghost buttons are regular weight, primary and danger medium.
 const FAKE_BUTTON: Record<FakeButtonVariant, string> = {
   primary: "border-transparent bg-primary font-medium text-on-primary",
-  outline: "border-border-strong text-fg-secondary",
-  ghost: "border-transparent text-fg-secondary",
+  outline: "border-border-strong",
+  ghost: "border-transparent",
   danger: "border-transparent bg-danger-surface font-medium text-danger",
 };
+
+// Outline and ghost take their text colour here, so a pressed or emphasised button never carries two.
+const QUIET_TEXT = { rest: "text-fg-secondary", strong: "text-fg", pressed: "bg-surface-hover text-fg" } as const;
+
+const HEIGHT = { sm: "h-6 px-2", md: "h-7 px-3", lg: "h-8 px-3" } as const;
 
 interface FakeButtonProps {
   variant: FakeButtonVariant;
   icon?: IconName;
-  /** 28px, the app's default, or 24px for the buttons inside a row. */
-  size?: "md" | "sm";
-  className?: string;
+  /** 28px, the app's default; 24px for the buttons inside a row; 32px beside a search field. */
+  size?: keyof typeof HEIGHT;
+  /** Outline and ghost only: `strong` for the update card's text in fg, `pressed` for an open or picked button. */
+  emphasis?: keyof typeof QUIET_TEXT;
   children?: ReactNode;
 }
 
-export function FakeButton({ variant, icon, size = "md", className = "", children }: FakeButtonProps) {
-  const height = size === "md" ? "h-7 px-3" : "h-6 px-2";
+export function FakeButton({ variant, icon, size = "md", emphasis = "rest", children }: FakeButtonProps) {
+  const isQuiet = variant === "outline" || variant === "ghost";
+  const text = isQuiet ? QUIET_TEXT[emphasis] : "";
   return (
     <span
-      className={`inline-flex flex-none items-center justify-center gap-1.5 rounded-lg border text-xs leading-4 whitespace-nowrap ${height} ${FAKE_BUTTON[variant]} ${className}`}
+      className={`inline-flex flex-none items-center justify-center gap-1.5 rounded-lg border text-xs leading-4 whitespace-nowrap ${HEIGHT[size]} ${FAKE_BUTTON[variant]} ${text}`}
     >
       {icon && <Icon name={icon} size={12} />}
       {children}

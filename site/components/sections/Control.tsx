@@ -1,9 +1,9 @@
-import type { ReactNode } from "react";
 import { PermissionCard, Spinner, type ChangedFile } from "../mockups/parts";
-import { Icon, type IconName } from "../ui/Icon";
+import { Icon } from "../ui/Icon";
+import { type Point, PointList } from "../ui/PointList";
 import { SectionIntro } from "../ui/SectionIntro";
 
-const POINTS: { icon: IconName; title: string; body: ReactNode }[] = [
+const POINTS: Point[] = [
   {
     icon: "shield-check",
     title: "Approvals in the chat",
@@ -53,7 +53,7 @@ const PLAN_ROW: Record<PlanState, string> = {
 
 function PlanMarker({ state }: { state: PlanState }) {
   if (state === "done") return <Icon name="circle-check" className="text-fg-muted" />;
-  if (state === "current") return <Spinner className="mx-px text-status-running" />;
+  if (state === "current") return <Spinner size={14} className="text-status-running" />;
   return <Icon name="circle" className="text-fg-subtle" />;
 }
 
@@ -89,17 +89,7 @@ export function Control() {
             title="You approve every step."
             lead="Permission requests arrive with the agent's own choices. Its plan stays in sight, and every step it took is in its activity."
           />
-          <ul className="m-0 flex list-none flex-col gap-5 p-0">
-            {POINTS.map(({ icon, title, body }) => (
-              <li key={title} className="flex gap-3.5">
-                <Icon name={icon} size={18} className="mt-[3px] text-fg" />
-                <div className="flex flex-col gap-1">
-                  <h3 className="t-heading m-0">{title}</h3>
-                  <p className="t-body m-0">{body}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <PointList points={POINTS} />
         </div>
 
         <div

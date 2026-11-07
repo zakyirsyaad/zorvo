@@ -1,10 +1,11 @@
 import type { AgentName } from "../../lib/agent-logos";
 import { FakeButton, LineCounts, LogoStack, StatusLine, type Status } from "../mockups/parts";
 import { AgentLogo } from "../ui/AgentLogo";
-import { Icon, type IconName } from "../ui/Icon";
+import { Icon } from "../ui/Icon";
+import { type Point, PointList } from "../ui/PointList";
 import { SectionIntro } from "../ui/SectionIntro";
 
-const POINTS: { icon: IconName; title: string; body: string }[] = [
+const POINTS: Point[] = [
   {
     icon: "git-branch",
     title: "Each agent in its own worktree",
@@ -96,7 +97,7 @@ function RunRowPicture({ row, isPicking }: { row: RunRow; isPicking?: boolean })
           <span className="px-2 text-xs leading-4 text-fg-subtle">No changes yet</span>
         )}
         <FakeButton variant="ghost" size="sm">Open</FakeButton>
-        <FakeButton variant="outline" size="sm" className={isPicking ? "bg-surface-hover text-fg" : ""}>
+        <FakeButton variant="outline" size="sm" emphasis={isPicking ? "pressed" : "rest"}>
           Pick
         </FakeButton>
       </span>
@@ -109,7 +110,7 @@ function RunPicture() {
     <div
       role="img"
       aria-label="A compare run. The new session has three agents ticked and a Start 3 sessions button. Below, the run: Claude Code working for 12 minutes with 3 changed files, Codex finished after 8 minutes with 4 changed files, and Qwen Code waiting for you. Pick is pressed on Codex, and a bar asks to keep Codex and stop Claude Code mid-turn."
-      className="flex min-w-0 flex-[1_1_520px] flex-col gap-4 rounded-xl border border-border bg-surface-1 p-4 text-left sm:p-7"
+      className="flex min-w-0 flex-[1_1_520px] flex-col gap-4 rounded-xl border border-border bg-surface-1 p-4 text-left sm:p-7 lg:order-first"
     >
       <DraftPicture />
       <div className="flex flex-col gap-1 pt-2">
@@ -137,8 +138,8 @@ function RunPicture() {
 export function Compare() {
   return (
     <section id="compare" aria-labelledby="compare-title" className="border-t border-border py-[72px] md:py-28">
-      <div className="site-wrap flex flex-wrap-reverse items-center gap-12 lg:gap-16">
-        <RunPicture />
+      {/* The heading comes first for a screen reader and on a phone; on a wide screen the picture moves to the left. */}
+      <div className="site-wrap flex flex-wrap items-center gap-12 lg:gap-16">
         <div className="flex min-w-0 flex-[1_1_360px] flex-col gap-8">
           <SectionIntro
             id="compare-title"
@@ -146,19 +147,10 @@ export function Compare() {
             title="One prompt. Four agents. Keep the best."
             lead="In a git repository, tick up to four agents on a new session and send them the same prompt. Each works on its own, and you choose whose changes stay."
           />
-          <ul className="m-0 flex list-none flex-col gap-5 p-0">
-            {POINTS.map(({ icon, title, body }) => (
-              <li key={title} className="flex gap-3.5">
-                <Icon name={icon} size={18} className="mt-[3px] text-fg" />
-                <div className="flex flex-col gap-1">
-                  <h3 className="t-heading m-0">{title}</h3>
-                  <p className="t-body m-0">{body}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <PointList points={POINTS} />
           <p className="t-caption m-0">Each agent runs on its own sign-in and uses its own quota.</p>
         </div>
+        <RunPicture />
       </div>
     </section>
   );

@@ -86,7 +86,7 @@ function CatalogPicture() {
           Search agents
         </span>
         <span className="hidden sm:inline-flex">
-          <FakeButton variant="outline" className="h-8">Check again</FakeButton>
+          <FakeButton variant="outline" size="lg">Check again</FakeButton>
         </span>
       </div>
       <div className="overflow-hidden rounded-xl border border-border bg-surface-2">

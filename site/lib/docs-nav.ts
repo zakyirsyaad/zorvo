@@ -28,7 +28,7 @@ export const DOCS_NAV: DocsGroup[] = [
       {
         href: "/docs/quickstart",
         label: "Quickstart",
-        summary: "Pick a folder, a branch and an agent, and send your first message.",
+        summary: "Tick your agents, pick a folder, and find your way around the window.",
       },
     ],
   },
@@ -51,9 +51,19 @@ export const DOCS_NAV: DocsGroup[] = [
     title: "Using Zorvo",
     pages: [
       {
+        href: "/docs/compare",
+        label: "Compare agents",
+        summary: "Send one prompt to up to four agents, each in its own worktree, and keep the one you pick.",
+      },
+      {
+        href: "/docs/review",
+        label: "Review changes",
+        summary: "Read what an agent changed, comment on lines, and send the comments in your next message.",
+      },
+      {
         href: "/docs/terminal",
         label: "Terminal",
-        summary: "A shell in the folder a session works in, in a drawer under the chat.",
+        summary: "A shell in the folder a session works in, in the inspector beside the chat.",
       },
     ],
   },

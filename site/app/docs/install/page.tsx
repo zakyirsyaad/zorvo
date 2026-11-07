@@ -39,7 +39,7 @@ export default function InstallPage() {
           you already have.
         </li>
         <li>
-          <B>Optional:</B> the GitHub CLI, <Chip isCode>gh</Chip>, for pull request status. Settings, General, GitHub
+          <B>Optional:</B> the GitHub CLI, <Chip isCode>gh</Chip>, for pull request status. Settings, GitHub
           shows whether it is installed and signed in, and <B>Connect</B> signs you in through your browser.
         </li>
       </UL>
@@ -48,7 +48,7 @@ export default function InstallPage() {
       <OL>
         <li>Download <DocLink href={LINKS.download}>the latest <Chip isCode>.dmg</Chip></DocLink>.</li>
         <li>Drag <B>Zorvo</B> into Applications.</li>
-        <li>Open it. Onboarding lists the agents, lets you pick a default and asks for a project folder.</li>
+        <li>Open it. The welcome screen lists the agents, lets you tick the ones you&apos;ll use and asks for a project folder.</li>
       </OL>
       <Callout tone="attention">
         <B>macOS blocks it the first time.</B> The build is not signed yet. Open it once,
@@ -60,7 +60,7 @@ export default function InstallPage() {
 
       <H2 id="first-agent">Install your first agent</H2>
       <P>
-        Pick an agent that is not installed and click <B>Install</B>, in onboarding, in a new
+        Pick an agent that is not installed and click <B>Install</B>, on the welcome screen, in a new
         session&apos;s agent picker or in Settings, Agents. You can write your first message while it installs.
       </P>
       <Picture label="The agent list in Settings, Agents: Claude Code installed, Codex installing, Qwen Code with an Install button">
@@ -113,27 +113,25 @@ export default function InstallPage() {
       <H2 id="update">Update Zorvo</H2>
       <P>
         From 0.6.0 on, Zorvo checks for a new version a few seconds after it starts, then about once a day. When there
-        is one, a notice at the top of the window says so.
+        is one, a card in the bottom right corner, above the message box, says so and what a restart would stop.
       </P>
-      <Picture label="The update notice at the top of the window: a new Zorvo version is available, agents that are working stop when Zorvo restarts, with Update and restart and Later buttons">
-        <div className="flex flex-wrap items-center gap-3 border-b border-border bg-surface-2 px-3.5 py-2.5">
-          <span className="min-w-[240px] flex-1 text-[13px] leading-5 text-fg-secondary">
-            Zorvo X.Y.Z is available. Agents that are working stop when Zorvo restarts.
-          </span>
-          <span className="flex gap-2">
-            <FakeButton variant="primary">Update &amp; restart</FakeButton>
-            <FakeButton variant="ghost">Later</FakeButton>
-          </span>
-        </div>
-        <div aria-hidden="true" className="flex flex-col gap-2 bg-bg px-3.5 pt-[18px] pb-[22px]">
-          <span className="h-2 w-[46%] rounded-full bg-surface-2" />
-          <span className="h-2 w-[68%] rounded-full bg-surface-2" />
-          <span className="h-2 w-[38%] rounded-full bg-surface-2" />
+      <Picture label="The update card: Zorvo X.Y.Z is ready, restarting stops 2 agents mid-turn and 1 shell, with Later and Update and restart buttons">
+        <div className="flex justify-end bg-bg p-4">
+          <div className="flex w-full max-w-[340px] flex-col gap-3 rounded-xl border border-border bg-surface-3 px-4 py-3.5 shadow-popover">
+            <div className="flex flex-col gap-1">
+              <span className="text-[13px] leading-[18px] font-semibold text-fg">Zorvo X.Y.Z is ready</span>
+              <span className="text-xs leading-4 text-fg-muted">Restarting stops 2 agents mid-turn and 1 shell.</span>
+            </div>
+            <span className="flex justify-end gap-2">
+              <FakeButton variant="ghost">Later</FakeButton>
+              <FakeButton variant="outline" className="text-fg">Update &amp; restart</FakeButton>
+            </span>
+          </div>
         </div>
       </Picture>
       <UL>
         <li><B>Update &amp; restart</B> downloads the update, checks its signature against the key built into Zorvo, installs it and opens Zorvo again.</li>
-        <li><B>Later</B> hides the notice until you next start Zorvo.</li>
+        <li><B>Later</B> hides the card until you next start Zorvo. Settings, General, About still shows the update, says when Zorvo last checked, and has <B>Check now</B>.</li>
         <li>Agents that are working stop, and open terminals end, when Zorvo restarts. Your sessions are kept, since they are stored outside the app.</li>
       </UL>
       <Callout>

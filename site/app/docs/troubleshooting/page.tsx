@@ -41,7 +41,7 @@ export default function TroubleshootingPage() {
 
       <H2 id="sign-in">An agent needs you to sign in</H2>
       <P>
-        Its status reads <B>Sign in</B> in the sidebar and in Settings, Agents. Use a sign-in method the panel offers,
+        Its status reads <B>Sign in</B> in the Agents menu and in Settings, Agents. Use a sign-in method the card offers,
         or sign in once in a terminal, then click <B>Check again</B>. Zorvo reads your shell&apos;s settings again first,
         so a key you just added to <Chip isCode>~/.zshrc</Chip> is found. Your message is sent once you are signed in.
         See <DocLink href="/docs/signing-in">Signing in</DocLink>.
@@ -49,24 +49,23 @@ export default function TroubleshootingPage() {
 
       <H2 id="failed">A turn failed</H2>
       <P>
-        The notice under the chat says what happened. When the agent could not reach the network, it says so in plain
+        A row under the last message says what happened. When the agent could not reach the network, it says so in plain
         words and keeps the agent&apos;s own error behind <B>Details</B>.
       </P>
       <div
         role="img"
-        aria-label="A failed turn: Qwen Code could not reach the network, check your connection or proxy, then try again, with Try again and Details under the message and a close button"
-        className="flex items-start gap-3 rounded-xl bg-danger-surface px-3.5 py-3 text-danger"
+        aria-label="A failed turn under the last message: Qwen Code could not reach the network, check your connection or proxy, then try again, with Try again, Details and Dismiss"
+        className="flex flex-wrap items-center gap-x-3 gap-y-2.5 rounded-xl border border-danger bg-danger-surface px-3.5 py-3"
       >
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <p className="m-0 text-[13px] leading-5 text-danger">
-            Qwen Code could not reach the network. Check your connection or proxy, then try again.
-          </p>
-          <span className="flex items-center gap-2">
-            <FakeButton variant="outline">Try again</FakeButton>
-            <span className="px-1 text-xs leading-4 text-danger underline underline-offset-2">Details</span>
-          </span>
-        </div>
-        <Icon name="x" className="mt-[3px] text-danger" />
+        <Icon name="circle-alert" className="flex-none text-danger" />
+        <p className="m-0 min-w-[220px] flex-1 text-[13px] leading-5 text-fg">
+          Qwen Code could not reach the network. Check your connection or proxy, then try again.
+        </p>
+        <span className="flex flex-none items-center gap-1">
+          <FakeButton variant="outline">Try again</FakeButton>
+          <FakeButton variant="ghost">Details</FakeButton>
+          <FakeButton variant="ghost">Dismiss</FakeButton>
+        </span>
       </div>
       <UL>
         <li>
@@ -78,7 +77,7 @@ export default function TroubleshootingPage() {
 
       <H2 id="stuck">An agent seems stuck</H2>
       <P>
-        Under Working…, Zorvo shows a notice with a <B>Stop</B> button when the agent reports failed requests in a row
+        Under the line that says the agent is working, Zorvo shows a notice with a <B>Stop</B> button when the agent reports failed requests in a row
         (for Qwen Code, with the error it logged), or has sent nothing for a minute while no tool is running. Click{" "}
         <B>Stop</B> to end the turn, or wait if the agent is working on something long.
       </P>
@@ -97,9 +96,9 @@ export default function TroubleshootingPage() {
 
       <H2 id="pull-requests">No pull request status</H2>
       <P>
-        Open Settings, General, GitHub. It says when the GitHub CLI is missing, with <Chip isCode>brew install gh</Chip>{" "}
+        Open Settings, GitHub. It says when the GitHub CLI is missing, with <Chip isCode>brew install gh</Chip>{" "}
         to copy. When you are signed out, <B>Connect</B> opens a terminal where <Chip isCode>gh</Chip> signs you in
-        through your browser. The Changes panel links there too. A repository without a GitHub remote has no pull
+        through your browser. The Changes tab links there too. A repository without a GitHub remote has no pull
         requests to show.
       </P>
 
@@ -118,7 +117,7 @@ export default function TroubleshootingPage() {
       <H2 id="worktree">A worktree would not have it</H2>
       <P>
         The message &quot;is not in the last commit, so a worktree would not have it&quot; means a worktree checks out
-        the last commit. Commit the folder first, or start the session without Worktree.
+        the last commit. Commit the folder first, or turn off New worktree.
       </P>
 
       <H2 id="blocked">The app is blocked on first open</H2>

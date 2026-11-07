@@ -28,7 +28,7 @@ function viewOf(flow: TopupFlow, balanceCredits: number | null, cannotReopen: bo
     case "idle":
       return null;
     case "opening":
-      return { title: "Opening checkout in your browser", body: "Your credits are held for 25 minutes while you pay." };
+      return { title: "Opening checkout in your browser" };
     case "waiting":
       if (cannotReopen) return { title: "Waiting for your payment", body: CANNOT_REOPEN };
       if (flow.openFailed) return { title: "Checkout is ready", body: privateErrorText("open_failed") };
@@ -52,7 +52,7 @@ function viewOf(flow: TopupFlow, balanceCredits: number | null, cannotReopen: bo
         body: "No credits were added. If PingPay received part of it, PingPay handles the refund. You can try again, with another chain or a card.",
       };
     case "expired":
-      return { title: "Checkout closed without paying", body: "Nothing was charged." };
+      return { title: "Checkout closed without paying" };
     case "waiting-stock":
       return {
         title: "Paid. Credits come with the next restock",
@@ -79,6 +79,7 @@ export function TopupProgress({ flow, balanceCredits, onOpenCheckout, onCancel, 
   const [cannotReopen, setCannotReopen] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isReopening, setIsReopening] = useState(false);
   const [lastTopupId, setLastTopupId] = useState<string | null>(null);
 
   // A new top-up starts with a clean slate: what was true of the last one does not carry over.
@@ -92,9 +93,16 @@ export function TopupProgress({ flow, balanceCredits, onOpenCheckout, onCancel, 
   const view = viewOf(flow, balanceCredits, cannotReopen);
 
   const reopen = async () => {
-    const result = await onOpenCheckout();
-    // Only a missing address cannot be fixed by pressing again.
-    if (!result.ok && result.code === "not_found") setCannotReopen(true);
+    // One open at a time: a second press while the first is on its way would open a second tab.
+    if (isReopening) return;
+    setIsReopening(true);
+    try {
+      const result = await onOpenCheckout();
+      // Only a missing address cannot be fixed by pressing again.
+      if (!result.ok && result.code === "not_found") setCannotReopen(true);
+    } finally {
+      setIsReopening(false);
+    }
   };
 
   const cancel = async () => {
@@ -135,7 +143,9 @@ export function TopupProgress({ flow, balanceCredits, onOpenCheckout, onCancel, 
               Cancel
             </Button>
           )}
-          {canReopen && <Button onClick={() => void reopen()}>Open checkout again</Button>}
+          {canReopen && <Button disabled={isReopening} onClick={() => void reopen()}>
+              Open checkout again
+            </Button>}
           {isEnded && (
             <Button variant="primary" onClick={onDismiss}>
               {flow.kind === "credited" ? "Done" : "Try again"}

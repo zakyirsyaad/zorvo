@@ -23,6 +23,8 @@ export interface FakePrivate {
   calls: FakePrivateCall[];
   recoveryCode: string;
   newRecoveryCode: string;
+  /** The status after a restore (the Rust service resets the recovery flags then); null leaves it as it was. */
+  statusAfterRecover: PrivateStatus | null;
   readTopupStatuses: number;
 }
 
@@ -50,6 +52,7 @@ export function emptyFakePrivate(): FakePrivate {
     calls: [],
     recoveryCode: "ZRV-FAKE-CODE",
     newRecoveryCode: "ZRV-NEW-CODE",
+    statusAfterRecover: null,
     readTopupStatuses: 0,
   };
 }
@@ -113,6 +116,7 @@ function answer(state: FakePrivate, cmd: string, args: Record<string, unknown> |
     case "private_recovery_code":
       return state.recoveryCode;
     case "private_recover":
+      if (state.statusAfterRecover) state.status = structuredClone(state.statusAfterRecover);
       return state.newRecoveryCode;
     default:
       // private_open_checkout, private_mark_recovery, private_forget_device

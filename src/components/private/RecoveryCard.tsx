@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { privateErrorText } from "../../lib/private-credits";
 import { errorCodeOf } from "../../lib/private-flow";
 import { Button } from "../ui/Button";
@@ -8,6 +8,8 @@ export interface RecoveryCardProps {
   revealCode: () => Promise<string>;
   /** False until this Mac has a device whose code can be read. */
   isAvailable: boolean;
+  /** Why Restore is off right now (a top-up holds credits); absent when it may run. */
+  restoreBlockedReason?: string;
   onRestore: () => void;
 }
 
@@ -21,7 +23,8 @@ const COPIED_MS = 2_000;
  * state only while shown (hidden again by a second press, after 30 seconds, or on unmount). Copy
  * puts it on the clipboard without ever holding it in state.
  */
-export function RecoveryCard({ revealCode, isAvailable, onRestore }: RecoveryCardProps) {
+export function RecoveryCard({ revealCode, isAvailable, restoreBlockedReason, onRestore }: RecoveryCardProps) {
+  const reasonId = useId();
   const [shown, setShown] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,7 +108,23 @@ export function RecoveryCard({ revealCode, isAvailable, onRestore }: RecoveryCar
       <SettingsRow
         label="Restore on this Mac"
         description="Enter a code from another Mac. That Mac stops using these credits, and you get a new code."
-        control={<Button onClick={onRestore}>Restore…</Button>}
+        control={
+          <>
+            {restoreBlockedReason && (
+              <span id={reasonId} className="sr-only">
+                {restoreBlockedReason}
+              </span>
+            )}
+            <Button
+              disabled={restoreBlockedReason !== undefined}
+              title={restoreBlockedReason}
+              aria-describedby={restoreBlockedReason ? reasonId : undefined}
+              onClick={onRestore}
+            >
+              Restore…
+            </Button>
+          </>
+        }
       />
     </SettingsGroup>
   );

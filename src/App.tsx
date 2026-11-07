@@ -84,6 +84,7 @@ import { useNavigationHistory } from "./hooks/useNavigationHistory";
 import { useUserProfile } from "./hooks/useUserProfile";
 import { useGithubConnection } from "./hooks/useGithubConnection";
 import { usePrivateCredits } from "./hooks/usePrivateCredits";
+import { usePrivateRecoveryDialog } from "./hooks/usePrivateRecoveryDialog";
 import { useWorkspaceDetails } from "./hooks/useWorkspaceDetails";
 import { useBranchPicker } from "./hooks/useBranchPicker";
 import { usePopoutHost } from "./hooks/usePopoutHost";
@@ -186,8 +187,7 @@ export default function App() {
   const userProfile = useUserProfile();
   const github = useGithubConnection();
   const privateCredits = usePrivateCredits();
-  // The recovery-code dialog asked for from Settings (the one after a first top-up needs no request).
-  const [recoveryRequest, setRecoveryRequest] = useState<{ code?: string } | null>(null);
+  const recoveryDialog = usePrivateRecoveryDialog();
   // What stops pull requests being read, when the GitHub connection explains it.
   const githubBlocker =
     github.status?.state === "not-installed" || github.status?.state === "signed-out" ? github.status.state : undefined;
@@ -1441,10 +1441,16 @@ export default function App() {
         github={github}
         agentSignIn={settingsSignIn}
         privateCredits={privateCredits}
-        onShowRecoveryCode={(code) => setRecoveryRequest({ code })}
+        onShowRecoveryCode={recoveryDialog.show}
+        onRestoringChange={recoveryDialog.setIsRestoring}
         onOpenUrl={openLink}
       />
-      <RecoveryCodeLayer credits={privateCredits} request={recoveryRequest} onClose={() => setRecoveryRequest(null)} />
+      <RecoveryCodeLayer
+        credits={privateCredits}
+        request={recoveryDialog.request}
+        suppressStatusPrompt={recoveryDialog.suppressStatusPrompt}
+        onClose={recoveryDialog.close}
+      />
     </main>
   );
 }

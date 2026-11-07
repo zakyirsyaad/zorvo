@@ -21,7 +21,10 @@ export function PrivateDialog({ title, children, footer, onEscape, initialFocusR
   useFocusTrap(dialogRef);
 
   useEffect(() => {
-    (initialFocusRef?.current ?? dialogRef.current)?.focus();
+    // A control that is still disabled (Copy, before the code arrives) cannot take focus: the dialog does.
+    const target = initialFocusRef?.current;
+    const canFocus = target !== null && target !== undefined && !target.matches(":disabled");
+    (canFocus ? target : dialogRef.current)?.focus();
   }, [initialFocusRef]);
 
   useEffect(() => {

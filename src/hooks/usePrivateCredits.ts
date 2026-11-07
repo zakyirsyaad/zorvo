@@ -35,8 +35,15 @@ export interface PrivateCredits {
   stock: Stock | null;
   models: ModelPrice[] | null;
   modelsError?: string;
-  /** Reads the status (`fresh` asks the server for the balance), the stock and the models. */
+  stockError?: string;
+  /** Reads the status; `fresh` asks the server for the balance. Never loads the catalog. */
   refresh: (fresh?: boolean) => Promise<void>;
+  /**
+   * Loads the stock and the models, each on its own. The credits server is asked only when Settings
+   * shows Private mode (and on its retry links), never at app start. One load at a time: a call during
+   * a load waits for it.
+   */
+  loadCatalog: () => Promise<void>;
   flow: TopupFlow;
   buy: (usd: number) => Promise<void>;
   /** Opens the current top-up's checkout again, for a browser that did not open the first time. */
@@ -116,6 +123,7 @@ export function usePrivateCredits(): PrivateCredits {
   const [stock, setStock] = useState<Stock | null>(null);
   const [models, setModels] = useState<ModelPrice[] | null>(null);
   const [modelsError, setModelsError] = useState<string | undefined>(undefined);
+  const [stockError, setStockError] = useState<string | undefined>(undefined);
   const [flow, setFlow] = useState<TopupFlow>({ kind: 'idle' });
   const [creditsOut, setCreditsOut] = useState<CreditsOut>({});
 
@@ -172,15 +180,18 @@ export function usePrivateCredits(): PrivateCredits {
   );
 
   const loadStock = useCallback(async () => {
+    if (isAlive.current) setStockError(undefined);
     try {
       const next = await invoke<Stock>('private_stock');
       if (isAlive.current) setStock(next);
-    } catch {
-      // The last stock stays.
+    } catch (error) {
+      // The last stock stays; the error says why the packages are missing or stale.
+      if (isAlive.current) setStockError(actionError('stock', codeOf(error)));
     }
   }, []);
 
   const loadModels = useCallback(async () => {
+    if (isAlive.current) setModelsError(undefined);
     try {
       const next = await invoke<ModelPrice[]>('private_models');
       if (!isAlive.current) return;
@@ -193,10 +204,22 @@ export function usePrivateCredits(): PrivateCredits {
 
   const refresh = useCallback(
     async (fresh = false) => {
-      await Promise.all([loadStatus(fresh), loadStock(), loadModels()]);
+      await loadStatus(fresh);
     },
-    [loadStatus, loadStock, loadModels],
+    [loadStatus],
   );
+
+  const catalogLoad = useRef<Promise<void> | null>(null);
+  const loadCatalog = useCallback(() => {
+    if (catalogLoad.current) return catalogLoad.current;
+    const load = Promise.all([loadStock(), loadModels()])
+      .then(() => undefined)
+      .finally(() => {
+        catalogLoad.current = null;
+      });
+    catalogLoad.current = load;
+    return load;
+  }, [loadStock, loadModels]);
 
   useEffect(() => {
     void refresh();
@@ -429,7 +452,9 @@ export function usePrivateCredits(): PrivateCredits {
     stock,
     models,
     modelsError,
+    stockError,
     refresh,
+    loadCatalog,
     flow,
     buy,
     openCheckout,

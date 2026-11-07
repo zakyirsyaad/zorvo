@@ -46,6 +46,8 @@ export interface SettingsPageProps {
   privateCredits?: PrivateCredits;
   /** Opens the app's recovery-code dialog, for the stored code or a restore's new one. Private mode needs it with `privateCredits`. */
   onShowRecoveryCode?: (code?: string) => void;
+  /** Tells the app a restore is open or running, so no second recovery dialog opens over it. */
+  onRestoringChange?: (isRestoring: boolean) => void;
   /** Opens a web link in the user's browser. */
   onOpenUrl?: (url: string) => void;
 }
@@ -73,6 +75,7 @@ export function SettingsPage({
   agentSignIn,
   privateCredits,
   onShowRecoveryCode,
+  onRestoringChange,
   onOpenUrl,
 }: SettingsPageProps) {
   const { section } = page;
@@ -171,7 +174,12 @@ export function SettingsPage({
         );
       case "private":
         return privateCredits && onShowRecoveryCode ? (
-          <PrivateSection {...heading} credits={privateCredits} onShowRecoveryCode={onShowRecoveryCode} />
+          <PrivateSection
+            {...heading}
+            credits={privateCredits}
+            onShowRecoveryCode={onShowRecoveryCode}
+            onRestoringChange={onRestoringChange}
+          />
         ) : null;
       case "github":
         return github ? (

@@ -52,6 +52,15 @@ export function RecoveryCodeDialog({ revealCode, markRecovery, initialCode, onCl
     };
   }, [initialCode, revealCode]);
 
+  // The dialog holds focus while the code loads (Copy is off then); once Copy works it is where the user goes
+  // next, unless they have already moved on.
+  useEffect(() => {
+    const copyButton = copyRef.current;
+    if (code === null || !copyButton) return;
+    const dialog = copyButton.closest('[role="dialog"]');
+    if (document.activeElement === dialog) copyButton.focus();
+  }, [code]);
+
   useEffect(() => {
     if (!isCopied) return;
     const timer = setTimeout(() => setIsCopied(false), COPIED_MS);

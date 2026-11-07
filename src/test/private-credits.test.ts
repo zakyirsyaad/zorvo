@@ -287,6 +287,12 @@ describe("actionError", () => {
     expect(actionError("models", "unreachable")).toBe("Couldn't load the private models. Try again.");
   });
 
+  it("words a packages failure as a packages failure, and keeps unauthorized", () => {
+    expect(actionError("stock", "upstream")).toBe("Couldn't load the packages. Try again.");
+    expect(actionError("stock", "unreachable")).toBe("Couldn't load the packages. Try again.");
+    expect(actionError("stock", "unauthorized")).toBe(privateErrorText("unauthorized"));
+  });
+
   it("words a cancel failure as a cancel failure", () => {
     expect(actionError("cancel", "upstream")).toBe("Couldn't cancel the checkout. Try again.");
     expect(actionError("cancel", "unreachable")).toBe("Couldn't cancel the checkout. Try again.");

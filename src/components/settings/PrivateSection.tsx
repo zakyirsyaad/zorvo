@@ -1,5 +1,6 @@
-import { useState, type Ref } from "react";
+import { useEffect, useState, type Ref } from "react";
 import type { PrivateCredits } from "../../hooks/usePrivateCredits";
+import { useLatest } from "../../hooks/useLatest";
 import { isTopupActive } from "../../lib/private-flow";
 import { BalanceCard } from "../private/BalanceCard";
 import { PromoField } from "../private/PromoField";
@@ -15,17 +16,41 @@ export interface PrivateSectionProps {
   credits: PrivateCredits;
   /** Asks the app for its recovery-code dialog: for the stored code, or for a new one from a restore. */
   onShowRecoveryCode: (code?: string) => void;
+  /** Tells the app a restore is open or running, so no second recovery dialog opens over it. */
+  onRestoringChange?: (isRestoring: boolean) => void;
 }
+
+const RESTORE_BLOCKED = "Finish or cancel your top-up first.";
 
 /**
  * Settings → Private mode: the credits Qwen Code's private sessions use, how to add more, and the
  * recovery code that moves them to another Mac. Zorvo holds no card or key here; the backend does.
  */
-export function PrivateSection({ titleRef, titleId, credits, onShowRecoveryCode }: PrivateSectionProps) {
-  const { status, flow } = credits;
+export function PrivateSection({
+  titleRef,
+  titleId,
+  credits,
+  onShowRecoveryCode,
+  onRestoringChange,
+}: PrivateSectionProps) {
+  const { status, flow, loadCatalog } = credits;
+  const onRestoringChangeRef = useLatest(onRestoringChange);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isRedeeming, setIsRedeeming] = useState(false);
   const isActive = isTopupActive(flow);
+
+  // The packages are asked for only now that the user has opened this section.
+  useEffect(() => {
+    void loadCatalog();
+  }, [loadCatalog]);
+
+  // Leaving with the dialog open must not leave the app waiting for it.
+  useEffect(() => () => onRestoringChangeRef.current?.(false), [onRestoringChangeRef]);
+
+  const setRestoring = (next: boolean) => {
+    setIsRestoring(next);
+    onRestoringChange?.(next);
+  };
   const balance = status?.balance?.credits ?? status?.lastBalance?.credits ?? null;
 
   return (
@@ -47,9 +72,10 @@ export function PrivateSection({ titleRef, titleId, credits, onShowRecoveryCode 
               stock={credits.stock}
               models={credits.models}
               modelsError={credits.modelsError}
+              stockError={credits.stockError}
               isDisabled={isRedeeming}
               onBuy={(usd) => void credits.buy(usd)}
-              onRetry={() => void credits.refresh()}
+              onRetry={() => void loadCatalog()}
             />
           )}
           <TopupProgress
@@ -65,13 +91,14 @@ export function PrivateSection({ titleRef, titleId, credits, onShowRecoveryCode 
       <RecoveryCard
         revealCode={credits.revealCode}
         isAvailable={status?.device === "ready"}
-        onRestore={() => setIsRestoring(true)}
+        restoreBlockedReason={isActive ? RESTORE_BLOCKED : undefined}
+        onRestore={() => setRestoring(true)}
       />
       {isRestoring && (
         <RestoreDialog
           recover={credits.recover}
           onRestored={(newCode) => onShowRecoveryCode(newCode)}
-          onClose={() => setIsRestoring(false)}
+          onClose={() => setRestoring(false)}
         />
       )}
     </div>

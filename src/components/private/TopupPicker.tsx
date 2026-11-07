@@ -14,6 +14,7 @@ export interface TopupPickerProps {
   stock: Stock | null;
   models: ModelPrice[] | null;
   modelsError?: string;
+  stockError?: string;
   /** Another action holds the top-up (a promo code is being redeemed). */
   isDisabled: boolean;
   onBuy: (usd: number) => void;
@@ -69,16 +70,18 @@ function PackageOption({ pkg, turns, isChecked, isDisabled, onSelect }: PackageO
  * The packages to buy, as a radio group. Picking one only shows what it costs: nothing is
  * created or opened until Pay.
  */
-export function TopupPicker({ stock, models, modelsError, isDisabled, onBuy, onRetry }: TopupPickerProps) {
+export function TopupPicker({ stock, models, modelsError, stockError, isDisabled, onBuy, onRetry }: TopupPickerProps) {
   const [selectedUsd, setSelectedUsd] = useState<number | null>(null);
   const packages = stock?.packages ?? [];
   const selected = packages.find((pkg) => pkg.usd === selectedUsd && pkg.available) ?? null;
   const model = models?.[0];
+  // One message and one retry: the stock is what the user needs first.
+  const loadError = stockError ?? modelsError;
   const isLowStock = stock !== null && stock.availableCredits < LOW_STOCK_CREDITS;
 
   return (
     <div className="flex flex-col gap-3">
-      {stock === null && <p className="text-ui-sm text-fg-subtle">Loading packages…</p>}
+      {stock === null && stockError === undefined && <p className="text-ui-sm text-fg-subtle">Loading packages…</p>}
       {stock !== null && isLowStock && (
         <div className="flex flex-col gap-1">
           <p className="text-ui-sm text-fg-secondary">{`Stock: ${formatCredits(stock.availableCredits)} · more coming soon`}</p>
@@ -99,9 +102,9 @@ export function TopupPicker({ stock, models, modelsError, isDisabled, onBuy, onR
           />
         ))}
       </div>
-      {modelsError && (
+      {loadError && (
         <p className="text-ui-sm text-fg-muted">
-          {modelsError}{" "}
+          {loadError}{" "}
           <button
             type="button"
             onClick={onRetry}

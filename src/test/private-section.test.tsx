@@ -1,5 +1,4 @@
 import "@testing-library/jest-dom/vitest";
-import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
@@ -11,6 +10,7 @@ import { RecoveryCodeDialog } from "../components/private/RecoveryCodeDialog";
 import { RecoveryCard } from "../components/private/RecoveryCard";
 import { TopupProgress } from "../components/private/TopupProgress";
 import { usePrivateCredits, type TopupFlow } from "../hooks/usePrivateCredits";
+import { usePrivateRecoveryDialog } from "../hooks/usePrivateRecoveryDialog";
 import { turnsFor, type PendingTopup } from "../lib/private-credits";
 import type { FakePrivate } from "./fixtures/private-backend";
 
@@ -52,12 +52,31 @@ function readyWith(credits: number, extra: Partial<FakePrivate["status"]> = {}) 
 /** What App does: one hook, the section, and the one recovery dialog layer. */
 function Harness() {
   const credits = usePrivateCredits();
-  const [request, setRequest] = useState<{ code?: string } | null>(null);
+  const dialog = usePrivateRecoveryDialog();
   return (
     <>
-      <PrivateSection credits={credits} onShowRecoveryCode={(code) => setRequest({ code })} />
-      <RecoveryCodeLayer credits={credits} request={request} onClose={() => setRequest(null)} />
+      <PrivateSection credits={credits} onShowRecoveryCode={dialog.show} onRestoringChange={dialog.setIsRestoring} />
+      <RecoveryCodeLayer
+        credits={credits}
+        request={dialog.request}
+        suppressStatusPrompt={dialog.suppressStatusPrompt}
+        onClose={dialog.close}
+      />
     </>
+  );
+}
+
+/** What App mounts at start, without Settings open: the hook and the recovery layer, no section. */
+function AppWithoutSettings() {
+  const credits = usePrivateCredits();
+  const dialog = usePrivateRecoveryDialog();
+  return (
+    <RecoveryCodeLayer
+      credits={credits}
+      request={dialog.request}
+      suppressStatusPrompt={dialog.suppressStatusPrompt}
+      onClose={dialog.close}
+    />
   );
 }
 
@@ -362,6 +381,8 @@ describe("TopupProgress", () => {
   it("opening says so and cannot be cancelled yet", () => {
     renderProgress({ kind: "opening", usd: 10 });
     expect(screen.getByText("Opening checkout in your browser")).toBeInTheDocument();
+    // The hold belongs to the waiting step: nothing is claimed before the checkout exists.
+    expect(screen.getByRole("status")).toHaveTextContent(/^Opening checkout in your browser$/);
     expect(button("Cancel")).toBeDisabled();
   });
 
@@ -449,6 +470,7 @@ describe("TopupProgress", () => {
   it("expired says the checkout closed", async () => {
     const props = renderProgress({ kind: "expired", topupId: "t1" });
     expect(screen.getByText("Checkout closed without paying")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/^Checkout closed without paying$/);
     await click(button("Try again"));
     expect(props.onDismiss).toHaveBeenCalledTimes(1);
   });
@@ -760,5 +782,74 @@ describe("Restore", () => {
     expect(screen.getByRole("dialog", { name: "Restore your credits" })).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
     await act(async () => release());
+  });
+});
+
+describe("Private mode: the catalog loads only when Settings shows it", () => {
+  it("the hook and an app without Settings read the status and nothing else", async () => {
+    await act(async () => {
+      render(<AppWithoutSettings />);
+    });
+    expect(fake().calls.map((call) => call.cmd)).toEqual(["private_status"]);
+  });
+
+  it("mounting the section loads the stock and the models once each", async () => {
+    stockWith();
+    await mount();
+    await screen.findByRole("radio", { name: /\$5\b/ });
+    expect(callsTo("private_stock")).toHaveLength(1);
+    expect(callsTo("private_models")).toHaveLength(1);
+    expect(callsTo("private_status")).toHaveLength(1);
+  });
+
+  it("a stock failure says so with a Try again that loads the packages", async () => {
+    stockWith();
+    fake().errors.private_stock = "unreachable";
+    await mount();
+    expect(await screen.findByText("Couldn't load the packages. Try again.")).toBeInTheDocument();
+    expect(screen.queryByText("Loading packages…")).toBeNull();
+    delete fake().errors.private_stock;
+    await click(button("Try again"));
+    expect(await screen.findByRole("radio", { name: /\$5\b/ })).toBeInTheDocument();
+    expect(callsTo("private_stock")).toHaveLength(2);
+    expect(screen.queryByText("Couldn't load the packages. Try again.")).toBeNull();
+  });
+
+  it("says Loading packages only while the load is in flight", async () => {
+    stockWith();
+    fake().errors.private_stock = "unreachable";
+    await mount();
+    await screen.findByText("Couldn't load the packages. Try again.");
+    let release: () => void = () => {};
+    fake().holds.private_stock = new Promise<void>((resolve) => (release = resolve));
+    await click(button("Try again"));
+    expect(screen.getByText("Loading packages…")).toBeInTheDocument();
+    expect(screen.queryByText("Couldn't load the packages. Try again.")).toBeNull();
+    await act(async () => release());
+  });
+});
+
+describe("Private mode: one hold at a time", () => {
+  it("Restore… is off, with its reason, while a top-up is followed", async () => {
+    stockWith();
+    readyWith(0, { pendingTopup: { topupId: "t1", expiresAt: "2026-11-07T11:00:00Z", credits: 1000 } });
+    await mount();
+    const restore = await screen.findByRole("button", { name: "Restore…" });
+    expect(restore).toBeDisabled();
+    expect(restore).toHaveAccessibleDescription("Finish or cancel your top-up first.");
+  });
+
+  it("Open checkout again takes one press at a time", async () => {
+    let release: () => void = () => {};
+    const onOpenCheckout = vi.fn(
+      () => new Promise<{ ok: true }>((resolve) => (release = () => resolve({ ok: true }))),
+    );
+    renderProgress({ kind: "waiting", topup: TOPUP }, { onOpenCheckout });
+    await click(button("Open checkout again"));
+    expect(button("Open checkout again")).toBeDisabled();
+    await click(button("Open checkout again"));
+    expect(onOpenCheckout).toHaveBeenCalledTimes(1);
+    await act(async () => release());
+    expect(button("Open checkout again")).toBeEnabled();
   });
 });

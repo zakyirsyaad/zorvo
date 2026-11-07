@@ -768,28 +768,85 @@ describe("usePrivateCredits: credits-out sessions", () => {
 });
 
 describe("usePrivateCredits: loading", () => {
-  it("loads the status, the stock and the models, and passes fresh through", async () => {
-    fake().models = [{ id: "qwen/qwen3-coder", inputPerM: 1, outputPerM: 2 }];
+  it("reads only the status at start, and passes fresh through", async () => {
     const view = await mount();
     expect(view.result.current.status?.device).toBe("none");
-    expect(view.result.current.stock?.availableCredits).toBe(100_000);
-    expect(view.result.current.models).toEqual(fake().models);
-    expect(view.result.current.modelsError).toBeUndefined();
+    expect(fake().calls.map((call) => call.cmd)).toEqual(["private_status"]);
     expect(callsTo("private_status")[0].args).toEqual({ fresh: false });
+    expect(view.result.current.stock).toBeNull();
+    expect(view.result.current.models).toBeNull();
 
     await act(async () => view.result.current.refresh(true));
     expect(callsTo("private_status")[1].args).toEqual({ fresh: true });
+    // A status read never loads the catalog.
+    expect(callsTo("private_stock")).toHaveLength(0);
+    expect(callsTo("private_models")).toHaveLength(0);
   });
 
-  it("keeps the status when the stock or the models fail, and words the models error", async () => {
+  it("loadCatalog loads the stock and the models", async () => {
+    fake().models = [{ id: "qwen/qwen3-coder", inputPerM: 1, outputPerM: 2 }];
+    const view = await mount();
+    await act(async () => view.result.current.loadCatalog());
+    expect(view.result.current.stock?.availableCredits).toBe(100_000);
+    expect(view.result.current.models).toEqual(fake().models);
+    expect(view.result.current.modelsError).toBeUndefined();
+    expect(view.result.current.stockError).toBeUndefined();
+  });
+
+  it("loadCatalog asks once while a load is in flight, and again when called later", async () => {
+    const view = await mount();
+    let release: () => void = () => {};
+    fake().holds.private_stock = new Promise<void>((resolve) => (release = resolve));
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    act(() => {
+      first = view.result.current.loadCatalog();
+      second = view.result.current.loadCatalog();
+    });
+    await act(async () => {
+      release();
+      await Promise.all([first, second]);
+    });
+    expect(callsTo("private_stock")).toHaveLength(1);
+    expect(callsTo("private_models")).toHaveLength(1);
+
+    delete fake().holds.private_stock;
+    await act(async () => view.result.current.loadCatalog());
+    expect(callsTo("private_stock")).toHaveLength(2);
+    expect(callsTo("private_models")).toHaveLength(2);
+  });
+
+  it("keeps the status when the stock or the models fail, and words both errors", async () => {
     readyWith(300);
     fake().errors.private_stock = "unreachable";
     fake().errors.private_models = "upstream";
     const view = await mount();
+    await act(async () => view.result.current.loadCatalog());
     expect(view.result.current.status?.balance?.credits).toBe(300);
     expect(view.result.current.stock).toBeNull();
     expect(view.result.current.models).toBeNull();
     expect(view.result.current.modelsError).toBe("Couldn't load the private models. Try again.");
+    expect(view.result.current.stockError).toBe("Couldn't load the packages. Try again.");
+  });
+
+  it("the stock and the models fail on their own, and a retry clears the errors", async () => {
+    const view = await mount();
+    fake().errors.private_stock = "unreachable";
+    await act(async () => view.result.current.loadCatalog());
+    expect(view.result.current.stockError).toBe("Couldn't load the packages. Try again.");
+    expect(view.result.current.models).toEqual([]);
+
+    delete fake().errors.private_stock;
+    await act(async () => view.result.current.loadCatalog());
+    expect(view.result.current.stockError).toBeUndefined();
+    expect(view.result.current.stock?.availableCredits).toBe(100_000);
+  });
+
+  it("keeps the normal words when the stock says the credits moved", async () => {
+    const view = await mount();
+    fake().errors.private_stock = "unauthorized";
+    await act(async () => view.result.current.loadCatalog());
+    expect(view.result.current.stockError).toBe("Your credits moved to another Mac.");
   });
 
   it("keeps the last status when a later read fails", async () => {

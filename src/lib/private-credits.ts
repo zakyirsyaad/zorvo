@@ -218,9 +218,10 @@ export function privateErrorText(code: string): string {
   return Object.hasOwn(ERROR_TEXT, code) ? ERROR_TEXT[code as PrivateErrorCode] : GENERIC_ERROR;
 }
 
-export type PrivateAction = 'models' | 'cancel' | 'redeem' | 'forget' | 'recover';
+export type PrivateAction = 'models' | 'stock' | 'cancel' | 'redeem' | 'forget' | 'recover';
 
 const MODELS_FAILED = "Couldn't load the private models. Try again.";
+const STOCK_FAILED = "Couldn't load the packages. Try again.";
 const CANCEL_FAILED = "Couldn't cancel the checkout. Try again.";
 const REDEEM_FAILED = "Couldn't redeem the code. Try again.";
 
@@ -234,6 +235,8 @@ export function actionError(action: PrivateAction, code: string): string {
   switch (action) {
     case 'models':
       return MODELS_FAILED;
+    case 'stock':
+      return STOCK_FAILED;
     case 'cancel':
       return CANCEL_FAILED;
     case 'redeem':

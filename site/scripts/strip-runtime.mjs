@@ -9,9 +9,19 @@ import { fileURLToPath } from "node:url";
 const SCRIPT = /<script\b(?![^>]*\btype="application\/ld\+json")[^>]*>[\s\S]*?<\/script>/g;
 const SCRIPT_PRELOAD = /<link\b[^>]*\b(?:rel="modulepreload"|as="script")[^>]*\/?>/g;
 
-/** @param {string} html @returns {string} */
+/**
+ * Removes scripts and script preloads until none is left: one pass could join the pieces around a
+ * removed tag into a new one (`<scr<script></script>ipt>`), so it repeats until nothing changes.
+ * @param {string} html @returns {string}
+ */
 export function stripRuntime(html) {
-  return html.replace(SCRIPT, "").replace(SCRIPT_PRELOAD, "");
+  let previous;
+  let stripped = html;
+  do {
+    previous = stripped;
+    stripped = stripped.replace(SCRIPT, "").replace(SCRIPT_PRELOAD, "");
+  } while (stripped !== previous);
+  return stripped;
 }
 
 /** @param {string} dir @returns {AsyncGenerator<string>} */

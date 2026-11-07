@@ -23,6 +23,10 @@ describe("stripRuntime", () => {
     expect(html).not.toContain("__next_f");
   });
 
+  it("leaves no script behind when removing one would form another", () => {
+    expect(stripRuntime('<p>a</p><scr<script>x</script>ipt src="/x.js"></script><p>b</p>')).toBe("<p>a</p><p>b</p>");
+  });
+
   it("keeps the structured data, the stylesheet, image preloads and the content", () => {
     expect(html).toContain('<script type="application/ld+json">{"@type":"SoftwareApplication"}</script>');
     expect(html).toContain("a.css");

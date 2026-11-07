@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { SECRET_HASH } from "../auth";
 import { parseConfig, type Config, type Env } from "../config";
 import { creditsForPackage, creditsFromNano, usdcAmount } from "../credits";
 import { decrypt } from "../crypto";
@@ -103,13 +104,30 @@ export class Ledger extends DurableObject<Env> {
 
   /** The check and the insert run before the first await, so one secret hash can never register twice. */
   async registerDevice(secretHash: string): Promise<{ deviceId: string } | { error: "bad_request" }> {
-    if (!/^[0-9a-f]{64}$/.test(secretHash)) return { error: "bad_request" };
+    if (!SECRET_HASH.test(secretHash)) return { error: "bad_request" };
     const taken = this.sql.exec("SELECT 1 FROM devices WHERE secret_hash = ?", secretHash).toArray().length > 0;
     if (taken) return { error: "bad_request" };
     const deviceId = crypto.randomUUID();
     this.sql.exec("INSERT INTO devices (id, secret_hash, created_at) VALUES (?, ?, ?)", deviceId, secretHash, Date.now());
     await this.ensureAlarm();
     return { deviceId };
+  }
+
+  /**
+   * The device whose secret hashes to `secretHash`, or why not: a miss counts one hit on
+   * `failureKey`, and once that passes `limit` in `windowMs` the answer is `rate_limited`. A device
+   * that is found is never counted.
+   */
+  authenticate(
+    secretHash: string,
+    failureKey: string,
+    limit: number,
+    windowMs: number,
+    now: number = Date.now(),
+  ): { deviceId: string } | { error: "unauthorized" | "rate_limited" } {
+    const device = this.deviceBySecretHash(secretHash);
+    if (device) return { deviceId: device.id };
+    return this.rateLimit(failureKey, limit, windowMs, now).allowed ? { error: "unauthorized" } : { error: "rate_limited" };
   }
 
   /** The device whose secret hashes to `secretHash`; a revoked device is not found. */

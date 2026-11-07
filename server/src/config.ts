@@ -13,7 +13,7 @@ export interface Env {
   PACKAGES_USD: string;
   /** Most credits one device may hold plus have reserved, e.g. "5000". */
   DEVICE_CAP_CREDITS: string;
-  /** Stock kept back from sale, in nano-USD (scale 9), e.g. "2000000000" for $2. */
+  /** Stock kept back from sale, in nano-USD (scale 9), e.g. "2000000000" for $2; "0" keeps nothing back. */
   STOCK_BUFFER_NANO: string;
   /** Comma-separated model allowlist; only those NEAR AI also lists as verifiable are offered. */
   MODELS: string;
@@ -54,11 +54,14 @@ export type Config = {
   pingPayBase: string;
 };
 
+/** The plain variables `parseConfig` reads: the required strings of `Env`, never a binding or a secret. */
+type VarName = { [K in keyof Env]-?: undefined extends Env[K] ? never : Env[K] extends string ? K : never }[keyof Env];
+
 function invalid(name: string, why: string): never {
   throw new Error(`Invalid config variable ${name}: ${why}`);
 }
 
-function positiveInt(env: Env, name: keyof Env): number {
+function positiveInt(env: Env, name: VarName): number {
   const raw = String(env[name] ?? "").trim();
   if (!/^[0-9]+$/.test(raw) || Number(raw) <= 0 || !Number.isSafeInteger(Number(raw))) {
     invalid(name, "expected a positive whole number");
@@ -66,7 +69,14 @@ function positiveInt(env: Env, name: keyof Env): number {
   return Number(raw);
 }
 
-function list(env: Env, name: keyof Env): string[] {
+/** A whole number of 0 or more, read as a bigint so a nano-USD amount never passes through a double. */
+function nonNegativeBigInt(env: Env, name: VarName): bigint {
+  const raw = String(env[name] ?? "").trim();
+  if (!/^[0-9]{1,18}$/.test(raw)) invalid(name, "expected a whole number of 0 or more");
+  return BigInt(raw);
+}
+
+function list(env: Env, name: VarName): string[] {
   const items = String(env[name] ?? "")
     .split(",")
     .map((item) => item.trim())
@@ -75,7 +85,7 @@ function list(env: Env, name: keyof Env): string[] {
   return items;
 }
 
-function text(env: Env, name: keyof Env): string {
+function text(env: Env, name: VarName): string {
   const value = String(env[name] ?? "").trim();
   if (value === "") invalid(name, "must not be empty");
   return value;
@@ -91,7 +101,7 @@ export function parseConfig(env: Env): Config {
     burnPerUsdCost: positiveInt(env, "BURN_PER_USD_COST"),
     packagesUsd,
     deviceCapCredits: positiveInt(env, "DEVICE_CAP_CREDITS"),
-    stockBufferNano: BigInt(positiveInt(env, "STOCK_BUFFER_NANO")),
+    stockBufferNano: nonNegativeBigInt(env, "STOCK_BUFFER_NANO"),
     models: list(env, "MODELS"),
     workspaceId: text(env, "WORKSPACE_ID"),
     organizationId: text(env, "ORGANIZATION_ID"),

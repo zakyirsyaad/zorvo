@@ -1,6 +1,8 @@
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const IV_BYTES = 12;
+/** AES-256: KEY_ENCRYPTION_KEY must decode to exactly this many bytes. */
+const AES_KEY_BYTES = 32;
 
 function toBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -46,8 +48,11 @@ export function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-function aesKey(keyB64: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey("raw", fromBase64(keyB64), "AES-GCM", false, ["encrypt", "decrypt"]);
+/** The AES-256-GCM key; a key of another size (AES-128 or AES-192 would import) is refused. */
+async function aesKey(keyB64: string): Promise<CryptoKey> {
+  const raw = fromBase64(keyB64);
+  if (raw.length !== AES_KEY_BYTES) throw new Error(`The encryption key must be ${AES_KEY_BYTES} bytes, base64`);
+  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
 
 /** AES-GCM with a fresh 12-byte IV; returns base64 of IV followed by the ciphertext. `keyB64` is a base64 32-byte key. */

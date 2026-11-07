@@ -291,6 +291,10 @@ money: the device recovers with its own code, which issues a fresh key against t
 - Webhooks are accepted only with a valid HMAC signature and a fresh timestamp. The admin route needs
   `ADMIN_TOKEN` (compared in constant time); without it set, nobody is admin.
 - Registration, top-ups, promo attempts and recovery attempts are rate-limited per device or per address.
+  So are admin attempts (20 an hour per address, right or wrong) and wrong device secrets (after 60 in an
+  hour from one address it is answered `429`; a device whose secret is valid is never counted). Each check
+  still costs one Ledger call; volumetric floods belong to a Cloudflare WAF rate-limiting rule in front.
+- `KEY_ENCRYPTION_KEY` must decode to exactly 32 bytes (AES-256); a shorter key is refused, not used.
 
 ## After a checkout
 

@@ -44,6 +44,14 @@ describe("credit math", () => {
   it("converts dollars to USDC base units", () => {
     expect(usdcAmount(5)).toBe("5000000");
     expect(usdcAmount(0.1)).toBe("100000");
+    expect(usdcAmount(123.456789)).toBe("123456789");
+    expect(usdcAmount(0)).toBe("0");
+  });
+  it("refuses a dollar amount finer than one USDC base unit instead of rounding it", () => {
+    expect(() => usdcAmount(1.2345678)).toThrow(RangeError);
+    expect(() => usdcAmount(1e-7)).toThrow(RangeError);
+    expect(() => usdcAmount(-1)).toThrow(RangeError);
+    expect(() => usdcAmount(Number.NaN)).toThrow(RangeError);
   });
 });
 
@@ -63,5 +71,9 @@ describe("parseConfig", () => {
     expect(() => parseConfig({ ...env, BURN_PER_USD_COST: "abc" } as unknown as Env)).toThrow("BURN_PER_USD_COST");
     expect(() => parseConfig({ ...env, PACKAGES_USD: "5,0" } as unknown as Env)).toThrow("PACKAGES_USD");
     expect(() => parseConfig({ ...env, STOCK_BUFFER_NANO: "1.5" } as unknown as Env)).toThrow("STOCK_BUFFER_NANO");
+    expect(() => parseConfig({ ...env, STOCK_BUFFER_NANO: "-1" } as unknown as Env)).toThrow("STOCK_BUFFER_NANO");
+  });
+  it("accepts a stock buffer of 0", () => {
+    expect(parseConfig({ ...env, STOCK_BUFFER_NANO: "0" } as unknown as Env).stockBufferNano).toBe(0n);
   });
 });

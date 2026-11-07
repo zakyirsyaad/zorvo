@@ -159,6 +159,14 @@ describe("crypto", () => {
     await expect(decrypt(key, btoa(String.fromCharCode(...bytes)))).rejects.toThrow();
   });
 
+  it("refuses an AES key that is not 32 bytes", async () => {
+    for (const length of [16, 24, 31, 33]) {
+      const short = btoa(String.fromCharCode(...new Uint8Array(length).fill(7)));
+      await expect(encrypt(short, "x")).rejects.toThrow(/32 bytes/);
+      await expect(decrypt(short, await encrypt(key, "x"))).rejects.toThrow(/32 bytes/);
+    }
+  });
+
   it("compares strings without short-circuiting", () => {
     expect(timingSafeEqual("ab", "ab")).toBe(true);
     expect(timingSafeEqual("ab", "ac")).toBe(false);

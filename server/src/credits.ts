@@ -34,8 +34,17 @@ export function balanceCredits(limitNano: bigint, usageNano: bigint, cfg: Config
   return creditsFromNano(left > 0n ? left : 0n, cfg);
 }
 
-/** A dollar amount in USDC base units (6 decimals), as the string PingPay takes. */
+/** A non-negative decimal with at most `USDC_DECIMALS` places, as JavaScript writes the number. */
+const USD_DECIMAL = new RegExp(`^([0-9]+)(?:\\.([0-9]{1,${USDC_DECIMALS}}))?$`);
+
+/**
+ * A dollar amount in USDC base units (6 decimals), as the string PingPay takes. Worked out on the
+ * number's decimal digits, never by a float multiplication; an amount finer than one base unit is
+ * refused, not rounded.
+ */
 export function usdcAmount(usd: number): string {
-  if (!Number.isFinite(usd) || usd < 0) throw new RangeError("usd must be a finite, non-negative number");
-  return BigInt(Math.round(usd * 10 ** USDC_DECIMALS)).toString();
+  const digits = Number.isFinite(usd) && usd >= 0 ? USD_DECIMAL.exec(String(usd)) : null;
+  if (!digits) throw new RangeError("usd must be a non-negative amount with at most 6 decimals");
+  const fraction = (digits[2] ?? "").padEnd(USDC_DECIMALS, "0");
+  return (BigInt(digits[1]!) * 10n ** BigInt(USDC_DECIMALS) + BigInt(fraction)).toString();
 }

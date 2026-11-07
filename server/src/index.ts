@@ -1,8 +1,9 @@
-import { authDevice, BEARER, ledgerOf } from "./auth";
+import { authDevice, BEARER, clientIp, ledgerOf, SECRET_HASH } from "./auth";
 import { parseConfig, type Env } from "./config";
 import { error, json } from "./http";
 import { sha256Hex, timingSafeEqual } from "./crypto";
 import { verifyWebhook } from "./pingpay";
+import { HOUR_MS } from "./time";
 
 export { Ledger } from "./ledger/Ledger";
 
@@ -10,21 +11,20 @@ const REGISTRATIONS_PER_HOUR = 10;
 const TOPUPS_PER_HOUR = 10;
 const PROMO_ATTEMPTS_PER_HOUR = 5;
 const RECOVER_ATTEMPTS_PER_HOUR = 5;
-const HOUR_MS = 60 * 60 * 1000;
+/** Admin attempts per address and hour, right or wrong, so the token cannot be guessed at speed. */
+const ADMIN_ATTEMPTS_PER_HOUR = 20;
 /** A promo code as the admin may create it: 4 to 64 visible ASCII characters. */
 const PROMO_CODE = /^[\x21-\x7E]{4,64}$/;
 const MAX_PROMO_USES = 10_000;
 /** Longest promo or recovery code the API reads; longer ones cannot be real. */
 const MAX_CODE_LENGTH = 100;
-const SECRET_HASH = /^[0-9a-f]{64}$/;
 const TOPUP_PATH = /^\/v1\/topups\/([0-9a-f-]{36})(\/cancel)?$/;
 /** The PingPay events that settle a checkout; their `resourceId` is the checkout session id. */
 const SESSION_EVENTS = new Set(["checkout.session.completed", "checkout.session.expired"]);
 
 async function registerDevice(req: Request, env: Env): Promise<Response> {
-  const ip = req.headers.get("CF-Connecting-IP") ?? "unknown";
   const ledger = ledgerOf(env);
-  const { allowed } = await ledger.rateLimit(`devices:${ip}`, REGISTRATIONS_PER_HOUR, HOUR_MS);
+  const { allowed } = await ledger.rateLimit(`devices:${clientIp(req)}`, REGISTRATIONS_PER_HOUR, HOUR_MS);
   if (!allowed) return error("rate_limited", 429);
 
   const body: unknown = await req.json().catch(() => null);
@@ -77,12 +77,14 @@ function isAdmin(req: Request, env: Env): boolean {
 
 /** Admin: creates or updates a promo code. Only the code's hash is stored; the code is never logged. */
 async function adminPromo(req: Request, env: Env): Promise<Response> {
+  const ledger = ledgerOf(env);
+  if (!(await ledger.rateLimit(`admin:${clientIp(req)}`, ADMIN_ATTEMPTS_PER_HOUR, HOUR_MS)).allowed) return error("rate_limited", 429);
   if (!isAdmin(req, env)) return error("unauthorized", 401);
   const body = ((await req.json().catch(() => null)) ?? {}) as { code?: unknown; credits?: unknown; maxUses?: unknown };
   const credits = boundedInt(body.credits, parseConfig(env).deviceCapCredits);
   const maxUses = boundedInt(body.maxUses, MAX_PROMO_USES);
   if (typeof body.code !== "string" || !PROMO_CODE.test(body.code) || credits === null || maxUses === null) return error("bad_request", 400);
-  await ledgerOf(env).addPromo(await sha256Hex(body.code), credits, maxUses);
+  await ledger.addPromo(await sha256Hex(body.code), credits, maxUses);
   return json({ ok: true });
 }
 
@@ -99,9 +101,8 @@ async function redeemPromoRoute(req: Request, env: Env, deviceId: string): Promi
 
 /** The recovery code is the credential, so there is no Bearer; attempts are limited per address. */
 async function recoverRoute(req: Request, env: Env): Promise<Response> {
-  const ip = req.headers.get("CF-Connecting-IP") ?? "unknown";
   const ledger = ledgerOf(env);
-  if (!(await ledger.rateLimit(`recover:${ip}`, RECOVER_ATTEMPTS_PER_HOUR, HOUR_MS)).allowed) return error("rate_limited", 429);
+  if (!(await ledger.rateLimit(`recover:${clientIp(req)}`, RECOVER_ATTEMPTS_PER_HOUR, HOUR_MS)).allowed) return error("rate_limited", 429);
   const body = (await req.json().catch(() => null)) as { recoveryCode?: unknown; newSecretHash?: unknown } | null;
   const { recoveryCode, newSecretHash } = body ?? {};
   if (typeof recoveryCode !== "string" || recoveryCode === "" || recoveryCode.length > MAX_CODE_LENGTH) return error("bad_request", 400);

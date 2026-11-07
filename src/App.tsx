@@ -17,6 +17,9 @@ import { CompareRunPanel } from "./components/compare/CompareRunPanel";
 import { FailedTurnBanner } from "./components/FailedTurnBanner";
 import { SignInLayer } from "./components/SignInLayer";
 import { RecoveryCodeLayer } from "./components/private/RecoveryCodeLayer";
+import { PrivateCreditsOut } from "./components/private/PrivateCreditsOut";
+import { PrivateInspector } from "./components/private/PrivateInspector";
+import { creditsOutText } from "./lib/private-session";
 import { AgentInstallPanel } from "./components/AgentInstallPanel";
 import { pickerLabelOf } from "./lib/install-plan";
 import { installPanelAgentOf } from "./lib/install-panel";
@@ -348,6 +351,8 @@ export default function App() {
 
   /** Keeps a model or effort pick (as the agent settled it), so the agent's next session starts with it too. */
   const rememberPick = (profileId: string, configId: string, value: string, reported?: AcpConfigOption[]) => {
+    // A private session's options are its TEE model's: they never become the agent's for ordinary drafts.
+    if (activeSession?.privateMode) return;
     const preferredConfig = rememberedChoice(state.agentOptions?.[profileId], configId, value, reported);
     if (!preferredConfig) return;
     // The lists on offer follow too (an effort list depends on its model), so the next draft offers the same.
@@ -355,8 +360,9 @@ export default function App() {
   };
 
   /** Keeps a model pick among an agent's `models`, so the agent's next session starts with it too. */
-  const rememberModelPick = (profileId: string, preferredModelId: string) =>
-    rememberAgentOptions(profileId, { preferredModelId });
+  const rememberModelPick = (profileId: string, preferredModelId: string) => {
+    if (!activeSession?.privateMode) rememberAgentOptions(profileId, { preferredModelId });
+  };
 
   const isComposerHiddenRef = useLatest(isComposerHidden);
   /** Whatever its status: a composer on its way to hiding would carry a message into the next session on screen. */
@@ -468,6 +474,7 @@ export default function App() {
     onTurnFailed: (sessionId, error) =>
       error ? setFailedTurns((prev) => ({ ...prev, [sessionId]: error })) : clearFailedTurn(sessionId),
     onPrivateCreditsOut: privateCredits.markCreditsOut,
+    giveBack: (sessionId, message) => giveBackMessage(sessionId, message.text, message.attachments),
   });
   // The one instance of Add, Update and Remove: Settings, saved sessions of a removed agent and popouts use it.
   const catalogActions = useAgentCatalogActions({
@@ -521,7 +528,12 @@ export default function App() {
   const isDraggingFiles = useFileDrop(handleDroppedFiles, reportError);
 
   const turnsEnded = useTurnsEnded(Boolean(activeSessionId) && isSessionBusy(activeSessionId));
-  const inspectorTabs = offeredTabs({ hasFolder: Boolean(filesFolder), isRepository, hasSession: Boolean(activeSession) });
+  const inspectorTabs = offeredTabs({
+    hasFolder: Boolean(filesFolder),
+    isRepository,
+    hasSession: Boolean(activeSession),
+    isPrivate: Boolean(activeSession?.privateMode),
+  });
   const inspector = useInspector(filesFolder?.path, isRepository, turnsEnded, reportError, {
     isSidebarShown: !isSidebarHidden,
     offered: inspectorTabs,
@@ -674,6 +686,22 @@ export default function App() {
     startSession,
     onNotice: setNotice,
   });
+
+  // A private session out of credits or a working key: its Send waits, and it offers a top-up or, once
+  // the user agreed the conversation leaves the TEE, the same conversation with another agent.
+  const creditsOutReason = activeSession ? privateCredits.creditsOut[activeSession.id] : undefined;
+  const continueAgents = activeSession
+    ? agentsInUse.filter((agent) => agent.id !== activeSession.profileId && isAgentRunnable(agent))
+    : [];
+  const continueWithAgent = (agentId: string) => {
+    const agent = agents.find((a) => a.id === agentId);
+    const lastMessage = (transcripts[activeSessionId] ?? []).at(-1);
+    if (!agent || !activeSession) return;
+    // Nothing to hand over yet: a new draft of that agent in the same folder.
+    if (!lastMessage) openNewSession(activeSession.cwd, agent.id);
+    // The new agent starts from what it was last picked with, never the private session's picks.
+    else void forkSession(lastMessage.id, { agent, choices: withPreferred(NO_CHOICES, state.agentOptions?.[agent.id]) });
+  };
 
   const handleSelectSession = (sessionId: string) => {
     setActiveSessionId(sessionId);
@@ -919,11 +947,16 @@ export default function App() {
       isWaiting: isSessionWaiting(sessionId),
       contextUsage: acp.info[sessionId]?.usage,
       failures: acp.failuresOf(sessionId),
+      privateCreditsOut: privateCredits.creditsOut[sessionId],
     }),
     agentCatalog: { agents, settings: state.settings, addAgent: catalogActions.addAgent },
     onAction: (sessionId, action) => {
-      if (action.kind === "send") void sendTo(sessionId, { text: action.text });
-      else if (action.kind === "stop") handleInterrupt(sessionId);
+      if (action.kind === "send") {
+        // The popout's Send waits too; one that raced the refusal is not sent into a refusal again.
+        const reason = privateCredits.creditsOut[sessionId];
+        if (reason) setNotice(creditsOutText(reason));
+        else void sendTo(sessionId, { text: action.text });
+      } else if (action.kind === "stop") handleInterrupt(sessionId);
       else if (action.kind === "answer-elicitation") acp.answerElicitation(sessionId, action.key, action.answer);
       else if (action.kind === "reopen-elicitation-url") acp.reopenElicitationUrl(sessionId, action.key);
       else chooseOption(sessionId, action.cardId, action.optionId, action.answers);
@@ -949,14 +982,16 @@ export default function App() {
   });
   // Several agents are not asked and nothing is picked for them yet: Send only waits for the single agent's install or sign-in.
   // The note promises one worktree each, so while the folder is not known to be a repository (still loading, or unreadable) Send waits too.
-  const isSendWaiting = compare.isCompare ? !canUseWorktree : draftNeedsInstall || draftNeedsSignIn || privateDraft.blocksSend;
+  const isSendWaiting = compare.isCompare
+    ? !canUseWorktree
+    : draftNeedsInstall || draftNeedsSignIn || privateDraft.blocksSend || creditsOutReason !== undefined;
   const isSendBlocked = isSendWaiting || review.blocksSend;
   const composerNoteText = composerNote({
     reviewOwner: review.reviewOwner,
     compareCount: compare.agentIds.length,
     agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
     agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
-    privateNote: privateDraft.note,
+    privateNote: privateDraft.note ?? (creditsOutReason && creditsOutText(creditsOutReason)),
     continuesSession: isResumable || Boolean(activeSession),
   });
   const composerCommands = composerCommandsFor({
@@ -1219,6 +1254,14 @@ export default function App() {
                       showTerminal={settingsPage.section === null}
                       panelTarget={draftSignInSlot}
                     />
+                    {activeSession && creditsOutReason && (
+                      <PrivateCreditsOut
+                        reason={creditsOutReason}
+                        agents={continueAgents.map((agent) => ({ id: agent.id, name: agent.name }))}
+                        onOpenSettings={() => settingsPage.open("private")}
+                        onContinue={continueWithAgent}
+                      />
+                    )}
                     {installPanelAgent
                       ? draftInstallSlot
                         ? createPortal(<AgentInstallPanel agent={installPanelAgent} />, draftInstallSlot)
@@ -1424,6 +1467,14 @@ export default function App() {
                         ? undefined
                         : (text) => composerRef.current?.insertText(text)
                     }
+                  />
+                )}
+                {inspectorTab === "private" && activeSession?.privateMode && (
+                  <PrivateInspector
+                    session={activeSession}
+                    credits={privateCredits}
+                    onTopUp={() => settingsPage.open("private")}
+                    onOpenUrl={openLink}
                   />
                 )}
                 {inspectorTab === "terminal" && filesFolder && (

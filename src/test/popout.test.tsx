@@ -110,6 +110,30 @@ describe("Popout windows", () => {
     });
   });
 
+  it("says a private session's credits ran out and blocks its own Send", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", {
+      sessionId: "s-1",
+      session: { ...runningSession, profileId: "qwen-code", privateMode: { modelId: "Qwen/Qwen3.8-27B" } },
+      messages: [],
+      status: { isBusy: false, isWaiting: false, privateCreditsOut: "empty" },
+    });
+
+    const prompt = screen.getByRole("textbox", { name: "Prompt" });
+    await act(async () => {
+      fireEvent.change(prompt, { target: { value: "go on" } });
+    });
+    const send = screen.getByRole("button", { name: "Send message" });
+    expect(send).toHaveProperty("disabled", true);
+    expect(screen.getByText("Your credits ran out. Top up to continue.")).toBeDefined();
+    await act(async () => {
+      fireEvent.keyDown(prompt, { key: "Enter" });
+    });
+    expect(emitted.some((e) => e.event === "popout-action")).toBe(false);
+  });
+
   it("replies to its agent by name", async () => {
     await act(async () => {
       render(<PopoutApp sessionId="s-1" />);

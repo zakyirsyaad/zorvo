@@ -26,7 +26,14 @@ import { isSessionGoneError, isUnknownSessionError } from '../../lib/acp-load-er
 import { writeConversationHandoff } from '../../lib/session-handoff';
 import { applyElicitation, completeElicitation, dismissPendingElicitations } from '../../lib/acp-elicitation';
 import { elicitationActions, type InFlightAnswer } from './elicitation-actions';
-import { privateModelIdOf, privateOpenError, withoutModelChanges } from '../../lib/private-session';
+import { parsePrivateCredits } from '../../lib/private-credits';
+import {
+  PRIVATE_SIGN_IN_FAILED,
+  privateModelIdOf,
+  privateOpenError,
+  withoutModelChanges,
+  type CreditsOutReason,
+} from '../../lib/private-session';
 
 const NOT_ENDED_NORMALLY = new Set(['refusal', 'max_tokens', 'max_turn_requests']);
 
@@ -98,8 +105,13 @@ export interface AcpEngineDeps extends EngineDeps {
   onTurnFailed?: (sessionId: string, error: string | null) => void;
   /** Writes the session's transcript in a moment rather than at its next interval: a turn ended, or the agent asks the user. */
   saveSoon?: (sessionId: string) => void;
-  /** A private session could not open for lack of credits (`empty`) or a working key (`key`). */
-  onPrivateCreditsOut?: (sessionId: string, reason: 'empty' | 'key') => void;
+  /** A private session could not open, or a turn of it was refused, for lack of credits (`empty`) or a working key (`key`). */
+  onPrivateCreditsOut?: (sessionId: string, reason: CreditsOutReason) => void;
+  /**
+   * A refused prompt goes back into its session's composer: a private session's turn refused for credits,
+   * a key or a sign-in, which Zorvo, not the user, gives the agent. Without it the message is only taken off the chat.
+   */
+  giveBack?: (sessionId: string, message: FirstMessage) => void;
 }
 
 /**
@@ -120,6 +132,7 @@ export function useAcpEngine({
   onTurnFailed,
   saveSoon,
   onPrivateCreditsOut,
+  giveBack,
 }: AcpEngineDeps) {
   const [starting, setStarting] = useState<ReadonlySet<string>>(new Set());
   const agentFailures = useAgentFailures();
@@ -213,7 +226,22 @@ export function useAcpEngine({
       agentFailures.clear(sessionId);
       updateNow(sessionId, closeTurn);
       saveSoon?.(sessionId);
+      const creditsOut = parsePrivateCredits(error);
+      if (creditsOut) {
+        // The panel above the composer says it; a failure notice would only repeat it.
+        handBackRefused(sessionId);
+        onPrivateCreditsOut?.(sessionId, creditsOut.reason);
+        onAttention?.(sessionId, 'failed');
+        return;
+      }
       const authMethods = parseAuthRequired(error);
+      if (authMethods && isPrivateSession(sessionId)) {
+        // Zorvo signs a private session's agent in: there is no sign-in of the user's to offer.
+        handBackRefused(sessionId);
+        reportError(PRIVATE_SIGN_IN_FAILED);
+        onAttention?.(sessionId, 'failed');
+        return;
+      }
       if (authMethods) {
         handBackForSignIn(sessionId, authMethods);
         return;
@@ -260,17 +288,36 @@ export function useAcpEngine({
     });
   }, []);
 
-  /** The agent opened the session but refused the prompt until the user signs in. */
-  const handBackForSignIn = (sessionId: string, methods: AuthMethod[]) => {
-    const session = sessions.find((s) => s.id === sessionId);
+  const isPrivateSession = (sessionId: string) =>
+    privateModelIdOf(sessions.find((s) => s.id === sessionId) ?? {}) !== undefined;
+
+  /**
+   * Takes a refused prompt off the chat and returns it, as the user wrote it; its hidden context waits
+   * for the next message. Undefined when the session had no prompt waiting.
+   */
+  const takeRefusedPrompt = (sessionId: string): FirstMessage | undefined => {
     const refused = lastPromptRef.current.get(sessionId);
     lastPromptRef.current.delete(sessionId);
+    failedPromptRef.current.delete(sessionId);
     const message = refused?.message;
     // The turn end before this one lands first; the message goes back at once.
     if (message) updateNow(sessionId, (prev) => withoutMessage(prev, message.id));
     if (refused?.context) unsentContextRef.current.set(sessionId, refused.context);
+    if (!message) return undefined;
+    return message.attachments ? { text: message.content, attachments: message.attachments } : { text: message.content };
+  };
+
+  /** A private session's prompt refused for credits, a key or a sign-in: the message goes back to its composer. */
+  const handBackRefused = (sessionId: string) => {
+    const unsent = takeRefusedPrompt(sessionId);
+    if (unsent) giveBack?.(sessionId, unsent);
+  };
+
+  /** The agent opened the session but refused the prompt until the user signs in. */
+  const handBackForSignIn = (sessionId: string, methods: AuthMethod[]) => {
+    const session = sessions.find((s) => s.id === sessionId);
+    const unsent = takeRefusedPrompt(sessionId);
     if (!session) return;
-    const unsent = message ? { text: message.content, attachments: message.attachments } : undefined;
     onAuthRequired(session, methods, unsent);
   };
 
@@ -387,12 +434,21 @@ export function useAcpEngine({
         patchSession(session.id, { status: 'terminated', endedAt: Date.now() });
         // Zorvo Private's refusals are said in plain words, never as the backend's marker or code.
         const privateError = privateOpenError(error, isPrivate);
+        if (privateError?.creditsOut && onPrivateCreditsOut) {
+          // The session is marked, and the panel above its composer says it: a notice would only repeat it.
+          onPrivateCreditsOut(session.id, privateError.creditsOut);
+          return false;
+        }
         if (privateError) {
           reportError(privateError.text);
-          if (privateError.creditsOut) onPrivateCreditsOut?.(session.id, privateError.creditsOut);
           return false;
         }
         const authMethods = parseAuthRequired(error);
+        if (authMethods && isPrivate) {
+          // Zorvo signs a private session's agent in: no sign-in panel, and the caller gives the message back.
+          reportError(PRIVATE_SIGN_IN_FAILED);
+          return false;
+        }
         if (authMethods) {
           refusedChoicesRef.current.set(session.id, options.choices);
           onAuthRequired(session, authMethods, options.first);

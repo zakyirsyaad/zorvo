@@ -7,6 +7,15 @@ import type { Session } from '../types';
 
 export const CREDITS_RAN_OUT = 'Your credits ran out. Top up to continue.';
 export const PRIVATE_KEY_STOPPED = "This Mac's private key stopped working. Restore it in Settings → Private mode.";
+/** A private session's agent asked for a sign-in: Zorvo signs it in, so the user can only check Private mode. */
+export const PRIVATE_SIGN_IN_FAILED = "Private mode couldn't sign in. Check Settings → Private mode.";
+
+export type CreditsOutReason = 'empty' | 'key';
+
+/** What a private session out of credits (`empty`) or with a key that stopped working (`key`) says. */
+export function creditsOutText(reason: CreditsOutReason): string {
+  return reason === 'empty' ? CREDITS_RAN_OUT : PRIVATE_KEY_STOPPED;
+}
 
 /** The private model a session runs on; undefined for an ordinary session. */
 export function privateModelIdOf(session: Pick<Session, 'privateMode'>): string | undefined {
@@ -16,7 +25,7 @@ export function privateModelIdOf(session: Pick<Session, 'privateMode'>): string 
 export interface PrivateOpenError {
   text: string;
   /** Set for a refusal that needs credits or a key: the session is marked out of them. */
-  creditsOut?: 'empty' | 'key';
+  creditsOut?: CreditsOutReason;
 }
 
 const PRIVATE_CODES: ReadonlySet<string> = new Set(PRIVATE_ERROR_CODES);
@@ -33,7 +42,7 @@ function plainCodeOf(error: unknown): string {
  */
 export function privateOpenError(error: unknown, isPrivate: boolean): PrivateOpenError | null {
   const refusal = parsePrivateCredits(error);
-  if (refusal) return { text: refusal.reason === 'empty' ? CREDITS_RAN_OUT : PRIVATE_KEY_STOPPED, creditsOut: refusal.reason };
+  if (refusal) return { text: creditsOutText(refusal.reason), creditsOut: refusal.reason };
   const code = plainCodeOf(error);
   if (!PRIVATE_CODES.has(code)) return null;
   return isPrivate || code === 'private_session' ? { text: privateErrorText(code) } : null;

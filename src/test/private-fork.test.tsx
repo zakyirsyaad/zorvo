@@ -25,6 +25,7 @@ function renderFork(source: Session, canFork: boolean) {
   const recordSession = vi.fn((spec: SessionSpec) => newSessionRecord(spec));
   const fork = vi.fn(() => Promise.resolve(true));
   const agents = fakeProfiles.map((agent) => (agent.id === "qwen-code" ? { ...agent, detected: true } : agent));
+  const claude = agents.find((agent) => agent.id === "claude-acp");
   const { result } = renderHook(() =>
     useSessionFork({
       source,
@@ -36,7 +37,7 @@ function renderFork(source: Session, canFork: boolean) {
       onNotice: vi.fn(),
     }),
   );
-  return { result, startSession, recordSession, fork };
+  return { result, startSession, recordSession, fork, claude };
 }
 
 describe("forking a private session", () => {
@@ -67,5 +68,19 @@ describe("forking a private session", () => {
     const spec = startSession.mock.calls[0][0] as SessionSpec;
     expect(spec).not.toHaveProperty("privateMode");
     expect(newSessionRecord(spec)).not.toHaveProperty("privateMode");
+  });
+  it("continues with another agent in an ordinary session, through a handoff even when a native fork could run", async () => {
+    const { result, startSession, fork, claude } = renderFork({ ...SOURCE, status: "running" }, true);
+    const choices = { config: { model: "opus" } };
+
+    await act(async () => result.current("m-1", { agent: claude, choices }));
+
+    expect(fork).not.toHaveBeenCalled();
+    const [spec, first, options] = startSession.mock.calls[0] as [SessionSpec, { context?: string }, { choices: unknown }];
+    expect(spec.agent.id).toBe("claude-acp");
+    expect(spec).not.toHaveProperty("privateMode");
+    expect(newSessionRecord(spec)).not.toHaveProperty("privateMode");
+    expect(first.context).toContain("/fake/app-data/handoffs/");
+    expect(options).toEqual({ choices });
   });
 });

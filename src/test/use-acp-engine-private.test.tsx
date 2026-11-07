@@ -82,6 +82,9 @@ function renderEngine(session: Session = PRIVATE) {
   const reportError = vi.fn();
   const rememberOptions = vi.fn();
   const onPrivateCreditsOut = vi.fn();
+  const onAuthRequired = vi.fn();
+  const onTurnFailed = vi.fn();
+  const giveBack = vi.fn();
   const hook = renderHook(() =>
     useAcpEngine({
       sessions,
@@ -94,9 +97,10 @@ function renderEngine(session: Session = PRIVATE) {
       },
       reportError,
       rememberOptions,
-      onAuthRequired: () => {},
-      onTurnFailed: () => {},
+      onAuthRequired,
+      onTurnFailed,
       onPrivateCreditsOut,
+      giveBack,
     }),
   );
   return {
@@ -104,6 +108,9 @@ function renderEngine(session: Session = PRIVATE) {
     reportError,
     rememberOptions,
     onPrivateCreditsOut,
+    onAuthRequired,
+    onTurnFailed,
+    giveBack,
     session: () => sessions[0],
     userMessages: () => messages.filter((m) => m.role === "user"),
     refresh: () => hook.rerender(),
@@ -173,7 +180,7 @@ describe("useAcpEngine with a private session", () => {
     ]);
   });
 
-  it("says the credits ran out, gives the message back and marks the session, never showing the raw refusal", async () => {
+  it("marks a private session that cannot open for lack of credits and gives the message back, with no raw refusal", async () => {
     stub({ acp_start_session: () => Promise.reject('PRIVATE_CREDITS:{"reason":"empty"}') });
     const engine = renderEngine();
     let isTaken = true;
@@ -184,21 +191,19 @@ describe("useAcpEngine with a private session", () => {
     // False: the caller gives the message back to the composer.
     expect(isTaken).toBe(false);
     expect(engine.userMessages()).toEqual([]);
-    expect(engine.reportError).toHaveBeenCalledWith("Your credits ran out. Top up to continue.");
-    expect(engine.reportError.mock.calls.flat().join(" ")).not.toContain("PRIVATE_CREDITS");
+    // The session is marked; the panel above its composer says it, so no notice repeats it.
+    expect(engine.reportError).not.toHaveBeenCalled();
     expect(engine.onPrivateCreditsOut).toHaveBeenCalledWith("s-1", "empty");
   });
 
-  it("says the private key stopped working", async () => {
+  it("marks a private session that cannot open because its key stopped working", async () => {
     stub({ acp_start_session: () => Promise.reject('PRIVATE_CREDITS:{"reason":"key"}') });
     const engine = renderEngine();
     await act(async () => {
       await engine.result.current.start(PRIVATE, { text: "hi" });
     });
 
-    expect(engine.reportError).toHaveBeenCalledWith(
-      "This Mac's private key stopped working. Restore it in Settings → Private mode.",
-    );
+    expect(engine.reportError).not.toHaveBeenCalled();
     expect(engine.onPrivateCreditsOut).toHaveBeenCalledWith("s-1", "key");
   });
 
@@ -223,6 +228,81 @@ describe("useAcpEngine with a private session", () => {
     });
 
     expect(engine.reportError).toHaveBeenCalledWith("This session ran privately. Reopen it as a private session.");
+  });
+
+  it("gives the message back and marks the session when a turn ends for lack of credits, with no failure notice", async () => {
+    const spy = stub();
+    const engine = renderEngine();
+    await act(async () => {
+      await engine.result.current.start(PRIVATE, { text: "review the module", attachments: ["/w/a.ts"] });
+    });
+    await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
+
+    await emit({ kind: "turn-end", error: 'PRIVATE_CREDITS:{"reason":"empty"}' });
+
+    expect(engine.onPrivateCreditsOut).toHaveBeenCalledWith("s-1", "empty");
+    expect(engine.giveBack).toHaveBeenCalledWith("s-1", { text: "review the module", attachments: ["/w/a.ts"] });
+    expect(engine.userMessages()).toEqual([]);
+    expect(engine.reportError).not.toHaveBeenCalled();
+    expect(engine.onTurnFailed).not.toHaveBeenCalledWith("s-1", expect.any(String));
+    expect(engine.result.current.hasFailedPrompt("s-1")).toBe(false);
+  });
+
+  it("marks the session when a turn ends because the private key stopped working", async () => {
+    stub();
+    const engine = renderEngine();
+    await act(async () => {
+      await engine.result.current.start(PRIVATE, { text: "hi" });
+    });
+    await emit({ kind: "turn-end", error: 'PRIVATE_CREDITS:{"reason":"key"}' });
+
+    expect(engine.onPrivateCreditsOut).toHaveBeenCalledWith("s-1", "key");
+    expect(engine.giveBack).toHaveBeenCalledWith("s-1", { text: "hi" });
+  });
+
+  it("never asks a private session's agent for a sign-in when a turn is refused: the message comes back with plain words", async () => {
+    stub();
+    const engine = renderEngine();
+    await act(async () => {
+      await engine.result.current.start(PRIVATE, { text: "review the module" });
+    });
+    const authRequired = `ACP_AUTH_REQUIRED:${JSON.stringify([{ id: "qwen-oauth", name: "Qwen OAuth", type: "terminal" }])}`;
+
+    await emit({ kind: "turn-end", error: authRequired });
+
+    expect(engine.onAuthRequired).not.toHaveBeenCalled();
+    expect(engine.giveBack).toHaveBeenCalledWith("s-1", { text: "review the module" });
+    expect(engine.userMessages()).toEqual([]);
+    expect(engine.reportError).toHaveBeenCalledWith("Private mode couldn't sign in. Check Settings → Private mode.");
+  });
+
+  it("never asks a private session's agent for a sign-in when it refuses to open", async () => {
+    const authRequired = `ACP_AUTH_REQUIRED:${JSON.stringify([{ id: "qwen-oauth", name: "Qwen OAuth", type: "terminal" }])}`;
+    stub({ acp_start_session: () => Promise.reject(authRequired) });
+    const engine = renderEngine();
+    let isTaken = true;
+    await act(async () => {
+      isTaken = await engine.result.current.start(PRIVATE, { text: "review the module" });
+    });
+
+    // False: the caller gives the message back to the composer.
+    expect(isTaken).toBe(false);
+    expect(engine.onAuthRequired).not.toHaveBeenCalled();
+    expect(engine.reportError).toHaveBeenCalledWith("Private mode couldn't sign in. Check Settings → Private mode.");
+  });
+
+  it("still asks an ordinary session's agent for a sign-in when a turn is refused", async () => {
+    stub();
+    const engine = renderEngine(ORDINARY);
+    await act(async () => {
+      await engine.result.current.start(ORDINARY, { text: "hi" });
+    });
+    const authRequired = `ACP_AUTH_REQUIRED:${JSON.stringify([{ id: "qwen-oauth", name: "Qwen OAuth", type: "terminal" }])}`;
+
+    await emit({ kind: "turn-end", error: authRequired });
+
+    expect(engine.onAuthRequired).toHaveBeenCalledTimes(1);
+    expect(engine.giveBack).not.toHaveBeenCalled();
   });
 
   it("keeps an ordinary session's errors as they were", async () => {

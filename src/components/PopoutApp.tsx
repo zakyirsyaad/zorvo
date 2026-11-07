@@ -20,6 +20,7 @@ import { ChatCanvas } from "./ChatCanvas";
 import { ComposerDock } from "./ComposerDock";
 import { RemovedAgentPanel } from "./RemovedAgentPanel";
 import { HistoryElsewhereNote } from "./chat/HistoryElsewhereNote";
+import { creditsOutText } from "../lib/private-session";
 
 export interface PopoutAppProps {
   sessionId: string;
@@ -129,6 +130,9 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
               agentName={agent?.name}
               disabled={!isRunning}
               placeholder={isRunning ? undefined : "This session is not running"}
+              // Out of credits, Send waits and says why; Top up and Continue are the main window's.
+              sendDisabled={status.privateCreditsOut !== undefined}
+              note={status.privateCreditsOut ? creditsOutText(status.privateCreditsOut) : undefined}
               onSendMessage={(text) => forward({ kind: "send", text })}
               isThinking={status.isBusy}
               onStop={() => forward({ kind: "stop" })}

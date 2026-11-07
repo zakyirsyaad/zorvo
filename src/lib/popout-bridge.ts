@@ -25,6 +25,8 @@ export interface SessionLiveStatus {
   contextUsage?: ContextUsage;
   /** Failed requests in a row the agent reported. */
   failures?: AgentFailures;
+  /** A private session out of credits (`empty`) or with a key that stopped working (`key`): its Send waits. */
+  privateCreditsOut?: 'empty' | 'key';
 }
 
 export const IDLE_STATUS: SessionLiveStatus = { isBusy: false, isWaiting: false };

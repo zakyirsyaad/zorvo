@@ -166,7 +166,7 @@ describe("a private draft in the app", () => {
 
     await send("review the payment module");
 
-    expect(await screen.findByText("Your credits ran out. Top up to continue.")).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Private credits" })).toHaveTextContent("Your credits ran out. Top up to continue.");
     await waitFor(() => expect(prompt().value).toBe("review the payment module"));
     expect(screen.queryByText(/PRIVATE_CREDITS/)).toBeNull();
   });

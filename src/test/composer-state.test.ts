@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { COMPOSER_PLACEHOLDERS, composerCommandsFor, composerNote, composerPlaceholder, composerStateFor, type ComposerInputs } from "../lib/composer-state";
 import { NO_CHOICES, withRewound, type AgentOptions } from "../lib/acp-draft";
 import { TRANSPORT_ACP, type AgentProfile, type Session, type SlashCommand } from "../types";
+import { creditsOutText } from "../lib/private-session";
 
 const IDLE = { isRunning: false, isCreatingWorktree: false, isResumable: false, canStartSession: false };
 
@@ -250,6 +251,16 @@ describe("composerNote", () => {
     expect(composerNote({ continuesSession: false, reviewOwner: { title: "Alpha", isArchived: false }, privateNote })).toBe(
       "These review comments are for Alpha. Go back to that session, or clear the message.",
     );
+  });
+
+  it("says a private session's credits ran out, after the sign-in reason", () => {
+    const privateNote = creditsOutText("empty");
+    expect(privateNote).toBe("Your credits ran out. Top up to continue.");
+    expect(composerNote({ continuesSession: true, privateNote })).toBe("Your credits ran out. Top up to continue.");
+    expect(composerNote({ continuesSession: true, agentToSignIn: "Qwen Code", privateNote })).toBe(
+      "Sign in to Qwen Code to continue this session.",
+    );
+    expect(creditsOutText("key")).toBe("This Mac's private key stopped working. Restore it in Settings → Private mode.");
   });
 
   it("says whom review comments are for", () => {

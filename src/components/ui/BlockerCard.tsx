@@ -8,8 +8,8 @@ export interface BlockerCardProps {
   profileId?: string;
   /** What stands in the way, as one sentence ("Codex isn't installed yet"). */
   title: string;
-  /** The explanation under the title. */
-  children: ReactNode;
+  /** The explanation under the title; none when the title says it all. */
+  children?: ReactNode;
   /** The way past it, on its own row under the body, at the right. */
   actions?: ReactNode;
   /** A ruled-off line under the body: progress, a status line, secondary buttons. */
@@ -31,7 +31,7 @@ export function BlockerCard({ label, profileId, title, children, actions, footer
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <h2 className="text-ui font-semibold text-fg">{title}</h2>
-          <div className="text-ui text-fg-muted">{children}</div>
+          {children && <div className="text-ui text-fg-muted">{children}</div>}
         </div>
       </div>
       {actions && <div className="flex justify-end gap-2">{actions}</div>}

@@ -16,8 +16,14 @@ const MAX_NAME_LENGTH: usize = 64;
 /// methods (`auth_methods`, from `initialize`). Empty when it is not known to be
 /// missing any: the agent offers no such method, offers a terminal sign-in (whose
 /// result is kept by the agent, not in the environment), or at least one `env_var`
-/// method has all its required variables set in `env`.
-pub fn missing_key_variables(auth_methods: &Value, env: &[(String, String)]) -> Vec<String> {
+/// method has all its required variables set. A variable is set when `env` (the launch
+/// environment) has it non-empty, or `process_var` finds it non-empty in Zorvo's own
+/// environment, which the agent inherits under `env` (a terminal-launched Zorvo).
+pub fn missing_key_variables(
+    auth_methods: &Value,
+    env: &[(String, String)],
+    process_var: impl Fn(&str) -> Option<String>,
+) -> Vec<String> {
     let Some(methods) = auth_methods.as_array() else {
         return Vec::new();
     };
@@ -33,6 +39,7 @@ pub fn missing_key_variables(auth_methods: &Value, env: &[(String, String)]) -> 
     let is_set = |name: &str| {
         env.iter()
             .any(|(key, value)| key == name && !value.is_empty())
+            || process_var(name).is_some_and(|value| !value.is_empty())
     };
     if required.is_empty() || required.iter().any(|names| names.iter().all(|n| is_set(n))) {
         return Vec::new();
@@ -86,6 +93,11 @@ mod tests {
         ])
     }
 
+    /// The variables missing when Zorvo's own environment has none of them.
+    fn missing(methods: &Value, env: &[(String, String)]) -> Vec<String> {
+        missing_key_variables(methods, env, |_| None)
+    }
+
     fn env(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
         pairs
             .iter()
@@ -95,21 +107,21 @@ mod tests {
 
     #[test]
     fn names_the_variable_when_it_is_not_set() {
-        let missing = missing_key_variables(&glm_methods(), &env(&[("PATH", "/usr/bin")]));
+        let missing = missing(&glm_methods(), &env(&[("PATH", "/usr/bin")]));
 
         assert_eq!(missing, vec!["Z_AI_API_KEY"]);
     }
 
     #[test]
     fn names_nothing_when_the_variable_is_set() {
-        let missing = missing_key_variables(&glm_methods(), &env(&[("Z_AI_API_KEY", "x")]));
+        let missing = missing(&glm_methods(), &env(&[("Z_AI_API_KEY", "x")]));
 
         assert!(missing.is_empty());
     }
 
     #[test]
     fn counts_an_empty_value_as_not_set() {
-        let missing = missing_key_variables(&glm_methods(), &env(&[("Z_AI_API_KEY", "")]));
+        let missing = missing(&glm_methods(), &env(&[("Z_AI_API_KEY", "")]));
 
         assert_eq!(missing, vec!["Z_AI_API_KEY"]);
     }
@@ -118,9 +130,9 @@ mod tests {
     fn names_nothing_for_an_agent_with_no_env_var_method() {
         let methods = json!([{ "id": "api-key", "name": "API key" }]);
 
-        assert!(missing_key_variables(&methods, &[]).is_empty());
-        assert!(missing_key_variables(&json!([]), &[]).is_empty());
-        assert!(missing_key_variables(&Value::Null, &[]).is_empty());
+        assert!(missing(&methods, &[]).is_empty());
+        assert!(missing(&json!([]), &[]).is_empty());
+        assert!(missing(&Value::Null, &[]).is_empty());
     }
 
     #[test]
@@ -131,7 +143,7 @@ mod tests {
             .unwrap()
             .push(json!({ "type": "terminal", "id": "login", "name": "Log in" }));
 
-        assert!(missing_key_variables(&methods, &[]).is_empty());
+        assert!(missing(&methods, &[]).is_empty());
     }
 
     #[test]
@@ -141,10 +153,10 @@ mod tests {
             { "type": "env_var", "id": "b", "vars": [{ "name": "KEY_C" }] }
         ]);
 
-        assert!(missing_key_variables(&methods, &env(&[("KEY_C", "x")])).is_empty());
+        assert!(missing(&methods, &env(&[("KEY_C", "x")])).is_empty());
         // One variable of the first method is not the whole method.
         assert_eq!(
-            missing_key_variables(&methods, &env(&[("KEY_A", "x")])),
+            missing(&methods, &env(&[("KEY_A", "x")])),
             vec!["KEY_A", "KEY_B", "KEY_C"]
         );
     }
@@ -162,13 +174,26 @@ mod tests {
             ]
         }]);
 
-        assert_eq!(missing_key_variables(&methods, &[]), vec!["WANTED"]);
+        assert_eq!(missing(&methods, &[]), vec!["WANTED"]);
     }
 
     #[test]
     fn names_nothing_for_a_method_that_requires_no_variable() {
         let methods = json!([{ "type": "env_var", "id": "a", "vars": [{ "name": "EXTRA", "optional": true }] }]);
 
-        assert!(missing_key_variables(&methods, &[]).is_empty());
+        assert!(missing(&methods, &[]).is_empty());
+    }
+
+    #[test]
+    fn counts_a_variable_only_zorvos_own_environment_has() {
+        let process = |name: &str| (name == "Z_AI_API_KEY").then(|| "x".to_string());
+
+        assert!(missing_key_variables(&glm_methods(), &[], process).is_empty());
+        // An empty value there is not set either.
+        let empty = |_: &str| Some(String::new());
+        assert_eq!(
+            missing_key_variables(&glm_methods(), &[], empty),
+            vec!["Z_AI_API_KEY"]
+        );
     }
 }

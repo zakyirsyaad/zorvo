@@ -20,6 +20,14 @@ export interface UseAgentSignInStatusOptions {
   updateState: (updater: (prev: PersistedState) => PersistedState) => void;
 }
 
+/** `state` without `profileId` among the agents seen signed in (the same object when it was not there). */
+function withoutSignedIn(state: PersistedState, profileId: string): PersistedState {
+  const signedIn = state.settings.signedInAgents;
+  return signedIn?.includes(profileId)
+    ? { ...state, settings: { ...state.settings, signedInAgents: signedIn.filter((id) => id !== profileId) } }
+    : state;
+}
+
 /**
  * What the app knows about each agent's sign-in. Only a sign-in actually seen
  * counts (a probe that showed an account, a sign-in that took), and it is kept
@@ -38,14 +46,7 @@ export function useAgentSignInStatus({ settings, updateState }: UseAgentSignInSt
   const markNeeded = useCallback(
     (profileId: string) => {
       setNeeded((prev) => (prev.has(profileId) ? prev : new Set(prev).add(profileId)));
-      updateState((prev) =>
-        prev.settings.signedInAgents?.includes(profileId)
-          ? {
-              ...prev,
-              settings: { ...prev.settings, signedInAgents: prev.settings.signedInAgents.filter((id) => id !== profileId) },
-            }
-          : prev,
-      );
+      updateState((prev) => withoutSignedIn(prev, profileId));
     },
     [updateState],
   );
@@ -70,18 +71,7 @@ export function useAgentSignInStatus({ settings, updateState }: UseAgentSignInSt
     [updateState],
   );
 
-  const markUnconfirmed = useCallback(
-    (profileId: string) =>
-      updateState((prev) =>
-        prev.settings.signedInAgents?.includes(profileId)
-          ? {
-              ...prev,
-              settings: { ...prev.settings, signedInAgents: prev.settings.signedInAgents.filter((id) => id !== profileId) },
-            }
-          : prev,
-      ),
-    [updateState],
-  );
+  const markUnconfirmed = useCallback((profileId: string) => updateState((prev) => withoutSignedIn(prev, profileId)), [updateState]);
 
   return useMemo(
     () => ({ stateOf, markNeeded, markSignedIn, markUnconfirmed }),

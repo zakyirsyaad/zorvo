@@ -156,7 +156,9 @@ impl AcpManager {
                 let missing_env = if reports_auth {
                     Vec::new()
                 } else {
-                    missing_key_variables(&auth_methods_of(&init), &launch.env)
+                    missing_key_variables(&auth_methods_of(&init), &launch.env, |name| {
+                        std::env::var(name).ok()
+                    })
                 };
                 let probed = ProbedAgent {
                     modes: session["modes"].clone(),

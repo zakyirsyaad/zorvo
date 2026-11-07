@@ -420,6 +420,7 @@ export default function App() {
     rememberProbed,
     auth: signIn.auth,
     onSignedIn: signInStatus.markSignedIn,
+    onUnconfirmed: signInStatus.markUnconfirmed,
   });
   // Its sign-in panel is open (and not yet done): a message would only be refused.
   const draftNeedsSignIn =

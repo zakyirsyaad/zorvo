@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { GitBranch, Square } from "lucide-react";
+import { GitBranch, Shield, Square } from "lucide-react";
 import type { Session } from "../../types";
 import { DOT_CLASS, SHOW_IN_ROW, rowDetail, rowSubtitle, statusOf } from "../../lib/sidebar-status";
 import { AgentLogo } from "../AgentLogo";
@@ -106,6 +106,11 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
             {session.worktree && (
               <span role="img" aria-label="Runs in its own worktree" className="flex shrink-0">
                 <GitBranch size={11} aria-hidden="true" />
+              </span>
+            )}
+            {session.privateMode && (
+              <span role="img" aria-label="Private session" className="flex shrink-0">
+                <Shield size={11} aria-hidden="true" />
               </span>
             )}
             {lineAgent && <AgentLogo profileId={session.profileId} name="" size={14} />}

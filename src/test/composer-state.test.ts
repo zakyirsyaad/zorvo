@@ -167,6 +167,35 @@ describe("composerStateFor", () => {
     });
   });
 
+  describe("a private session or draft", () => {
+    const models = { currentModelId: "auto", availableModels: [{ modelId: "auto", name: "Auto" }, { modelId: "flash", name: "Flash" }] };
+    const options = { qwen: { modes: info.modes, configOptions: [], models } };
+
+    it("offers no model chip in a private draft, and keeps the others", () => {
+      const state = composerStateFor(inputs({ draftAgent, agentOptions: options, isPrivate: true }));
+
+      expect(state.controls.model).toBeUndefined();
+      expect(state.controls.permission?.selected).toBe("default");
+    });
+
+    it("offers no model chip in a running private session", () => {
+      const live = { ...acp, info: { "s-1": { ...info, models } } } as unknown as ComposerInputs["acp"];
+      const session = { ...running(TRANSPORT_ACP), privateMode: { modelId: "Qwen/Qwen3.8-27B" } } as Session;
+
+      expect(composerStateFor(inputs({ session, acp: live })).controls.model).toBeUndefined();
+    });
+
+    it("offers no model chip when an ended private session is continued", () => {
+      const ended = { id: "s-1", status: "terminated", transport: TRANSPORT_ACP, privateMode: { modelId: "m" } } as Session;
+
+      expect(composerStateFor(inputs({ session: ended, draftAgent, agentOptions: options })).controls.model).toBeUndefined();
+    });
+
+    it("keeps the model chip of an ordinary draft", () => {
+      expect(composerStateFor(inputs({ draftAgent, agentOptions: options })).controls.model?.selected).toBe("auto");
+    });
+  });
+
   it("offers no controls while a running ACP session has reported nothing", () => {
     const state = composerStateFor(inputs({ session: running(TRANSPORT_ACP), acp: { ...acp, info: {} } as ComposerInputs["acp"] }));
 
@@ -207,6 +236,20 @@ describe("composerNote", () => {
     );
     // Loading the agent's options is shown by skeleton chips in the row, never by this line.
     expect(composerNote({ continuesSession: false })).toBeUndefined();
+  });
+
+  it("says what a private draft waits for, after the sign-in reason", () => {
+    const privateNote = "Add credits to start a private session";
+    expect(composerNote({ continuesSession: false, privateNote })).toBe(privateNote);
+    expect(composerNote({ continuesSession: false, agentToSignIn: "Qwen Code", privateNote })).toBe(
+      "Sign in to Qwen Code to send a message.",
+    );
+    expect(composerNote({ continuesSession: false, agentToInstall: "Qwen Code", privateNote })).toBe(
+      "Install Qwen Code to start a session.",
+    );
+    expect(composerNote({ continuesSession: false, reviewOwner: { title: "Alpha", isArchived: false }, privateNote })).toBe(
+      "These review comments are for Alpha. Go back to that session, or clear the message.",
+    );
   });
 
   it("says whom review comments are for", () => {

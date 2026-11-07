@@ -15,10 +15,12 @@ export interface DraftChipsProps {
   isOpen: (name: DraftChipName) => boolean;
   onToggle: (name: DraftChipName) => void;
   onClose: (name: DraftChipName) => void;
+  /** Chips after the agent's: the Private chip and its model menu. */
+  children?: ReactNode;
 }
 
 /** Above the draft's composer: where the session starts (folder, branch) and which agents run it. */
-export function DraftChips({ folder, agents, agentChip, isOpen, onToggle, onClose }: DraftChipsProps) {
+export function DraftChips({ folder, agents, agentChip, isOpen, onToggle, onClose, children }: DraftChipsProps) {
   const hasBranch = Boolean(folder?.branch || folder?.worktree);
   return (
     <div className="mb-4 flex w-full flex-wrap items-center gap-2">
@@ -56,6 +58,7 @@ export function DraftChips({ folder, agents, agentChip, isOpen, onToggle, onClos
       ) : (
         agentChip
       )}
+      {children}
     </div>
   );
 }

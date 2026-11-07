@@ -44,6 +44,9 @@ export function useSessionFork(deps: SessionForkDeps): (messageId: string) => Pr
       // A fork works in the same checkout as its source.
       worktree: source.worktree,
       initialMessages: messages.slice(0, index + 1),
+      // A fork of a private session stays private on its model: a native fork shares the source's private
+      // process, and a handoff fork starts a fresh one, which must be private too. A fork runs the source's agent.
+      ...(source.privateMode ? { privateMode: { modelId: source.privateMode.modelId } } : {}),
     };
     // A native fork needs the source agent alive; after it exited, fall back to a handoff.
     if (source.status === 'running' && isLatest && acp.canFork(source.id)) {

@@ -138,6 +138,17 @@ describe("SessionRow", () => {
     expect(mark.parentElement?.firstElementChild).toBe(mark);
   });
 
+  it("marks a private session with a shield in its subtitle", () => {
+    const { row } = renderRow(session({ privateMode: { modelId: "Qwen/Qwen3.8-27B" } }));
+    const mark = within(row).getByRole("img", { name: "Private session" });
+    expect(mark.parentElement).toBe(within(row).getByText("Qwen Code").parentElement);
+  });
+
+  it("marks no ordinary session as private", () => {
+    const { row } = renderRow(session());
+    expect(within(row).queryByRole("img", { name: "Private session" })).toBeNull();
+  });
+
   it("opens its actions on right-click, in place of WebKit's menu", () => {
     const { row } = renderRow(session(), { onDeleteSession: vi.fn(), onPinSession: vi.fn() });
     // fireEvent returns false when the default was prevented.

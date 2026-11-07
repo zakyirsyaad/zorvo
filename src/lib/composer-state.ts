@@ -24,6 +24,15 @@ export interface ComposerInputs {
   onPick?: (profileId: string, configId: string, value: string, reported?: AcpConfigOption[]) => void;
   /** Called for every model the user picks among the agent's `models`, with the agent it is for; in a running session once the agent took it. */
   onPickModel?: (profileId: string, modelId: string) => void;
+  /** The draft's Private chip is on: its private model menu takes the model chip's place. */
+  isPrivate?: boolean;
+}
+
+/** A private session runs the TEE model it was launched on: the agent's own model chip is not offered. */
+function withoutModel(controls: ComposerControls): ComposerControls {
+  if (!controls.model) return controls;
+  const { model: _hidden, ...rest } = controls;
+  return rest;
 }
 
 /**
@@ -32,6 +41,11 @@ export interface ComposerInputs {
  * options it reported last time, applied once it is up.
  */
 export function composerStateFor(inputs: ComposerInputs): ComposerState {
+  const { controls } = composerControlsFor(inputs);
+  return { controls: inputs.isPrivate || inputs.session?.privateMode ? withoutModel(controls) : controls };
+}
+
+function composerControlsFor(inputs: ComposerInputs): ComposerState {
   const { session, draftAgent, acp } = inputs;
   if (session?.status === 'running') {
     const info = acp.info[session.id];
@@ -141,6 +155,8 @@ export function composerNote(state: {
   agentToInstall?: string;
   /** The draft agent's name while its sign-in panel is open. */
   agentToSignIn?: string;
+  /** What a private draft waits for before it can start (credits, the models). */
+  privateNote?: string;
   /** The next message continues a session rather than starting one. */
   continuesSession: boolean;
 }): string | undefined {
@@ -148,6 +164,7 @@ export function composerNote(state: {
   if (state.compareCount !== undefined && state.compareCount >= 2) return COMPARE_NOTE;
   if (state.agentToInstall) return installPlaceholder(state.agentToInstall, state.continuesSession);
   if (state.agentToSignIn) return signInPlaceholder(state.agentToSignIn, state.continuesSession);
+  if (state.privateNote) return state.privateNote;
   return undefined;
 }
 

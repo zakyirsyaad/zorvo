@@ -34,6 +34,8 @@ export interface SessionSpec {
   compareRunId?: string | null;
   /** When the session was made; a run gives its sessions successive times, so they keep the order of its agents. */
   createdAt?: number;
+  /** A Zorvo Private session and its model: every start and reopen of it passes the model. */
+  privateMode?: { modelId: string };
 }
 
 /** How a session is started beyond its spec. */
@@ -46,7 +48,7 @@ export interface StartSessionOptions {
 
 /** The record of a session about to start: running, with the spec's agent and folder. */
 export function newSessionRecord(spec: SessionSpec, createdAt: number = spec.createdAt ?? Date.now()): Session {
-  const { id, agent, cwd, name, forkedFrom, worktree, acpSessionId, compareRunId } = spec;
+  const { id, agent, cwd, name, forkedFrom, worktree, acpSessionId, compareRunId, privateMode } = spec;
   return {
     id: id ?? createId('s'),
     name,
@@ -59,6 +61,7 @@ export function newSessionRecord(spec: SessionSpec, createdAt: number = spec.cre
     worktree: worktree ?? null,
     acpSessionId: acpSessionId ?? null,
     ...(compareRunId !== undefined ? { compareRunId } : {}),
+    ...(privateMode ? { privateMode: { modelId: privateMode.modelId } } : {}),
   };
 }
 

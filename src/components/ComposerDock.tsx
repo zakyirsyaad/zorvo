@@ -12,6 +12,9 @@ import { splitControls } from "../lib/composer-overflow";
 import type { AgentMultiPickerProps } from "./composer/AgentMultiPicker";
 import type { FolderControl } from "./composer/FolderPicker";
 import { DraftChips } from "./composer/DraftChips";
+import { PrivateChip } from "./private/PrivateChip";
+import { PrivateModelMenu } from "./private/PrivateModelMenu";
+import type { PrivateDraft } from "../hooks/usePrivateDraft";
 import { appendAttachments, formatAttachmentPath, withAttachments } from "../lib/attachments";
 import { joinWorkspacePath } from "../lib/files";
 import { MentionMenu } from "./composer/MentionMenu";
@@ -47,6 +50,8 @@ type OpenDropdown =
   | `option:${string}`
   // A compare draft's model chip, by agent.
   | `model:${string}`
+  // The private models, while the draft's Private chip is on.
+  | "private-model"
   | null;
 
 /** The one choice a compare chip shows before its agent's models are known. */
@@ -162,6 +167,11 @@ export interface ComposerDockProps {
   agents?: Omit<AgentMultiPickerProps, "isOpen" | "onToggle" | "onClose">;
   /** A running session's agent, named first in the row; drafts name theirs with the `agent`/`agents` chip. */
   sessionAgent?: { profileId: string; name: string };
+  /**
+   * Before a new session starts: the Private chip after the agent chip and, while it is on, the private model
+   * menu after it and the credits left in the row. The parent drops the agent's own model chip meanwhile.
+   */
+  privateDraft?: Pick<PrivateDraft, "chip" | "modelMenu" | "creditsLine">;
   /** In a compare draft: one model chip per ticked agent, in the run's order. */
   compareModels?: CompareModelControl[];
   /** A compare chip whose agent's models are unknown was opened (or its Try again pressed): ask that agent. */
@@ -202,6 +212,7 @@ export function ComposerDock({
   agent,
   agents,
   sessionAgent,
+  privateDraft,
   compareModels,
   onOpenCompareModel,
   mentions,
@@ -458,7 +469,21 @@ export function ComposerDock({
           isOpen={(name) => openDropdown === name}
           onToggle={toggle}
           onClose={(name) => setOpenDropdown((current) => (current === name ? null : current))}
-        />
+        >
+          {privateDraft?.chip && <PrivateChip {...privateDraft.chip} />}
+          {privateDraft?.modelMenu && (
+            <PrivateModelMenu
+              {...privateDraft.modelMenu}
+              onSelect={(modelId) => {
+                privateDraft.modelMenu?.onSelect(modelId);
+                setOpenDropdown(null);
+              }}
+              isOpen={openDropdown === "private-model"}
+              onToggle={() => toggle("private-model")}
+              onClose={() => setOpenDropdown((current) => (current === "private-model" ? null : current))}
+            />
+          )}
+        </DraftChips>
       )}
       {aboveCardSlots && (
         // Hidden while neither place holds a panel; `empty:` no longer applies, since the two places are always there.
@@ -622,6 +647,9 @@ export function ComposerDock({
               <p id={noteId} className="pl-1 text-caption text-fg-subtle">
                 {shownNote}
               </p>
+            )}
+            {privateDraft?.creditsLine && !(shownNote && noteInRow) && (
+              <span className="pl-1 text-caption text-fg-subtle">{privateDraft.creditsLine}</span>
             )}
           </div>
 

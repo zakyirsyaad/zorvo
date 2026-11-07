@@ -26,6 +26,7 @@ import { isSessionGoneError, isUnknownSessionError } from '../../lib/acp-load-er
 import { writeConversationHandoff } from '../../lib/session-handoff';
 import { applyElicitation, completeElicitation, dismissPendingElicitations } from '../../lib/acp-elicitation';
 import { elicitationActions, type InFlightAnswer } from './elicitation-actions';
+import { privateModelIdOf, privateOpenError, withoutModelChanges } from '../../lib/private-session';
 
 const NOT_ENDED_NORMALLY = new Set(['refusal', 'max_tokens', 'max_turn_requests']);
 
@@ -97,6 +98,8 @@ export interface AcpEngineDeps extends EngineDeps {
   onTurnFailed?: (sessionId: string, error: string | null) => void;
   /** Writes the session's transcript in a moment rather than at its next interval: a turn ended, or the agent asks the user. */
   saveSoon?: (sessionId: string) => void;
+  /** A private session could not open for lack of credits (`empty`) or a working key (`key`). */
+  onPrivateCreditsOut?: (sessionId: string, reason: 'empty' | 'key') => void;
 }
 
 /**
@@ -116,6 +119,7 @@ export function useAcpEngine({
   transcripts,
   onTurnFailed,
   saveSoon,
+  onPrivateCreditsOut,
 }: AcpEngineDeps) {
   const [starting, setStarting] = useState<ReadonlySet<string>>(new Set());
   const agentFailures = useAgentFailures();
@@ -314,6 +318,7 @@ export function useAcpEngine({
     sessionId: string,
     info: AcpSessionInfo,
     options: LaunchOptions,
+    isPrivate: boolean,
   ): Promise<AcpOptions> => {
     let current: AcpOptions = info;
     const done = new Set<string>();
@@ -322,7 +327,9 @@ export function useAcpEngine({
     // One change at a time, each checked against the agent's latest state: what
     // is on offer can depend on what was just set (an effort on its model).
     for (;;) {
-      const change = changesToApply(current, options.choices, options.applySafeMode).find((c) => !done.has(keyOf(c)));
+      const changes = changesToApply(current, options.choices, options.applySafeMode);
+      // A private session stays on the model it was launched on, whatever was picked for the agent before.
+      const change = (isPrivate ? withoutModelChanges(changes, current) : changes).find((c) => !done.has(keyOf(c)));
       if (!change || isStopped(sessionId)) return current;
       done.add(keyOf(change));
       try {
@@ -351,6 +358,7 @@ export function useAcpEngine({
     refusedChoicesRef.current.delete(session.id);
     // Taken before the open starts: a later launch or stop supersedes this one.
     const gen = bumpLaunchGen(session.id);
+    const isPrivate = privateModelIdOf(session) !== undefined;
     const message = options.first ? userMessage(options.first.text, options.first.attachments) : null;
     if (message) updateNow(session.id, (prev) => [...prev, message]);
     // Busy until the first prompt is out: a message sent meanwhile would race it.
@@ -377,6 +385,13 @@ export function useAcpEngine({
         // The message's hidden context goes out with the next one.
         if (options.first?.context) unsentContextRef.current.set(session.id, options.first.context);
         patchSession(session.id, { status: 'terminated', endedAt: Date.now() });
+        // Zorvo Private's refusals are said in plain words, never as the backend's marker or code.
+        const privateError = privateOpenError(error, isPrivate);
+        if (privateError) {
+          reportError(privateError.text);
+          if (privateError.creditsOut) onPrivateCreditsOut?.(session.id, privateError.creditsOut);
+          return false;
+        }
         const authMethods = parseAuthRequired(error);
         if (authMethods) {
           refusedChoicesRef.current.set(session.id, options.choices);
@@ -399,14 +414,17 @@ export function useAcpEngine({
         if (message) updateNow(session.id, (prev) => withoutMessage(prev, message.id));
         return true;
       }
-      // A reopened session may not repeat the models: what is remembered stays then.
-      rememberOptions(session.profileId, {
-        modes: info.modes,
-        configOptions: info.configOptions,
-        ...(info.models ? { models: info.models } : {}),
-      });
+      // A reopened session may not repeat the models: what is remembered stays then. A private session's
+      // options (its TEE model) are not what the agent offers an ordinary draft, so they are not remembered.
+      if (!isPrivate) {
+        rememberOptions(session.profileId, {
+          modes: info.modes,
+          configOptions: info.configOptions,
+          ...(info.models ? { models: info.models } : {}),
+        });
+      }
       if (info.acpSessionId) patchSession(session.id, { acpSessionId: info.acpSessionId });
-      const settled = await applyChanges(session.id, info, options);
+      const settled = await applyChanges(session.id, info, options, isPrivate);
       // Superseded while the picks were applied: a newer launch owns the session.
       if (!isCurrentLaunch(session.id, gen)) {
         // The message this launch showed was never prompted: take it back.
@@ -415,7 +433,7 @@ export function useAcpEngine({
       }
       // What the agent offers now, after the picks: an effort list follows its model,
       // and the next draft should offer what this session ended up with.
-      if (settled.configOptions !== info.configOptions) {
+      if (!isPrivate && settled.configOptions !== info.configOptions) {
         rememberOptions(session.profileId, { configOptions: settled.configOptions });
       }
       if (message && isCurrentLaunch(session.id, gen) && !isStopped(session.id)) {
@@ -431,7 +449,7 @@ export function useAcpEngine({
   };
 
   const start = (session: Session, first?: FirstMessage, choices: AcpChoices = NO_CHOICES) =>
-    launch(session, () => acp.start(session.id, session.cwd, session.profileId), {
+    launch(session, () => acp.start(session.id, session.cwd, session.profileId, privateModelIdOf(session)), {
       first,
       choices,
       applySafeMode: true,
@@ -440,7 +458,7 @@ export function useAcpEngine({
 
   /** Continues an ended session in a fresh agent process through the agent's own session/resume or session/load. */
   const resume = (session: Session, acpSessionId: string, first?: FirstMessage, choices: AcpChoices = NO_CHOICES) =>
-    launch(session, () => acp.reopen(session.id, session.cwd, session.profileId, acpSessionId), {
+    launch(session, () => acp.reopen(session.id, session.cwd, session.profileId, acpSessionId, privateModelIdOf(session)), {
       first,
       choices,
       applySafeMode: true,
@@ -550,12 +568,13 @@ export function useAcpEngine({
     const openNew = async () => {
       const context = hidden ? undefined : await handoffFor(session);
       if (context) unsentContextRef.current.set(sessionId, context);
-      return acp.start(session.id, session.cwd, session.profileId).catch((error: unknown) => {
+      return acp.start(session.id, session.cwd, session.profileId, privateModelIdOf(session)).catch((error: unknown) => {
         if (context) unsentContextRef.current.delete(sessionId);
         throw error;
       });
     };
-    const reopenSession = () => acp.reopen(session.id, session.cwd, session.profileId, acpSessionId);
+    const reopenSession = () =>
+      acp.reopen(session.id, session.cwd, session.profileId, acpSessionId, privateModelIdOf(session));
     // A session refused at a prompt may have had no turn the agent kept: when the agent does not know it,
     // it starts anew. Any other failure keeps the session, whose conversation the agent may still have.
     const reopen = wasTerminated

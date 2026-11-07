@@ -84,6 +84,7 @@ import { useNavigationHistory } from "./hooks/useNavigationHistory";
 import { useUserProfile } from "./hooks/useUserProfile";
 import { useGithubConnection } from "./hooks/useGithubConnection";
 import { usePrivateCredits } from "./hooks/usePrivateCredits";
+import { usePrivateDraft } from "./hooks/usePrivateDraft";
 import { usePrivateRecoveryDialog } from "./hooks/usePrivateRecoveryDialog";
 import { useWorkspaceDetails } from "./hooks/useWorkspaceDetails";
 import { useBranchPicker } from "./hooks/useBranchPicker";
@@ -266,6 +267,13 @@ export default function App() {
     onSingle: setPickedAgentId,
   });
   const newSessionAgent = agents.find((a) => a.id === (compare.agentIds[0] ?? primaryAgentId));
+  // The draft's Private chip: per draft, off by default; while on, the next session runs privately.
+  const privateDraft = usePrivateDraft({
+    credits: privateCredits,
+    agentIds: isNewSessionDraft && newSessionAgent ? (compare.isCompare ? compare.agentIds : [newSessionAgent.id]) : [],
+  });
+  // A private launch never uses the agent's own sign-in: no probe, no sign-in panel and no wait for one.
+  const isPrivateLaunch = privateDraft.isOn || Boolean(activeSession?.privateMode);
   // Several agents each run in their own worktree, so Worktree is on whatever it was set to.
   const isWorktreeActive = canUseWorktree && (isWorktreeOn || compare.isCompare);
   const branchPicker = useBranchPicker({
@@ -426,7 +434,7 @@ export default function App() {
   // A draft asks its ACP agent what it offers, and whether it needs a sign-in, before the first message.
   const agentCheck = useDraftAgentCheck({
     // Several agents are not asked: nothing starts until Send, and the chips they feed are hidden.
-    agent: isActiveRunning || !isDraftAgentReady || compare.isCompare ? undefined : draftAgent,
+    agent: isActiveRunning || !isDraftAgentReady || compare.isCompare || isPrivateLaunch ? undefined : draftAgent,
     cwd: shownFolderPath ?? undefined,
     agentOptions: state.agentOptions,
     rememberProbed,
@@ -436,6 +444,7 @@ export default function App() {
   });
   // Its sign-in panel is open (and not yet done): a message would only be refused.
   const draftNeedsSignIn =
+    !isPrivateLaunch &&
     draftAgent !== undefined &&
     signIn.auth.authRequest?.profileId === draftAgent.id &&
     signIn.auth.authRequest.status !== "signed-in";
@@ -458,6 +467,7 @@ export default function App() {
     },
     onTurnFailed: (sessionId, error) =>
       error ? setFailedTurns((prev) => ({ ...prev, [sessionId]: error })) : clearFailedTurn(sessionId),
+    onPrivateCreditsOut: privateCredits.markCreditsOut,
   });
   // The one instance of Add, Update and Remove: Settings, saved sessions of a removed agent and popouts use it.
   const catalogActions = useAgentCatalogActions({
@@ -595,6 +605,8 @@ export default function App() {
       return;
     }
     rememberFolder(activeWorkspace);
+    // Read now: the draft, and its Private chip with it, is gone once the session starts.
+    const { privateMode } = privateDraft;
     const name = first ? titleFor(first) : nextSessionName(sessions);
     let worktree: SessionWorktree | null = null;
     let cwd = activeWorkspace.path;
@@ -627,7 +639,7 @@ export default function App() {
     }
     setPickedAgentId(null);
     compare.reset();
-    startSession({ agent: newSessionAgent, cwd, name, worktree }, message);
+    startSession({ agent: newSessionAgent, cwd, name, worktree, privateMode }, message);
     // The base was this session's: the next draft starts from the folder's own branch.
     if (worktree) branchPicker.reset();
   };
@@ -754,7 +766,8 @@ export default function App() {
   const draftSessionList = useDraftSessionList({
     agent: isNewSessionDraft ? newSessionAgent : undefined, cwd: activeWorkspace?.path, sessions,
     activeSessionId,
-    isShown: Boolean(isNewSessionDraft && newSessionAgent && agentCheck.canListSessions(newSessionAgent.id) && !isWorktreeActive),
+    // An imported session runs as an ordinary one: a private draft does not offer them.
+    isShown: Boolean(isNewSessionDraft && newSessionAgent && agentCheck.canListSessions(newSessionAgent.id) && !isWorktreeActive && !privateDraft.isOn),
     listSessions: acp.listSessions, acp, choices: startChoices, onChoicesUsed: () => setAcpChoices(NO_CHOICES),
     recordSession, openSession: handleSelectSession, discardSession: sessionActions.discardSession, openNewSession, requestSignIn: signIn.auth.requestSignIn,
   });
@@ -932,16 +945,18 @@ export default function App() {
     acp,
     onPick: rememberPick,
     onPickModel: rememberModelPick,
+    isPrivate: privateDraft.isOn,
   });
   // Several agents are not asked and nothing is picked for them yet: Send only waits for the single agent's install or sign-in.
   // The note promises one worktree each, so while the folder is not known to be a repository (still loading, or unreadable) Send waits too.
-  const isSendWaiting = compare.isCompare ? !canUseWorktree : draftNeedsInstall || draftNeedsSignIn;
+  const isSendWaiting = compare.isCompare ? !canUseWorktree : draftNeedsInstall || draftNeedsSignIn || privateDraft.blocksSend;
   const isSendBlocked = isSendWaiting || review.blocksSend;
   const composerNoteText = composerNote({
     reviewOwner: review.reviewOwner,
     compareCount: compare.agentIds.length,
     agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
     agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
+    privateNote: privateDraft.note,
     continuesSession: isResumable || Boolean(activeSession),
   });
   const composerCommands = composerCommandsFor({
@@ -1199,7 +1214,8 @@ export default function App() {
                     <SignInLayer
                       signIn={signIn}
                       agents={agents}
-                      agentId={activeSession?.profileId ?? (activeRun ? undefined : newSessionAgent?.id)}
+                      // A request for the agent stays, unseen, while a private draft or session is on screen.
+                      agentId={isPrivateLaunch ? undefined : (activeSession?.profileId ?? (activeRun ? undefined : newSessionAgent?.id))}
                       showTerminal={settingsPage.section === null}
                       panelTarget={draftSignInSlot}
                     />
@@ -1240,6 +1256,7 @@ export default function App() {
                     sendLabel={compare.agentIds.length >= 2 ? `Start ${compare.agentIds.length} sessions` : undefined}
                     agentName={activeSession ? activeAgent?.name : newSessionAgent?.name}
                     sessionAgent={activeSession && activeAgent ? { profileId: activeAgent.id, name: activeAgent.name } : undefined}
+                    privateDraft={isNewSessionDraft ? privateDraft : undefined}
                     compareModels={
                       compare.isCompare
                         ? compareModelControls(

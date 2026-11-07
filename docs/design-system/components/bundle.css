@@ -4,7 +4,8 @@ html, body { margin: 0; background: var(--bg); color: var(--fg-secondary); font-
 .z-col { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); }
 .z-ico { width: var(--size-icon); height: var(--size-icon); flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 
-.z-btn { display: inline-flex; align-items: center; gap: var(--space-1\.5); padding: var(--space-1\.5) var(--space-3); border-radius: var(--radius-lg); border: 1px solid transparent; font: 500 12px/16px var(--font-sans); cursor: pointer; transition: background-color 150ms, color 150ms; }
+.z-btn { display: inline-flex; align-items: center; gap: var(--space-1\.5); padding: var(--space-1\.5) var(--space-3); border-radius: var(--radius-lg); border: 1px solid transparent; font: 400 12px/16px var(--font-sans); cursor: pointer; transition: background-color 150ms, color 150ms; }
+.z-btn--primary, .z-btn--danger { font-weight: 500; }
 .z-btn:focus-visible, .z-icon-btn:focus-visible, .z-select:focus-visible, .z-row:focus-visible { outline: 1px solid var(--focus-ring); outline-offset: 1px; }
 .z-btn--primary { background: var(--primary); color: var(--on-primary); }
 .z-btn--primary:enabled:hover { background: var(--primary-hover); }

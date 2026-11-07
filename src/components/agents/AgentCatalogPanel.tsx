@@ -3,7 +3,7 @@ import { AgentCatalog } from "./AgentCatalog";
 import type { SettingsSignIn } from "../../hooks/useSettingsSignIn";
 import type { AgentCatalogHandle } from "../../hooks/useAgentCatalog";
 import type { AgentCatalogActions } from "../../hooks/useAgentCatalogActions";
-import { loadAgentIcons } from "../../lib/agent-icons";
+import { recheckAgents } from "../../lib/agent-recheck";
 import { enabledAgentIds } from "../../lib/enabled-agents";
 import type { AgentProfile, Settings } from "../../types";
 
@@ -20,16 +20,9 @@ export interface AgentCatalogPanelProps {
 
 /** The agent catalog wired to the app's state; Settings and onboarding show the same one. */
 export function AgentCatalogPanel({ agents, settings, refreshAgents, catalog, actions, signIn }: AgentCatalogPanelProps) {
-  // Check again refreshes the registry, but reports no change event: the catalog and icons are read here.
-  const checkAgain = async () => {
-    try {
-      await refreshAgents();
-    } finally {
-      await Promise.all([catalog.reload(), loadAgentIcons()]);
-    }
-  };
+  const checkAgain = () => recheckAgents(refreshAgents, catalog.reload);
 
-  // When the agents tab opens (never at app start, never on window focus), agents that can say who is
+  // When the Agents section opens (never at app start, never on window focus), agents that can say who is
   // signed in are asked, in a way that opens no session; the chip then reads Ready or Sign in.
   const sweep = signIn?.sweep;
   const startable = (catalog.catalog?.agents ?? [])

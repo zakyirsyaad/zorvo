@@ -13,15 +13,94 @@ import { Chip } from "../components/ui/Chip";
 import { Tabs, tabIds, type TabItem } from "../components/ui/Tabs";
 
 describe("primitive sizes from the canvas", () => {
-  it("Button is 28px with 13px text by default, 24px small and 32px large", () => {
+  it("Button is 28px with 12px text by default, 24px small and 32px large with 13px text", () => {
     const { rerender } = render(<Button>Go</Button>);
-    expect(screen.getByRole("button", { name: "Go" })).toHaveClass("h-7", "text-ui");
+    const md = screen.getByRole("button", { name: "Go" });
+    expect(md).toHaveClass("h-7", "text-ui-sm");
+    expect(md).not.toHaveClass("text-ui");
 
     rerender(<Button size="sm">Go</Button>);
     expect(screen.getByRole("button", { name: "Go" })).toHaveClass("h-6", "text-ui-sm");
 
     rerender(<Button size="lg">Go</Button>);
     expect(screen.getByRole("button", { name: "Go" })).toHaveClass("h-8", "text-ui");
+  });
+
+  it("Button text is weight 400 for outline and ghost, 500 for primary and danger", () => {
+    const { rerender } = render(<Button variant="outline">Go</Button>);
+    const weightOf = () => screen.getByRole("button", { name: "Go" });
+    expect(weightOf()).toHaveClass("font-normal");
+    expect(weightOf()).not.toHaveClass("font-medium");
+
+    rerender(<Button variant="ghost">Go</Button>);
+    expect(weightOf()).toHaveClass("font-normal");
+    expect(weightOf()).not.toHaveClass("font-medium");
+
+    rerender(<Button variant="primary">Go</Button>);
+    expect(weightOf()).toHaveClass("font-medium");
+    expect(weightOf()).not.toHaveClass("font-normal");
+
+    rerender(<Button variant="danger">Go</Button>);
+    expect(weightOf()).toHaveClass("font-medium");
+    expect(weightOf()).not.toHaveClass("font-normal");
+  });
+
+  it("the weight follows the variant at every size, except that a large lead action is always 500", () => {
+    const { rerender } = render(<Button size="sm" variant="outline">Go</Button>);
+    expect(screen.getByRole("button", { name: "Go" })).toHaveClass("font-normal");
+
+    rerender(<Button size="row" variant="ghost">Go</Button>);
+    expect(screen.getByRole("button", { name: "Go" })).toHaveClass("font-normal");
+
+    // The sidebar's New session: an outline button the canvas draws at 13px and weight 500.
+    rerender(<Button size="lg" variant="outline">Go</Button>);
+    const lead = screen.getByRole("button", { name: "Go" });
+    expect(lead).toHaveClass("font-medium");
+    expect(lead).not.toHaveClass("font-normal");
+  });
+
+  it.each([
+    ["primary", "sm", "font-medium"],
+    ["primary", "row", "font-medium"],
+    ["primary", "md", "font-medium"],
+    ["primary", "lg", "font-medium"],
+    ["danger", "sm", "font-medium"],
+    ["danger", "md", "font-medium"],
+    ["danger", "lg", "font-medium"],
+    ["outline", "sm", "font-normal"],
+    ["outline", "row", "font-normal"],
+    ["outline", "md", "font-normal"],
+    ["outline", "lg", "font-medium"],
+    ["ghost", "sm", "font-normal"],
+    ["ghost", "row", "font-normal"],
+    ["ghost", "md", "font-normal"],
+    ["ghost", "lg", "font-medium"],
+    ["primary", "field", "font-medium"],
+    ["danger", "field", "font-medium"],
+    ["outline", "field", "font-normal"],
+    ["ghost", "field", "font-normal"],
+  ] as const)("a %s %s Button carries exactly one weight class, %s", (variant, size, expected) => {
+    render(<Button variant={variant} size={size}>Go</Button>);
+    const button = screen.getByRole("button", { name: "Go" });
+    const weights = ["font-normal", "font-medium"].filter((name) => button.classList.contains(name));
+    expect(weights).toEqual([expected]);
+  });
+
+  it("Button's `lg` is the 13px lead action and `field` is a 32px button with 12px text", () => {
+    const { rerender } = render(<Button size="lg">Go</Button>);
+    const lead = screen.getByRole("button", { name: "Go" });
+    expect(lead).toHaveClass("h-8", "px-3", "text-ui", "font-medium");
+    expect(lead).not.toHaveClass("text-ui-sm");
+
+    // Settings → Agents' Check again: 32px to sit beside the search field, drawn like any other outline button.
+    rerender(<Button size="field">Go</Button>);
+    const beside = screen.getByRole("button", { name: "Go" });
+    expect(beside).toHaveClass("h-8", "px-3", "text-ui-sm", "font-normal");
+    expect(beside).not.toHaveClass("text-ui");
+    expect(beside).not.toHaveClass("font-medium");
+
+    rerender(<Button size="field" variant="primary">Go</Button>);
+    expect(screen.getByRole("button", { name: "Go" })).toHaveClass("h-8", "text-ui-sm", "font-medium");
   });
 
   it("Button has a 26px size, and a ghost one can take the secondary text colour", () => {
@@ -219,13 +298,41 @@ describe("BlockerCard", () => {
     );
 
     const card = screen.getByRole("region", { name: "Install Codex" });
-    expect(card).toHaveClass("rounded-xl", "border", "bg-surface-2", "p-4");
-    expect(screen.getByRole("heading", { level: 2, name: "Codex isn't installed yet" })).toBeInTheDocument();
-    expect(screen.getByText("Codex needs Node.js before it can start.")).toBeInTheDocument();
+    // Padded 18px, with the popover shadow, as drawn.
+    expect(card).toHaveClass("rounded-xl", "border", "bg-surface-2", "p-[18px]", "shadow-popover", "gap-3.5");
+    const heading = screen.getByRole("heading", { level: 2, name: "Codex isn't installed yet" });
+    expect(heading).toHaveClass("font-semibold");
+    expect(screen.getByText("Codex needs Node.js before it can start.")).toHaveClass("text-ui", "text-fg-muted");
     expect(screen.getByRole("button", { name: "Install Codex" })).toBeInTheDocument();
-    expect(screen.getByText("Footer line").parentElement).toHaveClass("border-t", "pt-3", "mt-3");
+    const footer = screen.getByText("Footer line").parentElement;
+    expect(footer).toHaveClass("border-t", "pt-3");
+    expect(footer).not.toHaveClass("mt-3");
     // Codex's official logo is a decorative img: the heading already names the agent.
     expect(card.querySelector("img[alt='']")).not.toBeNull();
+  });
+
+  it("puts its logo in a 32px tile", () => {
+    render(
+      <BlockerCard label="Install Codex" profileId="codex-acp" title="Codex isn't installed yet">
+        Body
+      </BlockerCard>,
+    );
+
+    const tile = screen.getByRole("region", { name: "Install Codex" }).querySelector("img[alt='']")?.parentElement;
+    expect(tile).toHaveClass("size-8", "rounded-lg", "bg-surface-hover");
+  });
+
+  it("puts the main button on its own row under the body", () => {
+    render(
+      <BlockerCard label="Install Codex" title="Codex isn't installed yet" actions={<Button>Install Codex</Button>}>
+        Body
+      </BlockerCard>,
+    );
+
+    const row = screen.getByRole("button", { name: "Install Codex" }).parentElement as HTMLElement;
+    expect(row).toHaveClass("justify-end");
+    expect(row.contains(screen.getByRole("heading", { level: 2 }))).toBe(false);
+    expect(row.parentElement).toBe(screen.getByRole("region", { name: "Install Codex" }));
   });
 
   it("leaves out the logo, actions and footer it is not given", () => {

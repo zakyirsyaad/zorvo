@@ -55,6 +55,11 @@ describe("The new-session heading", () => {
     expect((screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement).disabled).toBe(true);
 
     const open = screen.getAllByRole("button", { name: "Open folder" }).find((button) => button.className.includes("bg-primary"))!;
+    // As drawn: a 32px button with a plus, under a 600 heading and a closed folder.
+    expect(open.className).toContain("h-8");
+    expect(open.querySelector(".lucide-plus")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Open a folder to start" }).className).toContain("font-semibold");
+    expect(document.querySelector(".lucide-folder-open")).toBeNull();
     await act(async () => {
       fireEvent.click(open);
     });

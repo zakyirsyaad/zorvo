@@ -31,6 +31,10 @@
 > it. [Opening it the first time](#open-zorvo-the-first-time) takes one extra
 > step.
 
+**New in 0.9:** a redesigned window with one inspector beside the chat, a
+welcome screen, Settings as a full page, a model per agent when you compare
+them, and Qwen Code's setup inside Zorvo. See the [changelog](CHANGELOG.md).
+
 ## Contents
 
 - [Quick start](#quick-start)
@@ -52,9 +56,11 @@
    open it, and drag Zorvo into **Applications**.
 2. Open Zorvo, then allow it once in **System Settings → Privacy & Security →
    Open Anyway** ([details](#open-zorvo-the-first-time)).
-3. Follow the onboarding: pick your agents and a project folder. Zorvo installs
-   what an agent needs, Node.js included.
-4. Click **+ New** and send your first message.
+3. On the welcome screen, tick the agents you'll use, press **Install** next to
+   any that are not on your Mac (Zorvo brings Node.js or `uv` when an agent
+   needs them), pick a project folder and press **Start**.
+4. Type your first message. If the agent needs you to sign in, the session
+   shows how before you send.
 
 ## What you can do
 
@@ -66,19 +72,21 @@
   skills and plugins add.
 - **An agent catalog.** Settings → Agents lists every agent in the ACP
   registry. Add, install, update and remove agents there.
-- **Sign in without leaving the app.** An agent's own login runs in a terminal
-  inside Zorvo. The sidebar shows which agents are **Ready**, which need you to
-  **Sign in** and which are **Not checked** yet, and a new session shows the
-  sign-in panel before you type. Settings → Agents shows the same status on
-  each agent, with **Check sign-in** and, when an agent needs one, its sign-in
-  methods. When an agent needs an answer from you, it can
-  show a form in the chat, or send you to a web page.
+- **Sign in without leaving the app.** An agent's own login, or its own setup
+  (Qwen Code: **Set up Qwen Code**), runs in a terminal inside Zorvo. The
+  **Agents** button next to Settings shows which agents are **Ready**, which
+  need you to **Sign in** and which are **Not checked** yet, and a new session
+  shows a sign-in card before you send. Settings → Agents shows the same chip on
+  each agent, with **Check sign-in** and its sign-in methods inside the row.
+- **Answer the agent's questions.** When an agent needs an answer from you, it
+  can show a form or a question card in the chat, or send you to a web page.
 - **Pick up where you left off.** Continue a session you started in an agent's
   own CLI, and sessions resume after a restart.
-- **Compare agents.** In a git repository, tick up to four agents on the Agent
-  chip and send one prompt to all of them. Each agent works in its own worktree
-  and uses its own quota. You see what each one changed, then **Pick** the one
-  to keep. The others stop and are archived, and their worktrees stay.
+- **Compare agents.** In a git repository, tick up to four agents on the agent
+  chip, choose each one's model, and send one prompt to all of them. Each agent
+  works in its own worktree and uses its own quota. One card per agent says how
+  its turn is going and what it changed; **Pick** keeps one after you confirm.
+  The others stop and are archived, and their worktrees stay.
 
 ### Stay in control
 
@@ -87,21 +95,27 @@
   agent offers.
 - **Reply to part of a reply.** Select text in the chat to copy it, or press
   **Reply** to quote it in your next message.
-- **See what an agent did.** The Activity panel lists the files it reported, the
-  commands it ran, and the permissions you answered, and shows files git says
-  changed that it did not report. It is the agent's own report, and it says so.
-- **See every change.** Each file the agent changes comes with its diff. The
-  Changes panel lets you review them and commit the files you choose.
+- **One inspector beside the chat.** The top bar's **Inspector** button opens a
+  panel with four tabs: Changes, Activity, Files and Terminal. Drag its edge to
+  resize it; Zorvo remembers the width.
+- **See what an agent did.** The Activity tab lists, turn by turn, the files it
+  reported, the commands it ran and the permissions you answered, and shows
+  files git says changed that it did not report. It is the agent's own report,
+  and it says so.
+- **See every change.** The Changes tab shows each changed file with its counts
+  and diff, and lets you commit the files you choose. The full diff review opens
+  in the chat's place, with the files listed on the left.
 - **Comment on lines of a diff.** Leave comments on the lines an agent changed,
-  add them to your message, read or edit it, and send it. The agent gets each
-  comment with its file, its line and the line itself. A comment that no longer
-  matches its line says **Outdated** instead of moving to another one.
+  in the Changes tab or the full review, add them to your message, read or edit
+  it, and send it. The agent gets each comment with its file, its line and the
+  line itself. A comment that no longer matches its line says **Outdated**
+  instead of moving to another one.
 - **Know when an agent is stuck.** If an agent reports failed requests, or has
   sent nothing for a minute, Zorvo says so under **Working…**, with a Stop
   button.
 - **Follow your pull request.** The top bar shows your branch's pull request and
   its checks, read with your own `gh`.
-- **Connect to GitHub.** **Settings → General → GitHub** shows whether your
+- **Connect to GitHub.** **Settings → GitHub** shows whether your
   GitHub CLI is installed and signed in. If it is not signed in, **Connect**
   opens a terminal where `gh` signs you in through your browser; `gh` asks a few
   questions there, such as which Git protocol you use, and you answer them in
@@ -111,17 +125,22 @@
 ### Keep your work organized
 
 - **Sessions by folder.** Sessions are titled from your first message and saved
-  on your Mac. Rename, pin and archive them, or pop one out into its own window.
-  An unread mark shows which agent finished while you were away.
+  on your Mac. Each row says in words what its agent is doing ("Working",
+  "Waiting for you", "Finished, unread"). Rename, pin and archive them, or open
+  one in its own window. **Hide sidebar** gives the chat the whole window.
 - **Fork and rewind.** Fork any reply into a new session, or rewind to before
   one of your messages and send it again, edited.
 - **Worktrees.** Run a session in its own git worktree on an `agent/<title>`
   branch, so agents in the same repository never edit the same files.
-- **A terminal where the agent works.** The **Terminal** button opens a shell in
-  the session's folder, in a drawer under the chat, with tabs per folder.
-- **A composer that knows your project.** Mention files with `@`, drop files or
-  pictures onto the window, and click the context meter to see the tokens used,
-  the tokens left and the cost.
+- **A terminal where the agent works.** The inspector's **Terminal** tab opens
+  a shell in the session's folder, with a tab per shell. Shells keep running
+  when you switch tabs or close the inspector.
+- **Read a file without leaving Zorvo.** The **Files** tab marks changed files
+  and opens a file with its changed lines marked. Select lines to add them to
+  your message.
+- **A composer that knows your project.** Mention files with `@`, run the
+  agent's commands with `/`, drop files or pictures onto the window, and click
+  "38% of context" to see the tokens used, the tokens left and the cost.
 
 ## Supported agents
 
@@ -153,12 +172,12 @@ sooner, and never one the registry has withdrawn.
   |---|---|---|
   | Claude Code | The sign-in panel in Zorvo, or `claude` then `/login` | `npm i -g @anthropic-ai/claude-code` |
   | Codex | The sign-in panel in Zorvo, or `codex login` | `npm i -g @openai/codex` |
-  | Qwen Code | Run `qwen` once in a terminal | `npm i -g @qwen-code/qwen-code` |
+  | Qwen Code | **Set up Qwen Code** in a new session, or run `qwen` once in a terminal | `npm i -g @qwen-code/qwen-code` |
 
   A global install is not needed; it only makes an agent show up as installed
   before you first use it.
 - **Optional: the [GitHub CLI](https://cli.github.com)**, signed in with
-  `gh auth login` or with **Connect** in **Settings → General**, to see pull
+  `gh auth login` or with **Connect** in **Settings → GitHub**, to see pull
   requests and their checks and to show your GitHub name in the sidebar.
 
 Zorvo reads your login shell's environment, so it finds whatever your terminal
@@ -208,9 +227,10 @@ From 0.6.0 on, Zorvo tells you when a newer version exists: a card in the bottom
 right of the window says "Zorvo X.Y.Z is ready". Click **Update & restart** and
 Zorvo downloads the update, checks its signature, installs it and opens again.
 **Later** hides the notice until you next start Zorvo. Agents that are working
-stop, and open terminals end, when Zorvo restarts, so update when the agents
-are idle and nothing runs in a terminal. Your sessions are kept: they are
-stored outside the app.
+stop, and open terminals end, when Zorvo restarts; the card says how many, so
+update when the agents are idle and nothing runs in a terminal. Your sessions
+are kept: they are stored outside the app. **Settings → General** shows when
+Zorvo last checked, with **Check now**.
 
 A copy that runs from the disk image, or from any other read-only place, cannot
 update itself there: drag Zorvo into Applications, open it from there, and
@@ -235,20 +255,21 @@ in the other. macOS asks again for notification and folder permissions.
 
 ## Getting started
 
-1. **Onboarding.** The first run checks which agents are installed, lets you
-   pick a default, and asks for a project folder.
-2. **Start a session.** Click **+ New**, or the **+** next to a folder to choose
-   its agent. In the composer, pick the folder, branch, model, effort and
-   permission mode, then send your first message. Turn on **Worktree** first to
-   give the session its own checkout.
+1. **The welcome screen.** The first run lists the agents in use or on your
+   Mac, then the popular ones. Tick the ones you'll use, install any that are
+   missing, pick a project folder and press **Start**. **Settings → General →
+   Run setup again** brings it back.
+2. **Start a session.** Click **New session**, or the **+** next to a folder.
+   Above the composer, pick the folder, the branch (or **New worktree** to give
+   the session its own checkout) and the agent; in the composer, pick the
+   model, effort and mode. Then send your first message.
 3. **Work with the agent.**
-   - Answer its permission requests in the chat.
-   - Open **Files** to browse the folder, and **Changes** to review and commit
-     what it changed.
-   - Open **Terminal** for a shell in the same folder.
-4. **Branch off.**
+   - Answer its permission requests and questions in the chat.
+   - Open the **Inspector** to review and commit changes, follow its activity,
+     read files and run a terminal in the same folder.
+4. **Branch off.** Point at a message to see its actions.
    - **Fork** under any reply starts a new session from there.
-   - **↺ Rewind** under one of your messages takes the conversation back to
+   - **Rewind** under one of your messages takes the conversation back to
      before it and puts the message in the composer to edit. Files the agent
      changed stay as they are.
 
@@ -306,10 +327,12 @@ before it edits files or runs commands. Pick another mode in the composer.
 | An agent shows as not installed | Click **Install** next to it in Settings → Agents, or pick it in a new session's agent list and click **Install**. Zorvo brings Node.js or `uv` when the agent needs them. Then click **Check again**. |
 | "Sign in to *agent*" | Use a sign-in method the panel offers, or sign in once in a terminal (see [Requirements](#requirements)). If you set a key outside Zorvo (for example in `~/.zshrc`), click **Check again** in the panel: Zorvo reads your shell's settings again, then asks the agent. Your refused message waits in the box and is sent once you are signed in. |
 | **Update & restart** fails with a read-only message | A copy that runs from the disk image cannot update itself: drag it into Applications and open it from there. Or download the newest DMG from [releases](https://github.com/zakyirsyaad/zorvo/releases) and replace Zorvo in Applications. |
+| The welcome screen says "Zorvo could not read your agents" | Press **Check again**. Zorvo reads your login shell's environment to find your agents, so if it keeps failing, check that a new terminal window opens without errors, then quit and reopen Zorvo. |
+| GLM Agent asks you to sign in, or reads **Not checked** | It needs `Z_AI_API_KEY` in your shell. Export it in `~/.zshrc` (or run the agent's own setup), then click **Check again**. Zorvo only checks that the variable is set, never its value. |
 | An agent takes a while to start the first time | Its first start downloads the agent's package. Later starts are quick. |
 | The agent stays on **Working…** | If Zorvo shows that the agent's requests failed, the cause is usually the agent's account, such as a used-up quota. Check it in the agent's own CLI, then click **Stop** and send your message again. |
-| No pull request status | Open **Settings → General → GitHub**. If `gh` is not installed, install it; if you are not connected, click **Connect**. A repository without a GitHub remote has none to show. |
-| "is not in the last commit, so a worktree would not have it" | A worktree checks out the last commit. Commit the folder first, or start the session without **Worktree**. |
+| No pull request status | Open **Settings → GitHub**. If `gh` is not installed, install it; if you are not connected, click **Connect**. A repository without a GitHub remote has none to show. |
+| "is not in the last commit, so a worktree would not have it" | A worktree checks out the last commit. Commit the folder first, or pick a branch instead of **New worktree**. |
 
 Still stuck? [Open an issue](https://github.com/zakyirsyaad/zorvo/issues/new/choose)
 with your Zorvo version, shown at the bottom of the sidebar.

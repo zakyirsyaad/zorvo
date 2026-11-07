@@ -419,6 +419,6 @@ describe("Window chrome wiring", () => {
     // The version lives in Settings; the footer is the person and their controls.
     expect(sidebar.queryByText(/Zorvo v/)).toBeNull();
     await click(sidebar.getByRole("button", { name: /^Settings/ }));
-    expect(screen.getByRole("dialog")).toBeDefined();
+    expect(screen.getByRole("navigation", { name: "Settings" })).toBeDefined();
   });
 });

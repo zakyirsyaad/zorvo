@@ -164,7 +164,7 @@ describe("signing in to an ACP agent from the app", () => {
   it("says in the panel's status line that the refused message is sent again", async () => {
     const { panel } = await sendRefused();
 
-    expect(panel.getByRole("status").textContent).toBe("Your message will be sent again after you sign in");
+    expect(panel.getByRole("status").textContent).toBe("Your message will be sent again after you sign in.");
   });
 
   it("shows the session running again once the refused message is sent", async () => {

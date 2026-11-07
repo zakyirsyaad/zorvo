@@ -713,6 +713,66 @@ fn reports_a_sign_in_when_the_agent_refuses_a_prompt_for_it() {
     manager.stop("s-1");
 }
 
+/// The error a started session's prompt ends its turn with, for an agent run as `launch`.
+fn prompt_failure(launch: &AcpLaunch) -> String {
+    let (manager, rx) = manager();
+    manager.start("s-1", &cwd(), launch).unwrap();
+
+    manager.prompt("s-1", "hi", &[]).unwrap();
+
+    let ended = wait_for(&rx, |e| matches!(e, AcpEvent::TurnEnded { .. }));
+    manager.stop("s-1");
+    let AcpEvent::TurnEnded {
+        stop_reason: Err(error),
+        ..
+    } = ended
+    else {
+        panic!("expected a failed turn, got {ended:?}");
+    };
+    error
+}
+
+/// GLM Agent opens sessions without a key and fails the first prompt with `-32603` and the
+/// reason in `data.details`: that is a request to sign in, not a failed turn.
+#[test]
+fn reports_a_sign_in_when_a_prompt_fails_internally_for_want_of_an_api_key() {
+    let launch = with_env(
+        fake_agent(),
+        "FAKE_ACP_PROMPT_ERROR_DETAILS",
+        "No API key found. Set the Z_AI_API_KEY environment variable.",
+    );
+
+    let error = prompt_failure(&launch);
+
+    assert_eq!(auth_methods_in(&error)[0]["id"], "browser");
+}
+
+#[test]
+fn keeps_an_internal_prompt_failure_without_a_sign_in_word_a_plain_failure() {
+    let launch = with_env(
+        fake_agent(),
+        "FAKE_ACP_PROMPT_ERROR_DETAILS",
+        "Cannot read properties of undefined",
+    );
+
+    let error = prompt_failure(&launch);
+
+    assert!(!error.starts_with(zorvo_lib::acp::manager::AUTH_REQUIRED_PREFIX));
+}
+
+#[test]
+fn keeps_an_internal_prompt_failure_from_an_agent_with_no_methods_a_plain_failure() {
+    let launch = with_env(
+        with_env(fake_agent(), "FAKE_ACP_NO_AUTH_METHODS", "1"),
+        "FAKE_ACP_PROMPT_ERROR_DETAILS",
+        "No API key found",
+    );
+
+    let error = prompt_failure(&launch);
+
+    assert!(!error.starts_with(zorvo_lib::acp::manager::AUTH_REQUIRED_PREFIX));
+}
+
 #[test]
 fn probes_an_agent_for_its_options_and_commands_without_keeping_a_session() {
     let (manager, _rx) = manager();
@@ -918,6 +978,60 @@ fn probing_does_not_wait_long_for_commands_an_agent_never_sends() {
     );
     assert_eq!(probed.commands, Value::Array(vec![]));
     assert_eq!(probed.config_options[0]["id"], "model");
+}
+
+/// GLM Agent opens a session without a key, so opening one shows nothing. When it names the
+/// variable its key lives in and that variable is not set, the probe must not call it ready.
+#[test]
+fn an_opened_session_is_not_a_sign_in_while_the_key_variable_the_agent_names_is_missing() {
+    let (manager, _rx) = manager();
+    let launch = with_env(fake_agent(), "FAKE_ACP_ENV_VAR_METHOD", "FAKE_GLM_KEY");
+
+    let probed = manager.probe(&cwd(), &launch, true).expect("probe");
+
+    assert_eq!(probed.config_options[0]["id"], "model");
+    assert!(!probed.sign_in_checked);
+    assert_eq!(probed.missing_env, vec!["FAKE_GLM_KEY"]);
+}
+
+#[test]
+fn an_opened_session_is_a_sign_in_once_the_key_variable_is_set() {
+    let (manager, _rx) = manager();
+    let launch = with_env(
+        with_env(fake_agent(), "FAKE_ACP_ENV_VAR_METHOD", "FAKE_GLM_KEY"),
+        "FAKE_GLM_KEY",
+        "set",
+    );
+
+    let probed = manager.probe(&cwd(), &launch, true).expect("probe");
+
+    assert!(probed.sign_in_checked);
+    assert!(probed.missing_env.is_empty());
+}
+
+#[test]
+fn a_missing_key_variable_does_not_change_an_agent_that_reports_who_is_signed_in() {
+    let (manager, _rx) = manager();
+    let launch = with_env(
+        with_env(fake_agent(), "FAKE_ACP_ENV_VAR_METHOD", "FAKE_GLM_KEY"),
+        "FAKE_ACP_AUTH_STATUS",
+        "account",
+    );
+
+    let probed = manager.probe(&cwd(), &launch, true).expect("probe");
+
+    assert!(probed.sign_in_checked);
+    assert!(probed.missing_env.is_empty());
+}
+
+#[test]
+fn an_agent_with_no_env_var_method_is_checked_as_before() {
+    let (manager, _rx) = manager();
+
+    let probed = manager.probe(&cwd(), &fake_agent(), true).expect("probe");
+
+    assert!(probed.sign_in_checked);
+    assert!(probed.missing_env.is_empty());
 }
 
 #[test]

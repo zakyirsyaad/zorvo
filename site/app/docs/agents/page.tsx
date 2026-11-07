@@ -71,7 +71,7 @@ export default function AgentsPage() {
       <H2 id="catalog">The agent catalog</H2>
       <P>
         Settings, Agents lists every agent in the registry, with search and logos. Add, install, update and remove
-        agents there. Onboarding uses the same list.
+        agents there. The welcome screen offers the same agents.
       </P>
       <Picture label="Settings, Agents: a search field and four agents, Claude Code installed, Codex with an update, Qwen Code not installed and Pi not added, then a collapsed list of two agents that are not available">
         <PictureRow>
@@ -111,7 +111,7 @@ export default function AgentsPage() {
       </Picture>
       <UL>
         <li>
-          <B>Agents in use only.</B> The sidebar and pickers show the agents you use: the three defaults, plus any
+          <B>Agents in use only.</B> The Agents menu and the agent pickers show the agents you use: the three defaults, plus any
           registry agent already installed on your Mac, as a binary on your <Chip isCode>PATH</Chip> or a global npm
           package.
         </li>
@@ -140,8 +140,8 @@ export default function AgentsPage() {
       <H3 id="versions">Versions and updates</H3>
       <P>
         A new version is offered a week after it was published, and never one the registry has withdrawn. Zorvo keeps
-        the version an agent started with until you click <B>Update</B>. When an update is offered, the Settings button
-        shows a dot, the Agents tab shows a count, and a notice tells you once per version.
+        the version an agent started with until you click <B>Update</B>. When an update is offered, Agents in Settings&apos; navigation
+        shows a count, and a notice tells you once per version.
       </P>
       <P>
         Agents sign in with their own tools. See <DocLink href="/docs/signing-in">Signing in</DocLink>.
@@ -152,6 +152,10 @@ export default function AgentsPage() {
         An agent can show a form in the chat, or send you to a web page to sign in. You answer in the chat or in a
         popout window. What you type goes to the agent and is never saved, and a web page opens in your browser only
         after you click <B>Open in browser</B>.
+      </P>
+      <P>
+        Qwen Code asks its questions as a card in the chat, with each question&apos;s options and an <B>Other</B> field for
+        your own words. <B>Submit</B> is on once every question has an answer, and what you type goes only to Qwen Code.
       </P>
 
       <H2 id="resume">Resume and fork</H2>

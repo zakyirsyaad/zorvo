@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
-export type Status = "running" | "attention" | "unread" | "merged" | "danger" | "idle";
+/** `ready` is the running colour without the pulse: done and fine (Up to date, Connected), not working. */
+export type Status = "running" | "ready" | "attention" | "unread" | "merged" | "danger" | "idle";
 
 export interface StatusLineProps {
   status: Status;
@@ -11,6 +12,7 @@ export interface StatusLineProps {
 
 const DOT: Record<Exclude<Status, "idle">, string> = {
   running: "bg-status-running motion-safe:animate-pulse",
+  ready: "bg-status-running",
   attention: "bg-status-attention",
   unread: "bg-status-unread",
   merged: "bg-status-merged",

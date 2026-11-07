@@ -58,7 +58,7 @@ describe("useAgentProbe", () => {
     await waitFor(() => expect(props.onProbed).toHaveBeenCalledTimes(1));
     expect(probeCalls(spy)[0][1]).toEqual({ profileId: "qwen-code", cwd: CWD, needsOptions: true });
     const [profileId, options, facts] = props.onProbed.mock.calls[0];
-    expect(facts).toEqual({ signInChecked: true, canListSessions: true });
+    expect(facts).toEqual({ signInChecked: true, canListSessions: true, missingEnv: [] });
     expect(profileId).toBe("qwen-code");
     expect(options.modes?.currentModeId).toBe("default");
     expect(options.configOptions[0].id).toBe("model");
@@ -94,7 +94,19 @@ describe("useAgentProbe", () => {
 
     await waitFor(() => expect(props.onProbed).toHaveBeenCalledTimes(1));
     const [, , facts] = props.onProbed.mock.calls[0];
-    expect(facts).toEqual({ signInChecked: true, canListSessions: false });
+    expect(facts).toEqual({ signInChecked: true, canListSessions: false, missingEnv: [] });
+  });
+
+  it("reads the key variables the agent is missing, and only plain names", async () => {
+    const answer = { ...structuredClone(PROBED), signInChecked: false, missingEnv: ["Z_AI_API_KEY", "bad name; rm", 7, "_OK1"] };
+    vi.spyOn(tauriInternals(), "invoke").mockResolvedValue(answer);
+    const props = deps();
+
+    renderHook(() => useAgentProbe(props));
+
+    await waitFor(() => expect(props.onProbed).toHaveBeenCalledTimes(1));
+    const [, , facts] = props.onProbed.mock.calls[0];
+    expect(facts).toEqual({ signInChecked: false, canListSessions: true, missingEnv: ["Z_AI_API_KEY", "_OK1"] });
   });
 
   it("says which agent it is asking while it waits", async () => {

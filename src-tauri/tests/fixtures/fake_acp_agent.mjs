@@ -31,6 +31,8 @@
 //                         session/list answers no sessions
 //   FAKE_ACP_LIST_FAIL_AT=<n> -> page n answers with a server error
 //   FAKE_ACP_AUTH_REQUIRED -> session/new and session/list refuse with an auth-required error
+//   FAKE_ACP_PROMPT_ERROR_DETAILS=<text> -> refuses a plain prompt with -32603 "Internal error"
+//                         and <text> in data.details, as GLM Agent does without an API key
 //   FAKE_ACP_CALL_LOG -> appends every received method name to the file it names
 //   FAKE_ACP_SLOW_INIT=<ms> -> answers initialize only after that many milliseconds
 //                         (ten seconds when set without a delay)
@@ -240,6 +242,19 @@ function handlePrompt(id, params) {
     send({ id, error: { code: -32000, message: "Authentication required" } });
     return;
   }
+  // FAKE_ACP_PROMPT_ERROR_DETAILS: refuses every other prompt the way GLM Agent does without
+  // a key: -32603 "Internal error", the reason only in data.details.
+  if (process.env.FAKE_ACP_PROMPT_ERROR_DETAILS) {
+    send({
+      id,
+      error: {
+        code: -32603,
+        message: "Internal error",
+        data: { details: process.env.FAKE_ACP_PROMPT_ERROR_DETAILS },
+      },
+    });
+    return;
+  }
   say(params.sessionId, `echo: ${text}`);
   reply(id, { stopReason: "end_turn" });
 }
@@ -292,11 +307,21 @@ const handlers = {
       authMethods: process.env.FAKE_ACP_NO_AUTH_METHODS ? [] : [
         { id: "browser", name: "Sign in with a browser" },
         { id: "api-key", name: "API key", description: "Set FAKE_API_KEY" },
+        // FAKE_ACP_ENV_VAR_METHOD=<NAME>: an env_var method naming that variable, as GLM Agent offers.
+        ...(process.env.FAKE_ACP_ENV_VAR_METHOD
+          ? [{
+              type: "env_var",
+              id: "env-key",
+              name: "Fake API key",
+              vars: [{ name: process.env.FAKE_ACP_ENV_VAR_METHOD, label: "Fake API key", secret: true, optional: false }],
+            }]
+          : []),
         // FAKE_ACP_SETUP_METHOD: Qwen Code's older terminal method, which marks an interactive setup.
         ...(process.env.FAKE_ACP_SETUP_METHOD
           ? [{ id: "setup", name: "Use OpenAI API key", _meta: { type: "terminal", args: ["--auth-type=openai"] } }]
           : []),
-        ...(params?.clientCapabilities?.auth?.terminal === true
+        // (FAKE_ACP_ENV_VAR_METHOD leaves the terminal method out: GLM Agent offers none.)
+        ...(params?.clientCapabilities?.auth?.terminal === true && !process.env.FAKE_ACP_ENV_VAR_METHOD
           ? [
               {
                 id: "terminal-login",

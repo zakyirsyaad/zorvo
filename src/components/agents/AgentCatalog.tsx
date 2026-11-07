@@ -1,8 +1,9 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { RefreshCw, Search } from "lucide-react";
 import { AgentCatalogRow } from "./AgentCatalogRow";
 import { UnavailableAgents } from "./UnavailableAgents";
 import { Button } from "../ui/Button";
+import { SettingsGroup } from "../settings/SettingsGroup";
 import type { SettingsSignIn } from "../../hooks/useSettingsSignIn";
 import type { AgentCatalogActions } from "../../hooks/useAgentCatalogActions";
 import { catalogSections, formatCheckedAgo, unavailableSection } from "../../lib/agent-catalog";
@@ -21,8 +22,6 @@ export interface AgentCatalogProps {
   onCheckAgain: () => Promise<void>;
   onRetryLoad: () => void;
 }
-
-const SECTION_HEADING = "mb-2 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle";
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -60,16 +59,13 @@ interface CatalogSectionProps {
   renderRow: (agent: CatalogAgent, isInUse: boolean) => ReactNode;
 }
 
+/** One group of agents as a card of rows, drawn only when it has any. */
 function CatalogSection({ title, agents, isInUse, renderRow }: CatalogSectionProps) {
-  const headingId = useId();
   if (agents.length === 0) return null;
   return (
-    <section aria-labelledby={headingId}>
-      <h3 id={headingId} className={SECTION_HEADING}>
-        {`${title} (${agents.length})`}
-      </h3>
-      <ul className="flex flex-col gap-1.5">{agents.map((agent) => renderRow(agent, isInUse))}</ul>
-    </section>
+    <SettingsGroup heading={title}>
+      <ul className="flex flex-col">{agents.map((agent) => renderRow(agent, isInUse))}</ul>
+    </SettingsGroup>
   );
 }
 
@@ -114,21 +110,22 @@ export function AgentCatalog({ catalog, error, agents, enabledIds, actions, sign
   );
 
   return (
-    <div className="flex flex-col gap-4 text-xs">
+    <div className="flex flex-col gap-6 text-ui">
       <header className="flex flex-col gap-1.5">
-        <div className="flex items-center gap-2">
-          <label className="flex flex-1 items-center gap-2 rounded-lg border border-border-strong bg-surface-2 px-3 py-1.5 focus-ring-within">
-            <Search size={13} className="shrink-0 text-fg-subtle" aria-hidden="true" />
+        <div className="flex gap-2">
+          <label className="flex h-8 flex-1 items-center gap-2 rounded-lg border border-border-strong bg-surface-2 px-2.5 text-fg-subtle focus-ring-within">
+            <Search size={14} className="shrink-0" aria-hidden="true" />
             <input
               type="search"
               aria-label="Search agents"
               placeholder="Search agents"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              className="min-w-0 flex-1 bg-transparent text-fg-secondary outline-none placeholder:text-fg-subtle"
+              className="min-w-0 flex-1 bg-transparent text-ui text-fg outline-none placeholder:text-fg-subtle"
             />
           </label>
           <Button
+            size="field"
             disabled={isChecking}
             onClick={checkAgain}
             icon={<RefreshCw size={12} className={isChecking ? "animate-spin" : undefined} aria-hidden="true" />}
@@ -137,21 +134,19 @@ export function AgentCatalog({ catalog, error, agents, enabledIds, actions, sign
           </Button>
         </div>
         {catalog?.lastChecked != null && (
-          <p className="text-[11px] text-fg-subtle">
-            {`Registry checked ${formatCheckedAgo(catalog.lastChecked, now)}`}
-          </p>
+          <p className="text-caption text-fg-subtle">{`Registry checked ${formatCheckedAgo(catalog.lastChecked, now)}`}</p>
         )}
         {checkError && (
-          <p role="alert" className="text-[11px] text-danger">
+          <p role="alert" className="text-ui-sm text-danger">
             {checkError}
           </p>
         )}
       </header>
 
       {error && (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2">
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-2 px-4 py-3">
           <p className="text-danger">{`Could not load the agents: ${error}`}</p>
-          <Button onClick={onRetryLoad} className="shrink-0">
+          <Button size="md" onClick={onRetryLoad}>
             Try again
           </Button>
         </div>
@@ -159,7 +154,7 @@ export function AgentCatalog({ catalog, error, agents, enabledIds, actions, sign
       {!catalog && !error && <p className="text-fg-subtle">Loading the agents…</p>}
 
       <CatalogSection title="In use" agents={inUse} isInUse renderRow={renderRow} />
-      <CatalogSection title="All agents" agents={others} isInUse={false} renderRow={renderRow} />
+      <CatalogSection title="Available" agents={others} isInUse={false} renderRow={renderRow} />
       <UnavailableAgents agents={unavailable} isSearching={trimmedQuery !== ""} />
       {catalog && trimmedQuery !== "" && inUse.length === 0 && others.length === 0 && unavailable.length === 0 && (
         <p className="text-fg-subtle">{`No agents match "${trimmedQuery}".`}</p>

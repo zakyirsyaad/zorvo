@@ -49,6 +49,33 @@ describe("useDraftAgentCheck", () => {
     expect(probeCalls(spy)).toHaveLength(2);
   });
 
+  it("drops a Ready recorded earlier when the agent opened a session but its key variable is not set", async () => {
+    vi.spyOn(tauriInternals(), "invoke").mockResolvedValue({ signInChecked: false, canListSessions: false, missingEnv: ["Z_AI_API_KEY"] });
+    const onSignedIn = vi.fn();
+    const onUnconfirmed = vi.fn();
+
+    renderHook(() =>
+      useDraftAgentCheck({ agent: QWEN, cwd: CWD, agentOptions: undefined, rememberProbed: () => {}, auth: pendingSignIn, onSignedIn, onUnconfirmed }),
+    );
+
+    await waitFor(() => expect(onUnconfirmed).toHaveBeenCalledWith("qwen-code"));
+    expect(onSignedIn).not.toHaveBeenCalled();
+  });
+
+  it("neither confirms nor unconfirms an agent that says nothing and names no missing variable", async () => {
+    vi.spyOn(tauriInternals(), "invoke").mockResolvedValue({ signInChecked: false, canListSessions: false });
+    const onSignedIn = vi.fn();
+    const onUnconfirmed = vi.fn();
+
+    renderHook(() =>
+      useDraftAgentCheck({ agent: QWEN, cwd: CWD, agentOptions: undefined, rememberProbed: () => {}, auth: pendingSignIn, onSignedIn, onUnconfirmed }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onSignedIn).not.toHaveBeenCalled();
+    expect(onUnconfirmed).not.toHaveBeenCalled();
+  });
+
   it("remembers that the agent can list its sessions, from its probe answer", async () => {
     vi.spyOn(tauriInternals(), "invoke").mockResolvedValue({ signInChecked: true, canListSessions: true });
 

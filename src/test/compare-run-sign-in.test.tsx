@@ -298,7 +298,7 @@ describe("a sign-in inside a compare run", () => {
 
     expect(await screen.findByRole("region", { name: "Sign in to Qwen Code" })).toBeInTheDocument();
     expect(prompt().value).toBe("fix the login");
-    expect(screen.getByText("Your message will be sent again after you sign in")).toBeInTheDocument();
+    expect(screen.getByText("Your message will be sent again after you sign in.")).toBeInTheDocument();
     await pressSignIn("Qwen Code");
 
     await waitFor(() => expect(promptsTo(spy, sessionId)).toHaveLength(2));
@@ -804,10 +804,10 @@ describe("a sign-in inside a compare run", () => {
     const sessionId = sessionOf(spy, "qwen-code");
 
     await click(screen.getByRole("button", { name: /^Settings/ }));
-    await click(await screen.findByRole("tab", { name: /Agents/ }));
+    await click(await screen.findByRole("link", { name: /^Agents/ }));
     await waitFor(() => expect(calls(spy, "acp_probe_sign_in").length).toBeGreaterThan(0));
     await settle();
-    await click(screen.getByRole("button", { name: /^Close/ }));
+    await click(screen.getByRole("link", { name: "Back to sessions" }));
 
     expect(within(rowOf("Qwen Code")).getByText("Needs sign-in")).toBeInTheDocument();
     expect(signInPanel("Qwen Code")).toBeNull();

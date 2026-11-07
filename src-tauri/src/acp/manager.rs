@@ -24,12 +24,14 @@ mod elicitation_routes;
 mod private_errors;
 mod reopen;
 mod routing;
+mod sign_in;
 
 pub use elicitation_routes::{
     UrlOpener, ELICITATION_GONE, ELICITATION_INVALID_PREFIX, ELICITATION_UNDELIVERED,
 };
 pub use reopen::{ReopenMethod, ReopenPurpose};
 use routing::{answer, route_event};
+use sign_in::{is_auth_required, offers_sign_in};
 
 /// ACP protocol version this client speaks.
 pub const PROTOCOL_VERSION: u64 = 1;
@@ -38,8 +40,6 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(180);
 pub(super) const SESSION_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 /// JSON-RPC "method not found", returned for client methods we do not offer.
 const METHOD_NOT_FOUND: i64 = -32601;
-/// ACP's "authentication required" error code.
-const AUTH_REQUIRED: i64 = -32000;
 /// Signing in may wait for the user to finish in a browser.
 const AUTHENTICATE_TIMEOUT: Duration = Duration::from_secs(300);
 /// Starts the error of a session that needs a sign-in; the agent's auth methods follow as JSON.
@@ -709,47 +709,6 @@ impl AcpManager {
         let sink = Arc::clone(&self.sink);
         Arc::new(move |event| route_event(&routes, &sink, &connection, connection_key, event))
     }
-}
-
-/// Words that make a `-32000` message one about signing in, once everything but
-/// letters is dropped: "Not logged in", "log-in", "signed in", "API key is
-/// missing" (Gemini CLI) and "No credentials" all match.
-const SIGN_IN_WORDS: [&str; 7] = [
-    "auth",
-    "login",
-    "loggedin",
-    "signin",
-    "signedin",
-    "apikey",
-    "credential",
-];
-
-/// Whether an agent's refusal says it needs a sign-in. ACP's code for that is `-32000`
-/// ("Authentication required"), but it does not fix the message, and the code is also
-/// JSON-RPC's generic server error. So an answer counts when its message is about
-/// signing in, or when the agent offers sign-in methods (`offers_sign_in`) and the
-/// refusal is of a request ACP says may fail for want of one: a session that cannot
-/// open, or a prompt. Gemini CLI, for one, words it "API key is missing".
-fn is_auth_required(error: &Value, offers_sign_in: bool) -> bool {
-    if error["code"].as_i64() != Some(AUTH_REQUIRED) {
-        return false;
-    }
-    // Letters only, so spacing and punctuation do not matter.
-    let message: String = error["message"]
-        .as_str()
-        .unwrap_or_default()
-        .chars()
-        .filter(char::is_ascii_alphabetic)
-        .collect::<String>()
-        .to_ascii_lowercase();
-    offers_sign_in || SIGN_IN_WORDS.iter().any(|word| message.contains(word))
-}
-
-/// Whether `auth_methods` (from `initialize`) lists at least one way to sign in.
-fn offers_sign_in(auth_methods: &Value) -> bool {
-    auth_methods
-        .as_array()
-        .is_some_and(|methods| !methods.is_empty())
 }
 
 /// Opens a session; an "authentication required" answer becomes an error

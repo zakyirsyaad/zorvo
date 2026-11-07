@@ -90,8 +90,9 @@ describe("Agents in use", () => {
 
     await click(within(screen.getByRole("complementary")).getByRole("button", { name: /^Settings/ }));
 
-    const select = within(screen.getByRole("combobox", { name: "Default agent" }));
-    const names = select.getAllByRole("option").map((option) => option.textContent);
+    await click(within(screen.getByRole("region", { name: "New sessions" })).getByRole("button"));
+    const list = within(screen.getByRole("listbox", { name: "Default agent" }));
+    const names = list.getAllByRole("option").map((option) => option.textContent);
     expect(names).toEqual(expect.arrayContaining(["Claude Code", "Kimi CLI"]));
     expect(names).not.toContain("Gemini CLI");
     expect(names).not.toContain("Qwen Code");

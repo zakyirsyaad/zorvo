@@ -9,6 +9,7 @@ import {
   FIRST_CHECK_DELAY_MS,
   RETRY_AFTER_FAILURE_MS,
   downloadPercent,
+  checkedWords,
   restartWarning,
 } from "../lib/app-update";
 
@@ -72,9 +73,10 @@ describe("AppUpdateNotice", () => {
     render(<AppUpdateNotice {...base} update={info("0.9.0")} busyCount={1} onInstall={onInstall} onLater={onLater} />);
 
     const card = screen.getByRole("status");
-    expect(card).toHaveClass("rounded-xl", "border", "border-border", "bg-surface-2", "shadow-popover");
+    expect(card).toHaveClass("rounded-xl", "border", "border-border", "bg-surface-3", "shadow-popover", "px-4", "py-3.5");
     expect(card).toHaveTextContent("Zorvo 0.9.0 is ready");
-    expect(card).toHaveTextContent("Agents that are working stop when Zorvo restarts.");
+    expect(screen.getByText("Zorvo 0.9.0 is ready")).toHaveClass("font-semibold");
+    expect(card).toHaveTextContent("Restarting stops 1 agent mid-turn.");
     expect(screen.getByRole("button", { name: "Later" }).className).toContain("border-transparent");
     expect(screen.getByRole("button", { name: "Update & restart" }).className).toContain("border-border-strong");
     fireEvent.click(screen.getByRole("button", { name: "Update & restart" }));
@@ -144,14 +146,14 @@ describe("AppUpdateNotice", () => {
 
   it("warns about what a restart ends, and only then", () => {
     const { rerender } = render(<AppUpdateNotice {...base} update={info("0.6.0")} busyCount={2} />);
-    expect(screen.getByRole("status")).toHaveTextContent("Agents that are working stop when Zorvo restarts.");
+    expect(screen.getByRole("status")).toHaveTextContent("Restarting stops 2 agents mid-turn.");
     rerender(<AppUpdateNotice {...base} update={info("0.6.0")} terminalCount={1} />);
-    expect(screen.getByRole("status")).toHaveTextContent("Open terminals end when Zorvo restarts.");
+    expect(screen.getByRole("status")).toHaveTextContent("Restarting stops 1 shell.");
     rerender(<AppUpdateNotice {...base} update={info("0.6.0")} busyCount={1} terminalCount={3} />);
-    expect(screen.getByRole("status")).toHaveTextContent("Agents that are working and open terminals end when Zorvo restarts.");
+    expect(screen.getByRole("status")).toHaveTextContent("Restarting stops 1 agent mid-turn and 3 shells.");
     rerender(<AppUpdateNotice {...base} update={info("0.6.0")} busyCount={0} terminalCount={0} />);
     expect(screen.getByRole("status")).toHaveTextContent("Zorvo 0.6.0 is ready");
-    expect(screen.getByRole("status")).not.toHaveTextContent("when Zorvo restarts");
+    expect(screen.getByRole("status")).not.toHaveTextContent("Restarting stops");
   });
 });
 
@@ -161,9 +163,9 @@ describe("restartWarning", () => {
   });
 
   it("names what a restart ends", () => {
-    expect(restartWarning(1, 0)).toBe("Agents that are working stop when Zorvo restarts.");
-    expect(restartWarning(0, 2)).toBe("Open terminals end when Zorvo restarts.");
-    expect(restartWarning(3, 2)).toBe("Agents that are working and open terminals end when Zorvo restarts.");
+    expect(restartWarning(1, 0)).toBe("Restarting stops 1 agent mid-turn.");
+    expect(restartWarning(0, 3)).toBe("Restarting stops 3 shells.");
+    expect(restartWarning(2, 1)).toBe("Restarting stops 2 agents mid-turn and 1 shell.");
   });
 });
 
@@ -366,5 +368,90 @@ describe("useAppUpdate install", () => {
     await flush();
     expect(callsOf(invoke, "app_update_restart")).toBe(1);
     expect(result.current.isInstalling).toBe(false);
+  });
+});
+
+describe("useAppUpdate checkNow", () => {
+  const T = Date.UTC(2026, 10, 7, 12);
+
+  it("checkNow asks the backend and records checkedAt", async () => {
+    vi.setSystemTime(T);
+    const invoke = mockBackend({ app_update_check: () => null });
+    const { result } = renderUpdate();
+    await act(() => result.current.checkNow());
+    expect(callsOf(invoke, "app_update_check")).toBe(1);
+    expect(result.current.checkedAt).toBe(T);
+    expect(result.current.isChecking).toBe(false);
+    expect(result.current.checkFailed).toBe(false);
+  });
+
+  it("a failed checkNow sets checkFailed, a failed automatic check does not", async () => {
+    mockBackend({ app_update_check: () => { throw new Error("offline"); } });
+    const { result } = renderUpdate();
+    await advance(FIRST_CHECK_DELAY_MS);
+    expect(result.current.checkFailed).toBe(false);
+    await act(() => result.current.checkNow());
+    expect(result.current.checkFailed).toBe(true);
+    expect(result.current.checkedAt).toBeNull();
+  });
+
+  it("an automatic check that answers records checkedAt", async () => {
+    vi.setSystemTime(T);
+    mockBackend({ app_update_check: () => null });
+    const { result } = renderUpdate();
+    expect(result.current.checkedAt).toBeNull();
+    await advance(FIRST_CHECK_DELAY_MS);
+    expect(result.current.checkedAt).toBe(T + FIRST_CHECK_DELAY_MS);
+  });
+
+  it("a later check that answers clears checkFailed", async () => {
+    let answer: () => unknown = () => { throw new Error("offline"); };
+    mockBackend({ app_update_check: () => answer() });
+    const { result } = renderUpdate();
+    await advance(FIRST_CHECK_DELAY_MS);
+    await act(() => result.current.checkNow());
+    expect(result.current.checkFailed).toBe(true);
+    answer = () => null;
+    await advance(RETRY_AFTER_FAILURE_MS);
+    expect(result.current.checkFailed).toBe(false);
+  });
+
+  it("available keeps an update hidden by Later", async () => {
+    mockBackend({ app_update_check: () => info("0.9.0") });
+    const { result } = renderUpdate();
+    await advance(FIRST_CHECK_DELAY_MS);
+    act(() => result.current.dismiss());
+    expect(result.current.update).toBeNull();
+    expect(result.current.available?.version).toBe("0.9.0");
+  });
+
+  it("checkNow does nothing while installing", async () => {
+    const install = deferred<void>();
+    const invoke = mockBackend({ app_update_check: () => info("0.9.0"), app_update_install: () => install.promise });
+    const { result } = renderUpdate();
+    await advance(FIRST_CHECK_DELAY_MS);
+    act(() => { void result.current.install(); });
+    await flush();
+    await act(() => result.current.checkNow());
+    expect(callsOf(invoke, "app_update_check")).toBe(1);
+  });
+
+  it("isChecking is true while the check is in flight", async () => {
+    const answer = deferred<null>();
+    mockBackend({ app_update_check: () => answer.promise });
+    const { result } = renderUpdate();
+    let done!: Promise<void>;
+    act(() => { done = result.current.checkNow(); });
+    expect(result.current.isChecking).toBe(true);
+    await act(async () => { answer.resolve(null); await done; });
+    expect(result.current.isChecking).toBe(false);
+  });
+});
+
+describe("checkedWords", () => {
+  it("says just now under a minute, then how long ago", () => {
+    expect(checkedWords(30_000)).toBe("just now");
+    expect(checkedWords(5 * 60_000)).toBe("5 min ago");
+    expect(checkedWords(2 * 3_600_000)).toBe("2 h ago");
   });
 });

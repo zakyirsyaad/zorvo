@@ -39,7 +39,9 @@ describe("Button sizes", () => {
   it("are set by `size`, never by padding or text size in a caller's className", () => {
     // Button's size sets px, h and the text size; a caller's px/py/text-[…] would sit beside
     // them on one element, where neither utility reliably wins. Use size="sm" | "md" | "lg".
-    const SIZE_OVERRIDE = /(?:^|\s)(?:p[xy]-[\w.]+|text-\[[^\]]+\])(?=\s|$)/;
+    // Weight is Button's too (400 or 500 by variant), so a font-weight utility would sit beside its own.
+    const SIZE_OVERRIDE =
+      /(?:^|\s)(?:p[xy]-[\w.]+|text-\[[^\]]+\]|font-(?:thin|extralight|light|normal|medium|semibold|bold|extrabold|black))(?=\s|$)/;
     const violations = tsxFiles(COMPONENTS)
       .filter((file) => !file.endsWith(join("ui", "Button.tsx")))
       .flatMap((file) =>

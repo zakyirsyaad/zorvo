@@ -6,6 +6,18 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Changed
 
+- **The landing page shows Zorvo 0.9.** The hero picture is the new window: the two-line sidebar with a compare run, the top bar's chips, the chat and composer, and the inspector on its Changes tab. New sections show a compare run, from ticking agents to Pick, and the diff review with a comment on its line. The features, the agents' Settings rows, the plan and the permission card follow the app as it looks now.
+- **The landing page links to the source.** GitHub sits in the header, and the footer's Project column lists the source, releases, changelog, issues and the Apache 2.0 license.
+- **The docs describe Zorvo 0.9.** New pages explain compare runs and reviewing changes (comments on lines, Reply, the file view, Activity). The quickstart starts from the welcome screen and walks the sidebar, top bar and inspector; Terminal lives in the inspector; signing in covers the Agents menu, Set up Qwen Code and agents whose key lives in a variable; and the update card and failed-turn row are drawn as they look now.
+
+## [0.9.0] - 2026-11-07
+
+### Changed
+
+- **First run is one welcome screen.** Tick the agents you'll use (one that is not installed offers Install; ticking downloads nothing), pick a project folder (the folders it finds are offered), and press Start, which opens a new session there. Signing in waits for the first session, as before.
+- **Settings is a full page.** It opens in place of the sidebar and the chat, with a left navigation (General, Appearance, Agents, GitHub, and MCP servers marked Soon) and **Back to sessions**, which returns to the session you left with your draft as it was. Appearance shows System, Light and Dark as preview tiles, GitHub has its own section, and About shows when Zorvo last checked for an update, with **Check now**. Agents are one row each, with a sign-in chip, and an agent's sign-in opens inside its row.
+- **Check again in Settings → Agents matches its design.** The button beside the agent search keeps its 32px height, with the 12px regular text of the other outline buttons instead of 13px medium.
+- **Buttons match the design's type.** A 28px button's label is 12px instead of 13px, and outline and ghost buttons are in regular weight (primary and danger stay medium, and so does the sidebar's New session), so rows of buttons look lighter and tidier.
 - **The app uses the Mac's system font (SF Pro) for its interface.** Code, commands and paths stay in Geist Mono.
 - **A tidier sidebar.** Each session is two lines: its title, then its agent and what it is doing in words ("Working", "Waiting for you", "Finished, unread", or how long ago it started). Stop and a ⋯ menu with Rename, Pin, Archive and Delete show when you point at a row or tab to it. A folded folder says what its sessions are doing ("1 waiting"), a compare run shows its agents and how far they are, and **Hide sidebar** makes room for the chat (**Show sidebar** brings it back). Your agents and their sign-in state moved into the **Agents** button next to Settings.
 - **One inspector instead of four panels and a drawer.** The top bar's **Inspector** button opens a panel on the right with tabs for Changes, Activity, Files and Terminal; the terminal moved there from the bottom of the window, and its shells keep running when you switch tabs or close the inspector. Drag its left edge (or use the arrow keys) to make it wider or narrower, and Zorvo remembers the width. In a narrow window the sidebar steps aside while it is open.
@@ -25,7 +37,15 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **Clearer cards when something stands in the way.** A compare run shows one card per agent and asks before Pick keeps one. Installing, signing in and a removed agent each get a card by the message box with the agent's logo, and signing in lists every way the agent offers. The terminal sign-in is wider, the empty window asks for a folder, and a Zorvo update shows as a card.
 - **The Changes tab and the full diff review look as designed:** each changed file is a card with its counts, the review has a file list with the picked file marked, and comments read where they stand ("Line 42 · Current").
 - **Comment on lines in the Changes tab too,** and add them to your message from there.
+- **A compare run, the cards that stand in the way, the sign-in terminal, the empty window and the update card look as designed:** each compare agent says how long its turn has run ("Working · 12 min") or took ("Finished · 8 min"), sign-in methods are listed with their own buttons, and the update card says what a restart stops ("2 agents mid-turn and 1 shell").
 - **Notices appear as a card in the bottom right corner** instead of a strip across the top of the chat, so they no longer push the conversation down. A long message wraps inside the card, and **Dismiss notice** closes it as before.
+
+### Fixed
+
+- **The welcome screen says when your agents could not be read.** If Zorvo could not read your agents, Start stayed off with no reason given. It now says "Zorvo could not read your agents. Press Check again.", and Check again reads them once more.
+- **GLM Agent without an API key now asks you to sign in.** It opens a session without a key and fails the first message with a generic "Internal error" that names the key only in its details. Zorvo now reads that as a sign-in request: the agent's chip turns to Sign in, the panel explains that it needs `Z_AI_API_KEY` in your shell (Zorvo never stores keys), and your message is sent again after you check.
+- **Check sign-in no longer calls GLM Agent ready without its key.** An agent that cannot say who is signed in is only seen to open a session, which GLM Agent does without a key. When such an agent names the variable its key lives in (GLM Agent: `Z_AI_API_KEY`) and that variable is not set in your shell, the chip reads Not checked instead of Ready and the row says Zorvo cannot confirm a sign-in, with what to do: run the agent's own setup or export the variable, then check again. Zorvo only looks whether the variable is set, never at its value, and does not call you signed out, since a key saved by the agent's own setup is not visible to it. Agents that report their sign-in, or refuse to open a session while signed out, are checked as before.
+- **An ordinary error is no longer mistaken for a sign-in request.** When an agent that offers sign-in methods fails with a generic "Internal error", Zorvo only asks you to sign in if the details say so in whole words or phrases ("No API key found", "Not logged in", "Unauthorized"). Words that merely contain one ("designing", "catalog in", "author.txt") no longer open the sign-in panel in place of the real error.
 
 ## [0.8.1] - 2026-11-04
 
@@ -245,7 +265,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.6.1...v0.7.0

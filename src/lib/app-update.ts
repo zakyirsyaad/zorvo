@@ -1,3 +1,5 @@
+import { elapsedWords } from './compare-run';
+
 /** What `app_update_check` reports about a newer Zorvo. */
 export interface AppUpdateInfo {
   version: string;
@@ -15,11 +17,13 @@ export const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** After a check that could not be made (Wi-Fi not up yet at login), ask again sooner than a day. */
 export const RETRY_AFTER_FAILURE_MS = 15 * 60 * 1000;
 
-/** What a restart ends, as the sentence the banner adds; empty when nothing would be lost. */
+/** What a restart ends, counted ("Restarting stops 2 agents mid-turn and 1 shell."); empty when nothing would be lost. */
 export function restartWarning(workingAgents: number, openTerminals: number): string {
-  if (workingAgents > 0 && openTerminals > 0) return 'Agents that are working and open terminals end when Zorvo restarts.';
-  if (workingAgents > 0) return 'Agents that are working stop when Zorvo restarts.';
-  if (openTerminals > 0) return 'Open terminals end when Zorvo restarts.';
+  const agents = `${workingAgents} ${workingAgents === 1 ? 'agent' : 'agents'} mid-turn`;
+  const shells = `${openTerminals} ${openTerminals === 1 ? 'shell' : 'shells'}`;
+  if (workingAgents > 0 && openTerminals > 0) return `Restarting stops ${agents} and ${shells}.`;
+  if (workingAgents > 0) return `Restarting stops ${agents}.`;
+  if (openTerminals > 0) return `Restarting stops ${shells}.`;
   return '';
 }
 
@@ -28,4 +32,11 @@ export function downloadPercent(progress: AppUpdateProgress | null): number | nu
   if (progress?.phase !== 'downloading' || !progress.total) return null;
   // Multiply first: `(57 / 100) * 100` is 56.99999999999999, which floors to 56.
   return Math.min(100, Math.floor((progress.downloaded * 100) / progress.total));
+}
+
+const MINUTE_MS = 60_000;
+
+/** When the last check was, in words: "just now" under a minute, else "5 min ago", "2 h ago". */
+export function checkedWords(ms: number): string {
+  return ms < MINUTE_MS ? 'just now' : `${elapsedWords(ms)} ago`;
 }

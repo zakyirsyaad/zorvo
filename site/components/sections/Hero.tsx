@@ -26,9 +26,9 @@ export function Hero() {
           <br />
           One desktop.
         </h1>
-        <p className="t-lead m-0 max-w-[560px]">
-          Claude Code, Codex and Qwen Code in one native app. Bring the agent you already use, or
-          install one from Zorvo. No lock-in, no API keys.
+        <p className="t-lead m-0 max-w-[580px]">
+          Claude Code, Codex, Qwen Code and the agents of the ACP registry in one native Mac app. Work
+          with one, or send one prompt to four and keep the best. No lock-in, no API keys.
         </p>
         <div className="flex flex-wrap justify-center gap-3">
           <ButtonLink href={LINKS.download} variant="primary" size="lg">
@@ -40,11 +40,13 @@ export function Hero() {
             <Icon name="arrow-right" size={16} />
           </ButtonLink>
         </div>
-        <p className="t-caption m-0">
-          Free · macOS, Apple silicon and Intel · Updates itself · Brings Node.js when an agent needs it
+        <p className="t-caption m-0 max-w-[460px]">
+          Free and open source under Apache 2.0, for Macs with Apple silicon or Intel. Zorvo updates itself, and brings
+          Node.js when an agent needs it.
         </p>
       </section>
-      <div className="site-wrap">
+      {/* The picture bleeds a little past the column on wide screens, so the window reads as the app, not a card. */}
+      <div className="site-wrap lg:max-w-[1260px]">
         <AppMockup />
       </div>
     </>

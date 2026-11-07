@@ -99,7 +99,7 @@ describe("authCopy", () => {
   const login: AuthMethod = { id: "chat-gpt", name: "ChatGPT", kind: "agent" };
 
   it("asks for a sign-in when the agent offers one", () => {
-    expect(authCopy("Codex", [key, login])).toMatchObject({ lead: "Codex needs you to sign in before it can start.", cliHint: null });
+    expect(authCopy("Codex", [key, login])).toMatchObject({ lead: "Pick how Codex signs in. It uses its own tool; Zorvo never sees your password or key.", cliHint: null });
   });
 
   it("does not ask an agent whose only method is a key to sign in", () => {
@@ -112,6 +112,41 @@ describe("authCopy", () => {
 
   it("points to the command line tool when the agent listed no method", () => {
     expect(authCopy("Codex", []).cliHint).toBe("Sign in with Codex's own command line tool, then check again.");
+  });
+});
+
+describe("GLM Agent's methods", () => {
+  // As glm-acp-agent 1.15.0 reports them in `initialize`: one with no type, one `env_var`.
+  const glm = [
+    {
+      id: "z-ai-api-key",
+      name: "Z.AI API key",
+      description: "Set Z_AI_API_KEY in the environment, or run `glm-acp-agent --setup` once to store the key on disk.",
+    },
+    {
+      type: "env_var",
+      id: "z_ai_api_key",
+      name: "Z.AI API key",
+      description: "API key for the Z.AI / Zhipu AI service.",
+      link: "https://z.ai/manage-apikey/apikey-list",
+      vars: [{ name: "Z_AI_API_KEY", label: "Z.AI API key", secret: true, optional: false }],
+    },
+  ];
+
+  it("explains both, so the panel shows no button and no key field", () => {
+    const methods = parseAuthRequired(`ACP_AUTH_REQUIRED:${JSON.stringify(glm)}`);
+
+    expect(methods?.map((method) => method.kind)).toEqual(["explain", "explain"]);
+    expect(methods?.[0].description).toBe("Set Z_AI_API_KEY in the environment, or run glm-acp-agent --setup once to store the key on disk.");
+  });
+
+  it("leads with the key it needs and says Zorvo never stores it", () => {
+    const methods = parseAuthRequired(`ACP_AUTH_REQUIRED:${JSON.stringify(glm)}`) ?? [];
+
+    const copy = authCopy("GLM Agent", methods);
+
+    expect(copy.lead).toBe("GLM Agent needs an API key or another account setting before it can start.");
+    expect(copy.keysNote).toMatch(/^Zorvo never stores keys\./);
   });
 });
 
@@ -134,7 +169,7 @@ describe("an agent's own setup", () => {
   });
 
   it("counts the setup among the ways in, not among the keys", () => {
-    expect(authCopy("Qwen Code", [setup, agent]).lead).toBe("Qwen Code needs you to sign in before it can start.");
+    expect(authCopy("Qwen Code", [setup, agent]).lead).toBe("Pick how Qwen Code signs in. It uses its own tool; Zorvo never sees your password or key.");
     expect(authCopy("Qwen Code", [setup, agent]).keysNote).toBeNull();
   });
 });

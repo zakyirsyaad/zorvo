@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { fakeTauriInvoke, type FakeTauriStore } from "./setup";
 import { fakeCatalog, makeCatalogAgent } from "./fixtures/catalog";
@@ -19,7 +20,9 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 import App from "../App";
 import { AgentCatalog } from "../components/agents/AgentCatalog";
-import { AppSettingsDialog } from "../components/AppSettingsDialog";
+import { SettingsPage } from "../components/settings/SettingsPage";
+import type { SettingsTab } from "../components/settings/SettingsNav";
+import { idleAppUpdate, pageAt } from "./fixtures/settings-page";
 import { useAgentCatalogActions, type AgentCatalogActions } from "../hooks/useAgentCatalogActions";
 import { useAgentCatalog } from "../hooks/useAgentCatalog";
 import { useAgentProfiles } from "../hooks/useDiscovery";
@@ -56,6 +59,8 @@ afterEach(() => {
 
 const NO_ACTIONS: AgentCatalogActions = {
   addAgent: () => {},
+  markAgent: () => {},
+  unmarkAgent: () => {},
   updateAgent: () => {},
   removeAgent: () => Promise.resolve(),
   runningSessionCount: () => 0,
@@ -77,23 +82,30 @@ function renderCatalog(overrides: Partial<Parameters<typeof AgentCatalog>[0]> = 
 }
 
 const row = (name: string) => screen.getByRole("listitem", { name });
+/** Opens a row's ⋯ menu and picks Remove, which asks under the row. */
+function askToRemove(item: HTMLElement) {
+  const name = item.getAttribute("aria-label");
+  fireEvent.click(within(item).getByRole("button", { name: `More actions for ${name}` }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Remove" }));
+}
+
 const section = (name: RegExp) => screen.getByRole("region", { name });
 
 describe("AgentCatalog", () => {
   it("lists the agents in use and all the others in two sections", () => {
     renderCatalog();
 
-    expect(within(section(/^In use \(3\)$/)).getAllByRole("listitem").map((item) => item.getAttribute("aria-label")))
+    expect(within(section(/^In use$/)).getAllByRole("listitem").map((item) => item.getAttribute("aria-label")))
       .toEqual(["Claude Code", "Codex", "Qwen Code"]);
-    expect(within(section(/^All agents \(1\)$/)).getByRole("listitem", { name: "Gemini CLI" })).toBeInTheDocument();
+    expect(within(section(/^Available$/)).getByRole("listitem", { name: "Gemini CLI" })).toBeInTheDocument();
   });
 
   it("shows each agent's version, status line and description", () => {
     renderCatalog();
 
     expect(row("Claude Code")).toHaveTextContent("1.2.0");
-    expect(row("Claude Code")).toHaveTextContent("Installed by Zorvo");
-    expect(row("Qwen Code")).toHaveTextContent("Runs with npx");
+    expect(row("Claude Code")).toHaveTextContent("1.2.0 · installed by Zorvo");
+    expect(row("Qwen Code")).toHaveTextContent("runs with npx");
     expect(row("Gemini CLI")).toHaveTextContent("Google's coding agent");
   });
 
@@ -114,10 +126,11 @@ describe("AgentCatalog", () => {
         ],
         unavailable: [],
       },
-      enabledIds: [],
+      enabledIds: ["opencode", "goose"],
     });
+    expect(within(row("OpenCode")).getByText("on this Mac")).toHaveAttribute("title", "/opt/homebrew/bin/opencode");
 
-    expect(row("OpenCode")).toHaveTextContent("Managed outside Zorvo · /opt/homebrew/bin/opencode");
+    // An available agent shows its description; once in use, its line says where it runs from.
     expect(row("OpenCode")).not.toHaveTextContent("1.19.3");
     expect(row("Goose")).toHaveTextContent("2.0.0");
   });
@@ -261,8 +274,9 @@ describe("AgentCatalog", () => {
   });
 });
 
-/** The Settings dialog with the app's real state, profile and catalog hooks behind it. */
+/** The Settings page with the app's real state, profile and catalog hooks behind it. */
 function Harness() {
+  const [section, setSection] = useState<SettingsTab>("general");
   const persisted = usePersistedState(() => {});
   const { agents, refresh, reload } = useAgentProfiles(() => {});
   const catalog = useAgentCatalog();
@@ -276,17 +290,19 @@ function Harness() {
     catalog,
   });
   return (
-    <AppSettingsDialog
-      isOpen
+    <SettingsPage
+      page={pageAt(section, setSection)}
       persisted={persisted}
       agents={agents}
       refreshAgents={refresh}
       catalog={catalog}
       actions={actions}
+      updateCount={0}
       recentFolders={[]}
       onRemoveRecentFolder={() => {}}
       onRunOnboarding={() => {}}
-      onClose={() => {}}
+      appUpdate={idleAppUpdate}
+      restartNote={null}
     />
   );
 }
@@ -307,7 +323,7 @@ async function openAgentsTab() {
   await act(async () => {
     render(<Harness />);
   });
-  fireEvent.click(screen.getByRole("tab", { name: /Agents/ }));
+  fireEvent.click(screen.getByRole("link", { name: /^Agents/ }));
   await screen.findByRole("listitem", { name: "Gemini CLI" });
 }
 
@@ -343,7 +359,7 @@ describe("Catalog actions — Add", () => {
     await openAgentsTab();
 
     await act(async () => {
-      fireEvent.click(within(row("Gemini CLI")).getByRole("button", { name: "Add" }));
+      fireEvent.click(within(row("Gemini CLI")).getByRole("button", { name: "Install" }));
     });
 
     await waitFor(() => expect(callsTo(spy, "install_agent")).toEqual([["install_agent", { agentId: "gemini" }]]));
@@ -359,7 +375,7 @@ describe("Catalog actions — Add", () => {
     await openAgentsTab();
 
     await act(async () => {
-      fireEvent.click(within(row("Gemini CLI")).getByRole("button", { name: "Add" }));
+      fireEvent.click(within(row("Gemini CLI")).getByRole("button", { name: "Install" }));
     });
 
     expect(await within(row("Gemini CLI")).findByText("Install failed · network down")).toBeInTheDocument();
@@ -377,7 +393,7 @@ describe("Catalog actions — Install", () => {
     );
     await openAgentsTab();
     const gemini = () => within(section(/^In use/)).getByRole("listitem", { name: "Gemini CLI" });
-    expect(gemini()).toHaveTextContent("Not installed · Install adds Gemini CLI 0.2.0");
+    expect(gemini()).toHaveTextContent("Installs Gemini CLI 0.2.0 into Zorvo's folder");
     expect(within(gemini()).queryByRole("button", { name: "Add" })).toBeNull();
 
     await act(async () => {
@@ -386,13 +402,21 @@ describe("Catalog actions — Install", () => {
 
     await waitFor(() => expect(callsTo(spy, "install_agent")).toEqual([["install_agent", { agentId: "gemini" }]]));
     expect(within(gemini()).getByText("Starting the install…")).toBeInTheDocument();
-    expect(gemini()).toHaveTextContent("Installing Gemini CLI 0.2.0");
+    // While it installs, the row shows the step in place of what it would install, then the download's bar.
+    expect(gemini()).toHaveClass("bg-surface-1");
+    await act(async () => {
+      listeners.get("agent-install-progress")?.({
+        payload: { agentId: "gemini", stepIndex: 0, stepCount: 1, kind: "agent", name: "Gemini CLI", phase: "download", receivedBytes: 1_048_576, totalBytes: 4_194_304 },
+      });
+    });
+    expect(within(gemini()).getByRole("progressbar", { name: "Gemini CLI download" })).toBeInTheDocument();
+    expect(within(gemini()).getByRole("status")).not.toHaveTextContent("MB");
     expect(within(gemini()).getByRole("button", { name: "Cancel" })).toBeInTheDocument();
     expect(within(gemini()).queryByRole("button", { name: "Install" })).toBeNull();
 
     await act(async () => failInstall("network down"));
 
-    expect(await within(gemini()).findByText("Install failed · network down")).toBeInTheDocument();
+    expect(await within(gemini()).findByText("Install failed · network down")).toHaveClass("text-danger");
     // The reason lives in the status line; the Retry button stands alone.
     expect(within(gemini()).getAllByText(/Install failed/)).toHaveLength(1);
     expect(within(gemini()).getByRole("button", { name: "Retry" })).toBeInTheDocument();
@@ -409,7 +433,7 @@ describe("Catalog actions — Install", () => {
     await openAgentsTab();
 
     await act(async () => {
-      fireEvent.click(within(row("Gemini CLI")).getByRole("button", { name: "Add" }));
+      fireEvent.click(within(row("Gemini CLI")).getByRole("button", { name: "Install" }));
     });
 
     await waitFor(() => expect(callsTo(spy, "install_agent")).toEqual([["install_agent", { agentId: "gemini" }]]));
@@ -516,7 +540,7 @@ describe("Catalog actions — Update", () => {
 
 describe("Catalog actions — Remove", () => {
   async function removeFromRow(name: string) {
-    fireEvent.click(within(row(name)).getByRole("button", { name: "Remove" }));
+    askToRemove(row(name));
     await act(async () => {
       fireEvent.click(within(row(name)).getByRole("button", { name: "Remove" }));
     });
@@ -526,7 +550,7 @@ describe("Catalog actions — Remove", () => {
     spyOnBackend(withGemini);
     await openAgentsTab();
 
-    fireEvent.click(within(row("Codex")).getByRole("button", { name: "Remove" }));
+    askToRemove(row("Codex"));
     expect(within(row("Codex")).getByText("Remove Codex? Zorvo deletes its copy. Saved sessions stay readable."))
       .toBeInTheDocument();
     fireEvent.click(within(row("Codex")).getByRole("button", { name: "Cancel" }));
@@ -544,7 +568,7 @@ describe("Catalog actions — Remove", () => {
     await waitFor(() => expect(callsTo(spy, "remove_agent_install")).toEqual([["remove_agent_install", { agentId: "codex-acp" }]]));
     expect(savedSettings().enabledAgents).toEqual(["claude-acp", "qwen-code"]);
     expect(savedSettings().removedAgents).toEqual(["codex-acp"]);
-    expect(within(section(/^All agents/)).getByRole("listitem", { name: "Codex" })).toBeInTheDocument();
+    expect(within(section(/^Available$/)).getByRole("listitem", { name: "Codex" })).toBeInTheDocument();
   });
 
   it("saves the removal before the backend deletes the copy", async () => {
@@ -569,7 +593,7 @@ describe("Catalog actions — Remove", () => {
     await removeFromRow("Codex");
 
     expect(await within(row("Codex")).findByText("Could not delete Zorvo's copy: busy")).toBeInTheDocument();
-    expect(within(section(/^All agents/)).getByRole("listitem", { name: "Codex" })).toBeInTheDocument();
+    expect(within(section(/^Available$/)).getByRole("listitem", { name: "Codex" })).toBeInTheDocument();
     await waitFor(() => expect(savedSettings().enabledAgents).toEqual(["claude-acp", "qwen-code"]));
   });
 
@@ -594,7 +618,7 @@ describe("Catalog actions — Remove", () => {
     );
     await openAgentsTab();
     await act(async () => {
-      fireEvent.click(within(row("Gemini CLI")).getByRole("button", { name: "Add" }));
+      fireEvent.click(within(row("Gemini CLI")).getByRole("button", { name: "Install" }));
     });
     await waitFor(() => expect(callsTo(spy, "install_agent")).toHaveLength(1));
 
@@ -602,7 +626,7 @@ describe("Catalog actions — Remove", () => {
     await waitFor(() => expect(callsTo(spy, "remove_agent_install")).toHaveLength(1));
     await act(async () => rejectInstall("INSTALL_CANCELLED"));
 
-    expect(within(row("Gemini CLI")).getByRole("button", { name: "Add" })).toBeInTheDocument();
+    expect(within(row("Gemini CLI")).getByRole("button", { name: "Install" })).toBeInTheDocument();
     expect(within(row("Gemini CLI")).queryByRole("progressbar")).toBeNull();
     expect(within(row("Gemini CLI")).queryByText(/Starting the install/)).toBeNull();
   });
@@ -627,9 +651,9 @@ describe("Catalog actions — Remove in the app", () => {
     const sessionId = String(callsTo(spy, "acp_start_session")[0][1]?.sessionId);
 
     fireEvent.click(screen.getByRole("button", { name: /^Settings/ }));
-    fireEvent.click(screen.getByRole("tab", { name: /Agents/ }));
+    fireEvent.click(screen.getByRole("link", { name: /^Agents/ }));
     const qwen = await screen.findByRole("listitem", { name: "Qwen Code" });
-    fireEvent.click(within(qwen).getByRole("button", { name: "Remove" }));
+    askToRemove(qwen);
     expect(within(qwen).getByText(/Its open sessions stop\./)).toBeInTheDocument();
     await act(async () => {
       fireEvent.click(within(qwen).getByRole("button", { name: "Remove" }));

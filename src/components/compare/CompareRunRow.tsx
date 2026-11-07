@@ -5,7 +5,7 @@ import { Button } from "../ui/Button";
 import { StatusLine } from "../ui/StatusLine";
 import { useDiffStatsSince } from "../../hooks/useDiffStats";
 import { formatLineCount, MINUS, totalsOf, type FileStat } from "../../lib/diff-stats";
-import { rowStatus, runStatusDot, statusLabel, type RowFacts } from "../../lib/compare-run";
+import { rowStatus, rowStatusWords, runStatusDot, type RowFacts } from "../../lib/compare-run";
 
 export interface CompareRunRowProps {
   facts: RowFacts;
@@ -14,6 +14,12 @@ export interface CompareRunRowProps {
   version: number;
   /** Another pick is under way. */
   isPickDisabled: boolean;
+  /** This row's Pick opened the confirm bar. */
+  isPicking: boolean;
+  /** The confirm bar Pick opens. */
+  confirmBarId?: string;
+  /** The panel's clock, for the time in the status words. */
+  now: number;
   onOpen: (sessionId: string) => void;
   /** Opens the session with its diff beside the chat. */
   onReview: (sessionId: string) => void;
@@ -35,11 +41,12 @@ interface ChangesProps {
 function Changes({ stats, error, agentName, onReview }: ChangesProps) {
   if (!stats) {
     return (
-      <span className="text-ui-sm text-fg-muted" title={error ?? undefined}>
+      <span className="shrink-0 px-2 text-ui-sm text-fg-muted" title={error ?? undefined}>
         —
       </span>
     );
   }
+  if (stats.length === 0) return <span className="shrink-0 px-2 text-ui-sm text-fg-subtle">No changes yet</span>;
   const { added, removed } = totalsOf(stats);
   const numbers = (
     <>
@@ -51,12 +58,11 @@ function Changes({ stats, error, agentName, onReview }: ChangesProps) {
       </span>
     </>
   );
-  if (stats.length === 0) return <span className="flex items-center gap-2 text-ui-sm text-fg-muted">{numbers}</span>;
   return (
     <button
       type="button"
       aria-label={`Review ${agentName}'s changes`}
-      className="flex items-center gap-2 rounded-md text-ui-sm text-fg-muted transition-colors hover:text-fg-secondary focus-ring"
+      className="flex h-6.5 shrink-0 items-center gap-1.5 rounded-md px-2 font-mono text-caption text-fg-muted transition-colors hover:bg-surface-hover focus-ring"
       onClick={onReview}
     >
       {numbers}
@@ -70,6 +76,9 @@ export function CompareRunRow({
   agentName,
   version,
   isPickDisabled,
+  isPicking,
+  confirmBarId,
+  now,
   onOpen,
   onReview,
   onChoose,
@@ -84,30 +93,39 @@ export function CompareRunRow({
   // Only known-empty changes turn Pick off: while they load, or when they cannot be read, the run must stay pickable.
   const hasNoChanges = stats?.length === 0;
   return (
-    <li aria-label={agentName} className="rounded-xl border border-border bg-surface-1 p-4">
-      <div className="flex items-center gap-2">
-        <AgentLogo profileId={session.profileId} name="" size={16} />
-        <span className="text-ui font-medium text-fg">{agentName}</span>
-        <StatusLine status={runStatusDot(status)} className="ml-1 text-caption text-fg-muted">
-          {statusLabel(status)}
-        </StatusLine>
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-3">
+    <li
+      aria-label={agentName}
+      className={`flex flex-col gap-3 rounded-xl border bg-surface-2 px-4 py-3.5 ${isPicking ? "border-border-strong" : "border-border"}`}
+    >
+      <div className="flex items-center gap-3.5">
+        <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-[7px] bg-surface-hover">
+          <AgentLogo profileId={session.profileId} name="" size={16} />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-ui font-medium text-fg">{agentName}</span>
+          <StatusLine status={runStatusDot(status, facts.hasUnread)} className="text-ui-sm text-fg-secondary">
+            {rowStatusWords(facts, status, now)}
+            {/* The dot is not the only sign of it. */}
+            {status === "done" && facts.hasUnread && <span className="sr-only">, unread</span>}
+          </StatusLine>
+        </span>
         <Changes stats={stats} error={error} agentName={agentName} onReview={() => onReview(session.id)} />
-        <div className="ml-auto flex items-center gap-2">
-          <Button aria-label={`Open ${agentName}`} onClick={() => onOpen(session.id)}>
-            Open
-          </Button>
-          <Button
-            aria-label={`Pick ${agentName}`}
-            variant="primary"
-            disabled={isPickDisabled || hasNoChanges}
-            title={hasNoChanges ? NO_CHANGES_TITLE : undefined}
-            onClick={() => onPick(session.id)}
-          >
-            Pick
-          </Button>
-        </div>
+        <Button variant="ghost" tone="secondary" aria-label={`Open ${agentName}`} onClick={() => onOpen(session.id)}>
+          Open
+        </Button>
+        <Button
+          aria-label={`Pick ${agentName}`}
+          variant="outline"
+          // It opens the confirm bar, so it says so, rather than turning into a toggle while the bar is open.
+          aria-expanded={isPicking}
+          aria-controls={isPicking ? confirmBarId : undefined}
+          className={isPicking ? "bg-surface-hover" : undefined}
+          disabled={isPickDisabled || hasNoChanges}
+          title={hasNoChanges ? NO_CHANGES_TITLE : undefined}
+          onClick={() => onPick(session.id)}
+        >
+          <span className={isPicking ? "text-fg" : undefined}>Pick</span>
+        </Button>
       </div>
       {pendingCard && (
         <ActionCard

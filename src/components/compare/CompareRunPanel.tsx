@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "../ui/Button";
+import { useNow } from "../../hooks/useNow";
 import { CompareRunRow } from "./CompareRunRow";
-import { othersToStop, pickQuestion, stopsLine, type CompareRun, type RowFacts } from "../../lib/compare-run";
+import { othersToStop, pickQuestion, rowStatus, stopsLine, type CompareRun, type RowFacts } from "../../lib/compare-run";
 import { formatRelativeTime } from "../../lib/relative-time";
 
 export interface CompareRunPanelProps {
@@ -27,7 +28,10 @@ function startedLine(run: CompareRun): string {
 /** What a user sees while a compare run is open: one card per agent, and Pick to keep one. */
 export function CompareRunPanel({ run, rows, version, agentName, onOpen, onReview, onChoose, onPick }: CompareRunPanelProps) {
   const [confirming, setConfirming] = useState<string | null>(null);
-  const [isPicking, setIsPicking] = useState(false);
+  const [isPickRunning, setIsPickRunning] = useState(false);
+  // Only a working row shows a time, so the clock runs only while one does.
+  const now = useNow(undefined, rows.some((row) => rowStatus(row) === "working"));
+  const barId = useId();
   const panelRef = useRef<HTMLElement>(null);
   const barPickRef = useRef<HTMLButtonElement>(null);
   // Every Pick asks: the question takes focus, or it would come and go unheard below the list.
@@ -36,7 +40,7 @@ export function CompareRunPanel({ run, rows, version, agentName, onOpen, onRevie
   }, [confirming]);
   const isBusy = (sessionId: string) => rows.find((row) => row.session.id === sessionId)?.isBusy ?? false;
   const confirmedRow = rows.find((row) => row.session.id === confirming);
-  // Read on every render, so the bar's second line goes when the working agents finish while it is open.
+  // Read on every render, so the bar stops naming the working agents once they finish while it is open.
   const working = confirmedRow
     ? othersToStop(run, confirmedRow.session.id, isBusy)
         .filter((session) => isBusy(session.id))
@@ -52,60 +56,70 @@ export function CompareRunPanel({ run, rows, version, agentName, onOpen, onRevie
 
   const pick = async (winnerId: string) => {
     setConfirming(null);
-    setIsPicking(true);
+    setIsPickRunning(true);
     try {
       await onPick(winnerId);
     } finally {
-      setIsPicking(false);
+      setIsPickRunning(false);
     }
   };
 
+  const confirmText = confirmedRow
+    ? [pickQuestion(agentName(confirmedRow.session.profileId)), working.length > 0 ? stopsLine(working) : ""].filter(Boolean).join(" ")
+    : "";
+
   return (
-    <section ref={panelRef} aria-label="Compare run" className="flex flex-1 flex-col overflow-y-auto px-6 py-8">
-      <div className="mx-auto w-full max-w-3xl">
-        <h2 className="text-xl font-semibold text-fg">{run.name}</h2>
-        <p className="mt-1 text-ui-sm text-fg-muted">
-          {run.sessions.length} agents, each in its own worktree · {startedLine(run)}
-        </p>
-        <ul className="mt-5 space-y-3">
-          {rows.map((facts) => (
-            <CompareRunRow
-              key={facts.session.id}
-              facts={facts}
-              agentName={agentName(facts.session.profileId)}
-              version={version}
-              isPickDisabled={isPicking}
-              onOpen={onOpen}
-              onReview={onReview}
-              onChoose={onChoose}
-              onPick={setConfirming}
-            />
-          ))}
-        </ul>
-        {confirmedRow && (
-          <div
-            role="group"
-            aria-label="Confirm pick"
-            className="sticky bottom-0 mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-border-strong bg-surface-2 p-4 shadow-popover"
-            onKeyDown={(event) => {
-              if (event.key === "Escape") cancelPick();
-            }}
-          >
-            <div className="min-w-0">
-              <p className="text-ui text-fg">{pickQuestion(agentName(confirmedRow.session.profileId))}</p>
-              {working.length > 0 && <p className="mt-0.5 text-ui-sm text-fg-muted">{stopsLine(working)}</p>}
-            </div>
-            <div className="ml-auto flex items-center gap-2">
-              <Button variant="ghost" onClick={cancelPick}>
-                Cancel
-              </Button>
-              <Button ref={barPickRef} variant="primary" onClick={() => void pick(confirmedRow.session.id)}>
-                Pick {agentName(confirmedRow.session.profileId)}
-              </Button>
-            </div>
+    <section ref={panelRef} aria-label="Compare run" className="relative flex min-h-0 flex-1 flex-col">
+      {/* The bar sits outside the scroller, so it stays put while the cards scroll under it. */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-10 pb-28">
+        <div className="mx-auto flex w-full max-w-chat flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-xl font-semibold tracking-[-0.02em] text-fg">{run.name}</h2>
+            <p className="text-ui text-fg-muted">
+              {run.sessions.length} agents, each in its own worktree · {startedLine(run)}
+            </p>
           </div>
-        )}
+          <ul className="flex flex-col gap-2">
+            {rows.map((facts) => (
+              <CompareRunRow
+                key={facts.session.id}
+                facts={facts}
+                agentName={agentName(facts.session.profileId)}
+                version={version}
+                isPickDisabled={isPickRunning}
+                isPicking={confirming === facts.session.id}
+                confirmBarId={barId}
+                now={now}
+                onOpen={onOpen}
+                onReview={onReview}
+                onChoose={onChoose}
+                onPick={setConfirming}
+              />
+            ))}
+          </ul>
+        </div>
       </div>
+      {confirmedRow && (
+        <div
+          id={barId}
+          role="group"
+          aria-label="Confirm pick"
+          className="absolute inset-x-6 bottom-6 mx-auto flex max-w-chat items-center gap-3 rounded-xl border border-border bg-surface-3 px-4 py-3.5 shadow-popover"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") cancelPick();
+          }}
+        >
+          <p className="min-w-0 flex-1 text-ui text-fg">{confirmText}</p>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button variant="ghost" tone="secondary" onClick={cancelPick}>
+              Cancel
+            </Button>
+            <Button ref={barPickRef} variant="primary" onClick={() => void pick(confirmedRow.session.id)}>
+              Pick {agentName(confirmedRow.session.profileId)}
+            </Button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

@@ -14,6 +14,13 @@ export function json(body: unknown, status = 200): Response {
 export type SessionStatus = "CREATED" | "PENDING" | "COMPLETED" | "EXPIRED" | "CANCELLED";
 
 /** A stand-in for PingPay: sessions it created, their payments, and every request it saw. */
+/** A response that never comes: it rejects with the signal's reason once the caller gives up. */
+export function hangUntilAborted(signal: AbortSignal | null | undefined): Promise<Response> {
+  return new Promise((_resolve, reject) => {
+    signal?.addEventListener("abort", () => reject(signal.reason));
+  });
+}
+
 export class FakePingPay {
   sessions = new Map<
     string,
@@ -108,21 +115,27 @@ export class FakeNearAi {
   remainingNano = 1_000_000_000_000n;
   /** A status to answer a route with instead of serving it. */
   status: Partial<Record<NearAiRoute, number>> = {};
-  private gate: Promise<void> | undefined;
-  private started: (() => void) | undefined;
+  /** Routes that never answer; the request fails only when its signal aborts. */
+  hang = new Set<NearAiRoute>();
+  private holds = new Map<NearAiRoute, { gate: Promise<void>; started: () => void }>();
   private nextKey = 0;
   private nextToken = 0;
 
-  /** Holds every key creation until `release`; `started` resolves once one is waiting. */
-  holdCreate(): { started: Promise<void>; release: () => void } {
+  /**
+   * Holds the answers of `route` until `release`: each is worked out when the request arrives (a
+   * key list as it was then) and sent only afterwards. `started` resolves once one is waiting.
+   */
+  hold(route: NearAiRoute): { started: Promise<void>; release: () => void } {
     let open: () => void = () => {};
-    this.gate = new Promise<void>((resolve) => (open = resolve));
-    const started = new Promise<void>((resolve) => (this.started = resolve));
+    const gate = new Promise<void>((resolve) => (open = resolve));
+    let started: () => void = () => {};
+    const startedPromise = new Promise<void>((resolve) => (started = resolve));
+    this.holds.set(route, { gate, started });
     const release = () => {
-      this.gate = undefined;
+      this.holds.delete(route);
       open();
     };
-    return { started, release };
+    return { started: startedPromise, release };
   }
 
   count(route: NearAiRoute): number {
@@ -136,13 +149,15 @@ export class FakeNearAi {
     const body: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
     const route = this.route(method, path);
     this.calls.push({ route, method, path, auth: new Headers(init?.headers).get("authorization"), body });
-    if (route === "create") {
-      this.started?.();
-      await this.gate;
-    }
+    if (this.hang.has(route)) return hangUntilAborted(init?.signal);
     const status = this.status[route];
-    if (status !== undefined) return json({ error: "unavailable" }, status);
-    return this.serve(route, path, body);
+    const answer = status !== undefined ? json({ error: "unavailable" }, status) : this.serve(route, path, body);
+    const held = this.holds.get(route);
+    if (held) {
+      held.started();
+      await held.gate;
+    }
+    return answer;
   }) as typeof fetch;
 
   private route(method: string, path: string): NearAiRoute {

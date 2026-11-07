@@ -6,6 +6,7 @@ import { spendLimitNano } from "../src/credits";
 import { decrypt } from "../src/crypto";
 import type { Ledger } from "../src/ledger/Ledger";
 import { NearAiClient, NearAiError } from "../src/nearai";
+import { hangUntilAborted } from "./fakes";
 
 const ledgerEnv = env as unknown as Env;
 const cfg = parseConfig(ledgerEnv);
@@ -196,6 +197,19 @@ describe("NearAiClient", () => {
     expect(failure).toBeInstanceOf(NearAiError);
     expect((failure as NearAiError).status).toBe(502);
     expect((failure as NearAiError).code).toBeUndefined();
+  });
+
+  it("gives up on a request that never answers, as a NearAiError that does not name the token", async () => {
+    const signals: (AbortSignal | null | undefined)[] = [];
+    const fetcher = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      signals.push(init?.signal);
+      return hangUntilAborted(init?.signal);
+    }) as typeof fetch;
+    const failure = await new NearAiClient(BASE, fetcher, 20).orgRemainingNano("secret-access", "org-1").catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(NearAiError);
+    expect((failure as Error).message).toMatch(/timed out/);
+    expect((failure as Error).message).not.toContain("secret-access");
+    expect(signals[0]?.aborted).toBe(true);
   });
 });
 

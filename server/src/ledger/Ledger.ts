@@ -2,11 +2,13 @@ import { DurableObject } from "cloudflare:workers";
 import { parseConfig, type Config, type Env } from "../config";
 import { creditsForPackage, usdcAmount } from "../credits";
 import { decrypt, encrypt } from "../crypto";
+import { UPSTREAM_TIMEOUT_MS } from "../http";
 import { NearAiClient, NearAiError } from "../nearai";
 import { chargesUsdc, PingPayClient } from "../pingpay";
 import {
   ALARM_INTERVAL_MS,
   describeError,
+  keyLimitsVersion,
   runAlarm,
   SNAPSHOT_MAX_AGE_MS,
   type AlertKind,
@@ -67,6 +69,8 @@ export class Ledger extends DurableObject<Env> {
   private ticking: Promise<void> | undefined;
   /** The `fetch` used for NEAR AI and PingPay calls; tests replace it. */
   fetcher: typeof fetch = (input, init) => fetch(input, init);
+  /** How long one NEAR AI or PingPay request may take; tests shorten it. */
+  requestTimeoutMs = UPSTREAM_TIMEOUT_MS;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -264,11 +268,11 @@ export class Ledger extends DurableObject<Env> {
   }
 
   private pingPay(): PingPayClient {
-    return new PingPayClient(this.config().pingPayBase, this.secret("PINGPAY_API_KEY"), this.fetcher);
+    return new PingPayClient(this.config().pingPayBase, this.secret("PINGPAY_API_KEY"), this.fetcher, this.requestTimeoutMs);
   }
 
   private nearAi(): NearAiClient {
-    return new NearAiClient(this.config().nearAiBase, this.fetcher);
+    return new NearAiClient(this.config().nearAiBase, this.fetcher, this.requestTimeoutMs);
   }
 
   /**
@@ -345,10 +349,15 @@ export class Ledger extends DurableObject<Env> {
    * snapshot, and each device key's limit and usage in `key_usage`. The device list is read after
    * the calls, so a key created meanwhile is not mistaken for a stranger's. The replacement of
    * `key_usage` and the snapshot is one transaction: either both change or neither does.
+   *
+   * When a credit recorded a key's new limit while the calls were out (race 7), the key list read
+   * is older than that limit: only the organization balance is taken, the recorded key amounts are
+   * kept, and `taken_at` is left alone so the next tick refreshes again.
    */
   async refreshSnapshot(now: number): Promise<void> {
     const cfg = this.config();
     const client = this.nearAi();
+    const limitsBefore = keyLimitsVersion(this.sql);
     const { remaining, keys } = await this.withAccessToken(now, async (access) => ({
       remaining: await client.orgRemainingNano(access, cfg.organizationId),
       keys: await client.listKeys(access, cfg.workspaceId),
@@ -363,6 +372,12 @@ export class Ledger extends DurableObject<Env> {
     const ours = keys.filter((key) => deviceKeys.has(key.id));
     // Keys the server creates always have a limit; a key without one counts as 0 outstanding.
     const outstanding = ours.reduce((sum, key) => (key.limitNano !== null && key.limitNano > key.usageNano ? sum + key.limitNano - key.usageNano : sum), 0n);
+
+    const hasSnapshot = this.sql.exec("SELECT 1 FROM snapshot WHERE id = ?", SNAPSHOT_ID).toArray().length > 0;
+    if (keyLimitsVersion(this.sql) !== limitsBefore && hasSnapshot) {
+      this.sql.exec("UPDATE snapshot SET org_remaining_usd = ? WHERE id = ?", Number(clampNano(remaining)), SNAPSHOT_ID);
+      return;
+    }
 
     this.ctx.storage.transactionSync(() => {
       this.sql.exec("DELETE FROM key_usage");
@@ -642,15 +657,20 @@ export class Ledger extends DurableObject<Env> {
   }
 
   override async alarm(): Promise<void> {
-    await this.runAlarm(Date.now());
+    const now = Date.now();
+    // Scheduled here too, so an invocation that joins a tick still running keeps the chain going.
+    await this.ctx.storage.setAlarm(now + ALARM_INTERVAL_MS);
+    await this.runAlarm(now);
   }
 
   /**
    * One alarm tick at `now` (spec 7.5, race 8): a tick that starts while one runs joins it, so two
-   * never overlap. It always schedules the next tick a minute later.
+   * never overlap. The next tick is scheduled a minute later both when it starts, so a step that
+   * hangs cannot end the chain, and when it ends.
    */
   runAlarm(now: number): Promise<void> {
     this.ticking ??= (async () => {
+      await this.ctx.storage.setAlarm(now + ALARM_INTERVAL_MS);
       try {
         await runAlarm(this.fulfilment(), now);
       } finally {

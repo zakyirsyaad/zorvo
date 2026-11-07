@@ -22,7 +22,9 @@ const STATEMENTS = [
     ping_payment_id TEXT,
     reserved_until INTEGER,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    next_poll_at INTEGER,
+    polls INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE TABLE IF NOT EXISTS reservations (
     topup_id TEXT PRIMARY KEY,
@@ -73,6 +75,12 @@ const STATEMENTS = [
     key_id TEXT PRIMARY KEY,
     limit_nano INTEGER,
     usage_nano INTEGER
+  )`,
+  // One row (id = 1), bumped whenever a credit records a key's new limit, so a snapshot refresh
+  // whose key list was read before that does not overwrite it.
+  `CREATE TABLE IF NOT EXISTS limits_version (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    version INTEGER NOT NULL
   )`,
   // Fixed-window counters, e.g. key 'devices:<ip>'.
   `CREATE TABLE IF NOT EXISTS ratelimits (

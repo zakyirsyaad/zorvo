@@ -54,6 +54,7 @@ beforeEach(async () => {
     await state.storage.deleteAlarm();
     (ledger as unknown as { env: Env }).env = { ...ledgerEnv, KEY_ENCRYPTION_KEY: KEY, OPERATOR_REFRESH_TOKEN: SEED, ALERT_URL };
     ledger.fetcher = fetcher;
+    ledger.requestTimeoutMs = 15 * SECOND_MS;
   });
 });
 
@@ -202,7 +203,7 @@ describe("credit queue", () => {
     const b = await newDevice();
     const c = await newDevice();
     const topupId = await paidTopup(a.deviceId);
-    const hold = near.holdCreate();
+    const hold = near.hold("create");
 
     await runInDurableObject(stub(), async (ledger: Ledger, state) => {
       const running = ledger.runAlarm(NOW);
@@ -229,7 +230,7 @@ describe("credit queue", () => {
     const { deviceId } = await newDevice();
     const topupId = await paidTopup(deviceId);
     near.keys.set("key-other", { name: "other", limitNano: 0n, usageNano: 0n, secret: "sk-other" });
-    const hold = near.holdCreate();
+    const hold = near.hold("create");
 
     await runInDurableObject(stub(), async (ledger: Ledger, state) => {
       const running = ledger.runAlarm(NOW);
@@ -323,6 +324,53 @@ describe("credit queue", () => {
     expect(alerts.filter((alert) => alert.kind === "stuck_queue")).toHaveLength(2);
   });
 
+  it("runs at most 20 credit items a tick", async () => {
+    near.status.create = 503;
+    await runInDurableObject(stub(), (_ledger, state) => {
+      for (let i = 0; i < 25; i += 1) {
+        const sql = state.storage.sql;
+        sql.exec("INSERT INTO devices (id, secret_hash, created_at) VALUES (?, ?, ?)", `d-${i}`, `hash-${i}`, NOW);
+        sql.exec(
+          "INSERT INTO topups (id, device_id, package_usd, credits, status, created_at, updated_at) VALUES (?, ?, 5, 500, 'paid', ?, ?)",
+          `t-${i}`,
+          `d-${i}`,
+          NOW,
+          NOW,
+        );
+        sql.exec("INSERT INTO queue (id, kind, ref, attempts, next_at, created_at) VALUES (?, 'credit', ?, 0, ?, ?)", `q-${i}`, `t-${i}`, NOW, NOW);
+      }
+    });
+    await tick(NOW);
+    expect(near.count("create")).toBe(20);
+    await tick(NOW + SECOND_MS);
+    expect(near.count("create")).toBe(25);
+  });
+
+  it("race 7: a top-up's snapshot refresh that listed the keys before a credit landed keeps the credit's limit", async () => {
+    await seedStock(1000, NOW - MINUTE_MS);
+    const a = await newDevice();
+    const b = await newDevice();
+    const c = await newDevice();
+    const paid = await paidTopup(a.deviceId, NOW - MINUTE_MS);
+    const listing = near.hold("list");
+
+    await runInDurableObject(stub(), async (ledger: Ledger, state) => {
+      const later = NOW + 2 * MINUTE_MS;
+      const buying = ledger.createTopup(b.deviceId, 5, later);
+      await listing.started;
+      // The snapshot is a minute old for the alarm, so it does not refresh: it credits A.
+      await ledger.runAlarm(NOW);
+      const status = state.storage.sql.exec<{ status: string }>("SELECT status FROM topups WHERE id = ?", paid).one().status;
+      expect(status).toBe("credited");
+
+      listing.release();
+      expect(await buying).toHaveProperty("topupId");
+      const outstanding = state.storage.sql.exec<{ outstanding_usd: number }>("SELECT outstanding_usd FROM snapshot").one().outstanding_usd;
+      expect(outstanding).toBe(Number(spendLimitNano(500, cfg)));
+      expect(ledger.stockFor(c.deviceId, later).availableCredits).toBe(0);
+    });
+  });
+
   it("leaves a queue item of a kind it has no handler for untouched", async () => {
     await runInDurableObject(stub(), (_ledger, state) => {
       state.storage.sql.exec("INSERT INTO queue (id, kind, ref, attempts, next_at) VALUES ('q-1', 'rotate_key', 'device-1', 0, ?)", NOW);
@@ -335,7 +383,7 @@ describe("credit queue", () => {
     await seedStock(10_000);
     const { deviceId } = await newDevice();
     await paidTopup(deviceId);
-    const hold = near.holdCreate();
+    const hold = near.hold("create");
     await runInDurableObject(stub(), async (ledger: Ledger) => {
       const first = ledger.runAlarm(NOW);
       await hold.started;
@@ -385,6 +433,84 @@ describe("alarm", () => {
     expect(ping.calls.some((call) => call.url.endsWith(`/checkout/sessions/${stale.sessionId}`))).toBe(false);
   });
 
+  it("polls at most 10 sessions a tick, none again before its next poll, and still runs the queue", async () => {
+    await seedStock(10_000);
+    const { deviceId } = await newDevice();
+    const paid = await paidTopup(deviceId);
+    await runInDurableObject(stub(), (_ledger, state) => {
+      for (let i = 0; i < 50; i += 1) {
+        state.storage.sql.exec(
+          `INSERT INTO topups (id, device_id, package_usd, credits, status, ping_session_id, created_at, updated_at)
+           VALUES (?, ?, 5, 500, 'expired', ?, ?, ?)`,
+          `t-${i}`,
+          deviceId,
+          `cs_old_${i}`,
+          NOW - HOUR_MS,
+          NOW - HOUR_MS,
+        );
+      }
+    });
+    for (let i = 0; i < 50; i += 1) {
+      ping.sessions.set(`cs_old_${i}`, { status: "EXPIRED", paymentId: null, body: {}, amount: { assetId: NEAR_USDC_ASSET_ID, amount: "5000000" } });
+    }
+    const reads = () => ping.calls.filter((call) => /\/checkout\/sessions\/cs_old_/.test(call.url)).map((call) => call.url.split("/").pop());
+
+    await tick(NOW);
+    expect(reads()).toHaveLength(10);
+    expect(await statusOf(paid)).toBe("credited");
+
+    for (let second = 1; second < 5; second += 1) await tick(NOW + second * SECOND_MS);
+    expect(reads()).toHaveLength(50);
+    expect(new Set(reads()).size).toBe(50);
+    await tick(NOW + 5 * SECOND_MS);
+    expect(reads()).toHaveLength(50);
+  });
+
+  it("backs off polling an abandoned checkout: 1 minute, then 2, 4, up to an hour", async () => {
+    await seedStock(10_000);
+    const { deviceId } = await newDevice();
+    const { topupId, sessionId } = await checkout(deviceId);
+    await stub().cancelTopup(deviceId, topupId, NOW);
+    const readTimes: number[] = [];
+    let at = NOW;
+    for (let minute = 0; minute <= 200; minute += 1) {
+      at = NOW + minute * MINUTE_MS;
+      const before = ping.calls.length;
+      await tick(at);
+      if (ping.calls.slice(before).some((call) => call.url.endsWith(`/checkout/sessions/${sessionId}`))) readTimes.push(minute);
+    }
+    expect(readTimes).toEqual([0, 1, 3, 7, 15, 31, 63, 123, 183]);
+  });
+
+  it("keeps polling a created checkout every minute while it can still be paid", async () => {
+    await seedStock(10_000);
+    const { deviceId } = await newDevice();
+    const { sessionId } = await checkout(deviceId);
+    const reads = () => ping.calls.filter((call) => call.url.endsWith(`/checkout/sessions/${sessionId}`)).length;
+    for (let minute = 3; minute <= 10; minute += 1) await tick(NOW + minute * MINUTE_MS);
+    expect(reads()).toBe(8);
+  });
+
+  it("schedules the next alarm when a tick starts, and runs the later steps once a hung call times out", async () => {
+    await seedStock(10_000);
+    const { deviceId } = await newDevice();
+    const { topupId, sessionId } = await checkout(deviceId);
+    ping.pay(sessionId);
+    near.hang.add("refresh");
+
+    await runInDurableObject(stub(), async (ledger: Ledger, state) => {
+      ledger.requestTimeoutMs = 50;
+      const running = ledger.runAlarm(NOW + 3 * MINUTE_MS);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(await state.storage.getAlarm()).toBe(NOW + 4 * MINUTE_MS);
+      await running;
+    });
+
+    expect(await statusOf(topupId)).toBe("paid");
+    expect(alerts.map((alert) => alert.kind)).toContain("refresh_failed");
+    expect((await rows()).queue).toEqual([expect.objectContaining({ ref: topupId, attempts: 1 })]);
+  });
+
   it("tries an unsettled session again on the next tick without failing the alarm", async () => {
     await seedStock(10_000);
     const { deviceId } = await newDevice();
@@ -405,14 +531,21 @@ describe("alarm", () => {
     ping.pay(sessionId);
     ping.restate(sessionId, { assetId: NEAR_USDC_ASSET_ID, amount: "1000000" });
 
+    const reads = () => ping.calls.filter((call) => call.url.endsWith(`/checkout/sessions/${sessionId}`)).length;
+
     await tick(NOW + 3 * MINUTE_MS);
     await tick(NOW + 4 * MINUTE_MS);
     const mismatches = () => alerts.filter((alert) => alert.kind === "payment_mismatch");
     expect(mismatches()).toHaveLength(1);
     expect(mismatches()[0]!.detail).toContain(topupId);
     expect(await statusOf(topupId)).toBe("created");
+    // A mismatch is asked about again an hour later, not every minute.
+    expect(reads()).toBe(1);
+    await tick(NOW + 62 * MINUTE_MS);
+    expect(reads()).toBe(1);
 
     await tick(NOW + 63 * MINUTE_MS);
+    expect(reads()).toBe(2);
     expect(mismatches()).toHaveLength(2);
   });
 

@@ -146,6 +146,18 @@ describe("POST /v1/topups", () => {
     expect(ping.calls).toHaveLength(0);
   });
 
+  it("answers 429 rate_limited to the 11th top-up of a device in an hour, and still cancels", async () => {
+    await seedStock(100_000, Date.now());
+    const { secret } = await newDevice();
+    const first = await topUpOk(secret);
+    for (let i = 1; i < 10; i += 1) await topUpOk(secret);
+    const res = await topUp(secret, 5);
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "rate_limited" });
+    expect((await call(`/v1/topups/${first.topupId}/cancel`, { method: "POST", secret })).status).toBe(200);
+    expect(ping.calls.filter((c) => c.method === "POST")).toHaveLength(10);
+  });
+
   it("answers 409 device_cap for a device at its cap", async () => {
     await seedStock(10_000, Date.now());
     const { secret } = await newDevice(4800);

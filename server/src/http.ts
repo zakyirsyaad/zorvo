@@ -8,6 +8,9 @@ export type ErrorCode =
   | "rate_limited" // 429
   | "upstream"; // 502, or 503 when a webhook should be delivered again later
 
+/** How long one request to NEAR AI or PingPay may take before it is given up. */
+export const UPSTREAM_TIMEOUT_MS = 15_000;
+
 export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,

@@ -6,6 +6,7 @@ import { verifyWebhook } from "./pingpay";
 export { Ledger } from "./ledger/Ledger";
 
 const REGISTRATIONS_PER_HOUR = 10;
+const TOPUPS_PER_HOUR = 10;
 const HOUR_MS = 60 * 60 * 1000;
 const SECRET_HASH = /^[0-9a-f]{64}$/;
 const TOPUP_PATH = /^\/v1\/topups\/([0-9a-f-]{36})(\/cancel)?$/;
@@ -26,7 +27,10 @@ async function registerDevice(req: Request, env: Env): Promise<Response> {
   return "error" in result ? error(result.error, 400) : json({ deviceId: result.deviceId }, 201);
 }
 
+/** Each top-up opens a PingPay checkout the alarm then polls, so a device gets 10 an hour. Cancel is not limited. */
 async function createTopup(req: Request, env: Env, deviceId: string): Promise<Response> {
+  const { allowed } = await ledgerOf(env).rateLimit(`topups:${deviceId}`, TOPUPS_PER_HOUR, HOUR_MS);
+  if (!allowed) return error("rate_limited", 429);
   const body: unknown = await req.json().catch(() => null);
   const packageUsd = (body as { packageUsd?: unknown } | null)?.packageUsd;
   if (typeof packageUsd !== "number" || !parseConfig(env).packagesUsd.includes(packageUsd)) return error("bad_request", 400);

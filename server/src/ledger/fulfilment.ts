@@ -21,8 +21,15 @@ export const ALARM_INTERVAL_MS = MINUTE_MS;
 export const SNAPSHOT_MAX_AGE_MS = 2 * MINUTE_MS;
 /** A `created` top-up is polled once its webhook is this late. */
 const POLL_CREATED_AFTER_MS = 2 * MINUTE_MS;
-/** An `expired` top-up is polled for a late payment for this long. */
-const POLL_EXPIRED_FOR_MS = 7 * 24 * HOUR_MS;
+/** A top-up is polled for a (late) payment for this long after it was created. */
+const POLL_FOR_MS = 7 * 24 * HOUR_MS;
+/** Sessions read per tick, so the poll can never use up the alarm's subrequests before the queue runs. */
+const POLLS_PER_TICK = 10;
+/** Credit items run per tick, for the same reason. */
+const CREDITS_PER_TICK = 20;
+/** A checkout that can still be paid is asked about this often; one that cannot backs off from here. */
+const POLL_INTERVAL_MS = MINUTE_MS;
+const POLL_MAX_INTERVAL_MS = HOUR_MS;
 const BACKOFF_FIRST_MS = 30 * 1000;
 const BACKOFF_MAX_MS = 30 * MINUTE_MS;
 /** The failure that raises `attempts_exhausted`; the item stays and keeps retrying. */
@@ -107,24 +114,32 @@ async function refreshStock(ctx: FulfilmentContext, now: number): Promise<void> 
 }
 
 /**
- * Asks PingPay about checkouts whose webhook may never come: `created` top-ups older than 2 minutes,
- * and `expired` ones younger than 7 days, whose payment may still arrive late. An unsettled session
- * is simply asked again on the next tick.
+ * Asks PingPay about checkouts whose webhook may never come: `created` top-ups older than 2 minutes
+ * and `expired` ones, whose payment may still arrive late, for 7 days after they were created. At
+ * most 10 sessions a tick, the ones due longest first; each is then not asked again until its
+ * `next_poll_at` (`nextPoll`).
  */
 async function pollSessions(ctx: FulfilmentContext, now: number): Promise<void> {
-  const open = ctx.sql
+  const due = ctx.sql
     .exec<{ id: string; ping_session_id: string }>(
       `SELECT id, ping_session_id FROM topups
        WHERE ping_session_id IS NOT NULL
-         AND ((status = 'created' AND created_at < ?) OR (status = 'expired' AND created_at > ?))
-       ORDER BY created_at, id`,
+         AND status IN ('created', 'expired')
+         AND created_at > ?
+         AND (status = 'expired' OR created_at < ?)
+         AND COALESCE(next_poll_at, 0) <= ?
+       ORDER BY COALESCE(next_poll_at, 0), id
+       LIMIT ?`,
+      now - POLL_FOR_MS,
       now - POLL_CREATED_AFTER_MS,
-      now - POLL_EXPIRED_FOR_MS,
+      now,
+      POLLS_PER_TICK,
     )
     .toArray();
-  for (const topup of open) {
+  for (const topup of due) {
+    let outcome: SessionOutcome | "failed" = "failed";
     try {
-      const outcome = await ctx.onSessionEvent(topup.ping_session_id, null, now);
+      outcome = await ctx.onSessionEvent(topup.ping_session_id, null, now);
       if (outcome === "mismatch") {
         const detail = `top-up ${topup.id} was paid with another amount or asset than its package; it is not credited`;
         await ctx.alertOnce("payment_mismatch", topup.id, detail, now);
@@ -132,7 +147,32 @@ async function pollSessions(ctx: FulfilmentContext, now: number): Promise<void> 
     } catch (error) {
       console.error(`Polling PingPay for top-up ${topup.id} failed: ${describeError(error)}`);
     }
+    nextPoll(ctx.sql, topup.id, outcome, now);
   }
+}
+
+/**
+ * When to ask about a top-up's session again: in a minute while it is `created` and inside its
+ * checkout window plus grace (`reserved_until`); in an hour after a mismatch, which needs the
+ * operator anyway; otherwise after 1 minute × 2^polls, at most an hour.
+ */
+function nextPoll(sql: SqlStorage, topupId: string, outcome: SessionOutcome | "failed", now: number): void {
+  const row = sql
+    .exec<{ status: TopupStatus; reserved_until: number | null; polls: number }>(
+      "SELECT status, reserved_until, polls FROM topups WHERE id = ?",
+      topupId,
+    )
+    .toArray()[0];
+  if (!row) return;
+  const payable = row.status === "created" && row.reserved_until !== null && now < row.reserved_until;
+  let delay = POLL_INTERVAL_MS;
+  let polls = row.polls;
+  if (outcome === "mismatch") delay = POLL_MAX_INTERVAL_MS;
+  else if (!payable) {
+    delay = Math.min(POLL_MAX_INTERVAL_MS, POLL_INTERVAL_MS * 2 ** row.polls);
+    polls += 1;
+  }
+  sql.exec("UPDATE topups SET next_poll_at = ?, polls = ? WHERE id = ?", now + delay, polls, topupId);
 }
 
 /**
@@ -166,7 +206,7 @@ function promoteWaiting(ctx: FulfilmentContext, now: number): void {
 async function runCreditQueue(ctx: FulfilmentContext, now: number): Promise<void> {
   // Only kinds with a handler are taken; another kind is left as it is, attempts and all.
   const due = ctx.sql
-    .exec<{ id: string }>("SELECT id FROM queue WHERE kind = 'credit' AND next_at <= ? ORDER BY next_at, id", now)
+    .exec<{ id: string }>("SELECT id FROM queue WHERE kind = 'credit' AND next_at <= ? ORDER BY next_at, id LIMIT ?", now, CREDITS_PER_TICK)
     .toArray();
   for (const { id } of due) await creditItem(ctx, id, now);
 }
@@ -318,11 +358,18 @@ async function recordCredit(ctx: FulfilmentContext, claim: Claim, upstream: Upst
   });
 }
 
+/** Bumped by every `recordKeyLimit`; a snapshot refresh compares it before and after its calls. */
+export function keyLimitsVersion(sql: SqlStorage): number {
+  return sql.exec<{ version: number }>("SELECT version FROM limits_version WHERE id = 1").toArray()[0]?.version ?? 0;
+}
+
 /**
  * Counts a key's new limit in the snapshot's outstanding amount at once. Without it, the released
- * reservation would show its stock as free until the next snapshot refresh.
+ * reservation would show its stock as free until the next snapshot refresh. A refresh already in
+ * flight sees the version change and does not overwrite it with an older key list.
  */
 function recordKeyLimit(sql: SqlStorage, keyId: string, limitNano: bigint): void {
+  sql.exec("INSERT INTO limits_version (id, version) VALUES (1, 1) ON CONFLICT (id) DO UPDATE SET version = version + 1");
   const row = sql
     .exec<{ limit_nano: number | null; usage_nano: number | null }>("SELECT limit_nano, usage_nano FROM key_usage WHERE key_id = ?", keyId)
     .toArray()[0];

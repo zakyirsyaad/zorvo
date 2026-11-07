@@ -1,4 +1,5 @@
 import { hmacSha256Hex, timingSafeEqual } from "./crypto";
+import { UPSTREAM_TIMEOUT_MS } from "./http";
 
 /**
  * The part of the PingPay API the credits server uses (hosted checkout and webhooks).
@@ -39,7 +40,7 @@ const WEBHOOK_TOLERANCE_MS = 5 * 60 * 1000;
 /** A timestamp below this is in seconds, above it in milliseconds (10^11 s is the year 5138). */
 const SECONDS_LIMIT = 100_000_000_000;
 
-/** A non-2xx answer from PingPay. The message names the request, never the key. */
+/** A non-2xx answer from PingPay, or none in time (`status` 0). The message names the request, never the key. */
 export class PingPayError extends Error {
   constructor(
     readonly status: number,
@@ -89,6 +90,7 @@ export class PingPayClient {
     base: string,
     private readonly apiKey: string,
     private readonly fetcher: typeof fetch,
+    private readonly timeoutMs: number = UPSTREAM_TIMEOUT_MS,
   ) {
     this.base = base.replace(/\/+$/, "");
   }
@@ -96,12 +98,21 @@ export class PingPayClient {
   private async request(method: string, path: string, body?: unknown): Promise<unknown> {
     const headers: Record<string, string> = { "x-api-key": this.apiKey };
     if (body !== undefined) headers["content-type"] = "application/json";
-    const response = await this.fetcher(`${this.base}${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const text = await response.text();
+    const signal = AbortSignal.timeout(this.timeoutMs);
+    let response: Response;
+    let text: string;
+    try {
+      response = await this.fetcher(`${this.base}${path}`, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal,
+      });
+      text = await response.text();
+    } catch (error) {
+      if (signal.aborted) throw new PingPayError(0, `PingPay ${method} ${path} timed out after ${this.timeoutMs} ms`);
+      throw error;
+    }
     if (!response.ok) throw new PingPayError(response.status, `PingPay ${method} ${path} failed with ${response.status}`);
     try {
       return text === "" ? undefined : JSON.parse(text);

@@ -1,3 +1,5 @@
+import { UPSTREAM_TIMEOUT_MS } from "./http";
+
 /** The part of the NEAR AI Cloud API the credits server uses. Amounts it returns are scale 9 (nano-USD) in the results. */
 
 const NANO_SCALE = 9;
@@ -6,7 +8,7 @@ const PAGE_SIZE = 100;
 const MAX_KEY_PAGES = 50;
 const TOKENS_PER_MILLION = 1e6;
 
-/** A non-2xx answer from NEAR AI. The message names the request, never a token. */
+/** A non-2xx answer from NEAR AI, or none in time (`status` 0). The message names the request, never a token. */
 export class NearAiError extends Error {
   constructor(
     readonly status: number,
@@ -72,6 +74,7 @@ export class NearAiClient {
   constructor(
     base: string,
     private readonly fetcher: typeof fetch,
+    private readonly timeoutMs: number = UPSTREAM_TIMEOUT_MS,
   ) {
     this.base = base.replace(/\/+$/, "");
   }
@@ -80,12 +83,21 @@ export class NearAiClient {
     const headers: Record<string, string> = {};
     if (token !== undefined) headers.authorization = `Bearer ${token}`;
     if (body !== undefined) headers["content-type"] = "application/json";
-    const response = await this.fetcher(`${this.base}${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const text = await response.text();
+    const signal = AbortSignal.timeout(this.timeoutMs);
+    let response: Response;
+    let text: string;
+    try {
+      response = await this.fetcher(`${this.base}${path}`, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal,
+      });
+      text = await response.text();
+    } catch (error) {
+      if (signal.aborted) throw new NearAiError(0, `NEAR AI ${method} ${path.split("?")[0]} timed out after ${this.timeoutMs} ms`);
+      throw error;
+    }
     let parsed: unknown;
     try {
       parsed = text === "" ? undefined : JSON.parse(text);

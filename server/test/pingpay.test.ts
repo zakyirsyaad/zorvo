@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { hmacSha256Hex } from "../src/crypto";
 import { NEAR_USDC_ASSET_ID, PingPayClient, PingPayError, verifyWebhook } from "../src/pingpay";
+import { hangUntilAborted } from "./fakes";
 
 const BASE = "https://ping.test/api";
 const KEY = "pk-test-secret";
@@ -160,6 +161,19 @@ describe("PingPayClient", () => {
     expect(failure).toBeInstanceOf(PingPayError);
     expect(failure).toMatchObject({ status: 401 });
     expect(String((failure as Error).message)).not.toContain(KEY);
+  });
+
+  it("gives up on a request that never answers, as a PingPayError that does not name the key", async () => {
+    const signals: (AbortSignal | null | undefined)[] = [];
+    const fetcher = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      signals.push(init?.signal);
+      return hangUntilAborted(init?.signal);
+    }) as typeof fetch;
+    const failure = await new PingPayClient(BASE, KEY, fetcher, 20).getSession("cs_1").catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(PingPayError);
+    expect((failure as Error).message).toMatch(/timed out/);
+    expect((failure as Error).message).not.toContain(KEY);
+    expect(signals[0]?.aborted).toBe(true);
   });
 });
 

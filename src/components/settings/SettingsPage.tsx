@@ -6,6 +6,7 @@ import { ToastStack } from "../ui/Toast";
 import type { AgentCatalogActions } from "../../hooks/useAgentCatalogActions";
 import type { AgentCatalogHandle } from "../../hooks/useAgentCatalog";
 import type { GithubConnection } from "../../hooks/useGithubConnection";
+import type { PrivateCredits } from "../../hooks/usePrivateCredits";
 import type { PersistedStateHandle } from "../../hooks/usePersistedState";
 import type { SettingsPage as SettingsPageState } from "../../hooks/useSettingsPage";
 import type { SettingsSignIn } from "../../hooks/useSettingsSignIn";
@@ -14,6 +15,7 @@ import type { AgentProfile, Settings } from "../../types";
 import { AppearanceSection } from "./AppearanceSection";
 import { GeneralSection, type GeneralAppUpdate } from "./GeneralSection";
 import { GithubSection } from "./GithubSection";
+import { PrivateSection } from "./PrivateSection";
 import { SettingsHeader } from "./SettingsGroup";
 import { SettingsNav } from "./SettingsNav";
 
@@ -40,6 +42,10 @@ export interface SettingsPageProps {
   github?: GithubConnection;
   /** Sign-in state and actions for the agents; the Agents section shows none without it. */
   agentSignIn?: SettingsSignIn;
+  /** Zorvo Private's credits (the app's one instance); Settings shows no Private mode content without it. */
+  privateCredits?: PrivateCredits;
+  /** Opens the app's recovery-code dialog, for the stored code or a restore's new one. Private mode needs it with `privateCredits`. */
+  onShowRecoveryCode?: (code?: string) => void;
   /** Opens a web link in the user's browser. */
   onOpenUrl?: (url: string) => void;
 }
@@ -65,6 +71,8 @@ export function SettingsPage({
   notice,
   github,
   agentSignIn,
+  privateCredits,
+  onShowRecoveryCode,
   onOpenUrl,
 }: SettingsPageProps) {
   const { section } = page;
@@ -161,6 +169,10 @@ export function SettingsPage({
             />
           </div>
         );
+      case "private":
+        return privateCredits && onShowRecoveryCode ? (
+          <PrivateSection {...heading} credits={privateCredits} onShowRecoveryCode={onShowRecoveryCode} />
+        ) : null;
       case "github":
         return github ? (
           <GithubSection

@@ -1,0 +1,764 @@
+import "@testing-library/jest-dom/vitest";
+import { useState } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+
+vi.mock("../lib/notify", () => ({ notifyIfAway: vi.fn(() => Promise.resolve()) }));
+
+import { PrivateSection } from "../components/settings/PrivateSection";
+import { RecoveryCodeLayer } from "../components/private/RecoveryCodeLayer";
+import { RecoveryCodeDialog } from "../components/private/RecoveryCodeDialog";
+import { RecoveryCard } from "../components/private/RecoveryCard";
+import { TopupProgress } from "../components/private/TopupProgress";
+import { usePrivateCredits, type TopupFlow } from "../hooks/usePrivateCredits";
+import { turnsFor, type PendingTopup } from "../lib/private-credits";
+import type { FakePrivate } from "./fixtures/private-backend";
+
+function fake(): FakePrivate {
+  return (window as unknown as { __FAKE_PRIVATE__: FakePrivate }).__FAKE_PRIVATE__;
+}
+
+function callsTo(cmd: string) {
+  return fake().calls.filter((call) => call.cmd === cmd);
+}
+
+const MODEL = { id: "Qwen/Qwen3.8-27B", inputPerM: 0.1, outputPerM: 1.3 };
+
+const PACKAGES = [
+  { usd: 5, credits: 500, available: true },
+  { usd: 10, credits: 1000, available: true },
+  { usd: 25, credits: 2500, available: false, reason: "device_cap" },
+];
+
+function stockWith(packages = PACKAGES, availableCredits = 100_000) {
+  fake().stock = { availableCredits, yourRoomCredits: 5_000, packages, updatedAt: "2026-11-07T10:00:00Z" };
+  fake().models = [MODEL];
+}
+
+/** A device that holds credits already. */
+function readyWith(credits: number, extra: Partial<FakePrivate["status"]> = {}) {
+  fake().status = {
+    ...fake().status,
+    device: "ready",
+    keyReady: true,
+    balance: { credits, usedCredits: 260, keyReady: true, updatedAt: new Date().toISOString() },
+    // Saved already: the global dialog stays out of these tests unless they ask for it.
+    recoverySaved: true,
+    recoveryPrompted: true,
+    ...extra,
+  };
+}
+
+/** What App does: one hook, the section, and the one recovery dialog layer. */
+function Harness() {
+  const credits = usePrivateCredits();
+  const [request, setRequest] = useState<{ code?: string } | null>(null);
+  return (
+    <>
+      <PrivateSection credits={credits} onShowRecoveryCode={(code) => setRequest({ code })} />
+      <RecoveryCodeLayer credits={credits} request={request} onClose={() => setRequest(null)} />
+    </>
+  );
+}
+
+async function mount() {
+  await act(async () => {
+    render(<Harness />);
+  });
+}
+
+async function click(element: HTMLElement) {
+  await act(async () => {
+    fireEvent.click(element);
+  });
+}
+
+async function type(element: HTMLElement, value: string) {
+  await act(async () => {
+    fireEvent.change(element, { target: { value } });
+  });
+}
+
+const button = (name: string | RegExp) => screen.getByRole("button", { name });
+
+let writeText: ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  writeText = vi.fn(() => Promise.resolve());
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("Private mode section: balance", () => {
+  it("first run shows 0 credits, no key and the first top-up note", async () => {
+    stockWith();
+    await mount();
+    expect(await screen.findByText("0 credits")).toBeInTheDocument();
+    expect(screen.getByText("No key yet")).toBeInTheDocument();
+    expect(
+      screen.getByText("You haven't topped up yet. Your first top-up also sets up the private key this Mac uses."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Got a promo code? Redeem it under the packages to try Private mode for free."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a skeleton with a status while the status loads", async () => {
+    let release: () => void = () => {};
+    fake().holds.private_status = new Promise<void>((resolve) => (release = resolve));
+    await mount();
+    expect(screen.getAllByRole("status").some((el) => el.textContent === "Loading your balance…")).toBe(true);
+    expect(screen.queryByText("0 credits")).toBeNull();
+    await act(async () => release());
+    expect(await screen.findByText("0 credits")).toBeInTheDocument();
+  });
+
+  it("shows the balance, the used credits and the key", async () => {
+    readyWith(1240);
+    await mount();
+    expect(await screen.findByText("1,240 credits")).toBeInTheDocument();
+    expect(screen.getByText("One balance for every private session on this Mac · 260 used so far")).toBeInTheDocument();
+    expect(screen.getByText("Key ready")).toBeInTheDocument();
+    expect(screen.getByText("Updated just now")).toBeInTheDocument();
+  });
+
+  it("Refresh asks the server for a fresh balance, once", async () => {
+    readyWith(1240);
+    await mount();
+    await screen.findByText("1,240 credits");
+    await click(button("Refresh"));
+    expect(callsTo("private_status").map((call) => call.args)).toEqual([{ fresh: false }, { fresh: true }]);
+  });
+
+  it("unreachable shows the last known balance and Try again", async () => {
+    fake().status = {
+      ...fake().status,
+      device: "ready",
+      keyReady: true,
+      balanceError: "unreachable",
+      lastBalance: { credits: 1240, usedCredits: 0, at: new Date(Date.now() - 3 * 3_600_000).toISOString() },
+      recoverySaved: true,
+      recoveryPrompted: true,
+    };
+    await mount();
+    expect(await screen.findByText("Balance unavailable")).toBeInTheDocument();
+    expect(screen.getByText("Last known: 1,240 credits · 3 hours ago")).toBeInTheDocument();
+    await click(button("Try again"));
+    expect(callsTo("private_status").at(-1)?.args).toEqual({ fresh: true });
+  });
+
+  it("moved offers Forget on this Mac, and says why when it fails", async () => {
+    fake().status = { ...fake().status, device: "moved", recoverySaved: true, recoveryPrompted: true };
+    await mount();
+    expect(await screen.findByText("Your credits moved to another Mac")).toBeInTheDocument();
+    fake().errors.private_forget_device = "storage";
+    await click(button("Forget on this Mac"));
+    expect(screen.getByText("Couldn't save your settings on this Mac. Try again.")).toBeInTheDocument();
+    delete fake().errors.private_forget_device;
+    fake().status = { ...fake().status, device: "none" };
+    await click(button("Forget on this Mac"));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Forget on this Mac" })).toBeNull());
+    expect(callsTo("private_forget_device")).toHaveLength(2);
+  });
+
+  it("offers Forget only when the credits moved", async () => {
+    readyWith(100);
+    await mount();
+    await screen.findByText("100 credits");
+    expect(screen.queryByRole("button", { name: "Forget on this Mac" })).toBeNull();
+  });
+
+  it("shows a key error in words", async () => {
+    readyWith(100, { keyReady: false, keyError: "key_lost" });
+    await mount();
+    expect(
+      await screen.findByText("Your private key didn't reach this Mac. Restore with your recovery code to get a new one."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("No key yet")).toBeInTheDocument();
+  });
+
+  it("a recovery code not yet saved leaves a note that opens the dialog", async () => {
+    readyWith(100, { recoverySaved: false, recoveryPrompted: true });
+    await mount();
+    await click(await screen.findByRole("button", { name: "Save your recovery code" }));
+    expect(await screen.findByRole("dialog", { name: "Save your recovery code" })).toBeInTheDocument();
+    expect(await screen.findByText("ZRV-FAKE-CODE")).toBeInTheDocument();
+  });
+});
+
+describe("Private mode section: top-up picker", () => {
+  it("lists the packages with turns, and a disabled one with its reason", async () => {
+    stockWith();
+    await mount();
+    const five = await screen.findByRole("radio", { name: /\$5\b/ });
+    expect(five).toBeEnabled();
+    expect(within(five.closest("label") as HTMLElement).getByText("500 credits")).toBeInTheDocument();
+    const turns = turnsFor(500, MODEL).toLocaleString("en-US");
+    expect(within(five.closest("label") as HTMLElement).getByText(`≈ ${turns} turns`)).toBeInTheDocument();
+    const twentyFive = screen.getByRole("radio", { name: /\$25/ });
+    expect(twentyFive).toBeDisabled();
+    expect(screen.getByText("Over your 5,000-credit limit")).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Package" })).toBeInTheDocument();
+    expect(screen.getByText("Credits can't be refunded or withdrawn.")).toBeInTheDocument();
+  });
+
+  it("leaves the turns out when the models are not loaded", async () => {
+    stockWith();
+    fake().models = [];
+    await mount();
+    await screen.findByRole("radio", { name: /\$5\b/ });
+    expect(screen.queryByText(/turns/)).toBeNull();
+  });
+
+  it("says Loading packages until the stock arrives", async () => {
+    stockWith();
+    let release: () => void = () => {};
+    fake().holds.private_stock = new Promise<void>((resolve) => (release = resolve));
+    await mount();
+    expect(screen.getByText("Loading packages…")).toBeInTheDocument();
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+    await act(async () => release());
+    expect(await screen.findByRole("radio", { name: /\$5\b/ })).toBeInTheDocument();
+  });
+
+  it("shows a models failure with a retry", async () => {
+    stockWith();
+    fake().errors.private_models = "upstream";
+    await mount();
+    expect(await screen.findByText("Couldn't load the private models. Try again.")).toBeInTheDocument();
+    delete fake().errors.private_models;
+    await click(button("Try again"));
+    await waitFor(() => expect(screen.queryByText("Couldn't load the private models. Try again.")).toBeNull());
+  });
+
+  it("shows the low stock line below 2,500 credits", async () => {
+    stockWith(PACKAGES, 600);
+    await mount();
+    expect(await screen.findByText("Stock: 600 credits · more coming soon")).toBeInTheDocument();
+    expect(
+      screen.getByText("Stock is checked before checkout, so you never pay for credits that aren't there."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no stock line when stock is plentiful", async () => {
+    stockWith();
+    await mount();
+    await screen.findByRole("radio", { name: /\$5\b/ });
+    expect(screen.queryByText(/Stock:/)).toBeNull();
+  });
+
+  it("picking $10 shows the confirm row and calls nothing", async () => {
+    stockWith();
+    await mount();
+    const calls = fake().calls.length;
+    await click(await screen.findByRole("radio", { name: /\$10/ }));
+    expect(screen.getByText("1,000 credits for $10")).toBeInTheDocument();
+    expect(button("Pay $10")).toBeEnabled();
+    expect(callsTo("private_create_topup")).toHaveLength(0);
+    expect(fake().calls).toHaveLength(calls);
+  });
+
+  it("Pay $10 creates the top-up once, then opens checkout and waits", async () => {
+    stockWith();
+    await mount();
+    await click(await screen.findByRole("radio", { name: /\$10/ }));
+    await click(button("Pay $10"));
+    expect(callsTo("private_create_topup")).toHaveLength(1);
+    expect(callsTo("private_create_topup")[0].args).toEqual({ packageUsd: 10 });
+    expect(callsTo("private_open_checkout")).toHaveLength(1);
+    expect(screen.getByText("Waiting for your payment")).toBeInTheDocument();
+    expect(screen.getByText("Your 1,000 credits are held for 25 minutes while you pay.")).toBeInTheDocument();
+    // The picker is gone while the top-up is followed.
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+  });
+
+  it("shows the reason when creating the top-up fails, and Try again brings the picker back", async () => {
+    stockWith();
+    fake().errors.private_create_topup = "stock";
+    await mount();
+    await click(await screen.findByRole("radio", { name: /\$10/ }));
+    await click(button("Pay $10"));
+    expect(screen.getByText("Top-ups are paused for now.")).toBeInTheDocument();
+    expect(screen.queryByText(/may still go through/)).toBeNull();
+    await click(button("Try again"));
+    expect(await screen.findByRole("radiogroup")).toBeInTheDocument();
+  });
+
+  it("disables the packages while a promo code is being redeemed", async () => {
+    stockWith();
+    readyWith(0);
+    let release: () => void = () => {};
+    await mount();
+    await screen.findByRole("radio", { name: /\$5\b/ });
+    fake().holds.private_redeem_promo = new Promise<void>((resolve) => (release = resolve));
+    await type(screen.getByRole("textbox", { name: "Promo code" }), "ZORVO-TEST");
+    await click(button("Redeem"));
+    expect(screen.getByRole("radio", { name: /\$5\b/ })).toBeDisabled();
+    await act(async () => release());
+  });
+});
+
+describe("Private mode section: promo code", () => {
+  it("redeems a code and says how many credits it added", async () => {
+    stockWith();
+    await mount();
+    await type(await screen.findByRole("textbox", { name: "Promo code" }), "ZORVO-TEST");
+    await click(button("Redeem"));
+    expect(callsTo("private_redeem_promo")[0].args).toEqual({ code: "ZORVO-TEST" });
+    expect(await screen.findByText("+500 credits added")).toBeInTheDocument();
+  });
+
+  it("shows the error text of a refused code", async () => {
+    stockWith();
+    fake().errors.private_redeem_promo = "bad_code";
+    await mount();
+    await type(await screen.findByRole("textbox", { name: "Promo code" }), "NOPE");
+    await click(button("Redeem"));
+    expect(screen.getByText("That code didn't work. Check it and try again.")).toBeInTheDocument();
+  });
+
+  it("keeps Redeem off for an empty code", async () => {
+    stockWith();
+    await mount();
+    await screen.findByRole("textbox", { name: "Promo code" });
+    expect(button("Redeem")).toBeDisabled();
+  });
+
+  it("keeps Redeem off while a top-up is followed", async () => {
+    stockWith();
+    readyWith(0, { pendingTopup: { topupId: "t1", expiresAt: "2026-11-07T11:00:00Z", credits: 1000 } });
+    await mount();
+    await screen.findByText("Waiting for your payment");
+    await type(screen.getByRole("textbox", { name: "Promo code" }), "ZORVO-TEST");
+    expect(button("Redeem")).toBeDisabled();
+  });
+});
+
+const TOPUP: PendingTopup = { topupId: "t1", expiresAt: "2026-11-07T11:00:00Z", credits: 1000 };
+
+function renderProgress(flow: TopupFlow, extra: Partial<Parameters<typeof TopupProgress>[0]> = {}) {
+  const props = {
+    flow,
+    balanceCredits: 2240,
+    onOpenCheckout: vi.fn(() => Promise.resolve({ ok: true as const })),
+    onCancel: vi.fn(() => Promise.resolve({ ok: true as const })),
+    onDismiss: vi.fn(),
+    ...extra,
+  };
+  render(<TopupProgress {...props} />);
+  return props;
+}
+
+describe("TopupProgress", () => {
+  it("renders nothing visible while idle, but keeps its live region", () => {
+    renderProgress({ kind: "idle" });
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("opening says so and cannot be cancelled yet", () => {
+    renderProgress({ kind: "opening", usd: 10 });
+    expect(screen.getByText("Opening checkout in your browser")).toBeInTheDocument();
+    expect(button("Cancel")).toBeDisabled();
+  });
+
+  it("waiting offers Open checkout again and Cancel", async () => {
+    const props = renderProgress({ kind: "waiting", topup: TOPUP });
+    expect(screen.getByText("Waiting for your payment")).toBeInTheDocument();
+    expect(screen.getByText("Your 1,000 credits are held for 25 minutes while you pay.")).toBeInTheDocument();
+    await click(button("Open checkout again"));
+    expect(props.onOpenCheckout).toHaveBeenCalledTimes(1);
+    await click(button("Cancel"));
+    expect(props.onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("waiting after a browser that did not open says so", () => {
+    renderProgress({ kind: "waiting", topup: TOPUP, openFailed: true });
+    expect(
+      screen.getByText("Couldn't open your browser. Your checkout is ready: open it again, or cancel."),
+    ).toBeInTheDocument();
+    expect(button("Open checkout again")).toBeInTheDocument();
+    expect(button("Cancel")).toBeInTheDocument();
+  });
+
+  it("a checkout that cannot be reopened offers Cancel only", async () => {
+    renderProgress(
+      { kind: "waiting", topup: TOPUP },
+      { onOpenCheckout: vi.fn(() => Promise.resolve({ ok: false as const, code: "not_found" })) },
+    );
+    await click(button("Open checkout again"));
+    expect(
+      screen.getByText(
+        "Your checkout can't be reopened here. If its browser tab is still open, finish paying there, or cancel.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open checkout again" })).toBeNull();
+    expect(button("Cancel")).toBeInTheDocument();
+  });
+
+  it("a browser failure keeps Open checkout again", async () => {
+    renderProgress(
+      { kind: "waiting", topup: TOPUP },
+      { onOpenCheckout: vi.fn(() => Promise.resolve({ ok: false as const, code: "open_failed" })) },
+    );
+    await click(button("Open checkout again"));
+    expect(screen.queryByText(/can't be reopened here/)).toBeNull();
+    expect(button("Open checkout again")).toBeInTheDocument();
+  });
+
+  it("shows why a cancel failed, in place", async () => {
+    renderProgress(
+      { kind: "waiting", topup: TOPUP },
+      { onCancel: vi.fn(() => Promise.resolve({ ok: false as const, text: "Couldn't cancel the checkout. Try again." })) },
+    );
+    await click(button("Cancel"));
+    expect(screen.getByText("Couldn't cancel the checkout. Try again.")).toBeInTheDocument();
+    expect(button("Cancel")).toBeEnabled();
+  });
+
+  it("paid says the credits are on the way", () => {
+    renderProgress({ kind: "paid", topup: TOPUP });
+    expect(screen.getByText("Payment received")).toBeInTheDocument();
+    expect(screen.getByText("Adding 1,000 credits to this Mac. You don't need to do anything.")).toBeInTheDocument();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("credited shows the new balance and Done", async () => {
+    const props = renderProgress({ kind: "credited", credits: 1000 });
+    expect(screen.getByText("+1,000 credits")).toBeInTheDocument();
+    expect(screen.getByText("Balance 2,240 credits")).toBeInTheDocument();
+    await click(button("Done"));
+    expect(props.onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("failed says nothing was added and offers Try again", async () => {
+    const props = renderProgress({ kind: "failed", topupId: "t1" });
+    expect(screen.getByText("Your payment didn't go through")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "No credits were added. If PingPay received part of it, PingPay handles the refund. You can try again, with another chain or a card.",
+      ),
+    ).toBeInTheDocument();
+    await click(button("Try again"));
+    expect(props.onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("expired says the checkout closed", async () => {
+    const props = renderProgress({ kind: "expired", topupId: "t1" });
+    expect(screen.getByText("Checkout closed without paying")).toBeInTheDocument();
+    await click(button("Try again"));
+    expect(props.onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("waiting for stock says the payment counts", () => {
+    renderProgress({ kind: "waiting-stock", topup: TOPUP });
+    expect(screen.getByText("Paid. Credits come with the next restock")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "The 25-minute hold ran out and the stock sold out meanwhile. Your payment counts, and you're first in line when stock comes back.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("an error before any hold claims nothing about a payment", () => {
+    renderProgress({ kind: "error", code: "device_cap" });
+    expect(screen.getByText("That would take you over your 5,000-credit limit.")).toBeInTheDocument();
+    expect(screen.queryByText(/may still go through/)).toBeNull();
+    expect(screen.queryByText(/cancel/i)).toBeNull();
+    expect(button("Try again")).toBeInTheDocument();
+  });
+
+  it("a lasting error while following a top-up says a payment may still go through", async () => {
+    const props = renderProgress({ kind: "error", code: "unauthorized" });
+    expect(screen.getByText("Your credits moved to another Mac.")).toBeInTheDocument();
+    expect(screen.getByText("If you started a payment, it may still go through.")).toBeInTheDocument();
+    await click(button("Try again"));
+    expect(props.onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("announces each state in one live region", () => {
+    const { rerender } = render(
+      <TopupProgress
+        flow={{ kind: "opening", usd: 10 }}
+        balanceCredits={null}
+        onOpenCheckout={() => Promise.resolve({ ok: true })}
+        onCancel={() => Promise.resolve({ ok: true })}
+        onDismiss={() => {}}
+      />,
+    );
+    const region = screen.getByRole("status");
+    rerender(
+      <TopupProgress
+        flow={{ kind: "paid", topup: TOPUP }}
+        balanceCredits={null}
+        onOpenCheckout={() => Promise.resolve({ ok: true })}
+        onCancel={() => Promise.resolve({ ok: true })}
+        onDismiss={() => {}}
+      />,
+    );
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+    expect(screen.getByRole("status")).toBe(region);
+    expect(region).toHaveTextContent("Payment received");
+  });
+});
+
+describe("Private mode section: resumed top-up", () => {
+  it("a checkout that cannot be reopened after a restart offers Cancel only", async () => {
+    stockWith();
+    readyWith(0, { pendingTopup: { topupId: "t1", expiresAt: "2026-11-07T11:00:00Z", credits: 1000 } });
+    fake().errors.private_open_checkout = "not_found";
+    await mount();
+    await click(await screen.findByRole("button", { name: "Open checkout again" }));
+    expect(screen.getByText(/can't be reopened here/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open checkout again" })).toBeNull();
+    await click(button("Cancel"));
+    expect(callsTo("private_cancel_topup")).toHaveLength(1);
+    expect(await screen.findByRole("radiogroup")).toBeInTheDocument();
+  });
+});
+
+describe("RecoveryCard", () => {
+  const MASKED = "ZRV-••••-••••-••••-••••";
+
+  it("keeps the code masked and reads it only on Show or Copy", async () => {
+    stockWith();
+    readyWith(100);
+    await mount();
+    await screen.findByText("100 credits");
+    expect(screen.getByText(MASKED)).toBeInTheDocument();
+    expect(callsTo("private_recovery_code")).toHaveLength(0);
+    expect(document.body).not.toHaveTextContent("ZRV-FAKE-CODE");
+
+    await click(button("Show"));
+    expect(callsTo("private_recovery_code")).toHaveLength(1);
+    expect(await screen.findByText("ZRV-FAKE-CODE")).toBeInTheDocument();
+
+    // A second press hides it again.
+    await click(button("Hide"));
+    expect(screen.queryByText("ZRV-FAKE-CODE")).toBeNull();
+    expect(screen.getByText(MASKED)).toBeInTheDocument();
+  });
+
+  it("Copy writes the code to the clipboard without showing it", async () => {
+    stockWith();
+    readyWith(100);
+    await mount();
+    await screen.findByText("100 credits");
+    await click(button("Copy"));
+    expect(writeText).toHaveBeenCalledWith("ZRV-FAKE-CODE");
+    expect(screen.queryByText("ZRV-FAKE-CODE")).toBeNull();
+    expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument();
+  });
+
+  it("is off until this Mac has a device", async () => {
+    stockWith();
+    await mount();
+    await screen.findByText("0 credits");
+    expect(button("Show")).toBeDisabled();
+    expect(button("Copy")).toBeDisabled();
+  });
+
+  it("hides a shown code after 30 seconds and when it unmounts", async () => {
+    vi.useFakeTimers();
+    const revealCode = vi.fn(() => Promise.resolve("ZRV-ABCD-EFGH-JKLM-NPQR"));
+    const { unmount } = render(<RecoveryCard revealCode={revealCode} isAvailable onRestore={() => {}} />);
+    await act(async () => {
+      fireEvent.click(button("Show"));
+    });
+    expect(screen.getByText("ZRV-ABCD-EFGH-JKLM-NPQR")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(29_000);
+    });
+    expect(screen.getByText("ZRV-ABCD-EFGH-JKLM-NPQR")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_500);
+    });
+    expect(screen.queryByText("ZRV-ABCD-EFGH-JKLM-NPQR")).toBeNull();
+    unmount();
+  });
+
+  it("says why when the code cannot be read", async () => {
+    stockWith();
+    readyWith(100);
+    fake().errors.private_recovery_code = "no_key";
+    await mount();
+    await screen.findByText("100 credits");
+    await click(button("Show"));
+    expect(await screen.findByText("This Mac has no private credits yet.")).toBeInTheDocument();
+  });
+});
+
+describe("RecoveryCodeDialog", () => {
+  it("keeps Done off until the code is marked as saved", async () => {
+    const markRecovery = vi.fn(() => Promise.resolve({ ok: true as const }));
+    const onClose = vi.fn();
+    render(
+      <RecoveryCodeDialog
+        revealCode={() => Promise.resolve("ZRV-AAAA-BBBB-CCCC-DDDD")}
+        markRecovery={markRecovery}
+        onClose={onClose}
+      />,
+    );
+    expect(await screen.findByText("ZRV-AAAA-BBBB-CCCC-DDDD")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Save your recovery code" })).toHaveAttribute("aria-modal", "true");
+    expect(
+      screen.getByText("Anyone with this code can use your credits. Keep it in a password manager, not in a chat."),
+    ).toBeInTheDocument();
+    expect(button("Done")).toBeDisabled();
+    await click(screen.getByRole("checkbox", { name: "I saved it somewhere safe" }));
+    expect(button("Done")).toBeEnabled();
+    await click(button("Done"));
+    expect(markRecovery).toHaveBeenCalledWith(true);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("Remind me later marks it as not saved", async () => {
+    const markRecovery = vi.fn(() => Promise.resolve({ ok: true as const }));
+    const onClose = vi.fn();
+    render(<RecoveryCodeDialog revealCode={() => Promise.resolve("ZRV-A")} markRecovery={markRecovery} onClose={onClose} />);
+    await screen.findByText("ZRV-A");
+    await click(button("Remind me later"));
+    expect(markRecovery).toHaveBeenCalledWith(false);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes an initial code and does not read the stored one", async () => {
+    const revealCode = vi.fn(() => Promise.resolve("ZRV-OLD"));
+    render(
+      <RecoveryCodeDialog
+        revealCode={revealCode}
+        markRecovery={() => Promise.resolve({ ok: true })}
+        initialCode="ZRV-NEW"
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByText("ZRV-NEW")).toBeInTheDocument();
+    expect(revealCode).not.toHaveBeenCalled();
+  });
+
+  it("copies the code", async () => {
+    render(
+      <RecoveryCodeDialog
+        revealCode={() => Promise.resolve("ZRV-A")}
+        markRecovery={() => Promise.resolve({ ok: true })}
+        onClose={() => {}}
+      />,
+    );
+    await screen.findByText("ZRV-A");
+    await click(button("Copy"));
+    expect(writeText).toHaveBeenCalledWith("ZRV-A");
+  });
+
+  it("stays open and says why when saving the choice fails", async () => {
+    const onClose = vi.fn();
+    render(
+      <RecoveryCodeDialog
+        revealCode={() => Promise.resolve("ZRV-A")}
+        markRecovery={() => Promise.resolve({ ok: false as const, text: "Couldn't save your settings on this Mac. Try again." })}
+        onClose={onClose}
+      />,
+    );
+    await screen.findByText("ZRV-A");
+    await click(screen.getByRole("checkbox", { name: "I saved it somewhere safe" }));
+    await click(button("Done"));
+    expect(screen.getByText("Couldn't save your settings on this Mac. Try again.")).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("shows when the code cannot be read", async () => {
+    render(
+      <RecoveryCodeDialog
+        revealCode={() => Promise.reject("keychain")}
+        markRecovery={() => Promise.resolve({ ok: true })}
+        onClose={() => {}}
+      />,
+    );
+    expect(await screen.findByText(/Couldn't save your key in the Keychain/)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "I saved it somewhere safe" })).toBeDisabled();
+  });
+
+  it("Escape reminds me later and gives focus back", async () => {
+    const markRecovery = vi.fn(() => Promise.resolve({ ok: true as const }));
+    const onClose = vi.fn();
+    render(<RecoveryCodeDialog revealCode={() => Promise.resolve("ZRV-A")} markRecovery={markRecovery} onClose={onClose} />);
+    await screen.findByText("ZRV-A");
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+    expect(markRecovery).toHaveBeenCalledWith(false);
+    expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe("Restore", () => {
+  async function openRestore() {
+    await click(await screen.findByRole("button", { name: "Restore…" }));
+    return screen.getByRole("dialog", { name: "Restore your credits" });
+  }
+
+  it("a code that does not work shows its text and stays open", async () => {
+    stockWith();
+    readyWith(0);
+    fake().errors.private_recover = "bad_code";
+    await mount();
+    const dialog = await openRestore();
+    const input = within(dialog).getByRole("textbox", { name: "Recovery code" });
+    expect(input).toHaveAttribute("type", "text");
+    expect(input).toHaveAttribute("spellcheck", "false");
+    expect(input).toHaveAttribute("autocomplete", "off");
+    await type(input, "ZRV-WRONG");
+    await click(within(dialog).getByRole("button", { name: "Restore" }));
+    expect(within(dialog).getByText("That code didn't work. Check it and try again.")).toBeInTheDocument();
+    expect(callsTo("private_recover")[0].args).toEqual({ code: "ZRV-WRONG" });
+  });
+
+  it("a code that works shows the new recovery code", async () => {
+    stockWith();
+    readyWith(0);
+    await mount();
+    const dialog = await openRestore();
+    await type(within(dialog).getByRole("textbox", { name: "Recovery code" }), " ZRV-GOOD ");
+    await click(within(dialog).getByRole("button", { name: "Restore" }));
+    expect(callsTo("private_recover")[0].args).toEqual({ code: "ZRV-GOOD" });
+    expect(screen.queryByRole("dialog", { name: "Restore your credits" })).toBeNull();
+    expect(await screen.findByRole("dialog", { name: "Save your recovery code" })).toBeInTheDocument();
+    expect(screen.getByText("ZRV-NEW-CODE")).toBeInTheDocument();
+    // The stored code is not read: the new one came with the answer.
+    expect(callsTo("private_recovery_code")).toHaveLength(0);
+  });
+
+  it("keeps Restore off for an empty code and closes on Cancel and Escape", async () => {
+    stockWith();
+    readyWith(0);
+    await mount();
+    const dialog = await openRestore();
+    expect(within(dialog).getByRole("button", { name: "Restore" })).toBeDisabled();
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+    expect(screen.queryByRole("dialog", { name: "Restore your credits" })).toBeNull();
+    await openRestore();
+    await click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Restore your credits" })).toBeNull();
+  });
+
+  it("does not close on Escape while a restore runs", async () => {
+    stockWith();
+    readyWith(0);
+    let release: () => void = () => {};
+    fake().holds.private_recover = new Promise<void>((resolve) => (release = resolve));
+    await mount();
+    const dialog = await openRestore();
+    await type(within(dialog).getByRole("textbox", { name: "Recovery code" }), "ZRV-GOOD");
+    await click(within(dialog).getByRole("button", { name: "Restore" }));
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+    expect(screen.getByRole("dialog", { name: "Restore your credits" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await act(async () => release());
+  });
+});

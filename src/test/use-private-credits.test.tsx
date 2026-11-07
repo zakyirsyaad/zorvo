@@ -103,9 +103,11 @@ describe("usePrivateCredits: top-up flow", () => {
     expect(callsTo("private_topup_status")).toHaveLength(1);
 
     delete fake().errors.private_open_checkout;
+    let opened: unknown;
     await act(async () => {
-      await view.result.current.openCheckout();
+      opened = await view.result.current.openCheckout();
     });
+    expect(opened).toEqual({ ok: true });
     expect(callsTo("private_open_checkout")).toHaveLength(2);
     expect(view.result.current.flow.kind).toBe("waiting");
     expect(view.result.current.flow).not.toHaveProperty("openFailed");
@@ -115,10 +117,22 @@ describe("usePrivateCredits: top-up flow", () => {
     const view = await mount();
     fake().errors.private_open_checkout = "open_failed";
     await buy(view, 5);
+    let opened: unknown;
     await act(async () => {
-      await view.result.current.openCheckout();
+      opened = await view.result.current.openCheckout();
     });
+    expect(opened).toEqual({ ok: false, code: "open_failed" });
     expect(view.result.current.flow).toMatchObject({ kind: "waiting", openFailed: true });
+  });
+
+  it("answers not_found when there is no checkout to open", async () => {
+    const view = await mount();
+    let opened: unknown;
+    await act(async () => {
+      opened = await view.result.current.openCheckout();
+    });
+    expect(opened).toEqual({ ok: false, code: "not_found" });
+    expect(callsTo("private_open_checkout")).toHaveLength(0);
   });
 
   it("follows paid, then credited with the package credits and reads the status fresh once", async () => {

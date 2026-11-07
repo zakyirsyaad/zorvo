@@ -26,6 +26,9 @@ export type TopupFlow =
 
 export type ActionResult = { ok: true } | { ok: false; text: string };
 
+/** `code` is the backend's plain error code (`not_found`: no checkout address is kept, as after a restart). */
+export type OpenCheckoutResult = { ok: true } | { ok: false; code: string };
+
 export interface PrivateCredits {
   /** null until the first read answers. */
   status: PrivateStatus | null;
@@ -37,7 +40,7 @@ export interface PrivateCredits {
   flow: TopupFlow;
   buy: (usd: number) => Promise<void>;
   /** Opens the current top-up's checkout again, for a browser that did not open the first time. */
-  openCheckout: () => Promise<void>;
+  openCheckout: () => Promise<OpenCheckoutResult>;
   cancel: () => Promise<ActionResult>;
   dismiss: () => void;
   redeem: (code: string) => Promise<{ ok: true; credits: number } | { ok: false; text: string }>;
@@ -268,18 +271,20 @@ export function usePrivateCredits(): PrivateCredits {
   }, [topupId, pollMs, settle, refresh, updateFlow]);
 
   const openCheckoutFor = useCallback(
-    async (topup: PendingTopup) => {
+    async (topup: PendingTopup): Promise<OpenCheckoutResult> => {
       try {
         await invoke('private_open_checkout', { topupId: topup.topupId });
         updateFlow((prev) => {
           if (prev.kind !== 'waiting' || prev.topup.topupId !== topup.topupId) return prev;
           return { kind: 'waiting', topup: prev.topup };
         });
-      } catch {
+        return { ok: true };
+      } catch (error) {
         // Whatever the reason, the hold stands: the user can open it again or cancel.
         updateFlow((prev) =>
           prev.kind === 'waiting' && prev.topup.topupId === topup.topupId ? { ...prev, openFailed: true } : prev,
         );
+        return { ok: false, code: codeOf(error) };
       }
     },
     [updateFlow],
@@ -309,9 +314,9 @@ export function usePrivateCredits(): PrivateCredits {
     [openCheckoutFor, refresh, updateFlow],
   );
 
-  const openCheckout = useCallback(async () => {
+  const openCheckout = useCallback(async (): Promise<OpenCheckoutResult> => {
     const current = flowRef.current;
-    if (current.kind === 'waiting') await openCheckoutFor(current.topup);
+    return current.kind === 'waiting' ? openCheckoutFor(current.topup) : { ok: false, code: 'not_found' };
   }, [openCheckoutFor]);
 
   const cancel = useCallback(async (): Promise<ActionResult> => {

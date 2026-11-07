@@ -16,6 +16,7 @@ import { Toast, ToastStack } from "./components/ui/Toast";
 import { CompareRunPanel } from "./components/compare/CompareRunPanel";
 import { FailedTurnBanner } from "./components/FailedTurnBanner";
 import { SignInLayer } from "./components/SignInLayer";
+import { RecoveryCodeLayer } from "./components/private/RecoveryCodeLayer";
 import { AgentInstallPanel } from "./components/AgentInstallPanel";
 import { pickerLabelOf } from "./lib/install-plan";
 import { installPanelAgentOf } from "./lib/install-panel";
@@ -82,6 +83,7 @@ import { AgentsMenu } from "./components/sidebar/AgentsMenu";
 import { useNavigationHistory } from "./hooks/useNavigationHistory";
 import { useUserProfile } from "./hooks/useUserProfile";
 import { useGithubConnection } from "./hooks/useGithubConnection";
+import { usePrivateCredits } from "./hooks/usePrivateCredits";
 import { useWorkspaceDetails } from "./hooks/useWorkspaceDetails";
 import { useBranchPicker } from "./hooks/useBranchPicker";
 import { usePopoutHost } from "./hooks/usePopoutHost";
@@ -183,6 +185,9 @@ export default function App() {
   const suggestedFolders = useSuggestedFolders();
   const userProfile = useUserProfile();
   const github = useGithubConnection();
+  const privateCredits = usePrivateCredits();
+  // The recovery-code dialog asked for from Settings (the one after a first top-up needs no request).
+  const [recoveryRequest, setRecoveryRequest] = useState<{ code?: string } | null>(null);
   // What stops pull requests being read, when the GitHub connection explains it.
   const githubBlocker =
     github.status?.state === "not-installed" || github.status?.state === "signed-out" ? github.status.state : undefined;
@@ -1435,8 +1440,11 @@ export default function App() {
         notice={settingsPage.section !== null && noticeToast}
         github={github}
         agentSignIn={settingsSignIn}
+        privateCredits={privateCredits}
+        onShowRecoveryCode={(code) => setRecoveryRequest({ code })}
         onOpenUrl={openLink}
       />
+      <RecoveryCodeLayer credits={privateCredits} request={recoveryRequest} onClose={() => setRecoveryRequest(null)} />
     </main>
   );
 }

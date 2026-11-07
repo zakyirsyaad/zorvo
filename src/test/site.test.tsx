@@ -151,9 +151,11 @@ describe("landing page", () => {
     }
   });
 
-  it("links the docs from the header and says agents come from the ACP registry", () => {
+  it("links the docs and the source from the header and says agents come from the ACP registry", () => {
     const header = document.querySelector("header")!;
     expect([...header.querySelectorAll("a")].map((link) => link.textContent)).toContain("Docs");
+    expect(header.querySelector(`a[href="${LINKS.repository}"]`)?.textContent).toBe("GitHub");
+    expect(document.querySelector(`footer a[href="${LINKS.license}"]`)).not.toBeNull();
     expect(copy).toContain("ACP registry");
     expect(copy).not.toMatch(/Aider|Oh-My-Pi/);
   });

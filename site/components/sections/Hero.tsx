@@ -41,7 +41,7 @@ export function Hero() {
           </ButtonLink>
         </div>
         <p className="t-caption m-0 max-w-[460px]">
-          Free and open source, for Macs with Apple silicon or Intel. Zorvo updates itself, and brings
+          Free and open source under Apache 2.0, for Macs with Apple silicon or Intel. Zorvo updates itself, and brings
           Node.js when an agent needs it.
         </p>
       </section>

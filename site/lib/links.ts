@@ -6,6 +6,10 @@
 const REPOSITORY = "https://github.com/zakyirsyaad/zorvo";
 
 export const LINKS = {
+  repository: REPOSITORY,
+  issues: `${REPOSITORY}/issues`,
+  releases: `${REPOSITORY}/releases`,
+  license: `${REPOSITORY}/blob/main/LICENSE`,
   download: `${REPOSITORY}/releases/latest/download/Zorvo-mac.dmg`,
   docs: "/docs",
   installGuide: "/docs/install",

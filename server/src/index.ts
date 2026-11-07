@@ -32,6 +32,11 @@ export default {
       if (device instanceof Response) return device;
       return json({ error: "not_implemented" }, 501); // Replaced by the balance endpoint.
     }
+    if (req.method === "GET" && pathname === "/v1/stock") {
+      const device = await authDevice(req, env);
+      if (device instanceof Response) return device;
+      return json(await ledgerOf(env).stockFor(device.deviceId));
+    }
     return error("not_found", 404);
   },
 } satisfies ExportedHandler<Env>;

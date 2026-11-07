@@ -21,6 +21,7 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 
 use super::connection::AcpConnection;
+use super::key_env::missing_key_variables;
 use super::manager::{
     auth_methods_of, auth_required_error, failure_message, initialize, open_request,
     spawn_unrouted, AcpLaunch, AcpManager, OpenError,
@@ -53,6 +54,11 @@ pub struct ProbedAgent {
     /// Whether the agent showed someone is signed in: it opened a session, or
     /// reported an account. False when it said nothing either way.
     pub sign_in_checked: bool,
+    /// The names (never the values) of the key variables the agent's `env_var` sign-in
+    /// methods need and that are not set for it. Only for an agent that cannot report
+    /// its sign-in: opening a session proves nothing for it, so with a name here the
+    /// sign-in is unconfirmed (`sign_in_checked` is false), not known to be missing.
+    pub missing_env: Vec<String>,
     /// Whether the agent can list its own sessions (`session/list`).
     pub can_list_sessions: bool,
 }
@@ -127,6 +133,7 @@ impl AcpManager {
                             config_options: Value::Array(Vec::new()),
                             commands: Value::Array(Vec::new()),
                             sign_in_checked: checked,
+                            missing_env: Vec::new(),
                             can_list_sessions: can_list_sessions(&init),
                         });
                     return Ok((outcome, None));
@@ -144,6 +151,15 @@ impl AcpManager {
                     auth_until,
                 };
                 let (commands, auth_kind) = settle(&rx, &awaited);
+                // An agent that cannot report who is signed in may open a session without a key
+                // and refuse only the prompt: if it names where its key lives, look there.
+                let missing_env = if reports_auth {
+                    Vec::new()
+                } else {
+                    missing_key_variables(&auth_methods_of(&init), &launch.env, |name| {
+                        std::env::var(name).ok()
+                    })
+                };
                 let probed = ProbedAgent {
                     modes: session["modes"].clone(),
                     models: session["models"].clone(),
@@ -151,7 +167,9 @@ impl AcpManager {
                     commands: commands.unwrap_or_else(|| Value::Array(Vec::new())),
                     // An agent that reports its sign-in may open sessions signed out
                     // (Claude Code): then only a reported account shows one.
-                    sign_in_checked: !reports_auth || auth_kind.is_some(),
+                    sign_in_checked: (!reports_auth && missing_env.is_empty())
+                        || auth_kind.is_some(),
+                    missing_env,
                     can_list_sessions: can_list_sessions(&init),
                 };
                 let discard =

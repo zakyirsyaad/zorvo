@@ -110,6 +110,21 @@ describe("useAgentSignInStatus", () => {
     expect(hook.result.current.stateOf("gemini")).toBe("ready");
   });
 
+  it("stops counting an agent as signed in when its sign-in could not be confirmed, without asking for one", () => {
+    const { hook, sync, saved } = setup(["gemini", "qwen"]);
+
+    act(() => hook.result.current.markUnconfirmed("gemini"));
+    sync();
+
+    expect(saved()).toEqual(["qwen"]);
+    expect(hook.result.current.stateOf("gemini")).toBe("unchecked");
+    // An agent that asked for a sign-in keeps asking: not being confirmed does not undo that.
+    act(() => hook.result.current.markNeeded("qwen"));
+    act(() => hook.result.current.markUnconfirmed("qwen"));
+    sync();
+    expect(hook.result.current.stateOf("qwen")).toBe("needed");
+  });
+
   it("does not write the state again for an agent already remembered", () => {
     const { hook } = setup(["gemini"]);
     const before = hook.result.current;

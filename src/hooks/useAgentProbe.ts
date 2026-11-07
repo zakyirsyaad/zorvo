@@ -12,7 +12,15 @@ export interface ProbeFacts {
   signInChecked: boolean;
   /** The agent can list its other sessions. */
   canListSessions: boolean;
+  /**
+   * Names (never values) of the key variables the agent's `env_var` sign-in methods need and that are not
+   * set for it. With one, opening a session proved nothing, so `signInChecked` is false.
+   */
+  missingEnv: string[];
 }
+
+/** A plain environment variable name; the backend sends names only, but they are shown, so they are checked. */
+const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
 export interface AgentProbeDeps {
   /** The agent the next message starts. */
@@ -36,6 +44,7 @@ export function parseProbeAnswer(raw: unknown): { options: ProbedOptions; facts:
     commands?: unknown;
     signInChecked?: unknown;
     canListSessions?: unknown;
+    missingEnv?: unknown;
   };
   return {
     options: {
@@ -47,6 +56,9 @@ export function parseProbeAnswer(raw: unknown): { options: ProbedOptions; facts:
     facts: {
       signInChecked: probed.signInChecked === true,
       canListSessions: probed.canListSessions === true,
+      missingEnv: Array.isArray(probed.missingEnv)
+        ? probed.missingEnv.filter((name): name is string => typeof name === 'string' && VARIABLE_NAME.test(name))
+        : [],
     },
   };
 }

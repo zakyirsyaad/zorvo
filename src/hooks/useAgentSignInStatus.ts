@@ -8,11 +8,24 @@ export interface AgentSignInStatus {
   markNeeded: (profileId: string) => void;
   /** Someone was seen signed in to the agent; remembered across launches. */
   markSignedIn: (profileId: string) => void;
+  /**
+   * A check could not confirm the agent's sign-in (a missing key variable): it stops counting as signed in,
+   * without being told to sign in, since a key saved by its own setup is not visible to Zorvo.
+   */
+  markUnconfirmed: (profileId: string) => void;
 }
 
 export interface UseAgentSignInStatusOptions {
   settings: Settings;
   updateState: (updater: (prev: PersistedState) => PersistedState) => void;
+}
+
+/** `state` without `profileId` among the agents seen signed in (the same object when it was not there). */
+function withoutSignedIn(state: PersistedState, profileId: string): PersistedState {
+  const signedIn = state.settings.signedInAgents;
+  return signedIn?.includes(profileId)
+    ? { ...state, settings: { ...state.settings, signedInAgents: signedIn.filter((id) => id !== profileId) } }
+    : state;
 }
 
 /**
@@ -33,14 +46,7 @@ export function useAgentSignInStatus({ settings, updateState }: UseAgentSignInSt
   const markNeeded = useCallback(
     (profileId: string) => {
       setNeeded((prev) => (prev.has(profileId) ? prev : new Set(prev).add(profileId)));
-      updateState((prev) =>
-        prev.settings.signedInAgents?.includes(profileId)
-          ? {
-              ...prev,
-              settings: { ...prev.settings, signedInAgents: prev.settings.signedInAgents.filter((id) => id !== profileId) },
-            }
-          : prev,
-      );
+      updateState((prev) => withoutSignedIn(prev, profileId));
     },
     [updateState],
   );
@@ -65,5 +71,10 @@ export function useAgentSignInStatus({ settings, updateState }: UseAgentSignInSt
     [updateState],
   );
 
-  return useMemo(() => ({ stateOf, markNeeded, markSignedIn }), [stateOf, markNeeded, markSignedIn]);
+  const markUnconfirmed = useCallback((profileId: string) => updateState((prev) => withoutSignedIn(prev, profileId)), [updateState]);
+
+  return useMemo(
+    () => ({ stateOf, markNeeded, markSignedIn, markUnconfirmed }),
+    [stateOf, markNeeded, markSignedIn, markUnconfirmed],
+  );
 }

@@ -1,3 +1,5 @@
+import type { Ledger } from "./ledger/Ledger";
+
 /**
  * Worker bindings. The plain variables are set in wrangler.jsonc, the secrets with
  * `wrangler secret put` (never in the repository). Each variable below feeds one `Config` field.
@@ -26,7 +28,7 @@ export interface Env {
   /** PingPay API base, e.g. "https://pay.pingpay.io/api". */
   PINGPAY_BASE: string;
 
-  LEDGER: DurableObjectNamespace;
+  LEDGER: DurableObjectNamespace<Ledger>;
 
   // Secrets (wrangler secret put).
   OPERATOR_REFRESH_TOKEN?: string;

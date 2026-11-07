@@ -3,6 +3,7 @@
 import { afterEach } from "vitest";
 import { fakeProfiles } from "./fixtures/agents";
 import { fakeCatalog } from "./fixtures/catalog";
+import { handlePrivateCommand, resetFakePrivate } from "./fixtures/private-backend";
 
 /**
  * In-memory stand-in for the backend store commands. Tests seed it through
@@ -137,6 +138,7 @@ function setDesktopWidth() {
 if (typeof window !== "undefined") {
   (window as unknown as { __FAKE_TAURI_STORE__: FakeTauriStore }).__FAKE_TAURI_STORE__ = emptyFakeStore();
   setDesktopWidth();
+  resetFakePrivate();
   afterEach(async () => {
     setDesktopWidth();
     // Imported here, not at the top: a static import would load the module before a test file's vi.mock applies.
@@ -144,6 +146,7 @@ if (typeof window !== "undefined") {
     (await import("../lib/attachment-previews")).clearAttachmentPreviews();
     (window as unknown as { __FAKE_TAURI_STORE__: FakeTauriStore }).__FAKE_TAURI_STORE__ = emptyFakeStore();
     delete (window as unknown as { __FAKE_ACP_LIST__?: unknown }).__FAKE_ACP_LIST__;
+    resetFakePrivate();
   });
 }
 
@@ -163,6 +166,10 @@ export function fakeTauriInvoke(cmd: string, args?: unknown): Promise<unknown> {
   const storeResult = handleStoreCommand(cmd, args as StoreArgs | undefined);
   if (storeResult) {
     return storeResult;
+  }
+  const privateResult = handlePrivateCommand(cmd, args);
+  if (privateResult) {
+    return privateResult;
   }
   if (cmd === "list_workspaces") {
     return Promise.resolve([

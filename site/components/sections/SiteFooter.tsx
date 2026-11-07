@@ -20,7 +20,16 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
       { label: "Install", href: LINKS.installGuide },
       { label: "Supported agents", href: LINKS.agentsGuide },
       { label: "Troubleshooting", href: LINKS.troubleshooting },
+    ],
+  },
+  {
+    title: "Project",
+    links: [
+      { label: "Source on GitHub", href: LINKS.repository },
+      { label: "Releases", href: LINKS.releases },
       { label: "Changelog", href: LINKS.changelog },
+      { label: "Report an issue", href: LINKS.issues },
+      { label: "Apache 2.0 license", href: LINKS.license },
     ],
   },
 ];

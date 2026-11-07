@@ -1,4 +1,5 @@
 import { ButtonLink } from "../ui/ButtonLink";
+import { GithubMark } from "../ui/GithubMark";
 import { ZorvoLockup } from "../ui/ZorvoSymbol";
 import { TEXT_LINK } from "../ui/styles";
 import { LINKS } from "../../lib/links";
@@ -20,6 +21,11 @@ export function SiteHeader() {
           <li><a className={TEXT_LINK} href={LINKS.changelog}>Changelog</a></li>
         </ul>
         <div className="flex items-center gap-2">
+          {/* On a phone only the mark shows; the hidden word still names the link. */}
+          <ButtonLink href={LINKS.repository} variant="ghost">
+            <GithubMark size={16} />
+            <span className="max-sm:sr-only">GitHub</span>
+          </ButtonLink>
           <ButtonLink href={LINKS.docs} variant="ghost">Docs</ButtonLink>
           <ButtonLink href={LINKS.download} variant="outline">Download</ButtonLink>
         </div>

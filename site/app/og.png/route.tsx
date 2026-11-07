@@ -1,25 +1,25 @@
 import { readFile } from "node:fs/promises";
 import { ImageResponse } from "next/og";
-import appPackage from "../../package.json";
-import { SYMBOL_PATHS } from "../components/ui/ZorvoSymbol";
-import { OG_COLORS as COLOR } from "../lib/og-colors";
-import { SITE_TITLE } from "../lib/site";
+import appPackage from "../../../package.json";
+import { SYMBOL_PATHS } from "../../components/ui/ZorvoSymbol";
+import { OG_COLORS as COLOR } from "../../lib/og-colors";
+import { OG_IMAGE } from "../../lib/site";
 
+// A route handler, not app/opengraph-image.tsx: that one exports a file without an extension,
+// which Vercel's trailingSlash redirects to /opengraph-image/ (a 404) and serves with no image type.
+// Built once at export time into out/og.png.
 export const dynamic = "force-static";
-export const alt = SITE_TITLE;
-export const size = { width: 1200, height: 630 };
-export const contentType = "image/png";
 
 // The image renderer reads .woff, not the .woff2 the page uses, so it loads the static cuts.
 // `new URL(literal, import.meta.url)` makes the bundler copy each file into the build, so
 // the path holds whatever directory the build runs from.
 const FONTS = {
-  500: new URL("../node_modules/@fontsource/instrument-sans/files/instrument-sans-latin-500-normal.woff", import.meta.url),
-  600: new URL("../node_modules/@fontsource/instrument-sans/files/instrument-sans-latin-600-normal.woff", import.meta.url),
+  500: new URL("../../node_modules/@fontsource/instrument-sans/files/instrument-sans-latin-500-normal.woff", import.meta.url),
+  600: new URL("../../node_modules/@fontsource/instrument-sans/files/instrument-sans-latin-600-normal.woff", import.meta.url),
 };
 
 /** The card shown when the page is shared: symbol and wordmark, the tagline, the agents. */
-export default async function OpenGraphImage() {
+export async function GET() {
   const [medium, semibold] = await Promise.all([readFile(FONTS[500]), readFile(FONTS[600])]);
   return new ImageResponse(
     (
@@ -71,7 +71,8 @@ export default async function OpenGraphImage() {
       </div>
     ),
     {
-      ...size,
+      width: OG_IMAGE.width,
+      height: OG_IMAGE.height,
       fonts: [
         { name: "Instrument Sans", data: medium, weight: 500, style: "normal" },
         { name: "Instrument Sans", data: semibold, weight: 600, style: "normal" },

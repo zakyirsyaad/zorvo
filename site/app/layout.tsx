@@ -7,9 +7,8 @@ import type { ReactNode } from "react";
 import "@fontsource-variable/instrument-sans";
 import "@fontsource-variable/geist-mono";
 import "./globals.css";
-import { SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, siteUrl } from "../lib/site";
+import { OG_IMAGE, SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, siteUrl } from "../lib/site";
 
-// app/opengraph-image.tsx adds og:image and twitter:image to these.
 export const metadata: Metadata = {
   metadataBase: siteUrl(),
   title: SITE_TITLE,
@@ -23,8 +22,9 @@ export const metadata: Metadata = {
     siteName: SITE_NAME,
     url: "/",
     locale: "en_US",
+    images: [OG_IMAGE],
   },
-  twitter: { card: "summary_large_image", title: SITE_TITLE, description: SITE_DESCRIPTION },
+  twitter: { card: "summary_large_image", title: SITE_TITLE, description: SITE_DESCRIPTION, images: [OG_IMAGE.url] },
 };
 
 // The headline font, preloaded with a metric-matched fallback, so the h1 keeps its size while it loads.

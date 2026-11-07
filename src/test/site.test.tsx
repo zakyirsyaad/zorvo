@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,7 +18,7 @@ import { LINKS } from "../../site/lib/links";
 import robots from "../../site/app/robots";
 import sitemap from "../../site/app/sitemap";
 import { OG_COLORS } from "../../site/lib/og-colors";
-import { siteUrl } from "../../site/lib/site";
+import { OG_IMAGE, siteUrl } from "../../site/lib/site";
 import NotFound from "../../site/app/not-found";
 
 const ROOT = join(__dirname, "..", "..");
@@ -237,9 +237,19 @@ describe("search engines", () => {
     expect(anchors.every((href) => href.startsWith("/#"))).toBe(true);
   });
 
+  it("has Vercel serve the stripped static export, not its own Next.js build", () => {
+    const config = JSON.parse(readFileSync(join(ROOT, "site", "vercel.json"), "utf8"));
+    expect(config.framework).toBeNull();
+    expect(config.outputDirectory).toBe("out");
+    expect(config.trailingSlash).toBe(true);
+    // trailingSlash redirects any path without a file extension, so the shared image needs one.
+    expect(OG_IMAGE.url).toMatch(/\.png$/);
+    expect(existsSync(join(ROOT, "site", "app", "opengraph-image.tsx"))).toBe(false);
+  });
+
   it("refuses to build for production without an address, rather than publish localhost links", () => {
     expect(() => siteUrl({ NODE_ENV: "production" })).toThrow(/SITE_URL/);
-    expect(siteUrl({ NODE_ENV: "production", VERCEL_PROJECT_PRODUCTION_URL: "zorvo.xyz" }).href).toBe("https://zorvo.xyz/");
+    expect(siteUrl({ NODE_ENV: "production", VERCEL_PROJECT_PRODUCTION_URL: "zorvohub.xyz" }).href).toBe("https://zorvohub.xyz/");
   });
 
   it("keeps a sub-path in SITE_URL for the sitemap", () => {
@@ -250,8 +260,8 @@ describe("search engines", () => {
   });
 
   it("takes the site's address from SITE_URL, then Vercel's production domain, then localhost", () => {
-    expect(siteUrl({ SITE_URL: "https://zorvo.xyz", VERCEL_PROJECT_PRODUCTION_URL: "zorvo.vercel.app" }).href).toBe(
-      "https://zorvo.xyz/",
+    expect(siteUrl({ SITE_URL: "https://zorvohub.xyz", VERCEL_PROJECT_PRODUCTION_URL: "zorvo.vercel.app" }).href).toBe(
+      "https://zorvohub.xyz/",
     );
     expect(siteUrl({ VERCEL_PROJECT_PRODUCTION_URL: "zorvo.vercel.app" }).href).toBe("https://zorvo.vercel.app/");
     expect(siteUrl({}).href).toBe("http://localhost:3100/");

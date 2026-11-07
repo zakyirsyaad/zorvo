@@ -8,7 +8,7 @@ import { StatusLine } from "../ui/StatusLine";
 import { useAgentInstall } from "../../hooks/useAgentInstall";
 import type { SignInState } from "../../lib/agent-sign-in";
 import { statusLine } from "../../lib/agent-catalog";
-import { orderedAgents, rowWords } from "../../lib/onboarding";
+import { FIRST_ROWS, arrangedAgents, rowWords } from "../../lib/onboarding";
 import type { CatalogAgent } from "../../types";
 
 export interface AgentChoicesProps {
@@ -23,6 +23,8 @@ export interface AgentChoicesProps {
   onInstall: (id: string) => void;
   onUntick: (id: string) => void;
   onMakeDefault: (id: string) => void;
+  /** Retries an update that failed (an update started in Settings fails here too, after Run setup again). */
+  onUpdate?: (id: string) => void;
   /** The rows' order, fixed when the screen first had agents, so a row never moves under the pointer. */
   order?: readonly string[];
   isLoading?: boolean;
@@ -32,9 +34,6 @@ export interface AgentChoicesProps {
   /** Reads the agents and the registry again (an agent installed elsewhere meanwhile). */
   onCheckAgain?: () => Promise<void>;
 }
-
-/** Rows shown before Show all agents. */
-const FIRST_ROWS = 5;
 
 /** A welcome-screen section's heading: its number in a ring, then its name. */
 export function NumberedHeading({ number, children }: { number: number; children: string }) {
@@ -61,12 +60,15 @@ interface ChoiceRowProps {
   onInstall: () => void;
   onUntick: () => void;
   onMakeDefault: () => void;
+  onUpdate?: () => void;
 }
 
-function ChoiceRow({ agent, isTicked, isDefault, signIn, isSetupOnly, onTick, onInstall, onUntick, onMakeDefault }: ChoiceRowProps) {
+function ChoiceRow({ agent, isTicked, isDefault, signIn, isSetupOnly, onTick, onInstall, onUntick, onMakeDefault, onUpdate }: ChoiceRowProps) {
   const job = useAgentInstall(agent.id);
   const isInstalling = job.status === "installing";
   const hasFailed = job.status === "failed" && isTicked;
+  // A failed update is retried as an update, as Settings does; an install as an install.
+  const retry = job.action === "update" && onUpdate ? onUpdate : job.install;
   const words = rowWords(agent, signIn, isSetupOnly, isTicked);
   // Ticked but not installed: a default agent on a new Mac, or an install that was stopped.
   const needsInstall = isTicked && agent.status === "not_installed" && !isInstalling && !hasFailed;
@@ -85,7 +87,7 @@ function ChoiceRow({ agent, isTicked, isDefault, signIn, isSetupOnly, onTick, on
   );
 
   const control = hasFailed ? (
-    <Button size="md" onClick={job.install}>
+    <Button size="md" onClick={retry}>
       <span className="text-fg">Retry</span>
     </Button>
   ) : needsInstall ? (
@@ -160,6 +162,7 @@ export function AgentChoices({
   onInstall,
   onUntick,
   onMakeDefault,
+  onUpdate,
   order,
   isLoading = false,
   loadError = null,
@@ -170,10 +173,7 @@ export function AgentChoices({
   const [isChecking, setIsChecking] = useState(false);
   // Rows ticked or unticked here stay on screen until the screen goes, even past the first five.
   const [kept, setKept] = useState<ReadonlySet<string>>(new Set());
-  const live = orderedAgents(catalog, enabledIds);
-  const byId = new Map(live.map((agent) => [agent.id, agent]));
-  const fixed = (order ?? live.map((agent) => agent.id)).flatMap((id) => byId.get(id) ?? []);
-  const all = [...fixed, ...live.filter((agent) => !fixed.includes(agent))];
+  const all = arrangedAgents(catalog, enabledIds, order);
   // The first rows as the screen first showed them; an agent in use is never cut.
   const [first, setFirst] = useState<ReadonlySet<string> | null>(null);
   if (first === null && all.length > 0) {
@@ -187,7 +187,11 @@ export function AgentChoices({
   const checkAgain = () => {
     if (!onCheckAgain) return;
     setIsChecking(true);
-    void onCheckAgain().finally(() => setIsChecking(false));
+    onCheckAgain()
+      .catch(() => {
+        // A failed read is reported as the app's notice, which the welcome screen draws.
+      })
+      .finally(() => setIsChecking(false));
   };
 
   return (
@@ -233,6 +237,7 @@ export function AgentChoices({
               onUntick(agent.id);
             }}
             onMakeDefault={() => onMakeDefault(agent.id)}
+            onUpdate={onUpdate && (() => onUpdate(agent.id))}
           />
         ))}
       </ul>

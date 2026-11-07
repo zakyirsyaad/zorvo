@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { startInstall, startUpdate } from '../lib/agent-installs';
+import { cancelInstall, installEntryOf, startInstall, startUpdate } from '../lib/agent-installs';
 import { withAgentAdded, withAgentRemoved } from '../lib/agent-catalog';
 import { enabledAgentIds } from '../lib/enabled-agents';
 import { patchSessionIn } from '../lib/session-helpers';
@@ -13,6 +13,10 @@ export interface AgentCatalogActions {
    * profile) says it is not installed.
    */
   addAgent: (id: string) => void;
+  /** The welcome screen's tick: puts the agent in use at the catalog's version and installs nothing. */
+  markAgent: (id: string) => void;
+  /** The welcome screen's untick: stops the agent's install and takes it out of use; never deletes it. */
+  unmarkAgent: (id: string) => void;
   /** Updates the agent; on success records and saves its version, then reloads profiles and catalog. */
   updateAgent: (id: string) => void;
   /** Stops the agent's running sessions, takes it out of use and deletes Zorvo's copy of it. */
@@ -65,9 +69,18 @@ export function useAgentCatalogActions({
     return profile !== undefined && profile.availability !== 'ready';
   };
 
-  const addAgent = (id: string) => {
+  const markAgent = (id: string) => {
     const version = catalogRowOf(id)?.version ?? null;
     updateSettings((settings) => withAgentAdded(settings, id, enabledAgentIds(settings), version));
+  };
+
+  const unmarkAgent = (id: string) => {
+    if (installEntryOf(id).status === 'installing') cancelInstall(id);
+    updateSettings((settings) => withAgentRemoved(settings, id, enabledAgentIds(settings)));
+  };
+
+  const addAgent = (id: string) => {
+    markAgent(id);
     if (needsInstall(id)) startInstall(id);
   };
 
@@ -112,5 +125,12 @@ export function useAgentCatalogActions({
     }
   };
 
-  return { addAgent, updateAgent, removeAgent, runningSessionCount: (id) => runningSessionsOf(id).length };
+  return {
+    addAgent,
+    markAgent,
+    unmarkAgent,
+    updateAgent,
+    removeAgent,
+    runningSessionCount: (id) => runningSessionsOf(id).length,
+  };
 }

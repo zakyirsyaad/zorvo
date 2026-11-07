@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
+  FIRST_ROWS,
   POPULAR_AGENT_IDS,
+  arrangedAgents,
   defaultOf,
-  hasMoreAgents,
   rowWords,
   startAgentOf,
   startGate,
-  visibleAgents,
 } from "../lib/onboarding";
 import { makeCatalogAgent } from "./fixtures/catalog";
 
@@ -15,7 +15,7 @@ const agent = (_label: string, overrides: Parameters<typeof makeCatalogAgent>[0]
 
 const FOLDER = { name: "zorvo", path: "/Users/me/zorvo" };
 
-describe("visibleAgents", () => {
+describe("arrangedAgents", () => {
   const catalog = [
     agent("zed", { id: "zed", name: "Zed", status: "ready" }),
     agent("gemini", { id: "gemini", name: "Gemini CLI", status: "not_installed" }),
@@ -28,25 +28,19 @@ describe("visibleAgents", () => {
     agent("nope", { id: "nope", name: "Nope", status: "unsupported" }),
   ];
 
-  it("puts agents in use or on this Mac first, then the popular ones, five in all", () => {
-    expect(visibleAgents(catalog, ["zed"], false).map((a) => a.id)).toEqual(["zed", "mine", "claude-acp", "codex-acp", "gemini"]);
-    expect(POPULAR_AGENT_IDS).toEqual(["claude-acp", "codex-acp", "gemini", "qwen-code"]);
-  });
-
-  it("shows everything Zorvo can offer with Show all, the rest by name", () => {
-    expect(visibleAgents(catalog, ["zed"], true).map((a) => a.id)).toEqual([
+  it("puts agents in use or on this Mac first, then the popular ones, then the rest by name", () => {
+    expect(arrangedAgents(catalog, ["zed"]).map((a) => a.id)).toEqual([
       "zed", "mine", "claude-acp", "codex-acp", "gemini", "qwen-code", "aider",
     ]);
+    expect(POPULAR_AGENT_IDS).toEqual(["claude-acp", "codex-acp", "gemini", "qwen-code"]);
+    expect(FIRST_ROWS).toBe(5);
   });
 
-  it("never cuts an agent in use", () => {
-    const many = ["a", "b", "c", "d", "e", "f"].map((id) => agent(id, { id, name: id.toUpperCase(), status: "ready" }));
-    expect(visibleAgents(many, ["a", "b", "c", "d", "e", "f"], false)).toHaveLength(6);
-  });
-
-  it("says whether there are more to show", () => {
-    expect(hasMoreAgents(catalog, ["zed"])).toBe(true);
-    expect(hasMoreAgents(catalog.slice(0, 3), [])).toBe(false);
+  it("keeps a fixed order, and puts agents the catalog added since last", () => {
+    const order = ["aider", "zed", "claude-acp"];
+    expect(arrangedAgents(catalog, ["zed"], order).map((a) => a.id)).toEqual([
+      "aider", "zed", "claude-acp", "mine", "codex-acp", "gemini", "qwen-code",
+    ]);
   });
 });
 

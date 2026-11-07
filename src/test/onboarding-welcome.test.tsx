@@ -1,10 +1,11 @@
 import "@testing-library/jest-dom/vitest";
+import { useState } from "react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { Wordmark } from "../components/onboarding/Wordmark";
 import { AgentChoices, type AgentChoicesProps } from "../components/onboarding/AgentChoices";
 import { FolderChoice } from "../components/onboarding/FolderChoice";
-import { resetAgentInstalls, startInstall } from "../lib/agent-installs";
+import { resetAgentInstalls, startInstall, startUpdate } from "../lib/agent-installs";
 import type { SignInState } from "../lib/agent-sign-in";
 import { fakeCatalog, makeCatalogAgent } from "./fixtures/catalog";
 
@@ -172,6 +173,31 @@ describe("project folder", () => {
     expect(screen.getByText("/Users/me/zorvo")).toBeInTheDocument();
   });
 
+  it("Use moves focus to the chosen folder's Change, which names the folder", () => {
+    function Harness() {
+      const [folder, setFolder] = useState<{ name: string; path: string } | null>(null);
+      return <FolderChoice folder={folder} recentFolders={recent} suggestedFolders={suggested} onChoose={setFolder} onPickFolder={vi.fn()} />;
+    }
+    render(<Harness />);
+    const use = screen.getByRole("button", { name: "Use site" });
+    use.focus();
+    fireEvent.click(use);
+    expect(screen.getByRole("button", { name: "Change" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Change" })).toHaveAccessibleDescription("site /Users/me/developer/site");
+  });
+
+  it("Open folder is off while the dialog is open", async () => {
+    let answer: (folder: null) => void = () => {};
+    const onPickFolder = vi.fn(() => new Promise<null>((resolve) => (answer = resolve)));
+    render(<FolderChoice folder={null} recentFolders={[]} suggestedFolders={[]} onChoose={vi.fn()} onPickFolder={onPickFolder} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
+    expect(onPickFolder).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Open folder" })).toBeDisabled();
+    await act(async () => answer(null));
+    expect(screen.getByRole("button", { name: "Open folder" })).toBeEnabled();
+  });
+
   it("a cancelled dialog changes nothing", async () => {
     const onChoose = vi.fn();
     render(<FolderChoice folder={null} recentFolders={[]} suggestedFolders={[]} onChoose={onChoose} onPickFolder={() => Promise.resolve(null)} />);
@@ -210,6 +236,29 @@ describe("review fixes", () => {
     renderChoices({ onCheckAgain });
     fireEvent.click(screen.getByRole("button", { name: "Check again" }));
     expect(onCheckAgain).toHaveBeenCalled();
+  });
+
+  it("a failed Check again is caught, and the button comes back", async () => {
+    const onCheckAgain = vi.fn(() => Promise.reject(new Error("registry down")));
+    renderChoices({ onCheckAgain });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    });
+    expect(screen.getByRole("button", { name: "Check again" })).toBeEnabled();
+  });
+
+  it("Retry after a failed update updates again, not installs", async () => {
+    const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: (cmd: string) => Promise<unknown> } }).__TAURI_INTERNALS__;
+    vi.spyOn(internals, "invoke").mockImplementation((cmd) =>
+      cmd === "update_agent" ? Promise.reject(new Error("no network")) : Promise.resolve(() => {}),
+    );
+    await act(async () => startUpdate("codex-acp", vi.fn()));
+    const onUpdate = vi.fn();
+    const { props } = renderChoices({ onUpdate });
+    await act(async () => {});
+    fireEvent.click(within(rowOf("Codex")).getByRole("button", { name: "Retry" }));
+    expect(onUpdate).toHaveBeenCalledWith("codex-acp");
+    expect(props.onInstall).not.toHaveBeenCalled();
   });
 
   it("rows keep their place when one is ticked", () => {

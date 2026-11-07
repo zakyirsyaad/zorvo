@@ -3,7 +3,7 @@ import { isAgentRunnable } from "../lib/agent-readiness";
 import { installEntryOf, subscribeToInstalls } from "../lib/agent-installs";
 import type { SignInState } from "../lib/agent-sign-in";
 import { enabledAgentIds, type EnabledSettings } from "../lib/enabled-agents";
-import { defaultOf, orderedAgents, startAgentOf, startGate } from "../lib/onboarding";
+import { arrangedAgents, defaultOf, orderedAgents, startAgentOf, startGate } from "../lib/onboarding";
 import type { AgentCatalog, AgentProfile, Settings } from "../types";
 import { AgentChoices } from "./onboarding/AgentChoices";
 import { FolderChoice } from "./onboarding/FolderChoice";
@@ -29,6 +29,8 @@ export interface OnboardingProps {
   /** Takes an agent out of use and stops its install; never deletes it. */
   onUntick: (id: string) => void;
   onMakeDefault: (id: string) => void;
+  /** Retries an update that failed. */
+  onUpdate?: (id: string) => void;
   recentFolders: readonly FolderOption[];
   suggestedFolders: readonly FolderOption[];
   onPickFolder: () => Promise<FolderOption | null>;
@@ -45,12 +47,6 @@ export interface OnboardingProps {
 }
 
 const NOTE_ID = "onboarding-start-note";
-
-/** Where `id` sits in `order`; an agent the catalog added since goes last. */
-const rankIn = (order: readonly string[], id: string) => {
-  const index = order.indexOf(id);
-  return index === -1 ? order.length : index;
-};
 
 /** The install status of each of `ids`, kept in step with the installs store. */
 function useInstalling(ids: readonly string[]): ReadonlySet<string> {
@@ -75,6 +71,7 @@ export function Onboarding({
   onInstall,
   onUntick,
   onMakeDefault,
+  onUpdate,
   recentFolders,
   suggestedFolders,
   onPickFolder,
@@ -93,10 +90,8 @@ export function Onboarding({
   // The rows' order is fixed once there are agents, so ticking never moves a row under the pointer.
   const [order, setOrder] = useState<readonly string[] | null>(null);
   if (order === null && catalogAgents.length > 0) setOrder(orderedAgents(catalogAgents, enabledIds).map((agent) => agent.id));
-  const listed = orderedAgents(catalogAgents, enabledIds);
-  const inOrder = order ? [...listed].sort((a, b) => rankIn(order, a.id) - rankIn(order, b.id)) : listed;
   // Ticked agents in the order the screen lists them, so "the first ticked" is the first row ticked.
-  const ticked = inOrder.filter((agent) => enabledIds.includes(agent.id));
+  const ticked = arrangedAgents(catalogAgents, enabledIds, order ?? undefined).filter((agent) => enabledIds.includes(agent.id));
   const tickedIds = ticked.map((agent) => agent.id);
   const installing = useInstalling(tickedIds);
   const isReady = (id: string) => {
@@ -140,6 +135,7 @@ export function Onboarding({
           onInstall={onInstall}
           onUntick={onUntick}
           onMakeDefault={onMakeDefault}
+          onUpdate={onUpdate}
           order={order ?? undefined}
           isLoading={catalog === null}
           loadError={catalog === null ? catalogError : null}

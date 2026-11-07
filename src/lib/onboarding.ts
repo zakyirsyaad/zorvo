@@ -6,7 +6,7 @@ import type { SignInState } from './agent-sign-in';
 export const POPULAR_AGENT_IDS: readonly string[] = ['claude-acp', 'codex-acp', 'gemini', 'qwen-code'];
 
 /** Rows the welcome screen shows before Show all agents. */
-const FIRST_ROWS = 5;
+export const FIRST_ROWS = 5;
 
 const isOffered = (agent: CatalogAgent) => agent.status !== 'waiting' && agent.status !== 'unsupported';
 const isHere = (agent: CatalogAgent, enabledIds: readonly string[]) =>
@@ -26,19 +26,19 @@ export function orderedAgents(catalog: readonly CatalogAgent[], enabledIds: read
 }
 
 /**
- * The agents the welcome screen lists: those in use or on this Mac first, then the popular ones, then
- * the rest by name; five until Show all, though an agent in use is never cut. Agents Zorvo cannot offer
- * yet (waiting, unsupported) are left out.
+ * The welcome screen's rows: in `order` (the ids as the screen first listed them, so ticking never moves
+ * a row), then any agent the catalog added since, in `orderedAgents`' order. Without `order`, that order.
  */
-export function visibleAgents(catalog: readonly CatalogAgent[], enabledIds: readonly string[], showAll: boolean): CatalogAgent[] {
-  const all = orderedAgents(catalog, enabledIds);
-  if (showAll) return all;
-  return all.filter((agent, index) => index < FIRST_ROWS || enabledIds.includes(agent.id));
-}
-
-/** Whether Show all agents would show more. */
-export function hasMoreAgents(catalog: readonly CatalogAgent[], enabledIds: readonly string[]): boolean {
-  return orderedAgents(catalog, enabledIds).length > visibleAgents(catalog, enabledIds, false).length;
+export function arrangedAgents(
+  catalog: readonly CatalogAgent[],
+  enabledIds: readonly string[],
+  order?: readonly string[],
+): CatalogAgent[] {
+  const live = orderedAgents(catalog, enabledIds);
+  if (!order) return live;
+  const byId = new Map(live.map((agent) => [agent.id, agent]));
+  const fixed = order.flatMap((id) => byId.get(id) ?? []);
+  return [...fixed, ...live.filter((agent) => !fixed.includes(agent))];
 }
 
 const SIGN_IN_WORDS: Readonly<Record<SignInState, string>> = {

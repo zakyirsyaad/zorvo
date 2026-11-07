@@ -100,11 +100,9 @@ import { attentionBody, notifyIfAway } from "./lib/notify";
 import { pickFiles } from "./lib/file-picker";
 import { useFileDrop } from "./hooks/useFileDrop";
 import { isAgentReady, isAgentRunnable, noAgentNotice, resolveDraftAgentId } from "./lib/agent-readiness";
-import { enabledAgentIds, isInUse, removedAgentName, removedAgentNameFor } from "./lib/enabled-agents";
-import { cancelInstall, installEntryOf } from "./lib/agent-installs";
+import { isInUse, removedAgentName, removedAgentNameFor } from "./lib/enabled-agents";
 import { isSetupOnly } from "./lib/acp-auth";
-import { withAgentAdded, withAgentRemoved } from "./lib/agent-catalog";
-import { loadAgentIcons } from "./lib/agent-icons";
+import { recheckAgents } from "./lib/agent-recheck";
 import { useCompareDraft } from "./hooks/useCompareDraft";
 import { useCompareRun, useCompareRunRows } from "./hooks/useCompareRun";
 import { useCompareModelProbe } from "./hooks/useCompareModelProbe";
@@ -706,27 +704,6 @@ export default function App() {
     openNewSession(folder.path, defaultAgentId);
   };
 
-  /** The welcome screen's Check again: the registry and the agents read again, then the catalog and logos. */
-  const checkAgentsAgain = async () => {
-    try {
-      await refreshAgents();
-    } finally {
-      await Promise.all([agentCatalog.reload(), loadAgentIcons()]);
-    }
-  };
-
-  /** Onboarding's tick: in use, and nothing installed; a ticked agent that needs it shows its own Install. */
-  const tickAgent = (id: string) => {
-    const version = agentCatalog.catalog?.agents.find((agent) => agent.id === id)?.version ?? null;
-    updateState((prev) => ({ ...prev, settings: withAgentAdded(prev.settings, id, enabledAgentIds(prev.settings), version) }));
-  };
-
-  /** Onboarding's untick: out of use, and its install stopped. Zorvo's copy of it is never deleted here. */
-  const untickAgent = (id: string) => {
-    if (installEntryOf(id).status === "installing") cancelInstall(id);
-    updateState((prev) => ({ ...prev, settings: withAgentRemoved(prev.settings, id, enabledAgentIds(prev.settings)) }));
-  };
-
   const handleRunOnboarding = () => {
     settingsPage.close();
     updateSettings({ onboardingCompleted: false });
@@ -974,10 +951,11 @@ export default function App() {
         settings={state.settings}
         signInStateOf={signInStatus.stateOf}
         isSetupOnly={(id) => isSetupOnly(settingsSignIn.methodsOf(id))}
-        onTick={tickAgent}
+        onTick={catalogActions.markAgent}
         onInstall={catalogActions.addAgent}
-        onUntick={untickAgent}
+        onUntick={catalogActions.unmarkAgent}
         onMakeDefault={(defaultAgentId) => updateSettings({ defaultAgentId })}
+        onUpdate={catalogActions.updateAgent}
         recentFolders={workspaces}
         suggestedFolders={suggestedFolders}
         onPickFolder={openFolder}
@@ -985,7 +963,7 @@ export default function App() {
         areAgentsLoaded={areAgentsLoaded}
         catalogError={agentCatalog.error}
         onRetryCatalog={() => void agentCatalog.reload()}
-        onCheckAgain={checkAgentsAgain}
+        onCheckAgain={() => recheckAgents(refreshAgents, agentCatalog.reload)}
         notice={noticeToast}
       />
     );

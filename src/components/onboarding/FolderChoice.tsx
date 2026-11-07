@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Folder } from "lucide-react";
 import { SettingsRow } from "../settings/SettingsGroup";
 import { Button } from "../ui/Button";
@@ -39,22 +39,36 @@ function offeredFolders(recent: readonly FolderOption[], suggested: readonly Fol
 /** Section 2 of the welcome screen: the chosen folder with Change, or folders to use and Open folder. */
 export function FolderChoice({ folder, recentFolders, suggestedFolders, onChoose, onPickFolder }: FolderChoiceProps) {
   const [error, setError] = useState<string | null>(null);
+  const [isPicking, setIsPicking] = useState(false);
+  const nameId = useId();
+  const pathId = useId();
+  // Use takes its own button off screen, so focus moves to the chosen folder's Change instead of the page.
+  const changeRef = useRef<HTMLButtonElement>(null);
+  const shouldFocusChange = useRef(false);
+  useEffect(() => {
+    if (!folder || !shouldFocusChange.current) return;
+    shouldFocusChange.current = false;
+    changeRef.current?.focus();
+  }, [folder]);
 
   const pick = async () => {
+    if (isPicking) return;
+    setIsPicking(true);
     setError(null);
     try {
       const picked = await onPickFolder();
       if (picked) onChoose(toFolderOption(picked));
     } catch {
       setError(PICK_ERROR);
+    } finally {
+      setIsPicking(false);
     }
   };
 
-  const outline = (label: string, onClick: () => void, ariaLabel?: string) => (
-    <Button size="md" onClick={onClick} aria-label={ariaLabel}>
-      <span className="text-fg">{label}</span>
-    </Button>
-  );
+  const use = (offered: FolderOption) => {
+    shouldFocusChange.current = true;
+    onChoose(offered);
+  };
 
   return (
     <section className="flex flex-col gap-2.5">
@@ -64,9 +78,17 @@ export function FolderChoice({ folder, recentFolders, suggestedFolders, onChoose
           <SettingsRow
             isTight
             leading={<FolderTile />}
-            label={folder.name}
-            description={<span className="font-mono text-caption">{folder.path}</span>}
-            control={outline("Change", () => void pick())}
+            label={<span id={nameId}>{folder.name}</span>}
+            description={
+              <span id={pathId} className="font-mono text-caption">
+                {folder.path}
+              </span>
+            }
+            control={
+              <Button ref={changeRef} size="md" disabled={isPicking} onClick={() => void pick()} aria-describedby={`${nameId} ${pathId}`}>
+                <span className="text-fg">Change</span>
+              </Button>
+            }
           />
         ) : (
           <>
@@ -77,14 +99,22 @@ export function FolderChoice({ folder, recentFolders, suggestedFolders, onChoose
                 leading={<FolderTile />}
                 label={offered.name}
                 description={<span className="font-mono text-caption">{offered.path}</span>}
-                control={outline("Use", () => onChoose(offered), `Use ${offered.name}`)}
+                control={
+                  <Button size="md" onClick={() => use(offered)} aria-label={`Use ${offered.name}`}>
+                    <span className="text-fg">Use</span>
+                  </Button>
+                }
               />
             ))}
             <SettingsRow
               isTight
               leading={<FolderTile />}
               label="Another folder"
-              control={outline("Open folder", () => void pick())}
+              control={
+                <Button size="md" disabled={isPicking} onClick={() => void pick()}>
+                  <span className="text-fg">Open folder</span>
+                </Button>
+              }
             />
           </>
         )}

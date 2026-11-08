@@ -51,7 +51,7 @@ export function SessionTree({ nodes, label, context, isNested = false, isInRun =
           <li key={session.id}>
             <SessionRow session={session} context={context} isInRun={isInRun} />
             {children.length > 0 && (
-              <SessionTree nodes={children} label={`Forks of ${session.name}`} context={context} isNested />
+              <SessionTree nodes={children} label={`Sessions from ${session.name}`} context={context} isNested />
             )}
           </li>
         );

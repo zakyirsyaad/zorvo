@@ -486,7 +486,7 @@ describe("Navigation and Layout Components", () => {
       );
 
       const top = within(screen.getByRole("list", { name: "Sessions in titan-investment" }));
-      const forks = within(top.getByRole("list", { name: "Forks of Refactor plan" }));
+      const forks = within(top.getByRole("list", { name: "Sessions from Refactor plan" }));
       expect(forks.getByText("Refactor plan (fork)")).toBeDefined();
       // The fork is listed once, under its source, not again at the top level.
       expect(screen.getAllByText("Refactor plan (fork)")).toHaveLength(1);

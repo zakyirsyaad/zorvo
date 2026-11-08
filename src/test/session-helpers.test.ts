@@ -22,6 +22,10 @@ describe("session helpers", () => {
     ...session(id, cwd, createdAt),
     forkedFrom: parent,
   });
+  const delegated = (id: string, cwd: string, createdAt: number, source: string) => ({
+    ...session(id, cwd, createdAt),
+    delegatedFrom: { sessionId: source, task: "Do it", startedAt: createdAt },
+  });
   const ids = (nodes: SessionNode[]): unknown[] =>
     nodes.map((n) => (n.children.length ? [n.session.id, ids(n.children)] : n.session.id));
 
@@ -67,6 +71,24 @@ describe("session helpers", () => {
     );
 
     expect(ids(groups[0].sessions)).toEqual(["moved", "orphan"]);
+  });
+
+  it("a delegated session sits under its source", () => {
+    const groups = groupSessionsByWorkspace(
+      [{ name: "api", path: "/w/api" }],
+      [session("a", "/w/api", 1), delegated("b", "/w/api", 2, "a")],
+    );
+
+    expect(ids(groups[0].sessions)).toEqual([["a", ["b"]]]);
+  });
+
+  it("a delegated session is a root when its source is not listed", () => {
+    const groups = groupSessionsByWorkspace(
+      [{ name: "api", path: "/w/api" }],
+      [delegated("b", "/w/api", 2, "archived-a")],
+    );
+
+    expect(ids(groups[0].sessions)).toEqual(["b"]);
   });
 
   it("lists a session that runs in a worktree under the workspace it was made from", () => {

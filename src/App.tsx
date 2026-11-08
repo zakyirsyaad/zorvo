@@ -17,6 +17,7 @@ import { CompareRunPanel } from "./components/compare/CompareRunPanel";
 import { FailedTurnBanner } from "./components/FailedTurnBanner";
 import { SignInLayer } from "./components/SignInLayer";
 import { RecoveryCodeLayer } from "./components/private/RecoveryCodeLayer";
+import { SecretGuardDialog } from "./components/private/SecretGuardDialog";
 import { PrivateCreditsOutLayer } from "./components/private/PrivateCreditsOut";
 import { PrivateInspector } from "./components/private/PrivateInspector";
 import { PrivateLowBalanceRow } from "./components/private/PrivateLowBalanceRow";
@@ -33,6 +34,7 @@ import { Inspector } from "./components/inspector/Inspector";
 import { offeredTabs } from "./lib/inspector";
 import { useReviewComments } from "./hooks/useReviewComments";
 import { useReviewWiring } from "./hooks/useReviewWiring";
+import { useSecretGuard } from "./hooks/useSecretGuard";
 import { useTurnsEnded } from "./hooks/useTurnsEnded";
 import { usePullRequest } from "./hooks/usePullRequest";
 import { currentPlan } from "./lib/plan";
@@ -294,6 +296,15 @@ export default function App() {
     (sessionId: string) => sessions.some((session) => session.id === sessionId && session.privateMode !== undefined),
     [sessions],
   );
+  const editSecretMessage = useCallback((message: { text: string; attachments?: readonly string[] }) => {
+    composerRef.current?.restore(message.text, message.attachments);
+  }, []);
+  const secretGuard = useSecretGuard({
+    isEnabled: isPrivateLaunch && state.settings.secretGuard !== false,
+    root: activeSession?.cwd ?? activeWorkspacePath,
+    agentName: activeAgent?.name ?? newSessionAgent?.name ?? "The agent",
+    onEdit: editSecretMessage,
+  });
   // A private turn's model calls change the balance: read it again, at most once a minute across sessions.
   const refreshPrivateCredits = usePrivateCreditsRefresh(privateCredits.refresh, isPrivateSessionId);
   const verifyPrivateTurn = privateVerification.verifyTurn;
@@ -963,14 +974,18 @@ export default function App() {
   /** Sends to the active session, continues it when it can be resumed, or starts a new one (or a run). */
   const handleSendMessage = (text: string, attachments?: string[]) => {
     const message = { text, attachments };
-    if (activeSession && isActiveRunning) {
-      review.sendFrom(activeSession.id, text);
-      sendFromComposer(activeSession.id, message);
-    } else if (activeSession && isResumable) {
-      review.sendFrom(activeSession.id, text);
-      resumeSession(activeSession, message);
-    } else if (compare.isCompare) handleNewRun(message);
-    else void handleNewSession(message);
+    const deliver = () => {
+      if (activeSession && isActiveRunning) {
+        review.sendFrom(activeSession.id, text);
+        sendFromComposer(activeSession.id, message);
+      } else if (activeSession && isResumable) {
+        review.sendFrom(activeSession.id, text);
+        resumeSession(activeSession, message);
+      } else if (compare.isCompare) handleNewRun(message);
+      else void handleNewSession(message);
+    };
+    // A private message pauses here when it may hold a secret; nothing goes out until the user picks.
+    secretGuard.check(message, deliver);
   };
 
   const chooseOption = (sessionId: string, cardId: string, optionId: string, answers?: Record<string, string>) =>
@@ -990,7 +1005,18 @@ export default function App() {
     agentCatalog: { agents, settings: state.settings, addAgent: catalogActions.addAgent },
     onAction: (sessionId, action) => {
       if (action.kind === "send") {
-        if (!refusesSend(sessionId)) void sendTo(sessionId, { text: action.text });
+        const session = sessionById(sessionId);
+        secretGuard.check(
+          { text: action.text },
+          () => {
+            if (!refusesSend(sessionId)) void sendTo(sessionId, { text: action.text });
+          },
+          {
+            isEnabled: Boolean(session?.privateMode) && state.settings.secretGuard !== false,
+            root: session?.cwd,
+            agentName: agentNameOr(agents.find((agent) => agent.id === session?.profileId)),
+          },
+        );
       } else if (action.kind === "stop") handleInterrupt(sessionId);
       else if (action.kind === "answer-elicitation") acp.answerElicitation(sessionId, action.key, action.answer);
       else if (action.kind === "reopen-elicitation-url") acp.reopenElicitationUrl(sessionId, action.key);
@@ -1591,6 +1617,13 @@ export default function App() {
         suppressStatusPrompt={recoveryDialog.suppressStatusPrompt}
         onClose={recoveryDialog.close}
       />
+      {secretGuard.review && (
+        <SecretGuardDialog
+          review={secretGuard.review}
+          onSendAnyway={secretGuard.sendAnyway}
+          onEdit={secretGuard.edit}
+        />
+      )}
     </main>
   );
 }

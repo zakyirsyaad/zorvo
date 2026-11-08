@@ -12,7 +12,7 @@ import { handlePrivateCommand, resetFakePrivate } from "./fixtures/private-backe
 export interface FakeTauriStore {
   state: {
     version: number;
-    settings: { defaultAgentId: string | null; onboardingCompleted: boolean };
+    settings: { defaultAgentId: string | null; onboardingCompleted: boolean; secretGuard?: boolean };
     recentFolders: unknown[];
     sessions: unknown[];
     agentOptions?: Record<string, unknown>;

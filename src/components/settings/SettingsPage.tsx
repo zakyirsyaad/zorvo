@@ -179,6 +179,8 @@ export function SettingsPage({
             credits={privateCredits}
             onShowRecoveryCode={onShowRecoveryCode}
             onRestoringChange={onRestoringChange}
+            secretGuard={settings.secretGuard !== false}
+            onSecretGuardChange={(secretGuard) => updateSettings({ secretGuard })}
           />
         ) : null;
       case "github":

@@ -190,6 +190,8 @@ export interface Settings {
   signedInAgents?: string[];
   /** Set once the live balance crossed below 50 and was handled; cleared when it reaches 50 again. */
   privateLowBalanceNotified?: boolean;
+  /** Check private messages for secrets before sending; on unless the user turns it off. */
+  secretGuard?: boolean;
 }
 
 export interface RecentFolder {

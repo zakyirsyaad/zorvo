@@ -50,12 +50,24 @@ function readyWith(credits: number, extra: Partial<FakePrivate["status"]> = {}) 
 }
 
 /** What App does: one hook, the section, and the one recovery dialog layer. */
-function Harness() {
+function Harness({
+  secretGuard = true,
+  onSecretGuardChange = () => {},
+}: {
+  secretGuard?: boolean;
+  onSecretGuardChange?: (isOn: boolean) => void;
+}) {
   const credits = usePrivateCredits();
   const dialog = usePrivateRecoveryDialog();
   return (
     <>
-      <PrivateSection credits={credits} onShowRecoveryCode={dialog.show} onRestoringChange={dialog.setIsRestoring} />
+      <PrivateSection
+        credits={credits}
+        onShowRecoveryCode={dialog.show}
+        onRestoringChange={dialog.setIsRestoring}
+        secretGuard={secretGuard}
+        onSecretGuardChange={onSecretGuardChange}
+      />
       <RecoveryCodeLayer
         credits={credits}
         request={dialog.request}
@@ -80,9 +92,9 @@ function AppWithoutSettings() {
   );
 }
 
-async function mount() {
+async function mount(options: { secretGuard?: boolean; onSecretGuardChange?: (isOn: boolean) => void } = {}) {
   await act(async () => {
-    render(<Harness />);
+    render(<Harness {...options} />);
   });
 }
 
@@ -923,5 +935,34 @@ describe("Private mode: one hold at a time", () => {
     expect(onOpenCheckout).toHaveBeenCalledTimes(1);
     await act(async () => release());
     expect(button("Open checkout again")).toBeEnabled();
+  });
+});
+
+describe("Private mode: the secret guard switch", () => {
+  it("is on by default, explains its limit, and reports turning it off", async () => {
+    stockWith();
+    readyWith(1_240);
+    const onChange = vi.fn();
+    await mount({ onSecretGuardChange: onChange });
+
+    const toggle = await screen.findByRole("switch", { name: "Check messages for secrets before sending" });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(
+      screen.getByText(
+        "Zorvo looks for keys and passwords in what you send, on this Mac. The agent can still read files in the folder itself.",
+      ),
+    ).toBeInTheDocument();
+    await click(toggle);
+    expect(onChange).toHaveBeenCalledWith(false);
+  });
+
+  it("draws the off state when the setting is off", async () => {
+    stockWith();
+    readyWith(1_240);
+    await mount({ secretGuard: false });
+
+    const toggle = await screen.findByRole("switch", { name: "Check messages for secrets before sending" });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(toggle.className).toContain("justify-start");
   });
 });

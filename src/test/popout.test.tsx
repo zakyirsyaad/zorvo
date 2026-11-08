@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, act, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, act, fireEvent, waitFor, within } from "@testing-library/react";
+import type { FakeTauriStore } from "./setup";
 
 type Listener = (event: { payload: unknown }) => void;
 const listeners = new Map<string, Listener[]>();
@@ -55,6 +56,12 @@ const runningSession = {
   createdAt: 1,
   transport: "acp",
 };
+
+const AWS = ["AKIA", "IOSFODNN7EXAMPL", "E"].join("");
+
+function fakeStore(): FakeTauriStore {
+  return (window as unknown as { __FAKE_TAURI_STORE__: FakeTauriStore }).__FAKE_TAURI_STORE__;
+}
 
 /** Starts a session in the main window with its first message; resolves with its id. */
 async function startSessionInMainWindow(spy: { mock: { calls: unknown[][] } }): Promise<string> {
@@ -255,6 +262,35 @@ describe("Popout windows", () => {
     await deliver("popout-action", { sessionId, action: { kind: "send", text: "hello" } });
     await waitFor(() =>
       expect(spy).toHaveBeenCalledWith("acp_prompt", expect.objectContaining({ sessionId, text: "hello" }), undefined),
+    );
+  });
+
+  it("holds a secret sent from a private popout until Send anyway", async () => {
+    fakeStore().state.sessions = [
+      {
+        ...runningSession,
+        profileId: "qwen-code",
+        privateMode: { modelId: "Qwen/Qwen3.8-27B" },
+      },
+    ];
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    await act(async () => {
+      render(<App />);
+    });
+
+    await deliver("popout-action", { sessionId: "s-1", action: { kind: "send", text: `key ${AWS}` } });
+    const dialog = await screen.findByRole("dialog", { name: "This message may hold a secret" });
+    expect(spy.mock.calls.some(([cmd]) => cmd === "acp_prompt")).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Send anyway" }));
+    });
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith(
+        "acp_prompt",
+        expect.objectContaining({ sessionId: "s-1", text: `key ${AWS}` }),
+        undefined,
+      ),
     );
   });
 

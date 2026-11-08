@@ -12,8 +12,8 @@ export type ButtonSize = "sm" | "row" | "md" | "lg" | "field";
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
-  /** A ghost button's colour: muted (the default) or the secondary text colour the canvas gives a back button. */
-  tone?: "muted" | "secondary";
+  /** A ghost button's colour: muted (the default), the secondary text colour of a back button, or danger. */
+  tone?: "muted" | "secondary" | "danger";
   /** Where the icon and label sit: centred, or from the left edge (the sidebar's New session). */
   align?: "center" | "start";
   icon?: ReactNode;
@@ -56,7 +56,11 @@ const VARIANTS: Record<ButtonVariant, string> = {
   danger: "border-transparent bg-danger-surface text-danger disabled:opacity-40",
 };
 
-const GHOST_TONES = { muted: "text-fg-muted", secondary: "text-fg-secondary" } as const;
+const GHOST_TONES = {
+  muted: "text-fg-muted",
+  secondary: "text-fg-secondary",
+  danger: "text-danger enabled:hover:text-danger",
+} as const;
 
 export function Button({
   variant = "outline",

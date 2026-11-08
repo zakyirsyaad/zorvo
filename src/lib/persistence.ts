@@ -12,7 +12,7 @@ export const STATE_VERSION = 2;
 export function emptyPersistedState(): PersistedState {
   return {
     version: STATE_VERSION,
-    settings: { appearance: 'system', defaultAgentId: null, onboardingCompleted: false },
+    settings: { appearance: 'system', defaultAgentId: null, onboardingCompleted: false, secretGuard: true },
     recentFolders: [],
     sessions: [],
   };
@@ -184,6 +184,7 @@ export function normalizePersistedState(raw: unknown): PersistedState {
       notifiedUpdates: toNotifiedUpdates(settings.notifiedUpdates),
       signedInAgents: toAgentIdList(settings.signedInAgents) ?? [],
       privateLowBalanceNotified: settings.privateLowBalanceNotified === true,
+      secretGuard: settings.secretGuard !== false,
     },
     recentFolders: Array.isArray(raw.recentFolders)
       ? raw.recentFolders.filter(

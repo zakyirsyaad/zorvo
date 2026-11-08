@@ -292,6 +292,11 @@ before it edits files or runs commands. Pick another mode in the composer.
   by reading Zorvo's loopback proxy with that session's one-time token. It
   never sees the NEAR AI key or this Mac's credits secret, and it contacts no
   host of its own.
+- **A local secret check before private messages.** When you send in a private
+  session, Zorvo looks for keys and passwords in the message and its attached
+  files on this Mac. Nothing goes out until you choose Send anyway or Edit
+  message, and a match is never stored. Settings → Private mode turns the
+  check off.
 - **GitHub stays in your `gh`.** Zorvo asks your `gh` whether you are signed in
   to github.com and reads only your login and name, to show them in the sidebar
   and in Settings. It stores neither, never reads or keeps a token, and

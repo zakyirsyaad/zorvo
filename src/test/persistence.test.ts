@@ -246,6 +246,16 @@ describe("normalizePersistedState - private low balance flag", () => {
   });
 });
 
+describe("normalizePersistedState - secret guard", () => {
+  it("is on unless the saved value is literally false", () => {
+    expect(normalizePersistedState({}).settings.secretGuard).toBe(true);
+    expect(normalizePersistedState({ settings: { secretGuard: false } }).settings.secretGuard).toBe(false);
+    for (const value of [true, "false", 0, null, {}]) {
+      expect(normalizePersistedState({ settings: { secretGuard: value } }).settings.secretGuard).toBe(true);
+    }
+  });
+});
+
 describe("normalizePersistedState - notified updates", () => {
   it("keeps string pairs and drops non-string values", () => {
     const { settings } = normalizePersistedState({

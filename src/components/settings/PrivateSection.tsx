@@ -1,4 +1,4 @@
-import { useEffect, useState, type Ref } from "react";
+import { useEffect, useId, useState, type Ref } from "react";
 import type { PrivateCredits } from "../../hooks/usePrivateCredits";
 import { useLatest } from "../../hooks/useLatest";
 import { isTopupActive } from "../../lib/private-flow";
@@ -8,7 +8,7 @@ import { RecoveryCard } from "../private/RecoveryCard";
 import { RestoreDialog } from "../private/RestoreDialog";
 import { TopupPicker } from "../private/TopupPicker";
 import { TopupProgress } from "../private/TopupProgress";
-import { SettingsGroup, SettingsHeader } from "./SettingsGroup";
+import { SettingsGroup, SettingsHeader, SettingsRow } from "./SettingsGroup";
 
 export interface PrivateSectionProps {
   titleRef?: Ref<HTMLHeadingElement>;
@@ -18,6 +18,9 @@ export interface PrivateSectionProps {
   onShowRecoveryCode: (code?: string) => void;
   /** Tells the app a restore is open or running, so no second recovery dialog opens over it. */
   onRestoringChange?: (isRestoring: boolean) => void;
+  /** The Safety switch's state; on unless the user turned it off. */
+  secretGuard?: boolean;
+  onSecretGuardChange?: (isOn: boolean) => void;
 }
 
 const RESTORE_BLOCKED = "Finish or cancel your top-up first.";
@@ -32,8 +35,11 @@ export function PrivateSection({
   credits,
   onShowRecoveryCode,
   onRestoringChange,
+  secretGuard = true,
+  onSecretGuardChange = () => {},
 }: PrivateSectionProps) {
   const { status, flow, loadCatalog } = credits;
+  const secretGuardLabelId = useId();
   const onRestoringChangeRef = useLatest(onRestoringChange);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isRedeeming, setIsRedeeming] = useState(false);
@@ -107,6 +113,29 @@ export function PrivateSection({
         restoreBlockedReason={isActive ? RESTORE_BLOCKED : undefined}
         onRestore={() => setRestoring(true)}
       />
+      <SettingsGroup heading="Safety">
+        <SettingsRow
+          label={<span id={secretGuardLabelId}>Check messages for secrets before sending</span>}
+          description="Zorvo looks for keys and passwords in what you send, on this Mac. The agent can still read files in the folder itself."
+          control={
+            <button
+              type="button"
+              role="switch"
+              aria-checked={secretGuard}
+              aria-labelledby={secretGuardLabelId}
+              onClick={() => onSecretGuardChange(!secretGuard)}
+              className={`focus-ring flex h-5 w-8 shrink-0 items-center rounded-full p-0.5 transition-colors ${
+                secretGuard ? "justify-end bg-fg" : "justify-start bg-border-strong"
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`size-4 rounded-full transition-colors ${secretGuard ? "bg-bg" : "bg-fg"}`}
+              />
+            </button>
+          }
+        />
+      </SettingsGroup>
       {isRestoring && (
         <RestoreDialog
           recover={credits.recover}

@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- **The full diff review stays inside the window.** One long line in a diff made the expanded review wider than the window, so its right edge was cut off, with the comments' Edit and Delete and the **Add N comments to message** button. The review now fits the window.
+
 ## [0.9.1] - 2026-11-08
 
 ### Changed

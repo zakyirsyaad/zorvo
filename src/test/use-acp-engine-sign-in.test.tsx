@@ -136,6 +136,7 @@ describe("useAcpEngine retryAfterSignIn", () => {
     patchSession: (sessionId: string, patch: Partial<Session>) => void = () => {},
     transcripts: Readonly<Record<string, ChatMessage[]>> = {},
     reportError: (message: string) => void = () => {},
+    promptBlockedReason?: (sessionId: string) => string | null,
   ) {
     return renderHook(
       ({ current }: { current: Session }) =>
@@ -148,6 +149,7 @@ describe("useAcpEngine retryAfterSignIn", () => {
           reportError,
           rememberOptions: () => {},
           onAuthRequired: () => {},
+          ...(promptBlockedReason ? { promptBlockedReason } : {}),
         }),
       { initialProps: { current: session } },
     );
@@ -519,6 +521,25 @@ describe("useAcpEngine retryAfterSignIn", () => {
 
     const changes = spy.mock.calls.filter(([cmd]) => cmd === "acp_set_config_option").map(([, args]) => args);
     expect(changes).toEqual([{ sessionId: "s-1", configId: "model", value: "smart" }]);
+  });
+
+  it("is refused while the pair is busy", async () => {
+    const spy = spyWith({});
+    const errors: string[] = [];
+    const reason = "Codex is working on the task you delegated.";
+    const { result } = renderEngine(SESSION, () => {}, {}, (message) => errors.push(message), () => reason);
+
+    let isHandled: boolean | undefined;
+    await act(async () => {
+      isHandled = await result.current.retryAfterSignIn("s-1", { text: "try again" });
+    });
+
+    expect(isHandled).toBe(false);
+    // Nothing was stopped, reopened, started, handed over or prompted.
+    expect(
+      callsOf(spy, "acp_stop_session", "acp_reopen_session", "acp_start_session", "write_fork_handoff", "acp_prompt"),
+    ).toEqual([]);
+    expect(errors).toEqual([reason]);
   });
 });
 

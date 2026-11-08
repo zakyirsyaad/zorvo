@@ -20,7 +20,7 @@ export interface SessionListContext {
   onArchiveSession?: (sessionId: string, isArchived: boolean) => void;
 }
 
-/** Sessions with their forks nested beneath them, joined by a guide line. */
+/** Sessions with their forks and delegated sessions nested beneath them, joined by a guide line. */
 export function SessionTree({ nodes, label, context, isNested = false, isInRun = false }: {
   nodes: SessionNode[];
   label: string;

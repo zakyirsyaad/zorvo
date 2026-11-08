@@ -65,6 +65,31 @@ function prompt(): HTMLTextAreaElement {
   return screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement;
 }
 
+/** Delegates to Codex from A's ⋯ menu; resolves with B's session id once it is started. */
+async function delegateToCodex(
+  spy: { mock: { calls: unknown[][] } },
+  task = "Implement step 2 of the plan",
+): Promise<string> {
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole("menuitem", { name: /Delegate to another agent/ }));
+  });
+  const dialog = await screen.findByRole("dialog", { name: "Delegate to another agent" });
+  await act(async () => {
+    fireEvent.click(within(dialog).getByRole("radio", { name: /Codex/ }));
+  });
+  await act(async () => {
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Task" }), { target: { value: task } });
+  });
+  await act(async () => {
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delegate" }));
+  });
+  await waitFor(() => expect(callsTo(spy, "acp_start_session")).toHaveLength(1));
+  return String(callsTo(spy, "acp_start_session")[0][1]?.sessionId);
+}
+
 async function type(text: string) {
   await act(async () => {
     fireEvent.change(prompt(), { target: { value: text } });
@@ -439,5 +464,159 @@ describe("delegating from the app", () => {
       expect(delegationRegion()).toHaveTextContent("Codex is working on the task you delegated"),
     );
     expect(delegationRegion()).not.toHaveClass("sr-only");
+  });
+
+  it("a failed turn in A is not retried while the delegated task runs", async () => {
+    seedSourceSession();
+    const spy = await renderApp();
+    await screen.findByText("Refactor the parser");
+
+    await type("try the parser");
+    await act(async () => {
+      fireEvent.keyDown(prompt(), { key: "Enter" });
+    });
+    await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
+    await acpEvent({ sessionId: "s-a", kind: "turn-end", error: "network is down" });
+    expect(await screen.findByRole("button", { name: "Try again" })).toBeDefined();
+
+    // A is between turns, so the delegation starts; B's first turn then holds the pair.
+    await delegateToCodex(spy);
+
+    const sidebar = within(screen.getByRole("complementary"));
+    await act(async () => {
+      fireEvent.click(sidebar.getByText("Fix login bug"));
+    });
+    const tryAgain = await screen.findByRole("button", { name: "Try again" });
+    await act(async () => {
+      fireEvent.click(tryAgain);
+    });
+
+    // Nothing was prompted to A: its message is still in the chat, and the banner can stay.
+    expect(callsTo(spy, "acp_prompt").filter(([, args]) => args?.sessionId === "s-a")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
+  });
+
+  it("Change carries the composer's attachments to the delegated task", async () => {
+    seedSourceSession();
+    realInvoke = tauriInternals().invoke;
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) =>
+      cmd === "get_agent_profiles"
+        ? Promise.resolve(agentProfiles())
+        : cmd === "plugin:dialog|open"
+          ? Promise.resolve(["/tmp/spec.md"])
+          : realInvoke(cmd, args),
+    );
+    await act(async () => {
+      render(<App />);
+    });
+    await screen.findByText("Refactor the parser");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Add attachment" }));
+    });
+    await type("@Codex fix it");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    });
+    const dialog = screen.getByRole("dialog", { name: "Delegate to another agent" });
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Delegate" }));
+    });
+
+    await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
+    expect(callsTo(spy, "acp_prompt")[0][1]).toMatchObject({ attachments: ["/tmp/spec.md"] });
+    expect(String(callsTo(spy, "acp_prompt")[0][1]?.text)).toContain("fix it");
+    // The task left the composer with its attachment.
+    expect(prompt().value).toBe("");
+  });
+
+  it("archiving a delegated session ends its link, and unarchiving keeps it ended", async () => {
+    seedSourceSession();
+    const spy = await renderApp();
+    await screen.findByText("Refactor the parser");
+    const sessionId = await delegateToCodex(spy);
+
+    const sidebar = within(screen.getByRole("complementary"));
+    expect(sidebar.getByText("Codex: Implement step 2 of the plan")).toBeDefined();
+
+    // B's first turn ends, so its row offers Archive, and its one report reaches A.
+    await acpEvent({
+      sessionId,
+      kind: "update",
+      update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "First answer." } },
+    });
+    await acpEvent({ sessionId, kind: "turn-end", stopReason: "end_turn" });
+    await waitFor(() =>
+      expect(callsTo(spy, "acp_prompt").filter(([, args]) => args?.sessionId === "s-a")).toHaveLength(1),
+    );
+
+    await act(async () => {
+      fireEvent.click(
+        within(screen.getByTestId(`session-row-${sessionId}`)).getByRole("button", { name: /More actions for/ }),
+      );
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: "Archive" }));
+    });
+
+    const savedSession = () => {
+      const sessions = fakeStore().state.sessions as Array<{
+        id: string;
+        archivedAt?: number | null;
+        delegatedFrom?: { endedAt?: number | null };
+      }>;
+      return sessions.find((session) => session.id === sessionId);
+    };
+    await waitFor(() => {
+      expect(savedSession()?.archivedAt).toEqual(expect.any(Number));
+      // The archive ended the link in the same action.
+      expect(savedSession()?.delegatedFrom?.endedAt).toEqual(expect.any(Number));
+    });
+
+    // A may delegate again: its only delegate's link is ended.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+    });
+    expect(screen.getByRole("menuitem", { name: /Delegate to another agent/ })).toBeEnabled();
+
+    // Unarchiving does not reopen the link.
+    await act(async () => {
+      fireEvent.click(sidebar.getByRole("button", { name: "Archived (1)" }));
+    });
+    await act(async () => {
+      fireEvent.click(
+        within(screen.getByTestId(`session-row-${sessionId}`)).getByRole("button", { name: /More actions for/ }),
+      );
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: "Unarchive" }));
+    });
+    await waitFor(() => {
+      expect(savedSession()?.archivedAt ?? null).toBeNull();
+      expect(savedSession()?.delegatedFrom?.endedAt).toEqual(expect.any(Number));
+    });
+
+    await act(async () => {
+      fireEvent.click(sidebar.getByText("Codex: Implement step 2 of the plan"));
+    });
+    expect(screen.getByRole("note")).toHaveTextContent("Delegated from Fix login bug · ended");
+
+    // B's next finished turn is not reported: the ended link sends nothing more to A.
+    await type("carry on");
+    await act(async () => {
+      fireEvent.keyDown(prompt(), { key: "Enter" });
+    });
+    await waitFor(() =>
+      expect(callsTo(spy, "acp_prompt").some(([, args]) => args?.sessionId === sessionId)).toBe(true),
+    );
+    await acpEvent({
+      sessionId,
+      kind: "update",
+      update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Carried on." } },
+    });
+    await acpEvent({ sessionId, kind: "turn-end", stopReason: "end_turn" });
+
+    // Only the report from before the archive reached A.
+    expect(callsTo(spy, "acp_prompt").filter(([, args]) => args?.sessionId === "s-a")).toHaveLength(1);
   });
 });

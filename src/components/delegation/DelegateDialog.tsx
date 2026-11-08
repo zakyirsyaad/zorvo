@@ -280,7 +280,7 @@ export function DelegateDialog({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="flex w-full max-w-[520px] flex-col gap-4 rounded-xl border border-border bg-surface-1 p-5 text-fg-secondary shadow-dialog outline-none"
+        className="flex max-h-[calc(100vh-2rem)] w-full max-w-[520px] flex-col gap-4 overflow-y-auto rounded-xl border border-border bg-surface-1 p-5 text-fg-secondary shadow-dialog outline-none"
       >
         <div className="flex items-center gap-2.5">
           <h2 id={titleId} className="min-w-0 flex-1 truncate text-base font-semibold text-fg">

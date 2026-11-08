@@ -177,7 +177,7 @@ export interface ComposerDockProps {
   /** The delegation the text asks for, after every change; null when it asks for none. Send clears it. */
   onDelegationMentionChange?: (mention: { agentId: string; task: string } | null) => void;
   /** What the named agent starts on, in the note's place, with Change; a blocking note wins while one is set. */
-  delegationSummary?: { text: string; onChange: () => void };
+  delegationSummary?: { text: string; onChange: (attachments?: readonly string[]) => void };
   /**
    * The prompt's text, after every change and once on mount: `clear`, `restore` and Send too, since the
    * parent does not redraw on typing. A mount reports empty, because a composer that went away took its text along.
@@ -602,7 +602,7 @@ export function ComposerDock({
             <span>{delegationSummary.text}</span>{" "}
             <button
               type="button"
-              onClick={delegationSummary.onChange}
+              onClick={() => delegationSummary.onChange(attachments)}
               className="rounded-sm text-fg-secondary underline underline-offset-2 focus-ring"
             >
               Change

@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { ComposerDock } from "../components/ComposerDock";
 import { DelegateDialog, type DelegateAgentChoice } from "../components/delegation/DelegateDialog";
 import { DelegationStatusLine } from "../components/delegation/DelegationStatusLine";
 import { DelegatedFromLine } from "../components/delegation/DelegatedFromLine";
@@ -85,6 +86,8 @@ describe("the delegate dialog", () => {
     const dialog = screen.getByRole("dialog", { name: "Delegate to another agent" });
     // Focus moves into the dialog when it opens.
     expect(dialog).toHaveFocus();
+    // A short window scrolls the card rather than pushing its actions out of reach.
+    expect(dialog).toHaveClass("max-h-[calc(100vh-2rem)]", "overflow-y-auto");
 
     fireEvent.click(screen.getByRole("button", { name: "Delegate" }));
 
@@ -133,6 +136,19 @@ describe("the delegate dialog", () => {
     renderDialog({ initialAgentId: "codex-acp", initialTask: "Implement step 2 of the plan" });
     expect(screen.getByRole("radio", { name: /Codex/ })).toBeChecked();
     expect(screen.getByRole("textbox", { name: "Task" })).toHaveValue("Implement step 2 of the plan");
+  });
+
+  it("keeps Shift+Tab and Tab inside the dialog while its card holds focus", () => {
+    renderDialog();
+    const dialog = screen.getByRole("dialog", { name: "Delegate to another agent" });
+    expect(dialog).toHaveFocus();
+
+    // The card itself is the first control for Tab and the last for Shift+Tab.
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(screen.getByRole("button", { name: "Delegate" })).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
   });
 
   it("shows the picked agent's chips and passes the picks on Delegate", () => {
@@ -450,5 +466,29 @@ describe("the delegated-from quiet line", () => {
       </>,
     );
     expect(screen.queryByRole("button", { name: "Open" })).toBeNull();
+  });
+});
+
+describe("the composer's delegation summary", () => {
+  it("Change reports the composer's current attachments", async () => {
+    const onChange = vi.fn();
+    render(
+      <ComposerDock
+        onSendMessage={vi.fn()}
+        onAttach={async () => ["/tmp/spec.md"]}
+        attachAsFiles
+        delegationSummary={{ text: "Codex starts on its defaults.", onChange }}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Add attachment" }));
+    });
+    expect(await screen.findByRole("button", { name: "Remove spec.md" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+
+    // The dialog carries them, so Delegate's first message keeps the attachment.
+    expect(onChange).toHaveBeenCalledWith(["/tmp/spec.md"]);
   });
 });

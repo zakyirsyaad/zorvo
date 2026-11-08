@@ -205,6 +205,8 @@ export default function App() {
   const [delegateDialog, setDelegateDialog] = useState<{
     initialAgentId?: string;
     initialTask?: string;
+    /** The composer's attachments when Change opened it: they go with B's first message. */
+    attachments?: readonly string[];
     clearsComposer: boolean;
     returnsFocusToMenu: boolean;
   } | null>(null);
@@ -212,6 +214,8 @@ export default function App() {
   const delegatePicksRef = useRef<Readonly<Record<string, AcpChoices>>>({});
   // Set once useDelegation is built: the engine's turns reach it through this, as it is built before the hook.
   const delegationTurnEndedRef = useRef<(sessionId: string, reason: AttentionReason) => void>(() => {});
+  // Set once useDelegation is built: the engine's retries read why the pair blocks them, as it is built before the hook.
+  const delegationBlockedRef = useRef<(sessionId: string) => string | null>(() => null);
 
   const reportError = useCallback((message: string) => setNotice(message), [setNotice]);
   const { state, isLoaded, updateState, getState, saveNow } = usePersistedState(reportError);
@@ -512,6 +516,8 @@ export default function App() {
     },
     onTurnFailed: (sessionId, error) =>
       error ? setFailedTurns((prev) => ({ ...prev, [sessionId]: error })) : clearFailedTurn(sessionId),
+    // Read when a retry runs, long after the render that built the engine: the latest hook decides.
+    promptBlockedReason: (sessionId) => delegationBlockedRef.current(sessionId),
   });
   // The one instance of Add, Update and Remove: Settings, saved sessions of a removed agent and popouts use it.
   const catalogActions = useAgentCatalogActions({
@@ -752,6 +758,22 @@ export default function App() {
   });
   // The engine was built before this hook: its turn ends reach it through the ref.
   delegationTurnEndedRef.current = delegation.onTurnEnded;
+  // A retry reads this when it runs: the hook's latest verdict, not the render that built the engine.
+  useEffect(() => {
+    delegationBlockedRef.current = delegation.sendBlockedReason;
+  });
+
+  /**
+   * Archives a session. Archiving a delegate ends its link in the same action:
+   * its reports stop, and A may delegate again. A failed archive leaves the link
+   * open, since the session still runs. Unarchiving does not reopen the link.
+   */
+  const handleArchiveSession = async (sessionId: string, isArchived: boolean) => {
+    await sessionActions.archiveSession(sessionId, isArchived);
+    if (!isArchived) return;
+    const isArchivedNow = getState().sessions.find((session) => session.id === sessionId)?.archivedAt != null;
+    if (isArchivedNow) delegation.end(sessionId);
+  };
 
   /** Shows a run's panel in the chat's place; no session stays selected, or the panel would not show. */
   const openRun = (runId: string) => {
@@ -1032,6 +1054,7 @@ export default function App() {
   const openDelegateDialog = (state: {
     initialAgentId?: string;
     initialTask?: string;
+    attachments?: readonly string[];
     clearsComposer: boolean;
     returnsFocusToMenu: boolean;
   }) => {
@@ -1088,6 +1111,8 @@ export default function App() {
   const handleDialogDelegate = (agentId: string, task: string, choices: AcpChoices) => {
     const sourceId = activeSession?.id;
     const isFromChange = delegateDialog?.clearsComposer === true;
+    // Change carried what the composer held: B's first message keeps the attachments.
+    const attachments = delegateDialog?.attachments;
     const accumulated = delegatePicksFor(agentId);
     const merged: AcpChoices = {
       ...accumulated,
@@ -1096,7 +1121,7 @@ export default function App() {
     };
     setDelegateDialog(null);
     if (sourceId === undefined) return;
-    void delegation.start(sourceId, agentId, task, { choices: delegationChoicesFor(agentId, merged) }).then((isStarted) => {
+    void delegation.start(sourceId, agentId, task, { choices: delegationChoicesFor(agentId, merged), attachments }).then((isStarted) => {
       if (isStarted && isFromChange) composerRef.current?.clear();
     });
   };
@@ -1119,10 +1144,11 @@ export default function App() {
             agentName: mentionedAgent.name,
             ...delegatedStartOf(state.agentOptions?.[mentionedAgent.id]),
           }),
-          onChange: () =>
+          onChange: (attachments?: readonly string[]) =>
             openDelegateDialog({
               initialAgentId: mentionedAgent.id,
               initialTask: delegationMention.task,
+              attachments,
               clearsComposer: true,
               returnsFocusToMenu: false,
             }),
@@ -1175,6 +1201,7 @@ export default function App() {
       isWaiting: isSessionWaiting(sessionId),
       contextUsage: acp.info[sessionId]?.usage,
       failures: acp.failuresOf(sessionId),
+      sendBlockedReason: delegation.sendBlockedReason(sessionId),
     }),
     agentCatalog: { agents, settings: state.settings, addAgent: catalogActions.addAgent },
     onAction: (sessionId, action) => {
@@ -1279,7 +1306,7 @@ export default function App() {
           onDeleteSession={sessionActions.deleteSession}
           onRenameSession={sessionActions.renameSession}
           onPinSession={sessionActions.pinSession}
-          onArchiveSession={(sessionId, isArchived) => void sessionActions.archiveSession(sessionId, isArchived)}
+          onArchiveSession={(sessionId, isArchived) => void handleArchiveSession(sessionId, isArchived)}
           footer={
             <ProfileFooter
               name={userProfile.name}
@@ -1316,7 +1343,7 @@ export default function App() {
             // Archiving ends the agent, so, as in the sidebar's menu, it waits until the agent is not working.
             onArchive={
               sessionOfItsOwn && !isSessionBusy(sessionOfItsOwn.id)
-                ? () => void sessionActions.archiveSession(sessionOfItsOwn.id, true)
+                ? () => void handleArchiveSession(sessionOfItsOwn.id, true)
                 : undefined
             }
             onReveal={shownFolderPath ? () => shell.revealFolder(shownFolderPath) : undefined}

@@ -360,8 +360,8 @@ describe("useDelegation reports", () => {
     expect(env.sends).toHaveLength(0);
     expect(env.givesBack).toHaveLength(0);
     expect(env.notices).toHaveLength(0);
-    // Nothing was handed over, so A's line still says it is working.
-    expect(env.result.current.delegation.viewFor("s-a")).toMatchObject({ state: "working" });
+    // Nothing was handed over and the delegate is not running: A has no line to show.
+    expect(env.result.current.delegation.viewFor("s-a")).toBeNull();
     expect(env.result.current.delegation.sendBlockedReason("s-b")).toBeNull();
   });
 
@@ -461,6 +461,24 @@ describe("useDelegation reports", () => {
     expect(env.result.current.delegation.viewFor("s-a")).toBeNull();
   });
 
+  it("sends nothing for a delegate that was archived", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession({ archivedAt: 20 })],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+    });
+
+    await act(async () => {
+      env.result.current.delegation.onTurnEnded("s-b", "finished");
+    });
+    await act(async () => {});
+
+    expect(env.sends).toHaveLength(0);
+    expect(env.givesBack).toHaveLength(0);
+    expect(env.notices).toHaveLength(0);
+    // An archived delegate is not open: A has no line and may delegate again.
+    expect(env.result.current.delegation.viewFor("s-a")).toBeNull();
+  });
+
   it("refuses B's send while a report is handing over", async () => {
     const env = setup({
       sessions: [sourceSession(), delegateSession()],
@@ -493,7 +511,8 @@ describe("useDelegation views", () => {
     });
 
     env.busy.delete("s-b");
-    expect(env.result.current.delegation.viewFor("s-a")).toMatchObject({ state: "working" });
+    // Between turns, with no outcome yet, the delegate has no live turn to report.
+    expect(env.result.current.delegation.viewFor("s-a")).toBeNull();
 
     await act(async () => {
       env.result.current.delegation.onTurnEnded("s-b", "failed");
@@ -517,6 +536,15 @@ describe("useDelegation views", () => {
       state: "needs-answer",
       workingSince: null,
     });
+  });
+
+  it("A has no working line once the delegate is not running", () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession({ status: "terminated" })],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+    });
+
+    expect(env.result.current.delegation.viewFor("s-a")).toBeNull();
   });
 
   it("after End delegation A has no view and B reads ended", () => {

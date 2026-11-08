@@ -15,6 +15,7 @@ import {
 } from '../lib/delegation';
 import { buildForkHandoff } from '../lib/fork-handoff';
 import { createId } from '../lib/ids';
+import { isArchived } from '../lib/session-helpers';
 import type { SessionSpec, StartSessionOptions } from '../lib/session-start';
 import type { AgentProfile, ChatMessage, Session } from '../types';
 import type { AttentionReason, FirstMessage } from './session-engine/useAcpEngine';
@@ -223,11 +224,14 @@ export function useDelegation(deps: DelegationDeps): {
     const delegate = openDelegateOf(sessionId, sessions);
     if (delegate === undefined) return null;
     const outcome = outcomes.current.get(delegate.id);
-    const state: DelegationState = deps.isWaiting(delegate.id)
+    // A delegate that is not running has no live turn: its last turn's outcome is
+    // the whole story, and without one (a restart, an exited agent) there is no line.
+    const state: DelegationState | null = deps.isWaiting(delegate.id)
       ? 'needs-answer'
       : deps.isBusy(delegate.id)
         ? 'working'
-        : (outcome?.kind ?? 'working');
+        : (outcome?.kind ?? null);
+    if (state === null) return null;
     const workingSince =
       state === 'working'
         ? (lastUserMessage(transcripts[delegate.id] ?? [])?.timestamp ??
@@ -249,7 +253,8 @@ export function useDelegation(deps: DelegationDeps): {
   const onTurnEnded = (sessionId: string, reason: AttentionReason): void => {
     const session = latest.current.sessions.find((candidate) => candidate.id === sessionId);
     const link = session?.delegatedFrom;
-    if (session === undefined || link === null || link === undefined || !isOpenLink(link)) return;
+    // An archived delegate's link is ended with it: a late turn end has nothing to report.
+    if (session === undefined || isArchived(session) || link === null || link === undefined || !isOpenLink(link)) return;
 
     if (reason === 'finished') {
       // Set before anything can await or render: Send in B is refused from now on.
@@ -335,7 +340,7 @@ export function useDelegation(deps: DelegationDeps): {
           : {}),
         context: buildDelegatePrompt(handoffPath),
       };
-      // No picks from the dialog: B starts on its defaults, and the draft's choices stay with the draft.
+      // The dialog's picks, or the defaults: the draft's own choices stay with the draft.
       current.startSession(spec, first, { choices: options.choices ?? NO_CHOICES });
       current.selectSession(id);
       return true;
@@ -351,8 +356,8 @@ export function useDelegation(deps: DelegationDeps): {
       try {
         const session = current.sessions.find((candidate) => candidate.id === delegateId);
         const link = session?.delegatedFrom;
-        // B is gone, or its link is no longer open: nothing to send.
-        if (session === undefined || link === null || link === undefined || !isOpenLink(link)) return;
+        // B is gone, archived, or its link is no longer open: nothing to send.
+        if (session === undefined || isArchived(session) || link === null || link === undefined || !isOpenLink(link)) return;
 
         const messages = current.transcripts[delegateId] ?? [];
         const last = lastMessage(messages);

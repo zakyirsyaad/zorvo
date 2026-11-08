@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { ActionCard, NO_OPTIONS_MESSAGE } from "../components/ActionCard";
 import { ChatCanvas, type ChatMessage } from "../components/ChatCanvas";
 import { HistoryElsewhereNote } from "../components/chat/HistoryElsewhereNote";
+import { diffDetail } from "../lib/diff-rows";
 import type { ActionCard as ActionCardType } from "../types";
 import {
   installSpeechMock,
@@ -685,7 +686,7 @@ describe("ACP chat content", () => {
                 name: "Edit src/app.ts",
                 status: "completed",
                 kind: "edit",
-                details: [{ kind: "diff", path: "src/app.ts", oldText: "a", newText: "b" }],
+                details: [diffDetail("src/app.ts", "a", "b")],
               },
             ],
             parts: [{ kind: "tools", toolIds: ["t-1"] }],

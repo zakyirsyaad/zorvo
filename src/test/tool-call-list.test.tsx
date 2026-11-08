@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { ToolCallList } from "../components/chat/ToolCallList";
+import { diffDetail } from "../lib/diff-rows";
 import type { ToolExecution } from "../types";
 
 const editTool: ToolExecution = {
@@ -8,7 +9,7 @@ const editTool: ToolExecution = {
   name: "Edit src/app.ts",
   status: "completed",
   kind: "edit",
-  details: [{ kind: "diff", path: "/repo/src/app.ts", oldText: "keep\nconst a = 1;\n", newText: "keep\nconst a = 2;\n" }],
+  details: [diffDetail("/repo/src/app.ts", "keep\nconst a = 1;\n", "keep\nconst a = 2;\n")],
 };
 
 describe("ToolCallList", () => {
@@ -25,7 +26,7 @@ describe("ToolCallList", () => {
   it("labels a new file and counts its lines", () => {
     render(
       <ToolCallList
-        tools={[{ ...editTool, details: [{ kind: "diff", path: "/repo/new.ts", oldText: null, newText: "a\nb\n" }] }]}
+        tools={[{ ...editTool, details: [diffDetail("/repo/new.ts", null, "a\nb\n")] }]}
         defaultOpenDiffs
         isTurnOver
       />

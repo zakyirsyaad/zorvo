@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import type { ToolDetail } from "../../types";
-import { countChanges, diffRows, type DiffRowKind } from "../../lib/diff-rows";
+import type { DiffRow, ToolDetail } from "../../types";
+import { countChanges, type DiffRowKind } from "../../lib/diff-rows";
 
 const ROW_STYLE: Record<DiffRowKind, string> = {
   added: "bg-diff-added text-fg",
@@ -35,9 +35,8 @@ function ShowAllButton({
   );
 }
 
-function DiffView({ path, oldText, newText }: { path: string; oldText: string | null; newText: string }) {
-  const rows = useMemo(() => diffRows(oldText, newText), [oldText, newText]);
-  const { added, removed } = countChanges(rows);
+function DiffView({ path, isNewFile, rows }: { path: string; isNewFile: boolean; rows: DiffRow[] }) {
+  const { added, removed } = useMemo(() => countChanges(rows), [rows]);
   const [showAll, setShowAll] = useState(false);
   const shown = showAll ? rows : rows.slice(0, MAX_DETAIL_ROWS);
   return (
@@ -46,7 +45,7 @@ function DiffView({ path, oldText, newText }: { path: string; oldText: string | 
         <span className="truncate text-fg-secondary" title={path}>
           {path}
         </span>
-        {oldText === null && <span className="rounded bg-surface-hover px-1.5 text-fg-muted">New file</span>}
+        {isNewFile && <span className="rounded bg-surface-hover px-1.5 text-fg-muted">New file</span>}
         <span className="ml-auto shrink-0 text-status-running">+{added}</span>
         {removed > 0 && <span className="shrink-0 text-danger">-{removed}</span>}
       </header>
@@ -102,7 +101,7 @@ export function ToolDetails({ details }: { details: ToolDetail[] }) {
     <div className="space-y-2">
       {details.map((detail, index) =>
         detail.kind === "diff" ? (
-          <DiffView key={index} path={detail.path} oldText={detail.oldText} newText={detail.newText} />
+          <DiffView key={index} path={detail.path} isNewFile={detail.isNewFile} rows={detail.rows} />
         ) : detail.kind === "changed" ? (
           <TextOutput key={index} text={`Changed ${detail.path} (too large to show)`} />
         ) : (

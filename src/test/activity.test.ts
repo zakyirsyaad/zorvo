@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { activityOf, reportedPath, statusWord, unreportedFiles, type ActivityEntry } from "../lib/activity";
+import { diffDetail } from "../lib/diff-rows";
 import type { ActionCard, ChatMessage, ToolExecution } from "../types";
 import type { FileStat } from "../lib/diff-stats";
 
@@ -42,7 +43,7 @@ const entriesOf = (tools: Partial<ToolExecution>[]) => activityOf([reply(tools)]
 describe("activityOf", () => {
   it("gives one entry for a file named by both locations and a diff, without its line", () => {
     const entries = entriesOf([
-      { kind: "edit", locations: ["/r/a.ts:12"], details: [{ kind: "diff", path: "/r/a.ts", oldText: "a", newText: "b" }] },
+      { kind: "edit", locations: ["/r/a.ts:12"], details: [diffDetail("/r/a.ts", "a", "b")] },
     ]);
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({ kind: "file", path: "/r/a.ts", action: "changed" });
@@ -183,7 +184,7 @@ describe("unreportedFiles", () => {
   });
 
   it("lists a file from a declined edit that sent its diff first", () => {
-    const edit = { kind: "edit", status: "failed", details: [{ kind: "diff", path: "/private/tmp/r/a.ts", oldText: "a", newText: "b" }] } as Partial<ToolExecution>;
+    const edit = { kind: "edit", status: "failed", details: [diffDetail("/private/tmp/r/a.ts", "a", "b")] } as Partial<ToolExecution>;
     expect(unreported([edit], [stat("a.ts")])).toEqual(["a.ts"]);
   });
 

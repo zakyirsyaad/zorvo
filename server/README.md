@@ -152,10 +152,11 @@ pnpm --filter zorvo-credits-server run deploy   # the package script, `wrangler 
 
 - **The Free plan works with the defaults.** The Ledger's alarm runs every minute. One tick polls at
   most 3 PingPay sessions (`POLLS_PER_TICK`), runs at most 5 queue items (`CREDITS_PER_TICK`), and stops
-  starting new items after 40 outbound requests (`TICK_SUBREQUEST_BUDGET`); the rest wait for the next
-  tick. The item already running when the budget is reached finishes, so a tick can go slightly over.
-  On the **Paid** plan, set `POLLS_PER_TICK` and `CREDITS_PER_TICK` in `wrangler.jsonc` higher (the old
-  10 and 20 are safe there) and raise `TICK_SUBREQUEST_BUDGET` with them, so a backlog drains faster.
+  starting new items once the next one's worst case would pass 40 outbound requests
+  (`TICK_SUBREQUEST_BUDGET`); it reserves 10 requests for a queue item and 2 for a poll, so the budget
+  keeps room for the item in progress, and the rest wait for the next tick. On the **Paid** plan, set
+  `POLLS_PER_TICK` and `CREDITS_PER_TICK` in `wrangler.jsonc` higher (the old 10 and 20 are safe there)
+  and raise `TICK_SUBREQUEST_BUDGET` with them, so a backlog drains faster.
 - **What a limit looks like.** In `wrangler tail`, an `Alarm step … failed` line whose message says
   `Too many subrequests` means the tick passed the plan's subrequest limit: lower `TICK_SUBREQUEST_BUDGET`
   or the per-tick limits, or move to Paid. An `Exceeded CPU limit` line is the plan's CPU limit: run fewer

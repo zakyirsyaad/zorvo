@@ -138,6 +138,44 @@ async function seedCreditQueue(count: number): Promise<void> {
   });
 }
 
+/** `count` expired checkouts the poll reads once each, with a cached token and a fresh snapshot. */
+async function seedExpiredSessions(count: number): Promise<void> {
+  await seedOperator(NOW);
+  await seedStock(10_000);
+  const { deviceId } = await newDevice();
+  await runInDurableObject(stub(), (_ledger, state) => {
+    for (let i = 0; i < count; i += 1) {
+      state.storage.sql.exec(
+        `INSERT INTO topups (id, device_id, package_usd, credits, status, ping_session_id, created_at, updated_at)
+         VALUES (?, ?, 5, 500, 'expired', ?, ?, ?)`,
+        `t-old-${i}`,
+        deviceId,
+        `cs-old-${i}`,
+        NOW - HOUR_MS,
+        NOW - HOUR_MS,
+      );
+      ping.sessions.set(`cs-old-${i}`, { status: "EXPIRED", paymentId: null, body: {}, amount: { assetId: NEAR_USDC_ASSET_ID, amount: "5000000" } });
+    }
+  });
+}
+
+/** Three fetches before the queue: a stale snapshot refresh (2) and one expired-session poll (1). */
+async function seedThreeFetchesBeforeQueue(): Promise<void> {
+  await seedOperator(NOW);
+  await seedStock(10_000, NOW - 3 * MINUTE_MS);
+  const { deviceId } = await newDevice();
+  await runInDurableObject(stub(), (_ledger, state) => {
+    state.storage.sql.exec(
+      `INSERT INTO topups (id, device_id, package_usd, credits, status, ping_session_id, created_at, updated_at)
+       VALUES ('t-before', ?, 5, 500, 'expired', 'cs-before', ?, ?)`,
+      deviceId,
+      NOW - HOUR_MS,
+      NOW - HOUR_MS,
+    );
+    ping.sessions.set("cs-before", { status: "EXPIRED", paymentId: null, body: {}, amount: { assetId: NEAR_USDC_ASSET_ID, amount: "5000000" } });
+  });
+}
+
 type QueueRow = { id: string; kind: string; ref: string; attempts: number; next_at: number };
 
 function rows() {
@@ -386,8 +424,8 @@ describe("credit queue", () => {
     expect((await rows()).queue).toHaveLength(5);
   });
 
-  it("stops starting queue items once the tick's subrequest budget is spent", async () => {
-    await setVars({ TICK_SUBREQUEST_BUDGET: "2" });
+  it("spends the tick's budget on one queue item at a time", async () => {
+    await setVars({ TICK_SUBREQUEST_BUDGET: "10" });
     await seedOperator(NOW);
     await seedStock(10_000);
     await seedCreditQueue(25);
@@ -397,6 +435,25 @@ describe("credit queue", () => {
     await tick(NOW + SECOND_MS);
     expect(near.count("create")).toBe(2);
     expect((await rows()).queue).toHaveLength(23);
+  });
+
+  it("starts a queue item while its reserve still fits the tick's budget", async () => {
+    // 13 - 10 (ITEM_RESERVE) = 3 fetches already spent, so the item's worst case still fits.
+    await setVars({ TICK_SUBREQUEST_BUDGET: "13" });
+    await seedThreeFetchesBeforeQueue();
+    await seedCreditQueue(1);
+    await tick(NOW);
+    expect(near.count("create")).toBe(1);
+  });
+
+  it("leaves a queue item queued when its reserve would pass the tick's budget", async () => {
+    // 12 - 10 (ITEM_RESERVE) = 2, one fetch less than the 3 already spent.
+    await setVars({ TICK_SUBREQUEST_BUDGET: "12" });
+    await seedThreeFetchesBeforeQueue();
+    await seedCreditQueue(1);
+    await tick(NOW);
+    expect(near.count("create")).toBe(0);
+    expect((await rows()).queue).toHaveLength(1);
   });
 
   it("race 7: a top-up's snapshot refresh that listed the keys before a credit landed keeps the credit's limit", async () => {
@@ -519,29 +576,23 @@ describe("alarm", () => {
     expect(reads()).toHaveLength(50);
   });
 
-  it("stops polling once the tick's subrequest budget is spent", async () => {
-    await setVars({ TICK_SUBREQUEST_BUDGET: "1" });
-    await seedOperator(NOW);
-    await seedStock(10_000);
-    const { deviceId } = await newDevice();
-    await runInDurableObject(stub(), (_ledger, state) => {
-      for (let i = 0; i < 5; i += 1) {
-        state.storage.sql.exec(
-          `INSERT INTO topups (id, device_id, package_usd, credits, status, ping_session_id, created_at, updated_at)
-           VALUES (?, ?, 5, 500, 'expired', ?, ?, ?)`,
-          `t-${i}`,
-          deviceId,
-          `cs_old_${i}`,
-          NOW - HOUR_MS,
-          NOW - HOUR_MS,
-        );
-        ping.sessions.set(`cs_old_${i}`, { status: "EXPIRED", paymentId: null, body: {}, amount: { assetId: NEAR_USDC_ASSET_ID, amount: "5000000" } });
-      }
-    });
-    const reads = () => ping.calls.filter((call) => /\/checkout\/sessions\/cs_old_/.test(call.url)).length;
+  it("polls while a poll's reserve still fits the tick's budget", async () => {
+    // Two fetches for a session and its payment; nothing is spent before the poll.
+    await setVars({ TICK_SUBREQUEST_BUDGET: "2" });
+    await seedExpiredSessions(5);
+    const reads = () => ping.calls.filter((call) => /\/checkout\/sessions\/cs-old-/.test(call.url)).length;
 
     await tick(NOW);
     expect(reads()).toBe(1);
+  });
+
+  it("leaves a session poll for the next tick when its reserve would pass the budget", async () => {
+    await setVars({ TICK_SUBREQUEST_BUDGET: "1" });
+    await seedExpiredSessions(5);
+    const reads = () => ping.calls.filter((call) => /\/checkout\/sessions\/cs-old-/.test(call.url)).length;
+
+    await tick(NOW);
+    expect(reads()).toBe(0);
   });
 
   it("backs off polling an abandoned checkout: 1 minute, then 2, 4, up to an hour", async () => {

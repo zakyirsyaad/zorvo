@@ -234,6 +234,16 @@ describe("DiffView", () => {
     expect(statCalls(spy).map((c) => (c[1] as { target: string }).target)).toEqual(["base"]);
   });
 
+  it("lets the expanded review shrink below its longest line", async () => {
+    // A flex item's minimum width is its content's by default, so one long unwrapped line pushed the
+    // expanded review past the window and cut off "Add N comments to message". jsdom has no layout,
+    // so this checks the class that allows the shrink; the overflow itself was measured in the app.
+    mockDiff(THREE);
+    await renderView({ isExpanded: true });
+
+    expect(screen.getByRole("complementary", { name: "Diff view" }).className.split(" ")).toContain("min-w-0");
+  });
+
   it("reads HEAD and reports once when the targets cannot be read", async () => {
     const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd) =>
       cmd === "session_diff_targets"

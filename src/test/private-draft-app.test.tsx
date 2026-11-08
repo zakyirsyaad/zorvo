@@ -55,6 +55,15 @@ function withCredits(credits = 1240) {
   ];
 }
 
+function withOwnKey() {
+  withCredits();
+  fakePrivate().status = {
+    ...fakePrivate().status,
+    ownKey: { saved: true, last4: "3f9a", addedAt: new Date().toISOString(), noCredits: false },
+  };
+  fakeStore().state.settings.paymentSource = "ownKey";
+}
+
 async function renderApp(overrides: Record<string, Override> = {}) {
   fakeStore().state.settings.defaultAgentId = "qwen";
   const realInvoke = tauriInternals().invoke;
@@ -106,6 +115,25 @@ describe("a private draft in the app", () => {
     expect(privateCatalogCalls()).toEqual([]);
     await waitFor(() => expect(fakeStore().state.sessions).toHaveLength(1));
     expect(fakeStore().state.sessions[0]).not.toHaveProperty("privateMode");
+  });
+
+  it("starts on the user's own key, shows its footer, and sends the ownKey choice", async () => {
+    withOwnKey();
+    const spy = await renderApp();
+    await turnOnPrivate();
+
+    expect(await screen.findByText(/Paying with your NEAR AI key/)).toBeInTheDocument();
+    expect(screen.getByText("sk-…3f9a")).toBeInTheDocument();
+    expect(screen.queryByText("1,240 credits left")).toBeNull();
+
+    await send("review the payment module");
+    await waitFor(() => expect(callsTo(spy, "acp_start_session")).toHaveLength(1));
+    expect(callsTo(spy, "acp_start_session")[0]).toMatchObject({
+      privateModelId: MODEL_ID,
+      privateOwnKey: true,
+    });
+    await waitFor(() => expect(fakeStore().state.sessions).toHaveLength(1));
+    expect(fakeStore().state.sessions[0]).toMatchObject({ privateMode: { modelId: MODEL_ID, ownKey: true } });
   });
 
   it("starts a private session on the first model, and the session and its row say so", async () => {

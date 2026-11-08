@@ -3,7 +3,7 @@ use std::os::unix::fs::PermissionsExt;
 
 use super::*;
 use crate::installer::{plan::InstalledTools, runtimes::MIN_USER_NODE_MAJOR};
-use crate::private_mode::device::{SecretStore, NEARAI_KEY};
+use crate::private_mode::device::{SecretStore, NEARAI_KEY, OWN_KEY};
 use crate::private_mode::testing::Harness;
 use crate::registry::{resolve::SystemTools, Catalog, BUNDLED_HISTORY};
 
@@ -468,6 +468,24 @@ fn plain_launch(env: &[(&str, &str)]) -> AcpLaunch {
     }
 }
 
+/// The existing tests start a Zorvo-credit private session; own-key launches are tested explicitly.
+fn session_launch(
+    session_id: &str,
+    base: impl FnOnce() -> Result<AcpLaunch, String>,
+    private: &crate::private_mode::service::PrivateMode,
+    profile_id: &str,
+    private_model_id: Option<&str>,
+) -> Result<AcpLaunch, String> {
+    super::session_launch(
+        session_id,
+        base,
+        private,
+        profile_id,
+        private_model_id,
+        false,
+    )
+}
+
 fn harness_with_key() -> Harness {
     let harness = Harness::new();
     harness
@@ -569,6 +587,32 @@ fn a_private_session_runs_on_a_proxy_token_and_the_loopback_endpoint() {
 }
 
 #[test]
+fn a_private_session_with_the_users_own_key_skips_the_worker() {
+    let harness = Harness::new();
+    harness
+        .store
+        .set(OWN_KEY, "own-key-3f9a")
+        .expect("seed the own key");
+    harness.mode.models().expect("cache the catalog");
+    let calls_before = harness.api.calls().len();
+
+    let launch = super::session_launch(
+        "s1",
+        || Ok(plain_launch(&[])),
+        &harness.mode,
+        "qwen-code",
+        Some("Qwen/Qwen3.8-27B"),
+        true,
+    )
+    .expect("launches");
+
+    assert!(launch.private);
+    assert_eq!(harness.api.calls().len(), calls_before);
+    assert_eq!(harness.mode.launch_key(true).as_deref(), Ok("own-key-3f9a"));
+    assert!(launch.args.iter().all(|arg| !arg.contains("own-key")));
+}
+
+#[test]
 fn a_private_session_without_a_key_asks_for_credits() {
     let harness = Harness::new();
 
@@ -666,6 +710,7 @@ fn a_private_session_is_checked_against_the_workspaces_like_any_other() {
             &scratch.folder(),
             "qwen-code",
             model,
+            false,
         )
         .unwrap_err();
 

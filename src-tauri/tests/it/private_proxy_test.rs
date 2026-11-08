@@ -226,7 +226,9 @@ fn client() -> reqwest::Client {
 }
 
 fn issue(proxy: &PrivateProxy) -> (String, String) {
-    let issued = proxy.issue(SESSION, MODEL, KEY).expect("a proxy token");
+    let issued = proxy
+        .issue(SESSION, MODEL, KEY, false)
+        .expect("a proxy token");
     (issued.token, issued.base_url)
 }
 
@@ -712,6 +714,29 @@ impl CreditsApi for McpApi {
     fn recover(&self, _: &str, _: &str) -> Result<(), PrivateError> {
         unimplemented!()
     }
+}
+
+#[tokio::test]
+async fn the_credits_route_says_an_own_key_balance_is_not_visible() {
+    let proxy = PrivateProxy::with_upstream("http://127.0.0.1:1/v1");
+    let issued = proxy
+        .issue(SESSION, MODEL, "own-key-3f9a", true)
+        .expect("a proxy token");
+    let root = issued.base_url.strip_suffix("/v1").expect("the proxy base");
+
+    let answer = client()
+        .get(format!("{root}/zorvo/v1/credits"))
+        .bearer_auth(&issued.token)
+        .send()
+        .await
+        .expect("the proxy answers");
+    assert_eq!(answer.status(), 200);
+    let answer: serde_json::Value = answer.json().await.expect("credits JSON");
+    assert_eq!(answer["ownKey"], true);
+    assert_eq!(
+        answer["message"],
+        "Paying with your own NEAR AI key. Its balance isn't visible to Zorvo, so plan as usual."
+    );
 }
 
 #[tokio::test]

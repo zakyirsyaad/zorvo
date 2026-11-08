@@ -12,7 +12,7 @@ export const STATE_VERSION = 2;
 export function emptyPersistedState(): PersistedState {
   return {
     version: STATE_VERSION,
-    settings: { appearance: 'system', defaultAgentId: null, onboardingCompleted: false, secretGuard: true },
+    settings: { appearance: 'system', defaultAgentId: null, onboardingCompleted: false, secretGuard: true, paymentSource: 'credits' },
     recentFolders: [],
     sessions: [],
   };
@@ -61,7 +61,7 @@ function isWorktree(value: unknown): value is SessionWorktree {
   );
 }
 
-function isPrivateMode(value: unknown): value is { modelId: string } {
+function isPrivateMode(value: unknown): value is { modelId: string; ownKey?: boolean } {
   return isObject(value) && typeof value.modelId === 'string' && value.modelId.length > 0;
 }
 
@@ -94,7 +94,9 @@ function withValidFields(session: Session): Session {
     ...(typeof historyElsewhere === 'boolean' ? { historyElsewhere } : {}),
     ...(compareRunId == null || typeof compareRunId === 'string' ? { compareRunId } : {}),
     ...(comments.length > 0 ? { reviewComments: comments } : {}),
-    ...(isPrivateMode(privateMode) ? { privateMode: { modelId: privateMode.modelId } } : {}),
+    ...(isPrivateMode(privateMode)
+      ? { privateMode: { modelId: privateMode.modelId, ...(privateMode.ownKey === true ? { ownKey: true } : {}) } }
+      : {}),
     ...(usage ? { privateUsage: usage } : {}),
   };
 }
@@ -195,6 +197,7 @@ export function normalizePersistedState(raw: unknown): PersistedState {
       signedInAgents: toAgentIdList(settings.signedInAgents) ?? [],
       privateLowBalanceNotified: settings.privateLowBalanceNotified === true,
       secretGuard: settings.secretGuard !== false,
+      paymentSource: settings.paymentSource === 'ownKey' ? 'ownKey' : 'credits',
     },
     recentFolders: Array.isArray(raw.recentFolders)
       ? raw.recentFolders.filter(

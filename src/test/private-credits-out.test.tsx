@@ -17,6 +17,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 import App from "../App";
+import { PrivateCreditsOut } from "../components/private/PrivateCreditsOut";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
 type InvokeCall = [string, Record<string, unknown> | undefined, ...unknown[]];
@@ -136,6 +137,36 @@ async function runOutOfCredits(
   await endTurn(sessionId, `PRIVATE_CREDITS:{"reason":"${reason}"}`);
   return spy;
 }
+
+describe("a private session on the user's own key", () => {
+  it("shows the own-key card with the dashboard and a switch back", () => {
+    const onSwitchToCredits = vi.fn();
+    const onOpenDashboard = vi.fn();
+    render(
+      <PrivateCreditsOut
+        reason="empty"
+        agents={[]}
+        onOpenSettings={vi.fn()}
+        onContinue={vi.fn()}
+        paymentSource="ownKey"
+        onSwitchToCredits={onSwitchToCredits}
+        onOpenDashboard={onOpenDashboard}
+      />,
+    );
+
+    expect(screen.getByText("Your NEAR AI key ran out of credits")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "NEAR AI turned the request down: your organization has no credits left. Add credits or stake more NEAR in your NEAR AI dashboard, or switch this Mac to Zorvo credits.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Your message is back in the box.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Switch to Zorvo credits" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open NEAR AI dashboard" }));
+    expect(onSwitchToCredits).toHaveBeenCalledTimes(1);
+    expect(onOpenDashboard).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("a private session that runs out of credits", () => {
   afterEach(() => {

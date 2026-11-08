@@ -1,5 +1,5 @@
 import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
-import { ArrowUp, Paperclip, ShieldAlert, Square } from "lucide-react";
+import { ArrowUp, KeyRound, Paperclip, ShieldAlert, Square } from "lucide-react";
 import { DRAFT_CHIP } from "./composer/chip-style";
 import { CompareModelStatus } from "./composer/CompareModelStatus";
 import type { CompareModelControl } from "../lib/compare-models";
@@ -171,7 +171,7 @@ export interface ComposerDockProps {
    * Before a new session starts: the Private chip after the agent chip and, while it is on, the private model
    * menu after it and the credits left in the row. The parent drops the agent's own model chip meanwhile.
    */
-  privateDraft?: Pick<PrivateDraft, "chip" | "modelMenu" | "creditsLine">;
+  privateDraft?: Pick<PrivateDraft, "chip" | "modelMenu" | "creditsLine" | "paymentLine" | "paymentKey">;
   /** In a compare draft: one model chip per ticked agent, in the run's order. */
   compareModels?: CompareModelControl[];
   /** A compare chip whose agent's models are unknown was opened (or its Try again pressed): ask that agent. */
@@ -688,6 +688,13 @@ export function ComposerDock({
             )}
           </div>
         </div>
+        {privateDraft?.paymentLine && (
+          <div className="mt-2 flex items-center gap-2 border-t border-border pt-2 text-caption text-fg-subtle">
+            <KeyRound size={12} strokeWidth={1.75} aria-hidden="true" />
+            {privateDraft.paymentLine}
+            {privateDraft.paymentKey && <span className="font-mono">{privateDraft.paymentKey}</span>}
+          </div>
+        )}
       </div>
     </footer>
   );

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use tauri::State;
 
-use super::billing::{default_billing, PrivateSessionUsage};
+use super::billing::{default_billing, KeyCheck, PrivateSessionUsage};
 use super::client::{
     Balance, CreatedTopup, CreditsApi, HttpCredits, ModelPrice, PromoResult, Stock, TopupState,
 };
@@ -16,11 +16,20 @@ use super::device::{keychain_service, KeychainStore};
 use super::launch::NEAR_AI_BASE_URL;
 use super::local_state::PendingTopup;
 use super::proxy::PrivateProxy;
-use super::service::{PrivateMode, PrivateStatus};
+use super::service::{OwnKeyStatus, PrivateMode, PrivateStatus};
 use super::verify::{PrivateVerifier, RecordVerification};
 use super::{PrivateError, CREDITS_BASE_URL};
 
 const STATE_DIR: &str = "private";
+const MAX_OWN_KEY_CHARS: usize = 512;
+
+fn own_key_input(key: &str) -> Result<&str, PrivateError> {
+    let key = key.trim();
+    if key.is_empty() || key.chars().count() > MAX_OWN_KEY_CHARS {
+        return Err(PrivateError::BadRequest);
+    }
+    Ok(key)
+}
 
 /// The `PrivateMode` the app manages: the Keychain, the Credits Worker at
 /// `CREDITS_BASE_URL`, `<data_dir>/private`, the system browser and the loopback
@@ -98,6 +107,30 @@ pub fn private_status(
     fresh: bool,
 ) -> Result<PrivateStatus, String> {
     Ok(private.status(fresh))
+}
+
+#[tauri::command(async)]
+pub fn private_check_own_key(
+    private: State<'_, PrivateMode>,
+    key: String,
+) -> Result<KeyCheck, String> {
+    let key = own_key_input(&key)?;
+    Ok(private.check_own_key(key)?)
+}
+
+#[tauri::command(async)]
+pub fn private_set_own_key(
+    private: State<'_, PrivateMode>,
+    key: String,
+) -> Result<OwnKeyStatus, String> {
+    let key = own_key_input(&key)?;
+    let check = private.check_own_key(key)?;
+    Ok(private.save_own_key(key, check)?)
+}
+
+#[tauri::command(async)]
+pub fn private_remove_own_key(private: State<'_, PrivateMode>) -> Result<(), String> {
+    Ok(private.remove_own_key()?)
 }
 
 #[tauri::command(async)]

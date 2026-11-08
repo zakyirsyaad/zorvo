@@ -15,6 +15,8 @@ export interface FakePrivate {
   topupStatuses: string[];
   /** The credits a `credited` answer reports (0 makes the hook fall back to the pending credits). */
   topupCredits: number;
+  /** The answer `private_check_own_key` gives. */
+  checkOwnKey: "accepted" | "no_credits";
   /** Command name to the plain error code it fails with. */
   errors: Record<string, string>;
   /** Command name to a promise its answer waits for, so a test can keep a call pending. */
@@ -42,9 +44,11 @@ export function emptyFakePrivate(): FakePrivate {
       recoverySaved: false,
       recoveryPrompted: false,
       pendingTopup: null,
+      ownKey: { saved: false, last4: null, addedAt: null, noCredits: false },
     },
     stock: { availableCredits: 100_000, yourRoomCredits: 5_000, packages: [], updatedAt: "2026-11-07T10:00:00Z" },
     models: [],
+    checkOwnKey: "accepted",
     topupStatuses: ["created"],
     topupCredits: 0,
     errors: {},
@@ -85,6 +89,27 @@ function answer(state: FakePrivate, cmd: string, args: Record<string, unknown> |
       return structuredClone(state.stock);
     case "private_models":
       return structuredClone(state.models);
+    case "private_check_own_key":
+      return state.checkOwnKey;
+    case "private_set_own_key": {
+      const key = String(args?.key ?? "");
+      state.status = {
+        ...state.status,
+        ownKey: {
+          saved: true,
+          last4: key.slice(-4),
+          addedAt: new Date().toISOString(),
+          noCredits: state.checkOwnKey === "no_credits",
+        },
+      };
+      return structuredClone(state.status.ownKey);
+    }
+    case "private_remove_own_key":
+      state.status = {
+        ...state.status,
+        ownKey: { saved: false, last4: null, addedAt: null, noCredits: false },
+      };
+      return undefined;
     case "private_create_topup": {
       const usd = Number(args?.packageUsd);
       const pending: PendingTopup = {

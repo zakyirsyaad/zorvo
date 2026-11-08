@@ -9,6 +9,8 @@ export interface PrivateLowBalanceDeps {
   notified: boolean;
   /** Stores the flag so a restart below 50 does not notify again; false re-arms the warning. */
   onNotified: (notified: boolean) => void;
+  /** The user's own key has no Zorvo balance to warn about. */
+  isOwnKey?: boolean;
 }
 
 /**
@@ -16,11 +18,16 @@ export interface PrivateLowBalanceDeps {
  * A crossing seen while a Zorvo window has focus is still marked handled: the note is on screen,
  * and `notifyIfAway` itself shows nothing in that case.
  */
-export function usePrivateLowBalanceNotice({ credits, notified, onNotified }: PrivateLowBalanceDeps) {
+export function usePrivateLowBalanceNotice({
+  credits,
+  notified,
+  onNotified,
+  isOwnKey = false,
+}: PrivateLowBalanceDeps) {
   const handled = useRef(false);
 
   useEffect(() => {
-    if (credits === null || !Number.isFinite(credits)) return;
+    if (isOwnKey || credits === null || !Number.isFinite(credits)) return;
     if (credits >= LOW_BALANCE_CREDITS) {
       handled.current = false;
       if (notified) onNotified(false);
@@ -33,5 +40,5 @@ export function usePrivateLowBalanceNotice({ credits, notified, onNotified }: Pr
       title: 'Zorvo Private credits are low',
       body: `${formatCredits(credits)} left. Top up to keep private sessions running.`,
     }).catch(() => {});
-  }, [credits, notified, onNotified]);
+  }, [credits, isOwnKey, notified, onNotified]);
 }

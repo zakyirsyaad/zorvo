@@ -88,6 +88,9 @@ function get(path) {
 }
 
 function summary(payload) {
+  if (payload.ownKey === true && typeof payload.message === "string") {
+    return payload.message;
+  }
   if (typeof payload.credits === "number") {
     const credits = `${payload.credits.toLocaleString("en-US")} ${
       payload.credits === 1 ? "credit" : "credits"

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PRIVATE_DRAFT_TEXT, privateDraftState, type PrivateDraftState } from '../lib/private-draft';
-import { formatCredits, type ModelPrice } from '../lib/private-credits';
+import { formatCredits, type ModelPrice, type PaymentSource } from '../lib/private-credits';
 import type { PrivateCredits } from './usePrivateCredits';
 
 export interface PrivateDraftDeps {
@@ -10,6 +10,7 @@ export interface PrivateDraftDeps {
   /** The chosen agent's display name and provider, for the disabled chip's reason. */
   agentName?: string;
   agentProvider?: string;
+  paymentSource?: PaymentSource;
 }
 
 export interface PrivateChipControl {
@@ -39,6 +40,9 @@ export interface PrivateDraft {
   note?: string;
   /** "N credits left", while on and ready to start. */
   creditsLine?: string;
+  /** "Paying with your NEAR AI key sk-…3f9a", while on and that key is the source. */
+  paymentLine?: string;
+  paymentKey?: string;
   /** Undefined while the chip is hidden. */
   chip?: PrivateChipControl;
   /** The private models, in place of the agent's model chip, while on. */
@@ -54,7 +58,13 @@ function creditsOf(status: PrivateDraftDeps['credits']['status']): number {
  * session a Zorvo Private one on the model picked in its menu. Turning it on is the one place outside
  * Settings that loads the private catalog; nothing is asked while it stays off.
  */
-export function usePrivateDraft({ credits, agentIds, agentName, agentProvider }: PrivateDraftDeps): PrivateDraft {
+export function usePrivateDraft({
+  credits,
+  agentIds,
+  agentName,
+  agentProvider,
+  paymentSource = 'credits',
+}: PrivateDraftDeps): PrivateDraft {
   const [isTurnedOn, setIsTurnedOn] = useState(false);
   const [pickedModelId, setPickedModelId] = useState<string | null>(null);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
@@ -82,6 +92,7 @@ export function usePrivateDraft({ credits, agentIds, agentName, agentProvider }:
     statusFailed,
     models,
     isLoadingModels,
+    paymentSource,
   });
   const isOn = state.chip === 'on';
 
@@ -119,7 +130,12 @@ export function usePrivateDraft({ credits, agentIds, agentName, agentProvider }:
     privateMode: isOn && modelId !== undefined ? { modelId } : undefined,
     blocksSend: isOn && !state.canStart,
     note: isOn ? state.note : undefined,
-    creditsLine: isOn && state.canStart ? `${formatCredits(creditsOf(status))} left` : undefined,
+    creditsLine:
+      isOn && state.canStart && paymentSource !== 'ownKey' ? `${formatCredits(creditsOf(status))} left` : undefined,
+    paymentLine:
+      isOn && paymentSource === 'ownKey' && status?.ownKey?.last4 ? 'Paying with your NEAR AI key' : undefined,
+    paymentKey:
+      isOn && paymentSource === 'ownKey' && status?.ownKey?.last4 ? `sk-…${status.ownKey.last4}` : undefined,
     chip:
       state.chip === 'hidden'
         ? undefined

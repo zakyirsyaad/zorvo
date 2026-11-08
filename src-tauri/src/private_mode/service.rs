@@ -16,9 +16,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use url::Url;
 
-use super::billing::{BillingApi, PrivateSessionUsage, UsageTracker};
+use super::billing::{BillingApi, KeyCheck, PrivateSessionUsage, UsageTracker};
 use super::client::{Balance, CreditsApi, ModelPrice, PromoResult, Stock, TopupState};
-use super::device::{new_recovery_code, secret_hash, SecretStore, DEVICE_SECRET, NEARAI_KEY};
+use super::device::{
+    new_recovery_code, secret_hash, SecretStore, DEVICE_SECRET, NEARAI_KEY, OWN_KEY,
+};
 use super::local_state::{CachedModels, LastBalance, LocalState, PendingTopup};
 use super::proxy::{IssuedToken, McpState, PrivateProxy, SharedModels};
 use super::verify::{PrivateVerifier, RecordVerification};
@@ -67,6 +69,17 @@ pub struct PrivateStatus {
     pub recovery_saved: bool,
     pub recovery_prompted: bool,
     pub pending_topup: Option<PendingTopup>,
+    pub own_key: OwnKeyStatus,
+}
+
+/// A key the user pasted. The key itself never leaves the Keychain; the UI sees only its last 4.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnKeyStatus {
+    pub saved: bool,
+    pub last4: Option<String>,
+    pub added_at: Option<String>,
+    pub no_credits: bool,
 }
 
 /// The part of a status that comes from the Keychain and the Worker.
@@ -227,6 +240,7 @@ impl PrivateMode {
     pub fn status(&self, fresh: bool) -> PrivateStatus {
         let report = self.device_report(fresh);
         let state = self.load_state();
+        let own_key = self.own_key_status(&state);
         PrivateStatus {
             device: report.device,
             key_ready: report.key_ready,
@@ -237,6 +251,21 @@ impl PrivateMode {
             recovery_saved: state.recovery_saved,
             recovery_prompted: state.recovery_prompted,
             pending_topup: state.pending_topup,
+            own_key,
+        }
+    }
+
+    fn own_key_status(&self, state: &LocalState) -> OwnKeyStatus {
+        let key = self.store.get(OWN_KEY).ok().flatten();
+        let last4 = key.as_deref().map(|key| {
+            let count = key.chars().count();
+            key.chars().skip(count.saturating_sub(4)).collect()
+        });
+        OwnKeyStatus {
+            saved: key.is_some(),
+            last4,
+            added_at: state.own_key_added_at.clone(),
+            no_credits: state.own_key_no_credits,
         }
     }
 
@@ -398,8 +427,49 @@ impl PrivateMode {
     }
 
     /// The NEAR AI key a private launch's proxy adds upstream; it never enters the agent's process.
-    pub fn launch_key(&self) -> Result<String, PrivateError> {
-        self.store.get(NEARAI_KEY)?.ok_or(PrivateError::NoKey)
+    /// `own_key` chooses the key the user pasted over the one the Worker handed over.
+    pub fn launch_key(&self, own_key: bool) -> Result<String, PrivateError> {
+        let account = if own_key { OWN_KEY } else { NEARAI_KEY };
+        self.store.get(account)?.ok_or(PrivateError::NoKey)
+    }
+
+    /// Checks a pasted key with NEAR AI. A 402 means the organization has no credits; it is still a
+    /// usable key and may be saved. The key is never logged.
+    pub fn check_own_key(&self, key: &str) -> Result<KeyCheck, PrivateError> {
+        self.billing.check_key(key)
+    }
+
+    /// Saves the own key after NEAR AI accepted it (including a 402), and records the date and
+    /// whether the organization had no credits. Only a key that reads back the same is saved.
+    pub fn save_own_key(&self, key: &str, check: KeyCheck) -> Result<OwnKeyStatus, PrivateError> {
+        self.store
+            .set(OWN_KEY, key)
+            .map_err(|_| PrivateError::Keychain)?;
+        match self.store.get(OWN_KEY) {
+            Ok(Some(saved)) if saved == key => {}
+            _ => {
+                let _ = self.store.delete(OWN_KEY);
+                return Err(PrivateError::Keychain);
+            }
+        }
+        self.change_state(|old| LocalState {
+            own_key_added_at: Some(now_iso()),
+            own_key_no_credits: check == KeyCheck::NoCredits,
+            ..old
+        });
+        let state = self.load_state();
+        Ok(self.own_key_status(&state))
+    }
+
+    /// Removes the own key and its local status; the Zorvo credits key is untouched.
+    pub fn remove_own_key(&self) -> Result<(), PrivateError> {
+        self.store.delete(OWN_KEY)?;
+        self.change_state(|old| LocalState {
+            own_key_added_at: None,
+            own_key_no_credits: false,
+            ..old
+        });
+        Ok(())
     }
 
     /// A fresh proxy token for a private launch of `session_id`. The key is read here and handed
@@ -408,9 +478,25 @@ impl PrivateMode {
         &self,
         session_id: &str,
         model_id: &str,
+        own_key: bool,
     ) -> Result<IssuedToken, PrivateError> {
-        let key = self.launch_key()?;
-        self.proxy.issue(session_id, model_id, &key)
+        let key = self.launch_key(own_key)?;
+        self.proxy.issue(session_id, model_id, &key, own_key)
+    }
+
+    /// The catalog a private launch may use. An own-key session never asks the Credits Worker for
+    /// it; the UI has loaded the same catalog for Settings or the draft.
+    pub fn models_for_launch(&self, own_key: bool) -> Result<Vec<ModelPrice>, PrivateError> {
+        if own_key {
+            // The catalog may be older than its Worker TTL; an own-key launch must not ask the
+            // Worker, and the UI refreshed this same list when the Private chip turned on.
+            Ok(lock(&self.models)
+                .as_ref()
+                .map(|(_, list)| list.clone())
+                .unwrap_or_default())
+        } else {
+            self.models()
+        }
     }
 
     /// Drops one holder of a proxy token; the token goes when its agent process has no session left.
@@ -442,7 +528,7 @@ impl PrivateMode {
         if records.is_empty() {
             return Ok(Vec::new());
         }
-        let key = self.launch_key()?;
+        let key = self.proxy.key(session_id).ok_or(PrivateError::NoKey)?;
         Ok(self.verifier.verify(records, &key))
     }
 

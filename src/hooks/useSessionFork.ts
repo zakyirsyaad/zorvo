@@ -64,7 +64,14 @@ export function useSessionFork(deps: SessionForkDeps): (messageId: string, optio
       // A fork of a private session stays private on its model: a native fork shares the source's private
       // process, and a handoff fork starts a fresh one, which must be private too. Another agent the user
       // picked to continue with, once told the conversation leaves the TEE, runs an ordinary session.
-      ...(source.privateMode && !isOtherAgent ? { privateMode: { modelId: source.privateMode.modelId } } : {}),
+      ...(source.privateMode && !isOtherAgent
+        ? {
+            privateMode: {
+              modelId: source.privateMode.modelId,
+              ...(source.privateMode.ownKey ? { ownKey: true } : {}),
+            },
+          }
+        : {}),
     };
     // A native fork needs the source agent alive; after it exited, fall back to a handoff.
     if (!isOtherAgent && source.status === 'running' && isLatest && acp.canFork(source.id)) {

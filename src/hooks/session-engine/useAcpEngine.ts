@@ -375,6 +375,8 @@ export function useAcpEngine({
    * prompted for a reason other than a sign-in (reported); a refusal for a
    * sign-in hands the message back itself.
    */
+  const privateOwnKeyOf = (session: Session) => session.privateMode?.ownKey === true;
+
   const launch = async (session: Session, open: () => Promise<AcpSessionInfo>, options: LaunchOptions): Promise<boolean> => {
     // A session ended earlier and now resumed must hear from its agent again.
     stoppedRef.current.delete(session.id);
@@ -473,7 +475,7 @@ export function useAcpEngine({
   };
 
   const start = (session: Session, first?: FirstMessage, choices: AcpChoices = NO_CHOICES) =>
-    launch(session, () => acp.start(session.id, session.cwd, session.profileId, privateModelIdOf(session)), {
+    launch(session, () => acp.start(session.id, session.cwd, session.profileId, privateModelIdOf(session), privateOwnKeyOf(session)), {
       first,
       choices,
       applySafeMode: true,
@@ -482,7 +484,7 @@ export function useAcpEngine({
 
   /** Continues an ended session in a fresh agent process through the agent's own session/resume or session/load. */
   const resume = (session: Session, acpSessionId: string, first?: FirstMessage, choices: AcpChoices = NO_CHOICES) =>
-    launch(session, () => acp.reopen(session.id, session.cwd, session.profileId, acpSessionId, privateModelIdOf(session)), {
+    launch(session, () => acp.reopen(session.id, session.cwd, session.profileId, acpSessionId, privateModelIdOf(session), privateOwnKeyOf(session)), {
       first,
       choices,
       applySafeMode: true,
@@ -592,13 +594,13 @@ export function useAcpEngine({
     const openNew = async () => {
       const context = hidden ? undefined : await handoffFor(session);
       if (context) unsentContextRef.current.set(sessionId, context);
-      return acp.start(session.id, session.cwd, session.profileId, privateModelIdOf(session)).catch((error: unknown) => {
+      return acp.start(session.id, session.cwd, session.profileId, privateModelIdOf(session), privateOwnKeyOf(session)).catch((error: unknown) => {
         if (context) unsentContextRef.current.delete(sessionId);
         throw error;
       });
     };
     const reopenSession = () =>
-      acp.reopen(session.id, session.cwd, session.profileId, acpSessionId, privateModelIdOf(session));
+      acp.reopen(session.id, session.cwd, session.profileId, acpSessionId, privateModelIdOf(session), privateOwnKeyOf(session));
     // A session refused at a prompt may have had no turn the agent kept: when the agent does not know it,
     // it starts anew. Any other failure keeps the session, whose conversation the agent may still have.
     const reopen = wasTerminated

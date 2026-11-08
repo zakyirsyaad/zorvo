@@ -183,6 +183,8 @@ export function SettingsPage({
             onSecretGuardChange={(secretGuard) => updateSettings({ secretGuard })}
             sessions={state.sessions}
             agentNameOf={(profileId) => agents.find((agent) => agent.id === profileId)?.name ?? profileId}
+            paymentSource={settings.paymentSource ?? "credits"}
+            onPaymentSourceChange={(paymentSource) => updateSettings({ paymentSource })}
           />
         ) : null;
       case "github":

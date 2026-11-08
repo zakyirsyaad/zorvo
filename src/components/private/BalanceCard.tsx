@@ -11,6 +11,7 @@ import {
   updatedAgo,
   type PrivateStatus,
 } from "../../lib/private-credits";
+import type { PaymentSource } from "../../lib/private-credits";
 import { privateUsageLabel, type PrivateUsageRow } from "../../lib/private-usage";
 import { Button } from "../ui/Button";
 import { StatusLine } from "../ui/StatusLine";
@@ -26,6 +27,7 @@ export interface BalanceCardProps {
   /** The persisted per-session totals, grouped by model. */
   usageRows?: readonly PrivateUsageRow[];
   agentNameOf?: (profileId: string) => string;
+  paymentSource?: PaymentSource;
 }
 
 const SOLO_AMOUNT = "text-[28px] leading-[34px] font-semibold tracking-[-0.02em] text-fg";
@@ -56,6 +58,7 @@ export function BalanceCard({
   onShowRecoveryCode,
   usageRows = [],
   agentNameOf = (profileId) => profileId,
+  paymentSource = "credits",
 }: BalanceCardProps) {
   const now = useNow();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -71,6 +74,17 @@ export function BalanceCard({
   }, []);
 
   if (status === null) return <BalanceSkeleton />;
+
+  if (paymentSource === "ownKey") {
+    return (
+      <SettingsGroup heading="Balance">
+        <SettingsRow
+          label="Paying with your NEAR AI key"
+          description="Zorvo credits aren't used while this Mac pays with your own key. Your staking credits are in your NEAR AI organization."
+        />
+      </SettingsGroup>
+    );
+  }
 
   const reload = async () => {
     setIsRefreshing(true);

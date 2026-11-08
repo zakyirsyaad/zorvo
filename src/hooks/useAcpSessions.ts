@@ -90,7 +90,8 @@ const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null 
 const isString = (v: unknown): v is string => typeof v === 'string';
 
 /** The private model as a command argument, or nothing: an ordinary launch carries no `privateModelId` key. */
-const privateArgs = (privateModelId: string | undefined) => (privateModelId === undefined ? {} : { privateModelId });
+const privateArgs = (privateModelId: string | undefined, privateOwnKey = false) =>
+  privateModelId === undefined ? {} : { privateModelId, ...(privateOwnKey ? { privateOwnKey: true } : {}) };
 
 /** Validates modes an agent reported; null when malformed. */
 export function toModes(raw: unknown): AcpModes | null {
@@ -299,20 +300,44 @@ export function useAcpSessions(handlers: AcpHandlers) {
 
   /** A `privateModelId` makes it a Zorvo Private session; an ordinary start sends no such key at all. */
   const start = useCallback(
-    async (sessionId: string, cwd: string, profileId: string, privateModelId?: string) =>
+    async (
+      sessionId: string,
+      cwd: string,
+      profileId: string,
+      privateModelId?: string,
+      privateOwnKey = false,
+    ) =>
       remember(
         sessionId,
-        await invoke('acp_start_session', { sessionId, cwd, profileId, ...privateArgs(privateModelId) }),
+        await invoke('acp_start_session', {
+          sessionId,
+          cwd,
+          profileId,
+          ...privateArgs(privateModelId, privateOwnKey),
+        }),
       ),
     [remember],
   );
 
   /** A private session is reopened on its model again; the backend refuses a plain reopen of one. */
   const reopen = useCallback(
-    async (sessionId: string, cwd: string, profileId: string, acpSessionId: string, privateModelId?: string) =>
+    async (
+      sessionId: string,
+      cwd: string,
+      profileId: string,
+      acpSessionId: string,
+      privateModelId?: string,
+      privateOwnKey = false,
+    ) =>
       remember(
         sessionId,
-        await invoke('acp_reopen_session', { sessionId, cwd, profileId, acpSessionId, ...privateArgs(privateModelId) }),
+        await invoke('acp_reopen_session', {
+          sessionId,
+          cwd,
+          profileId,
+          acpSessionId,
+          ...privateArgs(privateModelId, privateOwnKey),
+        }),
       ),
     [remember],
   );

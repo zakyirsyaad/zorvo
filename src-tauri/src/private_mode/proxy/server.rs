@@ -38,6 +38,8 @@ pub(super) struct TokenEntry {
     pub(super) app_session_id: String,
     pub(super) model: String,
     pub(super) key: String,
+    /// The key is the user's own; its balance is not visible to Zorvo.
+    pub(super) own_key: bool,
     holders: HashSet<String>,
 }
 
@@ -47,6 +49,9 @@ struct TokenTable {
     by_session: HashMap<String, String>,
     /// The last token each session held, so a turn that ends after Stop can still be verified.
     last_by_session: HashMap<String, String>,
+    /// The key behind that last token. Kept until the session is deleted, so a turn that ended
+    /// after Stop can still be verified and billed; it never leaves the backend.
+    last_key_by_session: HashMap<String, String>,
 }
 
 impl TokenTable {
@@ -55,6 +60,7 @@ impl TokenTable {
         app_session_id: &str,
         model: &str,
         key: &str,
+        own_key: bool,
     ) -> Result<String, PrivateError> {
         // Made before the old token is detached, so a random-source failure leaves the session as
         // it was.
@@ -64,6 +70,8 @@ impl TokenTable {
             .insert(app_session_id.to_string(), token.clone());
         self.last_by_session
             .insert(app_session_id.to_string(), token.clone());
+        self.last_key_by_session
+            .insert(app_session_id.to_string(), key.to_string());
         self.by_token.insert(
             token.clone(),
             TokenEntry {
@@ -71,6 +79,7 @@ impl TokenTable {
                 app_session_id: app_session_id.to_string(),
                 model: model.to_string(),
                 key: key.to_string(),
+                own_key,
                 holders: HashSet::from([app_session_id.to_string()]),
             },
         );
@@ -93,7 +102,9 @@ impl TokenTable {
         let Some(entry) = self.by_token.get_mut(&token) else {
             return false;
         };
+        let key = entry.key.clone();
         entry.holders.insert(fork.to_string());
+        self.last_key_by_session.insert(fork.to_string(), key);
         self.by_session.insert(fork.to_string(), token.clone());
         self.last_by_session.insert(fork.to_string(), token);
         true
@@ -120,6 +131,9 @@ impl TokenTable {
     }
 
     fn key_of(&self, app_session_id: &str) -> Option<String> {
+        if let Some(key) = self.last_key_by_session.get(app_session_id) {
+            return Some(key.clone());
+        }
         let token = self.token_of(app_session_id)?;
         self.by_token.get(&token).map(|entry| entry.key.clone())
     }
@@ -150,6 +164,7 @@ impl TokenTable {
     /// Forgets a deleted session: its last-token lookup goes, and the token it names is returned
     /// when no other session holds it, so its records can go too.
     fn forget(&mut self, app_session_id: &str) -> Option<String> {
+        self.last_key_by_session.remove(app_session_id);
         let token = self.last_by_session.remove(app_session_id);
         self.release(app_session_id);
         match token {
@@ -298,8 +313,9 @@ impl ProxyServer {
         app_session_id: &str,
         model: &str,
         key: &str,
+        own_key: bool,
     ) -> Result<String, PrivateError> {
-        lock(&self.state.tokens).issue(app_session_id, model, key)
+        lock(&self.state.tokens).issue(app_session_id, model, key, own_key)
     }
 
     pub(super) fn release(&self, app_session_id: &str) {
@@ -359,6 +375,12 @@ async fn mcp_credits(request: Request<Incoming>, state: Arc<ProxyState>) -> Resp
     let Some(entry) = forward::authorize(&request, &state) else {
         return forward::json_error(StatusCode::UNAUTHORIZED, "unauthorized");
     };
+    if entry.own_key {
+        return forward::json_ok(serde_json::json!({
+            "ownKey": true,
+            "message": "Paying with your own NEAR AI key. Its balance isn't visible to Zorvo, so plan as usual."
+        }));
+    }
     let Some(mcp) = state.mcp() else {
         return forward::json_error(StatusCode::SERVICE_UNAVAILABLE, "credits unavailable");
     };
@@ -403,8 +425,8 @@ mod tests {
     #[test]
     fn issuing_a_new_token_for_a_session_retires_the_old_one() {
         let mut table = TokenTable::default();
-        let first = table.issue("s1", "model", "key").expect("first");
-        let second = table.issue("s1", "model", "key").expect("second");
+        let first = table.issue("s1", "model", "key", false).expect("first");
+        let second = table.issue("s1", "model", "key", false).expect("second");
 
         assert!(table.find(&first).is_none());
         assert_eq!(
@@ -418,7 +440,7 @@ mod tests {
     #[test]
     fn a_fork_holds_the_sources_token_until_both_stop() {
         let mut table = TokenTable::default();
-        let token = table.issue("source", "model", "key").expect("token");
+        let token = table.issue("source", "model", "key", false).expect("token");
         assert!(table.share("source", "fork"));
 
         table.release("source");
@@ -432,7 +454,7 @@ mod tests {
     #[test]
     fn stopping_the_fork_first_leaves_the_source_working() {
         let mut table = TokenTable::default();
-        let token = table.issue("source", "model", "key").expect("token");
+        let token = table.issue("source", "model", "key", false).expect("token");
         assert!(table.share("source", "fork"));
 
         table.release("fork");

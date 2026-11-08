@@ -1,6 +1,7 @@
 import { CREDITS_MAY_BE_UPDATING, creditsOutText, type CreditsOutReason } from '../lib/private-session';
 import { NO_CHOICES, withPreferred, type AgentOptions } from '../lib/acp-draft';
 import { isAgentRunnable } from '../lib/agent-readiness';
+import type { PaymentSource } from '../lib/private-credits';
 import type { AgentProfile, ChatMessage, Session } from '../types';
 import { usePrivateCredits } from './usePrivateCredits';
 import { usePrivateCreditedNotice } from './usePrivateCreditedNotice';
@@ -20,6 +21,7 @@ export interface PrivateWiringDeps {
   draftAgentIds: readonly string[];
   draftAgentName?: string;
   draftAgentProvider?: string;
+  paymentSource?: PaymentSource;
   activeSession: Session | undefined;
 }
 
@@ -34,6 +36,7 @@ export function usePrivateWiring({
   draftAgentIds,
   draftAgentName,
   draftAgentProvider,
+  paymentSource,
   activeSession,
 }: PrivateWiringDeps) {
   const credits = usePrivateCredits();
@@ -45,6 +48,7 @@ export function usePrivateWiring({
     agentIds: draftAgentIds,
     agentName: draftAgentName,
     agentProvider: draftAgentProvider,
+    paymentSource,
   });
   return {
     credits,

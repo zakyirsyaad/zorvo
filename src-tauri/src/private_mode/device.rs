@@ -18,6 +18,8 @@ pub const DEVICE_SECRET: &str = "device-secret";
 pub const DEVICE_SECRET_NEXT: &str = "device-secret-next";
 /// Keychain account of the NEAR AI key handed over by the Credits Worker.
 pub const NEARAI_KEY: &str = "nearai-key";
+/// Keychain account of a key the user pasted, used instead of the Worker's key.
+pub const OWN_KEY: &str = "nearai-own-key";
 
 const RELEASE_SERVICE: &str = "xyz.zorvo.desktop.private";
 const SERVICE_SUFFIX_HEX_CHARS: usize = 8;

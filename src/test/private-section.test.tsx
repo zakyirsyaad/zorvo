@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
@@ -11,7 +12,7 @@ import { RecoveryCard } from "../components/private/RecoveryCard";
 import { TopupProgress } from "../components/private/TopupProgress";
 import { usePrivateCredits, type TopupFlow } from "../hooks/usePrivateCredits";
 import { usePrivateRecoveryDialog } from "../hooks/usePrivateRecoveryDialog";
-import { turnsFor, type PendingTopup } from "../lib/private-credits";
+import { turnsFor, type PaymentSource, type PendingTopup } from "../lib/private-credits";
 import type { Session } from "../types";
 import type { FakePrivate } from "./fixtures/private-backend";
 
@@ -56,12 +57,17 @@ function Harness({
   onSecretGuardChange = () => {},
   sessions = [],
   agentNameOf = (profileId: string) => profileId,
+  paymentSource = "credits",
+  onPaymentSourceChange = () => {},
 }: {
   secretGuard?: boolean;
   onSecretGuardChange?: (isOn: boolean) => void;
   sessions?: readonly Session[];
   agentNameOf?: (profileId: string) => string;
+  paymentSource?: PaymentSource;
+  onPaymentSourceChange?: (source: PaymentSource) => void;
 }) {
+  const [source, setSource] = useState<PaymentSource>(paymentSource);
   const credits = usePrivateCredits();
   const dialog = usePrivateRecoveryDialog();
   return (
@@ -74,6 +80,11 @@ function Harness({
         onSecretGuardChange={onSecretGuardChange}
         sessions={sessions}
         agentNameOf={agentNameOf}
+        paymentSource={source}
+        onPaymentSourceChange={(next) => {
+          setSource(next);
+          onPaymentSourceChange(next);
+        }}
       />
       <RecoveryCodeLayer
         credits={credits}
@@ -104,6 +115,8 @@ async function mount(options: {
   onSecretGuardChange?: (isOn: boolean) => void;
   sessions?: readonly Session[];
   agentNameOf?: (profileId: string) => string;
+  paymentSource?: PaymentSource;
+  onPaymentSourceChange?: (source: PaymentSource) => void;
 } = {}) {
   await act(async () => {
     render(<Harness {...options} />);
@@ -990,6 +1003,81 @@ describe("Private mode: used by model", () => {
         "Sessions running at the same time draw from this balance together. Give a session its own cap in its draft.",
       ),
     ).toBeInTheDocument();
+  });
+});
+
+describe("Private mode: your own NEAR AI key", () => {
+  const waitForCheck = () => act(async () => new Promise((resolve) => setTimeout(resolve, 450)));
+
+  it("checks a pasted key, saves it, and switches private sessions to it", async () => {
+    stockWith();
+    readyWith(1_240);
+    const onPaymentSourceChange = vi.fn();
+    await mount({ onPaymentSourceChange });
+
+    await click(button("Add key"));
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("NEAR AI key"), { target: { value: "own-key-3f9a" } });
+    });
+    await waitForCheck();
+    expect(screen.getByText("NEAR AI accepted this key")).toBeInTheDocument();
+
+    await click(button("Use this key"));
+    await waitFor(() => expect(onPaymentSourceChange).toHaveBeenCalledWith("ownKey"));
+    expect(screen.getByText(/sk-••••••••3f9a · added today/)).toBeInTheDocument();
+    expect(callsTo("private_set_own_key")[0].args).toEqual({ key: "own-key-3f9a" });
+    expect(screen.getByRole("radio", { name: "My NEAR AI key" })).toHaveAttribute("aria-checked", "true");
+
+    await click(button("Remove key"));
+    await waitFor(() => expect(onPaymentSourceChange).toHaveBeenLastCalledWith("credits"));
+    expect(screen.queryByText(/sk-••••••••3f9a/)).toBeNull();
+    expect(callsTo("private_remove_own_key")).toHaveLength(1);
+  });
+
+  it("replaces the balance with paying-with text when the own key is the source", async () => {
+    stockWith();
+    readyWith(1_240);
+    fake().status = {
+      ...fake().status,
+      ownKey: { saved: true, last4: "3f9a", addedAt: new Date().toISOString(), noCredits: false },
+    };
+    await mount({ paymentSource: "ownKey" });
+
+    expect(screen.getByText("Paying with your NEAR AI key")).toBeInTheDocument();
+    expect(screen.queryByText("1,240 credits")).toBeNull();
+  });
+
+  it("saves a key NEAR AI accepts with no credits, and warns", async () => {
+    stockWith();
+    readyWith(1_240);
+    fake().checkOwnKey = "no_credits";
+    await mount();
+
+    await click(button("Add key"));
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("NEAR AI key"), { target: { value: "own-key-3f9a" } });
+    });
+    await waitForCheck();
+    expect(
+      screen.getByText("NEAR AI accepted this key, but your organization has no credits yet."),
+    ).toBeInTheDocument();
+    await click(button("Use this key"));
+    expect(await screen.findByText("NEAR AI has no credits for this key yet.")).toBeInTheDocument();
+  });
+
+  it("refuses to save a key NEAR AI rejects", async () => {
+    stockWith();
+    readyWith(1_240);
+    fake().errors.private_check_own_key = "unauthorized";
+    await mount();
+
+    await click(button("Add key"));
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("NEAR AI key"), { target: { value: "sk-wrong" } });
+    });
+    await waitForCheck();
+    expect(screen.getByText("NEAR AI didn't accept this key.")).toBeInTheDocument();
+    expect(button("Use this key")).toBeDisabled();
   });
 });
 

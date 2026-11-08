@@ -85,6 +85,16 @@ export interface PromoResult {
   credits: number;
 }
 
+export type PaymentSource = 'credits' | 'ownKey';
+export type KeyCheck = 'accepted' | 'no_credits';
+
+export interface OwnKeyStatus {
+  saved: boolean;
+  last4: string | null;
+  addedAt: string | null;
+  noCredits: boolean;
+}
+
 export interface PrivateStatus {
   device: DeviceState;
   keyReady: boolean;
@@ -95,6 +105,8 @@ export interface PrivateStatus {
   recoverySaved: boolean;
   recoveryPrompted: boolean;
   pendingTopup: PendingTopup | null;
+  /** Absent in older fixtures; a saved key is shown only when this says so. */
+  ownKey?: OwnKeyStatus;
 }
 
 /** What the backend puts in front of a refusal that needs credits or a key. */

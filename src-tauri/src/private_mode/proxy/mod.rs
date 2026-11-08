@@ -94,9 +94,10 @@ impl PrivateProxy {
         app_session_id: &str,
         model: &str,
         key: &str,
+        own_key: bool,
     ) -> Result<IssuedToken, PrivateError> {
         let server = self.server()?;
-        let token = server.issue(app_session_id, model, key)?;
+        let token = server.issue(app_session_id, model, key, own_key)?;
         Ok(IssuedToken {
             token,
             base_url: server.base_url().to_string(),

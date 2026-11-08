@@ -370,6 +370,8 @@ describe("useAcpSessions", () => {
       await result.current.reopen("s-2", "/w", "qwen-code", "acp-2", "Qwen/Qwen3.8-27B");
       await result.current.start("s-3", "/w", "qwen-code");
       await result.current.reopen("s-4", "/w", "qwen-code", "acp-4");
+      await result.current.start("s-5", "/w", "qwen-code", "Qwen/Qwen3.8-27B", true);
+      await result.current.reopen("s-6", "/w", "qwen-code", "acp-6", "Qwen/Qwen3.8-27B", true);
     });
 
     const argsOf = (cmd: string) =>
@@ -389,6 +391,15 @@ describe("useAcpSessions", () => {
     });
     expect(Object.keys(argsOf("acp_start_session")[1])).not.toContain("privateModelId");
     expect(Object.keys(argsOf("acp_reopen_session")[1])).not.toContain("privateModelId");
+    expect(argsOf("acp_start_session")[2]).toMatchObject({
+      privateModelId: "Qwen/Qwen3.8-27B",
+      privateOwnKey: true,
+    });
+    expect(argsOf("acp_reopen_session")[2]).toMatchObject({
+      privateModelId: "Qwen/Qwen3.8-27B",
+      privateOwnKey: true,
+    });
+    expect(Object.keys(argsOf("acp_start_session")[1])).not.toContain("privateOwnKey");
   });
 
   it("reopens, imports and lists through the backend commands", async () => {

@@ -221,6 +221,7 @@ fn session_launch(
     private: &PrivateMode,
     profile_id: &str,
     private_model_id: Option<&str>,
+    own_key: bool,
 ) -> Result<AcpLaunch, String> {
     let launch = base()?;
     let Some(model_id) = private_model_id else {
@@ -228,12 +229,12 @@ fn session_launch(
     };
     // Before anything is read or asked: another agent never sees a token.
     ensure_qwen(profile_id)?;
-    let models = private.models()?;
+    let models = private.models_for_launch(own_key)?;
     if !offered_model(model_id, &models) {
         return Err(PrivateError::UnknownModel.into());
     }
     let issued = private
-        .issue_proxy_token(session_id, model_id)
+        .issue_proxy_token(session_id, model_id, own_key)
         .map_err(|error| match error {
             PrivateError::NoKey | PrivateError::NoDevice => credits_empty_error(),
             other => other.into(),
@@ -257,6 +258,7 @@ fn launch_for_session(
     cwd: &str,
     profile_id: &str,
     private_model_id: Option<&str>,
+    own_key: bool,
 ) -> Result<AcpLaunch, String> {
     session_launch(
         session_id,
@@ -264,6 +266,7 @@ fn launch_for_session(
         private,
         profile_id,
         private_model_id,
+        own_key,
     )
 }
 
@@ -287,6 +290,8 @@ fn setup_launches_in_workspace(
 /// Starts app session `session_id`. A `private_model_id` makes it a Zorvo
 /// Private session on that model (Qwen Code only); the key never leaves the
 /// backend.
+// A command's arguments are the names the webview sends, so they stay separate.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command(async)]
 pub fn acp_start_session(
     manager: State<'_, AcpManager>,
@@ -296,6 +301,7 @@ pub fn acp_start_session(
     cwd: String,
     profile_id: String,
     private_model_id: Option<String>,
+    private_own_key: Option<bool>,
 ) -> Result<StartedSession, String> {
     let launch = launch_for_session(
         &store,
@@ -304,6 +310,7 @@ pub fn acp_start_session(
         &cwd,
         &profile_id,
         private_model_id.as_deref(),
+        private_own_key.unwrap_or(false),
     )?;
     note_if_private(
         &private,
@@ -375,6 +382,7 @@ pub fn acp_reopen_session(
     profile_id: String,
     acp_session_id: String,
     private_model_id: Option<String>,
+    private_own_key: Option<bool>,
 ) -> Result<StartedSession, String> {
     open_session(
         &private,
@@ -388,6 +396,7 @@ pub fn acp_reopen_session(
                 &cwd,
                 &profile_id,
                 private_model_id.as_deref(),
+                private_own_key.unwrap_or(false),
             )
         },
         |launch| {

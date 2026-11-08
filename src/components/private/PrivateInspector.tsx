@@ -5,9 +5,10 @@ import {
   formatCredits,
   LOW_BALANCE_CREDITS,
   modelLabel,
+  type PaymentSource,
   type PrivateStatus,
 } from "../../lib/private-credits";
-import { formatUsageCredits, usageLead } from "../../lib/private-usage";
+import { formatUsageCredits, usageLead, usageUsd } from "../../lib/private-usage";
 import type { ChatMessage, Session } from "../../types";
 import { Button } from "../ui/Button";
 
@@ -23,6 +24,7 @@ export interface PrivateInspectorProps {
   credits: Pick<PrivateCredits, "status" | "models">;
   /** The session's replies, to count its turns and verified answers. */
   messages?: ChatMessage[];
+  paymentSource?: PaymentSource;
   onTopUp: () => void;
   onOpenUrl: (url: string) => void;
 }
@@ -46,7 +48,14 @@ function Section({ heading, children }: { heading: string; children: ReactNode }
 }
 
 /** The inspector's Private tab: the model and turns a private session runs, its verification and balance. */
-export function PrivateInspector({ session, credits, messages = [], onTopUp, onOpenUrl }: PrivateInspectorProps) {
+export function PrivateInspector({
+  session,
+  credits,
+  messages = [],
+  paymentSource = "credits",
+  onTopUp,
+  onOpenUrl,
+}: PrivateInspectorProps) {
   const modelId = session.privateMode?.modelId ?? "";
   // The label only once the catalog says the model is one of the private ones; till then its id.
   const isKnownModel = credits.models?.some((model) => model.id === modelId) === true;
@@ -61,6 +70,36 @@ export function PrivateInspector({ session, credits, messages = [], onTopUp, onO
   const usage = session.privateUsage ?? { credits: 0, estimated: false };
   const average =
     turns > 0 && session.privateUsage !== undefined ? formatUsageCredits(usage.credits / turns) : "—";
+
+  if (paymentSource === "ownKey") {
+    return (
+      <aside aria-label="Private panel" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui text-fg-secondary">
+        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-5">
+          <dl className="flex flex-col text-ui-sm">
+            <div className="flex items-center gap-2 border-b border-border py-2">
+              <dt className="flex-1 text-fg-muted">Paying with</dt>
+              <dd className="text-fg-secondary">Your NEAR AI key</dd>
+            </div>
+            <div className="flex items-center gap-2 border-b border-border py-2">
+              <dt className="flex-1 text-fg-muted">This session</dt>
+              <dd className="text-fg-secondary">{usageUsd(usage.credits)}</dd>
+            </div>
+            <div className="flex items-center gap-2 py-2">
+              <dt className="flex-1 text-fg-muted">Verified answers</dt>
+              <dd className="flex items-center gap-1.5 text-fg-secondary">
+                <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-status-running" />
+                {`${verified} of ${answers.length}`}
+              </dd>
+            </div>
+          </dl>
+          <p className="text-ui-sm text-fg-subtle">
+            Shown in dollars, the way NEAR AI bills your organization. Zorvo credits aren't used, and no session limit
+            applies.
+          </p>
+        </div>
+      </aside>
+    );
+  }
 
   return (
     <aside aria-label="Private panel" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui text-fg-secondary">

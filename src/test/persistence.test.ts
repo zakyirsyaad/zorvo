@@ -260,6 +260,34 @@ describe("normalizePersistedState - private low balance flag", () => {
   });
 });
 
+describe("normalizePersistedState - private payment source", () => {
+  it("defaults to Zorvo credits and keeps only ownKey", () => {
+    expect(normalizePersistedState({}).settings.paymentSource).toBe("credits");
+    expect(normalizePersistedState({ settings: { paymentSource: "ownKey" } }).settings.paymentSource).toBe(
+      "ownKey",
+    );
+    for (const value of ["credits", "other", false, 1, null]) {
+      expect(normalizePersistedState({ settings: { paymentSource: value } }).settings.paymentSource).toBe(
+        "credits",
+      );
+    }
+  });
+
+  it("keeps ownKey on a private mode only when true", () => {
+    const state = normalizePersistedState({
+      sessions: [
+        { ...base, privateMode: { modelId: "a", ownKey: true } },
+        { ...base, id: "s-2", privateMode: { modelId: "a", ownKey: false } },
+        { ...base, id: "s-3", privateMode: { modelId: "a", ownKey: "yes" } },
+      ],
+    });
+
+    expect(state.sessions[0].privateMode).toEqual({ modelId: "a", ownKey: true });
+    expect(state.sessions[1].privateMode).toEqual({ modelId: "a" });
+    expect(state.sessions[2].privateMode).toEqual({ modelId: "a" });
+  });
+});
+
 describe("normalizePersistedState - secret guard", () => {
   it("is on unless the saved value is literally false", () => {
     expect(normalizePersistedState({}).settings.secretGuard).toBe(true);

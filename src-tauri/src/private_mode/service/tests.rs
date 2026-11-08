@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use super::*;
 use crate::private_mode::device::{
-    normalize_recovery_code, secret_hash, DEVICE_SECRET_NEXT, NEARAI_KEY,
+    normalize_recovery_code, secret_hash, DEVICE_SECRET_NEXT, NEARAI_KEY, OWN_KEY,
 };
 use crate::private_mode::testing::{
     balance, model_list, Call, Harness, CHECKOUT_URL, CODE, OTHER_CODE, TOPUP_ID,
@@ -167,6 +167,43 @@ fn a_balance_is_remembered_as_the_last_balance() {
     assert_eq!(h.state().last_balance, Some(last));
 }
 
+// ---- status: the user's own key ----
+
+#[test]
+fn the_users_own_key_is_saved_with_its_last_four_and_can_be_removed() {
+    let h = Harness::new();
+    let status = h
+        .mode
+        .save_own_key("own-key-3f9a", KeyCheck::NoCredits)
+        .expect("save");
+    assert!(status.saved);
+    assert_eq!(status.last4.as_deref(), Some("3f9a"));
+    assert!(status.no_credits);
+    assert_eq!(h.secret(OWN_KEY).as_deref(), Some("own-key-3f9a"));
+    assert_eq!(h.mode.launch_key(true).as_deref(), Ok("own-key-3f9a"));
+    assert_eq!(h.mode.launch_key(false), Err(PrivateError::NoKey));
+
+    h.mode.remove_own_key().expect("remove");
+    assert_eq!(h.secret(OWN_KEY), None);
+    assert!(!h.mode.status(false).own_key.saved);
+}
+
+#[test]
+fn the_users_own_key_never_reaches_the_worker() {
+    let h = Harness::new();
+    h.mode
+        .save_own_key("own-key-3f9a", KeyCheck::Accepted)
+        .expect("save");
+
+    let issued = h
+        .mode
+        .issue_proxy_token("s1", "Qwen/Qwen3.8-27B", true)
+        .expect("private token");
+
+    assert!(!issued.token.contains("sk-own"));
+    assert!(h.api.calls().is_empty());
+}
+
 // ---- status: key handover ----
 
 #[test]
@@ -178,7 +215,7 @@ fn status_collects_the_key_and_reports_it_ready() {
     assert!(status.key_ready);
     assert_eq!(status.key_error, None);
     assert_eq!(h.secret(NEARAI_KEY).as_deref(), Some("sk-test"));
-    assert_eq!(h.mode.launch_key().as_deref(), Ok("sk-test"));
+    assert_eq!(h.mode.launch_key(false).as_deref(), Ok("sk-test"));
     assert!(h.api.calls().contains(&Call::TakeKey {
         secret: CODE.into()
     }));
@@ -192,7 +229,7 @@ fn a_key_the_keychain_cannot_save_reads_keychain() {
     let status = h.mode.status(false);
     assert_eq!(status.key_error, Some(PrivateError::Keychain));
     assert!(!status.key_ready);
-    assert_eq!(h.mode.launch_key(), Err(PrivateError::NoKey));
+    assert_eq!(h.mode.launch_key(false), Err(PrivateError::NoKey));
 }
 
 #[test]

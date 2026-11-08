@@ -87,6 +87,15 @@ describe("the private low balance row", () => {
     expect(await screen.findByRole("heading", { name: "Private mode" })).toBeInTheDocument();
   });
 
+  it("says nothing while the user pays with their own key", async () => {
+    setStatus(49, 1240);
+    fakePrivate().models = [{ id: MODEL_ID, inputPerM: 0, outputPerM: 100 }];
+    fakeStore().state.settings.paymentSource = "ownKey";
+    await renderApp();
+
+    expect(screen.queryByText(/49 credits left/)).toBeNull();
+  });
+
   it("says nothing when only the last known balance is low", async () => {
     setStatus(null, 40);
     fakePrivate().models = [{ id: MODEL_ID, inputPerM: 0, outputPerM: 100 }];

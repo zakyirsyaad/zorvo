@@ -79,6 +79,8 @@ pub struct Settings {
     pub onboarding_completed: bool,
     /// `system`, `light` or `dark`; anything else follows the system.
     pub appearance: String,
+    /// `credits` or `ownKey`: which key a private session spends.
+    pub payment_source: String,
     /// The agent ids the user uses, or `None` when the list was never set.
     pub enabled_agents: Option<Vec<String>>,
     /// Agent ids the user removed, which are never enabled again automatically.
@@ -201,6 +203,13 @@ pub struct SessionRecord {
 pub struct PrivateModeRecord {
     /// The NEAR AI model id the session runs on.
     pub model_id: String,
+    /// This session spends the user's own NEAR AI key rather than Zorvo credits.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub own_key: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// What a private session used, as the frontend last saved it.
@@ -791,11 +800,30 @@ mod tests {
         assert_eq!(
             record.private_mode,
             Some(PrivateModeRecord {
-                model_id: "Qwen/Qwen3.8-27B".to_string()
+                model_id: "Qwen/Qwen3.8-27B".to_string(),
+                own_key: false,
             })
         );
         let value = serde_json::to_value(&record).expect("serialize");
         assert_eq!(value["privateMode"]["modelId"], "Qwen/Qwen3.8-27B");
+    }
+
+    #[test]
+    fn a_private_mode_record_can_say_the_users_own_key() {
+        let record: SessionRecord = serde_json::from_value(session_json(serde_json::json!({
+            "privateMode": { "modelId": "Qwen/Qwen3.8-27B", "ownKey": true }
+        })))
+        .expect("deserialize");
+
+        assert_eq!(
+            record.private_mode,
+            Some(PrivateModeRecord {
+                model_id: "Qwen/Qwen3.8-27B".to_string(),
+                own_key: true,
+            })
+        );
+        let value = serde_json::to_value(&record).expect("serialize");
+        assert_eq!(value["privateMode"]["ownKey"], true);
     }
 
     #[test]

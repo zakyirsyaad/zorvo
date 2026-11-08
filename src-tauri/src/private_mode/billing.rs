@@ -35,9 +35,19 @@ pub struct CostAnswer {
     pub warning: Option<String>,
 }
 
-/// The one NEAR AI call this module makes. A trait so tests can inject a fake.
+/// How NEAR AI answered a pasted key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyCheck {
+    Accepted,
+    /// A valid key whose organization has no credits (HTTP 402).
+    NoCredits,
+}
+
+/// The NEAR AI calls this module makes. A trait so tests can inject a fake.
 pub trait BillingApi: Send + Sync {
     fn costs(&self, key: &str, ids: &[String]) -> Result<CostAnswer, PrivateError>;
+    fn check_key(&self, key: &str) -> Result<KeyCheck, PrivateError>;
 }
 
 /// The answer the inspector and the persisted session total use.
@@ -284,7 +294,56 @@ impl HttpBilling {
     }
 }
 
+impl HttpBilling {
+    fn check_key_request(&self, key: &str) -> Result<KeyCheck, PrivateError> {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(format!("{}/check_api_key", self.base))
+            .header("Authorization", format!("Bearer {key}"))
+            .body(String::new())
+            .map_err(|_| PrivateError::BadRequest)?;
+        let mut response = self
+            .agent
+            .run(request)
+            .map_err(|_| PrivateError::Unreachable)?;
+        let status = response.status().as_u16();
+        let text = response
+            .body_mut()
+            .with_config()
+            .limit(MAX_BODY_BYTES + 1)
+            .read_to_string()
+            .map_err(|_| PrivateError::Upstream)?;
+        if text.len() as u64 > MAX_BODY_BYTES {
+            return Err(PrivateError::Upstream);
+        }
+        check_answer(status, &text)
+    }
+}
+
+fn check_answer(status: u16, text: &str) -> Result<KeyCheck, PrivateError> {
+    match status {
+        200 => {
+            let valid = serde_json::from_str::<serde_json::Value>(text)
+                .ok()
+                .and_then(|value| value.get("valid").and_then(serde_json::Value::as_bool));
+            if valid == Some(false) {
+                Err(PrivateError::Unauthorized)
+            } else {
+                Ok(KeyCheck::Accepted)
+            }
+        }
+        401 => Err(PrivateError::Unauthorized),
+        402 => Ok(KeyCheck::NoCredits),
+        400..=499 => Err(PrivateError::BadRequest),
+        _ => Err(PrivateError::Upstream),
+    }
+}
+
 impl BillingApi for HttpBilling {
+    fn check_key(&self, key: &str) -> Result<KeyCheck, PrivateError> {
+        self.check_key_request(key)
+    }
+
     fn costs(&self, key: &str, ids: &[String]) -> Result<CostAnswer, PrivateError> {
         if ids.is_empty() || ids.len() > MAX_COST_IDS {
             return Err(PrivateError::BadRequest);
@@ -326,6 +385,10 @@ pub struct OfflineBilling;
 
 impl BillingApi for OfflineBilling {
     fn costs(&self, _: &str, _: &[String]) -> Result<CostAnswer, PrivateError> {
+        Err(PrivateError::Unreachable)
+    }
+
+    fn check_key(&self, _: &str) -> Result<KeyCheck, PrivateError> {
         Err(PrivateError::Unreachable)
     }
 }
@@ -370,6 +433,10 @@ mod tests {
         fn costs(&self, key: &str, ids: &[String]) -> Result<CostAnswer, PrivateError> {
             lock(&self.calls).push((key.to_string(), ids.to_vec()));
             lock(&self.answer).clone()
+        }
+
+        fn check_key(&self, _: &str) -> Result<KeyCheck, PrivateError> {
+            Err(PrivateError::Unreachable)
         }
     }
 
@@ -476,6 +543,32 @@ mod tests {
         assert_eq!(third.credits, 12.0);
         assert!(third.estimated);
         assert_eq!(lock(&fake.calls).len(), 3);
+    }
+
+    #[test]
+    fn a_pasted_key_is_accepted_rejected_or_has_no_credits() {
+        assert_eq!(
+            check_answer(200, r#"{"valid":true}"#),
+            Ok(KeyCheck::Accepted)
+        );
+        assert_eq!(check_answer(200, "{}"), Ok(KeyCheck::Accepted));
+        assert_eq!(
+            check_answer(200, r#"{"valid":false}"#),
+            Err(PrivateError::Unauthorized)
+        );
+        assert_eq!(check_answer(401, "{}"), Err(PrivateError::Unauthorized));
+        assert_eq!(check_answer(402, "{}"), Ok(KeyCheck::NoCredits));
+        assert_eq!(check_answer(500, "{}"), Err(PrivateError::Upstream));
+    }
+
+    #[test]
+    fn an_unreachable_near_ai_is_not_an_invalid_key() {
+        let billing = HttpBilling::new("http://127.0.0.1:1/v1").expect("billing client");
+
+        assert_eq!(
+            billing.check_key("test-key"),
+            Err(PrivateError::Unreachable)
+        );
     }
 
     #[test]

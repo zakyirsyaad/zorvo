@@ -71,6 +71,10 @@ pub struct LocalState {
     pub rotation_expected_until: Option<i64>,
     /// The server answered `401` to this Mac's secret: its credits moved.
     pub moved: bool,
+    /// When the user's own NEAR AI key was saved, for "added today"; never the key.
+    pub own_key_added_at: Option<String>,
+    /// NEAR AI accepted the own key but its organization had no credits.
+    pub own_key_no_credits: bool,
     /// ACP session ids started privately, lower-cased (the agent's store is
     /// read case-insensitively on macOS), oldest first. The agent keeps those
     /// sessions in its own store, so this is how Zorvo knows to never open one
@@ -125,6 +129,8 @@ impl LocalState {
             models: field(&object, "models"),
             rotation_expected_until: field(&object, "rotationExpectedUntil"),
             moved: field(&object, "moved").unwrap_or_default(),
+            own_key_added_at: field(&object, "ownKeyAddedAt"),
+            own_key_no_credits: field(&object, "ownKeyNoCredits").unwrap_or_default(),
             private_sessions: private_sessions_of(&object),
         }
     }
@@ -272,6 +278,8 @@ mod tests {
             }),
             rotation_expected_until: Some(1_762_480_800_000),
             moved: true,
+            own_key_added_at: Some("2026-11-08T01:00:00Z".into()),
+            own_key_no_credits: true,
             private_sessions: vec!["acp-1".into(), "acp-2".into()],
         }
     }

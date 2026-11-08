@@ -2,9 +2,11 @@ import { useEffect, useId, useState, type Ref } from "react";
 import type { PrivateCredits } from "../../hooks/usePrivateCredits";
 import { useLatest } from "../../hooks/useLatest";
 import { isTopupActive } from "../../lib/private-flow";
+import type { PaymentSource } from "../../lib/private-credits";
 import { privateUsageRows } from "../../lib/private-usage";
 import type { Session } from "../../types";
 import { BalanceCard } from "../private/BalanceCard";
+import { OwnKeySection } from "../private/OwnKeySection";
 import { PromoField } from "../private/PromoField";
 import { RecoveryCard } from "../private/RecoveryCard";
 import { RestoreDialog } from "../private/RestoreDialog";
@@ -26,6 +28,8 @@ export interface PrivateSectionProps {
   /** Sessions' persisted private totals, grouped by model under the balance. */
   sessions?: readonly Session[];
   agentNameOf?: (profileId: string) => string;
+  paymentSource?: PaymentSource;
+  onPaymentSourceChange?: (source: PaymentSource) => void;
 }
 
 const RESTORE_BLOCKED = "Finish or cancel your top-up first.";
@@ -44,6 +48,8 @@ export function PrivateSection({
   onSecretGuardChange = () => {},
   sessions = [],
   agentNameOf = (profileId) => profileId,
+  paymentSource = "credits",
+  onPaymentSourceChange = () => {},
 }: PrivateSectionProps) {
   const { status, flow, loadCatalog } = credits;
   const secretGuardLabelId = useId();
@@ -80,6 +86,7 @@ export function PrivateSection({
         onShowRecoveryCode={() => onShowRecoveryCode()}
         usageRows={usageRows}
         agentNameOf={agentNameOf}
+        paymentSource={paymentSource}
       />
       <SettingsGroup heading="Top-up">
         <div className="border-b border-border p-4">
@@ -122,6 +129,11 @@ export function PrivateSection({
         isAvailable={status?.device === "ready"}
         restoreBlockedReason={isActive ? RESTORE_BLOCKED : undefined}
         onRestore={() => setRestoring(true)}
+      />
+      <OwnKeySection
+        credits={credits}
+        paymentSource={paymentSource}
+        onPaymentSourceChange={onPaymentSourceChange}
       />
       <SettingsGroup heading="Safety">
         <SettingsRow

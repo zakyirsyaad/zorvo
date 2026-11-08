@@ -68,6 +68,8 @@ export interface PrivateCredits {
    * already shows credits (the server's balance lags NEAR AI's refusal), which clears the mark at once.
    */
   markCreditsOut: (sessionId: string, reason: 'empty' | 'key', onBalanceLagging?: () => void) => void;
+  /** Clears a mark after the user chooses another payment source. */
+  clearCreditsOut: (sessionId: string) => void;
   /** True once this Mac holds credits and the user has not yet been asked to save the recovery code. */
   needsRecoveryDialog: boolean;
 }
@@ -498,6 +500,14 @@ export function usePrivateCredits(): PrivateCredits {
     return { ok: true };
   }, [refresh, updateFlow]);
 
+  const clearCreditsOut = useCallback((sessionId: string) => {
+    setCreditsOut((prev) => {
+      if (!(sessionId in prev)) return prev;
+      const { [sessionId]: _cleared, ...rest } = prev;
+      return rest;
+    });
+  }, []);
+
   const markCreditsOut = useCallback(
     (sessionId: string, reason: 'empty' | 'key', onBalanceLagging?: () => void) => {
       setCreditsOut((prev) => (prev[sessionId] === reason ? prev : { ...prev, [sessionId]: reason }));
@@ -539,6 +549,7 @@ export function usePrivateCredits(): PrivateCredits {
     forget,
     creditsOut,
     markCreditsOut,
+    clearCreditsOut,
     needsRecoveryDialog,
   };
 }

@@ -299,6 +299,7 @@ export default function App() {
     offerNotice,
     draftAgentIds: isNewSessionDraft && newSessionAgent ? (compare.isCompare ? compare.agentIds : [newSessionAgent.id]) : [],
     draftAgentName: isNewSessionDraft ? newSessionAgent?.name : undefined,
+    paymentSource: state.settings.paymentSource ?? "credits",
     activeSession,
   });
   const isPrivateSessionId = useCallback(
@@ -676,6 +677,9 @@ export default function App() {
     rememberFolder(activeWorkspace);
     // Read now: the draft, and its Private chip with it, is gone once the session starts.
     const { privateMode } = privateDraft;
+    const sessionPrivateMode = privateMode
+      ? { ...privateMode, ...(state.settings.paymentSource === "ownKey" ? { ownKey: true } : {}) }
+      : undefined;
     const name = first ? titleFor(first) : nextSessionName(sessions);
     let worktree: SessionWorktree | null = null;
     let cwd = activeWorkspace.path;
@@ -708,7 +712,7 @@ export default function App() {
     }
     setPickedAgentId(null);
     compare.reset();
-    startSession({ agent: newSessionAgent, cwd, name, worktree, privateMode }, message);
+    startSession({ agent: newSessionAgent, cwd, name, worktree, privateMode: sessionPrivateMode }, message);
     // The base was this session's: the next draft starts from the folder's own branch.
     if (worktree) branchPicker.reset();
   };
@@ -805,6 +809,7 @@ export default function App() {
     credits: privateCredits.status?.balance?.credits ?? null,
     notified: state.settings.privateLowBalanceNotified === true,
     onNotified: (notified) => updateSettings({ privateLowBalanceNotified: notified }),
+    isOwnKey: state.settings.paymentSource === "ownKey",
   });
 
   const handleOnboardingComplete = ({ defaultAgentId, folder }: OnboardingResult) => {
@@ -1061,7 +1066,7 @@ export default function App() {
   const privateModel = privateCredits.models?.find((model) => model.id === privateModelId);
   const livePrivateCredits = privateCredits.status?.balance?.credits;
   const privateLowNote =
-    isPrivateLaunch && livePrivateCredits !== undefined
+    isPrivateLaunch && state.settings.paymentSource !== "ownKey" && livePrivateCredits !== undefined
       ? lowBalanceNote(livePrivateCredits, privateModel)
       : undefined;
   const composerNoteText = composerNote({
@@ -1343,6 +1348,12 @@ export default function App() {
                       agents={continueAgents.map((agent) => ({ id: agent.id, name: agent.name }))}
                       onOpenSettings={() => settingsPage.open("private")}
                       onContinue={continueWithAgent}
+                      paymentSource={state.settings.paymentSource ?? "credits"}
+                      onSwitchToCredits={() => {
+                        updateSettings({ paymentSource: "credits" });
+                        if (activeSession) privateCredits.clearCreditsOut(activeSession.id);
+                      }}
+                      onOpenDashboard={() => openLink("https://cloud.near.ai/")}
                     />
                     {installPanelAgent
                       ? draftInstallSlot
@@ -1580,6 +1591,7 @@ export default function App() {
                     session={activeSession}
                     credits={privateCredits}
                     messages={currentMessages}
+                    paymentSource={state.settings.paymentSource ?? "credits"}
                     onTopUp={() => settingsPage.open("private")}
                     onOpenUrl={openLink}
                   />

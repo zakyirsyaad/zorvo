@@ -145,8 +145,8 @@ export interface Session {
   compareRunId?: string | null;
   /** Comments written on lines of the session's diff; absent when there are none. */
   reviewComments?: ReviewComment[];
-  /** Set when the session runs privately on Zorvo Private credits; the model it was started with. */
-  privateMode?: { modelId: string };
+  /** Set when the session runs privately; the model it was started with and whose key it spends. */
+  privateMode?: { modelId: string; ownKey?: boolean };
   /** The last total this session used, kept across restarts; records themselves are in memory. */
   privateUsage?: { credits: number; estimated: boolean };
 }
@@ -194,6 +194,8 @@ export interface Settings {
   privateLowBalanceNotified?: boolean;
   /** Check private messages for secrets before sending; on unless the user turns it off. */
   secretGuard?: boolean;
+  /** Which key private sessions spend: Zorvo credits or the user's own NEAR AI key. */
+  paymentSource?: 'credits' | 'ownKey';
 }
 
 export interface RecentFolder {

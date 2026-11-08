@@ -1,7 +1,7 @@
 // Zorvo Private in the new-session draft: whether the Private chip shows, and whether a private
 // session can start yet. Pure: no invoke, no React.
 import { canonicalAgentId } from './persistence';
-import type { ModelPrice, PrivateStatus } from './private-credits';
+import type { ModelPrice, PaymentSource, PrivateStatus } from './private-credits';
 
 /** The one agent that runs privately (the backend refuses any other with `not_qwen`). */
 export const PRIVATE_AGENT_ID = 'qwen-code';
@@ -12,6 +12,7 @@ export const PRIVATE_DRAFT_TEXT = {
   statusFailed: "Couldn't check your credits. Try again.",
   moved: 'Your credits moved to another Mac.',
   addCredits: 'Add credits to start a private session',
+  addOwnKey: 'Add your NEAR AI key in Settings → Private mode to start.',
   loadingModels: 'Loading the private models…',
   modelsFailed: "Couldn't load the private models. Try again.",
 } as const;
@@ -34,6 +35,8 @@ export interface PrivateDraftInput {
   models: ModelPrice[] | null;
   /** A catalog load is running, so missing models are on their way rather than failed. */
   isLoadingModels?: boolean;
+  /** `ownKey` skips the Zorvo credit checks; the key must still be saved. */
+  paymentSource?: PaymentSource;
 }
 
 export interface PrivateDraftState {
@@ -68,8 +71,14 @@ function creditsOf(status: PrivateStatus): number {
 function waitingFor(input: PrivateDraftInput): string | undefined {
   const { status, models } = input;
   if (status === null) return input.statusFailed ? PRIVATE_DRAFT_TEXT.statusFailed : PRIVATE_DRAFT_TEXT.checking;
-  if (status.device === 'moved') return PRIVATE_DRAFT_TEXT.moved;
-  if (status.device === 'none' || !status.keyReady || creditsOf(status) <= 0) return PRIVATE_DRAFT_TEXT.addCredits;
+  if (input.paymentSource === 'ownKey') {
+    if (status.ownKey?.saved !== true) return PRIVATE_DRAFT_TEXT.addOwnKey;
+  } else {
+    if (status.device === 'moved') return PRIVATE_DRAFT_TEXT.moved;
+    if (status.device === 'none' || !status.keyReady || creditsOf(status) <= 0) {
+      return PRIVATE_DRAFT_TEXT.addCredits;
+    }
+  }
   if (models === null && input.isLoadingModels) return PRIVATE_DRAFT_TEXT.loadingModels;
   if (models === null || models.length === 0) return PRIVATE_DRAFT_TEXT.modelsFailed;
   return undefined;

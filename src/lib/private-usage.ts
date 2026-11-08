@@ -51,6 +51,12 @@ export function usageLead(credits: number, estimated: boolean): string {
   return `${estimated ? "about " : ""}${formatUsageCredits(credits)}`;
 }
 
+/** A private usage total in dollars: NEAR AI bills 120 credits per dollar of cost. */
+export function usageUsd(credits: number): string {
+  if (!Number.isFinite(credits) || credits < 0) return "$0.00";
+  return `$${(credits / 120).toFixed(2)}`;
+}
+
 /** The total used, summed per model, from the persisted session totals. */
 export function privateUsageRows(
   sessions: readonly Session[],

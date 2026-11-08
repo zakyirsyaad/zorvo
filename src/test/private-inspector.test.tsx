@@ -162,6 +162,38 @@ describe("PrivateInspector", () => {
     expect(screen.queryByText("Didn't verify")).toBeNull();
   });
 
+  it("shows dollars and no Zorvo balance with the user's own key", () => {
+    const messages = [
+      {
+        id: "a-1",
+        role: "agent" as const,
+        content: "",
+        timestamp: 1,
+        verification: { state: "verified" as const, signed: 1, total: 1 },
+      },
+    ] satisfies ChatMessage[];
+    render(
+      <PrivateInspector
+        session={{ ...SESSION, privateUsage: { credits: 25.2, estimated: false } }}
+        credits={{ status: READY, models: null }}
+        messages={messages}
+        paymentSource="ownKey"
+        onTopUp={vi.fn()}
+        onOpenUrl={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Paying with").parentElement).toHaveTextContent("Your NEAR AI key");
+    expect(screen.getByText("This session").parentElement).toHaveTextContent("$0.21");
+    expect(screen.getByText("1 of 1")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Balance" })).toBeNull();
+    expect(
+      screen.getByText(
+        "Shown in dollars, the way NEAR AI bills your organization. Zorvo credits aren't used, and no session limit applies.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("shows this session's usage and the average per turn, about when estimated", () => {
     const messages = [
       { id: "u-1", role: "user" as const, content: "", timestamp: 1 },

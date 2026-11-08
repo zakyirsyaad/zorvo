@@ -125,6 +125,25 @@ test("a 401 and a timeout become tool errors, never a crash", async () => {
   }
 });
 
+test("an own-key balance answer is its sentence, not a credit count", async () => {
+  const fake = await fakeServer((_request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    response.end(JSON.stringify({
+      ownKey: true,
+      message: "Paying with your own NEAR AI key. Its balance isn't visible to Zorvo, so plan as usual.",
+    }));
+  });
+  const mcp = startMcp(fake.url);
+  try {
+    const answer = await mcp.call("tools/call", { name: "credits_balance", arguments: {} });
+    assert.match(answer.result.content[0].text, /^Paying with your own NEAR AI key\./);
+    assert.doesNotMatch(answer.result.content[0].text, /credits left/);
+  } finally {
+    await mcp.close();
+    await fake.close();
+  }
+});
+
 test("the proxy token is never written to stdout", async () => {
   const fake = await fakeServer((_request, response) => {
     response.setHeader("Content-Type", "application/json");

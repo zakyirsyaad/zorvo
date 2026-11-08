@@ -1,5 +1,7 @@
 import { useId, useRef, useState } from "react";
+import { ExternalLink } from "lucide-react";
 import { creditsOutText, type CreditsOutReason } from "../../lib/private-session";
+import type { PaymentSource } from "../../lib/private-credits";
 import { BlockerCard } from "../ui/BlockerCard";
 import { Button } from "../ui/Button";
 import { PrivateDialog } from "./PrivateDialog";
@@ -17,16 +19,25 @@ export interface PrivateCreditsOutProps {
   onOpenSettings: () => void;
   /** Continues in a new, ordinary session of the agent picked; called only after the user confirmed it. */
   onContinue: (agentId: string) => void;
+  paymentSource?: PaymentSource;
+  onSwitchToCredits?: () => void;
+  onOpenDashboard?: () => void;
 }
 
 /**
  * Announces a session's refusal for credits or a key. Mounted before the panel and kept mounted, since a
  * live region that is already there announces what it is given and a new one does not.
  */
-export function PrivateCreditsOutStatus({ reason }: { reason: CreditsOutReason | undefined }) {
+export function PrivateCreditsOutStatus({
+  reason,
+  paymentSource = "credits",
+}: {
+  reason: CreditsOutReason | undefined;
+  paymentSource?: PaymentSource;
+}) {
   return (
     <p role="status" className="sr-only">
-      {reason ? creditsOutText(reason) : ""}
+      {reason ? (paymentSource === "ownKey" ? "Your NEAR AI key ran out of credits." : creditsOutText(reason)) : ""}
     </p>
   );
 }
@@ -35,9 +46,46 @@ export function PrivateCreditsOutStatus({ reason }: { reason: CreditsOutReason |
  * A private session out of credits, or with a key that stopped working: above the composer, the way
  * past it. Continuing with another agent asks first, since the conversation leaves the TEE.
  */
-export function PrivateCreditsOut({ reason, agents, onOpenSettings, onContinue }: PrivateCreditsOutProps) {
+export function PrivateCreditsOut({
+  reason,
+  agents,
+  onOpenSettings,
+  onContinue,
+  paymentSource = "credits",
+  onSwitchToCredits,
+  onOpenDashboard,
+}: PrivateCreditsOutProps) {
   const [isConfirming, setIsConfirming] = useState(false);
   const canContinue = reason === "empty" && agents.length > 0;
+
+  if (paymentSource === "ownKey") {
+    return (
+      <BlockerCard
+        label="Private credits"
+        title="Your NEAR AI key ran out of credits"
+        actions={
+          <>
+            <Button variant="ghost" tone="secondary" onClick={onSwitchToCredits}>
+              Switch to Zorvo credits
+            </Button>
+            <Button
+              variant="outline"
+              icon={<ExternalLink size={12} strokeWidth={1.75} aria-hidden="true" />}
+              onClick={onOpenDashboard}
+            >
+              Open NEAR AI dashboard
+            </Button>
+          </>
+        }
+      >
+        <p>
+          NEAR AI turned the request down: your organization has no credits left. Add credits or stake more NEAR in
+          your NEAR AI dashboard, or switch this Mac to Zorvo credits.
+        </p>
+        <p className="text-ui-sm text-fg-subtle">Your message is back in the box.</p>
+      </BlockerCard>
+    );
+  }
 
   const actions =
     reason === "empty" ? (
@@ -139,18 +187,25 @@ function ContinueDialog({ agents, onCancel, onConfirm }: ContinueDialogProps) {
   );
 }
 
-export interface PrivateCreditsOutLayerProps extends Omit<PrivateCreditsOutProps, 'reason'> {
+export interface PrivateCreditsOutLayerProps extends Omit<PrivateCreditsOutProps, "reason"> {
   /** The session on screen, if any: one session's confirm never carries over to another's panel. */
   sessionId: string | undefined;
   reason: CreditsOutReason | undefined;
 }
 
 /** The status line, kept mounted, and the panel while the session on screen is out of credits or a key. */
-export function PrivateCreditsOutLayer({ sessionId, reason, ...panel }: PrivateCreditsOutLayerProps) {
+export function PrivateCreditsOutLayer({
+  sessionId,
+  reason,
+  paymentSource,
+  ...panel
+}: PrivateCreditsOutLayerProps) {
   return (
     <>
-      <PrivateCreditsOutStatus reason={reason} />
-      {sessionId && reason && <PrivateCreditsOut key={sessionId} reason={reason} {...panel} />}
+      <PrivateCreditsOutStatus reason={reason} paymentSource={paymentSource} />
+      {sessionId && reason && (
+        <PrivateCreditsOut key={sessionId} reason={reason} paymentSource={paymentSource} {...panel} />
+      )}
     </>
   );
 }

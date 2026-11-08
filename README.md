@@ -283,10 +283,11 @@ before it edits files or runs commands. Pick another mode in the composer.
   or tokens. Agents sign in with their own tools, and pull request data comes
   from your own `gh` login. The one exception is Private mode, which you turn
   on yourself: Zorvo then keeps this Mac's credits secret and the NEAR AI key
-  its private Qwen Code sessions use in your macOS Keychain. The key never
-  enters the agent: each private launch gets a one-time token for a loopback
-  proxy in Zorvo's backend, which adds the key and forwards the agent's model
-  requests to NEAR AI.
+  its private Qwen Code sessions use in your macOS Keychain. If you paste your
+  own NEAR AI key in Settings, Zorvo keeps that in the Keychain too, after
+  NEAR AI has checked it. A key never enters the agent: each private launch
+  gets a one-time token for a loopback proxy in Zorvo's backend, which adds the
+  key and forwards the agent's model requests to NEAR AI.
 - **Private sessions get a small local MCP server.** It ships in Zorvo's app
   bundle and answers the agent's `credits_balance` and `private_models` calls
   by reading Zorvo's loopback proxy with that session's one-time token. It

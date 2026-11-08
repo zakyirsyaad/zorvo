@@ -47,6 +47,30 @@ describe("privateDraftState: the chip", () => {
     });
   });
 
+  it("starts on the user's own key without a Zorvo device or credits", () => {
+    const own = status({
+      device: "none",
+      keyReady: false,
+      balance: null,
+      ownKey: { saved: true, last4: "3f9a", addedAt: "2026-11-08T10:00:00Z", noCredits: false },
+    });
+    expect(
+      privateDraftState({ agentIds: QWEN, on: true, status: own, models: MODELS, paymentSource: "ownKey" }),
+    ).toEqual({ chip: "on", canStart: true });
+  });
+
+  it("waits for the own key when the source is ownKey and none is saved", () => {
+    const own = status({
+      device: "none",
+      keyReady: false,
+      balance: null,
+      ownKey: { saved: false, last4: null, addedAt: null, noCredits: false },
+    });
+    expect(
+      privateDraftState({ agentIds: QWEN, on: true, status: own, models: MODELS, paymentSource: "ownKey" }),
+    ).toEqual({ chip: "on", canStart: false, note: PRIVATE_DRAFT_TEXT.addOwnKey });
+  });
+
   it("is disabled for another agent, with the reason, and never blocks the start", () => {
     expect(privateDraftState({ agentIds: ["claude-acp"], on: true, status: null, models: null })).toEqual({
       chip: "disabled",

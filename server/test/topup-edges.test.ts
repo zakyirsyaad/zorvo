@@ -90,7 +90,9 @@ describe("a session PingPay answers without an amount", () => {
     const { sessionId } = await checkout(deviceId);
     h.ping.pay(sessionId);
     h.ping.dropAmount(sessionId);
-    await expect(stub().onSessionEvent(sessionId, null, NOW)).rejects.toThrow(/amount/);
+    await runInDurableObject(stub(), async (ledger: Ledger) => {
+      await expect(ledger.onSessionEvent(sessionId, null, NOW)).rejects.toThrow(/amount/);
+    });
   });
 });
 

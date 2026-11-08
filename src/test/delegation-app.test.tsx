@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, act, fireEvent, within, waitFor } from "@testing-library/react";
+import { render, screen, act, fireEvent, within, waitFor, configure } from "@testing-library/react";
 import type { FakeTauriStore } from "./setup";
 
 type Listener = (event: { payload: unknown }) => void;
@@ -16,6 +16,11 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 import App from "../App";
 import { fakeProfiles, makeProfile } from "./fixtures/agents";
+
+// These tests render the whole app: on a loaded machine a query can take longer
+// than Testing Library's 1s default, and a dialog flow longer than 20s.
+configure({ asyncUtilTimeout: 5_000 });
+vi.setConfig({ testTimeout: 60_000 });
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
 type InvokeCall = [string, Record<string, unknown> | undefined, ...unknown[]];

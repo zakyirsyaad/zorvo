@@ -6,6 +6,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Fixed
 
+- **Saving a long session no longer freezes the window.** An agent sends the whole file before and after every edit, and Zorvo kept both in the session's history, though the chat only shows the changed lines and three lines around them. A long session's history grew to tens of megabytes, and the window paused for a moment each time it was saved. Zorvo now keeps only the lines the chat shows (a 43 MB history becomes 9 MB), and shrinks an older session's history the next time it saves it. The diffs look the same.
 - **A long session no longer makes the window lag while its agent works.** Each update from the agent drew every tool call of the turn again, with all their open diffs: in a turn with hundreds of edits that was tens of thousands of elements, up to a second each time, so scrolling, typing and clicks stuttered. Now only the tool that changed is drawn again.
 - **The full diff review stays inside the window.** One long line in a diff made the expanded review wider than the window, so its right edge was cut off, with the comments' Edit and Delete and the **Add N comments to message** button. The review now fits the window.
 

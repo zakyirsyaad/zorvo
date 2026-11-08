@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { ChatCanvas } from "../components/ChatCanvas";
+import { diffDetail } from "../lib/diff-rows";
 import type { ChatMessage, ToolExecution } from "../types";
 
 /** Rows a diff or a text output renders before offering the rest. */
@@ -71,7 +72,7 @@ function longSession(): ChatMessage[] {
         name: `Edit file ${toolIndex}`,
         status: "completed",
         kind: "edit",
-        details: [{ kind: "diff", path: `src/file-${toolIndex}.ts`, oldText: null, newText: diffOf(toolIndex) }],
+        details: [diffDetail(`src/file-${toolIndex}.ts`, null, diffOf(toolIndex))],
       });
     }
     for (let text = 0; text < spec.texts; text += 1) {
@@ -101,7 +102,7 @@ function diffTool(id: string, path: string, newText = "a\nb"): ToolExecution {
     name: `Edit ${path}`,
     status: "completed",
     kind: "edit",
-    details: [{ kind: "diff", path, oldText: null, newText }],
+    details: [diffDetail(path, null, newText)],
   };
 }
 

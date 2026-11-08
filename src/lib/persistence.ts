@@ -1,7 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
-import { TRANSPORT_ACP, type ChatMessage, type ChatMessagePart, type PersistedState, type Session, type SessionWorktree } from '../types';
+import { TRANSPORT_ACP, type ChatMessage, type ChatMessagePart, type DiffRow, type PersistedState, type Session, type SessionWorktree, type ToolDetail } from '../types';
 import { markElicitationsUnanswered } from './acp-elicitation';
 import { settlePermissionCards } from './acp-events';
+import { diffDetail } from './diff-rows';
 import { normalizeAppearance } from './appearance';
 import type { AgentOptions } from './acp-draft';
 import { validReviewComments } from './review-comments';
@@ -265,11 +266,49 @@ function withValidEndTime(message: ChatMessage): ChatMessage {
  * match the shape and dropping entries that are not messages. Messages saved
  * before parts existed simply have none, and render the way they always did.
  */
+const DIFF_ROW_KINDS = new Set(['added', 'removed', 'context', 'skipped']);
+
+function isDiffRow(value: unknown): value is DiffRow {
+  return isObject(value) && typeof value.kind === 'string' && DIFF_ROW_KINDS.has(value.kind) && typeof value.text === 'string';
+}
+
+/**
+ * A saved tool detail as this version keeps it. A diff an older Zorvo saved with the whole file before
+ * and after becomes the rows it shows, so the transcript shrinks on its next save; a diff that is
+ * neither is dropped. Other details are kept as they are.
+ */
+function toToolDetail(raw: unknown): ToolDetail | null {
+  if (!isObject(raw) || raw.kind !== 'diff') return raw as ToolDetail;
+  if (typeof raw.path !== 'string') return null;
+  if (Array.isArray(raw.rows) && raw.rows.every(isDiffRow)) {
+    return { kind: 'diff', path: raw.path, isNewFile: raw.isNewFile === true, rows: raw.rows };
+  }
+  const oldText = raw.oldText ?? null;
+  if (typeof raw.newText === 'string' && (oldText === null || typeof oldText === 'string')) {
+    return diffDetail(raw.path, oldText, raw.newText);
+  }
+  return null;
+}
+
+function withReadableDiffs(message: ChatMessage): ChatMessage {
+  if (!Array.isArray(message.tools)) return message;
+  const hasDiff = message.tools.some((tool) => Array.isArray(tool.details) && tool.details.some((detail) => isObject(detail) && detail.kind === 'diff'));
+  if (!hasDiff) return message;
+  return {
+    ...message,
+    tools: message.tools.map((tool) =>
+      Array.isArray(tool.details)
+        ? { ...tool, details: tool.details.flatMap((detail) => toToolDetail(detail) ?? []) }
+        : tool,
+    ),
+  };
+}
+
 export function normalizeTranscript(raw: unknown): ChatMessage[] {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((raw): ChatMessage[] => {
     if (!isMessage(raw)) return [];
-    const message = withValidEndTime(raw);
+    const message = withReadableDiffs(withValidEndTime(raw));
     if (!('parts' in message)) return [message];
     const { parts, ...rest } = message;
     const isWellFormed = Array.isArray(parts) && parts.length > 0 && parts.every(isMessagePart);

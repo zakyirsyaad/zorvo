@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
+import { diffDetail } from "../lib/diff-rows";
 import type { ToolExecution } from "../types";
 
 const counted = vi.hoisted(() => ({ renders: 0 }));
@@ -25,7 +26,7 @@ const edit = (id: string, status: ToolExecution["status"] = "completed"): ToolEx
   kind: "edit",
   status,
   locations: [`/repo/${id}.ts`],
-  details: [{ kind: "diff", path: `/repo/${id}.ts`, oldText: "a\n", newText: "b\n" }],
+  details: [diffDetail(`/repo/${id}.ts`, "a\n", "b\n")],
 });
 
 describe("a streamed update to one tool in a long turn", () => {

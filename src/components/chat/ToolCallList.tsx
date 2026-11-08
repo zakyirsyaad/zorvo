@@ -13,7 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ToolExecution } from "../../types";
-import { countChanges, diffRows } from "../../lib/diff-rows";
+import { countChanges } from "../../lib/diff-rows";
 import { formatLineCount, MINUS } from "../../lib/diff-stats";
 import { toolRow, toolStatusWord } from "../../lib/tool-summary";
 import { PathText } from "../ui/PathText";
@@ -42,7 +42,7 @@ function editCounts(tool: ToolExecution): { added: number; removed: number } | n
   if (diffs.length === 0) return null;
   return diffs.reduce(
     (sum, diff) => {
-      const counts = countChanges(diffRows(diff.oldText, diff.newText));
+      const counts = countChanges(diff.rows);
       return { added: sum.added + counts.added, removed: sum.removed + counts.removed };
     },
     { added: 0, removed: 0 },

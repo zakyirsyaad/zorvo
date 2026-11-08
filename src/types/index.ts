@@ -279,10 +279,22 @@ export interface ToolExecution {
   command?: string;
 }
 
+export type DiffRowKind = 'added' | 'removed' | 'context' | 'skipped';
+
+export interface DiffRow {
+  kind: DiffRowKind;
+  /** The line, or for `skipped` how many unchanged lines were folded. */
+  text: string;
+}
+
 export type ToolDetail =
   | { kind: 'text'; text: string }
-  /** `oldText` is null for a file the tool created. */
-  | { kind: 'diff'; path: string; oldText: string | null; newText: string }
+  /**
+   * The rows a diff shows (changed lines, 3 lines of context, folded runs), worked out once when the
+   * agent sends it. ACP sends the whole file before and after every edit, so keeping those made a long
+   * session's transcript tens of megabytes, and the page froze each time it was saved.
+   */
+  | { kind: 'diff'; path: string; isNewFile: boolean; rows: DiffRow[] }
   /** A diff too large to keep: the file stays named. */
   | { kind: 'changed'; path: string };
 

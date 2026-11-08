@@ -834,7 +834,7 @@ describe("queue items without a device to serve", () => {
     expect(near.calls.filter((call) => call.route === "create" || call.route === "revoke")).toEqual([]);
   });
 
-  it("runs at most 20 credit and rotate items a tick between them", async () => {
+  it("runs at most 5 credit and rotate items a tick between them by default", async () => {
     near.status.create = 503;
     await runInDurableObject(stub(), (_ledger, state) => {
       for (let i = 0; i < 25; i += 1) {
@@ -845,6 +845,6 @@ describe("queue items without a device to serve", () => {
       }
     });
     await tick(NOW);
-    expect(near.count("create")).toBe(20);
+    expect(near.count("create")).toBe(5);
   });
 });

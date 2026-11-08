@@ -150,10 +150,17 @@ works from the repository root). The command asks for the value; do not put it o
 pnpm --filter zorvo-credits-server run deploy   # the package script, `wrangler deploy`
 ```
 
-- **Use the Workers Paid plan.** The Ledger's alarm runs every minute. One tick can poll up to 10 PingPay
-  sessions and run up to 20 credit items, each with 1 to 3 outbound calls to NEAR AI, plus the token and
-  stock calls. That can pass the **Free** plan's 50 subrequests per invocation; on Free, ticks would fail
-  part-way and top-ups would be credited late.
+- **The Free plan works with the defaults.** The Ledger's alarm runs every minute. One tick polls at
+  most 3 PingPay sessions (`POLLS_PER_TICK`), runs at most 5 queue items (`CREDITS_PER_TICK`), and stops
+  starting new items after 40 outbound requests (`TICK_SUBREQUEST_BUDGET`); the rest wait for the next
+  tick. The item already running when the budget is reached finishes, so a tick can go slightly over.
+  On the **Paid** plan, set `POLLS_PER_TICK` and `CREDITS_PER_TICK` in `wrangler.jsonc` higher (the old
+  10 and 20 are safe there) and raise `TICK_SUBREQUEST_BUDGET` with them, so a backlog drains faster.
+- **What a limit looks like.** In `wrangler tail`, an `Alarm step … failed` line whose message says
+  `Too many subrequests` means the tick passed the plan's subrequest limit: lower `TICK_SUBREQUEST_BUDGET`
+  or the per-tick limits, or move to Paid. An `Exceeded CPU limit` line is the plan's CPU limit: run fewer
+  items per tick or move to Paid. Nothing is lost either way: polls and queue items that did not run stay
+  due and are picked up by the next tick.
 - The Ledger uses SQLite-backed Durable Object storage (`new_sqlite_classes` in `wrangler.jsonc`).
 - **Migrations: only a new column needs one.** Every statement in `src/ledger/schema.ts` is
   `CREATE ... IF NOT EXISTS` and runs in the Ledger's constructor, so a new **table** or **index** is created

@@ -22,10 +22,6 @@ export const SNAPSHOT_MAX_AGE_MS = 2 * MINUTE_MS;
 const POLL_CREATED_AFTER_MS = 2 * MINUTE_MS;
 /** A top-up is polled for a (late) payment for this long after it was created. */
 const POLL_FOR_MS = 7 * 24 * HOUR_MS;
-/** Sessions read per tick, so the poll can never use up the alarm's subrequests before the queue runs. */
-const POLLS_PER_TICK = 10;
-/** Credit items run per tick, for the same reason. */
-const CREDITS_PER_TICK = 20;
 /** A checkout that can still be paid is asked about this often; one that cannot backs off from here. */
 const POLL_INTERVAL_MS = MINUTE_MS;
 const POLL_MAX_INTERVAL_MS = HOUR_MS;
@@ -50,6 +46,10 @@ export interface FulfilmentContext {
   readonly sql: SqlStorage;
   transaction(body: () => void): void;
   config(): Config;
+  /** Outbound fetches this tick has made so far. */
+  fetches(): number;
+  /** The most outbound fetches a tick may spend before it stops starting new items. */
+  subrequestBudget(): number;
   nearAi(): NearAiClient;
   accessToken(now: number): Promise<string>;
   withAccessToken<T>(now: number, call: (access: string) => Promise<T>): Promise<T>;
@@ -127,8 +127,9 @@ async function refreshStock(ctx: FulfilmentContext, now: number): Promise<void> 
 /**
  * Asks PingPay about checkouts whose webhook may never come: `created` top-ups older than 2 minutes
  * and `expired` ones, whose payment may still arrive late, for 7 days after they were created. At
- * most 10 sessions a tick, the ones due longest first; each is then not asked again until its
- * `next_poll_at` (`nextPoll`).
+ * most `POLLS_PER_TICK` sessions a tick (3 by default), the ones due longest first; each is then not
+ * asked again until its `next_poll_at` (`nextPoll`). Stops starting sessions once the tick's
+ * subrequest budget is spent, leaving the rest due for the next tick.
  */
 async function pollSessions(ctx: FulfilmentContext, now: number): Promise<void> {
   const due = ctx.sql
@@ -144,10 +145,11 @@ async function pollSessions(ctx: FulfilmentContext, now: number): Promise<void> 
       now - POLL_FOR_MS,
       now - POLL_CREATED_AFTER_MS,
       now,
-      POLLS_PER_TICK,
+      ctx.config().pollsPerTick,
     )
     .toArray();
   for (const topup of due) {
+    if (ctx.fetches() >= ctx.subrequestBudget()) break;
     let outcome: SessionOutcome | "failed" = "failed";
     try {
       outcome = await ctx.onSessionEvent(topup.ping_session_id, null, now);
@@ -247,7 +249,9 @@ const QUEUE_KINDS = ["credit", "rotate_key", "revoke_key"];
 /**
  * Runs the due items one at a time, so a `credit` and a `rotate_key` of one device never overlap. A
  * credit of a device with a rotation queued is not selected at all (it waits for the rotation), so
- * such credits cannot fill the tick's 20 and hold back other devices' credits.
+ * such credits cannot fill the tick's `CREDITS_PER_TICK` and hold back other devices' credits.
+ * Stops starting items once the tick's subrequest budget is spent, leaving the rest due for the
+ * next tick.
  */
 async function runQueue(ctx: FulfilmentContext, now: number): Promise<void> {
   const placeholders = QUEUE_KINDS.map(() => "?").join(", ");
@@ -259,10 +263,11 @@ async function runQueue(ctx: FulfilmentContext, now: number): Promise<void> {
        ORDER BY next_at, id LIMIT ?`,
       ...QUEUE_KINDS,
       now,
-      CREDITS_PER_TICK,
+      ctx.config().creditsPerTick,
     )
     .toArray();
   for (const { id, kind } of due) {
+    if (ctx.fetches() >= ctx.subrequestBudget()) break;
     if (kind === "credit") await creditItem(ctx, id, now);
     else if (kind === "rotate_key") await rotateItem(ctx, id, now);
     else await revokeItem(ctx, id, now);

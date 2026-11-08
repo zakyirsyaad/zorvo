@@ -59,6 +59,8 @@ export class Ledger extends DurableObject<Env> {
   private modelsCache: { models: ModelInfo[]; at: number } | undefined;
   private modelsLoading: Promise<ModelInfo[]> | undefined;
   private ticking: Promise<void> | undefined;
+  /** The alarm tick in flight: how many outbound fetches it has made, and the most it may spend. */
+  private tickFetches: { count: number; budget: number } | undefined;
   /** The `fetch` used for NEAR AI and PingPay calls; tests replace it. */
   fetcher: typeof fetch = (input, init) => fetch(input, init);
   /** How long one NEAR AI or PingPay request may take; tests shorten it. */
@@ -334,11 +336,17 @@ export class Ledger extends DurableObject<Env> {
   }
 
   private pingPay(): PingPayClient {
-    return new PingPayClient(this.config().pingPayBase, this.secret("PINGPAY_API_KEY"), this.fetcher, this.requestTimeoutMs);
+    return new PingPayClient(this.config().pingPayBase, this.secret("PINGPAY_API_KEY"), (input, init) => this.fetchOut(input, init), this.requestTimeoutMs);
   }
 
   private nearAi(): NearAiClient {
-    return new NearAiClient(this.config().nearAiBase, this.fetcher, this.requestTimeoutMs);
+    return new NearAiClient(this.config().nearAiBase, (input, init) => this.fetchOut(input, init), this.requestTimeoutMs);
+  }
+
+  /** Makes an outbound fetch, counting it against the alarm tick in flight when there is one. */
+  private fetchOut(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    if (this.tickFetches) this.tickFetches.count += 1;
+    return this.fetcher(input, init);
   }
 
   /**
@@ -694,7 +702,7 @@ export class Ledger extends DurableObject<Env> {
     const url = this.env.ALERT_URL;
     if (url === undefined || url === "") return;
     try {
-      const response = await this.fetcher(url, {
+      const response = await this.fetchOut(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ kind, detail }),
@@ -730,9 +738,11 @@ export class Ledger extends DurableObject<Env> {
   runAlarm(now: number): Promise<void> {
     this.ticking ??= (async () => {
       await this.ctx.storage.setAlarm(now + ALARM_INTERVAL_MS);
+      this.tickFetches = { count: 0, budget: this.config().tickSubrequestBudget };
       try {
         await runAlarm(this.fulfilment(), now);
       } finally {
+        this.tickFetches = undefined;
         await this.ctx.storage.setAlarm(now + ALARM_INTERVAL_MS);
       }
     })().finally(() => {
@@ -747,6 +757,8 @@ export class Ledger extends DurableObject<Env> {
       sql: this.sql,
       transaction: (body) => this.ctx.storage.transactionSync(body),
       config: () => this.config(),
+      fetches: () => this.tickFetches?.count ?? 0,
+      subrequestBudget: () => this.tickFetches?.budget ?? this.config().tickSubrequestBudget,
       nearAi: () => this.nearAi(),
       accessToken: (now) => this.accessToken(now),
       withAccessToken: (now, call) => this.withAccessToken(now, call),

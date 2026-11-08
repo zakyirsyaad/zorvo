@@ -76,4 +76,23 @@ describe("parseConfig", () => {
   it("accepts a stock buffer of 0", () => {
     expect(parseConfig({ ...env, STOCK_BUFFER_NANO: "0" } as unknown as Env).stockBufferNano).toBe(0n);
   });
+  it("defaults the tick limits to the Free-safe values", () => {
+    expect(cfg).toMatchObject({ pollsPerTick: 3, creditsPerTick: 5, tickSubrequestBudget: 40 });
+  });
+  it("reads the tick limits from the vars", () => {
+    const tuned = parseConfig({
+      ...env,
+      POLLS_PER_TICK: "10",
+      CREDITS_PER_TICK: "20",
+      TICK_SUBREQUEST_BUDGET: "50",
+    } as unknown as Env);
+    expect(tuned).toMatchObject({ pollsPerTick: 10, creditsPerTick: 20, tickSubrequestBudget: 50 });
+  });
+  it("rejects a tick limit that is not a positive whole number", () => {
+    for (const name of ["POLLS_PER_TICK", "CREDITS_PER_TICK", "TICK_SUBREQUEST_BUDGET"] as const) {
+      for (const value of ["0", "-1", "1.5", "abc"]) {
+        expect(() => parseConfig({ ...env, [name]: value } as unknown as Env)).toThrow(name);
+      }
+    }
+  });
 });

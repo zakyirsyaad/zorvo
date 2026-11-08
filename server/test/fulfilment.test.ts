@@ -3,7 +3,7 @@ import { env, exports } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseConfig, type Env } from "../src/config";
 import { spendLimitNano } from "../src/credits";
-import { decrypt, randomSecret, sha256Hex } from "../src/crypto";
+import { decrypt, encrypt, randomSecret, sha256Hex } from "../src/crypto";
 import type { Ledger } from "../src/ledger/Ledger";
 import type { TopupStatus } from "../src/ledger/status";
 import { NEAR_USDC_ASSET_ID } from "../src/pingpay";
@@ -53,6 +53,8 @@ beforeEach(async () => {
     for (const table of tables) state.storage.sql.exec(`DELETE FROM ${table}`);
     await state.storage.deleteAlarm();
     (ledger as unknown as { env: Env }).env = { ...ledgerEnv, KEY_ENCRYPTION_KEY: KEY, OPERATOR_REFRESH_TOKEN: SEED, ALERT_URL };
+    // A test may have replaced the env and parsed it; this test starts from wrangler.jsonc's values.
+    (ledger as unknown as { parsedConfig: unknown }).parsedConfig = undefined;
     ledger.fetcher = fetcher;
     ledger.requestTimeoutMs = 15 * SECOND_MS;
   });
@@ -92,6 +94,48 @@ async function paidTopup(deviceId: string, at = NOW): Promise<string> {
 
 function tick(now: number): Promise<void> {
   return runInDurableObject(stub(), (ledger: Ledger) => ledger.runAlarm(now));
+}
+
+/** Replaces the Ledger's env for this test and forgets the parsed config it cached. */
+async function setVars(vars: Partial<Env>): Promise<void> {
+  await runInDurableObject(stub(), (ledger) => {
+    const self = ledger as unknown as { env: Env; parsedConfig: unknown };
+    self.env = { ...self.env, ...vars };
+    self.parsedConfig = undefined;
+  });
+}
+
+/** A cached operator access token, so the tick spends no fetch refreshing it. */
+async function seedOperator(now: number): Promise<void> {
+  const access = await encrypt(KEY, "access-token");
+  const refresh = await encrypt(KEY, "refresh-token");
+  await runInDurableObject(stub(), (_ledger, state) => {
+    state.storage.sql.exec(
+      `INSERT OR REPLACE INTO operator (id, refresh_token_ciphertext, seed_hash, access_token, access_expires_at, version)
+       VALUES (1, ?, NULL, ?, ?, 1)`,
+      refresh,
+      access,
+      now + 30 * MINUTE_MS,
+    );
+  });
+}
+
+/** `count` devices, each with a paid $5 top-up and a due credit item. */
+async function seedCreditQueue(count: number): Promise<void> {
+  await runInDurableObject(stub(), (_ledger, state) => {
+    for (let i = 0; i < count; i += 1) {
+      const sql = state.storage.sql;
+      sql.exec("INSERT INTO devices (id, secret_hash, created_at) VALUES (?, ?, ?)", `d-${i}`, `hash-${i}`, NOW);
+      sql.exec(
+        "INSERT INTO topups (id, device_id, package_usd, credits, status, created_at, updated_at) VALUES (?, ?, 5, 500, 'paid', ?, ?)",
+        `t-${i}`,
+        `d-${i}`,
+        NOW,
+        NOW,
+      );
+      sql.exec("INSERT INTO queue (id, kind, ref, attempts, next_at, created_at) VALUES (?, 'credit', ?, 0, ?, ?)", `q-${i}`, `t-${i}`, NOW, NOW);
+    }
+  });
 }
 
 type QueueRow = { id: string; kind: string; ref: string; attempts: number; next_at: number };
@@ -324,26 +368,35 @@ describe("credit queue", () => {
     expect(alerts.filter((alert) => alert.kind === "stuck_queue")).toHaveLength(2);
   });
 
-  it("runs at most 20 credit items a tick", async () => {
-    near.status.create = 503;
-    await runInDurableObject(stub(), (_ledger, state) => {
-      for (let i = 0; i < 25; i += 1) {
-        const sql = state.storage.sql;
-        sql.exec("INSERT INTO devices (id, secret_hash, created_at) VALUES (?, ?, ?)", `d-${i}`, `hash-${i}`, NOW);
-        sql.exec(
-          "INSERT INTO topups (id, device_id, package_usd, credits, status, created_at, updated_at) VALUES (?, ?, 5, 500, 'paid', ?, ?)",
-          `t-${i}`,
-          `d-${i}`,
-          NOW,
-          NOW,
-        );
-        sql.exec("INSERT INTO queue (id, kind, ref, attempts, next_at, created_at) VALUES (?, 'credit', ?, 0, ?, ?)", `q-${i}`, `t-${i}`, NOW, NOW);
-      }
-    });
+  it("runs at most 5 credit items a tick by default, leaving the rest queued", async () => {
+    await seedCreditQueue(25);
+    await tick(NOW);
+    expect(near.count("create")).toBe(5);
+    expect((await rows()).queue).toHaveLength(20);
+    await tick(NOW + SECOND_MS);
+    expect(near.count("create")).toBe(10);
+    expect((await rows()).queue).toHaveLength(15);
+  });
+
+  it("runs the configured number of credit items a tick", async () => {
+    await setVars({ CREDITS_PER_TICK: "20", TICK_SUBREQUEST_BUDGET: "100" });
+    await seedCreditQueue(25);
     await tick(NOW);
     expect(near.count("create")).toBe(20);
+    expect((await rows()).queue).toHaveLength(5);
+  });
+
+  it("stops starting queue items once the tick's subrequest budget is spent", async () => {
+    await setVars({ TICK_SUBREQUEST_BUDGET: "2" });
+    await seedOperator(NOW);
+    await seedStock(10_000);
+    await seedCreditQueue(25);
+    await tick(NOW);
+    expect(near.count("create")).toBe(1);
+    expect((await rows()).queue).toHaveLength(24);
     await tick(NOW + SECOND_MS);
-    expect(near.count("create")).toBe(25);
+    expect(near.count("create")).toBe(2);
+    expect((await rows()).queue).toHaveLength(23);
   });
 
   it("race 7: a top-up's snapshot refresh that listed the keys before a credit landed keeps the credit's limit", async () => {
@@ -433,7 +486,7 @@ describe("alarm", () => {
     expect(ping.calls.some((call) => call.url.endsWith(`/checkout/sessions/${stale.sessionId}`))).toBe(false);
   });
 
-  it("polls at most 10 sessions a tick, none again before its next poll, and still runs the queue", async () => {
+  it("polls at most 3 sessions a tick by default, none again before its next poll, and still runs the queue", async () => {
     await seedStock(10_000);
     const { deviceId } = await newDevice();
     const paid = await paidTopup(deviceId);
@@ -456,14 +509,39 @@ describe("alarm", () => {
     const reads = () => ping.calls.filter((call) => /\/checkout\/sessions\/cs_old_/.test(call.url)).map((call) => call.url.split("/").pop());
 
     await tick(NOW);
-    expect(reads()).toHaveLength(10);
+    expect(reads()).toHaveLength(3);
     expect(await statusOf(paid)).toBe("credited");
 
-    for (let second = 1; second < 5; second += 1) await tick(NOW + second * SECOND_MS);
+    for (let second = 1; second < 18; second += 1) await tick(NOW + second * SECOND_MS);
     expect(reads()).toHaveLength(50);
     expect(new Set(reads()).size).toBe(50);
-    await tick(NOW + 5 * SECOND_MS);
+    await tick(NOW + 18 * SECOND_MS);
     expect(reads()).toHaveLength(50);
+  });
+
+  it("stops polling once the tick's subrequest budget is spent", async () => {
+    await setVars({ TICK_SUBREQUEST_BUDGET: "1" });
+    await seedOperator(NOW);
+    await seedStock(10_000);
+    const { deviceId } = await newDevice();
+    await runInDurableObject(stub(), (_ledger, state) => {
+      for (let i = 0; i < 5; i += 1) {
+        state.storage.sql.exec(
+          `INSERT INTO topups (id, device_id, package_usd, credits, status, ping_session_id, created_at, updated_at)
+           VALUES (?, ?, 5, 500, 'expired', ?, ?, ?)`,
+          `t-${i}`,
+          deviceId,
+          `cs_old_${i}`,
+          NOW - HOUR_MS,
+          NOW - HOUR_MS,
+        );
+        ping.sessions.set(`cs_old_${i}`, { status: "EXPIRED", paymentId: null, body: {}, amount: { assetId: NEAR_USDC_ASSET_ID, amount: "5000000" } });
+      }
+    });
+    const reads = () => ping.calls.filter((call) => /\/checkout\/sessions\/cs_old_/.test(call.url)).length;
+
+    await tick(NOW);
+    expect(reads()).toBe(1);
   });
 
   it("backs off polling an abandoned checkout: 1 minute, then 2, 4, up to an hour", async () => {

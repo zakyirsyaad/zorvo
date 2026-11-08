@@ -31,6 +31,12 @@ export interface Env {
   CHECKOUT_PAID_URL?: string;
   /** Optional https page PingPay sends a payer to after cancelling; the README's "Checkout cancelled" section by default. */
   CHECKOUT_CANCELLED_URL?: string;
+  /** Optional PingPay sessions one alarm tick may poll; defaults to 3, safe on the Workers Free plan. */
+  POLLS_PER_TICK?: string;
+  /** Optional queue items one alarm tick may run; defaults to 5, safe on the Workers Free plan. */
+  CREDITS_PER_TICK?: string;
+  /** Optional outbound fetches one alarm tick may spend before it stops starting items; defaults to 40. */
+  TICK_SUBREQUEST_BUDGET?: string;
 
   LEDGER: DurableObjectNamespace<Ledger>;
 
@@ -58,6 +64,12 @@ export type Config = {
   pingPayBase: string;
   checkoutPaidUrl: string;
   checkoutCancelledUrl: string;
+  /** PingPay sessions one alarm tick may poll. */
+  pollsPerTick: number;
+  /** Queue items one alarm tick may run. */
+  creditsPerTick: number;
+  /** Outbound fetches one alarm tick may spend before it stops starting items. */
+  tickSubrequestBudget: number;
 };
 
 /** Where PingPay sends the payer after the checkout unless configured: the README's "After a checkout" section. */
@@ -66,17 +78,28 @@ const DEFAULT_CHECKOUT_CANCELLED_URL = "https://github.com/zakyirsyaad/zorvo/blo
 
 /** The plain variables `parseConfig` reads: the required strings of `Env`, never a binding or a secret. */
 type VarName = { [K in keyof Env]-?: undefined extends Env[K] ? never : Env[K] extends string ? K : never }[keyof Env];
+/** The optional plain variables `parseConfig` reads; an unset one takes its Free-safe default. */
+type OptionalVarName = "POLLS_PER_TICK" | "CREDITS_PER_TICK" | "TICK_SUBREQUEST_BUDGET";
 
 function invalid(name: string, why: string): never {
   throw new Error(`Invalid config variable ${name}: ${why}`);
 }
 
-function positiveInt(env: Env, name: VarName): number {
-  const raw = String(env[name] ?? "").trim();
+function positiveIntValue(rawValue: string | undefined, name: string): number {
+  const raw = String(rawValue ?? "").trim();
   if (!/^[0-9]+$/.test(raw) || Number(raw) <= 0 || !Number.isSafeInteger(Number(raw))) {
     invalid(name, "expected a positive whole number");
   }
   return Number(raw);
+}
+
+function positiveInt(env: Env, name: VarName): number {
+  return positiveIntValue(env[name], name);
+}
+
+/** A positive whole number, or `fallback` when the variable is unset or empty. */
+function optionalPositiveInt(env: Env, name: OptionalVarName, fallback: number): number {
+  return String(env[name] ?? "").trim() === "" ? fallback : positiveIntValue(env[name], name);
 }
 
 /** A whole number of 0 or more, read as a bigint so a nano-USD amount never passes through a double. */
@@ -134,5 +157,8 @@ export function parseConfig(env: Env): Config {
     pingPayBase: text(env, "PINGPAY_BASE"),
     checkoutPaidUrl: httpsUrl(env, "CHECKOUT_PAID_URL", DEFAULT_CHECKOUT_PAID_URL),
     checkoutCancelledUrl: httpsUrl(env, "CHECKOUT_CANCELLED_URL", DEFAULT_CHECKOUT_CANCELLED_URL),
+    pollsPerTick: optionalPositiveInt(env, "POLLS_PER_TICK", 3),
+    creditsPerTick: optionalPositiveInt(env, "CREDITS_PER_TICK", 5),
+    tickSubrequestBudget: optionalPositiveInt(env, "TICK_SUBREQUEST_BUDGET", 40),
   };
 }

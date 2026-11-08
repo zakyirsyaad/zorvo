@@ -16,8 +16,8 @@ first live run is where they get confirmed.
 ```bash
 pnpm install
 pnpm --filter zorvo-credits-server dev          # wrangler dev on localhost
-pnpm --filter zorvo-credits-server test         # Vitest in the Workers runtime; NEAR AI and PingPay are stubbed
-pnpm --filter zorvo-credits-server typecheck
+pnpm --filter zorvo-credits-server test         # Vitest in the Workers runtime (NEAR AI and PingPay stubbed), then the login script's tests on Node
+pnpm --filter zorvo-credits-server typecheck    # the Worker and its tests, then scripts/ (checkJs, Node types)
 ```
 
 `wrangler dev` needs the secrets and the three `set-me` variables below. For local runs put the secrets

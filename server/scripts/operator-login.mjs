@@ -25,30 +25,55 @@ const ACCOUNT_ID = /^[a-z0-9][a-z0-9._-]{1,63}$/;
 const FALLBACK =
   "Fallback: sign in to the NEAR AI Cloud dashboard with the operator account, copy a refresh token from that session, and store it with `wrangler secret put OPERATOR_REFRESH_TOKEN`.";
 
+/** @param {string} message */
 function fail(message) {
   console.error(message);
   process.exitCode = 1;
 }
 
-/** The ed25519 key pair in the file, or null; whatever the file holds is never put into a message. */
+/**
+ * The ed25519 key pair in the file, or null; whatever the file holds is never put into a message.
+ * @param {string} path
+ * @returns {KeyPair | null}
+ */
 function readKeyPair(path) {
   try {
     const text = readFileSync(path, "utf8").trim();
     const secret = text.startsWith("{") ? (JSON.parse(text).private_key ?? JSON.parse(text).secret_key) : text;
-    const keyPair = KeyPair.fromString(secret);
+    if (typeof secret !== "string") return null;
+    const keyPair = KeyPair.fromString(/** @type {import("@near-js/crypto").KeyPairString} */ (secret));
     return keyPair.getPublicKey().toString().startsWith("ed25519:") ? keyPair : null;
   } catch {
     return null;
   }
 }
 
-/** Text from the server, safe to print: control characters removed, cut to `max` characters. */
-function visible(text, max) {
+/**
+ * Text from the server, safe to print: control characters, line and paragraph separators and the
+ * bidirectional controls (which can make a terminal show text in another order) become spaces; cut
+ * to `max` characters.
+ * @param {string} text
+ * @param {number} max
+ * @returns {string}
+ */
+export function visible(text, max) {
   // eslint-disable-next-line no-control-regex
-  return text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").slice(0, max);
+  return text.replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069]/g, " ").slice(0, max);
 }
 
-/** True when this file is the one node was started with, also through a symlink. */
+/**
+ * The signer `buildLoginRequest` takes, from the operator's key pair: it signs the digest as it is.
+ * @param {KeyPair} keyPair
+ * @returns {import("./nep413.mjs").Signer}
+ */
+export function signerFor(keyPair) {
+  return { publicKey: keyPair.getPublicKey().toString(), sign: (digest) => keyPair.sign(digest).signature };
+}
+
+/**
+ * True when this file is the one node was started with, also through a symlink.
+ * @returns {boolean}
+ */
 function isMain() {
   try {
     return process.argv[1] !== undefined && realpathSync(process.argv[1]) === realpathSync(new URL(import.meta.url));
@@ -57,11 +82,18 @@ function isMain() {
   }
 }
 
+/** @param {Iterable<number>} bytes */
 function hex(bytes) {
-  return Buffer.from(bytes).toString("hex");
+  return Buffer.from([...bytes]).toString("hex");
 }
 
-async function main(argv) {
+/**
+ * The CLI. `fetcher` is the network, replaced only by tests.
+ * @param {string[]} argv
+ * @param {typeof fetch} [fetcher]
+ * @returns {Promise<void>}
+ */
+export async function main(argv, fetcher = fetch) {
   const dryRun = argv.includes("--dry-run");
   const [accountId, keyPath, ...extra] = argv.filter((arg) => arg !== "--dry-run");
   if (!accountId || !keyPath || extra.length > 0) {
@@ -71,7 +103,7 @@ async function main(argv) {
 
   const keyPair = readKeyPair(keyPath);
   if (keyPair === null) return fail("Could not read an ed25519 NEAR key from that file (expected a near-cli credentials file or `ed25519:<base58>`).");
-  const signer = { publicKey: keyPair.getPublicKey().toString(), sign: (digest) => keyPair.sign(digest).signature };
+  const signer = signerFor(keyPair);
 
   const payload = buildNep413Payload(Date.now(), randomBytes(24));
   if (dryRun) {
@@ -87,7 +119,7 @@ async function main(argv) {
   const request = await buildLoginRequest(accountId, signer, payload);
   let response;
   try {
-    response = await fetch(LOGIN_URL, {
+    response = await fetcher(LOGIN_URL, {
       method: "POST",
       headers: { "content-type": "application/json", "user-agent": USER_AGENT },
       body: JSON.stringify(request),

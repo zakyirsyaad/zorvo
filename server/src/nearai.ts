@@ -103,13 +103,26 @@ function dollars(value: unknown): number | null {
   return amount / 10 ** scale;
 }
 
-/** A verifiable model with its prices per million tokens, or null for one that is not, or is malformed. */
-function verifiableModel(model: unknown): { id: string; inputPerM: number; outputPerM: number } | null {
-  if (!isRecord(model) || !isRecord(model.metadata) || model.metadata.verifiable !== true) return null;
+/** A model with its prices per million tokens in USD. */
+export type ModelPrice = { id: string; inputPerM: number; outputPerM: number };
+
+/**
+ * The model list as read, by model id: `verifiable` (with prices), `notVerifiable` (NEAR AI does not
+ * mark it verifiable: it must never be offered) and `unusable` (marked verifiable, prices unreadable).
+ * An entry without a model id cannot be told apart and is left out.
+ */
+export type ModelListing = { verifiable: ModelPrice[]; notVerifiable: string[]; unusable: string[] };
+
+type ModelEntry = { kind: "verifiable"; model: ModelPrice } | { kind: "notVerifiable" | "unusable"; id: string } | null;
+
+function modelEntry(model: unknown): ModelEntry {
+  if (!isRecord(model) || typeof model.modelId !== "string" || model.modelId === "") return null;
+  const id = model.modelId;
+  if (!isRecord(model.metadata) || model.metadata.verifiable !== true) return { kind: "notVerifiable", id };
   const input = dollars(model.inputCostPerToken);
   const output = dollars(model.outputCostPerToken);
-  if (typeof model.modelId !== "string" || model.modelId === "" || input === null || output === null) return null;
-  return { id: model.modelId, inputPerM: input * TOKENS_PER_MILLION, outputPerM: output * TOKENS_PER_MILLION };
+  if (input === null || output === null) return { kind: "unusable", id };
+  return { kind: "verifiable", model: { id, inputPerM: input * TOKENS_PER_MILLION, outputPerM: output * TOKENS_PER_MILLION } };
 }
 
 /**
@@ -236,13 +249,14 @@ export class NearAiClient {
   }
 
   /**
-   * Public (no credentials): the models NEAR AI marks verifiable, with prices per million tokens in
-   * USD. A malformed model is left out rather than failing the list. When an answer states a `total`
-   * above what was read, the next page is asked for by offset (unverified: NEAR AI's list has fit
-   * one page so far), for at most 10 pages, stopping on a page that names no model not seen before.
+   * Public (no credentials): every model NEAR AI lists, sorted into verifiable (with prices per
+   * million tokens in USD), not verifiable, and verifiable with unreadable prices; the first entry of
+   * an id decides. When an answer states a `total` above what was read, the next page is asked for
+   * by offset (unverified: NEAR AI's list has fit one page so far), for at most 10 pages, stopping
+   * on a page that names no model not seen before. An answer of another shape throws.
    */
-  async verifiableModels(): Promise<{ id: string; inputPerM: number; outputPerM: number }[]> {
-    const models = new Map<string, { id: string; inputPerM: number; outputPerM: number }>();
+  async modelListing(): Promise<ModelListing> {
+    const entries = new Map<string, Exclude<ModelEntry, null>>();
     const seen = new Set<unknown>();
     let rowsRead = 0;
     for (let pages = 0; pages < MAX_MODEL_PAGES; pages += 1) {
@@ -252,13 +266,24 @@ export class NearAiClient {
       const seenBefore = seen.size;
       for (const item of body.models) {
         seen.add(isRecord(item) ? item.modelId : item);
-        const model = verifiableModel(item);
-        if (model && !models.has(model.id)) models.set(model.id, model);
+        const entry = modelEntry(item);
+        const id = entry === null ? null : entry.kind === "verifiable" ? entry.model.id : entry.id;
+        if (entry !== null && id !== null && !entries.has(id)) entries.set(id, entry);
       }
       rowsRead += body.models.length;
       const total = typeof body.total === "number" ? body.total : 0;
       if (body.models.length === 0 || rowsRead >= total || seen.size === seenBefore) break;
     }
-    return [...models.values()];
+    const listing: ModelListing = { verifiable: [], notVerifiable: [], unusable: [] };
+    for (const entry of entries.values()) {
+      if (entry.kind === "verifiable") listing.verifiable.push(entry.model);
+      else listing[entry.kind].push(entry.id);
+    }
+    return listing;
+  }
+
+  /** The models NEAR AI marks verifiable, with readable prices; a malformed model is left out. */
+  async verifiableModels(): Promise<ModelPrice[]> {
+    return (await this.modelListing()).verifiable;
   }
 }

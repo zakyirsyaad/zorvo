@@ -113,23 +113,27 @@ export async function refreshForBalance(ctx: BalanceContext, deviceId: string, n
 
 /**
  * The models users may pick: the configured allowlist that NEAR AI marks verifiable, cached 10
- * minutes in memory and in SQLite. When NEAR AI cannot be read, or names none of the allowlist, the
- * last good list is served however old, also after an eviction; `upstream` only when there never was one.
+ * minutes in memory and in SQLite; possibly empty, when NEAR AI marks none of them verifiable. When
+ * NEAR AI cannot be read or its answer cannot be used (`loadModels`), the last good list is served
+ * however old, also after an eviction, less any model that answer marked not verifiable;
+ * `upstream` only when there never was one.
  */
 export async function models(ctx: ModelsContext, now: number): Promise<{ models: ModelInfo[] } | { error: "upstream" }> {
   const cached = ctx.cachedModels();
   if (cached && now - cached.at < MODELS_CACHE_MS) return { models: cached.models };
   try {
     const list = await ctx.loadModelsOnce();
-    // An answer that names none of the allowlisted models is a fault upstream, not a new list: it is
-    // not stored over the last good one, which is served instead.
-    if (list.length === 0 && ctx.config().models.length > 0) throw new Error("NEAR AI listed none of the allowlisted models as verifiable");
     ctx.rememberModels({ models: list, at: now });
     return { models: list };
   } catch (error) {
     console.error(`Reading the NEAR AI model list failed: ${describeError(error)}`);
     const last = ctx.cachedModels();
-    return last ? { models: last.models } : { error: "upstream" };
+    if (!last) return { error: "upstream" };
+    // A model even an unusable answer marks not verifiable leaves the last list for good.
+    const dropped = error instanceof UnusableModelList ? error.notVerifiable : [];
+    const kept = last.models.filter((model) => !dropped.includes(model.id));
+    if (kept.length !== last.models.length) ctx.rememberModels({ models: kept, at: last.at });
+    return { models: kept };
   }
 }
 
@@ -166,9 +170,40 @@ export function storedModels(sql: SqlStorage, allowlist: readonly string[]): { m
   return { models: parsed.filter((model) => allowlist.includes(model.id)), at: row.read_at };
 }
 
+/**
+ * A model list NEAR AI answered but that cannot be used: an allowlisted model is marked verifiable
+ * with prices that do not read, or no allowlisted model is mentioned at all. `notVerifiable` names
+ * the allowlisted models that answer did mark not verifiable: they leave the last list all the same.
+ */
+export class UnusableModelList extends Error {
+  constructor(
+    message: string,
+    readonly notVerifiable: readonly string[],
+  ) {
+    super(message);
+    this.name = "UnusableModelList";
+  }
+}
+
+/**
+ * The allowlisted models NEAR AI marks verifiable, in allowlist order. Only TEE models may ever be
+ * offered, so an answer that names allowlisted models but marks none verifiable is real data and
+ * gives an empty list (fail closed). It throws `UnusableModelList` for an answer that cannot be
+ * trusted as a list, so the last good one is served instead (see `models`).
+ */
 export async function loadModels(ctx: ModelsContext): Promise<ModelInfo[]> {
-  const verifiable = new Map((await ctx.nearAi().verifiableModels()).map((model) => [model.id, model]));
-  return ctx.config().models.flatMap((id) => {
+  const listing = await ctx.nearAi().modelListing();
+  const allowlist = ctx.config().models;
+  const allowed = (ids: readonly string[]) => ids.filter((id) => allowlist.includes(id));
+  const notVerifiable = allowed(listing.notVerifiable);
+  const verifiable = new Map(listing.verifiable.map((model) => [model.id, model]));
+  if (allowed(listing.unusable).length > 0) {
+    throw new UnusableModelList(`NEAR AI listed ${allowed(listing.unusable).join(", ")} with prices that do not read`, notVerifiable);
+  }
+  if (notVerifiable.length === 0 && !allowlist.some((id) => verifiable.has(id))) {
+    throw new UnusableModelList("NEAR AI's model list mentions none of the allowlisted models", []);
+  }
+  return allowlist.flatMap((id) => {
     const model = verifiable.get(id);
     return model ? [model] : [];
   });

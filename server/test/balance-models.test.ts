@@ -328,19 +328,72 @@ describe("models kept in storage", () => {
     expect(near.count("models")).toBe(0);
   });
 
-  it("keeps the last good list when NEAR AI answers none of the allowlisted models", async () => {
+  it("keeps the last good list when an answer does not mention the allowlisted models at all", async () => {
     near.modelList = [model(first!)];
     await stub().models(NOW);
-    near.modelList = [{ ...model(first!), verifiable: false }, model("not/allowlisted")];
+    near.modelList = [model("not/allowlisted")];
     const served = await stub().models(NOW + 11 * MINUTE_MS);
     if ("error" in served) throw new Error("expected the last good list");
     expect(served.models.map((m) => m.id)).toEqual([first]);
-    // Nor is the empty answer stored: after an eviction the good list is still there.
+    // Nor is that answer stored: after an eviction the good list is still there.
     await runInDurableObject(stub(), (ledger: Ledger) => forgetModelsInMemory(ledger));
     near.status.models = 503;
     const after = await stub().models(NOW + 12 * MINUTE_MS);
     if ("error" in after) throw new Error("expected the stored list");
     expect(after.models.map((m) => m.id)).toEqual([first]);
+  });
+
+  it("offers nothing when NEAR AI lists the allowlisted models as not verifiable, and stores that", async () => {
+    near.modelList = [model(first!), model(second!)];
+    await stub().models(NOW);
+    near.modelList = [{ ...model(first!), verifiable: false }, { ...model(second!), verifiable: false }];
+    expect(await stub().models(NOW + 11 * MINUTE_MS)).toEqual({ models: [] });
+    // The empty list replaced the stored one: a later failure serves nothing, not the old models.
+    await runInDurableObject(stub(), (ledger: Ledger) => forgetModelsInMemory(ledger));
+    near.status.models = 503;
+    expect(await stub().models(NOW + 30 * MINUTE_MS)).toEqual({ models: [] });
+  });
+
+  it("drops a model that turned non-verifiable and keeps the others", async () => {
+    near.modelList = [model(first!), model(second!)];
+    await stub().models(NOW);
+    near.modelList = [model(first!), { ...model(second!), verifiable: false }];
+    const served = await stub().models(NOW + 11 * MINUTE_MS);
+    if ("error" in served) throw new Error("expected models");
+    expect(served.models.map((m) => m.id)).toEqual([first]);
+    near.status.models = 503;
+    const later = await stub().models(NOW + 30 * MINUTE_MS);
+    if ("error" in later) throw new Error("expected the stored list");
+    expect(later.models.map((m) => m.id)).toEqual([first]);
+  });
+
+  it("serves the last good list for an answer of the wrong shape", async () => {
+    near.modelList = [model(first!), model(second!)];
+    await stub().models(NOW);
+    near.rawModels = { models: "not a list" };
+    const served = await stub().models(NOW + 11 * MINUTE_MS);
+    if ("error" in served) throw new Error("expected the last good list");
+    expect(served.models.map((m) => m.id)).toEqual([first, second]);
+  });
+
+  it("on an answer it cannot use, still drops from the last list a model that answer marks not verifiable", async () => {
+    near.modelList = [model(first!), model(second!)];
+    await stub().models(NOW);
+    near.rawModels = {
+      models: [
+        { modelId: first, inputCostPerToken: "free", outputCostPerToken: { amount: 1, scale: 9 }, metadata: { verifiable: true } },
+        { modelId: second, inputCostPerToken: { amount: 1, scale: 9 }, outputCostPerToken: { amount: 1, scale: 9 }, metadata: { verifiable: false } },
+      ],
+    };
+    const served = await stub().models(NOW + 11 * MINUTE_MS);
+    if ("error" in served) throw new Error("expected the last good list");
+    expect(served.models.map((m) => m.id)).toEqual([first]);
+    near.rawModels = undefined;
+    near.status.models = 503;
+    await runInDurableObject(stub(), (ledger: Ledger) => forgetModelsInMemory(ledger));
+    const stored = await stub().models(NOW + 30 * MINUTE_MS);
+    if ("error" in stored) throw new Error("expected the stored list");
+    expect(stored.models.map((m) => m.id)).toEqual([first]);
   });
 
   it("answers upstream when the first list NEAR AI gives holds none of the allowlisted models", async () => {
@@ -389,6 +442,14 @@ describe("routes", () => {
     const res = await get("/v1/balance?fresh=1", secret);
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ usedCredits: creditsFromNano(1n * USD, cfg), keyReady: true });
+  });
+
+  it("GET /v1/models answers an empty list when no allowlisted model is verifiable", async () => {
+    const { secret } = await newDevice();
+    near.modelList = cfg.models.map((id) => ({ id, verifiable: false, inputPerToken: 1.5e-7, outputPerToken: 3e-7 }));
+    const res = await get("/v1/models", secret);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ models: [] });
   });
 
   it("GET /v1/models returns the models, or 502 upstream when there are none to serve", async () => {

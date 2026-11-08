@@ -139,6 +139,8 @@ export class FakeNearAi {
   status: Partial<Record<NearAiRoute, number>> = {};
   /** A status to answer the next request of a route with, once; later ones are served. */
   failOnce: Partial<Record<NearAiRoute, number>> = {};
+  /** A raw `/model/list` body served instead of `modelList`, for answers of the wrong shape. */
+  rawModels: unknown = undefined;
   /** Key ids the key list leaves out, as a list that lags behind would. */
   unlisted = new Set<string>();
   /** Routes that never answer; the request fails only when its signal aborts. */
@@ -210,6 +212,7 @@ export class FakeNearAi {
       case "balance":
         return json({ remaining: { amount: Number(this.remainingNano), scale: 9 } });
       case "models":
+        if (this.rawModels !== undefined) return json(this.rawModels);
         return json({
           models: this.modelList.map((model) => ({
             modelId: model.id,

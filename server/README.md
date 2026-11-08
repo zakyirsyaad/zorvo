@@ -304,7 +304,10 @@ money: the device recovers with its own code, which issues a fresh key against t
   and queue state; the operator's refresh token and access token, both encrypted with `KEY_ENCRYPTION_KEY`,
   and a hash of the refresh-token secret (to notice a replaced secret); and a user's NEAR AI key only
   encrypted, for at most 24 hours, until it is handed over once.
-- Also stored: the last model list read from NEAR AI (ids and prices), served when NEAR AI cannot be read.
+- Also stored: the last model list read from NEAR AI (ids and prices), served when NEAR AI cannot be read or
+  its answer cannot be used. Only models NEAR AI marks verifiable (TEE) are ever offered: an answer that lists
+  the allowlisted models as not verifiable is taken as it is, so the list can be empty, and a model any answer
+  marks not verifiable leaves the stored list too.
 - Not stored or seen: prompts and completions (they go from the app to NEAR AI), the operator's NEAR private
   key (it stays on your Mac and is only read by the login script), card or wallet details (PingPay).
 - A leaked database exposes no usable user key and no device secret. It would show key ids, balances and

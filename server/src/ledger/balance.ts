@@ -1,6 +1,6 @@
 import type { Config } from "../config";
 import { balanceCredits, creditsFromNano, spendLimitNano } from "../credits";
-import type { NearAiClient } from "../nearai";
+import { UnusableModelList, type NearAiClient } from "../nearai";
 import { describeError } from "./fulfilment";
 
 /**
@@ -168,21 +168,6 @@ export function storedModels(sql: SqlStorage, allowlist: readonly string[]): { m
   }
   if (!Array.isArray(parsed) || !parsed.every(isModelInfo)) return undefined;
   return { models: parsed.filter((model) => allowlist.includes(model.id)), at: row.read_at };
-}
-
-/**
- * A model list NEAR AI answered but that cannot be used: an allowlisted model is marked verifiable
- * with prices that do not read, or no allowlisted model is mentioned at all. `notVerifiable` names
- * the allowlisted models that answer did mark not verifiable: they leave the last list all the same.
- */
-export class UnusableModelList extends Error {
-  constructor(
-    message: string,
-    readonly notVerifiable: readonly string[],
-  ) {
-    super(message);
-    this.name = "UnusableModelList";
-  }
 }
 
 /**

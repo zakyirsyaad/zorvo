@@ -376,6 +376,31 @@ describe("models kept in storage", () => {
     expect(served.models.map((m) => m.id)).toEqual([first, second]);
   });
 
+  it.each([
+    ["errors", () => new Response(JSON.stringify({ error: "unavailable" }), { status: 503 })],
+    ["has the wrong shape", () => new Response(JSON.stringify({ models: "not a list" }), { status: 200 })],
+  ])("drops a model page 1 marks not verifiable when page 2 %s", async (_name, secondPage) => {
+    near.modelList = [model(first!), model(second!)];
+    await stub().models(NOW);
+    const priced = (id: string, verifiable: boolean) => ({
+      modelId: id,
+      inputCostPerToken: { amount: 1, scale: 9 },
+      outputCostPerToken: { amount: 1, scale: 9 },
+      metadata: { verifiable },
+    });
+    near.modelPages = (offset) =>
+      offset === null ? new Response(JSON.stringify({ models: [priced(first!, false)], total: 2 }), { status: 200 }) : secondPage();
+    const served = await stub().models(NOW + 11 * MINUTE_MS);
+    if ("error" in served) throw new Error("expected the last good list");
+    expect(served.models.map((m) => m.id)).toEqual([second]);
+    near.modelPages = undefined;
+    near.status.models = 503;
+    await runInDurableObject(stub(), (ledger: Ledger) => forgetModelsInMemory(ledger));
+    const stored = await stub().models(NOW + 30 * MINUTE_MS);
+    if ("error" in stored) throw new Error("expected the stored list");
+    expect(stored.models.map((m) => m.id)).toEqual([second]);
+  });
+
   it("on an answer it cannot use, still drops from the last list a model that answer marks not verifiable", async () => {
     near.modelList = [model(first!), model(second!)];
     await stub().models(NOW);

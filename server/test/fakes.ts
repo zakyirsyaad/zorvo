@@ -141,6 +141,8 @@ export class FakeNearAi {
   failOnce: Partial<Record<NearAiRoute, number>> = {};
   /** A raw `/model/list` body served instead of `modelList`, for answers of the wrong shape. */
   rawModels: unknown = undefined;
+  /** Answers `/model/list` per page (`offset` is null on the first), instead of `modelList` and `rawModels`. */
+  modelPages: ((offset: string | null) => Response) | undefined = undefined;
   /** Key ids the key list leaves out, as a list that lags behind would. */
   unlisted = new Set<string>();
   /** Routes that never answer; the request fails only when its signal aborts. */
@@ -182,7 +184,8 @@ export class FakeNearAi {
     const once = this.failOnce[route];
     if (once !== undefined) delete this.failOnce[route];
     const status = once ?? this.status[route];
-    const answer = status !== undefined ? json({ error: "unavailable" }, status) : this.serve(route, path, body);
+    const paged = route === "models" && this.modelPages ? this.modelPages(url.searchParams.get("offset")) : undefined;
+    const answer = status !== undefined ? json({ error: "unavailable" }, status) : (paged ?? this.serve(route, path, body));
     const held = this.holds.get(route);
     if (held) {
       this.holds.delete(route);

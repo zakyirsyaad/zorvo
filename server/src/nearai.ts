@@ -103,6 +103,22 @@ function dollars(value: unknown): number | null {
   return amount / 10 ** scale;
 }
 
+/**
+ * A model list NEAR AI answered but that cannot be used: a later page failed, an allowlisted model
+ * is marked verifiable with prices that do not read, or no allowlisted model is mentioned at all.
+ * `notVerifiable` names the models the readable part did mark not verifiable: they leave the last
+ * list all the same, since only TEE models may ever be offered.
+ */
+export class UnusableModelList extends Error {
+  constructor(
+    message: string,
+    readonly notVerifiable: readonly string[],
+  ) {
+    super(message);
+    this.name = "UnusableModelList";
+  }
+}
+
 /** A model with its prices per million tokens in USD. */
 export type ModelPrice = { id: string; inputPerM: number; outputPerM: number };
 
@@ -253,7 +269,9 @@ export class NearAiClient {
    * million tokens in USD), not verifiable, and verifiable with unreadable prices; the first entry of
    * an id decides. When an answer states a `total` above what was read, the next page is asked for
    * by offset (unverified: NEAR AI's list has fit one page so far), for at most 10 pages, stopping
-   * on a page that names no model not seen before. An answer of another shape throws.
+   * on a page that names no model not seen before. A first page that fails or has another shape
+   * throws as it is; a later one throws `UnusableModelList` with the models the pages read so far
+   * marked not verifiable, so they are not offered from an older list.
    */
   async modelListing(): Promise<ModelListing> {
     const entries = new Map<string, Exclude<ModelEntry, null>>();
@@ -261,7 +279,16 @@ export class NearAiClient {
     let rowsRead = 0;
     for (let pages = 0; pages < MAX_MODEL_PAGES; pages += 1) {
       const query = pages === 0 ? "" : `?limit=${PAGE_SIZE}&offset=${rowsRead}`;
-      const body = await this.request("GET", `/model/list${query}`, undefined);
+      let body: unknown;
+      try {
+        body = await this.request("GET", `/model/list${query}`, undefined);
+        if (!isRecord(body) || !Array.isArray(body.models)) unexpected("model list");
+      } catch (error) {
+        if (pages === 0) throw error;
+        const notVerifiable = [...entries.values()].flatMap((entry) => (entry.kind === "notVerifiable" ? [entry.id] : []));
+        const why = error instanceof Error ? error.message : String(error);
+        throw new UnusableModelList(`NEAR AI's model list failed on page ${pages + 1}: ${why}`, notVerifiable);
+      }
       if (!isRecord(body) || !Array.isArray(body.models)) return unexpected("model list");
       const seenBefore = seen.size;
       for (const item of body.models) {

@@ -103,6 +103,12 @@ const STATEMENTS = [
     id TEXT PRIMARY KEY,
     received_at INTEGER NOT NULL
   )`,
+  // One row (id = 1): the last model list read from NEAR AI (JSON) and when, served when NEAR AI cannot be read.
+  `CREATE TABLE IF NOT EXISTS models_cache (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    models_json TEXT NOT NULL,
+    read_at INTEGER NOT NULL
+  )`,
   // One top-up per PingPay session; SQLite allows many NULLs, as a promo top-up has no session.
   "CREATE UNIQUE INDEX IF NOT EXISTS topups_session ON topups(ping_session_id)",
   "CREATE INDEX IF NOT EXISTS queue_kind_ref ON queue(kind, ref)",

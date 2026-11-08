@@ -7,7 +7,17 @@ import { UPSTREAM_TIMEOUT_MS } from "../http";
 import { HOUR_MS, MINUTE_MS, SECOND_MS } from "../time";
 import { NearAiClient } from "../nearai";
 import { PingPayClient } from "../pingpay";
-import { balanceFor, loadModels, models, type BalanceContext, type BalanceView, type ModelInfo, type ModelsContext } from "./balance";
+import {
+  balanceFor,
+  loadModels,
+  models,
+  storedModels,
+  storeModels,
+  type BalanceContext,
+  type BalanceView,
+  type ModelInfo,
+  type ModelsContext,
+} from "./balance";
 import {
   ALARM_INTERVAL_MS,
   describeError,
@@ -45,7 +55,7 @@ export class Ledger extends DurableObject<Env> {
   private parsedConfig: Config | undefined;
   private refreshing: Promise<OperatorSession> | undefined;
   private snapshotting: Promise<void> | undefined;
-  /** The last model list and when it was read; plain memory, read again after an eviction. */
+  /** The last model list and when it was read; memory in front of the `models_cache` row. */
   private modelsCache: { models: ModelInfo[]; at: number } | undefined;
   private modelsLoading: Promise<ModelInfo[]> | undefined;
   private ticking: Promise<void> | undefined;
@@ -225,9 +235,13 @@ export class Ledger extends DurableObject<Env> {
     const context: ModelsContext = {
       config: () => this.config(),
       nearAi: () => this.nearAi(),
-      cachedModels: () => this.modelsCache,
+      cachedModels: () => {
+        this.modelsCache ??= storedModels(this.sql, this.config().models);
+        return this.modelsCache;
+      },
       rememberModels: (cache) => {
         this.modelsCache = cache;
+        storeModels(this.sql, cache);
       },
       loadModelsOnce: () => {
         this.modelsLoading ??= loadModels(context).finally(() => {
@@ -237,12 +251,6 @@ export class Ledger extends DurableObject<Env> {
       },
     };
     return context;
-  }
-
-  /** For tests: forgets the cached model list. */
-  resetModelsCache(): void {
-    this.modelsCache = undefined;
-    this.modelsLoading = undefined;
   }
 
   /**

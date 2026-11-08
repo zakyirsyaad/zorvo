@@ -6,6 +6,7 @@ import { balanceCredits, creditsFromNano, spendLimitNano } from "../src/credits"
 import { randomSecret, sha256Hex } from "../src/crypto";
 import type { Ledger } from "../src/ledger/Ledger";
 import { FakeNearAi, FakePingPay } from "./fakes";
+import { forgetModelsInMemory } from "./harness";
 
 const ledgerEnv = env as unknown as Env;
 const cfg = parseConfig(ledgerEnv);
@@ -31,13 +32,13 @@ beforeEach(async () => {
   ping.expiresAt = () => NOW + 15 * MINUTE_MS;
   near = new FakeNearAi();
   await runInDurableObject(stub(), async (ledger: Ledger, state) => {
-    const tables = ["devices", "topups", "reservations", "queue", "pending_keys", "operator", "snapshot", "key_usage", "ratelimits", "events"];
+    const tables = ["devices", "topups", "reservations", "queue", "pending_keys", "operator", "snapshot", "key_usage", "ratelimits", "events", "models_cache"];
     for (const table of tables) state.storage.sql.exec(`DELETE FROM ${table}`);
     await state.storage.deleteAlarm();
     (ledger as unknown as { env: Env }).env = { ...ledgerEnv, KEY_ENCRYPTION_KEY: KEY, OPERATOR_REFRESH_TOKEN: SEED };
     ledger.fetcher = fetcher;
     ledger.requestTimeoutMs = 15 * SECOND_MS;
-    ledger.resetModelsCache();
+    forgetModelsInMemory(ledger);
   });
 });
 
@@ -185,6 +186,32 @@ describe("balanceFor with fresh", () => {
     expect(near.calls).toEqual([]);
   });
 
+  it("does not use up a device's Refresh while the snapshot is young enough to need none", async () => {
+    const { deviceId } = await creditedDevice();
+    near.calls = [];
+    await balance(deviceId, true, NOW + 10 * SECOND_MS);
+    expect(callsToList()).toBe(0);
+    await balance(deviceId, true, NOW + 35 * SECOND_MS);
+    expect(callsToList()).toBe(1);
+  });
+
+  it("refreshes for the whole server at most once per 30 seconds, even when that refresh failed", async () => {
+    const a = await creditedDevice();
+    const b = await newDevice();
+    await runInDurableObject(stub(), (_ledger, state) => {
+      state.storage.sql.exec("UPDATE devices SET nearai_key_id = 'key-b' WHERE id = ?", b.deviceId);
+    });
+    near.status.list = 503;
+    near.calls = [];
+    await balance(a.deviceId, true, NOW + 31 * SECOND_MS);
+    expect(callsToList()).toBe(1);
+    near.status.list = undefined;
+    await balance(b.deviceId, true, NOW + 45 * SECOND_MS);
+    expect(callsToList()).toBe(1);
+    await balance(b.deviceId, true, NOW + 62 * SECOND_MS);
+    expect(callsToList()).toBe(2);
+  });
+
   it("returns the cached row, not an error, when NEAR AI fails", async () => {
     const { deviceId, keyId } = await creditedDevice();
     near.keys.set(keyId, { ...near.keys.get(keyId)!, usageNano: 1n * USD });
@@ -275,6 +302,45 @@ describe("models", () => {
     const stale = await stub().models(NOW + 60 * MINUTE_MS);
     if ("error" in stale) throw new Error("expected the cached list");
     expect(stale.models.map((m) => m.id)).toEqual([first]);
+  });
+});
+
+describe("models kept in storage", () => {
+  const model = (id: string) => ({ id, verifiable: true, inputPerToken: 1.5e-7, outputPerToken: 3e-7 });
+  const [first, second] = cfg.models;
+
+  it("serves the last good list after the object lost its memory, when NEAR AI fails", async () => {
+    near.modelList = [model(first!), model(second!)];
+    await stub().models(NOW);
+    await runInDurableObject(stub(), (ledger: Ledger) => forgetModelsInMemory(ledger));
+    near.status.models = 503;
+    const served = await stub().models(NOW + 60 * MINUTE_MS);
+    if ("error" in served) throw new Error("expected the stored list");
+    expect(served.models.map((m) => m.id)).toEqual([first, second]);
+  });
+
+  it("serves a stored list younger than 10 minutes without asking NEAR AI", async () => {
+    near.modelList = [model(first!)];
+    await stub().models(NOW);
+    await runInDurableObject(stub(), (ledger: Ledger) => forgetModelsInMemory(ledger));
+    near.calls = [];
+    await stub().models(NOW + 5 * MINUTE_MS);
+    expect(near.count("models")).toBe(0);
+  });
+
+  it("leaves out a stored model the allowlist no longer has", async () => {
+    near.modelList = [model(first!), model(second!)];
+    await stub().models(NOW);
+    await runInDurableObject(stub(), (ledger: Ledger) => {
+      forgetModelsInMemory(ledger);
+      const self = ledger as unknown as { env: Env; parsedConfig: unknown };
+      self.env = { ...self.env, MODELS: first! };
+      self.parsedConfig = undefined;
+    });
+    near.status.models = 503;
+    const served = await stub().models(NOW + 60 * MINUTE_MS);
+    if ("error" in served) throw new Error("expected the stored list");
+    expect(served.models.map((m) => m.id)).toEqual([first]);
   });
 });
 

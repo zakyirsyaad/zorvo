@@ -10,6 +10,8 @@ export { Ledger } from "./ledger/Ledger";
 const REGISTRATIONS_PER_HOUR = 10;
 const TOPUPS_PER_HOUR = 10;
 const PROMO_ATTEMPTS_PER_HOUR = 5;
+/** Promo attempts per address and hour, across devices, so registering devices buys no extra guesses. */
+const PROMO_ATTEMPTS_PER_IP_HOUR = 20;
 const RECOVER_ATTEMPTS_PER_HOUR = 5;
 /** Admin attempts per address and hour, right or wrong, so the token cannot be guessed at speed. */
 const ADMIN_ATTEMPTS_PER_HOUR = 20;
@@ -102,9 +104,14 @@ async function adminPromo(req: Request, env: Env): Promise<Response> {
   return json({ ok: true });
 }
 
-/** Every attempt counts, wrong or malformed, so a code cannot be guessed at more than 5 an hour per device. */
+/**
+ * Every attempt counts, wrong or malformed, so a code cannot be guessed at more than 5 an hour per
+ * device or 20 an hour per address. Unknown, used-up and already-redeemed codes all answer the same
+ * 400; only a valid code can reach the 409s (stock, device cap), which the app needs to word.
+ */
 async function redeemPromoRoute(req: Request, env: Env, deviceId: string): Promise<Response> {
   const ledger = ledgerOf(env);
+  if (!(await ledger.rateLimit(`promo-ip:${clientIp(req)}`, PROMO_ATTEMPTS_PER_IP_HOUR, HOUR_MS)).allowed) return error("rate_limited", 429);
   if (!(await ledger.rateLimit(`promo:${deviceId}`, PROMO_ATTEMPTS_PER_HOUR, HOUR_MS)).allowed) return error("rate_limited", 429);
   const code = ((await req.json().catch(() => null)) as { code?: unknown } | null)?.code;
   if (typeof code !== "string" || code === "" || code.length > MAX_CODE_LENGTH) return error("bad_request", 400);

@@ -301,6 +301,7 @@ money: the device recovers with its own code, which issues a fresh key against t
   and queue state; the operator's refresh token and access token, both encrypted with `KEY_ENCRYPTION_KEY`,
   and a hash of the refresh-token secret (to notice a replaced secret); and a user's NEAR AI key only
   encrypted, for at most 24 hours, until it is handed over once.
+- Also stored: the last model list read from NEAR AI (ids and prices), served when NEAR AI cannot be read.
 - Not stored or seen: prompts and completions (they go from the app to NEAR AI), the operator's NEAR private
   key (it stays on your Mac and is only read by the login script), card or wallet details (PingPay).
 - A leaked database exposes no usable user key and no device secret. It would show key ids, balances and
@@ -310,6 +311,10 @@ money: the device recovers with its own code, which issues a fresh key against t
 - Webhooks are accepted only with a valid HMAC signature and a fresh timestamp. The admin route needs
   `ADMIN_TOKEN` (compared in constant time); without it set, nobody is admin.
 - Registration, top-ups, promo attempts and recovery attempts are rate-limited per device or per address.
+  Promo attempts are limited per device (5 an hour) and per address (20 an hour), so registering more devices
+  buys no extra guesses. An unknown, used-up or already-redeemed code all answer the same `400`; only a valid
+  code can get a `409` (`stock`, `device_cap`), which the app needs to tell the user why. Use generated codes
+  (as above): a 64-bit code cannot be found at 20 guesses an hour.
   So are admin attempts (20 an hour per address, right or wrong) and wrong device secrets (after 60 in an
   hour from one address it is answered `429`; a device whose secret is valid is never counted). Each check
   still costs one Ledger call; volumetric floods belong to a Cloudflare WAF rate-limiting rule in front.

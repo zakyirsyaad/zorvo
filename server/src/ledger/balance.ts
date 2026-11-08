@@ -22,6 +22,14 @@ export type ModelInfo = { id: string; inputPerM: number; outputPerM: number };
 export const FRESH_BALANCE_MS = 30 * 1000;
 /** How long the model list is served without asking NEAR AI again. */
 export const MODELS_CACHE_MS = 10 * 60 * 1000;
+const FRESH_ALL_KEY = "fresh:all";
+const MODELS_ROW_ID = 1;
+
+/** Whether a once-per-`FRESH_BALANCE_MS` window has room now, without taking it. */
+function windowIsFree(sql: SqlStorage, key: string, now: number): boolean {
+  const row = sql.exec<{ window_start: number }>("SELECT window_start FROM ratelimits WHERE key = ?", key).toArray()[0];
+  return row === undefined || now - row.window_start >= FRESH_BALANCE_MS;
+}
 
 export interface BalanceContext {
   readonly sql: SqlStorage;
@@ -82,16 +90,20 @@ export async function balanceFor(ctx: BalanceContext, deviceId: string, fresh: b
  * Refresh in the app. NEAR AI has no per-key total cheaper than the key list, so this reuses
  * `refreshSnapshot` (its race guard and access-token retry included), and is bounded so devices
  * cannot turn Refresh into a stream of key-list reads: once per 30 s per device, once per 30 s
- * for the server as a whole, and not at all when the snapshot is already that young. A device
- * without a key has nothing to read. A NEAR AI failure is logged and the cached row is served,
- * never an error: the balance on screen stays usable.
+ * for the server as a whole, and not at all when the snapshot is already that young. A window is
+ * used up only by a refresh that is made: both are checked first, then both taken, with no await
+ * in between, so a Refresh that was answered from a young snapshot or refused by the server's
+ * window does not hold the device's back. A device without a key has nothing to read. A NEAR AI
+ * failure is logged and the cached row is served, never an error: the balance on screen stays usable.
  */
 export async function refreshForBalance(ctx: BalanceContext, deviceId: string, now: number): Promise<void> {
   const hasKey = ctx.sql.exec("SELECT 1 FROM devices WHERE id = ? AND nearai_key_id IS NOT NULL", deviceId).toArray().length > 0;
   if (!hasKey) return;
-  if (!ctx.rateLimit(`fresh:${deviceId}`, 1, FRESH_BALANCE_MS, now).allowed) return;
   if (now - ctx.snapshotTakenAt() < FRESH_BALANCE_MS) return;
-  if (!ctx.rateLimit("fresh:all", 1, FRESH_BALANCE_MS, now).allowed) return;
+  const deviceKey = `fresh:${deviceId}`;
+  if (!windowIsFree(ctx.sql, deviceKey, now) || !windowIsFree(ctx.sql, FRESH_ALL_KEY, now)) return;
+  ctx.rateLimit(deviceKey, 1, FRESH_BALANCE_MS, now);
+  ctx.rateLimit(FRESH_ALL_KEY, 1, FRESH_BALANCE_MS, now);
   try {
     await ctx.refreshSnapshotOnce(now);
   } catch (error) {
@@ -101,8 +113,8 @@ export async function refreshForBalance(ctx: BalanceContext, deviceId: string, n
 
 /**
  * The models users may pick: the configured allowlist that NEAR AI marks verifiable, cached 10
- * minutes. When NEAR AI cannot be read the last list is served however old; `upstream` only when
- * there never was one.
+ * minutes in memory and in SQLite. When NEAR AI cannot be read the last list is served however
+ * old, also after an eviction; `upstream` only when there never was one.
  */
 export async function models(ctx: ModelsContext, now: number): Promise<{ models: ModelInfo[] } | { error: "upstream" }> {
   const cached = ctx.cachedModels();
@@ -116,6 +128,39 @@ export async function models(ctx: ModelsContext, now: number): Promise<{ models:
     const last = ctx.cachedModels();
     return last ? { models: last.models } : { error: "upstream" };
   }
+}
+
+/** Writes the model list read from NEAR AI, so it outlives the object's memory. */
+export function storeModels(sql: SqlStorage, cache: { models: ModelInfo[]; at: number }): void {
+  sql.exec(
+    "INSERT OR REPLACE INTO models_cache (id, models_json, read_at) VALUES (?, ?, ?)",
+    MODELS_ROW_ID,
+    JSON.stringify(cache.models),
+    cache.at,
+  );
+}
+
+function isModelInfo(value: unknown): value is ModelInfo {
+  if (typeof value !== "object" || value === null) return false;
+  const { id, inputPerM, outputPerM } = value as Record<string, unknown>;
+  return typeof id === "string" && typeof inputPerM === "number" && typeof outputPerM === "number";
+}
+
+/**
+ * The stored model list, limited to what the allowlist still names (a deploy may have dropped a
+ * model since it was read); undefined when there is none or it does not read as a list of models.
+ */
+export function storedModels(sql: SqlStorage, allowlist: readonly string[]): { models: ModelInfo[]; at: number } | undefined {
+  const row = sql.exec<{ models_json: string; read_at: number }>("SELECT models_json, read_at FROM models_cache WHERE id = ?", MODELS_ROW_ID).toArray()[0];
+  if (!row) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(row.models_json);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(parsed) || !parsed.every(isModelInfo)) return undefined;
+  return { models: parsed.filter((model) => allowlist.includes(model.id)), at: row.read_at };
 }
 
 export async function loadModels(ctx: ModelsContext): Promise<ModelInfo[]> {

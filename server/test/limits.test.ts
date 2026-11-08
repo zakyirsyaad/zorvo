@@ -99,6 +99,22 @@ describe("admin route", () => {
   });
 });
 
+describe("promo attempts", () => {
+  it("answers 429 to the 21st attempt from one address in an hour, across devices", async () => {
+    const ip = "198.51.100.80";
+    const attempt = (secret: string, i: number) => call("/v1/promo", { method: "POST", ip, secret, body: JSON.stringify({ code: `GUESS-${i}` }) });
+    for (let d = 0; d < 4; d += 1) {
+      const secret = await registered();
+      for (let i = 0; i < 5; i += 1) expect((await attempt(secret, i)).status).toBe(400);
+    }
+    const fresh = await registered();
+    const limited = await attempt(fresh, 0);
+    expect(limited.status).toBe(429);
+    expect(await limited.json()).toEqual({ error: "rate_limited" });
+    expect((await call("/v1/promo", { method: "POST", ip: "198.51.100.81", secret: fresh, body: JSON.stringify({ code: "GUESS" }) })).status).toBe(400);
+  });
+});
+
 describe("the rate limiter under concurrent requests", () => {
   it("lets exactly 10 of 15 simultaneous registrations from one address through", async () => {
     const ip = "198.51.100.60";

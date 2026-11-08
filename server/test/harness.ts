@@ -25,7 +25,7 @@ export const SEED = "seed-refresh-token";
 export const ALERT_URL = "https://alerts.test/hook";
 const TABLES = [
   "devices", "topups", "reservations", "queue", "pending_keys", "operator", "snapshot", "key_usage",
-  "ratelimits", "events", "promos", "promo_redemptions", "limits_version",
+  "ratelimits", "events", "promos", "promo_redemptions", "limits_version", "models_cache",
 ];
 
 export const stub = () => ledgerEnv.LEDGER.get(ledgerEnv.LEDGER.idFromName("ledger"));
@@ -121,4 +121,11 @@ export function call(path: string, init: RequestInit & { secret?: string; ip?: s
   if (secret) headers.set("Authorization", `Bearer ${secret}`);
   if (ip) headers.set("CF-Connecting-IP", ip);
   return exports.default.fetch(new Request(`https://credits.test${path}`, { ...rest, headers }));
+}
+
+/** As after an eviction: the Ledger forgets the model list it holds in memory (its stored copy stays). */
+export function forgetModelsInMemory(ledger: Ledger): void {
+  const self = ledger as unknown as { modelsCache: unknown; modelsLoading: unknown };
+  self.modelsCache = undefined;
+  self.modelsLoading = undefined;
 }

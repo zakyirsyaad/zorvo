@@ -1,9 +1,15 @@
 import { useId, type ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 import type { PrivateCredits } from "../../hooks/usePrivateCredits";
-import { formatCredits, modelLabel, type PrivateStatus } from "../../lib/private-credits";
+import {
+  formatCredits,
+  LOW_BALANCE_CREDITS,
+  modelLabel,
+  type PrivateStatus,
+} from "../../lib/private-credits";
 import type { ChatMessage, Session } from "../../types";
 import { Button } from "../ui/Button";
+import { RunningLow } from "./RunningLow";
 
 /** NEAR AI's public page that checks a model's attestation and a reply's signature in the browser (docs.near.ai/cloud/verification/verification-center). */
 export const VERIFICATION_CENTER_URL = "https://cloud.near.ai/verify";
@@ -48,6 +54,10 @@ export function PrivateInspector({ session, credits, messages = [], onTopUp, onO
   // The label only once the catalog says the model is one of the private ones; till then its id.
   const isKnownModel = credits.models?.some((model) => model.id === modelId) === true;
   const model = isKnownModel ? modelLabel(modelId) : modelId;
+  const shownCredits =
+    credits.status === null
+      ? null
+      : credits.status.balance?.credits ?? credits.status.lastBalance?.credits ?? 0;
 
   return (
     <aside aria-label="Private panel" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui text-fg-secondary">
@@ -64,7 +74,14 @@ export function PrivateInspector({ session, credits, messages = [], onTopUp, onO
         </dl>
         <div className="rounded-xl border border-border bg-surface-2 p-3">
           <Section heading="Balance">
-            <p className="text-ui-sm text-fg-secondary">{balanceText(credits.status)}</p>
+            <p className="text-ui-sm text-fg-secondary">
+              {balanceText(credits.status)}
+              {shownCredits !== null && shownCredits < LOW_BALANCE_CREDITS && (
+                <span className="ml-2">
+                  <RunningLow />
+                </span>
+              )}
+            </p>
             <Button onClick={onTopUp}>Top up</Button>
           </Section>
         </div>

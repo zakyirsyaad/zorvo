@@ -158,6 +158,32 @@ export function turnsFor(credits: number, model: ModelPrice): number {
   return Math.floor(credits / perTurn + 1e-9);
 }
 
+/** Below this the composer warns, the balance cards mark the number, and a notification may fire. */
+export const LOW_BALANCE_CREDITS = 50;
+
+/**
+ * The composer's low-credit warning, or undefined at 50 credits or more. The estimated turns are
+ * left out when the model's price is unknown or this balance buys no whole turn.
+ */
+export function lowBalanceNote(credits: number, model?: ModelPrice | null): string | undefined {
+  if (!Number.isFinite(credits) || credits >= LOW_BALANCE_CREDITS) return undefined;
+  const turns = model ? turnsFor(credits, model) : 0;
+  const about =
+    turns > 0 && model
+      ? `, about ${turns} ${turns === 1 ? 'turn' : 'turns'} on ${modelLabel(model.id)}`
+      : '';
+  return `Your credits are running low: ${formatCredits(credits)} left${about}. Top up in Settings.`;
+}
+
+/** What Private mode puts in the composer: a draft's block, then a refusal, then the low-credit warning. */
+export function privateComposerNote(
+  draftNote: string | undefined,
+  creditsOutNote: string | undefined,
+  lowBalance: string | undefined,
+): string | undefined {
+  return draftNote ?? creditsOutNote ?? lowBalance;
+}
+
 export function modelLabel(id: string): string {
   return (id.split('/').pop() || id).replaceAll('-', ' ');
 }

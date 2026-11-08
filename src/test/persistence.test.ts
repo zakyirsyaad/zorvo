@@ -230,6 +230,22 @@ describe("normalizePersistedState - catalog settings", () => {
   });
 });
 
+describe("normalizePersistedState - private low balance flag", () => {
+  it("keeps only a literal true", () => {
+    expect(
+      normalizePersistedState({ settings: { privateLowBalanceNotified: true } }).settings
+        .privateLowBalanceNotified,
+    ).toBe(true);
+    for (const value of [false, "true", 1, null, {}]) {
+      expect(
+        normalizePersistedState({ settings: { privateLowBalanceNotified: value } }).settings
+          .privateLowBalanceNotified,
+      ).toBe(false);
+    }
+    expect(normalizePersistedState({}).settings.privateLowBalanceNotified).toBe(false);
+  });
+});
+
 describe("normalizePersistedState - notified updates", () => {
   it("keeps string pairs and drops non-string values", () => {
     const { settings } = normalizePersistedState({

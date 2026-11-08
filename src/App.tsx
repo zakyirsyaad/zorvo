@@ -65,7 +65,10 @@ import { useAppearance } from "./hooks/useAppearance";
 import { usePersistedState } from "./hooks/usePersistedState";
 import { useBackgroundTasks } from "./hooks/useBackgroundTasks";
 import { useTranscripts } from "./hooks/useTranscripts";
+import { usePrivateCreditsRefresh } from "./hooks/usePrivateCreditsRefresh";
+import { usePrivateLowBalanceNotice } from "./hooks/usePrivateLowBalanceNotice";
 import { usePrivateVerification } from "./hooks/usePrivateVerification";
+import { lowBalanceNote, privateComposerNote } from "./lib/private-credits";
 import { useAgentProfiles, useSuggestedFolders } from "./hooks/useDiscovery";
 import { useDraftInstall } from "./hooks/useDraftInstall";
 import { useWorkspaceSelection } from "./hooks/useWorkspaceSelection";
@@ -285,6 +288,20 @@ export default function App() {
     draftAgentIds: isNewSessionDraft && newSessionAgent ? (compare.isCompare ? compare.agentIds : [newSessionAgent.id]) : [],
     activeSession,
   });
+  const isPrivateSessionId = useCallback(
+    (sessionId: string) => sessions.some((session) => session.id === sessionId && session.privateMode !== undefined),
+    [sessions],
+  );
+  // A private turn's model calls change the balance: read it again, at most once a minute across sessions.
+  const refreshPrivateCredits = usePrivateCreditsRefresh(privateCredits.refresh, isPrivateSessionId);
+  const verifyPrivateTurn = privateVerification.verifyTurn;
+  const onPrivateTurnEnd = useCallback(
+    (sessionId: string) => {
+      verifyPrivateTurn(sessionId);
+      refreshPrivateCredits(sessionId);
+    },
+    [verifyPrivateTurn, refreshPrivateCredits],
+  );
   // Several agents each run in their own worktree, so Worktree is on whatever it was set to.
   const isWorktreeActive = canUseWorktree && (isWorktreeOn || compare.isCompare);
   const branchPicker = useBranchPicker({
@@ -482,7 +499,7 @@ export default function App() {
     onTurnFailed: (sessionId, error) =>
       error ? setFailedTurns((prev) => ({ ...prev, [sessionId]: error })) : clearFailedTurn(sessionId),
     onPrivateCreditsOut: onCreditsOut,
-    onPrivateTurnEnd: privateVerification.verifyTurn,
+    onPrivateTurnEnd,
     giveBack: (sessionId, message) => giveBackMessage(sessionId, message.text, message.attachments),
   });
   // The one instance of Add, Update and Remove: Settings, saved sessions of a removed agent and popouts use it.
@@ -753,6 +770,12 @@ export default function App() {
   const updateSettings = (patch: Partial<Settings>) =>
     updateState((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } }));
 
+  usePrivateLowBalanceNotice({
+    credits: privateCredits.status?.balance?.credits ?? null,
+    notified: state.settings.privateLowBalanceNotified === true,
+    onNotified: (notified) => updateSettings({ privateLowBalanceNotified: notified }),
+  });
+
   const handleOnboardingComplete = ({ defaultAgentId, folder }: OnboardingResult) => {
     updateSettings({ onboardingCompleted: true, defaultAgentId });
     rememberFolder(folder);
@@ -988,12 +1011,21 @@ export default function App() {
     ? !canUseWorktree
     : draftNeedsInstall || draftNeedsSignIn || privateDraft.blocksSend || creditsOutReason !== undefined;
   const isSendBlocked = isSendWaiting || review.blocksSend;
+  const privateModelId = activeSession?.privateMode?.modelId ?? privateDraft.privateMode?.modelId;
+  const privateModel = privateCredits.models?.find((model) => model.id === privateModelId);
+  const livePrivateCredits = privateCredits.status?.balance?.credits;
+  const privateLowNote =
+    isPrivateLaunch && livePrivateCredits !== undefined
+      ? lowBalanceNote(livePrivateCredits, privateModel)
+      : undefined;
   const composerNoteText = composerNote({
     reviewOwner: review.reviewOwner,
     compareCount: compare.agentIds.length,
     agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
     agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
-    privateNote: privateDraft.note ?? creditsOutNote,
+    privateNote: isPrivateLaunch
+      ? privateComposerNote(privateDraft.note, creditsOutNote, privateLowNote)
+      : undefined,
     continuesSession: isResumable || Boolean(activeSession),
   });
   const composerCommands = composerCommandsFor({

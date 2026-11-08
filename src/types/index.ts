@@ -188,6 +188,8 @@ export interface Settings {
   notifiedUpdates?: Record<string, string>;
   /** Agents last seen signed in, by agent id: what lets the sidebar say Ready without asking again. */
   signedInAgents?: string[];
+  /** Set once the live balance crossed below 50 and was handled; cleared when it reaches 50 again. */
+  privateLowBalanceNotified?: boolean;
 }
 
 export interface RecentFolder {

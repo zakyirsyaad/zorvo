@@ -100,6 +100,18 @@ describe("PrivateInspector", () => {
     expect(screen.getByRole("region", { name: "Balance" })).toHaveTextContent("Checking…");
   });
 
+  it("marks a balance below 50 as running low", () => {
+    const status: PrivateStatus = {
+      ...READY,
+      balance: { ...READY.balance!, credits: 49 },
+    };
+    renderInspector({ status, models: null });
+    const balance = screen.getByRole("region", { name: "Balance" });
+
+    expect(balance).toHaveTextContent("49 credits");
+    expect(within(balance).getByText("Running low")).toBeInTheDocument();
+  });
+
   it("says where it runs, and opens NEAR AI's Verification Center", () => {
     const { onOpenUrl } = renderInspector({ status: READY, models: null });
     const where = screen.getByRole("region", { name: "Where it runs" });

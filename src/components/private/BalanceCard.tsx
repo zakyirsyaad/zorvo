@@ -3,10 +3,18 @@ import { RefreshCw } from "lucide-react";
 import { useNow } from "../../hooks/useNow";
 import type { ActionResult, PrivateCredits } from "../../hooks/usePrivateCredits";
 import { formatRelativeTime } from "../../lib/relative-time";
-import { formatCredits, parseIsoTime, privateErrorText, updatedAgo, type PrivateStatus } from "../../lib/private-credits";
+import {
+  formatCredits,
+  LOW_BALANCE_CREDITS,
+  parseIsoTime,
+  privateErrorText,
+  updatedAgo,
+  type PrivateStatus,
+} from "../../lib/private-credits";
 import { Button } from "../ui/Button";
 import { StatusLine } from "../ui/StatusLine";
 import { SettingsGroup, SettingsRow } from "../settings/SettingsGroup";
+import { RunningLow } from "./RunningLow";
 
 export interface BalanceCardProps {
   /** null until the first read answers. */
@@ -134,7 +142,12 @@ export function BalanceCard({ status, refresh, forget, onShowRecoveryCode }: Bal
   return (
     <SettingsGroup heading="Balance">
       <SettingsRow
-        label={<span className={SOLO_AMOUNT}>{formatCredits(credits)}</span>}
+        label={
+          <span className="flex items-center gap-2">
+            <span className={SOLO_AMOUNT}>{formatCredits(credits)}</span>
+            {credits < LOW_BALANCE_CREDITS && <RunningLow />}
+          </span>
+        }
         description={
           isFirstRun ? (
             <>

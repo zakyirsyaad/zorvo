@@ -146,6 +146,22 @@ describe("Private mode section: balance", () => {
     expect(await screen.findByText("0 credits")).toBeInTheDocument();
   });
 
+  it("marks a balance below 50 as running low", async () => {
+    readyWith(49);
+    await mount();
+
+    expect(await screen.findByText("49 credits")).toBeInTheDocument();
+    expect(screen.getByText("Running low")).toBeInTheDocument();
+  });
+
+  it("does not mark exactly 50 credits", async () => {
+    readyWith(50);
+    await mount();
+
+    expect(await screen.findByText("50 credits")).toBeInTheDocument();
+    expect(screen.queryByText("Running low")).toBeNull();
+  });
+
   it("shows the balance, the used credits and the key", async () => {
     readyWith(1240);
     await mount();

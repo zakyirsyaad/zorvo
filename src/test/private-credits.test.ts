@@ -10,12 +10,15 @@ import {
   formatCredits,
   creditedNoticeText,
   isPricedModel,
+  LOW_BALANCE_CREDITS,
+  lowBalanceNote,
   modelLabel,
   normalizeIsoTime,
   parseIsoTime,
   packageReason,
   parsePrivateCredits,
   perTurnLabel,
+  privateComposerNote,
   privateErrorText,
   turnsFor,
   updatedAgo,
@@ -69,6 +72,47 @@ describe("formatCredits", () => {
     expect(formatCredits(1240)).toBe("1,240 credits");
     expect(formatCredits(1)).toBe("1 credit");
     expect(formatCredits(0)).toBe("0 credits");
+  });
+});
+
+describe("lowBalanceNote", () => {
+  // 100 output per million costs 12 credits a turn, so 49 credits buys 4 whole turns.
+  const pricey = model(0, 100);
+
+  it("says nothing at 50 credits or more", () => {
+    expect(LOW_BALANCE_CREDITS).toBe(50);
+    expect(lowBalanceNote(51, pricey)).toBeUndefined();
+    expect(lowBalanceNote(50, pricey)).toBeUndefined();
+  });
+
+  it("names the balance and the model's whole turns below 50", () => {
+    expect(lowBalanceNote(49, pricey)).toBe(
+      "Your credits are running low: 49 credits left, about 4 turns on Qwen3.8 27B. Top up in Settings.",
+    );
+    expect(lowBalanceNote(42, pricey)).toBe(
+      "Your credits are running low: 42 credits left, about 3 turns on Qwen3.8 27B. Top up in Settings.",
+    );
+  });
+
+  it("drops the turns part without a price or a whole turn", () => {
+    expect(lowBalanceNote(49)).toBe(
+      "Your credits are running low: 49 credits left. Top up in Settings.",
+    );
+    expect(lowBalanceNote(1, pricey)).toBe(
+      "Your credits are running low: 1 credit left. Top up in Settings.",
+    );
+    expect(lowBalanceNote(0, pricey)).toBe(
+      "Your credits are running low: 0 credits left. Top up in Settings.",
+    );
+  });
+});
+
+describe("privateComposerNote", () => {
+  it("lets a draft's block beat a refusal and the low-balance warning", () => {
+    expect(privateComposerNote("Add credits", "Ran out", "Running low")).toBe("Add credits");
+    expect(privateComposerNote(undefined, "Ran out", "Running low")).toBe("Ran out");
+    expect(privateComposerNote(undefined, undefined, "Running low")).toBe("Running low");
+    expect(privateComposerNote(undefined, undefined, undefined)).toBeUndefined();
   });
 });
 

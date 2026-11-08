@@ -183,6 +183,7 @@ export function normalizePersistedState(raw: unknown): PersistedState {
       agentVersions: toAgentVersions(settings.agentVersions),
       notifiedUpdates: toNotifiedUpdates(settings.notifiedUpdates),
       signedInAgents: toAgentIdList(settings.signedInAgents) ?? [],
+      privateLowBalanceNotified: settings.privateLowBalanceNotified === true,
     },
     recentFolders: Array.isArray(raw.recentFolders)
       ? raw.recentFolders.filter(

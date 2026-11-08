@@ -4,7 +4,7 @@
 
 **Goal:** Let the user hand a task from session A to another agent B, which runs as a linked session in the same folder and reports every normally finished turn back to A automatically.
 
-**Architecture:** B is an ordinary session with a persisted `delegatedFrom` link; everything else (A's open delegation, strips, nesting, Send blocks) is derived in `src/lib/delegation.ts`. `src/hooks/useDelegation.ts` owns the side effects: starting B from a fork-style handoff, ending, and sending reports from the engine's turn-end signal. No new Tauri command; Rust only learns the new session field.
+**Architecture:** B is an ordinary session with a persisted `delegatedFrom` link; everything else (A's open delegation, status lines, nesting, Send blocks) is derived in `src/lib/delegation.ts`. `src/hooks/useDelegation.ts` owns the side effects: starting B from a fork-style handoff, ending, and sending reports from the engine's turn-end signal. No new Tauri command; Rust only learns the new session field.
 
 **Tech Stack:** React 19, TypeScript, Vitest + Testing Library (jsdom, fake Tauri in `src/test/setup.ts`), Rust (serde) in `src-tauri/src/store.rs`.
 
@@ -18,6 +18,7 @@
 - UI copy: sentence case, short declarative sentences, "you", agents by name. Exact strings below are copied from the spec; do not reword them.
 - B never inherits `compareRunId`; no session made from B (fork, rewind restart) copies `delegatedFrom`.
 - `MAX_REPORT_CHARS = 20000`.
+- The look of every element comes from the Zorvo Design System artifact (https://claude.ai/artifact/8w2xRW4Fs8KZV7SyLYddpJ) and its copy in `docs/design-system/components/`; the spec's "UI" section quotes the values. No new kind of visual element.
 - One open delegation per source session; one level only.
 - Local checks: run only the touched test files (`pnpm vitest run <file>`), plus `pnpm lint`; `src-tauri` changes, so also `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` from `src-tauri/` (needs `pnpm build` first for `dist/`).
 - Conventional Commits; stage explicit paths only (other sessions share checkouts).
@@ -25,8 +26,8 @@
 ## Review Focus
 
 1. **Send pressed in B in the same tick B's turn ends.** Expect the Send refused, because the report to A is about to start. Pinned in Task 6 (`refuses B's send while a report is handing over`).
-2. **B's turn ends with tool calls but no text.** Expect no report, and A's strip to stay "working". Pinned in Task 6 (`sends no report for a turn with no answer text`).
-3. **A is deleted while B is mid-turn.** Expect no report and no crash, and B's strip to read the gone line. Pinned in Task 6 (`sends nothing when the source is gone`).
+2. **B's turn ends with tool calls but no text.** Expect no report, and A's status line to stay "working". Pinned in Task 6 (`sends no report for a turn with no answer text`).
+3. **A is deleted while B is mid-turn.** Expect no report and no crash, and B's quiet line to read the gone line. Pinned in Task 6 (`sends nothing when the source is gone`).
 4. **A popout's send to B or A while the other works.** Expect the same refusal as in the main window. Pinned in Task 8 (the bridge's send goes through `delegation.sendBlockedReason`).
 5. **A task or path with control or bidi characters, or an answer over 20,000 characters.** Expect the task and paths escaped and the answer cut with the note. Pinned in Task 3 (`escapes the task and paths`, `cuts a long answer`).
 
@@ -43,12 +44,12 @@
 - Produces:
   - `export interface DelegationLink { sessionId: string; task: string; startedAt: number; endedAt?: number | null }` in `src/types/index.ts`
   - `Session.delegatedFrom?: DelegationLink | null`
-  - `ChatMessage.delegationReport?: { agentName: string }`
+  - `ChatMessage.delegationReport?: { agentName: string; agentId?: string }`
 
 - [ ] **Step 1: Write the failing tests** in `persistence.test.ts`:
   - `keeps a valid delegatedFrom link`: a session with `delegatedFrom: { sessionId: 's-a', task: 'Do it', startedAt: 5, endedAt: null }` survives `normalizePersistedState` unchanged.
   - `drops a malformed delegatedFrom and keeps the session`: for `delegatedFrom` values `5`, `{ sessionId: '', task: 'x', startedAt: 1 }`, `{ sessionId: 's-a', task: '', startedAt: 1 }`, `{ sessionId: 's-a', task: 'x', startedAt: 'now' }`, `{ sessionId: 's-a', task: 'x', startedAt: 1, endedAt: 'later' }`, the session loads with no `delegatedFrom` key and its other fields intact.
-  - `keeps a delegationReport mark and drops a malformed one`: `normalizeTranscript` keeps `{ agentName: 'Codex' }`, and drops the key (keeping the message) for `{ agentName: 3 }` and `'Codex'`.
+  - `keeps a delegationReport mark and drops a malformed one`: `normalizeTranscript` keeps `{ agentName: 'Codex' }`, and drops the key (keeping the message) for `{ agentName: 3 }` and `'Codex'`; an optional `agentId` string is kept, a non-string `agentId` is dropped from the mark.
 - [ ] **Step 2: Run** `pnpm vitest run src/test/persistence.test.ts`. Expected: the new tests FAIL.
 - [ ] **Step 3: Implement.** Add the types. In `withValidFields`, destructure `delegatedFrom` and keep it only when it is `null`, or when it is an object with non-empty string `sessionId` and `task`, a number `startedAt`, and an `endedAt` that is absent, `null` or a number (an `isDelegationLink` helper). In `normalizeTranscript`, drop `delegationReport` unless it is an object whose `agentName` is a non-empty string.
 - [ ] **Step 4: Run** the same command. Expected: PASS.
@@ -179,9 +180,9 @@ git commit -m "feat: list a delegated session under its source"
 
 - [ ] **Step 1: Write the failing tests**:
   - `send puts the marks on the user message`: after `send('s-a', 'hi', [], { delegationReport: { agentName: 'Codex' } })`, the transcript's last message has that mark.
-  - `a delegation report reads From Codex`: rendering a user message with the mark shows the text `From Codex` and does not show the user's own label.
+  - `a delegation report reads From Codex`: rendering a user message with the mark shows a header with the text `From Codex` and Codex's logo (an `img` or `AgentLogo` labelled decoratively, since the name follows), above the bubble.
 - [ ] **Step 2: Run** both files. Expected: FAIL.
-- [ ] **Step 3: Implement.** `send` spreads `marks` onto `userMessage(...)`. `MessageRow` shows a small `text-fg-muted` caption, `From ${agentName}`, above the bubble when the mark is set. Keep the bubble layout.
+- [ ] **Step 3: Implement.** `send` spreads `marks` onto `userMessage(...)`. In `MessageRow`, a marked user message keeps its bubble unchanged: right-hand, `surface-2`, `border`, radius 12, padding 10px 14px, `body` `fg`. Over the bubble, right-aligned, add the agent message header's look: the agent's 16px `AgentLogo` and `From ${agentName}` in `ui-sm` weight 500 `fg-secondary`, 10px above the bubble. The agent's id comes from the session list: pass `agentId` with the mark, so `delegationReport` becomes `{ agentName: string; agentId?: string }` (Task 1's validator accepts an optional string `agentId`).
 - [ ] **Step 4: Run.** Expected: PASS.
 - [ ] **Step 5: Commit.**
 
@@ -215,14 +216,16 @@ export interface DelegationDeps {
   giveBack: (sessionId: string, text: string) => void;
   onNotice: (message: string) => void;
 }
-export type DelegationStripState = 'working' | 'reported' | 'failed' | 'source-gone';
-export interface DelegationStripView {
+export type DelegationState = 'working' | 'reported' | 'failed' | 'source-gone' | 'ended';
+export interface DelegationView {
   role: 'source' | 'delegate';
   otherSessionId: string | null;   // null when the source is gone
   otherName: string;               // the other session's name
-  agentName: string;               // B's agent on A's strip, A's agent on B's strip
+  agentName: string;               // B's agent on A's line, A's agent on B's line
   task: string;
-  state: DelegationStripState;
+  state: DelegationState;
+  /** When B's current turn started (for "working"), else null. */
+  workingSince: number | null;
   reportedAt: number | null;
 }
 export function useDelegation(deps: DelegationDeps): {
@@ -231,7 +234,7 @@ export function useDelegation(deps: DelegationDeps): {
   end: (delegateId: string) => void;
   onTurnEnded: (sessionId: string, reason: AttentionReason) => void;
   sendBlockedReason: (sessionId: string) => string | null;
-  stripFor: (sessionId: string) => DelegationStripView | null;
+  viewFor: (sessionId: string) => DelegationView | null;
 };
 ```
 
@@ -242,15 +245,15 @@ Behavior the tests fix:
 - **`end`.** `patchSession(B, { delegatedFrom: { ...link, endedAt: now } })`.
 - **`onTurnEnded(B, reason)`** for a B with an open link:
   - `'finished'`: add A to a `handingOver` ref synchronously and B to a `pending` ref, then bump a state counter.
-  - `'failed'`: record `failed` for B's strip.
+  - `'failed'`: record `failed` for B (A's status line shows it).
   - Anything else, or any other session: ignored.
 - **Pending reports.** An effect over `[transcripts, sessions, counter]` drains `pending`, deleting each entry before acting, so a StrictMode double run is harmless:
   - B's last message gives an empty `answerOf`, or the link is no longer open: drop A from `handingOver`, send nothing.
   - A is gone: drop it, send nothing.
-  - `canPrompt(A)`: `await send(A, reportMessage(...), [], { delegationReport: { agentName: B agent } })`, record `reported` with the time, then drop A from `handingOver`.
+  - `canPrompt(A)`: `await send(A, reportMessage(...), [], { delegationReport: { agentName: B agent, agentId: B.profileId } })`, record `reported` with the time, then drop A from `handingOver`.
   - Otherwise: `giveBack(A, report)`, then `onNotice(\`${B agent}'s report is in the composer of ${A.name}.\`)`, then drop.
 - **`sendBlockedReason`** returns the Task 3 reason, and also returns B's "working on … report" line while A is in `handingOver`. It reads the ref, so it holds within the same tick.
-- **`stripFor`.** Returns `null` for a session with no link and for an ended link, on both sides, so both strips go away after End delegation. Strip state lives in memory; after a restart it reads `working`. The source-gone case uses B's strip copy: `The session that delegated this is gone.`
+- **`viewFor`.** Returns `null` for a session with no link. For an ended link it returns `null` on A's side (the status line goes) and `state: 'ended'` on B's (the quiet line reads as ended). `reported`/`failed` and `workingSince` live in memory; after a restart the state reads `working`. A gone source gives `state: 'source-gone'` on B's side.
 
 - [ ] **Step 1: Write the failing tests**:
   - `start writes the handoff and starts B linked to A in A's folder`
@@ -262,8 +265,8 @@ Behavior the tests fix:
   - `sends nothing when the source is gone`
   - `sends nothing after End delegation`
   - `refuses B's send while a report is handing over` (call `onTurnEnded(B, 'finished')`, then `sendBlockedReason(B)` in the same tick, before any render: non-null)
-  - `strip states follow reports and failures`
-  - `both strips are gone after End delegation`
+  - `view states follow reports and failures`
+  - `after End delegation A has no view and B reads ended`
 - [ ] **Step 2: Run** `pnpm vitest run src/test/useDelegation.test.ts`. Expected: FAIL.
 - [ ] **Step 3: Implement** `src/hooks/useDelegation.ts`, and the `SessionSpec` / `newSessionRecord` change in `src/lib/session-start.ts`.
 - [ ] **Step 4: Run** the same command, plus `pnpm vitest run src/test/session-start.test.ts` if that file exists. Expected: PASS.
@@ -274,89 +277,124 @@ git add src/hooks/useDelegation.ts src/lib/session-start.ts src/test/useDelegati
 git commit -m "feat: start delegations and report finished turns"
 ```
 
-### Task 7: Delegate dialog and strips
+### Task 7: Delegate dialog, status line, quiet line
+
+All values come from the Zorvo Design System artifact (https://claude.ai/artifact/8w2xRW4Fs8KZV7SyLYddpJ, READMEs Dialog, Composer, Message, TopBar) as the spec's "UI" section quotes them. Where this task and the artifact disagree, the artifact wins. The same values live in the repo's `docs/design-system/components/*/README.md`.
 
 **Files:**
-- Create: `src/components/delegation/DelegateDialog.tsx`, `src/components/delegation/DelegationStrip.tsx`
+- Create: `src/components/delegation/DelegateDialog.tsx`, `src/components/delegation/DelegationStatusLine.tsx`, `src/components/delegation/DelegatedFromLine.tsx`
 - Test: `src/test/delegation-ui.test.tsx`
 
 **Interfaces:**
-- Consumes: `DelegationStripView` (Task 6), `AgentProfile`, `AgentLogo`, `Button`, `IconButton`.
+- Consumes: `DelegationView` (Task 6), `AgentProfile`, `AgentLogo`, `Button`, `IconButton`.
 - Produces:
-  - `DelegateDialog({ agents, sourceAgentName, isSourceRunning, onDelegate: (agentId: string, task: string) => void, onCancel: () => void })`. `agents` is the list in use that can start, each with an `isInstallNeeded: boolean`.
-  - `DelegationStrip({ view, onOpen: (sessionId: string) => void, onEnd: () => void, canAct: boolean })`. `canAct` is false in popouts: no buttons.
+  - `DelegateDialog({ agents, sourceAgentName, isSourceRunning, onDelegate: (agentId: string, task: string) => void, onCancel: () => void })`. `agents` is `readonly { profile: AgentProfile; status: 'ready' | 'not-checked' | 'needs-sign-in' | 'not-installed' }[]`, the agents in use that can start; `not-installed` cannot be picked.
+  - `DelegationStatusLine({ view, now, onOpen: (sessionId: string) => void, canAct: boolean })`, for A (`view.role === 'source'`).
+  - `DelegatedFromLine({ view, onOpen: (sessionId: string) => void, canAct: boolean })`, for B (`view.role === 'delegate'`).
+  - `canAct` is false in popouts: no **Open**.
 
-Copy:
+Element by element:
 
-- **Dialog title:** `Delegate to another agent`.
-- **Line:** `${B} reads this conversation first and works in the same folder. Each answer it gives is sent to ${A}.`, plus ` ${A} isn't running, so its reports wait in its composer.` when `!isSourceRunning`.
-- **Empty task error:** `Write the task first.`
-- **Buttons:** `Cancel`, `Delegate`.
-- **Strip text:**
-  - delegate role: `Delegated from ${otherName} (${agentName})`
-  - source working: `${agentName} is working on: ${task}`
-  - source reported: `${agentName} reported ${relative time}`, using the relative-time helper the chat already uses
-  - source failed: `${agentName}'s turn failed`
-  - source-gone: the Task 6 line
-- **Strip buttons:** `Open`, `End delegation`.
-
-The dialog follows `TerminalSignInDialog.tsx`'s overlay and focus handling. The strip keeps one always-mounted `role="status"` element whose text is the strip line.
+- **Dialog.** Same overlay and focus handling as `TerminalSignInDialog.tsx`: the `overlay` scrim, focus moves into the dialog and comes back to the ⋯ button on close.
+  - Card: `bg-surface-1`, a `border` edge, `rounded-xl`, `space-5` padding, `shadow-dialog`.
+  - Title `Delegate to another agent` in the `heading` style, with a Close `IconButton` (label "Close") top right. Escape closes.
+  - Field "Agent": label in `ui` weight 500. Under it, one row per agent: a radio, the 16px `AgentLogo`, the name, then the status.
+    - Status words and colors: `Ready` (`fg-muted`), `Not checked` (`fg-subtle`), `Needs sign-in` (`status-attention`, after a 6px dot), `Not installed` (`fg-subtle`).
+    - An agent that cannot be picked is at 55% opacity, and its status is the radio's `aria-describedby`.
+    - Rows fill `surface-hover` when hovered or picked. The first pickable agent other than A's is picked to start.
+  - Field "Task": label in `ui` weight 500, then a textarea with a `border-strong` edge, 3 rows.
+  - Under the task field, a hint in `caption` `fg-subtle`: `${B} reads this conversation first and works in the same folder. Each answer it gives is sent to ${A}.`, plus ` ${A} isn't running, so its reports wait in its composer.` when `!isSourceRunning`.
+  - An empty task on Delegate shows `Write the task first.` in `caption` `danger` under the textarea, as the textarea's `aria-describedby`, and does not delegate. It clears on input.
+  - Actions bottom right above a `border` rule: **Cancel** (`Button` ghost), **Delegate** (`Button` primary).
+- **DelegationStatusLine (A).** Rendered under A's last message, in the chat column, only while `view.state` is `working` or `failed` and A is not in a turn itself.
+  - `working`: a 6px `status-running` dot with its soft 4px ring (the class the turn status uses), `${agentName} is working on the task you delegated` in `ui` `fg-secondary`, the time since `workingSince` in `caption` `fg-subtle` (the turn status's elapsed helper), then a 24px ghost **Open**. Nothing pulses.
+  - `failed`: a 14px circle-alert in `danger`, `${agentName}'s turn failed` in `ui` `fg-secondary`, and **Open**.
+  - The text sits in an always-mounted `role="status"` element, so a change is announced. The element stays mounted with empty text when the line is hidden.
+- **DelegatedFromLine (B).** One line above B's first message, styled like the imported session's history line (find it with `grep -rn "historyElsewhere" src/components`), in `caption` `fg-muted`.
+  - Open link: `Delegated from ${otherName} · ${agentName}`, then **Open** as a text button with `focus-ring`.
+  - Ended: `Delegated from ${otherName} · ended`.
+  - `source-gone`: `The session that delegated this is gone.`, with no **Open**.
 
 - [ ] **Step 1: Write the failing tests**:
   - `shows an error for an empty task and does not delegate`
-  - `an agent that needs Install cannot be picked`
+  - `an agent that is not installed cannot be picked`, with its status as the description
+  - `picks the first ready agent other than the source's`
   - `says reports wait in the composer when the source is not running`
-  - `the delegate strip opens the source and ends the delegation`
-  - `a strip without canAct has no buttons`
-  - `the source-gone strip has no Open`
+  - `the status line names the working agent and opens it`
+  - `the status line says a failed turn`
+  - `the quiet line opens the source, and has no Open when the source is gone`
+  - `lines without canAct have no Open`
 - [ ] **Step 2: Run** `pnpm vitest run src/test/delegation-ui.test.tsx`. Expected: FAIL.
-- [ ] **Step 3: Implement** both components with design tokens only.
-- [ ] **Step 4: Run** the same command, plus `pnpm vitest run src/test/design-tokens.test.ts`. Expected: PASS.
+- [ ] **Step 3: Implement** the three components with design tokens only, using `Button` and `IconButton`.
+- [ ] **Step 4: Run** the same command, plus `pnpm vitest run src/test/design-tokens.test.ts src/test/button-sizes.test.ts`. Expected: PASS.
 - [ ] **Step 5: Commit.**
 
 ```bash
 git add src/components/delegation src/test/delegation-ui.test.tsx
-git commit -m "feat: delegate dialog and delegation strips"
+git commit -m "feat: delegate dialog and delegation lines"
 ```
 
 ### Task 8: Wire it into the app
 
 **Files:**
-- Modify: `src/App.tsx` (build `useDelegation` once; feed `onAttention`; Send checks; strips above the chat; dialog state)
-- Modify: `src/components/TopBar.tsx` (a `Delegate` control)
+- Modify: `src/App.tsx` (build `useDelegation` once; feed `onAttention`; Send checks; dialog state; pass the lines to the chat)
+- Modify: `src/components/TopBar.tsx` (`MoreOptionsMenu` items)
+- Modify: `src/components/ChatCanvas.tsx` (render `DelegatedFromLine` above the first message, `DelegationStatusLine` under the last)
 - Modify: `src/lib/composer-state.ts` (`composerNote`)
 - Modify: the popout bridge's send handler in `App.tsx` (search `popout-bridge` usages)
+- Modify: `docs/design-system/components/TopBar/README.md`, `Dialog/README.md`, `Message/README.md` (the delegate parts, so the artifact can be republished after merge)
 - Modify: `CHANGELOG.md`
-- Test: `src/test/composer-state.test.ts`, and one integration test in `src/test/delegation-app.test.tsx` rendering `App` with the fake backend
+- Test: `src/test/composer-state.test.ts`, the TopBar menu test file (find it with `grep -ln "MoreOptionsMenu\|Open in new window" src/test`), and `src/test/delegation-app.test.tsx`
 
 **Interfaces:**
-- Consumes: `useDelegation` (Task 6), components (Task 7), `send` with marks (Task 5).
+- Consumes: `useDelegation` (Task 6), the components (Task 7), `send` with marks (Task 5).
 - `composerNote` gains `delegationBlock?: string`, returned after `agentToSignIn` and before `undefined`.
-- `TopBarProps` gains `onDelegate?: () => void` and `delegateBlockedReason?: string | null`. When `onDelegate` is set, a `Button`-styled control labelled `Delegate` shows left of the inspector button. With a reason, it is disabled and `title` / `aria-describedby` carries the reason. With the empty reason (a draft), no control shows.
+- `TopBarProps` gains:
+  - `onDelegate?: () => void` and `delegateBlockedReason?: string | null`,
+  - `onEndDelegation?: () => void`.
+- `MoreOptionsMenu` takes the same handlers. Per the TopBar README (a 220px menu, items with their icon, each only when it applies, Archive after a rule):
+  - **Delegate to another agent…** sits after **Rename** and before the rule. Its icon is lucide `Split`, unless the app already uses another icon for fork; then use that one.
+  - The item is listed when `onDelegate` is set and `delegateBlockedReason` is not `''`.
+  - With a non-empty reason it is disabled: its label in `fg-subtle`, the reason under it in `caption` `fg-subtle`, and that line as its `aria-describedby`.
+  - **End delegation** (lucide `Unlink`) sits after it when `onEndDelegation` is set. App sets it on A while it has an open delegate, and on B while its link is open.
 
 - [ ] **Step 1: Write the failing tests**:
   - `composer-state.test.ts`, `the delegation note comes after the sign-in note`.
-  - `delegation-app.test.tsx`, `delegating from a session starts the other agent and reports back`. Seed two agents and a session with one message. Click Delegate, pick the second agent, type a task, press Delegate. Assert a new session row under the first and that `acp_prompt` was invoked for it with the task. Then drive the fake agent's turn end for B with an answer, and assert `acp_prompt` is invoked for A with text starting `Report from`.
-- [ ] **Step 2: Run** both files. Expected: FAIL.
+  - TopBar menu test: `lists Delegate after Rename and before Archive`, `a blocked Delegate is disabled with its reason`, `no Delegate for an empty reason`, `End delegation shows when it applies`.
+  - `delegation-app.test.tsx`, `delegating from a session starts the other agent and reports back`:
+    - Seed two agents and a session with one message.
+    - Open ⋯, choose Delegate to another agent…, pick the second agent, type a task, press Delegate.
+    - Assert a new session row under the first, its quiet line, and that `acp_prompt` was invoked for it with the task.
+    - Drive the fake agent's turn end for B with an answer, and assert `acp_prompt` is invoked for A with text starting `Report from`.
+- [ ] **Step 2: Run** the three files. Expected: FAIL.
 - [ ] **Step 3: Implement the wiring:**
   1. Build `canPrompt` in `App.tsx` from the session status, `isSessionBusy`, the app's waiting check and the agent being detected.
   2. Call `delegation.onTurnEnded(id, reason)` inside the existing `onAttention`.
   3. Make `sendFromComposer` and the popout bridge's send refuse, giving the message back, when `delegation.sendBlockedReason(id)` is non-null.
   4. Add the reason to `isSendBlocked` and pass it as `delegationBlock`.
-  5. Render `DelegationStrip` above the chat for `stripFor(activeSessionId)`, with `canAct` true in the main window only.
-  6. Open `DelegateDialog` from the top bar.
+  5. Pass `viewFor(activeSessionId)` to `ChatCanvas`, with `canAct` true in the main window only. Popouts render the lines read-only from the snapshot, or not at all if the snapshot lacks the view. Not rendering them in popouts is acceptable; say so in the PR.
+  6. Open `DelegateDialog` from the ⋯ item. On close, focus returns to the ⋯ button.
   7. Check that `useSessionFork` and `useSessionRewind`'s restart build their specs without `delegatedFrom`. They do, since specs list fields explicitly; add a one-line assertion to the fork test.
-  8. Add a CHANGELOG line under Unreleased: `- Delegate a task from a session to another agent: it works in the same folder and its answers are sent back to the session.`
-- [ ] **Step 4: Run** `pnpm vitest run src/test/composer-state.test.ts src/test/delegation-app.test.tsx src/test/tauri-contract.test.ts` and `pnpm lint`. Expected: PASS, with the contract test unchanged.
+  8. Update the three design-system READMEs with the spec's "UI" bullets for their component.
+  9. Add a CHANGELOG line under Unreleased: `- Delegate a task from a session to another agent: it works in the same folder and its answers are sent back to the session.`
+- [ ] **Step 4: Run** the three test files plus `pnpm vitest run src/test/tauri-contract.test.ts src/test/design-system-docs.test.ts`, and `pnpm lint`. Expected: PASS, with the contract test unchanged.
 - [ ] **Step 5: Commit.**
 
 ```bash
-git add src/App.tsx src/components/TopBar.tsx src/lib/composer-state.ts src/test/composer-state.test.ts src/test/delegation-app.test.tsx CHANGELOG.md
-git commit -m "feat: delegate a task to another agent from the top bar"
+git add src/App.tsx src/components/TopBar.tsx src/components/ChatCanvas.tsx src/lib/composer-state.ts docs/design-system/components/TopBar/README.md docs/design-system/components/Dialog/README.md docs/design-system/components/Message/README.md CHANGELOG.md <test files>
+git commit -m "feat: delegate a task to another agent from the session menu"
 ```
 
-### Task 9: Branch check
+### Task 9: Check against the artifact in the running app
+
+The lesson of redesign phase 8: tests passing is not the same as matching the design.
+
+- [ ] **Step 1:** Run `pnpm tauri dev`. Delegate from a session to a second agent, and look at each element next to the artifact's README values: the ⋯ item, the dialog, the agent rows, A's status line, B's quiet line, the report header, and the sidebar row.
+- [ ] **Step 2:** Put a short table in the PR body: element, artifact value, what the app shows, and match or fix.
+
+### Task 10: Branch check
 
 - [ ] **Step 1:** Run `pnpm lint`, then `pnpm vitest run` on every test file touched in Tasks 1–8. Expected: all pass, no warnings.
 - [ ] **Step 2:** From `src-tauri/`, run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --lib store::`. Expected: pass.
 - [ ] **Step 3:** Check the diff against the spec's "Not built" list: no MCP server, no nesting beyond one level, no hold control, no popout buttons.
+- [ ] **Step 4:** Task 9's table is in the PR body.

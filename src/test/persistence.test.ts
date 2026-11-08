@@ -422,3 +422,61 @@ describe("a saved turn-end time", () => {
     expect("completedAt" in message).toBe(false);
   });
 });
+
+describe("normalizePersistedState - delegation", () => {
+  it("keeps a valid delegatedFrom link", () => {
+    const delegatedFrom = { sessionId: "s-a", task: "Do it", startedAt: 5, endedAt: null };
+
+    const state = normalizePersistedState({ sessions: [{ ...base, delegatedFrom }] });
+
+    expect(state.sessions).toHaveLength(1);
+    expect(state.sessions[0].delegatedFrom).toEqual(delegatedFrom);
+  });
+
+  it("drops a malformed delegatedFrom and keeps the session", () => {
+    const malformed = [
+      5,
+      { sessionId: "", task: "x", startedAt: 1 },
+      { sessionId: "s-a", task: "", startedAt: 1 },
+      { sessionId: "s-a", task: "x", startedAt: "now" },
+      { sessionId: "s-a", task: "x", startedAt: 1, endedAt: "later" },
+    ];
+
+    for (const delegatedFrom of malformed) {
+      const state = normalizePersistedState({ sessions: [{ ...base, delegatedFrom }] });
+
+      expect(state.sessions).toHaveLength(1);
+      expect(state.sessions[0]).not.toHaveProperty("delegatedFrom");
+      expect(state.sessions[0]).toMatchObject({
+        id: "s-1",
+        name: "Fix login",
+        cwd: "/w/api",
+        status: "terminated",
+        createdAt: 1,
+      });
+    }
+  });
+});
+
+describe("normalizeTranscript - delegation report", () => {
+  const reply = { id: "m-1", role: "agent", content: "Done.", timestamp: 7 };
+  const withReport = (delegationReport: unknown) => [{ ...reply, delegationReport }];
+
+  it("keeps a delegationReport mark and drops a malformed one", () => {
+    const [kept] = normalizeTranscript(withReport({ agentName: "Codex" }));
+    expect(kept.delegationReport).toEqual({ agentName: "Codex" });
+
+    for (const delegationReport of [{ agentName: 3 }, "Codex"]) {
+      const [message] = normalizeTranscript(withReport(delegationReport));
+      expect(message).toBeDefined();
+      expect(message).not.toHaveProperty("delegationReport");
+      expect(message.content).toBe("Done.");
+    }
+
+    const [withId] = normalizeTranscript(withReport({ agentName: "Codex", agentId: "codex-acp" }));
+    expect(withId.delegationReport).toEqual({ agentName: "Codex", agentId: "codex-acp" });
+
+    const [withoutId] = normalizeTranscript(withReport({ agentName: "Codex", agentId: 3 }));
+    expect(withoutId.delegationReport).toEqual({ agentName: "Codex" });
+  });
+});

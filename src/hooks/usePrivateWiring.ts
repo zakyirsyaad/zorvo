@@ -18,6 +18,8 @@ export interface PrivateWiringDeps {
   offerNotice: (message: string, tone?: NoticeTone) => void;
   /** The agents the new-session draft would start; empty while no draft is shown. */
   draftAgentIds: readonly string[];
+  draftAgentName?: string;
+  draftAgentProvider?: string;
   activeSession: Session | undefined;
 }
 
@@ -30,13 +32,20 @@ export function usePrivateWiring({
   setNotice,
   offerNotice,
   draftAgentIds,
+  draftAgentName,
+  draftAgentProvider,
   activeSession,
 }: PrivateWiringDeps) {
   const credits = usePrivateCredits();
   usePrivateCreditedNotice(credits.flow, isTopupShown, offerNotice);
   const recoveryDialog = usePrivateRecoveryDialog();
   // The draft's Private chip: per draft, off by default; while on, the next session runs privately.
-  const draft = usePrivateDraft({ credits, agentIds: draftAgentIds });
+  const draft = usePrivateDraft({
+    credits,
+    agentIds: draftAgentIds,
+    agentName: draftAgentName,
+    agentProvider: draftAgentProvider,
+  });
   return {
     credits,
     recoveryDialog,

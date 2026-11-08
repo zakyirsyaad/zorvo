@@ -90,6 +90,7 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
       <TopBar
         hasTrafficLights
         sessionName={session?.name}
+        isPrivate={session?.privateMode !== undefined}
         workspaceName={session ? folderNameOf(session.cwd) : undefined}
         plan={currentPlan(messages)}
       />

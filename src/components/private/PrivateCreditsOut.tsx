@@ -59,7 +59,19 @@ export function PrivateCreditsOut({ reason, agents, onOpenSettings, onContinue }
 
   return (
     <>
-      <BlockerCard label="Private credits" title={creditsOutText(reason)} actions={actions} />
+      <BlockerCard label="Private credits" title={creditsOutText(reason)} actions={actions}>
+        {reason === "empty" && (
+          <p>
+            Qwen Code stopped because there are no credits left. Your message is back in the box, ready to send after a
+            top-up. The rest of Zorvo and this session's history keep working.
+          </p>
+        )}
+        {canContinue && (
+          <p className="text-ui-sm text-fg-subtle">
+            Continuing with another agent sends your code to that agent's provider, outside a TEE.
+          </p>
+        )}
+      </BlockerCard>
       {isConfirming && (
         <ContinueDialog
           agents={agents}

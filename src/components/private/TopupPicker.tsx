@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Check } from "lucide-react";
 import {
   formatCredits,
   packageReason,
@@ -40,29 +41,36 @@ interface PackageOptionProps {
 
 function PackageOption({ pkg, turns, isChecked, isDisabled, onSelect }: PackageOptionProps) {
   const reason = reasonOf(pkg);
-  const state = isDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer";
+  const label = `$${pkg.usd}, ${formatCredits(pkg.credits)}${
+    reason ? `, ${reason}` : turns > 0 ? `, about ${turns.toLocaleString("en-US")} turns` : ""
+  }`;
   return (
-    <label
-      className={`flex flex-1 items-start gap-2.5 rounded-xl border border-border bg-surface-2 p-3.5 text-left has-[:checked]:border-border-strong has-[:checked]:bg-surface-hover ${state}`}
+    <button
+      type="button"
+      role="radio"
+      aria-checked={isChecked}
+      aria-label={label}
+      disabled={isDisabled}
+      onClick={onSelect}
+      className={`focus-ring relative flex flex-1 flex-col gap-0.5 rounded-xl border bg-surface-2 p-3 text-left disabled:cursor-default disabled:bg-surface-1 ${
+        isChecked ? "border-2 border-fg" : "border-border"
+      } ${isDisabled ? "cursor-default" : "cursor-pointer"}`}
     >
-      <input
-        type="radio"
-        name="private-package"
-        className="focus-ring mt-1 size-3.5 shrink-0"
-        checked={isChecked}
-        disabled={isDisabled}
-        onChange={onSelect}
-      />
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-base font-semibold text-fg">{`$${pkg.usd}`}</span>{" "}
-        <span className="text-ui-sm text-fg-secondary">{formatCredits(pkg.credits)}</span>{" "}
-        {reason ? (
-          <span className="text-ui-sm text-fg-subtle">{reason}</span>
-        ) : (
-          turns > 0 && <span className="text-ui-sm text-fg-subtle">{`≈ ${turns.toLocaleString("en-US")} turns`}</span>
-        )}
+      {isChecked && (
+        <Check size={14} strokeWidth={1.75} aria-hidden="true" className="absolute right-3 top-3 text-fg" />
+      )}
+      <span className={`text-lg leading-6 font-semibold ${isDisabled ? "text-fg-muted" : "text-fg"}`}>
+        {`$${pkg.usd}`}
       </span>
-    </label>
+      <span className={`text-ui-sm ${isDisabled ? "text-fg-muted" : "text-fg-secondary"}`}>
+        {formatCredits(pkg.credits)}
+      </span>
+      {reason ? (
+        <span className="text-ui-sm text-fg-subtle">{reason}</span>
+      ) : (
+        turns > 0 && <span className="text-ui-sm text-fg-subtle">{`≈ ${turns.toLocaleString("en-US")} turns`}</span>
+      )}
+    </button>
   );
 }
 

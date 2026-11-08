@@ -142,6 +142,7 @@ describe("SessionRow", () => {
     const { row } = renderRow(session({ privateMode: { modelId: "Qwen/Qwen3.8-27B" } }));
     const mark = within(row).getByRole("img", { name: "Private session" });
     expect(mark.parentElement).toBe(within(row).getByText("Qwen Code").parentElement);
+    expect(within(row).getByText(/Private ·/)).toBeInTheDocument();
   });
 
   it("marks no ordinary session as private", () => {

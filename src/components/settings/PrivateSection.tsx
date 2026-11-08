@@ -8,7 +8,7 @@ import { RecoveryCard } from "../private/RecoveryCard";
 import { RestoreDialog } from "../private/RestoreDialog";
 import { TopupPicker } from "../private/TopupPicker";
 import { TopupProgress } from "../private/TopupProgress";
-import { SettingsGroup, SettingsHeader, SettingsRow } from "./SettingsGroup";
+import { SettingsGroup, SettingsHeader } from "./SettingsGroup";
 
 export interface PrivateSectionProps {
   titleRef?: Ref<HTMLHeadingElement>;
@@ -88,12 +88,19 @@ export function PrivateSection({
         </div>
         <PromoField redeem={credits.redeem} isBlocked={isActive} onRedeeming={setIsRedeeming} />
       </SettingsGroup>
-      <SettingsGroup heading="Credits">
-        <SettingsRow
-          label="How credits work"
-          description="1 credit is $0.01 when you buy it. A private session uses NEAR AI's model price plus 20%."
-        />
-      </SettingsGroup>
+      <details className="rounded-xl border border-border bg-surface-2 px-4 py-3">
+        <summary className="cursor-pointer text-ui font-semibold text-fg">How credits work</summary>
+        <div className="mt-2 flex flex-col gap-2 text-ui-sm text-fg-muted">
+          <p>
+            You buy credits at 1 credit = $0.01. Each model has its own price at NEAR AI; Zorvo adds 20% to cover
+            payments and running the service.
+          </p>
+          <p>
+            A typical turn on Qwen 3.8 27B uses about 0.4 credits; bigger models use more. Credits don't expire, can't
+            be withdrawn, and work only on this Mac or the one you move them to.
+          </p>
+        </div>
+      </details>
       <RecoveryCard
         revealCode={credits.revealCode}
         isAvailable={status?.device === "ready"}

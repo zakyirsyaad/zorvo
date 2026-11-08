@@ -149,6 +149,9 @@ describe("a private session that runs out of credits", () => {
     await waitFor(() => expect(prompt().value).toBe("review the payment module"));
     const panel = screen.getByRole("region", { name: "Private credits" });
     expect(panel).toHaveTextContent(RAN_OUT);
+    expect(panel).toHaveTextContent(
+      "Continuing with another agent sends your code to that agent's provider, outside a TEE.",
+    );
     expect(within(panel).getByRole("button", { name: "Top up" })).toBeInTheDocument();
     expect(within(panel).getByRole("button", { name: "Continue with another agent" })).toBeInTheDocument();
     expect(screen.queryByText(/turn failed/i)).toBeNull();

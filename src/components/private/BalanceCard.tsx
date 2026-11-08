@@ -23,7 +23,7 @@ export interface BalanceCardProps {
   onShowRecoveryCode: () => void;
 }
 
-const SOLO_AMOUNT = "text-base font-semibold text-fg";
+const SOLO_AMOUNT = "text-[28px] leading-[34px] font-semibold tracking-[-0.02em] text-fg";
 
 function KeyState({ isReady }: { isReady: boolean }) {
   return <StatusLine status={isReady ? "ready" : "idle"}>{isReady ? "Key ready" : "No key yet"}</StatusLine>;

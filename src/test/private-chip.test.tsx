@@ -69,6 +69,7 @@ describe("PrivateChip", () => {
 
       expect(chip).toHaveAttribute("aria-disabled", "true");
       expect(chip).toHaveAccessibleDescription(reason);
+      expect(screen.getByText(reason)).toBeInTheDocument();
       fireEvent.click(chip);
       expect(onToggle).not.toHaveBeenCalled();
     },
@@ -107,7 +108,11 @@ describe("PrivateModelMenu", () => {
     ]);
     expect(options[0]).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("Private models · run in a TEE")).toBeInTheDocument();
-    expect(screen.getByText("Claude, GPT and Gemini aren't offered here: they don't run in a TEE.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Claude, GPT and Gemini aren't offered here: they don't run in a TEE. Turn estimates come from real coding tasks.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("selects a model and shows it on the chip", () => {
@@ -138,6 +143,7 @@ function Draft({ credits, controls = { model: MODEL_CONTROL } }: { credits: Priv
       agent={AGENT}
       privateDraft={draft}
       sendDisabled={draft.blocksSend}
+      sendLabel={draft.isOn ? "Start private session" : undefined}
       note={draft.note}
       onSendMessage={vi.fn()}
     />
@@ -184,7 +190,7 @@ describe("the Private chip in the draft", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Private · TEE" })));
     fireEvent.change(screen.getByRole("textbox", { name: "Prompt" }), { target: { value: "review" } });
 
-    const send = screen.getByRole("button", { name: "Send message" });
+    const send = screen.getByRole("button", { name: "Start private session" });
     expect(send).toBeDisabled();
     expect(send).toHaveAccessibleDescription("Add credits to start a private session");
   });

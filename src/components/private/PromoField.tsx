@@ -43,7 +43,7 @@ export function PromoField({ redeem, isBlocked, onRedeeming }: PromoFieldProps) 
     setIsBusy(false);
     if (answer.ok) {
       setCode("");
-      setResult({ ok: true, text: `+${formatCredits(answer.credits)} added` });
+      setResult({ ok: true, text: `${formatCredits(answer.credits)} added. Enjoy.` });
     } else {
       setResult({ ok: false, text: answer.text });
     }
@@ -55,7 +55,20 @@ export function PromoField({ redeem, isBlocked, onRedeeming }: PromoFieldProps) 
       description={
         <>
           Got a code from Zorvo? Its credits land here.
-          <span role="status" className={`block min-h-4 ${result?.ok === false ? "text-danger" : "text-fg-muted"}`}>
+          <span
+            role="status"
+            className={`mt-1 flex min-h-4 items-center gap-1.5 ${
+              result?.ok === false ? "text-danger" : "text-fg-muted"
+            }`}
+          >
+            {result && (
+              <span
+                aria-hidden="true"
+                className={`size-1.5 shrink-0 rounded-full ${
+                  result.ok ? "bg-status-running" : "bg-status-attention"
+                }`}
+              />
+            )}
             {result?.text}
           </span>
         </>

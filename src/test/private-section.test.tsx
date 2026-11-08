@@ -117,7 +117,14 @@ describe("Private mode section: how credits work", () => {
     await mount();
     expect(await screen.findByText("How credits work")).toBeInTheDocument();
     expect(
-      screen.getByText("1 credit is $0.01 when you buy it. A private session uses NEAR AI's model price plus 20%."),
+      screen.getByText(
+        "You buy credits at 1 credit = $0.01. Each model has its own price at NEAR AI; Zorvo adds 20% to cover payments and running the service.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "A typical turn on Qwen 3.8 27B uses about 0.4 credits; bigger models use more. Credits don't expire, can't be withdrawn, and work only on this Mac or the one you move them to.",
+      ),
     ).toBeInTheDocument();
   });
 });
@@ -245,9 +252,9 @@ describe("Private mode section: top-up picker", () => {
     await mount();
     const five = await screen.findByRole("radio", { name: /\$5\b/ });
     expect(five).toBeEnabled();
-    expect(within(five.closest("label") as HTMLElement).getByText("500 credits")).toBeInTheDocument();
+    expect(within(five).getByText("500 credits")).toBeInTheDocument();
     const turns = turnsFor(500, MODEL).toLocaleString("en-US");
-    expect(within(five.closest("label") as HTMLElement).getByText(`≈ ${turns} turns`)).toBeInTheDocument();
+    expect(within(five).getByText(`≈ ${turns} turns`)).toBeInTheDocument();
     const twentyFive = screen.getByRole("radio", { name: /\$25/ });
     expect(twentyFive).toBeDisabled();
     expect(screen.getByText("Over your 5,000-credit limit")).toBeInTheDocument();
@@ -331,7 +338,7 @@ describe("Private mode section: top-up picker", () => {
     await mount();
     await click(await screen.findByRole("radio", { name: /\$10/ }));
     await click(button("Pay $10"));
-    expect(screen.getByText("Top-ups are paused for now.")).toBeInTheDocument();
+    expect(screen.getByText("Top-ups are paused for now")).toBeInTheDocument();
     expect(screen.queryByText(/may still go through/)).toBeNull();
     await click(button("Try again"));
     expect(await screen.findByRole("radiogroup")).toBeInTheDocument();
@@ -358,7 +365,7 @@ describe("Private mode section: promo code", () => {
     await type(await screen.findByRole("textbox", { name: "Promo code" }), "ZORVO-TEST");
     await click(button("Redeem"));
     expect(callsTo("private_redeem_promo")[0].args).toEqual({ code: "ZORVO-TEST" });
-    expect(await screen.findByText("+500 credits added")).toBeInTheDocument();
+    expect(await screen.findByText("500 credits added. Enjoy.")).toBeInTheDocument();
   });
 
   it("shows the error text of a refused code", async () => {
@@ -367,7 +374,7 @@ describe("Private mode section: promo code", () => {
     await mount();
     await type(await screen.findByRole("textbox", { name: "Promo code" }), "NOPE");
     await click(button("Redeem"));
-    expect(screen.getByText("That code didn't work. Check it and try again.")).toBeInTheDocument();
+    expect(screen.getByText("That code doesn't exist, or it has been used up.")).toBeInTheDocument();
   });
 
   it("keeps Redeem off for an empty code", async () => {
@@ -412,8 +419,10 @@ describe("TopupProgress", () => {
   it("opening says so and cannot be cancelled yet", () => {
     renderProgress({ kind: "opening", usd: 10 });
     expect(screen.getByText("Opening checkout in your browser")).toBeInTheDocument();
-    // The hold belongs to the waiting step: nothing is claimed before the checkout exists.
-    expect(screen.getByRole("status")).toHaveTextContent(/^Opening checkout in your browser$/);
+    expect(screen.getByText("Your 1,000 credits are held for 25 minutes while you pay.")).toBeInTheDocument();
+    expect(screen.getByText("Waiting for your payment")).toBeInTheDocument();
+    expect(screen.getByText("Browser didn't open? Open checkout again.")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Opening checkout in your browser");
     expect(button("Cancel")).toBeDisabled();
   });
 
@@ -421,6 +430,7 @@ describe("TopupProgress", () => {
     const props = renderProgress({ kind: "waiting", topup: TOPUP });
     expect(screen.getByText("Waiting for your payment")).toBeInTheDocument();
     expect(screen.getByText("Your 1,000 credits are held for 25 minutes while you pay.")).toBeInTheDocument();
+    expect(screen.getByText("Checking with PingPay · 1,000 credits held for you for 25 min")).toBeInTheDocument();
     await click(button("Open checkout again"));
     expect(props.onOpenCheckout).toHaveBeenCalledTimes(1);
     await click(button("Cancel"));
@@ -429,9 +439,9 @@ describe("TopupProgress", () => {
 
   it("waiting after a browser that did not open says so", () => {
     renderProgress({ kind: "waiting", topup: TOPUP, openFailed: true });
-    expect(
-      screen.getByText("Couldn't open your browser. Your checkout is ready: open it again, or cancel."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Couldn't open checkout")).toBeInTheDocument();
+    expect(screen.getByText("PingPay didn't answer. Nothing was held or charged.")).toBeInTheDocument();
+    expect(screen.getByText("Waiting for your payment")).toBeInTheDocument();
     expect(button("Open checkout again")).toBeInTheDocument();
     expect(button("Cancel")).toBeInTheDocument();
   });
@@ -475,14 +485,25 @@ describe("TopupProgress", () => {
     renderProgress({ kind: "paid", topup: TOPUP });
     expect(screen.getByText("Payment received")).toBeInTheDocument();
     expect(screen.getByText("Adding 1,000 credits to this Mac. You don't need to do anything.")).toBeInTheDocument();
+    expect(screen.getByText("Paid · adding credits")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "You can close the browser tab. Zorvo hears about the payment from PingPay, and checks again every 2 minutes in case that message is late.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("credited shows the new balance and Done", async () => {
+  it("credited shows the new balance and starts a private session", async () => {
     const props = renderProgress({ kind: "credited", credits: 1000 });
     expect(screen.getByText("+1,000 credits")).toBeInTheDocument();
     expect(screen.getByText("Balance 2,240 credits")).toBeInTheDocument();
-    await click(button("Done"));
+    expect(
+      screen.getByText(
+        "Private sessions use the new credits at once. A notification says so if Zorvo is in the background.",
+      ),
+    ).toBeInTheDocument();
+    await click(button("Start a private session"));
     expect(props.onDismiss).toHaveBeenCalledTimes(1);
   });
 
@@ -501,7 +522,12 @@ describe("TopupProgress", () => {
   it("expired says the checkout closed", async () => {
     const props = renderProgress({ kind: "expired", topupId: "t1" });
     expect(screen.getByText("Checkout closed without paying")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent(/^Checkout closed without paying$/);
+    expect(
+      screen.getByText(
+        "Nothing was charged. Cancel releases the held credits at once; otherwise they're released after 25 minutes.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Checkout closed without paying");
     await click(button("Try again"));
     expect(props.onDismiss).toHaveBeenCalledTimes(1);
   });
@@ -514,6 +540,7 @@ describe("TopupProgress", () => {
         "The 25-minute hold ran out and the stock sold out meanwhile. Your payment counts, and you're first in line when stock comes back.",
       ),
     ).toBeInTheDocument();
+    expect(screen.getByText("Payment received · first in line")).toBeInTheDocument();
   });
 
   it("a top-up it could not check for long says so, and that a payment may still go through", async () => {
@@ -774,7 +801,7 @@ describe("Restore", () => {
     expect(input).toHaveAttribute("autocomplete", "off");
     await type(input, "ZRV-WRONG");
     await click(within(dialog).getByRole("button", { name: "Restore" }));
-    expect(within(dialog).getByText("That code didn't work. Check it and try again.")).toBeInTheDocument();
+    expect(within(dialog).getByText("That code doesn't exist, or it has been used up.")).toBeInTheDocument();
     expect(callsTo("private_recover")[0].args).toEqual({ code: "ZRV-WRONG" });
   });
 

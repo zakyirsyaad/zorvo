@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { GitBranch, Shield, Square } from "lucide-react";
+import { GitBranch, ShieldCheck, Square } from "lucide-react";
 import type { Session } from "../../types";
 import { DOT_CLASS, SHOW_IN_ROW, rowDetail, rowSubtitle, statusOf } from "../../lib/sidebar-status";
 import { AgentLogo } from "../AgentLogo";
@@ -41,8 +41,9 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
   // A run member's title already names the agent.
   const lineAgent = isInRun ? undefined : agentName;
   const detail = rowDetail(status, session.createdAt);
+  const privateDetail = session.privateMode ? `Private · ${detail}` : detail;
   const isUnread = Boolean(session.hasUnread) && !isBusy;
-  const words = `${lineAgent ? " · " : ""}${detail}${session.forkedFrom ? " · fork" : ""}`;
+  const words = `${lineAgent ? " · " : ""}${privateDetail}${session.forkedFrom ? " · fork" : ""}`;
 
   if (isRenaming) {
     // The row keeps its fill and its dot, so it is plain which session the field renames.
@@ -86,7 +87,11 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
       <button
         type="button"
         onClick={() => context.onSelectSession(session.id)}
-        title={[session.name, rowSubtitle(agentName, status, session.createdAt), session.worktree?.branch]
+        title={[
+          session.name,
+          rowSubtitle(agentName, status, session.createdAt, Date.now(), session.privateMode !== undefined),
+          session.worktree?.branch,
+        ]
           .filter(Boolean)
           .join(" · ")}
         className="flex min-w-0 flex-1 items-start gap-2.5 rounded-md p-2 text-left focus-ring"
@@ -110,7 +115,7 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
             )}
             {session.privateMode && (
               <span role="img" aria-label="Private session" className="flex shrink-0">
-                <Shield size={11} aria-hidden="true" />
+                <ShieldCheck size={11} aria-hidden="true" />
               </span>
             )}
             {lineAgent && <AgentLogo profileId={session.profileId} name="" size={14} />}

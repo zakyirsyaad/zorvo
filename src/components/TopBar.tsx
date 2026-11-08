@@ -9,6 +9,7 @@ import {
   PanelLeft,
   PanelRight,
   Pencil,
+  ShieldCheck,
 } from "lucide-react";
 import { Fragment, useState, type Ref } from "react";
 import { Chip } from "./ui/Chip";
@@ -133,6 +134,8 @@ export interface TopBarProps {
   onRename?: (name: string) => void;
   /** The title while no session is open (a new-session draft's folder). */
   workspaceName?: string;
+  /** A private session: the title takes the Private · TEE chip. */
+  isPrivate?: boolean;
   /** The workspace's git branch, shown as a chip when it is a repository. */
   branch?: string;
   /** The branch's pull request, with a chip that opens it; none when absent. */
@@ -181,6 +184,7 @@ export function TopBar({
   sessionName,
   onRename,
   workspaceName,
+  isPrivate = false,
   branch,
   pullRequest,
   onOpenPullRequest,
@@ -255,6 +259,15 @@ export function TopBar({
           <span data-tauri-drag-region className="min-w-12 truncate text-ui font-semibold text-fg">
             {title ?? "Zorvo"}
           </span>
+        )}
+        {title && isPrivate && (
+          <Chip
+            variant="plain"
+            icon={<ShieldCheck size={11} aria-hidden="true" />}
+            className="bg-surface-2 px-2"
+          >
+            Private · TEE
+          </Chip>
         )}
         {title && branch && (
           <Chip

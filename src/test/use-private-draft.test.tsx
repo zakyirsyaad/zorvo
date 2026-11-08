@@ -106,7 +106,9 @@ describe("usePrivateDraft", () => {
     expect(result.current.privateMode).toBeUndefined();
 
     rerender({ ...deps, agentIds: ["claude-acp"] });
-    expect(result.current.chip?.reason).toBe("Private sessions run Qwen Code only for now.");
+    expect(result.current.chip?.reason).toBe(
+      "Private mode works with Qwen Code for now. Claude Code sends your code to Anthropic.",
+    );
     // A disabled chip does nothing when pressed.
     act(() => result.current.chip?.onToggle());
     expect(deps.credits.loadCatalog).toHaveBeenCalledTimes(1);

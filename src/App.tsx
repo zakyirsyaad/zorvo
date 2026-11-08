@@ -287,6 +287,7 @@ export default function App() {
     setNotice,
     offerNotice,
     draftAgentIds: isNewSessionDraft && newSessionAgent ? (compare.isCompare ? compare.agentIds : [newSessionAgent.id]) : [],
+    draftAgentName: isNewSessionDraft ? newSessionAgent?.name : undefined,
     activeSession,
   });
   const isPrivateSessionId = useCallback(
@@ -1132,6 +1133,7 @@ export default function App() {
             hasTrafficLights={isSidebarHidden}
             sessionId={activeSession?.id ?? activeRun?.id}
             sessionName={activeSession?.name ?? activeRun?.name}
+            isPrivate={Boolean(activeSession?.privateMode)}
             // A run's sessions share one title, so only a session of its own is renamed or archived here.
             onRename={sessionOfItsOwn ? (name) => sessionActions.renameSession(sessionOfItsOwn.id, name) : undefined}
             // Archiving ends the agent, so, as in the sidebar's menu, it waits until the agent is not working.
@@ -1253,6 +1255,7 @@ export default function App() {
                   // The draft's heading, then its chips and card (the composer, below), then its sessions.
                   <NewSessionHeading
                     workspace={draftWorkspace}
+                    isPrivate={privateDraft.isOn}
                     unavailableReason={areAgentsLoaded && !agentsInUse.some(isAgentReady) ? noAgentNotice(agentsInUse) : undefined}
                   />
                 ) : isNewSessionDraft ? (
@@ -1350,7 +1353,13 @@ export default function App() {
                     onRestored={review.onComposerRestored}
                     onGivenBack={review.onComposerGivenBack}
                     commands={compare.isCompare ? [] : composerCommands}
-                    sendLabel={compare.agentIds.length >= 2 ? `Start ${compare.agentIds.length} sessions` : undefined}
+                    sendLabel={
+                      privateDraft.isOn
+                        ? "Start private session"
+                        : compare.agentIds.length >= 2
+                          ? `Start ${compare.agentIds.length} sessions`
+                          : undefined
+                    }
                     agentName={activeSession ? activeAgent?.name : newSessionAgent?.name}
                     sessionAgent={activeSession && activeAgent ? { profileId: activeAgent.id, name: activeAgent.name } : undefined}
                     privateDraft={isNewSessionDraft ? privateDraft : undefined}
@@ -1431,6 +1440,14 @@ export default function App() {
                     }
                   />
                 </div>
+                {isNewSessionDraft && privateDraft.isOn && (
+                  <div className="px-6">
+                    <p className="mx-auto w-full max-w-chat pt-1 text-ui-sm text-fg-subtle">
+                      Qwen Code sends your prompts straight to NEAR AI. Each answer comes with a signature
+                      from the secure hardware, so you can check where it ran.
+                    </p>
+                  </div>
+                )}
                 {/* After the composer's slot, never around it: the composer keeps its place in the tree, and its text. */}
                 {isNewSessionDraft && <NewSessionBelow sessionList={draftSessionList.sessionList} />}
               </div>

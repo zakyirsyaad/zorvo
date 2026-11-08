@@ -7,6 +7,9 @@ export interface PrivateDraftDeps {
   credits: Pick<PrivateCredits, 'status' | 'models' | 'loadCatalog' | 'refresh'> & { statusFailed?: boolean };
   /** The agents the new-session draft would start; empty while no draft is shown. */
   agentIds: readonly string[];
+  /** The chosen agent's display name and provider, for the disabled chip's reason. */
+  agentName?: string;
+  agentProvider?: string;
 }
 
 export interface PrivateChipControl {
@@ -51,7 +54,7 @@ function creditsOf(status: PrivateDraftDeps['credits']['status']): number {
  * session a Zorvo Private one on the model picked in its menu. Turning it on is the one place outside
  * Settings that loads the private catalog; nothing is asked while it stays off.
  */
-export function usePrivateDraft({ credits, agentIds }: PrivateDraftDeps): PrivateDraft {
+export function usePrivateDraft({ credits, agentIds, agentName, agentProvider }: PrivateDraftDeps): PrivateDraft {
   const [isTurnedOn, setIsTurnedOn] = useState(false);
   const [pickedModelId, setPickedModelId] = useState<string | null>(null);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
@@ -70,7 +73,16 @@ export function usePrivateDraft({ credits, agentIds }: PrivateDraftDeps): Privat
   }
 
   const { status, statusFailed, models, loadCatalog, refresh } = credits;
-  const state = privateDraftState({ agentIds, on: isTurnedOn, status, statusFailed, models, isLoadingModels });
+  const state = privateDraftState({
+    agentIds,
+    agentName,
+    agentProvider,
+    on: isTurnedOn,
+    status,
+    statusFailed,
+    models,
+    isLoadingModels,
+  });
   const isOn = state.chip === 'on';
 
   // A disabled chip (another agent, or a compare run) drops the choice too: going back to Qwen Code starts off.

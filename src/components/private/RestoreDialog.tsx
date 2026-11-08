@@ -64,7 +64,8 @@ export function RestoreDialog({ recover, onRestored, onClose }: RestoreDialogPro
       }
     >
       <p className="text-ui text-fg-muted">
-        Enter a code from another Mac. That Mac stops using these credits, and you get a new code.
+        The Mac that had these credits stops using them, and you get a new recovery code here. Your own NEAR AI key
+        isn't moved; add it again on this Mac if you use one.
       </p>
       <div className="flex flex-col gap-1.5">
         <label htmlFor={inputId} className="text-ui-sm font-medium text-fg-secondary">

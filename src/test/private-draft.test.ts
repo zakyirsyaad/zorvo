@@ -50,7 +50,7 @@ describe("privateDraftState: the chip", () => {
   it("is disabled for another agent, with the reason, and never blocks the start", () => {
     expect(privateDraftState({ agentIds: ["claude-acp"], on: true, status: null, models: null })).toEqual({
       chip: "disabled",
-      reason: "Private sessions run Qwen Code only for now.",
+      reason: "Private mode works with Qwen Code for now. Claude Code sends your code to Anthropic.",
       canStart: true,
     });
   });

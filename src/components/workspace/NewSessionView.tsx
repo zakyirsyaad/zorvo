@@ -3,6 +3,8 @@ import type { Workspace } from "../../types";
 
 export interface NewSessionHeadingProps {
   workspace: Workspace;
+  /** The draft is private: the title says so. */
+  isPrivate?: boolean;
   /** Why no session can start in the folder (no agent is ready). */
   unavailableReason?: string;
 }
@@ -15,12 +17,14 @@ export interface NewSessionHeadingProps {
  * offset grows with the window (24vh, between 120px and 260px), putting the composer a little above the middle.
  * It is not centred: content that arrives below (the agent's sessions, a sign-in panel) would make it jump.
  */
-export function NewSessionHeading({ workspace, unavailableReason }: NewSessionHeadingProps) {
+export function NewSessionHeading({ workspace, isPrivate = false, unavailableReason }: NewSessionHeadingProps) {
   return (
     // The gutter outside the column, as the composer's and the session list's are, so all of them line up.
     <div className="px-6 pt-[clamp(120px,24vh,260px)] pb-4">
       <div className="mx-auto w-full max-w-chat">
-        <h1 className="break-words text-xl font-semibold tracking-[-0.02em] text-fg">{`New session in ${workspace.name}`}</h1>
+        <h1 className="break-words text-xl font-semibold tracking-[-0.02em] text-fg">
+          {`New ${isPrivate ? "private " : ""}session in ${workspace.name}`}
+        </h1>
         {unavailableReason && <p className="mt-1 text-ui text-fg-muted">{unavailableReason}</p>}
       </div>
     </div>

@@ -671,7 +671,7 @@ describe("usePrivateCredits: promo, recovery and forgetting", () => {
     await act(async () => {
       result = await view.result.current.redeem("nope");
     });
-    expect(result).toEqual({ ok: false, text: "That code didn't work. Check it and try again." });
+    expect(result).toEqual({ ok: false, text: "That code doesn't exist, or it has been used up." });
     expect(view.result.current.flow.kind).toBe("idle");
 
     const reads = callsTo("private_status").length;

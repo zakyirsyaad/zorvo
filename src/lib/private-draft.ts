@@ -7,7 +7,6 @@ import type { ModelPrice, PrivateStatus } from './private-credits';
 export const PRIVATE_AGENT_ID = 'qwen-code';
 
 export const PRIVATE_DRAFT_TEXT = {
-  qwenOnly: 'Private sessions run Qwen Code only for now.',
   oneAgent: 'Private sessions run one agent.',
   checking: 'Checking your credits…',
   statusFailed: "Couldn't check your credits. Try again.",
@@ -22,6 +21,10 @@ export type PrivateChipKind = 'hidden' | 'off' | 'on' | 'disabled';
 export interface PrivateDraftInput {
   /** The agents the draft would start: one, or several for a compare run. */
   agentIds: readonly string[];
+  /** The agent's displayed name, for the disabled chip's reason. */
+  agentName?: string;
+  /** Where that agent sends code, for the disabled chip's reason. */
+  agentProvider?: string;
   /** The user turned the chip on. */
   on: boolean;
   /** null until the first status read answers. */
@@ -42,6 +45,20 @@ export interface PrivateDraftState {
   /** What an on chip waits for, said under the prompt. */
   note?: string;
 }
+
+const AGENT_NAMES: Readonly<Record<string, string>> = {
+  'claude-acp': 'Claude Code',
+  'codex-acp': 'Codex',
+  'gemini': 'Gemini CLI',
+  'goose': 'Goose',
+};
+
+const AGENT_PROVIDERS: Readonly<Record<string, string>> = {
+  'claude-acp': 'Anthropic',
+  'codex-acp': 'OpenAI',
+  'gemini': 'Google',
+  'goose': 'Block',
+};
 
 function creditsOf(status: PrivateStatus): number {
   return status.balance?.credits ?? status.lastBalance?.credits ?? 0;
@@ -67,8 +84,15 @@ export function privateDraftState(input: PrivateDraftInput): PrivateDraftState {
   const { agentIds } = input;
   if (agentIds.length === 0) return { chip: 'hidden', canStart: true };
   if (agentIds.length > 1) return { chip: 'disabled', reason: PRIVATE_DRAFT_TEXT.oneAgent, canStart: true };
-  if (canonicalAgentId(agentIds[0]) !== PRIVATE_AGENT_ID) {
-    return { chip: 'disabled', reason: PRIVATE_DRAFT_TEXT.qwenOnly, canStart: true };
+  const agentId = canonicalAgentId(agentIds[0]);
+  if (agentId !== PRIVATE_AGENT_ID) {
+    const agent = input.agentName ?? AGENT_NAMES[agentId] ?? agentId;
+    const provider = input.agentProvider ?? AGENT_PROVIDERS[agentId] ?? 'its provider';
+    return {
+      chip: 'disabled',
+      reason: `Private mode works with Qwen Code for now. ${agent} sends your code to ${provider}.`,
+      canStart: true,
+    };
   }
   if (!input.on) return { chip: 'off', canStart: true };
   const note = waitingFor(input);

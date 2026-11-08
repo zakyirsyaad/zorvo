@@ -114,8 +114,15 @@ describe("a private draft in the app", () => {
     await turnOnPrivate();
 
     expect(privateCatalogCalls().map((call) => call.cmd).sort()).toEqual(["private_models", "private_stock"]);
+    expect(await screen.findByRole("heading", { name: /New private session in/ })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Private model: Qwen 3.8 27B" })).toBeInTheDocument();
     expect(screen.getByText("1,240 credits left")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start private session" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Qwen Code sends your prompts straight to NEAR AI. Each answer comes with a signature from the secure hardware, so you can check where it ran.",
+      ),
+    ).toBeInTheDocument();
 
     await send("review the payment module");
     await waitFor(() => expect(callsTo(spy, "acp_start_session")).toHaveLength(1));
@@ -123,6 +130,8 @@ describe("a private draft in the app", () => {
     expect(callsTo(spy, "acp_start_session")[0]).toMatchObject({ profileId: "qwen-code", privateModelId: MODEL_ID });
     await waitFor(() => expect(fakeStore().state.sessions[0]).toMatchObject({ privateMode: { modelId: MODEL_ID } }));
     expect(await screen.findByRole("img", { name: "Private session" })).toBeInTheDocument();
+    expect(screen.getByText("Private · TEE")).toBeInTheDocument();
+    expect(screen.getByTitle(/Qwen Code · Private ·/)).toBeInTheDocument();
   });
 
   it("with Qwen Code signed out, shows no sign-in panel while on and lets the credits decide", async () => {
@@ -153,7 +162,7 @@ describe("a private draft in the app", () => {
       fireEvent.change(prompt(), { target: { value: "hi" } });
     });
 
-    const sendButton = screen.getByRole("button", { name: "Send message" });
+    const sendButton = screen.getByRole("button", { name: "Start private session" });
     expect(sendButton).toBeDisabled();
     expect(sendButton).toHaveAccessibleDescription("Add credits to start a private session");
     expect(callsTo(spy, "acp_start_session")).toHaveLength(0);
@@ -182,7 +191,9 @@ describe("a private draft in the app", () => {
     });
     const chip = await screen.findByRole("button", { name: "Private · TEE" });
     expect(chip).toHaveAttribute("aria-disabled", "true");
-    expect(chip).toHaveAccessibleDescription("Private sessions run Qwen Code only for now.");
+    expect(chip).toHaveAccessibleDescription(
+      "Private mode works with Qwen Code for now. Claude Code sends your code to Anthropic.",
+    );
     expect(within(document.body).queryByRole("button", { name: /^Private model/ })).toBeNull();
   });
 });

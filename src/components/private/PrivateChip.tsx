@@ -30,7 +30,7 @@ export function PrivateChip({ kind, reason, onToggle, onRetry }: PrivateChipCont
         Private · TEE
       </button>
       {isDisabled && reason && (
-        <span id={reasonId} className="sr-only">
+        <span id={reasonId} className="w-full pt-1 text-ui-sm text-fg-subtle">
           {reason}
         </span>
       )}

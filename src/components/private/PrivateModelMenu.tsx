@@ -60,7 +60,8 @@ export function PrivateModelMenu({ models, selected, onSelect, isOpen, onToggle,
         ))}
       </PopoverList>
       <p className="mt-1 border-t border-border px-2 pt-2 pb-1 text-caption text-fg-subtle">
-        Claude, GPT and Gemini aren't offered here: they don't run in a TEE.
+        Claude, GPT and Gemini aren't offered here: they don't run in a TEE. Turn estimates come from real coding
+        tasks.
       </p>
     </Popover>
   );

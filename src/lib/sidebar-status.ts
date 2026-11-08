@@ -59,9 +59,11 @@ export function rowSubtitle(
   status: RowStatus | null,
   createdAt: number,
   now: number = Date.now(),
+  isPrivate = false,
 ): string {
   const detail = rowDetail(status, createdAt, now);
-  return agentName ? `${agentName} · ${detail}` : detail;
+  const privateDetail = isPrivate ? `Private · ${detail}` : detail;
+  return agentName ? `${agentName} · ${privateDetail}` : privateDetail;
 }
 
 /** Every session in a tree, forks and a run's members included. */

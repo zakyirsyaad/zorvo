@@ -298,9 +298,14 @@ export function useAcpEngine({
   };
 
   /** Resolves to whether the agent took the message. */
-  const send = async (sessionId: string, text: string, attachments: readonly string[] = []): Promise<boolean> => {
+  const send = async (
+    sessionId: string,
+    text: string,
+    attachments: readonly string[] = [],
+    marks?: Pick<ChatMessage, 'delegationReport'>,
+  ): Promise<boolean> => {
     // Shown before the prompt goes out, so the agent's reply always lands after it.
-    const message = userMessage(text, attachments);
+    const message: ChatMessage = { ...userMessage(text, attachments), ...marks };
     updateNow(sessionId, (prev) => [...prev, message]);
     return prompt(sessionId, message, takeUnsentContext(sessionId));
   };

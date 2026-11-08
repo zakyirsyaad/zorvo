@@ -521,3 +521,32 @@ describe("useAcpEngine retryAfterSignIn", () => {
     expect(changes).toEqual([{ sessionId: "s-1", configId: "model", value: "smart" }]);
   });
 });
+
+describe("useAcpEngine send", () => {
+  it("puts the marks on the user message", async () => {
+    let messages: ChatMessage[] = [];
+    const { result } = renderHook(() =>
+      useAcpEngine({
+        sessions: [SESSION],
+        agents: fakeProfiles,
+        updateMessages: (_sessionId, change) => {
+          messages = change(messages);
+        },
+        patchSession: () => {},
+        reportError: () => {},
+        rememberOptions: () => {},
+        onAuthRequired: () => {},
+      }),
+    );
+
+    await act(async () => {
+      await result.current.send("s-a", "hi", [], { delegationReport: { agentName: "Codex" } });
+    });
+
+    expect(messages.at(-1)).toMatchObject({
+      role: "user",
+      content: "hi",
+      delegationReport: { agentName: "Codex" },
+    });
+  });
+});

@@ -14,6 +14,8 @@
     "@near-js/crypto": "2.5.1",
     "@near-js/types": "2.5.1",
     "@near-js/utils": "2.5.1",
+    "@noble/curves": "1.8.1",
+    "@noble/hashes": "1.8.0",
     "@types/node": "26.6.5",
     "borsh": "2.0.0",
     "typescript": "6.0.3",

@@ -245,6 +245,21 @@ echo "$code"        # hand this code to the judge
 A promo is paid from your NEAR AI stock like any top-up; if the stock cannot cover it, the redeeming
 device is told so (409 `stock`).
 
+### Verifying a judge code without a Mac
+
+`server/scripts/judge-demo.mjs` proves a code end to end from any machine with Node 20 or newer:
+
+```bash
+node server/scripts/judge-demo.mjs <worker-url> <judge-code>
+# or: ZORVO_JUDGE_URL=... ZORVO_JUDGE_CODE=... node server/scripts/judge-demo.mjs
+```
+
+It registers a fresh device, redeems the code, waits for the top-up to reach `credited`, takes the
+one-time key, sends one short non-streamed completion to NEAR AI, and checks the signature and the
+attestation report. It prints the model, the signature kind, the signer and `Verified`, or why not.
+The code, the device secret and the key are never printed. It asks for
+`Qwen/Qwen3.8-27B-abliterated`, so that model must be in the Worker's `MODELS` allowlist and deployed.
+
 ### Restocking
 
 Top up the operator's NEAR AI organization in the NEAR AI Cloud dashboard (the same PingPay top-up as in

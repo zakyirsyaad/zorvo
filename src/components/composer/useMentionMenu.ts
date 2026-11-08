@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { matchFiles, mentionAt, type MentionQuery } from '../../lib/mentions';
+import type { MentionAgent } from './MentionMenu';
 
 /** Where @-mentions come from: a workspace and how to list its files. */
 export interface MentionSource {
@@ -12,6 +13,8 @@ export interface MentionSource {
 export interface MentionMenuState {
   /** The @word being typed, or null when there is none. */
   mention: MentionQuery | null;
+  /** The agents offered for an @ at the very start of the message. */
+  agents: readonly MentionAgent[];
   /** The files offered for it. */
   files: string[];
   /** Follows the prompt's text and caret. */
@@ -20,17 +23,21 @@ export interface MentionMenuState {
 }
 
 /**
- * The @-mention list: the workspace's files are read once per workspace,
- * the first time an @ is typed, and filtered as the user types.
+ * The @-mention list: the workspace's files are read once per workspace, the
+ * first time an @ is typed, and filtered as the user types. Agents are offered
+ * only for an @ at the start, since a delegation is the whole message.
  */
-export function useMentionMenu(source: MentionSource | undefined): MentionMenuState {
+export function useMentionMenu(
+  source: MentionSource | undefined,
+  agents: readonly MentionAgent[] = [],
+): MentionMenuState {
   const [mention, setMention] = useState<MentionQuery | null>(null);
   // Kept per workspace: a list that arrives late for one cannot replace another's.
   const [listings, setListings] = useState<Readonly<Record<string, string[]>>>({});
   const requestedRef = useRef(new Set<string>());
 
   const update = (text: string, caret: number) => {
-    const found = source ? mentionAt(text, caret) : null;
+    const found = source || agents.length > 0 ? mentionAt(text, caret) : null;
     setMention(found);
     if (!found || !source || requestedRef.current.has(source.root)) return;
     const { root } = source;
@@ -43,5 +50,9 @@ export function useMentionMenu(source: MentionSource | undefined): MentionMenuSt
 
   const listing = source ? listings[source.root] : undefined;
   const files = mention && listing ? matchFiles(listing, mention.query) : [];
-  return { mention, files, update, close: () => setMention(null) };
+  const matchedAgents =
+    mention !== null && mention.start === 0
+      ? agents.filter((agent) => agent.name.toLowerCase().includes(mention.query.toLowerCase()))
+      : [];
+  return { mention, agents: matchedAgents, files, update, close: () => setMention(null) };
 }

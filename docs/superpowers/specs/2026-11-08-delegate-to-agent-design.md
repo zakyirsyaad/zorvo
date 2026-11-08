@@ -167,10 +167,20 @@ returns `{ agentId, task }` when the text starts with `@` + an agent's display n
 trimmed. Otherwise it returns `null`, and the message is an ordinary one for A. It reads only the
 start, so "ask @Codex later" is a message for A.
 
+**A's composer stays A's.** The mention changes nothing in A's composer but Send's label: the
+agent label, the model, mode and effort chips and the `/` commands stay those of A's agent, since
+the message is still typed in A's session. B is an ordinary session of its own agent, so its
+composer has that agent's chips and commands, and the user goes on talking to B there. B's first
+turn starts with the agent's remembered choices; the user changes them in B's composer for the
+turns after.
+
 **While the text names an agent:**
 - Send's label is **Delegate to Codex** (`sendLabel`, as Compare's "Start 2 sessions").
 - Send is blocked, with the note under the prompt, when:
   - the task is empty: "Write the task after @Codex.";
+  - the task starts with `/`: "Codex's commands work in its own session. Delegate the task first,
+    then use them there." (The conversation goes ahead of the task as hidden context, so a command
+    would not be at the start of B's prompt and would not run as one.);
   - the agent cannot start: "Codex isn't installed. Install it in Settings → Agents.", or "Codex
     needs a sign-in first.";
   - `delegateBlockedReason` gives a reason ("Codex already has a task from this session.").

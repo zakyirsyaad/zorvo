@@ -105,7 +105,7 @@ git commit -m "feat: keep a session's delegation link in state.json"
   - `delegateSessionName(agentName: string, task: string): string`: `"<agent>: <task's first line, cut at 40 chars with …>"`.
   - `delegationMentionOf(text: string, agents: readonly { id: string; name: string }[]): { agentId: string; task: string } | null`: the text starts with `@` plus an agent's name (case-insensitive, longest name first), then whitespace or the end; `task` is the rest, trimmed.
   - `type MentionAgentStatus = 'ready' | 'not-checked' | 'needs-sign-in' | 'not-installed'`
-  - `mentionBlockedReason(input: { agentName: string; task: string; status: MentionAgentStatus; delegateReason: string | null }): string | null`: the first that applies, in this order: an empty task, `not-installed`, `needs-sign-in`, then `delegateReason`.
+  - `mentionBlockedReason(input: { agentName: string; task: string; status: MentionAgentStatus; delegateReason: string | null }): string | null`: the first that applies, in this order: an empty task, a task starting with `/`, `not-installed`, `needs-sign-in`, then `delegateReason`.
 - `ForkHandoffMeta` gains optional `title?: string` (default `"# Session handoff"`) and `note?: string` (a line under the title when set).
 
 Exact copy (from the spec):
@@ -122,6 +122,7 @@ Exact copy (from the spec):
 | Files line | `Files ${B} reported changing this turn: a, b` |
 | Cut note | `(cut; the full answer is in the ${B} session)` |
 | Mention, empty task | `Write the task after @${B}.` |
+| Mention, task is a command | `${B}'s commands work in its own session. Delegate the task first, then use them there.` |
 | Mention, not installed | `${B} isn't installed. Install it in Settings → Agents.` |
 | Mention, needs sign-in | `${B} needs a sign-in first.` |
 | Handoff title / note | `# Delegation handoff` / `Another agent's session delegated a task to you and waits for your answer. The task is in the message that follows.` |
@@ -141,7 +142,7 @@ Exact copy (from the spec):
   - `delegateSessionName cuts at 40 characters`.
   - `delegationMentionOf reads an agent at the start`: `'@Codex fix it'` gives Codex and `'fix it'`; `'@claude code  do X'` gives Claude Code (two words, case-insensitive) and `'do X'`; with agents "Kimi" and "Kimi CLI", `'@Kimi CLI go'` gives Kimi CLI; `'@Codex'` gives an empty task.
   - `delegationMentionOf ignores anything else`: `'@Codexy go'`, `'ask @Codex later'`, `' @Codex go'` (leading space) and `'@Unknown go'` give `null`.
-  - `mentionBlockedReason follows its order` (one case each, plus `null` when ready with a task).
+  - `mentionBlockedReason follows its order` (one case each, including a task `'/review src/auth.ts'`, plus `null` when ready with a task).
 - [ ] **Step 2:** In `fork-handoff.test.ts`, add `uses the given title and note`, and check that the default title is unchanged.
 - [ ] **Step 3: Run** `pnpm vitest run src/test/delegation.test.ts src/test/fork-handoff.test.ts`. Expected: FAIL.
 - [ ] **Step 4: Implement** `src/lib/delegation.ts` and the `fork-handoff.ts` options. The blocked reason lists A's agent by `agentNameOf(source.profileId)` and B's by `agentNameOf(delegate.profileId)`.
@@ -378,6 +379,7 @@ The main way in (spec "The @ mention"). The look comes from the Composer README'
   - `no agents group without delegationAgents`
   - `arrow keys skip agents that cannot be picked`
   - `picking Claude Code inserts "@Claude Code " and keeps focus`
+  - `keeps A's chips and commands with a mention`: with `@Codex fix it` typed, the agent label and chips are still A's, and `/` at the start of the text still lists A's commands.
   - `reports the parsed mention as the text changes`: typing `@Codex fix it` reports `{ agentId: 'codex', task: 'fix it' }`, and deleting the `@` reports `null`.
 - [ ] **Step 2: Run** `pnpm vitest run src/test/mention-delegation.test.tsx`. Expected: FAIL.
 - [ ] **Step 3: Implement** the three files. Keep `mentionAt` unchanged, and keep mousedown-not-click on the rows so the prompt keeps focus, as the file rows do.

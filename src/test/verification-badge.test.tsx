@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { VerificationBadge } from "../components/private/VerificationBadge";
 import { VERIFICATION_CENTER_URL } from "../components/private/PrivateInspector";
+import { VERIFICATION_LABEL } from "../lib/private-verification";
 import type { MessageVerification } from "../types";
 
+const MODEL_ID = "Qwen/Qwen3.8-27B";
 const SIGNER = "0x1234567890abcdef1234567890abcdef12345678";
 
 const VERIFIED: MessageVerification = {
@@ -15,77 +17,88 @@ const VERIFIED: MessageVerification = {
   total: 2,
 };
 
-function open(verification: MessageVerification) {
+function open(verification: MessageVerification, modelId = MODEL_ID) {
   const onOpenUrl = vi.fn();
-  render(<VerificationBadge verification={verification} onOpenUrl={onOpenUrl} />);
-  return { onOpenUrl };
+  const view = render(<VerificationBadge verification={verification} modelId={modelId} onOpenUrl={onOpenUrl} />);
+  fireEvent.click(screen.getByRole("button", { name: /Show how this answer was verified/ }));
+  return { onOpenUrl, panel: screen.getByRole("dialog", { name: "Signature" }), view };
 }
 
 describe("VerificationBadge", () => {
-  it("shows the four states by name", () => {
-    const { unmount } = render(<VerificationBadge verification={VERIFIED} />);
-    expect(screen.getByText("Verified in TEE")).toBeInTheDocument();
-    unmount();
-
-    const states = [
-      ["didnt_verify", "Didn't verify"],
+  it("draws the four 24px states with the canvas icons", () => {
+    const cases = [
+      ["verified", "Verified in TEE"],
       ["not_signed", "Not signed"],
+      ["didnt_verify", "Didn't verify"],
       ["checking", "Checking the signature"],
     ] as const;
-    for (const [state, label] of states) {
-      const view = render(<VerificationBadge verification={{ ...VERIFIED, state }} />);
-      expect(screen.getByText(label)).toBeInTheDocument();
+    for (const [state, label] of cases) {
+      const view = render(
+        <VerificationBadge verification={{ ...VERIFIED, state }} modelId={MODEL_ID} />,
+      );
+      const badge = screen.getByRole("button", { name: new RegExp(label) });
+      expect(badge).toHaveClass("h-6", "rounded-md", "border", "text-caption");
+      expect(badge.querySelector(`[data-verification-icon="${state}"]`)).not.toBeNull();
       view.unmount();
     }
+
+    const checking = render(<VerificationBadge verification={{ ...VERIFIED, state: "checking" }} />);
+    expect(checking.container.querySelector(".animate-spin")).not.toBeNull();
+    checking.unmount();
   });
 
-  it("names the kind, the shortened signer and the signed calls", () => {
-    open(VERIFIED);
-    fireEvent.click(screen.getByRole("button", { name: /Verified in TEE/ }));
+  it("puts the verified signer beside the badge", () => {
+    render(<VerificationBadge verification={VERIFIED} modelId={MODEL_ID} />);
+    expect(screen.getByText("signed by 0x1234…5678")).toBeInTheDocument();
+  });
 
-    const panel = screen.getByRole("dialog", { name: "Signature" });
-    expect(within(panel).getByText("Signed by the model's TEE")).toBeInTheDocument();
-    expect(within(panel).getByText("2 of 2 calls signed · 0x1234…5678")).toBeInTheDocument();
+  it("shows the verified popover's key/value rows and opens the Verification Center", () => {
+    const { onOpenUrl, panel } = open(VERIFIED);
+
+    expect(within(panel).getByText("Verified in TEE")).toBeInTheDocument();
+    expect(within(panel).getByText(MODEL_ID)).toBeInTheDocument();
+    expect(within(panel).getByText("0x1234…5678 · provider TEE")).toBeInTheDocument();
     expect(
-      within(panel).getByText(
-        "Zorvo checked the signature against NEAR AI's attestation report. Check the hardware attestation itself in the Verification Center.",
-      ),
+      within(panel).getByText("The request and the answer match their signed hashes"),
     ).toBeInTheDocument();
+    expect(within(panel).queryByText(/attestation report/i)).toBeNull();
+    expect(within(panel).queryByText(/calls signed/i)).toBeNull();
+
+    fireEvent.click(
+      within(panel).getByRole("button", { name: "Check it yourself in NEAR AI's Verification Center" }),
+    );
+    expect(onOpenUrl).toHaveBeenCalledWith(VERIFICATION_CENTER_URL);
   });
 
-  it("names the attested gateway honestly", () => {
-    open({ ...VERIFIED, kind: "gateway" });
-    fireEvent.click(screen.getByRole("button", { name: /Verified in TEE/ }));
+  it("names the gateway and an unknown kind honestly", () => {
+    const gateway = open({ ...VERIFIED, kind: "gateway" });
+    expect(within(gateway.panel).getByText("0x1234…5678 · gateway")).toBeInTheDocument();
+    gateway.view.unmount();
 
-    expect(screen.getByText("Signed by NEAR AI's attested gateway")).toBeInTheDocument();
+    const unknown = open({ ...VERIFIED, kind: undefined });
+    expect(within(unknown.panel).getByText("0x1234…5678 · unknown signer")).toBeInTheDocument();
   });
 
-  it("says when the signer's kind is unknown", () => {
-    open({ ...VERIFIED, kind: undefined });
-    fireEvent.click(screen.getByRole("button", { name: /Verified in TEE/ }));
-
-    expect(screen.getByText("Signed by a key in NEAR AI's attestation report")).toBeInTheDocument();
-  });
-
-  it("explains a failure, a missing signature and a pending check", () => {
-    const failures = [
-      ["didnt_verify", "A call in this answer did not verify."],
-      ["not_signed", "NEAR AI did not sign this answer."],
-      ["checking", "Zorvo is checking NEAR AI's signature."],
+  it("shows the canvas's body for each unfinished state and no link", () => {
+    const bodies = [
+      [
+        "not_signed",
+        "The answer was cut off before NEAR AI could sign it, for example when you pressed Stop. It ran on the same hardware; it just can't be proven.",
+      ],
+      ["didnt_verify", "The signature doesn't match this answer. Treat the answer as unverified."],
+      ["checking", "Right after the answer ends, for a second or two."],
     ] as const;
-    for (const [state, detail] of failures) {
-      const view = render(<VerificationBadge verification={{ ...VERIFIED, state }} />);
-      fireEvent.click(screen.getByRole("button", { name: new RegExp(state === "didnt_verify" ? "Didn't verify" : state === "not_signed" ? "Not signed" : "Checking") }));
-      expect(screen.getByText(detail)).toBeInTheDocument();
+    for (const [state, body] of bodies) {
+      const view = render(<VerificationBadge verification={{ ...VERIFIED, state }} modelId={MODEL_ID} />);
+      fireEvent.click(screen.getByRole("button", { name: new RegExp(VERIFICATION_LABEL[state]) }));
+      const panel = screen.getByRole("dialog", { name: "Signature" });
+      expect(within(panel).getByText(body)).toBeInTheDocument();
+      expect(
+        within(panel).queryByRole("button", {
+          name: "Check it yourself in NEAR AI's Verification Center",
+        }),
+      ).toBeNull();
       view.unmount();
     }
-  });
-
-  it("opens NEAR AI's Verification Center from the panel", () => {
-    const { onOpenUrl } = open(VERIFIED);
-    fireEvent.click(screen.getByRole("button", { name: /Verified in TEE/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Open the Verification Center" }));
-
-    expect(onOpenUrl).toHaveBeenCalledWith(VERIFICATION_CENTER_URL);
   });
 });

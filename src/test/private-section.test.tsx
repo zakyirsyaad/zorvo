@@ -146,15 +146,15 @@ describe("Private mode section: balance", () => {
     expect(await screen.findByText("0 credits")).toBeInTheDocument();
   });
 
-  it("marks a balance below 50 as running low", async () => {
+  it("draws no Running low text in the Settings balance card", async () => {
     readyWith(49);
     await mount();
 
     expect(await screen.findByText("49 credits")).toBeInTheDocument();
-    expect(screen.getByText("Running low")).toBeInTheDocument();
+    expect(screen.queryByText("Running low")).toBeNull();
   });
 
-  it("does not mark exactly 50 credits", async () => {
+  it("does not mark exactly 50 credits either", async () => {
     readyWith(50);
     await mount();
 
@@ -169,6 +169,7 @@ describe("Private mode section: balance", () => {
     expect(screen.getByText("One balance for every private session on this Mac · 260 used so far")).toBeInTheDocument();
     expect(screen.getByText("Key ready")).toBeInTheDocument();
     expect(screen.getByText("Updated just now")).toBeInTheDocument();
+    expect(button("Refresh").querySelector("svg")).toHaveAttribute("width", "12");
   });
 
   it("Refresh asks the server for a fresh balance, once", async () => {
@@ -190,7 +191,9 @@ describe("Private mode section: balance", () => {
       recoveryPrompted: true,
     };
     await mount();
-    expect(await screen.findByText("Balance unavailable")).toBeInTheDocument();
+    const title = await screen.findByText("Balance unavailable");
+    expect(title).toHaveClass("text-ui", "font-semibold");
+    expect(title.closest("[data-settings-row]")?.querySelector(".bg-status-attention")).not.toBeNull();
     expect(screen.getByText("Last known: 1,240 credits · 3 hours ago")).toBeInTheDocument();
     await click(button("Try again"));
     expect(callsTo("private_status").at(-1)?.args).toEqual({ fresh: true });

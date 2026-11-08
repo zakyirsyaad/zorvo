@@ -19,6 +19,7 @@ import { SignInLayer } from "./components/SignInLayer";
 import { RecoveryCodeLayer } from "./components/private/RecoveryCodeLayer";
 import { PrivateCreditsOutLayer } from "./components/private/PrivateCreditsOut";
 import { PrivateInspector } from "./components/private/PrivateInspector";
+import { PrivateLowBalanceRow } from "./components/private/PrivateLowBalanceRow";
 import { AgentInstallPanel } from "./components/AgentInstallPanel";
 import { pickerLabelOf } from "./lib/install-plan";
 import { installPanelAgentOf } from "./lib/install-panel";
@@ -68,7 +69,7 @@ import { useTranscripts } from "./hooks/useTranscripts";
 import { usePrivateCreditsRefresh } from "./hooks/usePrivateCreditsRefresh";
 import { usePrivateLowBalanceNotice } from "./hooks/usePrivateLowBalanceNotice";
 import { usePrivateVerification } from "./hooks/usePrivateVerification";
-import { lowBalanceNote, privateComposerNote } from "./lib/private-credits";
+import { lowBalanceNote } from "./lib/private-credits";
 import { useAgentProfiles, useSuggestedFolders } from "./hooks/useDiscovery";
 import { useDraftInstall } from "./hooks/useDraftInstall";
 import { useWorkspaceSelection } from "./hooks/useWorkspaceSelection";
@@ -302,6 +303,15 @@ export default function App() {
     },
     [verifyPrivateTurn, refreshPrivateCredits],
   );
+  // A private session's low-balance row needs its model's price, so the catalog loads when it opens.
+  const activePrivateModelId = activeSession?.privateMode?.modelId;
+  const privateModels = privateCredits.models;
+  const loadPrivateCatalog = privateCredits.loadCatalog;
+  useEffect(() => {
+    if (activePrivateModelId !== undefined && privateModels === null) {
+      void loadPrivateCatalog();
+    }
+  }, [activePrivateModelId, privateModels, loadPrivateCatalog]);
   // Several agents each run in their own worktree, so Worktree is on whatever it was set to.
   const isWorktreeActive = canUseWorktree && (isWorktreeOn || compare.isCompare);
   const branchPicker = useBranchPicker({
@@ -1023,9 +1033,7 @@ export default function App() {
     compareCount: compare.agentIds.length,
     agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
     agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
-    privateNote: isPrivateLaunch
-      ? privateComposerNote(privateDraft.note, creditsOutNote, privateLowNote)
-      : undefined,
+    privateNote: isPrivateLaunch ? privateDraft.note ?? creditsOutNote : undefined,
     continuesSession: isResumable || Boolean(activeSession),
   });
   const composerCommands = composerCommandsFor({
@@ -1204,6 +1212,7 @@ export default function App() {
                     onForkBranch={(messageId) => void forkSession(messageId)}
                     onReply={(quote) => composerRef.current?.insertText(quote)}
                     onOpenUrl={openLink}
+                    privateModelId={activeSession?.privateMode?.modelId}
                     replyBlockedReason={replyBlockedReason({
                       isComposerHidden,
                       isComposerDisabled,
@@ -1302,6 +1311,16 @@ export default function App() {
                         ? createPortal(<AgentInstallPanel agent={installPanelAgent} />, draftInstallSlot)
                         : <AgentInstallPanel agent={installPanelAgent} />
                       : null}
+                    {privateLowNote !== undefined &&
+                      livePrivateCredits !== undefined &&
+                      creditsOutNote === undefined &&
+                      privateDraft.note === undefined && (
+                        <PrivateLowBalanceRow
+                          credits={livePrivateCredits}
+                          model={privateModel}
+                          onTopUp={() => settingsPage.open("private")}
+                        />
+                      )}
                   </div>
                 </div>
                 {/* 24px at the sides and 20px under it, as the canvas draws the composer's dock. */}

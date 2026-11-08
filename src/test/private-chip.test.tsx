@@ -97,12 +97,12 @@ function Menu({ onSelect }: { onSelect: (id: string) => void }) {
 describe("PrivateModelMenu", () => {
   it("lists the private models with their prices and turn cost, and says why others are missing", () => {
     render(<Menu onSelect={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Private model: Qwen3.8 27B" }));
+    fireEvent.click(screen.getByRole("button", { name: "Private model: Qwen 3.8 27B" }));
 
     const list = screen.getByRole("listbox", { name: "Private models" });
     const options = within(list).getAllByRole("option");
     expect(options.map((option) => option.textContent)).toEqual([
-      "Qwen3.8 27B$0.04 / $1.35 · ≈ 0.3 credit a turn",
+      "Qwen 3.8 27B$0.04 / $1.35 · ≈ 0.3 credit a turn",
       "Kimi K3$3.30 / $16.50 · ≈ 10 credits a turn",
     ]);
     expect(options[0]).toHaveAttribute("aria-selected", "true");
@@ -113,7 +113,7 @@ describe("PrivateModelMenu", () => {
   it("selects a model and shows it on the chip", () => {
     const onSelect = vi.fn();
     render(<Menu onSelect={onSelect} />);
-    fireEvent.click(screen.getByRole("button", { name: "Private model: Qwen3.8 27B" }));
+    fireEvent.click(screen.getByRole("button", { name: "Private model: Qwen 3.8 27B" }));
     fireEvent.click(screen.getByRole("option", { name: /Kimi K3/ }));
 
     expect(onSelect).toHaveBeenCalledWith("moonshotai/Kimi-K3");
@@ -123,7 +123,7 @@ describe("PrivateModelMenu", () => {
 
   it("closes on Escape", () => {
     render(<Menu onSelect={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Private model: Qwen3.8 27B" }));
+    fireEvent.click(screen.getByRole("button", { name: "Private model: Qwen 3.8 27B" }));
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("listbox", { name: "Private models" })).toBeNull();
   });
@@ -174,7 +174,7 @@ describe("the Private chip in the draft", () => {
 
     expect(credits.loadCatalog).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Private · TEE" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Private model: Qwen3.8 27B" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Private model: Qwen 3.8 27B" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Model: Qwen Max" })).toBeNull();
     expect(screen.getByText("1,240 credits left")).toBeInTheDocument();
   });

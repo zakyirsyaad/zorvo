@@ -18,7 +18,6 @@ import {
   packageReason,
   parsePrivateCredits,
   perTurnLabel,
-  privateComposerNote,
   privateErrorText,
   turnsFor,
   updatedAgo,
@@ -55,8 +54,9 @@ describe("creditsPerTurn and turnsFor", () => {
 });
 
 describe("modelLabel", () => {
-  it("keeps the part after the last slash and turns hyphens into spaces", () => {
-    expect(modelLabel("Qwen/Qwen3.8-27B")).toBe("Qwen3.8 27B");
+  it("keeps the part after the last slash, turns hyphens into spaces, and splits a version", () => {
+    expect(modelLabel("Qwen/Qwen3.8-27B")).toBe("Qwen 3.8 27B");
+    expect(modelLabel("GLM/GLM5.3")).toBe("GLM 5.3");
     expect(modelLabel("a/b/Some-Model-1")).toBe("Some Model 1");
     expect(modelLabel("plain-id")).toBe("plain id");
   });
@@ -86,33 +86,14 @@ describe("lowBalanceNote", () => {
   });
 
   it("names the balance and the model's whole turns below 50", () => {
-    expect(lowBalanceNote(49, pricey)).toBe(
-      "Your credits are running low: 49 credits left, about 4 turns on Qwen3.8 27B. Top up in Settings.",
-    );
-    expect(lowBalanceNote(42, pricey)).toBe(
-      "Your credits are running low: 42 credits left, about 3 turns on Qwen3.8 27B. Top up in Settings.",
-    );
+    expect(lowBalanceNote(49, pricey)).toBe("49 credits left, about 4 turns on Qwen 3.8 27B.");
+    expect(lowBalanceNote(42, pricey)).toBe("42 credits left, about 3 turns on Qwen 3.8 27B.");
   });
 
   it("drops the turns part without a price or a whole turn", () => {
-    expect(lowBalanceNote(49)).toBe(
-      "Your credits are running low: 49 credits left. Top up in Settings.",
-    );
-    expect(lowBalanceNote(1, pricey)).toBe(
-      "Your credits are running low: 1 credit left. Top up in Settings.",
-    );
-    expect(lowBalanceNote(0, pricey)).toBe(
-      "Your credits are running low: 0 credits left. Top up in Settings.",
-    );
-  });
-});
-
-describe("privateComposerNote", () => {
-  it("lets a draft's block beat a refusal and the low-balance warning", () => {
-    expect(privateComposerNote("Add credits", "Ran out", "Running low")).toBe("Add credits");
-    expect(privateComposerNote(undefined, "Ran out", "Running low")).toBe("Ran out");
-    expect(privateComposerNote(undefined, undefined, "Running low")).toBe("Running low");
-    expect(privateComposerNote(undefined, undefined, undefined)).toBeUndefined();
+    expect(lowBalanceNote(49)).toBe("49 credits left.");
+    expect(lowBalanceNote(1, pricey)).toBe("1 credit left.");
+    expect(lowBalanceNote(0, pricey)).toBe("0 credits left.");
   });
 });
 

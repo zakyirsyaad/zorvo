@@ -54,6 +54,8 @@ export interface ChatCanvasProps {
   onReopenElicitationUrl?: (key: string) => void;
   /** Opens NEAR AI's Verification Center from a private reply's badge. */
   onOpenUrl?: (url: string) => void;
+  /** The private model id, for a reply's verification popover. */
+  privateModelId?: string;
   /** True while the agent works on its turn: shown under the last message. */
   isWorking?: boolean;
   /** Failed requests in a row the agent reported while it works. */
@@ -85,6 +87,7 @@ export function ChatCanvas({
   onAnswerElicitation,
   onReopenElicitationUrl,
   onOpenUrl,
+  privateModelId,
   isWorking = false,
   failures,
   onStop,
@@ -240,6 +243,7 @@ export function ChatCanvas({
           onAnswerElicitation={onAnswerElicitation ? handleAnswerElicitation : undefined}
           onReopenElicitationUrl={onReopenElicitationUrl ? handleReopenElicitationUrl : undefined}
           onOpenUrl={onOpenUrl}
+          privateModelId={privateModelId}
         />
       ))}
       {isWorking && <WorkingIndicator agentName={shownAgentName} since={workStartedAt} />}

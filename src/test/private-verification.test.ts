@@ -4,7 +4,6 @@ import {
   shortSigner,
   summarizeVerification,
   VERIFICATION_LABEL,
-  verificationKindText,
   type VerificationRecord,
 } from "../lib/private-verification";
 import type { ChatMessage } from "../types";
@@ -117,14 +116,11 @@ describe("foldVerifications", () => {
 });
 
 describe("verification copy", () => {
-  it("names the four states and the three kinds honestly", () => {
+  it("names the four states", () => {
     expect(VERIFICATION_LABEL.verified).toBe("Verified in TEE");
     expect(VERIFICATION_LABEL.didnt_verify).toBe("Didn't verify");
     expect(VERIFICATION_LABEL.not_signed).toBe("Not signed");
     expect(VERIFICATION_LABEL.checking).toBe("Checking the signature");
-    expect(verificationKindText("provider_tee")).toBe("Signed by the model's TEE");
-    expect(verificationKindText("gateway")).toBe("Signed by NEAR AI's attested gateway");
-    expect(verificationKindText(undefined)).toBe("Signed by a key in NEAR AI's attestation report");
   });
 
   it("shortens a long signer and leaves a short one as it is", () => {

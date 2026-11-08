@@ -172,20 +172,13 @@ export function lowBalanceNote(credits: number, model?: ModelPrice | null): stri
     turns > 0 && model
       ? `, about ${turns} ${turns === 1 ? 'turn' : 'turns'} on ${modelLabel(model.id)}`
       : '';
-  return `Your credits are running low: ${formatCredits(credits)} left${about}. Top up in Settings.`;
-}
-
-/** What Private mode puts in the composer: a draft's block, then a refusal, then the low-credit warning. */
-export function privateComposerNote(
-  draftNote: string | undefined,
-  creditsOutNote: string | undefined,
-  lowBalance: string | undefined,
-): string | undefined {
-  return draftNote ?? creditsOutNote ?? lowBalance;
+  return `${formatCredits(credits)} left${about}.`;
 }
 
 export function modelLabel(id: string): string {
-  return (id.split('/').pop() || id).replaceAll('-', ' ');
+  return (id.split('/').pop() || id)
+    .replaceAll('-', ' ')
+    .replace(/(?<=[A-Za-z])(?=\d+\.)/g, ' ');
 }
 
 /** Whole credits, rounded: "1,240 credits", "1 credit"; anything not a positive number reads as 0. */

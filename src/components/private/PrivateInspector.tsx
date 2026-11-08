@@ -9,7 +9,6 @@ import {
 } from "../../lib/private-credits";
 import type { ChatMessage, Session } from "../../types";
 import { Button } from "../ui/Button";
-import { RunningLow } from "./RunningLow";
 
 /** NEAR AI's public page that checks a model's attestation and a reply's signature in the browser (docs.near.ai/cloud/verification/verification-center). */
 export const VERIFICATION_CENTER_URL = "https://cloud.near.ai/verify";
@@ -21,7 +20,7 @@ export interface PrivateInspectorProps {
   session: Pick<Session, "privateMode">;
   /** What the app already read: the status, and the models once Settings or the draft's chip loaded them. Nothing is asked here. */
   credits: Pick<PrivateCredits, "status" | "models">;
-  /** The session's replies, to count the ones NEAR AI's signature did not verify. */
+  /** The session's replies, to count its turns and verified answers. */
   messages?: ChatMessage[];
   onTopUp: () => void;
   onOpenUrl: (url: string) => void;
@@ -45,12 +44,9 @@ function Section({ heading, children }: { heading: string; children: ReactNode }
   );
 }
 
-/** The inspector's Private tab: the model a private session runs, the balance, and where it runs. */
+/** The inspector's Private tab: the model and turns a private session runs, its verification and balance. */
 export function PrivateInspector({ session, credits, messages = [], onTopUp, onOpenUrl }: PrivateInspectorProps) {
   const modelId = session.privateMode?.modelId ?? "";
-  const didntVerify = messages.filter(
-    (message) => message.role === "agent" && message.verification?.state === "didnt_verify",
-  ).length;
   // The label only once the catalog says the model is one of the private ones; till then its id.
   const isKnownModel = credits.models?.some((model) => model.id === modelId) === true;
   const model = isKnownModel ? modelLabel(modelId) : modelId;
@@ -58,32 +54,49 @@ export function PrivateInspector({ session, credits, messages = [], onTopUp, onO
     credits.status === null
       ? null
       : credits.status.balance?.credits ?? credits.status.lastBalance?.credits ?? 0;
+  const turns = messages.filter((message) => message.role === "user").length;
+  const answers = messages.filter((message) => message.role === "agent");
+  const verified = answers.filter((message) => message.verification?.state === "verified").length;
 
   return (
     <aside aria-label="Private panel" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui text-fg-secondary">
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-5">
         <dl className="flex flex-col text-ui-sm">
-          <div className="flex items-center gap-2 py-2">
+          <div className="flex items-center gap-2 border-b border-border py-2">
             <dt className="flex-1 text-fg-muted">Model</dt>
             <dd className="min-w-0 truncate text-fg-secondary">{model}</dd>
           </div>
+          <div className="flex items-center gap-2 border-b border-border py-2">
+            <dt className="flex-1 text-fg-muted">Turns</dt>
+            <dd className="text-fg-secondary">{turns}</dd>
+          </div>
+          <div className="flex items-center gap-2 border-b border-border py-2">
+            <dt className="flex-1 text-fg-muted">Verified answers</dt>
+            <dd className="flex items-center gap-1.5 text-fg-secondary">
+              <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-status-running" />
+              {`${verified} of ${answers.length}`}
+            </dd>
+          </div>
           <div className="flex items-center gap-2 py-2">
-            <dt className="flex-1 text-fg-muted">Didn't verify</dt>
-            <dd className={didntVerify > 0 ? "text-danger" : "text-fg-secondary"}>{didntVerify}</dd>
+            <dt className="flex-1 text-fg-muted">Average per turn</dt>
+            <dd className="text-fg-subtle">—</dd>
           </div>
         </dl>
-        <div className="rounded-xl border border-border bg-surface-2 p-3">
-          <Section heading="Balance">
-            <p className="text-ui-sm text-fg-secondary">
-              {balanceText(credits.status)}
-              {shownCredits !== null && shownCredits < LOW_BALANCE_CREDITS && (
-                <span className="ml-2">
-                  <RunningLow />
-                </span>
-              )}
-            </p>
-            <Button onClick={onTopUp}>Top up</Button>
-          </Section>
+        <div
+          role="region"
+          aria-label="Balance"
+          className="flex flex-col gap-2 rounded-xl border border-border bg-surface-2 p-3"
+        >
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-caption font-medium text-fg-muted">Balance</span>
+            {shownCredits !== null && shownCredits < LOW_BALANCE_CREDITS && (
+              <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-status-attention" />
+            )}
+            <span className="text-ui-sm text-fg-secondary">{balanceText(credits.status)}</span>
+          </div>
+          <Button variant="outline" className="w-full" onClick={onTopUp}>
+            Top up
+          </Button>
         </div>
         <Section heading="Where it runs">
           <p className="text-ui-sm text-fg-secondary">{WHERE_IT_RUNS}</p>

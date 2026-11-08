@@ -114,7 +114,7 @@ describe("a private draft in the app", () => {
     await turnOnPrivate();
 
     expect(privateCatalogCalls().map((call) => call.cmd).sort()).toEqual(["private_models", "private_stock"]);
-    expect(await screen.findByRole("button", { name: "Private model: Qwen3.8 27B" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Private model: Qwen 3.8 27B" })).toBeInTheDocument();
     expect(screen.getByText("1,240 credits left")).toBeInTheDocument();
 
     await send("review the payment module");

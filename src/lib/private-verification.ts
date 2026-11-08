@@ -84,19 +84,9 @@ export function shortSigner(signer: string): string {
   return signer.length <= 12 ? signer : `${signer.slice(0, 6)}…${signer.slice(-4)}`;
 }
 
-export function signedCallsText(verification: MessageVerification): string {
-  return `${verification.signed} of ${verification.total} ${verification.total === 1 ? 'call' : 'calls'} signed`;
-}
-
 export const VERIFICATION_LABEL: Record<VerificationState, string> = {
   verified: 'Verified in TEE',
   didnt_verify: "Didn't verify",
   not_signed: 'Not signed',
   checking: 'Checking the signature',
 };
-
-export function verificationKindText(kind: VerificationKind | undefined): string {
-  if (kind === 'provider_tee') return "Signed by the model's TEE";
-  if (kind === 'gateway') return "Signed by NEAR AI's attested gateway";
-  return "Signed by a key in NEAR AI's attestation report";
-}

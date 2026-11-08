@@ -78,7 +78,7 @@ function renderInspector(credits: { status: PrivateStatus | null; models: { id: 
 describe("PrivateInspector", () => {
   it("names the session's model by its label once the catalog is loaded", () => {
     renderInspector({ status: READY, models: [{ id: MODEL_ID, inputPerM: 0.04, outputPerM: 1.35 }] });
-    expect(screen.getByText("Model").parentElement).toHaveTextContent("Qwen3.8 27B");
+    expect(screen.getByText("Model").parentElement).toHaveTextContent("Qwen 3.8 27B");
   });
 
   it("names the model by its id while the catalog is not loaded, and never loads it", () => {
@@ -100,7 +100,7 @@ describe("PrivateInspector", () => {
     expect(screen.getByRole("region", { name: "Balance" })).toHaveTextContent("Checking…");
   });
 
-  it("marks a balance below 50 as running low", () => {
+  it("marks a balance below 50 with the amber dot, not text", () => {
     const status: PrivateStatus = {
       ...READY,
       balance: { ...READY.balance!, credits: 49 },
@@ -109,7 +109,8 @@ describe("PrivateInspector", () => {
     const balance = screen.getByRole("region", { name: "Balance" });
 
     expect(balance).toHaveTextContent("49 credits");
-    expect(within(balance).getByText("Running low")).toBeInTheDocument();
+    expect(balance.querySelector(".bg-status-attention")).not.toBeNull();
+    expect(within(balance).queryByText("Running low")).toBeNull();
   });
 
   it("says where it runs, and opens NEAR AI's Verification Center", () => {
@@ -123,20 +124,22 @@ describe("PrivateInspector", () => {
     expect(VERIFICATION_CENTER_URL).toBe("https://cloud.near.ai/verify");
   });
 
-  it("counts the replies NEAR AI's signature did not verify", () => {
+  it("counts turns and verified answers, and leaves the average for usage", () => {
     const messages = [
+      { id: "u-1", role: "user" as const, content: "", timestamp: 1 },
+      { id: "u-2", role: "user" as const, content: "", timestamp: 2 },
       {
         id: "a-1",
         role: "agent" as const,
         content: "",
-        timestamp: 1,
+        timestamp: 3,
         verification: { state: "didnt_verify" as const, signed: 0, total: 1 },
       },
       {
         id: "a-2",
         role: "agent" as const,
         content: "",
-        timestamp: 2,
+        timestamp: 4,
         verification: { state: "verified" as const, signed: 1, total: 1 },
       },
     ] satisfies ChatMessage[];
@@ -150,9 +153,13 @@ describe("PrivateInspector", () => {
       />,
     );
 
-    const row = screen.getByText("Didn't verify").parentElement;
-    expect(row).not.toBeNull();
-    expect(within(row!).getByText("1")).toBeInTheDocument();
+    expect(screen.getByText("Turns").parentElement).toHaveTextContent("2");
+    const verified = screen.getByText("Verified answers").parentElement;
+    expect(verified).not.toBeNull();
+    expect(verified).toHaveTextContent("1 of 2");
+    expect(verified!.querySelector(".bg-status-running")).not.toBeNull();
+    expect(screen.getByText("Average per turn").parentElement).toHaveTextContent("—");
+    expect(screen.queryByText("Didn't verify")).toBeNull();
   });
 });
 
@@ -202,8 +209,12 @@ describe("the Private tab in the app", () => {
 
     await waitFor(() => expect(screen.getByRole("region", { name: "Balance" })).toHaveTextContent("1,240 credits"));
     expect(screen.getByText("Model").parentElement).toHaveTextContent(MODEL_ID);
-    // The inspector asks the credits server for nothing beyond the status.
-    expect(fakePrivate().calls.filter((call) => call.cmd !== "private_status")).toEqual([]);
+    // The private session loads the catalog for its model's price.
+    expect([...new Set(fakePrivate().calls.map((call) => call.cmd))].sort()).toEqual([
+      "private_models",
+      "private_status",
+      "private_stock",
+    ]);
   });
 
   it("offers no Private tab for an ordinary session", async () => {

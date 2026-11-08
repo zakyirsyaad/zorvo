@@ -42,6 +42,8 @@ export interface MessageRowProps {
   onReopenElicitationUrl?: (key: string) => void;
   /** Opens NEAR AI's Verification Center from a private reply's badge. */
   onOpenUrl?: (url: string) => void;
+  /** The private model id, for the badge's popover. */
+  privateModelId?: string;
 }
 
 /**
@@ -68,6 +70,7 @@ export const MessageRow = memo(function MessageRow({
   onAnswerElicitation,
   onReopenElicitationUrl,
   onOpenUrl,
+  privateModelId,
 }: MessageRowProps) {
   const isUser = message.role === "user";
   const timeLabel = timeLabelOf(message);
@@ -172,7 +175,11 @@ export const MessageRow = memo(function MessageRow({
           </div>
           {text}
           {message.verification && (
-            <VerificationBadge verification={message.verification} onOpenUrl={onOpenUrl} />
+            <VerificationBadge
+              verification={message.verification}
+              modelId={privateModelId}
+              onOpenUrl={onOpenUrl}
+            />
           )}
           {/* The reply's actions, once its turn has ended */}
           {showActions && (

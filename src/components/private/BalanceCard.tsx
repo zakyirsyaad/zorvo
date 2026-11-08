@@ -5,7 +5,6 @@ import type { ActionResult, PrivateCredits } from "../../hooks/usePrivateCredits
 import { formatRelativeTime } from "../../lib/relative-time";
 import {
   formatCredits,
-  LOW_BALANCE_CREDITS,
   parseIsoTime,
   privateErrorText,
   updatedAgo,
@@ -14,7 +13,6 @@ import {
 import { Button } from "../ui/Button";
 import { StatusLine } from "../ui/StatusLine";
 import { SettingsGroup, SettingsRow } from "../settings/SettingsGroup";
-import { RunningLow } from "./RunningLow";
 
 export interface BalanceCardProps {
   /** null until the first read answers. */
@@ -112,7 +110,12 @@ export function BalanceCard({ status, refresh, forget, onShowRecoveryCode }: Bal
     return (
       <SettingsGroup heading="Balance">
         <SettingsRow
-          label={<span className={SOLO_AMOUNT}>Balance unavailable</span>}
+          label={
+            <span className="flex items-center gap-2">
+              <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-status-attention" />
+              <span className="text-ui font-semibold">Balance unavailable</span>
+            </span>
+          }
           description={
             <>
               {status.balanceError === "unreachable"
@@ -142,12 +145,7 @@ export function BalanceCard({ status, refresh, forget, onShowRecoveryCode }: Bal
   return (
     <SettingsGroup heading="Balance">
       <SettingsRow
-        label={
-          <span className="flex items-center gap-2">
-            <span className={SOLO_AMOUNT}>{formatCredits(credits)}</span>
-            {credits < LOW_BALANCE_CREDITS && <RunningLow />}
-          </span>
-        }
+        label={<span className={SOLO_AMOUNT}>{formatCredits(credits)}</span>}
         description={
           isFirstRun ? (
             <>
@@ -166,7 +164,7 @@ export function BalanceCard({ status, refresh, forget, onShowRecoveryCode }: Bal
             {balance && <span className="text-ui-sm text-fg-subtle">{updatedAgo(balance.updatedAt, now)}</span>}
             {!isFirstRun && (
               <Button
-                icon={<RefreshCw size={14} strokeWidth={1.75} aria-hidden="true" />}
+                icon={<RefreshCw size={12} strokeWidth={1.75} aria-hidden="true" />}
                 disabled={isRefreshing}
                 onClick={() => void reload()}
               >

@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { FakeTauriStore } from "./setup";
 import type { FakePrivate } from "./fixtures/private-backend";
 import type { Session } from "../types";
@@ -67,25 +67,31 @@ async function renderApp() {
   });
 }
 
-describe("the private composer's low balance note", () => {
+describe("the private low balance row", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     listeners.clear();
   });
 
-  it("warns from the live balance, not the last known one", async () => {
+  it("warns from the live balance with the model's turns, and opens the top-up settings", async () => {
     setStatus(49, 1240);
+    fakePrivate().models = [{ id: MODEL_ID, inputPerM: 0, outputPerM: 100 }];
     await renderApp();
 
     expect(
-      await screen.findByText("Your credits are running low: 49 credits left. Top up in Settings."),
+      await screen.findByText("49 credits left, about 4 turns on Qwen 3.8 27B."),
     ).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Top up" }));
+    });
+    expect(await screen.findByRole("heading", { name: "Private mode" })).toBeInTheDocument();
   });
 
   it("says nothing when only the last known balance is low", async () => {
     setStatus(null, 40);
+    fakePrivate().models = [{ id: MODEL_ID, inputPerM: 0, outputPerM: 100 }];
     await renderApp();
 
-    expect(screen.queryByText(/credits are running low/i)).toBeNull();
+    expect(screen.queryByText(/^\d+ credits? left/)).toBeNull();
   });
 });

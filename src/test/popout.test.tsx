@@ -139,7 +139,9 @@ describe("Popout windows", () => {
       fireEvent.click(screen.getByRole("button", { name: /Verified in TEE/ }));
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Open the Verification Center" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Check it yourself in NEAR AI's Verification Center" }),
+      );
     });
 
     expect(emitted).toContainEqual({

@@ -36,6 +36,13 @@ Made with the user on 2026-11-08:
   question goes to A, which may answer it or act on it; while A works, B cannot be prompted.
 - **B starts with the agent's remembered choices** (model, effort), like any new session, not in the
   safest mode as Compare does: the user picked this agent to do the work.
+- **The main way in is an `@Agent` mention in the composer** ("@Codex implement step 2…"); the ⋯
+  menu and its dialog stay as the second way. Zorvo never guesses from free text ("I want to do this
+  with Codex"): a wrong guess would send the user's message to another agent, which then changes
+  files. An agent that delegates on its own through a Zorvo MCP tool is a later sub-project, with
+  the MCP servers work.
+- **B shows its own status line** while A works on B's report ("Claude Code is working on Codex's
+  report"), mirroring A's line, so a blocked Send in B is explained where the user looks.
 
 ## What changes for the user
 
@@ -44,14 +51,20 @@ Every piece reuses a component of the Zorvo Design System artifact
 draft's agent rows, the turn status line, the quiet line above a first message, `SessionRow`'s fork
 nesting and the agent message header. There is no new kind of visual element. See "UI".
 
-1. In a session on screen, the top bar's ⋯ menu has **Delegate to another agent…**. It opens a
-   dialog: an agent picker, a task box, and the line "Codex reads this conversation first and works
-   in the same folder. Each answer it gives is sent to Claude Code." When A's agent is not running,
-   the line adds "Claude Code isn't running, so its reports wait in its composer."
-2. **Delegate** in the dialog starts B. The window switches to B; its first message is the task.
-   B's session is listed under A in the sidebar, as a fork is, and its row ends "· delegated".
+1. In a session's composer, the user types `@` at the start of the message. The `@` list shows a
+   **Delegate to an agent** group above "Files in <folder>". The user picks Codex, or types
+   `@Codex`, then the task: "@Codex implement step 2 of the plan: token refresh in src/auth.ts, with
+   tests". Send turns into **Delegate to Codex**.
+   - The other way in is the top bar's ⋯ menu, which has **Delegate to another agent…**. It opens a
+     dialog: an agent picker, a task box, and the line "Codex reads this conversation first and
+     works in the same folder. Each answer it gives is sent to Claude Code." When A's agent is not
+     running, the line adds "Claude Code isn't running, so its reports wait in its composer."
+2. **Delegate to Codex** (or **Delegate** in the dialog) starts B. The window switches to B; its
+   first message is the task, without the mention. B's session is listed under A in the sidebar, as
+   a fork is, and its row ends "· delegated".
 3. B's chat starts with one quiet line, "Delegated from Fix login bug · Claude Code", with **Open**
-   (selects A). B's ⋯ menu has **End delegation**.
+   (selects A). B's ⋯ menu has **End delegation**. While A works on one of B's reports, B shows
+   "Claude Code is working on Codex's report" with **Open**, and its Send is blocked.
 4. While B works, A shows a turn status line under its last message: "Codex is working on the task
    you delegated", the time since it started, and **Open** (selects B). After a failed turn of B it
    shows "Codex's turn failed" with **Open**. A's ⋯ menu also has **End delegation**.
@@ -126,6 +139,45 @@ B's composer and the delegation stays open.
 
 No new Tauri command. The webview still sends only an agent id; the command line comes from
 `launch_for`.
+
+## The @ mention
+
+The composer already lists workspace files after `@` (`lib/mentions.ts` `mentionAt`,
+`components/composer/MentionMenu.tsx`). Delegation joins that list; nothing reads free text.
+
+**When the agents group shows.** Only in a session on screen, in the main window, that may
+delegate: not a draft, not a delegated session, not a compare run's panel. Only for an `@` at the
+very start of the message (`mention.start === 0`), since a delegation is the whole message. An `@`
+anywhere else lists files only, as today.
+
+**The group.**
+- Header: "Delegate to an agent", above the existing "Files in <folder>".
+- Rows: every agent in use that can start, A's own included, filtered by the typed query against the
+  agent's name.
+- Each row reads like the dialog's agent rows: the 16px logo, the name with the match in bold, and
+  the status on the right ("Ready", "Not checked", "Needs sign-in", "Not installed"). An agent that
+  cannot be picked is at 55% opacity, and Return skips it.
+- ↑ ↓ moves through agents, then files, as one list.
+- Picking an agent replaces the `@word` with `@<Agent name> ` (the display name, then a space), so a
+  two-word name such as "Claude Code" is kept whole.
+
+**Reading a delegation from the text.** `delegationMentionOf(text, agents)` in `lib/delegation.ts`
+returns `{ agentId, task }` when the text starts with `@` + an agent's display name in use
+(case-insensitive, longest name first), followed by whitespace or the end. `task` is the rest,
+trimmed. Otherwise it returns `null`, and the message is an ordinary one for A. It reads only the
+start, so "ask @Codex later" is a message for A.
+
+**While the text names an agent:**
+- Send's label is **Delegate to Codex** (`sendLabel`, as Compare's "Start 2 sessions").
+- Send is blocked, with the note under the prompt, when:
+  - the task is empty: "Write the task after @Codex.";
+  - the agent cannot start: "Codex isn't installed. Install it in Settings → Agents.", or "Codex
+    needs a sign-in first.";
+  - `delegateBlockedReason` gives a reason ("Codex already has a task from this session.").
+- A's turn still shows Stop in Send's place, as today.
+- Send calls `start(sourceId, agentId, task, attachments)`. The attachments go with B's first
+  message, and the composer is cleared as for any send. A refused start gives the whole text back,
+  mention included, through the usual give-back path.
 
 ## One at a time
 
@@ -234,6 +286,16 @@ wins.
 - **Sidebar** (SessionRow README): B sits under A, 11px in, behind the `border` guide line, as a fork
   does, and its line 2 ends "· delegated" the way a fork's ends "· fork". When A is archived or gone,
   B is listed as an ordinary row, so archiving A never hides B.
+- **The @ list's agents group** (Composer README, "`/` and `@`"): the popover's look, above the card
+  in a session. The header "Delegate to an agent" is styled like "Files in <folder>" (`caption` 500
+  `fg-muted`). Each row is the 16px logo, the name in `ui-sm` (the match in bold), and the status on
+  the right in `caption` with the dialog's colors. The highlighted row fills `surface-hover` with
+  `fg` text. The prompt keeps focus.
+- **Send label** (Composer README, Send): "Delegate to Codex" at 13/500 with the 12px arrow up after
+  the label, like "Start 2 sessions".
+- **B's status line** (Message README, turn status): while A works on B's report, under B's last
+  message, the same line as A's, with the 6px `status-running` dot and its ring: "Claude Code is
+  working on Codex's report", the time in `caption` `fg-subtle`, and **Open** (selects A).
 - **Send note** (Composer README): the blocked Send's reason is the note under the prompt in
   `caption` `fg-muted`, and Send is `aria-describedby` it.
 - End delegation sets `endedAt`. A's status line goes away, and B's quiet line reads as ended.
@@ -246,7 +308,8 @@ report. The next normal turn of B, after it is reopened, is reported.
 
 ## Not built
 
-- An agent delegating by itself (a Zorvo MCP tool).
+- An agent delegating by itself (a Zorvo MCP tool), and reading a delegation from free text.
+- An `@Agent` mention anywhere but the start of the message, or two agents in one message.
 - Nested delegation, several open delegations per session, delegating into a worktree of its own.
 - Holding or batching reports.
 - Delegating from a popout.
@@ -267,7 +330,9 @@ Changed:
 - `src/lib/persistence.ts`: validate both.
 - `src-tauri/src/store.rs`: `delegated_from` with a lenient reader.
 - `src/lib/fork-handoff.ts`: a header option for a delegation.
-- `src/lib/composer-state.ts`: the two Send notes in `composerNote`'s order.
+- `src/lib/composer-state.ts`: the two Send notes in `composerNote`'s order, and the mention's notes.
+- `src/components/composer/MentionMenu.tsx`, `useMentionMenu.ts`, `ComposerDock.tsx`: the agents
+  group, one keyboard list across agents and files, picking an agent, and the mention's Send label.
 - `src/hooks/useSessionFork.ts` and other session creation paths: never copy `delegatedFrom`.
 - Sidebar (`components/sidebar/`), the top bar's ⋯ menu (`MoreOptionsMenu` in `TopBar.tsx`), the
   chat message row (the From header), `ChatCanvas` (where the status line and quiet line render),
@@ -286,6 +351,11 @@ Changed:
   marked report; `'failed'`, cancelled and sign-in turns send none; A not running puts the report in
   its composer with a notice; A deleted sends none; End delegation stops reports; A counts as busy
   before `send` resolves, so B's Send is refused in the same tick.
+- `delegationMentionOf` tests: a name at the start, a two-word name, case, the longest name first, a
+  name glued to a word ("@Codexy") or not at the start (no delegation), an empty task.
+- Mention menu tests: the group only for an `@` at the start of a session's message; status rows,
+  unpickable ones skipped by ↑ ↓; picking inserts `@Claude Code `; the Send label and each blocked
+  note.
 - Composer note tests for both sides; persistence round trip and invalid-field drop; Rust
   `store.rs` tests for the lenient field and its survival across a save.
 - Component tests for the dialog (empty task error, uninstalled agent not pickable) the status line, the quiet line and the ⋯ menu items.

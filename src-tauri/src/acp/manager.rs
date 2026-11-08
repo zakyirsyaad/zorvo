@@ -61,6 +61,9 @@ pub struct AcpLaunch {
     /// A Zorvo Private session: the env holds a loopback proxy token, never the
     /// NEAR AI key. Only `private_mode::launch::private_launch` sets this.
     pub private: bool,
+    /// MCP servers to pass to session/new, session/load and session/resume. Only a private launch
+    /// has one; every plain launch and the probe pass none.
+    pub mcp_servers: Vec<serde_json::Value>,
 }
 
 /// Prints the environment's names only: a private launch holds a proxy token
@@ -247,7 +250,7 @@ impl AcpManager {
                 connection,
                 init,
                 "session/new",
-                json!({ "cwd": cwd, "mcpServers": [] }),
+                json!({ "cwd": cwd, "mcpServers": launch.mcp_servers }),
                 launch,
                 self.route_on_answer(key, app_session_id, None, true, false),
             )?;

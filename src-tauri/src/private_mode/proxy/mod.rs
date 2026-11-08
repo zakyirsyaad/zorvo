@@ -9,6 +9,7 @@
 //! calls are recorded under the source's app session and are told apart by time, not by session.
 
 mod forward;
+pub mod mcp;
 mod records;
 mod server;
 
@@ -16,6 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use super::launch::NEAR_AI_BASE_URL;
 use super::PrivateError;
+pub use mcp::{McpState, SharedModels};
 use records::lock;
 
 pub use records::ProxyRecord;
@@ -32,6 +34,7 @@ pub struct IssuedToken {
 pub struct PrivateProxy {
     upstream: String,
     server: Mutex<Option<Arc<server::ProxyServer>>>,
+    mcp: Mutex<Option<Arc<McpState>>>,
 }
 
 impl PrivateProxy {
@@ -46,7 +49,25 @@ impl PrivateProxy {
         Self {
             upstream: upstream.into(),
             server: Mutex::new(None),
+            mcp: Mutex::new(None),
         }
+    }
+
+    /// Gives the loopback listener the read-only MCP view. Set once when private mode is built,
+    /// before the first private launch starts the listener.
+    pub(crate) fn set_mcp_state(&self, mcp: Arc<McpState>) {
+        *lock(&self.mcp) = Some(Arc::clone(&mcp));
+        if let Some(server) = lock(&self.server).as_ref() {
+            server.set_mcp_state(mcp);
+        }
+    }
+
+    /// Tests only: a proxy with its MCP view already attached.
+    #[doc(hidden)]
+    pub fn with_mcp_state(upstream: impl Into<String>, mcp: Arc<McpState>) -> Self {
+        let proxy = Self::with_upstream(upstream);
+        proxy.set_mcp_state(mcp);
+        proxy
     }
 
     fn server(&self) -> Result<Arc<server::ProxyServer>, PrivateError> {
@@ -54,10 +75,14 @@ impl PrivateProxy {
         if let Some(server) = slot.as_ref() {
             return Ok(Arc::clone(server));
         }
-        let started = Arc::new(server::ProxyServer::start(&self.upstream).map_err(|error| {
-            eprintln!("private proxy: could not listen on 127.0.0.1 ({error})");
-            PrivateError::Unreachable
-        })?);
+        let started = Arc::new(
+            server::ProxyServer::start(&self.upstream, lock(&self.mcp).clone()).map_err(
+                |error| {
+                    eprintln!("private proxy: could not listen on 127.0.0.1 ({error})");
+                    PrivateError::Unreachable
+                },
+            )?,
+        );
         *slot = Some(Arc::clone(&started));
         Ok(started)
     }

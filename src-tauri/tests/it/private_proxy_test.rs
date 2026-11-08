@@ -4,15 +4,20 @@
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
-use zorvo_lib::private_mode::proxy::PrivateProxy;
+use zorvo_lib::private_mode::client::{
+    Balance, CreatedTopup, CreditsApi, ModelPrice, PromoResult, Stock, TopupState,
+};
+use zorvo_lib::private_mode::device::{SecretStore, DEVICE_SECRET};
+use zorvo_lib::private_mode::proxy::{McpState, PrivateProxy};
+use zorvo_lib::private_mode::PrivateError;
 
 const MODEL: &str = "Qwen/Qwen3.8-27B";
 const KEY: &str = "sk-real-key";
@@ -544,5 +549,134 @@ async fn forwards_models_without_recording_a_completion() {
     assert_eq!(seen[0].method, "GET");
     assert_eq!(seen[0].path, "/v1/models");
     assert_eq!(seen[0].header("authorization"), Some("Bearer sk-real-key"));
+    assert!(proxy.records(SESSION).is_empty());
+}
+
+struct McpStore;
+
+impl SecretStore for McpStore {
+    fn get(&self, account: &str) -> Result<Option<String>, PrivateError> {
+        Ok((account == DEVICE_SECRET).then(|| "device".to_string()))
+    }
+    fn set(&self, _: &str, _: &str) -> Result<(), PrivateError> {
+        Ok(())
+    }
+    fn delete(&self, _: &str) -> Result<(), PrivateError> {
+        Ok(())
+    }
+}
+
+struct McpApi {
+    reads: AtomicUsize,
+}
+
+impl CreditsApi for McpApi {
+    fn register(&self, _: &str) -> Result<(), PrivateError> {
+        Ok(())
+    }
+    fn balance(&self, _: &str, _: bool) -> Result<Balance, PrivateError> {
+        self.reads.fetch_add(1, Ordering::SeqCst);
+        Ok(Balance {
+            credits: 49,
+            used_credits: 0,
+            key_ready: true,
+            updated_at: "2026-11-08T10:00:00Z".to_string(),
+        })
+    }
+    fn stock(&self, _: &str) -> Result<Stock, PrivateError> {
+        unimplemented!()
+    }
+    fn models(&self, _: &str) -> Result<Vec<ModelPrice>, PrivateError> {
+        unimplemented!()
+    }
+    fn create_topup(&self, _: &str, _: u32) -> Result<CreatedTopup, PrivateError> {
+        unimplemented!()
+    }
+    fn topup(&self, _: &str, _: &str) -> Result<TopupState, PrivateError> {
+        unimplemented!()
+    }
+    fn cancel_topup(&self, _: &str, _: &str) -> Result<(), PrivateError> {
+        unimplemented!()
+    }
+    fn take_key(&self, _: &str) -> Result<Option<String>, PrivateError> {
+        unimplemented!()
+    }
+    fn redeem_promo(&self, _: &str, _: &str) -> Result<PromoResult, PrivateError> {
+        unimplemented!()
+    }
+    fn recover(&self, _: &str, _: &str) -> Result<(), PrivateError> {
+        unimplemented!()
+    }
+}
+
+#[tokio::test]
+async fn mcp_routes_need_the_proxy_token_and_never_reach_upstream() {
+    let answer = br#"{"data":[]}"#;
+    let fake = FakeUpstream::start(move |_request, stream| {
+        respond(stream, "200 OK", "application/json", answer);
+    });
+    let api = Arc::new(McpApi {
+        reads: AtomicUsize::new(0),
+    });
+    let models = Arc::new(Mutex::new(Some((
+        Instant::now(),
+        vec![ModelPrice {
+            id: MODEL.to_string(),
+            input_per_m: 0.0,
+            output_per_m: 100.0,
+        }],
+    ))));
+    let mcp = Arc::new(McpState::new(Arc::new(McpStore), api.clone(), models));
+    let proxy = PrivateProxy::with_mcp_state(fake.base(), mcp);
+    let (token, base) = issue(&proxy);
+    let root = base.strip_suffix("/v1").expect("the proxy base");
+
+    let unauthorized = client()
+        .get(format!("{root}/zorvo/v1/credits"))
+        .send()
+        .await
+        .expect("the proxy answers");
+    assert_eq!(unauthorized.status(), 401);
+    let unauthorized = client()
+        .get(format!("{root}/zorvo/v1/models"))
+        .send()
+        .await
+        .expect("the proxy answers");
+    assert_eq!(unauthorized.status(), 401);
+
+    let credits = client()
+        .get(format!("{root}/zorvo/v1/credits"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .expect("the proxy answers");
+    assert_eq!(credits.status(), 200);
+    let credits: serde_json::Value = credits.json().await.expect("credits JSON");
+    assert_eq!(credits["credits"], 49);
+    assert_eq!(credits["model"], MODEL);
+    assert_eq!(credits["approxTurns"], 4);
+    assert_eq!(credits["updatedAt"], "2026-11-08T10:00:00Z");
+
+    // The same answer comes from the cache, not a second Worker read.
+    let cached = client()
+        .get(format!("{root}/zorvo/v1/credits"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .expect("the proxy answers");
+    assert_eq!(cached.status(), 200);
+    assert_eq!(api.reads.load(Ordering::SeqCst), 1);
+
+    let models = client()
+        .get(format!("{root}/zorvo/v1/models"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .expect("the proxy answers");
+    assert_eq!(models.status(), 200);
+    let models: serde_json::Value = models.json().await.expect("models JSON");
+    assert_eq!(models["models"][0]["label"], "Qwen 3.8 27B");
+    assert_eq!(models["models"][0]["approxCreditsPerTurn"], 12.0);
+    assert!(fake.requests().is_empty(), "the MCP routes are local");
     assert!(proxy.records(SESSION).is_empty());
 }

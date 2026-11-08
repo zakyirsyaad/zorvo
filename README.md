@@ -287,6 +287,11 @@ before it edits files or runs commands. Pick another mode in the composer.
   enters the agent: each private launch gets a one-time token for a loopback
   proxy in Zorvo's backend, which adds the key and forwards the agent's model
   requests to NEAR AI.
+- **Private sessions get a small local MCP server.** It ships in Zorvo's app
+  bundle and answers the agent's `credits_balance` and `private_models` calls
+  by reading Zorvo's loopback proxy with that session's one-time token. It
+  never sees the NEAR AI key or this Mac's credits secret, and it contacts no
+  host of its own.
 - **GitHub stays in your `gh`.** Zorvo asks your `gh` whether you are signed in
   to github.com and reads only your login and name, to show them in the sidebar
   and in Settings. It stores neither, never reads or keeps a token, and

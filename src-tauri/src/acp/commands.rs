@@ -160,6 +160,7 @@ fn launch_from(
         args: profile.acp_args,
         env: env.into_iter().collect(),
         private: false,
+        mcp_servers: Vec::new(),
     })
 }
 
@@ -237,8 +238,14 @@ fn session_launch(
             PrivateError::NoKey | PrivateError::NoDevice => credits_empty_error(),
             other => other.into(),
         })?;
+    let mcp_script = private.mcp_script();
     Ok(private_launch(
-        launch, profile_id, model_id, &models, &issued,
+        launch,
+        profile_id,
+        model_id,
+        &models,
+        &issued,
+        mcp_script.as_deref(),
     )?)
 }
 

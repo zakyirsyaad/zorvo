@@ -3,7 +3,7 @@
 //! the Keychain, and fails with the snake_case code of a [`PrivateError`],
 //! never a message.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tauri::State;
@@ -25,7 +25,11 @@ const STATE_DIR: &str = "private";
 /// `CREDITS_BASE_URL`, `<data_dir>/private`, the system browser and the loopback
 /// proxy. A base URL the client refuses leaves private mode offline instead of
 /// stopping the app.
-pub fn private_mode_for(data_dir: &Path, proxy: Arc<PrivateProxy>) -> PrivateMode {
+pub fn private_mode_for(
+    data_dir: &Path,
+    proxy: Arc<PrivateProxy>,
+    mcp_script: Option<PathBuf>,
+) -> PrivateMode {
     let api: Box<dyn CreditsApi> = match HttpCredits::new(CREDITS_BASE_URL) {
         Ok(api) => Box::new(api),
         Err(error) => {
@@ -36,14 +40,18 @@ pub fn private_mode_for(data_dir: &Path, proxy: Arc<PrivateProxy>) -> PrivateMod
             Box::new(OfflineCredits)
         }
     };
-    PrivateMode::new(
+    let mode = PrivateMode::new(
         Box::new(KeychainStore::new(keychain_service(data_dir))),
         api,
         data_dir.join(STATE_DIR),
         Box::new(crate::windows::open_url),
         proxy,
         PrivateVerifier::new(NEAR_AI_BASE_URL),
-    )
+    );
+    if let Some(path) = mcp_script {
+        mode.set_mcp_script(path);
+    }
+    mode
 }
 
 /// A Credits Worker that is never reachable.

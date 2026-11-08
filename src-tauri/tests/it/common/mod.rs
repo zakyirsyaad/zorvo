@@ -20,6 +20,7 @@ pub fn fake_agent() -> AcpLaunch {
         )],
         env: vec![],
         private: false,
+        mcp_servers: Vec::new(),
     }
 }
 

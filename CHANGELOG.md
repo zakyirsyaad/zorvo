@@ -9,6 +9,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **Private mode, opt in.** Qwen Code can run on NEAR AI models inside secure hardware (TEE), paid with prepaid credits you top up in Settings → Private mode. Turn it on with the Private chip of a Qwen Code draft; until you do, nothing changes.
 - **Verified private answers.** Each private reply now carries a badge saying whether NEAR AI signed every model call behind it, with the signer and a link to NEAR AI's Verification Center.
 - **Low-credit warning.** Below 50 credits, a private session shows the balance left and, when it can price the model, about how many turns remain, with a Top up button; the inspector marks a low balance with an amber dot, and Zorvo notifies once if you are away.
+- **Private sessions can check their credits.** Qwen Code can read the balance and model prices through a small local server, so it can tell you when credits are low and suggest a cheaper model. The server talks only to Zorvo's loopback proxy and never sees the NEAR AI key.
 
 ### Changed
 

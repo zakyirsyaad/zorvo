@@ -15,7 +15,8 @@ export default mergeConfig(
       testTimeout: 20_000,
       // Agent worktrees under .claude/ hold copies of the tests; run only this checkout's.
       // server/ is its own package with its own Vitest setup (Workers runtime).
-      exclude: [...configDefaults.exclude, ".claude/**", "server/**"],
+      // src-tauri/resources/ tests run with Node's own `node --test`, not in jsdom.
+      exclude: [...configDefaults.exclude, ".claude/**", "server/**", "src-tauri/**"],
     },
   }),
 );

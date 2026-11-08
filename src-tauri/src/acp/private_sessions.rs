@@ -122,6 +122,7 @@ mod tests {
             args: Vec::new(),
             env: Vec::new(),
             private: false,
+            mcp_servers: Vec::new(),
         }
     }
 

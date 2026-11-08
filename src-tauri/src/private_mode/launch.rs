@@ -3,6 +3,10 @@
 //! variables. This is the trust boundary for the key and the endpoint: the webview only names a
 //! model, and only a model Zorvo's own list offers. The NEAR AI key itself stays in the backend.
 
+use std::path::Path;
+
+use serde_json::json;
+
 use super::client::ModelPrice;
 use super::proxy::IssuedToken;
 use super::PrivateError;
@@ -105,6 +109,7 @@ pub fn private_launch(
     model_id: &str,
     models: &[ModelPrice],
     issued: &IssuedToken,
+    mcp_script: Option<&Path>,
 ) -> Result<AcpLaunch, PrivateError> {
     ensure_qwen(profile_id)?;
     if !offered_model(model_id, models) {
@@ -136,12 +141,35 @@ pub fn private_launch(
         (BASE_URL_VARIABLE.to_string(), issued.base_url.clone()),
         (MODEL_VARIABLE.to_string(), model_id.to_string()),
     ]);
+    let mcp_servers = mcp_script
+        .map(|script| {
+            vec![json!({
+                "name": "zorvo-credits",
+                "command": node_beside(&launch.program),
+                "args": [script.to_string_lossy()],
+                "env": [
+                    { "name": "ZORVO_PRIVATE_URL", "value": issued.base_url.trim_end_matches("/v1") },
+                    { "name": "ZORVO_PRIVATE_TOKEN", "value": issued.token },
+                ],
+            })]
+        })
+        .unwrap_or_default();
     Ok(AcpLaunch {
         program: launch.program,
         args,
         env,
         private: true,
+        mcp_servers,
     })
+}
+
+/// The node next to the npx the agent is launched with, else `node` from its PATH.
+fn node_beside(program: &str) -> String {
+    let sibling = Path::new(program).parent().map(|dir| dir.join("node"));
+    match sibling {
+        Some(path) if path.is_file() => path.to_string_lossy().into_owned(),
+        _ => "node".to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -177,11 +205,13 @@ mod tests {
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
             private: false,
+            mcp_servers: Vec::new(),
         }
     }
 
     fn launch(env: &[(&str, &str)]) -> AcpLaunch {
-        private_launch(base(env), "qwen-code", MODEL, &models(), &issued()).expect("private launch")
+        private_launch(base(env), "qwen-code", MODEL, &models(), &issued(), None)
+            .expect("private launch")
     }
 
     fn value<'a>(launch: &'a AcpLaunch, name: &str) -> Option<&'a str> {
@@ -213,6 +243,37 @@ mod tests {
         );
         assert_eq!(launched.program, "npx");
         assert!(launched.private);
+    }
+
+    #[test]
+    fn a_private_launch_carries_the_local_mcp_server_and_no_secret() {
+        let script = Path::new("/tmp/zorvo-private-mcp.mjs");
+        let launched = private_launch(
+            base(&[]),
+            "qwen-code",
+            MODEL,
+            &models(),
+            &issued(),
+            Some(script),
+        )
+        .expect("private launch");
+
+        assert_eq!(launched.mcp_servers.len(), 1);
+        let server = &launched.mcp_servers[0];
+        assert_eq!(server["name"], "zorvo-credits");
+        assert_eq!(server["args"][0], "/tmp/zorvo-private-mcp.mjs");
+        assert_eq!(server["env"][0]["name"], "ZORVO_PRIVATE_URL");
+        assert_eq!(server["env"][0]["value"], "http://127.0.0.1:45678");
+        assert_eq!(server["env"][1]["name"], "ZORVO_PRIVATE_TOKEN");
+        assert_eq!(server["env"][1]["value"], TOKEN);
+        let text = server.to_string();
+        assert!(!text.contains(REAL_KEY), "{text}");
+        assert!(!text.contains("device-secret"), "{text}");
+    }
+
+    #[test]
+    fn a_plain_launch_carries_no_mcp_server() {
+        assert!(base(&[]).mcp_servers.is_empty());
     }
 
     #[test]
@@ -301,7 +362,7 @@ mod tests {
                 .args
                 .extend(extra.iter().map(|arg| arg.to_string()));
 
-            let result = private_launch(with_flags, "qwen-code", MODEL, &models(), &issued());
+            let result = private_launch(with_flags, "qwen-code", MODEL, &models(), &issued(), None);
 
             assert_eq!(result, Err(PrivateError::BadRequest), "{extra:?}");
         }
@@ -314,7 +375,7 @@ mod tests {
             .args
             .extend(["--experimental-skills", "--model-x", "-mx"].map(String::from));
 
-        let launched = private_launch(with_flags, "qwen-code", MODEL, &models(), &issued());
+        let launched = private_launch(with_flags, "qwen-code", MODEL, &models(), &issued(), None);
 
         assert!(launched.is_ok());
     }
@@ -328,14 +389,14 @@ mod tests {
             "no-such-agent",
             "",
         ] {
-            let result = private_launch(base(&[]), id, MODEL, &models(), &issued());
+            let result = private_launch(base(&[]), id, MODEL, &models(), &issued(), None);
             assert_eq!(result, Err(PrivateError::NotQwen), "{id}");
         }
     }
 
     #[test]
     fn the_legacy_qwen_id_is_qwen_code() {
-        let launched = private_launch(base(&[]), "qwen", MODEL, &models(), &issued())
+        let launched = private_launch(base(&[]), "qwen", MODEL, &models(), &issued(), None)
             .expect("qwen is the legacy id of qwen-code");
 
         assert!(launched.private);
@@ -357,7 +418,7 @@ mod tests {
                 input_per_m: 0.1,
                 output_per_m: 0.1,
             }];
-            let result = private_launch(base(&[]), "qwen-code", id, &listed, &issued());
+            let result = private_launch(base(&[]), "qwen-code", id, &listed, &issued(), None);
             assert_eq!(result, Err(PrivateError::UnknownModel), "{id:?}");
         }
     }
@@ -370,6 +431,7 @@ mod tests {
             "Other/Model-1",
             &models(),
             &issued(),
+            None,
         );
 
         assert_eq!(result, Err(PrivateError::UnknownModel));
@@ -384,7 +446,8 @@ mod tests {
             output_per_m: 0.1,
         }];
 
-        let launched = private_launch(base(&[]), "qwen-code", &id, &listed, &issued()).expect("ok");
+        let launched =
+            private_launch(base(&[]), "qwen-code", &id, &listed, &issued(), None).expect("ok");
 
         assert_eq!(launched.args.last(), Some(&id));
     }

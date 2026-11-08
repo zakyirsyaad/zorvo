@@ -424,6 +424,7 @@ fn rejects_bad_starts_and_unknown_sessions() {
         args: vec![],
         env: vec![],
         private: false,
+        mcp_servers: Vec::new(),
     };
     assert!(manager.start("s-2", &cwd(), &missing).is_err());
     assert!(manager.prompt("nope", "hi", &[]).is_err());
@@ -1112,6 +1113,7 @@ fn agent_copied_under(tag: &str) -> (AgentDir, AcpLaunch) {
         args: vec![],
         env: vec![],
         private: false,
+        mcp_servers: Vec::new(),
     };
     (AgentDir(dir), launch)
 }
@@ -2092,6 +2094,7 @@ fn agent_setup_runs_the_setup_launch_as_given_when_the_agent_offers_a_setup() {
         args: vec!["setup.mjs".to_string()],
         env: vec![("A".to_string(), "1".to_string())],
         private: false,
+        mcp_servers: Vec::new(),
     };
 
     let run = manager
@@ -2113,6 +2116,7 @@ fn agent_setup_is_refused_for_an_agent_that_offers_none() {
         args: vec![],
         env: vec![],
         private: false,
+        mcp_servers: Vec::new(),
     };
 
     let error = manager

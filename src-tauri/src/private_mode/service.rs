@@ -19,7 +19,7 @@ use url::Url;
 use super::client::{Balance, CreditsApi, ModelPrice, PromoResult, Stock, TopupState};
 use super::device::{new_recovery_code, secret_hash, SecretStore, DEVICE_SECRET, NEARAI_KEY};
 use super::local_state::{CachedModels, LastBalance, LocalState, PendingTopup};
-use super::proxy::{IssuedToken, PrivateProxy};
+use super::proxy::{IssuedToken, McpState, PrivateProxy, SharedModels};
 use super::verify::{PrivateVerifier, RecordVerification};
 use super::PrivateError;
 
@@ -91,15 +91,17 @@ impl DeviceReport {
 
 /// Holds secrets, so it deliberately has no `Debug`.
 pub struct PrivateMode {
-    store: Box<dyn SecretStore>,
-    api: Box<dyn CreditsApi>,
+    store: Arc<dyn SecretStore>,
+    api: Arc<dyn CreditsApi>,
     dir: PathBuf,
     open: Opener,
     /// The loopback proxy private launches talk to; it holds the real key.
     proxy: Arc<PrivateProxy>,
     /// Checks NEAR AI's signatures and attestations for the proxy's records.
     verifier: PrivateVerifier,
-    models: Mutex<Option<(Instant, Vec<ModelPrice>)>>,
+    models: SharedModels,
+    /// The bundled MCP script, set by the app setup. Tests may leave it unset.
+    mcp_script: Mutex<Option<PathBuf>>,
     checkouts: Mutex<HashMap<String, String>>,
     /// The current secret is known to the server, this run.
     registered: AtomicBool,
@@ -130,6 +132,14 @@ impl PrivateMode {
         proxy: Arc<PrivateProxy>,
         verifier: PrivateVerifier,
     ) -> Self {
+        let store: Arc<dyn SecretStore> = store.into();
+        let api: Arc<dyn CreditsApi> = api.into();
+        let models = Arc::new(Mutex::new(None));
+        proxy.set_mcp_state(Arc::new(McpState::new(
+            Arc::clone(&store),
+            Arc::clone(&api),
+            Arc::clone(&models),
+        )));
         Self {
             store,
             api,
@@ -137,7 +147,8 @@ impl PrivateMode {
             open,
             proxy,
             verifier,
-            models: Mutex::new(None),
+            models,
+            mcp_script: Mutex::new(None),
             checkouts: Mutex::new(HashMap::new()),
             registered: AtomicBool::new(false),
             handover: Mutex::new(()),
@@ -402,6 +413,15 @@ impl PrivateMode {
     /// Lets a private fork keep using its source's proxy token after the source stops.
     pub fn share_proxy_token(&self, source_id: &str, fork_id: &str) -> bool {
         self.proxy.share(source_id, fork_id)
+    }
+
+    /// The bundled MCP server script, once the app setup knows its resource path.
+    pub fn set_mcp_script(&self, path: PathBuf) {
+        *lock(&self.mcp_script) = Some(path);
+    }
+
+    pub fn mcp_script(&self) -> Option<PathBuf> {
+        lock(&self.mcp_script).clone()
     }
 
     /// Verifies the session's private calls, reusing results already final. A turn that ended after

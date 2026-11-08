@@ -69,7 +69,7 @@ impl AcpManager {
                 connection,
                 init,
                 method.acp_method(),
-                json!({ "sessionId": acp_session_id, "cwd": cwd, "mcpServers": [] }),
+                json!({ "sessionId": acp_session_id, "cwd": cwd, "mcpServers": launch.mcp_servers }),
                 launch,
                 self.route_on_answer(
                     key,

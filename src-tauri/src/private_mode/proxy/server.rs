@@ -19,6 +19,7 @@ use tokio::net::TcpListener as TokioListener;
 use tokio::sync::oneshot;
 
 use super::forward;
+use super::mcp::McpState;
 use super::records::{hex, lock, RecordStore};
 use crate::private_mode::PrivateError;
 
@@ -200,16 +201,21 @@ pub(super) struct ProxyState {
     pub(super) client: reqwest::Client,
     tokens: std::sync::Mutex<TokenTable>,
     pub(super) records: Arc<std::sync::Mutex<RecordStore>>,
+    mcp: std::sync::Mutex<Option<Arc<McpState>>>,
 }
 
 impl ProxyState {
     pub(super) fn token(&self, raw: &str) -> Option<TokenEntry> {
         lock(&self.tokens).find(raw)
     }
+
+    pub(super) fn mcp(&self) -> Option<Arc<McpState>> {
+        lock(&self.mcp).clone()
+    }
 }
 
 impl ProxyServer {
-    pub(super) fn start(upstream: &str) -> io::Result<Self> {
+    pub(super) fn start(upstream: &str, mcp: Option<Arc<McpState>>) -> io::Result<Self> {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
         let port = listener.local_addr()?.port();
         listener.set_nonblocking(true)?;
@@ -225,6 +231,7 @@ impl ProxyServer {
             client,
             tokens: std::sync::Mutex::new(TokenTable::default()),
             records: Arc::new(std::sync::Mutex::new(RecordStore::default())),
+            mcp: std::sync::Mutex::new(mcp),
         });
         let (shutdown, mut stopped) = oneshot::channel();
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -277,6 +284,10 @@ impl ProxyServer {
         &self.base_url
     }
 
+    pub(super) fn set_mcp_state(&self, mcp: Arc<McpState>) {
+        *lock(&self.state.mcp) = Some(mcp);
+    }
+
     pub(super) fn issue(
         &self,
         app_session_id: &str,
@@ -327,8 +338,35 @@ async fn handle(request: Request<Incoming>, state: Arc<ProxyState>) -> Response<
     match (request.method(), request.uri().path()) {
         (&Method::POST, "/v1/chat/completions") => forward::chat(request, state).await,
         (&Method::GET, "/v1/models") => forward::models(request, state).await,
+        (&Method::GET, "/zorvo/v1/credits") => mcp_credits(request, state).await,
+        (&Method::GET, "/zorvo/v1/models") => mcp_models(request, state),
         _ => forward::json_error(StatusCode::NOT_FOUND, "not found"),
     }
+}
+
+async fn mcp_credits(request: Request<Incoming>, state: Arc<ProxyState>) -> Response<ProxyBody> {
+    let Some(entry) = forward::authorize(&request, &state) else {
+        return forward::json_error(StatusCode::UNAUTHORIZED, "unauthorized");
+    };
+    let Some(mcp) = state.mcp() else {
+        return forward::json_error(StatusCode::SERVICE_UNAVAILABLE, "credits unavailable");
+    };
+    let model = entry.model;
+    let answer = tokio::task::spawn_blocking(move || mcp.credits(&model)).await;
+    match answer {
+        Ok(Ok(answer)) => forward::json_ok(serde_json::json!(answer)),
+        _ => forward::json_error(StatusCode::SERVICE_UNAVAILABLE, "credits unavailable"),
+    }
+}
+
+fn mcp_models(request: Request<Incoming>, state: Arc<ProxyState>) -> Response<ProxyBody> {
+    if forward::authorize(&request, &state).is_none() {
+        return forward::json_error(StatusCode::UNAUTHORIZED, "unauthorized");
+    }
+    let Some(mcp) = state.mcp() else {
+        return forward::json_error(StatusCode::SERVICE_UNAVAILABLE, "credits unavailable");
+    };
+    forward::json_ok(serde_json::json!({ "models": mcp.models() }))
 }
 
 #[cfg(test)]

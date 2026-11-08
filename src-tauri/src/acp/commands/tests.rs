@@ -464,6 +464,7 @@ fn plain_launch(env: &[(&str, &str)]) -> AcpLaunch {
             .map(|(key, value)| (key.to_string(), value.to_string()))
             .collect(),
         private: false,
+        mcp_servers: Vec::new(),
     }
 }
 

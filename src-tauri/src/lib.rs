@@ -256,6 +256,20 @@ fn write_fork_handoff(
         .map_err(|p| format!("Handoff path is not valid UTF-8: {}", p.to_string_lossy()))
 }
 
+/// The bundled MCP script in a packaged app, with the source tree as a dev fallback.
+fn private_mcp_script(app: &AppHandle) -> Option<std::path::PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(dir) = app.path().resource_dir() {
+        candidates.push(dir.join("resources/zorvo-private-mcp.mjs"));
+        candidates.push(dir.join("_up_/resources/zorvo-private-mcp.mjs"));
+    }
+    candidates.push(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/zorvo-private-mcp.mjs"),
+    );
+    candidates.into_iter().find(|path| path.is_file())
+}
+
 /// The app's data dir; a debug build (`pnpm tauri dev`) gets its own, so
 /// testing never writes the installed app's sessions.
 fn app_data_dir(app: &AppHandle) -> tauri::Result<std::path::PathBuf> {
@@ -399,6 +413,7 @@ pub fn run() {
             app.manage(private_mode::commands::private_mode_for(
                 &data_dir,
                 proxy_for_setup,
+                private_mcp_script(app.handle()),
             ));
             let (store, migration) = data_migration::open_store(data_dir);
             app.manage(store);

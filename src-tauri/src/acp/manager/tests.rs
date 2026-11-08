@@ -70,6 +70,7 @@ fn debug_of_a_launch_shows_env_names_only_never_values() {
             ("PATH".to_string(), "/usr/bin".to_string()),
         ],
         private: true,
+        mcp_servers: Vec::new(),
     };
 
     let text = format!("{launch:?} {launch:#?}");

@@ -56,6 +56,35 @@ describe("ToolCallList", () => {
     expect(row.getAttribute("aria-expanded")).toBe("true");
   });
 
+  it("draws the MCP credits check as Checked credits_balance with its result at the right", () => {
+    render(
+      <ToolCallList
+        tools={[
+          {
+            id: "mcp-1",
+            name: "credits_balance",
+            status: "completed",
+            kind: "fetch",
+            details: [
+              {
+                kind: "text",
+                text: "52 credits left · ≈ 130 turns\n{\"credits\":52,\"approxTurns\":130}",
+              },
+            ],
+          },
+        ]}
+        defaultOpenDiffs={false}
+        isTurnOver
+      />,
+    );
+
+    const row = screen.getByRole("button", { name: /credits_balance/ });
+    expect(within(row).getByText("Checked")).toBeTruthy();
+    expect(within(row).getByText("credits_balance").closest("span")?.classList.contains("font-mono")).toBe(true);
+    expect(within(row).getByText("52 credits left · ≈ 130 turns")).toBeTruthy();
+    expect(row.querySelector(".lucide-clock")).not.toBeNull();
+  });
+
   it("shows the verb, the target and the status word", () => {
     render(<ToolCallList tools={[{ ...editTool, locations: ["src/app.ts"] }]} defaultOpenDiffs={false} isTurnOver />);
     const row = screen.getByRole("button", { name: /Edited/ });

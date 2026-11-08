@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
+  Clock,
   FileText,
   Globe,
   LoaderCircle,
@@ -68,8 +69,14 @@ const ROW = "flex h-7.5 w-full items-center gap-2 px-3 text-left text-ui-sm text
 
 function ToolRow({ tool, isTurnOver, isOpen }: { tool: ToolExecution; isTurnOver: boolean; isOpen?: boolean }) {
   const Chevron = isOpen ? ChevronDown : ChevronRight;
-  const Icon = (tool.kind && KIND_ICONS[tool.kind]) || Wrench;
-  const { verb, target } = toolRow(tool);
+  // The MCP credits check is a read in words, not the agent's own fetch: the canvas draws a clock,
+  // the verb Checked and the result's first line at the right.
+  const isCredits = tool.name.trim().toLowerCase().endsWith("credits_balance");
+  const Icon = isCredits ? Clock : (tool.kind && KIND_ICONS[tool.kind]) || Wrench;
+  const { verb, target } = isCredits ? { verb: "Checked", target: "credits_balance" } : toolRow(tool);
+  const creditsLine = isCredits
+    ? tool.details?.find((detail) => detail.kind === "text")?.text.split("\n")[0]
+    : undefined;
   // A file's path is cut at its start, so its name stays in sight however long the path;
   // a command reads from its start, so it is cut at its end.
   const isFile = Boolean(target) && tool.kind !== "execute";
@@ -107,7 +114,11 @@ function ToolRow({ tool, isTurnOver, isOpen }: { tool: ToolExecution; isTurnOver
           </span>
         </span>
       )}
-      <ToolStatus tool={tool} isTurnOver={isTurnOver} />
+      {creditsLine && tool.status === "completed" ? (
+        <span className="min-w-0 shrink truncate text-caption text-fg-subtle">{creditsLine}</span>
+      ) : (
+        <ToolStatus tool={tool} isTurnOver={isTurnOver} />
+      )}
     </>
   );
 }

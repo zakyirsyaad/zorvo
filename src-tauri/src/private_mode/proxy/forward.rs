@@ -22,18 +22,37 @@ const MAX_REQUEST_BYTES: usize = 32 * 1024 * 1024;
 
 /// The JSON body every error answer carries, so Qwen Code can show its message.
 pub(super) fn json_error(status: StatusCode, message: &str) -> Response<ProxyBody> {
-    let body = serde_json::json!({ "error": { "message": message } }).to_string();
+    json(serde_json::json!({ "error": { "message": message } })).with_status(status)
+}
+
+pub(super) fn json_ok(value: serde_json::Value) -> Response<ProxyBody> {
+    json(value)
+}
+
+fn json(value: serde_json::Value) -> Response<ProxyBody> {
+    let body = value.to_string();
     let body = Full::new(Bytes::from(body))
         .map_err(|never| match never {})
         .boxed();
     Response::builder()
-        .status(status)
+        .status(StatusCode::OK)
         .header(CONTENT_TYPE, "application/json")
         .body(body)
-        .expect("a JSON error response is valid")
+        .expect("a JSON response is valid")
 }
 
-fn authorize(request: &Request<Incoming>, state: &ProxyState) -> Option<TokenEntry> {
+trait WithStatus {
+    fn with_status(self, status: StatusCode) -> Self;
+}
+
+impl WithStatus for Response<ProxyBody> {
+    fn with_status(mut self, status: StatusCode) -> Self {
+        *self.status_mut() = status;
+        self
+    }
+}
+
+pub(super) fn authorize(request: &Request<Incoming>, state: &ProxyState) -> Option<TokenEntry> {
     let value = request.headers().get(AUTHORIZATION)?.to_str().ok()?;
     state.token(value.strip_prefix("Bearer ")?)
 }

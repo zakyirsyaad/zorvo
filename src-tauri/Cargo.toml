@@ -18,7 +18,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2.8.1"
-tauri-plugin-notification = "=2.7.0"
+tauri-plugin-notification = "=2.8.0"
 # Not the default features: `zip` only serves Windows .zip bundles and Linux AppImage, and it pins
 # zip 4 (RUSTSEC-2026-0367/0368/0369, no 4.x fix), which would keep `cargo audit` red. `system-proxy`
 # is kept so the update check follows the macOS proxy settings.

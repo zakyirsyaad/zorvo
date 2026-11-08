@@ -35,11 +35,14 @@ sha2 = "0.11.1"
 # The OS random source for the recovery code and proxy tokens; the version already in Cargo.lock.
 getrandom = "=0.3.4"
 # The private-session loopback proxy: a hyper server in the backend and a streaming reqwest client
-# upstream. All are already in Cargo.lock through tauri; pin the locked versions.
+# upstream. Pin the versions already in Cargo.lock. reqwest gets no TLS provider of its own; the
+# proxy builds its rustls config with ring (the provider ureq already uses), so aws-lc stays out.
 hyper = { version = "=1.12.0", features = ["server", "http1"] }
 hyper-util = { version = "=0.1.21", features = ["tokio"] }
 http-body-util = "=0.1.5"
-reqwest = { version = "=0.13.5", default-features = false, features = ["rustls", "stream"] }
+reqwest = { version = "=0.13.5", default-features = false, features = ["rustls-no-provider", "stream"] }
+rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-platform-verifier = "=0.7.1"
 futures-util = { version = "=0.3.34", default-features = false, features = ["std"] }
 flate2 = "1"
 tar = { version = "0.4", default-features = false }

@@ -1,7 +1,7 @@
 //! The loopback listener private agents talk to. One listener per app run, bound to 127.0.0.1:0,
-//! with one live token per private session.
+//! with one live token per private agent process; a native fork shares its source's token.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::net::{Ipv4Addr, TcpListener};
 use std::sync::Arc;
@@ -14,6 +14,7 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
+use rustls_platform_verifier::BuilderVerifierExt;
 use tokio::net::TcpListener as TokioListener;
 use tokio::sync::oneshot;
 
@@ -28,12 +29,15 @@ const READ_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 pub(super) type ProxyBody = BoxBody<Bytes, io::Error>;
 
-/// What the agent is allowed to spend: the real key stays here, never in the agent's process.
+/// What the agent process is allowed to spend: the real key stays here, never in the agent's
+/// process. A native fork shares its source's process, so it is a second holder of the same token.
 #[derive(Clone)]
 pub(super) struct TokenEntry {
+    pub(super) token: String,
     pub(super) app_session_id: String,
     pub(super) model: String,
     pub(super) key: String,
+    holders: HashSet<String>,
 }
 
 #[derive(Default)]
@@ -49,21 +53,44 @@ impl TokenTable {
         model: &str,
         key: &str,
     ) -> Result<String, PrivateError> {
+        // Made before the old token is detached, so a random-source failure leaves the session as
+        // it was.
         let token = random_token()?;
-        if let Some(previous) = self.by_session.remove(app_session_id) {
-            self.by_token.remove(&previous);
-        }
+        self.detach(app_session_id);
         self.by_session
             .insert(app_session_id.to_string(), token.clone());
         self.by_token.insert(
             token.clone(),
             TokenEntry {
+                token: token.clone(),
                 app_session_id: app_session_id.to_string(),
                 model: model.to_string(),
                 key: key.to_string(),
+                holders: HashSet::from([app_session_id.to_string()]),
             },
         );
         Ok(token)
+    }
+
+    /// Makes `fork` a holder of `source`'s token, so stopping the source leaves the fork working.
+    /// A source that never got a token (a plain session) adds nothing.
+    fn share(&mut self, source: &str, fork: &str) -> bool {
+        if source == fork {
+            return false;
+        }
+        let Some(token) = self.by_session.get(source).cloned() else {
+            return false;
+        };
+        if !self.by_token.contains_key(&token) {
+            return false;
+        }
+        self.detach(fork);
+        let Some(entry) = self.by_token.get_mut(&token) else {
+            return false;
+        };
+        entry.holders.insert(fork.to_string());
+        self.by_session.insert(fork.to_string(), token);
+        true
     }
 
     /// The live entry a bearer token names. Tokens are compared without an early exit, so a wrong
@@ -79,9 +106,30 @@ impl TokenTable {
         found
     }
 
+    fn token_of(&self, app_session_id: &str) -> Option<String> {
+        self.by_session.get(app_session_id).cloned()
+    }
+
+    /// Removes one holder; the token goes only when no session is left on that process.
     fn release(&mut self, app_session_id: &str) {
-        if let Some(token) = self.by_session.remove(app_session_id) {
+        let Some(token) = self.by_session.remove(app_session_id) else {
+            return;
+        };
+        let empty = match self.by_token.get_mut(&token) {
+            Some(entry) => {
+                entry.holders.remove(app_session_id);
+                entry.holders.is_empty()
+            }
+            None => false,
+        };
+        if empty {
             self.by_token.remove(&token);
+        }
+    }
+
+    fn detach(&mut self, app_session_id: &str) {
+        if self.by_session.contains_key(app_session_id) {
+            self.release(app_session_id);
         }
     }
 }
@@ -97,11 +145,23 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     difference == 0
 }
 
+/// The proxy's TLS config: the OS root store through rustls-platform-verifier and the ring
+/// provider ureq already uses, so the release build keeps one native crypto stack.
+fn tls_config() -> io::Result<rustls::ClientConfig> {
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    Ok(rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(io::Error::other)?
+        .with_platform_verifier()
+        .map_err(io::Error::other)?
+        .with_no_client_auth())
+}
+
 fn random_token() -> Result<String, PrivateError> {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes).map_err(|_| {
         eprintln!("private proxy: the OS random source failed; no session token was made");
-        PrivateError::Keychain
+        PrivateError::Unreachable
     })?;
     Ok(hex(&bytes))
 }
@@ -138,6 +198,7 @@ impl ProxyServer {
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(CONNECT_TIMEOUT)
             .read_timeout(READ_TIMEOUT)
+            .use_preconfigured_tls(tls_config()?)
             .build()
             .map_err(io::Error::other)?;
         let state = Arc::new(ProxyState {
@@ -162,18 +223,24 @@ impl ProxyServer {
                     loop {
                         tokio::select! {
                             _ = &mut stopped => break,
-                            accepted = listener.accept() => {
-                                let Ok((stream, _)) = accepted else { break };
-                                let state = Arc::clone(&serve_state);
-                                tokio::spawn(async move {
-                                    let service = service_fn(move |request| {
-                                        let state = Arc::clone(&state);
-                                        async move { Ok::<_, std::convert::Infallible>(handle(request, state).await) }
+                            accepted = listener.accept() => match accepted {
+                                Ok((stream, _)) => {
+                                    let state = Arc::clone(&serve_state);
+                                    tokio::spawn(async move {
+                                        let service = service_fn(move |request| {
+                                            let state = Arc::clone(&state);
+                                            async move { Ok::<_, std::convert::Infallible>(handle(request, state).await) }
+                                        });
+                                        let _ = http1::Builder::new()
+                                            .serve_connection(TokioIo::new(stream), service)
+                                            .await;
                                     });
-                                    let _ = http1::Builder::new()
-                                        .serve_connection(TokioIo::new(stream), service)
-                                        .await;
-                                });
+                                }
+                                // One transient accept failure must not end the listener for the run.
+                                Err(error) => {
+                                    eprintln!("private proxy: accepting a connection failed ({:?}); retrying", error.kind());
+                                    tokio::time::sleep(Duration::from_millis(100)).await;
+                                }
                             }
                         }
                     }
@@ -204,8 +271,17 @@ impl ProxyServer {
         lock(&self.state.tokens).release(app_session_id);
     }
 
+    /// Adds `fork` as a holder of `source`'s token; false when the source has no token.
+    pub(super) fn share(&self, source: &str, fork: &str) -> bool {
+        lock(&self.state.tokens).share(source, fork)
+    }
+
+    /// The records of the token this session holds, whether it owns it or forked it.
     pub(super) fn records(&self, app_session_id: &str) -> Vec<super::ProxyRecord> {
-        lock(&self.state.records).records(app_session_id)
+        let Some(token) = lock(&self.state.tokens).token_of(app_session_id) else {
+            return Vec::new();
+        };
+        lock(&self.state.records).records(&token)
     }
 }
 
@@ -261,5 +337,39 @@ mod tests {
         );
         table.release("s1");
         assert!(table.find(&second).is_none());
+    }
+
+    #[test]
+    fn a_fork_holds_the_sources_token_until_both_stop() {
+        let mut table = TokenTable::default();
+        let token = table.issue("source", "model", "key").expect("token");
+        assert!(table.share("source", "fork"));
+
+        table.release("source");
+        assert!(table.find(&token).is_some());
+        assert_eq!(table.token_of("fork"), Some(token.clone()));
+
+        table.release("fork");
+        assert!(table.find(&token).is_none());
+        assert!(table.token_of("source").is_none());
+        assert!(table.token_of("fork").is_none());
+    }
+
+    #[test]
+    fn stopping_the_fork_first_leaves_the_source_working() {
+        let mut table = TokenTable::default();
+        let token = table.issue("source", "model", "key").expect("token");
+        assert!(table.share("source", "fork"));
+
+        table.release("fork");
+        assert!(table.find(&token).is_some());
+        assert_eq!(table.token_of("source"), Some(token));
+    }
+
+    #[test]
+    fn sharing_from_a_plain_session_adds_nothing() {
+        let mut table = TokenTable::default();
+        assert!(!table.share("plain", "fork"));
+        assert!(table.token_of("fork").is_none());
     }
 }

@@ -182,6 +182,12 @@ fn end_chunks(stream: &mut TcpStream) {
 }
 
 fn client() -> reqwest::Client {
+    // reqwest is built with `rustls-no-provider`; the test client needs one for its own TLS
+    // stack, while the proxy passes its own ring-based config through `use_preconfigured_tls`.
+    static PROVIDER: std::sync::Once = std::sync::Once::new();
+    PROVIDER.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
     reqwest::Client::builder()
         .no_proxy()
         .build()
@@ -301,6 +307,61 @@ async fn streams_sse_chunks_before_the_upstream_finishes() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].chat_id.as_deref(), Some("chat-stream"));
     assert!(records[0].signed);
+}
+
+#[tokio::test]
+async fn a_fork_keeps_working_and_shares_records_when_the_source_stops() {
+    let reply = br#"{"id":"chat-shared","object":"chat.completion","choices":[]}"#;
+    let fake = FakeUpstream::start(move |_request, stream| {
+        respond(stream, "200 OK", "application/json", reply);
+    });
+    let proxy = PrivateProxy::with_upstream(fake.base());
+    let (token, base) = issue(&proxy);
+    let fork = "app-session-fork";
+    assert!(proxy.share(SESSION, fork));
+
+    let first = chat_response(
+        &base,
+        &token,
+        br#"{"model":"Qwen/Qwen3.8-27B","messages":[]}"#.to_vec(),
+    )
+    .await;
+    assert_eq!(first.status(), 200);
+    first.bytes().await.expect("the source's answer");
+
+    proxy.release(SESSION);
+    let second = chat_response(
+        &base,
+        &token,
+        br#"{"model":"Qwen/Qwen3.8-27B","messages":[]}"#.to_vec(),
+    )
+    .await;
+    assert_eq!(second.status(), 200);
+    second.bytes().await.expect("the fork's answer");
+
+    let records = proxy.records(fork);
+    assert_eq!(records.len(), 2, "the fork sees the process's calls");
+    assert!(
+        proxy.records(SESSION).is_empty(),
+        "the stopped source has no token"
+    );
+
+    proxy.release(fork);
+    let after = chat_response(
+        &base,
+        &token,
+        br#"{"model":"Qwen/Qwen3.8-27B","messages":[]}"#.to_vec(),
+    )
+    .await;
+    assert_eq!(after.status(), 401, "the last holder dropped the token");
+}
+
+#[tokio::test]
+async fn sharing_from_a_plain_session_adds_nothing() {
+    let proxy = PrivateProxy::with_upstream("http://127.0.0.1:1/v1");
+
+    assert!(!proxy.share("plain-source", "plain-fork"));
+    assert!(proxy.records("plain-fork").is_empty());
 }
 
 #[tokio::test]

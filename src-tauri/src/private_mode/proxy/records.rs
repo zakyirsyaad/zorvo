@@ -34,27 +34,25 @@ pub struct ProxyRecord {
     pub signed: bool,
 }
 
-/// The records of every app session, in memory only.
+/// The records of every token, in memory only. A fork shares its source's token, so its calls stay
+/// with the process and are told apart by time rather than by session.
 #[derive(Default)]
 pub(super) struct RecordStore {
-    by_session: HashMap<String, VecDeque<ProxyRecord>>,
+    by_token: HashMap<String, VecDeque<ProxyRecord>>,
 }
 
 impl RecordStore {
-    pub(super) fn push(&mut self, record: ProxyRecord) {
-        let records = self
-            .by_session
-            .entry(record.app_session_id.clone())
-            .or_default();
+    pub(super) fn push(&mut self, key: &str, record: ProxyRecord) {
+        let records = self.by_token.entry(key.to_string()).or_default();
         if records.len() == MAX_RECORDS_PER_SESSION {
             records.pop_front();
         }
         records.push_back(record);
     }
 
-    pub(super) fn records(&self, app_session_id: &str) -> Vec<ProxyRecord> {
-        self.by_session
-            .get(app_session_id)
+    pub(super) fn records(&self, key: &str) -> Vec<ProxyRecord> {
+        self.by_token
+            .get(key)
             .map(|records| records.iter().cloned().collect())
             .unwrap_or_default()
     }
@@ -87,6 +85,7 @@ pub(super) fn hex(bytes: &[u8]) -> String {
 /// Hashes a response while the proxy streams it, and records the completion once the stream ends
 /// or is dropped. `Drop` is what makes an interrupted stream a record marked not signed.
 pub(super) struct RecordBuilder {
+    record_key: String,
     app_session_id: String,
     model: String,
     request_sha256: String,
@@ -99,6 +98,7 @@ pub(super) struct RecordBuilder {
 
 impl RecordBuilder {
     pub(super) fn new(
+        record_key: &str,
         app_session_id: &str,
         model: &str,
         request_sha256: String,
@@ -106,6 +106,7 @@ impl RecordBuilder {
         records: Arc<Mutex<RecordStore>>,
     ) -> Self {
         Self {
+            record_key: record_key.to_string(),
             app_session_id: app_session_id.to_string(),
             model: model.to_string(),
             request_sha256,
@@ -141,7 +142,7 @@ impl RecordBuilder {
             app_session_id: self.app_session_id.clone(),
             signed: complete && chat_id.is_some(),
         };
-        lock(&self.records).push(record);
+        lock(&self.records).push(&self.record_key, record);
     }
 }
 
@@ -234,7 +235,7 @@ mod tests {
     use super::*;
 
     fn builder(records: Arc<Mutex<RecordStore>>) -> RecordBuilder {
-        RecordBuilder::new("s1", "model", sha256_hex(b"{}"), 1, records)
+        RecordBuilder::new("token-1", "s1", "model", sha256_hex(b"{}"), 1, records)
     }
 
     #[test]
@@ -245,7 +246,7 @@ mod tests {
 
         record.finish(true);
 
-        let stored = lock(&records).records("s1");
+        let stored = lock(&records).records("token-1");
         assert_eq!(stored.len(), 1);
         assert_eq!(stored[0].chat_id.as_deref(), Some("chat-1"));
         assert_eq!(
@@ -266,7 +267,7 @@ mod tests {
         record.observe(b"\"object\":\"chat.completion\"}");
         record.finish(true);
 
-        let stored = lock(&records).records("s1");
+        let stored = lock(&records).records("token-1");
         assert_eq!(stored[0].chat_id.as_deref(), Some("chat-2"));
         assert!(stored[0].signed);
     }
@@ -282,7 +283,7 @@ mod tests {
         idless.observe(b"data: {\"choices\":[]}\n\n");
         idless.finish(true);
 
-        let stored = lock(&records).records("s1");
+        let stored = lock(&records).records("token-1");
         assert_eq!(stored.len(), 2);
         assert_eq!(stored[0].chat_id.as_deref(), Some("chat-3"));
         assert!(!stored[0].signed);
@@ -299,7 +300,7 @@ mod tests {
             record.finish(true);
         }
 
-        let stored = lock(&records).records("s1");
+        let stored = lock(&records).records("token-1");
         assert_eq!(stored.len(), MAX_RECORDS_PER_SESSION);
         assert_eq!(stored[0].chat_id.as_deref(), Some("chat-2"));
         assert_eq!(

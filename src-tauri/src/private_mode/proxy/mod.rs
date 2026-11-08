@@ -78,11 +78,19 @@ impl PrivateProxy {
         })
     }
 
-    /// Drops the token a stopped or exited session used. Its records stay for verification.
+    /// Drops one holder of a token; the token goes only when its agent process has no session left.
     pub fn release(&self, app_session_id: &str) {
         if let Some(server) = lock(&self.server).as_ref() {
             server.release(app_session_id);
         }
+    }
+
+    /// Makes `fork` a holder of `source`'s token, so the fork keeps working when its source stops.
+    /// Returns false when the source has no token (it ran plain).
+    pub fn share(&self, source: &str, fork: &str) -> bool {
+        lock(&self.server)
+            .as_ref()
+            .is_some_and(|server| server.share(source, fork))
     }
 
     /// The completed calls of `app_session_id`, oldest first. Empty before the listener starts.

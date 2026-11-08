@@ -86,6 +86,7 @@ pub(super) async fn chat(
     let content_type = upstream.headers().get(CONTENT_TYPE).cloned();
     let record = status.is_success().then(|| {
         RecordBuilder::new(
+            &entry.token,
             &entry.app_session_id,
             &entry.model,
             request_sha256,

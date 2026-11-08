@@ -284,7 +284,7 @@ before it edits files or runs commands. Pick another mode in the composer.
   from your own `gh` login. The one exception is Private mode, which you turn
   on yourself: Zorvo then keeps this Mac's credits secret and the NEAR AI key
   its private Qwen Code sessions use in your macOS Keychain. The key never
-  enters the agent: each private session gets a one-time token for a loopback
+  enters the agent: each private launch gets a one-time token for a loopback
   proxy in Zorvo's backend, which adds the key and forwards the agent's model
   requests to NEAR AI.
 - **GitHub stays in your `gh`.** Zorvo asks your `gh` whether you are signed in

@@ -389,9 +389,14 @@ impl PrivateMode {
         self.proxy.issue(session_id, model_id, &key)
     }
 
-    /// Drops the proxy token of a stopped or exited session; its records stay for verification.
+    /// Drops one holder of a proxy token; the token goes when its agent process has no session left.
     pub fn release_proxy_token(&self, session_id: &str) {
         self.proxy.release(session_id);
+    }
+
+    /// Lets a private fork keep using its source's proxy token after the source stops.
+    pub fn share_proxy_token(&self, source_id: &str, fork_id: &str) -> bool {
+        self.proxy.share(source_id, fork_id)
     }
 
     // ---- private sessions ----

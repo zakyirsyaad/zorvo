@@ -465,11 +465,12 @@ pub fn acp_fork_session(
     cwd: String,
 ) -> Result<StartedSession, String> {
     let source_is_private = manager.is_private_session(&source_session_id);
-    note_if_private(
-        &private,
-        source_is_private,
-        fork_in_workspace(&manager, &store, &source_session_id, &session_id, &cwd),
-    )
+    let result = fork_in_workspace(&manager, &store, &source_session_id, &session_id, &cwd);
+    if source_is_private && result.is_ok() {
+        // The fork lives in the source's process: it must keep that process's token alive.
+        private.share_proxy_token(&source_session_id, &session_id);
+    }
+    note_if_private(&private, source_is_private, result)
 }
 
 /// Runs the sign-in command of `profile_id`'s terminal method `method_id` in a

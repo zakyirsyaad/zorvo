@@ -113,6 +113,7 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
             }
             onAnswerElicitation={(key, answer) => forward({ kind: "answer-elicitation", key, answer })}
             onReopenElicitationUrl={(key) => forward({ kind: "reopen-elicitation-url", key })}
+            onOpenUrl={(url) => forward({ kind: "open-url", url })}
             isWorking={status.isBusy && !status.isWaiting}
             failures={status.failures}
             onStop={() => forward({ kind: "stop" })}

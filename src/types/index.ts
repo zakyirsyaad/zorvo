@@ -301,6 +301,20 @@ export interface PlanEntry {
   priority?: string;
 }
 
+/** NEAR AI's signature check for one of a private reply's model calls. */
+export type VerificationState = 'verified' | 'didnt_verify' | 'not_signed' | 'checking';
+export type VerificationKind = 'provider_tee' | 'gateway' | 'unknown';
+
+/** The folded signature state of a private reply; hashes and prompts are never kept here. */
+export interface MessageVerification {
+  state: VerificationState;
+  kind?: VerificationKind;
+  signer?: string;
+  /** Calls NEAR AI signed, out of the calls this reply made. */
+  signed: number;
+  total: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'agent';
@@ -325,6 +339,8 @@ export interface ChatMessage {
   replayId?: string;
   /** A question the agent asked the user (ACP elicitation); never holds the answer. */
   elicitation?: ElicitationCard;
+  /** The NEAR AI signature state of a private reply's model calls. */
+  verification?: MessageVerification;
 }
 
 export interface ElicitationChoice {

@@ -56,6 +56,10 @@ impl RecordStore {
             .map(|records| records.iter().cloned().collect())
             .unwrap_or_default()
     }
+
+    pub(super) fn remove(&mut self, key: &str) {
+        self.by_token.remove(key);
+    }
 }
 
 pub(super) fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {

@@ -16,6 +16,7 @@ use super::device::{MemoryStore, SecretStore, DEVICE_SECRET};
 use super::local_state::LocalState;
 use super::proxy::PrivateProxy;
 use super::service::PrivateMode;
+use super::verify::PrivateVerifier;
 use super::PrivateError;
 
 pub(crate) const CODE: &str = "ZRV-4K9P-2M7Q-8HXD-7F2Q";
@@ -377,6 +378,7 @@ impl Harness {
                 Ok(())
             }),
             Arc::clone(&proxy),
+            PrivateVerifier::with_retry("http://127.0.0.1:1/v1", Duration::ZERO),
         );
         Self {
             mode,

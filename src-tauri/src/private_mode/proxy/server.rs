@@ -44,6 +44,8 @@ pub(super) struct TokenEntry {
 struct TokenTable {
     by_token: HashMap<String, TokenEntry>,
     by_session: HashMap<String, String>,
+    /// The last token each session held, so a turn that ends after Stop can still be verified.
+    last_by_session: HashMap<String, String>,
 }
 
 impl TokenTable {
@@ -58,6 +60,8 @@ impl TokenTable {
         let token = random_token()?;
         self.detach(app_session_id);
         self.by_session
+            .insert(app_session_id.to_string(), token.clone());
+        self.last_by_session
             .insert(app_session_id.to_string(), token.clone());
         self.by_token.insert(
             token.clone(),
@@ -89,7 +93,8 @@ impl TokenTable {
             return false;
         };
         entry.holders.insert(fork.to_string());
-        self.by_session.insert(fork.to_string(), token);
+        self.by_session.insert(fork.to_string(), token.clone());
+        self.last_by_session.insert(fork.to_string(), token);
         true
     }
 
@@ -107,7 +112,10 @@ impl TokenTable {
     }
 
     fn token_of(&self, app_session_id: &str) -> Option<String> {
-        self.by_session.get(app_session_id).cloned()
+        self.by_session
+            .get(app_session_id)
+            .or_else(|| self.last_by_session.get(app_session_id))
+            .cloned()
     }
 
     /// Removes one holder; the token goes only when no session is left on that process.
@@ -130,6 +138,17 @@ impl TokenTable {
     fn detach(&mut self, app_session_id: &str) {
         if self.by_session.contains_key(app_session_id) {
             self.release(app_session_id);
+        }
+    }
+
+    /// Forgets a deleted session: its last-token lookup goes, and the token it names is returned
+    /// when no other session holds it, so its records can go too.
+    fn forget(&mut self, app_session_id: &str) -> Option<String> {
+        let token = self.last_by_session.remove(app_session_id);
+        self.release(app_session_id);
+        match token {
+            Some(token) if !self.by_token.contains_key(&token) => Some(token),
+            _ => None,
         }
     }
 }
@@ -283,6 +302,14 @@ impl ProxyServer {
         };
         lock(&self.state.records).records(&token)
     }
+
+    /// A deleted session leaves no lookup; its records go with the last token on its process.
+    pub(super) fn forget(&self, app_session_id: &str) {
+        let token = lock(&self.state.tokens).forget(app_session_id);
+        if let Some(token) = token {
+            lock(&self.state.records).remove(&token);
+        }
+    }
 }
 
 impl Drop for ProxyServer {
@@ -351,8 +378,6 @@ mod tests {
 
         table.release("fork");
         assert!(table.find(&token).is_none());
-        assert!(table.token_of("source").is_none());
-        assert!(table.token_of("fork").is_none());
     }
 
     #[test]

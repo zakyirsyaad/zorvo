@@ -65,6 +65,7 @@ import { useAppearance } from "./hooks/useAppearance";
 import { usePersistedState } from "./hooks/usePersistedState";
 import { useBackgroundTasks } from "./hooks/useBackgroundTasks";
 import { useTranscripts } from "./hooks/useTranscripts";
+import { usePrivateVerification } from "./hooks/usePrivateVerification";
 import { useAgentProfiles, useSuggestedFolders } from "./hooks/useDiscovery";
 import { useDraftInstall } from "./hooks/useDraftInstall";
 import { useWorkspaceSelection } from "./hooks/useWorkspaceSelection";
@@ -167,6 +168,11 @@ export default function App() {
   const { state, isLoaded, updateState, getState, saveNow } = usePersistedState(reportError);
   useAppearance(state.settings.appearance, isLoaded, reportError);
   const { transcripts, transcriptStatus, ensureLoaded, updateMessages, saveSoon, removeTranscript, flush: flushTranscripts } = useTranscripts(reportError);
+  const privateVerification = usePrivateVerification({
+    updateMessages,
+    saveSoon,
+    isKnownSession: (id) => state.sessions.some((session) => session.id === id),
+  });
   const {
     agents,
     isLoaded: areAgentsLoaded,
@@ -476,6 +482,7 @@ export default function App() {
     onTurnFailed: (sessionId, error) =>
       error ? setFailedTurns((prev) => ({ ...prev, [sessionId]: error })) : clearFailedTurn(sessionId),
     onPrivateCreditsOut: onCreditsOut,
+    onPrivateTurnEnd: privateVerification.verifyTurn,
     giveBack: (sessionId, message) => giveBackMessage(sessionId, message.text, message.attachments),
   });
   // The one instance of Add, Update and Remove: Settings, saved sessions of a removed agent and popouts use it.
@@ -953,6 +960,7 @@ export default function App() {
       } else if (action.kind === "stop") handleInterrupt(sessionId);
       else if (action.kind === "answer-elicitation") acp.answerElicitation(sessionId, action.key, action.answer);
       else if (action.kind === "reopen-elicitation-url") acp.reopenElicitationUrl(sessionId, action.key);
+      else if (action.kind === "open-url") openLink(action.url);
       else chooseOption(sessionId, action.cardId, action.optionId, action.answers);
     },
   });
@@ -1163,6 +1171,7 @@ export default function App() {
                     agentProfileId={activeSession?.profileId}
                     onForkBranch={(messageId) => void forkSession(messageId)}
                     onReply={(quote) => composerRef.current?.insertText(quote)}
+                    onOpenUrl={openLink}
                     replyBlockedReason={replyBlockedReason({
                       isComposerHidden,
                       isComposerDisabled,
@@ -1467,6 +1476,7 @@ export default function App() {
                   <PrivateInspector
                     session={activeSession}
                     credits={privateCredits}
+                    messages={currentMessages}
                     onTopUp={() => settingsPage.open("private")}
                     onOpenUrl={openLink}
                   />

@@ -45,6 +45,7 @@ export type PopoutAction =
   | { kind: 'choose-option'; cardId: string; optionId: string; answers?: Record<string, string> }
   | { kind: 'answer-elicitation'; key: string; answer: ElicitationAnswer }
   | { kind: 'reopen-elicitation-url'; key: string }
+  | { kind: 'open-url'; url: string }
   | { kind: 'stop' }
   | { kind: 'add-agent' };
 

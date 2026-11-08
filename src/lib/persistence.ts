@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { TRANSPORT_ACP, type ChatMessage, type ChatMessagePart, type PersistedState, type Session, type SessionWorktree } from '../types';
+import { TRANSPORT_ACP, type ChatMessage, type ChatMessagePart, type MessageVerification, type PersistedState, type Session, type SessionWorktree } from '../types';
 import { markElicitationsUnanswered } from './acp-elicitation';
 import { settlePermissionCards } from './acp-events';
 import { normalizeAppearance } from './appearance';
@@ -254,6 +254,32 @@ function withValidEndTime(message: ChatMessage): ChatMessage {
   return rest;
 }
 
+const VERIFICATION_STATES = new Set(['verified', 'didnt_verify', 'not_signed', 'checking']);
+const VERIFICATION_KINDS = new Set(['provider_tee', 'gateway', 'unknown']);
+
+function isVerification(value: unknown): value is MessageVerification {
+  return (
+    isObject(value) &&
+    typeof value.state === 'string' &&
+    VERIFICATION_STATES.has(value.state) &&
+    typeof value.signed === 'number' &&
+    Number.isFinite(value.signed) &&
+    value.signed >= 0 &&
+    typeof value.total === 'number' &&
+    Number.isFinite(value.total) &&
+    value.total >= 0 &&
+    (value.kind === undefined || (typeof value.kind === 'string' && VERIFICATION_KINDS.has(value.kind))) &&
+    (value.signer === undefined || typeof value.signer === 'string')
+  );
+}
+
+/** A verification that does not match the shape is dropped; the reply itself stays. */
+function withValidVerification(message: ChatMessage): ChatMessage {
+  if (!('verification' in message) || isVerification(message.verification)) return message;
+  const { verification: _dropped, ...rest } = message;
+  return rest;
+}
+
 /**
  * Keeps every well-formed saved message, dropping a `parts` list that does not
  * match the shape and dropping entries that are not messages. Messages saved
@@ -263,7 +289,7 @@ export function normalizeTranscript(raw: unknown): ChatMessage[] {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((raw): ChatMessage[] => {
     if (!isMessage(raw)) return [];
-    const message = withValidEndTime(raw);
+    const message = withValidVerification(withValidEndTime(raw));
     if (!('parts' in message)) return [message];
     const { parts, ...rest } = message;
     const isWellFormed = Array.isArray(parts) && parts.length > 0 && parts.every(isMessagePart);

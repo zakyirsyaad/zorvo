@@ -2,7 +2,7 @@ import { useId, type ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 import type { PrivateCredits } from "../../hooks/usePrivateCredits";
 import { formatCredits, modelLabel, type PrivateStatus } from "../../lib/private-credits";
-import type { Session } from "../../types";
+import type { ChatMessage, Session } from "../../types";
 import { Button } from "../ui/Button";
 
 /** NEAR AI's public page that checks a model's attestation and a reply's signature in the browser (docs.near.ai/cloud/verification/verification-center). */
@@ -15,6 +15,8 @@ export interface PrivateInspectorProps {
   session: Pick<Session, "privateMode">;
   /** What the app already read: the status, and the models once Settings or the draft's chip loaded them. Nothing is asked here. */
   credits: Pick<PrivateCredits, "status" | "models">;
+  /** The session's replies, to count the ones NEAR AI's signature did not verify. */
+  messages?: ChatMessage[];
   onTopUp: () => void;
   onOpenUrl: (url: string) => void;
 }
@@ -38,8 +40,11 @@ function Section({ heading, children }: { heading: string; children: ReactNode }
 }
 
 /** The inspector's Private tab: the model a private session runs, the balance, and where it runs. */
-export function PrivateInspector({ session, credits, onTopUp, onOpenUrl }: PrivateInspectorProps) {
+export function PrivateInspector({ session, credits, messages = [], onTopUp, onOpenUrl }: PrivateInspectorProps) {
   const modelId = session.privateMode?.modelId ?? "";
+  const didntVerify = messages.filter(
+    (message) => message.role === "agent" && message.verification?.state === "didnt_verify",
+  ).length;
   // The label only once the catalog says the model is one of the private ones; till then its id.
   const isKnownModel = credits.models?.some((model) => model.id === modelId) === true;
   const model = isKnownModel ? modelLabel(modelId) : modelId;
@@ -51,6 +56,10 @@ export function PrivateInspector({ session, credits, onTopUp, onOpenUrl }: Priva
           <div className="flex items-center gap-2 py-2">
             <dt className="flex-1 text-fg-muted">Model</dt>
             <dd className="min-w-0 truncate text-fg-secondary">{model}</dd>
+          </div>
+          <div className="flex items-center gap-2 py-2">
+            <dt className="flex-1 text-fg-muted">Didn't verify</dt>
+            <dd className={didntVerify > 0 ? "text-danger" : "text-fg-secondary"}>{didntVerify}</dd>
           </div>
         </dl>
         <div className="rounded-xl border border-border bg-surface-2 p-3">

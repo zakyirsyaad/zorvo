@@ -12,9 +12,11 @@ use super::client::{
     Balance, CreatedTopup, CreditsApi, HttpCredits, ModelPrice, PromoResult, Stock, TopupState,
 };
 use super::device::{keychain_service, KeychainStore};
+use super::launch::NEAR_AI_BASE_URL;
 use super::local_state::PendingTopup;
 use super::proxy::PrivateProxy;
 use super::service::{PrivateMode, PrivateStatus};
+use super::verify::{PrivateVerifier, RecordVerification};
 use super::{PrivateError, CREDITS_BASE_URL};
 
 const STATE_DIR: &str = "private";
@@ -40,6 +42,7 @@ pub fn private_mode_for(data_dir: &Path, proxy: Arc<PrivateProxy>) -> PrivateMod
         data_dir.join(STATE_DIR),
         Box::new(crate::windows::open_url),
         proxy,
+        PrivateVerifier::new(NEAR_AI_BASE_URL),
     )
 }
 
@@ -155,6 +158,22 @@ pub fn private_recover(private: State<'_, PrivateMode>, code: String) -> Result<
 #[tauri::command(async)]
 pub fn private_forget_device(private: State<'_, PrivateMode>) -> Result<(), String> {
     Ok(private.forget_device()?)
+}
+
+/// The private calls of `session_id` that are not final yet, checked against NEAR AI's signature
+/// and attestation. Called at each private turn's end.
+#[tauri::command(async)]
+pub fn private_verify(
+    private: State<'_, PrivateMode>,
+    session_id: String,
+) -> Result<Vec<RecordVerification>, String> {
+    Ok(private.verify_proxy_records(&session_id)?)
+}
+
+/// A deleted session no longer needs its last token's records.
+#[tauri::command(async)]
+pub fn private_forget_session(private: State<'_, PrivateMode>, session_id: String) {
+    private.forget_proxy_session(&session_id);
 }
 
 #[cfg(test)]

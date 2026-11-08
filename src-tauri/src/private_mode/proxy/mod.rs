@@ -93,12 +93,20 @@ impl PrivateProxy {
             .is_some_and(|server| server.share(source, fork))
     }
 
-    /// The completed calls of `app_session_id`, oldest first. Empty before the listener starts.
+    /// The completed calls of `app_session_id`, oldest first. A stopped session keeps its last token's
+    /// records for verification; a deleted one calls [`Self::forget`].
     pub fn records(&self, app_session_id: &str) -> Vec<ProxyRecord> {
         lock(&self.server)
             .as_ref()
             .map(|server| server.records(app_session_id))
             .unwrap_or_default()
+    }
+
+    /// A deleted session: no more record lookups, and its records go with its process's last token.
+    pub fn forget(&self, app_session_id: &str) {
+        if let Some(server) = lock(&self.server).as_ref() {
+            server.forget(app_session_id);
+        }
     }
 
     /// Starts the listener if it has not started yet and returns its base URL.

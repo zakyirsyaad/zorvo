@@ -341,9 +341,10 @@ async fn a_fork_keeps_working_and_shares_records_when_the_source_stops() {
 
     let records = proxy.records(fork);
     assert_eq!(records.len(), 2, "the fork sees the process's calls");
-    assert!(
-        proxy.records(SESSION).is_empty(),
-        "the stopped source has no token"
+    assert_eq!(
+        proxy.records(SESSION).len(),
+        2,
+        "a stopped source keeps its last token's records"
     );
 
     proxy.release(fork);
@@ -354,6 +355,35 @@ async fn a_fork_keeps_working_and_shares_records_when_the_source_stops() {
     )
     .await;
     assert_eq!(after.status(), 401, "the last holder dropped the token");
+}
+
+#[tokio::test]
+async fn a_stopped_session_keeps_its_last_tokens_records_until_forgotten() {
+    let reply = br#"{"id":"chat-last","object":"chat.completion","choices":[]}"#;
+    let fake = FakeUpstream::start(move |_request, stream| {
+        respond(stream, "200 OK", "application/json", reply);
+    });
+    let proxy = PrivateProxy::with_upstream(fake.base());
+    let (token, base) = issue(&proxy);
+
+    let response = chat_response(
+        &base,
+        &token,
+        br#"{"model":"Qwen/Qwen3.8-27B","messages":[]}"#.to_vec(),
+    )
+    .await;
+    assert_eq!(response.status(), 200);
+    response.bytes().await.expect("the answer");
+
+    proxy.release(SESSION);
+    assert_eq!(
+        proxy.records(SESSION).len(),
+        1,
+        "a turn that ended after Stop must still verify"
+    );
+
+    proxy.forget(SESSION);
+    assert!(proxy.records(SESSION).is_empty());
 }
 
 #[tokio::test]

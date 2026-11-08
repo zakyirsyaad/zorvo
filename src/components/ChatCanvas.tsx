@@ -52,6 +52,8 @@ export interface ChatCanvasProps {
   onAnswerElicitation?: (key: string, answer: ElicitationAnswer) => void;
   /** Opens an agent's page again after the user opened it once. */
   onReopenElicitationUrl?: (key: string) => void;
+  /** Opens NEAR AI's Verification Center from a private reply's badge. */
+  onOpenUrl?: (url: string) => void;
   /** True while the agent works on its turn: shown under the last message. */
   isWorking?: boolean;
   /** Failed requests in a row the agent reported while it works. */
@@ -82,6 +84,7 @@ export function ChatCanvas({
   onChooseOption,
   onAnswerElicitation,
   onReopenElicitationUrl,
+  onOpenUrl,
   isWorking = false,
   failures,
   onStop,
@@ -236,6 +239,7 @@ export function ChatCanvas({
           onChooseOption={onChooseOption ? handleChooseOption : undefined}
           onAnswerElicitation={onAnswerElicitation ? handleAnswerElicitation : undefined}
           onReopenElicitationUrl={onReopenElicitationUrl ? handleReopenElicitationUrl : undefined}
+          onOpenUrl={onOpenUrl}
         />
       ))}
       {isWorking && <WorkingIndicator agentName={shownAgentName} since={workStartedAt} />}

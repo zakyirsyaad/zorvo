@@ -20,6 +20,7 @@ use super::client::{Balance, CreditsApi, ModelPrice, PromoResult, Stock, TopupSt
 use super::device::{new_recovery_code, secret_hash, SecretStore, DEVICE_SECRET, NEARAI_KEY};
 use super::local_state::{CachedModels, LastBalance, LocalState, PendingTopup};
 use super::proxy::{IssuedToken, PrivateProxy};
+use super::verify::{PrivateVerifier, RecordVerification};
 use super::PrivateError;
 
 mod recovery;
@@ -96,6 +97,8 @@ pub struct PrivateMode {
     open: Opener,
     /// The loopback proxy private launches talk to; it holds the real key.
     proxy: Arc<PrivateProxy>,
+    /// Checks NEAR AI's signatures and attestations for the proxy's records.
+    verifier: PrivateVerifier,
     models: Mutex<Option<(Instant, Vec<ModelPrice>)>>,
     checkouts: Mutex<HashMap<String, String>>,
     /// The current secret is known to the server, this run.
@@ -125,6 +128,7 @@ impl PrivateMode {
         dir: PathBuf,
         open: Opener,
         proxy: Arc<PrivateProxy>,
+        verifier: PrivateVerifier,
     ) -> Self {
         Self {
             store,
@@ -132,6 +136,7 @@ impl PrivateMode {
             dir,
             open,
             proxy,
+            verifier,
             models: Mutex::new(None),
             checkouts: Mutex::new(HashMap::new()),
             registered: AtomicBool::new(false),
@@ -397,6 +402,25 @@ impl PrivateMode {
     /// Lets a private fork keep using its source's proxy token after the source stops.
     pub fn share_proxy_token(&self, source_id: &str, fork_id: &str) -> bool {
         self.proxy.share(source_id, fork_id)
+    }
+
+    /// Verifies the session's private calls, reusing results already final. A turn that ended after
+    /// Stop still has its last token's records, until the session is deleted.
+    pub fn verify_proxy_records(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<RecordVerification>, PrivateError> {
+        let records = self.proxy.records(session_id);
+        if records.is_empty() {
+            return Ok(Vec::new());
+        }
+        let key = self.launch_key()?;
+        Ok(self.verifier.verify(records, &key))
+    }
+
+    /// A deleted session drops its record lookup and, when no fork holds the token, its records.
+    pub fn forget_proxy_session(&self, session_id: &str) {
+        self.proxy.forget(session_id);
     }
 
     // ---- private sessions ----

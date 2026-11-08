@@ -416,3 +416,34 @@ describe("a saved turn-end time", () => {
     expect("completedAt" in message).toBe(false);
   });
 });
+
+describe("a saved verification", () => {
+  const reply = {
+    id: "a",
+    role: "agent",
+    content: "Done.",
+    timestamp: 1_000,
+    completedAt: 2_000,
+    verification: { state: "verified", kind: "provider_tee", signer: "0xabc", signed: 1, total: 1 },
+  };
+
+  it("keeps a well-formed verification", () => {
+    const [message] = normalizeTranscript([reply]);
+
+    expect(message.verification).toEqual(reply.verification);
+  });
+
+  it("drops a malformed verification but keeps the reply", () => {
+    for (const verification of [
+      { ...reply.verification, state: "maybe" },
+      { ...reply.verification, signed: "one" },
+      { ...reply.verification, kind: "nope" },
+      { ...reply.verification, total: -1 },
+    ]) {
+      const [message] = normalizeTranscript([{ ...reply, verification }]);
+
+      expect(message).toBeDefined();
+      expect("verification" in message).toBe(false);
+    }
+  });
+});

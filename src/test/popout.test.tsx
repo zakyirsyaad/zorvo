@@ -29,6 +29,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 import App from "../App";
 import { PopoutApp } from "../components/PopoutApp";
+import { VERIFICATION_CENTER_URL } from "../components/private/PrivateInspector";
 import { readWindowMode } from "../lib/window-mode";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
@@ -107,6 +108,43 @@ describe("Popout windows", () => {
     expect(emitted).toContainEqual({
       event: "popout-action",
       payload: { sessionId: "s-1", action: { kind: "send", text: "run the tests" } },
+    });
+  });
+
+  it("shows a private reply's verification from the snapshot and forwards the Verification Center link", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", {
+      sessionId: "s-1",
+      session: { ...runningSession, profileId: "qwen-code", privateMode: { modelId: "Qwen/Qwen3.8-27B" } },
+      messages: [
+        {
+          id: "m-1",
+          role: "agent",
+          content: "Done.",
+          timestamp: 1,
+          verification: {
+            state: "verified",
+            kind: "provider_tee",
+            signer: "0x1234567890abcdef1234567890abcdef12345678",
+            signed: 1,
+            total: 1,
+          },
+        },
+      ],
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Verified in TEE/ }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open the Verification Center" }));
+    });
+
+    expect(emitted).toContainEqual({
+      event: "popout-action",
+      payload: { sessionId: "s-1", action: { kind: "open-url", url: VERIFICATION_CENTER_URL } },
     });
   });
 

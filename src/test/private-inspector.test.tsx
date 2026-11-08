@@ -4,7 +4,7 @@ import { render, screen, act, fireEvent, waitFor, within } from "@testing-librar
 import type { FakeTauriStore } from "./setup";
 import type { FakePrivate } from "./fixtures/private-backend";
 import type { PrivateStatus } from "../lib/private-credits";
-import type { Session } from "../types";
+import type { ChatMessage, Session } from "../types";
 
 type Listener = (event: { payload: unknown }) => void;
 const listeners = new Map<string, Listener>();
@@ -109,6 +109,38 @@ describe("PrivateInspector", () => {
     fireEvent.click(within(where).getByRole("button", { name: "Open the Verification Center" }));
     expect(onOpenUrl).toHaveBeenCalledWith(VERIFICATION_CENTER_URL);
     expect(VERIFICATION_CENTER_URL).toBe("https://cloud.near.ai/verify");
+  });
+
+  it("counts the replies NEAR AI's signature did not verify", () => {
+    const messages = [
+      {
+        id: "a-1",
+        role: "agent" as const,
+        content: "",
+        timestamp: 1,
+        verification: { state: "didnt_verify" as const, signed: 0, total: 1 },
+      },
+      {
+        id: "a-2",
+        role: "agent" as const,
+        content: "",
+        timestamp: 2,
+        verification: { state: "verified" as const, signed: 1, total: 1 },
+      },
+    ] satisfies ChatMessage[];
+    render(
+      <PrivateInspector
+        session={SESSION}
+        credits={{ status: READY, models: null }}
+        messages={messages}
+        onTopUp={vi.fn()}
+        onOpenUrl={vi.fn()}
+      />,
+    );
+
+    const row = screen.getByText("Didn't verify").parentElement;
+    expect(row).not.toBeNull();
+    expect(within(row!).getByText("1")).toBeInTheDocument();
   });
 });
 

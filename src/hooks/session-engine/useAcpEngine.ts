@@ -82,6 +82,8 @@ export interface AcpEngineDeps extends EngineDeps {
   saveSoon?: (sessionId: string) => void;
   /** A private session could not open, or a turn of it was refused, for lack of credits (`empty`) or a working key (`key`). */
   onPrivateCreditsOut?: (sessionId: string, reason: CreditsOutReason) => void;
+  /** A private turn ended: check the signatures of the calls it made. */
+  onPrivateTurnEnd?: (sessionId: string) => void;
   /**
    * A refused prompt goes back into its session's composer: a private session's turn refused for credits,
    * a key or a sign-in, which Zorvo, not the user, gives the agent. Without it the message is only taken off the chat.
@@ -107,6 +109,7 @@ export function useAcpEngine({
   onTurnFailed,
   saveSoon,
   onPrivateCreditsOut,
+  onPrivateTurnEnd,
   giveBack,
 }: AcpEngineDeps) {
   const [starting, setStarting] = useState<ReadonlySet<string>>(new Set());
@@ -201,6 +204,7 @@ export function useAcpEngine({
       agentFailures.clear(sessionId);
       updateNow(sessionId, closeTurn);
       saveSoon?.(sessionId);
+      if (isPrivateSession(sessionId)) onPrivateTurnEnd?.(sessionId);
       // Only a private session's agent is launched to report credits; an ordinary one's text is its own.
       const refusal = isPrivateSession(sessionId) ? privateTurnRefusal(error) : null;
       if (refusal) {

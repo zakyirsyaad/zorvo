@@ -10,6 +10,7 @@ pub mod proxy;
 pub mod service;
 #[cfg(test)]
 pub(crate) mod testing;
+pub mod verify;
 
 use serde::Serialize;
 

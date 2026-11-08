@@ -502,7 +502,9 @@ pub fn run() {
             private_mode::commands::private_recovery_code,
             private_mode::commands::private_mark_recovery,
             private_mode::commands::private_recover,
-            private_mode::commands::private_forget_device
+            private_mode::commands::private_forget_device,
+            private_mode::commands::private_verify,
+            private_mode::commands::private_forget_session
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

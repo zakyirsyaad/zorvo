@@ -148,8 +148,9 @@ export class FakeNearAi {
   private nextToken = 0;
 
   /**
-   * Holds the answers of `route` until `release`: each is worked out when the request arrives (a
-   * key list as it was then) and sent only afterwards. `started` resolves once one is waiting.
+   * Holds the next answer of `route` until `release`: it is worked out when the request arrives (a
+   * key list as it was then) and sent only afterwards; later requests of the route are served at
+   * once. `started` resolves once it is waiting.
    */
   hold(route: NearAiRoute): { started: Promise<void>; release: () => void } {
     let open: () => void = () => {};
@@ -182,6 +183,7 @@ export class FakeNearAi {
     const answer = status !== undefined ? json({ error: "unavailable" }, status) : this.serve(route, path, body);
     const held = this.holds.get(route);
     if (held) {
+      this.holds.delete(route);
       held.started();
       await held.gate;
     }

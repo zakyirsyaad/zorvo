@@ -252,9 +252,10 @@ Each kind and subject is raised at most once an hour. Details never contain a to
 | --- | --- | --- |
 | `refresh_failed` | The server could not refresh the operator token or read the NEAR AI stock. Credits stop being issued. | Check the NEAR AI status page and the log line. If the refresh token is dead, re-seed it: run the login again and `wrangler secret put OPERATOR_REFRESH_TOKEN` (step 2). |
 | `low_stock` | Under about $3 of NEAR AI cost is left to sell. | Restock (above). |
-| `stuck_queue` | A credit, key rotation or revoke has waited over an hour. | See "A paid top-up that does not arrive". |
+| `stuck_queue` | Credits, key rotations or revokes have waited over an hour. One summary an hour counts them and names the oldest five. | See "A paid top-up that does not arrive". |
 | `attempts_exhausted` | An item failed 10 times. It is not dropped: it keeps retrying every 30 minutes. | Read the preceding `Credit for top-up ... failed` log lines for the cause (usually NEAR AI or the token). |
 | `payment_mismatch` | A session was paid with another amount or asset than its package. It is **not** credited. | Look the session up in the PingPay dashboard and settle it by hand: refund it, or issue the credits with a promo code. |
+| `credit_absorbed` | A credit was counted, then a recovery's key rotation found nothing left: the old key had already spent past its balance (requests in flight when it was frozen), and that overshoot used these credits too. The top-up ends `credited`, the device has no key, nothing was added. | Compare the device's top-ups with its old key's usage in the NEAR AI dashboard. If the payer lost credits they paid for, give them back with a promo code. |
 
 ### A paid top-up that does not arrive
 
@@ -279,6 +280,16 @@ A device's secret doubles as its recovery code. Entering it on a new Mac (`POST 
 account to that Mac's new secret and **rotates the NEAR AI key**: the old key is frozen, a new one is created
 and the old one revoked. Only the **remaining** balance is carried over, so used credits are not refunded and
 recovering does not refill a spent key.
+
+The rotation reads the old key's usage from NEAR AI's key list before and after freezing it. If the list does
+not show the key at all while NEAR AI still accepts its freeze, the usage is unknown and the rotation does not
+go on (it retries, and raises `attempts_exhausted` after 10 tries): a stale usage would carry over credits
+that were already spent. A key NEAR AI no longer knows (404) cannot be spent on, so the usage on record is
+used. The freeze is a spend limit at the key's usage, not a deactivation; the old key is revoked right after
+the new one exists.
+
+Before it creates a device's key, the server revokes any key named `zorvo-<device id>` that it does not hold
+(left by a create whose answer was lost); no one has those keys' secrets.
 
 A new key is handed over once (`GET /v1/key`) and is kept encrypted on the server for at most **24 hours**
 until the device collects it, then deleted for good. A key that was not collected in time is not lost

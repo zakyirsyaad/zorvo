@@ -4,6 +4,7 @@ import { parseConfig, type Config, type Env } from "../config";
 import { creditsForPackage, creditsFromNano, usdcAmount } from "../credits";
 import { decrypt } from "../crypto";
 import { UPSTREAM_TIMEOUT_MS } from "../http";
+import { HOUR_MS, MINUTE_MS, SECOND_MS } from "../time";
 import { NearAiClient } from "../nearai";
 import { PingPayClient } from "../pingpay";
 import { balanceFor, loadModels, models, type BalanceContext, type BalanceView, type ModelInfo, type ModelsContext } from "./balance";
@@ -19,6 +20,7 @@ import {
 import { checkoutWindow, readSession, RESERVATION_MS } from "./checkout";
 import { operatorSession, refreshOperator, withAccessToken, type OperatorContext, type OperatorSession } from "./operator";
 import { promoRefusal, recoverDevice, redeemPromo, savePromo, type PromoContext, type PromoResult } from "./promo-recover";
+import { clampNano, SINGLE_ROW_ID, storable } from "./amounts";
 import { applySchema } from "./schema";
 import { canMove, type SessionOutcome, type TopupStatus } from "./status";
 import { computeStock, type StockView } from "./stock";
@@ -26,26 +28,11 @@ import { computeStock, type StockView } from "./stock";
 /** The `expires_at` of a paid top-up's reservation: it holds the stock until the credit releases it. */
 const HELD_UNTIL_CREDITED = Number.MAX_SAFE_INTEGER;
 
-const SNAPSHOT_ID = 1;
-const MAX_STORABLE = BigInt(Number.MAX_SAFE_INTEGER);
+const SNAPSHOT_ID = SINGLE_ROW_ID;
 /** A top-up is refused for stock when the snapshot is this old and cannot be refreshed. */
-const SNAPSHOT_FAIL_CLOSED_MS = 10 * 60 * 1000;
-const HOUR_MS = 60 * 60 * 1000;
+const SNAPSHOT_FAIL_CLOSED_MS = 10 * MINUTE_MS;
 /** An alert POST gives up after this long, so a slow hook cannot hold the alarm. */
-const ALERT_TIMEOUT_MS = 10 * 1000;
-
-/** Brings an upstream amount into the range `setSnapshot` and SQLite accept, so one odd value cannot stop updates. */
-function clampNano(nano: bigint): bigint {
-  if (nano < 0n) return 0n;
-  return nano > MAX_STORABLE ? MAX_STORABLE : nano;
-}
-
-/** SQLite hands back plain numbers, so an amount must stay exactly representable as one. */
-function storable(nano: bigint): number {
-  const value = Number(nano);
-  if (!Number.isSafeInteger(value) || value < 0) throw new RangeError("amount must be a whole, non-negative number below 2^53");
-  return value;
-}
+const ALERT_TIMEOUT_MS = 10 * SECOND_MS;
 
 export type { BalanceView, ModelInfo } from "./balance";
 

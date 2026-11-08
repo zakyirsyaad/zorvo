@@ -58,10 +58,20 @@ async function topupRoute(env: Env, deviceId: string, topupId: string, cancel: b
   return topup ? json(topup) : error("not_found", 404);
 }
 
-/** The device's NEAR AI key, once: the Ledger deletes it as it hands it over. Never cached on the way. */
+/**
+ * The device's NEAR AI key, once: the Ledger deletes it as it hands it over. Never cached on the way.
+ * A stored key that cannot be decrypted stays stored and is answered 503: the server, not the app,
+ * is at fault, and the app asks again later.
+ */
 async function handOverKey(env: Env, deviceId: string): Promise<Response> {
-  const key = await ledgerOf(env).takeKey(deviceId);
-  const response = key === null ? error("not_found", 404) : json({ key });
+  let response: Response;
+  try {
+    const key = await ledgerOf(env).takeKey(deviceId);
+    response = key === null ? error("not_found", 404) : json({ key });
+  } catch (failure) {
+    console.error(`Handing over the key of device ${deviceId} failed: ${describe(failure)}`);
+    response = error("upstream", 503);
+  }
   response.headers.set("cache-control", "no-store");
   return response;
 }

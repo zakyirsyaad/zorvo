@@ -113,6 +113,9 @@ function spendLimitBody(limitNano: bigint): { spendLimit: { amount: number; curr
   return { spendLimit: { amount: Number(limitNano), currency: "USD" } };
 }
 
+/** A workspace key as the list shows it; `name` when NEAR AI states one. */
+export type ListedKey = { id: string; name?: string; limitNano: bigint | null; usageNano: bigint };
+
 export class NearAiClient {
   private readonly base: string;
 
@@ -190,8 +193,8 @@ export class NearAiClient {
    * onto the next page; keys are therefore collected by id. Stops on an empty page or one that adds
    * nothing new (a server that ignores the offset), and throws past `MAX_KEY_PAGES`.
    */
-  async listKeys(access: string, ws: string): Promise<{ id: string; limitNano: bigint | null; usageNano: bigint }[]> {
-    const keys = new Map<string, { id: string; limitNano: bigint | null; usageNano: bigint }>();
+  async listKeys(access: string, ws: string): Promise<ListedKey[]> {
+    const keys = new Map<string, ListedKey>();
     let rowsRead = 0;
     let total = Number.POSITIVE_INFINITY;
     for (let pages = 0; rowsRead < total; pages += 1) {
@@ -204,6 +207,7 @@ export class NearAiClient {
         if (!isRecord(item) || typeof item.id !== "string") return unexpected("key list item");
         keys.set(item.id, {
           id: item.id,
+          ...(typeof item.name === "string" ? { name: item.name } : {}),
           limitNano: item.spend_limit == null ? null : toNano(item.spend_limit, "spend_limit", "down"),
           usageNano: item.usage == null ? 0n : toNano(item.usage, "usage", "up"),
         });

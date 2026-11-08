@@ -2,6 +2,8 @@ import type { Config } from "../config";
 import { creditsFromNano, creditsLeft, spendLimitNano } from "../credits";
 import { encrypt } from "../crypto";
 import { NearAiError, type NearAiClient } from "../nearai";
+import { DAY_MS, HOUR_MS, MINUTE_MS, SECOND_MS } from "../time";
+import { clampNano, SINGLE_ROW_ID } from "./amounts";
 import { RESERVATION_GRACE_MS, RESERVATION_MS } from "./checkout";
 import type { SessionOutcome, TopupStatus } from "./status";
 
@@ -11,10 +13,8 @@ import type { SessionOutcome, TopupStatus } from "./status";
  * the state; these functions reach it through a `FulfilmentContext`.
  */
 
-export type AlertKind = "refresh_failed" | "low_stock" | "stuck_queue" | "attempts_exhausted" | "payment_mismatch";
+export type AlertKind = "refresh_failed" | "low_stock" | "stuck_queue" | "attempts_exhausted" | "payment_mismatch" | "credit_absorbed";
 
-const MINUTE_MS = 60 * 1000;
-const HOUR_MS = 60 * MINUTE_MS;
 export const ALARM_INTERVAL_MS = MINUTE_MS;
 /** A snapshot older than this is refreshed by the alarm and before a reservation. */
 export const SNAPSHOT_MAX_AGE_MS = 2 * MINUTE_MS;
@@ -29,13 +29,14 @@ const CREDITS_PER_TICK = 20;
 /** A checkout that can still be paid is asked about this often; one that cannot backs off from here. */
 const POLL_INTERVAL_MS = MINUTE_MS;
 const POLL_MAX_INTERVAL_MS = HOUR_MS;
-const BACKOFF_FIRST_MS = 30 * 1000;
+const BACKOFF_FIRST_MS = 30 * SECOND_MS;
 const BACKOFF_MAX_MS = 30 * MINUTE_MS;
 /** The failure that raises `attempts_exhausted`; the item stays and keeps retrying. */
 const MAX_ATTEMPTS = 10;
 export const PENDING_KEY_TTL_MS = 24 * HOUR_MS;
 const STUCK_AFTER_MS = HOUR_MS;
-const DAY_MS = 24 * HOUR_MS;
+/** A `stuck_queue` summary names at most this many items. */
+const STUCK_LISTED = 5;
 /** A `created` top-up whose hold ended this long ago is `expired` (it is no longer polled either). */
 const ABANDONED_AFTER_MS = 7 * DAY_MS;
 /** Rate-limit rows older than this are purged; every limiter's window is an hour or less. */
@@ -76,7 +77,11 @@ export function backoffMs(attempts: number): number {
   return Math.min(BACKOFF_MAX_MS, BACKOFF_FIRST_MS * 2 ** Math.max(0, attempts - 1));
 }
 
-/** Runs every step in order. A step that fails is logged and the next one still runs. */
+/**
+ * Runs every step in order. A step that fails is logged and the next one still runs. Every step uses
+ * the tick's `now`: a slow tick (each call is capped at 15 s) only makes a later step see its expiries
+ * and backoffs a little early or late, never a hold released while it is still due.
+ */
 export async function runAlarm(ctx: FulfilmentContext, now: number): Promise<void> {
   const steps: [string, () => Promise<void> | void][] = [
     ["token refresh", () => refreshToken(ctx, now)],
@@ -197,6 +202,9 @@ function sweepExpired(ctx: FulfilmentContext, now: number): void {
     "DELETE FROM reservations WHERE expires_at <= ? AND topup_id NOT IN (SELECT id FROM topups WHERE status = 'paid')",
     now,
   );
+  // Only an open checkout (`created`) or a paid top-up waiting for its credit holds stock; a hold
+  // left behind by anything else (a finished or missing top-up) would keep its stock forever.
+  ctx.sql.exec("DELETE FROM reservations WHERE topup_id NOT IN (SELECT id FROM topups WHERE status IN ('created', 'paid'))");
   ctx.sql.exec("DELETE FROM pending_keys WHERE expires_at <= ?", now);
   const abandoned = ctx.sql
     .exec<{ id: string }>(
@@ -236,15 +244,20 @@ function promoteWaiting(ctx: FulfilmentContext, now: number): void {
 /** Queue kinds that have a handler; an item of any other kind is left as it is, attempts and all. */
 const QUEUE_KINDS = ["credit", "rotate_key", "revoke_key"];
 
-/** Runs the due items one at a time, so a `credit` and a `rotate_key` of one device never overlap. */
+/**
+ * Runs the due items one at a time, so a `credit` and a `rotate_key` of one device never overlap. A
+ * credit of a device with a rotation queued is not selected at all (it waits for the rotation), so
+ * such credits cannot fill the tick's 20 and hold back other devices' credits.
+ */
 async function runQueue(ctx: FulfilmentContext, now: number): Promise<void> {
-  const kinds = QUEUE_KINDS.map((kind) => `'${kind}'`).join(", ");
+  const placeholders = QUEUE_KINDS.map(() => "?").join(", ");
   const due = ctx.sql
     .exec<{ id: string; kind: string }>(
-      `SELECT id, kind FROM queue WHERE kind IN (${kinds}) AND next_at <= ?
+      `SELECT id, kind FROM queue WHERE kind IN (${placeholders}) AND next_at <= ?
          AND NOT (kind = 'credit' AND EXISTS (
            SELECT 1 FROM topups t JOIN queue r ON r.kind = 'rotate_key' AND r.ref = t.device_id WHERE t.id = queue.ref))
        ORDER BY next_at, id LIMIT ?`,
+      ...QUEUE_KINDS,
       now,
       CREDITS_PER_TICK,
     )
@@ -256,17 +269,19 @@ async function runQueue(ctx: FulfilmentContext, now: number): Promise<void> {
   }
 }
 
+/** One `stuck_queue` alert an hour for every item older than an hour, naming the oldest five. */
 async function alertStuckItems(ctx: FulfilmentContext, now: number): Promise<void> {
   const stuck = ctx.sql
-    .exec<{ id: string; kind: string; ref: string; attempts: number }>(
-      "SELECT id, kind, ref, attempts FROM queue WHERE created_at IS NOT NULL AND created_at < ? ORDER BY created_at, id",
+    .exec<{ kind: string; ref: string; attempts: number }>(
+      "SELECT kind, ref, attempts FROM queue WHERE created_at IS NOT NULL AND created_at < ? ORDER BY created_at, id",
       now - STUCK_AFTER_MS,
     )
     .toArray();
-  for (const item of stuck) {
-    const detail = `queue item ${item.kind} for ${item.ref} has waited over an hour (${item.attempts} attempts)`;
-    await ctx.alertOnce("stuck_queue", item.id, detail, now);
-  }
+  if (stuck.length === 0) return;
+  const listed = stuck.slice(0, STUCK_LISTED).map((item) => `${item.kind} for ${item.ref} (${item.attempts} attempts)`);
+  const more = stuck.length > STUCK_LISTED ? `, and ${stuck.length - STUCK_LISTED} more` : "";
+  const noun = stuck.length === 1 ? "queue item has" : "queue items have";
+  await ctx.alertOnce("stuck_queue", "queue", `${stuck.length} ${noun} waited over an hour: ${listed.join(", ")}${more}`, now);
 }
 
 type Claim = {
@@ -288,6 +303,11 @@ type Upstream = { created: boolean; keyId: string; ciphertext?: string; limitNan
  */
 async function creditItem(ctx: FulfilmentContext, itemId: string, now: number): Promise<void> {
   const claim = claimCredit(ctx, itemId, now);
+  if (claim && "absorbed" in claim) {
+    const detail = `the credit for top-up ${claim.absorbed} was used up by the replaced key's overshoot; the device has no key and nothing was added`;
+    await ctx.alert("credit_absorbed", detail);
+    return;
+  }
   if (!claim) return;
   try {
     const upstream = await setLimitUpstream(ctx, claim, now);
@@ -305,7 +325,7 @@ async function creditItem(ctx: FulfilmentContext, itemId: string, now: number): 
  * Marks the item before anything is called (race 8): one more attempt, the next try pushed out,
  * and on the first attempt only, the credits added to the device. One synchronous block.
  */
-function claimCredit(ctx: FulfilmentContext, itemId: string, now: number): Claim | null {
+function claimCredit(ctx: FulfilmentContext, itemId: string, now: number): Claim | { absorbed: string } | null {
   const item = ctx.sql
     .exec<{ ref: string; attempts: number; next_at: number; counted: number }>(
       "SELECT ref, attempts, next_at, counted FROM queue WHERE id = ? AND kind = 'credit'",
@@ -343,7 +363,7 @@ function claimCredit(ctx: FulfilmentContext, itemId: string, now: number): Claim
     .one();
   if (device.credits_bought === 0) {
     absorbedCredit(ctx, itemId, item.ref, now);
-    return null;
+    return { absorbed: item.ref };
   }
   return {
     itemId,
@@ -358,14 +378,15 @@ function claimCredit(ctx: FulfilmentContext, itemId: string, now: number): Claim
 /**
  * A counted credit that finds `credits_bought` at 0: a rotation that ran after it was counted found
  * nothing left, because the old key's overshoot used these credits too. There is no key to raise and
- * a limit of 0 must never be sent, so the item ends here and the top-up is `credited`.
+ * a limit of 0 must never be sent, so the item ends here and the top-up is `credited`; the caller
+ * raises `credit_absorbed` so the operator can check the case (see the README).
  */
 function absorbedCredit(ctx: FulfilmentContext, itemId: string, topupId: string, now: number): void {
   ctx.transaction(() => {
     ctx.sql.exec("DELETE FROM queue WHERE id = ?", itemId);
-    if (ctx.move(topupId, "credited", now)) ctx.releaseReservation(topupId);
+    ctx.move(topupId, "credited", now);
+    ctx.releaseReservation(topupId);
   });
-  console.error(`Credit for top-up ${topupId} was absorbed by the replaced key's overshoot; no key to raise`);
 }
 
 /**
@@ -386,6 +407,7 @@ async function setLimitUpstream(ctx: FulfilmentContext, claim: Claim, now: numbe
   // The encryption key is tried first, so a bad one fails before a key exists upstream.
   const keyB64 = ctx.keyEncryptionKey();
   await encrypt(keyB64, "");
+  await revokeOrphans(ctx, claim.deviceId, null, now);
   const created = await ctx.withAccessToken(now, (access) => client.createKey(access, cfg.workspaceId, `zorvo-${claim.deviceId}`, limitNano));
   return { created: true, keyId: created.id, ciphertext: await encrypt(keyB64, created.key), limitNano };
 }
@@ -420,13 +442,16 @@ async function recordCredit(ctx: FulfilmentContext, claim: Claim, upstream: Upst
     recordKeyLimit(ctx.sql, upstream.keyId, upstream.limitNano);
     if (device.credits_bought !== claim.creditsBought) return;
     ctx.sql.exec("DELETE FROM queue WHERE id = ?", claim.itemId);
-    if (ctx.move(claim.topupId, "credited", now)) ctx.releaseReservation(claim.topupId);
+    // The credits are counted and the item is gone, so the hold goes whatever `move` says: a hold
+    // kept for a top-up that is not `paid` would keep its stock forever.
+    ctx.move(claim.topupId, "credited", now);
+    ctx.releaseReservation(claim.topupId);
   });
 }
 
 /** Bumped by every `recordKeyLimit`; a snapshot refresh compares it before and after its calls. */
 export function keyLimitsVersion(sql: SqlStorage): number {
-  return sql.exec<{ version: number }>("SELECT version FROM limits_version WHERE id = 1").toArray()[0]?.version ?? 0;
+  return sql.exec<{ version: number }>("SELECT version FROM limits_version WHERE id = ?", SINGLE_ROW_ID).toArray()[0]?.version ?? 0;
 }
 
 /**
@@ -434,8 +459,9 @@ export function keyLimitsVersion(sql: SqlStorage): number {
  * reservation would show its stock as free until the next snapshot refresh. A refresh already in
  * flight sees the version change and does not overwrite it with an older key list.
  */
-function recordKeyLimit(sql: SqlStorage, keyId: string, limitNano: bigint): void {
-  sql.exec("INSERT INTO limits_version (id, version) VALUES (1, 1) ON CONFLICT (id) DO UPDATE SET version = version + 1");
+function recordKeyLimit(sql: SqlStorage, keyId: string, requestedNano: bigint): void {
+  const limitNano = clampNano(requestedNano);
+  sql.exec("INSERT INTO limits_version (id, version) VALUES (?, 1) ON CONFLICT (id) DO UPDATE SET version = version + 1", SINGLE_ROW_ID);
   const row = sql
     .exec<{ limit_nano: number | null; usage_nano: number | null }>("SELECT limit_nano, usage_nano FROM key_usage WHERE key_id = ?", keyId)
     .toArray()[0];
@@ -449,7 +475,12 @@ function recordKeyLimit(sql: SqlStorage, keyId: string, limitNano: bigint): void
     Number(limitNano),
     Number(usage),
   );
-  sql.exec("UPDATE snapshot SET outstanding_usd = MAX(0, outstanding_usd + ?) WHERE id = 1", Number(left(limitNano) - before));
+  sql.exec(
+    "UPDATE snapshot SET outstanding_usd = MIN(?, MAX(0, outstanding_usd + ?)) WHERE id = ?",
+    Number.MAX_SAFE_INTEGER,
+    Number(left(limitNano) - before),
+    SINGLE_ROW_ID,
+  );
 }
 
 /** Revokes `keyId` (retried once on a refused token); a failure is logged, never thrown. */
@@ -457,7 +488,25 @@ async function revokeQuietly(ctx: FulfilmentContext, keyId: string, now: number)
   try {
     await revokeUpstream(ctx, keyId, now);
   } catch (error) {
-    console.error(`Revoking the extra NEAR AI key ${keyId} failed: ${describeError(error)}`);
+    console.error(`Revoking the unheld NEAR AI key ${keyId} failed: ${describeError(error)}`);
+  }
+}
+
+/**
+ * Revokes the device's orphan keys before a new one is made: keys named `zorvo-<deviceId>` that are
+ * not `keep` (the key a rotation replaces, revoked by its own item) and are no device's key. They
+ * come from a create whose answer was lost, or from an eviction between a create and its record, so
+ * no one holds their secret; revoking them keeps the workspace from filling with them. A failed
+ * revoke is logged and does not stop the creation: the next one tries again.
+ */
+async function revokeOrphans(ctx: FulfilmentContext, deviceId: string, keep: string | null, now: number): Promise<void> {
+  const workspaceId = ctx.config().workspaceId;
+  const keys = await ctx.withAccessToken(now, (access) => ctx.nearAi().listKeys(access, workspaceId));
+  const name = `zorvo-${deviceId}`;
+  for (const key of keys) {
+    if (key.name !== name || key.id === keep) continue;
+    const held = ctx.sql.exec("SELECT 1 FROM devices WHERE nearai_key_id = ?", key.id).toArray().length > 0;
+    if (!held) await revokeQuietly(ctx, key.id, now);
   }
 }
 
@@ -477,15 +526,18 @@ const MIN_FROZEN_LIMIT_NANO = 1n;
 async function rotateItem(ctx: FulfilmentContext, itemId: string, now: number): Promise<void> {
   const claim = claimRotate(ctx, itemId, now);
   if (!claim) return;
+  let revokeItemId: string | null;
   try {
-    const revokeItemId = await rotateKey(ctx, claim.deviceId, itemId, now);
-    if (revokeItemId !== null) await revokeItem(ctx, revokeItemId, now);
+    revokeItemId = await rotateKey(ctx, claim.deviceId, itemId, now);
   } catch (error) {
     console.error(`Key rotation for device ${claim.deviceId} failed on attempt ${claim.attempts}: ${describeError(error)}`);
     if (claim.attempts === MAX_ATTEMPTS) {
       await ctx.alert("attempts_exhausted", `key rotation for device ${claim.deviceId} failed ${MAX_ATTEMPTS} times; it keeps retrying every 30 minutes`);
     }
+    return;
   }
+  // The rotation is done; the old key's revoke is its own item and logs its own failures.
+  if (revokeItemId !== null) await revokeItem(ctx, revokeItemId, now);
 }
 
 /** Marks the item before anything is called. An item with nothing to rotate (no device, revoked, no key) is dropped. */
@@ -528,6 +580,7 @@ async function rotateKey(ctx: FulfilmentContext, deviceId: string, itemId: strin
     // The encryption key is tried first, so a bad one fails before a key exists upstream.
     const keyB64 = ctx.keyEncryptionKey();
     await encrypt(keyB64, "");
+    await revokeOrphans(ctx, deviceId, oldKeyId, now);
     const limitNano = spendLimitNano(remaining, cfg);
     const key = await ctx.withAccessToken(now, (access) => ctx.nearAi().createKey(access, cfg.workspaceId, `zorvo-${deviceId}`, limitNano));
     created = { id: key.id, ciphertext: await encrypt(keyB64, key.key) };
@@ -562,9 +615,12 @@ async function rotateKey(ctx: FulfilmentContext, deviceId: string, itemId: strin
 
 /**
  * Stops further spend on `keyId` and returns what it has used. The key's usage is read, its limit
- * is set to that (an absolute PATCH, safe to repeat; the key then refuses new requests), recorded
- * at once so the outstanding amount is right, and the usage is read again after the freeze. A key
- * NEAR AI no longer knows (404) cannot be spent on: the usage on record is taken.
+ * is set to that (an absolute PATCH, safe to repeat; the key then refuses new requests; capped at
+ * 2^53 − 1 nano-USD, which still freezes a key that used more), recorded at once so the outstanding
+ * amount is right, and the usage is read again after the freeze. A key NEAR AI no longer knows (404)
+ * cannot be spent on: the usage on record is taken. A key NEAR AI still knows (its PATCH worked)
+ * but that neither list read showed has an unknown usage: the rotation fails and retries rather
+ * than carry over a balance from a usage on record that may be stale.
  */
 async function freezeKey(ctx: FulfilmentContext, keyId: string, now: number): Promise<bigint> {
   const cfg = ctx.config();
@@ -573,7 +629,8 @@ async function freezeKey(ctx: FulfilmentContext, keyId: string, now: number): Pr
   const stored = BigInt(ctx.sql.exec<{ usage_nano: number | null }>("SELECT usage_nano FROM key_usage WHERE key_id = ?", keyId).toArray()[0]?.usage_nano ?? 0);
 
   const first = await usageOf();
-  const frozenAt = (first ?? stored) > MIN_FROZEN_LIMIT_NANO ? (first ?? stored) : MIN_FROZEN_LIMIT_NANO;
+  const seen = clampNano(first ?? stored);
+  const frozenAt = seen > MIN_FROZEN_LIMIT_NANO ? seen : MIN_FROZEN_LIMIT_NANO;
   try {
     await ctx.withAccessToken(now, (access) => client.setSpendLimit(access, cfg.workspaceId, keyId, frozenAt));
   } catch (error) {
@@ -583,7 +640,8 @@ async function freezeKey(ctx: FulfilmentContext, keyId: string, now: number): Pr
   ctx.transaction(() => recordKeyLimit(ctx.sql, keyId, frozenAt));
   const second = await usageOf();
   const read = [first, second].filter((usage): usage is bigint => usage !== null);
-  return read.length === 0 ? stored : read.reduce((most, usage) => (usage > most ? usage : most));
+  if (read.length === 0) throw new Error(`NEAR AI's key list does not show key ${keyId}, so its usage is unknown`);
+  return read.reduce((most, usage) => (usage > most ? usage : most));
 }
 
 function readDevice(sql: SqlStorage, deviceId: string): { nearai_key_id: string | null; credits_bought: number } | undefined {
@@ -600,7 +658,7 @@ function forgetKeyLimit(sql: SqlStorage, keyId: string): void {
   const row = sql.exec<{ limit_nano: number | null; usage_nano: number | null }>("SELECT limit_nano, usage_nano FROM key_usage WHERE key_id = ?", keyId).toArray()[0];
   if (!row) return;
   const left = row.limit_nano !== null && row.limit_nano > (row.usage_nano ?? 0) ? row.limit_nano - (row.usage_nano ?? 0) : 0;
-  sql.exec("UPDATE snapshot SET outstanding_usd = MAX(0, outstanding_usd - ?) WHERE id = 1", left);
+  sql.exec("UPDATE snapshot SET outstanding_usd = MAX(0, outstanding_usd - ?) WHERE id = ?", left, SINGLE_ROW_ID);
   sql.exec("DELETE FROM key_usage WHERE key_id = ?", keyId);
 }
 

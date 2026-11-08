@@ -1,6 +1,7 @@
 /**
  * The Ledger's SQLite tables (spec 7.2), the single place they are created. Times are epoch
- * milliseconds. Money is kept as whole numbers: credits as credits, stock in nano-USD (scale 9).
+ * milliseconds. Money is kept as whole numbers: credits as credits, stock in nano-USD (scale 9),
+ * every nano-USD value at most 2^53 − 1 so it reads back exactly as a JS number (see `amounts.ts`).
  * Later tasks add their tables here.
  */
 const STATEMENTS = [

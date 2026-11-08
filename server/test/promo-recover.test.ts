@@ -470,7 +470,7 @@ describe("POST /v1/recover", () => {
     expect(near.keys.get("key-3")?.limitNano).toBe(spendLimitNano(499, cfg));
   });
 
-  it("freezes the old key before it reads the usage it carries: patch, list, create, revoke", async () => {
+  it("freezes the old key before it reads the usage it carries: patch, list, then the orphan check, create, revoke", async () => {
     const { secret } = await keyedDevice();
     expect((await recover(secret, randomSecret())).status).toBe(200);
     const seen = near.calls.length;
@@ -478,7 +478,7 @@ describe("POST /v1/recover", () => {
     await tick(NOW + MINUTE_MS);
 
     const routes = near.calls.slice(seen).map((call) => call.route).filter((route) => ["list", "patch", "create", "revoke"].includes(route));
-    expect(routes).toEqual(["list", "patch", "list", "create", "revoke"]);
+    expect(routes).toEqual(["list", "patch", "list", "list", "create", "revoke"]);
     const patch = near.calls.slice(seen).find((call) => call.route === "patch")!;
     expect(patch.path).toBe(`/workspaces/${cfg.workspaceId}/api-keys/key-1/spend-limit`);
     expect(patch.body).toEqual({ spendLimit: { amount: 1, currency: "USD" } });

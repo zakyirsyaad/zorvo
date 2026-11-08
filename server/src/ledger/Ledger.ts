@@ -533,6 +533,11 @@ export class Ledger extends DurableObject<Env> {
     return this.applySessionEvent(sessionId, eventId, now);
   }
 
+  /** Whether a checkout session id names a top-up; a `payment.*` webhook picks its candidate by this. */
+  hasSession(sessionId: string): boolean {
+    return this.sql.exec("SELECT 1 FROM topups WHERE ping_session_id = ?", sessionId).toArray().length > 0;
+  }
+
   /**
    * `onSessionEvent` for the webhook route, with the outcome as a value rather than a throw across
    * RPC: `upstream` when PingPay could not be read, `retry` when the session is not settled yet (or

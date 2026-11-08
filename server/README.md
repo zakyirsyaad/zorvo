@@ -140,9 +140,10 @@ works from the repository root). The command asks for the value; do not put it o
    is that dashboard setting. The server reads the recipient out of each session PingPay answers with and
    refuses (answers 502) any session whose recipient is not `OPERATOR_ACCOUNT`, so a wrong payee fails
    closed instead of sending money elsewhere.
-2. Register a webhook for `POST <your-worker-url>/v1/webhooks/pingpay` with the events
-   `checkout.session.completed` and `checkout.session.expired`, and put its signing secret into
-   `PINGPAY_WEBHOOK_SECRET`.
+2. Register a webhook for `POST <your-worker-url>/v1/webhooks/pingpay` and put its signing secret into
+   `PINGPAY_WEBHOOK_SECRET`. PingPay's dashboard has no event picker: it sends `payment.success` and
+   `payment.failed`. The server acts on both (and on `checkout.session.completed` / `.expired` when they
+   arrive) by re-reading the checkout session from PingPay, so the webhook itself never credits.
 
 ### 6. Deploy, on the right plan
 
@@ -183,11 +184,18 @@ and check each, in this order:
 - **Auth header.** PingPay's docs disagree: the Quick Start names `x-publishable-key`, the Create Checkout page
   and the example app use `x-api-key`. The client sends `x-api-key`. If PingPay answers 401, the header name
   is the first thing to check.
-- **Webhook `resourceId`.** The server treats `resourceId` of a `checkout.session.*` event as the checkout
-  session id. After paying, the top-up should reach `credited` within seconds; if it only arrives after a
-  couple of minutes, the webhook did not match and the alarm's polling credited it instead.
-- **Webhook timestamp unit.** `x-ping-timestamp` is accepted as seconds or milliseconds and must be within
-  5 minutes of now. The docs do not say which; a `401` on every webhook points here or at the secret.
+- **Webhook `resourceId`.** For `checkout.session.*` the server reads the checkout session id from
+  `resourceId`. For `payment.success` / `payment.failed`, `resourceId` may be a payment id, so it tries
+  `resourceId`, `data.checkoutSessionId`, `data.sessionId` and `data.checkoutSession.id` (strings only, at
+  most four, in that order) and uses the first that names a known top-up. When none does, it logs
+  `PingPay <type> webhook names no known checkout session; data keys: …` with the sorted key names only,
+  never a value or an id. After paying, the top-up should reach `credited` within seconds; if it only
+  arrives after a couple of minutes, look for that line and check the payload keys.
+- **Webhook timestamp unit and signature.** Verified 2026-11-08 with the dashboard's Test Webhook (both
+  deliveries answered 200): `x-ping-timestamp` is in seconds (10 digits), and `x-ping-signature` is a
+  64-hex HMAC-SHA256 over `${x-ping-timestamp}.${rawBody}` with the whole `whsec_…` string as the key.
+  The server accepts seconds or milliseconds and requires the timestamp within 5 minutes of now; a `401`
+  still points at the secret.
 - **`payment_mismatch` on the very first paid checkout.** The checkout opened (so the POST answer named the
   asset as `NEAR_USDC_ASSET_ID` expects) but reading the paid session back with GET reported the asset under
   another id. Fix `NEAR_USDC_ASSET_ID` in `src/pingpay.ts` (its `chargesUsdc` check reads both answers) so it

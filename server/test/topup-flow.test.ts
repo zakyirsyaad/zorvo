@@ -53,6 +53,17 @@ async function webhook(type: string, resourceId: string, id: string, secret = WE
   });
 }
 
+/** A `payment.*` event, whose `data` may name the checkout session. */
+async function paymentWebhook(type: string, resourceId: unknown, id: string, data: Record<string, unknown> = {}): Promise<Response> {
+  const body = JSON.stringify({ id, type, resourceId, data, createdAt: new Date().toISOString() });
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  return call("/v1/webhooks/pingpay", {
+    method: "POST",
+    body,
+    headers: { "x-ping-timestamp": timestamp, "x-ping-signature": await hmacSha256Hex(WEBHOOK_SECRET, `${timestamp}.${body}`) },
+  });
+}
+
 type TopupRow = { id: string; status: TopupStatus; ping_session_id: string | null; ping_payment_id: string | null; reserved_until: number | null };
 
 function rows() {
@@ -407,15 +418,88 @@ describe("POST /v1/webhooks/pingpay", () => {
     expect(ping.calls).toHaveLength(readsBefore);
   });
 
-  it("answers 200 to other event types and ignores them", async () => {
+  it("answers 200 to event types it does not act on", async () => {
     await seedStock(10_000, Date.now());
     const { secret } = await newDevice();
     const { topupId, sessionId } = await topUpOk(secret);
     ping.pay(sessionId);
     const readsBefore = ping.calls.length;
-    expect((await webhook("payment.success", `pay_${sessionId}`, "evt_1")).status).toBe(200);
+    expect((await webhook("invoice.paid", "in_1", "evt_1")).status).toBe(200);
     expect(await statusOf(secret, topupId)).toEqual({ status: "created", credits: 500 });
     expect(ping.calls).toHaveLength(readsBefore);
+  });
+
+  it.each([
+    { where: "resourceId", payload: (sessionId: string) => ({ resourceId: sessionId, data: {} }) },
+    { where: "data.checkoutSessionId", payload: (sessionId: string) => ({ resourceId: "pay_1", data: { checkoutSessionId: sessionId } }) },
+    { where: "data.sessionId", payload: (sessionId: string) => ({ resourceId: "pay_2", data: { sessionId } }) },
+    { where: "data.checkoutSession.id", payload: (sessionId: string) => ({ resourceId: "pay_3", data: { checkoutSession: { id: sessionId } } }) },
+  ])("credits a payment.success that names the session in $where", async ({ payload }) => {
+    await seedStock(10_000, Date.now());
+    const { secret } = await newDevice();
+    const { topupId, sessionId } = await topUpOk(secret);
+    ping.pay(sessionId);
+    const { resourceId, data } = payload(sessionId);
+
+    expect((await paymentWebhook("payment.success", resourceId, "evt_pay", data)).status).toBe(200);
+    expect(await statusOf(secret, topupId)).toEqual({ status: "paid", credits: 500 });
+    expect((await rows()).queue).toEqual([expect.objectContaining({ kind: "credit", ref: topupId })]);
+  });
+
+  it("answers 200 to a payment event that names no top-up and logs only data key names", async () => {
+    const res = await paymentWebhook("payment.success", "pay_unknown", "evt_unknown", {
+      checkoutSessionId: "cs_unknown",
+      customerEmail: "buyer@example.test",
+    });
+
+    expect(res.status).toBe(200);
+    expect((await rows()).events).toEqual([]);
+    expect((await rows()).queue).toEqual([]);
+    expect(ping.calls).toHaveLength(0);
+    const logged = consoleError.mock.calls.map((args: unknown[]) => args.join(" ")).join("\n");
+    expect(logged).toContain("payment.success");
+    expect(logged).toContain("checkoutSessionId");
+    expect(logged).toContain("customerEmail");
+    expect(logged).not.toContain("pay_unknown");
+    expect(logged).not.toContain("cs_unknown");
+    expect(logged).not.toContain("buyer@example.test");
+  });
+
+  it("records a payment event id once and does nothing on a duplicate", async () => {
+    await seedStock(10_000, Date.now());
+    const { secret } = await newDevice();
+    const { topupId, sessionId } = await topUpOk(secret);
+    ping.pay(sessionId);
+
+    expect((await paymentWebhook("payment.success", sessionId, "evt_pay_dup", {})).status).toBe(200);
+    expect((await paymentWebhook("payment.success", sessionId, "evt_pay_dup", {})).status).toBe(200);
+    expect(await statusOf(secret, topupId)).toEqual({ status: "paid", credits: 500 });
+    const { queue, events } = await rows();
+    expect(queue).toHaveLength(1);
+    expect(events.map((e) => e.id)).toEqual(["evt_pay_dup"]);
+  });
+
+  it("answers 200 to payment.failed on an open checkout and leaves its expiry to polling", async () => {
+    await seedStock(500, Date.now());
+    const { secret } = await newDevice();
+    const { topupId, sessionId } = await topUpOk(secret);
+
+    expect((await paymentWebhook("payment.failed", sessionId, "evt_fail", {})).status).toBe(200);
+    expect(await statusOf(secret, topupId)).toEqual({ status: "created", credits: 500 });
+    expect((await rows()).events).toEqual([]);
+    expect((await rows()).queue).toEqual([]);
+  });
+
+  it("expires a top-up on payment.failed when PingPay reports the session expired", async () => {
+    await seedStock(500, Date.now());
+    const { deviceId, secret } = await newDevice();
+    const { topupId, sessionId } = await topUpOk(secret);
+    ping.expire(sessionId);
+
+    expect((await paymentWebhook("payment.failed", sessionId, "evt_fail_exp", {})).status).toBe(200);
+    expect(await statusOf(secret, topupId)).toEqual({ status: "expired", credits: 500 });
+    expect((await rows()).reservations).toEqual([]);
+    expect((await stub().stockFor(deviceId)).availableCredits).toBe(500);
   });
 
   it("answers 200 to a session that is not one of ours", async () => {

@@ -24,6 +24,31 @@ const MAX_CODE_LENGTH = 100;
 const TOPUP_PATH = /^\/v1\/topups\/([0-9a-f-]{36})(\/cancel)?$/;
 /** The PingPay events that settle a checkout; their `resourceId` is the checkout session id. */
 const SESSION_EVENTS = new Set(["checkout.session.completed", "checkout.session.expired"]);
+/**
+ * The events PingPay's dashboard sends (it has no event picker). Their `resourceId` may be a payment
+ * id, so the checkout session may only be named in `data`; `paymentSessionCandidates` reads both.
+ */
+const PAYMENT_EVENTS = new Set(["payment.success", "payment.failed"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The session ids a `payment.*` event may name, in the order to try them: `resourceId`, then the
+ * fields of `data` PingPay has used or may use. Strings only, deduplicated, at most four.
+ */
+function paymentSessionCandidates(resourceId: unknown, data: unknown): string[] {
+  const record = isRecord(data) ? data : {};
+  const session = isRecord(record.checkoutSession) ? record.checkoutSession : {};
+  const values = [resourceId, record.checkoutSessionId, record.sessionId, session.id];
+  return [...new Set(values.filter((value): value is string => typeof value === "string" && value !== ""))].slice(0, 4);
+}
+
+/** The sorted key names of `data`: enough to fix a payload without logging a value or an id. */
+function dataKeys(data: unknown): string[] {
+  return isRecord(data) ? Object.keys(data).sort() : [];
+}
 
 async function registerDevice(req: Request, env: Env): Promise<Response> {
   const ledger = ledgerOf(env);
@@ -148,13 +173,38 @@ async function pingPayWebhook(req: Request, env: Env): Promise<Response> {
   } catch {
     return error("bad_request", 400);
   }
-  const { id, type, resourceId } = (typeof event === "object" && event !== null ? event : {}) as Record<string, unknown>;
+  const { id, type, resourceId, data } = (typeof event === "object" && event !== null ? event : {}) as Record<string, unknown>;
   if (typeof id !== "string" || id === "" || typeof type !== "string") return error("bad_request", 400);
-  if (!SESSION_EVENTS.has(type)) return json({ received: true });
-  if (typeof resourceId !== "string" || resourceId === "") return error("bad_request", 400);
+  const isSessionEvent = SESSION_EVENTS.has(type);
+  const isPaymentEvent = PAYMENT_EVENTS.has(type);
+  if (!isSessionEvent && !isPaymentEvent) return json({ received: true });
 
-  const result = await ledgerOf(env).webhookEvent(resourceId, id, Date.now());
+  const ledger = ledgerOf(env);
+  const now = Date.now();
+  let sessionId: string | undefined;
+  if (isSessionEvent) {
+    if (typeof resourceId !== "string" || resourceId === "") return error("bad_request", 400);
+    sessionId = resourceId;
+  } else {
+    for (const candidate of paymentSessionCandidates(resourceId, data)) {
+      if (await ledger.hasSession(candidate)) {
+        sessionId = candidate;
+        break;
+      }
+    }
+    if (sessionId === undefined) {
+      const keys = dataKeys(data);
+      console.error(
+        `PingPay ${type} webhook names no known checkout session; data keys: ${keys.length === 0 ? "(none)" : keys.join(", ")}`,
+      );
+      return json({ received: true });
+    }
+  }
+
+  const result = await ledger.webhookEvent(sessionId, id, now);
   if (!("error" in result)) return json({ received: true });
+  // A failed payment on a session that is still open is settled by polling its expiry, not by a redelivery.
+  if (type === "payment.failed" && result.error === "retry") return json({ received: true });
   // 502: PingPay could not be read. 503: the session is not settled yet. Either way PingPay redelivers.
   return error("upstream", result.error === "retry" ? 503 : 502);
 }

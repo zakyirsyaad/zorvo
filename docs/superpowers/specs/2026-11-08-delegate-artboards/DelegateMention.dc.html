@@ -64,9 +64,10 @@ body{margin:0}
   </section>
 
   <section>
-    <p class="lbl">An agent named at the start: Send turns into Delegate to Codex</p>
+    <p class="lbl">An agent named at the start: Send turns into Delegate to Codex, and the note says what Codex starts on</p>
     <div class="card">
-      <label style="display: block;"><span class="sr">Message</span><textarea rows="2" class="ta">@Codex implement step 2 of the plan: token refresh in src/auth.ts, with tests</textarea></label>
+      <label style="display: block;"><span class="sr">Message</span><textarea rows="2" class="ta" aria-describedby="starts-on">@Codex implement step 2 of the plan: token refresh in src/auth.ts, with tests</textarea></label>
+      <span id="starts-on" style="padding: 0 4px; font-size: 11px; color: var(--muted);">Codex starts on gpt-5.5-codex · high · Auto review <button style="padding: 0; border: 0; background: transparent; color: var(--fg2); font-size: 11px; text-decoration: underline; text-underline-offset: 2px;">Change</button></span>
       <div class="row">
         <button aria-label="Attach files" class="chip" style="width: 28px; padding: 0; color: var(--muted);"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="margin: auto;"><path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"></path></svg></button>
         <span style="height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 8px; color: var(--fg2);"><span class="logo" aria-hidden="true">Q</span>Qwen Code</span>

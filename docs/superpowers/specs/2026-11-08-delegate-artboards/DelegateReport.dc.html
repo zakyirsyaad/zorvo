@@ -22,7 +22,7 @@ body{margin:0}
 .link{padding:0;border:0;background:transparent;color:var(--fg2);font-size:11px;text-decoration:underline;text-underline-offset:2px}
 </style>
 </helmet>
-<div class="{{themeClass}}" style="width: 1024px; height: 860px; overflow: hidden; background: var(--bg); color: var(--fg); font-size: 13px; line-height: 18px; padding: 32px 24px; box-sizing: border-box;">
+<div class="{{themeClass}}" style="width: 1024px; height: 940px; overflow: hidden; background: var(--bg); color: var(--fg); font-size: 13px; line-height: 18px; padding: 32px 24px; box-sizing: border-box;">
   <div style="max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px;">
 
     <div style="display: flex; flex-direction: column; gap: 10px;">
@@ -58,6 +58,15 @@ body{margin:0}
     </div>
 
     <div style="display: flex; flex-direction: column; gap: 10px;">
+      <p class="lbl">In A, while Codex waits for your answer (a permission or a question)</p>
+      <div role="status" style="display: flex; align-items: center; gap: 10px; padding: 4px 0;">
+        <span aria-hidden="true" style="width: 6px; height: 6px; border-radius: 9999px; background: var(--att);"></span>
+        <span style="color: var(--fg2);">Codex needs your answer</span>
+        <button class="open">Open</button>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 10px;">
       <p class="lbl">In A, when A's agent isn't running: the report waits in its composer, with a warning toast</p>
       <div role="status" style="width: 340px; box-sizing: border-box; display: flex; gap: 10px; padding: 12px; border-radius: 10px; background: var(--s3); border: 1px solid var(--line);">
         <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--att); margin-top: 2px;"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16.5v.01"></path></svg>
@@ -74,7 +83,7 @@ body{margin:0}
   </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":1024,"height":860}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":1024,"height":940}}'>
 class Component extends DCLogic {
   renderVals() {
     const light = (this.props.theme ?? 'dark') === 'light';

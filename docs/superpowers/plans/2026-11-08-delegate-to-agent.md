@@ -105,6 +105,7 @@ git commit -m "feat: keep a session's delegation link in state.json"
   - `delegateSessionName(agentName: string, task: string): string`: `"<agent>: <task's first line, cut at 40 chars with …>"`.
   - `delegationMentionOf(text: string, agents: readonly { id: string; name: string }[]): { agentId: string; task: string } | null`: the text starts with `@` plus an agent's name (case-insensitive, longest name first), then whitespace or the end; `task` is the rest, trimmed.
   - `type MentionAgentStatus = 'ready' | 'not-checked' | 'needs-sign-in' | 'not-installed'`
+  - `startSummary(input: { agentName: string; modelName?: string; effortName?: string; modeName?: string }): string`: `"${agent} starts on ${parts.join(' · ')}"` over the known parts in that order, or `"${agent} starts on its defaults."` when none is known.
   - `mentionBlockedReason(input: { agentName: string; task: string; status: MentionAgentStatus; delegateReason: string | null }): string | null`: the first that applies, in this order: an empty task, a task starting with `/`, `not-installed`, `needs-sign-in`, then `delegateReason`.
 - `ForkHandoffMeta` gains optional `title?: string` (default `"# Session handoff"`) and `note?: string` (a line under the title when set).
 
@@ -142,6 +143,7 @@ Exact copy (from the spec):
   - `delegateSessionName cuts at 40 characters`.
   - `delegationMentionOf reads an agent at the start`: `'@Codex fix it'` gives Codex and `'fix it'`; `'@claude code  do X'` gives Claude Code (two words, case-insensitive) and `'do X'`; with agents "Kimi" and "Kimi CLI", `'@Kimi CLI go'` gives Kimi CLI; `'@Codex'` gives an empty task.
   - `delegationMentionOf ignores anything else`: `'@Codexy go'`, `'ask @Codex later'`, `' @Codex go'` (leading space) and `'@Unknown go'` give `null`.
+  - `startSummary joins the known parts`: all three give `'Codex starts on gpt-5.5-codex · high · Auto review'`; model only gives `'Codex starts on gpt-5.5-codex'`; none gives `'Codex starts on its defaults.'`.
   - `mentionBlockedReason follows its order` (one case each, including a task `'/review src/auth.ts'`, plus `null` when ready with a task).
 - [ ] **Step 2:** In `fork-handoff.test.ts`, add `uses the given title and note`, and check that the default title is unchanged.
 - [ ] **Step 3: Run** `pnpm vitest run src/test/delegation.test.ts src/test/fork-handoff.test.ts`. Expected: FAIL.
@@ -219,6 +221,8 @@ export interface DelegationDeps {
   isBusy: (sessionId: string) => boolean;
   /** Running, not in a turn, not waiting on a permission, elicitation or sign-in, agent installed. */
   canPrompt: (sessionId: string) => boolean;
+  /** Waiting on the user: a permission, a question or an elicitation. */
+  isWaiting: (sessionId: string) => boolean;
   send: (sessionId: string, text: string, attachments?: readonly string[], marks?: Pick<ChatMessage, 'delegationReport'>) => Promise<boolean>;
   startSession: (spec: SessionSpec, first?: FirstMessage) => void;
   selectSession: (sessionId: string) => void;
@@ -226,7 +230,7 @@ export interface DelegationDeps {
   giveBack: (sessionId: string, text: string) => void;
   onNotice: (message: string) => void;
 }
-export type DelegationState = 'working' | 'reported' | 'failed' | 'source-gone' | 'ended' | 'source-working';
+export type DelegationState = 'working' | 'needs-answer' | 'reported' | 'failed' | 'source-gone' | 'ended' | 'source-working';
 export interface DelegationView {
   role: 'source' | 'delegate';
   otherSessionId: string | null;   // null when the source is gone
@@ -240,7 +244,12 @@ export interface DelegationView {
 }
 export function useDelegation(deps: DelegationDeps): {
   delegateBlockedReason: (sourceId: string) => string | null;
-  start: (sourceId: string, agentId: string, task: string, attachments?: readonly string[]) => Promise<boolean>;
+  start: (
+    sourceId: string,
+    agentId: string,
+    task: string,
+    options?: { attachments?: readonly string[]; choices?: AcpChoices },
+  ) => Promise<boolean>;
   end: (delegateId: string) => void;
   onTurnEnded: (sessionId: string, reason: AttentionReason) => void;
   sendBlockedReason: (sessionId: string) => string | null;
@@ -250,7 +259,7 @@ export function useDelegation(deps: DelegationDeps): {
 
 Behavior the tests fix:
 
-- **`start`.** Builds the handoff from A's transcript up to its last message, with the delegation title and note from Task 3. It writes it with `invoke('write_fork_handoff', { handoffId: id, content })`, then calls `startSession` with `{ id, agent, cwd: A.cwd, worktree: A.worktree, name: delegateSessionName(...), delegatedFrom: { sessionId: A.id, task, startedAt: now } }` and `{ text: task, attachments, context: buildDelegatePrompt(path) }`, then `selectSession(id)`. It resolves `false`, with `onNotice("Could not delegate: <error>")`, when the write fails or `delegateBlockedReason` is non-null.
+- **`start`.** Builds the handoff from A's transcript up to its last message, with the delegation title and note from Task 3. It writes it with `invoke('write_fork_handoff', { handoffId: id, content })`, then calls `startSession` with `{ id, agent, cwd: A.cwd, worktree: A.worktree, name: delegateSessionName(...), delegatedFrom: { sessionId: A.id, task, startedAt: now } }` and `{ text: task, attachments, context: buildDelegatePrompt(path) }`, passing `{ choices }` as `StartSessionOptions` when given (the dialog's picks; `changesToApply` applies them before the first prompt), then `selectSession(id)`. It resolves `false`, with `onNotice("Could not delegate: <error>")`, when the write fails or `delegateBlockedReason` is non-null.
   - `SessionSpec` gains `delegatedFrom?: DelegationLink`, and `newSessionRecord` copies it only from the spec, the same way it copies `compareRunId`.
 - **`end`.** `patchSession(B, { delegatedFrom: { ...link, endedAt: now } })`.
 - **`onTurnEnded(B, reason)`** for a B with an open link:
@@ -263,7 +272,7 @@ Behavior the tests fix:
   - `canPrompt(A)`: `await send(A, reportMessage(...), [], { delegationReport: { agentName: B agent, agentId: B.profileId } })`, record `reported` with the time, then drop A from `handingOver`.
   - Otherwise: `giveBack(A, report)`, then `onNotice(\`${B agent}'s report is in the composer of ${A.name}.\`)`, then drop.
 - **`sendBlockedReason`** returns the Task 3 reason, and also returns B's "working on … report" line while A is in `handingOver`. It reads the ref, so it holds within the same tick.
-- **`viewFor`.** Returns `null` for a session with no link. For an ended link it returns `null` on A's side (the status line goes) and `state: 'ended'` on B's (the quiet line reads as ended). `reported`/`failed` and `workingSince` live in memory; after a restart the state reads `working`. A gone source gives `state: 'source-gone'` on B's side. While A works on one of B's reports (A is in `handingOver`, or A is busy and its last user message has a `delegationReport` with B's `agentId`), B's side reads `source-working`, with `workingSince` the time that report went out.
+- **`viewFor`.** Returns `null` for a session with no link. On A's side, `isWaiting(B)` gives `needs-answer`, which wins over `working`. For an ended link it returns `null` on A's side (the status line goes) and `state: 'ended'` on B's (the quiet line reads as ended). `reported`/`failed` and `workingSince` live in memory; after a restart the state reads `working`. A gone source gives `state: 'source-gone'` on B's side. While A works on one of B's reports (A is in `handingOver`, or A is busy and its last user message has a `delegationReport` with B's `agentId`), B's side reads `source-working`, with `workingSince` the time that report went out.
 
 - [ ] **Step 1: Write the failing tests**:
   - `start writes the handoff and starts B linked to A in A's folder`
@@ -278,7 +287,10 @@ Behavior the tests fix:
   - `view states follow reports and failures`
   - `after End delegation A has no view and B reads ended`
   - `B reads source-working while A works on its report`
+  - `A reads needs-answer while B waits on a permission`
+  - `start passes the dialog's choices to B's start`
   - `start passes the attachments to B's first message`
+  - (the `AcpChoices` type comes from `lib/acp-draft.ts`)
 - [ ] **Step 2: Run** `pnpm vitest run src/test/useDelegation.test.ts`. Expected: FAIL.
 - [ ] **Step 3: Implement** `src/hooks/useDelegation.ts`, and the `SessionSpec` / `newSessionRecord` change in `src/lib/session-start.ts`.
 - [ ] **Step 4: Run** the same command, plus `pnpm vitest run src/test/session-start.test.ts` if that file exists. Expected: PASS.
@@ -300,7 +312,9 @@ All values come from the Zorvo Design System artifact (https://claude.ai/artifac
 **Interfaces:**
 - Consumes: `DelegationView` (Task 6), `AgentProfile`, `AgentLogo`, `Button`, `IconButton`.
 - Produces:
-  - `DelegateDialog({ agents, sourceAgentName, isSourceRunning, onDelegate: (agentId: string, task: string) => void, onCancel: () => void })`. `agents` is `readonly { profile: AgentProfile; status: 'ready' | 'not-checked' | 'needs-sign-in' | 'not-installed' }[]`, the agents in use that can start; `not-installed` cannot be picked.
+  - `DelegateDialog({ agents, sourceAgentName, isSourceRunning, initialAgentId, initialTask, controlsFor, onDelegate: (agentId: string, task: string, choices: AcpChoices) => void, onCancel: () => void })`.
+    - `initialAgentId?: string` and `initialTask?: string` prefill it (from Change).
+    - `controlsFor: (agentId: string) => DraftControls` gives the picked agent's chips. Build `DraftControls` as the new-session draft builds its chips for that agent: the same `acpControls` output and the same chip component the composer renders (`OptionDropdown`), with an `onOpen` that probes an unknown agent through `useAgentProbe`, as the Compare model chip does. `agents` is `readonly { profile: AgentProfile; status: 'ready' | 'not-checked' | 'needs-sign-in' | 'not-installed' }[]`, the agents in use that can start; `not-installed` cannot be picked.
   - `DelegationStatusLine({ view, now, onOpen: (sessionId: string) => void, canAct: boolean })`, for A (`view.role === 'source'`), and for B while `view.state === 'source-working'`.
   - `DelegatedFromLine({ view, onOpen: (sessionId: string) => void, canAct: boolean })`, for B (`view.role === 'delegate'`).
   - `canAct` is false in popouts: no **Open**.
@@ -315,12 +329,14 @@ Element by element:
     - An agent that cannot be picked is at 55% opacity, and its status is the radio's `aria-describedby`.
     - Rows fill `surface-hover` when hovered or picked. The first pickable agent other than A's is picked to start.
   - Field "Task": label in `ui` weight 500, then a textarea with a `border-strong` edge, 3 rows.
-  - Under the task field, a hint in `caption` `fg-subtle`: `${B} reads this conversation first and works in the same folder. Each answer it gives is sent to ${A}.`, plus ` ${A} isn't running, so its reports wait in its composer.` when `!isSourceRunning`.
+  - Under the task field, the row "${B} starts on": a label in `ui` weight 500, then B's chips (28px, borderless, `radius-md`, `ui-sm` `fg-secondary`, 12px chevron in `fg-muted`). An agent with unknown options shows one `Default` chip; opening it asks the agent. A risky mode shows its `ShieldAlert`. Picks are held in the dialog and passed to `onDelegate` as `AcpChoices`.
+  - Under that, a hint in `caption` `fg-subtle`: `${B} reads this conversation first and works in the same folder. Each answer it gives is sent to ${A}.`, plus ` ${A} isn't running, so its reports wait in its composer.` when `!isSourceRunning`.
   - An empty task on Delegate shows `Write the task first.` in `caption` `danger` under the textarea, as the textarea's `aria-describedby`, and does not delegate. It clears on input.
   - Actions bottom right above a `border` rule: **Cancel** (`Button` ghost), **Delegate** (`Button` primary).
 - **DelegationStatusLine (A).** Rendered under A's last message, in the chat column, only while `view.state` is `working` or `failed` and A is not in a turn itself.
   - `working`: a 6px `status-running` dot with its soft 4px ring (the class the turn status uses), `${agentName} is working on the task you delegated` in `ui` `fg-secondary`, the time since `workingSince` in `caption` `fg-subtle` (the turn status's elapsed helper), then a 24px ghost **Open**. Nothing pulses.
   - `failed`: a 14px circle-alert in `danger`, `${agentName}'s turn failed` in `ui` `fg-secondary`, and **Open**.
+  - `needs-answer`: a 6px `status-attention` dot with no ring, `${agentName} needs your answer` in `ui` `fg-secondary`, and **Open**.
   - On B, `source-working`: the `working` look, with `${agentName} is working on ${B agent}'s report` (`agentName` is A's agent on B's view), the time since `workingSince`, and **Open** (selects A).
   - The text sits in an always-mounted `role="status"` element, so a change is announced. The element stays mounted with empty text when the line is hidden.
 - **DelegatedFromLine (B).** One line above B's first message, styled like the imported session's history line (find it with `grep -rn "historyElsewhere" src/components`), in `caption` `fg-muted`.
@@ -332,9 +348,13 @@ Element by element:
   - `shows an error for an empty task and does not delegate`
   - `an agent that is not installed cannot be picked`, with its status as the description
   - `picks the first ready agent other than the source's`
+  - `prefills the agent and task from Change`
+  - `shows the picked agent's chips and passes the picks on Delegate`
+  - `an agent with unknown options shows Default and asks only when it opens`
   - `says reports wait in the composer when the source is not running`
   - `the status line names the working agent and opens it`
   - `the status line says a failed turn`
+  - `the status line says Codex needs your answer`
   - `B's status line names A working on its report`
   - `the quiet line opens the source, and has no Open when the source is gone`
   - `lines without canAct have no Open`
@@ -369,6 +389,8 @@ The main way in (spec "The @ mention"). The look comes from the Composer README'
   - `ComposerDock` gains:
     - `delegationAgents?: readonly MentionAgent[]`: `undefined` turns the group off (drafts, delegated sessions, popouts, compare).
     - `onDelegationMentionChange?: (mention: { agentId: string; task: string } | null) => void`: called whenever the parsed value of the text changes, including when it is cleared on send.
+    - `delegationSummary?: { text: string; onChange: () => void }`: shown in the note's place (`caption` `fg-muted`) with **Change** as a text button, only while no blocking note is set.
+    - `clear(): void` on `ComposerHandle`, if it has no way to empty the box yet, for a delegation started from Change.
   - The agents show only while `mention.start === 0`, filtered by `name.toLowerCase().includes(query.toLowerCase())`.
   - Highlight and Return run over one list: the pickable agents first, then the files.
   - Picking an agent replaces `text.slice(mention.start, mention.end)` with `@${name} ` and puts the caret after the space.
@@ -380,6 +402,7 @@ The main way in (spec "The @ mention"). The look comes from the Composer README'
   - `arrow keys skip agents that cannot be picked`
   - `picking Claude Code inserts "@Claude Code " and keeps focus`
   - `keeps A's chips and commands with a mention`: with `@Codex fix it` typed, the agent label and chips are still A's, and `/` at the start of the text still lists A's commands.
+  - `shows the starts-on summary with Change, and a blocking note instead when there is one`
   - `reports the parsed mention as the text changes`: typing `@Codex fix it` reports `{ agentId: 'codex', task: 'fix it' }`, and deleting the `@` reports `null`.
 - [ ] **Step 2: Run** `pnpm vitest run src/test/mention-delegation.test.tsx`. Expected: FAIL.
 - [ ] **Step 3: Implement** the three files. Keep `mentionAt` unchanged, and keep mousedown-not-click on the rows so the prompt keeps focus, as the file rows do.
@@ -418,6 +441,7 @@ git commit -m "feat: delegate to an agent with an @ mention"
 - [ ] **Step 1: Write the failing tests**:
   - `composer-state.test.ts`, `the delegation note comes after the sign-in note`.
   - TopBar menu test: `lists Delegate after Rename and before Archive`, `a blocked Delegate is disabled with its reason`, `no Delegate for an empty reason`, `End delegation shows when it applies`.
+  - `delegation-app.test.tsx`, `Change opens the dialog with the agent and task, and its picks reach B`.
   - `delegation-app.test.tsx`, `typing @Codex and a task delegates instead of sending to A`: type `@Codex fix it` in a session, check the Send button reads `Delegate to Codex`, press it, and assert `acp_prompt` went to the new session with `fix it` (no mention) and not to A.
   - `delegation-app.test.tsx`, `delegating from a session starts the other agent and reports back`:
     - Seed two agents and a session with one message.
@@ -431,7 +455,10 @@ git commit -m "feat: delegate to an agent with an @ mention"
      - Build `delegationAgents` (agents in use that can start, with their `MentionAgentStatus` from the sign-in store and the install state). Pass it to `ComposerDock` only for a session on screen in the main window whose `delegateBlockedReason` is not `''`.
      - Keep the reported mention in state.
      - While it is set, `sendLabel` is `Delegate to ${name}`, and `mentionBlockedReason(...)` goes into `delegationBlock` ahead of the other delegation reasons.
-     - `sendFromComposer` with a mention calls `delegation.start(activeSessionId, agentId, task, attachments)` instead of `engine.send`, and gives the whole text back if it resolves false.
+     - `sendFromComposer` with a mention calls `delegation.start(activeSessionId, agentId, task, { attachments })` instead of `engine.send`, and gives the whole text back if it resolves false.
+     - Build `delegationSummary` with `startSummary` from the agent's `AgentOptions`: the remembered model's name (else its reported current model), that model's effort, and the reported default mode's name.
+     - **Change** opens `DelegateDialog` with `initialAgentId` and `initialTask`. Its Delegate starts B with the picks, then clears the composer. Cancel leaves the composer alone.
+     - `isWaiting` is the app's existing waiting check (the sidebar's `isSessionWaiting`).
   3. Call `delegation.onTurnEnded(id, reason)` inside the existing `onAttention`.
   4. Make `sendFromComposer` and the popout bridge's send refuse, giving the message back, when `delegation.sendBlockedReason(id)` is non-null.
   5. Add the reason to `isSendBlocked` and pass it as `delegationBlock`.

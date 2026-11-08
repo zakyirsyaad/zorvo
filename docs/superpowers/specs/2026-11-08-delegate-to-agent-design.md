@@ -41,6 +41,12 @@ Made with the user on 2026-11-08:
   with Codex"): a wrong guess would send the user's message to another agent, which then changes
   files. An agent that delegates on its own through a Zorvo MCP tool is a later sub-project, with
   the MCP servers work.
+- **B's first turn is never a hidden choice.** With a mention, a line under A's prompt says what B
+  starts on ("Codex starts on gpt-5.5-codex · high · Auto review") with **Change**, which opens the
+  dialog with Codex's model, effort and mode chips. Model and effort picks are remembered as a
+  draft's are; the mode is not (`REMEMBERED_CATEGORIES`), so B never starts in a risky mode it did
+  not show.
+- **A says when B waits for the user** ("Codex needs your answer"), not only when it works.
 - **B shows its own status line** while A works on B's report ("Claude Code is working on Codex's
   report"), mirroring A's line, so a blocked Send in B is explained where the user looks.
 
@@ -66,7 +72,8 @@ nesting and the agent message header. There is no new kind of visual element. Se
    (selects A). B's ⋯ menu has **End delegation**. While A works on one of B's reports, B shows
    "Claude Code is working on Codex's report" with **Open**, and its Send is blocked.
 4. While B works, A shows a turn status line under its last message: "Codex is working on the task
-   you delegated", the time since it started, and **Open** (selects B). After a failed turn of B it
+   you delegated", the time since it started, and **Open** (selects B). While B waits on a
+   permission or a question, it reads "Codex needs your answer". After a failed turn of B it
    shows "Codex's turn failed" with **Open**. A's ⋯ menu also has **End delegation**.
 5. When B's turn ends normally with an answer, A gets the report as a message with Codex's logo and
    "From Codex" over it, and starts working on it. The user can keep talking to B; each turn that
@@ -122,6 +129,18 @@ use that can start (an agent that needs Install cannot be picked, as in Compare;
 be picked, for a fresh second opinion). The task box is required: an empty task shows an inline
 error.
 
+**"<Agent> starts on" chips.** Under the task, the picked agent's model, effort and mode as
+composer chips, made as a new-session draft of that agent makes them (`acpControls` over its
+`AgentOptions`).
+- An agent whose options are unknown shows one "Default" chip. It is asked only when the chip opens,
+  as Compare's model chips are (`useAgentProbe`, `CompareModelStatus`), so opening the dialog starts
+  no agent.
+- Picks go to B's start as `StartSessionOptions.choices`, and `changesToApply` applies them before
+  the first prompt, as for a draft.
+- The model and effort are remembered for the agent's next draft (`withPreferred`, `withReported`);
+  the mode is not.
+- A mode that matches `RISKY_MODE` shows its `ShieldAlert`, as in the composer.
+
 **On Delegate:**
 
 1. Build the handoff with `buildForkHandoff(messages, lastMessageId, meta)`, with a header that says
@@ -174,6 +193,17 @@ composer has that agent's chips and commands, and the user goes on talking to B 
 turn starts with the agent's remembered choices; the user changes them in B's composer for the
 turns after.
 
+**What B starts on.** While the text names an agent that can start and nothing blocks Send, the
+note under the prompt is a summary of B's first turn instead of a reason, with **Change**:
+
+- "Codex starts on gpt-5.5-codex · high · Auto review": the model B will start on (its remembered
+  pick, else the default it last reported), the effort for that model when it has one, and the mode
+  the agent reported as its default. A part Zorvo does not know yet is left out.
+- When none is known (an agent never run): "Codex starts on its defaults."
+- **Change** opens the Delegate dialog with this agent picked, the task filled in (without the
+  mention) and the chips below. Delegating from there clears the composer, since the message left
+  in the dialog; Cancel leaves the composer as it was.
+
 **While the text names an agent:**
 - Send's label is **Delegate to Codex** (`sendLabel`, as Compare's "Start 2 sessions").
 - Send is blocked, with the note under the prompt, when:
@@ -185,7 +215,7 @@ turns after.
     needs a sign-in first.";
   - `delegateBlockedReason` gives a reason ("Codex already has a task from this session.").
 - A's turn still shows Stop in Send's place, as today.
-- Send calls `start(sourceId, agentId, task, attachments)`. The attachments go with B's first
+- Send calls `start(sourceId, agentId, task, { attachments })`. The attachments go with B's first
   message, and the composer is cleared as for any send. A refused start gives the whole text back,
   mention included, through the usual give-back path.
 
@@ -279,6 +309,14 @@ wins.
   after a dot) or "Not installed" (`fg-subtle`). An agent that cannot be picked is at 55% opacity,
   and its status describes its control. One choice only, so each row is a radio, not the draft's
   checkbox. The rows fill `surface-hover` when hovered or picked.
+- **"Starts on" summary** (Composer README, the note under the prompt): `caption` `fg-muted`,
+  "Codex starts on gpt-5.5-codex · high · Auto review", then **Change** as a text button in
+  `fg-secondary` with `focus-ring`. A blocking reason replaces it.
+- **Dialog chips** (Composer README, bottom row): a "Codex starts on" label in `ui` weight 500, then
+  28px borderless chips with `radius-md`, `ui-sm` `fg-secondary`, and a 12px chevron in `fg-muted`.
+  Their menus are the composer's `Popover`s.
+- **A's needs-answer line**: the status line's shape with a 6px `status-attention` dot and no ring,
+  "Codex needs your answer" in `ui` `fg-secondary`, and **Open**. It wins over "working".
 - **A's status line** (Message README, turn status): under A's last message, a 6px
   `status-running` dot with its soft 4px ring, "Codex is working on the task you delegated" in
   `ui` `fg-secondary`, the time since B's turn started in `caption` `fg-subtle`, then a 24px ghost

@@ -124,7 +124,7 @@ describe("verification copy", () => {
     expect(VERIFICATION_LABEL.checking).toBe("Checking the signature");
     expect(verificationKindText("provider_tee")).toBe("Signed by the model's TEE");
     expect(verificationKindText("gateway")).toBe("Signed by NEAR AI's attested gateway");
-    expect(verificationKindText(undefined)).toContain("unknown signer");
+    expect(verificationKindText(undefined)).toBe("Signed by a key in NEAR AI's attestation report");
   });
 
   it("shortens a long signer and leaves a short one as it is", () => {

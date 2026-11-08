@@ -73,6 +73,8 @@ impl Attestation {
     fn allows(&self, proof: &SignatureProof) -> bool {
         match proof.kind {
             SignatureKind::ProviderTee => self.model_signers.contains(&proof.signer),
+            // The gateway report has no request_nonce to bind. Without DCAP the nonce proves
+            // nothing extra, so the gateway signer is checked by address alone.
             SignatureKind::Gateway => self.gateway_signer.as_deref() == Some(proof.signer.as_str()),
             SignatureKind::Unknown => {
                 self.model_signers.contains(&proof.signer)
@@ -92,7 +94,8 @@ struct SignatureProof {
 enum SignatureLookup {
     Found(SignatureProof),
     NotFound,
-    Malformed,
+    /// A 2xx whose body says the signature is not available (or does not carry one): retry later.
+    Unavailable,
     Unreachable,
 }
 
@@ -103,6 +106,9 @@ struct SignatureAnswer {
     signing_address: String,
     #[serde(default)]
     signature_kind: Option<String>,
+    /// NEAR AI can answer 200 with an error body instead of a signature.
+    #[serde(default)]
+    error_code: Option<String>,
 }
 
 /// The signature and attestation checks, with their caches for this app run.
@@ -195,17 +201,7 @@ impl PrivateVerifier {
                         0,
                     );
                 }
-                SignatureLookup::Malformed => {
-                    self.emit(
-                        &mut out,
-                        &record,
-                        VerificationState::DidntVerify,
-                        None,
-                        None,
-                        0,
-                    );
-                }
-                SignatureLookup::Unreachable => {
+                SignatureLookup::Unavailable | SignatureLookup::Unreachable => {
                     self.retry_later(&mut out, &record, attempts);
                 }
                 SignatureLookup::Found(proof) => {
@@ -305,7 +301,7 @@ impl PrivateVerifier {
                 Ok((200, body)) => {
                     return match parse_signature(&body) {
                         Some(proof) => SignatureLookup::Found(proof),
-                        None => SignatureLookup::Malformed,
+                        None => SignatureLookup::Unavailable,
                     };
                 }
                 Ok((404, _)) => {
@@ -422,6 +418,15 @@ fn text_matches(proof: &SignatureProof, record: &ProxyRecord) -> bool {
 
 fn parse_signature(body: &str) -> Option<SignatureProof> {
     let answer: SignatureAnswer = serde_json::from_str(body).ok()?;
+    // A 2xx can say "not available" instead of signing, or carry an incomplete signature.
+    // Neither is tamper evidence: retry later, and never mark it Didn't verify.
+    if answer.error_code.is_some()
+        || answer.text.is_empty()
+        || answer.signature.is_empty()
+        || answer.signing_address.is_empty()
+    {
+        return None;
+    }
     let kind = match answer.signature_kind.as_deref() {
         Some(kind) if kind.eq_ignore_ascii_case("provider_tee") => SignatureKind::ProviderTee,
         Some(kind) if kind.eq_ignore_ascii_case("gateway") => SignatureKind::Gateway,
@@ -619,6 +624,19 @@ mod tests {
 
         assert_eq!(proof.kind, SignatureKind::Unknown);
         assert_eq!(proof.signer, "0xabc");
+    }
+
+    #[test]
+    fn an_error_code_makes_a_200_unavailable_even_with_signature_fields() {
+        let body = serde_json::json!({
+            "text": "req:resp",
+            "signature": "00",
+            "signing_address": "0xABC",
+            "error_code": "signature_unavailable"
+        })
+        .to_string();
+
+        assert!(parse_signature(&body).is_none());
     }
 
     #[test]

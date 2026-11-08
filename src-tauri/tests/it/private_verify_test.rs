@@ -274,6 +274,60 @@ fn a_gateway_signature_without_a_kind_is_accepted_as_unknown() {
 }
 
 #[test]
+fn a_200_error_code_is_unavailable_then_not_signed() {
+    let fake = FakeServer::start(|_request, stream| {
+        respond(
+            stream,
+            "200 OK",
+            &json!({
+                "error_code": "signature_unavailable",
+                "message": "Try again later."
+            })
+            .to_string(),
+        );
+    });
+    let verifier = PrivateVerifier::with_retry(&fake.base(), Duration::ZERO);
+    let record = record("chat-error-code");
+
+    let first = verifier.verify(vec![record.clone()], KEY);
+    let second = verifier.verify(vec![record.clone()], KEY);
+    let third = verifier.verify(vec![record], KEY);
+
+    assert_eq!(first[0].state, VerificationState::Checking);
+    assert_eq!(second[0].state, VerificationState::Checking);
+    assert_eq!(third[0].state, VerificationState::NotSigned);
+    assert_eq!(fake.requests().len(), 3);
+}
+
+#[test]
+fn a_200_missing_signature_is_unavailable_then_not_signed() {
+    let address = address_of(&signing_key());
+    let fake = FakeServer::start(move |_request, stream| {
+        respond(
+            stream,
+            "200 OK",
+            &json!({
+                "text": provider_text(),
+                "signing_address": address,
+                "signature_kind": "provider_tee"
+            })
+            .to_string(),
+        );
+    });
+    let verifier = PrivateVerifier::with_retry(&fake.base(), Duration::ZERO);
+    let record = record("chat-missing-signature");
+
+    let first = verifier.verify(vec![record.clone()], KEY);
+    let second = verifier.verify(vec![record.clone()], KEY);
+    let third = verifier.verify(vec![record], KEY);
+
+    assert_eq!(first[0].state, VerificationState::Checking);
+    assert_eq!(second[0].state, VerificationState::Checking);
+    assert_eq!(third[0].state, VerificationState::NotSigned);
+    assert_eq!(fake.requests().len(), 3);
+}
+
+#[test]
 fn a_text_mismatch_does_not_verify() {
     let address = address_of(&signing_key());
     let fake = FakeServer::start(move |request, stream| {

@@ -98,5 +98,5 @@ export const VERIFICATION_LABEL: Record<VerificationState, string> = {
 export function verificationKindText(kind: VerificationKind | undefined): string {
   if (kind === 'provider_tee') return "Signed by the model's TEE";
   if (kind === 'gateway') return "Signed by NEAR AI's attested gateway";
-  return 'The signature names an unknown signer';
+  return "Signed by a key in NEAR AI's attestation report";
 }

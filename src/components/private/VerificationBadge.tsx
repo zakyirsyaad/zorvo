@@ -69,10 +69,16 @@ export function VerificationBadge({ verification, onOpenUrl }: VerificationBadge
         <div className="flex w-64 flex-col gap-2 p-1.5">
           <p className="text-ui-sm text-fg-secondary">{detailOf(verification)}</p>
           {verification.state === "verified" && (
-            <p className="text-caption text-fg-subtle">
-              {signedCallsText(verification)}
-              {verification.signer ? ` · ${shortSigner(verification.signer)}` : ""}
-            </p>
+            <>
+              <p className="text-caption text-fg-subtle">
+                {signedCallsText(verification)}
+                {verification.signer ? ` · ${shortSigner(verification.signer)}` : ""}
+              </p>
+              <p className="text-caption text-fg-subtle">
+                Zorvo checked the signature against NEAR AI's attestation report. Check the hardware
+                attestation itself in the Verification Center.
+              </p>
+            </>
           )}
           {verification.state !== "verified" && (
             <p className="text-caption text-fg-subtle">{signedCallsText(verification)}</p>

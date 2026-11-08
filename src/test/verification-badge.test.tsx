@@ -46,6 +46,11 @@ describe("VerificationBadge", () => {
     const panel = screen.getByRole("dialog", { name: "Signature" });
     expect(within(panel).getByText("Signed by the model's TEE")).toBeInTheDocument();
     expect(within(panel).getByText("2 of 2 calls signed · 0x1234…5678")).toBeInTheDocument();
+    expect(
+      within(panel).getByText(
+        "Zorvo checked the signature against NEAR AI's attestation report. Check the hardware attestation itself in the Verification Center.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("names the attested gateway honestly", () => {
@@ -59,7 +64,7 @@ describe("VerificationBadge", () => {
     open({ ...VERIFIED, kind: undefined });
     fireEvent.click(screen.getByRole("button", { name: /Verified in TEE/ }));
 
-    expect(screen.getByText("The signature names an unknown signer")).toBeInTheDocument();
+    expect(screen.getByText("Signed by a key in NEAR AI's attestation report")).toBeInTheDocument();
   });
 
   it("explains a failure, a missing signature and a pending check", () => {

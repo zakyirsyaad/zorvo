@@ -65,6 +65,18 @@ function isPickable(agent: DelegateAgentChoice): boolean {
   return agent.status !== "not-installed";
 }
 
+/**
+ * Whether the agent reported anything to show. `acpControls` returns an empty
+ * object before an agent says its options, and that is still unknown: the
+ * dialog shows one Default chip until a real control appears.
+ */
+function hasControls(controls: ComposerControls | undefined): controls is ComposerControls {
+  return (
+    controls !== undefined &&
+    (controls.model !== undefined || controls.effort !== undefined || controls.permission !== undefined)
+  );
+}
+
 /** The agent picked when the dialog opens: Change's, else the first pickable one other than A's. */
 function initialAgentPick(
   agents: readonly DelegateAgentChoice[],
@@ -145,11 +157,17 @@ export function DelegateDialog({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onCancel();
+      if (event.key !== "Escape") return;
+      // An open chip's menu closes on the same keypress; only a second Escape discards the dialog.
+      if (openChip !== null) {
+        setOpenChip(null);
+        return;
+      }
+      onCancel();
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onCancel]);
+  }, [onCancel, openChip]);
 
   const picked = agents.find((agent) => agent.profile.id === agentId);
   const draft = picked ? controlsFor(picked.profile.id) : undefined;
@@ -201,7 +219,7 @@ export function DelegateDialog({
   };
 
   const controls = draft?.controls;
-  const chips = controls ? (
+  const chips = hasControls(controls) ? (
     <>
       {controls.model && renderChip("model", "Model", controls.model)}
       {controls.effort && renderChip("effort", "Effort", controls.effort)}

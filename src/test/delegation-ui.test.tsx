@@ -177,6 +177,44 @@ describe("the delegate dialog", () => {
     expect(screen.getByText("Asking Codex for its models…")).toBeInTheDocument();
   });
 
+  it("an agent whose controls are empty shows Default, and opening it asks", () => {
+    const onOpen = vi.fn();
+    renderDialog({
+      controlsFor: () => ({ agentName: "Codex", controls: {}, onOpen }),
+    });
+
+    expect(onOpen).not.toHaveBeenCalled();
+    const chip = screen.getByRole("button", { name: "Starts on: Default" });
+    fireEvent.click(chip);
+
+    expect(chip).toHaveAttribute("aria-expanded", "true");
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("Escape closes an open chip and keeps the dialog, and with no chip open closes the dialog", () => {
+    const { onCancel } = renderDialog({
+      controlsFor: () => ({ agentName: "Codex", controls: CHIP_CONTROLS }),
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Task" }), {
+      target: { value: "Fix the login bug" },
+    });
+
+    const chip = screen.getByRole("button", { name: "Model: gpt-5.5-codex" });
+    fireEvent.click(chip);
+    expect(chip).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Delegate to another agent" })).toBeInTheDocument();
+    expect(chip).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("textbox", { name: "Task" })).toHaveValue("Fix the login bug");
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
   it("says reports wait in the composer when the source is not running", () => {
     const { unmount } = render(
       <DelegateDialog

@@ -20,6 +20,8 @@ function register(secretHash: string, ip = "198.51.100.1"): Promise<Response> {
 
 /** A device with a fresh secret; the IP is unique per call so the rate limit never gets in the way. */
 let nextIp = 0;
+/** New devices one address may register in an hour (venues share one public address). */
+const REGISTRATIONS_PER_HOUR = 100;
 async function registerFresh(): Promise<{ secret: string; deviceId: string }> {
   const secret = randomSecret();
   nextIp += 1;
@@ -57,12 +59,12 @@ describe("POST /v1/devices", () => {
     expect(await res.json()).toEqual({ error: "bad_request" });
   });
 
-  it("answers the 11th registration from one IP within an hour with 429", async () => {
+  it("answers the 101st registration from one IP within an hour with 429", async () => {
     const ip = "192.0.2.20";
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < REGISTRATIONS_PER_HOUR; i += 1) {
       expect((await register(await sha256Hex(`limit-${i}`), ip)).status).toBe(201);
     }
-    const res = await register(await sha256Hex("limit-10"), ip);
+    const res = await register(await sha256Hex("limit-over"), ip);
     expect(res.status).toBe(429);
     expect(await res.json()).toEqual({ error: "rate_limited" });
     // Another IP is not affected.
@@ -70,7 +72,7 @@ describe("POST /v1/devices", () => {
   });
 
   it("counts requests without a CF-Connecting-IP header in one shared bucket", async () => {
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < REGISTRATIONS_PER_HOUR; i += 1) {
       const res = await call("/v1/devices", {
         method: "POST",
         body: JSON.stringify({ secretHash: await sha256Hex(`unknown-${i}`) }),
@@ -79,15 +81,15 @@ describe("POST /v1/devices", () => {
     }
     const res = await call("/v1/devices", {
       method: "POST",
-      body: JSON.stringify({ secretHash: await sha256Hex("unknown-10") }),
+      body: JSON.stringify({ secretHash: await sha256Hex("unknown-over") }),
     });
     expect(res.status).toBe(429);
   });
 
   it("opens a new window once the hour is over", async () => {
     const ip = "192.0.2.30";
-    for (let i = 0; i < 10; i += 1) await register(await sha256Hex(`window-${i}`), ip);
-    expect((await register(await sha256Hex("window-10"), ip)).status).toBe(429);
+    for (let i = 0; i < REGISTRATIONS_PER_HOUR; i += 1) await register(await sha256Hex(`window-${i}`), ip);
+    expect((await register(await sha256Hex("window-over"), ip)).status).toBe(429);
 
     const stub = ledgerEnv.LEDGER.get(ledgerEnv.LEDGER.idFromName("ledger"));
     await runInDurableObject(stub, (_ledger, state) => {
@@ -96,7 +98,7 @@ describe("POST /v1/devices", () => {
         `devices:${ip}`,
       );
     });
-    expect((await register(await sha256Hex("window-11"), ip)).status).toBe(201);
+    expect((await register(await sha256Hex("window-next"), ip)).status).toBe(201);
   });
 });
 

@@ -289,7 +289,10 @@ used. The freeze is a spend limit at the key's usage, not a deactivation; the ol
 the new one exists.
 
 Before it creates a device's key, the server revokes any key named `zorvo-<device id>` that it does not hold
-(left by a create whose answer was lost); no one has those keys' secrets.
+(left by a create whose answer was lost); no one has those keys' secrets. If the key list cannot be read, no
+key is created: the credit or rotation waits for its next retry. **Known cost:** a device's first credit reads
+the key list once more for this check (a rotation reuses the list it read after the freeze), on top of the
+tick's own stock refresh.
 
 A new key is handed over once (`GET /v1/key`) and is kept encrypted on the server for at most **24 hours**
 until the device collects it, then deleted for good. A key that was not collected in time is not lost
@@ -311,8 +314,10 @@ money: the device recovers with its own code, which issues a fresh key against t
 - Webhooks are accepted only with a valid HMAC signature and a fresh timestamp. The admin route needs
   `ADMIN_TOKEN` (compared in constant time); without it set, nobody is admin.
 - Registration, top-ups, promo attempts and recovery attempts are rate-limited per device or per address.
-  Promo attempts are limited per device (5 an hour) and per address (20 an hour), so registering more devices
-  buys no extra guesses. An unknown, used-up or already-redeemed code all answer the same `400`; only a valid
+  Registration allows 100 new devices an hour per address: a hackathon venue shares one public address, and a
+  device holds nothing until credits are paid for or redeemed. Promo attempts are limited per device (5 an hour,
+  every attempt) and per address (20 refused codes an hour; a redemption that works is not counted, so a
+  venue's devices can all redeem), so registering more devices buys no extra guesses. An unknown, used-up or already-redeemed code all answer the same `400`; only a valid
   code can get a `409` (`stock`, `device_cap`), which the app needs to tell the user why. Use generated codes
   (as above): a 64-bit code cannot be found at 20 guesses an hour.
   So are admin attempts (20 an hour per address, right or wrong) and wrong device secrets (after 60 in an

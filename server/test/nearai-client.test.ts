@@ -82,14 +82,14 @@ describe("path segments", () => {
 
 describe("upstream error codes", () => {
   it("keeps only a short code of safe characters", async () => {
-    const { fetcher } = stubFetch(() => json({ error: `${"x".repeat(500)}\n‮evil` }, 400));
+    const { fetcher } = stubFetch(() => json({ error: `${"x".repeat(500)}\n\u202Eevil` }, 400));
     const failure = (await new NearAiClient(BASE, fetcher).revokeKey("acc", "ws", "k").catch((error: unknown) => error)) as NearAiError;
     expect(failure).toBeInstanceOf(NearAiError);
     expect(failure.code).toMatch(/^[A-Za-z0-9_.:-]{1,64}$/);
   });
 
   it("drops a code with nothing safe in it", async () => {
-    const { fetcher } = stubFetch(() => json({ error: "‮\n " }, 400));
+    const { fetcher } = stubFetch(() => json({ error: "\u202E\n " }, 400));
     const failure = (await new NearAiClient(BASE, fetcher).revokeKey("acc", "ws", "k").catch((error: unknown) => error)) as NearAiError;
     expect(failure.code).toBeUndefined();
   });
@@ -109,6 +109,29 @@ describe("verifiableModels", () => {
       }),
     );
     expect((await new NearAiClient(BASE, fetcher).verifiableModels()).map((m) => m.id)).toEqual(["m/ok"]);
+  });
+
+  it("reads prices whose amount and scale are decimal digit strings, and refuses other strings", async () => {
+    const { fetcher } = stubFetch(() =>
+      json({
+        models: [
+          model("m/strings", { inputCostPerToken: { amount: "150", scale: "9" }, outputCostPerToken: { amount: "3", scale: 7 } }),
+          model("m/signed", { inputCostPerToken: { amount: "-1", scale: 9 } }),
+          model("m/decimal", { inputCostPerToken: { amount: "1.5", scale: 9 } }),
+          model("m/hex", { inputCostPerToken: { amount: "0x10", scale: 9 } }),
+        ],
+      }),
+    );
+    const models = await new NearAiClient(BASE, fetcher).verifiableModels();
+    expect(models.map((m) => m.id)).toEqual(["m/strings"]);
+    expect(models[0]!.inputPerM).toBeCloseTo(0.15, 10);
+    expect(models[0]!.outputPerM).toBeCloseTo(0.3, 10);
+  });
+
+  it("stops when the API ignores the offset and repeats the first page, without duplicates", async () => {
+    const { fetcher, calls } = stubFetch(() => json({ models: [model("m/a"), model("m/b")], total: 6 }));
+    expect((await new NearAiClient(BASE, fetcher).verifiableModels()).map((m) => m.id)).toEqual(["m/a", "m/b"]);
+    expect(calls).toHaveLength(2);
   });
 
   it("reads the following pages when the answer says there are more", async () => {

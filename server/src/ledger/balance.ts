@@ -113,14 +113,17 @@ export async function refreshForBalance(ctx: BalanceContext, deviceId: string, n
 
 /**
  * The models users may pick: the configured allowlist that NEAR AI marks verifiable, cached 10
- * minutes in memory and in SQLite. When NEAR AI cannot be read the last list is served however
- * old, also after an eviction; `upstream` only when there never was one.
+ * minutes in memory and in SQLite. When NEAR AI cannot be read, or names none of the allowlist, the
+ * last good list is served however old, also after an eviction; `upstream` only when there never was one.
  */
 export async function models(ctx: ModelsContext, now: number): Promise<{ models: ModelInfo[] } | { error: "upstream" }> {
   const cached = ctx.cachedModels();
   if (cached && now - cached.at < MODELS_CACHE_MS) return { models: cached.models };
   try {
     const list = await ctx.loadModelsOnce();
+    // An answer that names none of the allowlisted models is a fault upstream, not a new list: it is
+    // not stored over the last good one, which is served instead.
+    if (list.length === 0 && ctx.config().models.length > 0) throw new Error("NEAR AI listed none of the allowlisted models as verifiable");
     ctx.rememberModels({ models: list, at: now });
     return { models: list };
   } catch (error) {

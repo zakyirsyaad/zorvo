@@ -88,6 +88,14 @@ export class Ledger extends DurableObject<Env> {
     return { allowed: count <= limit };
   }
 
+  /** Whether `key` has used up `limit` hits in its current window, without counting one. */
+  private limitReached(key: string, limit: number, windowMs: number, now: number): boolean {
+    const row = this.sql
+      .exec<{ count: number; window_start: number }>("SELECT count, window_start FROM ratelimits WHERE key = ?", key)
+      .toArray()[0];
+    return row !== undefined && now - row.window_start < windowMs && row.count >= limit;
+  }
+
   /** The check and the insert run before the first await, so one secret hash can never register twice. */
   async registerDevice(secretHash: string): Promise<{ deviceId: string } | { error: "bad_request" }> {
     if (!SECRET_HASH.test(secretHash)) return { error: "bad_request" };
@@ -618,9 +626,22 @@ export class Ledger extends DurableObject<Env> {
   /**
    * Redeems a promo code (by its hash) for the device through the reservation and credit path. The
    * snapshot is made current first, as for a top-up; a use is taken only by the synchronous block.
+   * With `refusals`, a refused code counts one hit on its key, and once that has reached its limit
+   * in the window every attempt is `rate_limited` before the code is looked at; a redemption that
+   * works, or one refused for stock or the device cap, is not counted.
    */
-  async redeemPromo(deviceId: string, codeHash: string, now: number = Date.now()): Promise<PromoResult> {
-    if (promoRefusal(this.sql, codeHash, deviceId)) return { error: "bad_request" };
+  async redeemPromo(
+    deviceId: string,
+    codeHash: string,
+    now: number = Date.now(),
+    refusals?: { key: string; limit: number; windowMs: number },
+  ): Promise<PromoResult | { error: "rate_limited" }> {
+    if (refusals && this.limitReached(refusals.key, refusals.limit, refusals.windowMs, now)) return { error: "rate_limited" };
+    const refused = (): { error: "bad_request" } => {
+      if (refusals) this.rateLimit(refusals.key, refusals.limit, refusals.windowMs, now);
+      return { error: "bad_request" };
+    };
+    if (promoRefusal(this.sql, codeHash, deviceId)) return refused();
     await this.ensureAlarm();
     if (!(await this.stockIsCurrent(now))) return { error: "stock" };
     const context: PromoContext = {
@@ -629,7 +650,8 @@ export class Ledger extends DurableObject<Env> {
       reserve: (id, credits, usd, at) => this.reserve(id, credits, usd, at),
       holdForCredit: (topupId, at) => this.holdForCredit(topupId, at),
     };
-    return redeemPromo(context, deviceId, codeHash, now);
+    const result = redeemPromo(context, deviceId, codeHash, now);
+    return "error" in result && result.error === "bad_request" ? refused() : result;
   }
 
   /** Admin: creates or updates a promo code, stored by its hash. */

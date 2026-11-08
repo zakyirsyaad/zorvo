@@ -328,6 +328,26 @@ describe("models kept in storage", () => {
     expect(near.count("models")).toBe(0);
   });
 
+  it("keeps the last good list when NEAR AI answers none of the allowlisted models", async () => {
+    near.modelList = [model(first!)];
+    await stub().models(NOW);
+    near.modelList = [{ ...model(first!), verifiable: false }, model("not/allowlisted")];
+    const served = await stub().models(NOW + 11 * MINUTE_MS);
+    if ("error" in served) throw new Error("expected the last good list");
+    expect(served.models.map((m) => m.id)).toEqual([first]);
+    // Nor is the empty answer stored: after an eviction the good list is still there.
+    await runInDurableObject(stub(), (ledger: Ledger) => forgetModelsInMemory(ledger));
+    near.status.models = 503;
+    const after = await stub().models(NOW + 12 * MINUTE_MS);
+    if ("error" in after) throw new Error("expected the stored list");
+    expect(after.models.map((m) => m.id)).toEqual([first]);
+  });
+
+  it("answers upstream when the first list NEAR AI gives holds none of the allowlisted models", async () => {
+    near.modelList = [model("not/allowlisted")];
+    expect(await stub().models(NOW)).toEqual({ error: "upstream" });
+  });
+
   it("leaves out a stored model the allowlist no longer has", async () => {
     near.modelList = [model(first!), model(second!)];
     await stub().models(NOW);

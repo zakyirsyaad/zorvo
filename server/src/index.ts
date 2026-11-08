@@ -7,10 +7,11 @@ import { HOUR_MS } from "./time";
 
 export { Ledger } from "./ledger/Ledger";
 
-const REGISTRATIONS_PER_HOUR = 10;
+/** New devices per address and hour. High, since a venue shares one public address; a device holds nothing until it is paid for. */
+const REGISTRATIONS_PER_HOUR = 100;
 const TOPUPS_PER_HOUR = 10;
 const PROMO_ATTEMPTS_PER_HOUR = 5;
-/** Promo attempts per address and hour, across devices, so registering devices buys no extra guesses. */
+/** Refused promo attempts per address and hour, across devices, so registering devices buys no extra guesses. */
 const PROMO_ATTEMPTS_PER_IP_HOUR = 20;
 const RECOVER_ATTEMPTS_PER_HOUR = 5;
 /** Admin attempts per address and hour, right or wrong, so the token cannot be guessed at speed. */
@@ -105,18 +106,21 @@ async function adminPromo(req: Request, env: Env): Promise<Response> {
 }
 
 /**
- * Every attempt counts, wrong or malformed, so a code cannot be guessed at more than 5 an hour per
- * device or 20 an hour per address. Unknown, used-up and already-redeemed codes all answer the same
- * 400; only a valid code can reach the 409s (stock, device cap), which the app needs to word.
+ * Every attempt of a device counts, wrong or malformed, so a code cannot be guessed at more than 5 an
+ * hour per device. Per address only refused codes count (20 an hour, like `authenticate` counts only
+ * wrong secrets), so devices sharing a venue's address can all redeem. Unknown, used-up and
+ * already-redeemed codes all answer the same 400; only a valid code can reach the 409s (stock,
+ * device cap), which the app needs to word.
  */
 async function redeemPromoRoute(req: Request, env: Env, deviceId: string): Promise<Response> {
   const ledger = ledgerOf(env);
-  if (!(await ledger.rateLimit(`promo-ip:${clientIp(req)}`, PROMO_ATTEMPTS_PER_IP_HOUR, HOUR_MS)).allowed) return error("rate_limited", 429);
   if (!(await ledger.rateLimit(`promo:${deviceId}`, PROMO_ATTEMPTS_PER_HOUR, HOUR_MS)).allowed) return error("rate_limited", 429);
   const code = ((await req.json().catch(() => null)) as { code?: unknown } | null)?.code;
   if (typeof code !== "string" || code === "" || code.length > MAX_CODE_LENGTH) return error("bad_request", 400);
-  const result = await ledger.redeemPromo(deviceId, await sha256Hex(code), Date.now());
+  const refusals = { key: `promo-ip:${clientIp(req)}`, limit: PROMO_ATTEMPTS_PER_IP_HOUR, windowMs: HOUR_MS };
+  const result = await ledger.redeemPromo(deviceId, await sha256Hex(code), Date.now(), refusals);
   if (!("error" in result)) return json(result, 201);
+  if (result.error === "rate_limited") return error("rate_limited", 429);
   return result.error === "bad_request" ? error("bad_request", 400) : error(result.error, 409);
 }
 

@@ -115,15 +115,41 @@ describe("promo attempts", () => {
   });
 });
 
+describe("promo redemptions from one address", () => {
+  it("lets 25 devices behind one address redeem a valid code: only refused attempts count per address", async () => {
+    const ip = "198.51.100.90";
+    await stub().setSnapshot(1_000n * 1_000_000_000n, 0n, Date.now());
+    const code = `VENUE-${randomSecret(8)}`;
+    const added = await call("/v1/admin/promos", {
+      method: "POST",
+      ip: "198.51.100.91",
+      secret: ADMIN,
+      body: JSON.stringify({ code, credits: 100, maxUses: 30 }),
+    });
+    expect(added.status).toBe(200);
+    for (let i = 0; i < 25; i += 1) {
+      const res = await call("/v1/promo", { method: "POST", ip, secret: await registered(), body: JSON.stringify({ code }) });
+      expect(res.status).toBe(201);
+    }
+    // Refusals still count: 20 wrong codes from the address, then even a valid one is answered 429.
+    for (let i = 0; i < 20; i += 1) {
+      expect((await call("/v1/promo", { method: "POST", ip, secret: await registered(), body: JSON.stringify({ code: `WRONG-${i}` }) })).status).toBe(400);
+    }
+    const limited = await call("/v1/promo", { method: "POST", ip, secret: await registered(), body: JSON.stringify({ code }) });
+    expect(limited.status).toBe(429);
+    expect(await limited.json()).toEqual({ error: "rate_limited" });
+  });
+});
+
 describe("the rate limiter under concurrent requests", () => {
-  it("lets exactly 10 of 15 simultaneous registrations from one address through", async () => {
+  it("lets exactly 100 of 105 simultaneous registrations from one address through", async () => {
     const ip = "198.51.100.60";
-    const hashes = await Promise.all(Array.from({ length: 15 }, (_, i) => sha256Hex(`concurrent-${i}-${randomSecret()}`)));
+    const hashes = await Promise.all(Array.from({ length: 105 }, (_, i) => sha256Hex(`concurrent-${i}-${randomSecret()}`)));
     const answers = await Promise.all(
       hashes.map((secretHash) => call("/v1/devices", { method: "POST", ip, body: JSON.stringify({ secretHash }) })),
     );
     const statuses = answers.map((res) => res.status).sort();
-    expect(statuses.filter((status) => status === 201)).toHaveLength(10);
+    expect(statuses.filter((status) => status === 201)).toHaveLength(100);
     expect(statuses.filter((status) => status === 429)).toHaveLength(5);
   });
 });

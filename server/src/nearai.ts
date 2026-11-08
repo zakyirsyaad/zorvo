@@ -84,12 +84,22 @@ function toNano(value: unknown, what: string, round: "up" | "down"): bigint {
   return round === "up" && amount % divisor > 0n ? down + 1n : down;
 }
 
+/** The most decimal places a price may state; more is not a price NEAR AI would send. */
+const MAX_PRICE_SCALE = 30;
+
+/** A non-negative whole number from JSON: a number or a string of decimal digits; null for anything else. */
+function digits(value: unknown): number | null {
+  if (typeof value === "number") return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  if (typeof value === "string" && /^[0-9]{1,15}$/.test(value)) return Number(value);
+  return null;
+}
+
 /** Dollars per token from `{ amount, scale }`, for display only; null when it is not a price. */
 function dollars(value: unknown): number | null {
   if (!isRecord(value)) return null;
-  const { amount, scale } = value;
-  if (typeof amount !== "number" || !Number.isInteger(amount) || amount < 0) return null;
-  if (typeof scale !== "number" || !Number.isInteger(scale) || scale < 0 || scale > 30) return null;
+  const amount = digits(value.amount);
+  const scale = digits(value.scale);
+  if (amount === null || scale === null || scale > MAX_PRICE_SCALE) return null;
   return amount / 10 ** scale;
 }
 

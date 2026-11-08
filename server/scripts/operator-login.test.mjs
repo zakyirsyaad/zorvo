@@ -132,7 +132,7 @@ describe("the live path, with a fake NEAR AI", () => {
 
   it("explains a refusal with the server's text made visible, and the fallback", async () => {
     const fetcher = /** @type {typeof fetch} */ (
-      async () => new Response(JSON.stringify({ error: "bad‮sig", error_description: "line\nbreak⁦" }), { status: 401 })
+      async () => new Response(JSON.stringify({ error: "bad\u202Esig", error_description: "line\nbreak\u2066" }), { status: 401 })
     );
     const result = await inProcess(["operator.near", keyFile().path], fetcher);
     assert.equal(result.code, 1);
@@ -165,8 +165,8 @@ describe("signerFor", () => {
 
 describe("visible", () => {
   it("turns control, separator and bidi characters into spaces and cuts the text", () => {
-    assert.equal(visible("a\u0000b\u001bc d", 100), "a b c d");
-    assert.equal(visible("x‮y⁦z‏!؜?", 100), "x y z ! ?");
+    assert.equal(visible("a\u0000b\u001bc\u2028d", 100), "a b c d");
+    assert.equal(visible("x\u202Ey\u2066z\u200F!\u061C?", 100), "x y z ! ?");
     assert.equal(visible("abcdef", 3), "abc");
   });
 });

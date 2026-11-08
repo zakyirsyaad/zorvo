@@ -1,7 +1,7 @@
 import type { Config } from "../config";
 import { creditsFromNano, creditsLeft, spendLimitNano } from "../credits";
 import { encrypt } from "../crypto";
-import { NearAiError, type NearAiClient } from "../nearai";
+import { NearAiError, type ListedKey, type NearAiClient } from "../nearai";
 import { DAY_MS, HOUR_MS, MINUTE_MS, SECOND_MS } from "../time";
 import { clampNano, SINGLE_ROW_ID } from "./amounts";
 import { RESERVATION_GRACE_MS, RESERVATION_MS } from "./checkout";
@@ -496,12 +496,20 @@ async function revokeQuietly(ctx: FulfilmentContext, keyId: string, now: number)
  * Revokes the device's orphan keys before a new one is made: keys named `zorvo-<deviceId>` that are
  * not `keep` (the key a rotation replaces, revoked by its own item) and are no device's key. They
  * come from a create whose answer was lost, or from an eviction between a create and its record, so
- * no one holds their secret; revoking them keeps the workspace from filling with them. A failed
- * revoke is logged and does not stop the creation: the next one tries again.
+ * no one holds their secret; revoking them keeps the workspace from filling with them. `listed` is a
+ * key list the caller has just read (a rotation's read after the freeze), else the list is read
+ * here. A listing that fails throws, so no key is created without the check and the item retries;
+ * a revoke that fails is logged and does not stop the creation: the next one tries again.
  */
-async function revokeOrphans(ctx: FulfilmentContext, deviceId: string, keep: string | null, now: number): Promise<void> {
+async function revokeOrphans(
+  ctx: FulfilmentContext,
+  deviceId: string,
+  keep: string | null,
+  now: number,
+  listed?: readonly ListedKey[],
+): Promise<void> {
   const workspaceId = ctx.config().workspaceId;
-  const keys = await ctx.withAccessToken(now, (access) => ctx.nearAi().listKeys(access, workspaceId));
+  const keys = listed ?? (await ctx.withAccessToken(now, (access) => ctx.nearAi().listKeys(access, workspaceId)));
   const name = `zorvo-${deviceId}`;
   for (const key of keys) {
     if (key.name !== name || key.id === keep) continue;
@@ -572,7 +580,7 @@ async function rotateKey(ctx: FulfilmentContext, deviceId: string, itemId: strin
   if (!before?.nearai_key_id) return null;
   const oldKeyId = before.nearai_key_id;
 
-  const usageNano = await freezeKey(ctx, oldKeyId, now);
+  const { usageNano, listed } = await freezeKey(ctx, oldKeyId, now);
   const remaining = creditsLeft(before.credits_bought, usageNano, cfg);
 
   let created: { id: string; ciphertext: string } | null = null;
@@ -580,7 +588,7 @@ async function rotateKey(ctx: FulfilmentContext, deviceId: string, itemId: strin
     // The encryption key is tried first, so a bad one fails before a key exists upstream.
     const keyB64 = ctx.keyEncryptionKey();
     await encrypt(keyB64, "");
-    await revokeOrphans(ctx, deviceId, oldKeyId, now);
+    await revokeOrphans(ctx, deviceId, oldKeyId, now, listed);
     const limitNano = spendLimitNano(remaining, cfg);
     const key = await ctx.withAccessToken(now, (access) => ctx.nearAi().createKey(access, cfg.workspaceId, `zorvo-${deviceId}`, limitNano));
     created = { id: key.id, ciphertext: await encrypt(keyB64, key.key) };
@@ -622,10 +630,14 @@ async function rotateKey(ctx: FulfilmentContext, deviceId: string, itemId: strin
  * but that neither list read showed has an unknown usage: the rotation fails and retries rather
  * than carry over a balance from a usage on record that may be stale.
  */
-async function freezeKey(ctx: FulfilmentContext, keyId: string, now: number): Promise<bigint> {
+async function freezeKey(ctx: FulfilmentContext, keyId: string, now: number): Promise<{ usageNano: bigint; listed?: ListedKey[] }> {
   const cfg = ctx.config();
   const client = ctx.nearAi();
-  const usageOf = async () => (await ctx.withAccessToken(now, (access) => client.listKeys(access, cfg.workspaceId))).find((key) => key.id === keyId)?.usageNano ?? null;
+  let listed: ListedKey[] | undefined;
+  const usageOf = async () => {
+    listed = await ctx.withAccessToken(now, (access) => client.listKeys(access, cfg.workspaceId));
+    return listed.find((key) => key.id === keyId)?.usageNano ?? null;
+  };
   const stored = BigInt(ctx.sql.exec<{ usage_nano: number | null }>("SELECT usage_nano FROM key_usage WHERE key_id = ?", keyId).toArray()[0]?.usage_nano ?? 0);
 
   const first = await usageOf();
@@ -634,14 +646,15 @@ async function freezeKey(ctx: FulfilmentContext, keyId: string, now: number): Pr
   try {
     await ctx.withAccessToken(now, (access) => client.setSpendLimit(access, cfg.workspaceId, keyId, frozenAt));
   } catch (error) {
-    if (error instanceof NearAiError && error.status === 404) return first ?? stored;
+    if (error instanceof NearAiError && error.status === 404) return { usageNano: first ?? stored };
     throw error;
   }
   ctx.transaction(() => recordKeyLimit(ctx.sql, keyId, frozenAt));
   const second = await usageOf();
   const read = [first, second].filter((usage): usage is bigint => usage !== null);
   if (read.length === 0) throw new Error(`NEAR AI's key list does not show key ${keyId}, so its usage is unknown`);
-  return read.reduce((most, usage) => (usage > most ? usage : most));
+  // The list read after the freeze is handed on, so the orphan check before the create reads none of its own.
+  return { usageNano: read.reduce((most, usage) => (usage > most ? usage : most)), listed };
 }
 
 function readDevice(sql: SqlStorage, deviceId: string): { nearai_key_id: string | null; credits_bought: number } | undefined {

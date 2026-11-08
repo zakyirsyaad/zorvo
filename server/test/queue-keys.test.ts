@@ -55,6 +55,19 @@ describe("a refused access token on key calls", () => {
 });
 
 describe("NEAR AI keys the Ledger does not hold", () => {
+  it("does not create a key while the key list cannot be read: the credit waits for its retry", async () => {
+    await seedStock(h, 10_000, NOW - 30_000);
+    const { deviceId } = await newDevice();
+    const topupId = await paidTopup(h, deviceId);
+    h.near.status.list = 503;
+
+    await tick(NOW);
+
+    expect(await statusOf(topupId)).toBe("paid");
+    expect(h.near.count("create")).toBe(0);
+    expect(await queue()).toEqual([expect.objectContaining({ kind: "credit", attempts: 1 })]);
+  });
+
   it("revokes a device's orphan keys before it creates the device's key, and leaves other devices' keys alone", async () => {
     await seedStock(h, 10_000);
     const { deviceId } = await newDevice();
@@ -76,8 +89,17 @@ describe("NEAR AI keys the Ledger does not hold", () => {
     const { secret, deviceId, keyId } = await deviceWithKey();
     h.near.keys.set("orphan-2", { name: `zorvo-${deviceId}`, limitNano: 1n, usageNano: 0n, secret: "lost" });
     await recover(secret);
+    const creating = h.near.hold("create");
 
-    await tick(NOW + 1000);
+    await runInDurableObject(stub(), async (ledger: Ledger) => {
+      const running = ledger.runAlarm(NOW + 1000);
+      await creating.started;
+      // When the new key is created the orphan is gone and the key being replaced is still there.
+      expect(h.near.keys.has("orphan-2")).toBe(false);
+      expect(h.near.keys.has(keyId)).toBe(true);
+      creating.release();
+      await running;
+    });
 
     expect(h.near.keys.has("orphan-2")).toBe(false);
     expect(h.near.keys.has(keyId)).toBe(false);

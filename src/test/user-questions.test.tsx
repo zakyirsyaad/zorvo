@@ -93,7 +93,7 @@ describe("parseUserQuestions", () => {
   it("shows control characters and hidden marks as visible escapes, and cuts long text", () => {
     const parsed = parseUserQuestions(
       qwenToolCall([
-        { question: "Run‮evil?", header: "H", options: [{ label: "A\u0007" }, { label: "x".repeat(500) }], multiSelect: false },
+        { question: "Run\u202Eevil?", header: "H", options: [{ label: "A\u0007" }, { label: "x".repeat(500) }], multiSelect: false },
       ]),
     )!;
 
@@ -107,7 +107,7 @@ describe("text from the agent", () => {
   it("keeps the line breaks of a question and a description, and escapes every other hidden character", () => {
     const parsed = parseUserQuestions(
       qwenToolCall([
-        { question: "First line\nSecond‮line", options: [{ label: "A", description: "one\r\ntwo" }, { label: "B" }] },
+        { question: "First line\nSecond\u202Eline", options: [{ label: "A", description: "one\r\ntwo" }, { label: "B" }] },
       ]),
     )!;
 

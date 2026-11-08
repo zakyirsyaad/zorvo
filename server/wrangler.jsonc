@@ -16,9 +16,9 @@
     "DEVICE_CAP_CREDITS": "5000",
     "STOCK_BUFFER_NANO": "2000000000",
     "MODELS": "Qwen/Qwen3.8-27B,qwen/qwen3.5-397b-a17b,z-ai/glm-5.3,z-ai/glm-5.3-flash,moonshotai/kimi-k3,deepseek-ai/DeepSeek-V4.1-Flash-1017",
-    "WORKSPACE_ID": "set-me",
-    "ORGANIZATION_ID": "set-me",
-    "OPERATOR_ACCOUNT": "set-me",
+    "WORKSPACE_ID": "a294a09f-c9b0-4998-83e2-579330b324aa",
+    "ORGANIZATION_ID": "5fc317d1-dc92-40ce-aa2f-303f022d3d56",
+    "OPERATOR_ACCOUNT": "zorvo-ops.near",
     "NEAR_AI_BASE": "https://cloud-api.near.ai/v1",
     "PINGPAY_BASE": "https://pay.pingpay.io/api"
   }

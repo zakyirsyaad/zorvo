@@ -382,6 +382,11 @@ describe("useDelegation reports", () => {
     expect(env.givesBack[0].sessionId).toBe("s-a");
     expect(env.givesBack[0].text).toContain("Report from Codex");
     expect(env.notices).toEqual(["Codex's report is in the composer of Parser work."]);
+    // The report was delivered to A's composer, so A's line must not keep saying it is working.
+    expect(env.result.current.delegation.viewFor("s-a")).toMatchObject({
+      state: "reported",
+      reportedAt: expect.any(Number),
+    });
   });
 
   it("puts the report in A's composer when A's agent refuses the prompt", async () => {
@@ -402,6 +407,11 @@ describe("useDelegation reports", () => {
     expect(env.givesBack[0].text).toContain("Report from Codex");
     expect(env.notices).toEqual(["Codex's report is in the composer of Parser work."]);
     expect(env.result.current.delegation.sendBlockedReason("s-b")).toBeNull();
+    // Refused or not, the report reached A's composer: A's line reads delivered.
+    expect(env.result.current.delegation.viewFor("s-a")).toMatchObject({
+      state: "reported",
+      reportedAt: expect.any(Number),
+    });
   });
 
   it("sends nothing when the source is gone", async () => {

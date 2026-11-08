@@ -370,6 +370,8 @@ export function useDelegation(deps: DelegationDeps): {
         const report = reportMessage({ agentName, task: link.task, answer, files });
 
         if (!current.canPrompt(source.id)) {
+          // Waiting in A's composer is delivery: A's line shows the report, not a running turn.
+          outcomes.current.set(delegateId, { kind: 'reported', at: Date.now() });
           current.giveBack(source.id, report);
           current.onNotice(`${agentName}'s report is in the composer of ${source.name}.`);
           return;
@@ -389,6 +391,7 @@ export function useDelegation(deps: DelegationDeps): {
           return;
         }
         // The agent refused the prompt: the report waits in A's composer, as when A cannot take one.
+        outcomes.current.set(delegateId, { kind: 'reported', at: Date.now() });
         current.giveBack(source.id, report);
         current.onNotice(`${agentName}'s report is in the composer of ${source.name}.`);
       } finally {

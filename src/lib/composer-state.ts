@@ -141,6 +141,8 @@ export function composerNote(state: {
   agentToInstall?: string;
   /** The draft agent's name while its sign-in panel is open. */
   agentToSignIn?: string;
+  /** Why the mention, or the session's delegation pair, blocks Send; after the install and sign-in notes. */
+  delegationBlock?: string;
   /** The next message continues a session rather than starting one. */
   continuesSession: boolean;
 }): string | undefined {
@@ -148,6 +150,7 @@ export function composerNote(state: {
   if (state.compareCount !== undefined && state.compareCount >= 2) return COMPARE_NOTE;
   if (state.agentToInstall) return installPlaceholder(state.agentToInstall, state.continuesSession);
   if (state.agentToSignIn) return signInPlaceholder(state.agentToSignIn, state.continuesSession);
+  if (state.delegationBlock) return state.delegationBlock;
   return undefined;
 }
 

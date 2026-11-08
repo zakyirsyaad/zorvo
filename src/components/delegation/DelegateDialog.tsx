@@ -25,6 +25,12 @@ export interface DraftControls {
   agentName: string;
   /** `acpControls` over the agent's reported options; undefined when none are known. */
   controls?: ComposerControls;
+  /**
+   * Where the agent's permission mode lives: its `modes` list, or a `mode` config
+   * option. A config pick travels through the control's `onChange` (and so the
+   * caller's accumulator), never as a `modeId`.
+   */
+  modeKind?: "modes" | "config";
   /** Called when a chip's menu opens: asks an unknown agent for its options (never on mount). */
   onOpen?: () => void;
   /** What the chip's menu shows while asking, or after a failed ask. */
@@ -100,17 +106,21 @@ function selectedOf(
 
 /**
  * The picks as a start's choices: the mode and model have their own keys. A
- * pick is also passed to the control's `onChange`, since a config pick (the
- * effort, whose config id `ComposerControls` does not name) is only its
- * caller's to record.
+ * mode `modeId` is sent only for an agent whose modes are its own list, and
+ * only when the user picked one: a config-mode agent's pick travels through
+ * the control's `onChange` (the effort's config id is not named by
+ * `ComposerControls` either), and its reported value sent as a `modeId` would
+ * say a mode was picked, so `changesToApply` would skip the safe mode.
  */
 function choicesOf(
   controls: ComposerControls | undefined,
   picks: Readonly<Record<string, string | undefined>>,
+  modeKind: DraftControls["modeKind"],
 ): AcpChoices {
-  const modeId = controls?.permission
-    ? selectedOf(picks, "permission", controls.permission)
-    : undefined;
+  const modeId =
+    controls?.permission && modeKind === "modes" && Object.hasOwn(picks, "permission")
+      ? selectedOf(picks, "permission", controls.permission)
+      : undefined;
   const modelId = controls?.model ? selectedOf(picks, "model", controls.model) : undefined;
   return {
     ...(modeId !== undefined ? { modeId } : {}),
@@ -259,7 +269,7 @@ export function DelegateDialog({
       return;
     }
     if (agentId === null) return;
-    onDelegate(agentId, trimmed, choicesOf(controls, picks));
+    onDelegate(agentId, trimmed, choicesOf(controls, picks, draft?.modeKind));
   };
 
   return (

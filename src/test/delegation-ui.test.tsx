@@ -137,7 +137,7 @@ describe("the delegate dialog", () => {
 
   it("shows the picked agent's chips and passes the picks on Delegate", () => {
     const { onDelegate } = renderDialog({
-      controlsFor: () => ({ agentName: "Codex", controls: CHIP_CONTROLS }),
+      controlsFor: () => ({ agentName: "Codex", controls: CHIP_CONTROLS, modeKind: "modes" }),
     });
     expect(screen.getByText("Codex starts on")).toHaveClass("font-medium");
     expect(screen.getByRole("button", { name: "Effort: High" })).toBeInTheDocument();
@@ -161,6 +161,41 @@ describe("the delegate dialog", () => {
       modeId: "yolo",
       config: {},
     });
+  });
+
+  it("a config-mode agent sends no modeId, and its mode pick travels through the control", () => {
+    const setModeConfig = vi.fn();
+    const controls: ComposerControls = {
+      permission: {
+        options: [
+          { value: "default", label: "Default" },
+          { value: "bypassPermissions", label: "Bypass permissions", risky: true },
+        ],
+        // What draftInfo shows: the safe mode the session will start in, not the agent's configured one.
+        selected: "default",
+        onChange: setModeConfig,
+      },
+    };
+    const { onDelegate } = renderDialog({
+      sourceAgentName: "Codex",
+      controlsFor: () => ({ agentName: "Claude Code", controls, modeKind: "config" }),
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Task" }), {
+      target: { value: "Fix the login bug" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delegate" }));
+
+    // The chip's value is not a modeId: for a config-mode agent the mode is a config option,
+    // so the safe mode reaches it as a config change rather than being skipped as "picked".
+    expect(onDelegate).toHaveBeenCalledWith("claude-acp", "Fix the login bug", { config: {} });
+
+    fireEvent.click(screen.getByRole("button", { name: "Permission mode: Default" }));
+    fireEvent.click(screen.getByRole("option", { name: /Bypass permissions/ }));
+
+    // A config pick goes through the control's onChange, which App records in the dialog's accumulator.
+    expect(setModeConfig).toHaveBeenCalledWith("bypassPermissions");
+    fireEvent.click(screen.getByRole("button", { name: "Delegate" }));
+    expect(onDelegate).toHaveBeenLastCalledWith("claude-acp", "Fix the login bug", { config: {} });
   });
 
   it("an agent with unknown options shows Default and asks only when it opens", () => {
@@ -259,6 +294,47 @@ describe("the delegation status line", () => {
       <DelegationStatusLine view={view({ state: "reported" })} now={131_000} onOpen={onOpen} canAct />,
     );
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("the status region stays mounted, empty and out of layout while its line is hidden", () => {
+    const { rerender } = render(
+      <DelegationStatusLine
+        view={view({ role: "delegate", state: "working" })}
+        now={131_000}
+        onOpen={vi.fn()}
+        canAct
+        hidden
+      />,
+    );
+
+    const region = screen.getByRole("status");
+    expect(region).toBeEmptyDOMElement();
+    // No line means no column: the region is taken out of the flow rather than drawing an empty row.
+    expect(region).toHaveClass("sr-only");
+    expect(region).not.toHaveClass("mx-auto");
+
+    rerender(
+      <DelegationStatusLine
+        view={view({
+          role: "delegate",
+          otherSessionId: "s-a",
+          otherName: "Fix login bug",
+          agentName: "Claude Code",
+          state: "source-working",
+          workingSince: 123_000,
+        })}
+        delegateAgentName="Codex"
+        now={131_000}
+        onOpen={vi.fn()}
+        canAct
+        hidden={false}
+      />,
+    );
+
+    const shown = screen.getByRole("status");
+    expect(shown).toHaveTextContent("Claude Code is working on Codex's report");
+    expect(shown).toHaveClass("mx-auto", "w-full", "max-w-chat");
+    expect(shown).not.toHaveClass("sr-only");
   });
 
   it("the status line says a failed turn", () => {

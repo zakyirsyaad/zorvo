@@ -15,6 +15,12 @@ export interface DelegationStatusLineProps {
    * ("Claude Code is working on Codex's report").
    */
   delegateAgentName?: string;
+  /**
+   * Draw no line, but keep the status region mounted and empty: the host hides
+   * the line while the line does not apply (a turn of the session itself),
+   * not the region, which would then announce nothing when it appears.
+   */
+  hidden?: boolean;
 }
 
 /** The soft 4px ring the turn status gives its running dot. */
@@ -33,6 +39,7 @@ export function DelegationStatusLine({
   onOpen,
   canAct,
   delegateAgentName,
+  hidden = false,
 }: DelegationStatusLineProps) {
   const sessionId = view.otherSessionId;
   const open =
@@ -90,9 +97,11 @@ export function DelegationStatusLine({
       </div>
     );
   }
+  if (hidden) line = null;
 
   return (
-    <div role="status" className="mx-auto w-full max-w-chat">
+    // Out of the flow while it draws no line: mounted for the announcement, adding no row to the chat.
+    <div role="status" className={line === null ? "sr-only" : "mx-auto w-full max-w-chat"}>
       {line}
     </div>
   );

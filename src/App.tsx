@@ -1075,7 +1075,14 @@ export default function App() {
       setModel: (modelId) => recordDelegatePick(agentId, { modelId }),
       setConfigOption: (configId, value) => recordDelegatePick(agentId, { config: { [configId]: value } }),
     });
-    return { agentName, controls, onOpen, ...(status !== undefined ? { status } : {}) };
+    return {
+      agentName,
+      controls,
+      // A config-mode agent's mode pick is a config change, recorded above; it must not also go out as a modeId.
+      modeKind: options.modes ? "modes" : "config",
+      onOpen,
+      ...(status !== undefined ? { status } : {}),
+    };
   };
   /** Starts B with the dialog's picks, then clears the composer when Change opened it. */
   const handleDialogDelegate = (agentId: string, task: string, choices: AcpChoices) => {
@@ -1406,12 +1413,13 @@ export default function App() {
                       ) : undefined
                     }
                     delegationStatus={
-                      delegationView !== null && showsDelegationStatus ? (
+                      delegationView !== null ? (
                         <DelegationStatusLine
                           view={delegationView}
                           now={delegationNow}
                           onOpen={handleSelectSession}
                           canAct
+                          hidden={!showsDelegationStatus}
                           delegateAgentName={delegationView.role === "delegate" ? activeAgent?.name : undefined}
                         />
                       ) : undefined

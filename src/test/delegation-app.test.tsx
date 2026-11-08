@@ -135,6 +135,48 @@ function codexStartAnswer(args: Record<string, unknown> | undefined) {
   };
 }
 
+/**
+ * What Claude Code reports: its permission mode is a `mode` config option, not
+ * `modes`, and the user configured it to bypass permissions elsewhere.
+ */
+const CLAUDE_CONFIG_OPTIONS = {
+  modes: null,
+  configOptions: [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      currentValue: "opus",
+      options: [
+        { value: "opus", name: "Opus" },
+        { value: "sonnet", name: "Sonnet" },
+      ],
+    },
+    {
+      id: "mode",
+      name: "Mode",
+      category: "mode",
+      currentValue: "bypassPermissions",
+      options: [
+        { value: "default", name: "Default" },
+        { value: "acceptEdits", name: "Accept edits" },
+        { value: "bypassPermissions", name: "Bypass permissions" },
+      ],
+    },
+  ],
+};
+
+/** What Claude Code's session answers on start, in the config-mode shape. */
+function claudeStartAnswer(args: Record<string, unknown> | undefined) {
+  return {
+    acpSessionId: `acp-${String(args?.sessionId)}`,
+    agentCapabilities: {},
+    modes: null,
+    models: null,
+    configOptions: structuredClone(CLAUDE_CONFIG_OPTIONS.configOptions),
+  };
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   listeners.clear();
@@ -293,5 +335,109 @@ describe("delegating from the app", () => {
     );
     const report = callsTo(spy, "acp_prompt").find(([, args]) => args?.sessionId === "s-a");
     expect(String(report?.[1]?.text)).toMatch(/^Report from Codex/);
+  });
+
+  it("a config-mode agent starts in its safe mode when the dialog's mode is untouched", async () => {
+    seedSourceSession();
+    fakeStore().state.agentOptions = { "claude-acp": structuredClone(CLAUDE_CONFIG_OPTIONS) };
+    realInvoke = tauriInternals().invoke;
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) =>
+      cmd === "get_agent_profiles"
+        ? Promise.resolve(agentProfiles())
+        : cmd === "acp_start_session"
+          ? Promise.resolve(claudeStartAnswer(args))
+          : realInvoke(cmd, args),
+    );
+    await act(async () => {
+      render(<App />);
+    });
+    await screen.findByText("Refactor the parser");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: /Delegate to another agent/ }));
+    });
+
+    const dialog = await screen.findByRole("dialog", { name: "Delegate to another agent" });
+    // Claude Code is the first ready agent other than A's Qwen Code, and its mode is a config option.
+    expect(within(dialog).getByRole("radio", { name: /Claude Code/ })).toBeChecked();
+    // The chip shows the mode the session will start in, not the one configured outside Zorvo.
+    expect(within(dialog).getByRole("button", { name: "Permission mode: Default" })).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.change(within(dialog).getByRole("textbox", { name: "Task" }), {
+        target: { value: "Implement step 2 of the plan" },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Delegate" }));
+    });
+
+    await waitFor(() => expect(callsTo(spy, "acp_start_session")).toHaveLength(1));
+    const sessionId = String(callsTo(spy, "acp_start_session")[0][1]?.sessionId);
+    // The safe mode reaches the agent through its mode config option; the configured risky mode does not.
+    await waitFor(() =>
+      expect(callsTo(spy, "acp_set_config_option").map(([, args]) => args)).toContainEqual({
+        sessionId,
+        configId: "mode",
+        value: "default",
+      }),
+    );
+    expect(callsTo(spy, "acp_set_config_option").map(([, args]) => args)).not.toContainEqual({
+      sessionId,
+      configId: "mode",
+      value: "bypassPermissions",
+    });
+    expect(callsTo(spy, "acp_set_mode")).toHaveLength(0);
+  });
+
+  it("keeps the delegation status region mounted before its line appears", async () => {
+    seedSourceSession();
+    const spy = await renderApp();
+    await screen.findByText("Refactor the parser");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: /Delegate to another agent/ }));
+    });
+    const dialog = await screen.findByRole("dialog", { name: "Delegate to another agent" });
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("radio", { name: /Codex/ }));
+    });
+    await act(async () => {
+      fireEvent.change(within(dialog).getByRole("textbox", { name: "Task" }), {
+        target: { value: "Implement step 2 of the plan" },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Delegate" }));
+    });
+    await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
+
+    // B is on screen with no line of its own yet: the live region is mounted, empty and out of layout.
+    const canvas = within(screen.getByTestId("chat-canvas-container"));
+    // B's first turn also has the canvas's working indicator; the delegation region is the other status.
+    const delegationRegion = () => {
+      const region = canvas
+        .getAllByRole("status")
+        .find((element) => element.getAttribute("data-testid") !== "agent-working");
+      expect(region).toBeDefined();
+      return region as HTMLElement;
+    };
+    expect(delegationRegion()).toBeEmptyDOMElement();
+    expect(delegationRegion()).toHaveClass("sr-only");
+
+    // A, which delegated, has a line while B works: the same region now reads.
+    const sidebar = within(screen.getByRole("complementary"));
+    await act(async () => {
+      fireEvent.click(sidebar.getByText("Fix login bug"));
+    });
+    await waitFor(() =>
+      expect(delegationRegion()).toHaveTextContent("Codex is working on the task you delegated"),
+    );
+    expect(delegationRegion()).not.toHaveClass("sr-only");
   });
 });

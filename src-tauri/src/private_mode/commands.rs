@@ -4,6 +4,7 @@
 //! never a message.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use tauri::State;
 
@@ -12,15 +13,17 @@ use super::client::{
 };
 use super::device::{keychain_service, KeychainStore};
 use super::local_state::PendingTopup;
+use super::proxy::PrivateProxy;
 use super::service::{PrivateMode, PrivateStatus};
 use super::{PrivateError, CREDITS_BASE_URL};
 
 const STATE_DIR: &str = "private";
 
 /// The `PrivateMode` the app manages: the Keychain, the Credits Worker at
-/// `CREDITS_BASE_URL`, `<data_dir>/private` and the system browser. A base URL
-/// the client refuses leaves private mode offline instead of stopping the app.
-pub fn private_mode_for(data_dir: &Path) -> PrivateMode {
+/// `CREDITS_BASE_URL`, `<data_dir>/private`, the system browser and the loopback
+/// proxy. A base URL the client refuses leaves private mode offline instead of
+/// stopping the app.
+pub fn private_mode_for(data_dir: &Path, proxy: Arc<PrivateProxy>) -> PrivateMode {
     let api: Box<dyn CreditsApi> = match HttpCredits::new(CREDITS_BASE_URL) {
         Ok(api) => Box::new(api),
         Err(error) => {
@@ -36,6 +39,7 @@ pub fn private_mode_for(data_dir: &Path) -> PrivateMode {
         api,
         data_dir.join(STATE_DIR),
         Box::new(crate::windows::open_url),
+        proxy,
     )
 }
 

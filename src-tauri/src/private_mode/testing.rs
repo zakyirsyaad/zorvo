@@ -14,6 +14,7 @@ use super::client::{
 };
 use super::device::{MemoryStore, SecretStore, DEVICE_SECRET};
 use super::local_state::LocalState;
+use super::proxy::PrivateProxy;
 use super::service::PrivateMode;
 use super::PrivateError;
 
@@ -363,6 +364,7 @@ impl Harness {
         let recorder = Arc::clone(&opened);
         let opens_fail = Arc::new(AtomicBool::new(false));
         let failing = Arc::clone(&opens_fail);
+        let proxy = Arc::new(PrivateProxy::with_upstream("http://127.0.0.1:1/v1"));
         let mode = PrivateMode::new(
             Box::new(Arc::clone(&store)),
             Box::new(Arc::clone(&api)),
@@ -374,6 +376,7 @@ impl Harness {
                 lock(&recorder).push(url.to_string());
                 Ok(())
             }),
+            Arc::clone(&proxy),
         );
         Self {
             mode,

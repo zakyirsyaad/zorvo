@@ -10,7 +10,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -19,6 +19,7 @@ use url::Url;
 use super::client::{Balance, CreditsApi, ModelPrice, PromoResult, Stock, TopupState};
 use super::device::{new_recovery_code, secret_hash, SecretStore, DEVICE_SECRET, NEARAI_KEY};
 use super::local_state::{CachedModels, LastBalance, LocalState, PendingTopup};
+use super::proxy::{IssuedToken, PrivateProxy};
 use super::PrivateError;
 
 mod recovery;
@@ -93,6 +94,8 @@ pub struct PrivateMode {
     api: Box<dyn CreditsApi>,
     dir: PathBuf,
     open: Opener,
+    /// The loopback proxy private launches talk to; it holds the real key.
+    proxy: Arc<PrivateProxy>,
     models: Mutex<Option<(Instant, Vec<ModelPrice>)>>,
     checkouts: Mutex<HashMap<String, String>>,
     /// The current secret is known to the server, this run.
@@ -121,12 +124,14 @@ impl PrivateMode {
         api: Box<dyn CreditsApi>,
         dir: PathBuf,
         open: Opener,
+        proxy: Arc<PrivateProxy>,
     ) -> Self {
         Self {
             store,
             api,
             dir,
             open,
+            proxy,
             models: Mutex::new(None),
             checkouts: Mutex::new(HashMap::new()),
             registered: AtomicBool::new(false),
@@ -368,9 +373,25 @@ impl PrivateMode {
         }
     }
 
-    /// The key a private Qwen Code launch puts in its env.
+    /// The NEAR AI key a private launch's proxy adds upstream; it never enters the agent's process.
     pub fn launch_key(&self) -> Result<String, PrivateError> {
         self.store.get(NEARAI_KEY)?.ok_or(PrivateError::NoKey)
+    }
+
+    /// A fresh proxy token for a private launch of `session_id`. The key is read here and handed
+    /// only to the loopback proxy.
+    pub fn issue_proxy_token(
+        &self,
+        session_id: &str,
+        model_id: &str,
+    ) -> Result<IssuedToken, PrivateError> {
+        let key = self.launch_key()?;
+        self.proxy.issue(session_id, model_id, &key)
+    }
+
+    /// Drops the proxy token of a stopped or exited session; its records stay for verification.
+    pub fn release_proxy_token(&self, session_id: &str) {
+        self.proxy.release(session_id);
     }
 
     // ---- private sessions ----

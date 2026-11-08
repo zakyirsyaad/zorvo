@@ -6,6 +6,7 @@ pub mod commands;
 pub mod device;
 pub mod launch;
 pub mod local_state;
+pub mod proxy;
 pub mod service;
 #[cfg(test)]
 pub(crate) mod testing;

@@ -283,8 +283,10 @@ before it edits files or runs commands. Pick another mode in the composer.
   or tokens. Agents sign in with their own tools, and pull request data comes
   from your own `gh` login. The one exception is Private mode, which you turn
   on yourself: Zorvo then keeps this Mac's credits secret and the NEAR AI key
-  its private Qwen Code sessions use in your macOS Keychain, and hands the key
-  only to those sessions.
+  its private Qwen Code sessions use in your macOS Keychain. The key never
+  enters the agent: each private session gets a one-time token for a loopback
+  proxy in Zorvo's backend, which adds the key and forwards the agent's model
+  requests to NEAR AI.
 - **GitHub stays in your `gh`.** Zorvo asks your `gh` whether you are signed in
   to github.com and reads only your login and name, to show them in the sidebar
   and in Settings. It stores neither, never reads or keeps a token, and
@@ -304,6 +306,9 @@ before it edits files or runs commands. Pick another mode in the composer.
     Private mode or turn on a draft's Private chip, and then at start to read
     your balance and to follow a top-up still waiting from before. It sees this
     Mac's credits, never your prompts or code;
+  - NEAR AI Cloud (`cloud-api.near.ai`), only while a private session runs: the
+    loopback proxy forwards the agent's model requests there with the key.
+    Prompts go straight to NEAR AI; the Credits server never sees them;
   - this repository's releases on GitHub, to ask whether a newer Zorvo exists
     (`github.com/zakyirsyaad/zorvo`, shortly after Zorvo starts, then
     about once a day) and, when you click **Update & restart**, to download it

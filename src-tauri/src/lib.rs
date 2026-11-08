@@ -31,7 +31,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use acp::commands::{event_payload, ACP_EVENT};
-use acp::manager::AcpManager;
+use acp::manager::{AcpEvent, AcpManager};
 use acp::terminal_auth::{sign_in_event_payload, SIGN_IN_TERMINAL_EVENT};
 use installer::commands::{clean_up_at_start, versions_in_use, AppInstaller};
 use installer::layout::ToolsDir;
@@ -178,12 +178,20 @@ fn end_orphaned_sessions(
     app: AppHandle,
     pty: State<'_, PtySessionManager>,
     acp: State<'_, acp::manager::AcpManager>,
+    private: State<'_, private_mode::service::PrivateMode>,
 ) -> usize {
     let terminals = pty.session_ids();
     // Agent sessions are taken off the routes here, not just listed: the new UI
     // reopens a saved session under the same app session id, and that one
     // must not be what the thread below ends. (PTY ids are never reused.)
-    let agents: Vec<_> = acp.session_ids().iter().map(|id| acp.detach(id)).collect();
+    let agents: Vec<_> = acp
+        .session_ids()
+        .iter()
+        .map(|id| {
+            private.release_proxy_token(id);
+            acp.detach(id)
+        })
+        .collect();
     let count = terminals.len() + agents.len();
     std::thread::spawn(move || {
         workspace_terminal::end_sessions(&app.state::<PtySessionManager>(), &terminals);
@@ -346,11 +354,19 @@ pub fn run() {
     }));
 
     let acp_holder = Arc::clone(&app_handle_holder);
+    // The loopback proxy private launches talk to. It starts on the first private launch; its
+    // tokens go when their session exits, and the listener goes with the app.
+    let private_proxy = Arc::new(private_mode::proxy::PrivateProxy::new());
+    let proxy_for_events = Arc::clone(&private_proxy);
     let acp_manager = AcpManager::new(Box::new(move |event| {
+        if let AcpEvent::Exited { session_id, .. } = &event {
+            proxy_for_events.release(session_id);
+        }
         if let Some(app) = acp_holder.lock().ok().and_then(|guard| guard.clone()) {
             let _ = app.emit(ACP_EVENT, event_payload(&event));
         }
     }));
+    let proxy_for_setup = Arc::clone(&private_proxy);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -380,7 +396,10 @@ pub fn run() {
             // Builds clients only. The UI's first `private_status`, sent at start for
             // every user, reads the Keychain items; the Worker is asked only once this
             // Mac has a device.
-            app.manage(private_mode::commands::private_mode_for(&data_dir));
+            app.manage(private_mode::commands::private_mode_for(
+                &data_dir,
+                proxy_for_setup,
+            ));
             let (store, migration) = data_migration::open_store(data_dir);
             app.manage(store);
             if let Err(error) = migration {

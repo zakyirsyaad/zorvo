@@ -58,12 +58,12 @@ pub struct AcpLaunch {
     pub program: String,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
-    /// A Zorvo Private session: the env holds the NEAR AI key. Only
-    /// `private_mode::launch::private_launch` sets this.
+    /// A Zorvo Private session: the env holds a loopback proxy token, never the
+    /// NEAR AI key. Only `private_mode::launch::private_launch` sets this.
     pub private: bool,
 }
 
-/// Prints the environment's names only: a private launch holds the NEAR AI key
+/// Prints the environment's names only: a private launch holds a proxy token
 /// in its env, and no `{:?}` may ever print it.
 impl std::fmt::Debug for AcpLaunch {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

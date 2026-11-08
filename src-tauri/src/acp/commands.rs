@@ -17,7 +17,7 @@ use super::terminal_auth::{is_sign_in_terminal_id, CANCELLED_MESSAGE};
 use crate::env_resolver::cached_user_env;
 use crate::files::ensure_known_workspace;
 use crate::installer::commands::versions_in_use;
-use crate::private_mode::launch::{ensure_qwen, private_launch};
+use crate::private_mode::launch::{ensure_qwen, offered_model, private_launch};
 use crate::private_mode::service::PrivateMode;
 use crate::private_mode::{PrivateError, PRIVATE_CREDITS_PREFIX};
 use crate::profiles::{agent_profile_from, with_system_tools, AgentProfile};
@@ -215,6 +215,7 @@ fn credits_empty_error() -> String {
 /// private model is named, every failure is an error: this never falls back to a
 /// plain launch, which would run the session on the user's own account.
 fn session_launch(
+    session_id: &str,
     base: impl FnOnce() -> Result<AcpLaunch, String>,
     private: &PrivateMode,
     profile_id: &str,
@@ -224,25 +225,34 @@ fn session_launch(
     let Some(model_id) = private_model_id else {
         return Ok(launch);
     };
-    // Before anything is read or asked: another agent never sees the key.
+    // Before anything is read or asked: another agent never sees a token.
     ensure_qwen(profile_id)?;
     let models = private.models()?;
-    let key = private.launch_key().map_err(|error| match error {
-        PrivateError::NoKey | PrivateError::NoDevice => credits_empty_error(),
-        other => other.into(),
-    })?;
-    Ok(private_launch(launch, profile_id, model_id, &models, &key)?)
+    if !offered_model(model_id, &models) {
+        return Err(PrivateError::UnknownModel.into());
+    }
+    let issued = private
+        .issue_proxy_token(session_id, model_id)
+        .map_err(|error| match error {
+            PrivateError::NoKey | PrivateError::NoDevice => credits_empty_error(),
+            other => other.into(),
+        })?;
+    Ok(private_launch(
+        launch, profile_id, model_id, &models, &issued,
+    )?)
 }
 
 /// [`launch_in_workspace`] for a session that may be private.
 fn launch_for_session(
     store: &AppStore,
     private: &PrivateMode,
+    session_id: &str,
     cwd: &str,
     profile_id: &str,
     private_model_id: Option<&str>,
 ) -> Result<AcpLaunch, String> {
     session_launch(
+        session_id,
         || launch_in_workspace(store, cwd, profile_id),
         private,
         profile_id,
@@ -283,6 +293,7 @@ pub fn acp_start_session(
     let launch = launch_for_session(
         &store,
         &private,
+        &session_id,
         &cwd,
         &profile_id,
         private_model_id.as_deref(),
@@ -366,6 +377,7 @@ pub fn acp_reopen_session(
             launch_for_session(
                 &store,
                 &private,
+                &session_id,
                 &cwd,
                 &profile_id,
                 private_model_id.as_deref(),
@@ -683,7 +695,12 @@ pub fn acp_qwen_last_api_error(
 }
 
 #[tauri::command(async)]
-pub fn acp_stop_session(manager: State<'_, AcpManager>, session_id: String) {
+pub fn acp_stop_session(
+    manager: State<'_, AcpManager>,
+    private: State<'_, PrivateMode>,
+    session_id: String,
+) {
+    private.release_proxy_token(&session_id);
     manager.stop(&session_id);
 }
 

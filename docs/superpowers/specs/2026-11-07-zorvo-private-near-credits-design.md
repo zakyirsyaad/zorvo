@@ -230,9 +230,10 @@ Settings (`wrangler.jsonc`): credits per USD paid (100), burn per USD of cost (1
 | `client.rs` | `ureq` client for the Credits Worker; the base URL is a compile-time constant and the only host it calls. |
 | `models.rs` | Cached `GET /models`; validates a model id before launch. |
 | `service.rs`, `local_state.rs`, `launch.rs` | The logic behind the commands; `<app data>/private/state.json` (recovery flags, pending top-up, last balance, last model list), kept apart from `state.json`; the private launch. |
+| `proxy/` | The loopback proxy private launches talk to: one listener on 127.0.0.1:0, per-session tokens, forwarding to NEAR AI, and the in-memory records of completion ids and SHA-256 hashes. |
 | `commands.rs` | `private_status`, `private_stock`, `private_models`, `private_create_topup`, `private_open_checkout`, `private_topup_status`, `private_cancel_topup`, `private_redeem_promo`, `private_recovery_code`, `private_mark_recovery`, `private_recover`, `private_forget_device`. All are `#[tauri::command(async)]`. Rust opens the checkout URL itself, and only on `pay.pingpay.io`. |
 
-Launch: `acp_start_session` gains an optional `private_model_id`. When set and the agent is `qwen-code`, `launch_for` appends `--auth-type openai --openai-base-url https://cloud-api.near.ai/v1 --model <id>` after validating the id against `models.rs`, and the spawn gets `OPENAI_API_KEY` from the Keychain in that process's env only. The UI still sends ids, never arguments. Any other agent with a private model id is refused.
+Launch: `acp_start_session` gains an optional `private_model_id`. When set and the agent is `qwen-code`, `launch_for` appends `--auth-type openai --openai-base-url http://127.0.0.1:<port>/v1 --model <id>` after validating the id against `models.rs`, and the spawn gets `OPENAI_API_KEY` set to a fresh per-session proxy token and `OPENAI_BASE_URL` to that loopback URL; the NEAR AI key never enters the agent. The backend's one loopback proxy (`proxy/`, 127.0.0.1:0, started on the first private launch) maps each token to its app session, model and key, accepts only `POST /v1/chat/completions` and `GET /v1/models`, checks that the request's model is the token's, adds the real key, forwards the exact request bytes to `https://cloud-api.near.ai/v1`, streams the answer back byte for byte, and keeps in memory each completion's id and the SHA-256 of the exact request and response bytes (at most 500 per session, never the bodies). A token is dropped when its session stops or exits. The UI still sends ids, never arguments. Any other agent with a private model id is refused.
 
 Errors: for a private session, an ACP error `-32603` whose details carry `402` / `api_key_limit_exceeded` becomes `PRIVATE_CREDITS:{"reason":"empty"}`, and `401` becomes `PRIVATE_CREDITS:{"reason":"key"}`, mirroring `ACP_AUTH_REQUIRED:` in `acp/manager.rs`.
 
@@ -254,7 +255,7 @@ Built as milestones M6–M8 (section 14) after the core works end to end. Sizes 
 
 **A. Agents know their credits (M6, `agents`, size M).** For private sessions Zorvo passes one stdio MCP server in `session/new` `mcpServers` (today it sends `[]`, `acp/manager.rs`). The server offers `credits_balance` (credits left, ≈ turns left on the current model) and `private_models` (TEE models with price per 1M tokens and ≈ credits per turn). It reads them from the Credits Worker with the device secret, which it gets in its process env only. An agent can then plan its work, or suggest a cheaper model when credits run low.
 
-**B. "Verified in TEE" per answer (M6, `privacy`, size M).** Zorvo starts private Qwen Code with `--openai-logging-dir <per-session folder in the app data dir>`, reads the completion ids from those logs, calls `GET /v1/signature/{id}` with the device's key, and verifies the `provider_tee` ECDSA signature over `model:sha256(request):sha256(response)`. The answer gets a "Verified in TEE" badge, with the signer address and a link to NEAR AI's Verification Center. First task: check the log format and whether the logs store prompts; if they do, Zorvo deletes each log file once the id is read, and the folder is removed with the session.
+**B. "Verified in TEE" per answer (M6, `privacy`, size M).** The private launch goes through Zorvo's loopback proxy (8.1), the only place that holds the exact bytes NEAR AI signs. For each private completion the proxy records the completion id and the SHA-256 of the exact request and response bytes, never the bodies (at most 500 records per session, in memory only). At each turn end Zorvo reads the session's unchecked records, calls `GET /v1/signature/{id}` with the device's key, and verifies the signature: `provider_tee` signs `model:sha256(request):sha256(response)`; a gateway signature signs `sha256(request):sha256(response)`. The answer gets a "Verified in TEE" badge, with the signer address and a link to NEAR AI's Verification Center. Qwen's own logs are not read, so no prompt is ever copied for verification.
 
 **C. Low-balance warning (M6, size S).** Below 50 credits the composer note warns and a system notification fires once per crossing.
 
@@ -297,10 +298,10 @@ Built as milestones M6–M8 (section 14) after the core works end to end. Sizes 
 - Prompts never pass through the Credits server.
 - The server stores only hashes of device secrets and promo codes, NEAR AI key ids, an encrypted key for at most 24 hours until handover, and the operator's NEAR AI access and refresh tokens, both encrypted with the key-encryption key, plus a hash of the refresh-token secret (to notice a replaced seed).
 - A leaked database exposes no usable key and no device secret.
-- The NEAR AI key lives in the Keychain and only in the env of a private Qwen Code process; flags in argv carry no secret.
+- The NEAR AI key lives in the Keychain and only in the backend's loopback proxy; a private Qwen Code process gets a per-session token instead, and flags in argv carry no secret.
 - PingPay webhooks are accepted only with a valid, fresh signature.
 - The operator's full-access NEAR key stays on the operator's Mac.
-- `main` is untouched; the branch README states what changes there (one extra host, one stored key).
+- `main` is untouched; the branch README states what changes there (two extra hosts — the Credits Worker and NEAR AI Cloud — and one stored key).
 
 ## 12. Testing
 

@@ -1,14 +1,15 @@
-//! Turns a Qwen Code launch into a private one: NEAR AI Cloud as the endpoint,
-//! the Zorvo key, endpoint and model in the process env and nothing else from
-//! the user's `OPENAI_*` variables. This is the trust boundary for the key and the endpoint: the
-//! webview only names a model, and only a model Zorvo's own list offers.
+//! Turns a Qwen Code launch into a private one: the loopback proxy as the endpoint, a per-session
+//! token, endpoint and model in the process env and nothing else from the user's `OPENAI_*`
+//! variables. This is the trust boundary for the key and the endpoint: the webview only names a
+//! model, and only a model Zorvo's own list offers. The NEAR AI key itself stays in the backend.
 
 use super::client::ModelPrice;
+use super::proxy::IssuedToken;
 use super::PrivateError;
 use crate::acp::manager::AcpLaunch;
 use crate::registry::resolve::canonical_agent_id;
 
-/// The only endpoint a private session talks to.
+/// The only upstream a private session's proxy talks to.
 pub const NEAR_AI_BASE_URL: &str = "https://cloud-api.near.ai/v1";
 
 /// Longest model id Zorvo passes to an agent.
@@ -67,6 +68,11 @@ fn is_model_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'/' | b'-'))
 }
 
+/// Whether `model_id` is a shape Zorvo may pass to an agent and is on the list the Worker offers.
+pub(crate) fn offered_model(model_id: &str, models: &[ModelPrice]) -> bool {
+    is_model_id(model_id) && models.iter().any(|model| model.id == model_id)
+}
+
 /// Whether `arg` is one of the flags [`private_launch`] sets, alone or as
 /// `--flag=value`, or any telemetry flag.
 fn is_own_flag(arg: &str) -> bool {
@@ -86,21 +92,22 @@ fn is_own_flag(arg: &str) -> bool {
 /// `launch` for a private session on `model_id`: the registry's own arguments
 /// first (refused if they already pick an auth type, endpoint or model, or set
 /// a telemetry flag), then the flag that keeps prompts out of telemetry and
-/// the flags that point Qwen Code at NEAR AI Cloud (the user's
+/// the flags that point Qwen Code at the loopback proxy (the user's
 /// `~/.qwen/settings.json` would otherwise win over the env), and an env that
-/// sets `OPENAI_API_KEY` to `key`, `OPENAI_BASE_URL` and `OPENAI_MODEL` too
-/// (Qwen reads a workspace `.env` without overriding what is already set, so a
-/// `.env` cannot point the session elsewhere) and has none of the user's other
-/// `OPENAI_*` variables. The key goes in the env only, never in an argument.
+/// sets `OPENAI_API_KEY` to `issued.token`, `OPENAI_BASE_URL` and
+/// `OPENAI_MODEL` too (Qwen reads a workspace `.env` without overriding what
+/// is already set, so a `.env` cannot point the session elsewhere) and has
+/// none of the user's other `OPENAI_*` variables. The token goes in the env
+/// only, never in an argument; the NEAR AI key stays in the backend.
 pub fn private_launch(
     launch: AcpLaunch,
     profile_id: &str,
     model_id: &str,
     models: &[ModelPrice],
-    key: &str,
+    issued: &IssuedToken,
 ) -> Result<AcpLaunch, PrivateError> {
     ensure_qwen(profile_id)?;
-    if !is_model_id(model_id) || !models.iter().any(|model| model.id == model_id) {
+    if !offered_model(model_id, models) {
         return Err(PrivateError::UnknownModel);
     }
     if launch.args.iter().any(|arg| is_own_flag(arg)) {
@@ -113,7 +120,7 @@ pub fn private_launch(
             "--auth-type",
             "openai",
             "--openai-base-url",
-            NEAR_AI_BASE_URL,
+            issued.base_url.as_str(),
             "--model",
             model_id,
         ]
@@ -125,8 +132,8 @@ pub fn private_launch(
         .filter(|(name, _)| !name.starts_with(OPENAI_ENV_PREFIX))
         .collect();
     env.extend([
-        (KEY_VARIABLE.to_string(), key.to_string()),
-        (BASE_URL_VARIABLE.to_string(), NEAR_AI_BASE_URL.to_string()),
+        (KEY_VARIABLE.to_string(), issued.token.clone()),
+        (BASE_URL_VARIABLE.to_string(), issued.base_url.clone()),
         (MODEL_VARIABLE.to_string(), model_id.to_string()),
     ]);
     Ok(AcpLaunch {
@@ -142,7 +149,16 @@ mod tests {
     use super::*;
 
     const MODEL: &str = "Qwen/Qwen3.8-27B";
-    const KEY: &str = "sk-test";
+    const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const REAL_KEY: &str = "sk-test";
+    const PROXY_BASE: &str = "http://127.0.0.1:45678/v1";
+
+    fn issued() -> IssuedToken {
+        IssuedToken {
+            token: TOKEN.to_string(),
+            base_url: PROXY_BASE.to_string(),
+        }
+    }
 
     fn models() -> Vec<ModelPrice> {
         super::super::testing::model_list()
@@ -165,7 +181,7 @@ mod tests {
     }
 
     fn launch(env: &[(&str, &str)]) -> AcpLaunch {
-        private_launch(base(env), "qwen-code", MODEL, &models(), KEY).expect("private launch")
+        private_launch(base(env), "qwen-code", MODEL, &models(), &issued()).expect("private launch")
     }
 
     fn value<'a>(launch: &'a AcpLaunch, name: &str) -> Option<&'a str> {
@@ -190,7 +206,7 @@ mod tests {
                 "--auth-type",
                 "openai",
                 "--openai-base-url",
-                "https://cloud-api.near.ai/v1",
+                PROXY_BASE,
                 "--model",
                 MODEL,
             ]
@@ -200,12 +216,15 @@ mod tests {
     }
 
     #[test]
-    fn the_zorvo_key_is_in_the_env_and_in_no_argument() {
+    fn the_proxy_token_is_in_the_env_and_the_real_key_is_nowhere() {
         let launched = launch(&[("PATH", "/usr/bin")]);
 
-        assert_eq!(value(&launched, "OPENAI_API_KEY"), Some(KEY));
+        assert_eq!(value(&launched, "OPENAI_API_KEY"), Some(TOKEN));
         assert_eq!(value(&launched, "PATH"), Some("/usr/bin"));
-        assert!(launched.args.iter().all(|arg| !arg.contains(KEY)));
+        assert!(launched.args.iter().all(|arg| !arg.contains(TOKEN)));
+        let text = format!("{launched:?}");
+        assert!(!text.contains(REAL_KEY), "{text}");
+        assert!(!text.contains(TOKEN), "{text}");
     }
 
     #[test]
@@ -230,11 +249,8 @@ mod tests {
         assert_eq!(
             openai,
             [
-                ("OPENAI_API_KEY".to_string(), KEY.to_string()),
-                (
-                    "OPENAI_BASE_URL".to_string(),
-                    "https://cloud-api.near.ai/v1".to_string()
-                ),
+                ("OPENAI_API_KEY".to_string(), TOKEN.to_string()),
+                ("OPENAI_BASE_URL".to_string(), PROXY_BASE.to_string()),
                 ("OPENAI_MODEL".to_string(), MODEL.to_string()),
             ]
         );
@@ -246,9 +262,9 @@ mod tests {
         // Qwen loads `.env` without overriding variables that are already set.
         let launched = launch(&[]);
 
-        assert_eq!(value(&launched, "OPENAI_BASE_URL"), Some(NEAR_AI_BASE_URL));
+        assert_eq!(value(&launched, "OPENAI_BASE_URL"), Some(PROXY_BASE));
         assert_eq!(value(&launched, "OPENAI_MODEL"), Some(MODEL));
-        assert_eq!(value(&launched, "OPENAI_API_KEY"), Some(KEY));
+        assert_eq!(value(&launched, "OPENAI_API_KEY"), Some(TOKEN));
     }
 
     #[test]
@@ -285,7 +301,7 @@ mod tests {
                 .args
                 .extend(extra.iter().map(|arg| arg.to_string()));
 
-            let result = private_launch(with_flags, "qwen-code", MODEL, &models(), KEY);
+            let result = private_launch(with_flags, "qwen-code", MODEL, &models(), &issued());
 
             assert_eq!(result, Err(PrivateError::BadRequest), "{extra:?}");
         }
@@ -298,7 +314,7 @@ mod tests {
             .args
             .extend(["--experimental-skills", "--model-x", "-mx"].map(String::from));
 
-        let launched = private_launch(with_flags, "qwen-code", MODEL, &models(), KEY);
+        let launched = private_launch(with_flags, "qwen-code", MODEL, &models(), &issued());
 
         assert!(launched.is_ok());
     }
@@ -312,14 +328,14 @@ mod tests {
             "no-such-agent",
             "",
         ] {
-            let result = private_launch(base(&[]), id, MODEL, &models(), KEY);
+            let result = private_launch(base(&[]), id, MODEL, &models(), &issued());
             assert_eq!(result, Err(PrivateError::NotQwen), "{id}");
         }
     }
 
     #[test]
     fn the_legacy_qwen_id_is_qwen_code() {
-        let launched = private_launch(base(&[]), "qwen", MODEL, &models(), KEY)
+        let launched = private_launch(base(&[]), "qwen", MODEL, &models(), &issued())
             .expect("qwen is the legacy id of qwen-code");
 
         assert!(launched.private);
@@ -341,14 +357,20 @@ mod tests {
                 input_per_m: 0.1,
                 output_per_m: 0.1,
             }];
-            let result = private_launch(base(&[]), "qwen-code", id, &listed, KEY);
+            let result = private_launch(base(&[]), "qwen-code", id, &listed, &issued());
             assert_eq!(result, Err(PrivateError::UnknownModel), "{id:?}");
         }
     }
 
     #[test]
     fn a_model_of_the_right_shape_that_is_not_offered_is_refused() {
-        let result = private_launch(base(&[]), "qwen-code", "Other/Model-1", &models(), KEY);
+        let result = private_launch(
+            base(&[]),
+            "qwen-code",
+            "Other/Model-1",
+            &models(),
+            &issued(),
+        );
 
         assert_eq!(result, Err(PrivateError::UnknownModel));
     }
@@ -362,7 +384,7 @@ mod tests {
             output_per_m: 0.1,
         }];
 
-        let launched = private_launch(base(&[]), "qwen-code", &id, &listed, KEY).expect("ok");
+        let launched = private_launch(base(&[]), "qwen-code", &id, &listed, &issued()).expect("ok");
 
         assert_eq!(launched.args.last(), Some(&id));
     }

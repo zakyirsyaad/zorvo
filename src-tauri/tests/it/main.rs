@@ -28,6 +28,7 @@ mod installer_layout_test;
 mod installer_plan_test;
 mod installer_prerequisites_test;
 mod installer_runtimes_test;
+mod private_proxy_test;
 mod profiles_test;
 mod pty_session_test;
 mod registry_catalog_test;

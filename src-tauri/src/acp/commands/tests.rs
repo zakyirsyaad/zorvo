@@ -481,8 +481,8 @@ fn a_plain_session_launch_is_the_plain_launch_and_never_touches_private_mode() {
     let harness = Harness::new();
     let base = plain_launch(&[("PATH", "/usr/bin")]);
 
-    let launch =
-        session_launch(|| Ok(base.clone()), &harness.mode, "qwen-code", None).expect("launches");
+    let launch = session_launch("s1", || Ok(base.clone()), &harness.mode, "qwen-code", None)
+        .expect("launches");
 
     assert_eq!(launch, base);
     assert!(!launch.private);
@@ -497,7 +497,7 @@ fn a_plain_session_of_any_agent_is_untouched_by_a_stored_key() {
         let base = plain_launch(&[("OPENAI_API_KEY", "user")]);
 
         let launch =
-            session_launch(|| Ok(base.clone()), &harness.mode, id, None).expect("launches");
+            session_launch("s1", || Ok(base.clone()), &harness.mode, id, None).expect("launches");
 
         assert_eq!(launch, base, "{id}");
     }
@@ -508,6 +508,7 @@ fn a_plain_session_launch_error_is_passed_on() {
     let harness = Harness::new();
 
     let err = session_launch(
+        "s1",
         || Err("Qwen Code is not installed".to_string()),
         &harness.mode,
         "qwen-code",
@@ -519,11 +520,12 @@ fn a_plain_session_launch_error_is_passed_on() {
 }
 
 #[test]
-fn a_private_session_runs_on_the_zorvo_key_and_the_near_endpoint() {
+fn a_private_session_runs_on_a_proxy_token_and_the_loopback_endpoint() {
     let harness = harness_with_key();
     let base = plain_launch(&[("OPENAI_API_KEY", "user"), ("OPENAI_BASE_URL", "http://x")]);
 
     let launch = session_launch(
+        "s1",
         || Ok(base.clone()),
         &harness.mode,
         "qwen-code",
@@ -532,17 +534,25 @@ fn a_private_session_runs_on_the_zorvo_key_and_the_near_endpoint() {
     .expect("launches");
 
     assert!(launch.private);
-    assert_eq!(
-        launch.env,
-        [
-            ("OPENAI_API_KEY".to_string(), "sk-zorvo".to_string()),
-            (
-                "OPENAI_BASE_URL".to_string(),
-                "https://cloud-api.near.ai/v1".to_string()
-            ),
-            ("OPENAI_MODEL".to_string(), "Qwen/Qwen3.8-27B".to_string()),
-        ]
+    let env = |name: &str| {
+        launch
+            .env
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.as_str())
+    };
+    let token = env("OPENAI_API_KEY").expect("proxy token");
+    let base_url = env("OPENAI_BASE_URL").expect("proxy base URL");
+    assert_eq!(token.len(), 64, "{token}");
+    assert!(
+        token.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "{token}"
     );
+    assert_ne!(token, "sk-zorvo");
+    assert!(base_url.starts_with("http://127.0.0.1:"), "{base_url}");
+    assert!(base_url.ends_with("/v1"), "{base_url}");
+    assert_eq!(env("OPENAI_MODEL"), Some("Qwen/Qwen3.8-27B"));
+    assert!(launch.args.iter().all(|arg| !arg.contains("sk-zorvo")));
     assert_eq!(
         &launch.args[2..],
         [
@@ -550,7 +560,7 @@ fn a_private_session_runs_on_the_zorvo_key_and_the_near_endpoint() {
             "--auth-type",
             "openai",
             "--openai-base-url",
-            "https://cloud-api.near.ai/v1",
+            base_url,
             "--model",
             "Qwen/Qwen3.8-27B",
         ]
@@ -562,6 +572,7 @@ fn a_private_session_without_a_key_asks_for_credits() {
     let harness = Harness::new();
 
     let err = session_launch(
+        "s1",
         || Ok(plain_launch(&[])),
         &harness.mode,
         "qwen-code",
@@ -579,6 +590,7 @@ fn a_private_session_never_falls_back_to_a_plain_launch() {
     harness.api.models.always(Err(PrivateError::Unreachable));
 
     let err = session_launch(
+        "s1",
         || Ok(plain_launch(&[])),
         &harness.mode,
         "qwen-code",
@@ -594,6 +606,7 @@ fn a_private_model_the_list_does_not_offer_is_refused() {
     let harness = harness_with_key();
 
     let err = session_launch(
+        "s1",
         || Ok(plain_launch(&[])),
         &harness.mode,
         "qwen-code",
@@ -609,6 +622,7 @@ fn a_private_session_of_another_agent_is_refused_before_the_key_is_read() {
     let harness = harness_with_key();
     for id in ["claude-acp", "codex-acp"] {
         let err = session_launch(
+            "s1",
             || Ok(plain_launch(&[])),
             &harness.mode,
             id,
@@ -626,6 +640,7 @@ fn a_private_session_in_an_agent_that_cannot_start_reports_that_first() {
     let harness = harness_with_key();
 
     let err = session_launch(
+        "s1",
         || Err("Qwen Code is not installed".to_string()),
         &harness.mode,
         "qwen-code",
@@ -646,6 +661,7 @@ fn a_private_session_is_checked_against_the_workspaces_like_any_other() {
         let err = launch_for_session(
             &scratch.store(),
             &harness.mode,
+            "s1",
             &scratch.folder(),
             "qwen-code",
             model,

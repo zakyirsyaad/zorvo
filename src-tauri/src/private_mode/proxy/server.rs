@@ -119,6 +119,11 @@ impl TokenTable {
             .cloned()
     }
 
+    fn key_of(&self, app_session_id: &str) -> Option<String> {
+        let token = self.token_of(app_session_id)?;
+        self.by_token.get(&token).map(|entry| entry.key.clone())
+    }
+
     /// Removes one holder; the token goes only when no session is left on that process.
     fn release(&mut self, app_session_id: &str) {
         let Some(token) = self.by_session.remove(app_session_id) else {
@@ -312,6 +317,12 @@ impl ProxyServer {
             return Vec::new();
         };
         lock(&self.state.records).records(&token)
+    }
+
+    /// The key behind a session's current or last token, for a billing read. It never leaves the
+    /// backend or reaches an event.
+    pub(super) fn key(&self, app_session_id: &str) -> Option<String> {
+        lock(&self.state.tokens).key_of(app_session_id)
     }
 
     /// A deleted session leaves no lookup; its records go with the last token on its process.

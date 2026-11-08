@@ -7,6 +7,7 @@ import {
   modelLabel,
   type PrivateStatus,
 } from "../../lib/private-credits";
+import { formatUsageCredits, usageLead } from "../../lib/private-usage";
 import type { ChatMessage, Session } from "../../types";
 import { Button } from "../ui/Button";
 
@@ -17,7 +18,7 @@ const WHERE_IT_RUNS =
   "NEAR AI Cloud, inside Intel TDX and NVIDIA confidential computing. The credits server never sees your prompts.";
 
 export interface PrivateInspectorProps {
-  session: Pick<Session, "privateMode">;
+  session: Pick<Session, "privateMode" | "privateUsage">;
   /** What the app already read: the status, and the models once Settings or the draft's chip loaded them. Nothing is asked here. */
   credits: Pick<PrivateCredits, "status" | "models">;
   /** The session's replies, to count its turns and verified answers. */
@@ -57,10 +58,18 @@ export function PrivateInspector({ session, credits, messages = [], onTopUp, onO
   const turns = messages.filter((message) => message.role === "user").length;
   const answers = messages.filter((message) => message.role === "agent");
   const verified = answers.filter((message) => message.verification?.state === "verified").length;
+  const usage = session.privateUsage ?? { credits: 0, estimated: false };
+  const average =
+    turns > 0 && session.privateUsage !== undefined ? formatUsageCredits(usage.credits / turns) : "—";
 
   return (
     <aside aria-label="Private panel" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui text-fg-secondary">
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-5">
+        <Section heading="This session">
+          <span className="text-2xl font-semibold leading-[30px] tracking-[-0.02em] text-fg">
+            {usageLead(usage.credits, usage.estimated)}
+          </span>
+        </Section>
         <dl className="flex flex-col text-ui-sm">
           <div className="flex items-center gap-2 border-b border-border py-2">
             <dt className="flex-1 text-fg-muted">Model</dt>
@@ -79,7 +88,7 @@ export function PrivateInspector({ session, credits, messages = [], onTopUp, onO
           </div>
           <div className="flex items-center gap-2 py-2">
             <dt className="flex-1 text-fg-muted">Average per turn</dt>
-            <dd className="text-fg-subtle">—</dd>
+            <dd className="text-fg-secondary">{average}</dd>
           </div>
         </dl>
         <div

@@ -20,7 +20,7 @@ use super::PrivateError;
 pub use mcp::{McpState, SharedModels};
 use records::lock;
 
-pub use records::ProxyRecord;
+pub use records::{ProxyRecord, TokenUsage};
 
 /// A token for one private launch and the base URL the agent should use. The token is a
 /// capability, not the NEAR AI key; it is dropped when its session stops.
@@ -116,6 +116,14 @@ impl PrivateProxy {
         lock(&self.server)
             .as_ref()
             .is_some_and(|server| server.share(source, fork))
+    }
+
+    /// The key behind `app_session_id`'s current or last token, for a billing read. Backend only:
+    /// it is never returned to the UI.
+    pub fn key(&self, app_session_id: &str) -> Option<String> {
+        lock(&self.server)
+            .as_ref()
+            .and_then(|server| server.key(app_session_id))
     }
 
     /// The completed calls of `app_session_id`, oldest first. A stopped session keeps its last token's

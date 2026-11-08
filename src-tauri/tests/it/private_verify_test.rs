@@ -159,6 +159,8 @@ fn sign(text: &str) -> String {
 fn record(id: &str) -> ProxyRecord {
     ProxyRecord {
         chat_id: Some(id.to_string()),
+        inference_id: None,
+        usage: None,
         model: MODEL.to_string(),
         request_sha256: REQUEST_SHA.to_string(),
         response_sha256: RESPONSE_SHA.to_string(),

@@ -13,7 +13,7 @@ use hyper::{Request, Response, StatusCode};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
-use super::records::{now_ms, sha256_hex, RecordBuilder};
+use super::records::{now_ms, sanitize_inference_id, sha256_hex, RecordBuilder};
 use super::server::{ProxyBody, ProxyState, TokenEntry};
 
 /// The most one agent request may carry. Qwen's requests are far smaller; a larger body is refused
@@ -103,10 +103,16 @@ pub(super) async fn chat(
     };
     let status = upstream.status();
     let content_type = upstream.headers().get(CONTENT_TYPE).cloned();
+    let inference_id = upstream
+        .headers()
+        .get("inference-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(sanitize_inference_id);
     let record = status.is_success().then(|| {
         RecordBuilder::new(
             &entry.token,
             &entry.app_session_id,
+            inference_id,
             &entry.model,
             request_sha256,
             started,

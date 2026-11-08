@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
+use super::billing::OfflineBilling;
 use super::client::{
     Balance, CreatedTopup, CreditsApi, ModelPrice, PromoResult, Stock, TopupState,
 };
@@ -379,6 +380,7 @@ impl Harness {
             }),
             Arc::clone(&proxy),
             PrivateVerifier::with_retry("http://127.0.0.1:1/v1", Duration::ZERO),
+            Arc::new(OfflineBilling),
         );
         Self {
             mode,

@@ -161,6 +161,26 @@ describe("PrivateInspector", () => {
     expect(screen.getByText("Average per turn").parentElement).toHaveTextContent("—");
     expect(screen.queryByText("Didn't verify")).toBeNull();
   });
+
+  it("shows this session's usage and the average per turn, about when estimated", () => {
+    const messages = [
+      { id: "u-1", role: "user" as const, content: "", timestamp: 1 },
+      { id: "u-2", role: "user" as const, content: "", timestamp: 2 },
+    ] satisfies ChatMessage[];
+    render(
+      <PrivateInspector
+        session={{ ...SESSION, privateUsage: { credits: 6.2, estimated: true } }}
+        credits={{ status: READY, models: null }}
+        messages={messages}
+        onTopUp={vi.fn()}
+        onOpenUrl={vi.fn()}
+      />,
+    );
+
+    const section = screen.getByRole("region", { name: "This session" });
+    expect(section).toHaveTextContent("about 6.2 credits");
+    expect(screen.getByText("Average per turn").parentElement).toHaveTextContent("3.1 credits");
+  });
 });
 
 describe("offeredTabs", () => {

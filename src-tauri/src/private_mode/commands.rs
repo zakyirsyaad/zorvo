@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use tauri::State;
 
+use super::billing::{default_billing, PrivateSessionUsage};
 use super::client::{
     Balance, CreatedTopup, CreditsApi, HttpCredits, ModelPrice, PromoResult, Stock, TopupState,
 };
@@ -47,6 +48,7 @@ pub fn private_mode_for(
         Box::new(crate::windows::open_url),
         proxy,
         PrivateVerifier::new(NEAR_AI_BASE_URL),
+        default_billing(),
     );
     if let Some(path) = mcp_script {
         mode.set_mcp_script(path);
@@ -176,6 +178,16 @@ pub fn private_verify(
     session_id: String,
 ) -> Result<Vec<RecordVerification>, String> {
     Ok(private.verify_proxy_records(&session_id)?)
+}
+
+/// What a private session used: the final billing costs and estimates for its calls. Called at the
+/// same turn-end checks as `private_verify`; no key leaves the backend.
+#[tauri::command(async)]
+pub fn private_session_usage(
+    private: State<'_, PrivateMode>,
+    session_id: String,
+) -> Result<PrivateSessionUsage, String> {
+    Ok(private.session_usage(&session_id))
 }
 
 /// A deleted session no longer needs its last token's records.

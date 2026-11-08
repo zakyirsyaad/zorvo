@@ -519,6 +519,7 @@ pub fn run() {
             private_mode::commands::private_recover,
             private_mode::commands::private_forget_device,
             private_mode::commands::private_verify,
+            private_mode::commands::private_session_usage,
             private_mode::commands::private_forget_session
         ])
         .build(tauri::generate_context!())

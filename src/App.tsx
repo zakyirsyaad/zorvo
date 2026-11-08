@@ -70,6 +70,7 @@ import { useBackgroundTasks } from "./hooks/useBackgroundTasks";
 import { useTranscripts } from "./hooks/useTranscripts";
 import { usePrivateCreditsRefresh } from "./hooks/usePrivateCreditsRefresh";
 import { usePrivateLowBalanceNotice } from "./hooks/usePrivateLowBalanceNotice";
+import { usePrivateUsage } from "./hooks/usePrivateUsage";
 import { usePrivateVerification } from "./hooks/usePrivateVerification";
 import { lowBalanceNote } from "./lib/private-credits";
 import { useAgentProfiles, useSuggestedFolders } from "./hooks/useDiscovery";
@@ -174,10 +175,18 @@ export default function App() {
   const { state, isLoaded, updateState, getState, saveNow } = usePersistedState(reportError);
   useAppearance(state.settings.appearance, isLoaded, reportError);
   const { transcripts, transcriptStatus, ensureLoaded, updateMessages, saveSoon, removeTranscript, flush: flushTranscripts } = useTranscripts(reportError);
+  const updateSessionUsage = useCallback(
+    (sessionId: string, privateUsage: NonNullable<Session["privateUsage"]>) => {
+      updateState((prev) => patchSessionIn(prev, sessionId, { privateUsage }));
+    },
+    [updateState],
+  );
+  const privateUsage = usePrivateUsage({ sessions: state.sessions, updateSession: updateSessionUsage });
   const privateVerification = usePrivateVerification({
     updateMessages,
     saveSoon,
     isKnownSession: (id) => state.sessions.some((session) => session.id === id),
+    onCheck: privateUsage.refresh,
   });
   const {
     agents,

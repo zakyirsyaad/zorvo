@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { ChevronRight, RefreshCw } from "lucide-react";
+import { AgentLogo } from "../AgentLogo";
 import { useNow } from "../../hooks/useNow";
 import type { ActionResult, PrivateCredits } from "../../hooks/usePrivateCredits";
 import { formatRelativeTime } from "../../lib/relative-time";
@@ -10,6 +11,7 @@ import {
   updatedAgo,
   type PrivateStatus,
 } from "../../lib/private-credits";
+import { privateUsageLabel, type PrivateUsageRow } from "../../lib/private-usage";
 import { Button } from "../ui/Button";
 import { StatusLine } from "../ui/StatusLine";
 import { SettingsGroup, SettingsRow } from "../settings/SettingsGroup";
@@ -21,6 +23,9 @@ export interface BalanceCardProps {
   forget: () => Promise<ActionResult>;
   /** Opens the recovery-code dialog, for the note that asks for it. */
   onShowRecoveryCode: () => void;
+  /** The persisted per-session totals, grouped by model. */
+  usageRows?: readonly PrivateUsageRow[];
+  agentNameOf?: (profileId: string) => string;
 }
 
 const SOLO_AMOUNT = "text-[28px] leading-[34px] font-semibold tracking-[-0.02em] text-fg";
@@ -44,7 +49,14 @@ function BalanceSkeleton() {
 }
 
 /** Settings → Private mode → Balance, in the state the credits server and this Mac's device are in. */
-export function BalanceCard({ status, refresh, forget, onShowRecoveryCode }: BalanceCardProps) {
+export function BalanceCard({
+  status,
+  refresh,
+  forget,
+  onShowRecoveryCode,
+  usageRows = [],
+  agentNameOf = (profileId) => profileId,
+}: BalanceCardProps) {
   const now = useNow();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isForgetting, setIsForgetting] = useState(false);
@@ -140,6 +152,7 @@ export function BalanceCard({ status, refresh, forget, onShowRecoveryCode }: Bal
 
   const credits = balance?.credits ?? lastBalance?.credits ?? 0;
   const used = balance?.usedCredits ?? lastBalance?.usedCredits ?? 0;
+  const usageTotal = usageRows.reduce((sum, row) => sum + row.credits, 0);
   const isFirstRun = status.device === "none";
   const needsRecoveryNote = status.recoveryPrompted && !status.recoverySaved;
   return (
@@ -174,6 +187,44 @@ export function BalanceCard({ status, refresh, forget, onShowRecoveryCode }: Bal
           </>
         }
       />
+      {usageRows.length > 0 && (
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-ui-sm text-fg-secondary">
+            <ChevronRight
+              size={12}
+              strokeWidth={1.75}
+              aria-hidden="true"
+              className="text-fg-muted transition-transform group-open:rotate-90"
+            />
+            <span className="flex-1">
+              Used by {usageRows.length} {usageRows.length === 1 ? "model" : "models"}
+            </span>
+            <span className="text-fg-muted">{formatCredits(usageTotal)}</span>
+          </summary>
+          <div className="flex flex-col gap-2 px-4 pb-3 pl-9">
+            {usageRows.map((row) => (
+              <div key={row.modelId} className="flex items-center gap-2 text-ui-sm">
+                <AgentLogo profileId={row.profileId} name="" size={16} />
+                <span className="min-w-0 flex-1 truncate text-fg-secondary">
+                  {privateUsageLabel(row, agentNameOf)}
+                </span>
+                <span className="shrink-0 text-fg-muted">
+                  {Math.round(row.credits).toLocaleString("en-US")} used
+                </span>
+                {row.turnsLeft !== null && (
+                  <span className="w-[120px] shrink-0 text-right text-caption text-fg-subtle">
+                    ≈ {row.turnsLeft.toLocaleString("en-US")} turns left
+                  </span>
+                )}
+              </div>
+            ))}
+            <span className="text-ui-sm text-fg-subtle">
+              Sessions running at the same time draw from this balance together. Give a session its own cap in its
+              draft.
+            </span>
+          </div>
+        </details>
+      )}
       {status.keyError !== null && (
         <SettingsRow
           label={<span className="text-danger">{privateErrorText(status.keyError)}</span>}

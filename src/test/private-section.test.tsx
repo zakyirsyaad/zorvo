@@ -12,6 +12,7 @@ import { TopupProgress } from "../components/private/TopupProgress";
 import { usePrivateCredits, type TopupFlow } from "../hooks/usePrivateCredits";
 import { usePrivateRecoveryDialog } from "../hooks/usePrivateRecoveryDialog";
 import { turnsFor, type PendingTopup } from "../lib/private-credits";
+import type { Session } from "../types";
 import type { FakePrivate } from "./fixtures/private-backend";
 
 function fake(): FakePrivate {
@@ -53,9 +54,13 @@ function readyWith(credits: number, extra: Partial<FakePrivate["status"]> = {}) 
 function Harness({
   secretGuard = true,
   onSecretGuardChange = () => {},
+  sessions = [],
+  agentNameOf = (profileId: string) => profileId,
 }: {
   secretGuard?: boolean;
   onSecretGuardChange?: (isOn: boolean) => void;
+  sessions?: readonly Session[];
+  agentNameOf?: (profileId: string) => string;
 }) {
   const credits = usePrivateCredits();
   const dialog = usePrivateRecoveryDialog();
@@ -67,6 +72,8 @@ function Harness({
         onRestoringChange={dialog.setIsRestoring}
         secretGuard={secretGuard}
         onSecretGuardChange={onSecretGuardChange}
+        sessions={sessions}
+        agentNameOf={agentNameOf}
       />
       <RecoveryCodeLayer
         credits={credits}
@@ -92,7 +99,12 @@ function AppWithoutSettings() {
   );
 }
 
-async function mount(options: { secretGuard?: boolean; onSecretGuardChange?: (isOn: boolean) => void } = {}) {
+async function mount(options: {
+  secretGuard?: boolean;
+  onSecretGuardChange?: (isOn: boolean) => void;
+  sessions?: readonly Session[];
+  agentNameOf?: (profileId: string) => string;
+} = {}) {
   await act(async () => {
     render(<Harness {...options} />);
   });
@@ -935,6 +947,49 @@ describe("Private mode: one hold at a time", () => {
     expect(onOpenCheckout).toHaveBeenCalledTimes(1);
     await act(async () => release());
     expect(button("Open checkout again")).toBeEnabled();
+  });
+});
+
+describe("Private mode: used by model", () => {
+  const GLM = { id: "zai/GLM-5.3-Flash", inputPerM: 0.1, outputPerM: 0.2 };
+
+  function privateSession(id: string, modelId: string, credits: number): Session {
+    return {
+      id,
+      name: "Private review",
+      profileId: "qwen-code",
+      cwd: "/w",
+      status: "running",
+      createdAt: 1,
+      transport: "acp",
+      privateMode: { modelId },
+      privateUsage: { credits, estimated: false },
+    };
+  }
+
+  it("lists the persisted totals grouped by model, with turns left from the balance", async () => {
+    stockWith();
+    fake().models = [MODEL, GLM];
+    readyWith(1_240);
+    await mount({
+      sessions: [privateSession("s-1", MODEL.id, 210), privateSession("s-2", GLM.id, 50)],
+      agentNameOf: () => "Qwen Code",
+    });
+
+    const details = await screen.findByText("Used by 2 models");
+    expect(details.parentElement).toHaveTextContent("260 credits");
+    await click(details);
+
+    expect(screen.getByText("Qwen Code · Qwen 3.8 27B")).toBeInTheDocument();
+    expect(screen.getByText("210 used")).toBeInTheDocument();
+    expect(screen.getByText(`≈ ${turnsFor(1_240, MODEL).toLocaleString("en-US")} turns left`)).toBeInTheDocument();
+    expect(screen.getByText("Qwen Code · GLM 5.3 Flash")).toBeInTheDocument();
+    expect(screen.getByText("50 used")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Sessions running at the same time draw from this balance together. Give a session its own cap in its draft.",
+      ),
+    ).toBeInTheDocument();
   });
 });
 

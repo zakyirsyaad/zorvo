@@ -74,6 +74,20 @@ describe("normalizePersistedState", () => {
     expect(state.sessions[0].privateMode).toEqual({ modelId: "a" });
   });
 
+  it("keeps a session's saved private usage and drops a malformed one", () => {
+    const state = normalizePersistedState({
+      sessions: [
+        { ...base, privateUsage: { credits: 12.5, estimated: true } },
+        { ...base, id: "s-2", privateUsage: { credits: -1, estimated: false } },
+        { ...base, id: "s-3", privateUsage: "oops" },
+      ],
+    });
+
+    expect(state.sessions[0].privateUsage).toEqual({ credits: 12.5, estimated: true });
+    expect(state.sessions[1]).not.toHaveProperty("privateUsage");
+    expect(state.sessions[2]).not.toHaveProperty("privateUsage");
+  });
+
   it("keeps a session's compareRunId and worktree startCommit", () => {
     const worktree = { repoPath: "/w/api", path: "/data/worktrees/api/fix", branch: "agent/fix", startCommit: "abc123" };
 

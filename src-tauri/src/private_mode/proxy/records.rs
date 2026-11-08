@@ -18,6 +18,16 @@ const MAX_ID_PREFIX: usize = 1024 * 1024;
 const MAX_SSE_LINE: usize = 1024 * 1024;
 /// Longest completion id kept in a record.
 const MAX_CHAT_ID: usize = 200;
+/// Longest `inference-id` response header kept in a record.
+const MAX_INFERENCE_ID: usize = 100;
+
+/// The tokens a response's last `usage` object reports.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenUsage {
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+}
 
 /// One finished private call. Hashes are lowercase hex of the exact bytes; no body or prompt is
 /// kept. `signed` is true only for a complete 2xx answer that named a completion id.
@@ -25,6 +35,9 @@ const MAX_CHAT_ID: usize = 200;
 #[serde(rename_all = "camelCase")]
 pub struct ProxyRecord {
     pub chat_id: Option<String>,
+    /// NEAR AI's `inference-id` response header, the id `/v1/billing/costs` takes.
+    pub inference_id: Option<String>,
+    pub usage: Option<TokenUsage>,
     pub model: String,
     pub request_sha256: String,
     pub response_sha256: String,
@@ -73,6 +86,23 @@ pub(super) fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
+/// A canonical UUID in a response header, lower-cased, or nothing usable.
+pub(super) fn sanitize_inference_id(value: &str) -> Option<String> {
+    let value = value.trim();
+    let bytes = value.as_bytes();
+    let is_hex = |byte: u8| byte.is_ascii_hexdigit();
+    let uuid = value.len() == 36
+        && bytes[8] == b'-'
+        && bytes[13] == b'-'
+        && bytes[18] == b'-'
+        && bytes[23] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| matches!(index, 8 | 13 | 18 | 23) || is_hex(*byte));
+    (value.len() <= MAX_INFERENCE_ID && uuid).then(|| value.to_ascii_lowercase())
+}
+
 pub(super) fn sha256_hex(bytes: &[u8]) -> String {
     hex(&Sha256::digest(bytes))
 }
@@ -91,11 +121,12 @@ pub(super) fn hex(bytes: &[u8]) -> String {
 pub(super) struct RecordBuilder {
     record_key: String,
     app_session_id: String,
+    inference_id: Option<String>,
     model: String,
     request_sha256: String,
     started: u64,
     hasher: Sha256,
-    sniffer: IdSniffer,
+    sniffer: ResponseSniffer,
     records: Arc<Mutex<RecordStore>>,
     finished: bool,
 }
@@ -104,6 +135,7 @@ impl RecordBuilder {
     pub(super) fn new(
         record_key: &str,
         app_session_id: &str,
+        inference_id: Option<String>,
         model: &str,
         request_sha256: String,
         started: u64,
@@ -112,11 +144,12 @@ impl RecordBuilder {
         Self {
             record_key: record_key.to_string(),
             app_session_id: app_session_id.to_string(),
+            inference_id,
             model: model.to_string(),
             request_sha256,
             started,
             hasher: Sha256::new(),
-            sniffer: IdSniffer::default(),
+            sniffer: ResponseSniffer::default(),
             records,
             finished: false,
         }
@@ -138,6 +171,8 @@ impl RecordBuilder {
         let chat_id = self.sniffer.id();
         let record = ProxyRecord {
             chat_id: chat_id.clone(),
+            inference_id: self.inference_id.clone(),
+            usage: self.sniffer.usage(),
             model: self.model.clone(),
             request_sha256: self.request_sha256.clone(),
             response_sha256: hex(&self.hasher.clone().finalize()),
@@ -156,20 +191,21 @@ impl Drop for RecordBuilder {
     }
 }
 
-/// Finds the first completion id in a response while its bytes pass through. A streamed answer's
-/// `data:` line and a plain JSON object are both read from a bounded prefix, never a whole body.
+/// Finds the first completion id and the last `usage` object in a response while its bytes pass
+/// through. A streamed answer's `data:` line and a plain JSON object are both read from a bounded
+/// prefix, never a whole body.
 #[derive(Default)]
-struct IdSniffer {
+struct ResponseSniffer {
     id: Option<String>,
+    usage: Option<TokenUsage>,
     line: Vec<u8>,
     json: Vec<u8>,
+    /// A stream starts its body with `data:`; only a plain JSON body is buffered for `usage`.
+    is_not_json: bool,
 }
 
-impl IdSniffer {
+impl ResponseSniffer {
     fn observe(&mut self, bytes: &[u8]) {
-        if self.id.is_some() {
-            return;
-        }
         for &byte in bytes {
             if byte == b'\n' {
                 let line = std::mem::take(&mut self.line);
@@ -178,10 +214,20 @@ impl IdSniffer {
                 self.line.push(byte);
             }
         }
-        if self.json.len() < MAX_ID_PREFIX {
+        if !self.is_not_json && self.json.len() < MAX_ID_PREFIX {
             let room = MAX_ID_PREFIX - self.json.len();
             self.json.extend_from_slice(&bytes[..bytes.len().min(room)]);
-            self.plain_json();
+            if self
+                .json
+                .iter()
+                .find(|byte| !byte.is_ascii_whitespace())
+                .is_some_and(|byte| *byte != b'{')
+            {
+                self.is_not_json = true;
+                self.json.clear();
+            } else {
+                self.plain_json();
+            }
         }
     }
 
@@ -215,10 +261,28 @@ impl IdSniffer {
                 self.id = Some(id.to_string());
             }
         }
+        if let Some(usage) = value.get("usage") {
+            let prompt = usage
+                .get("prompt_tokens")
+                .and_then(serde_json::Value::as_u64);
+            let completion = usage
+                .get("completion_tokens")
+                .and_then(serde_json::Value::as_u64);
+            if let (Some(prompt), Some(completion)) = (prompt, completion) {
+                self.usage = Some(TokenUsage {
+                    prompt_tokens: prompt,
+                    completion_tokens: completion,
+                });
+            }
+        }
     }
 
     fn id(&self) -> Option<String> {
         self.id.clone()
+    }
+
+    fn usage(&self) -> Option<TokenUsage> {
+        self.usage.clone()
     }
 }
 
@@ -239,7 +303,15 @@ mod tests {
     use super::*;
 
     fn builder(records: Arc<Mutex<RecordStore>>) -> RecordBuilder {
-        RecordBuilder::new("token-1", "s1", "model", sha256_hex(b"{}"), 1, records)
+        RecordBuilder::new(
+            "token-1",
+            "s1",
+            None,
+            "model",
+            sha256_hex(b"{}"),
+            1,
+            records,
+        )
     }
 
     #[test]
@@ -311,6 +383,63 @@ mod tests {
             stored[MAX_RECORDS_PER_SESSION - 1].chat_id.as_deref(),
             Some("chat-501")
         );
+    }
+
+    #[test]
+    fn the_last_usage_object_is_kept_from_a_stream_and_from_plain_json() {
+        let records = Arc::new(Mutex::new(RecordStore::default()));
+        let inference = "123e4567-e89b-12d3-a456-426614174000";
+        let mut streamed = RecordBuilder::new(
+            "token-1",
+            "s1",
+            sanitize_inference_id(inference),
+            "model",
+            sha256_hex(b"{}"),
+            1,
+            Arc::clone(&records),
+        );
+        streamed.observe(b"data: {\"id\":\"chat-1\",\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2}}\n\n");
+        streamed.observe(b"data: {\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":20}}\n\n");
+        streamed.finish(true);
+
+        let mut plain = builder(Arc::clone(&records));
+        plain.observe(b"{\"id\":\"chat-2\",");
+        plain.observe(b"\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":5}}");
+        plain.finish(true);
+
+        let stored = lock(&records).records("token-1");
+        assert_eq!(stored[0].inference_id.as_deref(), Some(inference));
+        assert_eq!(
+            stored[0].usage,
+            Some(TokenUsage {
+                prompt_tokens: 10,
+                completion_tokens: 20,
+            })
+        );
+        assert_eq!(
+            stored[1].usage,
+            Some(TokenUsage {
+                prompt_tokens: 4,
+                completion_tokens: 5,
+            })
+        );
+    }
+
+    #[test]
+    fn only_a_canonical_uuid_header_becomes_an_inference_id() {
+        assert_eq!(
+            sanitize_inference_id("123E4567-E89B-12D3-A456-426614174000").as_deref(),
+            Some("123e4567-e89b-12d3-a456-426614174000")
+        );
+        for value in [
+            "",
+            "not-a-uuid",
+            "123e4567-e89b-12d3-a456-42661417400",
+            "123e4567-e89b-12d3-a456-4266141740000",
+            "123e4567-e89b-12d3-a456-42661417400z",
+        ] {
+            assert_eq!(sanitize_inference_id(value), None, "{value:?}");
+        }
     }
 
     #[test]

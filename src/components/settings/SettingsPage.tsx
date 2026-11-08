@@ -181,6 +181,8 @@ export function SettingsPage({
             onRestoringChange={onRestoringChange}
             secretGuard={settings.secretGuard !== false}
             onSecretGuardChange={(secretGuard) => updateSettings({ secretGuard })}
+            sessions={state.sessions}
+            agentNameOf={(profileId) => agents.find((agent) => agent.id === profileId)?.name ?? profileId}
           />
         ) : null;
       case "github":

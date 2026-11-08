@@ -22,12 +22,14 @@ export interface PrivateVerificationDeps {
   saveSoon?: (sessionId: string) => void;
   /** A session deleted while a check was in flight no longer takes its result. */
   isKnownSession?: (sessionId: string) => boolean;
+  /** Runs on each check (the turn end, its 2 s extra ask and the 10 s re-asks): usage shares this timer. */
+  onCheck?: (sessionId: string) => void;
 }
 
 /** Asks for the session's private call states and puts them on the replies they belong to. */
-export function usePrivateVerification({ updateMessages, saveSoon, isKnownSession }: PrivateVerificationDeps) {
-  const deps = useRef({ updateMessages, saveSoon, isKnownSession });
-  deps.current = { updateMessages, saveSoon, isKnownSession };
+export function usePrivateVerification({ updateMessages, saveSoon, isKnownSession, onCheck }: PrivateVerificationDeps) {
+  const deps = useRef({ updateMessages, saveSoon, isKnownSession, onCheck });
+  deps.current = { updateMessages, saveSoon, isKnownSession, onCheck };
   const timersRef = useRef(new Map<string, SessionTimers>());
   const runsRef = useRef(new Map<string, number>());
   const mountedRef = useRef(true);
@@ -81,11 +83,12 @@ export function usePrivateVerification({ updateMessages, saveSoon, isKnownSessio
   const check = useCallback(
     (sessionId: string, run: number) => {
       if (!mountedRef.current || runsRef.current.get(sessionId) !== run) return;
-      const { updateMessages, saveSoon, isKnownSession } = deps.current;
+      const { updateMessages, saveSoon, isKnownSession, onCheck } = deps.current;
       if (isKnownSession?.(sessionId) === false) {
         forget(sessionId);
         return;
       }
+      onCheck?.(sessionId);
       void invoke<VerificationRecord[]>('private_verify', { sessionId })
         .then((records) => {
           if (!mountedRef.current || runsRef.current.get(sessionId) !== run) return;

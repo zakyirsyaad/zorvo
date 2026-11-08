@@ -2,6 +2,8 @@ import { useEffect, useId, useState, type Ref } from "react";
 import type { PrivateCredits } from "../../hooks/usePrivateCredits";
 import { useLatest } from "../../hooks/useLatest";
 import { isTopupActive } from "../../lib/private-flow";
+import { privateUsageRows } from "../../lib/private-usage";
+import type { Session } from "../../types";
 import { BalanceCard } from "../private/BalanceCard";
 import { PromoField } from "../private/PromoField";
 import { RecoveryCard } from "../private/RecoveryCard";
@@ -21,6 +23,9 @@ export interface PrivateSectionProps {
   /** The Safety switch's state; on unless the user turned it off. */
   secretGuard?: boolean;
   onSecretGuardChange?: (isOn: boolean) => void;
+  /** Sessions' persisted private totals, grouped by model under the balance. */
+  sessions?: readonly Session[];
+  agentNameOf?: (profileId: string) => string;
 }
 
 const RESTORE_BLOCKED = "Finish or cancel your top-up first.";
@@ -37,6 +42,8 @@ export function PrivateSection({
   onRestoringChange,
   secretGuard = true,
   onSecretGuardChange = () => {},
+  sessions = [],
+  agentNameOf = (profileId) => profileId,
 }: PrivateSectionProps) {
   const { status, flow, loadCatalog } = credits;
   const secretGuardLabelId = useId();
@@ -58,6 +65,7 @@ export function PrivateSection({
     onRestoringChange?.(next);
   };
   const balance = status?.balance?.credits ?? status?.lastBalance?.credits ?? null;
+  const usageRows = privateUsageRows(sessions, credits.models, balance);
 
   return (
     <div className="flex flex-col gap-6">
@@ -70,6 +78,8 @@ export function PrivateSection({
         refresh={credits.refresh}
         forget={credits.forget}
         onShowRecoveryCode={() => onShowRecoveryCode()}
+        usageRows={usageRows}
+        agentNameOf={agentNameOf}
       />
       <SettingsGroup heading="Top-up">
         <div className="border-b border-border p-4">

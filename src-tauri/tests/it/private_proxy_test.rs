@@ -16,7 +16,7 @@ use zorvo_lib::private_mode::client::{
     Balance, CreatedTopup, CreditsApi, ModelPrice, PromoResult, Stock, TopupState,
 };
 use zorvo_lib::private_mode::device::{SecretStore, DEVICE_SECRET};
-use zorvo_lib::private_mode::proxy::{McpState, PrivateProxy};
+use zorvo_lib::private_mode::proxy::{McpState, PrivateProxy, TokenUsage};
 use zorvo_lib::private_mode::PrivateError;
 
 const MODEL: &str = "Qwen/Qwen3.8-27B";
@@ -154,10 +154,24 @@ fn read_request(stream: &mut TcpStream) -> Option<Recorded> {
     })
 }
 
-fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {
+fn respond_with_headers(
+    stream: &mut TcpStream,
+    status: &str,
+    content_type: &str,
+    headers: &[(&str, &str)],
+    body: &[u8],
+) {
     write!(
         stream,
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\n"
+    )
+    .unwrap();
+    for (name, value) in headers {
+        write!(stream, "{name}: {value}\r\n").unwrap();
+    }
+    write!(
+        stream,
+        "Content-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     )
     .unwrap();
@@ -165,13 +179,25 @@ fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]
     stream.flush().unwrap();
 }
 
-fn sse_head(stream: &mut TcpStream) {
+fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {
+    respond_with_headers(stream, status, content_type, &[], body);
+}
+
+fn sse_head_with_headers(stream: &mut TcpStream, headers: &[(&str, &str)]) {
     write!(
         stream,
-        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n"
     )
     .unwrap();
+    for (name, value) in headers {
+        write!(stream, "{name}: {value}\r\n").unwrap();
+    }
+    write!(stream, "Connection: close\r\n\r\n").unwrap();
     stream.flush().unwrap();
+}
+
+fn sse_head(stream: &mut TcpStream) {
+    sse_head_with_headers(stream, &[]);
 }
 
 fn chunk(stream: &mut TcpStream, bytes: &[u8]) {
@@ -261,6 +287,85 @@ async fn forwards_the_exact_request_bytes_and_records_both_hashes() {
     assert_eq!(record.response_sha256, sha256_hex(&body));
     assert!(record.signed);
     assert!(record.started <= record.ended);
+}
+
+#[tokio::test]
+async fn keeps_the_inference_id_and_usage_from_a_plain_response() {
+    let inference = "123e4567-e89b-12d3-a456-426614174000";
+    let reply =
+        br#"{"id":"chat-plain","usage":{"prompt_tokens":10,"completion_tokens":20},"choices":[]}"#;
+    let fake = FakeUpstream::start(move |_request, stream| {
+        respond_with_headers(
+            stream,
+            "200 OK",
+            "application/json",
+            &[("inference-id", inference)],
+            reply,
+        );
+    });
+    let proxy = PrivateProxy::with_upstream(fake.base());
+    let (token, base) = issue(&proxy);
+
+    let response = chat_response(
+        &base,
+        &token,
+        br#"{"model":"Qwen/Qwen3.8-27B","messages":[]}"#.to_vec(),
+    )
+    .await;
+    assert_eq!(response.status(), 200);
+    response.bytes().await.expect("the answer");
+
+    let records = proxy.records(SESSION);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].inference_id.as_deref(), Some(inference));
+    assert_eq!(
+        records[0].usage,
+        Some(TokenUsage {
+            prompt_tokens: 10,
+            completion_tokens: 20,
+        })
+    );
+    assert_eq!(proxy.key(SESSION).as_deref(), Some(KEY));
+}
+
+#[tokio::test]
+async fn keeps_the_last_usage_from_a_streamed_response() {
+    let inference = "123e4567-e89b-12d3-a456-426614174000";
+    let fake = FakeUpstream::start(move |_request, stream| {
+        sse_head_with_headers(stream, &[("inference-id", inference)]);
+        chunk(
+            stream,
+            b"data: {\"id\":\"chat-stream-usage\",\"choices\":[]}\n\n",
+        );
+        chunk(
+            stream,
+            b"data: {\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":22}}\n\n",
+        );
+        chunk(stream, b"data: [DONE]\n\n");
+        end_chunks(stream);
+    });
+    let proxy = PrivateProxy::with_upstream(fake.base());
+    let (token, base) = issue(&proxy);
+
+    let response = chat_response(
+        &base,
+        &token,
+        br#"{"model":"Qwen/Qwen3.8-27B","messages":[],"stream":true}"#.to_vec(),
+    )
+    .await;
+    assert_eq!(response.status(), 200);
+    response.bytes().await.expect("the stream");
+
+    let records = proxy.records(SESSION);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].inference_id.as_deref(), Some(inference));
+    assert_eq!(
+        records[0].usage,
+        Some(TokenUsage {
+            prompt_tokens: 11,
+            completion_tokens: 22,
+        })
+    );
 }
 
 #[tokio::test]

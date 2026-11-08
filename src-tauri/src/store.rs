@@ -186,6 +186,13 @@ pub struct SessionRecord {
         skip_serializing_if = "Option::is_none"
     )]
     pub private_mode: Option<PrivateModeRecord>,
+    /// The last usage total the UI saved, so it survives a restart after the
+    /// proxy's in-memory records are gone.
+    #[serde(
+        deserialize_with = "lenient_private_usage",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub private_usage: Option<PrivateUsageRecord>,
 }
 
 /// What a saved Zorvo Private session remembers about its privacy mode.
@@ -194,6 +201,14 @@ pub struct SessionRecord {
 pub struct PrivateModeRecord {
     /// The NEAR AI model id the session runs on.
     pub model_id: String,
+}
+
+/// What a private session used, as the frontend last saved it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateUsageRecord {
+    pub credits: f64,
+    pub estimated: bool,
 }
 
 /// One comment on a line of a session's diff. The UI checks the values of
@@ -293,6 +308,16 @@ fn lenient_private_mode<'de, D: Deserializer<'de>>(
 ) -> Result<Option<PrivateModeRecord>, D::Error> {
     let value = Option::<serde_json::Value>::deserialize(deserializer)?;
     Ok(value.and_then(|value| serde_json::from_value(value).ok()))
+}
+
+/// A saved usage total, or none when it is malformed or negative.
+fn lenient_private_usage<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<PrivateUsageRecord>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value
+        .and_then(|value| serde_json::from_value::<PrivateUsageRecord>(value).ok())
+        .filter(|usage| usage.credits.is_finite() && usage.credits >= 0.0))
 }
 
 /// The saved review comments, each read on its own: a field that is not a
@@ -771,6 +796,25 @@ mod tests {
         );
         let value = serde_json::to_value(&record).expect("serialize");
         assert_eq!(value["privateMode"]["modelId"], "Qwen/Qwen3.8-27B");
+    }
+
+    #[test]
+    fn a_private_usage_record_round_trips_as_camel_case() {
+        let record: SessionRecord = serde_json::from_value(session_json(serde_json::json!({
+            "privateUsage": { "credits": 12.5, "estimated": true }
+        })))
+        .expect("deserialize");
+
+        assert_eq!(
+            record.private_usage,
+            Some(PrivateUsageRecord {
+                credits: 12.5,
+                estimated: true,
+            })
+        );
+        let value = serde_json::to_value(&record).expect("serialize");
+        assert_eq!(value["privateUsage"]["credits"], 12.5);
+        assert_eq!(value["privateUsage"]["estimated"], true);
     }
 
     #[test]

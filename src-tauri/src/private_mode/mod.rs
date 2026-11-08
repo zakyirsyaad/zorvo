@@ -1,6 +1,7 @@
 //! Zorvo Private (hackathon branch only): a device identity kept in the macOS
 //! Keychain, a client for the Zorvo Credits Worker and private Qwen Code sessions.
 
+pub mod billing;
 pub mod client;
 pub mod commands;
 pub mod device;

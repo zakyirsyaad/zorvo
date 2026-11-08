@@ -65,6 +65,14 @@ function isPrivateMode(value: unknown): value is { modelId: string } {
   return isObject(value) && typeof value.modelId === 'string' && value.modelId.length > 0;
 }
 
+/** A saved usage total, with its estimated flag; malformed entries are dropped. */
+function toPrivateUsage(value: unknown): Session['privateUsage'] | undefined {
+  if (!isObject(value) || typeof value.credits !== 'number' || !Number.isFinite(value.credits) || value.credits < 0) {
+    return undefined;
+  }
+  return { credits: value.credits, estimated: value.estimated === true };
+}
+
 /** A worktree without a startCommit that is not a string; old worktrees have none. */
 function withValidStartCommit(worktree: SessionWorktree): SessionWorktree {
   const { startCommit, ...rest } = worktree;
@@ -73,8 +81,9 @@ function withValidStartCommit(worktree: SessionWorktree): SessionWorktree {
 
 /** A session keeps everything else when one of its optional fields is malformed. */
 function withValidFields(session: Session): Session {
-  const { worktree, pinned, archivedAt, namedByUser, hasUnread, historyElsewhere, compareRunId, reviewComments, privateMode, ...rest } = session;
+  const { worktree, pinned, archivedAt, namedByUser, hasUnread, historyElsewhere, compareRunId, reviewComments, privateMode, privateUsage, ...rest } = session;
   const comments = validReviewComments(reviewComments);
+  const usage = toPrivateUsage(privateUsage);
   return {
     ...rest,
     ...(worktree == null ? { worktree } : isWorktree(worktree) ? { worktree: withValidStartCommit(worktree) } : {}),
@@ -86,6 +95,7 @@ function withValidFields(session: Session): Session {
     ...(compareRunId == null || typeof compareRunId === 'string' ? { compareRunId } : {}),
     ...(comments.length > 0 ? { reviewComments: comments } : {}),
     ...(isPrivateMode(privateMode) ? { privateMode: { modelId: privateMode.modelId } } : {}),
+    ...(usage ? { privateUsage: usage } : {}),
   };
 }
 

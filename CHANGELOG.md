@@ -11,6 +11,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **Low-credit warning.** Below 50 credits, a private session shows the balance left and, when it can price the model, about how many turns remain, with a Top up button; the inspector marks a low balance with an amber dot, and Zorvo notifies once if you are away.
 - **Private sessions can check their credits.** Qwen Code can read the balance and model prices through a small local server, so it can tell you when credits are low and suggest a cheaper model. The server talks only to Zorvo's loopback proxy and never sees the NEAR AI key.
 - **A secret check before private messages.** Before a private message goes out, Zorvo looks for keys and passwords in the text and its attached files on this Mac. It pauses on a match so you can send anyway or edit; Settings → Private mode turns the check off, and no match is stored.
+- **Per-session private usage.** The Private tab shows what this session used and its average per turn, and Settings' balance lists the total by model with the turns each model's price leaves. The total survives a restart.
 
 ### Changed
 

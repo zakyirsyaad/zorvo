@@ -24,11 +24,11 @@ function mockAnswers(...answers: VerificationRecord[][]) {
   });
 }
 
-function renderVerification(isKnownSession = vi.fn(() => true)) {
+function renderVerification(isKnownSession = vi.fn(() => true), onCheck?: (sessionId: string) => void) {
   const updateMessages = vi.fn();
   const saveSoon = vi.fn();
   const view = renderHook(() =>
-    usePrivateVerification({ updateMessages, saveSoon, isKnownSession }),
+    usePrivateVerification({ updateMessages, saveSoon, isKnownSession, onCheck }),
   );
   return { ...view, updateMessages, saveSoon, isKnownSession };
 }
@@ -58,6 +58,18 @@ describe("usePrivateVerification", () => {
     vi.clearAllTimers();
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it("shares its turn-end checks with usage", async () => {
+    mockAnswers([VERIFIED], []);
+    const onCheck = vi.fn();
+    const view = renderVerification(vi.fn(() => true), onCheck);
+
+    await start(view);
+    expect(onCheck).toHaveBeenCalledWith("s-1");
+
+    await advance(2_000);
+    expect(onCheck).toHaveBeenCalledTimes(2);
   });
 
   it("re-asks while checking and stops once the answer verifies", async () => {

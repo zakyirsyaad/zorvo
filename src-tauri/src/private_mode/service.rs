@@ -16,6 +16,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use url::Url;
 
+use super::billing::{BillingApi, PrivateSessionUsage, UsageTracker};
 use super::client::{Balance, CreditsApi, ModelPrice, PromoResult, Stock, TopupState};
 use super::device::{new_recovery_code, secret_hash, SecretStore, DEVICE_SECRET, NEARAI_KEY};
 use super::local_state::{CachedModels, LastBalance, LocalState, PendingTopup};
@@ -99,6 +100,10 @@ pub struct PrivateMode {
     proxy: Arc<PrivateProxy>,
     /// Checks NEAR AI's signatures and attestations for the proxy's records.
     verifier: PrivateVerifier,
+    /// Reads what NEAR AI billed a session's calls; never holds the key beyond a call.
+    billing: Arc<dyn BillingApi>,
+    /// Settled costs and estimates, kept for this app run.
+    usage: UsageTracker,
     models: SharedModels,
     /// The bundled MCP script, set by the app setup. Tests may leave it unset.
     mcp_script: Mutex<Option<PathBuf>>,
@@ -131,6 +136,7 @@ impl PrivateMode {
         open: Opener,
         proxy: Arc<PrivateProxy>,
         verifier: PrivateVerifier,
+        billing: Arc<dyn BillingApi>,
     ) -> Self {
         let store: Arc<dyn SecretStore> = store.into();
         let api: Arc<dyn CreditsApi> = api.into();
@@ -147,6 +153,8 @@ impl PrivateMode {
             open,
             proxy,
             verifier,
+            billing,
+            usage: UsageTracker::default(),
             models,
             mcp_script: Mutex::new(None),
             checkouts: Mutex::new(HashMap::new()),
@@ -491,6 +499,16 @@ impl PrivateMode {
                 .map(|cached| cached.list)
                 .ok_or(error),
         }
+    }
+
+    /// What `session_id`'s private calls cost, from billing where it answers and from token counts
+    /// when it does not. It uses the key held by the proxy for that session and returns no key.
+    pub fn session_usage(&self, session_id: &str) -> PrivateSessionUsage {
+        let records = self.proxy.records(session_id);
+        let key = self.proxy.key(session_id);
+        let models = self.cached_models().unwrap_or_default();
+        self.usage
+            .usage(&records, &models, key.as_deref(), self.billing.as_ref())
     }
 
     fn cached_models(&self) -> Option<Vec<ModelPrice>> {

@@ -318,7 +318,9 @@ before it edits files or runs commands. Pick another mode in the composer.
     Mac's credits, never your prompts or code;
   - NEAR AI Cloud (`cloud-api.near.ai`), only while a private session runs: the
     loopback proxy forwards the agent's model requests there with the key.
-    Prompts go straight to NEAR AI; the Credits server never sees them;
+    Prompts go straight to NEAR AI; the Credits server never sees them. At a
+    turn's end Zorvo also asks NEAR AI what that turn's calls cost, with the
+    session's key; when billing cannot answer, it estimates from token counts;
   - this repository's releases on GitHub, to ask whether a newer Zorvo exists
     (`github.com/zakyirsyaad/zorvo`, shortly after Zorvo starts, then
     about once a day) and, when you click **Update & restart**, to download it

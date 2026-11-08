@@ -147,6 +147,8 @@ export interface Session {
   reviewComments?: ReviewComment[];
   /** Set when the session runs privately on Zorvo Private credits; the model it was started with. */
   privateMode?: { modelId: string };
+  /** The last total this session used, kept across restarts; records themselves are in memory. */
+  privateUsage?: { credits: number; estimated: boolean };
 }
 
 /** What a diff is compared with: the last commit, the base branch, or where the worktree started. */

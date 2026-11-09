@@ -63,6 +63,7 @@ export function VerificationBadge({ verification, modelId, onOpenUrl }: Verifica
         trigger={
           <Chip
             variant="outline"
+            textSize="ui-sm"
             onClick={() => setIsOpen((open) => !open)}
             label={`${label}. Show how this answer was verified`}
             title="Show how this answer was verified"

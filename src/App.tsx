@@ -34,6 +34,7 @@ import { Inspector } from "./components/inspector/Inspector";
 import { offeredTabs } from "./lib/inspector";
 import { useReviewComments } from "./hooks/useReviewComments";
 import { useReviewWiring } from "./hooks/useReviewWiring";
+import type { ReviewSlot } from "./hooks/useReviewMessage";
 import { useSecretGuard } from "./hooks/useSecretGuard";
 import { useTurnsEnded } from "./hooks/useTurnsEnded";
 import { usePullRequest } from "./hooks/usePullRequest";
@@ -436,14 +437,22 @@ export default function App() {
     sessionIds: sessions.map((s) => s.id),
     isHeldFor: isMessageHeldFor,
   });
+  /** Puts a held message's review comments back after its text returns, so Send still marks them. */
+  const rearmReviewRef = useRef<((slot: ReviewSlot) => void) | null>(null);
   /** Edit message: back into the composer of the session it was written for, never another one's. */
   const editSecretMessage = useCallback(
-    (sessionId: string | undefined, message: { text: string; attachments?: readonly string[] }) => {
+    (
+      sessionId: string | undefined,
+      message: { text: string; attachments?: readonly string[] },
+      reviewSlot?: ReviewSlot,
+    ) => {
       if (sessionId === undefined) {
+        // A draft has no review comments: restore into the draft's composer only.
         composerRef.current?.restore(message.text, message.attachments);
         return;
       }
       giveBackMessage(sessionId, message.text, message.attachments ?? []);
+      if (reviewSlot?.sessionId === sessionId) rearmReviewRef.current?.(reviewSlot);
       if (sessionId !== activeSessionId) {
         setNotice("Your message is back in that session's composer in the main window.");
       }
@@ -792,7 +801,7 @@ export default function App() {
     }
   };
 
-  /** Starts a fresh private session from a capped one, with no cap. */
+  /** Starts a fresh private session from this one, with no cap. */
   const handleNewPrivateSession = () => {
     if (!activeSession?.privateMode) return;
     const last = (transcripts[activeSession.id] ?? []).at(-1);
@@ -807,6 +816,30 @@ export default function App() {
       cwd: activeSession.cwd,
       name: nextSessionName(sessions),
       privateMode: { modelId: activeSession.privateMode.modelId },
+    });
+  };
+
+  /**
+   * Switches this Mac to Zorvo credits and starts a fresh credits session from this one: the running
+   * agent holds an own-key proxy token, so only a new process can pay with credits.
+   */
+  const handleSwitchToCredits = () => {
+    updateSettings({ paymentSource: "credits" });
+    const session = activeSession;
+    if (!session?.privateMode) return;
+    privateCredits.clearCreditsOut(session.id);
+    const last = (transcripts[session.id] ?? []).at(-1);
+    if (last) {
+      void forkSession(last.id, { creditsPrivate: true });
+      return;
+    }
+    const agent = agents.find((candidate) => candidate.id === session.profileId);
+    if (!agent) return;
+    startSession({
+      agent,
+      cwd: session.cwd,
+      name: nextSessionName(sessions),
+      privateMode: { modelId: session.privateMode.modelId },
     });
   };
 
@@ -1041,11 +1074,16 @@ export default function App() {
     collapseDiff: inspector.collapseDiff,
     agentNameOf: (profileId) => agents.find((a) => a.id === profileId)?.name ?? profileId,
   });
+  rearmReviewRef.current = review.rearm;
 
   /** Sends to the active session, continues it when it can be resumed, or starts a new one (or a run). */
   const handleSendMessage = (text: string, attachments?: string[]) => {
     const message = { text, attachments };
+    // The composer empties on Send, which clears the slot; keep it so the comments still go with this
+    // message after a secret review, whether the user picks Send anyway or edits and sends again.
+    const reviewSlot = review.slot;
     const deliver = () => {
+      if (reviewSlot) review.rearm(reviewSlot);
       if (activeSession && isActiveRunning) {
         review.sendFrom(activeSession.id, text);
         sendFromComposer(activeSession.id, message);
@@ -1061,6 +1099,7 @@ export default function App() {
       root: activeSession?.cwd ?? activeWorkspacePath,
       agentName: activeAgent?.name ?? newSessionAgent?.name ?? "The agent",
       sessionId: activeSession?.id,
+      ...(reviewSlot ? { reviewSlot } : {}),
     });
   };
 
@@ -1424,10 +1463,7 @@ export default function App() {
                       isRaising={isRaisingPrivateCap}
                       paymentSource={activeIsOwnKey ? "ownKey" : "credits"}
                       ownKeySaved={ownKeySaved}
-                      onSwitchToCredits={() => {
-                        updateSettings({ paymentSource: "credits" });
-                        if (activeSession) privateCredits.clearCreditsOut(activeSession.id);
-                      }}
+                      onSwitchToCredits={handleSwitchToCredits}
                       onOpenDashboard={() => openLink("https://cloud.near.ai/")}
                     />
                     {installPanelAgent

@@ -467,7 +467,7 @@ export function useAcpEngine({
             privateMode: { ...session.privateMode, sessionCap: reset },
           });
           reportError(
-            `The session's Worker key was gone. It restarted with its original ${reset}-credit limit.`,
+            `The session's private key was gone. It restarted with its original ${reset}-credit limit.`,
           );
         }
       }

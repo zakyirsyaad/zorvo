@@ -148,7 +148,7 @@ export function BalanceCard({
                 ? "Zorvo can't reach the credits server right now. Private sessions keep working while your credits last; top-ups wait until it's back."
                 : privateErrorText(status.balanceError)}
               {lastBalance && (
-                <span className="mt-1 block text-caption text-fg-subtle">
+                <span className="mt-1 block text-ui-sm text-fg-subtle">
                   {`Last known: ${formatCredits(lastBalance.credits)} · ${when}`}
                 </span>
               )}

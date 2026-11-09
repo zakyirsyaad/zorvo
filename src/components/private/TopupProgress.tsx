@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import type { ActionResult, OpenCheckoutResult, TopupFlow } from "../../hooks/usePrivateCredits";
 import { mayStillBePaid, topupErrorText } from "../../lib/private-flow";
-import { formatCredits } from "../../lib/private-credits";
+import { formatCreditAmount, formatCredits } from "../../lib/private-credits";
 import { Button } from "../ui/Button";
 
 export interface TopupProgressProps {
@@ -28,6 +28,8 @@ interface View {
   amount?: number;
   /** An amber dot before the title. */
   titleDot?: boolean;
+  /** The reopen button's words, when a failed open draws Try again as the primary action. */
+  reopenLabel?: string;
 }
 
 function StatusLine({ status }: { status: NonNullable<View["status"]> }) {
@@ -67,6 +69,7 @@ function viewOf(flow: TopupFlow, balanceCredits: number | null, cannotReopen: bo
           title: "Couldn't open checkout",
           body: "PingPay didn't answer. Nothing was held or charged.",
           titleDot: true,
+          reopenLabel: "Try again",
         };
       }
       return {
@@ -92,7 +95,7 @@ function viewOf(flow: TopupFlow, balanceCredits: number | null, cannotReopen: bo
           };
     case "credited":
       return {
-        title: `+${formatCredits(flow.credits)}`,
+        title: `+${formatCreditAmount(flow.credits)}`,
         body:
           balanceCredits === null ? undefined : (
             <span className="text-fg-secondary">{`Balance ${formatCredits(balanceCredits)}`}</span>
@@ -220,7 +223,7 @@ export function TopupProgress({ flow, balanceCredits, onOpenCheckout, onCancel, 
           <>
             {view.amount !== undefined ? (
               <span className="text-[28px] leading-[34px] font-semibold tracking-[-0.02em] text-fg">
-                +{formatCredits(view.amount)}{" "}
+                +{formatCreditAmount(view.amount)}{" "}
                 <span className="text-sm font-medium tracking-normal text-fg-muted">credits</span>
               </span>
             ) : (
@@ -255,8 +258,12 @@ export function TopupProgress({ flow, balanceCredits, onOpenCheckout, onCancel, 
             </Button>
           )}
           {canReopen && (
-            <Button disabled={isReopening} onClick={() => void reopen()}>
-              Open checkout again
+            <Button
+              variant={view?.reopenLabel ? "primary" : "outline"}
+              disabled={isReopening}
+              onClick={() => void reopen()}
+            >
+              {view?.reopenLabel ?? "Open checkout again"}
             </Button>
           )}
           {isEnded && (

@@ -27,6 +27,8 @@ export interface ForkOptions {
   choices?: AcpChoices;
   /** A fresh private process with no credit cap (the cap card's New session). */
   uncappedPrivate?: boolean;
+  /** A fresh private process paid by Zorvo credits, even from an own-key session. */
+  creditsPrivate?: boolean;
 }
 
 /**
@@ -70,8 +72,8 @@ export function useSessionFork(deps: SessionForkDeps): (messageId: string, optio
         ? {
             privateMode: {
               modelId: source.privateMode.modelId,
-              ...(source.privateMode.ownKey ? { ownKey: true } : {}),
-              ...(!options?.uncappedPrivate && source.privateMode.sessionCap !== undefined
+              ...(source.privateMode.ownKey && !options?.creditsPrivate ? { ownKey: true } : {}),
+              ...(!options?.uncappedPrivate && !options?.creditsPrivate && source.privateMode.sessionCap !== undefined
                 ? { sessionCap: source.privateMode.sessionCap }
                 : {}),
             },
@@ -79,8 +81,16 @@ export function useSessionFork(deps: SessionForkDeps): (messageId: string, optio
         : {}),
     };
     // A native fork needs the source agent alive; after it exited, fall back to a handoff. A new
-    // uncapped session must be a fresh process: a native fork would keep the source's capped token.
-    if (!isOtherAgent && !options?.uncappedPrivate && source.status === 'running' && isLatest && acp.canFork(source.id)) {
+    // uncapped or credits-paid session must be a fresh process: a native fork would keep the
+    // source's capped token, or its own-key token when the source paid with the user's key.
+    if (
+      !isOtherAgent &&
+      !options?.uncappedPrivate &&
+      !options?.creditsPrivate &&
+      source.status === 'running' &&
+      isLatest &&
+      acp.canFork(source.id)
+    ) {
       void acp.fork(source.id, recordSession(spec));
       return;
     }

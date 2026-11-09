@@ -521,13 +521,38 @@ impl PrivateMode {
         credits: u64,
     ) -> Result<SessionCapOutcome, PrivateError> {
         let _guard = lock(&self.cap_ops);
+        // A proxy 401 means NEAR AI revoked this session's key (usually the 24 h sweep): the
+        // record can never work again, so drop it before deciding what to reuse. Keep the
+        // launched session's record to rebuild it on its original cap, as the key-lost path does.
+        let mut rejected_previous = None;
+        for rejected in self.proxy.take_rejected_sessions() {
+            let previous = self.take_session_cap_locked(&rejected).ok().flatten();
+            if rejected == app_session_id {
+                rejected_previous = previous;
+            }
+        }
         let account = self.session_account(app_session_id)?;
-        let previous = self.load_state().session_cap(app_session_id);
+        let previous = self
+            .load_state()
+            .session_cap(app_session_id)
+            .or(rejected_previous);
         if let Some(previous) = previous {
             if self.store.get(&account)?.is_some() {
+                if !self.probe_session_gone(&previous) {
+                    return Ok(SessionCapOutcome {
+                        cap: previous.cap,
+                        restarted: false,
+                    });
+                }
+                // The Worker swept the session and revoked its key; there is nothing left to
+                // end. Start over on the draft's original cap, not a raised one.
+                let _ = self.take_session_cap_locked(app_session_id)?;
+                let base = session_base_cap(credits, Some(&previous));
+                self.create_session_cap_locked(app_session_id, &account, base)?;
+                *lock(&self.session_cap_reset) = Some((app_session_id.to_string(), base));
                 return Ok(SessionCapOutcome {
-                    cap: previous.cap,
-                    restarted: false,
+                    cap: base,
+                    restarted: true,
                 });
             }
             // The record survived but its key did not: retire the old Worker
@@ -681,6 +706,29 @@ impl PrivateMode {
                 Ok(())
             }
         }
+    }
+
+    /// True only when the Worker says it no longer knows a recorded capped session. An
+    /// unreachable Worker must not cost the session its cap; a live answer also arms the
+    /// once-a-minute `/seen` throttle, since the launch just told the Worker.
+    fn probe_session_gone(&self, cap: &SessionCap) -> bool {
+        let Ok(secret) = self.device_secret() else {
+            return false;
+        };
+        match self.api.seen_session(&secret, &cap.server_session_id) {
+            Ok(()) => {
+                lock(&self.seen).insert(cap.app_session_id.clone(), Instant::now());
+                false
+            }
+            Err(PrivateError::NotFound) => true,
+            Err(_) => false,
+        }
+    }
+
+    /// Tests only: forget the `/seen` throttle so a test can observe the next call.
+    #[cfg(test)]
+    pub(crate) fn reset_seen_throttle(&self, app_session_id: &str) {
+        lock(&self.seen).remove(app_session_id);
     }
 
     /// Doubles a capped session's limit at the Worker and records the new cap.

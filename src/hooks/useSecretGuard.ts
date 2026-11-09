@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { readWorkspaceFile } from "../lib/files";
 import { scanSecretText, type SecretMatch } from "../lib/secret-guard";
 import { useLatest } from "./useLatest";
+import type { ReviewSlot } from "./useReviewMessage";
 
 export interface SecretMessage {
   text: string;
@@ -17,6 +18,8 @@ export interface SecretGuardReview {
   agentName: string;
   /** The session the message was written for; undefined for a new-session draft. */
   sessionId?: string;
+  /** The composer's review-comment slot at Send time, so a held message keeps its comment link. */
+  reviewSlot?: ReviewSlot;
 }
 
 export interface SecretGuardContext {
@@ -25,6 +28,8 @@ export interface SecretGuardContext {
   agentName: string;
   /** The session the message was written for; undefined for a new-session draft. */
   sessionId?: string;
+  /** The composer's review-comment slot at Send time, so a held message keeps its comment link. */
+  reviewSlot?: ReviewSlot;
 }
 
 interface SecretGuardOptions {
@@ -34,7 +39,7 @@ interface SecretGuardOptions {
   root: string | undefined;
   agentName: string;
   /** Puts the message back in its own session's composer when the user picks Edit message. */
-  onEdit: (sessionId: string | undefined, message: SecretMessage) => void;
+  onEdit: (sessionId: string | undefined, message: SecretMessage, reviewSlot?: ReviewSlot) => void;
 }
 
 /** A file path from the session folder, or null when it is not inside it. */
@@ -114,6 +119,7 @@ export function useSecretGuard({ isEnabled, root, agentName, onEdit }: SecretGua
           skipped,
           agentName: active.agentName,
           sessionId: active.sessionId,
+          ...(active.reviewSlot ? { reviewSlot: active.reviewSlot } : {}),
         });
       })
       // Fails open by design: a scanner error must never become a Send the user cannot get past.
@@ -144,7 +150,7 @@ export function useSecretGuard({ isEnabled, root, agentName, onEdit }: SecretGua
     deliverRef.current = null;
     heldRef.current = false;
     setReview(null);
-    if (pending) onEditRef.current(pending.sessionId, pending.message);
+    if (pending) onEditRef.current(pending.sessionId, pending.message, pending.reviewSlot);
     drainRef.current();
   }, [onEditRef, review]);
 

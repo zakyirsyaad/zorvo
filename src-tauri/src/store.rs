@@ -83,6 +83,8 @@ pub struct Settings {
     pub payment_source: String,
     /// Whether a private message is checked for secrets before sending; on unless turned off.
     pub secret_guard: bool,
+    /// Whether the low-credit notice already fired below the threshold; armed again at 50.
+    pub private_low_balance_notified: bool,
     /// The agent ids the user uses, or `None` when the list was never set.
     pub enabled_agents: Option<Vec<String>>,
     /// Agent ids the user removed, which are never enabled again automatically.
@@ -104,6 +106,7 @@ impl Default for Settings {
             appearance: String::new(),
             payment_source: String::new(),
             secret_guard: true,
+            private_low_balance_notified: false,
             enabled_agents: None,
             removed_agents: Vec::new(),
             agent_versions: BTreeMap::new(),

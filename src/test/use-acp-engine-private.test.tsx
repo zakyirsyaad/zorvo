@@ -158,7 +158,7 @@ describe("useAcpEngine with a private session", () => {
     expect(callsTo(spy, "private_take_session_cap_reset")).toEqual([{ sessionId: "s-1" }]);
     expect(engine.session().privateMode).toEqual({ modelId: MODEL_ID, sessionCap: 200 });
     expect(engine.reportError).toHaveBeenCalledWith(
-      "The session's Worker key was gone. It restarted with its original 200-credit limit.",
+      "The session's private key was gone. It restarted with its original 200-credit limit.",
     );
   });
 

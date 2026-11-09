@@ -195,12 +195,17 @@ export function modelLabel(id: string): string {
     .replace(/(?<=[A-Za-z])(?=\d+\.)/g, ' ');
 }
 
+/** The rounded number alone: "1,240", "1"; anything not a positive number reads as 0. */
+export function formatCreditAmount(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return '0';
+  // `|| 0` turns the -0 that rounding a small negative gives into 0.
+  return (Math.round(n) || 0).toLocaleString('en-US');
+}
+
 /** Whole credits, rounded: "1,240 credits", "1 credit"; anything not a positive number reads as 0. */
 export function formatCredits(n: number): string {
   if (!Number.isFinite(n) || n < 0) return '0 credits';
-  // `|| 0` turns the -0 that rounding a small negative gives into 0.
-  const whole = Math.round(n) || 0;
-  return `${whole.toLocaleString('en-US')} ${whole === 1 ? 'credit' : 'credits'}`;
+  return `${formatCreditAmount(n)} ${Math.round(n) === 1 ? 'credit' : 'credits'}`;
 }
 
 /** What Zorvo says once a top-up's credits land: the notification's and the in-app notice's words. */

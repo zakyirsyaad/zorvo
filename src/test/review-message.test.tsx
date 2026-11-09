@@ -1263,6 +1263,18 @@ describe("A message with comments that comes back", () => {
     expect(result.current.slot).toEqual({ sessionId: "s-a", commentIds: [], lastTarget: "head" });
   });
 
+  it("puts a held message's own slot back, so its comments still go with it", () => {
+    const { result, markSent } = renderMessage();
+    const held = { sessionId: "s-a" as const, commentIds: ["c-9"], lastTarget: "head" as const };
+
+    act(() => result.current.rearm(held));
+    expect(result.current.slot).toEqual(held);
+
+    act(() => result.current.sendFrom("s-a", "the text"));
+    expect(markSent).toHaveBeenLastCalledWith("s-a", ["c-9"]);
+    expect(result.current.slot).toBeNull();
+  });
+
   it.each([
     ["first", "the text\n\nnewer"],
     ["last", "older\n\nthe text"],

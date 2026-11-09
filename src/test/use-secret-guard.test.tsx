@@ -32,6 +32,29 @@ describe("useSecretGuard", () => {
     expect(second).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the held message's review-comment slot for Edit", async () => {
+    const onEdit = vi.fn();
+    const { result } = renderHook(() =>
+      useSecretGuard({ isEnabled: true, root: "/w", agentName: "Qwen Code", onEdit }),
+    );
+    const slot = { sessionId: "s-1", commentIds: ["c-1"], lastTarget: "head" as const };
+
+    act(() => {
+      result.current.check({ text: `key ${AWS}` }, vi.fn(), {
+        isEnabled: true,
+        root: "/w",
+        agentName: "Qwen Code",
+        sessionId: "s-1",
+        reviewSlot: slot,
+      });
+    });
+    await waitFor(() => expect(result.current.review).not.toBeNull());
+
+    act(() => result.current.edit());
+
+    expect(onEdit).toHaveBeenCalledWith("s-1", { text: `key ${AWS}` }, slot);
+  });
+
   it("gives the held message's session to Edit", async () => {
     const onEdit = vi.fn();
     const { result } = renderHook(() =>
@@ -50,6 +73,6 @@ describe("useSecretGuard", () => {
 
     act(() => result.current.edit());
 
-    expect(onEdit).toHaveBeenCalledWith("s-1", { text: `key ${AWS}` });
+    expect(onEdit).toHaveBeenCalledWith("s-1", { text: `key ${AWS}` }, undefined);
   });
 });

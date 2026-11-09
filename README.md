@@ -56,7 +56,7 @@ _Add the demo screenshot here: the **Verified in TEE** badge and its popover._
 ### (a) No Mac needed
 
 1. `pnpm install` → installs the workspace, including `server/`.
-2. `pnpm --filter zorvo-credits-server test` → **405 Vitest tests and 30 Node tests pass**. The suite
+2. `pnpm --filter zorvo-credits-server test` → **406 Vitest tests and 31 Node tests pass**. The suite
    prints two expected uncaught-exception lines from its own tests and still exits 0.
 3. `curl -s -o - -w '\n%{http_code}\n' https://zorvo-credits-server.zkyxentertain.workers.dev/v1/models`
    → `{"error":"unauthorized"}` and `401`: the live Worker is up and refuses a request without a device
@@ -84,7 +84,7 @@ on a cold cache; later builds are much faster.
 2. `cd zorvo && pnpm install`
 3. `ZORVO_CREDITS_URL=https://zorvo-credits-server.zkyxentertain.workers.dev pnpm tauri dev`
 4. In Settings → Private mode, paste the judge code under **Promo code** and press **Redeem** → the
-   balance shows `+N credits` and the key line says `Key ready`.
+   promo row says `N credits added. Enjoy.` and the key line says `Key ready`.
 5. Start a Qwen Code draft with the **Private · TEE** chip on, send a prompt → Qwen answers from NEAR AI;
    the reply carries **Verified in TEE**, and its popover shows the model, the signer and the
    Verification Center link.
@@ -94,8 +94,8 @@ on a cold cache; later builds are much faster.
    the match, and sends nothing until **Send anyway** or **Edit message**. The check runs on this Mac; no
    match is stored or sent.
 8. Settings → Private mode → **Add key** saves your own NEAR AI key from an organization with credits;
-   switch a draft to **My NEAR AI key** and the footer says `Paying with your NEAR AI key`, with the
-   session priced in dollars instead of Zorvo credits.
+   under **Private sessions pay with**, pick **My NEAR AI key**, then start a private session: the
+   footer says `Paying with your NEAR AI key`, priced in dollars instead of Zorvo credits.
 9. The Private inspector shows **This session** usage and its **Average per turn**; Settings → Private
    mode lists the total **Used by N models** and the turns each model's price leaves.
 

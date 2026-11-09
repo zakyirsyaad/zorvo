@@ -13,6 +13,7 @@ pub mod mcp;
 mod records;
 mod server;
 
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use super::launch::NEAR_AI_BASE_URL;
@@ -35,6 +36,8 @@ pub struct PrivateProxy {
     upstream: String,
     server: Mutex<Option<Arc<server::ProxyServer>>>,
     mcp: Mutex<Option<Arc<McpState>>>,
+    /// App sessions whose capped session key NEAR AI rejected; drained by the service at launch.
+    rejected: Arc<Mutex<HashSet<String>>>,
 }
 
 impl PrivateProxy {
@@ -50,6 +53,7 @@ impl PrivateProxy {
             upstream: upstream.into(),
             server: Mutex::new(None),
             mcp: Mutex::new(None),
+            rejected: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -76,12 +80,15 @@ impl PrivateProxy {
             return Ok(Arc::clone(server));
         }
         let started = Arc::new(
-            server::ProxyServer::start(&self.upstream, lock(&self.mcp).clone()).map_err(
-                |error| {
-                    eprintln!("private proxy: could not listen on 127.0.0.1 ({error})");
-                    PrivateError::Unreachable
-                },
-            )?,
+            server::ProxyServer::start(
+                &self.upstream,
+                lock(&self.mcp).clone(),
+                Arc::clone(&self.rejected),
+            )
+            .map_err(|error| {
+                eprintln!("private proxy: could not listen on 127.0.0.1 ({error})");
+                PrivateError::Unreachable
+            })?,
         );
         *slot = Some(Arc::clone(&started));
         Ok(started)
@@ -124,6 +131,18 @@ impl PrivateProxy {
         if let Some(server) = lock(&self.server).as_ref() {
             server.revoke_own_key();
         }
+    }
+
+    /// Sessions whose capped key NEAR AI refused since the last call; draining gives the service
+    /// the records to drop before those sessions launch again.
+    pub fn take_rejected_sessions(&self) -> Vec<String> {
+        lock(&self.rejected).drain().collect()
+    }
+
+    /// Tests only: pretend NEAR AI refused this session's key, without a live proxy call.
+    #[cfg(test)]
+    pub(crate) fn mark_rejected(&self, app_session_id: &str) {
+        lock(&self.rejected).insert(app_session_id.to_string());
     }
 
     /// The key behind `app_session_id`'s current or last token, for a billing read. Backend only:

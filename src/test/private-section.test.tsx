@@ -334,14 +334,14 @@ describe("Private mode section: top-up picker", () => {
   it("shows the stock line at the heading, with a low-stock note below 2,500 credits", async () => {
     stockWith(PACKAGES, 600);
     await mount();
-    expect(await screen.findByText("Stock: 600 credits · more coming soon")).toBeInTheDocument();
+    expect(await screen.findByText(/^Stock: 600 credits · more coming soon · updated .+ ago$/)).toBeInTheDocument();
   });
 
   it("shows no low-stock note when stock is plentiful", async () => {
     stockWith();
     await mount();
     await screen.findByRole("radio", { name: /\$5\b/ });
-    expect(screen.getByText("Stock: 100,000 credits")).toBeInTheDocument();
+    expect(screen.getByText(/^Stock: 100,000 credits · updated .+ ago$/)).toBeInTheDocument();
     expect(screen.queryByText(/more coming soon/)).toBeNull();
   });
 
@@ -488,7 +488,7 @@ describe("TopupProgress", () => {
     expect(screen.getByText("Couldn't open checkout")).toBeInTheDocument();
     expect(screen.getByText("PingPay didn't answer. Nothing was held or charged.")).toBeInTheDocument();
     expect(screen.queryByText("Waiting for your payment")).toBeNull();
-    expect(button("Open checkout again")).toBeInTheDocument();
+    expect(button("Try again")).toHaveClass("bg-primary");
     expect(button("Cancel")).toBeInTheDocument();
   });
 
@@ -556,9 +556,11 @@ describe("TopupProgress", () => {
 
   it("credited shows the new balance and starts a private session", async () => {
     const props = renderProgress({ kind: "credited", credits: 1000 });
-    expect(screen.getByRole("status")).toHaveTextContent("+1,000 credits");
+    const amount = screen.getByRole("status").querySelector("[class*='text-[28px]']");
+    expect(amount?.textContent).toBe("+1,000 credits");
+    expect(screen.getByRole("status")).not.toHaveTextContent("credits credits");
     expect(screen.getByRole("status").closest("[class*='border-status-running']")).not.toBeNull();
-    expect(screen.getByRole("status").querySelector("[class*='text-[28px]']")).not.toBeNull();
+    expect(amount).not.toBeNull();
     expect(screen.getByText("Balance 2,240 credits")).toBeInTheDocument();
     expect(
       screen.getByText(

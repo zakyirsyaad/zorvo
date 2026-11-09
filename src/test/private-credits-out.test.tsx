@@ -189,7 +189,7 @@ describe("a private session on the user's own key", () => {
     expect(screen.getByText("Your NEAR AI key wasn't accepted")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "NEAR AI didn't accept this key. Check it or create a new one in your NEAR AI dashboard, then add it in Settings → Private mode.",
+        "NEAR AI didn't accept this key. Check it or create a new one in your NEAR AI dashboard, then add it in Settings → Private mode. Stop and reopen this session so it uses the new key.",
       ),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Add key" }));
@@ -215,7 +215,7 @@ describe("a private session on the user's own key", () => {
     expect(screen.getByText("Your NEAR AI key was removed")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "You removed this key from Zorvo. Add a key in Settings → Private mode to keep running privately.",
+        "You removed this key from Zorvo. Add a key in Settings → Private mode, then stop and reopen this session so it uses it.",
       ),
     ).toBeInTheDocument();
   });

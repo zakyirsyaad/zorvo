@@ -290,6 +290,9 @@ pub(super) struct ProxyState {
     pub(super) client: reqwest::Client,
     tokens: std::sync::Mutex<TokenTable>,
     pub(super) records: Arc<std::sync::Mutex<RecordStore>>,
+    /// App sessions whose capped session key NEAR AI rejected; shared with `PrivateProxy` so the
+    /// service can drop their records before the next launch.
+    rejected: Arc<std::sync::Mutex<HashSet<String>>>,
     mcp: std::sync::Mutex<Option<Arc<McpState>>>,
 }
 
@@ -298,13 +301,23 @@ impl ProxyState {
         lock(&self.tokens).find(raw)
     }
 
+    /// Records that NEAR AI refused this session's key. The proxy answer still passes through;
+    /// the next launch drops the local cap record and makes a new Worker session.
+    pub(super) fn reject_session(&self, app_session_id: &str) {
+        lock(&self.rejected).insert(app_session_id.to_string());
+    }
+
     pub(super) fn mcp(&self) -> Option<Arc<McpState>> {
         lock(&self.mcp).clone()
     }
 }
 
 impl ProxyServer {
-    pub(super) fn start(upstream: &str, mcp: Option<Arc<McpState>>) -> io::Result<Self> {
+    pub(super) fn start(
+        upstream: &str,
+        mcp: Option<Arc<McpState>>,
+        rejected: Arc<std::sync::Mutex<HashSet<String>>>,
+    ) -> io::Result<Self> {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
         let port = listener.local_addr()?.port();
         listener.set_nonblocking(true)?;
@@ -320,6 +333,7 @@ impl ProxyServer {
             client,
             tokens: std::sync::Mutex::new(TokenTable::default()),
             records: Arc::new(std::sync::Mutex::new(RecordStore::default())),
+            rejected,
             mcp: std::sync::Mutex::new(mcp),
         });
         let (shutdown, mut stopped) = oneshot::channel();

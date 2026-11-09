@@ -147,8 +147,8 @@ export function PrivateCreditsOut({
         {isKeyRefusal ? (
           <p>
             {ownKeySaved
-              ? "NEAR AI didn't accept this key. Check it or create a new one in your NEAR AI dashboard, then add it in Settings → Private mode."
-              : "You removed this key from Zorvo. Add a key in Settings → Private mode to keep running privately."}
+              ? "NEAR AI didn't accept this key. Check it or create a new one in your NEAR AI dashboard, then add it in Settings → Private mode. Stop and reopen this session so it uses the new key."
+              : "You removed this key from Zorvo. Add a key in Settings → Private mode, then stop and reopen this session so it uses it."}
           </p>
         ) : (
           <p>

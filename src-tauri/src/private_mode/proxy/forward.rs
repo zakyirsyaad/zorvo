@@ -102,6 +102,14 @@ pub(super) async fn chat(
         }
     };
     let status = upstream.status();
+    if status == StatusCode::UNAUTHORIZED && !entry.own_key {
+        // The Worker revoked a capped session's key (usually the 24 h sweep). The agent still
+        // sees NEAR AI's answer; the next launch drops the record and makes a new Worker session.
+        state.reject_session(&entry.app_session_id);
+        eprintln!(
+            "private proxy: NEAR AI refused this session's key; the next launch will make a new one"
+        );
+    }
     let content_type = upstream.headers().get(CONTENT_TYPE).cloned();
     let inference_id = upstream
         .headers()
@@ -145,6 +153,12 @@ pub(super) async fn models(
         }
     };
     let status = upstream.status();
+    if status == StatusCode::UNAUTHORIZED && !entry.own_key {
+        state.reject_session(&entry.app_session_id);
+        eprintln!(
+            "private proxy: NEAR AI refused this session's key; the next launch will make a new one"
+        );
+    }
     let content_type = upstream.headers().get(CONTENT_TYPE).cloned();
     stream_response(upstream, status, content_type, None)
 }

@@ -59,9 +59,13 @@ function envKind(name: string): string {
 /** A value that names where a secret comes from, not the secret itself. */
 function isExpressionValue(value: string): boolean {
   const trimmed = value.trim();
+  // A full `${…}` template or `$UPPER_SNAKE` reference is an expression; a `$`-prefixed value with
+  // mixed case or digits can be the password itself and stays caught.
+  if (/^\$\{[^}]+\}$/.test(trimmed) || /^\$[A-Z_][A-Z0-9_]*$/.test(trimmed)) return true;
   return (
-    trimmed.startsWith("$") ||
-    /^(?:process\.env|os\.environ|os\.getenv|import\.meta\.env|deno\.env)\b/i.test(trimmed) ||
+    /^(?:process\.env|os\.environ|os\.environ\.get|os\.getenv|import\.meta\.env|deno\.env)\b/i.test(trimmed) ||
+    /^(?:getenv|env)\(\s*['"][^'"]*['"]\s*\)$/i.test(trimmed) ||
+    /^request\.form\[/i.test(trimmed) ||
     trimmed.includes("${")
   );
 }

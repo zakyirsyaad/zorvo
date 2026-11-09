@@ -785,6 +785,33 @@ fn settings_keep_the_secret_guard_off_and_default_it_on() {
 }
 
 #[test]
+fn settings_keep_the_low_balance_notice_until_it_is_armed_again() {
+    let root = unique_temp_root("low-balance-notified");
+    let store = AppStore::new(root.clone());
+    let mut state = populated_state();
+    state.settings.private_low_balance_notified = true;
+
+    store.save_state(&state).expect("save state");
+    let loaded = store.load_state().expect("load state");
+
+    assert!(loaded.settings.private_low_balance_notified);
+    let raw = fs::read_to_string(root.join("state.json")).expect("read state file");
+    assert!(raw.contains("\"privateLowBalanceNotified\": true"), "{raw}");
+
+    fs::write(
+        root.join("state.json"),
+        r#"{"version":1,"settings":{"defaultAgentId":"claude"},"recentFolders":[],"sessions":[]}"#,
+    )
+    .expect("write old state");
+    let old = store.load_state().expect("load old state");
+    assert!(
+        !old.settings.private_low_balance_notified,
+        "a state without it has not notified yet"
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn state_without_appearance_loads_empty() {
     let root = unique_temp_root("no-appearance");
     fs::create_dir_all(&root).expect("create root");

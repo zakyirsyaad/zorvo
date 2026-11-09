@@ -2,7 +2,7 @@ import { useEffect, useId, useState, type Ref } from "react";
 import type { PrivateCredits } from "../../hooks/usePrivateCredits";
 import { useLatest } from "../../hooks/useLatest";
 import { isTopupActive } from "../../lib/private-flow";
-import { formatCredits, type PaymentSource } from "../../lib/private-credits";
+import { formatCredits, updatedAgo, type PaymentSource } from "../../lib/private-credits";
 import { privateUsageRows } from "../../lib/private-usage";
 import type { Session } from "../../types";
 import { BalanceCard } from "../private/BalanceCard";
@@ -53,6 +53,7 @@ export function PrivateSection({
 }: PrivateSectionProps) {
   const { status, flow, loadCatalog } = credits;
   const secretGuardLabelId = useId();
+  const topupHeadingId = useId();
   const onRestoringChangeRef = useLatest(onRestoringChange);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isRedeeming, setIsRedeeming] = useState(false);
@@ -88,17 +89,20 @@ export function PrivateSection({
         agentNameOf={agentNameOf}
         paymentSource={paymentSource}
       />
-      <SettingsGroup
-        heading="Top-up"
-        meta={
-          credits.stock
-            ? `Stock: ${formatCredits(credits.stock.availableCredits)}${
+      <section aria-labelledby={topupHeadingId} className="flex flex-col">
+        <div className="flex items-baseline gap-2 px-1 pb-2">
+          <h2 id={topupHeadingId} className="text-caption font-medium text-fg-muted">
+            Top-up
+          </h2>
+          {credits.stock && (
+            <span className="ml-auto text-[11px] text-fg-subtle">
+              {`Stock: ${formatCredits(credits.stock.availableCredits)}${
                 credits.stock.availableCredits < LOW_STOCK_CREDITS ? " · more coming soon" : ""
-              }`
-            : undefined
-        }
-      >
-        <div className="border-b border-border p-4">
+              } · ${updatedAgo(credits.stock.updatedAt, Date.now()).replace(/^Updated/, "updated")}`}
+            </span>
+          )}
+        </div>
+        <div className="pb-4">
           {flow.kind === "idle" && (
             <TopupPicker
               stock={credits.stock}
@@ -118,8 +122,10 @@ export function PrivateSection({
             onDismiss={credits.dismiss}
           />
         </div>
-        <PromoField redeem={credits.redeem} isBlocked={isActive} onRedeeming={setIsRedeeming} />
-      </SettingsGroup>
+        <div className="flex flex-col rounded-xl border border-border bg-surface-2">
+          <PromoField redeem={credits.redeem} isBlocked={isActive} onRedeeming={setIsRedeeming} />
+        </div>
+      </section>
       <details className="rounded-xl border border-border bg-surface-2 px-4 py-3">
         <summary className="cursor-pointer text-ui font-semibold text-fg">How credits work</summary>
         <div className="mt-2 flex flex-col gap-2 text-ui-sm text-fg-muted">

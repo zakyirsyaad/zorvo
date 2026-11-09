@@ -666,6 +666,57 @@ async fn passes_a_402_through_unchanged_and_records_nothing() {
 }
 
 #[tokio::test]
+async fn an_upstream_401_on_a_session_key_marks_it_for_a_new_session() {
+    let body = br#"{"error":"revoked"}"#;
+    let fake = FakeUpstream::start(move |_request, stream| {
+        respond(stream, "401 Unauthorized", "application/json", body);
+    });
+    let proxy = PrivateProxy::with_upstream(fake.base());
+    let (token, base) = issue(&proxy);
+
+    let response = chat_response(
+        &base,
+        &token,
+        br#"{"model":"Qwen/Qwen3.8-27B","messages":[]}"#.to_vec(),
+    )
+    .await;
+    assert_eq!(response.status(), 401);
+    let _ = response.bytes().await.expect("the upstream body");
+
+    assert_eq!(proxy.take_rejected_sessions(), vec![SESSION.to_string()]);
+    assert!(
+        proxy.take_rejected_sessions().is_empty(),
+        "draining reports it once"
+    );
+}
+
+#[tokio::test]
+async fn an_upstream_401_on_the_users_own_key_is_not_marked() {
+    let body = br#"{"error":"revoked"}"#;
+    let fake = FakeUpstream::start(move |_request, stream| {
+        respond(stream, "401 Unauthorized", "application/json", body);
+    });
+    let proxy = PrivateProxy::with_upstream(fake.base());
+    let issued = proxy
+        .issue(SESSION, MODEL, KEY, true)
+        .expect("a proxy token");
+
+    let response = chat_response(
+        &issued.base_url,
+        &issued.token,
+        br#"{"model":"Qwen/Qwen3.8-27B","messages":[]}"#.to_vec(),
+    )
+    .await;
+    assert_eq!(response.status(), 401);
+    let _ = response.bytes().await.expect("the upstream body");
+
+    assert!(
+        proxy.take_rejected_sessions().is_empty(),
+        "the user's own key is not a session key"
+    );
+}
+
+#[tokio::test]
 async fn a_stream_cut_mid_way_leaves_a_not_signed_record() {
     let fake = FakeUpstream::start(|_request, stream| {
         sse_head(stream);

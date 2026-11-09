@@ -1430,17 +1430,16 @@ fn ending_a_session_cap_calls_the_worker_and_forgets_the_key() {
 fn a_seen_session_tells_the_worker_once_a_minute() {
     let h = Harness::with_device(CODE);
     h.mode.ensure_session_cap("s-1", 100).expect("a cap");
+    // The launch probe already told the Worker once; start the throttle test from zero.
+    h.mode.reset_seen_throttle("s-1");
+    let before = h.api.count(|c| matches!(c, Call::SeenSession { .. }));
 
     h.mode.seen_session_cap("s-1").expect("seen");
     h.mode.seen_session_cap("s-1").expect("throttled");
 
     assert_eq!(
-        h.api
-            .calls()
-            .iter()
-            .filter(|c| matches!(c, Call::SeenSession { .. }))
-            .count(),
-        1
+        h.api.count(|c| matches!(c, Call::SeenSession { .. })),
+        before + 1
     );
     assert!(h.api.calls().contains(&Call::SeenSession {
         secret: CODE.into(),
@@ -1558,5 +1557,69 @@ fn a_seen_404_drops_the_local_key_so_the_next_launch_makes_a_new_one() {
             .filter(|call| matches!(call, Call::CreateSession { .. }))
             .count(),
         2
+    );
+}
+
+#[test]
+fn a_reopen_after_the_sweep_makes_a_new_key_without_ending_a_gone_session() {
+    let h = Harness::with_device(CODE);
+    h.mode.ensure_session_cap("s-1", 100).expect("a cap");
+    h.api.seen_session.always(Err(PrivateError::NotFound));
+
+    let outcome = h.mode.ensure_session_cap("s-1", 100).expect("a new one");
+
+    assert_eq!(
+        outcome,
+        SessionCapOutcome {
+            cap: 100,
+            restarted: true
+        }
+    );
+    assert_eq!(
+        h.api
+            .count(|call| matches!(call, Call::CreateSession { .. })),
+        2
+    );
+    assert_eq!(
+        h.api.count(|call| matches!(call, Call::EndSession { .. })),
+        0,
+        "a swept Worker session is already gone"
+    );
+    assert_eq!(h.mode.take_session_cap_reset("s-1"), Some(100));
+}
+
+#[test]
+fn a_rejected_session_key_is_rebuilt_on_its_original_cap() {
+    let h = Harness::with_device(CODE);
+    h.mode.ensure_session_cap("s-1", 100).expect("a cap");
+    h.api.raise_session.always(Ok(400));
+    h.mode.raise_session_cap("s-1", 200).expect("raised");
+    h.proxy.mark_rejected("s-1");
+
+    let outcome = h.mode.ensure_session_cap("s-1", 400).expect("a new one");
+
+    assert_eq!(
+        outcome,
+        SessionCapOutcome {
+            cap: 100,
+            restarted: true
+        }
+    );
+    assert_eq!(
+        h.api
+            .count(|call| matches!(call, Call::CreateSession { .. })),
+        2
+    );
+    assert_eq!(
+        h.api.count(|call| matches!(call, Call::EndSession { .. })),
+        0,
+        "a rejected key is already revoked"
+    );
+    assert_eq!(h.mode.take_session_cap_reset("s-1"), Some(100));
+    assert_eq!(
+        h.state()
+            .session_cap("s-1")
+            .map(|cap| (cap.cap, cap.base_cap)),
+        Some((100, 100))
     );
 }

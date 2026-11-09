@@ -73,6 +73,23 @@ describe("forking a private session", () => {
     expect(spec.privateMode).toEqual({ modelId: MODEL_ID });
   });
 
+  it("a switch to Zorvo credits is a fresh private process without the own key", async () => {
+    const { result, startSession, fork } = renderFork(
+      {
+        ...SOURCE,
+        status: "running",
+        privateMode: { modelId: MODEL_ID, ownKey: true, sessionCap: 200 },
+      },
+      true,
+    );
+
+    await act(async () => result.current("m-1", { creditsPrivate: true }));
+
+    expect(fork).not.toHaveBeenCalled();
+    const spec = startSession.mock.calls[0][0] as SessionSpec;
+    expect(spec.privateMode).toEqual({ modelId: MODEL_ID });
+  });
+
   it("a native fork records the fork as private too", async () => {
     const { result, recordSession, fork } = renderFork({ ...SOURCE, status: "running" }, true);
 

@@ -71,6 +71,21 @@ describe("scanSecretText", () => {
     expect(scanSecretText(text)).toEqual([]);
   });
 
+  it("keeps function-call references out but still catches a dollar-prefixed password", () => {
+    const references = [
+      'PASSWORD=getenv("PASSWORD")',
+      'SECRET=env("SECRET_VALUE")',
+      'TOKEN=request.form["token"]',
+      "API_KEY=$ENVIRONMENT_API_KEY",
+      "PASSWORD=${DATABASE_PASSWORD}",
+    ].join("\n");
+    expect(scanSecretText(references)).toEqual([]);
+
+    expect(scanSecretText("PASSWORD=$uP3rS3cretV4lueXyZ").map((match) => match.kind)).toEqual([
+      "Password",
+    ]);
+  });
+
   it("takes a long ghs_ token and a PGP private-key block", () => {
     const ghs = `ghs_${"a".repeat(40)}`;
     const pgp = ["-----BEGIN", "PGP PRIVATE KEY BLOCK-----"].join(" ");

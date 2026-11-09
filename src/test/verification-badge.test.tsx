@@ -37,7 +37,7 @@ describe("VerificationBadge", () => {
         <VerificationBadge verification={{ ...VERIFIED, state }} modelId={MODEL_ID} />,
       );
       const badge = screen.getByRole("button", { name: new RegExp(label) });
-      expect(badge).toHaveClass("h-6", "rounded-md", "border", "text-caption");
+      expect(badge).toHaveClass("h-6", "rounded-md", "border", "text-ui-sm");
       expect(badge.querySelector(`[data-verification-icon="${state}"]`)).not.toBeNull();
       view.unmount();
     }

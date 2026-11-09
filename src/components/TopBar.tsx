@@ -9,8 +9,10 @@ import {
   PanelLeft,
   PanelRight,
   Pencil,
+  Split,
+  Unlink,
 } from "lucide-react";
-import { Fragment, useState, type Ref } from "react";
+import { Fragment, useId, useState, type Ref } from "react";
 import { Chip } from "./ui/Chip";
 import { IconButton } from "./ui/IconButton";
 import { Popover, PopoverOption } from "./ui/Popover";
@@ -70,20 +72,49 @@ function SessionTitle({ name, isRenaming, onRename, onStartRename, onEndRename }
   );
 }
 
-/** The session's menu: Open in new window, Open in Finder, Rename, Archive, each only when it applies. */
-function MoreOptionsMenu({ onPopout, onReveal, onRename, onArchive }: {
+/** The session's menu: Open in new window, Open in Finder, Rename, Delegate, End delegation, Archive, each only when it applies. */
+function MoreOptionsMenu({
+  onPopout,
+  onReveal,
+  onRename,
+  onArchive,
+  onDelegate,
+  delegateBlockedReason,
+  onEndDelegation,
+  triggerRef,
+}: {
   onPopout?: () => void;
   onReveal?: () => void;
   onRename?: () => void;
   onArchive?: () => void;
+  /** Opens the delegate dialog; the item is left out when the reason is the empty string. */
+  onDelegate?: () => void;
+  /** Why delegating is blocked; null or undefined when it is not, a non-empty reason disables the item. */
+  delegateBlockedReason?: string | null;
+  onEndDelegation?: () => void;
+  /** The ⋯ button, which takes focus back when the dialog its Delegate item opened closes. */
+  triggerRef?: Ref<HTMLButtonElement>;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const delegateReasonId = useId();
+  // The empty reason means blocked with nothing to say: a draft has no Delegate item to show.
+  const canShowDelegate = onDelegate !== undefined && delegateBlockedReason !== "";
+  const delegateReason = delegateBlockedReason ?? undefined;
   const items = [
     { label: "Open in new window", run: onPopout, Icon: ExternalLink },
     { label: "Open in Finder", run: onReveal, Icon: Folder },
     { label: "Rename", run: onRename, Icon: Pencil },
+    ...(canShowDelegate
+      ? [{ label: "Delegate to another agent…", run: onDelegate, Icon: Split, description: delegateReason }]
+      : []),
+    ...(onEndDelegation !== undefined ? [{ label: "End delegation", run: onEndDelegation, Icon: Unlink }] : []),
     { label: "Archive", run: onArchive, Icon: Archive },
-  ].filter((item): item is { label: string; run: () => void; Icon: typeof Archive } => Boolean(item.run));
+  ].filter(
+    (
+      item,
+    ): item is { label: string; run: () => void; Icon: typeof Archive; description?: string } =>
+      Boolean(item.run),
+  );
   if (items.length === 0) return null;
   return (
     <Popover
@@ -94,6 +125,7 @@ function MoreOptionsMenu({ onPopout, onReveal, onRename, onArchive }: {
       className="w-[220px]"
       trigger={
         <IconButton
+          ref={triggerRef}
           label="More options"
           tone="secondary"
           aria-haspopup="menu"
@@ -104,7 +136,7 @@ function MoreOptionsMenu({ onPopout, onReveal, onRename, onArchive }: {
         </IconButton>
       }
     >
-      {items.map(({ label, run, Icon }, index) => (
+      {items.map(({ label, run, Icon, description }, index) => (
         <Fragment key={label}>
           {/* Archive ends the session's work, so a rule sets it apart from the rest. */}
           {label === "Archive" && index > 0 && <div role="separator" className="my-1.5 h-px bg-border" />}
@@ -113,9 +145,17 @@ function MoreOptionsMenu({ onPopout, onReveal, onRename, onArchive }: {
               setIsOpen(false);
               run();
             }}
+            // A blocked Delegate still shows its reason, which the row names for assistive tech.
+            {...(description !== undefined && label === "Delegate to another agent…"
+              ? { disabled: true, description, descriptionId: delegateReasonId }
+              : {})}
           >
             <span className="flex items-center gap-2">
-              <Icon size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
+              <Icon
+                size={14}
+                aria-hidden="true"
+                className={`shrink-0 ${description !== undefined ? "text-fg-subtle" : "text-fg-muted"}`}
+              />
               {label}
             </span>
           </PopoverOption>
@@ -155,6 +195,17 @@ export interface TopBarProps {
   onReveal?: () => void;
   /** Archives the session, from the menu. */
   onArchive?: () => void;
+  /** Opens the dialog that delegates a task to another agent, from the menu. */
+  onDelegate?: () => void;
+  /**
+   * Why delegating is blocked: null when it is not, a non-empty reason disables the item and
+   * shows it under the label, and the empty string leaves the item out (a draft, say).
+   */
+  delegateBlockedReason?: string | null;
+  /** Ends the session's open delegation (A's task, or B's link), from the menu. */
+  onEndDelegation?: () => void;
+  /** The ⋯ button, which takes focus back when a dialog its item opened closes. */
+  moreButtonRef?: Ref<HTMLButtonElement>;
   /** Opens or closes the inspector (changes, activity, files, terminal); the button is hidden when absent. */
   onToggleInspector?: () => void;
   isInspectorOpen?: boolean;
@@ -193,6 +244,10 @@ export function TopBar({
   onPopout,
   onReveal,
   onArchive,
+  onDelegate,
+  delegateBlockedReason,
+  onEndDelegation,
+  moreButtonRef,
   onToggleInspector,
   isInspectorOpen = false,
   inspectorButtonRef,
@@ -305,6 +360,10 @@ export function TopBar({
           onReveal={onReveal}
           onRename={sessionName && onRename ? () => setRenamingId(titleKey) : undefined}
           onArchive={onArchive}
+          onDelegate={onDelegate}
+          delegateBlockedReason={delegateBlockedReason}
+          onEndDelegation={onEndDelegation}
+          triggerRef={moreButtonRef}
         />
       </div>
     </header>

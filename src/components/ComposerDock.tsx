@@ -14,8 +14,9 @@ import type { FolderControl } from "./composer/FolderPicker";
 import { DraftChips } from "./composer/DraftChips";
 import { appendAttachments, formatAttachmentPath, withAttachments } from "../lib/attachments";
 import { joinWorkspacePath } from "../lib/files";
-import { MentionMenu } from "./composer/MentionMenu";
+import { MentionMenu, isPickableAgent, type MentionAgent } from "./composer/MentionMenu";
 import { useMentionMenu, type MentionSource } from "./composer/useMentionMenu";
+import { delegationMentionOf } from "../lib/delegation";
 import { AttachmentChips } from "./composer/AttachmentChips";
 import { ContextMeter } from "./composer/ContextMeter";
 import { isRiskyMode, type ComposerControl, type ComposerControls } from "../lib/composer-controls";
@@ -169,6 +170,15 @@ export interface ComposerDockProps {
   /** The workspace whose files `@` lists; mentions are off when absent. */
   mentions?: MentionSource;
   /**
+   * The agents an `@` at the very start of the message can delegate to; absent turns the group off
+   * (drafts, delegated sessions, popouts and compare runs).
+   */
+  delegationAgents?: readonly MentionAgent[];
+  /** The delegation the text asks for, after every change; null when it asks for none. Send clears it. */
+  onDelegationMentionChange?: (mention: { agentId: string; task: string } | null) => void;
+  /** What the named agent starts on, in the note's place, with Change; a blocking note wins while one is set. */
+  delegationSummary?: { text: string; onChange: (attachments?: readonly string[]) => void };
+  /**
    * The prompt's text, after every change and once on mount: `clear`, `restore` and Send too, since the
    * parent does not redraw on typing. A mount reports empty, because a composer that went away took its text along.
    */
@@ -205,6 +215,9 @@ export function ComposerDock({
   compareModels,
   onOpenCompareModel,
   mentions,
+  delegationAgents,
+  onDelegationMentionChange,
+  delegationSummary,
   onTextChange,
   onRestored,
   onGivenBack,
@@ -220,7 +233,12 @@ export function ComposerDock({
   const restoredRef = useRef<{ text: string; attachments: readonly string[] } | null>(null);
   // Set by `insertText`: the box can only be measured once the text is in it.
   const shouldFitRef = useRef(false);
+  // Set by a pick: where the caret goes once the new text is in the box.
+  const pendingCaretRef = useRef<number | null>(null);
+  // The delegation the last report gave, so an unchanged parse is not reported again.
+  const lastDelegationKeyRef = useRef("");
   const onTextChangeRef = useLatest(onTextChange);
+  const onDelegationMentionChangeRef = useLatest(onDelegationMentionChange);
 
   useDismiss(containerRef, openDropdown !== null, () => setOpenDropdown(null));
 
@@ -228,6 +246,14 @@ export function ComposerDock({
     if (!shouldFitRef.current || !textareaRef.current) return;
     shouldFitRef.current = false;
     fitToText(textareaRef.current);
+  }, [text]);
+
+  useLayoutEffect(() => {
+    const caret = pendingCaretRef.current;
+    if (caret === null || !textareaRef.current) return;
+    pendingCaretRef.current = null;
+    textareaRef.current.setSelectionRange(caret, caret);
+    textareaRef.current.focus();
   }, [text]);
 
   useEffect(() => {
@@ -265,7 +291,19 @@ export function ComposerDock({
     if (textareaRef.current) textareaRef.current.style.height = "auto";
   };
 
-  const mentionMenu = useMentionMenu(mentions);
+  const mentionMenu = useMentionMenu(mentions, delegationAgents);
+  // The parent builds the list anew on every render: the parse follows its names, not its identity.
+  const delegationAgentsRef = useLatest(delegationAgents);
+  const delegationAgentsKey = delegationAgents?.map((agent) => `${agent.id}\u0001${agent.name}`).join("\u0000");
+  // Reports the delegation as the text changes; an unchanged parse stays unreported.
+  useEffect(() => {
+    const agents = delegationAgentsRef.current;
+    const mention = agents ? delegationMentionOf(text, agents) : null;
+    const key = mention ? `${mention.agentId}\u0000${mention.task}` : "";
+    if (key === lastDelegationKeyRef.current) return;
+    lastDelegationKeyRef.current = key;
+    onDelegationMentionChangeRef.current?.(mention);
+  }, [text, delegationAgentsKey, delegationAgentsRef, onDelegationMentionChangeRef]);
   /** The @-mention list follows the caret: moving it off the @word closes the list. */
   const followCaret = (field: HTMLTextAreaElement) =>
     mentionMenu.update(field.value, field.selectionStart ?? field.value.length);
@@ -289,10 +327,42 @@ export function ComposerDock({
     textareaRef.current?.focus();
   };
 
-  // The file list, when an @word is typed, takes the keys before the command list.
+  /** Replaces the @word with `@Agent name ` and puts the caret after the space. */
+  const pickAgent = (agent: MentionAgent) => {
+    const { mention } = mentionMenu;
+    if (!mention) return;
+    const before = text.slice(0, mention.start);
+    const after = text.slice(mention.end).replace(/^ /, "");
+    const next = `${before}@${agent.name} ${after}`;
+    const caret = before.length + agent.name.length + 2;
+    pendingCaretRef.current = caret;
+    setText(next);
+    mentionMenu.close();
+    if (next === text) {
+      // React keeps the text, so the change effect does not run: put the caret where the pick asked now.
+      pendingCaretRef.current = null;
+      textareaRef.current?.setSelectionRange(caret, caret);
+    }
+    textareaRef.current?.focus();
+  };
+
+  // One keyboard list: the pickable agents first, then the files; the command list only when no @word is open.
+  const pickableMentionAgents = mentionMenu.agents.filter(isPickableAgent);
+  const pickMention = (index: number) => {
+    const agent = pickableMentionAgents[index];
+    if (agent !== undefined) {
+      pickAgent(agent);
+      return;
+    }
+    const path = mentionMenu.files[index - pickableMentionAgents.length];
+    if (path !== undefined) pickFile(path);
+  };
+  const mentionCount = pickableMentionAgents.length + mentionMenu.files.length;
+  // A visible list of only unpickable agents still takes the keys: Return must not send past it.
+  const hasMentionList = mentionMenu.agents.length > 0 || mentionMenu.files.length > 0;
   const openMenu =
-    mentionMenu.files.length > 0
-      ? { count: mentionMenu.files.length, pick: (i: number) => pickFile(mentionMenu.files[i]), dismiss: mentionMenu.close }
+    hasMentionList
+      ? { count: mentionCount, pick: pickMention, dismiss: mentionMenu.close }
       : menuCommands.length > 0
         ? { count: menuCommands.length, pick: (i: number) => pickCommand(menuCommands[i]), dismiss: () => setIsMenuDismissed(true) }
         : null;
@@ -310,14 +380,20 @@ export function ComposerDock({
     textareaRef.current?.focus();
   };
 
-  /** Arrow keys, Enter/Tab and Escape drive the open menu (files or commands). */
+  /** Arrow keys, Enter/Tab and Escape drive the open menu (agents and files, or commands). */
   const handleMenuKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): boolean => {
     if (!openMenu) return false;
     const last = openMenu.count - 1;
-    if (e.key === "ArrowDown") setHighlighted((i) => (i >= last ? 0 : i + 1));
-    else if (e.key === "ArrowUp") setHighlighted((i) => (i <= 0 ? last : i - 1));
-    else if (e.key === "Enter" || e.key === "Tab") openMenu.pick(Math.min(highlighted, last));
-    else if (e.key === "Escape") openMenu.dismiss();
+    if (e.key === "ArrowDown") setHighlighted((i) => (last < 0 || i >= last ? 0 : i + 1));
+    else if (e.key === "ArrowUp") setHighlighted((i) => (last < 0 || i <= 0 ? Math.max(last, 0) : i - 1));
+    else if (e.key === "Enter" || e.key === "Tab") {
+      // Nothing can be picked: the list stays open and Return does not send the message past it.
+      if (last < 0) {
+        e.preventDefault();
+        return true;
+      }
+      openMenu.pick(Math.min(highlighted, last));
+    } else if (e.key === "Escape") openMenu.dismiss();
     else return false;
     e.preventDefault();
     return true;
@@ -477,11 +553,13 @@ export function ComposerDock({
             onRemove={(path) => setAttachments((current) => current.filter((p) => p !== path))}
           />
         )}
-        {mentionMenu.files.length > 0 ? (
+        {mentionMenu.agents.length > 0 || mentionMenu.files.length > 0 ? (
           <MentionMenu
             files={mentionMenu.files}
+            agents={mentionMenu.agents}
             highlighted={highlighted}
             onPick={pickFile}
+            onPickAgent={pickAgent}
             folderName={folderNameOf(mentions?.root ?? "")}
             query={mentionMenu.mention?.query ?? ""}
             side={menuSide}
@@ -520,6 +598,19 @@ export function ComposerDock({
         {shownNote && !noteInRow && (
           <p id={noteId} className="text-caption text-fg-muted">
             {shownNote}
+          </p>
+        )}
+
+        {!shownNote && !noteInRow && delegationSummary && (
+          <p className="text-caption text-fg-muted">
+            <span>{delegationSummary.text}</span>{" "}
+            <button
+              type="button"
+              onClick={() => delegationSummary.onChange(attachments)}
+              className="rounded-sm text-fg-secondary underline underline-offset-2 focus-ring"
+            >
+              Change
+            </button>
           </p>
         )}
 

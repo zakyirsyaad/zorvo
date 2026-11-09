@@ -63,7 +63,8 @@ describe("useAgentProbe", () => {
     expect(options.modes?.currentModeId).toBe("default");
     expect(options.configOptions[0].id).toBe("model");
     expect(options.commands).toEqual([{ name: "review", description: "Review the changes" }]);
-    expect(result.current.isProbing("qwen-code")).toBe(false);
+    // The probe clears its pending mark in a finally after onProbed; wait for that render.
+    await waitFor(() => expect(result.current.isProbing("qwen-code")).toBe(false));
   });
 
   it("learns the models an agent reports, and none from one that does not", async () => {

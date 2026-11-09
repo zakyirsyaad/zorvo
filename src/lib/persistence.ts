@@ -1,5 +1,15 @@
 import { invoke } from '@tauri-apps/api/core';
-import { TRANSPORT_ACP, type ChatMessage, type ChatMessagePart, type DiffRow, type PersistedState, type Session, type SessionWorktree, type ToolDetail } from '../types';
+import {
+  TRANSPORT_ACP,
+  type ChatMessage,
+  type ChatMessagePart,
+  type DelegationLink,
+  type DiffRow,
+  type PersistedState,
+  type Session,
+  type SessionWorktree,
+  type ToolDetail,
+} from '../types';
 import { markElicitationsUnanswered } from './acp-elicitation';
 import { settlePermissionCards } from './acp-events';
 import { diffDetail } from './diff-rows';
@@ -62,6 +72,19 @@ function isWorktree(value: unknown): value is SessionWorktree {
   );
 }
 
+/** A link to the session that delegated a task: both texts non-empty, its times numeric. */
+function isDelegationLink(value: unknown): value is DelegationLink {
+  return (
+    isObject(value) &&
+    typeof value.sessionId === 'string' &&
+    value.sessionId !== '' &&
+    typeof value.task === 'string' &&
+    value.task !== '' &&
+    typeof value.startedAt === 'number' &&
+    (value.endedAt === undefined || value.endedAt === null || typeof value.endedAt === 'number')
+  );
+}
+
 /** A worktree without a startCommit that is not a string; old worktrees have none. */
 function withValidStartCommit(worktree: SessionWorktree): SessionWorktree {
   const { startCommit, ...rest } = worktree;
@@ -70,7 +93,7 @@ function withValidStartCommit(worktree: SessionWorktree): SessionWorktree {
 
 /** A session keeps everything else when one of its optional fields is malformed. */
 function withValidFields(session: Session): Session {
-  const { worktree, pinned, archivedAt, namedByUser, hasUnread, historyElsewhere, compareRunId, reviewComments, ...rest } = session;
+  const { worktree, pinned, archivedAt, namedByUser, hasUnread, historyElsewhere, compareRunId, reviewComments, delegatedFrom, ...rest } = session;
   const comments = validReviewComments(reviewComments);
   return {
     ...rest,
@@ -81,6 +104,7 @@ function withValidFields(session: Session): Session {
     ...(typeof hasUnread === 'boolean' ? { hasUnread } : {}),
     ...(typeof historyElsewhere === 'boolean' ? { historyElsewhere } : {}),
     ...(compareRunId == null || typeof compareRunId === 'string' ? { compareRunId } : {}),
+    ...(delegatedFrom === null || isDelegationLink(delegatedFrom) ? { delegatedFrom } : {}),
     ...(comments.length > 0 ? { reviewComments: comments } : {}),
   };
 }
@@ -261,6 +285,18 @@ function withValidEndTime(message: ChatMessage): ChatMessage {
   return rest;
 }
 
+/** A report mark keeps a non-empty agent name and, when it is a string, the agent's id. */
+function withValidDelegationReport(message: ChatMessage): ChatMessage {
+  if (!('delegationReport' in message)) return message;
+  const { delegationReport, ...rest } = message;
+  if (!isObject(delegationReport)) return rest as ChatMessage;
+  const { agentName, agentId } = delegationReport;
+  if (typeof agentName !== 'string' || agentName === '') return rest as ChatMessage;
+  return typeof agentId === 'string'
+    ? { ...rest, delegationReport: { agentName, agentId } }
+    : { ...rest, delegationReport: { agentName } };
+}
+
 /**
  * Keeps every well-formed saved message, dropping a `parts` list that does not
  * match the shape and dropping entries that are not messages. Messages saved
@@ -308,7 +344,7 @@ export function normalizeTranscript(raw: unknown): ChatMessage[] {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((raw): ChatMessage[] => {
     if (!isMessage(raw)) return [];
-    const message = withReadableDiffs(withValidEndTime(raw));
+    const message = withValidDelegationReport(withReadableDiffs(withValidEndTime(raw)));
     if (!('parts' in message)) return [message];
     const { parts, ...rest } = message;
     const isWellFormed = Array.isArray(parts) && parts.length > 0 && parts.every(isMessagePart);

@@ -52,9 +52,9 @@ export function removeSessionFrom(state: PersistedState, sessionId: string): Per
 }
 
 /**
- * A session with the sessions forked from it, newest first. A compare run is one node
- * with `run` set: its `children` are the run's sessions (oldest first, each with its own
- * forks), and `session` is the newest of them, which places the group in the list.
+ * A session with the sessions it began (a fork or a delegated task), newest first. A compare
+ * run is one node with `run` set: its `children` are the run's sessions (oldest first, each
+ * with its own forks), and `session` is the newest of them, which places the group in the list.
  */
 export interface SessionNode {
   session: Session;
@@ -96,8 +96,9 @@ export function workspacePathOf(session: Session): string {
 }
 
 /**
- * One folder's sessions as a tree: a fork sits under its source when that is in the same folder,
- * and each run (its sessions in this folder) is one group node placed by its newest session.
+ * One folder's sessions as a tree: a fork or a delegated session sits under its source when that
+ * is in the same folder, and each run (its sessions in this folder) is one group node placed by
+ * its newest session.
  */
 function forkTree(sessions: readonly Session[], runs: readonly CompareRun[] = []): SessionNode[] {
   const ids = new Set(sessions.map((s) => s.id));
@@ -119,7 +120,8 @@ function forkTree(sessions: readonly Session[], runs: readonly CompareRun[] = []
       placedRuns.add(run.id);
       continue;
     }
-    const parent = session.forkedFrom;
+    // A delegated session sits under its source the way a fork does.
+    const parent = session.forkedFrom ?? session.delegatedFrom?.sessionId;
     if (parent && parent !== session.id && ids.has(parent)) {
       childrenOf.set(parent, [...(childrenOf.get(parent) ?? []), session]);
     } else {

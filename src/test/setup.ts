@@ -1,8 +1,14 @@
 // Global test setup for Vitest (JSDOM environment mocks)
 
 import { afterEach } from "vitest";
+import { configure } from "@testing-library/react";
 import { fakeProfiles } from "./fixtures/agents";
 import { fakeCatalog } from "./fixtures/catalog";
+
+// App tests wait for real state; under the pre-push hook's load a query can take
+// longer than Testing Library's 1 s default. A passing test still ends as soon
+// as the condition is met, so only a slow or stuck one waits this long.
+configure({ asyncUtilTimeout: 10_000 });
 
 /**
  * In-memory stand-in for the backend store commands. Tests seed it through

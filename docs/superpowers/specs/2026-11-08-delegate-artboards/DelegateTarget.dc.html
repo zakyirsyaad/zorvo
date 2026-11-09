@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zorvo · Session B, delegated to Codex</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.z{--bg:#0a0a0b;--s1:#111113;--s2:#18181b;--s3:#1f1f23;--hover:#27272a;--line:#27272a;--strong:#71717a;--fg:#fafafa;--fg2:#d4d4d8;--muted:#a1a1aa;--subtle:#8b8b94;--primary:#fafafa;--onp:#09090b;--run:#34d399;--danger:#f87171;--pop:0 16px 40px -8px rgba(0,0,0,.6);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.z.light{--bg:#fafafa;--s1:#f4f4f5;--s2:#ffffff;--s3:#ffffff;--hover:#e4e4e7;--line:#e4e4e7;--strong:#808088;--fg:#09090b;--fg2:#27272a;--muted:#52525b;--subtle:#67676f;--primary:#09090b;--onp:#fafafa;--run:#047353;--danger:#b91c1c;--pop:0 12px 32px -8px rgba(9,9,11,.18)}
+.z button{font:inherit;cursor:pointer;margin:0}
+.mono{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.ico{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.logo{width:16px;height:16px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;background:var(--hover);color:var(--fg2);flex:none}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 1024px; height: 820px; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); color: var(--fg); font-size: 13px; line-height: 18px;">
+  <header style="height: 48px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 20px;">
+    <h1 style="margin: 0; font-size: 13px; font-weight: 600;">Codex: Implement step 2 of the plan…</h1>
+    <span class="mono" style="font-size: 11px; color: var(--fg2);">main</span>
+    <span style="flex: 1;"></span>
+    <button class="mono" aria-label="24 lines added, 3 removed. Open changes" style="height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid var(--line); border-radius: 6px; background: transparent; font-size: 11px;"><span style="color: var(--run);">+24</span><span style="color: var(--danger);">−3</span></button>
+    <button aria-label="Toggle inspector" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--fg2);"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16"></path></svg></button>
+    <button aria-label="More actions" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--fg2);"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></button>
+  </header>
+
+  <div style="flex: 1; min-height: 0; overflow: hidden; padding: 32px 24px 16px;">
+    <div style="max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px;">
+      <p style="margin: 0 0 -8px; font-size: 11px; line-height: 16px; color: var(--muted);">Delegated from Fix login bug · Claude Code <button style="padding: 0; border: 0; background: transparent; color: var(--fg2); font-size: 11px; text-decoration: underline; text-underline-offset: 2px;">Open</button></p>
+
+      <div style="align-self: flex-end; max-width: 85%; padding: 10px 14px; border-radius: 12px; background: var(--s2); border: 1px solid var(--line); font-size: 14px; line-height: 22px;">Implement step 2 of the plan: token refresh in src/auth.ts, with tests.</div>
+
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; align-items: center; gap: 8px;"><span class="logo" aria-hidden="true">X</span><span style="color: var(--fg2); font-size: 12px; font-weight: 500;">Codex</span><span style="color: var(--subtle); font-size: 11px;">just now</span></div>
+        <div style="display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--s1); color: var(--fg2); font-size: 12px;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg><span style="flex: 1;">Read 2 files, edited 2, ran 1 command</span><span class="mono" style="font-size: 11px; color: var(--subtle);">src/test/auth.test.ts +18</span></div>
+        <p style="margin: 0; color: var(--fg2); font-size: 14px; line-height: 22px;">Done. Token refresh added in <span class="mono" style="font-size: 12px; padding: 1px 5px; border-radius: 4px; background: var(--s2); border: 1px solid var(--line);">src/auth.ts</span>: it refreshes a minute before expiry and keeps one refresh in flight. 3 tests pass.</p>
+      </div>
+
+      <div role="status" style="display: flex; align-items: center; gap: 10px; padding: 4px 0;">
+        <span aria-hidden="true" style="width: 6px; height: 6px; border-radius: 9999px; background: var(--run); box-shadow: 0 0 0 4px rgba(52,211,153,.18);"></span>
+        <span style="color: var(--fg2);">Claude Code is working on Codex's report</span>
+        <span style="color: var(--subtle); font-size: 11px;">8s</span>
+        <button style="height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--fg2); font-size: 12px;">Open</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex: none; padding: 0 24px 20px;">
+    <div style="max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 12px; background: var(--s2); border: 1px solid var(--line); box-shadow: var(--pop);">
+      <label style="display: block;"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Message</span><textarea rows="2" placeholder="Reply to Codex" style="width: 100%; box-sizing: border-box; resize: none; border: 0; background: transparent; color: var(--fg); font: inherit; font-size: 14px; line-height: 22px; outline: none; padding: 0 4px;">Add a test for two refreshes at once</textarea></label>
+      <span id="send-note" style="padding: 0 4px; font-size: 11px; color: var(--muted);">Claude Code is working on Codex's report.</span>
+      <div style="display: flex; align-items: center; gap: 4px; font-size: 12px;">
+        <button aria-label="Attach files" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--muted);"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"></path></svg></button>
+        <span style="height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 8px; color: var(--fg2);"><span class="logo" aria-hidden="true">X</span>Codex</span>
+        <button style="height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--fg2);">gpt-5.5-codex</button>
+        <button style="height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--fg2);">Workspace write</button>
+        <span style="flex: 1;"></span>
+        <span style="color: var(--subtle); font-size: 11px; margin-right: 8px;">12% of context</span>
+        <button aria-label="Send" disabled="disabled" aria-describedby="send-note" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: var(--primary); color: var(--onp); opacity: .4; cursor: not-allowed;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":1024,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const light = (this.props.theme ?? 'dark') === 'light';
+    return { themeClass: light ? 'z light' : 'z' };
+  }
+}
+</script>
+</body>
+</html>

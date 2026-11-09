@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import {
   TopBar,
   TOP_BAR_TRAFFIC_LIGHT_INSET_PX,
@@ -187,6 +187,76 @@ describe("TopBar", () => {
       renderTopBar({ onPopout: () => {} });
       fireEvent.click(screen.getByRole("button", { name: "More options" }));
       expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Open in new window"]);
+    });
+
+    it("lists Delegate after Rename and before Archive", () => {
+      const onRename = vi.fn();
+      const onArchive = vi.fn();
+      const onDelegate = vi.fn();
+      renderTopBar({ sessionName: "Alpha", onRename, onArchive, onDelegate, delegateBlockedReason: null });
+
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      const menu = screen.getByRole("menu", { name: "More options" });
+      const labels = screen.getAllByRole("menuitem").map((item) => item.textContent);
+      expect(labels).toEqual(["Rename", "Delegate to another agent…", "Archive"]);
+
+      // Delegate sits above the rule that sets Archive apart.
+      const delegate = screen.getByRole("menuitem", { name: "Delegate to another agent…" });
+      const separator = menu.querySelector('[role="separator"]');
+      expect(separator).not.toBeNull();
+      expect(delegate.compareDocumentPosition(separator!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(separator!.nextElementSibling?.textContent).toBe("Archive");
+
+      fireEvent.click(delegate);
+      expect(onDelegate).toHaveBeenCalledTimes(1);
+      expect(onArchive).not.toHaveBeenCalled();
+    });
+
+    it("a blocked Delegate is disabled with its reason", () => {
+      const onDelegate = vi.fn();
+      const reason = "Codex already has a task from this session.";
+      renderTopBar({ sessionName: "Alpha", onDelegate, delegateBlockedReason: reason });
+
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      const item = screen.getByRole("menuitem", { name: /Delegate to another agent…/ });
+      expect(item).toBeDisabled();
+      expect(item).toHaveClass("disabled:text-fg-subtle");
+
+      const description = within(item).getByText(reason);
+      expect(description).toHaveClass("text-caption", "text-fg-subtle");
+      expect(item).toHaveAttribute("aria-describedby", description.id);
+
+      fireEvent.click(item);
+      expect(onDelegate).not.toHaveBeenCalled();
+    });
+
+    it("no Delegate for an empty reason", () => {
+      const onDelegate = vi.fn();
+      // Archive keeps the menu itself: only the Delegate item is left out.
+      renderTopBar({ sessionName: "Alpha", onArchive: vi.fn(), onDelegate, delegateBlockedReason: "" });
+
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Archive"]);
+      expect(screen.queryByRole("menuitem", { name: /Delegate/ })).toBeNull();
+    });
+
+    it("End delegation shows when it applies", () => {
+      const onDelegate = vi.fn();
+      const onEndDelegation = vi.fn();
+      renderTopBar({
+        sessionName: "Alpha",
+        onDelegate,
+        delegateBlockedReason: null,
+        onEndDelegation,
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      const labels = screen.getAllByRole("menuitem").map((item) => item.textContent);
+      expect(labels).toEqual(["Delegate to another agent…", "End delegation"]);
+
+      fireEvent.click(screen.getByRole("menuitem", { name: "End delegation" }));
+      expect(onEndDelegation).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("menu", { name: "More options" })).toBeNull();
     });
   });
 

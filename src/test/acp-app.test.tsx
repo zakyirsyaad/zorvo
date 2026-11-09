@@ -408,6 +408,11 @@ describe("ACP sessions in the app", () => {
     expect(forkArgs).toMatchObject({ sourceSessionId: sessionId, cwd: "/Users/test/developer/ai-perpetual-trading" });
     expect(callsTo(spy, "write_fork_handoff")).toHaveLength(0);
     expect(within(screen.getByRole("complementary")).getByText(`${FIRST_MESSAGE} (fork)`)).toBeDefined();
+    // A fork is a session of its own: it carries no delegation link.
+    const forked = () =>
+      fakeStore().state.sessions.find((s) => (s as { name?: string }).name === `${FIRST_MESSAGE} (fork)`);
+    await waitFor(() => expect(forked()).toBeDefined());
+    expect(forked()).not.toHaveProperty("delegatedFrom");
   });
 
   it("stops a live ACP agent when its session is deleted and ignores its late events", async () => {

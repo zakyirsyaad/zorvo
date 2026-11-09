@@ -70,7 +70,7 @@ impl Default for PersistedState {
 }
 
 /// User preferences restored across launches.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     /// The agent profile the UI preselects, or `None` to let the user choose.
@@ -81,6 +81,8 @@ pub struct Settings {
     pub appearance: String,
     /// `credits` or `ownKey`: which key a private session spends.
     pub payment_source: String,
+    /// Whether a private message is checked for secrets before sending; on unless turned off.
+    pub secret_guard: bool,
     /// The agent ids the user uses, or `None` when the list was never set.
     pub enabled_agents: Option<Vec<String>>,
     /// Agent ids the user removed, which are never enabled again automatically.
@@ -92,6 +94,23 @@ pub struct Settings {
     /// Agent ids that were seen signed in, so Settings and the sidebar can say
     /// "Ready" without asking the agent again. Opaque to the backend.
     pub signed_in_agents: Vec<String>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            default_agent_id: None,
+            onboarding_completed: false,
+            appearance: String::new(),
+            payment_source: String::new(),
+            secret_guard: true,
+            enabled_agents: None,
+            removed_agents: Vec::new(),
+            agent_versions: BTreeMap::new(),
+            notified_updates: BTreeMap::new(),
+            signed_in_agents: Vec::new(),
+        }
+    }
 }
 
 /// The registry agents in use until the user changes the list; matches

@@ -10,6 +10,7 @@ const GITHUB_PAT = `github_pat_${"b".repeat(30)}`;
 const OPENAI = `sk-proj-${"c".repeat(30)}`;
 const ANTHROPIC = `sk-ant-api03-${"d".repeat(24)}`;
 const SLACK = `xoxb-${"1".repeat(12)}`;
+const GENERIC_SK = `sk-${"Q7m2Lp9Rt4Vw8KxN3b6Yc1D"}`;
 
 describe("scanSecretText", () => {
   it("finds every supported kind with the canvas name", () => {
@@ -52,6 +53,39 @@ describe("scanSecretText", () => {
   it("keeps a low-entropy .env value out", () => {
     expect(scanSecretText("API_KEY=aaaaaaaaaaaaaaaa")).toEqual([]);
     expect(entropyBitsPerChar("aaaaaaaaaaaaaaaa")).toBe(0);
+  });
+
+  it("finds bare TOKEN, PASSWORD and SECRET assignments", () => {
+    const text = "TOKEN=Zx9Qm2Lp7Rt4Vw8K\nPASSWORD=Zx9Qm2Lp7Rt4Vw8K\nSECRET=Zx9Qm2Lp7Rt4Vw8K";
+
+    expect(scanSecretText(text).map((match) => match.kind)).toEqual(["Token", "Password", "Secret"]);
+  });
+
+  it("keeps values that name where a secret comes from out", () => {
+    const text = [
+      "SECRET_KEY = os.environ.get('SECRET_KEY')",
+      "API_TOKEN=${API_TOKEN}",
+      "PASSWORD=process.env.PASSWORD",
+    ].join("\n");
+
+    expect(scanSecretText(text)).toEqual([]);
+  });
+
+  it("takes a long ghs_ token and a PGP private-key block", () => {
+    const ghs = `ghs_${"a".repeat(40)}`;
+    const pgp = ["-----BEGIN", "PGP PRIVATE KEY BLOCK-----"].join(" ");
+
+    expect(scanSecretText(`${ghs}\n${pgp}`).map((match) => match.kind)).toEqual([
+      "GitHub token",
+      "Private key",
+    ]);
+    expect(scanSecretText(pgp)[0].preview).toBe("BEGIN PGP PRIVATE KEY BLOCK");
+  });
+
+  it("takes a random sk- key but not the sk-learn and sk-cube words", () => {
+    expect(scanSecretText(GENERIC_SK).map((match) => match.kind)).toEqual(["API key"]);
+    expect(scanSecretText("sk-learn-for-python-tutorial")).toEqual([]);
+    expect(scanSecretText("sk-cube-grid-animation")).toEqual([]);
   });
 
   it("does not report ordinary code, UUIDs, hashes, prose or lockfile integrity strings", () => {

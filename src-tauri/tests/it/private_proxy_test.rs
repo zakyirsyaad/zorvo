@@ -503,6 +503,36 @@ async fn removing_the_own_key_revokes_its_tokens_but_not_credits_tokens() {
 }
 
 #[tokio::test]
+async fn a_reopen_keeps_the_sessions_earlier_records() {
+    let reply = br#"{"id":"chat-reopen","object":"chat.completion","choices":[]}"#;
+    let fake = FakeUpstream::start(move |_request, stream| {
+        respond(stream, "200 OK", "application/json", reply);
+    });
+    let proxy = PrivateProxy::with_upstream(fake.base());
+    let first = proxy
+        .issue(SESSION, MODEL, KEY, false)
+        .expect("first token");
+    let body = br#"{"model":"Qwen/Qwen3.8-27B","messages":[]}"#.to_vec();
+    let answer = chat_response(&first.base_url, &first.token, body.clone()).await;
+    assert_eq!(answer.status(), 200);
+    answer.bytes().await.expect("the first answer");
+
+    let second = proxy
+        .issue(SESSION, MODEL, KEY, false)
+        .expect("reopened token");
+    let answer = chat_response(&second.base_url, &second.token, body).await;
+    assert_eq!(answer.status(), 200);
+    answer.bytes().await.expect("the reopened answer");
+
+    assert_eq!(
+        proxy.records(SESSION).len(),
+        2,
+        "a reopen keeps the earlier token's records"
+    );
+    assert_ne!(first.token, second.token);
+}
+
+#[tokio::test]
 async fn a_stopped_session_keeps_its_last_tokens_records_until_forgotten() {
     let reply = br#"{"id":"chat-last","object":"chat.completion","choices":[]}"#;
     let fake = FakeUpstream::start(move |_request, stream| {

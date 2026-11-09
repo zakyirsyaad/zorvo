@@ -154,7 +154,7 @@ describe("the secret guard in the app", () => {
     expect(callsTo(spy, "acp_start_session")).toHaveLength(0);
   });
 
-  it("skips a binary attachment", async () => {
+  it("names a binary attachment it could not check", async () => {
     withCredits();
     openDialog.mockResolvedValue([`${FOLDER}/archive.bin`]);
     const spy = await renderApp({
@@ -169,8 +169,14 @@ describe("the secret guard in the app", () => {
       fireEvent.keyDown(prompt(), { key: "Enter" });
     });
 
+    const dialog = await screen.findByRole("dialog", { name: "This message may hold a secret" });
+    expect(within(dialog).getByText(`Couldn't check 1 file: ${FOLDER}/archive.bin`)).toBeTruthy();
+    expect(callsTo(spy, "acp_start_session")).toHaveLength(0);
+
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Send anyway" }));
+    });
     await waitFor(() => expect(callsTo(spy, "acp_start_session")).toHaveLength(1));
-    expect(screen.queryByRole("dialog", { name: "This message may hold a secret" })).toBeNull();
   });
 
   it("does not scan a plain session", async () => {

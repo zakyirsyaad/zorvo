@@ -758,6 +758,33 @@ fn settings_round_trip_appearance() {
 }
 
 #[test]
+fn settings_keep_the_secret_guard_off_and_default_it_on() {
+    let root = unique_temp_root("secret-guard");
+    let store = AppStore::new(root.clone());
+    let mut state = populated_state();
+    state.settings.secret_guard = false;
+
+    store.save_state(&state).expect("save state");
+    let loaded = store.load_state().expect("load state");
+
+    assert!(!loaded.settings.secret_guard);
+    let raw = fs::read_to_string(root.join("state.json")).expect("read state file");
+    assert!(raw.contains("\"secretGuard\": false"), "{raw}");
+
+    fs::write(
+        root.join("state.json"),
+        r#"{"version":1,"settings":{"defaultAgentId":"claude"},"recentFolders":[],"sessions":[]}"#,
+    )
+    .expect("write old state");
+    let old = store.load_state().expect("load old state");
+    assert!(
+        old.settings.secret_guard,
+        "a state without it keeps the guard on"
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn state_without_appearance_loads_empty() {
     let root = unique_temp_root("no-appearance");
     fs::create_dir_all(&root).expect("create root");

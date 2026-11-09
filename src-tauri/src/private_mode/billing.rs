@@ -198,19 +198,27 @@ impl UsageTracker {
         let Some(id) = record.inference_id.as_deref() else {
             return;
         };
+        // An estimate needs a known price; without one, leave it unsettled for a later catalog.
+        let Some(model) = models.iter().find(|model| model.id == record.model) else {
+            lock(&self.cache).insert(
+                id.to_string(),
+                CachedCost {
+                    credits: 0.0,
+                    estimated: false,
+                    attempts: MAX_COST_ASKS,
+                    settled: false,
+                },
+            );
+            return;
+        };
         let credits = record
             .usage
             .as_ref()
-            .and_then(|usage| {
-                models
-                    .iter()
-                    .find(|model| model.id == record.model)
-                    .map(|model| {
-                        (usage.prompt_tokens as f64 * model.input_per_m
-                            + usage.completion_tokens as f64 * model.output_per_m)
-                            / 1e6
-                            * CREDITS_PER_USD
-                    })
+            .map(|usage| {
+                (usage.prompt_tokens as f64 * model.input_per_m
+                    + usage.completion_tokens as f64 * model.output_per_m)
+                    / 1e6
+                    * CREDITS_PER_USD
             })
             .unwrap_or(0.0);
         lock(&self.cache).insert(
@@ -542,6 +550,19 @@ mod tests {
         let third = tracker.usage(&records, &models(), Some(KEY), &fake);
         assert_eq!(third.credits, 12.0);
         assert!(third.estimated);
+        assert_eq!(lock(&fake.calls).len(), 3);
+    }
+
+    #[test]
+    fn a_failed_billing_call_without_a_price_stays_unsettled() {
+        let records = vec![record("123e4567-e89b-12d3-a456-426614174000")];
+        let fake = FakeBilling::new(Err(PrivateError::Unreachable));
+        let tracker = UsageTracker::default();
+
+        for _ in 0..4 {
+            let usage = tracker.usage(&records, &[], Some(KEY), &fake);
+            assert_eq!((usage.credits, usage.estimated), (0.0, false));
+        }
         assert_eq!(lock(&fake.calls).len(), 3);
     }
 

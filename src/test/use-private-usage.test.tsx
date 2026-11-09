@@ -49,6 +49,23 @@ describe("usePrivateUsage", () => {
     expect(spy).toHaveBeenCalledWith("private_session_usage", { sessionId: "s-1" }, undefined);
   });
 
+  it("keeps the saved base when a reopen makes the backend total cumulative", async () => {
+    const spy = vi
+      .spyOn(tauriInternals(), "invoke")
+      .mockResolvedValueOnce({ credits: 10, estimated: false, calls: 1 })
+      .mockResolvedValueOnce({ credits: 15, estimated: false, calls: 2 });
+    const updateSession = vi.fn();
+    const sessions = [session({ credits: 100, estimated: false })];
+    const { result } = renderHook(() => usePrivateUsage({ sessions, updateSession }));
+
+    await act(async () => result.current.refresh("s-1"));
+    await waitFor(() => expect(updateSession).toHaveBeenLastCalledWith("s-1", { credits: 110, estimated: false }));
+
+    await act(async () => result.current.refresh("s-1"));
+    await waitFor(() => expect(updateSession).toHaveBeenLastCalledWith("s-1", { credits: 115, estimated: false }));
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
   it("does nothing for a plain session or a malformed answer", async () => {
     const spy = vi.spyOn(tauriInternals(), "invoke").mockResolvedValue(null);
     const updateSession = vi.fn();

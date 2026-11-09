@@ -47,6 +47,8 @@ pub(super) struct TokenEntry {
 struct TokenTable {
     by_token: HashMap<String, TokenEntry>,
     by_session: HashMap<String, String>,
+    /// Every token each session has held this run, oldest first, so a reopen keeps its records.
+    tokens_by_session: HashMap<String, Vec<String>>,
     /// The last token each session held, so a turn that ends after Stop can still be verified.
     last_by_session: HashMap<String, String>,
     /// The key behind that last token. Kept until the session is deleted, so a turn that ended
@@ -72,6 +74,13 @@ impl TokenTable {
             .insert(app_session_id.to_string(), token.clone());
         self.last_key_by_session
             .insert(app_session_id.to_string(), key.to_string());
+        let held = self
+            .tokens_by_session
+            .entry(app_session_id.to_string())
+            .or_default();
+        if !held.contains(&token) {
+            held.push(token.clone());
+        }
         self.by_token.insert(
             token.clone(),
             TokenEntry {
@@ -106,7 +115,11 @@ impl TokenTable {
         entry.holders.insert(fork.to_string());
         self.last_key_by_session.insert(fork.to_string(), key);
         self.by_session.insert(fork.to_string(), token.clone());
-        self.last_by_session.insert(fork.to_string(), token);
+        self.last_by_session.insert(fork.to_string(), token.clone());
+        let held = self.tokens_by_session.entry(fork.to_string()).or_default();
+        if !held.contains(&token) {
+            held.push(token.clone());
+        }
         true
     }
 
@@ -161,16 +174,45 @@ impl TokenTable {
         }
     }
 
-    /// Forgets a deleted session: its last-token lookup goes, and the token it names is returned
-    /// when no other session holds it, so its records can go too.
-    fn forget(&mut self, app_session_id: &str) -> Option<String> {
+    /// Forgets a deleted session: its token history goes, and every token no other session holds is
+    /// returned, so its records can go too.
+    fn forget(&mut self, app_session_id: &str) -> Vec<String> {
         self.last_key_by_session.remove(app_session_id);
-        let token = self.last_by_session.remove(app_session_id);
-        self.release(app_session_id);
-        match token {
-            Some(token) if !self.by_token.contains_key(&token) => Some(token),
-            _ => None,
+        let mut tokens = self
+            .tokens_by_session
+            .remove(app_session_id)
+            .unwrap_or_default();
+        if let Some(last) = self.last_by_session.remove(app_session_id) {
+            if !tokens.contains(&last) {
+                tokens.push(last);
+            }
         }
+        self.release(app_session_id);
+        tokens
+            .into_iter()
+            .filter(|token| !self.by_token.contains_key(token))
+            .collect()
+    }
+
+    /// Every token the session has held this run, oldest first.
+    fn tokens_of(&self, app_session_id: &str) -> Vec<String> {
+        let mut tokens = self
+            .tokens_by_session
+            .get(app_session_id)
+            .cloned()
+            .unwrap_or_default();
+        for token in [
+            self.by_session.get(app_session_id),
+            self.last_by_session.get(app_session_id),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if !tokens.contains(token) {
+                tokens.push(token.clone());
+            }
+        }
+        tokens
     }
 
     /// Drops every token that spends the user's own key, with all its holders. The key is gone
@@ -194,6 +236,7 @@ impl TokenTable {
                     self.last_by_session.remove(&holder);
                 }
                 self.last_key_by_session.remove(&holder);
+                self.tokens_by_session.remove(&holder);
             }
         }
         revoked
@@ -362,12 +405,14 @@ impl ProxyServer {
         }
     }
 
-    /// The records of the token this session holds, whether it owns it or forked it.
+    /// The records of every token this session has held this run, oldest first.
     pub(super) fn records(&self, app_session_id: &str) -> Vec<super::ProxyRecord> {
-        let Some(token) = lock(&self.state.tokens).token_of(app_session_id) else {
-            return Vec::new();
-        };
-        lock(&self.state.records).records(&token)
+        let tokens = lock(&self.state.tokens).tokens_of(app_session_id);
+        let records = lock(&self.state.records);
+        tokens
+            .iter()
+            .flat_map(|token| records.records(token))
+            .collect()
     }
 
     /// The key behind a session's current or last token, for a billing read. It never leaves the
@@ -376,11 +421,14 @@ impl ProxyServer {
         lock(&self.state.tokens).key_of(app_session_id)
     }
 
-    /// A deleted session leaves no lookup; its records go with the last token on its process.
+    /// A deleted session leaves no lookup; its records go with every token no other session holds.
     pub(super) fn forget(&self, app_session_id: &str) {
-        let token = lock(&self.state.tokens).forget(app_session_id);
-        if let Some(token) = token {
-            lock(&self.state.records).remove(&token);
+        let tokens = lock(&self.state.tokens).forget(app_session_id);
+        if !tokens.is_empty() {
+            let mut records = lock(&self.state.records);
+            for token in tokens {
+                records.remove(&token);
+            }
         }
     }
 }

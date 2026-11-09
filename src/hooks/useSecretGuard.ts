@@ -11,14 +11,20 @@ export interface SecretMessage {
 export interface SecretGuardReview {
   message: SecretMessage;
   matches: SecretMatch[];
+  /** Attachments the scanner could not read; they are named in the dialog. */
+  skipped: string[];
   /** The session's agent, named in the dialog's limit. */
   agentName: string;
+  /** The session the message was written for; undefined for a new-session draft. */
+  sessionId?: string;
 }
 
 export interface SecretGuardContext {
   isEnabled: boolean;
   root: string | undefined;
   agentName: string;
+  /** The session the message was written for; undefined for a new-session draft. */
+  sessionId?: string;
 }
 
 interface SecretGuardOptions {
@@ -27,8 +33,8 @@ interface SecretGuardOptions {
   /** The folder the message's attachments are read from. */
   root: string | undefined;
   agentName: string;
-  /** Puts the message back in the composer when the user picks Edit message. */
-  onEdit: (message: SecretMessage) => void;
+  /** Puts the message back in its own session's composer when the user picks Edit message. */
+  onEdit: (sessionId: string | undefined, message: SecretMessage) => void;
 }
 
 /** A file path from the session folder, or null when it is not inside it. */
@@ -39,24 +45,32 @@ function relativeToRoot(root: string, path: string): string | null {
   return path.startsWith("/") ? null : path;
 }
 
-/** Scans the message and its attachments locally; an unreadable attachment is skipped. */
+/** Scans the message and its attachments locally; an attachment it cannot read is named as skipped. */
 export async function scanMessageSecrets(
   root: string,
   message: SecretMessage,
-): Promise<SecretMatch[]> {
+): Promise<{ matches: SecretMatch[]; skipped: string[] }> {
   const matches = scanSecretText(message.text);
+  const skipped: string[] = [];
   for (const path of message.attachments ?? []) {
     const relative = relativeToRoot(root, path);
-    if (relative === null || relative === "") continue;
+    if (relative === null || relative === "") {
+      skipped.push(path);
+      continue;
+    }
     try {
       const content = await readWorkspaceFile(root, relative);
-      if (content.kind !== "text") continue;
+      if (content.kind !== "text") {
+        skipped.push(path);
+        continue;
+      }
       matches.push(...scanSecretText(content.text, relative));
     } catch {
-      // A file the viewer cannot read cannot be checked; sending is not blocked for it.
+      // A file the viewer cannot read cannot be checked; the dialog says so.
+      skipped.push(path);
     }
   }
-  return matches;
+  return { matches, skipped };
 }
 
 /**
@@ -67,41 +81,71 @@ export function useSecretGuard({ isEnabled, root, agentName, onEdit }: SecretGua
   const [review, setReview] = useState<SecretGuardReview | null>(null);
   const deliverRef = useRef<(() => void) | null>(null);
   const onEditRef = useLatest(onEdit);
+  // One scan at a time: a second Send waits its turn instead of replacing the first held message.
+  const queueRef = useRef<{ message: SecretMessage; deliver: () => void; context?: SecretGuardContext }[]>([]);
+  const runningRef = useRef(false);
+  const heldRef = useRef(false);
+  const drainRef = useRef<() => void>(() => {});
 
-  const check = useCallback(
-    (message: SecretMessage, deliver: () => void, context?: SecretGuardContext) => {
-      const active = context ?? { isEnabled, root, agentName };
-      if (!active.isEnabled || active.root === undefined) {
-        deliver();
-        return;
-      }
-      void scanMessageSecrets(active.root, message)
-        .then((matches) => {
-          if (matches.length === 0) {
-            deliver();
-            return;
-          }
-          deliverRef.current = deliver;
-          setReview({ message, matches, agentName: active.agentName });
-        })
-        // A scanner failure must not become a send failure the user cannot get past.
-        .catch(() => deliver());
-    },
-    [agentName, isEnabled, root],
-  );
+  const drain = useCallback(() => {
+    if (runningRef.current || heldRef.current) return;
+    const job = queueRef.current.shift();
+    if (!job) return;
+    const active = job.context ?? { isEnabled, root, agentName };
+    if (!active.isEnabled || active.root === undefined) {
+      job.deliver();
+      drainRef.current();
+      return;
+    }
+    runningRef.current = true;
+    void scanMessageSecrets(active.root, job.message)
+      .then(({ matches, skipped }) => {
+        runningRef.current = false;
+        if (matches.length === 0 && skipped.length === 0) {
+          job.deliver();
+          drainRef.current();
+          return;
+        }
+        heldRef.current = true;
+        deliverRef.current = job.deliver;
+        setReview({
+          message: job.message,
+          matches,
+          skipped,
+          agentName: active.agentName,
+          sessionId: active.sessionId,
+        });
+      })
+      // Fails open by design: a scanner error must never become a Send the user cannot get past.
+      .catch(() => {
+        runningRef.current = false;
+        job.deliver();
+        drainRef.current();
+      });
+  }, [agentName, isEnabled, root]);
+  drainRef.current = drain;
+
+  const check = useCallback((message: SecretMessage, deliver: () => void, context?: SecretGuardContext) => {
+    queueRef.current.push({ message, deliver, context });
+    drainRef.current();
+  }, []);
 
   const sendAnyway = useCallback(() => {
     const deliver = deliverRef.current;
     deliverRef.current = null;
+    heldRef.current = false;
     setReview(null);
     deliver?.();
+    drainRef.current();
   }, []);
 
   const edit = useCallback(() => {
     const pending = review;
     deliverRef.current = null;
+    heldRef.current = false;
     setReview(null);
-    if (pending) onEditRef.current(pending.message);
+    if (pending) onEditRef.current(pending.sessionId, pending.message);
+    drainRef.current();
   }, [onEditRef, review]);
 
   return { review, check, sendAnyway, edit };

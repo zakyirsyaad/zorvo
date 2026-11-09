@@ -56,6 +56,27 @@ function envKind(name: string): string {
   return "API key";
 }
 
+/** A value that names where a secret comes from, not the secret itself. */
+function isExpressionValue(value: string): boolean {
+  const trimmed = value.trim();
+  return (
+    trimmed.startsWith("$") ||
+    /^(?:process\.env|os\.environ|os\.getenv|import\.meta\.env|deno\.env)\b/i.test(trimmed) ||
+    trimmed.includes("${")
+  );
+}
+
+/** A generic `sk-` value needs a digit, mixed case or enough entropy to be a key, not a word. */
+function looksLikeSecret(value: string): boolean {
+  if (/^sk-(?:learn|cube)-/.test(value)) return false;
+  const body = value.replace(/^sk-(?:ant-|proj-)?/, "");
+  return (
+    /[0-9]/.test(body) ||
+    (/[a-z]/.test(body) && /[A-Z]/.test(body)) ||
+    entropyBitsPerChar(body) >= 3.5
+  );
+}
+
 /** Every secret-looking value in `text`, with the attached file's path or `null` for the message. */
 export function scanSecretText(text: string, file: string | null = null): SecretMatch[] {
   const candidates: Candidate[] = [];
@@ -63,7 +84,7 @@ export function scanSecretText(text: string, file: string | null = null): Secret
     candidates.push({ kind, file, line: lineOf(text, index), preview, index, length });
   };
 
-  for (const match of text.matchAll(/-----BEGIN ((?:[A-Z0-9]+ )?PRIVATE KEY)-----/g)) {
+  for (const match of text.matchAll(/-----BEGIN ((?:PGP |[A-Z0-9]+ )?PRIVATE KEY(?: BLOCK)?)-----/g)) {
     const value = match[0];
     const label = match[1];
     add(match.index ?? 0, value.length, "Private key", `BEGIN ${label}`);
@@ -72,12 +93,15 @@ export function scanSecretText(text: string, file: string | null = null): Secret
     const value = match[1];
     add(match.index ?? 0, value.length, "AWS access key", maskSecret(value));
   }
-  for (const match of text.matchAll(/\b((?:gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,}))\b/g)) {
+  for (const match of text.matchAll(/\b((?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{20,}))\b/g)) {
     const value = match[1];
     add(match.index ?? 0, value.length, "GitHub token", maskSecret(value));
   }
   for (const match of text.matchAll(/\b(sk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,})\b/g)) {
     const value = match[1];
+    if (!value.startsWith("sk-ant-") && !value.startsWith("sk-proj-") && !looksLikeSecret(value)) {
+      continue;
+    }
     add(match.index ?? 0, value.length, "API key", maskSecret(value));
   }
   for (const match of text.matchAll(/\b(xox[abpr]-[A-Za-z0-9-]{10,})\b/g)) {
@@ -87,10 +111,10 @@ export function scanSecretText(text: string, file: string | null = null): Secret
 
   const specific = [...candidates].sort((left, right) => left.index - right.index);
   const envPattern =
-    /^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD))[ \t]*=[ \t]*(?:"([^"\n]{16,})"|'([^'\n]{16,})'|([^\s#]{16,}))/gim;
+    /^[ \t]*(?:export[ \t]+)?((?:[A-Za-z_][A-Za-z0-9_]*)?(?:KEY|SECRET|TOKEN|PASSWORD))[ \t]*=[ \t]*(?:"([^"\n]{16,})"|'([^'\n]{16,})'|([^\s#]{16,}))/gim;
   for (const match of text.matchAll(envPattern)) {
     const value = match[2] ?? match[3] ?? match[4] ?? "";
-    if (value.length < 16 || entropyBitsPerChar(value) < 3.5) continue;
+    if (value.length < 16 || isExpressionValue(value) || entropyBitsPerChar(value) < 3.5) continue;
     const index = (match.index ?? 0) + match[0].lastIndexOf(value);
     const overlaps = specific.some(
       (found) => index < found.index + found.length && found.index < index + value.length,

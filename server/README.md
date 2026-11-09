@@ -268,6 +268,22 @@ on the server is needed. Sales stay paused while the stock minus what is already
 (`STOCK_BUFFER_NANO`, $2) cannot cover a package. A top-up that was paid while the stock was short waits as
 `paid_waiting_stock` and is credited first-in-first-out after the restock; the payer never pays twice.
 
+### Session spending caps
+
+A private draft can cap one session at 100, 200 or 500 credits. The Ledger creates a separate NEAR AI key
+for the session (`zorvo-session-<id>`) with that spend limit and lowers the device key by the same amount, so
+the invariant is:
+
+`device key limit = spendLimit(credits bought) − active session caps − final usage of ended sessions`
+
+The app receives the session key once and keeps it in its Keychain; the server keeps only the key's id. The
+routes are `POST /v1/sessions` (`{credits}` → `{sessionId, key}`), `POST /v1/sessions/:id/end` (idempotent),
+`POST /v1/sessions/:id/seen` (called at each turn end, throttled to once a minute) and
+`POST /v1/sessions/:id/raise` (`{credits}`, the doubled cap). An end freezes the session key, records its
+final usage and raises the device key by the unspent part; a recovery ends every open session first, then
+rotates the device key and carries only what is left. The alarm ends a session that has not been seen for
+24 hours. The state is the `session_keys` table, created by the schema on the next start (no `ALTER`).
+
 ### Alerts
 
 Every alert is a log line (`Alert <kind>: <detail>`) and, when `ALERT_URL` is set, a POST of

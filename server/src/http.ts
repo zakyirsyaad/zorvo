@@ -5,6 +5,7 @@ export type ErrorCode =
   | "not_found" // 404
   | "stock" // 409
   | "device_cap" // 409
+  | "insufficient" // 409, a session cap larger than the device's unallocated credits
   | "rate_limited" // 429
   | "upstream"; // 502, or 503 when a webhook should be delivered again later
 

@@ -33,8 +33,8 @@ const STATEMENTS = [
     credits INTEGER NOT NULL,
     expires_at INTEGER NOT NULL
   )`,
-  // kind is 'credit', 'rotate_key' or 'revoke_key'. counted is 1 once a credit item has added its credits to
-  // devices.credits_bought, so a retry never adds them twice.
+  // kind is 'credit', 'rotate_key', 'revoke_key' or 'end_session'. counted is 1 once a credit item has
+  // added its credits to devices.credits_bought, so a retry never adds them twice.
   `CREATE TABLE IF NOT EXISTS queue (
     id TEXT PRIMARY KEY,
     kind TEXT NOT NULL,
@@ -109,9 +109,25 @@ const STATEMENTS = [
     models_json TEXT NOT NULL,
     read_at INTEGER NOT NULL
   )`,
+  // A per-session NEAR AI key and the budget it holds. `nearai_key_id` is NULL only while the key
+  // is being made. `settled_at` is set when a key rotation folds ended usage into credits_bought.
+  `CREATE TABLE IF NOT EXISTS session_keys (
+    id TEXT PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    nearai_key_id TEXT,
+    cap_credits INTEGER NOT NULL,
+    cap_nano INTEGER NOT NULL,
+    usage_nano INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    ended_at INTEGER,
+    settled_at INTEGER
+  )`,
   // One top-up per PingPay session; SQLite allows many NULLs, as a promo top-up has no session.
   "CREATE UNIQUE INDEX IF NOT EXISTS topups_session ON topups(ping_session_id)",
   "CREATE INDEX IF NOT EXISTS queue_kind_ref ON queue(kind, ref)",
+  "CREATE INDEX IF NOT EXISTS session_keys_device ON session_keys(device_id, status)",
 ];
 
 export function applySchema(sql: SqlStorage): void {

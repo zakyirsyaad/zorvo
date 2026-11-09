@@ -5,6 +5,14 @@ import { NearAiError, type ListedKey, type NearAiClient } from "../nearai";
 import { DAY_MS, HOUR_MS, MINUTE_MS, SECOND_MS } from "../time";
 import { clampNano, SINGLE_ROW_ID } from "./amounts";
 import { RESERVATION_GRACE_MS, RESERVATION_MS } from "./checkout";
+import {
+  deviceLimitNano,
+  idleSessions,
+  queueEndSession,
+  sessionDebtNano,
+  sessionRow,
+  settleEndedSessions,
+} from "./sessions";
 import type { SessionOutcome, TopupStatus } from "./status";
 
 /**
@@ -24,10 +32,12 @@ const POLL_CREATED_AFTER_MS = 2 * MINUTE_MS;
 const POLL_FOR_MS = 7 * 24 * HOUR_MS;
 /**
  * What one queue item may spend after it starts, counted from a worst-case `rotate_key`: two key
- * listings (2), the freeze PATCH (1), a create (1), revoking the replaced key (1), an orphan revoke
- * (1), a mid-item token refresh and its 401 retry (2), one more key-list page on a workspace over
- * 100 keys (1), and the `stuck queue check` alert that follows the queue (1). Reserving 10 keeps a
- * started item and that alert inside the Free plan's 50 subrequests.
+ * listings (2) and one extra page (1), the freeze PATCH (1), a create (1), revoking the replaced
+ * key (1), an orphan revoke (1), a mid-item token refresh and its 401 retry (2), and the
+ * `stuck queue check` alert that follows the queue (1). An `end_session` item is cheaper: two
+ * listings, its freeze PATCH, the device key's PATCH and the revoke it queues (4), plus the same
+ * refresh/retry (2), extra page (1) and alert (1), 8 in all. Reserving 10 keeps a started item and
+ * that alert inside the Free plan's 50 subrequests.
  */
 const ITEM_RESERVE = 10;
 /** A session poll reads the session and, when it is completed, its payment: two fetches. */
@@ -61,6 +71,8 @@ export interface FulfilmentContext {
   /** The most outbound fetches a tick may spend before it stops starting new items. */
   subrequestBudget(): number;
   nearAi(): NearAiClient;
+  /** Serializes the operations that PATCH one device's key. */
+  withDeviceLock<T>(deviceId: string, body: () => Promise<T>): Promise<T>;
   accessToken(now: number): Promise<string>;
   withAccessToken<T>(now: number, call: (access: string) => Promise<T>): Promise<T>;
   keyEncryptionKey(): string;
@@ -98,6 +110,7 @@ export async function runAlarm(ctx: FulfilmentContext, now: number): Promise<voi
     ["snapshot refresh", () => refreshStock(ctx, now)],
     ["session poll", () => pollSessions(ctx, now)],
     ["expiry sweep", () => sweepExpired(ctx, now)],
+    ["session sweep", () => sweepSessions(ctx, now)],
     ["promotion", () => promoteWaiting(ctx, now)],
     ["queue", () => runQueue(ctx, now)],
     ["stuck queue check", () => alertStuckItems(ctx, now)],
@@ -243,6 +256,20 @@ function sweepExpired(ctx: FulfilmentContext, now: number): void {
 }
 
 /**
+ * Ends sessions the app stopped talking about: no `/seen` for 24 hours. Their keys freeze and the
+ * unused part of their cap returns to the device key through the normal `end_session` item.
+ */
+function sweepSessions(ctx: FulfilmentContext, now: number): void {
+  for (const { id } of idleSessions(ctx.sql, now)) {
+    if (ctx.sql.exec("SELECT 1 FROM session_keys WHERE id = ? AND status = 'active'", id).toArray().length === 0) continue;
+    ctx.transaction(() => {
+      ctx.sql.exec("UPDATE session_keys SET status = 'ending' WHERE id = ? AND status = 'active'", id);
+      queueEndSession(ctx.sql, id, now);
+    });
+  }
+}
+
+/**
  * Serves top-ups waiting for stock oldest first, stopping at the first that does not fit. The ones
  * waiting behind it do not count against it; a new reservation still counts all of them.
  */
@@ -259,7 +286,7 @@ function promoteWaiting(ctx: FulfilmentContext, now: number): void {
 }
 
 /** Queue kinds that have a handler; an item of any other kind is left as it is, attempts and all. */
-const QUEUE_KINDS = ["credit", "rotate_key", "revoke_key"];
+const QUEUE_KINDS = ["credit", "rotate_key", "revoke_key", "end_session"];
 
 /**
  * Runs the due items one at a time, so a `credit` and a `rotate_key` of one device never overlap. A
@@ -275,6 +302,11 @@ async function runQueue(ctx: FulfilmentContext, now: number): Promise<void> {
       `SELECT id, kind FROM queue WHERE kind IN (${placeholders}) AND next_at <= ?
          AND NOT (kind = 'credit' AND EXISTS (
            SELECT 1 FROM topups t JOIN queue r ON r.kind = 'rotate_key' AND r.ref = t.device_id WHERE t.id = queue.ref))
+         AND NOT (kind = 'rotate_key' AND (
+           EXISTS (SELECT 1 FROM queue e JOIN session_keys s ON s.id = e.ref
+                   WHERE e.kind = 'end_session' AND s.device_id = queue.ref)
+           OR EXISTS (SELECT 1 FROM session_keys s WHERE s.device_id = queue.ref AND s.status != 'ended')
+         ))
        ORDER BY next_at, id LIMIT ?`,
       ...QUEUE_KINDS,
       now,
@@ -285,8 +317,104 @@ async function runQueue(ctx: FulfilmentContext, now: number): Promise<void> {
     if (!hasRoomFor(ctx, ITEM_RESERVE)) break;
     if (kind === "credit") await creditItem(ctx, id, now);
     else if (kind === "rotate_key") await rotateItem(ctx, id, now);
+    else if (kind === "end_session") await endSessionItem(ctx, id, now);
     else await revokeItem(ctx, id, now);
   }
+}
+
+/**
+ * One `end_session` item (spec 8.3 D): freeze the session key, record its final usage, remove its
+ * cap from the invariant and raise the device key's limit by what the session did not spend. The
+ * revoke of the frozen key is its own item, so a failed revoke never delays the returned budget.
+ * A retry after the session is `ended` only reconciles the device key and queues the revoke.
+ */
+async function endSessionItem(ctx: FulfilmentContext, itemId: string, now: number): Promise<void> {
+  const item = ctx.sql
+    .exec<{ ref: string }>("SELECT ref FROM queue WHERE id = ? AND kind = 'end_session'", itemId)
+    .toArray()[0];
+  if (!item) return;
+  const session = sessionRow(ctx.sql, item.ref);
+  if (!session) {
+    ctx.sql.exec("DELETE FROM queue WHERE id = ?", itemId);
+    return;
+  }
+  await ctx.withDeviceLock(session.device_id, () => endSessionLocked(ctx, itemId, now, session.id));
+}
+
+async function endSessionLocked(ctx: FulfilmentContext, itemId: string, now: number, sessionId: string): Promise<void> {
+  const item = ctx.sql
+    .exec<{ ref: string; attempts: number; next_at: number }>("SELECT ref, attempts, next_at FROM queue WHERE id = ? AND kind = 'end_session'", itemId)
+    .toArray()[0];
+  if (!item || item.next_at > now) return;
+  const session = sessionRow(ctx.sql, sessionId);
+  if (!session) {
+    ctx.sql.exec("DELETE FROM queue WHERE id = ?", itemId);
+    return;
+  }
+  const attempts = item.attempts + 1;
+  ctx.sql.exec("UPDATE queue SET attempts = ?, next_at = ? WHERE id = ?", attempts, now + backoffMs(attempts), itemId);
+
+  if (session.status !== "ended") {
+    let usage = 0n;
+    if (session.nearai_key_id !== null) {
+      try {
+        usage = (await freezeKey(ctx, session.nearai_key_id, now)).usageNano;
+      } catch (error) {
+        console.error(`Ending private session ${session.id} failed on attempt ${attempts}: ${describeError(error)}`);
+        if (attempts === MAX_ATTEMPTS) {
+          await ctx.alert("attempts_exhausted", `ending private session ${session.id} failed ${MAX_ATTEMPTS} times; it keeps retrying every 30 minutes`);
+        }
+        return;
+      }
+    }
+    ctx.transaction(() => {
+      ctx.sql.exec(
+        "UPDATE session_keys SET status = 'ended', usage_nano = ?, ended_at = ? WHERE id = ? AND status != 'ended'",
+        Number(clampNano(usage)),
+        now,
+        session.id,
+      );
+      if (session.nearai_key_id !== null) {
+        forgetKeyLimit(ctx.sql, session.nearai_key_id);
+        queueRevokeKey(ctx.sql, session.nearai_key_id, now);
+      }
+    });
+  } else if (session.nearai_key_id !== null) {
+    queueRevokeKey(ctx.sql, session.nearai_key_id, now);
+  }
+
+  const device = readDevice(ctx.sql, session.device_id);
+  if (device?.nearai_key_id) {
+    const target = deviceLimitNano(ctx.sql, ctx.config(), session.device_id, device.credits_bought);
+    const limitNano = target > 0n ? target : 1n;
+    try {
+      await ctx.withAccessToken(now, (access) =>
+        ctx.nearAi().setSpendLimit(access, ctx.config().workspaceId, device.nearai_key_id!, limitNano),
+      );
+    } catch (error) {
+      console.error(`Raising the device limit after session ${session.id} failed on attempt ${attempts}: ${describeError(error)}`);
+      if (attempts === MAX_ATTEMPTS) {
+        await ctx.alert("attempts_exhausted", `raising a device limit after a session failed ${MAX_ATTEMPTS} times; it keeps retrying every 30 minutes`);
+      }
+      return;
+    }
+    ctx.transaction(() => recordKeyLimit(ctx.sql, device.nearai_key_id!, limitNano));
+  }
+  ctx.sql.exec("DELETE FROM queue WHERE id = ?", itemId);
+}
+
+/** Queues one `revoke_key` for a frozen session key; no second one is queued while it waits. */
+function queueRevokeKey(sql: SqlStorage, keyId: string, now: number): void {
+  sql.exec(
+    `INSERT INTO queue (id, kind, ref, attempts, next_at, created_at)
+     SELECT ?, 'revoke_key', ?, 0, ?, ?
+     WHERE NOT EXISTS (SELECT 1 FROM queue WHERE kind = 'revoke_key' AND ref = ?)`,
+    crypto.randomUUID(),
+    keyId,
+    now,
+    now,
+    keyId,
+  );
 }
 
 /** One `stuck_queue` alert an hour for every item older than an hour, naming the oldest five. */
@@ -319,9 +447,21 @@ type Upstream = { created: boolean; keyId: string; ciphertext?: string; limitNan
 
 /**
  * One `credit` item (spec 7.5, races 5 and 7): claim it, call NEAR AI, then write the result from
- * rows read again after the call. Any failure leaves the item for its `next_at`.
+ * rows read again after the call. Any failure leaves the item for its `next_at`. The device lock
+ * keeps a session start, raise or end from changing the key's target while this PATCHes.
  */
 async function creditItem(ctx: FulfilmentContext, itemId: string, now: number): Promise<void> {
+  const topup = ctx.sql
+    .exec<{ device_id: string }>(
+      "SELECT t.device_id FROM queue q JOIN topups t ON t.id = q.ref WHERE q.id = ? AND q.kind = 'credit'",
+      itemId,
+    )
+    .toArray()[0];
+  if (!topup) return;
+  await ctx.withDeviceLock(topup.device_id, () => creditLocked(ctx, itemId, now));
+}
+
+async function creditLocked(ctx: FulfilmentContext, itemId: string, now: number): Promise<void> {
   const claim = claimCredit(ctx, itemId, now);
   if (claim && "absorbed" in claim) {
     const detail = `the credit for top-up ${claim.absorbed} was used up by the replaced key's overshoot; the device has no key and nothing was added`;
@@ -418,7 +558,9 @@ function absorbedCredit(ctx: FulfilmentContext, itemId: string, topupId: string,
 async function setLimitUpstream(ctx: FulfilmentContext, claim: Claim, now: number): Promise<Upstream> {
   const cfg = ctx.config();
   const client = ctx.nearAi();
-  const limitNano = spendLimitNano(claim.creditsBought, cfg);
+  // The credit adds to credits_bought; active session caps and ended usage are already subtracted.
+  const target = deviceLimitNano(ctx.sql, cfg, claim.deviceId, claim.creditsBought);
+  const limitNano = target > 0n ? target : 1n;
   if (claim.keyId !== null) {
     const keyId = claim.keyId;
     await ctx.withAccessToken(now, (access) => client.setSpendLimit(access, cfg.workspaceId, keyId, limitNano));
@@ -479,7 +621,7 @@ export function keyLimitsVersion(sql: SqlStorage): number {
  * reservation would show its stock as free until the next snapshot refresh. A refresh already in
  * flight sees the version change and does not overwrite it with an older key list.
  */
-function recordKeyLimit(sql: SqlStorage, keyId: string, requestedNano: bigint): void {
+export function recordKeyLimit(sql: SqlStorage, keyId: string, requestedNano: bigint): void {
   const limitNano = clampNano(requestedNano);
   sql.exec("INSERT INTO limits_version (id, version) VALUES (?, 1) ON CONFLICT (id) DO UPDATE SET version = version + 1", SINGLE_ROW_ID);
   const row = sql
@@ -548,10 +690,19 @@ function revokeUpstream(ctx: FulfilmentContext, keyId: string, now: number): Pro
 const MIN_FROZEN_LIMIT_NANO = 1n;
 
 /**
- * One `rotate_key` item (spec 7.5, Recovery): the device's secret is already replaced, so this
- * makes the key the new Mac will fetch and retires the old one. The device is read again here.
+ * One `rotate_key` item; the device lock keeps every cap and credit change out of its PATCHes.
+ * The device's secret is already replaced, so this makes the key the new Mac will fetch and
+ * retires the old one. The device is read again here.
  */
 async function rotateItem(ctx: FulfilmentContext, itemId: string, now: number): Promise<void> {
+  const item = ctx.sql
+    .exec<{ ref: string }>("SELECT ref FROM queue WHERE id = ? AND kind = 'rotate_key'", itemId)
+    .toArray()[0];
+  if (!item) return;
+  await ctx.withDeviceLock(item.ref, () => rotateLocked(ctx, itemId, now));
+}
+
+async function rotateLocked(ctx: FulfilmentContext, itemId: string, now: number): Promise<void> {
   const claim = claimRotate(ctx, itemId, now);
   if (!claim) return;
   let revokeItemId: string | null;
@@ -589,19 +740,28 @@ function claimRotate(ctx: FulfilmentContext, itemId: string, now: number): { dev
 /**
  * Replaces the device's key (spec 7.5, Recovery). Every attempt starts by freezing the old key, so
  * nothing more can be spent on it, and reads its usage after that; the new key gets what was left
- * (`creditsLeft`, rounded down) and `credits_bought` becomes that remainder, so later absolute
- * totals stay right on the new key. With nothing left no key is made: the device ends without one
- * and its next credit creates one. Returns the `revoke_key` item queued for the old key, or null
- * when the rotation did not happen (the device changed meanwhile; the item stays for its retry).
+ * of the device key's invariant limit (`creditsFromNano`, rounded down), and `credits_bought`
+ * becomes that remainder, with the ended sessions' usage settled into it, so later absolute totals
+ * stay right on the new key. With nothing left no key is made: the device ends without one and its
+ * next credit creates one. Returns the `revoke_key` item queued for the old key, or null when the
+ * rotation did not happen (the device changed meanwhile; the item stays for its retry).
  */
 async function rotateKey(ctx: FulfilmentContext, deviceId: string, itemId: string, now: number): Promise<string | null> {
   const cfg = ctx.config();
   const before = readDevice(ctx.sql, deviceId);
   if (!before?.nearai_key_id) return null;
   const oldKeyId = before.nearai_key_id;
+  // A session that started since the queue was read must end before the key is replaced.
+  const open = ctx.sql.exec("SELECT 1 FROM session_keys WHERE device_id = ? AND status != 'ended'", deviceId).toArray().length > 0;
+  if (open) return null;
 
   const { usageNano, listed } = await freezeKey(ctx, oldKeyId, now);
-  const remaining = creditsLeft(before.credits_bought, usageNano, cfg);
+  // A session that started while the old key was being frozen must end before the replacement.
+  if (ctx.sql.exec("SELECT 1 FROM session_keys WHERE device_id = ? AND status != 'ended'", deviceId).toArray().length > 0) {
+    return null;
+  }
+  const sessionUsage = sessionDebtNano(ctx.sql, deviceId);
+  const remaining = creditsLeft(before.credits_bought, usageNano + sessionUsage, cfg);
 
   let created: { id: string; ciphertext: string } | null = null;
   if (remaining > 0) {
@@ -621,6 +781,7 @@ async function rotateKey(ctx: FulfilmentContext, deviceId: string, itemId: strin
   }
   const revokeItemId = crypto.randomUUID();
   ctx.transaction(() => {
+    settleEndedSessions(ctx.sql, deviceId, now);
     ctx.sql.exec("UPDATE devices SET nearai_key_id = ?, credits_bought = ? WHERE id = ?", created?.id ?? null, remaining, deviceId);
     forgetKeyLimit(ctx.sql, oldKeyId);
     if (created) {
@@ -691,6 +852,10 @@ function forgetKeyLimit(sql: SqlStorage, keyId: string): void {
   const row = sql.exec<{ limit_nano: number | null; usage_nano: number | null }>("SELECT limit_nano, usage_nano FROM key_usage WHERE key_id = ?", keyId).toArray()[0];
   if (!row) return;
   const left = row.limit_nano !== null && row.limit_nano > (row.usage_nano ?? 0) ? row.limit_nano - (row.usage_nano ?? 0) : 0;
+  sql.exec(
+    "INSERT INTO limits_version (id, version) VALUES (?, 1) ON CONFLICT (id) DO UPDATE SET version = version + 1",
+    SINGLE_ROW_ID,
+  );
   sql.exec("UPDATE snapshot SET outstanding_usd = MAX(0, outstanding_usd - ?) WHERE id = ?", left, SINGLE_ROW_ID);
   sql.exec("DELETE FROM key_usage WHERE key_id = ?", keyId);
 }

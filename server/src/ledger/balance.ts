@@ -1,7 +1,8 @@
 import type { Config } from "../config";
-import { balanceCredits, creditsFromNano, spendLimitNano } from "../credits";
+import { creditsFromNano } from "../credits";
 import { UnusableModelList, type NearAiClient } from "../nearai";
 import { describeError } from "./fulfilment";
+import { remainingCredits, sessionUsageNano } from "./sessions";
 
 /**
  * What the app reads (spec 7.4): a device's balance and the models it may pick. The Ledger owns
@@ -70,17 +71,10 @@ export async function balanceFor(ctx: BalanceContext, deviceId: string, fresh: b
   const updatedAt = new Date(ctx.snapshotTakenAt()).toISOString();
   if (device.nearai_key_id === null) return { credits: 0, usedCredits: 0, keyReady: false, updatedAt };
 
-  const row = ctx.sql
-    .exec<{ limit_nano: number | null; usage_nano: number | null }>(
-      "SELECT limit_nano, usage_nano FROM key_usage WHERE key_id = ?",
-      device.nearai_key_id,
-    )
-    .toArray()[0];
-  const limit = row?.limit_nano != null ? BigInt(row.limit_nano) : spendLimitNano(device.credits_bought, cfg);
-  const usage = BigInt(row?.usage_nano ?? 0);
+  const usedNano = sessionUsageNano(ctx.sql, deviceId, device.nearai_key_id);
   return {
-    credits: balanceCredits(limit, usage, cfg),
-    usedCredits: creditsFromNano(usage, cfg),
+    credits: remainingCredits(ctx.sql, cfg, deviceId, device.credits_bought, device.nearai_key_id),
+    usedCredits: creditsFromNano(usedNano, cfg),
     keyReady: device.waiting === 0,
     updatedAt,
   };

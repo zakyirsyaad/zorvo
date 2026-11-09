@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { SECRET_HASH } from "../auth";
 import { parseConfig, type Config, type Env } from "../config";
-import { creditsForPackage, creditsFromNano, usdcAmount } from "../credits";
+import { creditsForPackage, creditsFromNano, spendLimitNano, usdcAmount } from "../credits";
 import { decrypt } from "../crypto";
 import { UPSTREAM_TIMEOUT_MS } from "../http";
 import { HOUR_MS, MINUTE_MS, SECOND_MS } from "../time";
@@ -22,6 +22,7 @@ import {
   ALARM_INTERVAL_MS,
   describeError,
   keyLimitsVersion,
+  recordKeyLimit,
   runAlarm,
   SNAPSHOT_MAX_AGE_MS,
   type AlertKind,
@@ -32,6 +33,23 @@ import { operatorSession, refreshOperator, withAccessToken, type OperatorContext
 import { promoRefusal, recoverDevice, redeemPromo, savePromo, type PromoContext, type PromoResult } from "./promo-recover";
 import { clampNano, SINGLE_ROW_ID, storable } from "./amounts";
 import { applySchema } from "./schema";
+import {
+  deviceLimitNano,
+  deviceUnallocatedCredits,
+  deviceKeyUsageNano,
+  endSessionsForDevice,
+  insertSession,
+  isSessionCap,
+  queueEndSession,
+  remainingCredits,
+  sessionDebtNano,
+  sessionRow,
+  sessionRows,
+  sessionUsageNano,
+  SESSION_CAPS,
+  type SessionCap,
+  type SessionRow,
+} from "./sessions";
 import { canMove, type SessionOutcome, type TopupStatus } from "./status";
 import { computeStock, type StockView } from "./stock";
 
@@ -59,6 +77,12 @@ export class Ledger extends DurableObject<Env> {
   private modelsCache: { models: ModelInfo[]; at: number } | undefined;
   private modelsLoading: Promise<ModelInfo[]> | undefined;
   private ticking: Promise<void> | undefined;
+  /**
+   * One tail per device for every operation that PATCHes the device key. The Durable Object runs
+   * one instance, so this serializes a credit, a rotation, a session start, raise or end that would
+   * otherwise interleave two absolute PATCHes and leave the higher one last.
+   */
+  private deviceLocks = new Map<string, Promise<void>>();
   /** The alarm tick in flight: how many outbound fetches it has made, and the most it may spend. */
   private tickFetches: { count: number; budget: number } | undefined;
   /** The `fetch` used for NEAR AI and PingPay calls; tests replace it. */
@@ -88,6 +112,28 @@ export class Ledger extends DurableObject<Env> {
       windowStart,
     );
     return { allowed: count <= limit };
+  }
+
+  /**
+   * Runs `body` after every earlier device-key operation of `deviceId` has finished. The lock is
+   * in memory only: the Durable Object is one instance, and an eviction aborts whatever it held,
+   * so no two bodies can overlap on the same device.
+   */
+  async withDeviceLock<T>(deviceId: string, body: () => Promise<T>): Promise<T> {
+    const previous = this.deviceLocks.get(deviceId) ?? Promise.resolve();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = previous.then(() => gate);
+    this.deviceLocks.set(deviceId, tail);
+    await previous;
+    try {
+      return await body();
+    } finally {
+      release();
+      if (this.deviceLocks.get(deviceId) === tail) this.deviceLocks.delete(deviceId);
+    }
   }
 
   /** Whether `key` has used up `limit` hits in its current window, without counting one. */
@@ -186,14 +232,16 @@ export class Ledger extends DurableObject<Env> {
    */
   private roomCredits(deviceId: string, now: number): number {
     const device = this.sql
-      .exec<{ credits_bought: number; usage_nano: number | null }>(
-        `SELECT d.credits_bought, k.usage_nano FROM devices d
-         LEFT JOIN key_usage k ON k.key_id = d.nearai_key_id WHERE d.id = ?`,
+      .exec<{ credits_bought: number; nearai_key_id: string | null }>(
+        "SELECT credits_bought, nearai_key_id FROM devices WHERE id = ?",
         deviceId,
       )
       .toArray()[0];
     if (!device) throw new Error("unknown device");
-    const used = creditsFromNano(BigInt(device.usage_nano ?? 0), this.config());
+    const used = creditsFromNano(
+      sessionUsageNano(this.sql, deviceId, device.nearai_key_id),
+      this.config(),
+    );
     const held = Math.max(0, device.credits_bought - used);
     const reserved = this.sum(
       "SELECT COALESCE(SUM(credits), 0) AS total FROM reservations WHERE device_id = ? AND expires_at > ?",
@@ -404,6 +452,11 @@ export class Ledger extends DurableObject<Env> {
         .toArray()
         .map((row) => row.nearai_key_id),
     );
+    for (const row of this.sql
+      .exec<{ nearai_key_id: string }>("SELECT nearai_key_id FROM session_keys WHERE nearai_key_id IS NOT NULL")
+      .toArray()) {
+      deviceKeys.add(row.nearai_key_id);
+    }
     const ours = keys.filter((key) => deviceKeys.has(key.id));
     // Keys the server creates always have a limit; a key without one counts as 0 outstanding.
     const outstanding = ours.reduce((sum, key) => (key.limitNano !== null && key.limitNano > key.usageNano ? sum + key.limitNano - key.usageNano : sum), 0n);
@@ -674,9 +727,208 @@ export class Ledger extends DurableObject<Env> {
 
   /** Recovery: swaps the secret hash of the device that holds `recoveryHash` and queues a key rotation. */
   async recover(recoveryHash: string, newSecretHash: string, now: number = Date.now()): Promise<{ ok: true } | { error: "bad_request" }> {
-    const result = recoverDevice({ sql: this.sql, transaction: (body) => this.ctx.storage.transactionSync(body) }, recoveryHash, newSecretHash, now);
+    const found = this.sql
+      .exec<{ id: string }>("SELECT id FROM devices WHERE secret_hash = ? AND revoked_at IS NULL", recoveryHash)
+      .toArray()[0];
+    const result = await this.withDeviceLock(found?.id ?? "", async () => {
+      const recovered = recoverDevice(
+        { sql: this.sql, transaction: (body) => this.ctx.storage.transactionSync(body) },
+        recoveryHash,
+        newSecretHash,
+        now,
+      );
+      if ("ok" in recovered && found) endSessionsForDevice(this.sql, found.id, now);
+      return recovered;
+    });
     if ("ok" in result) await this.ensureAlarm();
     return result;
+  }
+
+  // ---- per-session spending caps ----
+
+  /**
+   * Creates a session key with `credits` of spend limit, funded from the device key's unallocated
+   * budget. The row reserves the cap before the first await, so a second start sees it; the key is
+   * then made and the device key lowered. A failure anywhere revokes the new key and removes the
+   * row, so no budget stays held for a session the app never received.
+   */
+  async createSession(
+    deviceId: string,
+    credits: number,
+    now: number = Date.now(),
+  ): Promise<{ sessionId: string; key: string; credits: number } | { error: "bad_request" | "insufficient" | "upstream" }> {
+    if (!isSessionCap(credits)) return { error: "bad_request" };
+    return this.withDeviceLock(deviceId, async () => {
+      const cfg = this.config();
+      const device = this.sql
+        .exec<{ nearai_key_id: string | null; credits_bought: number }>(
+          "SELECT nearai_key_id, credits_bought FROM devices WHERE id = ? AND revoked_at IS NULL",
+          deviceId,
+        )
+        .toArray()[0];
+      if (!device?.nearai_key_id) return { error: "insufficient" as const };
+      const room = deviceUnallocatedCredits(this.sql, cfg, deviceId, device.credits_bought, device.nearai_key_id);
+      if (credits > room) return { error: "insufficient" as const };
+
+      const sessionId = crypto.randomUUID();
+      insertSession(this.sql, sessionId, deviceId, credits, now, cfg);
+      let key: { id: string; key: string };
+      try {
+        key = await this.withAccessToken(now, (access) =>
+          this.nearAi().createKey(access, cfg.workspaceId, `zorvo-session-${sessionId}`, spendLimitNano(credits, cfg)),
+        );
+      } catch (error) {
+        console.error(`Creating the key of private session ${sessionId} failed: ${describeError(error)}`);
+        this.sql.exec("DELETE FROM session_keys WHERE id = ?", sessionId);
+        return { error: "upstream" as const };
+      }
+
+      const row = sessionRow(this.sql, sessionId);
+      if (!row || row.status !== "active") {
+        await this.revokeQuietly(key.id, now);
+        this.sql.exec("DELETE FROM session_keys WHERE id = ?", sessionId);
+        return { error: "upstream" as const };
+      }
+      const target = deviceLimitNano(this.sql, cfg, deviceId, device.credits_bought);
+      const limitNano = target > 0n ? target : 1n;
+      try {
+        await this.withAccessToken(now, (access) =>
+          this.nearAi().setSpendLimit(access, cfg.workspaceId, device.nearai_key_id!, limitNano),
+        );
+      } catch (error) {
+        console.error(`Lowering the device limit for private session ${sessionId} failed: ${describeError(error)}`);
+        await this.revokeQuietly(key.id, now);
+        this.sql.exec("DELETE FROM session_keys WHERE id = ?", sessionId);
+        await this.restoreDeviceLimit(deviceId, device.nearai_key_id, now);
+        return { error: "upstream" as const };
+      }
+
+      this.ctx.storage.transactionSync(() => {
+        this.sql.exec(
+          "UPDATE session_keys SET nearai_key_id = ?, last_seen_at = ? WHERE id = ?",
+          key.id,
+          now,
+          sessionId,
+        );
+        recordKeyLimit(this.sql, key.id, spendLimitNano(credits, cfg));
+        recordKeyLimit(this.sql, device.nearai_key_id!, limitNano);
+      });
+      return { sessionId, key: key.key, credits };
+    });
+  }
+
+  /** Marks `sessionId` ending and queues its end; calling it again changes nothing. */
+  async endSession(deviceId: string, sessionId: string, now: number = Date.now()): Promise<{ status: SessionRow["status"] } | null> {
+    return this.withDeviceLock(deviceId, async () => {
+      const row = sessionRow(this.sql, sessionId);
+      if (!row || row.device_id !== deviceId) return null;
+      if (row.status === "active") {
+        this.sql.exec("UPDATE session_keys SET status = 'ending' WHERE id = ? AND status = 'active'", sessionId);
+        queueEndSession(this.sql, sessionId, now);
+        await this.ensureAlarm();
+      } else if (row.status === "ending") {
+        queueEndSession(this.sql, sessionId, now);
+        await this.ensureAlarm();
+      }
+      return { status: sessionRow(this.sql, sessionId)?.status ?? "ended" };
+    });
+  }
+
+  /** Records that the app is still using `sessionId`; false for an unknown or another device's. */
+  seenSession(deviceId: string, sessionId: string, now: number = Date.now()): boolean {
+    const row = sessionRow(this.sql, sessionId);
+    if (!row || row.device_id !== deviceId || row.status === "ended") return false;
+    this.sql.exec("UPDATE session_keys SET last_seen_at = ? WHERE id = ?", now, sessionId);
+    return true;
+  }
+
+  /**
+   * Doubles a session's cap, taking the difference from the device key. The device key is lowered
+   * before the session key is raised, so the two keys can never together pass what the device
+   * bought, even if the second PATCH fails.
+   */
+  async raiseSession(
+    deviceId: string,
+    sessionId: string,
+    credits: number,
+    now: number = Date.now(),
+  ): Promise<{ cap: number } | { error: "bad_request" | "insufficient" | "upstream" | "not_found" }> {
+    return this.withDeviceLock(deviceId, async () => {
+      const cfg = this.config();
+      const row = sessionRow(this.sql, sessionId);
+      if (!row || row.device_id !== deviceId) return { error: "not_found" as const };
+      if (row.status !== "active" || !Number.isSafeInteger(credits) || credits !== row.cap_credits * 2) {
+        return { error: "bad_request" as const };
+      }
+      const device = this.sql
+        .exec<{ nearai_key_id: string | null; credits_bought: number }>(
+          "SELECT nearai_key_id, credits_bought FROM devices WHERE id = ? AND revoked_at IS NULL",
+          deviceId,
+        )
+        .toArray()[0];
+      if (!device?.nearai_key_id || row.nearai_key_id === null) return { error: "insufficient" as const };
+      const room = deviceUnallocatedCredits(this.sql, cfg, deviceId, device.credits_bought, device.nearai_key_id);
+      if (credits > row.cap_credits + room) return { error: "insufficient" as const };
+
+      const oldCap = row.cap_credits;
+      const oldCapNano = BigInt(row.cap_nano);
+      this.sql.exec("UPDATE session_keys SET cap_credits = ?, cap_nano = ? WHERE id = ?", credits, Number(spendLimitNano(credits, cfg)), sessionId);
+      const target = deviceLimitNano(this.sql, cfg, deviceId, device.credits_bought);
+      const limitNano = target > 0n ? target : 1n;
+      try {
+        await this.withAccessToken(now, (access) =>
+          this.nearAi().setSpendLimit(access, cfg.workspaceId, device.nearai_key_id!, limitNano),
+        );
+      } catch (error) {
+        console.error(`Lowering the device limit for raising private session ${sessionId} failed: ${describeError(error)}`);
+        this.revertSessionCap(sessionId, oldCap, oldCapNano);
+        await this.restoreDeviceLimit(deviceId, device.nearai_key_id, now);
+        return { error: "upstream" as const };
+      }
+      try {
+        await this.withAccessToken(now, (access) =>
+          this.nearAi().setSpendLimit(access, cfg.workspaceId, row.nearai_key_id!, spendLimitNano(credits, cfg)),
+        );
+      } catch (error) {
+        console.error(`Raising the key of private session ${sessionId} failed: ${describeError(error)}`);
+        this.revertSessionCap(sessionId, oldCap, oldCapNano);
+        await this.restoreDeviceLimit(deviceId, device.nearai_key_id, now);
+        return { error: "upstream" as const };
+      }
+      this.ctx.storage.transactionSync(() => {
+        recordKeyLimit(this.sql, device.nearai_key_id!, limitNano);
+        recordKeyLimit(this.sql, row.nearai_key_id!, spendLimitNano(credits, cfg));
+      });
+      return { cap: credits };
+    });
+  }
+
+  private revertSessionCap(sessionId: string, cap: number, capNano: bigint): void {
+    this.sql.exec("UPDATE session_keys SET cap_credits = ?, cap_nano = ? WHERE id = ?", cap, Number(capNano), sessionId);
+  }
+
+  /** Best effort: set the device key back to the invariant after a failed session change. */
+  private async restoreDeviceLimit(deviceId: string, keyId: string, now: number): Promise<void> {
+    const device = this.sql
+      .exec<{ credits_bought: number }>("SELECT credits_bought FROM devices WHERE id = ?", deviceId)
+      .toArray()[0];
+    if (!device) return;
+    const target = deviceLimitNano(this.sql, this.config(), deviceId, device.credits_bought);
+    try {
+      await this.withAccessToken(now, (access) =>
+        this.nearAi().setSpendLimit(access, this.config().workspaceId, keyId, target > 0n ? target : 1n),
+      );
+    } catch (error) {
+      console.error(`Restoring the device limit of ${deviceId} failed: ${describeError(error)}`);
+    }
+  }
+
+  private async revokeQuietly(keyId: string, now: number): Promise<void> {
+    try {
+      await this.withAccessToken(now, (access) => this.nearAi().revokeKey(access, this.config().workspaceId, keyId));
+    } catch (error) {
+      console.error(`Revoking the unheld NEAR AI key ${keyId} failed: ${describeError(error)}`);
+    }
   }
 
   /**
@@ -765,6 +1017,7 @@ export class Ledger extends DurableObject<Env> {
       fetches: () => this.tickFetches?.count ?? 0,
       subrequestBudget: () => this.tickFetches?.budget ?? this.config().tickSubrequestBudget,
       nearAi: () => this.nearAi(),
+      withDeviceLock: (deviceId, body) => this.withDeviceLock(deviceId, body),
       accessToken: (now) => this.accessToken(now),
       withAccessToken: (now, call) => this.withAccessToken(now, call),
       keyEncryptionKey: () => this.secret("KEY_ENCRYPTION_KEY"),

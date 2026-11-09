@@ -25,7 +25,7 @@ export const SEED = "seed-refresh-token";
 export const ALERT_URL = "https://alerts.test/hook";
 const TABLES = [
   "devices", "topups", "reservations", "queue", "pending_keys", "operator", "snapshot", "key_usage",
-  "ratelimits", "events", "promos", "promo_redemptions", "limits_version", "models_cache",
+  "ratelimits", "events", "promos", "promo_redemptions", "limits_version", "models_cache", "session_keys",
 ];
 
 export const stub = () => ledgerEnv.LEDGER.get(ledgerEnv.LEDGER.idFromName("ledger"));

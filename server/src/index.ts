@@ -22,6 +22,8 @@ const MAX_PROMO_USES = 10_000;
 /** Longest promo or recovery code the API reads; longer ones cannot be real. */
 const MAX_CODE_LENGTH = 100;
 const TOPUP_PATH = /^\/v1\/topups\/([0-9a-f-]{36})(\/cancel)?$/;
+/** A private session id and its one action; the id is the UUID the Ledger made. */
+const SESSION_PATH = /^\/v1\/sessions\/([0-9a-f-]{36})(\/end|\/seen|\/raise)?$/;
 /** The PingPay events that settle a checkout; their `resourceId` is the checkout session id. */
 const SESSION_EVENTS = new Set(["checkout.session.completed", "checkout.session.expired"]);
 /**
@@ -253,6 +255,41 @@ async function route(req: Request, env: Env): Promise<Response> {
   }
   if (req.method === "POST" && pathname === "/v1/admin/promos") return adminPromo(req, env);
   if (req.method === "POST" && pathname === "/v1/recover") return recoverRoute(req, env);
+  if (req.method === "POST" && pathname === "/v1/sessions") {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    const credits = ((await req.json().catch(() => null)) as { credits?: unknown } | null)?.credits;
+    const result = await ledgerOf(env).createSession(device.deviceId, credits as number);
+    if ("error" in result) {
+      if (result.error === "bad_request") return error("bad_request", 400);
+      return result.error === "upstream" ? error("upstream", 502) : error("insufficient", 409);
+    }
+    const response = json({ sessionId: result.sessionId, key: result.key }, 201);
+    response.headers.set("cache-control", "no-store");
+    return response;
+  }
+  const session = SESSION_PATH.exec(pathname);
+  if (session && req.method === "POST") {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    const id = session[1]!;
+    if (session[2] === "/end") {
+      const result = await ledgerOf(env).endSession(device.deviceId, id);
+      return result ? json(result) : error("not_found", 404);
+    }
+    if (session[2] === "/seen") {
+      return (await ledgerOf(env).seenSession(device.deviceId, id)) ? json({ ok: true }) : error("not_found", 404);
+    }
+    if (session[2] === "/raise") {
+      const credits = ((await req.json().catch(() => null)) as { credits?: unknown } | null)?.credits;
+      const result = await ledgerOf(env).raiseSession(device.deviceId, id, credits as number);
+      if (!("error" in result)) return json(result);
+      if (result.error === "not_found") return error("not_found", 404);
+      if (result.error === "bad_request") return error("bad_request", 400);
+      return result.error === "upstream" ? error("upstream", 502) : error("insufficient", 409);
+    }
+    return error("not_found", 404);
+  }
   if (req.method === "POST" && pathname === "/v1/promo") {
     const device = await authDevice(req, env);
     if (device instanceof Response) return device;

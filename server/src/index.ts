@@ -199,6 +199,12 @@ async function pingPayWebhook(req: Request, env: Env): Promise<Response> {
       console.error(
         `PingPay ${type} webhook names no known checkout session; data keys: ${keys.length === 0 ? "(none)" : keys.join(", ")}`,
       );
+      // `payment.success` may name only the payment id: read the open checkouts now. The event id is
+      // recorded only if one of them settled, so a redelivery can still try again otherwise.
+      if (type === "payment.success") {
+        const settled = await ledger.nudgePolling(now);
+        if (settled) await ledger.recordEvent(id, now);
+      }
       return json({ received: true });
     }
   }

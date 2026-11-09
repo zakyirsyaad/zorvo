@@ -67,6 +67,7 @@ describe("PingPayClient", () => {
     const call = calls[0]!;
     expect(call).toMatchObject({ url: `${BASE}/checkout/sessions`, method: "POST" });
     expect(call.headers.get("x-api-key")).toBe(KEY);
+    expect(call.headers.get("x-publishable-key")).toBe(KEY);
     expect(call.headers.get("content-type")).toBe("application/json");
     expect(call.body).toEqual({
       amount: "5000000",
@@ -126,6 +127,7 @@ describe("PingPayClient", () => {
     });
     expect(calls[0]).toMatchObject({ url: `${BASE}/checkout/sessions/cs_1`, method: "GET" });
     expect(calls[0]?.headers.get("x-api-key")).toBe(KEY);
+    expect(calls[0]?.headers.get("x-publishable-key")).toBe(KEY);
   });
 
   it("reads a session without a payment yet, and needs no amount before it is completed", async () => {

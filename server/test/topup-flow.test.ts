@@ -191,6 +191,7 @@ describe("POST /v1/topups", () => {
       metadata: { topupId },
     });
     expect(ping.calls[0]?.apiKey).toBe("test-pingpay-key");
+    expect(ping.calls[0]?.publishableKey).toBe("test-pingpay-key");
 
     const until = Date.parse(expiresAt) + 10 * MINUTE_MS;
     const { topups, reservations } = await rows();
@@ -463,6 +464,77 @@ describe("POST /v1/webhooks/pingpay", () => {
     expect(logged).not.toContain("pay_unknown");
     expect(logged).not.toContain("cs_unknown");
     expect(logged).not.toContain("buyer@example.test");
+  });
+
+  it("credits a payable checkout at once when an unmatched payment.success arrives", async () => {
+    await seedStock(10_000, Date.now());
+    const { secret } = await newDevice();
+    const { topupId, sessionId } = await topUpOk(secret);
+    ping.pay(sessionId);
+
+    const res = await paymentWebhook("payment.success", "pay_unknown", "evt_nudge", {});
+
+    expect(res.status).toBe(200);
+    expect(await statusOf(secret, topupId)).toEqual({ status: "paid", credits: 500 });
+    expect((await rows()).events.map((event) => event.id)).toEqual(["evt_nudge"]);
+    expect((await rows()).queue).toEqual([expect.objectContaining({ kind: "credit", ref: topupId })]);
+  });
+
+  it("reads at most the three newest payable checkouts on an unmatched payment.success", async () => {
+    await seedStock(10_000, Date.now());
+    const { secret } = await newDevice();
+    const made = [];
+    for (let index = 0; index < 4; index += 1) made.push(await topUpOk(secret));
+    // Four checkouts in the same millisecond: give them distinct, newest-last creation times.
+    for (const [index, topup] of made.entries()) {
+      await runInDurableObject(stub(), (_ledger, state) => {
+        state.storage.sql.exec("UPDATE topups SET created_at = ? WHERE id = ?", Date.now() - (made.length - index) * 1_000, topup.topupId);
+      });
+    }
+    ping.pay(made[3]!.sessionId);
+
+    expect((await paymentWebhook("payment.success", "pay_unknown", "evt_three", {})).status).toBe(200);
+
+    const readSessions = new Set(
+      ping.calls
+        .filter((call) => call.method === "GET")
+        .map((call) => /\/checkout\/sessions\/([^/]+)$/.exec(new URL(call.url).pathname)?.[1])
+        .filter((id): id is string => id !== undefined),
+    );
+    expect(readSessions.size).toBe(3);
+    expect(readSessions).toEqual(new Set(made.slice(1).map((topup) => topup.sessionId)));
+    expect(await statusOf(secret, made[3]!.topupId)).toEqual({ status: "paid", credits: 500 });
+  });
+
+  it("makes no PingPay call for an unmatched payment.success when no checkout is still payable", async () => {
+    await seedStock(10_000, Date.now());
+    const { secret } = await newDevice();
+    const { topupId } = await topUpOk(secret);
+    await runInDurableObject(stub(), (_ledger, state) => {
+      state.storage.sql.exec("UPDATE topups SET reserved_until = ? WHERE id = ?", Date.now() - 1, topupId);
+    });
+    const before = ping.calls.length;
+
+    expect((await paymentWebhook("payment.success", "pay_unknown", "evt_none", {})).status).toBe(200);
+
+    expect(ping.calls).toHaveLength(before);
+    expect(await statusOf(secret, topupId)).toEqual({ status: "created", credits: 500 });
+    expect((await rows()).events).toEqual([]);
+  });
+
+  it("does not poll an unmatched payment.success without a valid signature", async () => {
+    await seedStock(10_000, Date.now());
+    const { secret } = await newDevice();
+    const { topupId, sessionId } = await topUpOk(secret);
+    ping.pay(sessionId);
+    const before = ping.calls.length;
+    const body = JSON.stringify({ id: "evt_unsigned", type: "payment.success", resourceId: "pay_unknown", data: {} });
+
+    const res = await call("/v1/webhooks/pingpay", { method: "POST", body });
+
+    expect(res.status).toBe(401);
+    expect(ping.calls).toHaveLength(before);
+    expect(await statusOf(secret, topupId)).toEqual({ status: "created", credits: 500 });
   });
 
   it("records a payment event id once and does nothing on a duplicate", async () => {

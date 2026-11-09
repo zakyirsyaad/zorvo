@@ -216,6 +216,40 @@ function nextPoll(sql: SqlStorage, topupId: string, outcome: SessionOutcome | "f
   sql.exec("UPDATE topups SET next_poll_at = ?, polls = ? WHERE id = ?", now + delay, polls, topupId);
 }
 
+/**
+ * A signed `payment.success` that names no top-up: read the newest open checkouts right now, at most
+ * three, instead of waiting for the next alarm tick. The event itself never credits; each session is
+ * read again from PingPay through the same path the alarm uses, then rescheduled like a poll. Says
+ * whether one of them settled, so the caller knows whether the event id is worth recording.
+ */
+export async function pollOpenCheckouts(ctx: FulfilmentContext, now: number): Promise<boolean> {
+  const open = ctx.sql
+    .exec<{ id: string; ping_session_id: string }>(
+      `SELECT id, ping_session_id FROM topups
+       WHERE status = 'created' AND ping_session_id IS NOT NULL AND reserved_until > ?
+       ORDER BY created_at DESC, id DESC
+       LIMIT 3`,
+      now,
+    )
+    .toArray();
+  let settled = false;
+  for (const topup of open) {
+    let outcome: SessionOutcome | "failed" = "failed";
+    try {
+      outcome = await ctx.onSessionEvent(topup.ping_session_id, null, now);
+      if (outcome === "mismatch") {
+        const detail = `top-up ${topup.id} was paid with another amount or asset than its package; it is not credited`;
+        await ctx.alertOnce("payment_mismatch", topup.id, detail, now);
+      }
+    } catch (error) {
+      console.error(`Polling PingPay for top-up ${topup.id} after an unmatched payment webhook failed: ${describeError(error)}`);
+    }
+    if (outcome === "paid" || outcome === "expired") settled = true;
+    nextPoll(ctx.sql, topup.id, outcome, now);
+  }
+  return settled;
+}
+
 /** A `created` top-up still without a checkout session this long after it was made never got one. */
 const NO_CHECKOUT_AFTER_MS = RESERVATION_MS + RESERVATION_GRACE_MS;
 

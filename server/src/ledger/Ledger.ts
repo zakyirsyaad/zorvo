@@ -22,6 +22,7 @@ import {
   ALARM_INTERVAL_MS,
   describeError,
   keyLimitsVersion,
+  pollOpenCheckouts,
   recordKeyLimit,
   runAlarm,
   SNAPSHOT_MAX_AGE_MS,
@@ -589,6 +590,16 @@ export class Ledger extends DurableObject<Env> {
   /** Whether a checkout session id names a top-up; a `payment.*` webhook picks its candidate by this. */
   hasSession(sessionId: string): boolean {
     return this.sql.exec("SELECT 1 FROM topups WHERE ping_session_id = ?", sessionId).toArray().length > 0;
+  }
+
+  /** Reads the newest open checkouts now, for an unmatched `payment.success`; true if one settled. */
+  nudgePolling(now: number = Date.now()): Promise<boolean> {
+    return pollOpenCheckouts(this.fulfilment(), now);
+  }
+
+  /** Records a webhook event id once, after one of its polls settled a top-up. */
+  recordEvent(eventId: string, now: number): void {
+    this.sql.exec("INSERT OR IGNORE INTO events (id, received_at) VALUES (?, ?)", eventId, now);
   }
 
   /**

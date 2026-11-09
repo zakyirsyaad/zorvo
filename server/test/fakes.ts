@@ -27,7 +27,7 @@ export class FakePingPay {
     { status: SessionStatus; paymentId: string | null; body: Record<string, unknown>; amount: Record<string, unknown> }
   >();
   payments = new Map<string, string>();
-  calls: { method: string; url: string; apiKey: string | null }[] = [];
+  calls: { method: string; url: string; apiKey: string | null; publishableKey: string | null }[] = [];
   failCreate = false;
   failReads = false;
   /** The amount a new session's answer states; by default what was asked, in NEAR USDC. */
@@ -45,7 +45,13 @@ export class FakePingPay {
   readonly fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
-    this.calls.push({ method, url: url.toString(), apiKey: new Headers(init?.headers).get("x-api-key") });
+    const headers = new Headers(init?.headers);
+    this.calls.push({
+      method,
+      url: url.toString(),
+      apiKey: headers.get("x-api-key"),
+      publishableKey: headers.get("x-publishable-key"),
+    });
     if (method === "POST" && url.pathname.endsWith("/checkout/sessions")) {
       if (this.failCreate) return json({ code: "INTERNAL", message: "down" }, 503);
       this.next += 1;

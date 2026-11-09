@@ -14,8 +14,9 @@ import { UPSTREAM_TIMEOUT_MS } from "./http";
  *   schema and PingPay's own example app, updated 2026-10-26, send none.) The answer is
  *   `{ session: { sessionId, status, paymentId, recipient: { address }, expiresAt?, ... }, sessionUrl }`,
  *   so the client checks `session.recipient.address` against the operator account instead of sending it.
- * - Requests carry the key in `x-api-key` (the Quick Start page names `x-publishable-key`; the
- *   Create Checkout page and the example app use `x-api-key`).
+ * - Requests carry the key as both `x-api-key` (the Quick Start page names `x-publishable-key`; the
+ *   Create Checkout page and the example app use `x-api-key`) and `x-publishable-key` (Retrieve
+ *   Checkout and Retrieve Payment), with the same value.
  * - A webhook body is `{ id, type, resourceId, data, createdAt }`; for `checkout.session.*` events
  *   `resourceId` is the checkout session id. It is signed with HMAC-SHA256 hex over
  *   `${x-ping-timestamp}.${rawBody}` in `x-ping-signature`. The docs do not give the timestamp's unit.
@@ -96,7 +97,12 @@ export class PingPayClient {
   }
 
   private async request(method: string, path: string, body?: unknown): Promise<unknown> {
-    const headers: Record<string, string> = { "x-api-key": this.apiKey };
+    // The docs disagree: Create Checkout names `x-api-key`, Retrieve Checkout/Payment name
+    // `x-publishable-key`. Send both with the same key; neither is ever logged.
+    const headers: Record<string, string> = {
+      "x-api-key": this.apiKey,
+      "x-publishable-key": this.apiKey,
+    };
     if (body !== undefined) headers["content-type"] = "application/json";
     const signal = AbortSignal.timeout(this.timeoutMs);
     let response: Response;

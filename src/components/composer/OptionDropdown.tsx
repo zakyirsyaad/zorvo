@@ -15,6 +15,8 @@ export interface DropdownOption {
   description?: string;
   /** The choice lets the agent act without asking; the open menu marks it before it is picked. */
   risky?: boolean;
+  /** Why the agent cannot take this choice now; the row is shown disabled, with this in place of its description. */
+  unavailable?: string;
 }
 
 export interface OptionDropdownProps {
@@ -115,6 +117,7 @@ function matches(option: DropdownOption, query: string): boolean {
  * ended before the risky sentence joins it.
  */
 function detailOf(option: DropdownOption): string | undefined {
+  if (option.unavailable) return option.unavailable;
   const description = option.description?.trim() || undefined;
   if (!option.risky) return description;
   return description ? `${asSentence(description)} ${RISKY_LINE}.` : `${RISKY_LINE}.`;
@@ -150,6 +153,7 @@ function OptionRow({ option, current, query, onSelect, renderIcon }: Omit<Option
     <PopoverOption
       selected={option.value === current?.value}
       onSelect={() => onSelect(option.value)}
+      disabled={Boolean(option.unavailable)}
       // A choice found by its description shows why it is listed.
       description={detail && query.trim() !== "" ? <Highlighted text={detail} query={query} /> : detail}
       // The full label, tag and all, for a name cut short.

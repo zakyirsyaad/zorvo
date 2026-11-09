@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- **Qwen Code's Workflow mode no longer fails with an error when you pick On.** Qwen Code offers Workflow mode in every session, but turns it on only when workflows are on in its own settings, and otherwise refuses with "Internal error (Workflow mode is unavailable in this session)". Zorvo now reads what Qwen Code reports and shows On as unavailable, with the reason: turn on workflows in Qwen Code's settings first.
+
 ## [0.9.2] - 2026-11-09
 
 ### Fixed

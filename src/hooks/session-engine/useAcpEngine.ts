@@ -97,6 +97,11 @@ export interface AcpEngineDeps extends EngineDeps {
   onTurnFailed?: (sessionId: string, error: string | null) => void;
   /** Writes the session's transcript in a moment rather than at its next interval: a turn ended, or the agent asks the user. */
   saveSoon?: (sessionId: string) => void;
+  /**
+   * Why a retry must not prompt the agent now, or null. A retry sends without the
+   * composer, so the same one-at-a-time rule that blocks Send applies here.
+   */
+  promptBlockedReason?: (sessionId: string) => string | null;
 }
 
 /**
@@ -116,6 +121,7 @@ export function useAcpEngine({
   transcripts,
   onTurnFailed,
   saveSoon,
+  promptBlockedReason,
 }: AcpEngineDeps) {
   const [starting, setStarting] = useState<ReadonlySet<string>>(new Set());
   const agentFailures = useAgentFailures();
@@ -298,9 +304,14 @@ export function useAcpEngine({
   };
 
   /** Resolves to whether the agent took the message. */
-  const send = async (sessionId: string, text: string, attachments: readonly string[] = []): Promise<boolean> => {
+  const send = async (
+    sessionId: string,
+    text: string,
+    attachments: readonly string[] = [],
+    marks?: Pick<ChatMessage, 'delegationReport'>,
+  ): Promise<boolean> => {
     // Shown before the prompt goes out, so the agent's reply always lands after it.
-    const message = userMessage(text, attachments);
+    const message: ChatMessage = { ...userMessage(text, attachments), ...marks };
     updateNow(sessionId, (prev) => [...prev, message]);
     return prompt(sessionId, message, takeUnsentContext(sessionId));
   };
@@ -516,6 +527,12 @@ export function useAcpEngine({
    * other than a sign-in: the caller gives it back to the user.
    */
   const retryAfterSignIn = async (sessionId: string, message: FirstMessage): Promise<boolean> => {
+    // The pair may be busy since the refusal: a retry never prompts past it.
+    const blocked = promptBlockedReason?.(sessionId) ?? null;
+    if (blocked !== null) {
+      reportError(blocked);
+      return false;
+    }
     const session = sessions.find((s) => s.id === sessionId);
     // Deleted meanwhile: there is no session to give the message back to.
     if (!session) return true;
@@ -705,6 +722,13 @@ export function useAcpEngine({
    * Resolves to whether the agent took the message.
    */
   const retryFailedTurn = async (sessionId: string, giveBack?: (message: FirstMessage) => void): Promise<boolean> => {
+    // The pair may be busy since the failure: a retry never prompts past it. The
+    // message stays in the chat, so nothing goes back to the composer.
+    const blocked = promptBlockedReason?.(sessionId) ?? null;
+    if (blocked !== null) {
+      reportError(blocked);
+      return false;
+    }
     const failed = failedPromptRef.current.get(sessionId);
     const session = sessions.find((s) => s.id === sessionId);
     if (!failed || !session || isBusy(sessionId)) return false;

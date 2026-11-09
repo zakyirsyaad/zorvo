@@ -112,6 +112,17 @@ export interface SessionWorktree {
   startCommit?: string;
 }
 
+/** A delegated task: the session that delegated it, the task, and when it ran. */
+export interface DelegationLink {
+  /** A, the session that delegated. */
+  sessionId: string;
+  /** The task as the user typed it. */
+  task: string;
+  startedAt: number;
+  /** Set by End delegation; no report is sent after it. */
+  endedAt?: number | null;
+}
+
 export interface Session {
   id: string;
   name: string;
@@ -143,6 +154,8 @@ export interface Session {
   historyElsewhere?: boolean;
   /** The compare run this session belongs to, when it was started from one. */
   compareRunId?: string | null;
+  /** The session this one was delegated from; absent when the user started it themselves. */
+  delegatedFrom?: DelegationLink | null;
   /** Comments written on lines of the session's diff; absent when there are none. */
   reviewComments?: ReviewComment[];
 }
@@ -333,6 +346,8 @@ export interface ChatMessage {
   attachments?: string[];
   /** The agent's `messageId` for a user message replayed by `session/load`; its chunks share it. */
   replayId?: string;
+  /** A report from a delegated session in A's transcript; the chat labels it From <agent>. */
+  delegationReport?: { agentName: string; agentId?: string };
   /** A question the agent asked the user (ACP elicitation); never holds the answer. */
   elicitation?: ElicitationCard;
 }

@@ -42,7 +42,9 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
   const lineAgent = isInRun ? undefined : agentName;
   const detail = rowDetail(status, session.createdAt);
   const isUnread = Boolean(session.hasUnread) && !isBusy;
-  const words = `${lineAgent ? " · " : ""}${detail}${session.forkedFrom ? " · fork" : ""}`;
+  // How the session began, when the user did not start it: a fork or a delegated task.
+  const origin = session.forkedFrom ? " · fork" : session.delegatedFrom ? " · delegated" : "";
+  const words = `${lineAgent ? " · " : ""}${detail}${origin}`;
 
   if (isRenaming) {
     // The row keeps its fill and its dot, so it is plain which session the field renames.

@@ -209,6 +209,14 @@ describe("composerNote", () => {
     expect(composerNote({ continuesSession: false })).toBeUndefined();
   });
 
+  it("the delegation note comes after the sign-in note", () => {
+    const delegationBlock = "Codex is working on the task you delegated.";
+    expect(composerNote({ continuesSession: true, agentToSignIn: "Qwen Code", delegationBlock })).toBe(
+      "Sign in to Qwen Code to continue this session.",
+    );
+    expect(composerNote({ continuesSession: false, delegationBlock })).toBe(delegationBlock);
+  });
+
   it("says whom review comments are for", () => {
     expect(composerNote({ continuesSession: true, reviewOwner: { title: "Alpha", isArchived: false } })).toBe(
       "These review comments are for Alpha. Go back to that session, or clear the message.",

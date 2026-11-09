@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- Delegate a task from a session to another agent: it works in the same folder and its answers are sent back to the session.
+
 ## [0.9.2] - 2026-11-09
 
 ### Fixed

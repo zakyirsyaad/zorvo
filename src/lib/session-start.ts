@@ -10,6 +10,7 @@ import {
   TRANSPORT_ACP,
   type AgentProfile,
   type ChatMessage,
+  type DelegationLink,
   type Session,
   type SessionWorktree,
 } from '../types';
@@ -32,6 +33,8 @@ export interface SessionSpec {
   acpSessionId?: string;
   /** The compare run this session belongs to. */
   compareRunId?: string | null;
+  /** The session this one was delegated from, when another agent started it. */
+  delegatedFrom?: DelegationLink;
   /** When the session was made; a run gives its sessions successive times, so they keep the order of its agents. */
   createdAt?: number;
 }
@@ -46,7 +49,7 @@ export interface StartSessionOptions {
 
 /** The record of a session about to start: running, with the spec's agent and folder. */
 export function newSessionRecord(spec: SessionSpec, createdAt: number = spec.createdAt ?? Date.now()): Session {
-  const { id, agent, cwd, name, forkedFrom, worktree, acpSessionId, compareRunId } = spec;
+  const { id, agent, cwd, name, forkedFrom, worktree, acpSessionId, compareRunId, delegatedFrom } = spec;
   return {
     id: id ?? createId('s'),
     name,
@@ -59,6 +62,7 @@ export function newSessionRecord(spec: SessionSpec, createdAt: number = spec.cre
     worktree: worktree ?? null,
     acpSessionId: acpSessionId ?? null,
     ...(compareRunId !== undefined ? { compareRunId } : {}),
+    ...(delegatedFrom !== undefined ? { delegatedFrom } : {}),
   };
 }
 

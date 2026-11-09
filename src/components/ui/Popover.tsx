@@ -215,6 +215,8 @@ export interface PopoverOptionProps {
   onSelect: () => void;
   /** A line under the label that says what the option does. */
   description?: ReactNode;
+  /** The id of that line, so the row can name it as its `aria-describedby` (a disabled row's reason). */
+  descriptionId?: string;
   /** In a menu: one of a set of choices, checked when `selected` (a radio item, not a command). */
   isRadio?: boolean;
   /** Shown at the right edge, before the check (a hint such as a count). */
@@ -236,6 +238,7 @@ export function PopoverOption({
   selected,
   onSelect,
   description,
+  descriptionId,
   isRadio = false,
   trailing,
   disabled,
@@ -255,6 +258,7 @@ export function PopoverOption({
       role={role}
       aria-selected={role === "option" ? isSelected : undefined}
       aria-checked={role === "menuitemradio" ? isSelected : undefined}
+      aria-describedby={descriptionId}
       disabled={disabled}
       title={title}
       onClick={onSelect}
@@ -267,7 +271,11 @@ export function PopoverOption({
       )}
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate">{children}</span>
-        {description && <span className="text-caption leading-[15px] text-fg-subtle">{description}</span>}
+        {description && (
+          <span id={descriptionId} className="text-caption leading-[15px] text-fg-subtle">
+            {description}
+          </span>
+        )}
       </span>
       {trailing && <span className="shrink-0 text-caption text-fg-muted">{trailing}</span>}
     </button>

@@ -18,11 +18,18 @@ export interface ForkHandoffMeta {
   agentName: string;
   cwd: string;
   createdAt: number;
+  /** The document's heading; a delegation says it is one instead of a fork. */
+  title?: string;
+  /** A line under the heading, before the fields. */
+  note?: string;
 }
+
+const DEFAULT_HANDOFF_TITLE = "# Session handoff";
 
 function buildHeader(meta: ForkHandoffMeta): string {
   return [
-    "# Session handoff",
+    meta.title ?? DEFAULT_HANDOFF_TITLE,
+    ...(meta.note ? [meta.note] : []),
     "",
     `- Source session: ${meta.sourceSessionName}`,
     `- Agent: ${meta.agentName}`,

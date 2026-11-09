@@ -146,6 +146,20 @@ export const MessageRow = memo(function MessageRow({
     >
       {isUser ? (
         <>
+          {message.delegationReport && (
+            // A report from a delegated session keeps its bubble, headed like a reply, saying whose it is.
+            <div data-delegation-header="" className="mb-2.5 flex min-w-0 max-w-full items-center gap-2">
+              <AgentLogo
+                profileId={message.delegationReport.agentId ?? ""}
+                name=""
+                size={16}
+                className="shrink-0"
+              />
+              <span className="min-w-0 truncate text-ui-sm font-medium text-fg-secondary">
+                {`From ${message.delegationReport.agentName}`}
+              </span>
+            </div>
+          )}
           {text}
           <UserMessageBar
             copied={copied}
@@ -160,7 +174,7 @@ export const MessageRow = memo(function MessageRow({
           data-message-body=""
           className={`-mx-3 self-stretch rounded-[10px] p-3 transition-colors ${showActions ? "group-hover:bg-surface-1" : ""}`}
         >
-          {/* The agent's reply is headed by its logo, name and time; your message needs no header. */}
+          {/* The agent's reply is headed by its logo, name and time; your own message only when a delegate wrote it. */}
           <div data-message-header="" className="mb-2.5 flex min-w-0 max-w-full items-center gap-2">
             <AgentLogo profileId={agentProfileId ?? ""} name="" size={16} className="shrink-0" />
             <span className="min-w-0 truncate text-ui-sm font-medium text-fg-secondary">{agentName}</span>

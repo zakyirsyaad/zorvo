@@ -173,6 +173,12 @@ pub struct SessionRecord {
     /// The compare run this session belongs to, when it was started from one.
     #[serde(deserialize_with = "lenient_string")]
     pub compare_run_id: Option<String>,
+    /// The session this one was delegated from, when the user delegated its task.
+    #[serde(
+        deserialize_with = "lenient_delegation",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub delegated_from: Option<DelegationLinkRecord>,
     /// Comments the user wrote on lines of the session's diff.
     #[serde(
         deserialize_with = "lenient_review_comments",
@@ -228,6 +234,19 @@ pub struct SessionWorktreeRecord {
     pub start_commit: Option<String>,
 }
 
+/// A delegated task: the session that delegated it, the task, and when it ran.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DelegationLinkRecord {
+    /// The session that delegated the task.
+    pub session_id: String,
+    /// The task as the user typed it.
+    pub task: String,
+    pub started_at: i64,
+    /// When the user ended the delegation; no report is sent after it.
+    pub ended_at: Option<i64>,
+}
+
 /// Where the app keeps its data: the platform app-data dir, or a sibling
 /// `<identifier>.dev` folder for a dev build. Dev and release builds share an
 /// identifier, and two processes writing one data dir can lose sessions.
@@ -266,6 +285,15 @@ pub struct AppStore {
 fn lenient_worktree<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<SessionWorktreeRecord>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| serde_json::from_value(value).ok()))
+}
+
+/// A saved delegation link, or none when it is malformed, for the same reason
+/// as [`lenient_worktree`]: one bad link must not lose every saved session.
+fn lenient_delegation<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<DelegationLinkRecord>, D::Error> {
     let value = Option::<serde_json::Value>::deserialize(deserializer)?;
     Ok(value.and_then(|value| serde_json::from_value(value).ok()))
 }
@@ -736,5 +764,46 @@ mod tests {
         let value = serde_json::to_value(SessionRecord::default()).expect("serialize");
 
         assert!(value.get("reviewComments").is_none(), "{value}");
+    }
+
+    #[test]
+    fn a_delegated_from_link_survives_a_save() {
+        let record = SessionRecord {
+            id: "s-1".to_string(),
+            delegated_from: Some(DelegationLinkRecord {
+                session_id: "s-a".to_string(),
+                task: "Do it".to_string(),
+                started_at: 5,
+                ended_at: Some(9),
+            }),
+            ..SessionRecord::default()
+        };
+
+        let value = serde_json::to_value(&record).expect("serialize");
+        let back: SessionRecord = serde_json::from_value(value.clone()).expect("deserialize");
+
+        assert_eq!(back, record);
+        assert_eq!(value["delegatedFrom"]["sessionId"], "s-a");
+    }
+
+    #[test]
+    fn a_delegated_from_field_of_the_wrong_shape_loads_none() {
+        for delegated_from in [serde_json::json!(5), serde_json::json!({ "task": "x" })] {
+            let record: SessionRecord = serde_json::from_value(session_json(
+                serde_json::json!({ "delegatedFrom": delegated_from }),
+            ))
+            .expect("a bad delegatedFrom must not fail the record");
+
+            assert_eq!(record.delegated_from, None);
+            assert_eq!(record.id, "s-1");
+            assert_eq!(record.name, "Fix login");
+        }
+    }
+
+    #[test]
+    fn no_delegated_from_is_not_written() {
+        let value = serde_json::to_value(SessionRecord::default()).expect("serialize");
+
+        assert!(value.get("delegatedFrom").is_none(), "{value}");
     }
 }

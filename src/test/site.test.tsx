@@ -251,11 +251,16 @@ describe("search engines", () => {
   it("always builds production, and skips only previews that change nothing the site uses", () => {
     const { ignoreCommand } = JSON.parse(readFileSync(join(ROOT, "site", "vercel.json"), "utf8"));
     // Vercel skips the build when the command exits 0. Comparing HEAD with itself is a commit that changes nothing.
-    const run = (env: string) =>
-      spawnSync("sh", ["-c", ignoreCommand], {
+    const run = (environment: string) => {
+      // A Git hook exports GIT_DIR (and friends) for its own repository; Vercel's
+      // build does not, and inheriting it makes `git diff` from site/ look in the
+      // wrong place, so the command fails instead of comparing commits.
+      const { GIT_DIR: _gitDir, GIT_WORK_TREE: _gitWorkTree, GIT_INDEX_FILE: _gitIndex, ...inherited } = process.env;
+      return spawnSync("sh", ["-c", ignoreCommand], {
         cwd: join(ROOT, "site"),
-        env: { ...process.env, VERCEL_ENV: env, VERCEL_GIT_PREVIOUS_SHA: "HEAD" },
+        env: { ...inherited, VERCEL_ENV: environment, VERCEL_GIT_PREVIOUS_SHA: "HEAD" },
       }).status;
+    };
     expect(run("production")).toBe(1);
     expect(run("preview")).toBe(0);
   });

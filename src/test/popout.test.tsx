@@ -110,6 +110,36 @@ describe("Popout windows", () => {
     });
   });
 
+  it("waits its Send while the delegation pair blocks it, and says why", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", {
+      sessionId: "s-1",
+      session: runningSession,
+      messages: [],
+      status: {
+        isBusy: false,
+        isWaiting: false,
+        sendBlockedReason: "Codex is working on the task you delegated.",
+      },
+    });
+
+    const send = screen.getByRole("button", { name: "Send message" }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    const reason = screen.getByText("Codex is working on the task you delegated.");
+    expect(reason).toBeDefined();
+    expect(send.getAttribute("aria-describedby")).toBe(reason.id);
+
+    // Typing and Return must not forward a send the main window would drop.
+    const prompt = screen.getByRole("textbox", { name: "Prompt" });
+    await act(async () => {
+      fireEvent.change(prompt, { target: { value: "run the tests" } });
+      fireEvent.keyDown(prompt, { key: "Enter" });
+    });
+    expect(emitted.some((event) => event.event === "popout-action")).toBe(false);
+  });
+
   it("replies to its agent by name", async () => {
     await act(async () => {
       render(<PopoutApp sessionId="s-1" />);

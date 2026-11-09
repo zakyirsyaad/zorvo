@@ -20,7 +20,7 @@ export interface SessionListContext {
   onArchiveSession?: (sessionId: string, isArchived: boolean) => void;
 }
 
-/** Sessions with their forks nested beneath them, joined by a guide line. */
+/** Sessions with their forks and delegated sessions nested beneath them, joined by a guide line. */
 export function SessionTree({ nodes, label, context, isNested = false, isInRun = false }: {
   nodes: SessionNode[];
   label: string;
@@ -51,7 +51,7 @@ export function SessionTree({ nodes, label, context, isNested = false, isInRun =
           <li key={session.id}>
             <SessionRow session={session} context={context} isInRun={isInRun} />
             {children.length > 0 && (
-              <SessionTree nodes={children} label={`Forks of ${session.name}`} context={context} isNested />
+              <SessionTree nodes={children} label={`Sessions from ${session.name}`} context={context} isNested />
             )}
           </li>
         );

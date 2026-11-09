@@ -42,7 +42,9 @@ const emit = (payload: Record<string, unknown>) =>
   });
 
 /** The engine with its session, transcript and callbacks held in plain variables the test can read. */
-function renderEngine(options: { withTurnFailed?: boolean } = {}) {
+function renderEngine(
+  options: { withTurnFailed?: boolean; promptBlockedReason?: (sessionId: string) => string | null } = {},
+) {
   const withTurnFailed = options.withTurnFailed ?? true;
   let sessions: Session[] = [SESSION];
   let messages: ChatMessage[] = [];
@@ -62,6 +64,7 @@ function renderEngine(options: { withTurnFailed?: boolean } = {}) {
       rememberOptions: () => {},
       onAuthRequired: () => {},
       ...(withTurnFailed ? { onTurnFailed } : {}),
+      ...(options.promptBlockedReason ? { promptBlockedReason: options.promptBlockedReason } : {}),
     }),
   );
   return {
@@ -144,6 +147,26 @@ describe("useAcpEngine when a turn fails", () => {
 
     expect(retried).toBe(false);
     expect(promptsSent(spy)).toEqual(["fix the parser", "something else"]);
+  });
+
+  it("refuses to try again while a delegated report is handing over", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const reason = "Claude Code is working on Codex's report.";
+    const engine = renderEngine({ promptBlockedReason: () => reason });
+    await startWithFailedTurn(engine, spy);
+    expect(promptsSent(spy)).toHaveLength(1);
+
+    let retried = true;
+    await act(async () => {
+      retried = await engine.result.current.retryFailedTurn("s-1");
+    });
+
+    expect(retried).toBe(false);
+    // Nothing was prompted past the pair's other side.
+    expect(promptsSent(spy)).toEqual(["fix the parser"]);
+    expect(engine.reportError).toHaveBeenCalledWith(reason);
+    // The message is still in the chat, so the banner can stay.
+    expect(engine.result.current.hasFailedPrompt("s-1")).toBe(true);
   });
 
   it("forgets the prompt once the user sends something else", async () => {

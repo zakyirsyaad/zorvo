@@ -147,7 +147,7 @@ describe("a compare run in the sidebar", () => {
     const fork = session({ id: "fork-1", name: "Fix the login (fork)", profileId: "qwen-code", createdAt: 20, forkedFrom: "r-qwen" });
     renderSidebar([...runSessions(), fork]);
 
-    const forks = within(screen.getByRole("list", { name: "Forks of Fix the login" }));
+    const forks = within(screen.getByRole("list", { name: "Sessions from Fix the login" }));
     expect(forks.getByTestId("session-row-fork-1")).toBeInTheDocument();
     // Under the Qwen Code row, not beside the group.
     const qwenItem = screen.getByTestId("session-row-r-qwen").closest("li");

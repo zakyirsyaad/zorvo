@@ -133,6 +133,9 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
               isThinking={status.isBusy}
               onStop={() => forward({ kind: "stop" })}
               contextUsage={status.contextUsage}
+              // The pair's hand-over blocks Send here as it does in the main window, and says why.
+              sendDisabled={Boolean(status.sendBlockedReason)}
+              note={status.sendBlockedReason ?? undefined}
             />
           )}
         </div>

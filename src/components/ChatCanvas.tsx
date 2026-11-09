@@ -64,6 +64,10 @@ export interface ChatCanvasProps {
   onRewind?: (messageId: string) => void;
   /** Shown above the conversation, e.g. the folder and branch the session works in. */
   header?: ReactNode;
+  /** B's quiet line above its first message: who delegated this session. */
+  delegatedFrom?: ReactNode;
+  /** A delegation's status under the messages, before the turn's own status. */
+  delegationStatus?: ReactNode;
   /** Shown under the last message and the turn's status (a failed turn's card). */
   footer?: ReactNode;
   /** Puts a quote of text selected in a message into the message box; Reply is offered only when given. */
@@ -88,6 +92,8 @@ export function ChatCanvas({
   conversationId,
   onRewind,
   header,
+  delegatedFrom,
+  delegationStatus,
   footer,
   onReply,
   replyBlockedReason,
@@ -217,6 +223,7 @@ export function ChatCanvas({
       className="flex-1 overflow-y-auto pt-8 px-6 pb-4 space-y-6"
     >
       {header && <div className="mx-auto w-full max-w-chat">{header}</div>}
+      {delegatedFrom && <div className="mx-auto w-full max-w-chat">{delegatedFrom}</div>}
       {visibleMessages.map((msg, index) => (
         <MessageRow
           key={msg.id}
@@ -238,6 +245,7 @@ export function ChatCanvas({
           onReopenElicitationUrl={onReopenElicitationUrl ? handleReopenElicitationUrl : undefined}
         />
       ))}
+      {delegationStatus}
       {isWorking && <WorkingIndicator agentName={shownAgentName} since={workStartedAt} />}
       {isWorking && (
         <AgentStallNotice agentName={shownAgentName} messages={messages} failures={failures} onStop={onStop} />

@@ -1,6 +1,6 @@
 # NEAR HACKATHON: Zorvo Private
 
-Tracks: `privacy` (primary), `open`, `agents`. Branch: `hackathon/near-credits`.
+Tracks: `privacy` (primary), `security`, `open`, `agents`. Branch: `hackathon/near-credits`.
 
 Zorvo Private is an opt-in private mode in Zorvo, an open-source macOS app that hosts coding agents over
 the Agent Client Protocol (ACP). In Private mode Qwen Code runs only on NEAR AI Cloud models that run
@@ -41,6 +41,16 @@ _Add the demo screenshot here: the **Verified in TEE** badge and its popover._
 - **`privacy` (primary).** Prompts go from the agent to NEAR AI through the local proxy; the Credits
   Worker never sees a prompt or a completion. It creates the Mac's NEAR AI key and hands it over once, as
   described above; after collection the key lives in the macOS Keychain, not in the Worker.
+- **`security`.** Every completed private answer is checked against NEAR AI's signature over the exact
+  request and response bytes, and its signer against NEAR AI's attestation report. Zorvo does not run a
+  DCAP or NRAS hardware check; it verifies the signature and the report's signer address and links to
+  NEAR AI's Verification Center for the hardware proof. The NEAR AI key never enters Qwen Code's process:
+  a loopback proxy in Zorvo's Rust backend holds it and adds it to each request, while the agent holds
+  only a per-launch proxy token. Spending caps are enforced by NEAR AI's gateway (`402`), not by Zorvo,
+  and the device key's limit is kept at what the Mac bought minus its open caps and spent credits, so the
+  device's total can never pass what it bought. Before a private message leaves, a local secret check
+  looks for keys and passwords in its text and attachments and pauses Send until you choose; nothing it
+  finds is stored or sent.
 - **`open`.** Zorvo and the Credits Worker are in this Apache-2.0 repository. The Worker is a plain
   Cloudflare Worker with one SQLite Durable Object; its contract, operator setup and deploy steps are in
   [`server/README.md`](server/README.md). Outside Private mode, no API keys are stored in the app; Private

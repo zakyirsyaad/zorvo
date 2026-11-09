@@ -6,11 +6,12 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use super::billing::{default_billing, KeyCheck, PrivateSessionUsage};
 use super::client::{
-    Balance, CreatedTopup, CreditsApi, HttpCredits, ModelPrice, PromoResult, Stock, TopupState,
+    Balance, CreatedSession, CreatedTopup, CreditsApi, HttpCredits, ModelPrice, PromoResult, Stock,
+    TopupState,
 };
 use super::device::{keychain_service, KeychainStore};
 use super::launch::NEAR_AI_BASE_URL;
@@ -97,6 +98,18 @@ impl CreditsApi for OfflineCredits {
         Err(PrivateError::Unreachable)
     }
     fn recover(&self, _: &str, _: &str) -> Result<(), PrivateError> {
+        Err(PrivateError::Unreachable)
+    }
+    fn create_session(&self, _: &str, _: u64) -> Result<CreatedSession, PrivateError> {
+        Err(PrivateError::Unreachable)
+    }
+    fn end_session(&self, _: &str, _: &str) -> Result<(), PrivateError> {
+        Err(PrivateError::Unreachable)
+    }
+    fn seen_session(&self, _: &str, _: &str) -> Result<(), PrivateError> {
+        Err(PrivateError::Unreachable)
+    }
+    fn raise_session(&self, _: &str, _: &str, _: u64) -> Result<u64, PrivateError> {
         Err(PrivateError::Unreachable)
     }
 }
@@ -217,16 +230,35 @@ pub fn private_verify(
 /// same turn-end checks as `private_verify`; no key leaves the backend.
 #[tauri::command(async)]
 pub fn private_session_usage(
+    app: AppHandle,
     private: State<'_, PrivateMode>,
     session_id: String,
 ) -> Result<PrivateSessionUsage, String> {
+    // A capped session tells the Worker it is still in use, but a slow Worker must not delay this answer.
+    let id = session_id.clone();
+    std::thread::spawn(move || {
+        let _ = app.state::<PrivateMode>().seen_session_cap(&id);
+    });
     Ok(private.session_usage(&session_id))
 }
 
-/// A deleted session no longer needs its last token's records.
+/// Doubles a capped session's limit at the Worker; returns the new cap.
 #[tauri::command(async)]
-pub fn private_forget_session(private: State<'_, PrivateMode>, session_id: String) {
+pub fn private_raise_session_cap(
+    private: State<'_, PrivateMode>,
+    session_id: String,
+    credits: u64,
+) -> Result<u64, String> {
+    Ok(private.raise_session_cap(&session_id, credits)?)
+}
+
+/// A deleted session no longer needs its last token's records, and its cap ends.
+#[tauri::command(async)]
+pub fn private_forget_session(app: AppHandle, private: State<'_, PrivateMode>, session_id: String) {
     private.forget_proxy_session(&session_id);
+    std::thread::spawn(move || {
+        let _ = app.state::<PrivateMode>().end_session_cap(&session_id);
+    });
 }
 
 #[cfg(test)]
@@ -247,5 +279,12 @@ mod tests {
         assert_eq!(api.take_key("s").map(|_| ()), unreachable);
         assert_eq!(api.redeem_promo("s", "c").map(|_| ()), unreachable);
         assert_eq!(api.recover("c", "h"), unreachable);
+        assert_eq!(api.create_session("s", 100).map(|_| ()), unreachable);
+        assert_eq!(api.end_session("s", "id"), unreachable);
+        assert_eq!(api.seen_session("s", "id"), unreachable);
+        assert_eq!(
+            api.raise_session("s", "id", 200),
+            Err(PrivateError::Unreachable)
+        );
     }
 }

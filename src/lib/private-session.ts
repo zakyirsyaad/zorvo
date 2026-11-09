@@ -13,16 +13,24 @@ export const CREDITS_MAY_BE_UPDATING =
 /** A private session's agent asked for a sign-in: Zorvo signs it in, so the user can only check Private mode. */
 export const PRIVATE_SIGN_IN_FAILED = "Private mode couldn't sign in. Check Settings → Private mode.";
 
-export type CreditsOutReason = 'empty' | 'key';
+export type CreditsOutReason = 'empty' | 'key' | 'session_limit';
 
-/** What a private session out of credits (`empty`) or with a key that stopped working (`key`) says. */
+/** What a private session out of credits (`empty`), with a key that stopped working (`key`), or at its cap says. */
 export function creditsOutText(reason: CreditsOutReason): string {
-  return reason === 'empty' ? CREDITS_RAN_OUT : PRIVATE_KEY_STOPPED;
+  if (reason === 'empty') return CREDITS_RAN_OUT;
+  if (reason === 'session_limit') return 'This session reached its credit limit.';
+  return PRIVATE_KEY_STOPPED;
 }
 
 /** The private model a session runs on; undefined for an ordinary session. */
 export function privateModelIdOf(session: Pick<Session, 'privateMode'>): string | undefined {
   return session.privateMode?.modelId;
+}
+
+/** The session's credit cap; undefined for an uncapped session or a malformed saved value. */
+export function privateSessionCapOf(session: Pick<Session, 'privateMode'>): number | undefined {
+  const cap = session.privateMode?.sessionCap;
+  return typeof cap === 'number' && Number.isSafeInteger(cap) && cap > 0 ? cap : undefined;
 }
 
 export interface PrivateOpenError {

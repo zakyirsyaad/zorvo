@@ -68,6 +68,8 @@ export function PrivateInspector({
   const answers = messages.filter((message) => message.role === "agent");
   const verified = answers.filter((message) => message.verification?.state === "verified").length;
   const usage = session.privateUsage ?? { credits: 0, estimated: false };
+  const sessionCap = session.privateMode?.sessionCap;
+  const cappedUsed = Math.floor(usage.credits);
   const average =
     turns > 0 && session.privateUsage !== undefined ? formatUsageCredits(usage.credits / turns) : "—";
 
@@ -105,9 +107,34 @@ export function PrivateInspector({
     <aside aria-label="Private panel" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui text-fg-secondary">
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-5">
         <Section heading="This session">
-          <span className="text-2xl font-semibold leading-[30px] tracking-[-0.02em] text-fg">
-            {usageLead(usage.credits, usage.estimated)}
-          </span>
+          {sessionCap !== undefined ? (
+            <>
+              <span className="text-2xl font-semibold leading-[30px] tracking-[-0.02em] text-fg">
+                {cappedUsed}{" "}
+                <span className="text-ui-sm font-medium tracking-normal text-fg-muted">of {sessionCap} credits</span>
+              </span>
+              <div
+                role="progressbar"
+                aria-label="Session credit cap"
+                aria-valuenow={cappedUsed}
+                aria-valuemin={0}
+                aria-valuemax={sessionCap}
+                className="h-1 overflow-hidden rounded-full bg-surface-hover"
+              >
+                <div
+                  className="h-full bg-fg-secondary"
+                  style={{ width: `${Math.min(100, (cappedUsed / sessionCap) * 100)}%` }}
+                />
+              </div>
+              <span className="text-caption text-fg-subtle">
+                NEAR AI stops this session at {sessionCap} credits, even if Zorvo is closed.
+              </span>
+            </>
+          ) : (
+            <span className="text-2xl font-semibold leading-[30px] tracking-[-0.02em] text-fg">
+              {usageLead(usage.credits, usage.estimated)}
+            </span>
+          )}
         </Section>
         <dl className="flex flex-col text-ui-sm">
           <div className="flex items-center gap-2 border-b border-border py-2">

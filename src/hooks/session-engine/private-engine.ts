@@ -10,9 +10,12 @@ export type PrivateRefusal = { creditsOut: CreditsOutReason } | { report: string
  * A private turn's refusal: for credits or a key, or for a sign-in (Zorvo signs a private session's agent in,
  * so there is no sign-in of the user's to offer). Null for any other error.
  */
-export function privateTurnRefusal(error: unknown): PrivateRefusal | null {
+export function privateTurnRefusal(error: unknown, sessionCap?: number): PrivateRefusal | null {
   const creditsOut = parsePrivateCredits(error);
-  if (creditsOut) return { creditsOut: creditsOut.reason };
+  if (creditsOut) {
+    if (creditsOut.reason === 'empty' && sessionCap !== undefined) return { creditsOut: 'session_limit' };
+    return { creditsOut: creditsOut.reason };
+  }
   return parseAuthRequired(error) ? { report: PRIVATE_SIGN_IN_FAILED } : null;
 }
 
@@ -21,9 +24,12 @@ export function privateTurnRefusal(error: unknown): PrivateRefusal | null {
  * (`canMarkCreditsOut`), else said as text; a sign-in request of a private session is said as text too.
  * Null for an error that keeps its ordinary wording.
  */
-export function privateOpenOutcome(error: unknown, isPrivate: boolean, canMarkCreditsOut: boolean): PrivateRefusal | null {
+export function privateOpenOutcome(error: unknown, isPrivate: boolean, canMarkCreditsOut: boolean, sessionCap?: number): PrivateRefusal | null {
   const privateError = privateOpenError(error, isPrivate);
-  if (privateError?.creditsOut && canMarkCreditsOut) return { creditsOut: privateError.creditsOut };
+  if (privateError?.creditsOut) {
+    const reason = privateError.creditsOut === 'empty' && sessionCap !== undefined ? 'session_limit' : privateError.creditsOut;
+    if (canMarkCreditsOut) return { creditsOut: reason };
+  }
   if (privateError) return { report: privateError.text };
   return isPrivate && parseAuthRequired(error) ? { report: PRIVATE_SIGN_IN_FAILED } : null;
 }

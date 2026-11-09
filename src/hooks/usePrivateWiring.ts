@@ -106,6 +106,7 @@ export function usePrivateContinue({
     // The new agent starts from what it was last picked with, never the private session's picks.
     else void forkSession(lastMessage.id, { agent, choices: withPreferred(NO_CHOICES, agentOptions?.[agent.id]) });
   };
-  const creditsOutNote = creditsOutReason && creditsOutText(creditsOutReason);
+  const creditsOutNote =
+    creditsOutReason && creditsOutReason !== 'session_limit' ? creditsOutText(creditsOutReason) : undefined;
   return { creditsOutReason, creditsOutNote, continueAgents, continueWithAgent };
 }

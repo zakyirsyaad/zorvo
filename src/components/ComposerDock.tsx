@@ -14,6 +14,7 @@ import type { FolderControl } from "./composer/FolderPicker";
 import { DraftChips } from "./composer/DraftChips";
 import { PrivateChip } from "./private/PrivateChip";
 import { PrivateModelMenu } from "./private/PrivateModelMenu";
+import { PrivateSessionLimitMenu } from "./private/PrivateSessionLimitMenu";
 import type { PrivateDraft } from "../hooks/usePrivateDraft";
 import { appendAttachments, formatAttachmentPath, withAttachments } from "../lib/attachments";
 import { joinWorkspacePath } from "../lib/files";
@@ -171,7 +172,9 @@ export interface ComposerDockProps {
    * Before a new session starts: the Private chip after the agent chip and, while it is on, the private model
    * menu after it and the credits left in the row. The parent drops the agent's own model chip meanwhile.
    */
-  privateDraft?: Pick<PrivateDraft, "chip" | "modelMenu" | "creditsLine" | "paymentLine" | "paymentKey">;
+  privateDraft?: Pick<PrivateDraft, "chip" | "modelMenu" | "creditsLine" | "paymentLine" | "paymentKey" | "sessionLimit">;
+  /** "34 of 200 credits this session", left of Send while a capped private session runs. */
+  privateSessionLine?: string;
   /** In a compare draft: one model chip per ticked agent, in the run's order. */
   compareModels?: CompareModelControl[];
   /** A compare chip whose agent's models are unknown was opened (or its Try again pressed): ask that agent. */
@@ -213,6 +216,7 @@ export function ComposerDock({
   agents,
   sessionAgent,
   privateDraft,
+  privateSessionLine,
   compareModels,
   onOpenCompareModel,
   mentions,
@@ -483,6 +487,7 @@ export function ComposerDock({
               onClose={() => setOpenDropdown((current) => (current === "private-model" ? null : current))}
             />
           )}
+          {privateDraft?.sessionLimit && <PrivateSessionLimitMenu {...privateDraft.sessionLimit} />}
         </DraftChips>
       )}
       {aboveCardSlots && (
@@ -655,6 +660,9 @@ export function ComposerDock({
 
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             {contextUsage && <ContextMeter {...contextUsage} />}
+            {privateSessionLine && (
+              <span className="text-caption text-fg-subtle">{privateSessionLine}</span>
+            )}
 
             {isThinking && onStop ? (
               <IconButton

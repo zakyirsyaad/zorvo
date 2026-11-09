@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use serde_json::{json, Value};
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use super::manager::{AcpEvent, AcpLaunch, AcpManager, ReopenPurpose, StartedSession};
 use super::private_sessions::{note_if_private, open_session, without_private};
@@ -222,6 +222,7 @@ fn session_launch(
     profile_id: &str,
     private_model_id: Option<&str>,
     own_key: bool,
+    session_cap: Option<u64>,
 ) -> Result<AcpLaunch, String> {
     let launch = base()?;
     let Some(model_id) = private_model_id else {
@@ -232,6 +233,12 @@ fn session_launch(
     let models = private.models_for_launch(own_key)?;
     if !offered_model(model_id, &models) {
         return Err(PrivateError::UnknownModel.into());
+    }
+    // A cap makes its own NEAR AI key; the key never reaches the agent, only the proxy.
+    if !own_key {
+        if let Some(credits) = session_cap {
+            private.ensure_session_cap(session_id, credits)?;
+        }
     }
     let issued = private
         .issue_proxy_token(session_id, model_id, own_key)
@@ -251,6 +258,7 @@ fn session_launch(
 }
 
 /// [`launch_in_workspace`] for a session that may be private.
+#[allow(clippy::too_many_arguments)]
 fn launch_for_session(
     store: &AppStore,
     private: &PrivateMode,
@@ -259,6 +267,7 @@ fn launch_for_session(
     profile_id: &str,
     private_model_id: Option<&str>,
     own_key: bool,
+    session_cap: Option<u64>,
 ) -> Result<AcpLaunch, String> {
     session_launch(
         session_id,
@@ -267,6 +276,7 @@ fn launch_for_session(
         profile_id,
         private_model_id,
         own_key,
+        session_cap,
     )
 }
 
@@ -302,6 +312,7 @@ pub fn acp_start_session(
     profile_id: String,
     private_model_id: Option<String>,
     private_own_key: Option<bool>,
+    private_session_cap: Option<u64>,
 ) -> Result<StartedSession, String> {
     let launch = launch_for_session(
         &store,
@@ -311,6 +322,7 @@ pub fn acp_start_session(
         &profile_id,
         private_model_id.as_deref(),
         private_own_key.unwrap_or(false),
+        private_session_cap,
     )?;
     note_if_private(
         &private,
@@ -383,6 +395,7 @@ pub fn acp_reopen_session(
     acp_session_id: String,
     private_model_id: Option<String>,
     private_own_key: Option<bool>,
+    private_session_cap: Option<u64>,
 ) -> Result<StartedSession, String> {
     open_session(
         &private,
@@ -397,6 +410,7 @@ pub fn acp_reopen_session(
                 &profile_id,
                 private_model_id.as_deref(),
                 private_own_key.unwrap_or(false),
+                private_session_cap,
             )
         },
         |launch| {
@@ -713,12 +727,16 @@ pub fn acp_qwen_last_api_error(
 
 #[tauri::command(async)]
 pub fn acp_stop_session(
+    app: AppHandle,
     manager: State<'_, AcpManager>,
     private: State<'_, PrivateMode>,
     session_id: String,
 ) {
     private.release_proxy_token(&session_id);
     manager.stop(&session_id);
+    std::thread::spawn(move || {
+        let _ = app.state::<PrivateMode>().end_session_cap(&session_id);
+    });
 }
 
 #[cfg(test)]

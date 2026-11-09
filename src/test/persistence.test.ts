@@ -74,6 +74,24 @@ describe("normalizePersistedState", () => {
     expect(state.sessions[0].privateMode).toEqual({ modelId: "a" });
   });
 
+  it("keeps a private session's credit cap, and drops a malformed one", () => {
+    const state = normalizePersistedState({
+      sessions: [
+        { ...base, privateMode: { modelId: "a", sessionCap: 200 } },
+        { ...base, id: "s-2", privateMode: { modelId: "a", ownKey: true, sessionCap: 500 } },
+        { ...base, id: "s-3", privateMode: { modelId: "a", sessionCap: 12.5 } },
+        { ...base, id: "s-4", privateMode: { modelId: "a", sessionCap: -100 } },
+        { ...base, id: "s-5", privateMode: { modelId: "a", sessionCap: "200" } },
+      ],
+    });
+
+    expect(state.sessions[0].privateMode).toEqual({ modelId: "a", sessionCap: 200 });
+    expect(state.sessions[1].privateMode).toEqual({ modelId: "a", ownKey: true, sessionCap: 500 });
+    for (const session of state.sessions.slice(2)) {
+      expect(session.privateMode).toEqual({ modelId: "a" });
+    }
+  });
+
   it("keeps a session's saved private usage and drops a malformed one", () => {
     const state = normalizePersistedState({
       sessions: [

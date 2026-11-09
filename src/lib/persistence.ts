@@ -61,8 +61,13 @@ function isWorktree(value: unknown): value is SessionWorktree {
   );
 }
 
-function isPrivateMode(value: unknown): value is { modelId: string; ownKey?: boolean } {
+function isPrivateMode(value: unknown): value is { modelId: string; ownKey?: boolean; sessionCap?: number } {
   return isObject(value) && typeof value.modelId === 'string' && value.modelId.length > 0;
+}
+
+/** A whole positive credit cap, or nothing; an old or malformed value drops only the cap. */
+function privateSessionCap(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }
 
 /** A saved usage total, with its estimated flag; malformed entries are dropped. */
@@ -84,6 +89,7 @@ function withValidFields(session: Session): Session {
   const { worktree, pinned, archivedAt, namedByUser, hasUnread, historyElsewhere, compareRunId, reviewComments, privateMode, privateUsage, ...rest } = session;
   const comments = validReviewComments(reviewComments);
   const usage = toPrivateUsage(privateUsage);
+  const sessionCap = isPrivateMode(privateMode) ? privateSessionCap(privateMode.sessionCap) : undefined;
   return {
     ...rest,
     ...(worktree == null ? { worktree } : isWorktree(worktree) ? { worktree: withValidStartCommit(worktree) } : {}),
@@ -95,7 +101,13 @@ function withValidFields(session: Session): Session {
     ...(compareRunId == null || typeof compareRunId === 'string' ? { compareRunId } : {}),
     ...(comments.length > 0 ? { reviewComments: comments } : {}),
     ...(isPrivateMode(privateMode)
-      ? { privateMode: { modelId: privateMode.modelId, ...(privateMode.ownKey === true ? { ownKey: true } : {}) } }
+      ? {
+          privateMode: {
+            modelId: privateMode.modelId,
+            ...(privateMode.ownKey === true ? { ownKey: true } : {}),
+            ...(sessionCap !== undefined ? { sessionCap } : {}),
+          },
+        }
       : {}),
     ...(usage ? { privateUsage: usage } : {}),
   };

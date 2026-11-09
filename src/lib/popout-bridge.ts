@@ -1,4 +1,5 @@
 import type { AgentFailures } from './agent-stall';
+import type { CreditsOutReason } from './private-session';
 import type { ChatMessage, ContextUsage, ElicitationAnswer, Session } from '../types';
 
 /**
@@ -25,8 +26,8 @@ export interface SessionLiveStatus {
   contextUsage?: ContextUsage;
   /** Failed requests in a row the agent reported. */
   failures?: AgentFailures;
-  /** A private session out of credits (`empty`) or with a key that stopped working (`key`): its Send waits. */
-  privateCreditsOut?: 'empty' | 'key';
+  /** A private session out of credits, with a key that stopped working, or at its cap: its Send waits. */
+  privateCreditsOut?: CreditsOutReason;
 }
 
 export const IDLE_STATUS: SessionLiveStatus = { isBusy: false, isWaiting: false };

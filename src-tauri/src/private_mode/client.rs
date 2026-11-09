@@ -85,6 +85,14 @@ pub struct PromoResult {
     pub credits: u64,
 }
 
+/// A capped session's one-time key and the Worker's session id. The key never reaches the UI.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedSession {
+    pub session_id: String,
+    pub key: String,
+}
+
 #[derive(Deserialize)]
 struct ModelList {
     models: Vec<ModelPrice>,
@@ -93,6 +101,11 @@ struct ModelList {
 #[derive(Deserialize)]
 struct KeyAnswer {
     key: String,
+}
+
+#[derive(Deserialize)]
+struct SessionCapAnswer {
+    cap: u64,
 }
 
 #[derive(Deserialize)]
@@ -120,6 +133,17 @@ pub trait CreditsApi: Send + Sync {
     fn redeem_promo(&self, secret: &str, code: &str) -> Result<PromoResult, PrivateError>;
     /// Moves the device behind `code` to a new secret. Sends no bearer.
     fn recover(&self, code: &str, new_secret_hash: &str) -> Result<(), PrivateError>;
+    /// Creates a session key with `credits` of spend limit; the key is handed over once.
+    fn create_session(&self, secret: &str, credits: u64) -> Result<CreatedSession, PrivateError>;
+    fn end_session(&self, secret: &str, session_id: &str) -> Result<(), PrivateError>;
+    fn seen_session(&self, secret: &str, session_id: &str) -> Result<(), PrivateError>;
+    /// Doubles the session's cap; returns the cap the Worker accepted.
+    fn raise_session(
+        &self,
+        secret: &str,
+        session_id: &str,
+        credits: u64,
+    ) -> Result<u64, PrivateError>;
 }
 
 // The service holds the Worker as `Box<dyn CreditsApi>`: a method that made
@@ -142,6 +166,7 @@ pub fn error_from(status: u16, body: &str) -> PrivateError {
     match code.as_deref() {
         Some("stock") => PrivateError::Stock,
         Some("device_cap") => PrivateError::DeviceCap,
+        Some("insufficient") => PrivateError::Insufficient,
         Some("rate_limited") => PrivateError::RateLimited,
         Some("unauthorized") => PrivateError::Unauthorized,
         Some("not_found") => PrivateError::NotFound,
@@ -361,6 +386,65 @@ impl CreditsApi for HttpCredits {
         let body = json!({ "recoveryCode": code, "newSecretHash": new_secret_hash });
         self.succeed(Method::POST, "/v1/recover", None, Some(body))
             .map(|_| ())
+    }
+
+    fn create_session(&self, secret: &str, credits: u64) -> Result<CreatedSession, PrivateError> {
+        let body = json!({ "credits": credits });
+        let text = self.succeed(Method::POST, "/v1/sessions", Some(secret), Some(body))?;
+        let created: CreatedSession = parse(&text)?;
+        if !is_plain_token(&created.session_id) || created.key.is_empty() {
+            return Err(PrivateError::Upstream);
+        }
+        Ok(created)
+    }
+
+    fn end_session(&self, secret: &str, session_id: &str) -> Result<(), PrivateError> {
+        if !is_plain_token(session_id) {
+            return Err(PrivateError::BadRequest);
+        }
+        self.succeed(
+            Method::POST,
+            &format!("/v1/sessions/{session_id}/end"),
+            Some(secret),
+            None,
+        )
+        .map(|_| ())
+    }
+
+    fn seen_session(&self, secret: &str, session_id: &str) -> Result<(), PrivateError> {
+        if !is_plain_token(session_id) {
+            return Err(PrivateError::BadRequest);
+        }
+        self.succeed(
+            Method::POST,
+            &format!("/v1/sessions/{session_id}/seen"),
+            Some(secret),
+            None,
+        )
+        .map(|_| ())
+    }
+
+    fn raise_session(
+        &self,
+        secret: &str,
+        session_id: &str,
+        credits: u64,
+    ) -> Result<u64, PrivateError> {
+        if !is_plain_token(session_id) {
+            return Err(PrivateError::BadRequest);
+        }
+        let body = json!({ "credits": credits });
+        let text = self.succeed(
+            Method::POST,
+            &format!("/v1/sessions/{session_id}/raise"),
+            Some(secret),
+            Some(body),
+        )?;
+        let answer: SessionCapAnswer = parse(&text)?;
+        if answer.cap != credits {
+            return Err(PrivateError::Upstream);
+        }
+        Ok(answer.cap)
     }
 }
 

@@ -51,6 +51,28 @@ describe("forking a private session", () => {
     expect(newSessionRecord(spec).privateMode).toEqual({ modelId: MODEL_ID });
   });
 
+  it("a handoff fork keeps the source's credit cap", async () => {
+    const { result, startSession } = renderFork({ ...SOURCE, privateMode: { modelId: MODEL_ID, sessionCap: 200 } }, false);
+
+    await act(async () => result.current("m-1"));
+
+    const spec = startSession.mock.calls[0][0] as SessionSpec;
+    expect(spec.privateMode).toEqual({ modelId: MODEL_ID, sessionCap: 200 });
+  });
+
+  it("a new uncapped session is a fresh private process even when a native fork could run", async () => {
+    const { result, startSession, fork } = renderFork(
+      { ...SOURCE, status: "running", privateMode: { modelId: MODEL_ID, sessionCap: 200 } },
+      true,
+    );
+
+    await act(async () => result.current("m-1", { uncappedPrivate: true }));
+
+    expect(fork).not.toHaveBeenCalled();
+    const spec = startSession.mock.calls[0][0] as SessionSpec;
+    expect(spec.privateMode).toEqual({ modelId: MODEL_ID });
+  });
+
   it("a native fork records the fork as private too", async () => {
     const { result, recordSession, fork } = renderFork({ ...SOURCE, status: "running" }, true);
 

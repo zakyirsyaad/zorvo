@@ -13,12 +13,19 @@ export interface ContinueChoice {
 
 export interface PrivateCreditsOutProps {
   reason: CreditsOutReason;
+  /** The capped session's limit, for the cap card's title and its doubled raise. */
+  sessionCap?: number;
   /** The agents the conversation can go on with, outside the TEE; none hides Continue with another agent. */
   agents: readonly ContinueChoice[];
   /** Opens Settings on Private mode, to top up or to restore the key. */
   onOpenSettings: () => void;
   /** Continues in a new, ordinary session of the agent picked; called only after the user confirmed it. */
   onContinue: (agentId: string) => void;
+  /** Starts a fresh, uncapped private session from this one. */
+  onNewSession?: () => void;
+  /** Doubles the cap at the Worker; the button waits while this is in flight. */
+  onRaise?: () => void;
+  isRaising?: boolean;
   paymentSource?: PaymentSource;
   onSwitchToCredits?: () => void;
   onOpenDashboard?: () => void;
@@ -48,15 +55,45 @@ export function PrivateCreditsOutStatus({
  */
 export function PrivateCreditsOut({
   reason,
+  sessionCap,
   agents,
   onOpenSettings,
   onContinue,
+  onNewSession,
+  onRaise,
+  isRaising = false,
   paymentSource = "credits",
   onSwitchToCredits,
   onOpenDashboard,
 }: PrivateCreditsOutProps) {
   const [isConfirming, setIsConfirming] = useState(false);
   const canContinue = reason === "empty" && agents.length > 0;
+
+  if (reason === "session_limit") {
+    const nextCap = sessionCap !== undefined ? sessionCap * 2 : undefined;
+    return (
+      <BlockerCard
+        label="Private session limit"
+        title={sessionCap !== undefined ? `This session reached ${sessionCap} credits` : "This session reached its credit limit"}
+        actions={
+          <>
+            {onNewSession && (
+              <Button variant="ghost" tone="secondary" onClick={onNewSession}>
+                New session
+              </Button>
+            )}
+            {onRaise && nextCap !== undefined && (
+              <Button variant="outline" onClick={onRaise} disabled={isRaising}>
+                {isRaising ? "Raising…" : `Raise to ${nextCap}`}
+              </Button>
+            )}
+          </>
+        }
+      >
+        <p>NEAR AI stopped it at the cap you set. Raise the cap to go on, or start a new session.</p>
+      </BlockerCard>
+    );
+  }
 
   if (paymentSource === "ownKey") {
     return (

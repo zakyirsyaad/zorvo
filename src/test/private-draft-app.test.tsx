@@ -125,6 +125,10 @@ describe("a private draft in the app", () => {
     expect(await screen.findByText(/Paying with your NEAR AI key/)).toBeInTheDocument();
     expect(screen.getByText("sk-…3f9a")).toBeInTheDocument();
     expect(screen.queryByText("1,240 credits left")).toBeNull();
+    expect(screen.getByRole("button", { name: "Session limit" })).toBeDisabled();
+    expect(
+      screen.getByText("With your own key, set spending limits on the key in your NEAR AI dashboard."),
+    ).toBeInTheDocument();
 
     await send("review the payment module");
     await waitFor(() => expect(callsTo(spy, "acp_start_session")).toHaveLength(1));
@@ -160,6 +164,33 @@ describe("a private draft in the app", () => {
     expect(await screen.findByRole("img", { name: "Private session" })).toBeInTheDocument();
     expect(screen.getByText("Private · TEE")).toBeInTheDocument();
     expect(screen.getByTitle(/Qwen Code · Private ·/)).toBeInTheDocument();
+  });
+
+  it("sets a session limit and starts the session with that capped key", async () => {
+    withCredits();
+    const spy = await renderApp();
+    await turnOnPrivate();
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "Session limit: No session limit" }));
+    });
+    expect(screen.getByRole("listbox", { name: "Session limit" })).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("option", { name: /200 credits/ }));
+    });
+    expect(screen.getByRole("button", { name: "Session limit: 200 credits" })).toBeInTheDocument();
+
+    await send("review the payment module");
+    await waitFor(() => expect(callsTo(spy, "acp_start_session")).toHaveLength(1));
+    expect(callsTo(spy, "acp_start_session")[0]).toMatchObject({
+      privateModelId: MODEL_ID,
+      privateSessionCap: 200,
+    });
+    await waitFor(() =>
+      expect(fakeStore().state.sessions[0]).toMatchObject({
+        privateMode: { modelId: MODEL_ID, sessionCap: 200 },
+      }),
+    );
   });
 
   it("with Qwen Code signed out, shows no sign-in panel while on and lets the credits decide", async () => {

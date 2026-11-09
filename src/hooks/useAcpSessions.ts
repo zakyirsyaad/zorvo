@@ -90,8 +90,18 @@ const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null 
 const isString = (v: unknown): v is string => typeof v === 'string';
 
 /** The private model as a command argument, or nothing: an ordinary launch carries no `privateModelId` key. */
-const privateArgs = (privateModelId: string | undefined, privateOwnKey = false) =>
-  privateModelId === undefined ? {} : { privateModelId, ...(privateOwnKey ? { privateOwnKey: true } : {}) };
+const privateArgs = (
+  privateModelId: string | undefined,
+  privateOwnKey = false,
+  privateSessionCap?: number,
+) =>
+  privateModelId === undefined
+    ? {}
+    : {
+        privateModelId,
+        ...(privateOwnKey ? { privateOwnKey: true } : {}),
+        ...(privateSessionCap !== undefined ? { privateSessionCap } : {}),
+      };
 
 /** Validates modes an agent reported; null when malformed. */
 export function toModes(raw: unknown): AcpModes | null {
@@ -306,6 +316,7 @@ export function useAcpSessions(handlers: AcpHandlers) {
       profileId: string,
       privateModelId?: string,
       privateOwnKey = false,
+      privateSessionCap?: number,
     ) =>
       remember(
         sessionId,
@@ -313,7 +324,7 @@ export function useAcpSessions(handlers: AcpHandlers) {
           sessionId,
           cwd,
           profileId,
-          ...privateArgs(privateModelId, privateOwnKey),
+          ...privateArgs(privateModelId, privateOwnKey, privateSessionCap),
         }),
       ),
     [remember],
@@ -328,6 +339,7 @@ export function useAcpSessions(handlers: AcpHandlers) {
       acpSessionId: string,
       privateModelId?: string,
       privateOwnKey = false,
+      privateSessionCap?: number,
     ) =>
       remember(
         sessionId,
@@ -336,7 +348,7 @@ export function useAcpSessions(handlers: AcpHandlers) {
           cwd,
           profileId,
           acpSessionId,
-          ...privateArgs(privateModelId, privateOwnKey),
+          ...privateArgs(privateModelId, privateOwnKey, privateSessionCap),
         }),
       ),
     [remember],

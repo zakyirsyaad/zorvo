@@ -140,6 +140,8 @@ function answer(state: FakePrivate, cmd: string, args: Record<string, unknown> |
     }
     case "private_recovery_code":
       return state.recoveryCode;
+    case "private_raise_session_cap":
+      return Number(args?.credits);
     case "private_recover":
       if (state.statusAfterRecover) state.status = structuredClone(state.statusAfterRecover);
       return state.newRecoveryCode;

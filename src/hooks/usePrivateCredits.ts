@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { notifyIfAway } from '../lib/notify';
+import type { CreditsOutReason } from '../lib/private-session';
 import { TOPUP_UNCHECKED } from '../lib/private-flow';
 import {
   PRIVATE_ERROR_CODES,
@@ -62,12 +63,12 @@ export interface PrivateCredits {
   markRecovery: (saved: boolean) => Promise<ActionResult>;
   forget: () => Promise<ActionResult>;
   /** Sessions whose turn was refused for lack of credits or a key, until the status shows it is fixed. */
-  creditsOut: Readonly<Record<string, 'empty' | 'key'>>;
+  creditsOut: Readonly<Record<string, CreditsOutReason>>;
   /**
    * Marks the session; for `empty` reads the balance afresh and calls `onBalanceLagging` when that read
    * already shows credits (the server's balance lags NEAR AI's refusal), which clears the mark at once.
    */
-  markCreditsOut: (sessionId: string, reason: 'empty' | 'key', onBalanceLagging?: () => void) => void;
+  markCreditsOut: (sessionId: string, reason: CreditsOutReason, onBalanceLagging?: () => void) => void;
   /** Clears a mark after the user chooses another payment source. */
   clearCreditsOut: (sessionId: string) => void;
   /** True once this Mac holds credits and the user has not yet been asked to save the recovery code. */
@@ -98,7 +99,7 @@ function isTransientPollError(code: string): boolean {
 const ONE_TOPUP_AT_A_TIME = 'Finish or cancel your current top-up first.';
 const STILL_OPENING = 'Wait a moment, then cancel.';
 
-type CreditsOut = Readonly<Record<string, 'empty' | 'key'>>;
+type CreditsOut = Readonly<Record<string, CreditsOutReason>>;
 
 /** The backend rejects with a plain snake_case code. */
 function codeOf(error: unknown): string {
@@ -138,7 +139,10 @@ function giveUpAt(topup: PendingTopup, startedAt: number): number {
 function pruneCreditsOut(marks: CreditsOut, status: PrivateStatus): CreditsOut {
   const hasCredits = freshCreditsOf(status) > 0;
   const keyFixed = status.keyReady && status.keyError === null;
-  const kept = Object.entries(marks).filter(([, reason]) => !(reason === 'empty' ? hasCredits : keyFixed));
+  const kept = Object.entries(marks).filter(([, reason]) => {
+    if (reason === 'session_limit') return true;
+    return !(reason === 'empty' ? hasCredits : keyFixed);
+  });
   return kept.length === Object.keys(marks).length ? marks : Object.fromEntries(kept);
 }
 
@@ -509,7 +513,7 @@ export function usePrivateCredits(): PrivateCredits {
   }, []);
 
   const markCreditsOut = useCallback(
-    (sessionId: string, reason: 'empty' | 'key', onBalanceLagging?: () => void) => {
+    (sessionId: string, reason: CreditsOutReason, onBalanceLagging?: () => void) => {
       setCreditsOut((prev) => (prev[sessionId] === reason ? prev : { ...prev, [sessionId]: reason }));
       if (reason !== 'empty') return;
       // The balance shown elsewhere (the Private tab, Settings) must not contradict the refusal.

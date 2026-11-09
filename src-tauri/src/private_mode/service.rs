@@ -20,8 +20,9 @@ use super::billing::{BillingApi, KeyCheck, PrivateSessionUsage, UsageTracker};
 use super::client::{Balance, CreditsApi, ModelPrice, PromoResult, Stock, TopupState};
 use super::device::{
     new_recovery_code, secret_hash, SecretStore, DEVICE_SECRET, NEARAI_KEY, OWN_KEY,
+    SESSION_KEY_PREFIX,
 };
-use super::local_state::{CachedModels, LastBalance, LocalState, PendingTopup};
+use super::local_state::{CachedModels, LastBalance, LocalState, PendingTopup, SessionCap};
 use super::proxy::{IssuedToken, McpState, PrivateProxy, SharedModels};
 use super::verify::{PrivateVerifier, RecordVerification};
 use super::PrivateError;
@@ -42,6 +43,10 @@ const SECONDS_PER_DAY: u64 = 86_400;
 const ROTATION_WINDOW_MS: i64 = 15 * 60 * 1000;
 /// A promo credit is held like a checkout; the server sends no expiry for it.
 const PROMO_HOLD_SECS: u64 = 25 * 60;
+/// How often a capped session tells the Worker it is still in use.
+const SEEN_INTERVAL: Duration = Duration::from_secs(60);
+/// Longest app session id a Keychain account name may carry.
+const MAX_SESSION_ID_CHARS: usize = 100;
 
 /// Opens a checkout URL in the system browser.
 pub type Opener = Box<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
@@ -127,6 +132,9 @@ pub struct PrivateMode {
     /// A one-time key the server handed over that the Keychain refused; the
     /// next collection writes it again instead of asking for it.
     unsaved_key: Mutex<Option<String>>,
+    /// When a capped session last told the Worker it was in use, for the
+    /// once-a-minute `/seen` throttle.
+    seen: Mutex<HashMap<String, Instant>>,
     /// Serializes read-modify-write of the state file.
     state: Mutex<()>,
 }
@@ -174,6 +182,7 @@ impl PrivateMode {
             registered: AtomicBool::new(false),
             handover: Mutex::new(()),
             unsaved_key: Mutex::new(None),
+            seen: Mutex::new(HashMap::new()),
             state: Mutex::new(()),
         }
     }
@@ -427,10 +436,164 @@ impl PrivateMode {
     }
 
     /// The NEAR AI key a private launch's proxy adds upstream; it never enters the agent's process.
-    /// `own_key` chooses the key the user pasted over the one the Worker handed over.
-    pub fn launch_key(&self, own_key: bool) -> Result<String, PrivateError> {
-        let account = if own_key { OWN_KEY } else { NEARAI_KEY };
-        self.store.get(account)?.ok_or(PrivateError::NoKey)
+    /// `own_key` chooses the key the user pasted; a capped session uses its own key, so the cap
+    /// stays enforced by NEAR AI even after a reopen.
+    pub(crate) fn launch_key(
+        &self,
+        session_id: &str,
+        own_key: bool,
+    ) -> Result<String, PrivateError> {
+        if own_key {
+            return self.store.get(OWN_KEY)?.ok_or(PrivateError::NoKey);
+        }
+        if self.load_state().session_cap(session_id).is_some() {
+            let account = self.session_account(session_id)?;
+            return self.store.get(&account)?.ok_or(PrivateError::NoKey);
+        }
+        self.store.get(NEARAI_KEY)?.ok_or(PrivateError::NoKey)
+    }
+
+    /// The Keychain account of `app_session_id`, after checking it is a plain id.
+    fn session_account(&self, app_session_id: &str) -> Result<String, PrivateError> {
+        let valid = !app_session_id.is_empty()
+            && app_session_id.len() <= MAX_SESSION_ID_CHARS
+            && app_session_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'));
+        if !valid {
+            return Err(PrivateError::BadRequest);
+        }
+        Ok(format!("{SESSION_KEY_PREFIX}{app_session_id}"))
+    }
+
+    /// Makes or reuses the capped session's Worker key. The key is kept in the
+    /// Keychain under the app session id and the Worker id is recorded in the
+    /// local state; neither ever reaches the UI.
+    pub fn ensure_session_cap(
+        &self,
+        app_session_id: &str,
+        credits: u64,
+    ) -> Result<(), PrivateError> {
+        let account = self.session_account(app_session_id)?;
+        if self.load_state().session_cap(app_session_id).is_some() {
+            if self.store.get(&account)?.is_some() {
+                return Ok(());
+            }
+            // The record survived but its key did not: retire the old Worker
+            // session before making a new one, then try again.
+            let _ = self.end_session_cap(app_session_id);
+        }
+        let secret = self.ensure_device()?;
+        let created = self.worker(&secret, self.api.create_session(&secret, credits))?;
+        if let Err(error) = self.save_session_key(&account, &created.key) {
+            // The key cannot be kept: end the Worker session so its budget returns.
+            let _ = self.api.end_session(&secret, &created.session_id);
+            return Err(error);
+        }
+        let server_session_id = created.session_id.clone();
+        let cap = SessionCap {
+            app_session_id: app_session_id.to_string(),
+            server_session_id: created.session_id,
+            cap: credits,
+        };
+        if self.update_state(|old| old.with_session_cap(cap)).is_err() {
+            let _ = self.store.delete(&account);
+            let _ = self.api.end_session(&secret, &server_session_id);
+            return Err(PrivateError::Storage);
+        }
+        Ok(())
+    }
+
+    /// Writes a session key and reads it back; only an identical read counts.
+    fn save_session_key(&self, account: &str, key: &str) -> Result<(), PrivateError> {
+        self.store
+            .set(account, key)
+            .map_err(|_| PrivateError::Keychain)?;
+        match self.store.get(account) {
+            Ok(Some(saved)) if saved == key => Ok(()),
+            _ => {
+                let _ = self.store.delete(account);
+                Err(PrivateError::Keychain)
+            }
+        }
+    }
+
+    /// Ends a capped session at the Worker and forgets its local key. Called on
+    /// stop, delete, orphan cleanup and a lost key; a failed call is only logged,
+    /// since the Worker sweeps an idle session after 24 hours.
+    pub fn end_session_cap(&self, app_session_id: &str) -> Result<(), PrivateError> {
+        let account = self.session_account(app_session_id)?;
+        let cap = self.load_state().session_cap(app_session_id);
+        let _ = self.store.delete(&account);
+        lock(&self.seen).remove(app_session_id);
+        self.change_state(|old| old.without_session_cap(app_session_id));
+        let Some(cap) = cap else {
+            return Ok(());
+        };
+        match self.device_secret() {
+            Ok(secret) => {
+                if let Err(error) = self.api.end_session(&secret, &cap.server_session_id) {
+                    eprintln!(
+                        "private mode: ending a capped session failed ({}); the server will sweep it",
+                        error.code()
+                    );
+                }
+            }
+            Err(_) => eprintln!("private mode: no device secret to end a capped session with"),
+        }
+        Ok(())
+    }
+
+    /// Tells the Worker a capped session is still in use, at most once a minute.
+    pub fn seen_session_cap(&self, app_session_id: &str) -> Result<(), PrivateError> {
+        let cap = match self.load_state().session_cap(app_session_id) {
+            Some(cap) => cap,
+            None => return Ok(()),
+        };
+        let now = Instant::now();
+        {
+            let mut seen = lock(&self.seen);
+            if seen
+                .get(app_session_id)
+                .is_some_and(|last| now.duration_since(*last) < SEEN_INTERVAL)
+            {
+                return Ok(());
+            }
+            seen.insert(app_session_id.to_string(), now);
+        }
+        let secret = self.device_secret()?;
+        if let Err(error) = self.api.seen_session(&secret, &cap.server_session_id) {
+            eprintln!(
+                "private mode: telling the Worker a capped session is in use failed ({})",
+                error.code()
+            );
+        }
+        Ok(())
+    }
+
+    /// Doubles a capped session's limit at the Worker and records the new cap.
+    pub fn raise_session_cap(
+        &self,
+        app_session_id: &str,
+        credits: u64,
+    ) -> Result<u64, PrivateError> {
+        let cap = self
+            .load_state()
+            .session_cap(app_session_id)
+            .ok_or(PrivateError::NotFound)?;
+        let secret = self.ensure_device()?;
+        let raised = self.worker(
+            &secret,
+            self.api
+                .raise_session(&secret, &cap.server_session_id, credits),
+        )?;
+        let cap = SessionCap { cap: raised, ..cap };
+        // The Worker already raised the key; a failed local save only leaves an older cap in the
+        // state file (the Worker id and key are unchanged), so the command still succeeds.
+        if self.update_state(|old| old.with_session_cap(cap)).is_err() {
+            report_storage_failure();
+        }
+        Ok(raised)
     }
 
     /// Checks a pasted key with NEAR AI. A 402 means the organization has no credits; it is still a
@@ -480,7 +643,7 @@ impl PrivateMode {
         model_id: &str,
         own_key: bool,
     ) -> Result<IssuedToken, PrivateError> {
-        let key = self.launch_key(own_key)?;
+        let key = self.launch_key(session_id, own_key)?;
         self.proxy.issue(session_id, model_id, &key, own_key)
     }
 

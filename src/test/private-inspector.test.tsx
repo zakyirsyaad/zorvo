@@ -60,13 +60,16 @@ const SESSION: Session = {
   privateMode: { modelId: MODEL_ID },
 };
 
-function renderInspector(credits: { status: PrivateStatus | null; models: { id: string; inputPerM: number; outputPerM: number }[] | null }) {
+function renderInspector(
+  credits: { status: PrivateStatus | null; models: { id: string; inputPerM: number; outputPerM: number }[] | null },
+  session: Session = SESSION,
+) {
   const onTopUp = vi.fn();
   const onOpenUrl = vi.fn();
   const loadCatalog = vi.fn(() => Promise.resolve());
   render(
     <PrivateInspector
-      session={SESSION}
+      session={session}
       credits={{ ...credits, loadCatalog } as unknown as Parameters<typeof PrivateInspector>[0]["credits"]}
       onTopUp={onTopUp}
       onOpenUrl={onOpenUrl}
@@ -76,6 +79,25 @@ function renderInspector(credits: { status: PrivateStatus | null; models: { id: 
 }
 
 describe("PrivateInspector", () => {
+  it("shows a capped session's used and total credits, its bar and the cap note", () => {
+    renderInspector(
+      { status: READY, models: [{ id: MODEL_ID, inputPerM: 0.04, outputPerM: 1.35 }] },
+      {
+        ...SESSION,
+        privateMode: { modelId: MODEL_ID, sessionCap: 200 },
+        privateUsage: { credits: 34, estimated: false },
+      },
+    );
+
+    expect(screen.getByText("of 200 credits").parentElement).toHaveTextContent("34 of 200 credits");
+    expect(screen.getByRole("progressbar", { name: "Session credit cap" })).toHaveAttribute("aria-valuenow", "34");
+    expect(screen.getByRole("progressbar", { name: "Session credit cap" })).toHaveAttribute("aria-valuemax", "200");
+    expect(
+      screen.getByText("NEAR AI stops this session at 200 credits, even if Zorvo is closed."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^34 credits used/)).toBeNull();
+  });
+
   it("names the session's model by its label once the catalog is loaded", () => {
     renderInspector({ status: READY, models: [{ id: MODEL_ID, inputPerM: 0.04, outputPerM: 1.35 }] });
     expect(screen.getByText("Model").parentElement).toHaveTextContent("Qwen 3.8 27B");

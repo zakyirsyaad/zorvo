@@ -140,6 +140,11 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
               isThinking={status.isBusy}
               onStop={() => forward({ kind: "stop" })}
               contextUsage={status.contextUsage}
+              privateSessionLine={
+                session?.privateMode?.sessionCap !== undefined
+                  ? `${Math.floor(session.privateUsage?.credits ?? 0)} of ${session.privateMode.sessionCap} credits this session`
+                  : undefined
+              }
             />
           )}
         </div>

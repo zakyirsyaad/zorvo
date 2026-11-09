@@ -222,6 +222,22 @@ mod tests {
         fn recover(&self, _: &str, _: &str) -> Result<(), PrivateError> {
             unimplemented!()
         }
+        fn create_session(
+            &self,
+            _: &str,
+            _: u64,
+        ) -> Result<crate::private_mode::client::CreatedSession, PrivateError> {
+            unimplemented!()
+        }
+        fn end_session(&self, _: &str, _: &str) -> Result<(), PrivateError> {
+            unimplemented!()
+        }
+        fn seen_session(&self, _: &str, _: &str) -> Result<(), PrivateError> {
+            unimplemented!()
+        }
+        fn raise_session(&self, _: &str, _: &str, _: u64) -> Result<u64, PrivateError> {
+            unimplemented!()
+        }
     }
 
     fn state() -> (McpState, Arc<Api>) {

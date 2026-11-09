@@ -28,12 +28,25 @@ export interface PrivateModelChoice {
   onSelect: (modelId: string) => void;
 }
 
+/** The draft's Session limit chip: the chosen cap, the draft's model and what the picker may offer. */
+export interface PrivateSessionLimit {
+  /** The cap the draft will start with, or undefined for no limit. */
+  cap?: number;
+  /** The draft's model, for the turn estimate. */
+  model?: ModelPrice;
+  /** The credits left, so a cap larger than that is not offered. */
+  credits: number;
+  /** The draft spends the user's own key: the Worker cannot cap that key. */
+  ownKey: boolean;
+  onChange: (cap: number | undefined) => void;
+}
+
 export interface PrivateDraft {
   state: PrivateDraftState;
   /** The chip is on: the draft starts a private session. */
   isOn: boolean;
   /** What the session the draft starts now records, while on and a model is known. */
-  privateMode: { modelId: string } | undefined;
+  privateMode: { modelId: string; sessionCap?: number } | undefined;
   /** On, and still waiting for credits or the models: Send waits too. */
   blocksSend: boolean;
   /** What an on chip waits for, for the composer's note. */
@@ -47,6 +60,8 @@ export interface PrivateDraft {
   chip?: PrivateChipControl;
   /** The private models, in place of the agent's model chip, while on. */
   modelMenu?: PrivateModelChoice;
+  /** The Session limit chip and listbox, while on. */
+  sessionLimit?: PrivateSessionLimit;
 }
 
 function creditsOf(status: PrivateDraftDeps['credits']['status']): number {
@@ -67,6 +82,7 @@ export function usePrivateDraft({
 }: PrivateDraftDeps): PrivateDraft {
   const [isTurnedOn, setIsTurnedOn] = useState(false);
   const [pickedModelId, setPickedModelId] = useState<string | null>(null);
+  const [sessionCap, setSessionCap] = useState<number | undefined>(undefined);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const isAlive = useRef(true);
   useEffect(() => {
@@ -77,9 +93,10 @@ export function usePrivateDraft({
   }, []);
 
   // A draft that goes away (it started, or another session is shown) takes its choice along: the next starts off.
-  if (agentIds.length === 0 && (isTurnedOn || pickedModelId !== null)) {
+  if (agentIds.length === 0 && (isTurnedOn || pickedModelId !== null || sessionCap !== undefined)) {
     setIsTurnedOn(false);
     setPickedModelId(null);
+    setSessionCap(undefined);
   }
 
   const { status, statusFailed, models, loadCatalog, refresh } = credits;
@@ -97,9 +114,10 @@ export function usePrivateDraft({
   const isOn = state.chip === 'on';
 
   // A disabled chip (another agent, or a compare run) drops the choice too: going back to Qwen Code starts off.
-  if (state.chip === 'disabled' && (isTurnedOn || pickedModelId !== null)) {
+  if (state.chip === 'disabled' && (isTurnedOn || pickedModelId !== null || sessionCap !== undefined)) {
     setIsTurnedOn(false);
     setPickedModelId(null);
+    setSessionCap(undefined);
   }
 
   // Only while the chip is on (turning it on, or its Retry): the catalog is never asked for otherwise.
@@ -123,11 +141,18 @@ export function usePrivateDraft({
 
   const offered = models ?? [];
   const modelId = offered.find((model) => model.id === pickedModelId)?.id ?? offered[0]?.id;
+  const selectedModel = offered.find((model) => model.id === modelId);
 
   return {
     state,
     isOn,
-    privateMode: isOn && modelId !== undefined ? { modelId } : undefined,
+    privateMode:
+      isOn && modelId !== undefined
+        ? {
+            modelId,
+            ...(paymentSource !== 'ownKey' && sessionCap !== undefined ? { sessionCap } : {}),
+          }
+        : undefined,
     blocksSend: isOn && !state.canStart,
     note: isOn ? state.note : undefined,
     creditsLine:
@@ -147,5 +172,14 @@ export function usePrivateDraft({
           },
     modelMenu:
       isOn && modelId !== undefined ? { models: offered, selected: modelId, onSelect: setPickedModelId } : undefined,
+    sessionLimit: isOn
+      ? {
+          cap: sessionCap,
+          model: selectedModel,
+          credits: creditsOf(status),
+          ownKey: paymentSource === 'ownKey',
+          onChange: setSessionCap,
+        }
+      : undefined,
   };
 }

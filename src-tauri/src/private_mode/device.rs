@@ -20,6 +20,8 @@ pub const DEVICE_SECRET_NEXT: &str = "device-secret-next";
 pub const NEARAI_KEY: &str = "nearai-key";
 /// Keychain account of a key the user pasted, used instead of the Worker's key.
 pub const OWN_KEY: &str = "nearai-own-key";
+/// Prefix of a capped session's Keychain account; the app session id follows.
+pub const SESSION_KEY_PREFIX: &str = "nearai-session-";
 
 const RELEASE_SERVICE: &str = "xyz.zorvo.desktop.private";
 const SERVICE_SUFFIX_HEX_CHARS: usize = 8;

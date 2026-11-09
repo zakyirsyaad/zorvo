@@ -72,7 +72,7 @@ import { usePrivateCreditsRefresh } from "./hooks/usePrivateCreditsRefresh";
 import { usePrivateLowBalanceNotice } from "./hooks/usePrivateLowBalanceNotice";
 import { usePrivateUsage } from "./hooks/usePrivateUsage";
 import { usePrivateVerification } from "./hooks/usePrivateVerification";
-import { lowBalanceNote } from "./lib/private-credits";
+import { lowBalanceNote, privateErrorText } from "./lib/private-credits";
 import { useAgentProfiles, useSuggestedFolders } from "./hooks/useDiscovery";
 import { useDraftInstall } from "./hooks/useDraftInstall";
 import { useWorkspaceSelection } from "./hooks/useWorkspaceSelection";
@@ -160,6 +160,7 @@ export default function App() {
   /** Whether the next new session runs in its own worktree (a git repository only). */
   const [isWorktreeOn, setIsWorktreeOn] = useState(false);
   const [isCreatingWorktree, setIsCreatingWorktree] = useState(false);
+  const [isRaisingPrivateCap, setIsRaisingPrivateCap] = useState(false);
   /** Bumped after each of the active agent's turns, so its folder's branch is read again. */
   const [branchCheck, setBranchCheck] = useState(0);
   const [acpChoices, setAcpChoices] = useState<AcpChoices>(NO_CHOICES);
@@ -759,6 +760,45 @@ export default function App() {
     forkSession,
   });
 
+  const handleRaisePrivateCap = async () => {
+    const session = activeSession;
+    const cap = session?.privateMode?.sessionCap;
+    if (!session?.privateMode || cap === undefined || isRaisingPrivateCap) return;
+    setIsRaisingPrivateCap(true);
+    try {
+      const raised = await invoke<number>("private_raise_session_cap", {
+        sessionId: session.id,
+        credits: cap * 2,
+      });
+      patchSession(session.id, {
+        privateMode: { ...session.privateMode, sessionCap: raised },
+      });
+      privateCredits.clearCreditsOut(session.id);
+    } catch (error) {
+      setNotice(privateErrorText(String(error)), "warning");
+    } finally {
+      setIsRaisingPrivateCap(false);
+    }
+  };
+
+  /** Starts a fresh private session from a capped one, with no cap. */
+  const handleNewPrivateSession = () => {
+    if (!activeSession?.privateMode) return;
+    const last = (transcripts[activeSession.id] ?? []).at(-1);
+    if (last) {
+      void forkSession(last.id, { uncappedPrivate: true });
+      return;
+    }
+    const agent = agents.find((candidate) => candidate.id === activeSession.profileId);
+    if (!agent) return;
+    startSession({
+      agent,
+      cwd: activeSession.cwd,
+      name: nextSessionName(sessions),
+      privateMode: { modelId: activeSession.privateMode.modelId },
+    });
+  };
+
   const handleSelectSession = (sessionId: string) => {
     setActiveSessionId(sessionId);
     // An agent picked for a new session that was never started is forgotten.
@@ -1064,6 +1104,13 @@ export default function App() {
   const isSendBlocked = isSendWaiting || review.blocksSend;
   const privateModelId = activeSession?.privateMode?.modelId ?? privateDraft.privateMode?.modelId;
   const privateModel = privateCredits.models?.find((model) => model.id === privateModelId);
+  const privateSessionCap = activeSession?.privateMode?.sessionCap;
+  const privateSessionLine =
+    activeSession &&
+    privateSessionCap !== undefined &&
+    state.settings.paymentSource !== "ownKey"
+      ? `${Math.floor(activeSession.privateUsage?.credits ?? 0)} of ${privateSessionCap} credits this session`
+      : undefined;
   const livePrivateCredits = privateCredits.status?.balance?.credits;
   const privateLowNote =
     isPrivateLaunch && state.settings.paymentSource !== "ownKey" && livePrivateCredits !== undefined
@@ -1345,9 +1392,13 @@ export default function App() {
                     <PrivateCreditsOutLayer
                       sessionId={activeSession?.id}
                       reason={creditsOutReason}
+                      sessionCap={privateSessionCap}
                       agents={continueAgents.map((agent) => ({ id: agent.id, name: agent.name }))}
                       onOpenSettings={() => settingsPage.open("private")}
                       onContinue={continueWithAgent}
+                      onNewSession={handleNewPrivateSession}
+                      onRaise={() => void handleRaisePrivateCap()}
+                      isRaising={isRaisingPrivateCap}
                       paymentSource={state.settings.paymentSource ?? "credits"}
                       onSwitchToCredits={() => {
                         updateSettings({ paymentSource: "credits" });
@@ -1409,6 +1460,7 @@ export default function App() {
                     agentName={activeSession ? activeAgent?.name : newSessionAgent?.name}
                     sessionAgent={activeSession && activeAgent ? { profileId: activeAgent.id, name: activeAgent.name } : undefined}
                     privateDraft={isNewSessionDraft ? privateDraft : undefined}
+                    privateSessionLine={privateSessionLine}
                     compareModels={
                       compare.isCompare
                         ? compareModelControls(

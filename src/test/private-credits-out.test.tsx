@@ -113,13 +113,17 @@ const endTurn = (sessionId: string, error: string) => emit({ sessionId, kind: "t
 async function runOutOfCredits(
   reason: "empty" | "key",
   overrides: Record<string, Override> = {},
-  { isBalanceLagging = false }: { isBalanceLagging?: boolean } = {},
+  { isBalanceLagging = false, cap }: { isBalanceLagging?: boolean; cap?: number } = {},
 ) {
   withCredits();
   const spy = await renderApp(overrides);
   // A saved session shows first: the private one starts from a new draft.
   if (!screen.queryByRole("button", { name: "Private · TEE" })) await click(screen.getByRole("button", { name: "New session" }));
   await click(await screen.findByRole("button", { name: "Private · TEE" }));
+  if (cap !== undefined) {
+    await click(await screen.findByRole("button", { name: "Session limit: No session limit" }));
+    await click(screen.getByRole("option", { name: new RegExp(`${cap} credits`) }));
+  }
   // A first turn that Qwen Code answers, so the session has a conversation to hand over.
   await send("look at the payments folder");
   await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
@@ -165,6 +169,70 @@ describe("a private session on the user's own key", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open NEAR AI dashboard" }));
     expect(onSwitchToCredits).toHaveBeenCalledTimes(1);
     expect(onOpenDashboard).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a capped private session", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    listeners.clear();
+  });
+
+  it("shows the cap card with its count, the exact text and both ways on", () => {
+    const onNewSession = vi.fn();
+    const onRaise = vi.fn();
+    render(
+      <PrivateCreditsOut
+        reason="session_limit"
+        sessionCap={200}
+        agents={[]}
+        onOpenSettings={vi.fn()}
+        onContinue={vi.fn()}
+        onNewSession={onNewSession}
+        onRaise={onRaise}
+      />,
+    );
+
+    expect(screen.getByText("This session reached 200 credits")).toBeInTheDocument();
+    expect(
+      screen.getByText("NEAR AI stopped it at the cap you set. Raise the cap to go on, or start a new session."),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "New session" }));
+    expect(onNewSession).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Raise to 400" }));
+    expect(onRaise).toHaveBeenCalledOnce();
+  });
+
+  it("waits on the raise button while the Worker is asked", () => {
+    render(
+      <PrivateCreditsOut
+        reason="session_limit"
+        sessionCap={200}
+        agents={[]}
+        onOpenSettings={vi.fn()}
+        onContinue={vi.fn()}
+        onRaise={vi.fn()}
+        isRaising
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Raising…" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Raise to 400" })).toBeNull();
+  });
+
+  it("turns a 402 in a capped session into the cap card and raises it", async () => {
+    const spy = await runOutOfCredits("empty", {}, { cap: 200 });
+
+    expect(await screen.findByText("This session reached 200 credits")).toBeInTheDocument();
+    expect(screen.getByText("0 of 200 credits this session")).toBeInTheDocument();
+    await click(screen.getByRole("button", { name: "Raise to 400" }));
+    await waitFor(() =>
+      expect(callsTo(spy, "private_raise_session_cap")).toEqual([{ sessionId: expect.any(String), credits: 400 }]),
+    );
+    await waitFor(() => expect(screen.queryByText("This session reached 200 credits")).toBeNull());
+    expect(await screen.findByText("0 of 400 credits this session")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(storedSessions()[0]).toMatchObject({ privateMode: { modelId: MODEL_ID, sessionCap: 400 } }),
+    );
   });
 });
 

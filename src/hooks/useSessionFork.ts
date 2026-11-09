@@ -25,6 +25,8 @@ export interface ForkOptions {
   agent?: AgentProfile;
   /** What that agent starts with; without it, the draft's picks, which belong to another agent. */
   choices?: AcpChoices;
+  /** A fresh private process with no credit cap (the cap card's New session). */
+  uncappedPrivate?: boolean;
 }
 
 /**
@@ -69,12 +71,16 @@ export function useSessionFork(deps: SessionForkDeps): (messageId: string, optio
             privateMode: {
               modelId: source.privateMode.modelId,
               ...(source.privateMode.ownKey ? { ownKey: true } : {}),
+              ...(!options?.uncappedPrivate && source.privateMode.sessionCap !== undefined
+                ? { sessionCap: source.privateMode.sessionCap }
+                : {}),
             },
           }
         : {}),
     };
-    // A native fork needs the source agent alive; after it exited, fall back to a handoff.
-    if (!isOtherAgent && source.status === 'running' && isLatest && acp.canFork(source.id)) {
+    // A native fork needs the source agent alive; after it exited, fall back to a handoff. A new
+    // uncapped session must be a fresh process: a native fork would keep the source's capped token.
+    if (!isOtherAgent && !options?.uncappedPrivate && source.status === 'running' && isLatest && acp.canFork(source.id)) {
       void acp.fork(source.id, recordSession(spec));
       return;
     }

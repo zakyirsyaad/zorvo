@@ -189,15 +189,18 @@ fn end_orphaned_sessions(
         .iter()
         .map(|id| {
             private.release_proxy_token(id);
-            acp.detach(id)
+            (id.clone(), acp.detach(id))
         })
         .collect();
     let count = terminals.len() + agents.len();
     std::thread::spawn(move || {
         workspace_terminal::end_sessions(&app.state::<PtySessionManager>(), &terminals);
-        agents
-            .into_iter()
-            .for_each(acp::manager::DetachedSession::end);
+        agents.into_iter().for_each(|(id, session)| {
+            let _ = app
+                .state::<private_mode::service::PrivateMode>()
+                .end_session_cap(&id);
+            session.end();
+        });
     });
     count
 }
@@ -523,6 +526,7 @@ pub fn run() {
             private_mode::commands::private_forget_device,
             private_mode::commands::private_verify,
             private_mode::commands::private_session_usage,
+            private_mode::commands::private_raise_session_cap,
             private_mode::commands::private_forget_session
         ])
         .build(tauri::generate_context!())

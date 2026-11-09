@@ -63,6 +63,8 @@ private_errors! {
     NotFound => "not_found",
     Stock => "stock",
     DeviceCap => "device_cap",
+    /// A session cap is larger than the device key's unallocated credits.
+    Insufficient => "insufficient",
     RateLimited => "rate_limited",
     Upstream => "upstream",
     Keychain => "keychain",

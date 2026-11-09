@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 use zorvo_lib::private_mode::client::{
-    Balance, CreatedTopup, CreditsApi, ModelPrice, PromoResult, Stock, TopupState,
+    Balance, CreatedSession, CreatedTopup, CreditsApi, ModelPrice, PromoResult, Stock, TopupState,
 };
 use zorvo_lib::private_mode::device::{SecretStore, DEVICE_SECRET};
 use zorvo_lib::private_mode::proxy::{McpState, PrivateProxy, TokenUsage};
@@ -712,6 +712,18 @@ impl CreditsApi for McpApi {
         unimplemented!()
     }
     fn recover(&self, _: &str, _: &str) -> Result<(), PrivateError> {
+        unimplemented!()
+    }
+    fn create_session(&self, _: &str, _: u64) -> Result<CreatedSession, PrivateError> {
+        unimplemented!()
+    }
+    fn end_session(&self, _: &str, _: &str) -> Result<(), PrivateError> {
+        unimplemented!()
+    }
+    fn seen_session(&self, _: &str, _: &str) -> Result<(), PrivateError> {
+        unimplemented!()
+    }
+    fn raise_session(&self, _: &str, _: &str, _: u64) -> Result<u64, PrivateError> {
         unimplemented!()
     }
 }

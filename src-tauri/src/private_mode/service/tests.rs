@@ -8,7 +8,8 @@ use crate::private_mode::device::{
     normalize_recovery_code, secret_hash, DEVICE_SECRET_NEXT, NEARAI_KEY, OWN_KEY,
 };
 use crate::private_mode::testing::{
-    balance, model_list, Call, Harness, CHECKOUT_URL, CODE, OTHER_CODE, TOPUP_ID,
+    balance, model_list, Call, Harness, CHECKOUT_URL, CODE, OTHER_CODE, SESSION_ID, SESSION_KEY,
+    TOPUP_ID,
 };
 
 fn state_with_balance(credits: u64) -> LocalState {
@@ -180,8 +181,8 @@ fn the_users_own_key_is_saved_with_its_last_four_and_can_be_removed() {
     assert_eq!(status.last4.as_deref(), Some("3f9a"));
     assert!(status.no_credits);
     assert_eq!(h.secret(OWN_KEY).as_deref(), Some("own-key-3f9a"));
-    assert_eq!(h.mode.launch_key(true).as_deref(), Ok("own-key-3f9a"));
-    assert_eq!(h.mode.launch_key(false), Err(PrivateError::NoKey));
+    assert_eq!(h.mode.launch_key("s1", true).as_deref(), Ok("own-key-3f9a"));
+    assert_eq!(h.mode.launch_key("s1", false), Err(PrivateError::NoKey));
 
     h.mode.remove_own_key().expect("remove");
     assert_eq!(h.secret(OWN_KEY), None);
@@ -215,7 +216,7 @@ fn status_collects_the_key_and_reports_it_ready() {
     assert!(status.key_ready);
     assert_eq!(status.key_error, None);
     assert_eq!(h.secret(NEARAI_KEY).as_deref(), Some("sk-test"));
-    assert_eq!(h.mode.launch_key(false).as_deref(), Ok("sk-test"));
+    assert_eq!(h.mode.launch_key("s1", false).as_deref(), Ok("sk-test"));
     assert!(h.api.calls().contains(&Call::TakeKey {
         secret: CODE.into()
     }));
@@ -229,7 +230,7 @@ fn a_key_the_keychain_cannot_save_reads_keychain() {
     let status = h.mode.status(false);
     assert_eq!(status.key_error, Some(PrivateError::Keychain));
     assert!(!status.key_ready);
-    assert_eq!(h.mode.launch_key(false), Err(PrivateError::NoKey));
+    assert_eq!(h.mode.launch_key("s1", false), Err(PrivateError::NoKey));
 }
 
 #[test]
@@ -1326,4 +1327,129 @@ fn a_restore_goes_through_when_this_mac_lost_its_device_secret() {
 
     assert_eq!(h.secret(DEVICE_SECRET), Some(new));
     assert_eq!(h.api.count(|c| matches!(c, Call::Recover { .. })), 1);
+}
+
+#[test]
+fn a_session_cap_creates_a_worker_key_and_uses_it_for_its_launch() {
+    let h = Harness::with_device(CODE);
+
+    h.mode.ensure_session_cap("s-1", 200).expect("a cap");
+
+    assert_eq!(
+        h.api
+            .calls()
+            .iter()
+            .filter(|c| matches!(c, Call::CreateSession { .. }))
+            .count(),
+        1
+    );
+    assert!(h.api.calls().contains(&Call::CreateSession {
+        secret: CODE.into(),
+        credits: 200,
+    }));
+    assert_eq!(
+        h.secret(&format!("{}{}", SESSION_KEY_PREFIX, "s-1"))
+            .as_deref(),
+        Some(SESSION_KEY)
+    );
+    let state = h.state();
+    assert_eq!(
+        state
+            .session_cap("s-1")
+            .map(|cap| (cap.server_session_id, cap.cap)),
+        Some((SESSION_ID.into(), 200))
+    );
+    assert_eq!(h.mode.launch_key("s-1", false).as_deref(), Ok(SESSION_KEY));
+    let text = std::fs::read_to_string(h.dir.join("private").join("state.json")).expect("state");
+    assert!(!text.contains(SESSION_KEY));
+}
+
+#[test]
+fn a_session_cap_is_reused_for_a_reopen() {
+    let h = Harness::with_device(CODE);
+    h.mode.ensure_session_cap("s-1", 200).expect("a cap");
+    h.mode.ensure_session_cap("s-1", 200).expect("reused");
+
+    assert_eq!(
+        h.api
+            .calls()
+            .iter()
+            .filter(|c| matches!(c, Call::CreateSession { .. }))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn a_session_key_the_keychain_refuses_ends_the_worker_session() {
+    let h = Harness::with_device(CODE);
+    h.store
+        .fail_writes_to(&format!("{}{}", SESSION_KEY_PREFIX, "s-1"));
+
+    assert_eq!(
+        h.mode.ensure_session_cap("s-1", 200),
+        Err(PrivateError::Keychain)
+    );
+    assert!(h.api.calls().contains(&Call::EndSession {
+        secret: CODE.into(),
+        id: SESSION_ID.into(),
+    }));
+    assert_eq!(h.state().session_cap("s-1"), None);
+}
+
+#[test]
+fn ending_a_session_cap_calls_the_worker_and_forgets_the_key() {
+    let h = Harness::with_device(CODE);
+    h.mode.ensure_session_cap("s-1", 100).expect("a cap");
+
+    h.mode.end_session_cap("s-1").expect("ended");
+
+    assert!(h.api.calls().contains(&Call::EndSession {
+        secret: CODE.into(),
+        id: SESSION_ID.into(),
+    }));
+    assert_eq!(h.secret(&format!("{}{}", SESSION_KEY_PREFIX, "s-1")), None);
+    assert_eq!(h.state().session_cap("s-1"), None);
+    assert_eq!(h.mode.end_session_cap("s-1"), Ok(()));
+}
+
+#[test]
+fn a_seen_session_tells_the_worker_once_a_minute() {
+    let h = Harness::with_device(CODE);
+    h.mode.ensure_session_cap("s-1", 100).expect("a cap");
+
+    h.mode.seen_session_cap("s-1").expect("seen");
+    h.mode.seen_session_cap("s-1").expect("throttled");
+
+    assert_eq!(
+        h.api
+            .calls()
+            .iter()
+            .filter(|c| matches!(c, Call::SeenSession { .. }))
+            .count(),
+        1
+    );
+    assert!(h.api.calls().contains(&Call::SeenSession {
+        secret: CODE.into(),
+        id: SESSION_ID.into(),
+    }));
+}
+
+#[test]
+fn raising_a_cap_records_what_the_worker_accepted() {
+    let h = Harness::with_device(CODE);
+    h.mode.ensure_session_cap("s-1", 100).expect("a cap");
+    h.api.raise_session.always(Ok(400));
+
+    assert_eq!(h.mode.raise_session_cap("s-1", 200), Ok(400));
+    assert!(h.api.calls().contains(&Call::RaiseSession {
+        secret: CODE.into(),
+        id: SESSION_ID.into(),
+        credits: 200,
+    }));
+    assert_eq!(h.state().session_cap("s-1").map(|cap| cap.cap), Some(400));
+    assert_eq!(
+        h.mode.raise_session_cap("missing", 200),
+        Err(PrivateError::NotFound)
+    );
 }

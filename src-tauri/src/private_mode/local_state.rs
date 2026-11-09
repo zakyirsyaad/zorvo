@@ -29,6 +29,18 @@ const STALE_TMP_AGE: Duration = Duration::from_secs(60);
 /// id is forgotten and that session could be opened plainly (the guard fails
 /// open for it).
 pub const MAX_PRIVATE_SESSIONS: usize = 1000;
+/// How many capped sessions' Worker ids are kept; the oldest go first.
+pub const MAX_SESSION_CAPS: usize = 100;
+
+/// A capped private session: the app's session id, the Worker's id for its key,
+/// and the cap. No key is stored here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionCap {
+    pub app_session_id: String,
+    pub server_session_id: String,
+    pub cap: u64,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -81,6 +93,8 @@ pub struct LocalState {
     /// without private mode. Ids only, no secret. Accepted limit: a state file
     /// that is malformed reads as empty, so the record is lost with it.
     pub private_sessions: Vec<String>,
+    /// The capped sessions whose Worker keys this Mac holds, oldest first.
+    pub session_caps: Vec<SessionCap>,
 }
 
 /// One field of the file, or `None` when it is absent or has the wrong shape.
@@ -109,6 +123,34 @@ fn private_sessions_of(object: &Map<String, Value>) -> Vec<String> {
     ids
 }
 
+/// The valid `sessionCaps` items, oldest first, one per app session; a
+/// malformed entry or a repeat is dropped.
+fn session_caps_of(object: &Map<String, Value>) -> Vec<SessionCap> {
+    let Some(Value::Array(items)) = object.get("sessionCaps") else {
+        return Vec::new();
+    };
+    let mut caps: Vec<SessionCap> = Vec::new();
+    for cap in items
+        .iter()
+        .filter_map(|value| serde_json::from_value::<SessionCap>(value.clone()).ok())
+    {
+        if cap.app_session_id.is_empty() || cap.server_session_id.is_empty() {
+            continue;
+        }
+        if let Some(existing) = caps
+            .iter_mut()
+            .find(|existing| existing.app_session_id == cap.app_session_id)
+        {
+            *existing = cap;
+        } else {
+            caps.push(cap);
+        }
+    }
+    let excess = caps.len().saturating_sub(MAX_SESSION_CAPS);
+    caps.drain(..excess);
+    caps
+}
+
 impl LocalState {
     /// `<dir>/state.json`. A missing or malformed file is the default; a field
     /// of the wrong type is its default and the others are kept. Temp files a
@@ -132,6 +174,7 @@ impl LocalState {
             own_key_added_at: field(&object, "ownKeyAddedAt"),
             own_key_no_credits: field(&object, "ownKeyNoCredits").unwrap_or_default(),
             private_sessions: private_sessions_of(&object),
+            session_caps: session_caps_of(&object),
         }
     }
 
@@ -151,6 +194,31 @@ impl LocalState {
             private_sessions,
             ..self
         }
+    }
+
+    /// The cap recorded for `app_session_id`, if any.
+    pub fn session_cap(&self, app_session_id: &str) -> Option<SessionCap> {
+        self.session_caps
+            .iter()
+            .find(|cap| cap.app_session_id == app_session_id)
+            .cloned()
+    }
+
+    /// This state with `cap` recorded, replacing an older one for the same app session.
+    pub fn with_session_cap(mut self, cap: SessionCap) -> LocalState {
+        self.session_caps
+            .retain(|old| old.app_session_id != cap.app_session_id);
+        self.session_caps.push(cap);
+        let excess = self.session_caps.len().saturating_sub(MAX_SESSION_CAPS);
+        self.session_caps.drain(..excess);
+        self
+    }
+
+    /// This state without the cap of `app_session_id`; the other caps stay.
+    pub fn without_session_cap(mut self, app_session_id: &str) -> LocalState {
+        self.session_caps
+            .retain(|cap| cap.app_session_id != app_session_id);
+        self
     }
 
     /// Writes a temp file in `dir` and renames it over `state.json`, creating
@@ -281,6 +349,11 @@ mod tests {
             own_key_added_at: Some("2026-11-08T01:00:00Z".into()),
             own_key_no_credits: true,
             private_sessions: vec!["acp-1".into(), "acp-2".into()],
+            session_caps: vec![SessionCap {
+                app_session_id: "s-1".into(),
+                server_session_id: "sess-1".into(),
+                cap: 200,
+            }],
         }
     }
 

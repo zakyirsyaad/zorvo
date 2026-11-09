@@ -483,6 +483,7 @@ fn session_launch(
         profile_id,
         private_model_id,
         false,
+        None,
     )
 }
 
@@ -603,12 +604,16 @@ fn a_private_session_with_the_users_own_key_skips_the_worker() {
         "qwen-code",
         Some("Qwen/Qwen3.8-27B"),
         true,
+        None,
     )
     .expect("launches");
 
     assert!(launch.private);
     assert_eq!(harness.api.calls().len(), calls_before);
-    assert_eq!(harness.mode.launch_key(true).as_deref(), Ok("own-key-3f9a"));
+    assert_eq!(
+        harness.mode.launch_key("s1", true).as_deref(),
+        Ok("own-key-3f9a")
+    );
     assert!(launch.args.iter().all(|arg| !arg.contains("own-key")));
 }
 
@@ -711,6 +716,7 @@ fn a_private_session_is_checked_against_the_workspaces_like_any_other() {
             "qwen-code",
             model,
             false,
+            None,
         )
         .unwrap_err();
 

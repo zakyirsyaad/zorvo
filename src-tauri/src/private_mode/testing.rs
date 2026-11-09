@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use super::billing::OfflineBilling;
 use super::client::{
-    Balance, CreatedTopup, CreditsApi, ModelPrice, PromoResult, Stock, TopupState,
+    Balance, CreatedSession, CreatedTopup, CreditsApi, ModelPrice, PromoResult, Stock, TopupState,
 };
 use super::device::{MemoryStore, SecretStore, DEVICE_SECRET};
 use super::local_state::LocalState;
@@ -25,6 +25,8 @@ pub(crate) const OTHER_CODE: &str = "ZRV-0000-1111-2222-3333";
 pub(crate) const CHECKOUT_URL: &str = "https://pay.pingpay.io/checkout/cs_test_1";
 pub(crate) const TOPUP_ID: &str = "t1";
 pub(crate) const UPDATED_AT: &str = "2026-11-07T01:00:00Z";
+pub(crate) const SESSION_ID: &str = "sess-1";
+pub(crate) const SESSION_KEY: &str = "sk-session-1";
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
@@ -82,16 +84,59 @@ impl<T: Clone> Script<T> {
 /// One call the fake saw, with its arguments (secrets included: test only).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Call {
-    Register { hash: String },
-    Balance { secret: String, fresh: bool },
-    Stock { secret: String },
-    Models { secret: String },
-    CreateTopup { secret: String, usd: u32 },
-    Topup { secret: String, id: String },
-    CancelTopup { secret: String, id: String },
-    TakeKey { secret: String },
-    RedeemPromo { secret: String, code: String },
-    Recover { code: String, new_hash: String },
+    Register {
+        hash: String,
+    },
+    Balance {
+        secret: String,
+        fresh: bool,
+    },
+    Stock {
+        secret: String,
+    },
+    Models {
+        secret: String,
+    },
+    CreateTopup {
+        secret: String,
+        usd: u32,
+    },
+    Topup {
+        secret: String,
+        id: String,
+    },
+    CancelTopup {
+        secret: String,
+        id: String,
+    },
+    TakeKey {
+        secret: String,
+    },
+    RedeemPromo {
+        secret: String,
+        code: String,
+    },
+    Recover {
+        code: String,
+        new_hash: String,
+    },
+    CreateSession {
+        secret: String,
+        credits: u64,
+    },
+    EndSession {
+        secret: String,
+        id: String,
+    },
+    SeenSession {
+        secret: String,
+        id: String,
+    },
+    RaiseSession {
+        secret: String,
+        id: String,
+        credits: u64,
+    },
 }
 
 /// A Credits Worker whose answers are scripted per method.
@@ -106,6 +151,10 @@ pub(crate) struct FakeCredits {
     pub(crate) take_key: Script<Option<String>>,
     pub(crate) redeem_promo: Script<PromoResult>,
     pub(crate) recover: Script<()>,
+    pub(crate) create_session: Script<CreatedSession>,
+    pub(crate) end_session: Script<()>,
+    pub(crate) seen_session: Script<()>,
+    pub(crate) raise_session: Script<u64>,
     take_key_delay: Mutex<Duration>,
     calls: Mutex<Vec<Call>>,
 }
@@ -138,6 +187,13 @@ impl Default for FakeCredits {
                 credits: 300,
             })),
             recover: Script::new(Ok(())),
+            create_session: Script::new(Ok(CreatedSession {
+                session_id: SESSION_ID.to_string(),
+                key: SESSION_KEY.to_string(),
+            })),
+            end_session: Script::new(Ok(())),
+            seen_session: Script::new(Ok(())),
+            raise_session: Script::new(Ok(400)),
             take_key_delay: Mutex::new(Duration::ZERO),
             calls: Mutex::new(Vec::new()),
         }
@@ -245,6 +301,44 @@ impl CreditsApi for FakeCredits {
         });
         self.recover.next()
     }
+
+    fn create_session(&self, secret: &str, credits: u64) -> Result<CreatedSession, PrivateError> {
+        self.record(Call::CreateSession {
+            secret: secret.to_string(),
+            credits,
+        });
+        self.create_session.next()
+    }
+
+    fn end_session(&self, secret: &str, session_id: &str) -> Result<(), PrivateError> {
+        self.record(Call::EndSession {
+            secret: secret.to_string(),
+            id: session_id.to_string(),
+        });
+        self.end_session.next()
+    }
+
+    fn seen_session(&self, secret: &str, session_id: &str) -> Result<(), PrivateError> {
+        self.record(Call::SeenSession {
+            secret: secret.to_string(),
+            id: session_id.to_string(),
+        });
+        self.seen_session.next()
+    }
+
+    fn raise_session(
+        &self,
+        secret: &str,
+        session_id: &str,
+        credits: u64,
+    ) -> Result<u64, PrivateError> {
+        self.record(Call::RaiseSession {
+            secret: secret.to_string(),
+            id: session_id.to_string(),
+            credits,
+        });
+        self.raise_session.next()
+    }
 }
 
 impl<T: CreditsApi + ?Sized> CreditsApi for Arc<T> {
@@ -277,6 +371,23 @@ impl<T: CreditsApi + ?Sized> CreditsApi for Arc<T> {
     }
     fn recover(&self, code: &str, new_secret_hash: &str) -> Result<(), PrivateError> {
         (**self).recover(code, new_secret_hash)
+    }
+    fn create_session(&self, secret: &str, credits: u64) -> Result<CreatedSession, PrivateError> {
+        (**self).create_session(secret, credits)
+    }
+    fn end_session(&self, secret: &str, session_id: &str) -> Result<(), PrivateError> {
+        (**self).end_session(secret, session_id)
+    }
+    fn seen_session(&self, secret: &str, session_id: &str) -> Result<(), PrivateError> {
+        (**self).seen_session(secret, session_id)
+    }
+    fn raise_session(
+        &self,
+        secret: &str,
+        session_id: &str,
+        credits: u64,
+    ) -> Result<u64, PrivateError> {
+        (**self).raise_session(secret, session_id, credits)
     }
 }
 

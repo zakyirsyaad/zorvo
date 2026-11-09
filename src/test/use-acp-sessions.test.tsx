@@ -372,6 +372,8 @@ describe("useAcpSessions", () => {
       await result.current.reopen("s-4", "/w", "qwen-code", "acp-4");
       await result.current.start("s-5", "/w", "qwen-code", "Qwen/Qwen3.8-27B", true);
       await result.current.reopen("s-6", "/w", "qwen-code", "acp-6", "Qwen/Qwen3.8-27B", true);
+      await result.current.start("s-7", "/w", "qwen-code", "Qwen/Qwen3.8-27B", false, 200);
+      await result.current.reopen("s-8", "/w", "qwen-code", "acp-8", "Qwen/Qwen3.8-27B", false, 200);
     });
 
     const argsOf = (cmd: string) =>
@@ -400,6 +402,10 @@ describe("useAcpSessions", () => {
       privateOwnKey: true,
     });
     expect(Object.keys(argsOf("acp_start_session")[1])).not.toContain("privateOwnKey");
+    expect(argsOf("acp_start_session")[3]).toMatchObject({ privateSessionCap: 200 });
+    expect(argsOf("acp_reopen_session")[3]).toMatchObject({ privateSessionCap: 200 });
+    expect(Object.keys(argsOf("acp_start_session")[0])).not.toContain("privateSessionCap");
+    expect(Object.keys(argsOf("acp_reopen_session")[0])).not.toContain("privateSessionCap");
   });
 
   it("reopens, imports and lists through the backend commands", async () => {

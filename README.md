@@ -40,7 +40,9 @@ _Add the demo screenshot here: the **Verified in TEE** badge and its popover._
 
 - **`privacy` (primary).** Prompts go from the agent to NEAR AI through the local proxy; the Credits
   Worker never sees a prompt or a completion. It creates the Mac's NEAR AI key and hands it over once, as
-  described above; after collection the key lives in the macOS Keychain, not in the Worker.
+  described above; after collection the key lives in the macOS Keychain, not in the Worker. Nothing
+  prompt-shaped is kept server-side: the Worker stores no prompts or completions, and the loopback proxy
+  keeps only completion ids and SHA-256 hashes in memory for the app run.
 - **`security`.** Every completed private answer is checked against NEAR AI's signature over the exact
   request and response bytes, and its signer against NEAR AI's attestation report. Zorvo does not run a
   DCAP or NRAS hardware check; it verifies the signature and the report's signer address and links to
@@ -95,9 +97,11 @@ on a cold cache; later builds are much faster.
 3. `ZORVO_CREDITS_URL=https://zorvo-credits-server.zkyxentertain.workers.dev pnpm tauri dev`
 4. In Settings → Private mode, paste the judge code under **Promo code** and press **Redeem** → the
    promo row says `N credits added. Enjoy.` and the key line says `Key ready`.
-5. Start a Qwen Code draft with the **Private · TEE** chip on, send a prompt → Qwen answers from NEAR AI;
-   the reply carries **Verified in TEE**, and its popover shows the model, the signer and the
-   Verification Center link.
+5. Add `examples/private-demo` as a workspace, start a Qwen Code draft with the **Private · TEE** chip
+   on, and send **"Review the payment module for client Acme and list what could leak card data."** →
+   Qwen answers from NEAR AI; the reply carries **Verified in TEE**, and its popover shows the model,
+   the signer and the Verification Center link. The folder is fictional and needs no real data; its
+   README lists the three planted problems.
 6. Optional: set **Session limit** to 200 credits in the draft → the composer shows
    `N of 200 credits this session`, and the Private inspector shows the same with a progress bar.
 7. Paste an AWS-looking key in the prompt (or attach a `.env` with one) → Zorvo holds the message, names
@@ -110,6 +114,51 @@ on a cold cache; later builds are much faster.
    mode lists the total **Used by N models** and the turns each model's price leaves.
 
 The judge code is a placeholder here: `JUDGE-…`. The user creates it after M5.
+
+## Attack demo
+
+Four things a private session can try, and what stops each. Run them after the Mac steps above.
+
+**(a) The agent prints its key.** In a private session, send: "Run `printenv OPENAI_API_KEY`." Qwen
+prints a 64-character hex string. That is a per-launch proxy token, not a NEAR AI key; it names one
+session and one model. Send it straight to `https://cloud-api.near.ai/v1/chat/completions` as a bearer
+token → `401`. The real NEAR AI key stays in Zorvo's loopback proxy and never enters the agent's process.
+
+**(b) The token reaches past its session.** Print the proxy URL with `printenv OPENAI_BASE_URL`. With
+the same token, send a completion whose `model` is another id → `400`; request a path the proxy does
+not serve, such as `/v1/embeddings` → `404`. The Rust tests that prove this are
+`private_proxy_test::refuses_a_missing_unknown_or_released_token_without_forwarding` and
+`private_proxy_test::refuses_another_model_and_other_paths_without_forwarding`.
+
+**(c) A session hits its cap.** Start a session on the 1-credit promo, or set a 100-credit cap and use
+it up → NEAR AI answers `402`, Qwen stops, and the composer shows the cap card. The limit is enforced
+by NEAR AI's gateway, not by Zorvo, so it holds even if Zorvo is closed.
+
+**(d) A secret goes into a message.** Assemble a fake AWS-shaped key by concatenating `AKIA` and
+`0000000000000000` (four letters and sixteen zeros, not a real key), then paste it into a private
+prompt → Zorvo holds the message and names the match before anything leaves this Mac. Choose **Send
+anyway** or **Edit message**; nothing the check finds is stored or sent.
+
+TODO (user): paste the real log lines captured at M5 here, one short block per step. They must not
+contain a key, token, device secret or prompt.
+
+## Hardware proof
+
+Zorvo checks NEAR AI's signature and the signer's address in NEAR AI's attestation report. It does not
+run the DCAP/NRAS hardware check itself; NEAR AI's own verifier does. With your own NEAR AI key in the
+`API_KEY` environment variable, follow
+[`nearai/nearai-cloud-verifier`](https://github.com/nearai/nearai-cloud-verifier) (Python 3.10+ or
+Node 20+), then run one of these from that repository:
+
+```bash
+python3 py/model_verifier.py --model Qwen/Qwen3.8-27B-abliterated
+pnpm run model -- --model Qwen/Qwen3.8-27B-abliterated
+```
+
+Compare the `signing_address` it reports with the signer in Zorvo's **Verified in TEE** popover, or
+with the `Signer:` line from `server/scripts/judge-demo.mjs`. The same address means the key whose
+signature Zorvo checked is bound to the TDX quote and NVIDIA evidence that the verifier validated.
+This is the check Zorvo itself does not run.
 
 ## What existed before, and what the window added
 

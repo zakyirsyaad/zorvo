@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager, State};
+use tauri::State;
 
 use super::manager::{AcpEvent, AcpLaunch, AcpManager, ReopenPurpose, StartedSession};
 use super::private_sessions::{note_if_private, open_session, without_private};
@@ -727,16 +727,12 @@ pub fn acp_qwen_last_api_error(
 
 #[tauri::command(async)]
 pub fn acp_stop_session(
-    app: AppHandle,
     manager: State<'_, AcpManager>,
     private: State<'_, PrivateMode>,
     session_id: String,
 ) {
     private.release_proxy_token(&session_id);
     manager.stop(&session_id);
-    std::thread::spawn(move || {
-        let _ = app.state::<PrivateMode>().end_session_cap(&session_id);
-    });
 }
 
 #[cfg(test)]

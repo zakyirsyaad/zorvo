@@ -33,13 +33,16 @@ pub const MAX_PRIVATE_SESSIONS: usize = 1000;
 pub const MAX_SESSION_CAPS: usize = 100;
 
 /// A capped private session: the app's session id, the Worker's id for its key,
-/// and the cap. No key is stored here.
+/// the current cap and the draft's original cap. No key is stored here.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionCap {
     pub app_session_id: String,
     pub server_session_id: String,
     pub cap: u64,
+    /// The cap the draft picked (100/200/500), kept when Raise doubles it.
+    #[serde(default)]
+    pub base_cap: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -353,6 +356,7 @@ mod tests {
                 app_session_id: "s-1".into(),
                 server_session_id: "sess-1".into(),
                 cap: 200,
+                base_cap: 200,
             }],
         }
     }

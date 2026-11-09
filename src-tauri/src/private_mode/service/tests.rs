@@ -1453,3 +1453,97 @@ fn raising_a_cap_records_what_the_worker_accepted() {
         Err(PrivateError::NotFound)
     );
 }
+
+#[test]
+fn a_raised_cap_is_reused_on_reopen_without_a_second_worker_session() {
+    let h = Harness::with_device(CODE);
+    h.mode.ensure_session_cap("s-1", 100).expect("a cap");
+    h.api.raise_session.always(Ok(400));
+    h.mode.raise_session_cap("s-1", 200).expect("raised");
+
+    assert!(
+        !h.mode
+            .ensure_session_cap("s-1", 400)
+            .expect("reused")
+            .restarted
+    );
+
+    assert_eq!(
+        h.api
+            .calls()
+            .iter()
+            .filter(|call| matches!(call, Call::CreateSession { .. }))
+            .count(),
+        1
+    );
+    let cap = h.state().session_cap("s-1").expect("recorded");
+    assert_eq!((cap.cap, cap.base_cap), (400, 100));
+}
+
+#[test]
+fn a_swept_worker_session_starts_a_new_one_on_the_original_cap() {
+    let h = Harness::with_device(CODE);
+    h.mode.ensure_session_cap("s-1", 100).expect("a cap");
+    h.api.raise_session.always(Ok(400));
+    h.mode.raise_session_cap("s-1", 200).expect("raised");
+    h.store
+        .delete(&format!("{}{}", SESSION_KEY_PREFIX, "s-1"))
+        .expect("key gone");
+
+    let outcome = h.mode.ensure_session_cap("s-1", 400).expect("restarted");
+
+    assert_eq!(
+        outcome,
+        SessionCapOutcome {
+            cap: 100,
+            restarted: true
+        }
+    );
+    assert_eq!(h.mode.take_session_cap_reset("s-1"), Some(100));
+    assert_eq!(
+        h.state().session_cap("s-1").map(|cap| cap.base_cap),
+        Some(100)
+    );
+    assert!(h.api.calls().contains(&Call::EndSession {
+        secret: CODE.into(),
+        id: SESSION_ID.into(),
+    }));
+}
+
+#[test]
+fn a_raised_cap_without_a_record_restarts_on_its_original_choice() {
+    let h = Harness::with_device(CODE);
+
+    let outcome = h.mode.ensure_session_cap("s-1", 400).expect("cap");
+
+    assert_eq!(
+        outcome,
+        SessionCapOutcome {
+            cap: 200,
+            restarted: true
+        }
+    );
+    assert_eq!(h.mode.take_session_cap_reset("s-1"), Some(200));
+    assert_eq!(h.state().session_cap("s-1").map(|cap| cap.cap), Some(200));
+}
+
+#[test]
+fn a_seen_404_drops_the_local_key_so_the_next_launch_makes_a_new_one() {
+    let h = Harness::with_device(CODE);
+    h.mode.ensure_session_cap("s-1", 100).expect("a cap");
+    h.api.seen_session.always(Err(PrivateError::NotFound));
+
+    h.mode.seen_session_cap("s-1").expect("seen");
+
+    assert_eq!(h.state().session_cap("s-1"), None);
+    assert_eq!(h.secret(&format!("{}{}", SESSION_KEY_PREFIX, "s-1")), None);
+    h.mode.ensure_session_cap("s-1", 100).expect("new");
+    assert_eq!(
+        h.api
+            .calls()
+            .iter()
+            .filter(|call| matches!(call, Call::CreateSession { .. }))
+            .count(),
+        2
+    );
+}

@@ -460,6 +460,17 @@ export function useAcpEngine({
         });
       }
       if (info.acpSessionId) patchSession(session.id, { acpSessionId: info.acpSessionId });
+      if (isPrivate) {
+        const reset = await acp.takeSessionCapReset(session.id);
+        if (reset !== null && session.privateMode) {
+          patchSession(session.id, {
+            privateMode: { ...session.privateMode, sessionCap: reset },
+          });
+          reportError(
+            `The session's Worker key was gone. It restarted with its original ${reset}-credit limit.`,
+          );
+        }
+      }
       const settled = await applyChanges(session.id, info, options, isPrivate);
       // Superseded while the picks were applied: a newer launch owns the session.
       if (!isCurrentLaunch(session.id, gen)) {

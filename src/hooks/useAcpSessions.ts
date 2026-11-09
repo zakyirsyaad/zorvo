@@ -354,6 +354,12 @@ export function useAcpSessions(handlers: AcpHandlers) {
     [remember],
   );
 
+  const takeSessionCapReset = useCallback(
+    async (sessionId: string): Promise<number | null> =>
+      invoke<number | null>('private_take_session_cap_reset', { sessionId }).catch(() => null),
+    [],
+  );
+
   const importSession = useCallback(
     async (sessionId: string, cwd: string, profileId: string, acpSessionId: string) =>
       remember(sessionId, await invoke('acp_import_session', { sessionId, cwd, profileId, acpSessionId })),
@@ -461,6 +467,7 @@ export function useAcpSessions(handlers: AcpHandlers) {
     info,
     start,
     reopen,
+    takeSessionCapReset,
     importSession,
     listSessions,
     fork,

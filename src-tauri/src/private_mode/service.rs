@@ -87,6 +87,14 @@ pub struct OwnKeyStatus {
     pub no_credits: bool,
 }
 
+/// What a capped session's key came to: the cap in force, and whether a lost Worker session
+/// made it restart on the draft's original cap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionCapOutcome {
+    pub cap: u64,
+    pub restarted: bool,
+}
+
 /// The part of a status that comes from the Keychain and the Worker.
 struct DeviceReport {
     device: DeviceState,
@@ -135,6 +143,10 @@ pub struct PrivateMode {
     /// When a capped session last told the Worker it was in use, for the
     /// once-a-minute `/seen` throttle.
     seen: Mutex<HashMap<String, Instant>>,
+    /// Serializes creating, raising and ending a capped session's key.
+    cap_ops: Mutex<()>,
+    /// The last lost Worker session that restarted on its original cap, for the UI to mention.
+    session_cap_reset: Mutex<Option<(String, u64)>>,
     /// Serializes read-modify-write of the state file.
     state: Mutex<()>,
 }
@@ -147,6 +159,37 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// Keychain and the server are the truth), so the command goes on.
 pub(crate) fn report_storage_failure() {
     eprintln!("private mode: couldn't save the local state file");
+}
+
+/// The draft's cap choices; a raised cap (400, 1000) is not one, but the original still is.
+fn is_base_session_cap(cap: u64) -> bool {
+    matches!(cap, 100 | 200 | 500)
+}
+
+/// The cap to recreate a lost Worker session with: the requested one when it is a draft choice,
+/// else the original cap the record kept, else a sensible default.
+fn session_base_cap(requested: u64, previous: Option<&SessionCap>) -> u64 {
+    if is_base_session_cap(requested) {
+        return requested;
+    }
+    if let Some(previous) = previous {
+        if is_base_session_cap(previous.base_cap) {
+            return previous.base_cap;
+        }
+        if is_base_session_cap(previous.cap) {
+            return previous.cap;
+        }
+    }
+    // With no record, a raised cap still doubles its way back to the draft's choice.
+    let mut candidate = requested;
+    while candidate > 500 && candidate.is_multiple_of(2) {
+        candidate /= 2;
+    }
+    if is_base_session_cap(candidate) {
+        candidate
+    } else {
+        200
+    }
 }
 
 impl PrivateMode {
@@ -183,6 +226,8 @@ impl PrivateMode {
             handover: Mutex::new(()),
             unsaved_key: Mutex::new(None),
             seen: Mutex::new(HashMap::new()),
+            cap_ops: Mutex::new(()),
+            session_cap_reset: Mutex::new(None),
             state: Mutex::new(()),
         }
     }
@@ -468,24 +513,57 @@ impl PrivateMode {
 
     /// Makes or reuses the capped session's Worker key. The key is kept in the
     /// Keychain under the app session id and the Worker id is recorded in the
-    /// local state; neither ever reaches the UI.
+    /// local state; neither ever reaches the UI. A reopen reuses the same
+    /// Worker session, so a raised cap and its spent part survive Stop.
     pub fn ensure_session_cap(
         &self,
         app_session_id: &str,
         credits: u64,
-    ) -> Result<(), PrivateError> {
+    ) -> Result<SessionCapOutcome, PrivateError> {
+        let _guard = lock(&self.cap_ops);
         let account = self.session_account(app_session_id)?;
-        if self.load_state().session_cap(app_session_id).is_some() {
+        let previous = self.load_state().session_cap(app_session_id);
+        if let Some(previous) = previous {
             if self.store.get(&account)?.is_some() {
-                return Ok(());
+                return Ok(SessionCapOutcome {
+                    cap: previous.cap,
+                    restarted: false,
+                });
             }
             // The record survived but its key did not: retire the old Worker
-            // session before making a new one, then try again.
-            let _ = self.end_session_cap(app_session_id);
+            // session, then make a new one on the draft's original cap.
+            if let Some(taken) = self.take_session_cap_locked(app_session_id)? {
+                self.end_taken_session_cap(taken);
+            }
+            let base = session_base_cap(credits, Some(&previous));
+            self.create_session_cap_locked(app_session_id, &account, base)?;
+            *lock(&self.session_cap_reset) = Some((app_session_id.to_string(), base));
+            return Ok(SessionCapOutcome {
+                cap: base,
+                restarted: true,
+            });
         }
+        let base = session_base_cap(credits, None);
+        let outcome = self.create_session_cap_locked(app_session_id, &account, base)?;
+        if outcome.cap != credits {
+            *lock(&self.session_cap_reset) = Some((app_session_id.to_string(), outcome.cap));
+            return Ok(SessionCapOutcome {
+                cap: outcome.cap,
+                restarted: true,
+            });
+        }
+        Ok(outcome)
+    }
+
+    fn create_session_cap_locked(
+        &self,
+        app_session_id: &str,
+        account: &str,
+        credits: u64,
+    ) -> Result<SessionCapOutcome, PrivateError> {
         let secret = self.ensure_device()?;
         let created = self.worker(&secret, self.api.create_session(&secret, credits))?;
-        if let Err(error) = self.save_session_key(&account, &created.key) {
+        if let Err(error) = self.save_session_key(account, &created.key) {
             // The key cannot be kept: end the Worker session so its budget returns.
             let _ = self.api.end_session(&secret, &created.session_id);
             return Err(error);
@@ -495,13 +573,17 @@ impl PrivateMode {
             app_session_id: app_session_id.to_string(),
             server_session_id: created.session_id,
             cap: credits,
+            base_cap: credits,
         };
         if self.update_state(|old| old.with_session_cap(cap)).is_err() {
-            let _ = self.store.delete(&account);
+            let _ = self.store.delete(account);
             let _ = self.api.end_session(&secret, &server_session_id);
             return Err(PrivateError::Storage);
         }
-        Ok(())
+        Ok(SessionCapOutcome {
+            cap: credits,
+            restarted: false,
+        })
     }
 
     /// Writes a session key and reads it back; only an identical read counts.
@@ -518,18 +600,30 @@ impl PrivateMode {
         }
     }
 
-    /// Ends a capped session at the Worker and forgets its local key. Called on
-    /// stop, delete, orphan cleanup and a lost key; a failed call is only logged,
-    /// since the Worker sweeps an idle session after 24 hours.
-    pub fn end_session_cap(&self, app_session_id: &str) -> Result<(), PrivateError> {
+    /// Removes a capped session's local record and key, without a Worker call. The caller decides
+    /// whether the Worker session should be ended (delete) or is already gone (`/seen` 404).
+    pub fn take_session_cap(
+        &self,
+        app_session_id: &str,
+    ) -> Result<Option<SessionCap>, PrivateError> {
+        let _guard = lock(&self.cap_ops);
+        self.take_session_cap_locked(app_session_id)
+    }
+
+    fn take_session_cap_locked(
+        &self,
+        app_session_id: &str,
+    ) -> Result<Option<SessionCap>, PrivateError> {
         let account = self.session_account(app_session_id)?;
         let cap = self.load_state().session_cap(app_session_id);
         let _ = self.store.delete(&account);
         lock(&self.seen).remove(app_session_id);
         self.change_state(|old| old.without_session_cap(app_session_id));
-        let Some(cap) = cap else {
-            return Ok(());
-        };
+        Ok(cap)
+    }
+
+    /// Ends a Worker session the caller already took off this Mac's state.
+    pub fn end_taken_session_cap(&self, cap: SessionCap) {
         match self.device_secret() {
             Ok(secret) => {
                 if let Err(error) = self.api.end_session(&secret, &cap.server_session_id) {
@@ -541,10 +635,20 @@ impl PrivateMode {
             }
             Err(_) => eprintln!("private mode: no device secret to end a capped session with"),
         }
+    }
+
+    /// Ends a capped session at the Worker and forgets its local key. Called on
+    /// delete and orphan cleanup; a failed call is only logged, since the Worker
+    /// sweeps an idle session after 24 hours.
+    pub fn end_session_cap(&self, app_session_id: &str) -> Result<(), PrivateError> {
+        if let Some(cap) = self.take_session_cap(app_session_id)? {
+            self.end_taken_session_cap(cap);
+        }
         Ok(())
     }
 
-    /// Tells the Worker a capped session is still in use, at most once a minute.
+    /// Tells the Worker a capped session is still in use, at most once a minute. A 404 means the
+    /// Worker swept it: drop the local record and key so the next launch makes a new one.
     pub fn seen_session_cap(&self, app_session_id: &str) -> Result<(), PrivateError> {
         let cap = match self.load_state().session_cap(app_session_id) {
             Some(cap) => cap,
@@ -562,13 +666,21 @@ impl PrivateMode {
             seen.insert(app_session_id.to_string(), now);
         }
         let secret = self.device_secret()?;
-        if let Err(error) = self.api.seen_session(&secret, &cap.server_session_id) {
-            eprintln!(
-                "private mode: telling the Worker a capped session is in use failed ({})",
-                error.code()
-            );
+        match self.api.seen_session(&secret, &cap.server_session_id) {
+            Ok(()) => Ok(()),
+            Err(PrivateError::NotFound) => {
+                eprintln!("private mode: the Worker no longer knows this capped session; it will start a new one");
+                let _ = self.take_session_cap(app_session_id);
+                Ok(())
+            }
+            Err(error) => {
+                eprintln!(
+                    "private mode: telling the Worker a capped session is in use failed ({})",
+                    error.code()
+                );
+                Ok(())
+            }
         }
-        Ok(())
     }
 
     /// Doubles a capped session's limit at the Worker and records the new cap.
@@ -577,6 +689,7 @@ impl PrivateMode {
         app_session_id: &str,
         credits: u64,
     ) -> Result<u64, PrivateError> {
+        let _guard = lock(&self.cap_ops);
         let cap = self
             .load_state()
             .session_cap(app_session_id)
@@ -594,6 +707,19 @@ impl PrivateMode {
             report_storage_failure();
         }
         Ok(raised)
+    }
+
+    /// Takes the "the Worker session was gone, restarted on its original cap" note for one session.
+    pub fn take_session_cap_reset(&self, app_session_id: &str) -> Option<u64> {
+        let mut reset = lock(&self.session_cap_reset);
+        match reset.as_ref() {
+            Some((id, cap)) if id == app_session_id => {
+                let cap = *cap;
+                *reset = None;
+                Some(cap)
+            }
+            _ => None,
+        }
     }
 
     /// Checks a pasted key with NEAR AI. A 402 means the organization has no credits; it is still a

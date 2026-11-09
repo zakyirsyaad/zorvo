@@ -91,6 +91,12 @@ fn error_from_maps_every_server_code() {
         ),
         (404, r#"{"error":"not_found"}"#, PrivateError::NotFound),
         (400, r#"{"error":"bad_request"}"#, PrivateError::BadRequest),
+        (
+            409,
+            r#"{"error":"insufficient"}"#,
+            PrivateError::Insufficient,
+        ),
+        (409, r#"{"error":"recovering"}"#, PrivateError::Recovering),
         (502, r#"{"error":"upstream"}"#, PrivateError::Upstream),
         (500, "", PrivateError::Upstream),
     ];
@@ -419,6 +425,120 @@ fn recover_posts_both_values_without_a_bearer() {
         serde_json::from_str(request.split("\r\n\r\n").nth(1).expect("body")).expect("json");
     assert_eq!(body["recoveryCode"], SECRET);
     assert_eq!(body["newSecretHash"], HASH);
+}
+
+#[test]
+fn create_session_posts_the_cap_and_reads_the_one_time_key() {
+    let (base, served) = serve_once(http(
+        "201 Created",
+        br#"{"sessionId":"sess-1","key":"sk-session-1"}"#,
+    ));
+
+    let created = client(&base).create_session(SECRET, 200).expect("created");
+
+    assert_eq!(created.session_id, "sess-1");
+    assert_eq!(created.key, "sk-session-1");
+    let debug = format!("{created:?}");
+    assert!(debug.contains("sess-1"));
+    assert!(!debug.contains("sk-session-1"), "{debug}");
+    assert!(debug.contains("<redacted>"), "{debug}");
+    let request = served.join().expect("stub");
+    assert!(
+        request.starts_with("POST /v1/sessions HTTP/1.1\r\n"),
+        "{request}"
+    );
+    assert!(
+        request
+            .to_ascii_lowercase()
+            .contains("authorization: bearer zrv-abcd"),
+        "{request}"
+    );
+    assert!(request.ends_with(r#"{"credits":200}"#), "{request}");
+}
+
+#[test]
+fn end_and_seen_post_to_the_session_paths() {
+    let (base, served) = serve_once(http("200 OK", br#"{"status":"ending"}"#));
+    client(&base).end_session(SECRET, "sess-1").expect("end");
+    let request = served.join().expect("stub");
+    assert!(
+        request.starts_with("POST /v1/sessions/sess-1/end HTTP/1.1\r\n"),
+        "{request}"
+    );
+
+    let (base, served) = serve_once(http("200 OK", br#"{"ok":true}"#));
+    client(&base).seen_session(SECRET, "sess-1").expect("seen");
+    let request = served.join().expect("stub");
+    assert!(
+        request.starts_with("POST /v1/sessions/sess-1/seen HTTP/1.1\r\n"),
+        "{request}"
+    );
+}
+
+#[test]
+fn raise_session_posts_the_doubled_cap() {
+    let (base, served) = serve_once(http("200 OK", br#"{"cap":400}"#));
+
+    assert_eq!(
+        client(&base)
+            .raise_session(SECRET, "sess-1", 400)
+            .expect("raised"),
+        400
+    );
+
+    let request = served.join().expect("stub");
+    assert!(
+        request.starts_with("POST /v1/sessions/sess-1/raise HTTP/1.1\r\n"),
+        "{request}"
+    );
+    assert!(request.ends_with(r#"{"credits":400}"#), "{request}");
+}
+
+#[test]
+fn session_calls_map_their_failures_and_refuse_bad_ids() {
+    let cases: [(&str, &[u8], PrivateError); 3] = [
+        (
+            "409 Conflict",
+            br#"{"error":"insufficient"}"#,
+            PrivateError::Insufficient,
+        ),
+        (
+            "409 Conflict",
+            br#"{"error":"recovering"}"#,
+            PrivateError::Recovering,
+        ),
+        (
+            "502 Bad Gateway",
+            br#"{"error":"upstream"}"#,
+            PrivateError::Upstream,
+        ),
+    ];
+    for (status, body, expected) in cases {
+        let (base, _served) = serve_once(http(status, body));
+        assert_eq!(
+            client(&base).create_session(SECRET, 100),
+            Err(expected),
+            "{status}"
+        );
+    }
+    let api = client("http://127.0.0.1:1");
+    for id in ["", "../key", "a/b", "a?b=1", "a b", &"x".repeat(65)] {
+        assert_eq!(
+            api.end_session(SECRET, id),
+            Err(PrivateError::BadRequest),
+            "{id:?}"
+        );
+        assert_eq!(
+            api.seen_session(SECRET, id),
+            Err(PrivateError::BadRequest),
+            "{id:?}"
+        );
+        assert_eq!(
+            api.raise_session(SECRET, id, 400),
+            Err(PrivateError::BadRequest),
+            "{id:?}"
+        );
+    }
 }
 
 #[test]

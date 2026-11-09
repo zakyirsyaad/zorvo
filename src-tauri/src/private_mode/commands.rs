@@ -252,13 +252,26 @@ pub fn private_raise_session_cap(
     Ok(private.raise_session_cap(&session_id, credits)?)
 }
 
+/// Takes the notice that a capped session's Worker key was gone and it restarted on its
+/// original cap, if there is one for this session.
+#[tauri::command(async)]
+pub fn private_take_session_cap_reset(
+    private: State<'_, PrivateMode>,
+    session_id: String,
+) -> Option<u64> {
+    private.take_session_cap_reset(&session_id)
+}
+
 /// A deleted session no longer needs its last token's records, and its cap ends.
 #[tauri::command(async)]
 pub fn private_forget_session(app: AppHandle, private: State<'_, PrivateMode>, session_id: String) {
     private.forget_proxy_session(&session_id);
-    std::thread::spawn(move || {
-        let _ = app.state::<PrivateMode>().end_session_cap(&session_id);
-    });
+    let cap = private.take_session_cap(&session_id).ok().flatten();
+    if let Some(cap) = cap {
+        std::thread::spawn(move || {
+            app.state::<PrivateMode>().end_taken_session_cap(cap);
+        });
+    }
 }
 
 #[cfg(test)]

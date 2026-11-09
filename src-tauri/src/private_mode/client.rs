@@ -7,6 +7,7 @@
 //! `Debug` output: errors are the `Copy` codes of [`PrivateError`], and
 //! [`error_from`] never echoes a response body.
 
+use std::fmt;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
@@ -86,11 +87,20 @@ pub struct PromoResult {
 }
 
 /// A capped session's one-time key and the Worker's session id. The key never reaches the UI.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreatedSession {
     pub session_id: String,
     pub key: String,
+}
+
+impl fmt::Debug for CreatedSession {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CreatedSession")
+            .field("session_id", &self.session_id)
+            .field("key", &"<redacted>")
+            .finish()
+    }
 }
 
 #[derive(Deserialize)]
@@ -171,6 +181,7 @@ pub fn error_from(status: u16, body: &str) -> PrivateError {
         Some("unauthorized") => PrivateError::Unauthorized,
         Some("not_found") => PrivateError::NotFound,
         Some("bad_request") => PrivateError::BadRequest,
+        Some("recovering") => PrivateError::Recovering,
         Some("upstream") => PrivateError::Upstream,
         _ => match status {
             429 => PrivateError::RateLimited,

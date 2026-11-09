@@ -283,9 +283,9 @@ describe("privateErrorText", () => {
     expect([...PRIVATE_ERROR_CODES].sort()).toEqual(
       [
         "unreachable", "unauthorized", "bad_request", "not_found", "stock", "device_cap", "insufficient",
-        "rate_limited", "upstream", "keychain", "no_device", "no_key", "key_lost", "bad_code", "not_qwen",
-        "unknown_model", "bad_checkout_url", "has_own_credits", "storage", "open_failed", "private_session",
-        "model_locked",
+        "recovering", "rate_limited", "upstream", "keychain", "no_device", "no_key", "key_lost",
+        "bad_code", "not_qwen", "unknown_model", "bad_checkout_url", "has_own_credits", "storage",
+        "open_failed", "private_session", "model_locked",
       ].sort(),
     );
     for (const code of PRIVATE_ERROR_CODES) {

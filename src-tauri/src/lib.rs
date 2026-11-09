@@ -527,6 +527,7 @@ pub fn run() {
             private_mode::commands::private_verify,
             private_mode::commands::private_session_usage,
             private_mode::commands::private_raise_session_cap,
+            private_mode::commands::private_take_session_cap_reset,
             private_mode::commands::private_forget_session
         ])
         .build(tauri::generate_context!())

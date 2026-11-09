@@ -136,6 +136,24 @@ describe("useAcpEngine with a private session", () => {
     expect(Object.keys(ordinaryStart)).not.toContain("privateModelId");
   });
 
+  it("records a cap the backend restarted and says why", async () => {
+    const spy = stub({
+      acp_start_session: () => Promise.resolve(STARTED_WITH_MODEL),
+      private_take_session_cap_reset: () => Promise.resolve(200),
+    });
+    const capped = { ...PRIVATE, privateMode: { modelId: MODEL_ID, sessionCap: 400 } };
+    const engine = renderEngine(capped);
+    await act(async () => {
+      await engine.result.current.start(capped);
+    });
+
+    expect(callsTo(spy, "private_take_session_cap_reset")).toEqual([{ sessionId: "s-1" }]);
+    expect(engine.session().privateMode).toEqual({ modelId: MODEL_ID, sessionCap: 200 });
+    expect(engine.reportError).toHaveBeenCalledWith(
+      "The session's Worker key was gone. It restarted with its original 200-credit limit.",
+    );
+  });
+
   it("never moves a private session off its model, and keeps its options out of the agent's remembered ones", async () => {
     const spy = stub({ acp_start_session: () => Promise.resolve(STARTED_WITH_MODEL) });
     const engine = renderEngine();

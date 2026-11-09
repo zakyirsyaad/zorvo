@@ -65,6 +65,8 @@ private_errors! {
     DeviceCap => "device_cap",
     /// A session cap is larger than the device key's unallocated credits.
     Insufficient => "insufficient",
+    /// A restore is rotating this Mac's key; a session cap must wait.
+    Recovering => "recovering",
     RateLimited => "rate_limited",
     Upstream => "upstream",
     Keychain => "keychain",

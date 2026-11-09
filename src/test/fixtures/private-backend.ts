@@ -25,6 +25,8 @@ export interface FakePrivate {
   calls: FakePrivateCall[];
   recoveryCode: string;
   newRecoveryCode: string;
+  /** The cap the next launch restarted with, when its Worker key had been swept; null for no note. */
+  sessionCapReset: number | null;
   /** The status after a restore (the Rust service resets the recovery flags then); null leaves it as it was. */
   statusAfterRecover: PrivateStatus | null;
   readTopupStatuses: number;
@@ -56,6 +58,7 @@ export function emptyFakePrivate(): FakePrivate {
     calls: [],
     recoveryCode: "ZRV-FAKE-CODE",
     newRecoveryCode: "ZRV-NEW-CODE",
+    sessionCapReset: null,
     statusAfterRecover: null,
     readTopupStatuses: 0,
   };
@@ -142,6 +145,11 @@ function answer(state: FakePrivate, cmd: string, args: Record<string, unknown> |
       return state.recoveryCode;
     case "private_raise_session_cap":
       return Number(args?.credits);
+    case "private_take_session_cap_reset": {
+      const reset = state.sessionCapReset;
+      state.sessionCapReset = null;
+      return reset;
+    }
     case "private_recover":
       if (state.statusAfterRecover) state.status = structuredClone(state.statusAfterRecover);
       return state.newRecoveryCode;

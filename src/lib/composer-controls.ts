@@ -1,4 +1,4 @@
-import type { AcpOptions } from '../hooks/useAcpSessions';
+import type { AcpConfigOption, AcpOptions } from '../hooks/useAcpSessions';
 import type { DropdownOption } from '../components/composer/OptionDropdown';
 import { isAgentRunnable } from './agent-readiness';
 import { pickerLabelOf } from './install-plan';
@@ -62,10 +62,11 @@ function modeOption(value: string, name: string, description: string | undefined
 }
 
 /** One choice of a config option, in the form its category calls for. */
-function choiceOption(category: string | undefined, choice: { value: string; name: string; description?: string }): DropdownOption {
-  if (category === 'model') return modelOption(choice.value, choice.name, choice.description);
-  if (category === 'mode') return modeOption(choice.value, choice.name, choice.description);
-  return { value: choice.value, label: choice.name, description: choice.description };
+function choiceOption(category: string | undefined, choice: AcpConfigOption['options'][number]): DropdownOption {
+  const unavailable = choice.unavailable ? { unavailable: choice.unavailable } : {};
+  if (category === 'model') return { ...modelOption(choice.value, choice.name, choice.description), ...unavailable };
+  if (category === 'mode') return { ...modeOption(choice.value, choice.name, choice.description), ...unavailable };
+  return { value: choice.value, label: choice.name, description: choice.description, ...unavailable };
 }
 
 /** `undefined` when there is nothing real to choose from. */

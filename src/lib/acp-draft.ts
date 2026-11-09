@@ -207,7 +207,8 @@ export function changesToApply(
   const picks = Object.entries(choices.config).sort(([a], [b]) => Number(isModel(b)) - Number(isModel(a)));
   for (const [configId, value] of picks) {
     const option = info.configOptions.find((o) => o.id === configId);
-    const offered = option?.options.some((o) => o.value === value);
+    // A choice the agent says it cannot take now is not offered: sending it would only come back refused.
+    const offered = option?.options.some((o) => o.value === value && !o.unavailable);
     if (option && offered && option.currentValue !== value) changes.push({ kind: 'config', configId, value });
   }
   const pickedAModeConfig = info.configOptions.some((o) => o.category === 'mode' && o.id in choices.config);

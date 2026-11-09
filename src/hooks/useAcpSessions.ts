@@ -5,6 +5,7 @@ import { useLatest } from './useLatest';
 import type { PermissionRequestPayload } from '../lib/acp-events';
 import { toElicitationCard } from '../lib/acp-elicitation';
 import { toListedSessions, type ListedSessions } from '../lib/session-list';
+import { unavailableChoiceReason } from '../lib/qwen-workflow-mode';
 import type { ContextUsage, ElicitationAnswer, ElicitationCard, SlashCommand } from '../types';
 
 /** The one event channel the backend emits ACP traffic on. */
@@ -41,7 +42,8 @@ export interface AcpConfigOption {
   /** What the option does, when the agent says so. */
   description?: string;
   currentValue: string;
-  options: { value: string; name: string; description?: string }[];
+  /** `unavailable` says why the agent cannot take that choice now (Qwen Code's Workflow mode while off in its settings). */
+  options: { value: string; name: string; description?: string; unavailable?: string }[];
 }
 
 /** Live facts about one ACP session, as reported by its agent. */
@@ -122,11 +124,15 @@ export function toConfigOptions(raw: unknown): AcpConfigOption[] {
     const choices = option.options
       .filter(isObject)
       .filter((c) => isString(c.value) && isString(c.name))
-      .map((c) => ({
-        value: c.value as string,
-        name: c.name as string,
-        description: isString(c.description) && c.description ? c.description : undefined,
-      }));
+      .map((c) => {
+        const unavailable = unavailableChoiceReason(option, c.value as string);
+        return {
+          value: c.value as string,
+          name: c.name as string,
+          description: isString(c.description) && c.description ? c.description : undefined,
+          ...(unavailable ? { unavailable } : {}),
+        };
+      });
     return [
       {
         id: option.id,

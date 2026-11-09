@@ -480,3 +480,40 @@ describe("normalizeTranscript - delegation report", () => {
     expect(withoutId.delegationReport).toEqual({ agentName: "Codex" });
   });
 });
+
+describe("normalizeTranscript - tool diffs", () => {
+  const withDiff = (detail: unknown) => [
+    { id: "m", role: "agent", content: "", timestamp: 1, tools: [{ id: "t", name: "Edit", status: "completed", details: [detail] }] },
+  ];
+
+  it("turns a diff saved with whole files into the rows it shows", () => {
+    const [message] = normalizeTranscript(withDiff({ kind: "diff", path: "/r/a.ts", oldText: "a\n", newText: "b\n" }));
+
+    expect(message.tools?.[0].details).toEqual([
+      {
+        kind: "diff",
+        path: "/r/a.ts",
+        isNewFile: false,
+        rows: [
+          { kind: "removed", text: "a" },
+          { kind: "added", text: "b" },
+        ],
+      },
+    ]);
+  });
+
+  it("marks an old diff with no oldText as a new file, and keeps a diff already saved as rows", () => {
+    const rows = [{ kind: "added", text: "x" }];
+    const [created] = normalizeTranscript(withDiff({ kind: "diff", path: "/r/n.ts", oldText: null, newText: "x\n" }));
+    const [kept] = normalizeTranscript(withDiff({ kind: "diff", path: "/r/k.ts", isNewFile: true, rows }));
+
+    expect(created.tools?.[0].details).toEqual([{ kind: "diff", path: "/r/n.ts", isNewFile: true, rows }]);
+    expect(kept.tools?.[0].details).toEqual([{ kind: "diff", path: "/r/k.ts", isNewFile: true, rows }]);
+  });
+
+  it("drops a diff it cannot read, keeping the tool", () => {
+    const [message] = normalizeTranscript(withDiff({ kind: "diff", path: "/r/x.ts", rows: "nope" }));
+
+    expect(message.tools?.[0].details).toEqual([]);
+  });
+});

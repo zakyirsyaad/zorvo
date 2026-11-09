@@ -1,12 +1,7 @@
 import { diffLines } from 'diff';
+import type { DiffRow, ToolDetail } from '../types';
 
-export type DiffRowKind = 'added' | 'removed' | 'context' | 'skipped';
-
-export interface DiffRow {
-  kind: DiffRowKind;
-  /** The line, or for `skipped` how many unchanged lines were folded. */
-  text: string;
-}
+export type { DiffRow, DiffRowKind } from '../types';
 
 /** Unchanged lines kept on each side of a change; longer unchanged runs are folded. */
 const CONTEXT_LINES = 3;
@@ -40,6 +35,11 @@ export function diffRows(oldText: string | null, newText: string): DiffRow[] {
     return foldContext(lines, index === 0, index === parts.length - 1);
   });
   return rows;
+}
+
+/** A file change as a tool's diff detail keeps it: the rows it shows, never the whole file. */
+export function diffDetail(path: string, oldText: string | null, newText: string): Extract<ToolDetail, { kind: 'diff' }> {
+  return { kind: 'diff', path, isNewFile: oldText === null, rows: diffRows(oldText, newText) };
 }
 
 export function countChanges(rows: readonly DiffRow[]): { added: number; removed: number } {

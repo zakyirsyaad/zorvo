@@ -201,7 +201,7 @@ describe("reportedFiles", () => {
           name: "Edit",
           status: "completed",
           kind: "edit",
-          details: [{ kind: "diff", path: "src/a.ts", oldText: "", newText: "x" }],
+          details: [{ kind: "diff", path: "src/a.ts", isNewFile: false, rows: [{ kind: "added", text: "x" }] }],
         },
         { id: "t-touch", name: "Lint", status: "completed", locations: ["src/b.ts:12"] },
         { id: "t-read", name: "Read", status: "completed", kind: "read", locations: ["src/c.ts"] },

@@ -13,7 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ToolExecution } from "../../types";
-import { countChanges, diffRows } from "../../lib/diff-rows";
+import { countChanges } from "../../lib/diff-rows";
 import { formatLineCount, MINUS } from "../../lib/diff-stats";
 import { toolRow, toolStatusWord } from "../../lib/tool-summary";
 import { PathText } from "../ui/PathText";
@@ -42,7 +42,7 @@ function editCounts(tool: ToolExecution): { added: number; removed: number } | n
   if (diffs.length === 0) return null;
   return diffs.reduce(
     (sum, diff) => {
-      const counts = countChanges(diffRows(diff.oldText, diff.newText));
+      const counts = countChanges(diff.rows);
       return { added: sum.added + counts.added, removed: sum.removed + counts.removed };
     },
     { added: 0, removed: 0 },
@@ -116,7 +116,8 @@ function ToolRow({ tool, isTurnOver, isOpen }: { tool: ToolExecution; isTurnOver
  * One tool call. Its output and diff stay out of the DOM until the row is
  * opened, and a diff opens itself only where its turn is being watched.
  */
-function ToolCallRow({ tool, defaultOpenDiffs, isTurnOver }: { tool: ToolExecution; defaultOpenDiffs: boolean; isTurnOver: boolean }) {
+// Memoized: a streamed frame changes one tool, and every other row's open diff would be drawn again.
+const ToolCallRow = memo(function ToolCallRow({ tool, defaultOpenDiffs, isTurnOver }: { tool: ToolExecution; defaultOpenDiffs: boolean; isTurnOver: boolean }) {
   const hasDiff = tool.details?.some((detail) => detail.kind === "diff") ?? false;
   // Only an explicit click overrides the turn rule: an auto-opened row closes
   // again when the user moves on, while a row they opened stays open.
@@ -142,7 +143,7 @@ function ToolCallRow({ tool, defaultOpenDiffs, isTurnOver }: { tool: ToolExecuti
       )}
     </div>
   );
-}
+});
 
 /**
  * The agent's tool calls as flat rows inside their group's card, with no dividers: what each

@@ -6,6 +6,7 @@ export type ErrorCode =
   | "stock" // 409
   | "device_cap" // 409
   | "insufficient" // 409, a session cap larger than the device's unallocated credits
+  | "recovering" // 409, the device's key is being rotated after a restore
   | "rate_limited" // 429
   | "upstream"; // 502, or 503 when a webhook should be delivered again later
 

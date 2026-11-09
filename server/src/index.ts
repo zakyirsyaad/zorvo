@@ -268,6 +268,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     const result = await ledgerOf(env).createSession(device.deviceId, credits as number);
     if ("error" in result) {
       if (result.error === "bad_request") return error("bad_request", 400);
+      if (result.error === "recovering") return error("recovering", 409);
       return result.error === "upstream" ? error("upstream", 502) : error("insufficient", 409);
     }
     const response = json({ sessionId: result.sessionId, key: result.key }, 201);
@@ -292,6 +293,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (!("error" in result)) return json(result);
       if (result.error === "not_found") return error("not_found", 404);
       if (result.error === "bad_request") return error("bad_request", 400);
+      if (result.error === "recovering") return error("recovering", 409);
       return result.error === "upstream" ? error("upstream", 502) : error("insufficient", 409);
     }
     return error("not_found", 404);

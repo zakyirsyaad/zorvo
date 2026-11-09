@@ -145,6 +145,8 @@ export class FakeNearAi {
   status: Partial<Record<NearAiRoute, number>> = {};
   /** A status to answer the next request of a route with, once; later ones are served. */
   failOnce: Partial<Record<NearAiRoute, number>> = {};
+  /** Key ids whose spend-limit PATCH is refused with 503. */
+  failPatchFor = new Set<string>();
   /** A raw `/model/list` body served instead of `modelList`, for answers of the wrong shape. */
   rawModels: unknown = undefined;
   /** Answers `/model/list` per page (`offset` is null on the first), instead of `modelList` and `rawModels`. */
@@ -249,6 +251,7 @@ export class FakeNearAi {
       case "patch": {
         const key = keyId === undefined ? undefined : this.keys.get(keyId);
         if (!key) return json({ error: "not_found" }, 404);
+        if (keyId !== undefined && this.failPatchFor.has(keyId)) return json({ error: "down" }, 503);
         this.keys.set(keyId!, { ...key, limitNano: limitOf(body) });
         return json({});
       }

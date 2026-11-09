@@ -134,6 +134,40 @@ describe("POST /v1/sessions", () => {
     expect(await sql((s) => sessionRows(s, deviceId))).toEqual([]);
   });
 
+  it("refuses a cap when the device key has spent more than the snapshot shows", async () => {
+    const { deviceId, secret, keyId, limit } = await deviceWithKey(200);
+    // The snapshot still says 0 used; NEAR AI knows the key has spent 180 credits of its 200.
+    harness.near.keys.set(keyId, { ...harness.near.keys.get(keyId)!, usageNano: 1_500_000_000n });
+    const before = harness.near.count("create");
+
+    const { response, body } = await create(secret, 100);
+
+    expect(response.status).toBe(409);
+    expect(body).toEqual({ error: "insufficient" });
+    expect(harness.near.count("create")).toBe(before);
+    expect(await sql((s) => sessionRows(s, deviceId))).toEqual([]);
+    expect(harness.near.keys.get(keyId)?.limitNano).toBe(limit);
+  });
+
+  it("refuses a session while the device's key is being rotated after a restore", async () => {
+    const { deviceId, secret } = await deviceWithKey();
+    await sql((s) =>
+      s.exec(
+        "INSERT INTO queue (id, kind, ref, attempts, next_at, created_at) VALUES (?, 'rotate_key', ?, 0, ?, ?)",
+        crypto.randomUUID(),
+        deviceId,
+        NOW,
+        NOW,
+      ),
+    );
+
+    const { response, body } = await create(secret, CAP);
+
+    expect(response.status).toBe(409);
+    expect(body).toEqual({ error: "recovering" });
+    expect(await sql((s) => sessionRows(s, deviceId))).toEqual([]);
+  });
+
   it("removes the session and restores the device limit when the key cannot be made", async () => {
     const { deviceId, secret, keyId, limit } = await deviceWithKey();
     harness.near.status.create = 503;
@@ -270,6 +304,59 @@ describe("raising a cap", () => {
     expect(refused).toEqual({ error: "insufficient" });
     expect((await sql((s) => sessionRows(s, deviceId)))[0]!.cap_credits).toBe(200);
     expect(harness.near.keys.get(keyId)?.limitNano).toBe(before);
+  });
+
+  it("refuses a raise while the device's key is being rotated", async () => {
+    const { deviceId, secret, keyId } = await deviceWithKey();
+    const { body } = await create(secret, CAP);
+    const id = body.sessionId!;
+    const before = harness.near.keys.get(keyId)?.limitNano;
+    await sql((s) =>
+      s.exec(
+        "INSERT INTO queue (id, kind, ref, attempts, next_at, created_at) VALUES (?, 'rotate_key', ?, 0, ?, ?)",
+        crypto.randomUUID(),
+        deviceId,
+        NOW,
+        NOW,
+      ),
+    );
+
+    const { response, body: refused } = await raise(secret, id, 200);
+
+    expect(response.status).toBe(409);
+    expect(refused).toEqual({ error: "recovering" });
+    expect((await sql((s) => sessionRows(s, deviceId)))[0]!.cap_credits).toBe(CAP);
+    expect(harness.near.keys.get(keyId)?.limitNano).toBe(before);
+  });
+
+  it("keeps the new cap and the lowered device key when the session key's PATCH fails", async () => {
+    const { deviceId, secret, keyId, limit } = await deviceWithKey();
+    const { body } = await create(secret, CAP);
+    const id = body.sessionId!;
+    const row = (await sql((s) => sessionRows(s, deviceId)))[0]!;
+    harness.near.failPatchFor.add(row.nearai_key_id!);
+
+    expect((await raise(secret, id, 200)).response.status).toBe(502);
+
+    expect((await sql((s) => sessionRows(s, deviceId)))[0]!.cap_credits).toBe(200);
+    const raisedTarget = limit - spendLimitNano(200, cfg);
+    expect(harness.near.keys.get(keyId)?.limitNano).toBe(raisedTarget);
+    expect(harness.near.keys.get(row.nearai_key_id!)?.limitNano).toBe(spendLimitNano(CAP, cfg));
+    expect((await limits(deviceId)).expected).toBe(raisedTarget);
+  });
+
+  it("reverts the cap when the device key's PATCH fails first", async () => {
+    const { deviceId, secret, keyId, limit } = await deviceWithKey();
+    const { body } = await create(secret, CAP);
+    const id = body.sessionId!;
+    const row = (await sql((s) => sessionRows(s, deviceId)))[0]!;
+    harness.near.failOnce.patch = 503;
+
+    expect((await raise(secret, id, 200)).response.status).toBe(502);
+
+    expect((await sql((s) => sessionRows(s, deviceId)))[0]!.cap_credits).toBe(CAP);
+    expect(harness.near.keys.get(keyId)?.limitNano).toBe(limit - spendLimitNano(CAP, cfg));
+    expect(harness.near.keys.get(row.nearai_key_id!)?.limitNano).toBe(spendLimitNano(CAP, cfg));
   });
 
   it("refuses a cap that is not double, a bad body, and an ended session", async () => {
@@ -433,7 +520,11 @@ describe("races", () => {
     );
     expect(device).toMatchObject({ nearai_key_id: "key-2", credits_bought: 470 });
     expect(harness.near.keys.get("key-2")?.limitNano).toBe(spendLimitNano(470, cfg));
+    expect(harness.near.keys.get("key-2")?.limitNano).toBe((await limits(deviceId)).expected);
     expect(harness.near.keys.has(row.nearai_key_id!)).toBe(false);
+
+    const next = await create(newSecret, 100);
+    expect(next.response.status).toBe(201);
   });
 
   it("drops an end item for a session whose key was never made", async () => {
@@ -457,7 +548,7 @@ describe("races", () => {
   });
 
   it("sweeps an idle session while the app is ending it", async () => {
-    const { deviceId, secret } = await deviceWithKey();
+    const { deviceId, secret, keyId, limit } = await deviceWithKey();
     const { body } = await create(secret, CAP);
     const id = body.sessionId!;
     await sql((s) => s.exec("UPDATE session_keys SET last_seen_at = ? WHERE id = ?", NOW - 25 * HOUR_MS, id));
@@ -466,6 +557,8 @@ describe("races", () => {
     await tick(NOW + MINUTE_MS);
     const row = (await sql((s) => sessionRows(s, deviceId)))[0]!;
     expect(row.status).toBe("ended");
+    expect(harness.near.keys.get(keyId)?.limitNano).toBe(limit);
+    expect((await limits(deviceId)).expected).toBe(limit);
     const ends = await sql((s) =>
       s.exec<{ kind: string }>("SELECT kind FROM queue WHERE kind = 'end_session'").toArray(),
     );

@@ -36,8 +36,6 @@ import { clampNano, SINGLE_ROW_ID, storable } from "./amounts";
 import { applySchema } from "./schema";
 import {
   deviceLimitNano,
-  deviceUnallocatedCredits,
-  deviceKeyUsageNano,
   endSessionsForDevice,
   insertSession,
   isSessionCap,
@@ -767,9 +765,12 @@ export class Ledger extends DurableObject<Env> {
     deviceId: string,
     credits: number,
     now: number = Date.now(),
-  ): Promise<{ sessionId: string; key: string; credits: number } | { error: "bad_request" | "insufficient" | "upstream" }> {
+  ): Promise<
+    { sessionId: string; key: string; credits: number } | { error: "bad_request" | "insufficient" | "recovering" | "upstream" }
+  > {
     if (!isSessionCap(credits)) return { error: "bad_request" };
     return this.withDeviceLock(deviceId, async () => {
+      if (this.isRecovering(deviceId)) return { error: "recovering" as const };
       const cfg = this.config();
       const device = this.sql
         .exec<{ nearai_key_id: string | null; credits_bought: number }>(
@@ -778,8 +779,16 @@ export class Ledger extends DurableObject<Env> {
         )
         .toArray()[0];
       if (!device?.nearai_key_id) return { error: "insufficient" as const };
-      const room = deviceUnallocatedCredits(this.sql, cfg, deviceId, device.credits_bought, device.nearai_key_id);
-      if (credits > room) return { error: "insufficient" as const };
+      let liveUsage: bigint;
+      try {
+        liveUsage = await this.liveDeviceUsage(device.nearai_key_id, now);
+      } catch (error) {
+        console.error(`Reading the live device usage for private session ${deviceId} failed: ${describeError(error)}`);
+        return { error: "upstream" as const };
+      }
+      const targetBefore = deviceLimitNano(this.sql, cfg, deviceId, device.credits_bought);
+      const room = targetBefore > liveUsage ? targetBefore - liveUsage : 0n;
+      if (spendLimitNano(credits, cfg) > room) return { error: "insufficient" as const };
 
       const sessionId = crypto.randomUUID();
       insertSession(this.sql, sessionId, deviceId, credits, now, cfg);
@@ -863,11 +872,14 @@ export class Ledger extends DurableObject<Env> {
     sessionId: string,
     credits: number,
     now: number = Date.now(),
-  ): Promise<{ cap: number } | { error: "bad_request" | "insufficient" | "upstream" | "not_found" }> {
+  ): Promise<
+    { cap: number } | { error: "bad_request" | "insufficient" | "recovering" | "upstream" | "not_found" }
+  > {
     return this.withDeviceLock(deviceId, async () => {
       const cfg = this.config();
       const row = sessionRow(this.sql, sessionId);
       if (!row || row.device_id !== deviceId) return { error: "not_found" as const };
+      if (this.isRecovering(deviceId)) return { error: "recovering" as const };
       if (row.status !== "active" || !Number.isSafeInteger(credits) || credits !== row.cap_credits * 2) {
         return { error: "bad_request" as const };
       }
@@ -878,13 +890,28 @@ export class Ledger extends DurableObject<Env> {
         )
         .toArray()[0];
       if (!device?.nearai_key_id || row.nearai_key_id === null) return { error: "insufficient" as const };
-      const room = deviceUnallocatedCredits(this.sql, cfg, deviceId, device.credits_bought, device.nearai_key_id);
-      if (credits > row.cap_credits + room) return { error: "insufficient" as const };
+      let liveUsage: bigint;
+      try {
+        liveUsage = await this.liveDeviceUsage(device.nearai_key_id, now);
+      } catch (error) {
+        console.error(`Reading the live device usage for raising private session ${sessionId} failed: ${describeError(error)}`);
+        return { error: "upstream" as const };
+      }
 
-      const oldCap = row.cap_credits;
       const oldCapNano = BigInt(row.cap_nano);
-      this.sql.exec("UPDATE session_keys SET cap_credits = ?, cap_nano = ? WHERE id = ?", credits, Number(spendLimitNano(credits, cfg)), sessionId);
-      const target = deviceLimitNano(this.sql, cfg, deviceId, device.credits_bought);
+      const newCapNano = spendLimitNano(credits, cfg);
+      const added = newCapNano > oldCapNano ? newCapNano - oldCapNano : 0n;
+      const targetBefore = deviceLimitNano(this.sql, cfg, deviceId, device.credits_bought);
+      const room = targetBefore > liveUsage ? targetBefore - liveUsage : 0n;
+      if (added > room) return { error: "insufficient" as const };
+
+      this.sql.exec(
+        "UPDATE session_keys SET cap_credits = ?, cap_nano = ? WHERE id = ?",
+        credits,
+        Number(newCapNano),
+        sessionId,
+      );
+      const target = targetBefore > added ? targetBefore - added : 0n;
       const limitNano = target > 0n ? target : 1n;
       try {
         await this.withAccessToken(now, (access) =>
@@ -892,23 +919,24 @@ export class Ledger extends DurableObject<Env> {
         );
       } catch (error) {
         console.error(`Lowering the device limit for raising private session ${sessionId} failed: ${describeError(error)}`);
-        this.revertSessionCap(sessionId, oldCap, oldCapNano);
+        this.revertSessionCap(sessionId, row.cap_credits, oldCapNano);
         await this.restoreDeviceLimit(deviceId, device.nearai_key_id, now);
         return { error: "upstream" as const };
       }
       try {
         await this.withAccessToken(now, (access) =>
-          this.nearAi().setSpendLimit(access, cfg.workspaceId, row.nearai_key_id!, spendLimitNano(credits, cfg)),
+          this.nearAi().setSpendLimit(access, cfg.workspaceId, row.nearai_key_id!, newCapNano),
         );
       } catch (error) {
         console.error(`Raising the key of private session ${sessionId} failed: ${describeError(error)}`);
-        this.revertSessionCap(sessionId, oldCap, oldCapNano);
-        await this.restoreDeviceLimit(deviceId, device.nearai_key_id, now);
+        // The device key is already lower and the new cap is recorded; reverting either would make
+        // the difference spendable twice. The end item settles the cap against the final usage.
+        this.ctx.storage.transactionSync(() => recordKeyLimit(this.sql, device.nearai_key_id!, limitNano));
         return { error: "upstream" as const };
       }
       this.ctx.storage.transactionSync(() => {
         recordKeyLimit(this.sql, device.nearai_key_id!, limitNano);
-        recordKeyLimit(this.sql, row.nearai_key_id!, spendLimitNano(credits, cfg));
+        recordKeyLimit(this.sql, row.nearai_key_id!, newCapNano);
       });
       return { cap: credits };
     });
@@ -916,6 +944,24 @@ export class Ledger extends DurableObject<Env> {
 
   private revertSessionCap(sessionId: string, cap: number, capNano: bigint): void {
     this.sql.exec("UPDATE session_keys SET cap_credits = ?, cap_nano = ? WHERE id = ?", cap, Number(capNano), sessionId);
+  }
+
+  /** Whether the device's key is waiting for a recovery rotation; no session may PATCH it meanwhile. */
+  private isRecovering(deviceId: string): boolean {
+    return (
+      this.sql
+        .exec("SELECT 1 FROM queue WHERE kind = 'rotate_key' AND ref = ?", deviceId)
+        .toArray().length > 0
+    );
+  }
+
+  /** The device key's live usage, read from NEAR AI rather than the up-to-2-minute-old snapshot. */
+  private async liveDeviceUsage(keyId: string, now: number): Promise<bigint> {
+    const cfg = this.config();
+    const keys = await this.withAccessToken(now, (access) => this.nearAi().listKeys(access, cfg.workspaceId));
+    const key = keys.find((candidate) => candidate.id === keyId);
+    if (!key) throw new Error(`NEAR AI's key list does not show device key ${keyId}`);
+    return key.usageNano;
   }
 
   /** Best effort: set the device key back to the invariant after a failed session change. */

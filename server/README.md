@@ -258,7 +258,8 @@ It registers a fresh device, redeems the code, waits for the top-up to reach `cr
 one-time key, sends one short non-streamed completion to NEAR AI, and checks the signature and the
 attestation report. It prints the model, the signature kind, the signer and `Verified`, or why not.
 The code, the device secret and the key are never printed. It asks for
-`Qwen/Qwen3.8-27B-abliterated`, so that model must be in the Worker's `MODELS` allowlist and deployed.
+`Qwen/Qwen3.8-27B-abliterated`, so that model must be in the Worker's `MODELS` allowlist and deployed; it
+checks the Worker's model list before sending and says plainly when the model is not offered.
 
 ### Restocking
 

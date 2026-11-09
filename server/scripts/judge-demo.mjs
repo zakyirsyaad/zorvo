@@ -20,6 +20,7 @@ const TOPUP_POLL_MS = 3_000;
 const TOPUP_WAIT_MS = 120_000;
 const SIGNATURE_TRIES = 3;
 const SIGNATURE_RETRY_MS = 3_000;
+const REQUEST_TIMEOUT_MS = 30_000;
 
 /** Hex SHA-256 of exact bytes. @param {Uint8Array} bytes @returns {string} */
 export function sha256Hex(bytes) {
@@ -130,12 +131,27 @@ export function attestationAllows(attestation, kind, signer) {
   return attestation.modelSigners.has(signer) || attestation.gatewaySigner === signer;
 }
 
+/**
+ * Whether a Worker model list lacks the judge model. A malformed answer is not treated as a refusal;
+ * the chat call reports that case.
+ * @param {unknown} models
+ * @returns {boolean}
+ */
+export function lacksJudgeModel(models) {
+  return Array.isArray(models) && !models.some((model) => isObject(model) && model.id === MODEL);
+}
+
 /** @param {string} url @param {RequestInit & { token?: string, body?: string }} options */
 async function jsonRequest(url, { token, body, ...init } = {}) {
   const headers = new Headers(init.headers);
   if (token !== undefined) headers.set("authorization", `Bearer ${token}`);
   if (body !== undefined) headers.set("content-type", "application/json");
-  const response = await fetch(url, { ...init, headers, body });
+  const response = await fetch(url, {
+    ...init,
+    headers,
+    body,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
   const bytes = new Uint8Array(await response.arrayBuffer());
   const text = new TextDecoder().decode(bytes);
   /** @type {unknown} */
@@ -181,7 +197,15 @@ async function redeem(worker, code) {
   }
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const answer = await workerJson(worker, "/v1/key", secret);
-    if (isObject(answer) && typeof answer.key === "string" && answer.key !== "") return answer.key;
+    if (isObject(answer) && typeof answer.key === "string" && answer.key !== "") {
+      const models = await workerJson(worker, "/v1/models", secret);
+      if (lacksJudgeModel(models)) {
+        throw new Error(
+          `the Worker does not offer ${MODEL}; add it to MODELS and deploy the Worker before judging`,
+        );
+      }
+      return answer.key;
+    }
     if (attempt < 4) await sleep(1_000);
   }
   throw new Error("the credited device had no key");

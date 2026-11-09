@@ -21,11 +21,15 @@ _Add the demo screenshot here: the **Verified in TEE** badge and its popover._
   do a DCAP or NRAS hardware check; it verifies the signature and the report's signer address, and links
   to NEAR AI's Verification Center for the hardware proof itself. A streamed answer is usually signed by
   NEAR AI's gateway rather than the model's provider key.
-- **The key stays local.** The NEAR AI key is held by a loopback proxy in Zorvo's Rust backend, never by
-  Qwen Code. The agent gets a one-time proxy token; the proxy adds the key and forwards the exact bytes.
+- **The key stays local after handover.** The Credits Worker creates one NEAR AI key per Mac and stores it
+  encrypted for at most 24 hours, until the app collects it; after that the app keeps it in the macOS
+  Keychain, and a loopback proxy in Zorvo's Rust backend adds it to each request. Qwen Code only ever holds
+  a one-time proxy token. The Worker never sees prompts or completions. A capped session's key is created
+  the same way, handed to the app once, and not stored by the Worker.
 - **USDC on NEAR.** Payments are USDC on NEAR through PingPay, which is built on NEAR Intents. Zorvo
   creates a checkout on the Credits Worker and opens it in the browser; no card or wallet data reaches
-  Zorvo.
+  Zorvo. The checkout return URLs in `server/wrangler.jsonc` point at this branch's `server/README.md`, so
+  a redeploy follows a branch rename.
 - **Spend-limited keys.** The Worker creates one NEAR AI key per Mac with a spend limit, and the
   per-session cap creates a second key with its own limit. NEAR AI's gateway enforces both (`402`), so a
   cap holds even if Zorvo is closed.
@@ -35,7 +39,8 @@ _Add the demo screenshot here: the **Verified in TEE** badge and its popover._
 ## Tracks
 
 - **`privacy` (primary).** Prompts go from the agent to NEAR AI through the local proxy; the Credits
-  Worker never sees a prompt, a completion or the NEAR AI key.
+  Worker never sees a prompt or a completion. It creates the Mac's NEAR AI key and hands it over once, as
+  described above; after collection the key lives in the macOS Keychain, not in the Worker.
 - **`open`.** Zorvo and the Credits Worker are in this Apache-2.0 repository. The Worker is a plain
   Cloudflare Worker with one SQLite Durable Object; its contract, operator setup and deploy steps are in
   [`server/README.md`](server/README.md). Outside Private mode, no API keys are stored in the app; Private
@@ -51,7 +56,7 @@ _Add the demo screenshot here: the **Verified in TEE** badge and its popover._
 ### (a) No Mac needed
 
 1. `pnpm install` → installs the workspace, including `server/`.
-2. `pnpm --filter zorvo-credits-server test` → **396 Vitest tests and 29 Node tests pass**. The suite
+2. `pnpm --filter zorvo-credits-server test` → **405 Vitest tests and 30 Node tests pass**. The suite
    prints two expected uncaught-exception lines from its own tests and still exits 0.
 3. `curl -s -o - -w '\n%{http_code}\n' https://zorvo-credits-server.zkyxentertain.workers.dev/v1/models`
    → `{"error":"unauthorized"}` and `401`: the live Worker is up and refuses a request without a device
@@ -60,15 +65,20 @@ _Add the demo screenshot here: the **Verified in TEE** badge and its popover._
    `node server/scripts/judge-demo.mjs https://zorvo-credits-server.zkyxentertain.workers.dev JUDGE-…`
    → `Model: Qwen/Qwen3.8-27B-abliterated`, `Kind: provider_tee` (or `gateway`), `Signer: 0x…`, and
    `Verified: NEAR AI signed the exact request and response, and its attestation names the signer.`
-   The script registers a fresh device, redeems the code, waits for the credit, sends one non-streamed
-   completion, hashes the exact bytes, and checks the signature and attestation report. It never prints
-   the code, the device secret or the key. It asks for `Qwen/Qwen3.8-27B-abliterated`, so that model must
-   be in the Worker's `MODELS` allowlist and deployed.
+   The script registers a fresh device, redeems the code, waits for the credit, checks that the Worker
+   offers the judge model, sends one non-streamed completion, hashes the exact bytes, and checks the
+   signature and attestation report. It never prints the code, the device secret or the key. It asks for
+   `Qwen/Qwen3.8-27B-abliterated` — the abliterated variant, whose safety refusals are removed for this
+   demo — so that model must be in the Worker's `MODELS` allowlist and deployed; if it is absent the script
+   says the Worker does not offer it instead of failing at the model call.
 
 ### (b) On a Mac
 
 Use a Mac with Apple Silicon or Intel; the product's [Requirements](#requirements) sets no separate macOS
-floor, and its Install notes cover macOS 15 and later.
+floor, and its Install notes cover macOS 15 and later. Before the first build: Xcode Command Line Tools
+(`xcode-select --install`), Rust through rustup, Node from `.nvmrc` (26; 22+ also runs), and pnpm 12
+(`corepack enable`). The first `pnpm tauri dev` compiles the Rust backend and takes roughly 10–20 minutes
+on a cold cache; later builds are much faster.
 
 1. `git clone --branch hackathon/near-credits https://github.com/zakyirsyaad/zorvo.git`
 2. `cd zorvo && pnpm install`
@@ -80,6 +90,14 @@ floor, and its Install notes cover macOS 15 and later.
    Verification Center link.
 6. Optional: set **Session limit** to 200 credits in the draft → the composer shows
    `N of 200 credits this session`, and the Private inspector shows the same with a progress bar.
+7. Paste an AWS-looking key in the prompt (or attach a `.env` with one) → Zorvo holds the message, names
+   the match, and sends nothing until **Send anyway** or **Edit message**. The check runs on this Mac; no
+   match is stored or sent.
+8. Settings → Private mode → **Add key** saves your own NEAR AI key from an organization with credits;
+   switch a draft to **My NEAR AI key** and the footer says `Paying with your NEAR AI key`, with the
+   session priced in dollars instead of Zorvo credits.
+9. The Private inspector shows **This session** usage and its **Average per turn**; Settings → Private
+   mode lists the total **Used by N models** and the turns each model's price leaves.
 
 The judge code is a placeholder here: `JUDGE-…`. The user creates it after M5.
 
@@ -90,6 +108,7 @@ on another chain. Everything under Private mode, `server/`, the loopback proxy, 
 verification, the credits UI, the own-key path, the secret guard, per-session usage and the per-session
 cap was built from 2026-11-07 onward on this branch. The comparison is
 [`pre-hackathon...hackathon-submission`](https://github.com/zakyirsyaad/zorvo/compare/pre-hackathon...hackathon-submission).
+Both tags are created at submission; until then the compare link has nothing to show.
 
 ## Disclosures
 
@@ -103,9 +122,11 @@ cap was built from 2026-11-07 onward on this branch. The comparison is
 ## Security and privacy model
 
 - Prompts and completions go from Qwen Code to NEAR AI; the Credits Worker never sees them.
-- The NEAR AI key lives in the Rust backend's loopback proxy. The agent gets a one-time proxy token; the
-  device secret, the NEAR AI key, an own key and a capped session's key live in the macOS Keychain, and
-  no secret is logged or sent to the webview.
+- The NEAR AI key is created by the Credits Worker and handed to the app once, stored encrypted in the
+  Worker only until collection (at most 24 hours); after that it lives in the macOS Keychain and the
+  backend's loopback proxy. The agent gets a one-time proxy token; the device secret, an own key and a
+  capped session's key live in the Keychain, and no secret is logged or sent to the webview. The Worker
+  never sees prompts or completions.
 - The Worker stores hashes of device and promo codes, NEAR AI key ids, encrypted operator tokens, and a
   user key only encrypted for at most 24 hours until it is collected. A leaked database has no usable key
   or device secret.

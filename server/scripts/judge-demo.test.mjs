@@ -14,6 +14,7 @@ import { bytesToHex } from "@noble/hashes/utils";
 import {
   attestationAllows,
   eip191Digest,
+  lacksJudgeModel,
   normalizeAddress,
   parseAttestation,
   recoverAddress,
@@ -184,6 +185,14 @@ describe("the attestation report", () => {
       assert.equal(check.modelSigners.size, 0);
       assert.equal(check.gatewaySigner, null);
     }
+  });
+});
+
+describe("the judge model allowlist", () => {
+  it("refuses a list without the abliterated model and accepts one with it", () => {
+    assert.equal(lacksJudgeModel([{ id: "Qwen/Qwen3.8-27B" }]), true);
+    assert.equal(lacksJudgeModel([{ id: "Qwen/Qwen3.8-27B-abliterated" }]), false);
+    assert.equal(lacksJudgeModel(null), false);
   });
 });
 

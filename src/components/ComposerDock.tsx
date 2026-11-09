@@ -292,14 +292,18 @@ export function ComposerDock({
   };
 
   const mentionMenu = useMentionMenu(mentions, delegationAgents);
+  // The parent builds the list anew on every render: the parse follows its names, not its identity.
+  const delegationAgentsRef = useLatest(delegationAgents);
+  const delegationAgentsKey = delegationAgents?.map((agent) => `${agent.id}\u0001${agent.name}`).join("\u0000");
   // Reports the delegation as the text changes; an unchanged parse stays unreported.
   useEffect(() => {
-    const mention = delegationAgents ? delegationMentionOf(text, delegationAgents) : null;
+    const agents = delegationAgentsRef.current;
+    const mention = agents ? delegationMentionOf(text, agents) : null;
     const key = mention ? `${mention.agentId}\u0000${mention.task}` : "";
     if (key === lastDelegationKeyRef.current) return;
     lastDelegationKeyRef.current = key;
     onDelegationMentionChangeRef.current?.(mention);
-  }, [text, delegationAgents, onDelegationMentionChangeRef]);
+  }, [text, delegationAgentsKey, delegationAgentsRef, onDelegationMentionChangeRef]);
   /** The @-mention list follows the caret: moving it off the @word closes the list. */
   const followCaret = (field: HTMLTextAreaElement) =>
     mentionMenu.update(field.value, field.selectionStart ?? field.value.length);

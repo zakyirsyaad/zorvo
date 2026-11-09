@@ -160,6 +160,27 @@ describe("sendBlockedReason", () => {
     ).toBe("Claude Code is working on Codex's report.");
   });
 
+  it("says only that A is busy when A's turn is not B's report", () => {
+    expect(
+      sendBlockedReason({
+        sessionId: "s-b",
+        sessions: [source, open],
+        isBusy: (id) => id === "s-a",
+        agentNameOf,
+        isWorkingOnReport: () => false,
+      }),
+    ).toBe("Wait for Claude Code to finish.");
+    expect(
+      sendBlockedReason({
+        sessionId: "s-b",
+        sessions: [source, open],
+        isBusy: (id) => id === "s-a",
+        agentNameOf,
+        isWorkingOnReport: (sourceId, delegateId) => sourceId === "s-a" && delegateId === "s-b",
+      }),
+    ).toBe("Claude Code is working on Codex's report.");
+  });
+
   it("blocks nothing when neither side is busy", () => {
     expect(
       sendBlockedReason({ sessionId: "s-a", sessions: [source, open], isBusy: () => false, agentNameOf }),

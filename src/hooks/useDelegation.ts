@@ -157,14 +157,33 @@ export function useDelegation(deps: DelegationDeps): {
 
   const delegateBlockedReason = (sourceId: string): string | null => blockedReasonFor(deps, sourceId);
 
+  /** A works on B's report: it is on its way, or A's last prompt is B's report. */
+  const isWorkingOnReport = (sourceId: string, delegateId: string): boolean => {
+    if (handingOver.current.get(sourceId) === delegateId) return true;
+    const delegate = sessions.find((candidate) => candidate.id === delegateId);
+    const report = lastUserMessage(transcripts[sourceId] ?? [])?.delegationReport;
+    return delegate !== undefined && report?.agentId === delegate.profileId;
+  };
+
   const sendBlockedReason = (sessionId: string): string | null => {
     const reason = pairSendBlockedReason({
       sessionId,
       sessions,
       isBusy: deps.isBusy,
       agentNameOf,
+      isWorkingOnReport,
     });
     if (reason !== null) return reason;
+
+    // Same tick as B's turn ended, seen from A: the report is about to go out, and a
+    // message sent now would take A's turn and push the report into the composer.
+    const handingOverFrom = handingOver.current.get(sessionId);
+    if (handingOverFrom !== undefined) {
+      const delegate = sessions.find((candidate) => candidate.id === handingOverFrom);
+      if (delegate !== undefined) {
+        return `${agentNameOf(delegate.profileId)} is working on the task you delegated.`;
+      }
+    }
 
     const session = sessions.find((candidate) => candidate.id === sessionId);
     const link = session?.delegatedFrom;

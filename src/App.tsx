@@ -108,17 +108,18 @@ import { useCompareRun, useCompareRunRows } from "./hooks/useCompareRun";
 import { useCompareModelProbe } from "./hooks/useCompareModelProbe";
 import { useDelegation } from "./hooks/useDelegation";
 import { useNow } from "./hooks/useNow";
-import { DelegateDialog, type DelegateAgentChoice, type DraftControls } from "./components/delegation/DelegateDialog";
+import { DelegateDialog, type DelegateAgentChoice } from "./components/delegation/DelegateDialog";
+import { useDelegateDialog } from "./hooks/useDelegateDialog";
+import { delegatedStartOf, delegationChoicesFor as delegationChoicesForOptions } from "./lib/delegation-start";
 import { DelegationStatusLine } from "./components/delegation/DelegationStatusLine";
 import { DelegatedFromLine } from "./components/delegation/DelegatedFromLine";
 import { isOpenLink, mentionBlockedReason, openDelegateOf, startSummary, type MentionAgentStatus } from "./lib/delegation";
 import { compareModelControls } from "./lib/compare-models";
 import { lastOfRun, runOf } from "./lib/compare-run";
-import { acpControls, compareAgentOptions } from "./lib/composer-controls";
+import { compareAgentOptions } from "./lib/composer-controls";
 import { COMPARE_NOTE, composerCommandsFor, composerNote, composerPlaceholder, composerStateFor } from "./lib/composer-state";
 import {
   NO_CHOICES,
-  draftInfo,
   rememberedChoice,
   withEffortList,
   withPreferred,
@@ -136,36 +137,6 @@ const NO_FOLDER_NOTICE = "Open a project folder first: choose one from the folde
 
 // eslint-disable-next-line no-control-regex -- matching control characters is the point.
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
-
-/**
- * The model, effort and mode a delegation starts on, as the agent last reported
- * them: its remembered model (else the current one), that model's effort, and
- * its default mode. A part Zorvo does not know is left out.
- */
-function delegatedStartOf(options: AgentOptions | undefined): {
-  modelName?: string;
-  effortName?: string;
-  modeName?: string;
-} {
-  if (options === undefined) return {};
-  // The same choices a draft starts with: the remembered picks over what the agent reported.
-  const info = draftInfo(options, withPreferred(NO_CHOICES, options));
-  const modelConfig = info.configOptions.find((option) => option.category === "model");
-  const modelName =
-    modelConfig?.options.find((choice) => choice.value === modelConfig.currentValue)?.name ??
-    info.models?.availableModels.find((model) => model.modelId === info.models?.currentModelId)?.name;
-  const effort = info.configOptions.find((option) => option.category === "thought_level");
-  const effortName = effort?.options.find((choice) => choice.value === effort.currentValue)?.name;
-  const modeConfig = info.configOptions.find((option) => option.category === "mode");
-  const modeName =
-    info.modes?.availableModes.find((mode) => mode.id === info.modes?.currentModeId)?.name ??
-    modeConfig?.options.find((choice) => choice.value === modeConfig.currentValue)?.name;
-  return {
-    ...(modelName !== undefined ? { modelName } : {}),
-    ...(effortName !== undefined ? { effortName } : {}),
-    ...(modeName !== undefined ? { modeName } : {}),
-  };
-}
 
 export default function App() {
   const { notice, setNotice } = useNotice();
@@ -201,17 +172,6 @@ export default function App() {
   const moreOptionsButtonRef = useRef<HTMLButtonElement>(null);
   /** The delegation the composer's text asks for, as the mention menu reported it: never on mount. */
   const [delegationMention, setDelegationMention] = useState<{ agentId: string; task: string } | null>(null);
-  /** The open delegate dialog, and whether its Delegate clears the composer (it does when Change opened it). */
-  const [delegateDialog, setDelegateDialog] = useState<{
-    initialAgentId?: string;
-    initialTask?: string;
-    /** The composer's attachments when Change opened it: they go with B's first message. */
-    attachments?: readonly string[];
-    clearsComposer: boolean;
-    returnsFocusToMenu: boolean;
-  } | null>(null);
-  /** The dialog's chip picks per agent, reset each time it opens; they are merged over its own on Delegate. */
-  const delegatePicksRef = useRef<Readonly<Record<string, AcpChoices>>>({});
   // Set once useDelegation is built: the engine's turns reach it through this, as it is built before the hook.
   const delegationTurnEndedRef = useRef<(sessionId: string, reason: AttentionReason) => void>(() => {});
   // Set once useDelegation is built: the engine's retries read why the pair blocks them, as it is built before the hook.
@@ -764,15 +724,21 @@ export default function App() {
   });
 
   /**
-   * Archives a session. Archiving a delegate ends its link in the same action:
-   * its reports stop, and A may delegate again. A failed archive leaves the link
-   * open, since the session still runs. Unarchiving does not reopen the link.
+   * Archives a session. Archiving either side of a delegation ends its link in the
+   * same action: archiving B stops its reports, and archiving A stops reports to a
+   * session whose agent the archive ended (they would only pile up in its composer).
+   * A failed archive leaves the link open, since the session still runs.
+   * Unarchiving does not reopen the link.
    */
   const handleArchiveSession = async (sessionId: string, isArchived: boolean) => {
     await sessionActions.archiveSession(sessionId, isArchived);
     if (!isArchived) return;
-    const isArchivedNow = getState().sessions.find((session) => session.id === sessionId)?.archivedAt != null;
-    if (isArchivedNow) delegation.end(sessionId);
+    const latestSessions = getState().sessions;
+    const isArchivedNow = latestSessions.find((session) => session.id === sessionId)?.archivedAt != null;
+    if (!isArchivedNow) return;
+    delegation.end(sessionId);
+    const delegate = openDelegateOf(sessionId, latestSessions);
+    if (delegate !== undefined) delegation.end(delegate.id);
   };
 
   /** Shows a run's panel in the chat's place; no session stays selected, or the panel would not show. */
@@ -989,8 +955,8 @@ export default function App() {
   });
 
   /** What a delegation to an agent starts with: the picks, and the agent's remembered model and effort. */
-  const delegationChoicesFor = (agentId: string, picks: AcpChoices = NO_CHOICES): AcpChoices =>
-    withPreferred(picks, state.agentOptions?.[agentId]);
+  const delegationChoicesFor = (agentId: string): AcpChoices =>
+    delegationChoicesForOptions(state.agentOptions?.[agentId]);
 
   /** Sends to the active session, continues it when it can be resumed, or starts a new one (or a run). */
   const handleSendMessage = (text: string, attachments?: string[]) => {
@@ -1051,80 +1017,15 @@ export default function App() {
       }))
     : undefined;
 
-  const openDelegateDialog = (state: {
-    initialAgentId?: string;
-    initialTask?: string;
-    attachments?: readonly string[];
-    clearsComposer: boolean;
-    returnsFocusToMenu: boolean;
-  }) => {
-    // The chips' picks belong to the dialog that made them.
-    delegatePicksRef.current = {};
-    setDelegateDialog(state);
-  };
-  /** Closes the dialog; Cancel from the ⋯ item puts focus back on its button. */
-  const closeDelegateDialog = () => {
-    const isReturningToMenu = delegateDialog?.returnsFocusToMenu === true;
-    setDelegateDialog(null);
-    if (isReturningToMenu) {
-      requestAnimationFrame(() => moreOptionsButtonRef.current?.focus());
-    }
-  };
-
-  const delegatePicksFor = (agentId: string): AcpChoices => delegatePicksRef.current[agentId] ?? NO_CHOICES;
-  /** Records a chip's pick, since the dialog passes only mode and model in its own choices. */
-  const recordDelegatePick = (agentId: string, patch: Partial<AcpChoices>) => {
-    const current = delegatePicksFor(agentId);
-    delegatePicksRef.current = {
-      ...delegatePicksRef.current,
-      [agentId]: {
-        ...current,
-        ...patch,
-        config: { ...current.config, ...patch.config },
-      },
-    };
-  };
-  /** What the dialog's chips are made from: the agent's reported options and the picks made so far. */
-  const delegateControlsFor = (agentId: string): DraftControls => {
-    const agentName = agents.find((agent) => agent.id === agentId)?.name ?? agentId;
-    const onOpen = () => compareModelProbe.ask(agentId);
-    const status = compareModelProbe.stateOf(agentId);
-    const options = state.agentOptions?.[agentId];
-    if (options === undefined) {
-      return { agentName, onOpen, ...(status !== undefined ? { status } : {}) };
-    }
-    const controls = acpControls(draftInfo(options, delegationChoicesFor(agentId, delegatePicksFor(agentId))), {
-      setMode: (modeId) => recordDelegatePick(agentId, { modeId }),
-      setModel: (modelId) => recordDelegatePick(agentId, { modelId }),
-      setConfigOption: (configId, value) => recordDelegatePick(agentId, { config: { [configId]: value } }),
-    });
-    return {
-      agentName,
-      controls,
-      // A config-mode agent's mode pick is a config change, recorded above; it must not also go out as a modeId.
-      modeKind: options.modes ? "modes" : "config",
-      onOpen,
-      ...(status !== undefined ? { status } : {}),
-    };
-  };
-  /** Starts B with the dialog's picks, then clears the composer when Change opened it. */
-  const handleDialogDelegate = (agentId: string, task: string, choices: AcpChoices) => {
-    const sourceId = activeSession?.id;
-    const isFromChange = delegateDialog?.clearsComposer === true;
-    // Change carried what the composer held: B's first message keeps the attachments.
-    const attachments = delegateDialog?.attachments;
-    const accumulated = delegatePicksFor(agentId);
-    const merged: AcpChoices = {
-      ...accumulated,
-      ...choices,
-      config: { ...accumulated.config, ...choices.config },
-    };
-    setDelegateDialog(null);
-    if (sourceId === undefined) return;
-    void delegation.start(sourceId, agentId, task, { choices: delegationChoicesFor(agentId, merged), attachments }).then((isStarted) => {
-      if (isStarted && isFromChange) composerRef.current?.clear();
-    });
-  };
+  const delegateDialog = useDelegateDialog({
+    agents,
+    agentOptions: state.agentOptions,
+    probe: compareModelProbe,
+    sourceId: activeSession?.id,
+    start: delegation.start,
+    composerRef,
+    menuButtonRef: moreOptionsButtonRef,
+  });
 
   const mentionBlock = delegationMention === null || mentionedAgent === undefined
     ? null
@@ -1145,7 +1046,7 @@ export default function App() {
             ...delegatedStartOf(state.agentOptions?.[mentionedAgent.id]),
           }),
           onChange: (attachments?: readonly string[]) =>
-            openDelegateDialog({
+            delegateDialog.open({
               initialAgentId: mentionedAgent.id,
               initialTask: delegationMention.task,
               attachments,
@@ -1172,7 +1073,7 @@ export default function App() {
         : undefined;
   const onDelegate =
     sessionOfItsOwn !== undefined && sessionOfItsOwn.delegatedFrom == null
-      ? () => openDelegateDialog({ clearsComposer: false, returnsFocusToMenu: true })
+      ? () => delegateDialog.open({ clearsComposer: false, returnsFocusToMenu: true })
       : undefined;
 
   // A's line while B works or waits, and B's while A works on its report; while A is in a turn its own status shows.
@@ -1439,17 +1340,16 @@ export default function App() {
                         <DelegatedFromLine view={delegationView} onOpen={handleSelectSession} canAct />
                       ) : undefined
                     }
+                    // Always mounted for a session, so the first line it draws is announced.
                     delegationStatus={
-                      delegationView !== null ? (
-                        <DelegationStatusLine
-                          view={delegationView}
-                          now={delegationNow}
-                          onOpen={handleSelectSession}
-                          canAct
-                          hidden={!showsDelegationStatus}
-                          delegateAgentName={delegationView.role === "delegate" ? activeAgent?.name : undefined}
-                        />
-                      ) : undefined
+                      <DelegationStatusLine
+                        view={delegationView}
+                        now={delegationNow}
+                        onOpen={handleSelectSession}
+                        canAct
+                        hidden={!showsDelegationStatus}
+                        delegateAgentName={delegationView?.role === "delegate" ? activeAgent?.name : undefined}
+                      />
                     }
                     // A turn that failed says so under its last message, with Try again.
                     footer={
@@ -1765,16 +1665,16 @@ export default function App() {
         agentSignIn={settingsSignIn}
         onOpenUrl={openLink}
       />
-      {delegateDialog !== null && (
+      {delegateDialog.dialog !== null && (
         <DelegateDialog
           agents={delegateAgents}
           sourceAgentName={activeAgent?.name ?? "The agent"}
           isSourceRunning={isActiveRunning}
-          initialAgentId={delegateDialog.initialAgentId}
-          initialTask={delegateDialog.initialTask}
-          controlsFor={delegateControlsFor}
-          onDelegate={handleDialogDelegate}
-          onCancel={closeDelegateDialog}
+          initialAgentId={delegateDialog.dialog.initialAgentId}
+          initialTask={delegateDialog.dialog.initialTask}
+          controlsFor={delegateDialog.controlsFor}
+          onDelegate={delegateDialog.delegate}
+          onCancel={delegateDialog.close}
         />
       )}
     </main>

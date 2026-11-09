@@ -495,6 +495,35 @@ describe("useDelegation reports", () => {
     expect(reason).toBe("Claude Code is working on Codex's report.");
     await act(async () => {});
   });
+
+  it("refuses A's send while B's report is handing over", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+    });
+    let reason: string | null = null;
+
+    act(() => {
+      env.result.current.delegation.onTurnEnded("s-b", "finished");
+      // Same tick: a message to A now would take A's turn from the report.
+      reason = env.result.current.delegation.sendBlockedReason("s-a");
+    });
+
+    expect(reason).toBe("Codex is working on the task you delegated.");
+    await act(async () => {});
+    // Once the report went out, A is no longer held by the hand-over.
+    expect(env.result.current.delegation.sendBlockedReason("s-a")).toBeNull();
+  });
+
+  it("does not blame B's report for a turn the user started in A", () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+      busy: ["s-a"],
+    });
+
+    expect(env.result.current.delegation.sendBlockedReason("s-b")).toBe("Wait for Claude Code to finish.");
+  });
 });
 
 describe("useDelegation views", () => {

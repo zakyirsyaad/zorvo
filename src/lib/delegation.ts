@@ -91,6 +91,11 @@ export interface SendBlockedInput {
   sessions: readonly Session[];
   isBusy: (id: string) => boolean;
   agentNameOf: (profileId: string) => string;
+  /**
+   * Whether A's turn is about B's report. Without it every turn of A counts as one;
+   * with it, a turn the user started in A says only that A is busy.
+   */
+  isWorkingOnReport?: (sourceId: string, delegateId: string) => boolean;
 }
 
 /**
@@ -102,6 +107,7 @@ export function sendBlockedReason({
   sessions,
   isBusy,
   agentNameOf,
+  isWorkingOnReport,
 }: SendBlockedInput): string | null {
   const session = sessions.find((candidate) => candidate.id === sessionId);
   if (session === undefined) return null;
@@ -109,7 +115,10 @@ export function sendBlockedReason({
   if (isOpenLink(session.delegatedFrom)) {
     const source = sourceOf(session, sessions);
     if (source !== undefined && isBusy(source.id)) {
-      return `${agentNameOf(source.profileId)} is working on ${agentNameOf(session.profileId)}'s report.`;
+      const sourceName = agentNameOf(source.profileId);
+      return isWorkingOnReport === undefined || isWorkingOnReport(source.id, session.id)
+        ? `${sourceName} is working on ${agentNameOf(session.profileId)}'s report.`
+        : `Wait for ${sourceName} to finish.`;
     }
   }
 

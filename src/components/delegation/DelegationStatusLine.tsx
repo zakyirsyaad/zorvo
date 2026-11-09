@@ -4,7 +4,8 @@ import type { DelegationView } from "../../hooks/useDelegation";
 import { Button } from "../ui/Button";
 
 export interface DelegationStatusLineProps {
-  view: DelegationView;
+  /** null while the session is in no delegation: the region stays mounted, empty. */
+  view: DelegationView | null;
   /** Fixes the time since the working turn started, so a test can pin it. */
   now: number;
   onOpen: (sessionId: string) => void;
@@ -41,6 +42,8 @@ export function DelegationStatusLine({
   delegateAgentName,
   hidden = false,
 }: DelegationStatusLineProps) {
+  // Mounted before any delegation, so the first line is announced when it appears.
+  if (view === null) return <div role="status" className="sr-only" />;
   const sessionId = view.otherSessionId;
   const open =
     canAct && sessionId !== null ? (

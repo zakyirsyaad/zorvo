@@ -63,6 +63,8 @@ describe("VerificationBadge", () => {
     ).toBeInTheDocument();
     expect(within(panel).queryByText(/attestation report/i)).toBeNull();
     expect(within(panel).queryByText(/calls signed/i)).toBeNull();
+    expect(within(panel).getByText("Model")).toHaveClass("w-24");
+    expect(within(panel).getByText("Model").parentElement).toHaveClass("py-1.5");
 
     fireEvent.click(
       within(panel).getByRole("button", { name: "Check it yourself in NEAR AI's Verification Center" }),

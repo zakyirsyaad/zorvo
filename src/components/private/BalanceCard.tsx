@@ -148,7 +148,7 @@ export function BalanceCard({
                 ? "Zorvo can't reach the credits server right now. Private sessions keep working while your credits last; top-ups wait until it's back."
                 : privateErrorText(status.balanceError)}
               {lastBalance && (
-                <span className="mt-1 block text-fg-muted">
+                <span className="mt-1 block text-caption text-fg-subtle">
                   {`Last known: ${formatCredits(lastBalance.credits)} · ${when}`}
                 </span>
               )}
@@ -172,7 +172,15 @@ export function BalanceCard({
   return (
     <SettingsGroup heading="Balance">
       <SettingsRow
-        label={<span className={SOLO_AMOUNT}>{formatCredits(credits)}</span>}
+        label={
+          <span className={SOLO_AMOUNT} data-balance-amount="">
+            <span aria-hidden="true">
+              {credits.toLocaleString("en-US")}{" "}
+              <span className="text-sm font-medium tracking-normal text-fg-muted">credits</span>
+            </span>
+            <span className="sr-only">{`${credits.toLocaleString("en-US")} credits`}</span>
+          </span>
+        }
         description={
           isFirstRun ? (
             <>

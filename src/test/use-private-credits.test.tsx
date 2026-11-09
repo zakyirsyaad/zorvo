@@ -148,7 +148,7 @@ describe("usePrivateCredits: top-up flow", () => {
     expect(freshBefore).toBe(0);
 
     await advance(POLL_MS);
-    expect(view.result.current.flow).toEqual({ kind: "credited", credits: 500 });
+    expect(view.result.current.flow).toEqual({ kind: "credited", credits: 500, keyCreated: true });
     const fresh = callsTo("private_status").filter((call) => call.args?.fresh === true);
     expect(fresh).toHaveLength(1);
     expect(view.result.current.status?.balance?.credits).toBe(500);
@@ -165,7 +165,7 @@ describe("usePrivateCredits: top-up flow", () => {
     fake().topupCredits = 650;
     await buy(view, 5);
     await advance(POLL_MS);
-    expect(view.result.current.flow).toEqual({ kind: "credited", credits: 650 });
+    expect(view.result.current.flow).toEqual({ kind: "credited", credits: 650, keyCreated: true });
   });
 
   it.each(["failed", "expired"] as const)("ends polling when the top-up is %s", async (status) => {
@@ -495,7 +495,7 @@ describe("usePrivateCredits: errors and ending a flow", () => {
       await cancelling;
     });
     expect(result).toEqual({ ok: true });
-    expect(view.result.current.flow).toEqual({ kind: "credited", credits: 500 });
+    expect(view.result.current.flow).toEqual({ kind: "credited", credits: 500, keyCreated: true });
   });
 
   it("drops a poll answer that arrives after a cancel", async () => {
@@ -1046,7 +1046,7 @@ describe("usePrivateCredits: notification", () => {
     fake().topupStatuses = ["credited"];
     await buy(view, 5);
     await advance(POLL_MS);
-    expect(view.result.current.flow).toEqual({ kind: "credited", credits: 500 });
+    expect(view.result.current.flow).toEqual({ kind: "credited", credits: 500, keyCreated: true });
   });
 });
 

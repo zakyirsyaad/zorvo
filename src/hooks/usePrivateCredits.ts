@@ -23,7 +23,7 @@ export type TopupFlow =
   /** `openFailed`: the hold exists but the browser did not open; Open again or Cancel. */
   | { kind: 'waiting'; topup: PendingTopup; openFailed?: boolean }
   | { kind: 'paid'; topup: PendingTopup }
-  | { kind: 'credited'; credits: number }
+  | { kind: 'credited'; credits: number; keyCreated?: boolean }
   | { kind: 'failed' | 'expired'; topupId: string }
   | { kind: 'waiting-stock'; topup: PendingTopup }
   | { kind: 'error'; code: string };
@@ -296,7 +296,11 @@ export function usePrivateCredits(): PrivateCredits {
           break;
         case 'credited': {
           const credits = state.credits > 0 ? state.credits : topup.credits;
-          updateFlow(() => ({ kind: 'credited', credits }));
+          updateFlow(() => ({
+            kind: 'credited',
+            credits,
+            ...(status?.device === 'none' ? { keyCreated: true } : {}),
+          }));
           if (!notifiedTopups.current.has(topupId)) {
             notifiedTopups.current.add(topupId);
             notifyCredits(credits);
@@ -310,7 +314,7 @@ export function usePrivateCredits(): PrivateCredits {
           break;
       }
     },
-    [refresh, updateFlow],
+    [refresh, status?.device, updateFlow],
   );
 
   const followed = toppedUp(flow);

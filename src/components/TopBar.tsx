@@ -263,6 +263,7 @@ export function TopBar({
         {title && isPrivate && (
           <Chip
             variant="plain"
+            size="sm"
             icon={<ShieldCheck size={11} aria-hidden="true" />}
             className="bg-surface-2 px-2"
           >

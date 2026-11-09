@@ -110,6 +110,7 @@ export function PrivateCreditsOut({
       <BlockerCard
         label="Private credits"
         title={ownKeyOutTitle(reason, ownKeySaved)}
+        titleDot={reason === "empty" ? "attention" : undefined}
         actions={
           isKeyRefusal ? (
             <>
@@ -180,7 +181,7 @@ export function PrivateCreditsOut({
 
   return (
     <>
-      <BlockerCard label="Private credits" title={creditsOutText(reason)} actions={actions}>
+      <BlockerCard label="Private credits" title={creditsOutText(reason)} titleDot={reason === "empty" ? "attention" : undefined} actions={actions}>
         {reason === "empty" && (
           <p>
             Qwen Code stopped because there are no credits left. Your message is back in the box, ready to send after a

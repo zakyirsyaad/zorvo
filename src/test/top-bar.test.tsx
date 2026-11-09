@@ -258,6 +258,7 @@ describe("TopBar", () => {
     it("puts the Private · TEE chip after a private session's title", () => {
       const { unmount } = render(<TopBar sessionName="Private review" isPrivate />);
       expect(screen.getByText("Private · TEE")).toBeDefined();
+      expect(screen.getByText("Private · TEE")).toHaveClass("h-[22px]");
       unmount();
       render(<TopBar sessionName="Plain review" />);
       expect(screen.queryByText("Private · TEE")).toBeNull();

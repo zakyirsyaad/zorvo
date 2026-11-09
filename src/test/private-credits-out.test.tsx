@@ -297,6 +297,7 @@ describe("a private session that runs out of credits", () => {
     await waitFor(() => expect(prompt().value).toBe("review the payment module"));
     const panel = screen.getByRole("region", { name: "Private credits" });
     expect(panel).toHaveTextContent(RAN_OUT);
+    expect(panel.querySelector(".bg-status-attention")).not.toBeNull();
     expect(panel).toHaveTextContent(
       "Continuing with another agent sends your code to that agent's provider, outside a TEE.",
     );

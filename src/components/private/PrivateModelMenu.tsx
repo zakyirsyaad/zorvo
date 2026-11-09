@@ -1,5 +1,5 @@
 import { ChevronDown } from "lucide-react";
-import { Popover, PopoverHeader, PopoverList, PopoverOption } from "../ui/Popover";
+import { Popover, PopoverHeader, PopoverOption } from "../ui/Popover";
 import { DRAFT_CHIP } from "../composer/chip-style";
 import { modelLabel, perTurnLabel, type ModelPrice } from "../../lib/private-credits";
 import type { PrivateModelChoice } from "../../hooks/usePrivateDraft";
@@ -26,7 +26,7 @@ export function PrivateModelMenu({ models, selected, onSelect, isOpen, onToggle,
       isOpen={isOpen}
       onClose={onClose}
       label={MENU_LABEL}
-      role="dialog"
+      role="listbox"
       side="bottom"
       align="end"
       className="w-90 max-w-[calc(100vw-2rem)]"
@@ -35,7 +35,7 @@ export function PrivateModelMenu({ models, selected, onSelect, isOpen, onToggle,
         <button
           type="button"
           aria-label={`Private model: ${currentLabel}`}
-          aria-haspopup="dialog"
+          aria-haspopup="listbox"
           aria-expanded={isOpen}
           onClick={onToggle}
           className={DRAFT_CHIP}
@@ -46,7 +46,7 @@ export function PrivateModelMenu({ models, selected, onSelect, isOpen, onToggle,
       }
     >
       <PopoverHeader aside="per 1M tokens in / out">Private models · run in a TEE</PopoverHeader>
-      <PopoverList label={MENU_LABEL}>
+      <div>
         {models.map((model) => (
           <PopoverOption
             key={model.id}
@@ -58,7 +58,7 @@ export function PrivateModelMenu({ models, selected, onSelect, isOpen, onToggle,
             {modelLabel(model.id)}
           </PopoverOption>
         ))}
-      </PopoverList>
+      </div>
       <p className="mt-1 border-t border-border px-2 pt-2 pb-1 text-caption text-fg-subtle">
         Claude, GPT and Gemini aren't offered here: they don't run in a TEE. Turn estimates come from real coding
         tasks.

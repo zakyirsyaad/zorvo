@@ -210,6 +210,9 @@ describe("Private mode section: balance", () => {
     readyWith(1240);
     await mount();
     expect(await screen.findByText("1,240 credits")).toBeInTheDocument();
+    const amount = document.querySelector("[data-balance-amount]");
+    expect(amount).toHaveClass("text-[28px]");
+    expect(within(amount as HTMLElement).getByText("credits")).toHaveClass("text-sm");
     expect(screen.getByText("One balance for every private session on this Mac · 260 used so far")).toBeInTheDocument();
     expect(screen.getByText("Key ready")).toBeInTheDocument();
     expect(screen.getByText("Updated just now")).toBeInTheDocument();
@@ -328,20 +331,18 @@ describe("Private mode section: top-up picker", () => {
     await waitFor(() => expect(screen.queryByText("Couldn't load the private models. Try again.")).toBeNull());
   });
 
-  it("shows the low stock line below 2,500 credits", async () => {
+  it("shows the stock line at the heading, with a low-stock note below 2,500 credits", async () => {
     stockWith(PACKAGES, 600);
     await mount();
     expect(await screen.findByText("Stock: 600 credits · more coming soon")).toBeInTheDocument();
-    expect(
-      screen.getByText("Stock is checked before checkout, so you never pay for credits that aren't there."),
-    ).toBeInTheDocument();
   });
 
-  it("shows no stock line when stock is plentiful", async () => {
+  it("shows no low-stock note when stock is plentiful", async () => {
     stockWith();
     await mount();
     await screen.findByRole("radio", { name: /\$5\b/ });
-    expect(screen.queryByText(/Stock:/)).toBeNull();
+    expect(screen.getByText("Stock: 100,000 credits")).toBeInTheDocument();
+    expect(screen.queryByText(/more coming soon/)).toBeNull();
   });
 
   it("picking $10 shows the confirm row and calls nothing", async () => {
@@ -364,7 +365,11 @@ describe("Private mode section: top-up picker", () => {
     expect(callsTo("private_create_topup")[0].args).toEqual({ packageUsd: 10 });
     expect(callsTo("private_open_checkout")).toHaveLength(1);
     expect(screen.getByText("Waiting for your payment")).toBeInTheDocument();
-    expect(screen.getByText("Your 1,000 credits are held for 25 minutes while you pay.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Checkout is open in your browser. Pay $10 in USDC from any chain, a wallet or a card. This updates by itself.",
+      ),
+    ).toBeInTheDocument();
     // The picker is gone while the top-up is followed.
     expect(screen.queryByRole("radiogroup")).toBeNull();
   });
@@ -466,7 +471,11 @@ describe("TopupProgress", () => {
   it("waiting offers Open checkout again and Cancel", async () => {
     const props = renderProgress({ kind: "waiting", topup: TOPUP });
     expect(screen.getByText("Waiting for your payment")).toBeInTheDocument();
-    expect(screen.getByText("Your 1,000 credits are held for 25 minutes while you pay.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Checkout is open in your browser. Pay $10 in USDC from any chain, a wallet or a card. This updates by itself.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText("Checking with PingPay · 1,000 credits held for you for 25 min")).toBeInTheDocument();
     await click(button("Open checkout again"));
     expect(props.onOpenCheckout).toHaveBeenCalledTimes(1);
@@ -478,7 +487,7 @@ describe("TopupProgress", () => {
     renderProgress({ kind: "waiting", topup: TOPUP, openFailed: true });
     expect(screen.getByText("Couldn't open checkout")).toBeInTheDocument();
     expect(screen.getByText("PingPay didn't answer. Nothing was held or charged.")).toBeInTheDocument();
-    expect(screen.getByText("Waiting for your payment")).toBeInTheDocument();
+    expect(screen.queryByText("Waiting for your payment")).toBeNull();
     expect(button("Open checkout again")).toBeInTheDocument();
     expect(button("Cancel")).toBeInTheDocument();
   });
@@ -531,9 +540,25 @@ describe("TopupProgress", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
+  it("after 20 seconds of paid, says the credits are on the way", () => {
+    vi.useFakeTimers();
+    try {
+      renderProgress({ kind: "paid", topup: TOPUP });
+      act(() => vi.advanceTimersByTime(20_000));
+      expect(screen.getByText("Paid. Your 1,000 credits are on the way")).toBeInTheDocument();
+      expect(
+        screen.getByText("NEAR AI is slow to answer right now. Zorvo keeps trying, and you don't need to pay again."),
+      ).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("credited shows the new balance and starts a private session", async () => {
     const props = renderProgress({ kind: "credited", credits: 1000 });
-    expect(screen.getByText("+1,000 credits")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("+1,000 credits");
+    expect(screen.getByRole("status").closest("[class*='border-status-running']")).not.toBeNull();
+    expect(screen.getByRole("status").querySelector("[class*='text-[28px]']")).not.toBeNull();
     expect(screen.getByText("Balance 2,240 credits")).toBeInTheDocument();
     expect(
       screen.getByText(
@@ -544,6 +569,12 @@ describe("TopupProgress", () => {
     expect(props.onDismiss).toHaveBeenCalledTimes(1);
   });
 
+  it("says when the first top-up made the key", () => {
+    renderProgress({ kind: "credited", credits: 1000, keyCreated: true });
+
+    expect(screen.getByText("Key saved in your Keychain · first top-up only")).toBeInTheDocument();
+  });
+
   it("failed says nothing was added and offers Try again", async () => {
     const props = renderProgress({ kind: "failed", topupId: "t1" });
     expect(screen.getByText("Your payment didn't go through")).toBeInTheDocument();
@@ -552,6 +583,7 @@ describe("TopupProgress", () => {
         "No credits were added. If PingPay received part of it, PingPay handles the refund. You can try again, with another chain or a card.",
       ),
     ).toBeInTheDocument();
+    expect(button("Try again").className).toContain("border-border-strong");
     await click(button("Try again"));
     expect(props.onDismiss).toHaveBeenCalledTimes(1);
   });

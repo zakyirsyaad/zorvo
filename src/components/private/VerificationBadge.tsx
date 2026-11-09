@@ -31,8 +31,8 @@ function kindLabel(kind: VerificationKind | undefined): string {
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-center gap-3 border-b border-border py-2 last:border-b-0">
-      <dt className="w-16 shrink-0 text-caption text-fg-muted">{label}</dt>
+    <div className="flex items-center gap-2 border-b border-border py-1.5 last:border-b-0">
+      <dt className="w-24 shrink-0 text-caption text-fg-muted">{label}</dt>
       <dd className="min-w-0 flex-1 text-fg-secondary">{children}</dd>
     </div>
   );
@@ -87,7 +87,7 @@ export function VerificationBadge({ verification, modelId, onOpenUrl }: Verifica
         align="start"
       >
         {verification.state === "verified" ? (
-          <div className="w-64 p-1.5">
+          <div className="flex w-72 flex-col gap-3.5 p-[18px]">
             <div className="flex items-center gap-2 pb-2">
               <ShieldCheck size={14} strokeWidth={1.75} aria-hidden="true" className="text-status-running" />
               <span className="text-ui font-semibold text-fg">Verified in TEE</span>
@@ -116,7 +116,7 @@ export function VerificationBadge({ verification, modelId, onOpenUrl }: Verifica
             </button>
           </div>
         ) : (
-          <div className="w-64 p-1.5">
+          <div className="flex w-72 flex-col gap-3.5 p-[18px]">
             <p className="text-ui-sm text-fg-secondary">{BODY[verification.state]}</p>
           </div>
         )}

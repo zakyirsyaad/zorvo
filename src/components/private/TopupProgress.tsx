@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import type { ActionResult, OpenCheckoutResult, TopupFlow } from "../../hooks/usePrivateCredits";
 import { mayStillBePaid, topupErrorText } from "../../lib/private-flow";
@@ -24,6 +24,10 @@ interface View {
   status?: { text: string; tone?: "run" | "attn"; spinner?: boolean };
   footer?: string;
   primaryLabel?: string;
+  /** The credited card draws its amount at 28px. */
+  amount?: number;
+  /** An amber dot before the title. */
+  titleDot?: boolean;
 }
 
 function StatusLine({ status }: { status: NonNullable<View["status"]> }) {
@@ -45,7 +49,7 @@ function StatusLine({ status }: { status: NonNullable<View["status"]> }) {
 }
 
 /** The words for a flow state. `cannotReopen`: opening the checkout again found no address to open. */
-function viewOf(flow: TopupFlow, balanceCredits: number | null, cannotReopen: boolean): View | null {
+function viewOf(flow: TopupFlow, balanceCredits: number | null, cannotReopen: boolean, paidSlow: boolean): View | null {
   switch (flow.kind) {
     case "idle":
       return null;
@@ -62,29 +66,39 @@ function viewOf(flow: TopupFlow, balanceCredits: number | null, cannotReopen: bo
         return {
           title: "Couldn't open checkout",
           body: "PingPay didn't answer. Nothing was held or charged.",
-          status: { text: "Waiting for your payment", tone: "attn" },
+          titleDot: true,
         };
       }
       return {
         title: "Waiting for your payment",
-        body: `Your ${formatCredits(flow.topup.credits)} are held for 25 minutes while you pay.`,
+        body: `Checkout is open in your browser. Pay $${flow.topup.credits / 100} in USDC from any chain, a wallet or a card. This updates by itself.`,
         status: {
           text: `Checking with PingPay · ${formatCredits(flow.topup.credits)} held for you for 25 min`,
           spinner: true,
         },
       };
     case "paid":
-      return {
-        title: "Payment received",
-        body: `Adding ${formatCredits(flow.topup.credits)} to this Mac. You don't need to do anything.`,
-        status: { text: "Paid · adding credits" },
-        footer:
-          "You can close the browser tab. Zorvo hears about the payment from PingPay, and checks again every 2 minutes in case that message is late.",
-      };
+      return paidSlow
+        ? {
+            title: `Paid. Your ${formatCredits(flow.topup.credits)} are on the way`,
+            body: "NEAR AI is slow to answer right now. Zorvo keeps trying, and you don't need to pay again.",
+          }
+        : {
+            title: "Payment received",
+            body: `Adding ${formatCredits(flow.topup.credits)} to this Mac. You don't need to do anything.`,
+            status: { text: "Paid · adding credits" },
+            footer:
+              "You can close the browser tab. Zorvo hears about the payment from PingPay, and checks again every 2 minutes in case that message is late.",
+          };
     case "credited":
       return {
         title: `+${formatCredits(flow.credits)}`,
-        body: balanceCredits === null ? undefined : `Balance ${formatCredits(balanceCredits)}`,
+        body:
+          balanceCredits === null ? undefined : (
+            <span className="text-fg-secondary">{`Balance ${formatCredits(balanceCredits)}`}</span>
+          ),
+        status: flow.keyCreated ? { text: "Key saved in your Keychain · first top-up only" } : undefined,
+        amount: flow.credits,
         footer:
           "Private sessions use the new credits at once. A notification says so if Zorvo is in the background.",
         primaryLabel: "Start a private session",
@@ -118,6 +132,7 @@ function viewOf(flow: TopupFlow, balanceCredits: number | null, cannotReopen: bo
         return {
           title: "Couldn't open checkout",
           body: "PingPay didn't answer. Nothing was held or charged.",
+          titleDot: true,
         };
       }
       return {
@@ -142,6 +157,16 @@ export function TopupProgress({ flow, balanceCredits, onOpenCheckout, onCancel, 
   const [isCancelling, setIsCancelling] = useState(false);
   const [isReopening, setIsReopening] = useState(false);
   const [lastTopupId, setLastTopupId] = useState<string | null>(null);
+  const [paidSlow, setPaidSlow] = useState(false);
+
+  useEffect(() => {
+    if (flow.kind !== "paid") {
+      setPaidSlow(false);
+      return;
+    }
+    const timer = setTimeout(() => setPaidSlow(true), 20_000);
+    return () => clearTimeout(timer);
+  }, [flow.kind]);
 
   // A new top-up starts with a clean slate: what was true of the last one does not carry over.
   const topupId = "topup" in flow ? flow.topup.topupId : null;
@@ -151,7 +176,7 @@ export function TopupProgress({ flow, balanceCredits, onOpenCheckout, onCancel, 
     setCancelError(null);
   }
 
-  const view = viewOf(flow, balanceCredits, cannotReopen);
+  const view = viewOf(flow, balanceCredits, cannotReopen, paidSlow);
 
   const reopen = async () => {
     // One open at a time: a second press while the first is on its way would open a second tab.
@@ -174,20 +199,38 @@ export function TopupProgress({ flow, balanceCredits, onOpenCheckout, onCancel, 
     if (!result.ok) setCancelError(result.text);
   };
 
+  const isCredited = flow.kind === "credited";
   const isEnded = flow.kind === "credited" || flow.kind === "failed" || flow.kind === "expired" || flow.kind === "error";
   const canReopen = flow.kind === "waiting" && !cannotReopen;
   const canCancel = flow.kind === "opening" || flow.kind === "waiting";
+  const outlinedEnd = isCredited || flow.kind === "failed" || flow.kind === "expired";
 
   return (
     <div
       className={
-        view ? "flex flex-col gap-3.5 rounded-xl border border-border bg-surface-1 p-4" : undefined
+        view
+          ? `flex flex-col gap-3.5 rounded-xl border bg-surface-2 p-[18px] shadow-popover ${
+              isCredited ? "border-status-running" : "border-border"
+            }`
+          : undefined
       }
     >
       <div role="status" className={view ? "flex flex-col gap-1" : "sr-only"}>
         {view && (
           <>
-            <span className="text-ui font-semibold text-fg">{view.title}</span>
+            {view.amount !== undefined ? (
+              <span className="text-[28px] leading-[34px] font-semibold tracking-[-0.02em] text-fg">
+                +{formatCredits(view.amount)}{" "}
+                <span className="text-sm font-medium tracking-normal text-fg-muted">credits</span>
+              </span>
+            ) : (
+              <span className="flex items-center gap-2 text-ui font-semibold text-fg">
+                {view.titleDot && (
+                  <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-status-attention" />
+                )}
+                {view.title}
+              </span>
+            )}
             {view.body && <span className="text-ui text-fg-muted">{view.body}</span>}
             {view.status && <StatusLine status={view.status} />}
           </>
@@ -217,7 +260,7 @@ export function TopupProgress({ flow, balanceCredits, onOpenCheckout, onCancel, 
             </Button>
           )}
           {isEnded && (
-            <Button variant="primary" onClick={onDismiss}>
+            <Button variant={outlinedEnd ? "outline" : "primary"} onClick={onDismiss}>
               {flow.kind === "credited" ? view?.primaryLabel ?? "Done" : "Try again"}
             </Button>
           )}

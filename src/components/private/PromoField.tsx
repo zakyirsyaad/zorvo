@@ -58,7 +58,7 @@ export function PromoField({ redeem, isBlocked, onRedeeming }: PromoFieldProps) 
           <span
             role="status"
             className={`mt-1 flex min-h-4 items-center gap-1.5 ${
-              result?.ok === false ? "text-danger" : "text-fg-muted"
+              result?.ok === false ? "text-fg-secondary" : "text-fg-muted"
             }`}
           >
             {result && (

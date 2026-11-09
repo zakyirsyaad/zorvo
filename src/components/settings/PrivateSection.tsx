@@ -2,7 +2,7 @@ import { useEffect, useId, useState, type Ref } from "react";
 import type { PrivateCredits } from "../../hooks/usePrivateCredits";
 import { useLatest } from "../../hooks/useLatest";
 import { isTopupActive } from "../../lib/private-flow";
-import type { PaymentSource } from "../../lib/private-credits";
+import { formatCredits, type PaymentSource } from "../../lib/private-credits";
 import { privateUsageRows } from "../../lib/private-usage";
 import type { Session } from "../../types";
 import { BalanceCard } from "../private/BalanceCard";
@@ -10,7 +10,7 @@ import { OwnKeySection } from "../private/OwnKeySection";
 import { PromoField } from "../private/PromoField";
 import { RecoveryCard } from "../private/RecoveryCard";
 import { RestoreDialog } from "../private/RestoreDialog";
-import { TopupPicker } from "../private/TopupPicker";
+import { LOW_STOCK_CREDITS, TopupPicker } from "../private/TopupPicker";
 import { TopupProgress } from "../private/TopupProgress";
 import { SettingsGroup, SettingsHeader, SettingsRow } from "./SettingsGroup";
 
@@ -88,7 +88,16 @@ export function PrivateSection({
         agentNameOf={agentNameOf}
         paymentSource={paymentSource}
       />
-      <SettingsGroup heading="Top-up">
+      <SettingsGroup
+        heading="Top-up"
+        meta={
+          credits.stock
+            ? `Stock: ${formatCredits(credits.stock.availableCredits)}${
+                credits.stock.availableCredits < LOW_STOCK_CREDITS ? " · more coming soon" : ""
+              }`
+            : undefined
+        }
+      >
         <div className="border-b border-border p-4">
           {flow.kind === "idle" && (
             <TopupPicker

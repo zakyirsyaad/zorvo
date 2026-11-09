@@ -23,7 +23,7 @@ export interface TopupPickerProps {
 }
 
 /** Below this much stock, the packages may run out: say so before the user picks one. */
-const LOW_STOCK_CREDITS = 2_500;
+export const LOW_STOCK_CREDITS = 2_500;
 const NOT_AVAILABLE = "Not available right now";
 
 function reasonOf(pkg: StockPackage): string | null {
@@ -52,7 +52,7 @@ function PackageOption({ pkg, turns, isChecked, isDisabled, onSelect }: PackageO
       aria-label={label}
       disabled={isDisabled}
       onClick={onSelect}
-      className={`focus-ring relative flex flex-1 flex-col gap-0.5 rounded-xl border bg-surface-2 p-3 text-left disabled:cursor-default disabled:bg-surface-1 ${
+      className={`focus-ring relative flex flex-1 flex-col gap-0.5 rounded-xl border bg-surface-2 p-4 text-left disabled:cursor-default disabled:bg-surface-1 ${
         isChecked ? "border-2 border-fg" : "border-border"
       } ${isDisabled ? "cursor-default" : "cursor-pointer"}`}
     >
@@ -85,20 +85,11 @@ export function TopupPicker({ stock, models, modelsError, stockError, isDisabled
   const model = models?.[0];
   // One message and one retry: the stock is what the user needs first.
   const loadError = stockError ?? modelsError;
-  const isLowStock = stock !== null && stock.availableCredits < LOW_STOCK_CREDITS;
 
   return (
     <div className="flex flex-col gap-3">
       {stock === null && stockError === undefined && <p className="text-ui-sm text-fg-subtle">Loading packages…</p>}
-      {stock !== null && isLowStock && (
-        <div className="flex flex-col gap-1">
-          <p className="text-ui-sm text-fg-secondary">{`Stock: ${formatCredits(stock.availableCredits)} · more coming soon`}</p>
-          <p className="text-ui-sm text-fg-subtle">
-            Stock is checked before checkout, so you never pay for credits that aren't there.
-          </p>
-        </div>
-      )}
-      <div role="radiogroup" aria-label="Package" className="flex flex-wrap gap-2.5">
+      <div role="radiogroup" aria-label="Package" className="flex flex-wrap gap-3">
         {packages.map((pkg) => (
           <PackageOption
             key={pkg.usd}
@@ -123,7 +114,7 @@ export function TopupPicker({ stock, models, modelsError, stockError, isDisabled
         </p>
       )}
       {selected && (
-        <div className="flex items-center gap-4 rounded-xl border border-border bg-surface-1 p-3.5">
+        <div className="flex items-center gap-4 rounded-xl border border-border bg-surface-2 px-4 py-3">
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="text-ui font-medium text-fg">{`${formatCredits(selected.credits)} for $${selected.usd}`}</span>
             <span className="text-ui-sm text-fg-subtle">

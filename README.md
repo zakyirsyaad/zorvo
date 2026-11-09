@@ -1,3 +1,133 @@
+# NEAR HACKATHON: Zorvo Private
+
+Tracks: `privacy` (primary), `open`, `agents`. Branch: `hackathon/near-credits`.
+
+Zorvo Private is an opt-in private mode in Zorvo, an open-source macOS app that hosts coding agents over
+the Agent Client Protocol (ACP). In Private mode Qwen Code runs only on NEAR AI Cloud models that run
+inside a TEE (Intel TDX with NVIDIA confidential computing), not on the user's own account or an
+ordinary cloud endpoint. The user pays with prepaid credits bought with USDC through PingPay. There is no
+sign-up, wallet or email: the balance belongs to the Mac, and a recovery code moves it to another Mac.
+
+<!-- TODO (user): replace this line with a screenshot of the Verified in TEE badge and its popover. -->
+_Add the demo screenshot here: the **Verified in TEE** badge and its popover._
+
+## Role of NEAR
+
+- **Private compute.** Models run in NEAR AI Cloud TEEs (Intel TDX + NVIDIA confidential computing). The
+  app offers only models NEAR AI marks `verifiable: true`; a model that stops being verifiable leaves the
+  list, and a private session is never silently continued on a non-TEE provider.
+- **Signed answers.** Each private answer is checked against NEAR AI's signature over the exact request
+  and response bytes, and the signer is checked against NEAR AI's attestation report. Zorvo does **not**
+  do a DCAP or NRAS hardware check; it verifies the signature and the report's signer address, and links
+  to NEAR AI's Verification Center for the hardware proof itself. A streamed answer is usually signed by
+  NEAR AI's gateway rather than the model's provider key.
+- **The key stays local.** The NEAR AI key is held by a loopback proxy in Zorvo's Rust backend, never by
+  Qwen Code. The agent gets a one-time proxy token; the proxy adds the key and forwards the exact bytes.
+- **USDC on NEAR.** Payments are USDC on NEAR through PingPay, which is built on NEAR Intents. Zorvo
+  creates a checkout on the Credits Worker and opens it in the browser; no card or wallet data reaches
+  Zorvo.
+- **Spend-limited keys.** The Worker creates one NEAR AI key per Mac with a spend limit, and the
+  per-session cap creates a second key with its own limit. NEAR AI's gateway enforces both (`402`), so a
+  cap holds even if Zorvo is closed.
+- **Operator login.** The operator signs in to NEAR AI with NEP-413 through
+  `server/scripts/operator-login.mjs`; the operator's full-access NEAR key stays on the operator's Mac.
+
+## Tracks
+
+- **`privacy` (primary).** Prompts go from the agent to NEAR AI through the local proxy; the Credits
+  Worker never sees a prompt, a completion or the NEAR AI key.
+- **`open`.** Zorvo and the Credits Worker are in this Apache-2.0 repository. The Worker is a plain
+  Cloudflare Worker with one SQLite Durable Object; its contract, operator setup and deploy steps are in
+  [`server/README.md`](server/README.md). Outside Private mode, no API keys are stored in the app; Private
+  mode keeps its keys in the macOS Keychain.
+- **`agents`.** A coding agent spends prepaid credits on private compute through its own spend-limited
+  NEAR AI key. The key's limit is enforced by NEAR AI's gateway (`402`), and a session can also carry a
+  100, 200 or 500-credit cap of its own. An MCP server inside the app lets the agent read its balance and
+  the model prices; it never sees the key or the device secret. Payment is USDC on NEAR through PingPay
+  (NEAR Intents).
+
+## Reproduce
+
+### (a) No Mac needed
+
+1. `pnpm install` → installs the workspace, including `server/`.
+2. `pnpm --filter zorvo-credits-server test` → **396 Vitest tests and 29 Node tests pass**. The suite
+   prints two expected uncaught-exception lines from its own tests and still exits 0.
+3. `curl -s -o - -w '\n%{http_code}\n' https://zorvo-credits-server.zkyxentertain.workers.dev/v1/models`
+   → `{"error":"unauthorized"}` and `401`: the live Worker is up and refuses a request without a device
+   secret.
+4. With a judge code, Node 20 or newer:
+   `node server/scripts/judge-demo.mjs https://zorvo-credits-server.zkyxentertain.workers.dev JUDGE-…`
+   → `Model: Qwen/Qwen3.8-27B-abliterated`, `Kind: provider_tee` (or `gateway`), `Signer: 0x…`, and
+   `Verified: NEAR AI signed the exact request and response, and its attestation names the signer.`
+   The script registers a fresh device, redeems the code, waits for the credit, sends one non-streamed
+   completion, hashes the exact bytes, and checks the signature and attestation report. It never prints
+   the code, the device secret or the key. It asks for `Qwen/Qwen3.8-27B-abliterated`, so that model must
+   be in the Worker's `MODELS` allowlist and deployed.
+
+### (b) On a Mac
+
+Use a Mac with Apple Silicon or Intel; the product's [Requirements](#requirements) sets no separate macOS
+floor, and its Install notes cover macOS 15 and later.
+
+1. `git clone --branch hackathon/near-credits https://github.com/zakyirsyaad/zorvo.git`
+2. `cd zorvo && pnpm install`
+3. `ZORVO_CREDITS_URL=https://zorvo-credits-server.zkyxentertain.workers.dev pnpm tauri dev`
+4. In Settings → Private mode, paste the judge code under **Promo code** and press **Redeem** → the
+   balance shows `+N credits` and the key line says `Key ready`.
+5. Start a Qwen Code draft with the **Private · TEE** chip on, send a prompt → Qwen answers from NEAR AI;
+   the reply carries **Verified in TEE**, and its popover shows the model, the signer and the
+   Verification Center link.
+6. Optional: set **Session limit** to 200 credits in the draft → the composer shows
+   `N of 200 credits this session`, and the Private inspector shows the same with a progress bar.
+
+The judge code is a placeholder here: `JUDGE-…`. The user creates it after M5.
+
+## What existed before, and what the window added
+
+Zorvo predates the hackathon: it is an open-source macOS app that hosts ACP coding agents, and it is not
+on another chain. Everything under Private mode, `server/`, the loopback proxy, signature and attestation
+verification, the credits UI, the own-key path, the secret guard, per-session usage and the per-session
+cap was built from 2026-11-07 onward on this branch. The comparison is
+[`pre-hackathon...hackathon-submission`](https://github.com/zakyirsyaad/zorvo/compare/pre-hackathon...hackathon-submission).
+
+## Disclosures
+
+- **Main libraries.** Cloudflare Workers + Durable Objects, hyper, reqwest, rustls with ring,
+  rustls-platform-verifier, k256, sha3, Tauri and React. The judge script uses `@noble/curves` and
+  `@noble/hashes`.
+- **AI-assisted code.** Parts of this branch were written with Claude Code and Qwen Code under the
+  author's direction and review; the author reviewed and tested every change.
+- **Other projects by the author.** TODO (user): list other projects, or say "none".
+
+## Security and privacy model
+
+- Prompts and completions go from Qwen Code to NEAR AI; the Credits Worker never sees them.
+- The NEAR AI key lives in the Rust backend's loopback proxy. The agent gets a one-time proxy token; the
+  device secret, the NEAR AI key, an own key and a capped session's key live in the macOS Keychain, and
+  no secret is logged or sent to the webview.
+- The Worker stores hashes of device and promo codes, NEAR AI key ids, encrypted operator tokens, and a
+  user key only encrypted for at most 24 hours until it is collected. A leaked database has no usable key
+  or device secret.
+- PingPay webhooks are accepted only with a valid, fresh HMAC signature; the admin route compares its
+  token in constant time.
+- Answer verification checks NEAR AI's signature over the exact bytes and the signer in its attestation
+  report. It is not a DCAP/NRAS hardware verification; that proof is at NEAR AI's Verification Center.
+
+## Known limits
+
+- The operator restocks NEAR AI by hand; credits are custodial and non-refundable.
+- Qwen Code is the only agent that can run privately for now, and Zorvo is macOS only.
+- No DCAP/NRAS check in Zorvo. Streamed answers are usually gateway-signed; an answer cut off before it is
+  signed reads **Not signed**. The live NEAR AI signature and attestation shapes are confirmed at M5; the
+  repo's tests use fixtures until then.
+- A signed session is not a guarantee of model quality or of the provider's policy; it proves which
+  hardware key signed the bytes.
+- The Worker is hosted for the hackathon through 2026-11-25. If it is unreachable, the balance is
+  unavailable and running private sessions keep working while their credits last.
+
+---
+
 <p align="center">
   <img src="docs/assets/zorvo-icon.png" alt="" width="112" height="112">
 </p>

@@ -182,6 +182,13 @@ async function redeem(worker, code) {
     secretHash: sha256Hex(bytesOf(secret)),
   });
   if (!isObject(device) || typeof device.deviceId !== "string") throw new Error("device registration had no id");
+  // Check the allowlist before redeeming: a missing judge model must not spend one of the code's uses.
+  const models = await workerJson(worker, "/v1/models", secret);
+  if (lacksJudgeModel(models)) {
+    throw new Error(
+      `the Worker does not offer ${MODEL}; add it to MODELS and deploy the Worker before judging`,
+    );
+  }
   const promo = await workerJson(worker, "/v1/promo", secret, { code });
   if (!isObject(promo) || typeof promo.topupId !== "string") throw new Error("promo produced no top-up");
   const deadline = Date.now() + TOPUP_WAIT_MS;
@@ -198,12 +205,6 @@ async function redeem(worker, code) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const answer = await workerJson(worker, "/v1/key", secret);
     if (isObject(answer) && typeof answer.key === "string" && answer.key !== "") {
-      const models = await workerJson(worker, "/v1/models", secret);
-      if (lacksJudgeModel(models)) {
-        throw new Error(
-          `the Worker does not offer ${MODEL}; add it to MODELS and deploy the Worker before judging`,
-        );
-      }
       return answer.key;
     }
     if (attempt < 4) await sleep(1_000);

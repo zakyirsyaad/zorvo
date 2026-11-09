@@ -880,7 +880,7 @@ export class Ledger extends DurableObject<Env> {
       const row = sessionRow(this.sql, sessionId);
       if (!row || row.device_id !== deviceId) return { error: "not_found" as const };
       if (this.isRecovering(deviceId)) return { error: "recovering" as const };
-      if (row.status !== "active" || !Number.isSafeInteger(credits) || credits !== row.cap_credits * 2) {
+      if (row.status !== "active" || !Number.isSafeInteger(credits)) {
         return { error: "bad_request" as const };
       }
       const device = this.sql
@@ -890,6 +890,25 @@ export class Ledger extends DurableObject<Env> {
         )
         .toArray()[0];
       if (!device?.nearai_key_id || row.nearai_key_id === null) return { error: "insufficient" as const };
+      if (credits === row.cap_credits) {
+        // A previous raise recorded this cap and lowered the device key, then the session-key
+        // PATCH failed. Retry only that PATCH: the device key already holds the difference, and
+        // lowering it again would take the same room twice.
+        const capNano = BigInt(row.cap_nano);
+        try {
+          await this.withAccessToken(now, (access) =>
+            this.nearAi().setSpendLimit(access, cfg.workspaceId, row.nearai_key_id!, capNano),
+          );
+        } catch (error) {
+          console.error(`Raising the key of private session ${sessionId} failed again: ${describeError(error)}`);
+          return { error: "upstream" as const };
+        }
+        this.ctx.storage.transactionSync(() => recordKeyLimit(this.sql, row.nearai_key_id!, capNano));
+        return { cap: row.cap_credits };
+      }
+      if (credits !== row.cap_credits * 2) {
+        return { error: "bad_request" as const };
+      }
       let liveUsage: bigint;
       try {
         liveUsage = await this.liveDeviceUsage(device.nearai_key_id, now);

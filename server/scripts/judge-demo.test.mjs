@@ -5,6 +5,8 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -193,6 +195,49 @@ describe("the judge model allowlist", () => {
     assert.equal(lacksJudgeModel([{ id: "Qwen/Qwen3.8-27B" }]), true);
     assert.equal(lacksJudgeModel([{ id: "Qwen/Qwen3.8-27B-abliterated" }]), false);
     assert.equal(lacksJudgeModel(null), false);
+  });
+});
+
+describe("the judge allowlist check", () => {
+  it("checks the Worker's model list before redeeming the code", async () => {
+    /** @type {string[]} */
+    const requests = [];
+    const server = createServer((request, response) => {
+      requests.push(`${request.method} ${request.url}`);
+      if (request.method === "POST" && request.url === "/v1/devices") {
+        response.writeHead(201, { "content-type": "application/json" });
+        response.end(JSON.stringify({ deviceId: "dev-1" }));
+        return;
+      }
+      if (request.method === "GET" && request.url === "/v1/models") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify([{ id: "Qwen/Qwen3.8-27B" }]));
+        return;
+      }
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: "unexpected" }));
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    if (address === null || typeof address === "string") throw new Error("the test server has no port");
+    const base = `http://127.0.0.1:${address.port}`;
+
+    try {
+      await run(process.execPath, [CLI, base, "JUDGE-secret"]);
+      assert.fail("the CLI should have exited 1");
+    } catch (failure) {
+      const { code, stdout, stderr } = /** @type {{ code: number, stdout: string, stderr: string }} */ (failure);
+      assert.equal(code, 1);
+      assert.match(stderr, /does not offer Qwen\/Qwen3\.8-27B-abliterated/);
+      assert.doesNotMatch(stderr, /JUDGE-secret/);
+      assert.equal(stdout, "");
+    } finally {
+      server.close();
+      await once(server, "close");
+    }
+
+    assert.equal(requests.includes("POST /v1/promo"), false, "the code was not spent");
   });
 });
 

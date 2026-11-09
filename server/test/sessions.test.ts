@@ -345,6 +345,26 @@ describe("raising a cap", () => {
     expect((await limits(deviceId)).expected).toBe(raisedTarget);
   });
 
+  it("retries the session key's PATCH when the cap is already recorded", async () => {
+    const { deviceId, secret, keyId, limit } = await deviceWithKey();
+    const { body } = await create(secret, CAP);
+    const id = body.sessionId!;
+    const row = (await sql((s) => sessionRows(s, deviceId)))[0]!;
+    harness.near.failPatchFor.add(row.nearai_key_id!);
+
+    expect((await raise(secret, id, 200)).response.status).toBe(502);
+    const deviceTarget = limit - spendLimitNano(200, cfg);
+
+    harness.near.failPatchFor.delete(row.nearai_key_id!);
+    const retried = await raise(secret, id, 200);
+
+    expect(retried.response.status).toBe(200);
+    expect(retried.body).toEqual({ cap: 200 });
+    expect(harness.near.keys.get(row.nearai_key_id!)?.limitNano).toBe(spendLimitNano(200, cfg));
+    expect(harness.near.keys.get(keyId)?.limitNano).toBe(deviceTarget);
+    expect((await sql((s) => sessionRows(s, deviceId)))[0]!.cap_credits).toBe(200);
+  });
+
   it("reverts the cap when the device key's PATCH fails first", async () => {
     const { deviceId, secret, keyId, limit } = await deviceWithKey();
     const { body } = await create(secret, CAP);
@@ -363,7 +383,7 @@ describe("raising a cap", () => {
     const { secret } = await deviceWithKey();
     const { body } = await create(secret, CAP);
     const id = body.sessionId!;
-    for (const credits of [100, 150, 300, 0, 1.5]) {
+    for (const credits of [50, 150, 300, 0, 1.5]) {
       const result = await raise(secret, id, credits);
       expect(result.response.status).toBe(400);
       expect(result.body).toEqual({ error: "bad_request" });

@@ -85,6 +85,30 @@ describe("ToolCallList", () => {
     expect(row.querySelector(".lucide-clock")).not.toBeNull();
   });
 
+  it("matches the credits row through the zorvo-credits server prefix only", () => {
+    const tool = {
+      id: "mcp-prefixed",
+      status: "completed" as const,
+      kind: "fetch" as const,
+      details: [{ kind: "text" as const, text: "52 credits left" }],
+    };
+    render(
+      <ToolCallList
+        tools={[
+          { ...tool, name: "zorvo-credits__credits_balance" },
+          { ...tool, id: "mcp-foreign", name: "other-server__credits_balance" },
+        ]}
+        defaultOpenDiffs={false}
+        isTurnOver
+      />,
+    );
+
+    const ours = screen.getByRole("button", { name: /Checked/ });
+    expect(within(ours).getByText("Checked")).toBeTruthy();
+    const foreign = screen.getByRole("button", { name: /other-server__credits_balance/ });
+    expect(within(foreign).queryByText("Checked")).toBeNull();
+  });
+
   it("shows the verb, the target and the status word", () => {
     render(<ToolCallList tools={[{ ...editTool, locations: ["src/app.ts"] }]} defaultOpenDiffs={false} isTurnOver />);
     const row = screen.getByRole("button", { name: /Edited/ });

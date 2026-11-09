@@ -205,6 +205,29 @@ fn forks_into_a_new_app_session_on_the_same_agent() {
 }
 
 #[test]
+fn a_native_fork_passes_the_sources_mcp_servers() {
+    let (manager, _rx) = manager();
+    let log = method_log("mcp-fork");
+    let mut launch = with_env(fake_agent(), "FAKE_ACP_MCP_LOG", log.to_str().unwrap());
+    launch.private = true;
+    launch.mcp_servers = vec![json!({
+        "name": "zorvo-credits",
+        "command": "node",
+        "args": ["mcp.mjs"],
+    })];
+    manager.start("s-1", &cwd(), &launch).unwrap();
+
+    manager.fork("s-1", "s-2", &cwd()).expect("fork");
+
+    let servers = mcp_servers_in(&log);
+    assert_eq!(servers.len(), 2, "{servers:?}");
+    assert_eq!(servers[0], servers[1]);
+    assert_eq!(servers[1][0]["name"], "zorvo-credits");
+    manager.stop("s-1");
+    manager.stop("s-2");
+}
+
+#[test]
 fn refuses_to_fork_when_the_agent_cannot() {
     let (manager, _rx) = manager();
     let launch = with_env(fake_agent(), "FAKE_ACP_NO_FORK", "1");
@@ -871,6 +894,16 @@ fn methods_in(path: &std::path::Path) -> Vec<String> {
         .unwrap_or_default()
         .lines()
         .map(str::to_string)
+        .collect()
+}
+
+/// The `mcpServers` each session/new, load, resume or fork carried, in order.
+fn mcp_servers_in(path: &std::path::Path) -> Vec<Vec<Value>> {
+    std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| line.split_once(' '))
+        .filter_map(|(_, servers)| serde_json::from_str(servers).ok())
         .collect()
 }
 

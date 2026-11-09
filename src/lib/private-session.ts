@@ -22,6 +22,24 @@ export function creditsOutText(reason: CreditsOutReason): string {
   return PRIVATE_KEY_STOPPED;
 }
 
+/** The title of an own-key session's refusal; a removed key reads differently from one NEAR AI refused. */
+export function ownKeyOutTitle(reason: CreditsOutReason, saved: boolean): string {
+  if (reason === 'empty') return 'Your NEAR AI key ran out of credits';
+  if (reason === 'key') return saved ? "Your NEAR AI key wasn't accepted" : 'Your NEAR AI key was removed';
+  return creditsOutText(reason);
+}
+
+/** The one-line note for an own-key session's refusal, in the composer and the status line. */
+export function ownKeyOutText(reason: CreditsOutReason, saved: boolean): string {
+  if (reason === 'empty') return 'Your NEAR AI key ran out of credits. Add credits in your NEAR AI dashboard.';
+  if (reason === 'key') {
+    return saved
+      ? "Your NEAR AI key wasn't accepted. Add it again in Settings → Private mode."
+      : 'Your NEAR AI key was removed. Add it again in Settings → Private mode.';
+  }
+  return creditsOutText(reason);
+}
+
 /** The private model a session runs on; undefined for an ordinary session. */
 export function privateModelIdOf(session: Pick<Session, 'privateMode'>): string | undefined {
   return session.privateMode?.modelId;

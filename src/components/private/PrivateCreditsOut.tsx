@@ -1,6 +1,6 @@
 import { useId, useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
-import { creditsOutText, type CreditsOutReason } from "../../lib/private-session";
+import { creditsOutText, ownKeyOutText, ownKeyOutTitle, type CreditsOutReason } from "../../lib/private-session";
 import type { PaymentSource } from "../../lib/private-credits";
 import { BlockerCard } from "../ui/BlockerCard";
 import { Button } from "../ui/Button";
@@ -27,6 +27,8 @@ export interface PrivateCreditsOutProps {
   onRaise?: () => void;
   isRaising?: boolean;
   paymentSource?: PaymentSource;
+  /** Whether the user's own key is still in the Keychain; false makes a key refusal read as removed. */
+  ownKeySaved?: boolean;
   onSwitchToCredits?: () => void;
   onOpenDashboard?: () => void;
 }
@@ -38,13 +40,19 @@ export interface PrivateCreditsOutProps {
 export function PrivateCreditsOutStatus({
   reason,
   paymentSource = "credits",
+  ownKeySaved = true,
 }: {
   reason: CreditsOutReason | undefined;
   paymentSource?: PaymentSource;
+  ownKeySaved?: boolean;
 }) {
   return (
     <p role="status" className="sr-only">
-      {reason ? (paymentSource === "ownKey" ? "Your NEAR AI key ran out of credits." : creditsOutText(reason)) : ""}
+      {reason
+        ? paymentSource === "ownKey"
+          ? ownKeyOutText(reason, ownKeySaved)
+          : creditsOutText(reason)
+        : ""}
     </p>
   );
 }
@@ -63,6 +71,7 @@ export function PrivateCreditsOut({
   onRaise,
   isRaising = false,
   paymentSource = "credits",
+  ownKeySaved = true,
   onSwitchToCredits,
   onOpenDashboard,
 }: PrivateCreditsOutProps) {
@@ -96,29 +105,56 @@ export function PrivateCreditsOut({
   }
 
   if (paymentSource === "ownKey") {
+    const isKeyRefusal = reason === "key";
     return (
       <BlockerCard
         label="Private credits"
-        title="Your NEAR AI key ran out of credits"
+        title={ownKeyOutTitle(reason, ownKeySaved)}
         actions={
-          <>
-            <Button variant="ghost" tone="secondary" onClick={onSwitchToCredits}>
-              Switch to Zorvo credits
-            </Button>
-            <Button
-              variant="outline"
-              icon={<ExternalLink size={12} strokeWidth={1.75} aria-hidden="true" />}
-              onClick={onOpenDashboard}
-            >
-              Open NEAR AI dashboard
-            </Button>
-          </>
+          isKeyRefusal ? (
+            <>
+              <Button variant="primary" onClick={onOpenSettings}>
+                Add key
+              </Button>
+              <Button variant="ghost" tone="secondary" onClick={onSwitchToCredits}>
+                Switch to Zorvo credits
+              </Button>
+              <Button
+                variant="outline"
+                icon={<ExternalLink size={12} strokeWidth={1.75} aria-hidden="true" />}
+                onClick={onOpenDashboard}
+              >
+                Open NEAR AI dashboard
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" tone="secondary" onClick={onSwitchToCredits}>
+                Switch to Zorvo credits
+              </Button>
+              <Button
+                variant="outline"
+                icon={<ExternalLink size={12} strokeWidth={1.75} aria-hidden="true" />}
+                onClick={onOpenDashboard}
+              >
+                Open NEAR AI dashboard
+              </Button>
+            </>
+          )
         }
       >
-        <p>
-          NEAR AI turned the request down: your organization has no credits left. Add credits or stake more NEAR in
-          your NEAR AI dashboard, or switch this Mac to Zorvo credits.
-        </p>
+        {isKeyRefusal ? (
+          <p>
+            {ownKeySaved
+              ? "NEAR AI didn't accept this key. Check it or create a new one in your NEAR AI dashboard, then add it in Settings → Private mode."
+              : "You removed this key from Zorvo. Add a key in Settings → Private mode to keep running privately."}
+          </p>
+        ) : (
+          <p>
+            NEAR AI turned the request down: your organization has no credits left. Add credits or stake more NEAR in
+            your NEAR AI dashboard, or switch this Mac to Zorvo credits.
+          </p>
+        )}
         <p className="text-ui-sm text-fg-subtle">Your message is back in the box.</p>
       </BlockerCard>
     );
@@ -235,13 +271,20 @@ export function PrivateCreditsOutLayer({
   sessionId,
   reason,
   paymentSource,
+  ownKeySaved,
   ...panel
 }: PrivateCreditsOutLayerProps) {
   return (
     <>
-      <PrivateCreditsOutStatus reason={reason} paymentSource={paymentSource} />
+      <PrivateCreditsOutStatus reason={reason} paymentSource={paymentSource} ownKeySaved={ownKeySaved} />
       {sessionId && reason && (
-        <PrivateCreditsOut key={sessionId} reason={reason} paymentSource={paymentSource} {...panel} />
+        <PrivateCreditsOut
+          key={sessionId}
+          reason={reason}
+          paymentSource={paymentSource}
+          ownKeySaved={ownKeySaved}
+          {...panel}
+        />
       )}
     </>
   );

@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use super::billing::OfflineBilling;
+use super::billing::{BillingApi, CostAnswer, KeyCheck, OfflineBilling};
 use super::client::{
     Balance, CreatedSession, CreatedTopup, CreditsApi, ModelPrice, PromoResult, Stock, TopupState,
 };
@@ -457,6 +457,19 @@ fn scratch_dir() -> PathBuf {
     ))
 }
 
+/// A billing client that answers a key check with a fixed result.
+pub(crate) struct CheckBilling(pub(crate) KeyCheck);
+
+impl BillingApi for CheckBilling {
+    fn costs(&self, _: &str, _: &[String]) -> Result<CostAnswer, PrivateError> {
+        Err(PrivateError::Unreachable)
+    }
+
+    fn check_key(&self, _: &str) -> Result<KeyCheck, PrivateError> {
+        Ok(self.0)
+    }
+}
+
 /// A `PrivateMode` over a `TestStore`, a `FakeCredits`, a scratch dir (removed
 /// on drop) and an opener that records every URL it is given.
 pub(crate) struct Harness {
@@ -470,6 +483,15 @@ pub(crate) struct Harness {
 
 impl Harness {
     pub(crate) fn new() -> Self {
+        Self::with_billing(Arc::new(OfflineBilling))
+    }
+
+    /// A harness whose key checks answer `check` instead of the offline error.
+    pub(crate) fn with_key_check(check: KeyCheck) -> Self {
+        Self::with_billing(Arc::new(CheckBilling(check)))
+    }
+
+    fn with_billing(billing: Arc<dyn BillingApi>) -> Self {
         let store = Arc::new(TestStore::default());
         let api = Arc::new(FakeCredits::default());
         let opened = Arc::new(Mutex::new(Vec::new()));
@@ -491,7 +513,7 @@ impl Harness {
             }),
             Arc::clone(&proxy),
             PrivateVerifier::with_retry("http://127.0.0.1:1/v1", Duration::ZERO),
-            Arc::new(OfflineBilling),
+            billing,
         );
         Self {
             mode,

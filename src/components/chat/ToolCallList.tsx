@@ -70,8 +70,10 @@ const ROW = "flex h-7.5 w-full items-center gap-2 px-3 text-left text-ui-sm text
 function ToolRow({ tool, isTurnOver, isOpen }: { tool: ToolExecution; isTurnOver: boolean; isOpen?: boolean }) {
   const Chevron = isOpen ? ChevronDown : ChevronRight;
   // The MCP credits check is a read in words, not the agent's own fetch: the canvas draws a clock,
-  // the verb Checked and the result's first line at the right.
-  const isCredits = tool.name.trim().toLowerCase().endsWith("credits_balance");
+  // the verb Checked and the result's first line at the right. Agents may prefix the tool with the
+  // `zorvo-credits` server name, so match that spelling too (and only that server's tool).
+  const name = tool.name.trim().toLowerCase();
+  const isCredits = name === "credits_balance" || /^(?:mcp__)?zorvo-credits[_-]+credits_balance$/.test(name);
   const Icon = isCredits ? Clock : (tool.kind && KIND_ICONS[tool.kind]) || Wrench;
   const { verb, target } = isCredits ? { verb: "Checked", target: "credits_balance" } : toolRow(tool);
   const creditsLine = isCredits

@@ -1,11 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { privateModelIdOf, privateOpenError, withoutModelChanges } from "../lib/private-session";
+import {
+  ownKeyOutText,
+  ownKeyOutTitle,
+  privateModelIdOf,
+  privateOpenError,
+  withoutModelChanges,
+} from "../lib/private-session";
 import type { AcpOptions } from "../hooks/useAcpSessions";
 
 describe("privateModelIdOf", () => {
   it("is the model of a private session and undefined for any other", () => {
     expect(privateModelIdOf({ privateMode: { modelId: "Qwen/Qwen3.8-27B" } })).toBe("Qwen/Qwen3.8-27B");
     expect(privateModelIdOf({})).toBeUndefined();
+  });
+});
+
+describe("own-key refusals", () => {
+  it("tells credits, a refused key and a removed key apart", () => {
+    expect(ownKeyOutTitle("empty", true)).toBe("Your NEAR AI key ran out of credits");
+    expect(ownKeyOutTitle("key", true)).toBe("Your NEAR AI key wasn't accepted");
+    expect(ownKeyOutTitle("key", false)).toBe("Your NEAR AI key was removed");
+    expect(ownKeyOutText("empty", true)).toContain("Add credits in your NEAR AI dashboard.");
+    expect(ownKeyOutText("key", true)).toContain("Add it again in Settings → Private mode.");
+    expect(ownKeyOutText("key", false)).toContain("Your NEAR AI key was removed.");
   });
 });
 

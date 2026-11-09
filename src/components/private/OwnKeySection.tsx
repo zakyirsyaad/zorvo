@@ -53,6 +53,7 @@ export function OwnKeySection({ credits, paymentSource, onPaymentSourceChange }:
   const [check, setCheck] = useState<CheckState>("idle");
   const [isSaving, setIsSaving] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const labelId = useId();
   const status = credits.status?.ownKey;
@@ -108,10 +109,13 @@ export function OwnKeySection({ credits, paymentSource, onPaymentSourceChange }:
   const remove = async () => {
     if (isRemoving) return;
     setIsRemoving(true);
+    setRemoveError(null);
     try {
       await invoke("private_remove_own_key");
       await credits.refresh(true);
       if (paymentSource === "ownKey") onPaymentSourceChange("credits");
+    } catch {
+      setRemoveError("Couldn't remove the key from your Keychain. Try again.");
     } finally {
       setIsRemoving(false);
     }
@@ -140,6 +144,11 @@ export function OwnKeySection({ credits, paymentSource, onPaymentSourceChange }:
                 Remove key
               </Button>
             </div>
+            {removeError && (
+              <span role="alert" className="text-ui-sm text-danger">
+                {removeError}
+              </span>
+            )}
             <div className="flex items-center gap-3">
               <span id={labelId} className="text-ui text-fg">
                 Private sessions pay with

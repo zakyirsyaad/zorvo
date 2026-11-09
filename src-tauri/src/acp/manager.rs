@@ -160,6 +160,8 @@ struct SessionEntry {
     /// The ids, lower-cased, of the options the agent reported in the `model`
     /// category, which a private session refuses to change.
     model_options: Vec<String>,
+    /// The MCP servers the session was opened with; a native fork passes the same ones.
+    mcp_servers: Vec<serde_json::Value>,
 }
 
 /// What opening a session learned that its entry keeps: the sign-in methods
@@ -167,6 +169,7 @@ struct SessionEntry {
 struct EntryTraits {
     auth_methods: Value,
     private: bool,
+    mcp_servers: Vec<serde_json::Value>,
 }
 
 #[derive(Default)]
@@ -303,6 +306,7 @@ impl AcpManager {
         let traits = EntryTraits {
             auth_methods,
             private: launch.private,
+            mcp_servers: launch.mcp_servers.clone(),
         };
         self.register(
             app_session_id,
@@ -369,6 +373,7 @@ impl AcpManager {
                     EntryTraits {
                         auth_methods: e.auth_methods.clone(),
                         private: e.private,
+                        mcp_servers: e.mcp_servers.clone(),
                     },
                 )
             })?;
@@ -380,7 +385,7 @@ impl AcpManager {
         let response = connection
             .request_raw_with(
                 "session/fork",
-                json!({ "sessionId": acp_id, "cwd": cwd, "mcpServers": [] }),
+                json!({ "sessionId": acp_id, "cwd": cwd, "mcpServers": traits.mcp_servers.clone() }),
                 SESSION_REQUEST_TIMEOUT,
                 self.route_on_answer(connection_key, new_app_id, None, false, false),
             )?
@@ -682,6 +687,7 @@ impl AcpManager {
                     cwd: PathBuf::from(cwd),
                     private: traits.private,
                     model_options: model_option_ids(&started.config_options),
+                    mcp_servers: traits.mcp_servers,
                 },
             );
         }

@@ -5,7 +5,6 @@ import {
   formatCredits,
   LOW_BALANCE_CREDITS,
   modelLabel,
-  type PaymentSource,
   type PrivateStatus,
 } from "../../lib/private-credits";
 import { formatUsageCredits, usageLead, usageUsd } from "../../lib/private-usage";
@@ -24,7 +23,6 @@ export interface PrivateInspectorProps {
   credits: Pick<PrivateCredits, "status" | "models">;
   /** The session's replies, to count its turns and verified answers. */
   messages?: ChatMessage[];
-  paymentSource?: PaymentSource;
   onTopUp: () => void;
   onOpenUrl: (url: string) => void;
 }
@@ -52,7 +50,6 @@ export function PrivateInspector({
   session,
   credits,
   messages = [],
-  paymentSource = "credits",
   onTopUp,
   onOpenUrl,
 }: PrivateInspectorProps) {
@@ -73,7 +70,7 @@ export function PrivateInspector({
   const average =
     turns > 0 && session.privateUsage !== undefined ? formatUsageCredits(usage.credits / turns) : "—";
 
-  if (paymentSource === "ownKey") {
+  if (session.privateMode?.ownKey === true) {
     return (
       <aside aria-label="Private panel" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui text-fg-secondary">
         <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-5">

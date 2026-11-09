@@ -635,6 +635,25 @@ fn a_private_session_without_a_key_asks_for_credits() {
 }
 
 #[test]
+fn an_own_key_session_whose_key_was_removed_asks_for_the_key_not_credits() {
+    let harness = Harness::new();
+    harness.mode.models().expect("cache the catalog");
+
+    let err = super::session_launch(
+        "s1",
+        || Ok(plain_launch(&[])),
+        &harness.mode,
+        "qwen-code",
+        Some("Qwen/Qwen3.8-27B"),
+        true,
+        None,
+    )
+    .unwrap_err();
+
+    assert_eq!(err, "PRIVATE_CREDITS:{\"reason\":\"key\"}");
+}
+
+#[test]
 fn a_private_session_never_falls_back_to_a_plain_launch() {
     let harness = harness_with_key();
     harness.api.models.always(Err(PrivateError::Unreachable));

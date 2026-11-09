@@ -172,6 +172,32 @@ impl TokenTable {
             _ => None,
         }
     }
+
+    /// Drops every token that spends the user's own key, with all its holders. The key is gone
+    /// from the Keychain, so a running session must not keep using a token that still holds it.
+    fn revoke_own_key(&mut self) -> Vec<String> {
+        let revoked: Vec<String> = self
+            .by_token
+            .iter()
+            .filter(|(_, entry)| entry.own_key)
+            .map(|(token, _)| token.clone())
+            .collect();
+        for token in &revoked {
+            let Some(entry) = self.by_token.remove(token) else {
+                continue;
+            };
+            for holder in entry.holders {
+                if self.by_session.get(&holder) == Some(token) {
+                    self.by_session.remove(&holder);
+                }
+                if self.last_by_session.get(&holder) == Some(token) {
+                    self.last_by_session.remove(&holder);
+                }
+                self.last_key_by_session.remove(&holder);
+            }
+        }
+        revoked
+    }
 }
 
 fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
@@ -327,6 +353,15 @@ impl ProxyServer {
         lock(&self.state.tokens).share(source, fork)
     }
 
+    /// Drops every own-key token and its records; a running own-key session stops working at once.
+    pub(super) fn revoke_own_key(&self) {
+        let revoked = lock(&self.state.tokens).revoke_own_key();
+        let mut records = lock(&self.state.records);
+        for token in revoked {
+            records.remove(&token);
+        }
+    }
+
     /// The records of the token this session holds, whether it owns it or forked it.
     pub(super) fn records(&self, app_session_id: &str) -> Vec<super::ProxyRecord> {
         let Some(token) = lock(&self.state.tokens).token_of(app_session_id) else {
@@ -467,5 +502,27 @@ mod tests {
         let mut table = TokenTable::default();
         assert!(!table.share("plain", "fork"));
         assert!(table.token_of("fork").is_none());
+    }
+
+    #[test]
+    fn revoking_own_key_tokens_leaves_credits_tokens_and_drops_every_holder() {
+        let mut table = TokenTable::default();
+        let own = table
+            .issue("own", "model", "own-key", true)
+            .expect("own token");
+        assert!(table.share("own", "own-fork"));
+        let credits = table
+            .issue("credits", "model", "credits-key", false)
+            .expect("credits token");
+
+        let revoked = table.revoke_own_key();
+
+        assert_eq!(revoked, vec![own.clone()]);
+        assert!(table.find(&own).is_none());
+        assert!(table.token_of("own").is_none());
+        assert!(table.token_of("own-fork").is_none());
+        assert!(table.key_of("own").is_none());
+        assert!(table.find(&credits).is_some());
+        assert_eq!(table.key_of("credits").as_deref(), Some("credits-key"));
     }
 }

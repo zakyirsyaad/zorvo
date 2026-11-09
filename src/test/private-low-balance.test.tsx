@@ -87,13 +87,24 @@ describe("the private low balance row", () => {
     expect(await screen.findByRole("heading", { name: "Private mode" })).toBeInTheDocument();
   });
 
-  it("says nothing while the user pays with their own key", async () => {
+  it("says nothing while the session pays with the user's own key", async () => {
+    setStatus(49, 1240);
+    fakePrivate().models = [{ id: MODEL_ID, inputPerM: 0, outputPerM: 100 }];
+    fakeStore().state.sessions = [{ ...SESSION, privateMode: { modelId: MODEL_ID, ownKey: true } }];
+    await act(async () => {
+      render(<App />);
+    });
+
+    expect(screen.queryByText(/49 credits left/)).toBeNull();
+  });
+
+  it("still warns a credits session when the setting only changes new drafts", async () => {
     setStatus(49, 1240);
     fakePrivate().models = [{ id: MODEL_ID, inputPerM: 0, outputPerM: 100 }];
     fakeStore().state.settings.paymentSource = "ownKey";
     await renderApp();
 
-    expect(screen.queryByText(/49 credits left/)).toBeNull();
+    expect(await screen.findByText(/49 credits left/)).toBeInTheDocument();
   });
 
   it("says nothing when only the last known balance is low", async () => {

@@ -845,11 +845,17 @@ export default function App() {
   const updateSettings = (patch: Partial<Settings>) =>
     updateState((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } }));
 
+  // The setting decides a new draft; a running session keeps the key it was launched with.
+  const activeIsOwnKey = activeSession?.privateMode
+    ? activeSession.privateMode.ownKey === true
+    : state.settings.paymentSource === "ownKey";
+  const ownKeySaved = privateCredits.status?.ownKey?.saved !== false;
+
   usePrivateLowBalanceNotice({
     credits: privateCredits.status?.balance?.credits ?? null,
     notified: state.settings.privateLowBalanceNotified === true,
     onNotified: (notified) => updateSettings({ privateLowBalanceNotified: notified }),
-    isOwnKey: state.settings.paymentSource === "ownKey",
+    isOwnKey: activeIsOwnKey,
   });
 
   const handleOnboardingComplete = ({ defaultAgentId, folder }: OnboardingResult) => {
@@ -1108,12 +1114,12 @@ export default function App() {
   const privateSessionLine =
     activeSession &&
     privateSessionCap !== undefined &&
-    state.settings.paymentSource !== "ownKey"
+    !activeIsOwnKey
       ? `${Math.floor(activeSession.privateUsage?.credits ?? 0)} of ${privateSessionCap} credits this session`
       : undefined;
   const livePrivateCredits = privateCredits.status?.balance?.credits;
   const privateLowNote =
-    isPrivateLaunch && state.settings.paymentSource !== "ownKey" && livePrivateCredits !== undefined
+    isPrivateLaunch && !activeIsOwnKey && livePrivateCredits !== undefined
       ? lowBalanceNote(livePrivateCredits, privateModel)
       : undefined;
   const composerNoteText = composerNote({
@@ -1399,7 +1405,8 @@ export default function App() {
                       onNewSession={handleNewPrivateSession}
                       onRaise={() => void handleRaisePrivateCap()}
                       isRaising={isRaisingPrivateCap}
-                      paymentSource={state.settings.paymentSource ?? "credits"}
+                      paymentSource={activeIsOwnKey ? "ownKey" : "credits"}
+                      ownKeySaved={ownKeySaved}
                       onSwitchToCredits={() => {
                         updateSettings({ paymentSource: "credits" });
                         if (activeSession) privateCredits.clearCreditsOut(activeSession.id);
@@ -1643,7 +1650,6 @@ export default function App() {
                     session={activeSession}
                     credits={privateCredits}
                     messages={currentMessages}
-                    paymentSource={state.settings.paymentSource ?? "credits"}
                     onTopUp={() => settingsPage.open("private")}
                     onOpenUrl={openLink}
                   />

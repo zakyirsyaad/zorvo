@@ -725,7 +725,15 @@ impl PrivateMode {
     /// Checks a pasted key with NEAR AI. A 402 means the organization has no credits; it is still a
     /// usable key and may be saved. The key is never logged.
     pub fn check_own_key(&self, key: &str) -> Result<KeyCheck, PrivateError> {
-        self.billing.check_key(key)
+        let check = self.billing.check_key(key)?;
+        // Re-checking the key already saved refreshes the warning without a second save.
+        if matches!(self.store.get(OWN_KEY), Ok(Some(saved)) if saved == key) {
+            self.change_state(|old| LocalState {
+                own_key_no_credits: check == KeyCheck::NoCredits,
+                ..old
+            });
+        }
+        Ok(check)
     }
 
     /// Saves the own key after NEAR AI accepted it (including a 402), and records the date and
@@ -753,6 +761,9 @@ impl PrivateMode {
     /// Removes the own key and its local status; the Zorvo credits key is untouched.
     pub fn remove_own_key(&self) -> Result<(), PrivateError> {
         self.store.delete(OWN_KEY)?;
+        // A running own-key session holds a proxy token, not the key; revoke those tokens so no
+        // turn can spend the key after it was removed.
+        self.proxy.revoke_own_key();
         self.change_state(|old| LocalState {
             own_key_added_at: None,
             own_key_no_credits: false,

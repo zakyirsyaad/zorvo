@@ -470,6 +470,39 @@ async fn a_fork_keeps_working_and_shares_records_when_the_source_stops() {
 }
 
 #[tokio::test]
+async fn removing_the_own_key_revokes_its_tokens_but_not_credits_tokens() {
+    let reply = br#"{"id":"chat-key","object":"chat.completion","choices":[]}"#;
+    let fake = FakeUpstream::start(move |_request, stream| {
+        respond(stream, "200 OK", "application/json", reply);
+    });
+    let proxy = PrivateProxy::with_upstream(fake.base());
+    let own = proxy
+        .issue(SESSION, MODEL, "own-key", true)
+        .expect("own token");
+    let credits = proxy
+        .issue("app-session-credits", MODEL, KEY, false)
+        .expect("credits token");
+    let body = br#"{"model":"Qwen/Qwen3.8-27B","messages":[]}"#.to_vec();
+
+    proxy.revoke_own_key();
+
+    assert_eq!(
+        chat_response(&own.base_url, &own.token, body.clone())
+            .await
+            .status(),
+        401,
+        "the removed key's token stops working"
+    );
+    assert_eq!(
+        chat_response(&credits.base_url, &credits.token, body)
+            .await
+            .status(),
+        200,
+        "a Zorvo credits token is untouched"
+    );
+}
+
+#[tokio::test]
 async fn a_stopped_session_keeps_its_last_tokens_records_until_forgotten() {
     let reply = br#"{"id":"chat-last","object":"chat.completion","choices":[]}"#;
     let fake = FakeUpstream::start(move |_request, stream| {

@@ -196,10 +196,9 @@ describe("PrivateInspector", () => {
     ] satisfies ChatMessage[];
     render(
       <PrivateInspector
-        session={{ ...SESSION, privateUsage: { credits: 25.2, estimated: false } }}
+        session={{ ...SESSION, privateMode: { modelId: MODEL_ID, ownKey: true }, privateUsage: { credits: 25.2, estimated: false } }}
         credits={{ status: READY, models: null }}
         messages={messages}
-        paymentSource="ownKey"
         onTopUp={vi.fn()}
         onOpenUrl={vi.fn()}
       />,

@@ -170,6 +170,55 @@ describe("a private session on the user's own key", () => {
     expect(onSwitchToCredits).toHaveBeenCalledTimes(1);
     expect(onOpenDashboard).toHaveBeenCalledTimes(1);
   });
+
+  it("shows the key-was-not-accepted card with a way to add it again", () => {
+    const onOpenSettings = vi.fn();
+    render(
+      <PrivateCreditsOut
+        reason="key"
+        agents={[]}
+        onOpenSettings={onOpenSettings}
+        onContinue={vi.fn()}
+        paymentSource="ownKey"
+        ownKeySaved
+        onSwitchToCredits={vi.fn()}
+        onOpenDashboard={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Your NEAR AI key wasn't accepted")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "NEAR AI didn't accept this key. Check it or create a new one in your NEAR AI dashboard, then add it in Settings → Private mode.",
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add key" }));
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Switch to Zorvo credits" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open NEAR AI dashboard" })).toBeInTheDocument();
+  });
+
+  it("shows the key-was-removed card when no own key is saved", () => {
+    render(
+      <PrivateCreditsOut
+        reason="key"
+        agents={[]}
+        onOpenSettings={vi.fn()}
+        onContinue={vi.fn()}
+        paymentSource="ownKey"
+        ownKeySaved={false}
+        onSwitchToCredits={vi.fn()}
+        onOpenDashboard={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Your NEAR AI key was removed")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "You removed this key from Zorvo. Add a key in Settings → Private mode to keep running privately.",
+      ),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("a capped private session", () => {

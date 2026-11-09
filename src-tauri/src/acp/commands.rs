@@ -210,6 +210,11 @@ fn credits_empty_error() -> String {
     format!("{PRIVATE_CREDITS_PREFIX}{}", json!({ "reason": "empty" }))
 }
 
+/// What an own-key launch reports when the key is no longer in the Keychain.
+fn own_key_missing_error() -> String {
+    format!("{PRIVATE_CREDITS_PREFIX}{}", json!({ "reason": "key" }))
+}
+
 /// The launch of a session: `base()` (today's [`launch_in_workspace`]) for
 /// `None`, byte for byte. For `Some(model)` it is `base()` first (the workspace
 /// and install checks), then a private Qwen Code launch on NEAR AI. Once a
@@ -243,6 +248,7 @@ fn session_launch(
     let issued = private
         .issue_proxy_token(session_id, model_id, own_key)
         .map_err(|error| match error {
+            PrivateError::NoKey | PrivateError::NoDevice if own_key => own_key_missing_error(),
             PrivateError::NoKey | PrivateError::NoDevice => credits_empty_error(),
             other => other.into(),
         })?;

@@ -1034,6 +1034,22 @@ describe("Private mode: your own NEAR AI key", () => {
     expect(callsTo("private_remove_own_key")).toHaveLength(1);
   });
 
+  it("keeps the key and says so when the Keychain refuses to remove it", async () => {
+    stockWith();
+    readyWith(1_240, {
+      ownKey: { saved: true, last4: "3f9a", addedAt: new Date().toISOString(), noCredits: false },
+    });
+    fake().errors.private_remove_own_key = "keychain";
+    await mount({ paymentSource: "ownKey" });
+
+    await click(button("Remove key"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Couldn't remove the key from your Keychain. Try again.",
+    );
+    expect(screen.getByText(/sk-••••••••3f9a/)).toBeInTheDocument();
+  });
+
   it("replaces the balance with paying-with text when the own key is the source", async () => {
     stockWith();
     readyWith(1_240);

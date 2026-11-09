@@ -119,6 +119,13 @@ impl PrivateProxy {
             .is_some_and(|server| server.share(source, fork))
     }
 
+    /// Removes the user's own key: every token that spends it stops working, and its records go.
+    pub fn revoke_own_key(&self) {
+        if let Some(server) = lock(&self.server).as_ref() {
+            server.revoke_own_key();
+        }
+    }
+
     /// The key behind `app_session_id`'s current or last token, for a billing read. Backend only:
     /// it is never returned to the UI.
     pub fn key(&self, app_session_id: &str) -> Option<String> {

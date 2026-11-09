@@ -136,6 +136,14 @@ describe("useAcpEngine with a private session", () => {
     expect(Object.keys(ordinaryStart)).not.toContain("privateModelId");
   });
 
+  it("marks a saved private session that is not open when its turn ends", async () => {
+    const engine = renderEngine();
+
+    await emit({ kind: "turn-end", error: 'PRIVATE_CREDITS:{"reason":"empty"}' });
+
+    expect(engine.onPrivateCreditsOut).toHaveBeenCalledWith("s-1", "empty");
+  });
+
   it("records a cap the backend restarted and says why", async () => {
     const spy = stub({
       acp_start_session: () => Promise.resolve(STARTED_WITH_MODEL),

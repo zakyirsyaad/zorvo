@@ -1,4 +1,9 @@
-import { CREDITS_MAY_BE_UPDATING, creditsOutText, type CreditsOutReason } from '../lib/private-session';
+import {
+  CREDITS_MAY_BE_UPDATING,
+  creditsOutText,
+  ownKeyOutText,
+  type CreditsOutReason,
+} from '../lib/private-session';
 import { NO_CHOICES, withPreferred, type AgentOptions } from '../lib/acp-draft';
 import { isAgentRunnable } from '../lib/agent-readiness';
 import type { PaymentSource } from '../lib/private-credits';
@@ -62,7 +67,12 @@ export function usePrivateWiring({
     /** The popout's Send waits too; one that raced the refusal is not sent into a refusal again. */
     refusesSend: (sessionId: string): boolean => {
       const reason = credits.creditsOut[sessionId];
-      if (reason) setNotice(creditsOutText(reason));
+      if (reason) {
+        const isOwnKey = activeSession?.id === sessionId && activeSession.privateMode?.ownKey === true;
+        setNotice(
+          isOwnKey ? ownKeyOutText(reason, credits.status?.ownKey?.saved !== false) : creditsOutText(reason),
+        );
+      }
       return reason !== undefined;
     },
   };
@@ -107,6 +117,10 @@ export function usePrivateContinue({
     else void forkSession(lastMessage.id, { agent, choices: withPreferred(NO_CHOICES, agentOptions?.[agent.id]) });
   };
   const creditsOutNote =
-    creditsOutReason && creditsOutReason !== 'session_limit' ? creditsOutText(creditsOutReason) : undefined;
+    creditsOutReason && creditsOutReason !== 'session_limit'
+      ? activeSession?.privateMode?.ownKey === true
+        ? ownKeyOutText(creditsOutReason, credits.status?.ownKey?.saved !== false)
+        : creditsOutText(creditsOutReason)
+      : undefined;
   return { creditsOutReason, creditsOutNote, continueAgents, continueWithAgent };
 }

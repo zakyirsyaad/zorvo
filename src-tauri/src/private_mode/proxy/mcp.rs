@@ -14,6 +14,8 @@ use crate::private_mode::PrivateError;
 use super::records::lock;
 
 const BALANCE_TTL: Duration = Duration::from_secs(30);
+/// A failed balance read is kept briefly too, so a flapping Worker is not asked on every turn.
+const BALANCE_ERROR_TTL: Duration = Duration::from_secs(5);
 const TURN_INPUT_TOKENS: f64 = 20_000.0;
 const TURN_OUTPUT_TOKENS: f64 = 1_000.0;
 const CREDITS_PER_USD_COST: f64 = 120.0;
@@ -47,7 +49,7 @@ pub struct McpState {
     store: Arc<dyn SecretStore>,
     api: Arc<dyn CreditsApi>,
     models: SharedModels,
-    balance: Mutex<Option<(Instant, Balance)>>,
+    balance: Mutex<Option<(Instant, Result<Balance, PrivateError>)>>,
 }
 
 impl McpState {
@@ -65,21 +67,37 @@ impl McpState {
     }
 
     /// The balance, read from the credits server at most once per 30 seconds. A cache hit returns
-    /// the same snapshot even if its `updatedAt` is older.
+    /// the same snapshot even if its `updatedAt` is older. One failed read is kept for five seconds,
+    /// and the lock is held across the fetch so concurrent turns share one request.
     pub fn credits(&self, model: &str) -> Result<CreditsAnswer, PrivateError> {
-        let cached = lock(&self.balance).clone();
+        let mut cache = lock(&self.balance);
+        let cached = cache
+            .as_ref()
+            .filter(|(at, result)| {
+                at.elapsed()
+                    < if result.is_ok() {
+                        BALANCE_TTL
+                    } else {
+                        BALANCE_ERROR_TTL
+                    }
+            })
+            .map(|(_, result)| result.clone());
         let balance = match cached {
-            Some((at, balance)) if at.elapsed() < BALANCE_TTL => balance,
-            _ => {
-                let secret = self
-                    .store
-                    .get(DEVICE_SECRET)?
-                    .ok_or(PrivateError::NoDevice)?;
-                let balance = self.api.balance(&secret, false)?;
-                *lock(&self.balance) = Some((Instant::now(), balance.clone()));
-                balance
+            Some(Ok(balance)) => balance,
+            Some(Err(error)) => return Err(error),
+            None => {
+                let read = (|| {
+                    let secret = self
+                        .store
+                        .get(DEVICE_SECRET)?
+                        .ok_or(PrivateError::NoDevice)?;
+                    self.api.balance(&secret, false)
+                })();
+                *cache = Some((Instant::now(), read.clone()));
+                read?
             }
         };
+        drop(cache);
         Ok(CreditsAnswer {
             credits: balance.credits,
             updated_at: balance.updated_at,
@@ -153,7 +171,7 @@ fn label(id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     struct Store;
 
@@ -171,6 +189,7 @@ mod tests {
 
     struct Api {
         reads: AtomicUsize,
+        fail: AtomicBool,
     }
 
     impl CreditsApi for Api {
@@ -179,6 +198,9 @@ mod tests {
         }
         fn balance(&self, _: &str, _: bool) -> Result<Balance, PrivateError> {
             self.reads.fetch_add(1, Ordering::SeqCst);
+            if self.fail.load(Ordering::SeqCst) {
+                return Err(PrivateError::Unreachable);
+            }
             Ok(Balance {
                 credits: 49,
                 used_credits: 0,
@@ -243,6 +265,7 @@ mod tests {
     fn state() -> (McpState, Arc<Api>) {
         let api = Arc::new(Api {
             reads: AtomicUsize::new(0),
+            fail: AtomicBool::new(false),
         });
         let models = Arc::new(Mutex::new(Some((
             Instant::now(),
@@ -286,6 +309,22 @@ mod tests {
         let json = serde_json::to_value(&first).expect("json");
         assert_eq!(json["approxTurns"], 4);
         assert_eq!(json["model"], "Qwen/Qwen3.8-27B");
+    }
+
+    #[test]
+    fn a_failed_balance_read_is_kept_briefly() {
+        let (state, api) = state();
+        api.fail.store(true, Ordering::SeqCst);
+
+        assert_eq!(
+            state.credits("Qwen/Qwen3.8-27B"),
+            Err(PrivateError::Unreachable)
+        );
+        assert_eq!(
+            state.credits("Qwen/Qwen3.8-27B"),
+            Err(PrivateError::Unreachable)
+        );
+        assert_eq!(api.reads.load(Ordering::SeqCst), 1);
     }
 
     #[test]

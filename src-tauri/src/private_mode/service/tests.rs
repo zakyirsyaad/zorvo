@@ -190,6 +190,19 @@ fn the_users_own_key_is_saved_with_its_last_four_and_can_be_removed() {
 }
 
 #[test]
+fn checking_the_saved_key_refreshes_its_no_credits_warning() {
+    let h = Harness::with_key_check(KeyCheck::Accepted);
+    h.mode
+        .save_own_key("own-key-3f9a", KeyCheck::NoCredits)
+        .expect("save");
+    assert!(h.state().own_key_no_credits);
+
+    assert_eq!(h.mode.check_own_key("own-key-3f9a"), Ok(KeyCheck::Accepted));
+
+    assert!(!h.state().own_key_no_credits);
+}
+
+#[test]
 fn the_users_own_key_never_reaches_the_worker() {
     let h = Harness::new();
     h.mode

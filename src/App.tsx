@@ -70,6 +70,10 @@ import { usePersistedState } from "./hooks/usePersistedState";
 import { useBackgroundTasks } from "./hooks/useBackgroundTasks";
 import { useTranscripts } from "./hooks/useTranscripts";
 import { usePrivateCreditsRefresh } from "./hooks/usePrivateCreditsRefresh";
+import { usePrivateTopupRequests } from "./hooks/usePrivateTopupRequests";
+import { PrivateTopupRequestCard } from "./components/private/PrivateTopupRequestCard";
+import { TopupProgress } from "./components/private/TopupProgress";
+import { isTopupActive } from "./lib/private-flow";
 import { usePrivateLowBalanceNotice } from "./hooks/usePrivateLowBalanceNotice";
 import { usePrivateUsage } from "./hooks/usePrivateUsage";
 import { usePrivateVerification } from "./hooks/usePrivateVerification";
@@ -304,6 +308,28 @@ export default function App() {
     paymentSource: state.settings.paymentSource ?? "credits",
     activeSession,
   });
+  const topupRequests = usePrivateTopupRequests();
+  const [chatTopupSession, setChatTopupSession] = useState<string | null>(null);
+  const [isAnsweringTopup, setIsAnsweringTopup] = useState(false);
+  /** The user's answer to an agent's ask; an approval starts the existing checkout flow. */
+  const answerTopupRequest = useCallback(
+    async (sessionId: string, requestId: string, approve: boolean) => {
+      const request = topupRequests.requests[sessionId];
+      if (!request || request.requestId !== requestId || isAnsweringTopup) return;
+      setIsAnsweringTopup(true);
+      const ok = await topupRequests.answer(sessionId, requestId, approve);
+      setIsAnsweringTopup(false);
+      if (!ok) {
+        setNotice("That top-up request is no longer waiting.", "warning");
+        return;
+      }
+      if (approve) {
+        setChatTopupSession(sessionId);
+        void privateCredits.buy(request.usd);
+      }
+    },
+    [isAnsweringTopup, privateCredits, setNotice, topupRequests],
+  );
   const isPrivateSessionId = useCallback(
     (sessionId: string) => sessions.some((session) => session.id === sessionId && session.privateMode !== undefined),
     [sessions],
@@ -1116,6 +1142,7 @@ export default function App() {
       contextUsage: acp.info[sessionId]?.usage,
       failures: acp.failuresOf(sessionId),
       privateCreditsOut: privateCredits.creditsOut[sessionId],
+      privateTopupRequest: topupRequests.requests[sessionId] ?? null,
     }),
     agentCatalog: { agents, settings: state.settings, addAgent: catalogActions.addAgent },
     onAction: (sessionId, action) => {
@@ -1137,6 +1164,8 @@ export default function App() {
       else if (action.kind === "answer-elicitation") acp.answerElicitation(sessionId, action.key, action.answer);
       else if (action.kind === "reopen-elicitation-url") acp.reopenElicitationUrl(sessionId, action.key);
       else if (action.kind === "open-url") openLink(action.url);
+      else if (action.kind === "approve-topup") void answerTopupRequest(sessionId, action.requestId, true);
+      else if (action.kind === "decline-topup") void answerTopupRequest(sessionId, action.requestId, false);
       else chooseOption(sessionId, action.cardId, action.optionId, action.answers);
     },
   });
@@ -1174,6 +1203,7 @@ export default function App() {
       ? `${Math.floor(activeSession.privateUsage?.credits ?? 0)} of ${privateSessionCap} credits this session`
       : undefined;
   const livePrivateCredits = privateCredits.status?.balance?.credits;
+  const activeTopupRequest = activeSession ? topupRequests.requests[activeSession.id] : undefined;
   const privateLowNote =
     isPrivateLaunch && !activeIsOwnKey && livePrivateCredits !== undefined
       ? lowBalanceNote(livePrivateCredits, privateModel)
@@ -1451,6 +1481,43 @@ export default function App() {
                       showTerminal={settingsPage.section === null}
                       panelTarget={draftSignInSlot}
                     />
+                    {activeTopupRequest && (
+                      <PrivateTopupRequestCard
+                        request={activeTopupRequest}
+                        model={privateModel}
+                        isBusy={isAnsweringTopup}
+                        canTopUp={!isTopupActive(privateCredits.flow)}
+                        onTopUp={() =>
+                          void answerTopupRequest(
+                            activeTopupRequest.sessionId,
+                            activeTopupRequest.requestId,
+                            true,
+                          )
+                        }
+                        onNotNow={() =>
+                          void answerTopupRequest(
+                            activeTopupRequest.sessionId,
+                            activeTopupRequest.requestId,
+                            false,
+                          )
+                        }
+                      />
+                    )}
+                    {!activeTopupRequest &&
+                      activeSession &&
+                      chatTopupSession === activeSession.id &&
+                      privateCredits.flow.kind !== "idle" && (
+                        <TopupProgress
+                          flow={privateCredits.flow}
+                          balanceCredits={livePrivateCredits ?? null}
+                          onOpenCheckout={privateCredits.openCheckout}
+                          onCancel={privateCredits.cancel}
+                          onDismiss={() => {
+                            privateCredits.dismiss();
+                            setChatTopupSession(null);
+                          }}
+                        />
+                      )}
                     <PrivateCreditsOutLayer
                       sessionId={activeSession?.id}
                       reason={creditsOutReason}

@@ -13,10 +13,11 @@ use std::time::{Duration, Instant};
 use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 use zorvo_lib::private_mode::client::{
-    Balance, CreatedSession, CreatedTopup, CreditsApi, ModelPrice, PromoResult, Stock, TopupState,
+    Balance, CreatedSession, CreatedTopup, CreditsApi, ModelPrice, PromoResult, Stock,
+    StockPackage, TopupState,
 };
 use zorvo_lib::private_mode::device::{SecretStore, DEVICE_SECRET};
-use zorvo_lib::private_mode::proxy::{McpState, PrivateProxy, TokenUsage};
+use zorvo_lib::private_mode::proxy::{McpState, PrivateProxy, TokenUsage, TopupRequests};
 use zorvo_lib::private_mode::PrivateError;
 
 const MODEL: &str = "Qwen/Qwen3.8-27B";
@@ -805,7 +806,25 @@ impl CreditsApi for McpApi {
         })
     }
     fn stock(&self, _: &str) -> Result<Stock, PrivateError> {
-        unimplemented!()
+        Ok(Stock {
+            available_credits: 5_000,
+            your_room_credits: 5_000,
+            packages: vec![
+                StockPackage {
+                    usd: 5,
+                    credits: 500,
+                    available: true,
+                    reason: None,
+                },
+                StockPackage {
+                    usd: 10,
+                    credits: 1_000,
+                    available: false,
+                    reason: Some("stock".to_string()),
+                },
+            ],
+            updated_at: "2026-11-10T10:00:00Z".to_string(),
+        })
     }
     fn models(&self, _: &str) -> Result<Vec<ModelPrice>, PrivateError> {
         unimplemented!()
@@ -882,7 +901,13 @@ async fn mcp_routes_need_the_proxy_token_and_never_reach_upstream() {
             output_per_m: 100.0,
         }],
     ))));
-    let mcp = Arc::new(McpState::new(Arc::new(McpStore), api.clone(), models));
+    let topups = Arc::new(TopupRequests::default());
+    let mcp = Arc::new(McpState::new(
+        Arc::new(McpStore),
+        api.clone(),
+        models,
+        Arc::clone(&topups),
+    ));
     let proxy = PrivateProxy::with_mcp_state(fake.base(), mcp);
     let (token, base) = issue(&proxy);
     let root = base.strip_suffix("/v1").expect("the proxy base");
@@ -935,4 +960,148 @@ async fn mcp_routes_need_the_proxy_token_and_never_reach_upstream() {
     assert_eq!(models["models"][0]["approxCreditsPerTurn"], 12.0);
     assert!(fake.requests().is_empty(), "the MCP routes are local");
     assert!(proxy.records(SESSION).is_empty());
+}
+
+#[tokio::test]
+async fn an_agent_topup_request_is_local_and_refuses_an_own_key_or_a_second_ask() {
+    let fake = FakeUpstream::start(|_request, stream| {
+        respond(stream, "200 OK", "application/json", br#"{"data":[]}"#);
+    });
+    let api = Arc::new(McpApi {
+        reads: AtomicUsize::new(0),
+    });
+    let models = Arc::new(Mutex::new(Some((
+        Instant::now(),
+        vec![ModelPrice {
+            id: MODEL.to_string(),
+            input_per_m: 0.0,
+            output_per_m: 100.0,
+        }],
+    ))));
+    let topups = Arc::new(TopupRequests::default());
+    let mcp = Arc::new(McpState::new(
+        Arc::new(McpStore),
+        api,
+        models,
+        Arc::clone(&topups),
+    ));
+    let proxy = PrivateProxy::with_mcp_state(fake.base(), mcp);
+
+    let own = proxy
+        .issue("own-session", MODEL, "own-key", true)
+        .expect("an own-key token");
+    let own_root = own.base_url.strip_suffix("/v1").expect("the proxy base");
+    let unauthorized = client()
+        .post(format!("{own_root}/zorvo/v1/topup-requests"))
+        .send()
+        .await
+        .expect("the proxy answers");
+    assert_eq!(unauthorized.status(), 401);
+
+    let refused = client()
+        .post(format!("{own_root}/zorvo/v1/topup-requests"))
+        .bearer_auth(&own.token)
+        .json(&serde_json::json!({ "usd": 5, "reason": "Need credits." }))
+        .send()
+        .await
+        .expect("the proxy answers");
+    assert_eq!(refused.status(), 409);
+    let refused: serde_json::Value = refused.json().await.expect("refusal JSON");
+    assert_eq!(refused["error"], "own_key");
+
+    let (token, base) = issue(&proxy);
+    let root = base.strip_suffix("/v1").expect("the proxy base");
+    let asked = client()
+        .post(format!("{root}/zorvo/v1/topup-requests"))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "usd": 5, "reason": "The review needs more credits." }))
+        .send()
+        .await
+        .expect("the proxy answers");
+    assert_eq!(asked.status(), 200);
+    let asked: serde_json::Value = asked.json().await.expect("request JSON");
+    assert_eq!(asked["usd"], 5);
+    assert_eq!(asked["credits"], 500);
+    assert_eq!(asked["sessionId"], SESSION);
+    assert_eq!(asked["reason"], "The review needs more credits.");
+
+    let second = client()
+        .post(format!("{root}/zorvo/v1/topup-requests"))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "usd": 5, "reason": "Again" }))
+        .send()
+        .await
+        .expect("the proxy answers");
+    assert_eq!(second.status(), 409);
+    let second: serde_json::Value = second.json().await.expect("refusal JSON");
+    assert_eq!(second["error"], "pending");
+    assert!(
+        fake.requests().is_empty(),
+        "a top-up ask never reaches NEAR AI"
+    );
+}
+
+#[tokio::test]
+async fn a_topup_request_refuses_an_unknown_or_unavailable_package_and_a_cooldown() {
+    let fake = FakeUpstream::start(|_request, stream| {
+        respond(stream, "200 OK", "application/json", br#"{"data":[]}"#);
+    });
+    let api = Arc::new(McpApi {
+        reads: AtomicUsize::new(0),
+    });
+    let models = Arc::new(Mutex::new(None));
+    let topups = Arc::new(TopupRequests::default());
+    let mcp = Arc::new(McpState::new(
+        Arc::new(McpStore),
+        api,
+        models,
+        Arc::clone(&topups),
+    ));
+    let proxy = PrivateProxy::with_mcp_state(fake.base(), mcp);
+    let (token, base) = issue(&proxy);
+    let root = base.strip_suffix("/v1").expect("the proxy base");
+
+    let unknown = client()
+        .post(format!("{root}/zorvo/v1/topup-requests"))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "usd": 7, "reason": "Why" }))
+        .send()
+        .await
+        .expect("the proxy answers");
+    assert_eq!(unknown.status(), 400);
+
+    let unavailable = client()
+        .post(format!("{root}/zorvo/v1/topup-requests"))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "usd": 10, "reason": "Why" }))
+        .send()
+        .await
+        .expect("the proxy answers");
+    assert_eq!(unavailable.status(), 409);
+    let unavailable: serde_json::Value = unavailable.json().await.expect("refusal JSON");
+    assert_eq!(unavailable["error"], "unavailable");
+
+    let asked = client()
+        .post(format!("{root}/zorvo/v1/topup-requests"))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "usd": 5, "reason": "One" }))
+        .send()
+        .await
+        .expect("the proxy answers");
+    let asked: serde_json::Value = asked.json().await.expect("request JSON");
+    let request_id = asked["requestId"].as_str().expect("a request id");
+    topups
+        .answer(SESSION, request_id, false)
+        .expect("the decline");
+
+    let cooling = client()
+        .post(format!("{root}/zorvo/v1/topup-requests"))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "usd": 5, "reason": "Two" }))
+        .send()
+        .await
+        .expect("the proxy answers");
+    assert_eq!(cooling.status(), 429);
+    let cooling: serde_json::Value = cooling.json().await.expect("refusal JSON");
+    assert_eq!(cooling["error"], "cooldown");
 }

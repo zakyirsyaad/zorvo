@@ -12,6 +12,7 @@ mod forward;
 pub mod mcp;
 mod records;
 mod server;
+mod topup;
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -20,6 +21,7 @@ use super::launch::NEAR_AI_BASE_URL;
 use super::PrivateError;
 pub use mcp::{McpState, SharedModels};
 use records::lock;
+pub use topup::{TopupRefusal, TopupRequestEvent, TopupRequests, TOPUP_REQUEST_EVENT};
 
 pub use records::{ProxyRecord, TokenUsage};
 
@@ -38,6 +40,8 @@ pub struct PrivateProxy {
     mcp: Mutex<Option<Arc<McpState>>>,
     /// App sessions whose capped session key NEAR AI rejected; drained by the service at launch.
     rejected: Arc<Mutex<HashSet<String>>>,
+    /// The one pending top-up request per session, and the cooldown after a decline.
+    topups: Arc<TopupRequests>,
 }
 
 impl PrivateProxy {
@@ -54,6 +58,7 @@ impl PrivateProxy {
             server: Mutex::new(None),
             mcp: Mutex::new(None),
             rejected: Arc::new(Mutex::new(HashSet::new())),
+            topups: Arc::new(TopupRequests::default()),
         }
     }
 
@@ -131,6 +136,11 @@ impl PrivateProxy {
         if let Some(server) = lock(&self.server).as_ref() {
             server.revoke_own_key();
         }
+    }
+
+    /// The one pending top-up request per session, shared with the proxy route and the commands.
+    pub fn topup_requests(&self) -> Arc<TopupRequests> {
+        Arc::clone(&self.topups)
     }
 
     /// Sessions whose capped key NEAR AI refused since the last call; draining gives the service

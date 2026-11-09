@@ -9,7 +9,9 @@ use std::thread;
 use std::time::Duration;
 
 use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt, Full, Limited};
 use hyper::body::{Bytes, Incoming};
+use hyper::header::CONTENT_TYPE;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
@@ -21,12 +23,15 @@ use tokio::sync::oneshot;
 use super::forward;
 use super::mcp::McpState;
 use super::records::{hex, lock, RecordStore};
+use super::topup::TopupRefusal;
 use crate::private_mode::PrivateError;
 
 /// A connect that takes longer than this fails the request.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// A stream that sends nothing for this long is treated as dead. There is no total timeout.
 const READ_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+/// A top-up request is two short fields; anything larger is not one.
+const MAX_TOPUP_REQUEST_BYTES: usize = 16 * 1024;
 
 pub(super) type ProxyBody = BoxBody<Bytes, io::Error>;
 
@@ -41,6 +46,20 @@ pub(super) struct TokenEntry {
     /// The key is the user's own; its balance is not visible to Zorvo.
     pub(super) own_key: bool,
     holders: HashSet<String>,
+}
+
+#[cfg(test)]
+impl TokenEntry {
+    pub(super) fn for_test(app_session_id: &str, own_key: bool) -> Self {
+        Self {
+            token: "test-token".to_string(),
+            app_session_id: app_session_id.to_string(),
+            model: "Qwen/Qwen3.8-27B".to_string(),
+            key: "test-key".to_string(),
+            own_key,
+            holders: HashSet::from([app_session_id.to_string()]),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -464,6 +483,7 @@ async fn handle(request: Request<Incoming>, state: Arc<ProxyState>) -> Response<
         (&Method::GET, "/v1/models") => forward::models(request, state).await,
         (&Method::GET, "/zorvo/v1/credits") => mcp_credits(request, state).await,
         (&Method::GET, "/zorvo/v1/models") => mcp_models(request, state),
+        (&Method::POST, "/zorvo/v1/topup-requests") => mcp_topup_request(request, state).await,
         _ => forward::json_error(StatusCode::NOT_FOUND, "not found"),
     }
 }
@@ -497,6 +517,69 @@ fn mcp_models(request: Request<Incoming>, state: Arc<ProxyState>) -> Response<Pr
         return forward::json_error(StatusCode::SERVICE_UNAVAILABLE, "credits unavailable");
     };
     forward::json_ok(serde_json::json!({ "models": mcp.models() }))
+}
+
+/// An agent asks its user to approve a top-up. The package is checked against the Worker, the
+/// request is recorded for the user, and nothing is sent to NEAR AI or charged here.
+async fn mcp_topup_request(
+    request: Request<Incoming>,
+    state: Arc<ProxyState>,
+) -> Response<ProxyBody> {
+    let Some(entry) = forward::authorize(&request, &state) else {
+        return forward::json_error(StatusCode::UNAUTHORIZED, "unauthorized");
+    };
+    let body = match Limited::new(request.into_body(), MAX_TOPUP_REQUEST_BYTES)
+        .collect()
+        .await
+    {
+        Ok(collected) => collected.to_bytes(),
+        Err(_) => {
+            return forward::json_error(StatusCode::PAYLOAD_TOO_LARGE, "request is too large")
+        }
+    };
+    let parsed: serde_json::Value = match serde_json::from_slice(&body) {
+        Ok(value) => value,
+        Err(_) => return forward::json_error(StatusCode::BAD_REQUEST, "bad request"),
+    };
+    let usd = parsed
+        .get("usd")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok());
+    let reason = parsed
+        .get("reason")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let (Some(usd), Some(reason)) = (usd, reason) else {
+        return forward::json_error(StatusCode::BAD_REQUEST, "usd and reason are required");
+    };
+    let Some(mcp) = state.mcp() else {
+        return forward::json_error(StatusCode::SERVICE_UNAVAILABLE, "credits unavailable");
+    };
+    let answer = tokio::task::spawn_blocking(move || mcp.request_topup(&entry, usd, &reason)).await;
+    match answer {
+        Ok(Ok(event)) => forward::json_ok(serde_json::json!(event)),
+        Ok(Err(refusal)) => topup_refusal(refusal),
+        Err(_) => forward::json_error(StatusCode::BAD_GATEWAY, "top-up request failed"),
+    }
+}
+
+/// The proxy route's refusal body: a stable code and the sentence the agent's tool shows.
+fn topup_refusal(refusal: TopupRefusal) -> Response<ProxyBody> {
+    let status = match refusal.code {
+        "bad_request" => StatusCode::BAD_REQUEST,
+        "cooldown" => StatusCode::TOO_MANY_REQUESTS,
+        "upstream" => StatusCode::BAD_GATEWAY,
+        _ => StatusCode::CONFLICT,
+    };
+    let body = serde_json::json!({ "error": refusal.code, "message": refusal.message }).to_string();
+    let body = Full::new(Bytes::from(body))
+        .map_err(|never| match never {})
+        .boxed();
+    Response::builder()
+        .status(status)
+        .header(CONTENT_TYPE, "application/json")
+        .body(body)
+        .expect("a top-up refusal is valid")
 }
 
 #[cfg(test)]

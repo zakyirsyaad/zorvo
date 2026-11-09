@@ -252,6 +252,18 @@ pub fn private_raise_session_cap(
     Ok(private.raise_session_cap(&session_id, credits)?)
 }
 
+/// The user's answer to an agent's top-up request: approve clears it, decline starts the
+/// five-minute cooldown the proxy route enforces.
+#[tauri::command(async)]
+pub fn private_answer_topup_request(
+    private: State<'_, PrivateMode>,
+    session_id: String,
+    request_id: String,
+    approve: bool,
+) -> Result<(), String> {
+    Ok(private.answer_topup_request(&session_id, &request_id, approve)?)
+}
+
 /// Takes the notice that a capped session's Worker key was gone and it restarted on its
 /// original cap, if there is one for this session.
 #[tauri::command(async)]

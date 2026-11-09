@@ -12,6 +12,10 @@ use crate::private_mode::device::{SecretStore, DEVICE_SECRET};
 use crate::private_mode::PrivateError;
 
 use super::records::lock;
+use super::server::TokenEntry;
+use super::topup::{
+    TopupRefusal, TopupRequestEvent, TopupRequests, MAX_REASON_CHARS, OWN_KEY_MESSAGE,
+};
 
 const BALANCE_TTL: Duration = Duration::from_secs(30);
 /// A failed balance read is kept briefly too, so a flapping Worker is not asked on every turn.
@@ -49,6 +53,7 @@ pub struct McpState {
     store: Arc<dyn SecretStore>,
     api: Arc<dyn CreditsApi>,
     models: SharedModels,
+    topups: Arc<TopupRequests>,
     balance: Mutex<Option<(Instant, Result<Balance, PrivateError>)>>,
 }
 
@@ -57,13 +62,79 @@ impl McpState {
         store: Arc<dyn SecretStore>,
         api: Arc<dyn CreditsApi>,
         models: SharedModels,
+        topups: Arc<TopupRequests>,
     ) -> Self {
         Self {
             store,
             api,
             models,
+            topups,
             balance: Mutex::new(None),
         }
+    }
+
+    /// Checks the agent's ask against the Worker's live packages and records it for the user. The
+    /// package and its credit count come from the Worker, never from the agent. Nothing is sent to
+    /// NEAR AI, and the human still pays through the existing PingPay checkout.
+    pub(super) fn request_topup(
+        &self,
+        entry: &TokenEntry,
+        usd: u32,
+        reason: &str,
+    ) -> Result<TopupRequestEvent, TopupRefusal> {
+        if entry.own_key {
+            return Err(TopupRefusal::new("own_key", OWN_KEY_MESSAGE));
+        }
+        if usd == 0 {
+            return Err(TopupRefusal::new(
+                "bad_request",
+                "Pick a whole-dollar top-up package.",
+            ));
+        }
+        if reason.trim().is_empty() || reason.chars().count() > MAX_REASON_CHARS {
+            return Err(TopupRefusal::new(
+                "bad_request",
+                format!("The reason must be 1–{MAX_REASON_CHARS} characters of plain text."),
+            ));
+        }
+        let secret = self
+            .store
+            .get(DEVICE_SECRET)
+            .map_err(|_| {
+                TopupRefusal::new("unavailable", "Zorvo couldn't read this Mac's private key.")
+            })?
+            .ok_or_else(|| {
+                TopupRefusal::new(
+                    "unavailable",
+                    "This Mac has no private key yet. Top up in Settings first.",
+                )
+            })?;
+        let stock = self.api.stock(&secret).map_err(|_| {
+            TopupRefusal::new(
+                "upstream",
+                "Zorvo couldn't read the top-up packages. Try again.",
+            )
+        })?;
+        let Some(package) = stock.packages.iter().find(|package| package.usd == usd) else {
+            return Err(TopupRefusal::new(
+                "bad_request",
+                format!("Zorvo doesn't offer a ${usd} top-up."),
+            ));
+        };
+        if !package.available {
+            let message = match package.reason.as_deref() {
+                Some("stock") => {
+                    format!("The ${usd} package is sold out right now. Try a smaller one.")
+                }
+                Some("device_cap") => format!(
+                    "This Mac's private key limit is in the way of the ${usd} package. Try a smaller one."
+                ),
+                _ => format!("The ${usd} package isn't available right now. Try a smaller one."),
+            };
+            return Err(TopupRefusal::new("unavailable", message));
+        }
+        self.topups
+            .request(&entry.app_session_id, package.usd, package.credits, reason)
     }
 
     /// The balance, read from the credits server at most once per 30 seconds. A cache hit returns
@@ -209,7 +280,25 @@ mod tests {
             })
         }
         fn stock(&self, _: &str) -> Result<crate::private_mode::client::Stock, PrivateError> {
-            unimplemented!()
+            Ok(crate::private_mode::client::Stock {
+                available_credits: 5_000,
+                your_room_credits: 5_000,
+                packages: vec![
+                    crate::private_mode::client::StockPackage {
+                        usd: 5,
+                        credits: 500,
+                        available: true,
+                        reason: None,
+                    },
+                    crate::private_mode::client::StockPackage {
+                        usd: 10,
+                        credits: 1_000,
+                        available: false,
+                        reason: Some("stock".to_string()),
+                    },
+                ],
+                updated_at: "2026-11-10T10:00:00Z".to_string(),
+            })
         }
         fn models(&self, _: &str) -> Result<Vec<ModelPrice>, PrivateError> {
             unimplemented!()
@@ -262,11 +351,12 @@ mod tests {
         }
     }
 
-    fn state() -> (McpState, Arc<Api>) {
+    fn state() -> (McpState, Arc<Api>, Arc<TopupRequests>) {
         let api = Arc::new(Api {
             reads: AtomicUsize::new(0),
             fail: AtomicBool::new(false),
         });
+        let topups = Arc::new(TopupRequests::default());
         let models = Arc::new(Mutex::new(Some((
             Instant::now(),
             vec![ModelPrice {
@@ -275,7 +365,11 @@ mod tests {
                 output_per_m: 100.0,
             }],
         ))));
-        (McpState::new(Arc::new(Store), api.clone(), models), api)
+        (
+            McpState::new(Arc::new(Store), api.clone(), models, Arc::clone(&topups)),
+            api,
+            topups,
+        )
     }
 
     #[test]
@@ -297,7 +391,7 @@ mod tests {
 
     #[test]
     fn credits_read_the_server_once_and_keep_the_canvas_shape() {
-        let (state, api) = state();
+        let (state, api, _) = state();
         let first = state.credits("Qwen/Qwen3.8-27B").expect("credits");
         let second = state.credits("Qwen/Qwen3.8-27B").expect("cached credits");
 
@@ -313,7 +407,7 @@ mod tests {
 
     #[test]
     fn a_failed_balance_read_is_kept_briefly() {
-        let (state, api) = state();
+        let (state, api, _) = state();
         api.fail.store(true, Ordering::SeqCst);
 
         assert_eq!(
@@ -329,7 +423,7 @@ mod tests {
 
     #[test]
     fn models_carry_the_canvas_labels_and_price_names() {
-        let (state, _) = state();
+        let (state, _, _) = state();
         let models = state.models();
 
         assert_eq!(models.len(), 1);
@@ -338,5 +432,71 @@ mod tests {
         assert_eq!(json["inputUsdPer1M"], 0.0);
         assert_eq!(json["outputUsdPer1M"], 100.0);
         assert_eq!(json["approxCreditsPerTurn"], 12.0);
+    }
+
+    #[test]
+    fn a_topup_request_uses_the_workers_package_and_refuses_an_own_key() {
+        let (state, _, topups) = state();
+        let own = TokenEntry::for_test("s-own", true);
+        assert_eq!(
+            state.request_topup(&own, 5, "The review needs credits."),
+            Err(TopupRefusal::new("own_key", OWN_KEY_MESSAGE))
+        );
+
+        let entry = TokenEntry::for_test("s-1", false);
+        let asked = state
+            .request_topup(&entry, 5, "The review needs credits.")
+            .expect("a request");
+        assert_eq!(asked.usd, 5);
+        assert_eq!(asked.credits, 500);
+        assert_eq!(asked.session_id, "s-1");
+        assert_eq!(topups.pending_for("s-1"), Some(asked));
+        assert_eq!(
+            state.request_topup(&entry, 5, "Again"),
+            Err(TopupRefusal::new(
+                "pending",
+                super::super::topup::PENDING_MESSAGE
+            ))
+        );
+    }
+
+    #[test]
+    fn a_topup_request_refuses_an_unknown_or_unavailable_package() {
+        let (state, _, _) = state();
+        let entry = TokenEntry::for_test("s-1", false);
+
+        assert_eq!(
+            state.request_topup(&entry, 7, "Why"),
+            Err(TopupRefusal::new(
+                "bad_request",
+                "Zorvo doesn't offer a $7 top-up."
+            ))
+        );
+        let refusal = state
+            .request_topup(&entry, 10, "Why")
+            .expect_err("sold out");
+        assert_eq!(refusal.code, "unavailable");
+        assert!(refusal.message.contains("sold out"));
+    }
+
+    #[test]
+    fn a_topup_request_refuses_an_empty_or_overlong_reason() {
+        let (state, _, _) = state();
+        let entry = TokenEntry::for_test("s-1", false);
+
+        assert_eq!(
+            state.request_topup(&entry, 5, "   "),
+            Err(TopupRefusal::new(
+                "bad_request",
+                format!("The reason must be 1–{MAX_REASON_CHARS} characters of plain text.")
+            ))
+        );
+        assert_eq!(
+            state.request_topup(&entry, 5, &"a".repeat(MAX_REASON_CHARS + 1)),
+            Err(TopupRefusal::new(
+                "bad_request",
+                format!("The reason must be 1–{MAX_REASON_CHARS} characters of plain text.")
+            ))
+        );
     }
 }

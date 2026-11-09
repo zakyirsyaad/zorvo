@@ -209,6 +209,7 @@ impl PrivateMode {
             Arc::clone(&store),
             Arc::clone(&api),
             Arc::clone(&models),
+            proxy.topup_requests(),
         )));
         Self {
             store,
@@ -755,6 +756,19 @@ impl PrivateMode {
             report_storage_failure();
         }
         Ok(raised)
+    }
+
+    /// Records the user's answer to an agent's top-up request. Approve clears it; decline clears it
+    /// and starts the five-minute cooldown the proxy route enforces.
+    pub fn answer_topup_request(
+        &self,
+        app_session_id: &str,
+        request_id: &str,
+        approve: bool,
+    ) -> Result<(), PrivateError> {
+        self.proxy
+            .topup_requests()
+            .answer(app_session_id, request_id, approve)
     }
 
     /// Takes the "the Worker session was gone, restarted on its original cap" note for one session.

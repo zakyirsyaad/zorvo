@@ -14,6 +14,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **Per-session private usage.** The Private tab shows what this session used and its average per turn, and Settings' balance lists the total by model with the turns each model's price leaves. The total survives a restart.
 - **Use your own NEAR AI key.** If you stake NEAR in your own NEAR AI organization, Settings → Private mode can check and save your key in the Keychain and use it instead of Zorvo credits. Zorvo shows the session cost in dollars and no Zorvo balance; your credits stay and you can switch back.
 - **A spending cap for each private session.** A Qwen Code private draft can cap itself at 100, 200 or 500 credits. NEAR AI enforces the cap on a key of its own, so it stops the session even if Zorvo is closed; the composer and inspector show the cap and its progress, and a capped session offers New session or a doubled cap when it reaches it.
+- **An agent can ask for a top-up.** A private Qwen Code session can ask for one of the Worker's packages with one short reason; a card above the composer shows the package and the reason, and only the user's click starts their own PingPay checkout. **Not now** starts a five-minute cooldown. The agent never opens checkout, pays or sees a key.
 
 ### Changed
 

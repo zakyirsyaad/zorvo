@@ -255,4 +255,79 @@ describe("a private draft in the app", () => {
     );
     expect(within(document.body).queryByRole("button", { name: /^Private model/ })).toBeNull();
   });
+
+  it("shows an agent's top-up ask and opens the checkout only after a click", async () => {
+    withCredits();
+    const spy = await renderApp();
+    await turnOnPrivate();
+    await send("review the payment module");
+    await waitFor(() => expect(fakeStore().state.sessions).toHaveLength(1));
+    const sessionId = (fakeStore().state.sessions[0] as { id: string }).id;
+
+    await act(async () => {
+      listeners.get("private-topup-request")?.({
+        payload: {
+          sessionId,
+          requestId: "r-1",
+          usd: 5,
+          credits: 500,
+          reason: "The review needs more credits.",
+        },
+      });
+    });
+
+    expect(await screen.findByRole("heading", { name: "Qwen Code asks to top up $5" })).toBeInTheDocument();
+    expect(screen.getByText(/^500 credits/)).toBeInTheDocument();
+    expect(screen.getByText(/The review needs more credits\./)).toBeInTheDocument();
+    expect(callsTo(spy, "private_create_topup")).toHaveLength(0);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Top up $5" }));
+    });
+
+    await waitFor(() => expect(callsTo(spy, "private_answer_topup_request")).toHaveLength(1));
+    expect(callsTo(spy, "private_answer_topup_request")[0]).toMatchObject({
+      sessionId,
+      requestId: "r-1",
+      approve: true,
+    });
+    await waitFor(() => expect(callsTo(spy, "private_create_topup")).toHaveLength(1));
+    expect(callsTo(spy, "private_create_topup")[0]).toMatchObject({ packageUsd: 5 });
+    expect(screen.queryByRole("heading", { name: "Qwen Code asks to top up $5" })).toBeNull();
+  });
+
+  it("declines an agent's top-up ask without creating a checkout", async () => {
+    withCredits();
+    const spy = await renderApp();
+    await turnOnPrivate();
+    await send("review the payment module");
+    await waitFor(() => expect(fakeStore().state.sessions).toHaveLength(1));
+    const sessionId = (fakeStore().state.sessions[0] as { id: string }).id;
+
+    await act(async () => {
+      listeners.get("private-topup-request")?.({
+        payload: {
+          sessionId,
+          requestId: "r-2",
+          usd: 5,
+          credits: 500,
+          reason: "The review needs more credits.",
+        },
+      });
+    });
+    await screen.findByRole("heading", { name: "Qwen Code asks to top up $5" });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+    });
+
+    await waitFor(() => expect(callsTo(spy, "private_answer_topup_request")).toHaveLength(1));
+    expect(callsTo(spy, "private_answer_topup_request")[0]).toMatchObject({
+      sessionId,
+      requestId: "r-2",
+      approve: false,
+    });
+    expect(callsTo(spy, "private_create_topup")).toHaveLength(0);
+    expect(screen.queryByRole("heading", { name: "Qwen Code asks to top up $5" })).toBeNull();
+  });
 });

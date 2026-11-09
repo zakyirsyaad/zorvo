@@ -60,8 +60,9 @@ _Add the demo screenshot here: the **Verified in TEE** badge and its popover._
 - **`agents`.** A coding agent spends prepaid credits on private compute through its own spend-limited
   NEAR AI key. The key's limit is enforced by NEAR AI's gateway (`402`), and a session can also carry a
   100, 200 or 500-credit cap of its own. An MCP server inside the app lets the agent read its balance and
-  the model prices; it never sees the key or the device secret. Payment is USDC on NEAR through PingPay
-  (NEAR Intents).
+  the model prices; it never sees the key or the device secret. It can also ask the user for a top-up,
+  with one short reason: the card shows the Worker's package and credits, and only the user's click
+  starts their own PingPay checkout. Payment is USDC on NEAR through PingPay (NEAR Intents).
 
 ## Reproduce
 

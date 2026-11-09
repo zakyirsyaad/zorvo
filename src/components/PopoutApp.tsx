@@ -20,6 +20,7 @@ import { ChatCanvas } from "./ChatCanvas";
 import { ComposerDock } from "./ComposerDock";
 import { RemovedAgentPanel } from "./RemovedAgentPanel";
 import { HistoryElsewhereNote } from "./chat/HistoryElsewhereNote";
+import { PrivateTopupRequestCard } from "./private/PrivateTopupRequestCard";
 import { creditsOutText } from "../lib/private-session";
 
 export interface PopoutAppProps {
@@ -125,7 +126,26 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
             {session ? "No messages yet." : "Connecting to the main window…"}
           </div>
         )}
-        <div className="p-4 flex justify-center">
+        <div className="p-4 flex flex-col items-center gap-3">
+          {status.privateTopupRequest && (
+            <div className="w-full max-w-chat">
+              <PrivateTopupRequestCard
+                request={status.privateTopupRequest}
+                onTopUp={() =>
+                  forward({
+                    kind: "approve-topup",
+                    requestId: status.privateTopupRequest!.requestId,
+                  })
+                }
+                onNotNow={() =>
+                  forward({
+                    kind: "decline-topup",
+                    requestId: status.privateTopupRequest!.requestId,
+                  })
+                }
+              />
+            </div>
+          )}
           {removedAgentName ? (
             <RemovedAgentPanel agentName={removedAgentName} profileId={session?.profileId} onAdd={() => forward({ kind: "add-agent" })} />
           ) : (

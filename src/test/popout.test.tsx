@@ -118,6 +118,46 @@ describe("Popout windows", () => {
     });
   });
 
+  it("shows an agent's top-up ask and forwards the choice to the main window", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", {
+      sessionId: "s-1",
+      session: { ...runningSession, profileId: "qwen-code", privateMode: { modelId: "Qwen/Qwen3.8-27B" } },
+      messages: [],
+      status: {
+        isBusy: false,
+        isWaiting: false,
+        privateTopupRequest: {
+          sessionId: "s-1",
+          requestId: "r-1",
+          usd: 5,
+          credits: 500,
+          reason: "The review needs credits.",
+        },
+      },
+      removedAgentName: null,
+    });
+
+    expect(await screen.findByRole("heading", { name: "Qwen Code asks to top up $5" })).toBeDefined();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Top up $5" }));
+    });
+    expect(emitted).toContainEqual({
+      event: "popout-action",
+      payload: { sessionId: "s-1", action: { kind: "approve-topup", requestId: "r-1" } },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+    });
+    expect(emitted).toContainEqual({
+      event: "popout-action",
+      payload: { sessionId: "s-1", action: { kind: "decline-topup", requestId: "r-1" } },
+    });
+  });
+
   it("shows a private reply's verification from the snapshot and forwards the Verification Center link", async () => {
     await act(async () => {
       render(<PopoutApp sessionId="s-1" />);

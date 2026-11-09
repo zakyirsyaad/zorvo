@@ -84,7 +84,11 @@ test("MCP handshake, tool list and both calls", async () => {
     const init = await mcp.call("initialize", {});
     assert.equal(init.result.protocolVersion, "2025-06-18");
     const list = await mcp.call("tools/list", {});
-    assert.deepEqual(list.result.tools.map((tool) => tool.name), ["credits_balance", "private_models"]);
+    assert.deepEqual(list.result.tools.map((tool) => tool.name), [
+      "credits_balance",
+      "private_models",
+      "request_topup",
+    ]);
 
     const credits = await mcp.call("tools/call", { name: "credits_balance", arguments: {} });
     assert.match(credits.result.content[0].text, /^52 credits left · ≈ 130 turns/);
@@ -93,6 +97,89 @@ test("MCP handshake, tool list and both calls", async () => {
     const models = await mcp.call("tools/call", { name: "private_models", arguments: {} });
     assert.match(models.result.content[0].text, /^1 private model in a TEE\./);
     assert.match(models.result.content[0].text, /Qwen 3\.8 27B/);
+  } finally {
+    await mcp.close();
+    await fake.close();
+  }
+});
+
+test("request_topup posts the package and reason, then shows the refusal text", async () => {
+  const calls = [];
+  const fake = await fakeServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      calls.push({
+        method: request.method,
+        url: request.url,
+        auth: request.headers.authorization,
+        body: body === "" ? null : JSON.parse(body),
+      });
+      response.setHeader("Content-Type", "application/json");
+      if (calls.length === 1) {
+        response.end(JSON.stringify({
+          sessionId: "s-1",
+          requestId: "r-1",
+          usd: 5,
+          credits: 500,
+          reason: "The review needs credits.",
+        }));
+      } else {
+        response.statusCode = 409;
+        response.end(JSON.stringify({
+          error: "pending",
+          message: "You already asked the user for a top-up. Wait for their answer before asking again.",
+        }));
+      }
+    });
+  });
+  const mcp = startMcp(fake.url);
+  try {
+    const asked = await mcp.call("tools/call", {
+      name: "request_topup",
+      arguments: { usd: 5, reason: "The review needs credits." },
+    });
+    assert.equal(asked.result.isError, undefined);
+    assert.equal(
+      asked.result.content[0].text,
+      "Asked the user to approve a $5 top-up (500 credits). Check credits_balance later; do not ask again unless they agree.",
+    );
+
+    const again = await mcp.call("tools/call", {
+      name: "request_topup",
+      arguments: { usd: 5, reason: "Again" },
+    });
+    assert.equal(again.result.isError, true);
+    assert.match(again.result.content[0].text, /already asked/);
+
+    assert.equal(calls[0].method, "POST");
+    assert.equal(calls[0].url, "/zorvo/v1/topup-requests");
+    assert.equal(calls[0].auth, `Bearer ${proxyToken}`);
+    assert.deepEqual(calls[0].body, { usd: 5, reason: "The review needs credits." });
+    assert.equal(mcp.raw().includes(proxyToken), false);
+  } finally {
+    await mcp.close();
+    await fake.close();
+  }
+});
+
+test("request_topup refuses bad arguments without a request", async () => {
+  let calls = 0;
+  const fake = await fakeServer((_request, response) => {
+    calls += 1;
+    response.end("{}");
+  });
+  const mcp = startMcp(fake.url);
+  try {
+    for (const args of [{ usd: 0, reason: "Why" }, { usd: 5, reason: "" }, { usd: 5, reason: "a".repeat(201) }]) {
+      const answer = await mcp.call("tools/call", { name: "request_topup", arguments: args });
+      assert.equal(answer.result.isError, true);
+      assert.match(answer.result.content[0].text, /whole-dollar package/);
+    }
+    assert.equal(calls, 0);
   } finally {
     await mcp.close();
     await fake.close();

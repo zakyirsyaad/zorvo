@@ -410,6 +410,17 @@ pub fn run() {
             app.manage(AppInstaller::new(ToolsDir::new(&data_dir)));
             // Reads two small files; fetching and `npm` wait for the thread below.
             registry::install(Catalog::open(data_dir.clone(), registry::BUNDLED_HISTORY));
+            // An agent's top-up ask goes to the main window only; a popout gets it in its snapshot.
+            let topup_app = app.handle().clone();
+            proxy_for_setup
+                .topup_requests()
+                .set_sink(Box::new(move |request| {
+                    let _ = topup_app.emit_to(
+                        "main",
+                        private_mode::proxy::TOPUP_REQUEST_EVENT,
+                        request,
+                    );
+                }));
             // Builds clients only. The UI's first `private_status`, sent at start for
             // every user, reads the Keychain items; the Worker is asked only once this
             // Mac has a device.
@@ -528,6 +539,7 @@ pub fn run() {
             private_mode::commands::private_session_usage,
             private_mode::commands::private_raise_session_cap,
             private_mode::commands::private_take_session_cap_reset,
+            private_mode::commands::private_answer_topup_request,
             private_mode::commands::private_forget_session
         ])
         .build(tauri::generate_context!())

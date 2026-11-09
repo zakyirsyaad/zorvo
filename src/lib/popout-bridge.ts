@@ -1,5 +1,6 @@
 import type { AgentFailures } from './agent-stall';
 import type { CreditsOutReason } from './private-session';
+import type { PrivateTopupRequest } from './private-topup-request';
 import type { ChatMessage, ContextUsage, ElicitationAnswer, Session } from '../types';
 
 /**
@@ -28,6 +29,8 @@ export interface SessionLiveStatus {
   failures?: AgentFailures;
   /** A private session out of credits, with a key that stopped working, or at its cap: its Send waits. */
   privateCreditsOut?: CreditsOutReason;
+  /** The agent's pending top-up ask, shown above the popout's composer. */
+  privateTopupRequest?: PrivateTopupRequest | null;
 }
 
 export const IDLE_STATUS: SessionLiveStatus = { isBusy: false, isWaiting: false };
@@ -48,7 +51,9 @@ export type PopoutAction =
   | { kind: 'reopen-elicitation-url'; key: string }
   | { kind: 'open-url'; url: string }
   | { kind: 'stop' }
-  | { kind: 'add-agent' };
+  | { kind: 'add-agent' }
+  | { kind: 'approve-topup'; requestId: string }
+  | { kind: 'decline-topup'; requestId: string };
 
 export interface PopoutActionPayload {
   sessionId: string;

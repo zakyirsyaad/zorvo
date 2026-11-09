@@ -27,6 +27,29 @@ const TOOLS = [
       "List the TEE models Zorvo can run privately, with their prices and approximate cost per turn. Suggest a cheaper one when credits are low; never switch models yourself.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
+  {
+    name: "request_topup",
+    description:
+      "Ask the user to approve a Zorvo top-up when this session's credits will not cover the work at hand. Give one of the Worker's whole-dollar packages and one short reason. Ask once, and never claim the top-up happened: this returns at once, and the user pays in their own browser. Check credits_balance later.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        usd: {
+          type: "integer",
+          minimum: 1,
+          description: "Package size in whole US dollars, one of the packages credits_balance or private_models returned.",
+        },
+        reason: {
+          type: "string",
+          minLength: 1,
+          maxLength: 200,
+          description: "One short sentence for the user: what the work needs the credits for.",
+        },
+      },
+      required: ["usd", "reason"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 function send(message) {
@@ -41,7 +64,7 @@ function fail(id, code, message) {
   send({ jsonrpc: "2.0", id, error: { code, message } });
 }
 
-function get(path) {
+function requestJson(path, method = "GET", payload) {
   return new Promise((resolve, reject) => {
     if (baseUrl === "" || token === "") {
       reject(new Error("Zorvo Private is not configured for this session."));
@@ -58,33 +81,51 @@ function get(path) {
       reject(new Error("Zorvo Private's local address is not usable."));
       return;
     }
+    const body = payload === undefined ? undefined : JSON.stringify(payload);
+    const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
+    if (body !== undefined) {
+      headers["Content-Type"] = "application/json";
+      headers["Content-Length"] = Buffer.byteLength(body);
+    }
     const request = url.protocol === "https:" ? httpsRequest : httpRequest;
-    const req = request(
-      url,
-      { method: "GET", headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } },
-      (response) => {
-        let body = "";
-        response.setEncoding("utf8");
-        response.on("data", (chunk) => {
-          body += chunk;
-        });
-        response.on("end", () => {
-          if (response.statusCode !== 200) {
-            reject(new Error(`Zorvo Private answered ${response.statusCode}.`));
-            return;
-          }
+    const req = request(url, { method, headers }, (response) => {
+      let answer = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => {
+        answer += chunk;
+      });
+      response.on("end", () => {
+        if (response.statusCode !== 200) {
+          // A refusal carries the sentence the agent should show the user; a bare status does not.
+          let detail = "";
           try {
-            resolve(JSON.parse(body));
+            const parsed = JSON.parse(answer);
+            if (parsed && typeof parsed.message === "string") detail = parsed.message;
           } catch {
-            reject(new Error("Zorvo Private sent an unreadable answer."));
+            // Keep the status-only message.
           }
-        });
-      },
-    );
+          reject(new Error(detail || `Zorvo Private answered ${response.statusCode}.`));
+          return;
+        }
+        try {
+          resolve(JSON.parse(answer));
+        } catch {
+          reject(new Error("Zorvo Private sent an unreadable answer."));
+        }
+      });
+    });
     req.setTimeout(timeoutMs, () => req.destroy(new Error("Zorvo Private did not answer in time.")));
     req.on("error", (error) => reject(error));
-    req.end();
+    req.end(body);
   });
+}
+
+function get(path) {
+  return requestJson(path);
+}
+
+function post(path, payload) {
+  return requestJson(path, "POST", payload);
 }
 
 function summary(payload) {
@@ -105,7 +146,7 @@ function summary(payload) {
   return "Zorvo Private answered.";
 }
 
-async function callTool(name) {
+async function callTool(name, args = {}) {
   if (name === "credits_balance") {
     const payload = await get("/zorvo/v1/credits");
     return { content: [{ type: "text", text: `${summary(payload)}\n${JSON.stringify(payload)}` }] };
@@ -113,6 +154,32 @@ async function callTool(name) {
   if (name === "private_models") {
     const payload = await get("/zorvo/v1/models");
     return { content: [{ type: "text", text: `${summary(payload)}\n${JSON.stringify(payload)}` }] };
+  }
+  if (name === "request_topup") {
+    const usd = args.usd;
+    const reason = args.reason;
+    if (
+      !Number.isInteger(usd) ||
+      usd <= 0 ||
+      typeof reason !== "string" ||
+      reason.trim() === "" ||
+      reason.length > 200
+    ) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: "Ask for a whole-dollar package and a reason of 200 characters or less." }],
+      };
+    }
+    const asked = await post("/zorvo/v1/topup-requests", { usd, reason });
+    const credits = Number.isFinite(asked.credits) ? asked.credits : 0;
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Asked the user to approve a $${usd} top-up (${credits.toLocaleString("en-US")} credits). Check credits_balance later; do not ask again unless they agree.`,
+        },
+      ],
+    };
   }
   return { isError: true, content: [{ type: "text", text: `Unknown tool: ${name}` }] };
 }
@@ -142,7 +209,8 @@ async function handle(message) {
     }
     if (method === "tools/call") {
       const name = params && typeof params.name === "string" ? params.name : "";
-      answer(id, await callTool(name));
+      const args = params && typeof params.arguments === "object" && params.arguments !== null ? params.arguments : {};
+      answer(id, await callTool(name, args));
       return;
     }
     fail(id, -32601, "Method not found");

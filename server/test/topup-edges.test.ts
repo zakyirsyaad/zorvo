@@ -146,6 +146,8 @@ describe("checkout pages", () => {
   it("sends the payer to the README sections by default", async () => {
     await seedStock(h, 10_000);
     const { deviceId } = await newDevice();
+    // Pin the fallback: the deployed vars name the hackathon branch's README, not the defaults.
+    await setLedgerEnv({ CHECKOUT_PAID_URL: "", CHECKOUT_CANCELLED_URL: "" });
     const { sessionId } = await checkout(deviceId);
     expect(h.ping.sessions.get(sessionId)?.body).toMatchObject({ successUrl: DEFAULT_PAID_URL, cancelUrl: DEFAULT_CANCELLED_URL });
   });

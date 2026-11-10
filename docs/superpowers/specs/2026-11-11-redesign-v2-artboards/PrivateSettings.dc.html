@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zorvo · Settings private mode</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.z{--ground:#0a0a0b;--sheet:#111113;--s2:#18181b;--s3:#1f1f23;--hover:#27272a;--chip:rgba(255,255,255,.06);--line:#27272a;--strong:#71717a;--fg:#fafafa;--fg2:#d4d4d8;--muted:#a1a1aa;--subtle:#8b8b94;--primary:#fafafa;--onp:#09090b;--run:#34d399;--att:#fbbf24;--unread:#38bdf8;--danger:#f87171;--atts:#1f1a0d;--attb:#6b5416;--add:rgba(52,211,153,.12);--rem:rgba(248,113,113,.12);--pop:0 16px 40px -8px rgba(0,0,0,.6);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.z.light{--ground:#f4f4f5;--sheet:#fafafa;--s2:#ffffff;--s3:#ffffff;--hover:#e4e4e7;--chip:rgba(9,9,11,.05);--line:#e4e4e7;--strong:#808088;--fg:#09090b;--fg2:#27272a;--muted:#52525b;--subtle:#67676f;--primary:#09090b;--onp:#fafafa;--run:#047353;--att:#a34b08;--unread:#0369a1;--danger:#b91c1c;--atts:#fffbeb;--attb:#e9c46a;--add:rgba(4,120,87,.08);--rem:rgba(185,28,28,.08);--pop:0 12px 32px -8px rgba(9,9,11,.18)}
+.z button{font:inherit;cursor:pointer;margin:0}
+.z a{text-decoration:none;color:inherit}
+.mono{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.ico{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.ib{width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.tile{width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;background:var(--chip);box-shadow:inset 0 0 0 1px var(--line);color:var(--fg2)}
+.tile.sm{width:16px;height:16px;border-radius:4px;font-size:9px}
+.av{position:relative;display:flex;flex:none;margin-top:1px}
+.badge{position:absolute;right:-3px;bottom:-3px;width:8px;height:8px;border-radius:9999px;box-shadow:0 0 0 2px var(--ground)}
+.row{display:flex;align-items:flex-start;gap:10px;padding:7px 8px;border-radius:8px}
+.row.on{background:var(--hover)}
+.row.on .badge{box-shadow:0 0 0 2px var(--hover)}
+.rt{flex:1;min-width:0;display:flex;flex-direction:column}
+.t1{color:var(--fg2);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.t2{color:var(--subtle);font-size:11px;line-height:16px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tm{flex:none;color:var(--subtle);font-size:11px;line-height:18px}
+.fold{display:flex;align-items:center;gap:6px;padding:12px 8px 4px;color:var(--muted);font-size:11px;font-weight:500}
+.seg{height:26px;display:flex;align-items:center;gap:6px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px}
+.seg.on{background:var(--hover);color:var(--fg)}
+.chip{height:26px;display:flex;align-items:center;gap:6px;padding:0 8px;border:0;border-radius:6px;background:var(--chip);color:var(--fg2);font-size:12px}
+.step{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px 0 14px;border-radius:6px;font-size:12px;color:var(--fg2)}
+.step .verb{width:44px;flex:none;color:var(--muted)}
+.frow{display:flex;align-items:center;gap:8px;padding:8px 10px}
+.z input{font:inherit;margin:0}
+.nv{display:flex;align-items:center;gap:10px;height:30px;padding:0 10px;border-radius:8px;color:var(--fg2)}
+.nv.on{background:var(--hover);color:var(--fg);font-weight:500}
+.grp{display:flex;flex-direction:column;border-radius:12px;background:var(--s2);border:1px solid var(--line);overflow:hidden}
+.r{display:flex;align-items:center;gap:16px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.r:last-child{border-bottom:0}
+.r .l{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.r .d{font-size:12px;color:var(--subtle)}
+.ob{height:28px;padding:0 12px;border:1px solid var(--strong);border-radius:8px;background:transparent;color:var(--fg2);font-size:12px}
+.gh{display:flex;align-items:baseline;gap:8px;font-size:11px;font-weight:500;color:var(--muted);padding:0 4px 8px}
+.pk{flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--fg);text-align:left}
+.pk.on{border-color:var(--strong);background:var(--s2)}
+.dot{width:6px;height:6px;border-radius:9999px;flex:none}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 1280px; height: 1300px; box-sizing: border-box; display: flex; overflow: hidden; background: var(--ground); color: var(--fg); font-size: 13px; line-height: 18px;">
+  <nav aria-label="Settings" style="width: 220px; flex: none; display: flex; flex-direction: column; gap: 2px; padding: 0 10px;">
+    <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 8px; padding-left: 6px;" aria-hidden="true"><span style="width: 12px; height: 12px; border-radius: 9999px; background: var(--hover);"></span><span style="width: 12px; height: 12px; border-radius: 9999px; background: var(--hover);"></span><span style="width: 12px; height: 12px; border-radius: 9999px; background: var(--hover);"></span></div>
+    <a href="#" class="nv" style="color: var(--muted); margin-bottom: 10px;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"></path></svg>Back to sessions</a>
+    <a href="#" class="nv"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-9M14 17H5"></path><circle cx="17" cy="17" r="3"></circle><circle cx="7" cy="7" r="3"></circle></svg>General</a>
+    <a href="#" class="nv"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"></path></svg>Appearance</a>
+    <a href="#" class="nv"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>Agents</a>
+    <a href="#" class="nv on" aria-current="page"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v6c0 4.2 3 7.6 7 9 4-1.4 7-4.8 7-9V6z"></path><path d="m9 12 2 2 4-4"></path></svg>Private mode</a>
+    <a href="#" class="nv"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7V3M15 7V3M6 7h12v4a6 6 0 0 1-12 0zM12 17v4"></path></svg>MCP servers</a>
+    <a href="#" class="nv"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="18" r="2.5"></circle><path d="M6 8.5v7M18 15.5V9a3 3 0 0 0-3-3h-3"></path></svg>GitHub</a>
+  </nav>
+
+  <main style="flex: 1; min-width: 0; margin: 8px 8px 8px 0; overflow: hidden; background: var(--sheet); border: 1px solid var(--line); border-radius: 10px; padding: 44px 40px;">
+    <div style="max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px;">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <h1 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: -0.02em;">Private mode</h1>
+        <span style="color: var(--muted);">Qwen Code runs on models inside NEAR AI's secure hardware. Your code never reaches OpenAI or Anthropic, and the credits server never sees your prompts.</span>
+      </div>
+
+      <section aria-label="Balance">
+        <div class="gh">Balance</div>
+        <div class="grp">
+          <div class="r" style="padding: 16px;">
+            <span class="l" style="gap: 4px;">
+              <span class="mono" style="font-size: 28px; line-height: 34px; font-weight: 600; letter-spacing: -0.02em;">{{balance}} <span style="font-family: -apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',sans-serif; font-size: 14px; font-weight: 500; color: var(--muted); letter-spacing: 0;">credits</span></span>
+              <span class="d">One balance for every private session on this Mac · <span class="mono">260</span> used so far</span>
+            </span>
+            <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
+              <span style="display: flex; align-items: center; gap: 6px; color: var(--fg2); font-size: 12px;"><span class="dot" style="background: var(--run);"></span>Key ready</span>
+              <span style="display: flex; align-items: center; gap: 8px;"><span class="d">Updated 1 min ago</span><button class="ob" style="display: flex; align-items: center; gap: 6px;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px;"><path d="M20 11a8 8 0 1 0-2.3 5.7"></path><path d="M20 4v7h-7"></path></svg>Refresh</button></span>
+            </span>
+          </div>
+          <details class="r" style="display: block; padding: 0;">
+            <summary style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; cursor: pointer; list-style: none; font-size: 12px;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m9 6 6 6-6 6"></path></svg><span style="flex: 1; color: var(--fg2);">Used by 2 models</span><span class="mono" style="color: var(--muted);">260 credits</span></summary>
+            <div style="display: flex; flex-direction: column; gap: 8px; padding: 0 16px 12px 36px;">
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 12px;"><span class="tile sm" aria-hidden="true">Q</span><span style="flex: 1; color: var(--fg2);">Qwen Code · Qwen 3.8 27B</span><span class="mono" style="color: var(--muted);">210 used</span><span style="width: 120px; text-align: right; color: var(--subtle);">≈ 3,100 turns left</span></div>
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 12px;"><span class="tile sm" aria-hidden="true">Q</span><span style="flex: 1; color: var(--fg2);">Qwen Code · GLM 5.3 Flash</span><span class="mono" style="color: var(--muted);">50 used</span><span style="width: 120px; text-align: right; color: var(--subtle);">≈ 4,100 turns left</span></div>
+            <span class="d">Sessions running at the same time draw from this balance together. Give a session its own cap in its draft.</span>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <section aria-label="Top up">
+        <div class="gh"><span style="flex: 1;">Top-up</span><span style="font-weight: 400; color: var(--subtle);">Stock: <span class="mono">{{stock}} credits</span> · updated 1 min ago</span></div>
+        <div role="radiogroup" aria-label="Package" style="display: flex; gap: 12px;">
+          <button class="pk" role="radio" aria-checked="false"><span class="mono" style="font-size: 18px; line-height: 24px; font-weight: 600;">$5</span><span class="mono" style="color: var(--fg2);">500 credits</span><span style="color: var(--subtle); font-size: 12px;">≈ 1,250 turns</span></button>
+          <button class="pk on" role="radio" aria-checked="true" style="position: relative;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="position: absolute; top: 12px; right: 12px;"><circle cx="12" cy="12" r="9"></circle><path d="m8 12 3 3 5-6"></path></svg><span class="mono" style="font-size: 18px; line-height: 24px; font-weight: 600;">$10</span><span class="mono" style="color: var(--fg2);">1,000 credits</span><span style="color: var(--subtle); font-size: 12px;">≈ 2,500 turns</span></button>
+          <button class="pk" role="radio" aria-checked="false" aria-disabled="true" style="cursor: default;"><span class="mono" style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--muted);">$25</span><span class="mono" style="color: var(--muted);">2,500 credits</span><span style="color: var(--subtle); font-size: 12px;">Over your <span class="mono">5,000</span>-credit limit</span></button>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 12px 16px; border-radius: 12px; background: var(--s2); border: 1px solid var(--line);">
+          <span style="flex: 1; display: flex; flex-direction: column; gap: 2px;"><span style="color: var(--fg);"><span class="mono">1,000 credits</span> for <span class="mono">$10</span></span><span style="color: var(--subtle); font-size: 12px;">Checkout opens in your browser through PingPay. Pay with USDC from any chain, a wallet or a card. The credits are held for you for 25 minutes.</span></span>
+          <button style="height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--primary); color: var(--onp); font-weight: 500;">Pay <span class="mono">$10</span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px;"><path d="M7 17 17 7M9 7h8v8"></path></svg></button>
+        </div>
+        <p style="margin: 10px 4px 0; color: var(--subtle); font-size: 12px;">Credits can't be refunded or withdrawn.</p>
+        <div class="grp" style="margin-top: 12px;">
+          <div class="r">
+            <span class="l"><span id="promo-label">Promo code</span><span class="d">Got a code from Zorvo? Its credits land here.</span></span>
+            <input aria-labelledby="promo-label" placeholder="ZORVO-HACK-…" class="mono" style="width: 180px; height: 28px; box-sizing: border-box; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--ground); color: var(--fg); font-size: 12px;">
+            <button class="ob">Redeem</button>
+          </div>
+        </div>
+      </section>
+
+      <section aria-label="Recovery code">
+        <div class="gh">Recovery code</div>
+        <div class="grp">
+          <div class="r">
+            <span class="l"><span class="mono" style="font-size: 13px; letter-spacing: 0.04em;">ZRV-••••-••••-••••-7F2Q</span><span class="d">Moves your credits to another Mac. Anyone with this code can use your credits, so keep it somewhere safe.</span></span>
+            <button class="ob">Show</button>
+            <button class="ob">Copy</button>
+          </div>
+          <div class="r">
+            <span class="l"><span>Restore on this Mac</span><span class="d">Enter a code from another Mac. That Mac stops using these credits, and you get a new code.</span></span>
+            <button class="ob">Restore…</button>
+          </div>
+        </div>
+      </section>
+
+      <section aria-label="Your own NEAR AI key">
+        <div class="gh">Your own NEAR AI key</div>
+        <div class="grp">
+          <div class="r">
+            <span class="l"><span>Use my own NEAR AI key</span><span class="d">For NEAR holders who earn credits by staking in their own NEAR AI organization. Zorvo keeps the key in your Keychain and uses it instead of Zorvo credits.</span></span>
+            <button class="ob">Add key</button>
+          </div>
+        </div>
+      </section>
+
+      <section aria-label="Safety">
+        <div class="gh">Safety</div>
+        <div class="grp">
+          <div class="r">
+            <span class="l"><span id="sg-label">Check messages for secrets before sending</span><span class="d">Zorvo looks for keys and passwords in what you send, on this Mac. The agent can still read files in the folder itself.</span></span>
+            <button role="switch" aria-checked="true" aria-labelledby="sg-label" style="width: 32px; height: 20px; padding: 2px; border: 0; border-radius: 9999px; background: var(--primary); display: flex; justify-content: flex-end;"><span style="width: 16px; height: 16px; border-radius: 9999px; background: var(--onp);"></span></button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"balance":{"editor":"text","default":"1,240"},"stock":{"editor":"text","default":"12,400"},"$preview":{"width":1280,"height":1300}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const light = (this.props.theme ?? 'dark') === 'light';
+    return { themeClass: light ? 'z light' : 'z', balance: this.props.balance ?? '1,240', stock: this.props.stock ?? '12,400' };
+  }
+}
+</script>
+</body>
+</html>

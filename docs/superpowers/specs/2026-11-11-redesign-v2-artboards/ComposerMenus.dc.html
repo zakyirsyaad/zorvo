@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zorvo · Composer menus</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.z{--ground:#0a0a0b;--sheet:#111113;--s2:#18181b;--s3:#1f1f23;--hover:#27272a;--chip:rgba(255,255,255,.06);--line:#27272a;--strong:#71717a;--fg:#fafafa;--fg2:#d4d4d8;--muted:#a1a1aa;--subtle:#8b8b94;--primary:#fafafa;--onp:#09090b;--run:#34d399;--att:#fbbf24;--unread:#38bdf8;--danger:#f87171;--atts:#1f1a0d;--attb:#6b5416;--add:rgba(52,211,153,.12);--rem:rgba(248,113,113,.12);--pop:0 16px 40px -8px rgba(0,0,0,.6);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.z.light{--ground:#f4f4f5;--sheet:#fafafa;--s2:#ffffff;--s3:#ffffff;--hover:#e4e4e7;--chip:rgba(9,9,11,.05);--line:#e4e4e7;--strong:#808088;--fg:#09090b;--fg2:#27272a;--muted:#52525b;--subtle:#67676f;--primary:#09090b;--onp:#fafafa;--run:#047353;--att:#a34b08;--unread:#0369a1;--danger:#b91c1c;--atts:#fffbeb;--attb:#e9c46a;--add:rgba(4,120,87,.08);--rem:rgba(185,28,28,.08);--pop:0 12px 32px -8px rgba(9,9,11,.18)}
+.z button{font:inherit;cursor:pointer;margin:0}
+.z a{text-decoration:none;color:inherit}
+.mono{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.ico{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.ib{width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.tile{width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;background:var(--chip);box-shadow:inset 0 0 0 1px var(--line);color:var(--fg2)}
+.tile.sm{width:16px;height:16px;border-radius:4px;font-size:9px}
+.chip{height:26px;display:flex;align-items:center;gap:6px;padding:0 8px;border:0;border-radius:6px;background:var(--chip);color:var(--fg2);font-size:12px}
+.chip.open{background:var(--hover);color:var(--fg)}
+.cell{height:468px;display:flex;flex-direction:column;justify-content:flex-end}
+.anchor{position:relative}
+.comp{display:flex;flex-direction:column;gap:10px;padding:10px;border-radius:12px;background:var(--s2);border:1px solid var(--line);box-shadow:var(--pop)}
+.txt{min-height:44px;padding:0 4px;color:var(--subtle);font-size:14px;line-height:22px}
+.crow{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.agent{height:26px;display:flex;align-items:center;gap:6px;padding:0 6px 0 2px;color:var(--fg2);font-size:12px}
+.ctx{display:flex;align-items:center;gap:6px;color:var(--subtle);font-size:11px}
+.menu{position:absolute;bottom:calc(100% + 8px);box-sizing:border-box;display:flex;flex-direction:column;padding:4px;border-radius:10px;background:var(--s3);border:1px solid var(--line);box-shadow:var(--pop)}
+.opt{display:flex;align-items:flex-start;gap:8px;min-height:28px;box-sizing:border-box;padding:5px 8px;border-radius:6px;color:var(--fg2)}
+.opt.on{background:var(--hover)}
+.opt .t{display:flex;flex-direction:column;flex:1;min-width:0}
+.opt .d{font-size:11px;color:var(--subtle);line-height:15px}
+.hd{padding:6px 8px 4px;font-size:11px;font-weight:500;color:var(--muted)}
+.lst{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.chk{width:14px;height:14px;flex:none;margin-top:2px}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 1024px; height: 1000px; box-sizing: border-box; padding: 24px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; row-gap: 16px; overflow: hidden; background: var(--sheet); color: var(--fg); font-size: 13px; line-height: 18px;">
+
+  <div class="cell">
+    <div class="anchor">
+      <section class="menu" aria-label="Mode" style="left: 208px; width: 260px;">
+        <div class="hd">Mode</div>
+        <ul class="lst" role="listbox" aria-label="Mode">
+        <li class="opt on" role="option" aria-selected="true"><svg class="ico chk" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--fg);"><path d="M20 6 9 17l-5-5"></path></svg><span class="t"><span style="color: var(--fg);">Ask before edits</span><span class="d">Asks you before it changes a file or runs a command.</span></span></li>
+        <li class="opt" role="option" aria-selected="false"><span class="chk"></span><span class="t"><span>Plan</span><span class="d">Reads and plans. It changes nothing.</span></span></li>
+        <li class="opt" role="option" aria-selected="false"><span class="chk"></span><span class="t"><span style="display: flex; align-items: center; gap: 6px;">Accept edits<svg class="ico" viewBox="0 0 24 24" aria-label="Lets the agent act without asking" role="img" style="color: var(--att); width: 12px; height: 12px;"><path d="M12 3 4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6z"></path><path d="M12 9v4M12 16v.01"></path></svg></span><span class="d">Edits files without asking. Lets the agent act without asking.</span></span></li>
+        </ul>
+      </section>
+      <div class="comp">
+        <div class="txt">Reply to Claude Code</div>
+        <div class="crow">
+          <button class="ib" aria-label="Attach files"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"></path></svg></button>
+          <span class="agent"><span class="tile sm" aria-hidden="true">C</span>Claude Code</span>
+          <button class="chip">Opus<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+          <button class="chip open" aria-expanded="true" aria-haspopup="listbox">Ask before edits<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+          <span style="flex: 1;"></span>
+          <span class="ctx"><svg viewBox="0 0 16 16" role="img" aria-label="38% of context used" style="width: 14px; height: 14px; transform: rotate(-90deg);"><circle cx="8" cy="8" r="6" style="fill: none; stroke: var(--hover); stroke-width: 2;"></circle><circle cx="8" cy="8" r="6" stroke-dasharray="14.3 37.7" style="fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round;"></circle></svg></span>
+          <button aria-label="Send" disabled="disabled" style="width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: var(--hover); color: var(--muted); cursor: not-allowed;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cell">
+    <div class="anchor">
+      <section class="menu" aria-label="Model" style="left: 142px; width: 300px;">
+        <label style="display: flex; align-items: center; gap: 8px; height: 28px; margin-bottom: 4px; box-sizing: border-box; padding: 0 8px; border-radius: 6px; background: var(--s2); border: 1px solid var(--line); color: var(--subtle);"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px;"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><input value="son" aria-label="Search models" style="flex: 1; min-width: 0; border: 0; background: transparent; color: var(--fg); font: inherit; font-size: 12px; outline: none;"></label>
+        <ul class="lst" role="listbox" aria-label="Model">
+        <li class="opt on" role="option" aria-selected="false"><span class="chk"></span><span class="t"><span style="color: var(--fg);"><b style="font-weight: 600;">Son</b>net</span><span class="d">Fast and capable for most work.</span></span></li>
+        <li class="opt" role="option" aria-selected="false"><span class="chk"></span><span class="t"><span><b style="font-weight: 600;">Son</b>net, long context</span><span class="d">For large repositories.</span></span></li>
+        </ul>
+        <div style="padding: 6px 8px 4px; font-size: 11px; color: var(--muted);">2 of 14 models</div>
+      </section>
+      <div class="comp">
+        <div class="txt">Reply to Claude Code</div>
+        <div class="crow">
+          <button class="ib" aria-label="Attach files"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"></path></svg></button>
+          <span class="agent"><span class="tile sm" aria-hidden="true">C</span>Claude Code</span>
+          <button class="chip open" aria-expanded="true" aria-haspopup="listbox">Opus<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+          <button class="chip">Ask before edits<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+          <span style="flex: 1;"></span>
+          <span class="ctx"><svg viewBox="0 0 16 16" role="img" aria-label="38% of context used" style="width: 14px; height: 14px; transform: rotate(-90deg);"><circle cx="8" cy="8" r="6" style="fill: none; stroke: var(--hover); stroke-width: 2;"></circle><circle cx="8" cy="8" r="6" stroke-dasharray="14.3 37.7" style="fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round;"></circle></svg></span>
+          <button aria-label="Send" disabled="disabled" style="width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: var(--hover); color: var(--muted); cursor: not-allowed;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cell">
+    <div class="anchor">
+      <section class="menu" aria-label="Slash commands" style="left: 0; width: 100%;">
+        <div class="hd">Commands from Claude Code</div>
+        <ul class="lst" role="listbox" aria-label="Slash commands">
+        <li class="opt on" role="option"><span class="t"><span class="mono" style="font-size: 12px; color: var(--fg);">/review</span><span class="d">Review the changes on this branch</span></span></li>
+        <li class="opt" role="option"><span class="t"><span class="mono" style="font-size: 12px;">/compact</span><span class="d">Summarize the conversation to free context</span></span></li>
+        <li class="opt" role="option"><span class="t"><span class="mono" style="font-size: 12px;">/init</span><span class="d">Write a CLAUDE.md for this project</span></span></li>
+        </ul>
+      </section>
+      <div class="comp">
+        <div class="txt mono" style="color: var(--fg); font-size: 13px;">/re<span style="display: inline-block; width: 1px; height: 16px; vertical-align: -3px; background: var(--fg);"></span></div>
+        <div class="crow">
+          <button class="ib" aria-label="Attach files"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"></path></svg></button>
+          <span class="agent"><span class="tile sm" aria-hidden="true">C</span>Claude Code</span>
+          <button class="chip">Opus<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+          <button class="chip">Ask before edits<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+          <span style="flex: 1;"></span>
+          <span class="ctx"><svg viewBox="0 0 16 16" role="img" aria-label="38% of context used" style="width: 14px; height: 14px; transform: rotate(-90deg);"><circle cx="8" cy="8" r="6" style="fill: none; stroke: var(--hover); stroke-width: 2;"></circle><circle cx="8" cy="8" r="6" stroke-dasharray="14.3 37.7" style="fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round;"></circle></svg></span>
+          <button aria-label="Send" style="width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: var(--primary); color: var(--onp);"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cell">
+    <div class="anchor">
+      <section class="menu" aria-label="Files to mention" style="left: 0; width: 100%;">
+        <div class="hd">Files in agent-desktop</div>
+        <ul class="lst" role="listbox" aria-label="Files to mention">
+        <li class="opt on" role="option"><svg class="ico chk" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--subtle);"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path></svg><span class="t"><span class="mono" style="font-size: 12px; color: var(--fg);"><b style="font-weight: 600;">Session</b>List.tsx</span><span class="d mono">src/components/sidebar</span></span></li>
+        <li class="opt" role="option"><svg class="ico chk" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--subtle);"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path></svg><span class="t"><span class="mono" style="font-size: 12px;"><b style="font-weight: 600;">session</b>-status.ts</span><span class="d mono">src/lib</span></span></li>
+        <li class="opt" role="option"><svg class="ico chk" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--subtle);"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path></svg><span class="t"><span class="mono" style="font-size: 12px;"><b style="font-weight: 600;">session</b>-list.test.tsx</span><span class="d mono">src/test</span></span></li>
+        </ul>
+      </section>
+      <div class="comp">
+        <div class="txt" style="color: var(--fg);">Check <span class="mono" style="font-size: 13px;">@session</span><span style="display: inline-block; width: 1px; height: 16px; vertical-align: -3px; background: var(--fg);"></span></div>
+        <div class="crow">
+          <button class="ib" aria-label="Attach files"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"></path></svg></button>
+          <span class="agent"><span class="tile sm" aria-hidden="true">C</span>Claude Code</span>
+          <button class="chip">Opus<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+          <button class="chip">Ask before edits<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+          <span style="flex: 1;"></span>
+          <span class="ctx"><svg viewBox="0 0 16 16" role="img" aria-label="38% of context used" style="width: 14px; height: 14px; transform: rotate(-90deg);"><circle cx="8" cy="8" r="6" style="fill: none; stroke: var(--hover); stroke-width: 2;"></circle><circle cx="8" cy="8" r="6" stroke-dasharray="14.3 37.7" style="fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round;"></circle></svg></span>
+          <button aria-label="Send" style="width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: var(--primary); color: var(--onp);"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":1024,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const light = (this.props.theme ?? 'dark') === 'light';
+    return { themeClass: light ? 'z light' : 'z' };
+  }
+}
+</script>
+</body>
+</html>

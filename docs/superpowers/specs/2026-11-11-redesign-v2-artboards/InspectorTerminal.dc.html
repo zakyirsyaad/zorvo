@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zorvo · Inspector terminal</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.z{--ground:#0a0a0b;--sheet:#111113;--s2:#18181b;--s3:#1f1f23;--hover:#27272a;--chip:rgba(255,255,255,.06);--line:#27272a;--strong:#71717a;--fg:#fafafa;--fg2:#d4d4d8;--muted:#a1a1aa;--subtle:#8b8b94;--primary:#fafafa;--onp:#09090b;--run:#34d399;--att:#fbbf24;--unread:#38bdf8;--danger:#f87171;--atts:#1f1a0d;--attb:#6b5416;--add:rgba(52,211,153,.12);--rem:rgba(248,113,113,.12);--pop:0 16px 40px -8px rgba(0,0,0,.6);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.z.light{--ground:#f4f4f5;--sheet:#fafafa;--s2:#ffffff;--s3:#ffffff;--hover:#e4e4e7;--chip:rgba(9,9,11,.05);--line:#e4e4e7;--strong:#808088;--fg:#09090b;--fg2:#27272a;--muted:#52525b;--subtle:#67676f;--primary:#09090b;--onp:#fafafa;--run:#047353;--att:#a34b08;--unread:#0369a1;--danger:#b91c1c;--atts:#fffbeb;--attb:#e9c46a;--add:rgba(4,120,87,.08);--rem:rgba(185,28,28,.08);--pop:0 12px 32px -8px rgba(9,9,11,.18)}
+.z button{font:inherit;cursor:pointer;margin:0}
+.z a{text-decoration:none;color:inherit}
+.mono{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.ico{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.ib{width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.tile{width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;background:var(--chip);box-shadow:inset 0 0 0 1px var(--line);color:var(--fg2)}
+.tile.sm{width:16px;height:16px;border-radius:4px;font-size:9px}
+.av{position:relative;display:flex;flex:none;margin-top:1px}
+.badge{position:absolute;right:-3px;bottom:-3px;width:8px;height:8px;border-radius:9999px;box-shadow:0 0 0 2px var(--ground)}
+.row{display:flex;align-items:flex-start;gap:10px;padding:7px 8px;border-radius:8px}
+.row.on{background:var(--hover)}
+.row.on .badge{box-shadow:0 0 0 2px var(--hover)}
+.rt{flex:1;min-width:0;display:flex;flex-direction:column}
+.t1{color:var(--fg2);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.t2{color:var(--subtle);font-size:11px;line-height:16px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tm{flex:none;color:var(--subtle);font-size:11px;line-height:18px}
+.fold{display:flex;align-items:center;gap:6px;padding:12px 8px 4px;color:var(--muted);font-size:11px;font-weight:500}
+.seg{height:26px;display:flex;align-items:center;gap:6px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px}
+.seg.on{background:var(--hover);color:var(--fg)}
+.chip{height:26px;display:flex;align-items:center;gap:6px;padding:0 8px;border:0;border-radius:6px;background:var(--chip);color:var(--fg2);font-size:12px}
+.step{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px 0 14px;border-radius:6px;font-size:12px;color:var(--fg2)}
+.step .verb{width:44px;flex:none;color:var(--muted)}
+.frow{display:flex;align-items:center;gap:8px;padding:8px 10px}
+@media (max-width:900px){.z .side,.z .insp{display:none}.z .stage{padding-left:8px}}
+.tg{color:#8b8b94}.tok{color:#34d399}.twarn{color:#fbbf24}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="position: relative; width: 576px; height: 800px; box-sizing: border-box; display: flex; padding: 8px; overflow: hidden; background: var(--ground); color: var(--fg); font-size: 13px; line-height: 18px;">
+<aside class="insp" aria-label="Inspector" style="width: 560px; box-sizing: border-box; flex: none; display: flex; flex-direction: column; background: var(--sheet); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;">
+  <div style="height: 48px; flex: none; display: flex; align-items: center; padding: 0 10px; border-bottom: 1px solid var(--line);">
+    <div role="tablist" aria-label="Inspector" style="display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--chip);">
+      <button role="tab" aria-selected="false" class="seg">Changes<span style="color: var(--muted);">3</span></button>
+      <button role="tab" aria-selected="false" class="seg">Activity</button>
+      <button role="tab" aria-selected="false" class="seg">Files</button>
+      <button role="tab" aria-selected="true" class="seg on">Terminal</button>
+    </div>
+  </div>
+
+  <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; background: #0a0a0b;">
+    <div style="height: 36px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 12px; border-bottom: 1px solid #27272a;">
+      <span style="height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 6px; background: #27272a; color: #fafafa; font-size: 12px;">zsh<span class="mono" style="font-size: 11px; color: #8b8b94;">agent-desktop</span></span>
+      <span style="height: 24px; display: flex; align-items: center; padding: 0 10px; color: #a1a1aa; font-size: 12px;">zsh 2</span>
+      <button aria-label="New terminal" style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: #a1a1aa;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px;"><path d="M12 5v14M5 12h14"></path></svg></button>
+      <span style="flex: 1;"></span>
+      <span style="color: #8b8b94; font-size: 11px;">80 × 38</span>
+    </div>
+    <div class="mono" style="flex: 1; padding: 12px 14px; font-size: 12px; line-height: 18px; color: #d4d4d8; white-space: pre; overflow: hidden;"><span class="tok">~/agent-desktop</span> <span class="tg">on</span> agent/redesign-main-window <span class="tg">$</span> pnpm lint
+
+<span class="tg">&gt; zorvo@0.8.0 lint /Users/mac/developer/agent-desktop</span>
+<span class="tg">&gt; tsc --noEmit &amp;&amp; eslint . --max-warnings=0</span>
+
+<span class="twarn">src/components/sidebar/SessionList.tsx</span>
+  <span class="tg">88:7</span>  <span class="twarn">warning</span>  'renderRow' is defined but never used  no-unused-vars
+
+<span class="twarn">✖ 1 problem (0 errors, 1 warning)</span>
+<span class="tg"> ELIFECYCLE  Command failed with exit code 1.</span>
+
+<span class="tok">~/agent-desktop</span> <span class="tg">on</span> agent/redesign-main-window <span class="tg">$</span> pnpm vitest run src/test/session-list.test.tsx
+
+ <span class="tok">✓</span> src/test/session-list.test.tsx (6 tests) 412ms
+
+ <span class="tg">Test Files</span>  <span class="tok">1 passed</span> (1)
+      <span class="tg">Tests</span>  <span class="tok">6 passed</span> (6)
+   <span class="tg">Duration</span>  2.14s
+
+<span class="tok">~/agent-desktop</span> <span class="tg">on</span> agent/redesign-main-window <span class="tg">$</span> <span style="display: inline-block; width: 7px; height: 14px; vertical-align: -2px; background: #d4d4d8;"></span></div>
+  </div>
+</aside>
+
+<div aria-hidden="true" style="position: absolute; left: 5px; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: var(--strong);"></div>
+<div role="separator" aria-orientation="vertical" aria-label="Resize inspector" aria-valuenow="560" aria-valuemin="320" aria-valuemax="720" style="position: absolute; left: 2px; top: 50%; width: 10px; height: 36px; margin-top: -18px; border-radius: 5px; background: var(--strong);"></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":576,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const light = (this.props.theme ?? 'dark') === 'light';
+    return { themeClass: light ? 'z light' : 'z' };
+  }
+}
+</script>
+</body>
+</html>

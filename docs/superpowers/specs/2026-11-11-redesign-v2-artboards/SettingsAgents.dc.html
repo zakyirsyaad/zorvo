@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zorvo · Settings agents, layered</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.z{--ground:#0a0a0b;--sheet:#111113;--s2:#18181b;--s3:#1f1f23;--hover:#27272a;--chip:rgba(255,255,255,.06);--line:#27272a;--strong:#71717a;--fg:#fafafa;--fg2:#d4d4d8;--muted:#a1a1aa;--subtle:#8b8b94;--primary:#fafafa;--onp:#09090b;--run:#34d399;--att:#fbbf24;--unread:#38bdf8;--danger:#f87171;--atts:#1f1a0d;--attb:#6b5416;--add:rgba(52,211,153,.12);--rem:rgba(248,113,113,.12);--pop:0 16px 40px -8px rgba(0,0,0,.6);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.z.light{--ground:#f4f4f5;--sheet:#fafafa;--s2:#ffffff;--s3:#ffffff;--hover:#e4e4e7;--chip:rgba(9,9,11,.05);--line:#e4e4e7;--strong:#808088;--fg:#09090b;--fg2:#27272a;--muted:#52525b;--subtle:#67676f;--primary:#09090b;--onp:#fafafa;--run:#047353;--att:#a34b08;--unread:#0369a1;--danger:#b91c1c;--atts:#fffbeb;--attb:#e9c46a;--add:rgba(4,120,87,.08);--rem:rgba(185,28,28,.08);--pop:0 12px 32px -8px rgba(9,9,11,.18)}
+.z button{font:inherit;cursor:pointer;margin:0}
+.z a{text-decoration:none;color:inherit}
+.mono{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.ico{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.ib{width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.tile{width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;background:var(--chip);box-shadow:inset 0 0 0 1px var(--line);color:var(--fg2)}
+.tile.sm{width:16px;height:16px;border-radius:4px;font-size:9px}
+.av{position:relative;display:flex;flex:none;margin-top:1px}
+.badge{position:absolute;right:-3px;bottom:-3px;width:8px;height:8px;border-radius:9999px;box-shadow:0 0 0 2px var(--ground)}
+.row{display:flex;align-items:flex-start;gap:10px;padding:7px 8px;border-radius:8px}
+.row.on{background:var(--hover)}
+.row.on .badge{box-shadow:0 0 0 2px var(--hover)}
+.rt{flex:1;min-width:0;display:flex;flex-direction:column}
+.t1{color:var(--fg2);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.t2{color:var(--subtle);font-size:11px;line-height:16px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tm{flex:none;color:var(--subtle);font-size:11px;line-height:18px}
+.fold{display:flex;align-items:center;gap:6px;padding:12px 8px 4px;color:var(--muted);font-size:11px;font-weight:500}
+.seg{height:26px;display:flex;align-items:center;gap:6px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px}
+.seg.on{background:var(--hover);color:var(--fg)}
+.chip{height:26px;display:flex;align-items:center;gap:6px;padding:0 8px;border:0;border-radius:6px;background:var(--chip);color:var(--fg2);font-size:12px}
+.step{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px 0 14px;border-radius:6px;font-size:12px;color:var(--fg2)}
+.step .verb{width:44px;flex:none;color:var(--muted)}
+.frow{display:flex;align-items:center;gap:8px;padding:8px 10px}
+@media (max-width:900px){.z .side,.z .insp{display:none}.z .stage{padding-left:8px}}
+.tile.lg{width:28px;height:28px;border-radius:8px;font-size:12px}
+.grp{display:flex;flex-direction:column;border-radius:12px;background:var(--s2);border:1px solid var(--line);overflow:hidden}
+.r{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.r:last-child{border-bottom:0}
+.l{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.d{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;line-height:16px}
+.dot{width:6px;height:6px;border-radius:9999px;flex:none}
+.ob{height:28px;padding:0 12px;border:1px solid var(--strong);border-radius:8px;background:transparent;color:var(--fg);font-size:12px}
+.gb{height:28px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:12px}
+.gh{font-size:11px;font-weight:500;color:var(--muted);padding:0 4px 8px}
+.st{display:flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:6px;background:var(--chip);font-size:11px;color:var(--fg2);flex:none}
+.pg{width:100%;height:4px;margin-top:6px;border:0;border-radius:9999px;overflow:hidden;appearance:none;-webkit-appearance:none;background:var(--hover)}
+.pg::-webkit-progress-bar{background:var(--hover)}
+.pg::-webkit-progress-value{background:var(--fg2);border-radius:9999px}
+.pg::-moz-progress-bar{background:var(--fg2)}
+.meth{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line)}
+.meth:last-child{border-bottom:0}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 880px; height: 940px; box-sizing: border-box; overflow: hidden; background: var(--sheet); color: var(--fg); font-size: 13px; line-height: 18px;">
+  <main style="box-sizing: border-box; padding: 48px 80px;">
+    <div style="max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px;">
+      <div style="display: flex; flex-direction: column; gap: 4px;"><h1 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: -0.02em;">Agents</h1><span style="color: var(--muted);">The agents Zorvo can run. Zorvo installs them in its own folder, or uses the ones already on this Mac.</span></div>
+
+      <div style="display: flex; gap: 8px;">
+        <label style="flex: 1; height: 32px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--s2); color: var(--subtle);"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><input type="search" placeholder="Search agents" aria-label="Search agents" style="flex: 1; min-width: 0; border: 0; background: transparent; color: var(--fg); font: inherit; outline: none;"></label>
+        <button class="ob" style="height: 32px; display: flex; align-items: center; gap: 6px; color: var(--fg2);"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px;"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"></path></svg>Check again</button>
+      </div>
+
+      <section>
+        <div class="gh">In use</div>
+        <div class="grp">
+          <div class="r">
+            <span class="tile lg" aria-hidden="true">C</span>
+            <span class="l"><span style="color: var(--fg); font-weight: 500;">Claude Code</span><span class="d mono" style="font-size: 11px;">0.93.0 · installed by Zorvo</span></span>
+            <span class="st"><span class="dot" style="background: var(--run);"></span>Ready</span>
+            <button class="ob">Update to 0.94.1</button>
+            <button class="ib" aria-label="More actions for Claude Code"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></button>
+          </div>
+
+          <div style="display: flex; flex-direction: column; border-bottom: 1px solid var(--line);">
+            <div class="r" style="border-bottom: 0;">
+              <span class="tile lg" aria-hidden="true">G</span>
+              <span class="l"><span style="color: var(--fg); font-weight: 500;">Gemini CLI</span><span class="d mono" style="font-size: 11px;">0.64.0 · on this Mac</span></span>
+              <span class="st"><span class="dot" style="background: var(--att);"></span>Sign in</span>
+              <button class="ib" aria-expanded="true" aria-label="Hide sign-in for Gemini CLI"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6"></path></svg></button>
+            </div>
+            <div style="margin: 0 16px 14px 56px; display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--sheet);">
+                <div class="meth"><span style="flex: 1; color: var(--fg2);">Log in with Google</span><button class="ob">Log in with Google</button></div>
+                <div class="meth"><span style="flex: 1; display: flex; flex-direction: column;"><span style="color: var(--fg2);">Gemini API key</span><span class="d">Set the key in your shell, then check again.</span></span><span style="font-size: 11px; color: var(--subtle);">In your shell</span></div>
+                <div class="meth"><span style="flex: 1; display: flex; flex-direction: column;"><span style="color: var(--fg2);">Vertex AI</span><span class="d">Needs your Google Cloud settings in the shell.</span></span><span style="font-size: 11px; color: var(--subtle);">In your shell</span></div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;"><span class="d" style="flex: 1;">Checking may open a short session in Gemini CLI, which stays in its history.</span><button class="ob" style="color: var(--fg2);">Check sign-in</button></div>
+            </div>
+          </div>
+
+          <div class="r">
+            <span class="tile lg" aria-hidden="true">Q</span>
+            <span class="l"><span style="color: var(--fg); font-weight: 500;">Qwen Code</span><span class="d mono" style="font-size: 11px;">0.26.6 · on this Mac</span></span>
+            <span class="st"><span class="dot" style="background: var(--subtle);"></span>Not checked</span>
+            <button class="ob">Open setup</button>
+            <button class="ib" aria-label="More actions for Qwen Code"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></button>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="gh">Available</div>
+        <div class="grp">
+          <div class="r"><span class="tile lg" aria-hidden="true">X</span><span class="l"><span style="color: var(--fg); font-weight: 500;">Codex</span><span class="d">ACP adapter for OpenAI's coding assistant</span></span><button class="ob">Add</button></div>
+          <div class="r"><span class="tile lg" aria-hidden="true">P</span><span class="l"><span style="color: var(--fg); font-weight: 500;">Pi</span><span class="d">Installs Pi and Node.js into Zorvo's folder</span></span><button class="ob">Install</button></div>
+          <div class="r"><span class="tile lg" aria-hidden="true">K</span><span class="l"><span style="color: var(--fg); font-weight: 500;">Kilo</span><span role="status" class="d">Downloading Node.js · 18 of 42 MB</span><progress class="pg" value="43" max="100" aria-label="Install progress"></progress></span><button class="gb">Cancel</button></div>
+        </div>
+      </section>
+
+      <button aria-expanded="false" class="gb" style="align-self: flex-start; display: flex; align-items: center; gap: 6px; padding: 0 4px;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px;"><path d="m9 6 6 6-6 6"></path></svg>Not available (3)</button>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":880,"height":940}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const light = (this.props.theme ?? 'dark') === 'light';
+    return { themeClass: light ? 'z light' : 'z' };
+  }
+}
+</script>
+</body>
+</html>

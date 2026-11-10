@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zorvo · Settings appearance and GitHub, layered</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.z{--ground:#0a0a0b;--sheet:#111113;--s2:#18181b;--s3:#1f1f23;--hover:#27272a;--chip:rgba(255,255,255,.06);--line:#27272a;--strong:#71717a;--fg:#fafafa;--fg2:#d4d4d8;--muted:#a1a1aa;--subtle:#8b8b94;--primary:#fafafa;--onp:#09090b;--run:#34d399;--att:#fbbf24;--unread:#38bdf8;--danger:#f87171;--atts:#1f1a0d;--attb:#6b5416;--add:rgba(52,211,153,.12);--rem:rgba(248,113,113,.12);--pop:0 16px 40px -8px rgba(0,0,0,.6);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.z.light{--ground:#f4f4f5;--sheet:#fafafa;--s2:#ffffff;--s3:#ffffff;--hover:#e4e4e7;--chip:rgba(9,9,11,.05);--line:#e4e4e7;--strong:#808088;--fg:#09090b;--fg2:#27272a;--muted:#52525b;--subtle:#67676f;--primary:#09090b;--onp:#fafafa;--run:#047353;--att:#a34b08;--unread:#0369a1;--danger:#b91c1c;--atts:#fffbeb;--attb:#e9c46a;--add:rgba(4,120,87,.08);--rem:rgba(185,28,28,.08);--pop:0 12px 32px -8px rgba(9,9,11,.18)}
+.z button{font:inherit;cursor:pointer;margin:0}
+.z a{text-decoration:none;color:inherit}
+.mono{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.ico{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.ib{width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.tile{width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;background:var(--chip);box-shadow:inset 0 0 0 1px var(--line);color:var(--fg2)}
+.tile.sm{width:16px;height:16px;border-radius:4px;font-size:9px}
+.av{position:relative;display:flex;flex:none;margin-top:1px}
+.badge{position:absolute;right:-3px;bottom:-3px;width:8px;height:8px;border-radius:9999px;box-shadow:0 0 0 2px var(--ground)}
+.row{display:flex;align-items:flex-start;gap:10px;padding:7px 8px;border-radius:8px}
+.row.on{background:var(--hover)}
+.row.on .badge{box-shadow:0 0 0 2px var(--hover)}
+.rt{flex:1;min-width:0;display:flex;flex-direction:column}
+.t1{color:var(--fg2);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.t2{color:var(--subtle);font-size:11px;line-height:16px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tm{flex:none;color:var(--subtle);font-size:11px;line-height:18px}
+.fold{display:flex;align-items:center;gap:6px;padding:12px 8px 4px;color:var(--muted);font-size:11px;font-weight:500}
+.seg{height:26px;display:flex;align-items:center;gap:6px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px}
+.seg.on{background:var(--hover);color:var(--fg)}
+.chip{height:26px;display:flex;align-items:center;gap:6px;padding:0 8px;border:0;border-radius:6px;background:var(--chip);color:var(--fg2);font-size:12px}
+.step{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px 0 14px;border-radius:6px;font-size:12px;color:var(--fg2)}
+.step .verb{width:44px;flex:none;color:var(--muted)}
+.frow{display:flex;align-items:center;gap:8px;padding:8px 10px}
+@media (max-width:900px){.z .side,.z .insp{display:none}.z .stage{padding-left:8px}}
+.grp{display:flex;flex-direction:column;border-radius:12px;background:var(--s2);border:1px solid var(--line);overflow:hidden}
+.r{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.r:last-child{border-bottom:0}
+.l{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.d{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;line-height:16px}
+.dot{width:6px;height:6px;border-radius:9999px;flex:none}
+.ob{height:28px;padding:0 12px;border:1px solid var(--strong);border-radius:8px;background:transparent;color:var(--fg2);font-size:12px}
+.gh{font-size:11px;font-weight:500;color:var(--muted);padding:0 4px 8px}
+.track{display:flex;gap:2px;padding:2px;border-radius:8px;background:var(--chip);width:fit-content}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 880px; height: 620px; box-sizing: border-box; overflow: hidden; background: var(--sheet); color: var(--fg); font-size: 13px; line-height: 18px;">
+  <main style="box-sizing: border-box; padding: 48px 80px;">
+    <div style="max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 48px;">
+
+      <section style="display: flex; flex-direction: column; gap: 16px;">
+        <div style="display: flex; flex-direction: column; gap: 4px;"><h1 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: -0.02em;">Appearance</h1><span style="color: var(--muted);">The terminal stays dark in every theme, since agents color their output for a dark ground.</span></div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div role="radiogroup" aria-label="Theme" class="track">
+            <button role="radio" aria-checked="true" class="seg on" style="padding: 0 14px;">System</button>
+            <button role="radio" aria-checked="false" class="seg" style="padding: 0 14px;">Light</button>
+            <button role="radio" aria-checked="false" class="seg" style="padding: 0 14px;">Dark</button>
+          </div>
+          <span style="color: var(--subtle); font-size: 12px;">follows your Mac</span>
+        </div>
+      </section>
+
+      <section style="display: flex; flex-direction: column; gap: 16px;">
+        <div style="display: flex; flex-direction: column; gap: 4px;"><h2 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: -0.02em;">GitHub</h2><span style="color: var(--muted);">Optional. Zorvo reads pull requests through your own <span class="mono" style="font-size: 12px;">gh</span> and keeps no token.</span></div>
+
+        <div>
+          <div class="gh">Signed in</div>
+          <div class="grp"><div class="r"><span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 9999px; background: var(--hover); color: var(--fg2); display: flex; align-items: center; justify-content: center; flex: none;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg></span><span class="l"><span style="color: var(--fg); font-weight: 500;">Local user</span><span class="d"><span class="dot" style="background: var(--run);"></span>Connected as @local-user on github.com</span></span><button class="ob">Check again</button></div></div>
+        </div>
+
+        <div>
+          <div class="gh">Signed out</div>
+          <div class="grp"><div class="r"><span class="l"><span>Not connected</span><span class="d">Connect to see pull requests in the Changes tab and the top bar.</span></span><button style="height: 28px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--primary); color: var(--onp); font-size: 12px; font-weight: 500;">Connect</button></div></div>
+        </div>
+
+        <div>
+          <div class="gh">gh not installed</div>
+          <div class="grp"><div class="r"><span class="l"><span>Install the GitHub CLI first</span><span class="d" style="display: block;">Run <span class="mono" style="font-size: 11px; color: var(--fg2);">brew install gh</span> in a terminal, or get it from <a href="#" style="color: var(--fg2); text-decoration: underline;">cli.github.com</a>. Then check again.</span></span><button class="ob">Check again</button></div></div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":880,"height":620}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const light = (this.props.theme ?? 'dark') === 'light';
+    return { themeClass: light ? 'z light' : 'z' };
+  }
+}
+</script>
+</body>
+</html>

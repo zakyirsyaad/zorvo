@@ -4,7 +4,7 @@ A notice in the bottom right corner of the main area, over the chat: a failure y
 
 `ToastStack` holds the toasts and sits inside the main area's `relative` container; `Toast` is one card. The consumer provides the message and the dismiss handler, and optionally one action.
 
-- Card: 340px wide, `surface-3`, `border`, `shadow-popover`, 10px radius, 12px padding. A long message (a path, an error text) wraps inside the card.
+- Card: 340px wide, `surface-3`, `border`, `shadow-popover`, `radius-panel` (10px), 12px padding. A long message (a path, an error text) wraps inside the card.
 - Tone sets the icon and how it is spoken: `warning` (the default) has a circle-alert in `status-attention`, `info` a `fg-muted` one; both are `role="status"` with the message in `fg-secondary`. `error` has a `danger` circle-alert, a `danger` edge and the message in `fg`, and is `role="alert"`, so a screen reader reads it at once.
 - The main window's notices say which they are: something that failed is an error; a notice that asks you to do something first (open a folder, install an agent, a dropped file left out) is a warning.
 - One action at most, as a 24px outline `Button` under the message ("Try again"), its label in `fg`. Dismiss is a 22px `IconButton` with a 12px icon, named "Dismiss notice".

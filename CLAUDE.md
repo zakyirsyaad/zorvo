@@ -116,7 +116,7 @@ Parallel sessions each work in their own git worktree under `.claude/worktrees/`
 
 ## Design system rules (enforced by tests)
 
-- `src/styles/globals.css` is the source of truth: its `@theme` block holds dark values and generates Tailwind utilities (`bg-surface-2`, `text-fg-muted`, `border-border-strong`); a `prefers-color-scheme: light` block overrides them. Change `globals.css` and `docs/design-system/tokens.json` together — `design-system-docs.test.ts` fails on drift.
+- `src/styles/globals.css` is the source of truth: its `@theme` block holds dark values and generates Tailwind utilities (`bg-surface-2`, `text-fg-muted`, `border-border-strong`); a `prefers-color-scheme: light` block overrides them. Change `globals.css` and `docs/design-system/tokens.json` together — `design-system-docs.test.ts` fails on drift. `ground`, `sheet` and `chip` are the v2 surfaces (the window, the raised chat and inspector, and translucent fills); `sheet-fills.test.ts` fails on `bg-bg` or `bg-surface-1` outside Settings, onboarding and the agent catalog, which keep the old two until phase 6.
 - No raw colors in components (`bg-neutral-800`, `text-white`, `bg-[#121212]`) — `design-tokens.test.ts` fails on them. Light-mode contrast is checked by `theme-contrast.test.ts`.
 - Use `src/components/ui/` primitives (`Button`, `IconButton`) before styling a `<button>` by hand; every focusable control gets the `focus-ring` utility. Shadows are `shadow-popover` / `shadow-dialog`.
 - UI copy: sentence case, short declarative sentences, address the user as "you", name the agents rather than saying "AI". See `docs/design-system/README.md`.

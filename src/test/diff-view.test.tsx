@@ -244,6 +244,16 @@ describe("DiffView", () => {
     expect(screen.getByRole("complementary", { name: "Diff view" }).className.split(" ")).toContain("min-w-0");
   });
 
+  it("sits on the chat's sheet: no fill of its own, a hairline on its left", async () => {
+    mockDiff(THREE);
+    await renderView({ isExpanded: false });
+
+    const view = screen.getByRole("complementary", { name: "Diff view" });
+    const classes = view.className.split(" ");
+    expect(classes).not.toContain("bg-bg");
+    expect(classes).toEqual(expect.arrayContaining(["border-l", "border-border"]));
+  });
+
   it("reads HEAD and reports once when the targets cannot be read", async () => {
     const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd) =>
       cmd === "session_diff_targets"

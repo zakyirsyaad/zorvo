@@ -170,7 +170,7 @@ export function DiffView({
       ref={panel}
       aria-label="Diff view"
       tabIndex={review ? -1 : undefined}
-      className={`flex h-full flex-col border-l border-border bg-bg text-ui ${isExpanded ? "min-w-0 flex-1" : "w-1/2 min-w-[480px] shrink-0"}${review ? " focus-ring" : ""}`}
+      className={`flex h-full flex-col border-l border-border text-ui ${isExpanded ? "min-w-0 flex-1" : "w-1/2 min-w-[480px] shrink-0"}${review ? " focus-ring" : ""}`}
     >
       <DiffViewHeader
         target={target}

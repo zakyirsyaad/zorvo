@@ -87,7 +87,7 @@ describe("useInspector", () => {
     const { result, onCrowded } = renderInspector(true);
     act(() => result.current.show("files"));
     expect(onCrowded).not.toHaveBeenCalled();
-    // Terminal shows 560px wide: 1280 - 256 - 560 leaves the chat 464px.
+    // Terminal shows 560px wide: 1280 - 264 - 560 - 16 leaves the chat 440px.
     act(() => result.current.show("terminal"));
     expect(onCrowded).toHaveBeenCalledTimes(1);
   });

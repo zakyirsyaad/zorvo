@@ -76,7 +76,7 @@ export function ProfileFooter({
 
   return (
     // `relative`: the Agents menu anchors to this bar, across the sidebar, not to its own button.
-    <footer className="relative flex h-13 shrink-0 items-center justify-between border-t border-border bg-surface-1 px-3">
+    <footer className="relative flex h-13 shrink-0 items-center justify-between px-3">
       <div className="flex min-w-0 items-center gap-2">
         <span className="relative shrink-0">
           <span

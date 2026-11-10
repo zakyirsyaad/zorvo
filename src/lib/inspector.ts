@@ -4,7 +4,9 @@ export type InspectorTab = "changes" | "activity" | "files" | "terminal";
 export const INSPECTOR_WIDTH = { min: 320, max: 720, initial: 380, wide: 560, step: 16 } as const;
 
 /** The sidebar's width while it shows. */
-export const SIDEBAR_WIDTH = 256;
+export const SIDEBAR_WIDTH = 264;
+/** The gap around and between the sheets. */
+export const STAGE_INSET = 8;
 /** The narrowest the chat column may get before the sidebar gives way. */
 export const MIN_CHAT_WIDTH = 560;
 
@@ -39,7 +41,7 @@ export function offeredTabs(on: { hasFolder: boolean; isRepository: boolean; has
   return tabs;
 }
 
-/** True when the sidebar, the inspector and the narrowest chat column do not all fit. */
+/** True when the sidebar, the inspector, the insets and the narrowest chat column do not all fit. */
 export function isCrowded(windowWidth: number, inspectorWidth: number, isSidebarShown: boolean): boolean {
-  return isSidebarShown && windowWidth - SIDEBAR_WIDTH - inspectorWidth < MIN_CHAT_WIDTH;
+  return isSidebarShown && windowWidth - SIDEBAR_WIDTH - inspectorWidth - 2 * STAGE_INSET < MIN_CHAT_WIDTH;
 }

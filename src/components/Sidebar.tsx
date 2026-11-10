@@ -167,13 +167,13 @@ export function Sidebar({
   return (
     <aside
       hidden={isHidden}
-      className="w-64 shrink-0 flex flex-col justify-between border-r border-border bg-surface-1 select-none text-ui text-fg-secondary"
+      className="w-66 shrink-0 flex flex-col justify-between select-none text-ui text-fg-secondary"
     >
       {/* The window's own buttons float in this header's inset; the rest of it drags the window. */}
       <div
         data-tauri-drag-region
         style={{ paddingLeft: TOP_BAR_TRAFFIC_LIGHT_INSET_PX }}
-        className="flex h-12 shrink-0 items-center justify-end pr-3"
+        className="mt-2 flex h-12 shrink-0 items-center justify-end pr-3"
       >
         {onHide && (
           <IconButton label="Hide sidebar" onClick={onHide}>

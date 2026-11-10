@@ -46,6 +46,14 @@ describe("inspector layout", () => {
     expect(isCrowded(1440, 380, true)).toBe(false);
     expect(isCrowded(1100, 380, false)).toBe(false);
   });
+
+  it("counts the sidebar and the insets around the sheets", () => {
+    expect(isCrowded(1280, 380, true)).toBe(false); // 1280 - 264 - 380 - 16 = 620
+    expect(isCrowded(1220, 380, true)).toBe(false); // exactly 560
+    expect(isCrowded(1219, 380, true)).toBe(true);
+    expect(isCrowded(1280, 560, true)).toBe(true); // 440
+    expect(isCrowded(640, 560, false)).toBe(false); // no sidebar, never crowded
+  });
 });
 
 describe("useInspectorWidth", () => {

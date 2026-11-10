@@ -12,9 +12,11 @@ import PrivacyDocs from "../../site/app/docs/privacy/page";
 import QuickstartDocs from "../../site/app/docs/quickstart/page";
 import ReviewDocs from "../../site/app/docs/review/page";
 import SigningInDocs from "../../site/app/docs/signing-in/page";
+import DelegateDocs from "../../site/app/docs/delegate/page";
 import TerminalDocs from "../../site/app/docs/terminal/page";
 import TroubleshootingDocs from "../../site/app/docs/troubleshooting/page";
 import { DOCS_PAGES } from "../../site/lib/docs-nav";
+import { AGENT_LOGOS } from "../../site/lib/agent-logos";
 import { LINKS } from "../../site/lib/links";
 import robots from "../../site/app/robots";
 import sitemap from "../../site/app/sitemap";
@@ -101,19 +103,38 @@ describe("landing page", () => {
     return body.textContent ?? "";
   })();
 
-  it("has the eight approved sections in order, and no pricing", () => {
-    const ids = [...document.querySelectorAll("main > section[id], main > div > section[id]")].map(
-      (section) => section.id,
+  it("has the thirteen approved sections in order, and no pricing", () => {
+    const names = [...document.querySelectorAll("main > section")].map(
+      (section) => section.id || section.getAttribute("aria-label"),
     );
-    expect(ids).toEqual(["top", "agents", "compare", "control", "review", "features", "privacy", "download"]);
-    expect(text).not.toMatch(/pricing|per month|\$\d+\s*\/\s*mo/i);
+    expect(names).toEqual([
+      "top",
+      "Agents",
+      "sessions",
+      "compare",
+      "delegate",
+      "private",
+      "near",
+      "review",
+      "control",
+      "Long sessions",
+      "features",
+      "privacy",
+      "download",
+    ]);
+    // A session called "Review the pricing copy" is in a picture; the page's own words name no price.
+    expect(copy).not.toMatch(/pricing|per month/i);
+    expect(text).not.toMatch(/\$\d/);
+    expect(copy).toContain("Zorvo stays free");
+    expect(copy).toContain("Credits pay for private sessions only.");
   });
 
-  it("has one h1, and every section is labelled by its heading", () => {
+  it("has one h1, and every section is labelled", () => {
     expect(document.querySelectorAll("h1")).toHaveLength(1);
-    for (const section of document.querySelectorAll("section")) {
+    for (const section of document.querySelectorAll("main > section")) {
       const label = section.getAttribute("aria-labelledby");
-      expect(label && document.getElementById(label)?.textContent, section.id).toBeTruthy();
+      const named = label ? document.getElementById(label)?.textContent : section.getAttribute("aria-label");
+      expect(named, section.id).toBeTruthy();
     }
   });
 
@@ -124,10 +145,11 @@ describe("landing page", () => {
   });
 
   it("names every agent and says it is not endorsed by them", () => {
-    for (const agent of ["Claude Code", "Codex", "Qwen Code"]) {
+    for (const agent of ["Claude Code", "Codex", "Qwen Code", "Antigravity"]) {
       expect(text).toContain(agent);
     }
     expect(text).toContain("not endorsed by them");
+    expect(text).not.toMatch(/Gemini/);
   });
 
   it("gives every image alt text, and every picture a description", () => {
@@ -153,69 +175,84 @@ describe("landing page", () => {
     }
   });
 
-  it("links the docs and the source from the header and says agents come from the ACP registry", () => {
+  it("links the docs and the source from the header and the guides from their sections", () => {
     const header = document.querySelector("header")!;
     expect([...header.querySelectorAll("a")].map((link) => link.textContent)).toContain("Docs");
     expect(header.querySelector(`a[href="${LINKS.repository}"]`)?.textContent).toBe("GitHub");
     expect(document.querySelector(`footer a[href="${LINKS.license}"]`)).not.toBeNull();
     expect(document.querySelector(`#compare a[href="${LINKS.compareGuide}"]`)).not.toBeNull();
+    expect(document.querySelector(`#delegate a[href="${LINKS.delegateGuide}"]`)).not.toBeNull();
     expect(document.querySelector(`#review a[href="${LINKS.reviewGuide}"]`)).not.toBeNull();
     expect(copy).toContain("ACP registry");
     expect(copy).not.toMatch(/Aider|Oh-My-Pi/);
   });
 
-  it("lists the twelve features in order and the registry's three agent states", () => {
+  it("says Private mode is optional, with the NEAR AI mark at the three approved sizes", () => {
+    expect(document.querySelector("#top a")?.textContent).toContain("Optional private mode on NEAR AI Cloud");
+    const logos = [...document.querySelectorAll('img[alt="NEAR AI"]')].map((image) => [
+      image.getAttribute("src"),
+      image.getAttribute("width"),
+      image.closest("section")?.id,
+    ]);
+    expect(logos).toEqual([
+      ["/near-ai-tile-white.svg", "32", "top"],
+      ["/near-ai-wordmark-white.svg", "128", "private"],
+      ["/near-ai-wordmark-white.svg", "200", "near"],
+    ]);
+    for (const file of ["near-ai-tile-white.svg", "near-ai-wordmark-white.svg"]) {
+      const svg = readFileSync(join(ROOT, "site", "public", file), "utf8");
+      expect(svg, file).toMatch(/^<svg /);
+      expect(svg, file).not.toMatch(/<script|on\w+=|<foreignObject|href=/i);
+    }
+    expect(document.querySelector("#privacy")?.textContent).toContain("Private mode is the one exception");
+  });
+
+  it("shows every agent by its logo in the design's tile, and keeps the + tile of the registry", () => {
+    const tiles = [...document.querySelectorAll(".lp-logo")];
+    const agentTiles = tiles.filter((tile) => tile.textContent !== "+");
+    expect(agentTiles).toHaveLength(30);
+    expect(tiles.length - agentTiles.length).toBe(1);
+    for (const tile of agentTiles) {
+      expect(tile.getAttribute("aria-hidden"), tile.outerHTML).toBe("true");
+      expect(tile.textContent, "no letter stands for the agent any more").toBe("");
+      expect(tile.querySelectorAll('img[alt=""]')).toHaveLength(1);
+    }
+    const logos = new Set(agentTiles.map((tile) => tile.querySelector("img")?.getAttribute("src")));
+    expect(logos).toEqual(new Set(Object.values(AGENT_LOGOS)));
+  });
+
+  it("keeps the long-session numbers, ending at their final values", () => {
+    const stats = document.querySelector('[aria-label="Long sessions"]')!;
+    expect(stats.textContent).toContain("9 MB");
+    expect(stats.textContent).toContain("down from 43 MB");
+    expect(stats.textContent).toContain("263");
+    expect(stats.textContent).toContain("down from 42,099");
+    const counted = [...stats.querySelectorAll("[data-count]")].map((el) => [el.getAttribute("data-from"), el.getAttribute("data-count")]);
+    expect(counted).toEqual([["43", "9"], ["42099", "263"], [null, "4"]]);
+  });
+
+  it("lists the nine features in order", () => {
     const features = [...document.querySelectorAll("#features ul > li h3")].map((title) => title.textContent);
     expect(features).toEqual([
-      "The agent's own data",
       "Every choice the agent offers",
       "Install agents from Zorvo",
       "See which agents are ready",
-      "One welcome screen",
-      "A sidebar that says who waits",
-      "One inspector",
+      "One inspector beside the chat",
       "Read a file in place",
-      "Branches and worktrees",
       "Fork and rewind",
+      "The effort list follows the model",
       "When a turn goes wrong",
       "Zorvo updates itself",
     ]);
-    expect(copy).toContain("Install agents from Zorvo");
-    expect(copy).not.toMatch(/drawer/i);
-    const registry = document.querySelector('#agents [role="img"]');
-    expect(registry?.textContent).toMatch(/Update available.*Installing….*In the registry/s);
   });
 
-  it("draws the 0.9 window in the hero picture, and says the app updates itself", () => {
-    const hero = document.querySelector('#top ~ div [role="img"]');
-    expect(hero?.textContent).toMatch(/Claude Code · Working.*Codex · Waiting for you.*Compare · 3 agents/s);
-    expect(hero?.textContent).toMatch(/Changes\s*3\s*Activity\s*Files\s*Terminal/);
+  it("draws the window with the delegated session, and a compare run that asks before Pick", () => {
+    const hero = document.querySelector("#top [data-win]");
+    expect(hero?.textContent).toContain("Qwen Code · delegated");
     expect(hero?.textContent).toContain("38% of context");
-    expect(copy).toContain("Zorvo updates itself");
-    expect(copy).toContain("keeps itself up to date");
-    expect(copy).toContain("a mode that skips approvals carries a shield");
-  });
-
-  it("shows the plan with one step done and the permission the agent waits on", () => {
-    const picture = document.querySelector('#control [role="img"]');
-    expect(picture?.textContent).toMatch(/Plan from Codex\s*1 of 4 done/);
-    expect(picture?.textContent).toMatch(/Deny\s*Always allow\s*Allow once/);
-    expect(picture?.textContent).not.toContain("Session cost");
-  });
-
-  it("shows a compare run that asks before Pick keeps one agent", () => {
-    const picture = document.querySelector('#compare [role="img"]');
-    expect(picture?.textContent).toContain("Start 3 sessions");
-    expect(picture?.textContent).toMatch(/Claude Code\s*Working.*Codex\s*Finished.*Qwen Code\s*Waiting for you/s);
-    expect(picture?.textContent).toContain("Pick Codex");
-    expect(copy).toContain("uses its own quota");
-  });
-
-  it("shows a review comment that stays on its line and goes into the message", () => {
-    const picture = document.querySelector('#review [role="img"]');
-    expect(picture?.textContent).toContain("Line 42 · Current");
-    expect(picture?.textContent).toContain("Add 2 comments to message");
-    expect(copy).toContain("Outdated");
+    const compare = document.querySelector("#compare [role=img]");
+    expect(compare?.textContent).toContain("Start 3 sessions");
+    expect(compare?.textContent).toContain("Pick Claude Code");
   });
 
   it("points every in-page link at an element that exists", () => {
@@ -223,6 +260,52 @@ describe("landing page", () => {
       const id = link.getAttribute("href")!.slice(1);
       expect(document.getElementById(id), `#${id}`).not.toBeNull();
     }
+  });
+
+  describe("motion", () => {
+    const script = readFileSync(join(ROOT, "site", "scripts", "motion", "landing.ts"), "utf8");
+
+    it("ships the motion script and the structured data, and no other script", () => {
+      const scripts = [...document.querySelectorAll("script")].map((el) => el.getAttribute("src") ?? el.getAttribute("type"));
+      expect(scripts.sort()).toEqual(["/motion.js", "application/ld+json"]);
+    });
+
+    it("does nothing under reduced motion", () => {
+      expect(script).toContain("(prefers-reduced-motion: reduce)");
+    });
+
+    it("finds every hook it animates in the page", () => {
+      const selectors = new Set([...script.matchAll(/["'`]((?:\[data-[\w-]+\]|\.lp-[\w-]+)[^"'`]*)["'`]/g)].map((match) => match[1]));
+      expect(selectors.size).toBeGreaterThan(30);
+      for (const selector of selectors) {
+        expect(document.querySelector(selector.replace(/ \[data-count\]| path| i$/, "")), selector).not.toBeNull();
+      }
+    });
+
+    it("never lets GSAP and Motion animate the same element", () => {
+      const gsapHooks = [
+        "[data-hero-fade]", "[data-win]", "[data-srow]", "[data-chat]", "[data-cmp-prompt]", "[data-cmp-type]", "[data-cmp-chip]",
+        "[data-cmp-start]", "[data-cmp-card]", "[data-cmp-confirm]", "[data-dlg-pane]", "[data-dlg-ph]", "[data-dlg-type]",
+        "[data-dlg-pop]", "[data-dlg-send]", "[data-dlg-msg]", "[data-dlg-status]", "[data-dlg-dot]", "[data-dlg-b]",
+        "[data-dlg-report]", "[data-prv]", "[data-prv-chip]", "[data-prv-item]", "[data-prv-check]", "[data-prv-badge]",
+        "[data-flow-step]", "[data-flow-end]", "[data-term-type]", "[data-term-out]", ".lp-ln > span", ".lp-pulse", ".lp-bar i",
+        ".lp-st-a", ".lp-st-b",
+      ].join(",");
+      const motionHooks = [
+        "[data-r]", "[data-hover]", "[data-press]", "[data-rev-row]", "[data-rev-comment]", "[data-rev-bar]", "[data-perm-item]",
+        "[data-perm-btn]", ".lp-pl-a", ".lp-pl-b", "[data-cell]",
+      ].join(",");
+      const shared = [...document.querySelectorAll(motionHooks)].filter((el) => el.matches(gsapHooks));
+      expect(shared.map((el) => el.outerHTML.slice(0, 80))).toEqual([]);
+    });
+
+    it("starts hidden scenes by CSS, so the page is complete without the script", () => {
+      const css = readFileSync(join(ROOT, "site", "app", "landing.css"), "utf8");
+      expect(css).toMatch(/\.lp-st-a, \.lp-pl-a, \.lp-pop, \.lp-wire-dot, \.lp-typed \{ opacity: 0; visibility: hidden; \}/);
+      // The finished state is what shows: Finished, the plan at 3/4, and the numbers at their end values.
+      expect(copy + text).toContain("Finished · 2 min");
+      expect(document.querySelector("[data-count='59']")?.textContent).toBe("59");
+    });
   });
 });
 
@@ -243,6 +326,11 @@ describe("search engines", () => {
     expect(config.framework).toBeNull();
     expect(config.outputDirectory).toBe("out");
     expect(config.trailingSlash).toBe(true);
+    // The page's own motion script is the only script it allows: same origin, no inline code, no other host.
+    const csp = config.headers[0].headers.find((header: { key: string }) => header.key === "Content-Security-Policy").value as string;
+    expect(csp).toContain("script-src 'self';");
+    expect(csp).not.toMatch(/unsafe-inline.*script|script-src[^;]*(unsafe|https?:)/);
+    expect(csp).toContain("connect-src 'self'");
     // trailingSlash redirects any path without a file extension, so the shared image needs one.
     expect(OG_IMAGE.url).toMatch(/\.png$/);
     expect(existsSync(join(ROOT, "site", "app", "opengraph-image.tsx"))).toBe(false);
@@ -315,6 +403,7 @@ describe("docs pages", () => {
     "/docs/agents": AgentsDocs,
     "/docs/signing-in": SigningInDocs,
     "/docs/compare": CompareDocs,
+    "/docs/delegate": DelegateDocs,
     "/docs/review": ReviewDocs,
     "/docs/terminal": TerminalDocs,
     "/docs/privacy": PrivacyDocs,
@@ -416,7 +505,7 @@ describe("docs pages", () => {
     );
 
     const troubleshooting = idsOf("/docs/troubleshooting");
-    for (const id of ["failed", "gemini", "update"]) expect(troubleshooting).toContain(id);
+    for (const id of ["failed", "update"]) expect(troubleshooting).toContain(id);
 
     const quickstart = parse("/docs/quickstart");
     expect(quickstart.body.textContent).toContain("Rewind to here");
@@ -427,7 +516,7 @@ describe("docs pages", () => {
     expect(parse("/docs/compare").body.textContent).toContain("Pick always asks first");
     expect(parse("/docs/review").body.textContent).toContain("Outdated");
     for (const href of Object.keys(PAGES)) {
-      expect(parse(href).body.textContent, href).not.toMatch(/drawer|detected agents|Settings, General, GitHub/i);
+      expect(parse(href).body.textContent, href).not.toMatch(/drawer|detected agents|Settings, General, GitHub|Gemini/i);
     }
   });
 

@@ -12,7 +12,6 @@ const TOC: TocEntry[] = [
   { id: "sign-in", label: "An agent needs you to sign in" },
   { id: "failed", label: "A turn failed" },
   { id: "stuck", label: "An agent seems stuck" },
-  { id: "gemini", label: "Gemini CLI does not answer" },
   { id: "start", label: "An agent does not start" },
   { id: "pull-requests", label: "No pull request status" },
   { id: "update", label: "An update does not install" },
@@ -80,12 +79,6 @@ export default function TroubleshootingPage() {
         Under the line that says the agent is working, Zorvo shows a notice with a <B>Stop</B> button when the agent reports failed requests in a row
         (for Qwen Code, with the error it logged), or has sent nothing for a minute while no tool is running. Click{" "}
         <B>Stop</B> to end the turn, or wait if the agent is working on something long.
-      </P>
-
-      <H2 id="gemini">Gemini CLI does not answer</H2>
-      <P>
-        Gemini&apos;s default model, <Chip isCode>auto</Chip>, can hang without an answer. Pick another model in the
-        composer&apos;s model chip. Zorvo sets it before your first message, and your next session starts with it.
       </P>
 
       <H2 id="start">An agent does not start</H2>

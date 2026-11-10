@@ -89,7 +89,7 @@ export default function QuickstartPage() {
         <li><B>Codex</B> has a collaboration mode chip, which is where you put Codex in Plan.</li>
         <li><B>Claude Code</B> has a fast mode chip and one for its agent persona.</li>
         <li>
-          <B>Gemini CLI</B> and other agents that list their models only through ACP get a model chip too. Your pick
+          Agents that report their models in the session answer, not as a model setting, get a model chip too. Your pick
           is set before your first message, and the next session starts with it.
         </li>
         <li>A list over ten choices has a search field.</li>

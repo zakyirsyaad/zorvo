@@ -1,38 +1,34 @@
-import { ButtonLink } from "../ui/ButtonLink";
-import { GithubMark } from "../ui/GithubMark";
-import { ZorvoLockup } from "../ui/ZorvoSymbol";
-import { TEXT_LINK } from "../ui/styles";
 import { LINKS } from "../../lib/links";
 
 /** `anchorBase` is "/" on pages other than the home page, so the section links lead back to it. */
 export function SiteHeader({ anchorBase = "" }: { anchorBase?: "" | "/" }) {
   return (
-    <header>
-      <nav
-        aria-label="Main"
-        // Three columns from md up, the outer two equal, so the links sit at the page's centre
-        // however wide the logo and the buttons are; on a phone the links are hidden and it is a row.
-        className="site-wrap flex min-h-16 items-center justify-between gap-4 py-3 md:grid md:grid-cols-[1fr_auto_1fr] md:justify-items-start"
-      >
-        <ZorvoLockup anchorBase={anchorBase} />
-        {/* On a phone the section links live in the footer; Docs and Download stay. */}
-        <ul className="m-0 hidden list-none items-center gap-7 p-0 md:flex">
-          <li><a className={TEXT_LINK} href={`${anchorBase}#agents`}>Agents</a></li>
-          <li><a className={TEXT_LINK} href={`${anchorBase}#compare`}>Compare</a></li>
-          <li><a className={TEXT_LINK} href={`${anchorBase}#review`}>Review</a></li>
-          <li><a className={TEXT_LINK} href={`${anchorBase}#features`}>Features</a></li>
-          <li><a className={TEXT_LINK} href={LINKS.changelog}>Changelog</a></li>
-        </ul>
-        <div className="flex items-center gap-2 md:justify-self-end">
-          {/* Below lg only the mark shows, so the links stay centred; the hidden word still names the link. */}
-          <ButtonLink href={LINKS.repository} variant="ghost">
-            <GithubMark size={16} />
-            <span className="max-lg:sr-only">GitHub</span>
-          </ButtonLink>
-          <ButtonLink href={LINKS.docs} variant="ghost">Docs</ButtonLink>
-          <ButtonLink href={LINKS.download} variant="outline">Download</ButtonLink>
-        </div>
-      </nav>
+    <header className="border-b border-border">
+      <div className="lp-wrap flex items-center gap-6 h-16">
+        <a className="focus-ring inline-flex items-center gap-2.5 min-h-11 text-fg" href={`${anchorBase}#top`}>
+          <svg viewBox="0 0 40 40" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M6 7l10 7-10 7" />
+            <path d="M18 19l10 7-10 7" />
+            <path d="M30 33h5" />
+          </svg>
+          <span className="text-[22px] font-semibold tracking-[-0.04em]">zorvo</span>
+        </a>
+        <nav className="lp-nav gap-1 mx-auto" aria-label="Sections">
+          <a className="focus-ring lp-btn lp-btn-ghost" href={`${anchorBase}#compare`}>Compare</a>
+          <a className="focus-ring lp-btn lp-btn-ghost" href={`${anchorBase}#delegate`}>Delegate</a>
+          <a className="focus-ring lp-btn lp-btn-ghost" href={`${anchorBase}#private`}>Private</a>
+          <a className="focus-ring lp-btn lp-btn-ghost" href={`${anchorBase}#review`}>Review</a>
+          <a className="focus-ring lp-btn lp-btn-ghost" href={`${anchorBase}#features`}>Features</a>
+          <a className="focus-ring lp-btn lp-btn-ghost" href={`${anchorBase}#privacy`}>Privacy</a>
+        </nav>
+        <span className="flex items-center gap-1 ml-auto">
+          <a className="focus-ring lp-btn lp-btn-ghost max-[520px]:hidden" href={LINKS.repository}>GitHub</a>
+          <a className="focus-ring lp-btn lp-btn-ghost" href={LINKS.docs}>Docs</a>
+          <a className="focus-ring lp-btn lp-btn-outline h-10" data-press="" href={LINKS.download}>
+            Download
+          </a>
+        </span>
+      </div>
     </header>
   );
 }

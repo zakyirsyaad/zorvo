@@ -1,90 +1,73 @@
-import { Icon, type IconName } from "../ui/Icon";
-import { SectionIntro } from "../ui/SectionIntro";
-
-const PROMISES: { icon: IconName; title: string; body: string }[] = [
-  {
-    icon: "key-round",
-    title: "Sign-in stays with the agents",
-    body: "Zorvo never asks for or stores API keys or tokens. Agents sign in with their own tools, even when the login runs inside Zorvo, and GitHub goes through your own gh.",
-  },
-  {
-    icon: "globe",
-    title: "Few hosts, all named",
-    body: "Zorvo reads the ACP registry and, shortly after it starts and then about once a day, asks GitHub whether a newer Zorvo exists. Only when you click Install does it fetch that agent's hash-checked download, plus Node.js or uv if it needs them, and only when you click Update & restart does it download a signature-checked update. No telemetry, and no requests from the window.",
-  },
-  {
-    icon: "hard-drive",
-    title: "Your data, on your Mac",
-    body: "Sessions, transcripts, worktrees and installed agents live in one folder you can open in Finder.",
-  },
-  {
-    icon: "lock",
-    title: "Only the folders you open",
-    body: "The backend reads and runs only in folders you opened in the app. What you type in an agent's form is never saved.",
-  },
-];
-
-const DATA_FOLDER = ["state.json", "tools/", "transcripts/", "worktrees/"];
-
-function DataFolderTerminal() {
-  return (
-    <div
-      role="img"
-      aria-label="The folder where Zorvo keeps its data: state.json, tools, transcripts and worktrees"
-      className="min-w-0 flex-[1_1_380px] overflow-hidden rounded-xl border border-terminal-border bg-terminal-bg"
-    >
-      <div className="flex h-9 items-center gap-2 border-b border-terminal-border px-3.5">
-        <span className="size-2.5 rounded-full bg-terminal-border" />
-        <span className="size-2.5 rounded-full bg-terminal-border" />
-        <span className="size-2.5 rounded-full bg-terminal-border" />
-        <span className="ml-2 font-mono text-[11px] leading-4 text-terminal-fg-subtle">zsh</span>
-      </div>
-      <div className="flex flex-col gap-0.5 overflow-hidden px-5 py-[18px] font-mono text-xs leading-[18px] text-terminal-fg">
-        {/* The picture has no scrollbar, so the path wraps on a narrow screen instead of being cut off. */}
-        <div className="break-all">
-          <span className="text-terminal-fg-subtle">~ %</span> ls ~/Library/Application\ Support/xyz.zorvo.desktop
-        </div>
-        {DATA_FOLDER.map((entry, index) => (
-          <div key={entry} className={index === 0 ? "pt-2" : ""}>
-            {entry}
-          </div>
-        ))}
-        <div className="pt-3.5">
-          <span className="text-terminal-fg-subtle">~ %</span>{" "}
-          <span className="inline-block h-3.5 w-2 bg-terminal-fg align-[-2px]" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function Privacy() {
   return (
-    <section
-      id="privacy"
-      aria-labelledby="privacy-title"
-      className="border-t border-border py-[72px] md:py-28"
-    >
-      <div className="site-wrap flex flex-wrap items-center gap-12 lg:gap-16">
-        <div className="flex min-w-0 flex-[1_1_520px] flex-col gap-10">
-          <SectionIntro
-            id="privacy-title"
-            eyebrow="privacy"
-            title="No lock-in. No API keys."
-            lead="Zorvo sits between you and your agents and keeps nothing for itself."
-            className="max-w-[520px]"
-          />
-          <ul className="m-0 grid list-none grid-cols-1 gap-x-8 gap-y-7 p-0 sm:grid-cols-2">
-            {PROMISES.map(({ icon, title, body }) => (
-              <li key={title} className="flex flex-col gap-2">
-                <Icon name={icon} size={18} className="text-fg" />
-                <h3 className="t-heading m-0">{title}</h3>
-                <p className="t-body m-0">{body}</p>
-              </li>
-            ))}
+    <section className="lp-sec" id="privacy" aria-labelledby="privacy-title">
+      <div className="lp-wrap lp-row">
+        <div className="lp-col basis-130" data-reveal="">
+          <p className="lp-eyebrow" data-r="">Privacy</p>
+          <h2 className="lp-h2" data-r="" id="privacy-title">Nothing kept for itself.</h2>
+          <p className="lp-lead" data-r="">
+            Zorvo sits between you and your agents and keeps nothing for itself.
+          </p>
+          <ul className="lp-pts grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-y-7 gap-x-8" data-r="">
+            <li>
+              <h3>Sign-in stays with the agents</h3>
+              <p>
+                Zorvo never asks you for an API key or token. Agents sign in with their own tools, and GitHub goes through your own gh.
+              </p>
+            </li>
+            <li>
+              <h3>Your data, on your Mac</h3>
+              <p>
+                Sessions, transcripts, worktrees and installed agents live in one folder you can open in Finder.
+              </p>
+            </li>
+            <li>
+              <h3>Only the folders you open</h3>
+              <p>The backend reads and runs only in folders you opened in the app.</p>
+            </li>
+            <li>
+              <h3>Few requests, all named</h3>
+              <p>
+                The ACP registry, a daily check for a newer Zorvo, and an agent's download when you click Install.
+              </p>
+            </li>
           </ul>
+          <p className="max-w-140 text-[14px] leading-5.5 text-fg-subtle" data-r="">
+            Private mode is the one exception, and only while you have it on: Zorvo then keeps a NEAR AI key in your Keychain and talks to NEAR AI and the credits server.
+            {" "}
+            <a className="focus-ring text-fg-secondary underline decoration-(--lp-strong) underline-offset-3" href="#private">
+              See Private mode
+            </a>
+          </p>
         </div>
-        <DataFolderTerminal />
+        <div className="lp-col basis-105">
+          <div className="lp-term font-mono text-[12px] leading-5 text-fg-secondary" data-term="" role="img" aria-label="A terminal listing the folder where Zorvo keeps its data: state.json, tools, transcripts and worktrees.">
+            <span className="flex items-center gap-2 h-9 py-0 px-3.5 border-b border-border">
+              <span className="lp-dot w-2.5 h-2.5 bg-surface-hover" />
+              <span className="lp-dot w-2.5 h-2.5 bg-surface-hover" />
+              <span className="lp-dot w-2.5 h-2.5 bg-surface-hover" />
+              <span className="lp-sub ml-2">zsh</span>
+            </span>
+            <span className="flex flex-col gap-0.5 py-4.5 px-5 overflow-hidden">
+              <span className="whitespace-nowrap">
+                <span className="text-fg-subtle">~ %</span>
+                {" "}
+                <span className="inline-block align-top" data-term-type="">
+                  ls ~/Library/Application\ Support/xyz.zorvo.desktop
+                </span>
+              </span>
+              <span data-term-out="">state.json</span>
+              <span data-term-out="">tools</span>
+              <span data-term-out="">transcripts</span>
+              <span data-term-out="">worktrees</span>
+              <span data-term-out="">
+                <span className="text-fg-subtle">~ %</span>
+                {" "}
+                <span className="lp-cursor" />
+              </span>
+            </span>
+          </div>
+        </div>
       </div>
     </section>
   );

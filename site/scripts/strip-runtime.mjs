@@ -1,7 +1,9 @@
 // The site has no client components: every page is complete HTML, and React's runtime only
 // hydrates what is already there. After `next build`, this removes that runtime from each page
-// in out/ (script tags, their preloads and the inline flight data), so a visitor downloads no
-// JavaScript. Structured data (`application/ld+json`) is data, not script, and stays.
+// in out/ (script tags, their preloads and the inline flight data), so the only JavaScript a visitor
+// downloads is the landing page's motion script, /motion.js (scripts/motion/, built by
+// scripts/build-motion.mjs), which never hydrates anything. Structured data (`application/ld+json`)
+// is data, not script, and stays.
 import { realpathSync } from "node:fs";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -13,10 +15,27 @@ import { parse, serialize } from "parse5";
 /** @param {Node} node @param {string} name */
 const attr = (node, name) => ("attrs" in node ? node.attrs.find((entry) => entry.name === name)?.value : undefined);
 
-/** A script that runs, or a hint to fetch one; structured data is a script element but never runs. */
+/** The one script the site keeps: the motion bundle, by its exact address and with no inline code. */
+export const MOTION_SCRIPT = "/motion.js";
+
+/** The motion script's own tag: `src` is exactly MOTION_SCRIPT, it is classic (not a module), and it has no body. */
+function isMotionScript(/** @type {Node} */ node) {
+  if (node.nodeName !== "script" || attr(node, "src") !== MOTION_SCRIPT) return false;
+  const type = attr(node, "type");
+  const hasBody = "childNodes" in node && node.childNodes.length > 0;
+  return !hasBody && (type === undefined || type === "text/javascript");
+}
+
+/** A script that runs, or a hint to fetch one; structured data and the motion script are kept. */
 function isRuntime(/** @type {Node} */ node) {
-  if (node.nodeName === "script") return attr(node, "type") !== "application/ld+json";
-  if (node.nodeName === "link") return attr(node, "rel") === "modulepreload" || attr(node, "as") === "script";
+  if (node.nodeName === "script") {
+    if (isMotionScript(node)) return false;
+    return attr(node, "type") !== "application/ld+json";
+  }
+  if (node.nodeName === "link") {
+    if (attr(node, "href") === MOTION_SCRIPT) return false;
+    return attr(node, "rel") === "modulepreload" || attr(node, "as") === "script";
+  }
   return false;
 }
 
@@ -41,6 +60,26 @@ export function stripPage(html) {
   return { html: serialize(document), removed };
 }
 
+/**
+ * Every script element left in a page, and whether it is one the site keeps.
+ * @param {string} html @returns {{ isKept: boolean }[]}
+ */
+export function scriptsOf(html) {
+  /** @type {{ isKept: boolean }[]} */
+  const found = [];
+  /** @param {Node} node */
+  const walk = (node) => {
+    if ("content" in node) walk(node.content);
+    if (!("childNodes" in node)) return;
+    for (const child of node.childNodes) {
+      if (child.nodeName === "script") found.push({ isKept: attr(child, "type") === "application/ld+json" || isMotionScript(child) });
+      walk(child);
+    }
+  };
+  walk(parse(html));
+  return found;
+}
+
 /** @param {string} html @returns {string} */
 export const stripRuntime = (html) => stripPage(html).html;
 
@@ -60,6 +99,7 @@ async function main() {
     const { html, removed } = stripPage(await readFile(file, "utf8"));
     // Parse the result again: anything still runnable means a form this does not know, so stop the build.
     if (stripPage(html).removed > 0) throw new Error(`${file} still has a script after stripping`);
+    if (scriptsOf(html).some((script) => !script.isKept)) throw new Error(`${file} has a script other than the motion script`);
     if (removed === 0) continue;
     await writeFile(file, html);
     pages++;

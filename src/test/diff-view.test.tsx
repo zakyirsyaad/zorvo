@@ -254,6 +254,14 @@ describe("DiffView", () => {
     expect(classes).toEqual(expect.arrayContaining(["border-l", "border-border"]));
   });
 
+  it("fills the sheet when expanded, with no hairline doubling the sheet's own edge", async () => {
+    mockDiff(THREE);
+    await renderView({ isExpanded: true });
+
+    const classes = screen.getByRole("complementary", { name: "Diff view" }).className.split(" ");
+    expect(classes).not.toContain("border-l");
+  });
+
   it("reads HEAD and reports once when the targets cannot be read", async () => {
     const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd) =>
       cmd === "session_diff_targets"

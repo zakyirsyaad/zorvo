@@ -1,3 +1,5 @@
+import { AgentTile } from "../ui/AgentTile";
+
 export function PrivateMode() {
   return (
     <section className="lp-sec bg-surface-1" id="private" aria-labelledby="private-title">
@@ -22,7 +24,7 @@ export function PrivateMode() {
                   Review the payment module for client Acme and list what could leak card data.
                 </span>
                 <span className="flex items-center gap-2" data-prv-item="">
-                  <span className="lp-logo lp-logo-s" aria-hidden="true">Q</span>
+                  <AgentTile agent="Qwen Code" size="small" logo={12} />
                   <b className="font-medium text-fg">Qwen Code</b>
                   <span className="lp-sub">Qwen 3.8 27B</span>
                 </span>

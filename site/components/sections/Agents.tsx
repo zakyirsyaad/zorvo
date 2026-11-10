@@ -1,3 +1,5 @@
+import { AgentTile } from "../ui/AgentTile";
+
 export function Agents() {
   return (
     <section className="border-t border-border py-14 px-0" aria-label="Agents">
@@ -7,19 +9,19 @@ export function Agents() {
         </p>
         <ul className="flex flex-wrap justify-center gap-3">
           <li className="lp-card flex items-center gap-3 h-14 py-0 px-4.5" data-r="" data-hover="">
-            <span className="lp-logo" aria-hidden="true">C</span>
+            <AgentTile agent="Claude Code" size="large" logo={16} />
             <span className="text-fg font-medium">Claude Code</span>
           </li>
           <li className="lp-card flex items-center gap-3 h-14 py-0 px-4.5" data-r="" data-hover="">
-            <span className="lp-logo" aria-hidden="true">X</span>
+            <AgentTile agent="Codex" size="large" logo={16} />
             <span className="text-fg font-medium">Codex</span>
           </li>
           <li className="lp-card flex items-center gap-3 h-14 py-0 px-4.5" data-r="" data-hover="">
-            <span className="lp-logo" aria-hidden="true">Q</span>
+            <AgentTile agent="Qwen Code" size="large" logo={16} />
             <span className="text-fg font-medium">Qwen Code</span>
           </li>
           <li className="lp-card flex items-center gap-3 h-14 py-0 px-4.5" data-r="" data-hover="">
-            <span className="lp-logo" aria-hidden="true">G</span>
+            <AgentTile agent="Gemini CLI" size="large" logo={16} />
             <span className="text-fg font-medium">Gemini CLI</span>
           </li>
           <li className="lp-card flex items-center gap-3 h-14 py-0 px-4.5 border-dashed" data-r="" data-hover="">

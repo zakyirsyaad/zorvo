@@ -1,4 +1,5 @@
 import { LINKS } from "../../lib/links";
+import { AgentTile } from "../ui/AgentTile";
 
 export function Delegate() {
   return (
@@ -14,7 +15,7 @@ export function Delegate() {
         <div className="lp-ui flex flex-wrap items-stretch gap-0" data-dlg="" role="img" aria-label="Delegating a task. In a Claude Code session the message at Codex, write tests for the discount totals, is sent with Delegate to Codex. Codex works on it in its own session, edits a test file and runs the tests. Its answer returns to the first session as a message headed From Codex.">
           <div className="lp-card flex-[1_1_400px] min-w-0 min-h-110 flex flex-col bg-bg" data-dlg-pane="">
             <span className="lp-tb">
-              <span className="lp-logo lp-logo-s" aria-hidden="true">C</span>
+              <AgentTile agent="Claude Code" size="small" logo={12} />
               <b className="font-semibold text-fg">Add discount codes to checkout</b>
               <span className="flex-1" />
               <span className="lp-sub">Claude Code</span>
@@ -31,7 +32,7 @@ export function Delegate() {
               </span>
               <span className="lp-card flex flex-col gap-1.5 py-3 px-3.5" data-dlg-report="">
                 <span className="flex items-center gap-2">
-                  <span className="lp-logo lp-logo-s" aria-hidden="true">X</span>
+                  <AgentTile agent="Codex" size="small" logo={12} />
                   <b className="font-medium text-fg">From Codex</b>
                 </span>
                 <span>
@@ -47,19 +48,19 @@ export function Delegate() {
               <span className="lp-pop lp-card absolute left-4 bottom-24 w-60 flex flex-col gap-0.5 p-1.5 bg-surface-3 shadow-popover" data-dlg-pop="">
                 <span className="lp-sub p-[4px_8px_6px] font-medium text-fg-muted">Delegate to an agent</span>
                 <span className="flex items-center gap-2 h-7.5 py-0 px-2 rounded-md bg-surface-hover text-fg">
-                  <span className="lp-logo lp-logo-s" aria-hidden="true">X</span>
+                  <AgentTile agent="Codex" size="small" logo={12} />
                   Codex
                   <span className="flex-1" />
                   <span className="lp-sub">Ready</span>
                 </span>
                 <span className="flex items-center gap-2 h-7.5 py-0 px-2">
-                  <span className="lp-logo lp-logo-s" aria-hidden="true">Q</span>
+                  <AgentTile agent="Qwen Code" size="small" logo={12} />
                   Qwen Code
                   <span className="flex-1" />
                   <span className="lp-sub">Ready</span>
                 </span>
                 <span className="flex items-center gap-2 h-7.5 py-0 px-2">
-                  <span className="lp-logo lp-logo-s" aria-hidden="true">G</span>
+                  <AgentTile agent="Gemini CLI" size="small" logo={12} />
                   Gemini CLI
                   <span className="flex-1" />
                   <span className="lp-sub">Sign in</span>
@@ -76,7 +77,7 @@ export function Delegate() {
                 </span>
                 <span className="flex items-center gap-2 max-[520px]:flex-wrap">
                   <span className="lp-chip">
-                    <span className="lp-logo lp-logo-s" aria-hidden="true">C</span>
+                    <AgentTile agent="Claude Code" size="small" logo={12} />
                     Claude Code
                   </span>
                   <span className="lp-chip">Sonnet</span>
@@ -93,7 +94,7 @@ export function Delegate() {
           </div>
           <div className="lp-card flex-[1_1_400px] min-w-0 min-h-110 flex flex-col bg-bg" data-dlg-pane="">
             <span className="lp-tb">
-              <span className="lp-logo lp-logo-s" aria-hidden="true">X</span>
+              <AgentTile agent="Codex" size="small" logo={12} />
               <b className="font-semibold text-fg">Write tests for the discount totals</b>
               <span className="flex-1" />
               <span className="lp-sub">Codex · delegated</span>

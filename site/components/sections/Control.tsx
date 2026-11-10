@@ -1,3 +1,5 @@
+import { AgentTile } from "../ui/AgentTile";
+
 export function Control() {
   return (
     <section className="lp-sec" id="control" aria-labelledby="control-title">
@@ -41,7 +43,7 @@ export function Control() {
             </span>
             <span className="lp-card flex flex-col gap-3 py-3.5 px-4" data-perm-item="">
               <span className="flex items-center gap-2.5">
-                <span className="lp-logo" aria-hidden="true">X</span>
+                <AgentTile agent="Codex" size="large" logo={16} />
                 <b className="font-medium text-fg">Codex wants to edit 2 files</b>
               </span>
               <span className="font-mono flex flex-col gap-1.5 text-[12px]">

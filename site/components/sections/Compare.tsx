@@ -1,4 +1,5 @@
 import { LINKS } from "../../lib/links";
+import { AgentTile } from "../ui/AgentTile";
 
 export function Compare() {
   return (
@@ -18,15 +19,15 @@ export function Compare() {
             </span>
             <span className="flex flex-wrap items-center gap-2">
               <span className="lp-chip" data-cmp-chip="">
-                <span className="lp-logo lp-logo-s" aria-hidden="true">C</span>
+                <AgentTile agent="Claude Code" size="small" logo={12} />
                 Claude Code
               </span>
               <span className="lp-chip" data-cmp-chip="">
-                <span className="lp-logo lp-logo-s" aria-hidden="true">X</span>
+                <AgentTile agent="Codex" size="small" logo={12} />
                 Codex
               </span>
               <span className="lp-chip" data-cmp-chip="">
-                <span className="lp-logo lp-logo-s" aria-hidden="true">Q</span>
+                <AgentTile agent="Qwen Code" size="small" logo={12} />
                 Qwen Code
               </span>
               <span className="flex-1" />
@@ -36,7 +37,7 @@ export function Compare() {
           <div className="flex flex-col gap-2">
             <div className="lp-card flex flex-col gap-2.5 py-3.5 px-4 border-border-strong" data-cmp-card="" data-cmp-win="">
               <span className="flex items-center gap-3.5 max-[520px]:flex-wrap max-[520px]:gap-y-2">
-                <span className="lp-logo" aria-hidden="true">C</span>
+                <AgentTile agent="Claude Code" size="large" logo={16} />
                 <span className="flex-1 min-w-0 flex flex-col max-[520px]:basis-30">
                   <b className="font-medium text-fg">Claude Code</b>
                   <span className="lp-stack text-[12px]">
@@ -67,7 +68,7 @@ export function Compare() {
             </div>
             <div className="lp-card flex flex-col gap-2.5 py-3.5 px-4" data-cmp-card="">
               <span className="flex items-center gap-3.5 max-[520px]:flex-wrap max-[520px]:gap-y-2">
-                <span className="lp-logo" aria-hidden="true">X</span>
+                <AgentTile agent="Codex" size="large" logo={16} />
                 <span className="flex-1 min-w-0 flex flex-col max-[520px]:basis-30">
                   <b className="font-medium text-fg">Codex</b>
                   <span className="lp-stack text-[12px]">
@@ -98,7 +99,7 @@ export function Compare() {
             </div>
             <div className="lp-card flex flex-col gap-2.5 py-3.5 px-4" data-cmp-card="">
               <span className="flex items-center gap-3.5 max-[520px]:flex-wrap max-[520px]:gap-y-2">
-                <span className="lp-logo" aria-hidden="true">Q</span>
+                <AgentTile agent="Qwen Code" size="large" logo={16} />
                 <span className="flex-1 min-w-0 flex flex-col max-[520px]:basis-30">
                   <b className="font-medium text-fg">Qwen Code</b>
                   <span className="lp-stack text-[12px]">

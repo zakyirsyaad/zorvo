@@ -16,6 +16,7 @@ import DelegateDocs from "../../site/app/docs/delegate/page";
 import TerminalDocs from "../../site/app/docs/terminal/page";
 import TroubleshootingDocs from "../../site/app/docs/troubleshooting/page";
 import { DOCS_PAGES } from "../../site/lib/docs-nav";
+import { AGENT_LOGOS } from "../../site/lib/agent-logos";
 import { LINKS } from "../../site/lib/links";
 import robots from "../../site/app/robots";
 import sitemap from "../../site/app/sitemap";
@@ -203,6 +204,20 @@ describe("landing page", () => {
       expect(svg, file).not.toMatch(/<script|on\w+=|<foreignObject|href=/i);
     }
     expect(document.querySelector("#privacy")?.textContent).toContain("Private mode is the one exception");
+  });
+
+  it("shows every agent by its logo in the design's tile, and keeps the + tile of the registry", () => {
+    const tiles = [...document.querySelectorAll(".lp-logo")];
+    const agentTiles = tiles.filter((tile) => tile.textContent !== "+");
+    expect(agentTiles).toHaveLength(30);
+    expect(tiles.length - agentTiles.length).toBe(1);
+    for (const tile of agentTiles) {
+      expect(tile.getAttribute("aria-hidden"), tile.outerHTML).toBe("true");
+      expect(tile.textContent, "no letter stands for the agent any more").toBe("");
+      expect(tile.querySelectorAll('img[alt=""]')).toHaveLength(1);
+    }
+    const logos = new Set(agentTiles.map((tile) => tile.querySelector("img")?.getAttribute("src")));
+    expect(logos).toEqual(new Set(Object.values(AGENT_LOGOS)));
   });
 
   it("keeps the long-session numbers, ending at their final values", () => {

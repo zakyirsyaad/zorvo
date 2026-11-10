@@ -1,4 +1,5 @@
 import { LINKS } from "../../lib/links";
+import { AgentTile } from "../ui/AgentTile";
 
 export function Hero() {
   return (
@@ -78,28 +79,28 @@ export function Hero() {
             <span className="lp-sr lp-sr-on" data-srow="">
               <b>Fix login redirect loop</b>
               <span>
-                <span className="lp-logo lp-logo-s" aria-hidden="true">X</span>
+                <AgentTile agent="Codex" size="small" logo={12} />
                 Codex · Working
               </span>
             </span>
             <span className="lp-sr ml-3.5 border-l border-border rounded-[0_8px_8px_0]" data-srow="">
               <b>Write tests for the redirect</b>
               <span>
-                <span className="lp-logo lp-logo-s" aria-hidden="true">Q</span>
+                <AgentTile agent="Qwen Code" size="small" logo={12} />
                 Qwen Code · delegated
               </span>
             </span>
             <span className="lp-sr" data-srow="">
               <b>Refactor orders API client</b>
               <span>
-                <span className="lp-logo lp-logo-s" aria-hidden="true">Q</span>
+                <AgentTile agent="Qwen Code" size="small" logo={12} />
                 Qwen Code · Finished, unread
               </span>
             </span>
             <span className="lp-sr" data-srow="">
               <b>Document the checkout flow</b>
               <span>
-                <span className="lp-logo lp-logo-s" aria-hidden="true">C</span>
+                <AgentTile agent="Claude Code" size="small" logo={12} />
                 Claude Code · 3 hours ago
               </span>
             </span>
@@ -129,7 +130,7 @@ export function Hero() {
                 Signing in from /login sends me back to /login?next=/login forever. Find the loop and fix it.
               </span>
               <span className="flex items-center gap-2" data-chat="">
-                <span className="lp-logo lp-logo-s w-5.5 h-5.5" aria-hidden="true">X</span>
+                <AgentTile agent="Codex" size="small" logo={14} className="w-5.5 h-5.5" />
                 <b className="font-medium text-fg">Codex</b>
                 <span className="lp-sub">now</span>
               </span>
@@ -189,7 +190,7 @@ export function Hero() {
                 <span className="text-fg-subtle">Reply to Codex</span>
                 <span className="flex items-center gap-2">
                   <span className="lp-chip">
-                    <span className="lp-logo lp-logo-s" aria-hidden="true">X</span>
+                    <AgentTile agent="Codex" size="small" logo={12} />
                     Codex
                   </span>
                   <span className="lp-chip">gpt-5-codex</span>

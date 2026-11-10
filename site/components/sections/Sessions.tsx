@@ -1,3 +1,5 @@
+import { AgentTile } from "../ui/AgentTile";
+
 export function Sessions() {
   return (
     <section className="lp-sec" id="sessions" aria-labelledby="sessions-title">
@@ -46,7 +48,7 @@ export function Sessions() {
             <span className="lp-sr lp-sr-on py-2.5 px-3" data-r="">
               <b>Add discount codes to checkout</b>
               <span>
-                <span className="lp-logo lp-logo-s" aria-hidden="true">C</span>
+                <AgentTile agent="Claude Code" size="small" logo={12} />
                 Claude Code ·
                 <span className="lp-dot lp-pulse bg-status-running" />
                 Working
@@ -55,7 +57,7 @@ export function Sessions() {
             <span className="lp-sr py-2.5 px-3" data-r="">
               <b>Fix login redirect loop</b>
               <span>
-                <span className="lp-logo lp-logo-s" aria-hidden="true">X</span>
+                <AgentTile agent="Codex" size="small" logo={12} />
                 Codex ·
                 <span className="lp-dot bg-status-attention" />
                 Waiting for you
@@ -64,7 +66,7 @@ export function Sessions() {
             <span className="lp-sr py-2.5 px-3" data-r="">
               <b>Refactor orders API client</b>
               <span>
-                <span className="lp-logo lp-logo-s" aria-hidden="true">Q</span>
+                <AgentTile agent="Qwen Code" size="small" logo={12} />
                 Qwen Code ·
                 <span className="lp-dot bg-status-unread" />
                 Finished, unread
@@ -73,7 +75,7 @@ export function Sessions() {
             <span className="lp-sr py-2.5 px-3" data-r="">
               <b>Review the pricing copy</b>
               <span>
-                <span className="lp-logo lp-logo-s" aria-hidden="true">G</span>
+                <AgentTile agent="Gemini CLI" size="small" logo={12} />
                 Gemini CLI · 3 hours ago
               </span>
             </span>

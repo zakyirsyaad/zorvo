@@ -1,3 +1,5 @@
+import { AgentTile } from "../ui/AgentTile";
+
 export function Near() {
   return (
     <section className="lp-sec" id="near" aria-labelledby="near-title">
@@ -40,7 +42,7 @@ export function Near() {
         </ul>
         <div className="lp-ui flex flex-wrap items-center justify-center gap-2.5 mt-10" data-flow="" role="img" aria-label="How a private answer travels: Qwen Code sends the prompt to Zorvo's proxy on your Mac, which sends it to NEAR AI Cloud inside a TEE. The answer comes back signed, and Zorvo shows Verified in TEE.">
           <span className="lp-chip h-8 py-0 px-3" data-flow-step="">
-            <span className="lp-logo lp-logo-s" aria-hidden="true">Q</span>
+            <AgentTile agent="Qwen Code" size="small" logo={12} />
             Qwen Code
           </span>
           <svg className="lp-ico text-fg-subtle" data-flow-step="" viewBox="0 0 24 24" aria-hidden="true">

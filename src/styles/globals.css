@@ -8,6 +8,12 @@
   --color-surface-2: #18181b;
   --color-surface-3: #1f1f23;
   --color-surface-hover: #27272a;
+  /* The window behind the sidebar and the sheets; also wells (code, inputs) on a sheet. */
+  --color-ground: #0a0a0b;
+  /* The raised panels: chat, inspector. In light mode these two are the reverse of bg and surface-1. */
+  --color-sheet: #111113;
+  /* A translucent fill: chips, agent tiles, segmented tracks. */
+  --color-chip: rgba(255, 255, 255, 0.06);
   --color-overlay: rgba(0, 0, 0, 0.7);
   --color-border: #27272a;
   --color-border-strong: #71717a;
@@ -43,6 +49,7 @@
 
   /* The chat's column: messages, cards, notices and the composer share it. */
   --container-chat: 680px;
+  --radius-panel: 10px;
 
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -74,6 +81,9 @@
     --color-surface-2: #ffffff;
     --color-surface-3: #ffffff;
     --color-surface-hover: #e4e4e7;
+    --color-ground: #f4f4f5;
+    --color-sheet: #fafafa;
+    --color-chip: rgba(9, 9, 11, 0.05);
     --color-overlay: rgba(9, 9, 11, 0.4);
     --color-border: #e4e4e7;
     --color-border-strong: #808088;

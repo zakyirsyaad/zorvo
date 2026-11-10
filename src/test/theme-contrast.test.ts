@@ -48,7 +48,18 @@ function expectContrast(fg: string, bg: string, floor: number) {
   expect(r, `${fg} on ${bg} is ${r.toFixed(2)}:1, needs ${floor}:1`).toBeGreaterThanOrEqual(floor);
 }
 
-const SURFACES = ["bg", "surface-1", "surface-2", "surface-3"];
+const SURFACES = ["bg", "surface-1", "surface-2", "surface-3", "ground", "sheet"];
+/** A translucent `rgba(r, g, b, a)` token painted over an opaque hex one, as a hex. */
+function flattened(rgbaToken: string, over: string): string {
+  const match = block.match(new RegExp(`--color-${rgbaToken}:\\s*rgba\\((\\d+),\\s*(\\d+),\\s*(\\d+),\\s*([\\d.]+)\\)\\s*;`));
+  if (!match) throw new Error(`light block has no rgba --color-${rgbaToken}`);
+  const [r, g, b] = [match[1], match[2], match[3]].map(Number);
+  const a = Number(match[4]);
+  const under = token(over);
+  const mixed = [r, g, b].map((c, i) => Math.round(a * c + (1 - a) * parseInt(under.slice(1 + 2 * i, 3 + 2 * i), 16)));
+  return `#${mixed.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+}
+
 const TEXT = [
   "fg", "fg-secondary", "fg-muted", "fg-subtle",
   "status-running", "status-attention", "status-unread", "status-merged", "danger",
@@ -61,6 +72,13 @@ describe("light theme contrast", () => {
 
   it.each(SURFACES)("text is readable on %s", (surface) => {
     for (const fg of TEXT) expectContrast(fg, surface, 4.5);
+  });
+
+  it.each(["sheet", "surface-2"])("text on the chip fill is readable over %s", (under) => {
+    const fill = flattened("chip", under);
+    for (const text of ["fg", "fg-secondary", "fg-muted", "fg-subtle"]) {
+      expect(ratio(token(text), fill)).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   it("text is readable on surface-hover", () => {

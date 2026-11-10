@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, waitFor } from "@testing-library/react";
 
@@ -178,6 +179,18 @@ describe("Popout windows", () => {
     });
     // The popout is an Overlay window with no sidebar: the traffic lights always float over its bar.
     expect(screen.getByRole("banner").style.paddingLeft).toBe("78px");
+  });
+
+  it("draws one sheet inset on the ground, with the top bar inside it", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    const main = screen.getByRole("main");
+    expect(main).toHaveClass("bg-ground", "p-2");
+    expect(main.hasAttribute("data-tauri-drag-region")).toBe(true);
+    const sheet = main.querySelector('[data-sheet="main"]') as HTMLElement;
+    expect(sheet).toHaveClass("rounded-panel", "border", "border-border", "bg-sheet", "overflow-hidden");
+    expect(sheet.contains(screen.getByRole("banner"))).toBe(true);
   });
 
   it("shows the history note for a resumed import with no messages", async () => {

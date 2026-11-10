@@ -84,62 +84,64 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
   const isRunning = session?.status === "running";
 
   return (
-    <main className="flex h-screen w-screen flex-col bg-bg text-fg-secondary">
-      {/* An Overlay window with no sidebar: the traffic lights always float over its bar. */}
-      <TopBar
-        hasTrafficLights
-        sessionName={session?.name}
-        workspaceName={session ? folderNameOf(session.cwd) : undefined}
-        plan={currentPlan(messages)}
-      />
-      <article className="flex-1 flex flex-col bg-bg relative overflow-hidden">
-        {messages.length > 0 || session?.historyElsewhere ? (
-          <ChatCanvas
-            messages={messages}
-            agentName={agent?.name}
-            agentProfileId={session?.profileId}
-            header={
-              session?.historyElsewhere ? (
-                <HistoryElsewhereNote agentName={agent?.name ?? "the agent"} />
-              ) : undefined
-            }
-            onChooseOption={(cardId, optionId, answers) =>
-              forward(
-                answers
-                  ? { kind: "choose-option", cardId, optionId, answers }
-                  : { kind: "choose-option", cardId, optionId },
-              )
-            }
-            onAnswerElicitation={(key, answer) => forward({ kind: "answer-elicitation", key, answer })}
-            onReopenElicitationUrl={(key) => forward({ kind: "reopen-elicitation-url", key })}
-            isWorking={status.isBusy && !status.isWaiting}
-            failures={status.failures}
-            onStop={() => forward({ kind: "stop" })}
-          />
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-sm text-fg-subtle">
-            {session ? "No messages yet." : "Connecting to the main window…"}
-          </div>
-        )}
-        <div className="p-4 flex justify-center">
-          {removedAgentName ? (
-            <RemovedAgentPanel agentName={removedAgentName} profileId={session?.profileId} onAdd={() => forward({ kind: "add-agent" })} />
-          ) : (
-            <ComposerDock
+    <main data-tauri-drag-region className="flex h-screen w-screen flex-col bg-ground p-2 text-fg-secondary">
+      <div data-sheet="main" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel border border-border bg-sheet">
+        {/* An Overlay window with no sidebar: the traffic lights always float over its bar. */}
+        <TopBar
+          hasTrafficLights
+          sessionName={session?.name}
+          workspaceName={session ? folderNameOf(session.cwd) : undefined}
+          plan={currentPlan(messages)}
+        />
+        <article className="flex-1 flex flex-col relative overflow-hidden">
+          {messages.length > 0 || session?.historyElsewhere ? (
+            <ChatCanvas
+              messages={messages}
               agentName={agent?.name}
-              disabled={!isRunning}
-              placeholder={isRunning ? undefined : "This session is not running"}
-              onSendMessage={(text) => forward({ kind: "send", text })}
-              isThinking={status.isBusy}
+              agentProfileId={session?.profileId}
+              header={
+                session?.historyElsewhere ? (
+                  <HistoryElsewhereNote agentName={agent?.name ?? "the agent"} />
+                ) : undefined
+              }
+              onChooseOption={(cardId, optionId, answers) =>
+                forward(
+                  answers
+                    ? { kind: "choose-option", cardId, optionId, answers }
+                    : { kind: "choose-option", cardId, optionId },
+                )
+              }
+              onAnswerElicitation={(key, answer) => forward({ kind: "answer-elicitation", key, answer })}
+              onReopenElicitationUrl={(key) => forward({ kind: "reopen-elicitation-url", key })}
+              isWorking={status.isBusy && !status.isWaiting}
+              failures={status.failures}
               onStop={() => forward({ kind: "stop" })}
-              contextUsage={status.contextUsage}
-              // The pair's hand-over blocks Send here as it does in the main window, and says why.
-              sendDisabled={Boolean(status.sendBlockedReason)}
-              note={status.sendBlockedReason ?? undefined}
             />
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-sm text-fg-subtle">
+              {session ? "No messages yet." : "Connecting to the main window…"}
+            </div>
           )}
-        </div>
-      </article>
+          <div className="p-4 flex justify-center">
+            {removedAgentName ? (
+              <RemovedAgentPanel agentName={removedAgentName} profileId={session?.profileId} onAdd={() => forward({ kind: "add-agent" })} />
+            ) : (
+              <ComposerDock
+                agentName={agent?.name}
+                disabled={!isRunning}
+                placeholder={isRunning ? undefined : "This session is not running"}
+                onSendMessage={(text) => forward({ kind: "send", text })}
+                isThinking={status.isBusy}
+                onStop={() => forward({ kind: "stop" })}
+                contextUsage={status.contextUsage}
+                // The pair's hand-over blocks Send here as it does in the main window, and says why.
+                sendDisabled={Boolean(status.sendBlockedReason)}
+                note={status.sendBlockedReason ?? undefined}
+              />
+            )}
+          </div>
+        </article>
+      </div>
     </main>
   );
 }

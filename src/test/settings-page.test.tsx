@@ -142,6 +142,12 @@ describe("Settings page", () => {
     expect(screen.getByRole("heading", { level: 1, name: "GitHub" })).toBeInTheDocument();
   });
 
+  it("keeps the old bg surface of its own until it moves to the v2 surfaces", async () => {
+    await renderApp();
+    await click(settingsButton());
+    expect(document.querySelector("[data-settings-page]")).toHaveClass("bg-bg");
+  });
+
   it("a notice raised in Settings shows on the page", async () => {
     await renderApp();
     await click(settingsButton());

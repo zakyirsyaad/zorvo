@@ -11,8 +11,6 @@ const KEEPS_OLD_SURFACES = [
   "components/onboarding/",
   "components/Onboarding.tsx",
   "components/composer/chip-style.ts",
-  // Task 7 of the phase 1 plan moves the popout window; remove this line there.
-  "components/PopoutApp.tsx",
 ];
 
 /** Any use of `bg` or `surface-1` as a fill, ring, edge, outline or gradient stop. */

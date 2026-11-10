@@ -111,7 +111,7 @@ export const FileLines = memo(function FileLines({
       aria-label={`Contents of ${name}`}
       // Padding and line height come from the numbers the add-lines card is placed by, so the two cannot drift.
       style={BODY_STYLE}
-      className="focus-ring relative min-h-0 flex-1 overflow-auto bg-ground font-mono text-ui-sm select-text"
+      className="focus-ring-inset relative min-h-0 flex-1 overflow-auto bg-ground font-mono text-ui-sm select-text"
     >
       {lines.map((_, index) => {
         const line = index + 1;

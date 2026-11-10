@@ -448,11 +448,13 @@ describe("Tabs", () => {
 
   it("marks the selected tab", () => {
     renderTabs("changes");
-    expect(screen.getByRole("tablist", { name: "Inspector" })).toBeInTheDocument();
+    const list = screen.getByRole("tablist", { name: "Inspector" });
+    expect(list).toHaveClass("inline-flex", "gap-0.5", "rounded-lg", "bg-chip", "p-0.5");
     const changes = screen.getByRole("tab", { name: /Changes/ });
     expect(changes).toHaveAttribute("aria-selected", "true");
     expect(changes).toHaveAttribute("tabindex", "0");
-    expect(changes).toHaveClass("border-fg", "text-fg");
+    expect(changes).toHaveClass("h-6.5", "rounded-md", "px-2.5", "text-ui-sm", "bg-surface-hover", "text-fg");
+    expect(changes).not.toHaveClass("border-b-2");
     expect(changes).toHaveAttribute("aria-controls", tabIds("insp", "changes").panel);
     expect(changes).toHaveAttribute("id", tabIds("insp", "changes").tab);
     const activity = screen.getByRole("tab", { name: "Activity" });

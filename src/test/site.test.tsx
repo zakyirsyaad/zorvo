@@ -175,6 +175,18 @@ describe("landing page", () => {
     }
   });
 
+  it("centres the section links on the page, not between the logo and the buttons", () => {
+    // In a flex row, auto margins centre the nav in the room left between a short logo and a wider
+    // group of buttons, which puts it left of the page's middle. Three columns, 1fr auto 1fr, give
+    // both sides the same width. jsdom has no layout, so this checks the classes that do it.
+    const row = document.querySelector('header nav[aria-label="Sections"]')!.parentElement!;
+    const classes = row.className.split(" ");
+    expect(classes).toContain("min-[861px]:grid");
+    expect(classes).toContain("min-[861px]:grid-cols-[1fr_auto_1fr]");
+    expect(row.firstElementChild!.className.split(" ")).toContain("justify-self-start");
+    expect(row.lastElementChild!.className.split(" ")).toContain("min-[861px]:justify-self-end");
+  });
+
   it("links the docs and the source from the header and the guides from their sections", () => {
     const header = document.querySelector("header")!;
     expect([...header.querySelectorAll("a")].map((link) => link.textContent)).toContain("Docs");

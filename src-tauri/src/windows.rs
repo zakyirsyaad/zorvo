@@ -23,6 +23,11 @@ pub const SESSION_WINDOW_HEIGHT: f64 = 700.0;
 /// A popout keeps room for its chat and composer: below this the composer's Send would be out of reach.
 pub const SESSION_WINDOW_MIN_WIDTH: f64 = 480.0;
 pub const SESSION_WINDOW_MIN_HEIGHT: f64 = 560.0;
+/// Where the macOS traffic lights sit in the main window and in a popout (logical points from the
+/// window's top left): their center is 32px from the top, the top bar's center line inside its sheet.
+/// `tauri.conf.json`'s `trafficLightPosition` for the main window must match; a test checks it.
+#[cfg(target_os = "macos")]
+const TRAFFIC_LIGHT_POSITION: (f64, f64) = (20.0, 26.0);
 
 /// Whether `session_id` is safe to embed in a window label and a URL query.
 ///
@@ -96,7 +101,11 @@ pub fn open_session_window(app: AppHandle, session_id: String) -> Result<(), Str
     #[cfg(target_os = "macos")]
     let builder = builder
         .title_bar_style(TitleBarStyle::Overlay)
-        .hidden_title(true);
+        .hidden_title(true)
+        .traffic_light_position(tauri::LogicalPosition::new(
+            TRAFFIC_LIGHT_POSITION.0,
+            TRAFFIC_LIGHT_POSITION.1,
+        ));
 
     builder.build().map_err(|e| e.to_string())?;
     Ok(())

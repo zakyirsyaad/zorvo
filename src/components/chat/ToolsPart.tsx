@@ -34,7 +34,7 @@ export const ToolsPart = memo(function ToolsPart({ tools, isCurrentTurn, isTurnO
   const Chevron = isOpen ? ChevronDown : ChevronRight;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface-1">
+    <div className="overflow-hidden rounded-lg border border-border bg-surface-2">
       <button
         type="button"
         aria-expanded={isOpen}

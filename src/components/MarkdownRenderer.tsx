@@ -17,7 +17,7 @@ function CodeBlock({ language, code }: { language?: string; code: string }) {
     setTimeout(() => setIsCopied(false), COPIED_FEEDBACK_MS);
   };
   return (
-    <div className="my-3 overflow-hidden rounded-xl border border-border bg-surface-1">
+    <div className="my-3 overflow-hidden rounded-xl border border-border bg-ground">
       <div className="flex items-center justify-between border-b border-border bg-surface-2 px-3 py-1.5 text-[11px] font-mono text-fg-muted select-none">
         <span>{language || "text"}</span>
         <button

@@ -14,10 +14,10 @@ const RESULT_STYLES: Record<string, string> = {
 
 const DOT_STYLES: Record<DotTone, string> = {
   done: "border-status-running bg-status-running",
-  failed: "border-danger bg-surface-1",
-  running: "border-status-running bg-surface-1",
-  waiting: "border-status-attention bg-surface-1",
-  open: "border-border-strong bg-surface-1",
+  failed: "border-danger bg-sheet",
+  running: "border-status-running bg-sheet",
+  waiting: "border-status-attention bg-sheet",
+  open: "border-border-strong bg-sheet",
 };
 
 /** How much of a row's text names it to a screen reader. */

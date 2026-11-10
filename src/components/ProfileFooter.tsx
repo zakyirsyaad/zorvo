@@ -91,7 +91,7 @@ export function ProfileFooter({
               role="img"
               aria-label="Connected to GitHub"
               title="Connected to GitHub"
-              className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full border border-border-strong bg-bg text-fg-secondary"
+              className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full border border-border-strong bg-ground text-fg-secondary"
             >
               <GithubMark size={8} />
             </span>

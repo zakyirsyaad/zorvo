@@ -37,7 +37,7 @@ function choiceVariant(kind: string): ButtonVariant {
  */
 function EditedFiles({ edits }: { edits: NonNullable<ActionCardType["edits"]> }) {
   return (
-    <ul aria-label="Files to edit" className="rounded-md border border-border bg-bg">
+    <ul aria-label="Files to edit" className="rounded-md border border-border bg-ground">
       {edits.map((edit, index) => (
         <li
           // A request can carry two diffs for one file, so the path alone is not a key.
@@ -148,7 +148,7 @@ export function ActionCard({ card, onChoose, disabled = false, agentName = "The 
 
       {/* Command Snippet */}
       {card.commandSnippet && (
-        <div className="overflow-x-auto rounded-md border border-border bg-bg px-2.5 py-2 font-mono text-ui-sm text-fg-secondary">
+        <div className="overflow-x-auto rounded-md border border-border bg-ground px-2.5 py-2 font-mono text-ui-sm text-fg-secondary">
           <code>{card.commandSnippet}</code>
         </div>
       )}

@@ -15,7 +15,7 @@ const ROW = "flex h-[30px] w-full shrink-0 items-center gap-2 rounded-md px-2.5 
 /** The full review's list of changed files on the left, each with its counts. */
 export function DiffFileList({ stats, selectedPath, onSelect }: DiffFileListProps) {
   return (
-    <nav aria-label="Changed files" className="flex w-60 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border bg-surface-1 px-2 py-2.5">
+    <nav aria-label="Changed files" className="flex w-60 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border px-2 py-2.5">
       {stats.map((stat) => {
         // A nested repository is listed as a folder, "vendor/lib/": named by its last part.
         const shown = stat.path.replace(/\/+$/, "");

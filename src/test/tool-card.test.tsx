@@ -44,11 +44,11 @@ describe("lastTouchedLabel", () => {
 });
 
 describe("the tool card, as drawn", () => {
-  it("is a surface-1 card with a 34px header naming the last touched file in mono", () => {
+  it("is a surface-2 card with a 34px header naming the last touched file in mono", () => {
     render(<ToolsPart tools={[read, edit]} isCurrentTurn={false} isTurnOver />);
     const header = screen.getAllByRole("button")[0];
     const card = header.parentElement as HTMLElement;
-    expect(card).toHaveClass("rounded-lg", "border-border", "bg-surface-1", "overflow-hidden");
+    expect(card).toHaveClass("rounded-lg", "border-border", "bg-surface-2", "overflow-hidden");
     expect(header).toHaveClass("h-[34px]", "text-ui-sm", "text-fg-secondary");
     expect(header.className).not.toContain("border-b");
     expect(within(header).getByText("sidebar/SessionRow.tsx +1")).toHaveClass("font-mono", "text-caption", "text-fg-subtle");

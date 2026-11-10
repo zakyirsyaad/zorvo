@@ -77,7 +77,7 @@ export function TerminalSignInDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="flex w-full max-w-[760px] flex-col overflow-hidden rounded-xl border border-border bg-surface-1 text-fg-secondary shadow-dialog"
+        className="flex w-full max-w-[760px] flex-col overflow-hidden rounded-xl border border-border bg-surface-2 text-fg-secondary shadow-dialog"
       >
         <header className="flex items-center gap-2.5 px-5 py-4">
           {profileId && (

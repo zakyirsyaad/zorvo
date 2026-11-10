@@ -59,7 +59,7 @@ describe("the model menu", () => {
     openDropdown("Model", models);
     expect(screen.getByRole("dialog", { name: "Model" })).toHaveClass("w-75");
     const search = screen.getByRole("searchbox", { name: "Search model" });
-    expect(search.closest("label")).toHaveClass("h-7.5");
+    expect(search.closest("label")).toHaveClass("h-7");
     fireEvent.change(search, { target: { value: "son" } });
     expect(screen.getByText("2 of 14 models")).toHaveClass("text-caption", "text-fg-subtle", "pt-1.5");
     const mark = screen.getAllByRole("option")[0].querySelector("mark");

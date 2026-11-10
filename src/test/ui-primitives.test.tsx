@@ -579,7 +579,7 @@ describe("Popover", () => {
     render(<Harness />);
     expect(screen.queryByRole("menu")).toBeNull();
     open();
-    expect(screen.getByRole("menu", { name: "Mode menu" })).toHaveClass("bg-surface-3", "shadow-popover", "rounded-lg");
+    expect(screen.getByRole("menu", { name: "Mode menu" })).toHaveClass("bg-surface-3", "shadow-popover", "rounded-panel", "p-1");
   });
 
   it("closes on Escape and gives focus back to the trigger", () => {
@@ -684,6 +684,11 @@ describe("Highlighted", () => {
 });
 
 describe("Toast", () => {
+  it("takes the panel radius", () => {
+    render(<Toast message="Saved." onDismiss={() => {}} />);
+    expect(screen.getByRole("status")).toHaveClass("rounded-panel", "bg-surface-3", "shadow-popover");
+  });
+
   it("brings a new notice into view once, so one that appears in a column scrolled away from it is seen", () => {
     const reveal = vi.fn();
     const original = Element.prototype.scrollIntoView;

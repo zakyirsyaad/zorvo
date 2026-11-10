@@ -13,7 +13,7 @@ export interface ToastProps {
   onDismiss: () => void;
 }
 
-const CARD = "flex w-[340px] items-start gap-2.5 rounded-[10px] border bg-surface-3 p-3 shadow-popover";
+const CARD = "flex w-[340px] items-start gap-2.5 rounded-panel border bg-surface-3 p-3 shadow-popover";
 // An error reads in fg on a danger edge; a warning or a note is status text in fg-secondary.
 const TONES = {
   info: { border: "border-border", text: "text-fg-secondary", icon: <Info size={15} className="text-fg-muted" /> },

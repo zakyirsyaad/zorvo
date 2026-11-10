@@ -12,9 +12,12 @@ SITE_URL=https://zorvolabs.xyz pnpm --filter zorvo-site build   # writes site/ou
 ```
 
 `out/` is plain files: any static host serves it. The site has no client components, so the build
-ends with `scripts/strip-runtime.mjs`, which removes React's hydration runtime from every page: a
-visitor downloads HTML, CSS, fonts and images, and no JavaScript. Structured data stays. Next.js telemetry is off in
-both scripts. The page makes no requests to other sites. Every link comes from
+ends with `scripts/strip-runtime.mjs`, which removes React's hydration runtime from every page. The one
+script a visitor downloads is `/motion.js`, the landing page's motion (`scripts/motion/landing.ts`, GSAP and
+Motion, bundled by `scripts/build-motion.mjs` before `next build`): it hydrates nothing, plays only
+when the visitor has not asked for reduced motion, and the page is complete without it. The strip step keeps
+exactly that tag and fails the build if any other script survives. `vercel.json` allows scripts from the site's
+own origin only (`script-src 'self'`). Structured data stays. Next.js telemetry is off in both scripts. The page makes no requests to other sites. Every link comes from
 `lib/links.ts`: the docs links point at the pages under `app/docs/` and the
 downloads and the changelog at the repository, and changing that one file moves
 them all. The docs pages are listed in `lib/docs-nav.ts`, which the sidebar, the

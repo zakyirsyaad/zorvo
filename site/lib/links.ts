@@ -16,6 +16,8 @@ export const LINKS = {
   quickstart: "/docs/quickstart",
   compareGuide: "/docs/compare",
   reviewGuide: "/docs/review",
+  delegateGuide: "/docs/delegate",
+  signingIn: "/docs/signing-in",
   agentsGuide: "/docs/agents",
   troubleshooting: "/docs/troubleshooting",
   changelog: `${REPOSITORY}/blob/main/CHANGELOG.md`,

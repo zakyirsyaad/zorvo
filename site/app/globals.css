@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./landing.css";
 
 /*
  * Zorvo tokens, the same names and values as the app's src/styles/globals.css

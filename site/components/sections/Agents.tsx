@@ -21,8 +21,8 @@ export function Agents() {
             <span className="text-fg font-medium">Qwen Code</span>
           </li>
           <li className="lp-card flex items-center gap-3 h-14 py-0 px-4.5" data-r="" data-hover="">
-            <AgentTile agent="Gemini CLI" size="large" logo={16} />
-            <span className="text-fg font-medium">Gemini CLI</span>
+            <AgentTile agent="Antigravity" size="large" logo={16} />
+            <span className="text-fg font-medium">Antigravity</span>
           </li>
           <li className="lp-card flex items-center gap-3 h-14 py-0 px-4.5 border-dashed" data-r="" data-hover="">
             <span className="lp-logo font-mono" aria-hidden="true">+</span>

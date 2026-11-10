@@ -145,10 +145,11 @@ describe("landing page", () => {
   });
 
   it("names every agent and says it is not endorsed by them", () => {
-    for (const agent of ["Claude Code", "Codex", "Qwen Code", "Gemini CLI"]) {
+    for (const agent of ["Claude Code", "Codex", "Qwen Code", "Antigravity"]) {
       expect(text).toContain(agent);
     }
     expect(text).toContain("not endorsed by them");
+    expect(text).not.toMatch(/Gemini/);
   });
 
   it("gives every image alt text, and every picture a description", () => {
@@ -504,7 +505,7 @@ describe("docs pages", () => {
     );
 
     const troubleshooting = idsOf("/docs/troubleshooting");
-    for (const id of ["failed", "gemini", "update"]) expect(troubleshooting).toContain(id);
+    for (const id of ["failed", "update"]) expect(troubleshooting).toContain(id);
 
     const quickstart = parse("/docs/quickstart");
     expect(quickstart.body.textContent).toContain("Rewind to here");
@@ -515,7 +516,7 @@ describe("docs pages", () => {
     expect(parse("/docs/compare").body.textContent).toContain("Pick always asks first");
     expect(parse("/docs/review").body.textContent).toContain("Outdated");
     for (const href of Object.keys(PAGES)) {
-      expect(parse(href).body.textContent, href).not.toMatch(/drawer|detected agents|Settings, General, GitHub/i);
+      expect(parse(href).body.textContent, href).not.toMatch(/drawer|detected agents|Settings, General, GitHub|Gemini/i);
     }
   });
 

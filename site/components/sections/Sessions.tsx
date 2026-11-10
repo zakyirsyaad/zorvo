@@ -36,7 +36,7 @@ export function Sessions() {
           </ul>
         </div>
         <div className="lp-col basis-95 items-center">
-          <div className="lp-ui lp-card w-full max-w-95 flex flex-col gap-1 p-3 bg-surface-1" data-reveal="" role="img" aria-label="The sidebar's acme-shop folder with four sessions: Claude Code working on discount codes, Codex waiting for you on the login fix, Qwen Code finished and unread on the orders client, and Gemini CLI started three hours ago.">
+          <div className="lp-ui lp-card w-full max-w-95 flex flex-col gap-1 p-3 bg-surface-1" data-reveal="" role="img" aria-label="The sidebar's acme-shop folder with four sessions: Claude Code working on discount codes, Codex waiting for you on the login fix, Qwen Code finished and unread on the orders client, and Antigravity started three hours ago.">
             <span className="flex items-center gap-2 py-1.5 px-2.5 text-[12px] text-fg" data-r="">
               <svg className="lp-ico w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
@@ -75,8 +75,8 @@ export function Sessions() {
             <span className="lp-sr py-2.5 px-3" data-r="">
               <b>Review the pricing copy</b>
               <span>
-                <AgentTile agent="Gemini CLI" size="small" logo={12} />
-                Gemini CLI · 3 hours ago
+                <AgentTile agent="Antigravity" size="small" logo={12} />
+                Antigravity · 3 hours ago
               </span>
             </span>
           </div>

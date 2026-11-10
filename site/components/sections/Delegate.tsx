@@ -60,8 +60,8 @@ export function Delegate() {
                   <span className="lp-sub">Ready</span>
                 </span>
                 <span className="flex items-center gap-2 h-7.5 py-0 px-2">
-                  <AgentTile agent="Gemini CLI" size="small" logo={12} />
-                  Gemini CLI
+                  <AgentTile agent="Antigravity" size="small" logo={12} />
+                  Antigravity
                   <span className="flex-1" />
                   <span className="lp-sub">Sign in</span>
                 </span>

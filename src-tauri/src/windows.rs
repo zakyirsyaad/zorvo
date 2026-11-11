@@ -24,10 +24,11 @@ pub const SESSION_WINDOW_HEIGHT: f64 = 700.0;
 pub const SESSION_WINDOW_MIN_WIDTH: f64 = 480.0;
 pub const SESSION_WINDOW_MIN_HEIGHT: f64 = 560.0;
 /// Where the macOS traffic lights sit in the main window and in a popout (logical points from the
-/// window's top left): their center is 32px from the top, the top bar's center line inside its sheet.
+/// window's top left). Their center is 32px from the top, the top bar's center line inside its
+/// sheet; it sits 2px above the y given here (measured), hence 34.
 /// `tauri.conf.json`'s `trafficLightPosition` for the main window must match; a test checks it.
 #[cfg(target_os = "macos")]
-const TRAFFIC_LIGHT_POSITION: (f64, f64) = (20.0, 26.0);
+const TRAFFIC_LIGHT_POSITION: (f64, f64) = (20.0, 34.0);
 
 /// Whether `session_id` is safe to embed in a window label and a URL query.
 ///

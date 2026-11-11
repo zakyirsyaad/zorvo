@@ -152,6 +152,31 @@ describe("composer controls", () => {
       expect(acpControls(pi, actions()).permission).toBeUndefined();
     });
 
+    it("shows one chip when the modes went stale after a model switch", () => {
+      // pi-acp sends only the new current mode after a model switch, so the mode list stays the old model's
+      // while the effort list is the new model's: neither holds the other.
+      const pi: AcpSessionInfo = {
+        ...info,
+        modes: { currentModeId: "medium", availableModes: levels(["off", "minimal", "low", "medium", "high"]) },
+        configOptions: [thinking(["low", "high", "max"], "max")],
+      };
+
+      const controls = acpControls(pi, actions());
+
+      expect(controls.permission).toBeUndefined();
+      expect(controls.effort?.selected).toBe("max");
+    });
+
+    it("shows one chip when the stale modes share no level with the effort list", () => {
+      const pi: AcpSessionInfo = {
+        ...info,
+        modes: { currentModeId: "low", availableModes: levels(["off", "minimal", "low"]) },
+        configOptions: [thinking(["high", "max"], "max")],
+      };
+
+      expect(acpControls(pi, actions()).permission).toBeUndefined();
+    });
+
     it("keeps the mode chip of an agent whose modes are not its effort levels", () => {
       const qwen: AcpSessionInfo = { ...info, configOptions: [thinking(["low", "high"], "low")] };
 

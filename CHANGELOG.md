@@ -4,13 +4,15 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
-### Changed
-
-- **The website has the new landing page.** Sessions, Compare, Delegate, Private mode on NEAR AI Cloud, Review, Control and the long-session numbers each have their own section, with motion that plays once and is off for visitors who ask for reduced motion. The site now ships one small script for it, and the docs have a new page on delegating a task.
+## [0.10.0] - 2026-11-11
 
 ### Added
 
 - Delegate a task from a session to another agent: it works in the same folder and its answers are sent back to the session.
+
+### Changed
+
+- **The website has the new landing page.** Sessions, Compare, Delegate, Private mode on NEAR AI Cloud, Review, Control and the long-session numbers each have their own section, with motion that plays once and is off for visitors who ask for reduced motion. The site now ships one small script for it, and the docs have a new page on delegating a task.
 
 ### Fixed
 
@@ -294,7 +296,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.8.1...v0.9.0

@@ -346,17 +346,18 @@ impl AcpManager {
         text: &str,
         attachments: &[String],
     ) -> Result<(), String> {
-        let (connection, acp_id, capabilities, auth_methods) =
+        let (connection, acp_id, capabilities, auth_methods, cwd) =
             self.with_entry(app_session_id, |e| {
                 (
                     Arc::clone(&e.connection),
                     e.acp_session_id.clone(),
                     e.agent_capabilities.clone(),
                     e.auth_methods.clone(),
+                    e.cwd.clone(),
                 )
             })?;
         let supports_images = capabilities["promptCapabilities"]["image"] == Value::Bool(true);
-        let prompt = prompt_blocks(text, attachments, supports_images)?;
+        let prompt = prompt_blocks(text, attachments, supports_images, &cwd)?;
         let sink = Arc::clone(&self.sink);
         let session_id = app_session_id.to_string();
         connection.send_request(

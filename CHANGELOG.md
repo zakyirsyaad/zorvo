@@ -4,6 +4,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-11-12
+
 ### Fixed
 
 - **Pi shows one Thinking chip after a model switch too.** 0.10.0 hid Pi's second Thinking chip only while its two lists of levels matched. After a model switch Pi's adapter keeps the old model's list on one of them, so both chips came back, with different values. Zorvo now recognizes Pi's modes by their names, whatever levels each list holds.
@@ -300,7 +302,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.0...v0.9.1

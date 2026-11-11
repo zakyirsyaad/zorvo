@@ -49,8 +49,9 @@ describe("inspector layout", () => {
 
   it("counts the sidebar and the insets around the sheets", () => {
     expect(isCrowded(1280, 380, true)).toBe(false); // 1280 - 264 - 380 - 16 = 620
-    expect(isCrowded(1220, 380, true)).toBe(false); // exactly 560
-    expect(isCrowded(1219, 380, true)).toBe(true);
+    expect(isCrowded(1200, 380, true)).toBe(false); // the default window size keeps the sidebar: 540
+    expect(isCrowded(1196, 380, true)).toBe(false); // exactly 536
+    expect(isCrowded(1195, 380, true)).toBe(true);
     expect(isCrowded(1280, 560, true)).toBe(true); // 440
     expect(isCrowded(640, 560, false)).toBe(false); // no sidebar, never crowded
   });

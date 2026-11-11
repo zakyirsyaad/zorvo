@@ -7,8 +7,12 @@ export const INSPECTOR_WIDTH = { min: 320, max: 720, initial: 380, wide: 560, st
 export const SIDEBAR_WIDTH = 264;
 /** The gap around and between the sheets. */
 export const STAGE_INSET = 8;
-/** The narrowest the chat column may get before the sidebar gives way. */
-export const MIN_CHAT_WIDTH = 560;
+/**
+ * The narrowest the chat column may get before the sidebar gives way. It was 560 when the sidebar was 256px
+ * and nothing framed the sheets; the 264px sidebar and the 16px of insets take 24px more, so 536 keeps the
+ * same window sizes crowded as before (a 380px inspector still fits beside the sidebar from 1196px wide).
+ */
+export const MIN_CHAT_WIDTH = 536;
 
 /** A width the inspector may take: rounded, within its bounds, the initial width when not a number. */
 export function clampInspectorWidth(px: number): number {

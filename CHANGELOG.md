@@ -4,17 +4,25 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- The window has a layered look: the chat and the inspector are raised panels on the window's background.
+
+## [0.10.0] - 2026-11-11
+
 ### Added
 
 - Delegate a task from a session to another agent: it works in the same folder and its answers are sent back to the session.
 
 ### Changed
 
-- The window has a layered look: the chat and the inspector are raised panels on the window's background.
+- **The website has the new landing page.** Sessions, Compare, Delegate, Private mode on NEAR AI Cloud, Review, Control and the long-session numbers each have their own section, with motion that plays once and is off for visitors who ask for reduced motion. The site now ships one small script for it, and the docs have a new page on delegating a task.
 
 ### Fixed
 
 - **Qwen Code's Workflow mode no longer fails with an error when you pick On.** Qwen Code offers Workflow mode in every session, but turns it on only when workflows are on in its own settings, and otherwise refuses with "Internal error (Workflow mode is unavailable in this session)". Zorvo now reads what Qwen Code reports and shows On as unavailable, with the reason: turn on workflows in Qwen Code's settings first.
+- **Qwen Code sees a file you attach from outside the session's folder.** Qwen Code reads an attached file only when it lies inside the session's folder, and dropped any other without a word, so a document from Downloads never reached it and it answered that nothing was attached. Zorvo now also names the path of each such file in the message, so the agent knows it is there and can read it.
+- **Pi shows one Thinking chip, not two.** Pi's adapter reports its thinking levels twice, as modes and as an effort setting, so the composer showed two Thinking chips that could disagree on an ended session. Zorvo now shows the effort chip alone when an agent's modes only repeat its thinking levels.
 
 ## [0.9.2] - 2026-11-09
 
@@ -292,7 +300,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.8.1...v0.9.0

@@ -58,8 +58,8 @@ export default function SigningInPage() {
       </Picture>
       <UL>
         <li>
-          <B>Check sign-in</B> asks the agent. Claude Code and Codex can say who is signed in without a session. Gemini
-          CLI and Qwen Code cannot, so the button says first that it opens one.
+          <B>Check sign-in</B> asks the agent. Claude Code and Codex can say who is signed in without a session. Qwen Code
+          cannot, so the button says first that it opens one.
         </li>
         <li>
           Start a new session with an agent that is not ready: Zorvo checks it and shows a sign-in card above the
@@ -69,8 +69,7 @@ export default function SigningInPage() {
       <H2 id="in-zorvo">In Zorvo</H2>
       <P>
         An agent that offers its own login, such as Claude Code&apos;s Claude subscription, runs it in a terminal inside
-        Zorvo. Your message is sent once you are signed in. Where an agent offers a key instead (Gemini CLI&apos;s API
-        key, for example), the panel explains it and you set it up outside Zorvo, then click <B>Check again</B> in the sign-in
+        Zorvo. Your message is sent once you are signed in. Where an agent offers a key instead of a login, the panel explains it and you set it up outside Zorvo, then click <B>Check again</B> in the sign-in
         panel, or <B>Check sign-in</B> in Settings. Zorvo reads your
         shell&apos;s settings again before it asks the agent, so a key you just added to <Chip isCode>~/.zshrc</Chip> is found.
       </P>

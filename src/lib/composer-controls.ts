@@ -83,16 +83,25 @@ export interface AcpControlActions {
 /**
  * Whether the agent's modes are its thinking levels over again. pi ACP has no permission modes, so its adapter
  * fills ACP's modes with the levels ("Thinking: medium") and reports them as a `thought_level` option as well:
- * two chips for one setting. One list inside the other counts, since a draft or an ended session shows the modes
- * the agent reported last beside the effort list remembered for its model, and those can differ by a level.
+ * two chips for one setting.
+ *
+ * The two lists cannot be relied on to match. The effort list follows the model, but after a model switch the
+ * adapter sends only the new current mode, never a new mode list, and a draft or an ended session shows the modes
+ * reported last beside the effort list remembered for its model: the modes of one model (off … high) beside the
+ * levels of another (low, high, max), with neither list inside the other. So the names decide first: every mode
+ * is called after the effort option ("Thinking: low" for the option "Thinking"). One list inside the other still
+ * counts, for an adapter that names them differently.
  */
 function modesRepeatEffort(info: AcpOptions): boolean {
   const effort = info.configOptions.find((o) => o.category === 'thought_level');
   if (!info.modes || !effort) return false;
-  const modes = info.modes.availableModes.map((m) => m.id);
+  const modes = info.modes.availableModes;
   const levels = effort.options.map((o) => o.value);
   if (modes.length === 0 || levels.length === 0) return false;
-  return modes.every((id) => levels.includes(id)) || levels.every((value) => modes.includes(value));
+  const prefix = `${effort.name.trim().toLowerCase()}:`;
+  if (prefix.length > 1 && modes.every((m) => m.name.trim().toLowerCase().startsWith(prefix))) return true;
+  const ids = modes.map((m) => m.id);
+  return ids.every((id) => levels.includes(id)) || levels.every((value) => ids.includes(value));
 }
 
 /** Controls for an ACP session: exactly what its agent reported, applied live. */

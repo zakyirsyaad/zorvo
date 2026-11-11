@@ -117,4 +117,45 @@ describe("composer controls", () => {
     expect(controls.permission?.selected).toBe("ask");
     expect(setConfig).toHaveBeenCalledWith("mode", "ask");
   });
+  describe("an agent that reports its thinking levels as modes too (pi ACP)", () => {
+    const levels = (ids: string[]) => ids.map((id) => ({ id, name: `Thinking: ${id}` }));
+    const thinking = (ids: string[], current: string) => ({
+      id: "thought_level",
+      name: "Thinking",
+      category: "thought_level",
+      currentValue: current,
+      options: ids.map((id) => ({ value: id, name: `Thinking: ${id}` })),
+    });
+    const actions = () => ({ setMode: vi.fn(), setConfigOption: vi.fn(), setModel: vi.fn() });
+
+    it("shows one Thinking chip, the effort one", () => {
+      const ids = ["off", "low", "medium", "high"];
+      const pi: AcpSessionInfo = {
+        ...info,
+        modes: { currentModeId: "medium", availableModes: levels(ids) },
+        configOptions: [thinking(ids, "medium")],
+      };
+
+      const controls = acpControls(pi, actions());
+
+      expect(controls.permission).toBeUndefined();
+      expect(controls.effort?.options.map((o) => o.value)).toEqual(ids);
+    });
+
+    it("still shows one chip when the remembered effort list is another model's", () => {
+      const pi: AcpSessionInfo = {
+        ...info,
+        modes: { currentModeId: "medium", availableModes: levels(["off", "low", "medium", "high"]) },
+        configOptions: [thinking(["off", "low", "medium", "high", "max"], "max")],
+      };
+
+      expect(acpControls(pi, actions()).permission).toBeUndefined();
+    });
+
+    it("keeps the mode chip of an agent whose modes are not its effort levels", () => {
+      const qwen: AcpSessionInfo = { ...info, configOptions: [thinking(["low", "high"], "low")] };
+
+      expect(acpControls(qwen, actions()).permission?.options.map((o) => o.value)).toEqual(["default", "yolo"]);
+    });
+  });
 });

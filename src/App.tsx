@@ -24,9 +24,10 @@ import { ChangesPanel } from "./components/changes/ChangesPanel";
 import { DiffView } from "./components/changes/DiffView";
 import { totalsOf } from "./lib/diff-stats";
 import { useInspector } from "./hooks/useInspector";
+import { useWindowWidth } from "./hooks/useWindowWidth";
 import { useNotice } from "./hooks/useNotice";
 import { Inspector } from "./components/inspector/Inspector";
-import { offeredTabs } from "./lib/inspector";
+import { maxInspectorWidth, offeredTabs } from "./lib/inspector";
 import { useReviewComments } from "./hooks/useReviewComments";
 import { useReviewWiring } from "./hooks/useReviewWiring";
 import { useTurnsEnded } from "./hooks/useTurnsEnded";
@@ -165,6 +166,7 @@ export default function App() {
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const settingsPage = useSettingsPage(settingsButtonRef);
   const [isSidebarHidden, setSidebarHidden] = useState(false);
+  const windowWidth = useWindowWidth();
   const composerRef = useRef<ComposerHandle>(null);
   // The top bar's Inspector button: focus goes back to it when the inspector closes from its own button.
   const inspectorButtonRef = useRef<HTMLButtonElement>(null);
@@ -1567,6 +1569,7 @@ export default function App() {
               tab={inspectorTab}
               tabs={inspectorTabs}
               width={inspector.width}
+              maxWidth={maxInspectorWidth(windowWidth, !isSidebarHidden)}
               counts={{ changes: inspector.changes.changes?.length }}
               isViewingFile={inspectorTab === "files" && inspector.viewedFile !== null}
               onSelect={inspector.show}

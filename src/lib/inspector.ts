@@ -25,10 +25,31 @@ function isWideTab(tab: InspectorTab, isViewingFile: boolean): boolean {
   return tab === "terminal" || (tab === "files" && isViewingFile);
 }
 
-/** How wide the inspector shows: none while closed, at least `wide` on the Terminal tab or a file open in Files. */
-export function shownInspectorWidth(tab: InspectorTab | null, width: number, isViewingFile = false): number {
+/** The narrowest the main sheet may get beside the inspector, so its top bar is never crushed. */
+export const MIN_MAIN_SHEET_WIDTH = 240;
+
+/**
+ * The widest the inspector may show in a window this wide: what is left once the sidebar (or the stage's own
+ * 8px inset while the sidebar is hidden), the gap and the right inset, and a 240px main sheet are counted.
+ */
+export function maxInspectorWidth(windowWidth: number, isSidebarShown: boolean): number {
+  const left = isSidebarShown ? SIDEBAR_WIDTH : STAGE_INSET;
+  return windowWidth - left - 2 * STAGE_INSET - MIN_MAIN_SHEET_WIDTH;
+}
+
+/**
+ * How wide the inspector shows: none while closed, at least `wide` on the Terminal tab or a file open in Files,
+ * and never above `maxWidth` (the cap wins over that minimum and over the remembered width).
+ */
+export function shownInspectorWidth(
+  tab: InspectorTab | null,
+  width: number,
+  isViewingFile = false,
+  maxWidth = Number.POSITIVE_INFINITY,
+): number {
   if (tab === null) return 0;
-  return isWideTab(tab, isViewingFile) ? Math.max(INSPECTOR_WIDTH.wide, width) : width;
+  const wanted = isWideTab(tab, isViewingFile) ? Math.max(INSPECTOR_WIDTH.wide, width) : width;
+  return Math.min(wanted, maxWidth);
 }
 
 /** The narrowest a tab shows: `wide` on the Terminal tab or a file open in Files, else the inspector's own minimum. */

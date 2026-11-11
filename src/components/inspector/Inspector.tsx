@@ -23,6 +23,8 @@ export interface InspectorProps {
   counts?: Partial<Record<InspectorTab, number>>;
   /** A file is open in the Files tab: like the Terminal tab, it shows at least `INSPECTOR_WIDTH.wide`. */
   isViewingFile?: boolean;
+  /** The most the window leaves room for (`maxInspectorWidth`); it wins over the minimums and the remembered width. */
+  maxWidth?: number;
   onSelect: (tab: InspectorTab) => void;
   onResize: (px: number) => void;
   onClose: () => void;
@@ -31,7 +33,7 @@ export interface InspectorProps {
 }
 
 /** The right-hand inspector: one tab of the session's changes, activity, files or terminal, with an edge that drags. */
-export function Inspector({ tab, tabs, width, counts, isViewingFile = false, onSelect, onResize, onClose, children }: InspectorProps) {
+export function Inspector({ tab, tabs, width, counts, isViewingFile = false, maxWidth = Number.POSITIVE_INFINITY, onSelect, onResize, onClose, children }: InspectorProps) {
   const onResizeRef = useLatest(onResize);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const stopDragRef = useRef<() => void>(() => {});
@@ -49,9 +51,10 @@ export function Inspector({ tab, tabs, width, counts, isViewingFile = false, onS
 
   // Resizing starts from the width that shows (the Terminal tab's may be wider than the remembered one)
   // and never goes below the tab's own minimum, so every step changes what you see.
-  const shown = shownInspectorWidth(tab, width, isViewingFile);
-  const min = minInspectorWidth(tab, isViewingFile);
-  const widthFor = (px: number) => Math.max(min, clampInspectorWidth(px));
+  const shown = shownInspectorWidth(tab, width, isViewingFile, maxWidth);
+  const min = Math.min(minInspectorWidth(tab, isViewingFile), maxWidth);
+  const max = Math.min(INSPECTOR_WIDTH.max, maxWidth);
+  const widthFor = (px: number) => Math.min(max, Math.max(min, clampInspectorWidth(px)));
 
   const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     // Only the main button drags: a right-click's menu would swallow the pointerup that ends it.
@@ -104,7 +107,7 @@ export function Inspector({ tab, tabs, width, counts, isViewingFile = false, onS
         aria-orientation="vertical"
         aria-label="Resize inspector"
         aria-valuemin={min}
-        aria-valuemax={INSPECTOR_WIDTH.max}
+        aria-valuemax={max}
         aria-valuenow={shown}
         tabIndex={0}
         data-dragging={isDragging ? "" : undefined}

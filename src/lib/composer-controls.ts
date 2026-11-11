@@ -80,6 +80,21 @@ export interface AcpControlActions {
   setConfigOption: (configId: string, value: string) => void;
 }
 
+/**
+ * Whether the agent's modes are its thinking levels over again. pi ACP has no permission modes, so its adapter
+ * fills ACP's modes with the levels ("Thinking: medium") and reports them as a `thought_level` option as well:
+ * two chips for one setting. One list inside the other counts, since a draft or an ended session shows the modes
+ * the agent reported last beside the effort list remembered for its model, and those can differ by a level.
+ */
+function modesRepeatEffort(info: AcpOptions): boolean {
+  const effort = info.configOptions.find((o) => o.category === 'thought_level');
+  if (!info.modes || !effort) return false;
+  const modes = info.modes.availableModes.map((m) => m.id);
+  const levels = effort.options.map((o) => o.value);
+  if (modes.length === 0 || levels.length === 0) return false;
+  return modes.every((id) => levels.includes(id)) || levels.every((value) => modes.includes(value));
+}
+
 /** Controls for an ACP session: exactly what its agent reported, applied live. */
 export function acpControls(
   info: AcpOptions,
@@ -96,13 +111,15 @@ export function acpControls(
     );
   };
 
-  const permission = info.modes
+  const modeControl = info.modes
     ? controlIf(
         info.modes.availableModes.map((m) => modeOption(m.id, m.name, m.description)),
         1,
         { selected: info.modes.currentModeId, onChange: (value) => value && actions.setMode(value) },
       )
     : fromConfig('mode');
+  // The effort chip already offers these levels.
+  const permission = modesRepeatEffort(info) ? undefined : modeControl;
 
   // A model config option is the agent's newer way to offer models; `models` is the older one.
   const fromModels = (): ComposerControl | undefined =>

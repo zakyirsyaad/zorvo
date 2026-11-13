@@ -13,16 +13,16 @@ export interface ToastProps {
   onDismiss: () => void;
 }
 
-const CARD = "flex w-[340px] items-start gap-2.5 rounded-panel border bg-surface-3 p-3 shadow-popover";
+const CARD = "flex w-[340px] items-start gap-2.5 rounded-panel border bg-surface-3 py-3 pr-3 pl-3.5 shadow-popover";
 // An error reads in fg on a danger edge; a warning or a note is status text in fg-secondary.
 const TONES = {
-  info: { border: "border-border", text: "text-fg-secondary", icon: <Info size={15} className="text-fg-muted" /> },
+  info: { border: "border-border", text: "text-fg-secondary", icon: <Info size={14} className="text-fg-muted" /> },
   warning: {
     border: "border-border",
     text: "text-fg-secondary",
-    icon: <CircleAlert size={15} className="text-status-attention" />,
+    icon: <CircleAlert size={14} className="text-status-attention" />,
   },
-  error: { border: "border-danger", text: "text-fg", icon: <CircleAlert size={15} className="text-danger" /> },
+  error: { border: "border-danger", text: "text-fg", icon: <CircleAlert size={14} className="text-danger" /> },
 } as const;
 
 /** A notice in the corner of the main area: an error is spoken at once, the rest politely. */
@@ -52,5 +52,5 @@ export function Toast({ tone = "warning", message, action, onDismiss }: ToastPro
 
 /** Holds the toasts at the bottom right of the main area, which must be `relative`. */
 export function ToastStack({ children }: { children: ReactNode }) {
-  return <div className="absolute right-5 bottom-5 z-40 flex flex-col gap-2.5">{children}</div>;
+  return <div className="absolute right-6 bottom-6 z-40 flex flex-col gap-2.5">{children}</div>;
 }

@@ -771,6 +771,6 @@ describe("Toast", () => {
         <Toast message="One" onDismiss={() => {}} />
       </ToastStack>,
     );
-    expect(screen.getByRole("status").parentElement).toHaveClass("absolute", "right-5", "bottom-5", "z-40");
+    expect(screen.getByRole("status").parentElement).toHaveClass("absolute", "right-6", "bottom-6", "z-40");
   });
 });

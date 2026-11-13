@@ -86,7 +86,7 @@ describe("the Reply toolbar, as drawn", () => {
   it("is a 2px-padded panel with a 28px Reply in fg", () => {
     render(<SelectionToolbar selection={{ text: "status words", isCode: false, rect: null }} onReply={vi.fn()} />);
     const toolbar = screen.getByRole("toolbar", { name: "Selected text" });
-    expect(toolbar).toHaveClass("p-0.5", "rounded-lg", "border-border", "bg-surface-3", "shadow-popover");
+    expect(toolbar).toHaveClass("p-1", "rounded-panel", "border-border", "bg-surface-3", "shadow-popover");
     const reply = within(toolbar).getByRole("button", { name: "Reply" });
     expect(reply).toHaveClass("h-7", "font-normal");
     // The canvas draws Reply at 13px, so the label carries the size a 28px button no longer has.

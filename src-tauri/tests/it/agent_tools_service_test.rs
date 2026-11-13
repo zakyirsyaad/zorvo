@@ -444,3 +444,62 @@ fn an_end_during_emit_is_reported_after_the_call_event_exactly_once() {
     assert!(done.recv_timeout(QUIET).is_err());
     assert_eq!(*log.lock().unwrap(), vec!["call", "ended"]);
 }
+
+fn launch_value(env: &[(String, String)], name: &str) -> Option<String> {
+    env.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone())
+}
+
+#[test]
+fn launch_env_is_empty_when_disabled() {
+    let rig = rig("envoff");
+    assert!(rig.tools.launch_env_for("s1", false).is_empty());
+    assert!(AgentTools::disabled().launch_env_for("s1", true).is_empty());
+}
+
+#[test]
+fn launch_env_names_the_socket_a_token_and_the_program() {
+    let rig = rig("envon");
+    let env = rig.tools.launch_env_for("s1", true);
+    assert_eq!(env.len(), 3);
+    assert_eq!(launch_value(&env, "ZORVO_MCP_SOCKET").unwrap(), rig.socket);
+    assert_eq!(launch_value(&env, "ZORVO_MCP_TOKEN").unwrap().len(), 64);
+    assert_eq!(
+        launch_value(&env, "ZORVO_TOOLS").unwrap(),
+        "/bin/zorvo-test"
+    );
+}
+
+#[test]
+fn the_token_from_launch_env_authenticates_as_its_session() {
+    let rig = rig("envauth");
+    let env = rig.tools.launch_env_for("s9", true);
+    let token = launch_value(&env, "ZORVO_MCP_TOKEN").unwrap();
+    let mut stream = UnixStream::connect(&rig.socket).unwrap();
+    writeln!(stream, "{}", json!({ "token": token })).unwrap();
+    writeln!(
+        stream,
+        "{}",
+        json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+               "params": {"name": "list_agents", "arguments": {}}})
+    )
+    .unwrap();
+    let call = rig.calls.recv_timeout(WAIT).unwrap();
+    assert_eq!(call.session_id, "s9");
+}
+
+#[test]
+fn forget_drops_a_launch_env_token() {
+    let rig = rig("envforget");
+    let env = rig.tools.launch_env_for("s1", true);
+    let token = launch_value(&env, "ZORVO_MCP_TOKEN").unwrap();
+    rig.tools.forget("s1");
+    let mut stream = UnixStream::connect(&rig.socket).unwrap();
+    writeln!(stream, "{}", json!({ "token": token })).unwrap();
+    let _ = writeln!(
+        stream,
+        "{}",
+        json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+               "params": {"name": "list_agents", "arguments": {}}})
+    );
+    assert!(rig.calls.recv_timeout(QUIET).is_err());
+}

@@ -22,6 +22,7 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::{json, Value};
 
+use super::bridge::{SOCKET_VARIABLE, TOKEN_VARIABLE, TOOLS_VARIABLE};
 use super::protocol::{handle_line, tool_result, Step, MAX_LINE_BYTES};
 use super::socket::{socket_path, Listener, Tokens};
 
@@ -193,6 +194,28 @@ impl AgentTools {
                 { "name": "ZORVO_MCP_TOKEN", "value": token }
             ]
         }])
+    }
+
+    /// What an agent on the command path gets in its environment instead of
+    /// an `mcpServers` entry: the socket, a fresh token and the program that
+    /// runs `zorvo tools`. Empty when `enabled` is false or this instance is
+    /// disabled.
+    pub fn launch_env_for(&self, app_session_id: &str, enabled: bool) -> Vec<(String, String)> {
+        if !enabled || !self.enabled {
+            return Vec::new();
+        }
+        let token = self.tokens.issue(app_session_id);
+        vec![
+            (
+                SOCKET_VARIABLE.to_string(),
+                self.socket.to_string_lossy().into_owned(),
+            ),
+            (TOKEN_VARIABLE.to_string(), token),
+            (
+                TOOLS_VARIABLE.to_string(),
+                self.bridge.to_string_lossy().into_owned(),
+            ),
+        ]
     }
 
     /// Answers a waiting call. Unknown or already answered: nothing happens.

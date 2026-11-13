@@ -24,6 +24,7 @@ import { matchingCommands, pendingHint, slashQuery } from "../lib/slash-commands
 import { SlashCommandMenu } from "./composer/SlashCommandMenu";
 import { useDismiss } from "../hooks/useDismiss";
 import { useLatest } from "../hooks/useLatest";
+import { usePasteImages } from "../hooks/usePasteImages";
 import type { ContextUsage, SlashCommand } from "../types";
 
 const MAX_PROMPT_HEIGHT_PX = 180;
@@ -187,6 +188,8 @@ export interface ComposerDockProps {
   onRestored?: (text: string) => void;
   /** Every time `giveBack` runs, with the message returned, not the text it joined. */
   onGivenBack?: (returnedText: string) => void;
+  /** A short plain notice for the user, e.g. why a pasted image was not attached; silent when absent. */
+  onNotice?: (message: string) => void;
 }
 
 export function ComposerDock({
@@ -221,6 +224,7 @@ export function ComposerDock({
   onTextChange,
   onRestored,
   onGivenBack,
+  onNotice,
 }: ComposerDockProps) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
@@ -421,6 +425,9 @@ export function ComposerDock({
     textareaRef.current?.focus();
   };
 
+  // An image in the clipboard is attached as the paperclip's files are; text pastes as the browser does it.
+  const handlePaste = usePasteImages({ enabled: !disabled, onPaths: insertPaths, onNotice: (message) => onNotice?.(message) });
+
   useImperativeHandle(handleRef, () => ({
     insertPaths,
     insertText: (inserted) => {
@@ -585,6 +592,7 @@ export function ComposerDock({
           }}
           onClick={(e) => followCaret(e.currentTarget)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           disabled={disabled}
           placeholder={placeholder ?? replyPlaceholder(agentName)}
           aria-label="Prompt"

@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- **Paste an image into the message.** A screenshot or an image copied in another app attaches when you paste it into the prompt, like a file from the paperclip. Text still pastes as text, also when the copy carries a picture of that text, as web pages and spreadsheets do. Pasted images are kept in Zorvo's data folder for 30 days.
+
 ### Changed
 
 - The window has a layered look: the chat and the inspector are raised panels on the window's background.

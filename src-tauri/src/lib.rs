@@ -14,6 +14,7 @@ pub mod fork_handoff;
 pub mod git_info;
 pub mod github;
 pub mod installer;
+pub mod pasted_images;
 pub mod profiles;
 pub mod pty_session;
 pub mod pull_requests;
@@ -389,6 +390,16 @@ pub fn run() {
                     .set_theme(appearance::theme_for(&state.settings.appearance));
             }
 
+            // Pasted images older than a month; off the main thread, since it lists a folder.
+            let pasted = pasted_images::pasted_dir(&app.state::<store::AppStore>());
+            std::thread::spawn(move || {
+                pasted_images::sweep_old(
+                    &pasted,
+                    std::time::SystemTime::now(),
+                    pasted_images::MAX_AGE,
+                );
+            });
+
             refresh_catalog_in_background(app.handle().clone());
             Ok(())
         })
@@ -422,6 +433,7 @@ pub fn run() {
             files::read_workspace_file,
             files::remember_workspace,
             attachments::attachment_preview,
+            pasted_images::save_pasted_image,
             workspace_files::workspace_files,
             git_info::workspace_details,
             branches::list_branches,

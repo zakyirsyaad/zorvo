@@ -1459,6 +1459,7 @@ export default function App() {
                       onTextChange={review.onComposerText}
                       onRestored={review.onComposerRestored}
                       onGivenBack={review.onComposerGivenBack}
+                      onNotice={reportError}
                       commands={compare.isCompare ? [] : composerCommands}
                       sendLabel={delegationSendLabel ?? (compare.agentIds.length >= 2 ? `Start ${compare.agentIds.length} sessions` : undefined)}
                       agentName={activeSession ? activeAgent?.name : newSessionAgent?.name}

@@ -376,6 +376,11 @@ impl AppStore {
         }
     }
 
+    /// The app's data folder.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     /// Where session worktrees are made.
     pub fn worktrees_root(&self) -> PathBuf {
         self.root.join(WORKTREES_DIR)

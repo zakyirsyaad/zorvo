@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { AgentCatalogPanel } from "../agents/AgentCatalogPanel";
+import { AgentToolsSetting } from "./AgentToolsSetting";
 import { TerminalSignInDialog } from "../TerminalSignInDialog";
 import type { FolderOption } from "../onboarding/types";
 import { ToastStack } from "../ui/Toast";
@@ -158,6 +159,10 @@ export function SettingsPage({
               catalog={catalog}
               actions={actions}
               signIn={agentSignIn}
+            />
+            <AgentToolsSetting
+              isOn={settings.agentTools !== false}
+              onChange={(agentTools) => updateSettings({ agentTools })}
             />
           </div>
         );

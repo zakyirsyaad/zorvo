@@ -942,7 +942,7 @@ fn a_dev_build_keeps_its_data_beside_the_installed_apps() {
 }
 
 #[test]
-fn agent_tools_is_off_unless_the_state_says_on() {
+fn agent_tools_is_on_unless_the_state_says_off() {
     let root = unique_temp_root("agent-tools");
     fs::create_dir_all(&root).expect("create root");
     let store = AppStore::new(root.clone());
@@ -955,17 +955,25 @@ fn agent_tools_is_off_unless_the_state_says_on() {
         store.load_state().expect("load state").settings
     };
 
-    assert!(!load(r#"{"onboardingCompleted":true}"#).agent_tools);
+    // A state written before the setting existed has it on.
+    assert!(load(r#"{"onboardingCompleted":true}"#).agent_tools);
     assert!(load(r#"{"agentTools":true}"#).agent_tools);
-    // A wrong type must not make the state unreadable.
-    let bad = load(r#"{"agentTools":"yes","onboardingCompleted":true}"#);
-    assert!(!bad.agent_tools);
+    assert!(!load(r#"{"agentTools":false}"#).agent_tools);
+    // A wrong type must not make the state unreadable, and is not a "no".
+    let bad = load(r#"{"agentTools":"no","onboardingCompleted":true}"#);
+    assert!(bad.agent_tools);
     assert!(bad.onboarding_completed);
+    // A first run, with no state file's settings at all.
+    assert!(zorvo_lib::store::Settings::default().agent_tools);
 
     let mut state = store.load_state().expect("load state");
-    state.settings.agent_tools = true;
+    state.settings.agent_tools = false;
     store.save_state(&state).expect("save state");
     let raw = fs::read_to_string(root.join("state.json")).expect("read state file");
-    assert!(raw.contains("\"agentTools\""), "saved in camelCase: {raw}");
+    assert!(
+        raw.contains("\"agentTools\": false"),
+        "saved in camelCase: {raw}"
+    );
+    assert!(!store.load_state().expect("load state").settings.agent_tools);
     fs::remove_dir_all(&root).ok();
 }

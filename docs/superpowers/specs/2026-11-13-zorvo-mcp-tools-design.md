@@ -231,10 +231,10 @@ duplicate them.
    through the existing `useDelegation` and `startSession`.
 3. It answers with the command `agent_tool_respond(callId, result)`; the backend writes the MCP
    result to the bridge.
-4. No answer within 4 minutes (the card was left open), the agent's own
+4. No answer within 170 seconds (the card was left open), the agent's own
    `notifications/cancelled` for the call, or the caller's session stopping, ends the call with an
-   error and withdraws the card. Four minutes, because the spike showed Qwen Code and Codex give up
-   on a tool call after exactly five. A call for a session the webview does not know is an
+   error and withdraws the card. 170 seconds, because the spike showed Antigravity gives up on a
+   tool call after 180 (Qwen Code and Codex after 300). A call for a session the webview does not know is an
    error. A webview reload fails every open call (`end_orphaned_sessions` already ends the agents).
 
 `list_agents` takes the same path, since readiness and delegate state are webview state.

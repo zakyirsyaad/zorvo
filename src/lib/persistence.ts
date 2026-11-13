@@ -214,7 +214,8 @@ export function normalizePersistedState(raw: unknown): PersistedState {
       agentVersions: toAgentVersions(settings.agentVersions),
       notifiedUpdates: toNotifiedUpdates(settings.notifiedUpdates),
       signedInAgents: toAgentIdList(settings.signedInAgents) ?? [],
-      ...(settings.agentTools === true ? { agentTools: true } : {}),
+      // On unless the user turned it off: a state written before the setting existed has it on.
+      agentTools: settings.agentTools !== false,
     },
     recentFolders: Array.isArray(raw.recentFolders)
       ? raw.recentFolders.filter(

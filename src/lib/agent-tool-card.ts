@@ -36,6 +36,17 @@ function visibleTask(task: string): string {
     .join('\n');
 }
 
+/**
+ * A task on a card that lists several: every line marked as the task's own, so
+ * a line the agent wrote ("For Codex:") cannot read as the next request's heading.
+ */
+function quotedTask(task: string): string {
+  return visibleTask(task)
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n');
+}
+
 export function toolCard(input: ToolCardInput): ActionCard {
   return {
     id: input.cardId,
@@ -118,7 +129,7 @@ export function toolCardFor(
     title: areAllDelegations
       ? `${input.callerName} wants to give other agents ${tasks.length} tasks`
       : `${input.callerName} asks for ${tasks.length} things`,
-    prompt: tasks.map((task) => `${blockHeading(task)}\n${visibleTask(task.task)}`).join('\n\n'),
+    prompt: tasks.map((task) => `${blockHeading(task)}\n${quotedTask(task.task)}`).join('\n\n'),
   };
 }
 

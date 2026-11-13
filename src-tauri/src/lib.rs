@@ -33,7 +33,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use acp::commands::{event_payload, ACP_EVENT};
-use acp::manager::AcpManager;
+use acp::manager::{AcpEvent, AcpManager};
 use acp::terminal_auth::{sign_in_event_payload, SIGN_IN_TERMINAL_EVENT};
 use installer::commands::{clean_up_at_start, versions_in_use, AppInstaller};
 use installer::layout::ToolsDir;
@@ -389,6 +389,13 @@ pub fn run() {
     let acp_holder = Arc::clone(&app_handle_holder);
     let acp_manager = AcpManager::new(Box::new(move |event| {
         if let Some(app) = acp_holder.lock().ok().and_then(|guard| guard.clone()) {
+            // An agent that exited makes no more calls: whatever still holds its
+            // session's token (a process it left behind) must not speak for it.
+            if let AcpEvent::Exited { session_id, .. } = &event {
+                if let Some(tools) = app.try_state::<Arc<agent_tools::AgentTools>>() {
+                    tools.forget(session_id);
+                }
+            }
             let _ = app.emit(ACP_EVENT, event_payload(&event));
         }
     }));

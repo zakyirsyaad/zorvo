@@ -335,6 +335,22 @@ describe("useOpenedSessions", () => {
     expect(t.result.current.openedOf("s-a")[0]).toMatchObject({ handle: "session-4" });
   });
 
+  it("does not give a deleted session's handle to the next one", async () => {
+    const t = setup();
+    let first: { ok: boolean; handle?: string } = { ok: false };
+    let second: { ok: boolean; handle?: string } = { ok: false };
+    await act(async () => {
+      first = await t.result.current.open("s-a", REQUEST);
+    });
+    // The session was listed and then deleted: nothing in `sessions` holds its handle any more.
+    t.rerender({ sessions: [OPENER, { ...OPENER, id: t.starts[0].spec.id ?? "o-1", openedBy: t.starts[0].spec.openedBy }] });
+    t.rerender({ sessions: [OPENER] });
+    await act(async () => {
+      second = await t.result.current.open("s-a", REQUEST);
+    });
+    expect([first.handle, second.handle]).toEqual(["session-1", "session-2"]);
+  });
+
   it("lists the opener's sessions with their state and folder", () => {
     const opened: Session = {
       ...OPENER,

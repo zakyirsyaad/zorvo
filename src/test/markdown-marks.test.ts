@@ -66,6 +66,15 @@ describe("withoutMarkdownMarks", () => {
     );
   });
 
+  it("reads GitHub's extensions as the chat does: strikethrough, task boxes, tables and bare links", () => {
+    expect(withoutMarkdownMarks("~~old~~ new")).toBe("old new");
+    expect(withoutMarkdownMarks("- [x] done\n- [ ] todo")).toBe("done\ntodo");
+    expect(withoutMarkdownMarks("| File | Lines |\n| --- | ---: |\n| `a.ts` | **12** |\n| b.ts | 3 |")).toBe(
+      "File · Lines\na.ts · 12\nb.ts · 3",
+    );
+    expect(withoutMarkdownMarks("See https://example.invalid/a_b_c for more.")).toBe("See https://example.invalid/a_b_c for more.");
+  });
+
   it("keeps raw HTML as the text it is", () => {
     expect(withoutMarkdownMarks("Use <b>this</b> tag.")).toBe("Use <b>this</b> tag.");
   });

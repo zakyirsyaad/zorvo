@@ -1,9 +1,12 @@
 import { fromMarkdown } from 'mdast-util-from-markdown';
+import { gfmFromMarkdown } from 'mdast-util-gfm';
+import { gfm } from 'micromark-extension-gfm';
 
 /**
  * An agent's prose as plain text, for the places that show its words without rendering them (a compare
- * column's last message). The text is read by the parser the chat renders with, so it says what the chat
- * says: marks go, words stay, and code is exactly what the agent wrote, whatever its ticks or fences.
+ * column's last message). The text is read by the parser the chat renders with, GitHub's extensions
+ * included (tables, task lists, strikethrough, bare links), so it says what the chat says: marks go,
+ * words stay, and code is exactly what the agent wrote, whatever its ticks or fences.
  */
 
 /** What the reader needs of a markdown node. */
@@ -15,7 +18,13 @@ interface MarkdownNode {
 }
 
 /** Blocks that hold other blocks; their parts read one under another. */
-const BLOCK_CONTAINERS: ReadonlySet<string> = new Set(['root', 'blockquote', 'list', 'listItem']);
+const BLOCK_CONTAINERS: ReadonlySet<string> = new Set(['root', 'blockquote', 'list', 'listItem', 'table', 'footnoteDefinition']);
+
+/** Between the cells of a table's row, where the chat draws a column edge. */
+const CELL_SEPARATOR = ' · ';
+
+/** The chat's own syntax: CommonMark with GitHub's extensions, as `MarkdownRenderer` enables them. */
+const SYNTAX = { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] };
 
 /**
  * How much of a text is parsed. The places that show it show a few lines, and a reply can be long
@@ -29,6 +38,7 @@ function textOf(node: MarkdownNode): string {
   // Text, inline code, a code block and raw HTML carry their own words.
   if (typeof node.value === 'string') return node.value;
   const parts = (node.children ?? []).map(textOf);
+  if (node.type === 'tableRow') return parts.join(CELL_SEPARATOR);
   return BLOCK_CONTAINERS.has(node.type) ? parts.filter((part) => part !== '').join('\n') : parts.join('');
 }
 
@@ -42,10 +52,10 @@ function startOf(text: string): string {
 
 /**
  * The start of `text` without markdown's marks, one block per line: emphasis, headings, quotes, list
- * markers, link targets, escapes, code ticks and fences are gone, and what they held is kept. Code is
- * never rewritten. It is CommonMark as the chat reads it, so `__init__` outside code loses its
- * underscores here as it is bold there.
+ * markers and task boxes, strikethrough, link targets, escapes, code ticks and fences are gone, and
+ * what they held is kept; a table reads row by row. Code is never rewritten. It is markdown as the chat
+ * reads it, so `__init__` outside code loses its underscores here as it is bold there.
  */
 export function withoutMarkdownMarks(text: string): string {
-  return textOf(fromMarkdown(startOf(text)) as MarkdownNode);
+  return textOf(fromMarkdown(startOf(text), SYNTAX) as MarkdownNode);
 }

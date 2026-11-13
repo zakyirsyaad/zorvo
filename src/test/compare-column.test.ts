@@ -92,6 +92,20 @@ describe("withoutMarkdownMarks", () => {
     expect(withoutMarkdownMarks("See [the plan](https://example.invalid/plan) and ![a shot](shot.png).")).toBe("See the plan and a shot.");
   });
 
+  it("never rewrites code: a span loses its ticks and nothing else", () => {
+    expect(withoutMarkdownMarks("Updated `src/*/test/*`.")).toBe("Updated src/*/test/*.");
+    expect(withoutMarkdownMarks("The map is `[key](value)` and `**kwargs`.")).toBe("The map is [key](value) and **kwargs.");
+    // Marks around a span still go; the span inside them stays as written.
+    expect(withoutMarkdownMarks("**see `a*b*c` now** and *then `x[0](y)`*")).toBe("see a*b*c now and then x[0](y)");
+  });
+
+  it("never rewrites a fenced block: only its two fence lines go", () => {
+    const text = "Run:\n```bash\n# install\nls src/*/test/* > out\necho **done**\n```\n# Next\n*after*";
+    expect(withoutMarkdownMarks(text)).toBe("Run:\n\n# install\nls src/*/test/* > out\necho **done**\n\nNext\nafter");
+    // A fence left open runs to the end, and another kind of fence inside it is code.
+    expect(withoutMarkdownMarks("~~~\n```\n*x*")).toBe("\n```\n*x*");
+  });
+
   it("leaves asterisks and underscores that are not marks", () => {
     expect(withoutMarkdownMarks("2 * 3 * 4 and 2*3*4")).toBe("2 * 3 * 4 and 2*3*4");
     expect(withoutMarkdownMarks("call __init__ and snake_case_name")).toBe("call __init__ and snake_case_name");

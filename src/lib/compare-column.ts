@@ -27,20 +27,53 @@ function oneLine(text: string): string {
   return escapeVisible(text.replace(/\s+/g, ' ').trim());
 }
 
-/**
- * An agent's prose without the marks markdown adds around its words: code ticks and fences, bold and
- * italic asterisks, heading hashes, quote marks, and a link's target. The words stay; nothing is rendered.
- * Underscores are left alone, since `snake_case` and `__init__` are far more common than `_emphasis_`.
- */
-export function withoutMarkdownMarks(text: string): string {
-  return text
-    .replace(/^\s{0,3}(```|~~~)[^\n]*$/gm, '')
-    .replace(/`([^`\n]+)`/g, '$1')
+/** Stands in for a code span while the prose around it loses its marks; a private-use character no prose holds. */
+const HELD = '\uE000';
+const HELD_SPAN = /\uE000(\d+)\uE000/g;
+const FENCE = /^\s{0,3}(```|~~~)/;
+
+/** A line of prose without its marks: bold and italic asterisks, a heading's hashes, a quote's mark, a link's target. */
+function proseWithoutMarks(line: string): string {
+  return line
     .replace(/!?\[([^\]\n]*)\]\([^)\n]*\)/g, '$1')
     .replace(/\*\*(?=\S)([^\n]*?\S)\*\*/g, '$1')
     .replace(/(^|[^\w*])\*(?=\S)([^*\n]*?\S)\*(?![\w*])/g, '$1$2')
-    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
-    .replace(/^\s{0,3}>\s?/gm, '');
+    .replace(/^\s{0,3}#{1,6}\s+/, '')
+    .replace(/^\s{0,3}>\s?/, '');
+}
+
+/** One line outside a fence: its code spans lose their ticks and nothing else, and the prose around them its marks. */
+function lineWithoutMarks(line: string): string {
+  if (line.includes(HELD)) return line;
+  const spans: string[] = [];
+  const held = line.replace(/`([^`\n]+)`/g, (_whole, code: string) => `${HELD}${spans.push(code) - 1}${HELD}`);
+  return proseWithoutMarks(held).replace(HELD_SPAN, (_whole, index: string) => spans[Number(index)] ?? '');
+}
+
+/**
+ * An agent's prose without the marks markdown adds around its words: code ticks and fences, bold and
+ * italic asterisks, heading hashes, quote marks, and a link's target. The words stay; nothing is rendered.
+ * Code is never rewritten: a span or a fenced block loses its delimiters only, so a glob with stars and
+ * `[key](value)` read as the agent wrote them. Underscores are left alone, since `snake_case` and
+ * `__init__` are far more common than `_emphasis_`.
+ */
+export function withoutMarkdownMarks(text: string): string {
+  const lines: string[] = [];
+  let fence: string | null = null;
+  for (const line of text.split('\n')) {
+    const mark = FENCE.exec(line)?.[1] ?? null;
+    if (fence !== null) {
+      // Inside a fence every line is code; the line that closes it goes, as the one that opened it did.
+      if (mark === fence) fence = null;
+      lines.push(mark === null || fence !== null ? line : '');
+    } else if (mark !== null) {
+      fence = mark;
+      lines.push('');
+    } else {
+      lines.push(lineWithoutMarks(line));
+    }
+  }
+  return lines.join('\n');
 }
 
 /** An agent's prose as one plain line. */

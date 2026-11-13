@@ -269,7 +269,7 @@ export function TopBar({
     <header
       data-tauri-drag-region
       style={hasTrafficLights ? { paddingLeft: TOP_BAR_TRAFFIC_LIGHT_INSET_PX } : undefined}
-      className="flex h-12 w-full shrink-0 items-center gap-3 border-b border-border bg-bg pr-3 pl-5 text-ui-sm select-none"
+      className="flex h-12 w-full shrink-0 items-center gap-3 border-b border-border pr-3 pl-5 text-ui-sm select-none"
     >
       {/* Left: with the sidebar hidden, its show button and the session history; then what is open.
           It clips, so a crowded bar never paints its chips over the right-hand ones. */}

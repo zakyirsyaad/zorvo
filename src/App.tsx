@@ -24,9 +24,10 @@ import { ChangesPanel } from "./components/changes/ChangesPanel";
 import { DiffView } from "./components/changes/DiffView";
 import { totalsOf } from "./lib/diff-stats";
 import { useInspector } from "./hooks/useInspector";
+import { useWindowWidth } from "./hooks/useWindowWidth";
 import { useNotice } from "./hooks/useNotice";
 import { Inspector } from "./components/inspector/Inspector";
-import { offeredTabs } from "./lib/inspector";
+import { maxInspectorWidth, offeredTabs } from "./lib/inspector";
 import { useReviewComments } from "./hooks/useReviewComments";
 import { useReviewWiring } from "./hooks/useReviewWiring";
 import { useTurnsEnded } from "./hooks/useTurnsEnded";
@@ -165,6 +166,7 @@ export default function App() {
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const settingsPage = useSettingsPage(settingsButtonRef);
   const [isSidebarHidden, setSidebarHidden] = useState(false);
+  const windowWidth = useWindowWidth();
   const composerRef = useRef<ComposerHandle>(null);
   // The top bar's Inspector button: focus goes back to it when the inspector closes from its own button.
   const inspectorButtonRef = useRef<HTMLButtonElement>(null);
@@ -1183,7 +1185,7 @@ export default function App() {
   }
 
   return (
-    <main className="flex h-screen w-screen flex-col bg-bg text-fg-secondary">
+    <main className="flex h-screen w-screen flex-col bg-ground text-fg-secondary">
       {/* Hidden, not unmounted, while Settings shows: a draft, its comments and the terminals stay as they were. */}
       <section hidden={settingsPage.section !== null} className="flex flex-1 overflow-hidden">
         <Sidebar
@@ -1233,417 +1235,420 @@ export default function App() {
           }
         />
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <TopBar
-            onShowSidebar={isSidebarHidden ? () => setSidebarHidden(false) : undefined}
-            hasTrafficLights={isSidebarHidden}
-            sessionId={activeSession?.id ?? activeRun?.id}
-            sessionName={activeSession?.name ?? activeRun?.name}
-            // A run's sessions share one title, so only a session of its own is renamed or archived here.
-            onRename={sessionOfItsOwn ? (name) => sessionActions.renameSession(sessionOfItsOwn.id, name) : undefined}
-            // Archiving ends the agent, so, as in the sidebar's menu, it waits until the agent is not working.
-            onArchive={
-              sessionOfItsOwn && !isSessionBusy(sessionOfItsOwn.id)
-                ? () => void handleArchiveSession(sessionOfItsOwn.id, true)
-                : undefined
-            }
-            onReveal={shownFolderPath ? () => shell.revealFolder(shownFolderPath) : undefined}
-            onDelegate={onDelegate}
-            delegateBlockedReason={activeDelegateBlockedReason}
-            onEndDelegation={onEndDelegation}
-            moreButtonRef={moreOptionsButtonRef}
-            workspaceName={activeSession ? folderNameOf(workspacePathOf(activeSession)) : activeWorkspace?.name}
-            branch={workspaceDetails?.branch ?? undefined}
-            pullRequest={pullRequest}
-            onOpenPullRequest={openPullRequest}
-            canGoBack={canGoBack}
-            canGoForward={navigation.canGoForward}
-            onBack={() => navigateTo(!activeSession ? lastViewedSessionId : navigation.back())}
-            onForward={() => navigateTo(navigation.forward())}
-            onToggleInspector={inspectorTabs.length > 0 ? () => inspector.toggle(inspectorTabs) : undefined}
-            isInspectorOpen={inspectorTab !== null}
-            inspectorButtonRef={inspectorButtonRef}
-            diffStats={diffStats}
-            isDiffAlwaysShown={Boolean(startCommit) || reviewComments.comments.length > 0}
-            diffCommentCount={unsentCommentCount}
-            onOpenDiff={inspectorTabs.includes("changes") ? () => inspector.openDiff() : undefined}
-            onPopout={activeSession ? () => shell.popout(activeSession.id) : undefined}
-            backgroundTasks={{
-              tasks: backgroundTasks.tasks,
-              isOpen: backgroundTasks.isMenuOpen,
-              onOpenChange: backgroundTasks.setMenuOpen,
-              onOpenTask: backgroundTasks.open,
-              onStopTask: backgroundTasks.stop,
-            }}
-            plan={sessionPlan}
-            planSource={activeAgent?.name}
-          />
-          <div className="flex min-h-0 flex-1">
-            {/* A still frame: the drop overlay is placed against it and the update banner sits on it, so both stay on
-                screen whatever the column under them is scrolled to. */}
-            <article className={`${isDiffOpen && inspector.isDiffExpanded ? "hidden" : "flex"} flex-1 flex-col bg-bg relative overflow-hidden`}>
-              {isDraggingFiles && <FileDropOverlay />}
-              <UpdateNotice
-                agents={agentUpdates.unnotified}
-                onShow={() => { agentUpdates.acknowledge(); settingsPage.open("agents"); }}
-                onDismiss={agentUpdates.acknowledge}
-              />
-              {/* The chat or the draft. It scrolls only when what it holds does not fit (a short window, a sign-in panel
-                  above the composer), so Send is always reachable; the chat and a draft's sessions scroll inside it. It
-                  is always rendered, so the composer keeps its place in the tree, and its text. A draft keeps room for
-                  the scrollbar, so the centred column does not jump when one appears. */}
-              <div
-                ref={mainColumnRef}
-                data-main-column=""
-                className={`flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden${draftWorkspace ? " [scrollbar-gutter:stable]" : ""}`}
-              >
-                {activeRun ? (
-                  <CompareRunPanel
-                    run={activeRun}
-                    rows={runRows}
-                    version={runVersion}
-                    agentName={(profileId) => agents.find((a) => a.id === profileId)?.name ?? profileId}
-                    onOpen={handleSelectSession}
-                    onReview={(sessionId) => {
-                      handleSelectSession(sessionId);
-                      // The review is for the session that comes on screen, not for the run's panel.
-                      inspector.openDiff(sessionId);
-                    }}
-                    onChoose={chooseOption}
-                    onPick={(winnerId) => compareRun.pick(activeRun, winnerId)}
-                  />
-                ) : activeSession && (currentMessages.length > 0 || isSessionBusy(activeSessionId) || activeSession.historyElsewhere) ? (
-                  <ChatCanvas
-                    conversationId={activeSessionId}
-                    messages={currentMessages}
-                    jumpTo={chatJump}
-                    onJumped={() => setChatJump(null)}
-                    agentName={activeAgent?.name}
-                    agentProfileId={activeSession?.profileId}
-                    onForkBranch={(messageId) => void forkSession(messageId)}
-                    onReply={(quote) => composerRef.current?.insertText(quote)}
-                    replyBlockedReason={replyBlockedReason({
-                      isComposerHidden,
-                      isComposerDisabled,
-                      isHeldElsewhere: review.isHeldFor(activeSessionId),
-                    })}
-                    onRewind={(messageId) => { compareRun.dropSignIn(activeSessionId); void rewind(activeSession, messageId); }}
-                    // The sidebar and the top bar say where a session runs; only an imported
-                    // session's note sits above its first message.
-                    header={
-                      activeSession.historyElsewhere ? (
-                        <HistoryElsewhereNote agentName={agentNameOr(activeAgent)} />
-                      ) : undefined
-                    }
-                    delegatedFrom={
-                      delegationView?.role === "delegate" ? (
-                        <DelegatedFromLine view={delegationView} onOpen={handleSelectSession} canAct />
-                      ) : undefined
-                    }
-                    // Always mounted for a session, so the first line it draws is announced.
-                    delegationStatus={
-                      <DelegationStatusLine
-                        view={delegationView}
-                        now={delegationNow}
-                        onOpen={handleSelectSession}
-                        canAct
-                        hidden={!showsDelegationStatus}
-                        delegateAgentName={delegationView?.role === "delegate" ? activeAgent?.name : undefined}
-                      />
-                    }
-                    // A turn that failed says so under its last message, with Try again.
-                    footer={
-                      failedTurns[activeSessionId] ? (
-                        <FailedTurnBanner
-                          agentName={activeAgent?.name}
-                          error={failedTurns[activeSessionId]}
-                          isBusy={isSessionBusy(activeSessionId)}
-                          onRetry={
-                            acp.hasFailedPrompt(activeSessionId)
-                              ? () => void acp.retryFailedTurn(activeSessionId, (unsent) => giveBackMessage(activeSessionId, unsent.text, unsent.attachments))
-                              : undefined
-                          }
-                          onDismiss={() => clearFailedTurn(activeSessionId)}
+        <div data-stage data-tauri-drag-region className={`flex min-w-0 flex-1 gap-2 py-2 pr-2${isSidebarHidden ? " pl-2" : ""}`}>
+          <div data-sheet="main" className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-panel border border-border bg-sheet">
+            <TopBar
+              onShowSidebar={isSidebarHidden ? () => setSidebarHidden(false) : undefined}
+              hasTrafficLights={isSidebarHidden}
+              sessionId={activeSession?.id ?? activeRun?.id}
+              sessionName={activeSession?.name ?? activeRun?.name}
+              // A run's sessions share one title, so only a session of its own is renamed or archived here.
+              onRename={sessionOfItsOwn ? (name) => sessionActions.renameSession(sessionOfItsOwn.id, name) : undefined}
+              // Archiving ends the agent, so, as in the sidebar's menu, it waits until the agent is not working.
+              onArchive={
+                sessionOfItsOwn && !isSessionBusy(sessionOfItsOwn.id)
+                  ? () => void handleArchiveSession(sessionOfItsOwn.id, true)
+                  : undefined
+              }
+              onReveal={shownFolderPath ? () => shell.revealFolder(shownFolderPath) : undefined}
+              onDelegate={onDelegate}
+              delegateBlockedReason={activeDelegateBlockedReason}
+              onEndDelegation={onEndDelegation}
+              moreButtonRef={moreOptionsButtonRef}
+              workspaceName={activeSession ? folderNameOf(workspacePathOf(activeSession)) : activeWorkspace?.name}
+              branch={workspaceDetails?.branch ?? undefined}
+              pullRequest={pullRequest}
+              onOpenPullRequest={openPullRequest}
+              canGoBack={canGoBack}
+              canGoForward={navigation.canGoForward}
+              onBack={() => navigateTo(!activeSession ? lastViewedSessionId : navigation.back())}
+              onForward={() => navigateTo(navigation.forward())}
+              onToggleInspector={inspectorTabs.length > 0 ? () => inspector.toggle(inspectorTabs) : undefined}
+              isInspectorOpen={inspectorTab !== null}
+              inspectorButtonRef={inspectorButtonRef}
+              diffStats={diffStats}
+              isDiffAlwaysShown={Boolean(startCommit) || reviewComments.comments.length > 0}
+              diffCommentCount={unsentCommentCount}
+              onOpenDiff={inspectorTabs.includes("changes") ? () => inspector.openDiff() : undefined}
+              onPopout={activeSession ? () => shell.popout(activeSession.id) : undefined}
+              backgroundTasks={{
+                tasks: backgroundTasks.tasks,
+                isOpen: backgroundTasks.isMenuOpen,
+                onOpenChange: backgroundTasks.setMenuOpen,
+                onOpenTask: backgroundTasks.open,
+                onStopTask: backgroundTasks.stop,
+              }}
+              plan={sessionPlan}
+              planSource={activeAgent?.name}
+            />
+            <div className="flex min-h-0 flex-1">
+              {/* A still frame: the drop overlay is placed against it and the update banner sits on it, so both stay on
+                  screen whatever the column under them is scrolled to. */}
+              <article className={`${isDiffOpen && inspector.isDiffExpanded ? "hidden" : "flex"} flex-1 flex-col relative overflow-hidden`}>
+                {isDraggingFiles && <FileDropOverlay />}
+                <UpdateNotice
+                  agents={agentUpdates.unnotified}
+                  onShow={() => { agentUpdates.acknowledge(); settingsPage.open("agents"); }}
+                  onDismiss={agentUpdates.acknowledge}
+                />
+                {/* The chat or the draft. It scrolls only when what it holds does not fit (a short window, a sign-in panel
+                    above the composer), so Send is always reachable; the chat and a draft's sessions scroll inside it. It
+                    is always rendered, so the composer keeps its place in the tree, and its text. A draft keeps room for
+                    the scrollbar, so the centred column does not jump when one appears. */}
+                <div
+                  ref={mainColumnRef}
+                  data-main-column=""
+                  className={`flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden${draftWorkspace ? " [scrollbar-gutter:stable]" : ""}`}
+                >
+                  {activeRun ? (
+                    <CompareRunPanel
+                      run={activeRun}
+                      rows={runRows}
+                      version={runVersion}
+                      agentName={(profileId) => agents.find((a) => a.id === profileId)?.name ?? profileId}
+                      onOpen={handleSelectSession}
+                      onReview={(sessionId) => {
+                        handleSelectSession(sessionId);
+                        // The review is for the session that comes on screen, not for the run's panel.
+                        inspector.openDiff(sessionId);
+                      }}
+                      onChoose={chooseOption}
+                      onPick={(winnerId) => compareRun.pick(activeRun, winnerId)}
+                    />
+                  ) : activeSession && (currentMessages.length > 0 || isSessionBusy(activeSessionId) || activeSession.historyElsewhere) ? (
+                    <ChatCanvas
+                      conversationId={activeSessionId}
+                      messages={currentMessages}
+                      jumpTo={chatJump}
+                      onJumped={() => setChatJump(null)}
+                      agentName={activeAgent?.name}
+                      agentProfileId={activeSession?.profileId}
+                      onForkBranch={(messageId) => void forkSession(messageId)}
+                      onReply={(quote) => composerRef.current?.insertText(quote)}
+                      replyBlockedReason={replyBlockedReason({
+                        isComposerHidden,
+                        isComposerDisabled,
+                        isHeldElsewhere: review.isHeldFor(activeSessionId),
+                      })}
+                      onRewind={(messageId) => { compareRun.dropSignIn(activeSessionId); void rewind(activeSession, messageId); }}
+                      // The sidebar and the top bar say where a session runs; only an imported
+                      // session's note sits above its first message.
+                      header={
+                        activeSession.historyElsewhere ? (
+                          <HistoryElsewhereNote agentName={agentNameOr(activeAgent)} />
+                        ) : undefined
+                      }
+                      delegatedFrom={
+                        delegationView?.role === "delegate" ? (
+                          <DelegatedFromLine view={delegationView} onOpen={handleSelectSession} canAct />
+                        ) : undefined
+                      }
+                      // Always mounted for a session, so the first line it draws is announced.
+                      delegationStatus={
+                        <DelegationStatusLine
+                          view={delegationView}
+                          now={delegationNow}
+                          onOpen={handleSelectSession}
+                          canAct
+                          hidden={!showsDelegationStatus}
+                          delegateAgentName={delegationView?.role === "delegate" ? activeAgent?.name : undefined}
                         />
-                      ) : undefined
-                    }
-                    onChooseOption={(cardId, optionId, answers) => chooseOption(activeSessionId, cardId, optionId, answers)}
-                    onAnswerElicitation={(key, answer) => acp.answerElicitation(activeSessionId, key, answer)}
-                    onReopenElicitationUrl={(key) => acp.reopenElicitationUrl(activeSessionId, key)}
-                    isWorking={isSessionBusy(activeSessionId) && !isAwaitingUser(currentMessages)}
-                    failures={acp.failuresOf(activeSessionId)}
-                    onStop={() => handleInterrupt(activeSessionId)}
-                  />
-                ) : draftWorkspace ? (
-                  // The draft's heading, then its chips and card (the composer, below), then its sessions.
-                  <NewSessionHeading
-                    workspace={draftWorkspace}
-                    unavailableReason={areAgentsLoaded && !agentsInUse.some(isAgentReady) ? noAgentNotice(agentsInUse) : undefined}
-                  />
-                ) : isNewSessionDraft ? (
-                  <EmptyFolderState onOpenFolder={() => void openFolder()} />
-                ) : (
-                  // A session with no messages yet (its transcript may still be loading): only its composer, at the bottom.
-                  <div className="flex-1" />
-                )}
+                      }
+                      // A turn that failed says so under its last message, with Try again.
+                      footer={
+                        failedTurns[activeSessionId] ? (
+                          <FailedTurnBanner
+                            agentName={activeAgent?.name}
+                            error={failedTurns[activeSessionId]}
+                            isBusy={isSessionBusy(activeSessionId)}
+                            onRetry={
+                              acp.hasFailedPrompt(activeSessionId)
+                                ? () => void acp.retryFailedTurn(activeSessionId, (unsent) => giveBackMessage(activeSessionId, unsent.text, unsent.attachments))
+                                : undefined
+                            }
+                            onDismiss={() => clearFailedTurn(activeSessionId)}
+                          />
+                        ) : undefined
+                      }
+                      onChooseOption={(cardId, optionId, answers) => chooseOption(activeSessionId, cardId, optionId, answers)}
+                      onAnswerElicitation={(key, answer) => acp.answerElicitation(activeSessionId, key, answer)}
+                      onReopenElicitationUrl={(key) => acp.reopenElicitationUrl(activeSessionId, key)}
+                      isWorking={isSessionBusy(activeSessionId) && !isAwaitingUser(currentMessages)}
+                      failures={acp.failuresOf(activeSessionId)}
+                      onStop={() => handleInterrupt(activeSessionId)}
+                    />
+                  ) : draftWorkspace ? (
+                    // The draft's heading, then its chips and card (the composer, below), then its sessions.
+                    <NewSessionHeading
+                      workspace={draftWorkspace}
+                      unavailableReason={areAgentsLoaded && !agentsInUse.some(isAgentReady) ? noAgentNotice(agentsInUse) : undefined}
+                    />
+                  ) : isNewSessionDraft ? (
+                    <EmptyFolderState onOpenFolder={() => void openFolder()} />
+                  ) : (
+                    // A session with no messages yet (its transcript may still be loading): only its composer, at the bottom.
+                    <div className="flex-1" />
+                  )}
 
-                {/* Anchored at the composer's top edge, so the cards float over the chat and never over Send or Stop. */}
-                <div className="relative h-0">
-                  <ToastStack>
-                    <AppUpdateNotice
-                      update={appUpdate.update}
-                      busyCount={busyCount}
-                      terminalCount={terminals.liveCount}
-                      isInstalling={appUpdate.isInstalling}
-                      progress={appUpdate.progress}
-                      onInstall={() => void appUpdate.install()}
-                      onLater={appUpdate.dismiss}
-                    />
-                    {settingsPage.section === null && noticeToast}
-                  </ToastStack>
-                </div>
-                {activeAgentRemoved !== null && (
-                  <div className="p-4 flex justify-center">
-                    <RemovedAgentPanel
-                      agentName={activeAgentRemoved}
-                      profileId={activeSession?.profileId}
-                      onAdd={() => activeAgent && catalogActions.addAgent(activeAgent.id)}
+                  {/* Anchored at the composer's top edge, so the cards float over the chat and never over Send or Stop. */}
+                  <div className="relative h-0">
+                    <ToastStack>
+                      <AppUpdateNotice
+                        update={appUpdate.update}
+                        busyCount={busyCount}
+                        terminalCount={terminals.liveCount}
+                        isInstalling={appUpdate.isInstalling}
+                        progress={appUpdate.progress}
+                        onInstall={() => void appUpdate.install()}
+                        onLater={appUpdate.dismiss}
+                      />
+                      {settingsPage.section === null && noticeToast}
+                    </ToastStack>
+                  </div>
+                  {activeAgentRemoved !== null && (
+                    <div className="p-4 flex justify-center">
+                      <RemovedAgentPanel
+                        agentName={activeAgentRemoved}
+                        profileId={activeSession?.profileId}
+                        onAdd={() => activeAgent && catalogActions.addAgent(activeAgent.id)}
+                      />
+                    </div>
+                  )}
+                  {/* The blockers sit right above the composer, which stays: a prompt can be written meanwhile. */}
+                  {/* As wide as the composer's card: the gutter sits outside the 680px column, as the dock's does. */}
+                  {/* In a draft the panels go into the composer's slot under its chips, so they read in order. */}
+                  <div className="px-6">
+                    <div className="mx-auto w-full max-w-chat space-y-3">
+                      <SignInLayer
+                        signIn={signIn}
+                        agents={agents}
+                        agentId={activeSession?.profileId ?? (activeRun ? undefined : newSessionAgent?.id)}
+                        showTerminal={settingsPage.section === null}
+                        panelTarget={draftSignInSlot}
+                      />
+                      {installPanelAgent
+                        ? draftInstallSlot
+                          ? createPortal(<AgentInstallPanel agent={installPanelAgent} />, draftInstallSlot)
+                          : <AgentInstallPanel agent={installPanelAgent} />
+                        : null}
+                    </div>
+                  </div>
+                  {/* 24px at the sides and 20px under it, as the canvas draws the composer's dock. */}
+                  {/* A draft's composer sits inside its column, with the agent's sessions right under it. */}
+                  <div hidden={isComposerHidden} className={`flex justify-center px-6 ${isNewSessionDraft ? "" : "pb-5"}`}>
+                    <ComposerDock
+                      controls={compare.isCompare ? {} : composer.controls}
+                      isThinking={Boolean(activeSession) && isSessionBusy(activeSessionId)}
+                      onStop={activeSession ? () => handleInterrupt(activeSessionId) : undefined}
+                      disabled={isComposerDisabled}
+                      sendDisabled={isSendBlocked}
+                      placeholder={composerPlaceholder({
+                        isRunning: isActiveRunning,
+                        isCreatingWorktree,
+                        isResumable,
+                        canStartSession,
+                        // Comments held for another session say nothing about whether this one can continue.
+                        isSendBlocked: isSendWaiting,
+                        isEndedSession: Boolean(activeSession),
+                        isAwaitingAnswer: isAwaitingUser(currentMessages),
+                      })}
+                      onSendMessage={handleSendMessage}
+                      attachAsFiles
+                      onAttach={pickFiles}
+                      handleRef={composerRef}
+                      onTextChange={review.onComposerText}
+                      onRestored={review.onComposerRestored}
+                      onGivenBack={review.onComposerGivenBack}
+                      commands={compare.isCompare ? [] : composerCommands}
+                      sendLabel={delegationSendLabel ?? (compare.agentIds.length >= 2 ? `Start ${compare.agentIds.length} sessions` : undefined)}
+                      agentName={activeSession ? activeAgent?.name : newSessionAgent?.name}
+                      sessionAgent={activeSession && activeAgent ? { profileId: activeAgent.id, name: activeAgent.name } : undefined}
+                      compareModels={
+                        compare.isCompare
+                          ? compareModelControls(
+                              compare.agentIds.map((id) => ({ id, name: agents.find((a) => a.id === id)?.name ?? id })),
+                              state.agentOptions,
+                              compareModelProbe.stateOf,
+                              {
+                                // A pick is the agent's remembered model. For the draft's own agent, its single-draft pick
+                                // is dropped too, or it would outrank this one once the agent is alone again.
+                                pickModel: (profileId, modelId) => {
+                                  rememberModelPick(profileId, modelId);
+                                  if (profileId === draftAgent?.id) setAcpChoices(({ modelId: _dropped, ...rest }) => rest);
+                                },
+                                pickConfig: (profileId, configId, value) => {
+                                  rememberPick(profileId, configId, value);
+                                  if (profileId === draftAgent?.id) {
+                                    setAcpChoices((current) => ({
+                                      ...current,
+                                      config: Object.fromEntries(Object.entries(current.config).filter(([id]) => id !== configId)),
+                                    }));
+                                  }
+                                },
+                              },
+                            )
+                          : undefined
+                      }
+                      onOpenCompareModel={compareModelProbe.ask}
+                      note={composerNoteText}
+                      // Only a compare run's note sits in the row, as drawn; why Send is blocked is a sentence for under the prompt.
+                      noteInRow={composerNoteText === COMPARE_NOTE}
+                      // While the draft asks its agent what it offers, its chips show as skeletons in the row.
+                      isLoadingControls={Boolean(!isActiveRunning && draftAgent && agentCheck.isProbing(draftAgent.id))}
+                      aboveCardSlots={draftBlockerSlots}
+                      contextUsage={isActiveRunning ? acp.info[activeSessionId]?.usage : undefined}
+                      mentions={filesFolder ? { root: filesFolder.path, loadFiles: () => shell.loadWorkspaceFiles(filesFolder.path) } : undefined}
+                      delegationAgents={delegationAgents}
+                      onDelegationMentionChange={setDelegationMention}
+                      delegationSummary={delegationSummary}
+                      folder={
+                        isNewSessionDraft
+                          ? {
+                              folders: workspaces,
+                              selectedPath: activeWorkspacePath,
+                              onSelect: chooseFolder,
+                              onOpenFolder: () => void openFolder(),
+                              worktree: canUseWorktree
+                                ? {
+                                    isOn: isWorktreeActive,
+                                    onChange: setIsWorktreeOn,
+                                    lockedReason: compare.isCompare ? "Each agent runs in its own worktree." : undefined,
+                                  }
+                                : undefined,
+                              branch: branchPicker.control,
+                            }
+                          : undefined
+                      }
+                      agent={
+                        isNewSessionDraft && newSessionAgent && !canCompare
+                          ? {
+                              options: pickableAgents.map((a) => ({ value: a.id, label: pickerLabelOf(a) })),
+                              selected: newSessionAgent.id,
+                              onChange: (agentId) => setPickedAgentId(agentId ?? null),
+                            }
+                          : undefined
+                      }
+                      agents={
+                        isNewSessionDraft && newSessionAgent && canCompare
+                          ? {
+                              options: agentChoices,
+                              selected: compare.agentIds,
+                              onChange: compare.toggle,
+                              onPick: (agentId) => {
+                                compare.reset();
+                                setPickedAgentId(agentId);
+                              },
+                            }
+                          : undefined
+                      }
                     />
                   </div>
-                )}
-                {/* The blockers sit right above the composer, which stays: a prompt can be written meanwhile. */}
-                {/* As wide as the composer's card: the gutter sits outside the 680px column, as the dock's does. */}
-                {/* In a draft the panels go into the composer's slot under its chips, so they read in order. */}
-                <div className="px-6">
-                  <div className="mx-auto w-full max-w-chat space-y-3">
-                    <SignInLayer
-                      signIn={signIn}
-                      agents={agents}
-                      agentId={activeSession?.profileId ?? (activeRun ? undefined : newSessionAgent?.id)}
-                      showTerminal={settingsPage.section === null}
-                      panelTarget={draftSignInSlot}
-                    />
-                    {installPanelAgent
-                      ? draftInstallSlot
-                        ? createPortal(<AgentInstallPanel agent={installPanelAgent} />, draftInstallSlot)
-                        : <AgentInstallPanel agent={installPanelAgent} />
-                      : null}
-                  </div>
+                  {/* After the composer's slot, never around it: the composer keeps its place in the tree, and its text. */}
+                  {isNewSessionDraft && <NewSessionBelow sessionList={draftSessionList.sessionList} />}
                 </div>
-                {/* 24px at the sides and 20px under it, as the canvas draws the composer's dock. */}
-                {/* A draft's composer sits inside its column, with the agent's sessions right under it. */}
-                <div hidden={isComposerHidden} className={`flex justify-center px-6 ${isNewSessionDraft ? "" : "pb-5"}`}>
-                  <ComposerDock
-                    controls={compare.isCompare ? {} : composer.controls}
-                    isThinking={Boolean(activeSession) && isSessionBusy(activeSessionId)}
-                    onStop={activeSession ? () => handleInterrupt(activeSessionId) : undefined}
-                    disabled={isComposerDisabled}
-                    sendDisabled={isSendBlocked}
-                    placeholder={composerPlaceholder({
-                      isRunning: isActiveRunning,
-                      isCreatingWorktree,
-                      isResumable,
-                      canStartSession,
-                      // Comments held for another session say nothing about whether this one can continue.
-                      isSendBlocked: isSendWaiting,
-                      isEndedSession: Boolean(activeSession),
-                      isAwaitingAnswer: isAwaitingUser(currentMessages),
-                    })}
-                    onSendMessage={handleSendMessage}
-                    attachAsFiles
-                    onAttach={pickFiles}
-                    handleRef={composerRef}
-                    onTextChange={review.onComposerText}
-                    onRestored={review.onComposerRestored}
-                    onGivenBack={review.onComposerGivenBack}
-                    commands={compare.isCompare ? [] : composerCommands}
-                    sendLabel={delegationSendLabel ?? (compare.agentIds.length >= 2 ? `Start ${compare.agentIds.length} sessions` : undefined)}
-                    agentName={activeSession ? activeAgent?.name : newSessionAgent?.name}
-                    sessionAgent={activeSession && activeAgent ? { profileId: activeAgent.id, name: activeAgent.name } : undefined}
-                    compareModels={
-                      compare.isCompare
-                        ? compareModelControls(
-                            compare.agentIds.map((id) => ({ id, name: agents.find((a) => a.id === id)?.name ?? id })),
-                            state.agentOptions,
-                            compareModelProbe.stateOf,
-                            {
-                              // A pick is the agent's remembered model. For the draft's own agent, its single-draft pick
-                              // is dropped too, or it would outrank this one once the agent is alone again.
-                              pickModel: (profileId, modelId) => {
-                                rememberModelPick(profileId, modelId);
-                                if (profileId === draftAgent?.id) setAcpChoices(({ modelId: _dropped, ...rest }) => rest);
-                              },
-                              pickConfig: (profileId, configId, value) => {
-                                rememberPick(profileId, configId, value);
-                                if (profileId === draftAgent?.id) {
-                                  setAcpChoices((current) => ({
-                                    ...current,
-                                    config: Object.fromEntries(Object.entries(current.config).filter(([id]) => id !== configId)),
-                                  }));
-                                }
-                              },
-                            },
-                          )
-                        : undefined
-                    }
-                    onOpenCompareModel={compareModelProbe.ask}
-                    note={composerNoteText}
-                    // Only a compare run's note sits in the row, as drawn; why Send is blocked is a sentence for under the prompt.
-                    noteInRow={composerNoteText === COMPARE_NOTE}
-                    // While the draft asks its agent what it offers, its chips show as skeletons in the row.
-                    isLoadingControls={Boolean(!isActiveRunning && draftAgent && agentCheck.isProbing(draftAgent.id))}
-                    aboveCardSlots={draftBlockerSlots}
-                    contextUsage={isActiveRunning ? acp.info[activeSessionId]?.usage : undefined}
-                    mentions={filesFolder ? { root: filesFolder.path, loadFiles: () => shell.loadWorkspaceFiles(filesFolder.path) } : undefined}
-                    delegationAgents={delegationAgents}
-                    onDelegationMentionChange={setDelegationMention}
-                    delegationSummary={delegationSummary}
-                    folder={
-                      isNewSessionDraft
-                        ? {
-                            folders: workspaces,
-                            selectedPath: activeWorkspacePath,
-                            onSelect: chooseFolder,
-                            onOpenFolder: () => void openFolder(),
-                            worktree: canUseWorktree
-                              ? {
-                                  isOn: isWorktreeActive,
-                                  onChange: setIsWorktreeOn,
-                                  lockedReason: compare.isCompare ? "Each agent runs in its own worktree." : undefined,
-                                }
-                              : undefined,
-                            branch: branchPicker.control,
-                          }
-                        : undefined
-                    }
-                    agent={
-                      isNewSessionDraft && newSessionAgent && !canCompare
-                        ? {
-                            options: pickableAgents.map((a) => ({ value: a.id, label: pickerLabelOf(a) })),
-                            selected: newSessionAgent.id,
-                            onChange: (agentId) => setPickedAgentId(agentId ?? null),
-                          }
-                        : undefined
-                    }
-                    agents={
-                      isNewSessionDraft && newSessionAgent && canCompare
-                        ? {
-                            options: agentChoices,
-                            selected: compare.agentIds,
-                            onChange: compare.toggle,
-                            onPick: (agentId) => {
-                              compare.reset();
-                              setPickedAgentId(agentId);
-                            },
-                          }
-                        : undefined
-                    }
-                  />
-                </div>
-                {/* After the composer's slot, never around it: the composer keeps its place in the tree, and its text. */}
-                {isNewSessionDraft && <NewSessionBelow sessionList={draftSessionList.sessionList} />}
-              </div>
-            </article>
-            {isDiffOpen && filesFolder && (
-              <DiffView
-                key={`${activeSession?.id ?? "draft"}:${filesFolder.path}`}
-                rootPath={filesFolder.path}
-                startCommit={startCommit}
-                prefersStart={Boolean(activeSession?.compareRunId)}
-                review={activeSession ? review.review : undefined}
-                addReview={activeSession ? review.addReview : undefined}
-                version={inspector.changes.version}
-                isExpanded={inspector.isDiffExpanded}
-                onToggleExpanded={inspector.toggleDiffExpanded}
-                onClose={inspector.closeDiff}
-                onError={reportError}
-              />
-            )}
-            {inspectorTab && (
-              <Inspector
-                tab={inspectorTab}
-                tabs={inspectorTabs}
-                width={inspector.width}
-                counts={{ changes: inspector.changes.changes?.length }}
-                isViewingFile={inspectorTab === "files" && inspector.viewedFile !== null}
-                onSelect={inspector.show}
-                onResize={inspector.setWidth}
-                onClose={() => {
-                  inspector.close();
-                  inspectorButtonRef.current?.focus();
-                }}
-              >
-                {inspectorTab === "changes" && filesFolder && (
-                  <ChangesPanel
-                    key={filesFolder.path}
-                    rootPath={filesFolder.path}
-                    rootName={filesFolder.name}
-                    changes={inspector.changes.changes}
-                    version={inspector.changes.version}
-                    onReload={inspector.changes.reload}
-                    pullRequests={repoPullRequests}
-                    onOpenPullRequest={openPullRequest}
-                    githubProblem={githubProblem}
-                    onOpenGithubSettings={() => settingsPage.open("github")}
-                    diffStats={diffStats}
-                    onOpenDiff={() => inspector.openDiff()}
-                    stats={inspector.headStats ?? undefined}
-                    statsFailed={inspector.headStatsFailed}
-                    targets={inspector.targets}
-                    targetsFailed={inspector.targetsFailed}
-                    review={activeSession ? review.review : undefined}
-                    addReview={activeSession ? review.addReview : undefined}
-                  />
-                )}
-                {inspectorTab === "activity" && activeSession && (
-                  <ActivityPanel
-                    key={activeSession.id}
-                    messages={transcripts[activeSession.id]}
-                    transcript={transcriptStatus[activeSession.id] ?? "loading"}
-                    session={activeSession}
-                    isRepository={isRepository}
-                    isBusy={isSessionBusy(activeSession.id)}
-                    version={inspector.changes.version}
-                    headStats={inspector.headStats}
-                    headStatsFailed={inspector.headStatsFailed}
-                    onJump={(messageId) => setChatJump((prev) => ({ messageId, nonce: (prev?.nonce ?? 0) + 1 }))}
-                    agentName={agentNameOr(activeAgent)}
-                    onShowChanges={() => inspector.show("changes")}
-                  />
-                )}
-                {inspectorTab === "files" && filesFolder && (
-                  <FilesPanel
-                    key={filesFolder.path}
-                    rootPath={filesFolder.path}
-                    rootName={filesFolder.name}
-                    onInsertPath={(path) => insertPaths([path])}
-                    onRevealRoot={() => filesFolder && shell.revealFolder(filesFolder.path)}
-                    markers={fileMarkers}
-                    viewedFile={inspector.viewedFile}
-                    onViewFile={inspector.viewFile}
-                    onCloseFile={inspector.closeFile}
-                    version={inspector.changes.version}
-                    filesPrefix={inspector.filesPrefix}
-                    // Lines go into the message box only when Reply could: shown, enabled, not holding another session's comments.
-                    onInsertText={
-                      replyBlockedReason({ isComposerHidden, isComposerDisabled, isHeldElsewhere: review.isHeldFor(activeSessionId) })
-                        ? undefined
-                        : (text) => composerRef.current?.insertText(text)
-                    }
-                  />
-                )}
-                {inspectorTab === "terminal" && filesFolder && (
-                  <TerminalDrawer
-                    folderPath={filesFolder.path}
-                    folderName={filesFolder.name}
-                    terminals={terminals}
-                    startingFor={terminalDrawer.startingFor}
-                    onStartShell={terminalDrawer.startShell}
-                  />
-                )}
-              </Inspector>
-            )}
+              </article>
+              {isDiffOpen && filesFolder && (
+                <DiffView
+                  key={`${activeSession?.id ?? "draft"}:${filesFolder.path}`}
+                  rootPath={filesFolder.path}
+                  startCommit={startCommit}
+                  prefersStart={Boolean(activeSession?.compareRunId)}
+                  review={activeSession ? review.review : undefined}
+                  addReview={activeSession ? review.addReview : undefined}
+                  version={inspector.changes.version}
+                  isExpanded={inspector.isDiffExpanded}
+                  onToggleExpanded={inspector.toggleDiffExpanded}
+                  onClose={inspector.closeDiff}
+                  onError={reportError}
+                />
+              )}
+            </div>
           </div>
+          {inspectorTab && (
+            <Inspector
+              tab={inspectorTab}
+              tabs={inspectorTabs}
+              width={inspector.width}
+              maxWidth={maxInspectorWidth(windowWidth, !isSidebarHidden)}
+              counts={{ changes: inspector.changes.changes?.length }}
+              isViewingFile={inspectorTab === "files" && inspector.viewedFile !== null}
+              onSelect={inspector.show}
+              onResize={inspector.setWidth}
+              onClose={() => {
+                inspector.close();
+                inspectorButtonRef.current?.focus();
+              }}
+            >
+              {inspectorTab === "changes" && filesFolder && (
+                <ChangesPanel
+                  key={filesFolder.path}
+                  rootPath={filesFolder.path}
+                  rootName={filesFolder.name}
+                  changes={inspector.changes.changes}
+                  version={inspector.changes.version}
+                  onReload={inspector.changes.reload}
+                  pullRequests={repoPullRequests}
+                  onOpenPullRequest={openPullRequest}
+                  githubProblem={githubProblem}
+                  onOpenGithubSettings={() => settingsPage.open("github")}
+                  diffStats={diffStats}
+                  onOpenDiff={() => inspector.openDiff()}
+                  stats={inspector.headStats ?? undefined}
+                  statsFailed={inspector.headStatsFailed}
+                  targets={inspector.targets}
+                  targetsFailed={inspector.targetsFailed}
+                  review={activeSession ? review.review : undefined}
+                  addReview={activeSession ? review.addReview : undefined}
+                />
+              )}
+              {inspectorTab === "activity" && activeSession && (
+                <ActivityPanel
+                  key={activeSession.id}
+                  messages={transcripts[activeSession.id]}
+                  transcript={transcriptStatus[activeSession.id] ?? "loading"}
+                  session={activeSession}
+                  isRepository={isRepository}
+                  isBusy={isSessionBusy(activeSession.id)}
+                  version={inspector.changes.version}
+                  headStats={inspector.headStats}
+                  headStatsFailed={inspector.headStatsFailed}
+                  onJump={(messageId) => setChatJump((prev) => ({ messageId, nonce: (prev?.nonce ?? 0) + 1 }))}
+                  agentName={agentNameOr(activeAgent)}
+                  onShowChanges={() => inspector.show("changes")}
+                />
+              )}
+              {inspectorTab === "files" && filesFolder && (
+                <FilesPanel
+                  key={filesFolder.path}
+                  rootPath={filesFolder.path}
+                  rootName={filesFolder.name}
+                  onInsertPath={(path) => insertPaths([path])}
+                  onRevealRoot={() => filesFolder && shell.revealFolder(filesFolder.path)}
+                  markers={fileMarkers}
+                  viewedFile={inspector.viewedFile}
+                  onViewFile={inspector.viewFile}
+                  onCloseFile={inspector.closeFile}
+                  version={inspector.changes.version}
+                  filesPrefix={inspector.filesPrefix}
+                  // Lines go into the message box only when Reply could: shown, enabled, not holding another session's comments.
+                  onInsertText={
+                    replyBlockedReason({ isComposerHidden, isComposerDisabled, isHeldElsewhere: review.isHeldFor(activeSessionId) })
+                      ? undefined
+                      : (text) => composerRef.current?.insertText(text)
+                  }
+                />
+              )}
+              {inspectorTab === "terminal" && filesFolder && (
+                <TerminalDrawer
+                  folderPath={filesFolder.path}
+                  folderName={filesFolder.name}
+                  terminals={terminals}
+                  startingFor={terminalDrawer.startingFor}
+                  onStartShell={terminalDrawer.startShell}
+                />
+              )}
+            </Inspector>
+          )}
         </div>
       </section>
       <SettingsPage

@@ -70,10 +70,10 @@ describe("the file view as drawn", () => {
     expect(path.querySelector(".truncate")).toHaveTextContent("src/sidebar/");
   });
 
-  it("the body is a 12/20 well on bg, its padding and line height from the card's own numbers", async () => {
+  it("the body is a 12/20 well on ground, its padding and line height from the card's own numbers", async () => {
     await renderViewer();
     const body = screen.getByRole("region", { name: "Contents of a.ts" });
-    expect(body).toHaveClass("bg-bg", "text-ui-sm");
+    expect(body).toHaveClass("bg-ground", "text-ui-sm");
     expect(body.style.paddingTop).toBe("10px");
     expect(body.style.lineHeight).toBe("20px");
   });

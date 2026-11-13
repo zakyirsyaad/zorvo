@@ -218,7 +218,7 @@ describe("SessionRow", () => {
     expect(renaming).toHaveClass("bg-surface-hover");
     expect(renaming.querySelector(".bg-status-running")).not.toBeNull();
     expect(within(renaming).getByText("Return saves, Esc cancels")).toHaveClass("text-fg-subtle");
-    expect(field).toHaveClass("h-6.5", "border-fg", "bg-bg");
+    expect(field).toHaveClass("h-6.5", "border-fg", "bg-ground");
   });
 
   it("offers Stop only while the agent works", () => {

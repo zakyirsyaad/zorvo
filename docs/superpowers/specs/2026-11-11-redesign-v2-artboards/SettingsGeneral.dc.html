@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zorvo · Settings general, layered</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.z{--ground:#0a0a0b;--sheet:#111113;--s2:#18181b;--s3:#1f1f23;--hover:#27272a;--chip:rgba(255,255,255,.06);--line:#27272a;--strong:#71717a;--fg:#fafafa;--fg2:#d4d4d8;--muted:#a1a1aa;--subtle:#8b8b94;--primary:#fafafa;--onp:#09090b;--run:#34d399;--att:#fbbf24;--unread:#38bdf8;--danger:#f87171;--atts:#1f1a0d;--attb:#6b5416;--add:rgba(52,211,153,.12);--rem:rgba(248,113,113,.12);--pop:0 16px 40px -8px rgba(0,0,0,.6);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.z.light{--ground:#f4f4f5;--sheet:#fafafa;--s2:#ffffff;--s3:#ffffff;--hover:#e4e4e7;--chip:rgba(9,9,11,.05);--line:#e4e4e7;--strong:#808088;--fg:#09090b;--fg2:#27272a;--muted:#52525b;--subtle:#67676f;--primary:#09090b;--onp:#fafafa;--run:#047353;--att:#a34b08;--unread:#0369a1;--danger:#b91c1c;--atts:#fffbeb;--attb:#e9c46a;--add:rgba(4,120,87,.08);--rem:rgba(185,28,28,.08);--pop:0 12px 32px -8px rgba(9,9,11,.18)}
+.z button{font:inherit;cursor:pointer;margin:0}
+.z a{text-decoration:none;color:inherit}
+.mono{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.ico{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.ib{width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.tile{width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;background:var(--chip);box-shadow:inset 0 0 0 1px var(--line);color:var(--fg2)}
+.tile.sm{width:16px;height:16px;border-radius:4px;font-size:9px}
+.av{position:relative;display:flex;flex:none;margin-top:1px}
+.badge{position:absolute;right:-3px;bottom:-3px;width:8px;height:8px;border-radius:9999px;box-shadow:0 0 0 2px var(--ground)}
+.row{display:flex;align-items:flex-start;gap:10px;padding:7px 8px;border-radius:8px}
+.row.on{background:var(--hover)}
+.row.on .badge{box-shadow:0 0 0 2px var(--hover)}
+.rt{flex:1;min-width:0;display:flex;flex-direction:column}
+.t1{color:var(--fg2);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.t2{color:var(--subtle);font-size:11px;line-height:16px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tm{flex:none;color:var(--subtle);font-size:11px;line-height:18px}
+.fold{display:flex;align-items:center;gap:6px;padding:12px 8px 4px;color:var(--muted);font-size:11px;font-weight:500}
+.seg{height:26px;display:flex;align-items:center;gap:6px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px}
+.seg.on{background:var(--hover);color:var(--fg)}
+.chip{height:26px;display:flex;align-items:center;gap:6px;padding:0 8px;border:0;border-radius:6px;background:var(--chip);color:var(--fg2);font-size:12px}
+.step{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px 0 14px;border-radius:6px;font-size:12px;color:var(--fg2)}
+.step .verb{width:44px;flex:none;color:var(--muted)}
+.frow{display:flex;align-items:center;gap:8px;padding:8px 10px}
+@media (max-width:900px){.z .side,.z .insp{display:none}.z .stage{padding-left:8px}}
+.nv{display:flex;align-items:center;gap:10px;height:30px;padding:0 10px;border-radius:8px;color:var(--fg2)}
+.nv.cur{background:var(--hover);color:var(--fg);font-weight:500}
+.grp{display:flex;flex-direction:column;border-radius:12px;background:var(--s2);border:1px solid var(--line);overflow:hidden}
+.r{display:flex;align-items:center;gap:16px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.r:last-child{border-bottom:0}
+.l{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.d{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;line-height:16px}
+.dot{width:6px;height:6px;border-radius:9999px;flex:none}
+.ob{height:28px;padding:0 12px;border:1px solid var(--strong);border-radius:8px;background:transparent;color:var(--fg2);font-size:12px}
+.gb{height:28px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:12px}
+.gh{font-size:11px;font-weight:500;color:var(--muted);padding:0 4px 8px}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);opacity:0;margin:0}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 1280px; height: 800px; box-sizing: border-box; display: flex; overflow: hidden; background: var(--ground); color: var(--fg); font-size: 13px; line-height: 18px;">
+
+  <nav aria-label="Settings" style="width: 240px; flex: none; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; padding: 0 8px;">
+    <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px;" aria-hidden="true">
+      <span style="width: 12px; height: 12px; border-radius: 9999px; background: var(--hover);"></span>
+      <span style="width: 12px; height: 12px; border-radius: 9999px; background: var(--hover);"></span>
+      <span style="width: 12px; height: 12px; border-radius: 9999px; background: var(--hover);"></span>
+    </div>
+    <a href="#" class="nv" style="color: var(--muted); margin-bottom: 10px;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"></path></svg>Back to sessions</a>
+    <a href="#" class="nv cur" aria-current="page"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-9M14 17H5"></path><circle cx="17" cy="17" r="3"></circle><circle cx="7" cy="7" r="3"></circle></svg>General</a>
+    <a href="#" class="nv"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"></path></svg>Appearance</a>
+    <a href="#" class="nv"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg><span style="flex: 1;">Agents</span><span style="position: relative; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 6px; background: var(--chip); color: var(--fg); font-size: 11px; display: flex; align-items: center; justify-content: center;">2<span class="vh"> updates</span></span></a>
+    <a href="#" class="nv"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7V3M15 7V3M6 7h12v4a6 6 0 0 1-12 0zM12 17v4"></path></svg>MCP servers</a>
+    <a href="#" class="nv"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="18" r="2.5"></circle><path d="M6 8.5v7M18 15.5V9a3 3 0 0 0-3-3h-3"></path></svg>GitHub</a>
+  </nav>
+
+  <main style="flex: 1; min-width: 0; margin: 8px 8px 8px 0; box-sizing: border-box; overflow: hidden; padding: 48px 40px; background: var(--sheet); border: 1px solid var(--line); border-radius: 10px;">
+    <div style="max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px;">
+      <div style="display: flex; flex-direction: column; gap: 4px;"><h1 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: -0.02em;">General</h1><span style="color: var(--muted);">How new sessions start, and the folders Zorvo remembers.</span></div>
+
+      <section>
+        <div class="gh">New sessions</div>
+        <div class="grp">
+          <div class="r"><span class="l"><span>Default agent</span><span class="d">New sessions start with this agent. You can switch in each draft.</span></span><button class="ob" style="display: flex; align-items: center; gap: 8px; color: var(--fg);"><span class="tile sm" aria-hidden="true">C</span>Claude Code<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button></div>
+        </div>
+      </section>
+
+      <section>
+        <div class="gh">Recent folders</div>
+        <div class="grp">
+          <div class="r"><span class="l"><span>agent-desktop</span><span class="d mono" style="font-size: 11px;">~/developer/agent-desktop</span></span><button class="gb">Remove</button></div>
+          <div class="r"><span class="l"><span>zorvo-site</span><span class="d mono" style="font-size: 11px;">~/developer/zorvo-site</span></span><button class="gb">Remove</button></div>
+          <div class="r"><span class="l"><span>nadgacha</span><span class="d mono" style="font-size: 11px;">~/developer/nadgacha</span></span><button class="gb">Remove</button></div>
+        </div>
+      </section>
+
+      <section>
+        <div class="gh">About</div>
+        <div class="grp">
+          <div class="r"><span class="l"><span>Zorvo version</span><span class="d"><span class="dot" style="background: var(--run);"></span>0.8.0 · Up to date · checked 2 h ago</span></span><button class="ob">Check now</button></div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const light = (this.props.theme ?? 'dark') === 'light';
+    return { themeClass: light ? 'z light' : 'z' };
+  }
+}
+</script>
+</body>
+</html>

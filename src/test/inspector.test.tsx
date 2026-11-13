@@ -4,10 +4,10 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { Inspector } from "../components/inspector/Inspector";
 import type { InspectorTab } from "../lib/inspector";
 
-function renderInspector(tab: InspectorTab, width = 380) {
+function renderInspector(tab: InspectorTab, width = 380, maxWidth?: number) {
   const handlers = { onSelect: vi.fn(), onResize: vi.fn(), onClose: vi.fn() };
   const view = render(
-    <Inspector tab={tab} tabs={["changes", "files", "terminal"]} width={width} counts={{ changes: 3 }} {...handlers}>
+    <Inspector tab={tab} tabs={["changes", "files", "terminal"]} width={width} maxWidth={maxWidth} counts={{ changes: 3 }} {...handlers}>
       <p>panel body</p>
     </Inspector>,
   );
@@ -92,6 +92,24 @@ describe("Inspector", () => {
       </Inspector>,
     );
     expect(screen.getByRole("region", { name: "Inspector" }).style.width).toBe("380px");
+  });
+
+  it("shows no wider than the window leaves room for, and reports the capped numbers", () => {
+    const { onResize } = renderInspector("terminal", 380, 376);
+    expect(screen.getByRole("region", { name: "Inspector" }).style.width).toBe("376px");
+    const edge = screen.getByRole("separator", { name: "Resize inspector" });
+    expect(edge).toHaveAttribute("aria-valuenow", "376");
+    expect(edge).toHaveAttribute("aria-valuemax", "376");
+    expect(edge).toHaveAttribute("aria-valuemin", "376");
+    // It cannot be widened past the cap.
+    fireEvent.keyDown(edge, { key: "ArrowLeft" });
+    expect(onResize).not.toHaveBeenCalled();
+  });
+
+  it("is not capped in a window with room, and its maximum is its own 720", () => {
+    renderInspector("changes", 380, 1176);
+    expect(screen.getByRole("region", { name: "Inspector" }).style.width).toBe("380px");
+    expect(screen.getByRole("separator", { name: "Resize inspector" })).toHaveAttribute("aria-valuemax", "720");
   });
 
   it("resizes the Terminal tab from the width it shows", () => {

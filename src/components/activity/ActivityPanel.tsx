@@ -136,7 +136,7 @@ export function ActivityPanel({ messages, transcript, session, agentName, isRepo
   );
 
   return (
-    <aside aria-label="Activity panel" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui text-fg-secondary">
+    <aside aria-label="Activity panel" className="flex h-full min-h-0 flex-1 flex-col text-ui text-fg-secondary">
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
         <p className="flex gap-2 text-caption leading-4 text-fg-subtle">
           <Info size={12} aria-hidden="true" className="mt-0.5 shrink-0" />

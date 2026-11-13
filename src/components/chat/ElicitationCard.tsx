@@ -135,7 +135,7 @@ function DeclineButton({ disabled, onAnswer }: { disabled: boolean; onAnswer: (a
 function UrlRequest({ card, disabled, onAnswer }: { card: ElicitationCardData; disabled: boolean; onAnswer: (a: ElicitationAnswer) => void }) {
   return (
     <div className="flex flex-col gap-3.5">
-      <div className="rounded-md border border-border bg-bg px-2.5 py-2 font-mono text-ui-sm text-fg-secondary">
+      <div className="rounded-md border border-border bg-ground px-2.5 py-2 font-mono text-ui-sm text-fg-secondary">
         <p>
           Host: <strong className="text-fg">{card.host}</strong>
         </p>

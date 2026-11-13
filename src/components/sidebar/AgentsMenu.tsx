@@ -93,7 +93,7 @@ export function AgentsMenu({ agents, settings = {}, signInStateOf, onSetUpAgent,
         >
           <span aria-hidden="true" className="flex -space-x-1">
             {listed.slice(0, SHOWN_LOGOS).map((agent) => (
-              <span key={agent.id} className="flex rounded-[4px] bg-surface-1 ring-2 ring-surface-1">
+              <span key={agent.id} className="flex rounded-[4px] bg-ground ring-2 ring-ground">
                 <AgentLogo profileId={agent.id} name={agent.name} size={16} />
               </span>
             ))}
@@ -101,7 +101,7 @@ export function AgentsMenu({ agents, settings = {}, signInStateOf, onSetUpAgent,
           {needsSignIn && (
             <span
               aria-hidden="true"
-              className="absolute right-[3px] top-[3px] size-1.5 rounded-full bg-status-attention ring-2 ring-surface-1"
+              className="absolute right-[3px] top-[3px] size-1.5 rounded-full bg-status-attention ring-2 ring-ground"
             />
           )}
         </button>

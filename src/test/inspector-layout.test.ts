@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { clampInspectorWidth, isCrowded, minInspectorWidth, offeredTabs, shownInspectorWidth } from "../lib/inspector";
+import { clampInspectorWidth, isCrowded, maxInspectorWidth, minInspectorWidth, offeredTabs, shownInspectorWidth } from "../lib/inspector";
 import { useInspectorWidth } from "../hooks/useInspectorWidth";
 
 const KEY = "zorvo.inspectorWidth";
@@ -46,6 +46,32 @@ describe("inspector layout", () => {
     expect(isCrowded(1440, 380, true)).toBe(false);
     expect(isCrowded(1100, 380, false)).toBe(false);
   });
+
+  it("counts the sidebar and the insets around the sheets", () => {
+    expect(isCrowded(1280, 380, true)).toBe(false); // 1280 - 264 - 380 - 16 = 620
+    expect(isCrowded(1200, 380, true)).toBe(false); // the default window size keeps the sidebar: 540
+    expect(isCrowded(1196, 380, true)).toBe(false); // exactly 536
+    expect(isCrowded(1195, 380, true)).toBe(true);
+    expect(isCrowded(1280, 560, true)).toBe(true); // 440
+    expect(isCrowded(640, 560, false)).toBe(false); // no sidebar, never crowded
+  });
+
+  it("caps the inspector so the main sheet keeps 240px", () => {
+    // Sidebar hidden: 8px at the left, 8px between the sheets, 8px at the right.
+    expect(maxInspectorWidth(640, false)).toBe(376); // 640 - 8 - 16 - 240
+    // Sidebar shown: it takes 264px, and the stage has no inset at its left.
+    expect(maxInspectorWidth(1200, true)).toBe(680); // 1200 - 264 - 16 - 240
+    expect(maxInspectorWidth(1440, true)).toBe(920); // above the inspector's own 720 maximum: no cap
+  });
+
+  it("shows the Terminal tab at the cap in a small window, over its 560 minimum and the stored width", () => {
+    expect(shownInspectorWidth("terminal", 380, false, maxInspectorWidth(640, false))).toBe(376);
+    expect(shownInspectorWidth("changes", 500, false, 376)).toBe(376);
+    // Room to spare: nothing changes, and the stored width is not touched.
+    expect(shownInspectorWidth("terminal", 380, false, maxInspectorWidth(1440, false))).toBe(560);
+    expect(shownInspectorWidth("changes", 380, false, 1176)).toBe(380);
+    expect(shownInspectorWidth(null, 380, false, 376)).toBe(0);
+  });
 });
 
 describe("useInspectorWidth", () => {
@@ -70,4 +96,5 @@ describe("useInspectorWidth", () => {
     act(() => blocked.result.current[1](450));
     expect(blocked.result.current[0]).toBe(450);
   });
+
 });

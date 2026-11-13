@@ -8,4 +8,17 @@ describe("window sizes", () => {
     const main = config.app.windows.find((window: { label: string }) => window.label === "main");
     expect(main).toMatchObject({ minWidth: 640, minHeight: 560 });
   });
+
+  it("places the traffic lights the same way in the main window and in popouts", () => {
+    const config = JSON.parse(readFileSync(resolve(__dirname, "../../src-tauri/tauri.conf.json"), "utf8"));
+    const main = config.app.windows.find((window: { label: string }) => window.label === "main");
+    expect(main.trafficLightPosition.x).toBe(20);
+    // Measured in the running app: with y = 26 the lights' center sat at 24, so y = 34 puts it at 32,
+    // the center line of the top bar and the sidebar header.
+    expect(main.trafficLightPosition.y).toBe(34);
+    const rust = readFileSync(resolve(__dirname, "../../src-tauri/src/windows.rs"), "utf8");
+    const [, x, y] = rust.match(/TRAFFIC_LIGHT_POSITION: \(f64, f64\) = \(([\d.]+), ([\d.]+)\)/)!;
+    expect([Number(x), Number(y)]).toEqual([main.trafficLightPosition.x, main.trafficLightPosition.y]);
+    expect(rust).toContain(".traffic_light_position(");
+  });
 });

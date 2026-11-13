@@ -111,7 +111,7 @@ export const FileLines = memo(function FileLines({
       aria-label={`Contents of ${name}`}
       // Padding and line height come from the numbers the add-lines card is placed by, so the two cannot drift.
       style={BODY_STYLE}
-      className="focus-ring relative min-h-0 flex-1 overflow-auto bg-bg font-mono text-ui-sm select-text"
+      className="focus-ring-inset relative min-h-0 flex-1 overflow-auto bg-ground font-mono text-ui-sm select-text"
     >
       {lines.map((_, index) => {
         const line = index + 1;
@@ -259,7 +259,7 @@ export function FileViewer({
   }, [canInsertText, range, relativePath, lines, language.fence, clearSelection, insertTextRef]);
 
   return (
-    <section aria-label="File viewer" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1">
+    <section aria-label="File viewer" className="flex h-full min-h-0 flex-1 flex-col">
       <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-border px-2">
         <Button variant="ghost" tone="secondary" size="row" icon={<ChevronLeft size={14} aria-hidden="true" />} onClick={onBack}>
           Files

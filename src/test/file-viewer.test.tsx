@@ -203,7 +203,9 @@ describe("FileViewer — adding lines to the prompt", () => {
 
     const body = screen.getByRole("region", { name: "Contents of a.ts" });
     expect(body).toHaveAttribute("tabindex", "0");
-    expect(body).toHaveClass("focus-ring");
+    // Inside the inspector's clipped sheet an outer ring would be cut off, so it is drawn inside.
+    expect(body).toHaveClass("focus-ring-inset");
+    expect(body.className.split(" ")).not.toContain("focus-ring");
   });
 
   it("offers nothing where no message box can take the lines", async () => {

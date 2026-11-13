@@ -34,7 +34,7 @@ export function LineCommentBox({ label, location, initialBody, error, onChange, 
           setBody(event.target.value);
           onChange(event.target.value);
         }}
-        className="w-full resize-y rounded-md border border-border-strong bg-bg px-2 py-1.5 text-fg focus-ring"
+        className="w-full resize-y rounded-md border border-border-strong bg-ground px-2 py-1.5 text-fg focus-ring"
       />
       {error && (
         <p role="alert" className="text-caption text-danger">

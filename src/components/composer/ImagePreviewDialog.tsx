@@ -53,7 +53,7 @@ export function ImagePreviewDialog({ path, bytes, onClose }: ImagePreviewDialogP
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="flex max-h-[85vh] w-full max-w-[520px] flex-col rounded-xl border border-border bg-surface-1 text-fg-secondary shadow-dialog"
+        className="flex max-h-[85vh] w-full max-w-[520px] flex-col rounded-xl border border-border bg-surface-2 text-fg-secondary shadow-dialog"
         onClick={(event) => event.stopPropagation()}
       >
         <header className="flex items-center justify-between gap-3 py-2.5 pr-3 pl-4">
@@ -68,7 +68,7 @@ export function ImagePreviewDialog({ path, bytes, onClose }: ImagePreviewDialogP
           </IconButton>
         </header>
 
-        <div className="mx-3 mb-3 flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg border border-border bg-bg">
+        <div className="mx-3 mb-3 flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg border border-border bg-ground">
           {preview.status === "ready" ? (
             <img
               src={preview.src}

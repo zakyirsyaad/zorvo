@@ -66,7 +66,7 @@ describe("the permission card, as drawn", () => {
     expect(screen.getByRole("heading")).toHaveClass("text-ui", "font-semibold", "text-fg");
 
     const files = within(card).getByRole("list", { name: "Files to edit" });
-    expect(files).toHaveClass("rounded-md", "border-border", "bg-bg");
+    expect(files).toHaveClass("rounded-md", "border-border", "bg-ground");
     const [first, second] = within(files).getAllByRole("listitem");
     // The path text sits in a bdi inside the mono span that cuts it at its start.
     expect(within(first).getByText("src/components/sidebar/SessionRow.tsx").parentElement).toHaveClass(
@@ -118,7 +118,7 @@ describe("the question card, as drawn", () => {
     expect(within(card).getByText(form.message)).toHaveClass("text-ui", "text-fg-muted");
 
     expect(within(card).getByText("Target branch").closest("label")).toHaveClass("text-ui", "font-medium", "text-fg-secondary");
-    expect(within(card).getByRole("textbox")).toHaveClass("h-8", "rounded-lg", "border-border-strong", "bg-bg", "px-2.5");
+    expect(within(card).getByRole("textbox")).toHaveClass("h-8", "rounded-lg", "border-border-strong", "bg-ground", "px-2.5");
 
     const decline = within(card).getByRole("button", { name: "Decline" });
     const submit = within(card).getByRole("button", { name: "Submit" });

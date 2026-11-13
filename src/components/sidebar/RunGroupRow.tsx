@@ -44,7 +44,7 @@ export function RunGroupRow({ node, context }: { node: SessionNode; context: Ses
         {/* Decorative: the words name the run, so the logos stay out of the button's name. */}
         <span aria-hidden="true" className="mt-0.5 flex shrink-0 -space-x-1">
           {members.map((member) => (
-            <span key={member.id} className="flex rounded-[4px] bg-surface-1 ring-2 ring-surface-1">
+            <span key={member.id} className="flex rounded-[4px] bg-ground ring-2 ring-ground">
               <AgentLogo
                 profileId={member.profileId}
                 name={context.agentNameOf(member.profileId) ?? member.profileId}

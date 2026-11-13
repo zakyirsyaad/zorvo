@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zorvo · Private mode states</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.z{--ground:#0a0a0b;--sheet:#111113;--s2:#18181b;--s3:#1f1f23;--hover:#27272a;--chip:rgba(255,255,255,.06);--line:#27272a;--strong:#71717a;--fg:#fafafa;--fg2:#d4d4d8;--muted:#a1a1aa;--subtle:#8b8b94;--primary:#fafafa;--onp:#09090b;--run:#34d399;--att:#fbbf24;--unread:#38bdf8;--danger:#f87171;--atts:#1f1a0d;--attb:#6b5416;--add:rgba(52,211,153,.12);--rem:rgba(248,113,113,.12);--pop:0 16px 40px -8px rgba(0,0,0,.6);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.z.light{--ground:#f4f4f5;--sheet:#fafafa;--s2:#ffffff;--s3:#ffffff;--hover:#e4e4e7;--chip:rgba(9,9,11,.05);--line:#e4e4e7;--strong:#808088;--fg:#09090b;--fg2:#27272a;--muted:#52525b;--subtle:#67676f;--primary:#09090b;--onp:#fafafa;--run:#047353;--att:#a34b08;--unread:#0369a1;--danger:#b91c1c;--atts:#fffbeb;--attb:#e9c46a;--add:rgba(4,120,87,.08);--rem:rgba(185,28,28,.08);--pop:0 12px 32px -8px rgba(9,9,11,.18)}
+.z button{font:inherit;cursor:pointer;margin:0}
+.z a{text-decoration:none;color:inherit}
+.mono{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.ico{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.ib{width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.tile{width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;background:var(--chip);box-shadow:inset 0 0 0 1px var(--line);color:var(--fg2)}
+.tile.sm{width:16px;height:16px;border-radius:4px;font-size:9px}
+.av{position:relative;display:flex;flex:none;margin-top:1px}
+.badge{position:absolute;right:-3px;bottom:-3px;width:8px;height:8px;border-radius:9999px;box-shadow:0 0 0 2px var(--ground)}
+.row{display:flex;align-items:flex-start;gap:10px;padding:7px 8px;border-radius:8px}
+.row.on{background:var(--hover)}
+.row.on .badge{box-shadow:0 0 0 2px var(--hover)}
+.rt{flex:1;min-width:0;display:flex;flex-direction:column}
+.t1{color:var(--fg2);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.t2{color:var(--subtle);font-size:11px;line-height:16px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tm{flex:none;color:var(--subtle);font-size:11px;line-height:18px}
+.fold{display:flex;align-items:center;gap:6px;padding:12px 8px 4px;color:var(--muted);font-size:11px;font-weight:500}
+.seg{height:26px;display:flex;align-items:center;gap:6px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px}
+.seg.on{background:var(--hover);color:var(--fg)}
+.chip{height:26px;display:flex;align-items:center;gap:6px;padding:0 8px;border:0;border-radius:6px;background:var(--chip);color:var(--fg2);font-size:12px}
+.step{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px 0 14px;border-radius:6px;font-size:12px;color:var(--fg2)}
+.step .verb{width:44px;flex:none;color:var(--muted)}
+.frow{display:flex;align-items:center;gap:8px;padding:8px 10px}
+@media (max-width:900px){.z .side,.z .insp{display:none}.z .stage{padding-left:8px}}
+.z{--dlg:0 24px 64px -12px rgba(0,0,0,.7);--overlay:rgba(0,0,0,.7);--dangers:#2a1215}
+.z.light{--dlg:0 24px 64px -12px rgba(9,9,11,.25);--overlay:rgba(9,9,11,.4);--dangers:#fef2f2}
+.grp{display:flex;flex-direction:column;gap:8px}
+.cap{color:var(--muted);font-size:11px;font-weight:500}
+.sheet{position:relative;overflow:hidden;padding:16px;background:var(--sheet);border:1px solid var(--line);border-radius:10px}
+.sheet.dsc{padding:24px}
+.ov{position:absolute;top:0;right:0;bottom:0;left:0;background:var(--overlay)}
+.card{display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:12px;background:var(--s2);border:1px solid var(--line)}
+.dlg{position:relative;display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:12px;background:var(--s2);border:1px solid var(--line);box-shadow:var(--dlg)}
+.hd{display:flex;align-items:flex-start;gap:10px}
+.hd .ico{margin-top:2px}
+.hd .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.ttl{font-weight:600;color:var(--fg)}
+.txt{color:var(--muted)}
+.sm{color:var(--subtle);font-size:12px}
+.st{display:flex;align-items:center;gap:8px;color:var(--fg2);font-size:12px}
+.dot{width:6px;height:6px;border-radius:9999px;flex:none}
+.acts{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.z .pb{height:30px;padding:0 14px;border:0;border-radius:8px;background:var(--primary);color:var(--onp);font-weight:500}
+.z .ob{height:30px;padding:0 12px;border:1px solid var(--strong);border-radius:8px;background:transparent;color:var(--fg2)}
+.z .gb{height:30px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--fg2)}
+.kv{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px}
+.kv:last-child{border-bottom:0}
+.kv .k{width:96px;flex:none;color:var(--muted)}
+.fld{height:32px;box-sizing:border-box;padding:0 10px;border:1px solid var(--strong);border-radius:8px;background:var(--ground);color:var(--fg);font-size:13px;outline:none}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 1024px; height: 1240px; box-sizing: border-box; padding: 24px; display: flex; align-items: flex-start; gap: 24px; overflow: hidden; background: var(--ground); color: var(--fg); font-size: 13px; line-height: 18px;">
+
+  <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 20px;">
+
+    <div class="grp">
+      <span class="cap">Top-up · checkout open</span>
+      <div class="sheet">
+        <section class="card" aria-label="Waiting for your payment">
+          <div class="hd"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--muted);"><rect x="2" y="5" width="20" height="14" rx="2"></rect><path d="M2 10h20"></path></svg><div class="tx"><span class="ttl">Waiting for your payment</span><span class="txt">Checkout is open in your browser. Pay <span class="mono">$5</span> in USDC from any chain, a wallet or a card. This updates by itself.</span></div></div>
+          <span class="st" role="status"><svg viewBox="0 0 24 24" aria-hidden="true" style="width: 14px; height: 14px; flex: none; fill: none; stroke: var(--run); stroke-width: 2; stroke-linecap: round;"><path d="M12 3a9 9 0 1 1-9 9"></path></svg>Checking with PingPay · <span class="mono">500</span> credits held for you for 25 min</span>
+          <div class="acts"><button class="gb">Cancel</button><button class="ob">Open checkout again</button></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="grp">
+      <span class="cap">Top-up · paid, but adding credits failed at least once (rare)</span>
+      <div class="sheet">
+        <section class="card" aria-label="Paid, credits on the way">
+          <div class="hd"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--muted);"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg><div class="tx"><span class="ttl">Paid. Your <span class="mono">500</span> credits are on the way</span><span class="txt">NEAR AI is slow to answer right now. Zorvo keeps trying, and you don't need to pay again.</span></div></div>
+          <span class="st" role="status"><span class="dot" style="background: var(--run);"></span>Payment received · tried 3 times · next try in 2 min</span>
+        </section>
+      </div>
+    </div>
+
+    <div class="grp">
+      <span class="cap">Top-up · stock sold out</span>
+      <div class="sheet">
+        <section class="card" aria-label="Top-ups are paused">
+          <div class="hd"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--muted);"><path d="M8 5v14M16 5v14"></path></svg><div class="tx"><span class="ttl">Top-ups are paused for now</span><span class="txt">Zorvo has sold the credits it has right now. New stock comes in soon, and nobody is charged in the meantime. Your <span class="mono">48</span> credits still work.</span></div></div>
+          <div class="acts"><button class="ob">Check again</button></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="grp">
+      <span class="cap">Session · credits ran out (above the composer)</span>
+      <div class="sheet">
+        <section class="card" aria-label="Your credits ran out">
+          <div class="hd"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--att);"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v4M12 16v.01"></path></svg><div class="tx"><span class="ttl">Your credits ran out</span><span class="txt">Qwen Code stopped because there are no credits left. Your message is back in the box, ready to send after a top-up. The rest of Zorvo and this session's history keep working.</span></div></div>
+          <span class="sm">Continuing with another agent sends your code to that agent's provider, outside a TEE.</span>
+          <div class="acts"><button class="gb">Continue with another agent</button><button class="pb">Top up</button></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="grp">
+      <span class="cap">Session · cap reached</span>
+      <div class="sheet">
+        <section class="card" aria-label="This session reached its cap">
+          <div class="hd"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--muted);"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg><div class="tx"><span class="ttl">This session reached <span class="mono">200</span> credits</span><span class="txt">NEAR AI stopped it at the cap you set. Raise the cap to go on, or start a new session.</span></div></div>
+          <div class="acts"><button class="gb">New session</button><button class="ob">Raise to <span class="mono">400</span></button></div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 20px;">
+
+    <div class="grp">
+      <span class="cap">Before sending · secret guard</span>
+      <div class="sheet dsc">
+        <div class="ov" aria-hidden="true"></div>
+        <section class="dlg" role="dialog" aria-label="This message may hold a secret">
+          <div class="hd"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--att);"><path d="M12 3 2 21h20z"></path><path d="M12 10v4M12 17.5v.01"></path></svg><div class="tx"><span class="ttl">This message may hold a secret</span><span class="txt">Zorvo found these on this Mac, before anything was sent.</span></div></div>
+          <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 8px; background: var(--ground); overflow: hidden;">
+            <li style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-bottom: 1px solid var(--line);"><span style="color: var(--fg);">AWS access key</span><span class="mono" style="color: var(--subtle); font-size: 11px;">AKIA••••••••7Q2X · in your message</span></li>
+            <li style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px;"><span style="color: var(--fg);">Private key</span><span class="mono" style="color: var(--subtle); font-size: 11px;">BEGIN PRIVATE KEY · in .env.local, attached</span></li>
+          </ul>
+          <span class="sm">Qwen Code can still read files in the folder itself. This check covers only what you send.</span>
+          <div class="acts"><button class="gb" style="color: var(--danger);">Send anyway</button><button class="pb">Edit message</button></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="grp">
+      <span class="cap">Settings · restore on this Mac</span>
+      <div class="sheet dsc">
+        <div class="ov" aria-hidden="true"></div>
+        <section class="dlg" role="dialog" aria-label="Restore your credits">
+          <div class="hd"><div class="tx"><span class="ttl">Restore your credits</span><span class="txt">The Mac that had these credits stops using them, and you get a new recovery code here. Your own NEAR AI key isn't moved; add it again on this Mac if you use one.</span></div></div>
+          <label style="display: flex; flex-direction: column; gap: 6px;"><span style="color: var(--fg2); font-size: 12px;">Recovery code</span><input class="mono fld" value="ZRV-4K9P-"></label>
+          <div class="acts"><button class="gb">Cancel</button><button class="pb">Restore</button></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="grp">
+      <span class="cap">Answer · Verified in TEE, opened</span>
+      <div class="sheet dsc">
+        <div class="ov" aria-hidden="true"></div>
+        <section class="dlg" role="dialog" aria-label="Verified in TEE">
+          <div style="display: flex; align-items: center; gap: 8px;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--run);"><path d="M12 3 5 6v6c0 4.2 3 7.6 7 9 4-1.4 7-4.8 7-9V6z"></path><path d="m9 12 2 2 4-4"></path></svg><span class="ttl">Verified in TEE</span></div>
+          <div style="display: flex; flex-direction: column;">
+            <div class="kv"><span class="k">Model</span><span class="mono" style="font-size: 11px;">Qwen/Qwen3.8-27B</span></div>
+            <div class="kv"><span class="k">Signed by</span><span class="mono" style="font-size: 11px;">0x835a…aa26 · provider TEE</span></div>
+            <div class="kv"><span class="k">Checked</span><span>The request and the answer match their signed hashes</span></div>
+          </div>
+          <a href="#" style="align-self: flex-start; color: var(--fg2); font-size: 12px; text-decoration: underline; text-underline-offset: 2px;">Check it yourself in NEAR AI's Verification Center</a>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":1024,"height":1240}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const light = (this.props.theme ?? 'dark') === 'light';
+    return { themeClass: light ? 'z light' : 'z' };
+  }
+}
+</script>
+</body>
+</html>

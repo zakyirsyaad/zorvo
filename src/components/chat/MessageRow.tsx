@@ -172,7 +172,7 @@ export const MessageRow = memo(function MessageRow({
         // ends; only an ended reply fills surface-1 on hover, never one whose card still waits.
         <div
           data-message-body=""
-          className={`-mx-3 self-stretch rounded-[10px] p-3 transition-colors ${showActions ? "group-hover:bg-surface-1" : ""}`}
+          className={`-mx-3 self-stretch rounded-[10px] p-3 transition-colors ${showActions ? "group-hover:bg-surface-2" : ""}`}
         >
           {/* The agent's reply is headed by its logo, name and time; your own message only when a delegate wrote it. */}
           <div data-message-header="" className="mb-2.5 flex min-w-0 max-w-full items-center gap-2">

@@ -277,7 +277,7 @@ export function FilesPanel({
   // The viewer takes the header's and the tree's place; the tree's state (open folders, filter) waits for "← Files".
   if (viewedFile) {
     return (
-      <aside aria-label="Files panel" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui-sm text-fg-secondary">
+      <aside aria-label="Files panel" className="flex h-full min-h-0 flex-1 flex-col text-ui-sm text-fg-secondary">
         <FileViewer
           rootPath={rootPath}
           relativePath={viewedFile}
@@ -295,7 +295,7 @@ export function FilesPanel({
   return (
     <aside
       aria-label="Files panel"
-      className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui-sm text-fg-secondary select-none"
+      className="flex h-full min-h-0 flex-1 flex-col text-ui-sm text-fg-secondary select-none"
     >
       <PanelHeader
         rootName={rootName}

@@ -65,7 +65,7 @@ const PLAN_TONE: Record<PlanEntry["status"], string> = {
 /** The agent's current plan, one line per step with its status. */
 export function PlanList({ entries }: { entries: PlanEntry[] }) {
   return (
-    <ul aria-label="Plan" className="mb-3 space-y-1 rounded-lg border border-border bg-bg px-3 py-2">
+    <ul aria-label="Plan" className="mb-3 space-y-1 rounded-lg border border-border bg-ground px-3 py-2">
       {entries.map((entry, index) => {
         const Icon = PLAN_ICON[entry.status];
         return (

@@ -16,6 +16,19 @@ describe("the inspector's frame as drawn", () => {
     renderInspector();
     const strip = screen.getByRole("tablist", { name: "Inspector" }).parentElement!;
     expect(strip).toHaveClass("h-12", "pl-3", "pr-2");
+    // The segmented track keeps its own 30px height, centred in the strip, not stretched to it.
+    expect(screen.getByRole("tablist", { name: "Inspector" })).toHaveClass("self-center");
+  });
+
+  it("draws a sheet inside a frame with the resize handle outside the clip", () => {
+    renderInspector();
+    const region = screen.getByRole("region", { name: "Inspector" });
+    const sheet = region.querySelector('[data-sheet="inspector"]') as HTMLElement;
+    expect(sheet).toHaveClass("rounded-panel", "border", "border-border", "bg-sheet", "overflow-hidden");
+    expect(region).not.toHaveClass("border-l", "bg-surface-1", "overflow-hidden");
+    const handle = screen.getByRole("separator", { name: "Resize inspector" });
+    expect(sheet.contains(handle)).toBe(false);
+    expect(handle).toHaveClass("-left-2", "w-2");
   });
 
   it("close is a 24px icon button", () => {

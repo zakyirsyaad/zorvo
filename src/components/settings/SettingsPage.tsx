@@ -177,7 +177,7 @@ export function SettingsPage({
   })();
 
   return (
-    <div data-settings-page className="relative flex min-h-0 min-w-0 flex-1">
+    <div data-settings-page className="relative flex min-h-0 min-w-0 flex-1 bg-bg">
       <SettingsNav current={section} onSelect={page.select} onBack={page.close} updateCount={updateCount} />
       {/* Keyed by section: a new section is a new scroller, so it opens at its top. */}
       <section

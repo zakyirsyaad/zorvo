@@ -196,7 +196,7 @@ export function ChangesPanel({
       ref={panel}
       aria-label="Changes panel"
       tabIndex={review ? -1 : undefined}
-      className={`flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui text-fg-secondary select-none${review ? " focus-ring" : ""}`}
+      className={`flex h-full min-h-0 flex-1 flex-col text-ui text-fg-secondary select-none${review ? " focus-ring-inset" : ""}`}
     >
       {pullRequests && onOpenPullRequest && (
         <div className="max-h-[45%] shrink-0 overflow-y-auto">
@@ -296,7 +296,7 @@ export function ChangesPanel({
             onChange={(e) => setMessage(e.target.value)}
             rows={2}
             placeholder="Commit message"
-            className="w-full resize-none rounded-lg border border-border-strong bg-bg px-2.5 py-2 text-ui text-fg placeholder-fg-subtle focus-ring"
+            className="w-full resize-none rounded-lg border border-border-strong bg-ground px-2.5 py-2 text-ui text-fg placeholder-fg-subtle focus-ring"
           />
           <Button
             variant="primary"

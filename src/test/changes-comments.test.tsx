@@ -95,6 +95,14 @@ afterEach(() => {
 });
 
 describe("Line comments in the Changes tab", () => {
+  it("draws the panel's focus ring inside, since the inspector's sheet clips an outer one", async () => {
+    await openChanges([sessionOf("s-a", "Alpha work", [])]);
+
+    const classes = changes().className.split(" ");
+    expect(classes).toContain("focus-ring-inset");
+    expect(classes).not.toContain("focus-ring");
+  });
+
   it("the Changes inline diff offers a comment on its active line", async () => {
     await openChanges([sessionOf("s-a", "Alpha work", [])]);
 

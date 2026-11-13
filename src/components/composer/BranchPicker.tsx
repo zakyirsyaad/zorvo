@@ -127,7 +127,7 @@ function WorktreeSwitch({
           className={`relative mt-px h-4 w-7 shrink-0 rounded-full transition-colors ${worktree.isOn ? "bg-fg" : "bg-border-strong"}`}
         >
           <span
-            className={`absolute top-0.5 h-3 w-3 rounded-full transition-transform ${worktree.isOn ? "translate-x-3.5 bg-bg" : "translate-x-0.5 bg-fg"}`}
+            className={`absolute top-0.5 h-3 w-3 rounded-full transition-transform ${worktree.isOn ? "translate-x-3.5 bg-ground" : "translate-x-0.5 bg-fg"}`}
           />
         </span>
         <span className="flex min-w-0 flex-col">

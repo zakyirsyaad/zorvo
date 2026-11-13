@@ -56,7 +56,7 @@ describe("the stall notice, as drawn", () => {
       />,
     );
     const notice = screen.getByRole("status");
-    expect(notice).toHaveClass("flex", "items-center", "gap-2.5", "px-3", "py-2.5", "rounded-lg", "border-border", "bg-surface-1");
+    expect(notice).toHaveClass("flex", "items-center", "gap-2.5", "px-3", "py-2.5", "rounded-lg", "border-border", "bg-surface-2");
     expect(notice.querySelector(".lucide-clock")?.getAttribute("class")).toContain("text-status-attention");
     expect(notice.querySelector("span")).toHaveClass("text-ui", "text-fg-secondary");
     const stop = within(notice).getByRole("button", { name: "Stop" });

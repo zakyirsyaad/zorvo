@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zorvo · Delegate dialog</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.z{--ground:#0a0a0b;--sheet:#111113;--s2:#18181b;--s3:#1f1f23;--hover:#27272a;--chip:rgba(255,255,255,.06);--line:#27272a;--strong:#71717a;--fg:#fafafa;--fg2:#d4d4d8;--muted:#a1a1aa;--subtle:#8b8b94;--primary:#fafafa;--onp:#09090b;--run:#34d399;--att:#fbbf24;--unread:#38bdf8;--danger:#f87171;--atts:#1f1a0d;--attb:#6b5416;--add:rgba(52,211,153,.12);--rem:rgba(248,113,113,.12);--pop:0 16px 40px -8px rgba(0,0,0,.6);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.z.light{--ground:#f4f4f5;--sheet:#fafafa;--s2:#ffffff;--s3:#ffffff;--hover:#e4e4e7;--chip:rgba(9,9,11,.05);--line:#e4e4e7;--strong:#808088;--fg:#09090b;--fg2:#27272a;--muted:#52525b;--subtle:#67676f;--primary:#09090b;--onp:#fafafa;--run:#047353;--att:#a34b08;--unread:#0369a1;--danger:#b91c1c;--atts:#fffbeb;--attb:#e9c46a;--add:rgba(4,120,87,.08);--rem:rgba(185,28,28,.08);--pop:0 12px 32px -8px rgba(9,9,11,.18)}
+.z{--overlay:rgba(0,0,0,.7);--dlg:0 24px 64px -12px rgba(0,0,0,.7)}
+.z.light{--overlay:rgba(9,9,11,.4);--dlg:0 24px 64px -12px rgba(9,9,11,.25)}
+.z button{font:inherit;cursor:pointer;margin:0}
+.z a{text-decoration:none;color:inherit}
+.mono{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.ico{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.ib{width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.tile{width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;background:var(--chip);box-shadow:inset 0 0 0 1px var(--line);color:var(--fg2)}
+.tile.sm{width:16px;height:16px;border-radius:4px;font-size:9px}
+.av{position:relative;display:flex;flex:none;margin-top:1px}
+.badge{position:absolute;right:-3px;bottom:-3px;width:8px;height:8px;border-radius:9999px;box-shadow:0 0 0 2px var(--ground)}
+.row{display:flex;align-items:flex-start;gap:10px;padding:7px 8px;border-radius:8px}
+.row.on{background:var(--hover)}
+.row.on .badge{box-shadow:0 0 0 2px var(--hover)}
+.rt{flex:1;min-width:0;display:flex;flex-direction:column}
+.t1{color:var(--fg2);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.t2{color:var(--subtle);font-size:11px;line-height:16px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tm{flex:none;color:var(--subtle);font-size:11px;line-height:18px}
+.fold{display:flex;align-items:center;gap:6px;padding:12px 8px 4px;color:var(--muted);font-size:11px;font-weight:500}
+.seg{height:26px;display:flex;align-items:center;gap:6px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px}
+.seg.on{background:var(--hover);color:var(--fg)}
+.chip{height:26px;display:flex;align-items:center;gap:6px;padding:0 8px;border:0;border-radius:6px;background:var(--chip);color:var(--fg2);font-size:12px}
+.step{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px 0 14px;border-radius:6px;font-size:12px;color:var(--fg2)}
+.step .verb{width:44px;flex:none;color:var(--muted)}
+.frow{display:flex;align-items:center;gap:8px;padding:8px 10px}
+@media (max-width:900px){.z .side,.z .insp{display:none}.z .stage{padding-left:8px}}
+.arow{display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border-radius:6px;cursor:pointer}
+.arow.on{background:var(--hover)}
+.arow.off{opacity:.55;cursor:default}
+.radio{width:14px;height:14px;flex:none;box-sizing:border-box;border-radius:9999px;border:1px solid var(--strong);display:flex;align-items:center;justify-content:center}
+.st{margin-left:auto;font-size:12px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="position: relative; width: 1024px; height: 760px; box-sizing: border-box; overflow: hidden; background: var(--sheet); color: var(--fg); font-size: 13px; line-height: 18px;">
+  <div aria-hidden="true" style="position: absolute; inset: 0; padding: 96px 172px; display: flex; flex-direction: column; gap: 16px;">
+    <div style="align-self: flex-end; height: 44px; width: 360px; border-radius: 12px; background: var(--s2); border: 1px solid var(--line);"></div>
+    <div style="height: 18px; width: 140px; border-radius: 4px; background: var(--s2);"></div>
+    <div style="height: 88px; border-radius: 8px; background: var(--s2);"></div>
+  </div>
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: var(--overlay);"></div>
+
+  <div role="dialog" aria-modal="true" aria-labelledby="dlg-title" style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 520px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 12px; background: var(--s2); border: 1px solid var(--line); box-shadow: var(--dlg);">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <h2 id="dlg-title" style="flex: 1; margin: 0; font-size: 14px; line-height: 22px; font-weight: 600;">Delegate to another agent</h2>
+      <button class="ib" aria-label="Close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></button>
+    </div>
+
+    <fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 4px;">
+      <legend style="padding: 0; margin-bottom: 6px; font-weight: 500; color: var(--fg);">Agent</legend>
+      <label class="arow on"><input type="radio" name="agent" checked="checked" class="sr"><span class="radio" aria-hidden="true" style="border-color: var(--fg);"><span style="width: 6px; height: 6px; border-radius: 9999px; background: var(--fg);"></span></span><span class="tile" aria-hidden="true">X</span><span style="color: var(--fg); font-weight: 500;">Codex</span><span class="st" style="color: var(--muted);">Ready</span></label>
+      <label class="arow"><input type="radio" name="agent" class="sr"><span class="radio" aria-hidden="true"></span><span class="tile" aria-hidden="true">C</span><span style="color: var(--fg2);">Claude Code</span><span class="st" style="color: var(--muted);">Ready</span></label>
+      <label class="arow"><input type="radio" name="agent" class="sr"><span class="radio" aria-hidden="true"></span><span class="tile" aria-hidden="true">Q</span><span style="color: var(--fg2);">Qwen Code</span><span class="st" style="color: var(--subtle);">Not checked</span></label>
+      <label class="arow"><input type="radio" name="agent" class="sr"><span class="radio" aria-hidden="true"></span><span class="tile" aria-hidden="true">G</span><span style="color: var(--fg2);">Gemini CLI</span><span class="st" style="display: flex; align-items: center; gap: 6px; color: var(--muted);"><span aria-hidden="true" style="width: 6px; height: 6px; border-radius: 9999px; background: var(--att);"></span>Needs sign-in</span></label>
+      <label class="arow off"><input type="radio" name="agent" disabled="disabled" aria-describedby="kimi-st" class="sr"><span class="radio" aria-hidden="true"></span><span class="tile" aria-hidden="true">K</span><span style="color: var(--fg2);">Kimi CLI</span><span id="kimi-st" class="st" style="color: var(--subtle);">Not installed</span></label>
+    </fieldset>
+
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <label for="task" style="font-weight: 500; color: var(--fg);">Task</label>
+      <textarea id="task" rows="3" aria-describedby="task-err task-hint" style="width: 100%; box-sizing: border-box; resize: none; padding: 8px 10px; border-radius: 8px; border: 1px solid {{taskEdge}}; background: var(--ground); color: var(--fg); font: inherit; font-size: 13px; line-height: 20px; outline: none;">{{taskText}}</textarea>
+      <span id="task-err" style="display: {{errDisplay}}; font-size: 12px; color: var(--danger);">Write the task first.</span>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px;">
+        <span style="font-weight: 500; color: var(--fg);">Codex starts on</span>
+        <button class="chip">gpt-5.5-codex<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+        <button class="chip">High<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+        <button class="chip">Auto review<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+      </div>
+      <span id="task-hint" style="font-size: 12px; line-height: 17px; color: var(--muted);">Codex reads this conversation first and works in the same folder. Each answer it gives is sent to Claude Code.<span style="display: {{notRunningDisplay}};"> Claude Code isn't running, so its reports wait in its composer.</span></span>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; gap: 8px; padding-top: 16px; border-top: 1px solid var(--line);">
+      <button style="height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--fg2);">Cancel</button>
+      <button style="height: 30px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--primary); color: var(--onp); font-weight: 500;">Delegate</button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"variant":{"editor":"enum","options":["filled","empty task","Claude Code not running"],"default":"filled"},"$preview":{"width":1024,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const light = (this.props.theme ?? 'dark') === 'light';
+    const variant = this.props.variant ?? 'filled';
+    const empty = variant === 'empty task';
+    return {
+      themeClass: light ? 'z light' : 'z',
+      taskText: empty ? '' : 'Implement step 2 of the plan: token refresh in src/auth.ts, with tests.',
+      taskEdge: empty ? 'var(--danger)' : 'var(--strong)',
+      errDisplay: empty ? 'block' : 'none',
+      notRunningDisplay: variant === 'Claude Code not running' ? 'inline' : 'none'
+    };
+  }
+}
+</script>
+</body>
+</html>

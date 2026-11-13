@@ -85,6 +85,30 @@ describe("The inspector in the app", () => {
     expect(document.activeElement).toBe(inspectorButton());
   });
 
+  it("never leaves the main sheet under 240px: the Terminal tab is capped in a small window and widens again with it", async () => {
+    const original = window.innerWidth;
+    const setWidth = (px: number) => {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: px });
+      act(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+    };
+    try {
+      setWidth(640);
+      seedWithChanges();
+      await renderApp();
+      await openInspectorTab("Terminal");
+      // 640 - 8 (left inset, the sidebar having given way) - 16 - 240 = 376, under the tab's 560 minimum.
+      expect(inspector()?.style.width).toBe("376px");
+      expect(screen.getByRole("separator", { name: "Resize inspector" })).toHaveAttribute("aria-valuenow", "376");
+
+      setWidth(1440);
+      expect(inspector()?.style.width).toBe("560px");
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: original });
+    }
+  });
+
   it("opens a clicked file in the Files tab, widening the inspector, and goes back to the tree", async () => {
     const spy = seedWithChanges();
     const original = spy.getMockImplementation()!;

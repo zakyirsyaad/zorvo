@@ -29,7 +29,7 @@ describe("the branch menu", () => {
   it("is 360 wide, with the 30px search field", () => {
     renderMenu();
     expect(screen.getByRole("dialog", { name: "Choose a branch" })).toHaveClass("w-90");
-    expect(screen.getByRole("textbox", { name: "Search branches" }).closest("label")).toHaveClass("h-7.5");
+    expect(screen.getByRole("textbox", { name: "Search branches" }).closest("label")).toHaveClass("h-7");
   });
 
   it("lists branches in mono 12, the check on the left and the checked-out one named", () => {

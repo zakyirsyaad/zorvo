@@ -59,7 +59,7 @@ describe("Window chrome wiring", () => {
 
     const sidebar = screen.getByRole("complementary");
     const sidebarHeader = sidebar.firstElementChild as HTMLElement;
-    expect(sidebarHeader).toHaveClass("h-12");
+    expect(sidebarHeader).toHaveClass("h-12", "mt-2");
     expect(sidebarHeader.hasAttribute("data-tauri-drag-region")).toBe(true);
     expect(sidebarHeader.style.paddingLeft).toBe("78px");
     expect(within(sidebarHeader).getByRole("button", { name: "Hide sidebar" })).toBeDefined();
@@ -68,12 +68,34 @@ describe("Window chrome wiring", () => {
     expect(sidebar.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(banner.style.paddingLeft).toBe("");
 
+    // The stage's 8px strips drag the window; the top bar sits inside the chat's sheet.
+    expect(sidebar).toHaveClass("w-66");
+    expect(sidebar).not.toHaveClass("border-r", "bg-surface-1");
+    const stage = document.querySelector("[data-stage]") as HTMLElement;
+    expect(stage.hasAttribute("data-tauri-drag-region")).toBe(true);
+    expect(stage).toHaveClass("gap-2", "py-2", "pr-2");
+    expect(stage).not.toHaveClass("pl-2");
+    const sheet = stage.querySelector('[data-sheet="main"]') as HTMLElement;
+    expect(sheet).toHaveClass("rounded-panel", "border", "border-border", "bg-sheet", "overflow-hidden");
+    expect(sheet.contains(banner)).toBe(true);
+
     // Hidden, the top bar takes the inset; shown again, the sidebar's header has it back.
     await click(within(sidebarHeader).getByRole("button", { name: "Hide sidebar" }));
+    expect(document.querySelector("[data-stage]")).toHaveClass("pl-2");
     expect(screen.getByRole("banner").style.paddingLeft).toBe("78px");
     await click(header().getByRole("button", { name: "Show sidebar" }));
     expect((screen.getByRole("complementary").firstElementChild as HTMLElement).style.paddingLeft).toBe("78px");
     expect(screen.getByRole("banner").style.paddingLeft).toBe("");
+  });
+
+  it("puts the inspector beside the chat's sheet, not inside it", async () => {
+    seedSessions();
+    await renderApp();
+    await click(await header().findByRole("button", { name: "Inspector" }));
+
+    const inspector = screen.getByRole("region", { name: "Inspector" });
+    expect(inspector.parentElement).toBe(document.querySelector("[data-stage]"));
+    expect(document.querySelector('[data-sheet="main"]')!.contains(inspector)).toBe(false);
   });
 
   it("goes back and forward through the sessions the user viewed", async () => {

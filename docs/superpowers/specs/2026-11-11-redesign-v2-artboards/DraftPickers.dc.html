@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zorvo · Draft pickers</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.z{--ground:#0a0a0b;--sheet:#111113;--s2:#18181b;--s3:#1f1f23;--hover:#27272a;--chip:rgba(255,255,255,.06);--line:#27272a;--strong:#71717a;--fg:#fafafa;--fg2:#d4d4d8;--muted:#a1a1aa;--subtle:#8b8b94;--primary:#fafafa;--onp:#09090b;--run:#34d399;--att:#fbbf24;--unread:#38bdf8;--danger:#f87171;--atts:#1f1a0d;--attb:#6b5416;--add:rgba(52,211,153,.12);--rem:rgba(248,113,113,.12);--pop:0 16px 40px -8px rgba(0,0,0,.6);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.z.light{--ground:#f4f4f5;--sheet:#fafafa;--s2:#ffffff;--s3:#ffffff;--hover:#e4e4e7;--chip:rgba(9,9,11,.05);--line:#e4e4e7;--strong:#808088;--fg:#09090b;--fg2:#27272a;--muted:#52525b;--subtle:#67676f;--primary:#09090b;--onp:#fafafa;--run:#047353;--att:#a34b08;--unread:#0369a1;--danger:#b91c1c;--atts:#fffbeb;--attb:#e9c46a;--add:rgba(4,120,87,.08);--rem:rgba(185,28,28,.08);--pop:0 12px 32px -8px rgba(9,9,11,.18)}
+.z button{font:inherit;cursor:pointer;margin:0}
+.z a{text-decoration:none;color:inherit}
+.mono{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.ico{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.ib{width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.tile{width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;background:var(--chip);box-shadow:inset 0 0 0 1px var(--line);color:var(--fg2)}
+.tile.sm{width:16px;height:16px;border-radius:4px;font-size:9px}
+.av{position:relative;display:flex;flex:none;margin-top:1px}
+.badge{position:absolute;right:-3px;bottom:-3px;width:8px;height:8px;border-radius:9999px;box-shadow:0 0 0 2px var(--ground)}
+.row{display:flex;align-items:flex-start;gap:10px;padding:7px 8px;border-radius:8px}
+.row.on{background:var(--hover)}
+.row.on .badge{box-shadow:0 0 0 2px var(--hover)}
+.rt{flex:1;min-width:0;display:flex;flex-direction:column}
+.t1{color:var(--fg2);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.t2{color:var(--subtle);font-size:11px;line-height:16px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tm{flex:none;color:var(--subtle);font-size:11px;line-height:18px}
+.fold{display:flex;align-items:center;gap:6px;padding:12px 8px 4px;color:var(--muted);font-size:11px;font-weight:500}
+.seg{height:26px;display:flex;align-items:center;gap:6px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px}
+.seg.on{background:var(--hover);color:var(--fg)}
+.chip{height:26px;display:flex;align-items:center;gap:6px;padding:0 8px;border:0;border-radius:6px;background:var(--chip);color:var(--fg2);font-size:12px}
+.step{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px 0 14px;border-radius:6px;font-size:12px;color:var(--fg2)}
+.step .verb{width:44px;flex:none;color:var(--muted)}
+.frow{display:flex;align-items:center;gap:8px;padding:8px 10px}
+@media (max-width:900px){.z .side,.z .insp{display:none}.z .stage{padding-left:8px}}
+.dot{width:6px;height:6px;border-radius:9999px;flex:none}
+.scene{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;gap:20px;box-sizing:border-box;padding:32px 144px 0;background:var(--sheet);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.pick{display:flex;align-items:center;gap:10px;min-height:48px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--fg2);text-align:left}
+.pick.on{border-color:var(--strong);background:var(--s2);color:var(--fg)}
+.pop{position:absolute;z-index:2;display:flex;flex-direction:column;box-sizing:border-box;padding:6px;border-radius:10px;background:var(--s3);border:1px solid var(--line);box-shadow:var(--pop)}
+.srch{display:flex;align-items:center;gap:8px;height:28px;margin-bottom:4px;padding:0 8px;border-radius:6px;background:var(--s2);border:1px solid var(--line);color:var(--subtle)}
+.srch input{flex:1;min-width:0;border:0;background:transparent;color:var(--fg);font:inherit;font-size:12px;outline:none}
+.opt{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border-radius:6px;color:var(--fg2)}
+.opt.hv{background:var(--hover);color:var(--fg)}
+.gl{padding:6px 8px 4px;font-size:11px;font-weight:500;color:var(--muted)}
+.cb{width:14px;height:14px;box-sizing:border-box;border-radius:3px;border:1.5px solid var(--strong);flex:none;display:flex;align-items:center;justify-content:center}
+.cb.on{background:var(--fg);border-color:var(--fg);color:var(--s3)}
+.sep{height:1px;margin:6px 0;background:var(--line)}
+.stat{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 1024px; height: 824px; box-sizing: border-box; padding: 8px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; background: var(--ground); color: var(--fg); font-size: 13px; line-height: 18px;">
+
+  <section class="scene" aria-label="New session with the branch picker open">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <h2 style="flex: 1; min-width: 0; margin: 0; white-space: nowrap; font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: -0.02em;">New session</h2>
+      <button class="chip"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>agent-desktop<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+      <div style="position: relative; flex: none;">
+        <button class="chip" aria-expanded="true" style="background: var(--hover); color: var(--fg);"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><path d="M6 8.5v7M18 10.5c0 4-6 3-11 6"></path></svg><span class="mono" style="font-size: 11px;">main</span><span style="color: var(--muted);">· new worktree</span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+        <section class="pop" aria-label="Branch" style="top: 32px; right: 0; width: 360px;">
+          <label class="srch"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px;"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><input placeholder="Search branches" aria-label="Search branches"></label>
+          <div class="gl">Local branches</div>
+          <ul role="listbox" aria-label="Branches" style="list-style: none; margin: 0; padding: 0;">
+            <li class="opt hv" role="option" aria-selected="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg><span class="mono" style="flex: 1; font-size: 12px;">main</span><span style="font-size: 11px; color: var(--muted);">checked out</span></li>
+            <li class="opt" role="option" aria-selected="false"><span style="width: 14px; flex: none;"></span><span class="mono" style="flex: 1; min-width: 0; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">fix/transcript-save-interval</span></li>
+            <li class="opt" role="option" aria-selected="false"><span style="width: 14px; flex: none;"></span><span class="mono" style="flex: 1; min-width: 0; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">feat/diff-comments</span></li>
+            <li class="opt" role="option" aria-selected="false"><span style="width: 14px; flex: none;"></span><span class="mono" style="flex: 1; min-width: 0; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">chore/changelog-0.8.0-date</span></li>
+          </ul>
+          <div class="sep"></div>
+          <div style="display: flex; align-items: flex-start; gap: 10px; padding: 6px 8px;">
+            <button role="switch" aria-checked="true" aria-label="New worktree" style="position: relative; width: 28px; height: 16px; flex: none; margin-top: 1px; padding: 0; border: 0; border-radius: 9999px; background: var(--fg);"><span style="position: absolute; right: 2px; top: 2px; width: 12px; height: 12px; border-radius: 9999px; background: var(--s3);"></span></button>
+            <span style="display: flex; flex-direction: column;"><span style="color: var(--fg);">New worktree</span><span style="font-size: 11px; color: var(--subtle);">Works on its own copy from main. Your checkout stays as it is.</span></span>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <section aria-label="Agents" style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="color: var(--fg2); font-size: 12px; font-weight: 500;">Agents</span>
+        <span style="flex: 1; min-width: 0; color: var(--subtle); font-size: 11px;">Tick two or more to compare them.</span>
+        <button style="height: 24px; display: flex; align-items: center; gap: 4px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 12px;">All agents<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px;"><path d="m6 9 6 6 6-6"></path></svg></button>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 8px;">
+        <button class="pick on" aria-pressed="true"><span class="tile" aria-hidden="true">C</span><span style="flex: 1; min-width: 0; display: flex; flex-direction: column;"><span style="font-weight: 500;">Claude Code</span><span style="display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; line-height: 16px;"><span class="dot" style="background: var(--run);"></span>Ready</span></span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg></button>
+        <button class="pick on" aria-pressed="true"><span class="tile" aria-hidden="true">X</span><span style="flex: 1; min-width: 0; display: flex; flex-direction: column;"><span style="font-weight: 500;">Codex</span><span style="display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; line-height: 16px;"><span class="dot" style="background: var(--run);"></span>Ready</span></span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg></button>
+        <button class="pick" aria-label="Qwen Code, sign in first"><span class="tile" aria-hidden="true">Q</span><span style="flex: 1; min-width: 0; display: flex; flex-direction: column;"><span>Qwen Code</span><span style="display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; line-height: 16px;"><span class="dot" style="background: var(--att);"></span>Sign in</span></span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--muted);"><path d="m9 6 6 6-6 6"></path></svg></button>
+        <button class="pick" aria-pressed="false"><span class="tile" aria-hidden="true">G</span><span style="flex: 1; min-width: 0; display: flex; flex-direction: column;"><span>Gemini CLI</span><span style="color: var(--subtle); font-size: 11px; line-height: 16px;">Not checked</span></span></button>
+      </div>
+    </section>
+
+    <div style="display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 12px; background: var(--s2); border: 1px solid var(--line); box-shadow: var(--pop);">
+      <label style="display: block;"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">What should the agents do?</span><textarea rows="2" style="width: 100%; box-sizing: border-box; resize: none; border: 0; background: transparent; color: var(--fg); font: inherit; font-size: 14px; line-height: 22px; outline: none; padding: 0 4px;">Group the sidebar by folder and show each session's status in words.</textarea></label>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <button class="ib" aria-label="Attach files"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"></path></svg></button>
+        <button class="chip" aria-label="Claude Code model: Opus"><span class="tile sm" aria-hidden="true">C</span>Opus<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+        <button class="chip" aria-label="Codex model: gpt-5-codex"><span class="tile sm" aria-hidden="true">X</span>gpt-5-codex<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+        <span style="flex: 1;"></span>
+        <button style="height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--primary); color: var(--onp); font-size: 12px; font-weight: 500;">Start 2 sessions<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px;"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+      </div>
+    </div>
+  </section>
+
+  <section class="scene" aria-label="New session with the agent picker open">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <h2 style="flex: 1; min-width: 0; margin: 0; white-space: nowrap; font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: -0.02em;">New session</h2>
+      <button class="chip"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>agent-desktop<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+      <button class="chip"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><path d="M6 8.5v7M18 10.5c0 4-6 3-11 6"></path></svg><span class="mono" style="font-size: 11px;">main</span><span style="color: var(--muted);">· new worktree</span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+    </div>
+
+    <section aria-label="Agents" style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="color: var(--fg2); font-size: 12px; font-weight: 500;">Agents</span>
+        <span style="flex: 1; min-width: 0; color: var(--subtle); font-size: 11px;">Tick two or more to compare them.</span>
+        <div style="position: relative; flex: none;">
+          <button aria-expanded="true" style="height: 24px; display: flex; align-items: center; gap: 4px; padding: 0 6px; border: 0; border-radius: 6px; background: var(--hover); color: var(--fg); font-size: 12px;">All agents<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px;"><path d="m6 9 6 6 6-6"></path></svg></button>
+          <section class="pop" aria-label="All agents" style="top: 30px; right: 0; width: 380px;">
+            <div class="gl" style="display: flex;"><span style="flex: 1;">Agents</span><span style="font-weight: 400; color: var(--subtle);">Pick more than one to compare</span></div>
+            <ul role="listbox" aria-multiselectable="true" aria-label="Agents" style="list-style: none; margin: 0; padding: 0;">
+              <li class="opt hv" role="option" aria-selected="true"><span class="cb on"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 10px; height: 10px; stroke-width: 3;"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="tile sm" aria-hidden="true">C</span><span style="flex: 1;">Claude Code</span><span class="stat"><span class="dot" style="background: var(--run);"></span>Ready</span></li>
+              <li class="opt" role="option" aria-selected="true"><span class="cb on"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 10px; height: 10px; stroke-width: 3;"><path d="M20 6 9 17l-5-5"></path></svg></span><span class="tile sm" aria-hidden="true">X</span><span style="flex: 1;">Codex</span><span class="stat"><span class="dot" style="background: var(--run);"></span>Ready</span></li>
+              <li class="opt" role="option" aria-selected="false"><span class="cb"></span><span class="tile sm" aria-hidden="true">G</span><span style="flex: 1;">Gemini CLI</span><span style="font-size: 11px; color: var(--subtle);">Not checked</span></li>
+              <li class="opt" role="option" aria-selected="false" aria-disabled="true" style="opacity: .55; cursor: not-allowed;"><span class="cb"></span><span class="tile sm" aria-hidden="true">Q</span><span style="flex: 1;">Qwen Code</span><span class="stat" style="color: var(--att);"><span class="dot" style="background: var(--att);"></span>Needs sign-in</span></li>
+              <li class="opt" role="option" aria-selected="false" aria-disabled="true" style="opacity: .55; cursor: not-allowed;"><span class="cb"></span><span class="tile sm" aria-hidden="true">P</span><span style="flex: 1;">Pi</span><span style="font-size: 11px; color: var(--subtle);">Not installed</span></li>
+            </ul>
+            <div class="sep"></div>
+            <p style="margin: 0; padding: 4px 8px 6px; font-size: 11px; color: var(--subtle);">With two or more agents, each runs in its own worktree in its safest mode.</p>
+          </section>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 8px;">
+        <button class="pick on" aria-pressed="true"><span class="tile" aria-hidden="true">C</span><span style="flex: 1; min-width: 0; display: flex; flex-direction: column;"><span style="font-weight: 500;">Claude Code</span><span style="display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; line-height: 16px;"><span class="dot" style="background: var(--run);"></span>Ready</span></span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg></button>
+        <button class="pick on" aria-pressed="true"><span class="tile" aria-hidden="true">X</span><span style="flex: 1; min-width: 0; display: flex; flex-direction: column;"><span style="font-weight: 500;">Codex</span><span style="display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; line-height: 16px;"><span class="dot" style="background: var(--run);"></span>Ready</span></span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg></button>
+        <button class="pick" aria-label="Qwen Code, sign in first"><span class="tile" aria-hidden="true">Q</span><span style="flex: 1; min-width: 0; display: flex; flex-direction: column;"><span>Qwen Code</span><span style="display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; line-height: 16px;"><span class="dot" style="background: var(--att);"></span>Sign in</span></span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--muted);"><path d="m9 6 6 6-6 6"></path></svg></button>
+        <button class="pick" aria-pressed="false"><span class="tile" aria-hidden="true">G</span><span style="flex: 1; min-width: 0; display: flex; flex-direction: column;"><span>Gemini CLI</span><span style="color: var(--subtle); font-size: 11px; line-height: 16px;">Not checked</span></span></button>
+      </div>
+    </section>
+
+    <div style="display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 12px; background: var(--s2); border: 1px solid var(--line); box-shadow: var(--pop);">
+      <label style="display: block;"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">What should the agents do?</span><textarea rows="2" style="width: 100%; box-sizing: border-box; resize: none; border: 0; background: transparent; color: var(--fg); font: inherit; font-size: 14px; line-height: 22px; outline: none; padding: 0 4px;">Group the sidebar by folder and show each session's status in words.</textarea></label>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <button class="ib" aria-label="Attach files"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"></path></svg></button>
+        <button class="chip" aria-label="Claude Code model: Opus"><span class="tile sm" aria-hidden="true">C</span>Opus<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+        <button class="chip" aria-label="Codex model: gpt-5-codex"><span class="tile sm" aria-hidden="true">X</span>gpt-5-codex<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; color: var(--muted);"><path d="m6 9 6 6 6-6"></path></svg></button>
+        <span style="flex: 1;"></span>
+        <button style="height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--primary); color: var(--onp); font-size: 12px; font-weight: 500;">Start 2 sessions<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px;"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":1024,"height":824}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const light = (this.props.theme ?? 'dark') === 'light';
+    return { themeClass: light ? 'z light' : 'z' };
+  }
+}
+</script>
+</body>
+</html>

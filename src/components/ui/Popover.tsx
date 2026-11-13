@@ -30,7 +30,7 @@ export interface PopoverProps {
 }
 
 /** The panel's look without its position, for a list that keeps focus in a text field (the `/` and `@` menus). */
-export const POPOVER_PANEL_STYLE = "rounded-lg border border-border bg-surface-3 p-1.5 shadow-popover";
+export const POPOVER_PANEL_STYLE = "rounded-panel border border-border bg-surface-3 p-1 shadow-popover";
 const PANEL = `absolute z-50 ${POPOVER_PANEL_STYLE}`;
 const SIDES = { bottom: "top-full mt-1", top: "bottom-full mb-1" } as const;
 const ALIGNS = { start: "left-0", end: "right-0" } as const;
@@ -169,10 +169,10 @@ export interface PopoverSearchProps {
   onKeyDown?: KeyboardEventHandler<HTMLInputElement>;
 }
 
-/** The 30px search field at the top of a long menu, with its icon, as the canvas draws the branch and model menus. */
+/** The 28px search field at the top of a long menu, with its icon, as the canvas draws the branch and model menus. */
 export function PopoverSearch({ value, onChange, placeholder, type = "text", autoFocus, inputRef, onKeyDown }: PopoverSearchProps) {
   return (
-    <label className="focus-ring-within mb-1 flex h-7.5 items-center gap-2 rounded border border-border bg-surface-2 px-2 text-fg-subtle">
+    <label className="focus-ring-within mb-1 flex h-7 items-center gap-2 rounded-md border border-border bg-surface-2 px-2 text-fg-subtle">
       <Search size={12} aria-hidden="true" className="shrink-0" />
       <input
         ref={inputRef}
@@ -228,7 +228,7 @@ export interface PopoverOptionProps {
 }
 
 const OPTION =
-  "focus-ring flex min-h-7.5 w-full gap-2 rounded px-2 text-left text-ui text-fg transition-colors enabled:hover:bg-surface-hover disabled:text-fg-subtle";
+  "focus-ring flex min-h-7.5 w-full gap-2 rounded-md px-2 text-left text-ui text-fg transition-colors enabled:hover:bg-surface-hover disabled:text-fg-subtle";
 // A row with a line under its label tops its check and grows; a one-line row is centred in 30px.
 const OPTION_TWO_LINES = "items-start py-1.75";
 const OPTION_ONE_LINE = "items-center py-1.5";

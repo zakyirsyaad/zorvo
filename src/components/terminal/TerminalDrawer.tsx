@@ -117,7 +117,7 @@ export function TerminalDrawer({
   // states are not a terminal: they keep the theme's surface, so their text and button read in light mode.
   const hasTabs = tabs.length > 0;
   return (
-    <section aria-label="Terminal" className={`flex min-h-0 flex-1 flex-col ${hasTabs ? "bg-terminal-bg" : "bg-surface-1"}`}>
+    <section aria-label="Terminal" className={`flex min-h-0 flex-1 flex-col${hasTabs ? " bg-terminal-bg" : ""}`}>
       {(hasTabs || onHide) && (
         // The theme's focus ring turns dark in light mode, which would vanish on this strip: it takes the terminal's fixed grey.
         <div className="flex h-9 shrink-0 items-center gap-1 border-b border-terminal-surface bg-terminal-bg pr-2 pl-3 [--color-focus-ring:var(--color-terminal-fg-muted)]">
@@ -167,7 +167,7 @@ export function TerminalDrawer({
               label={`${labelOf(activeTab)} · ${folderName}`}
             />
             {activeTab.status === "exited" && (
-              <div className="flex items-center gap-3 border-t border-border bg-surface-1 px-3 py-2 text-ui-sm text-fg-muted">
+              <div className="flex items-center gap-3 border-t border-border px-3 py-2 text-ui-sm text-fg-muted">
                 <span>The shell exited.</span>
                 <Button onClick={startShell}>Start a new shell</Button>
               </div>

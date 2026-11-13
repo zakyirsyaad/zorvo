@@ -53,10 +53,10 @@ describe("messages, as drawn", () => {
     expect(header).toHaveClass("gap-2", "mb-2.5");
   });
 
-  it("fills an ended reply with surface-1 on hover, with its actions as 24px secondary icons", () => {
+  it("fills an ended reply with surface-2 on hover, with its actions as 24px secondary icons", () => {
     const row = renderRow(reply);
     const body = row.querySelector("[data-message-body]") as HTMLElement;
-    expect(body).toHaveClass("group-hover:bg-surface-1", "p-3", "-mx-3", "rounded-[10px]");
+    expect(body).toHaveClass("group-hover:bg-surface-2", "p-3", "-mx-3", "rounded-[10px]");
     const actions = within(row).getAllByRole("button").map((button) => button.getAttribute("aria-label"));
     expect(actions).toEqual(["Copy message", "Fork from here"]);
     for (const button of within(row).getAllByRole("button")) {
@@ -76,7 +76,7 @@ describe("messages, as drawn", () => {
       options: [{ optionId: "allow", name: "Allow once", kind: "allow_once" }],
     };
     const row = renderRow({ ...reply, isComplete: false, actionCard: card }, { showActions: false });
-    expect(row.querySelector(".group-hover\\:bg-surface-1")).toBeNull();
+    expect(row.querySelector(".group-hover\\:bg-surface-2")).toBeNull();
     expect(screen.getByTestId("action-card-c-1").className).not.toContain("bg-surface-1");
   });
 });

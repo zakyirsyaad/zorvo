@@ -1,0 +1,26 @@
+<!-- @dsCard group="Status" height=96 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>AgentTile — preview</title>
+<style>
+.z-tile { position: relative; display: inline-flex; flex: none; align-items: center; justify-content: center; background: var(--chip); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg-muted); font: 500 10px/1 var(--font-sans); }
+.z-tile--16 { width: 16px; height: 16px; border-radius: var(--radius-sm); }
+.z-tile--22 { width: 22px; height: 22px; border-radius: var(--radius-md); font-size: 11px; }
+.z-tile--28 { width: 28px; height: 28px; border-radius: var(--radius-lg); font-size: 13px; }
+.z-tile__badge { position: absolute; right: -3px; bottom: -3px; width: 8px; height: 8px; border-radius: var(--radius-full); box-shadow: 0 0 0 2px var(--ground); }
+.z-tile__badge--attention { background: var(--status-attention); }
+.z-tile__badge--running { background: var(--status-running); }
+.z-tile__badge--unread { background: var(--status-unread); }
+</style>
+</head>
+<body>
+<div class="z-stage" style="gap:var(--space-4); background: var(--ground)">
+  <span class="z-tile z-tile--16">C</span>
+  <span class="z-tile z-tile--22">C</span>
+  <span class="z-tile z-tile--28">C</span>
+  <span class="z-row__meta"><span class="z-tile z-tile--22">X<span class="z-tile__badge z-tile__badge--attention"></span></span>Needs your input</span>
+  <span class="z-row__meta"><span class="z-tile z-tile--22">Q<span class="z-tile__badge z-tile__badge--running"></span></span>Working</span>
+  <span class="z-row__meta"><span class="z-tile z-tile--22">G<span class="z-tile__badge z-tile__badge--unread"></span></span>Finished</span>
+</div>
+</body>
+</html>

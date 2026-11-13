@@ -129,13 +129,15 @@ describe("TerminalDrawer", () => {
 
     expect(screen.getByRole("region", { name: "Terminal" })).toHaveClass("bg-terminal-bg");
     expect(screen.getByRole("tablist").parentElement).toHaveClass("bg-terminal-bg");
-    expect(screen.getByText("The shell exited.").parentElement).toHaveClass("bg-surface-1");
+    expect(screen.getByText("The shell exited.").parentElement).not.toHaveClass("bg-surface-1");
   });
 
-  it("an empty drawer keeps the theme's surface", () => {
+  it("an empty drawer paints nothing, so the sheet shows", () => {
     render(<TerminalDrawer {...baseProps} terminals={fakeTerminals([])} />);
 
-    expect(screen.getByRole("region", { name: "Terminal" })).toHaveClass("bg-surface-1");
+    const drawer = screen.getByRole("region", { name: "Terminal" });
+    expect(drawer).not.toHaveClass("bg-surface-1");
+    expect(drawer).not.toHaveClass("bg-terminal-bg");
   });
 
   it("puts the terminal straight into the panel's flex column, so its height comes from the drawer and not from its output", () => {

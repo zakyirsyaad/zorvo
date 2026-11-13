@@ -53,7 +53,7 @@ The logo is the **double prompt** symbol beside the `zorvo` wordmark. Two `>` pr
 
 Monochrome on the zinc scale, in a dark and a light theme. The app follows the Mac's appearance, or the Appearance setting (System, Light, Dark) in Settings. The terminal stays dark in both themes.
 
-- Paint the canvas `bg`; chrome (sidebar, top bar) `surface-1`; the composer, cards and inputs `surface-2`; menus and popovers `surface-3`. Step up one surface per layer, never skip back down.
+- Paint the window `ground`; the sidebar sits on it. Raise the chat and the inspector as `sheet` panels with a `border` edge and `radius-panel`. On a sheet: the composer, cards and inputs `surface-2`; wells (code, fields inside a card) `ground`; menus and popovers `surface-3`; chips, tiles and segmented tracks `chip`. `bg` and `surface-1` remain only where a page has not moved yet.
 - Set headings and the active item in `fg`, message text and button labels in `fg-secondary`, icons and secondary labels in `fg-muted`, hints, timestamps and paths in `fg-subtle`. Don't put `fg-subtle` on `surface-hover`.
 - Draw hairlines with `border`. Use `border-strong` only where an edge must be seen: inputs, the outline button.
 - Give a view **one** primary action, filled `primary` with `on-primary` text. Everything else is outline or ghost.
@@ -76,7 +76,7 @@ Monochrome on the zinc scale, in a dark and a light theme. The app follows the M
 ## Space, shape and elevation
 
 - Space with the `space-*` steps; the app is dense, so `space-1.5` and `space-2` do most of the work. Give cards `space-4` and dialogs `space-5`.
-- Round by size: `radius-sm` for menu items and inline chips, `radius-md` for icon buttons and rows, `radius-lg` for buttons and menus, `radius-xl` for the composer, cards and dialogs. `radius-full` is for status dots only.
+- Round by size: `radius-sm` for menu items and inline chips, `radius-md` for icon buttons and rows, `radius-lg` for buttons and dropdown triggers, `radius-panel` (10px) for sheets, menus, popovers and toasts, `radius-xl` for the composer, cards and dialogs. `radius-full` is for status dots only.
 - Float menus and the composer with `shadow-popover`, dialogs with `shadow-dialog` over `overlay`. Nothing else casts a shadow.
 - Controls are `size-control` (28px) square or tall; icons are `size-icon` (14px).
 

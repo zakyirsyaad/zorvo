@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- The window has a layered look: the chat and the inspector are raised panels on the window's background.
+
 ## [0.10.1] - 2026-11-12
 
 ### Fixed

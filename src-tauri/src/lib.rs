@@ -9,6 +9,7 @@ pub mod changes;
 pub mod data_migration;
 pub mod diff_stats;
 pub mod env_resolver;
+pub mod file_preview;
 pub mod files;
 pub mod fork_handoff;
 pub mod git_info;
@@ -420,6 +421,7 @@ pub fn run() {
             files::list_directory,
             files::open_path,
             files::read_workspace_file,
+            file_preview::read_workspace_preview,
             files::remember_workspace,
             attachments::attachment_preview,
             workspace_files::workspace_files,

@@ -428,6 +428,109 @@ describe("useDelegation giveTask", () => {
   });
 });
 
+describe("useDelegation giveTask under pressure", () => {
+  it("starts one delegate when two tasks for the same agent arrive in the same tick", async () => {
+    const env = setup({ sessions: [sourceSession()], transcripts: { "s-a": A_MESSAGES } });
+
+    let results: unknown[] = [];
+    await act(async () => {
+      results = await Promise.all([
+        env.result.current.delegation.giveTask("s-a", "codex-acp", "Fix the parser", { byAgent: true }),
+        env.result.current.delegation.giveTask("s-a", "codex-acp", "Fix the lexer", { byAgent: true }),
+      ]);
+    });
+
+    expect(env.starts).toHaveLength(1);
+    expect(results[0]).toMatchObject({ ok: true, kind: "started" });
+    expect(results[1]).toEqual({ ok: false, reason: "Codex is still working on the previous task." });
+  });
+
+  it("still starts a delegate for another agent in the same tick", async () => {
+    const env = setup({ sessions: [sourceSession()], transcripts: { "s-a": A_MESSAGES } });
+
+    await act(async () => {
+      await Promise.all([
+        env.result.current.delegation.giveTask("s-a", "codex-acp", "Fix the parser", { byAgent: true }),
+        env.result.current.delegation.giveTask("s-a", "claude-acp", "Check the docs", { byAgent: true }),
+      ]);
+    });
+
+    expect(env.starts.map((start) => start.spec.agent.id)).toEqual(["codex-acp", "claude-acp"]);
+  });
+
+  it("lets the agent be asked again when the start failed", async () => {
+    vi.spyOn(internals(), "invoke").mockImplementationOnce(() => Promise.reject(new Error("disk full at /secret/path")));
+    const env = setup({ sessions: [sourceSession()], transcripts: { "s-a": A_MESSAGES } });
+
+    let first: unknown;
+    let second: unknown;
+    await act(async () => {
+      first = await env.result.current.delegation.giveTask("s-a", "codex-acp", "Fix the parser", { byAgent: true });
+    });
+    await act(async () => {
+      second = await env.result.current.delegation.giveTask("s-a", "codex-acp", "Fix the parser", { byAgent: true });
+    });
+
+    // The cause stays with Zorvo: it could hold a path, and the caller may be an agent.
+    expect(first).toMatchObject({ ok: false, reason: "The task could not be handed over.", isInternal: true });
+    expect(second).toMatchObject({ ok: true, kind: "started" });
+  });
+
+  it("refuses a further task while the delegate's last report has not reached the source", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+      busy: ["s-a"],
+      cannotPrompt: ["s-a"],
+    });
+    await act(async () => {
+      env.result.current.delegation.onTurnEnded("s-b", "finished");
+    });
+    await act(async () => {});
+
+    let result: unknown;
+    await act(async () => {
+      result = await env.result.current.delegation.giveTask("s-a", "codex-acp", "Now add tests", { byAgent: true });
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "Codex's last answer has not reached this session yet. Give it the next task after its report arrives.",
+    });
+    // Nothing was sent to the delegate, so its answer is still the last message when the report goes out.
+    expect(env.sends).toHaveLength(0);
+
+    await act(async () => {
+      env.busy.delete("s-a");
+      env.cannotPrompt.delete("s-a");
+      env.result.current.setTranscripts((prev) => ({ ...prev, "s-a": [...(prev["s-a"] ?? [])] }));
+    });
+    await waitFor(() => expect(env.sends).toHaveLength(1));
+    expect(env.sends[0].text).toContain("> Done. Tests pass.");
+  });
+
+  it("ends the link of a delegate whose session has ended and starts a new one", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession({ status: "terminated" })],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+    });
+
+    let result: unknown;
+    await act(async () => {
+      result = await env.result.current.delegation.giveTask("s-a", "codex-acp", "Now add tests", { byAgent: true });
+    });
+
+    expect(result).toMatchObject({ ok: true, kind: "started" });
+    expect(env.sends).toHaveLength(0);
+    expect(env.patches[0]).toEqual({
+      sessionId: "s-b",
+      patch: { delegatedFrom: expect.objectContaining({ endedAt: expect.any(Number) }) },
+    });
+    expect(env.starts).toHaveLength(1);
+    expect(env.starts[0].spec.delegatedFrom).toMatchObject({ sessionId: "s-a", task: "Now add tests" });
+  });
+});
+
 describe("useDelegation reports", () => {
   it("sends one marked report when B's turn finishes", async () => {
     const answer = agentMessage({

@@ -79,7 +79,15 @@ export interface DelegationView {
 /** What giving a task led to: a new delegate, a further task for the one that agent has, or a refusal. */
 export type GiveTaskResult =
   | { ok: true; kind: 'started' | 'sent'; sessionId: string; sessionName: string }
-  | { ok: false; reason: string };
+  | {
+      ok: false;
+      /** What the caller is told; never an error's own text. */
+      reason: string;
+      /** Zorvo failed, not a rule: an agent is told only that it did not work. */
+      isInternal?: true;
+      /** The error itself, for the user's notice. It may hold a path, so it never goes to an agent. */
+      detail?: string;
+    };
 
 export interface GiveTaskOptions {
   attachments?: readonly string[];
@@ -163,6 +171,10 @@ export function useDelegation(deps: DelegationDeps): {
   const delivering = useRef(new Set<string>());
   // What each delegate's last turn led to: a report, or a failed turn. Memory only.
   const outcomes = useRef(new Map<string, DelegationOutcome>());
+  // The delegates being started, by source and agent, with the new session's id once it is known.
+  // A session is in `sessions` only after React commits, so a second task for the same agent in
+  // the same tick would otherwise start a second delegate.
+  const starting = useRef(new Map<string, string | null>());
   // When the hand-over began, for B's line while the report is still on its way.
   const handoverSince = useRef(new Map<string, number>());
   // Bumped when a turn ends or a hand-over settles, so the drain runs and the lines read again.
@@ -396,7 +408,7 @@ export function useDelegation(deps: DelegationDeps): {
       }
       return { ok: true, kind: 'started', sessionId: id, sessionName: name };
     } catch (error) {
-      return { ok: false, reason: String(error) };
+      return { ok: false, reason: 'The task could not be handed over.', isInternal: true, detail: String(error) };
     }
   };
 
@@ -436,6 +448,10 @@ export function useDelegation(deps: DelegationDeps): {
     const agent = current.agents.find((candidate) => candidate.id === agentId);
     if (source === undefined) return { ok: false, reason: 'this session no longer exists.' };
     if (agent === undefined) return { ok: false, reason: 'the agent is not available.' };
+    const startKey = `${sourceId}\n${agentId}`;
+    if (starting.current.has(startKey)) {
+      return { ok: false, reason: `${agent.name} is still working on the previous task.` };
+    }
 
     const route = taskRoute({
       source,
@@ -448,9 +464,31 @@ export function useDelegation(deps: DelegationDeps): {
       agentNameOf: (profileId) => agentNameIn(current.agents, profileId),
     });
     if (route.kind === 'blocked') return { ok: false, reason: route.reason };
-    return route.kind === 'follow-up'
-      ? sendFurtherTask(source, route.delegate, task, options)
-      : startDelegate(source, agent, task, options);
+
+    if (route.kind === 'follow-up') {
+      const { delegate } = route;
+      // Its agent is gone (the app restarted, the session ended): a task sent there reaches
+      // nobody. The old link ends and the task starts a new delegate.
+      if (delegate.status !== 'terminated') {
+        if (isHandingOver(delegate.id)) {
+          // A task sent now would become the delegate's last message, and the answer that
+          // still waits to be reported would be lost.
+          return {
+            ok: false,
+            reason: `${agent.name}'s last answer has not reached this session yet. Give it the next task after its report arrives.`,
+          };
+        }
+        return sendFurtherTask(source, delegate, task, options);
+      }
+      end(delegate.id);
+    }
+
+    // Held from here, before anything awaits, until the new session is listed.
+    starting.current.set(startKey, null);
+    const started = await startDelegate(source, agent, task, options);
+    if (started.ok) starting.current.set(startKey, started.sessionId);
+    else starting.current.delete(startKey);
+    return started;
   };
 
   /** The dialog's and the mention's way in: a refusal is a notice. */
@@ -462,9 +500,17 @@ export function useDelegation(deps: DelegationDeps): {
   ): Promise<boolean> => {
     const result = await giveTask(sourceId, agentId, task, options);
     if (result.ok) return true;
-    latest.current.onNotice(result.reason === '' ? 'Could not delegate.' : `Could not delegate: ${result.reason}`);
+    const why = result.detail ?? result.reason;
+    latest.current.onNotice(why === '' ? 'Could not delegate.' : `Could not delegate: ${why}`);
     return false;
   };
+
+  // A delegate that is listed no longer needs its start held: the rules see the session itself.
+  useEffect(() => {
+    for (const [key, sessionId] of [...starting.current]) {
+      if (sessionId !== null && sessions.some((session) => session.id === sessionId)) starting.current.delete(key);
+    }
+  }, [sessions]);
 
   useEffect(() => {
     const deliver = async (delegateId: string): Promise<void> => {

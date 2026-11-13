@@ -263,6 +263,22 @@ describe("useAgentTools", () => {
     expect(t.answers()[0]).toEqual({ callId: "1", ok: false, text: "Qwen Code is still working on the previous task." });
   });
 
+  it("does not pass Zorvo's own failure on to the agent", async () => {
+    const t = setup({
+      giveResult: () => ({
+        ok: false,
+        reason: "The task could not be handed over.",
+        isInternal: true,
+        detail: "Error: disk full at /Users/someone/secret",
+      }),
+    });
+    await t.call("1", "delegate", REVIEW);
+    await t.choose(ALLOW_SESSION);
+
+    await waitFor(() => expect(t.answers()).toHaveLength(1));
+    expect(t.answers()[0]).toEqual({ callId: "1", ok: false, text: "Zorvo could not do that." });
+  });
+
   it("tells a compare-run session, a delegated session and an unknown one that they cannot use the tools", async () => {
     const compared: Session = { ...SESSION, id: "s-c", compareRunId: "run-1" };
     const delegated: Session = { ...SESSION, id: "s-d", delegatedFrom: { sessionId: "s-1", task: "t", startedAt: 1 } };

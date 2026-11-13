@@ -92,7 +92,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
           const text = delegateResultText({ kind: result.kind, sessionName: result.sessionName, agentName: call.targetName });
           respond(call.callId, true, text);
         } else {
-          respond(call.callId, false, result.reason === '' ? FAILED : result.reason);
+          // A failure inside Zorvo is not explained to an agent: its cause could hold a path.
+          respond(call.callId, false, result.isInternal === true || result.reason === '' ? FAILED : result.reason);
         }
       } catch {
         respond(call.callId, false, FAILED);

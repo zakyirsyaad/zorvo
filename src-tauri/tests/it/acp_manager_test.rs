@@ -17,7 +17,9 @@ use crate::common::{agent_text, cwd, fake_agent, manager, wait_for, WAIT};
 fn starts_a_session_and_reports_its_modes() {
     let (manager, _rx) = manager();
 
-    let started = manager.start("s-1", &cwd(), &fake_agent()).expect("start");
+    let started = manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .expect("start");
 
     assert_eq!(started.acp_session_id, "fake-1");
     assert_eq!(started.modes["currentModeId"], "default");
@@ -28,7 +30,9 @@ fn starts_a_session_and_reports_its_modes() {
 #[test]
 fn streams_agent_messages_and_ends_the_turn() {
     let (manager, rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
 
     manager.prompt("s-1", "hi", &[]).unwrap();
 
@@ -43,7 +47,9 @@ fn streams_agent_messages_and_ends_the_turn() {
 #[test]
 fn round_trips_a_permission_request() {
     let (manager, rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
     manager.prompt("s-1", "permission", &[]).unwrap();
 
     let request = wait_for(&rx, |e| matches!(e, AcpEvent::PermissionRequest { .. }));
@@ -81,7 +87,7 @@ fn ask_questions(
     let (manager, rx) = manager();
     let log = method_log(name);
     let launch = with_env(fake_agent(), "FAKE_ACP_QUESTION_LOG", log.to_str().unwrap());
-    manager.start("s-1", &cwd(), &launch).unwrap();
+    manager.start("s-1", &cwd(), &launch, json!([])).unwrap();
     manager.prompt("s-1", "user-question", &[]).unwrap();
     let request = wait_for(&rx, |e| matches!(e, AcpEvent::PermissionRequest { .. }));
     let AcpEvent::PermissionRequest {
@@ -177,7 +183,9 @@ fn bad_answers_are_refused_and_the_request_stays_open() {
 #[test]
 fn cancelling_a_turn_ends_it_as_cancelled() {
     let (manager, rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
     manager.prompt("s-1", "slow", &[]).unwrap();
 
     manager.cancel("s-1").unwrap();
@@ -192,9 +200,11 @@ fn cancelling_a_turn_ends_it_as_cancelled() {
 #[test]
 fn forks_into_a_new_app_session_on_the_same_agent() {
     let (manager, rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
 
-    let forked = manager.fork("s-1", "s-2", &cwd()).expect("fork");
+    let forked = manager.fork("s-1", "s-2", &cwd(), json!([])).expect("fork");
     assert_eq!(forked.acp_session_id, "fake-2");
 
     manager.prompt("s-2", "from the fork", &[]).unwrap();
@@ -210,9 +220,9 @@ fn refuses_to_fork_when_the_agent_cannot() {
     let launch = with_env(fake_agent(), "FAKE_ACP_NO_FORK", "1");
     let log = method_log("no-fork");
     let launch = with_env(launch, "FAKE_ACP_METHOD_LOG", log.to_str().unwrap());
-    manager.start("s-1", &cwd(), &launch).unwrap();
+    manager.start("s-1", &cwd(), &launch, json!([])).unwrap();
 
-    let error = manager.fork("s-1", "s-2", &cwd()).unwrap_err();
+    let error = manager.fork("s-1", "s-2", &cwd(), json!([])).unwrap_err();
 
     assert!(error.contains("cannot fork"), "unexpected error: {error}");
     assert!(!methods_in(&log).iter().any(|m| m == "session/fork"));
@@ -241,7 +251,9 @@ fn answers_agent_requests_sent_before_the_session_is_registered() {
         log.to_str().unwrap(),
     );
 
-    let started = manager.start("s-1", &cwd(), &launch).expect("start");
+    let started = manager
+        .start("s-1", &cwd(), &launch, json!([]))
+        .expect("start");
 
     assert_eq!(started.acp_session_id, "fake-1");
     let replies = early_replies(&log);
@@ -268,7 +280,14 @@ fn answers_agent_requests_sent_while_a_session_loads() {
     );
 
     manager
-        .reopen("s-1", &cwd(), &launch, "fake-old", ReopenPurpose::Continue)
+        .reopen(
+            "s-1",
+            &cwd(),
+            &launch,
+            "fake-old",
+            ReopenPurpose::Continue,
+            json!([]),
+        )
         .expect("load");
 
     let replies = early_replies(&log);
@@ -292,9 +311,9 @@ fn asks_the_user_about_a_permission_sent_right_after_a_session_opens() {
     let (manager, rx) = manager();
     let launch = with_env(fake_agent(), "FAKE_ACP_ASK_AFTER_OPEN", "1");
 
-    manager.start("s-1", &cwd(), &launch).unwrap();
+    manager.start("s-1", &cwd(), &launch, json!([])).unwrap();
     permission_for(&rx, "s-1");
-    manager.fork("s-1", "s-2", &cwd()).unwrap();
+    manager.fork("s-1", "s-2", &cwd(), json!([])).unwrap();
     permission_for(&rx, "s-2");
 
     manager.stop("s-1");
@@ -304,7 +323,9 @@ fn asks_the_user_about_a_permission_sent_right_after_a_session_opens() {
 #[test]
 fn cancels_a_permission_request_for_a_session_the_app_does_not_know() {
     let (manager, rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
 
     manager.prompt("s-1", "stray-permission", &[]).unwrap();
 
@@ -317,8 +338,12 @@ fn cancels_a_permission_request_for_a_session_the_app_does_not_know() {
 fn routes_each_agent_process_to_its_own_session_when_their_ids_match() {
     let (manager, rx) = manager();
     // Each start is its own agent process, and both call their session `fake-1`.
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
-    manager.start("s-2", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
+    manager
+        .start("s-2", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
 
     manager.prompt("s-1", "permission", &[]).unwrap();
     let AcpEvent::PermissionRequest { request_id, .. } = permission_for(&rx, "s-1") else {
@@ -340,7 +365,9 @@ fn routes_each_agent_process_to_its_own_session_when_their_ids_match() {
 #[test]
 fn reports_an_agent_that_exits_mid_turn() {
     let (manager, rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
 
     manager.prompt("s-1", "crash", &[]).unwrap();
 
@@ -359,7 +386,9 @@ fn reports_an_agent_that_exits_mid_turn() {
 #[test]
 fn sets_the_session_mode() {
     let (manager, rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
 
     manager.set_mode("s-1", "yolo").unwrap();
 
@@ -378,7 +407,9 @@ fn sets_the_session_mode() {
 fn reports_the_models_an_agent_offers_and_sets_the_session_model() {
     let (manager, rx) = manager();
     let launch = with_env(fake_agent(), "FAKE_ACP_MODELS", "1");
-    let started = manager.start("s-1", &cwd(), &launch).expect("start");
+    let started = manager
+        .start("s-1", &cwd(), &launch, json!([]))
+        .expect("start");
     assert_eq!(started.models["currentModelId"], "auto");
     assert_eq!(started.models["availableModels"][1]["modelId"], "flash");
 
@@ -394,7 +425,7 @@ fn reports_the_models_an_agent_offers_and_sets_the_session_model() {
 fn a_model_the_agent_refuses_is_an_error() {
     let (manager, _rx) = manager();
     let launch = with_env(fake_agent(), "FAKE_ACP_MODELS", "1");
-    manager.start("s-1", &cwd(), &launch).unwrap();
+    manager.start("s-1", &cwd(), &launch, json!([])).unwrap();
 
     let error = manager.set_model("s-1", "nope").unwrap_err();
 
@@ -418,20 +449,24 @@ fn probe_reports_the_models_an_agent_offers() {
 fn rejects_bad_starts_and_unknown_sessions() {
     let (manager, _rx) = manager();
 
-    assert!(manager.start("s-1", "relative/dir", &fake_agent()).is_err());
+    assert!(manager
+        .start("s-1", "relative/dir", &fake_agent(), json!([]))
+        .is_err());
     let missing = AcpLaunch {
         program: "/nonexistent/agent".into(),
         args: vec![],
         env: vec![],
     };
-    assert!(manager.start("s-2", &cwd(), &missing).is_err());
+    assert!(manager.start("s-2", &cwd(), &missing, json!([])).is_err());
     assert!(manager.prompt("nope", "hi", &[]).is_err());
 }
 
 #[test]
 fn stopping_a_session_forgets_it() {
     let (manager, _rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
 
     manager.stop("s-1");
 
@@ -450,6 +485,7 @@ fn loads_an_earlier_session_without_replaying_its_history_to_the_app() {
             &fake_agent(),
             "fake-earlier",
             ReopenPurpose::Continue,
+            json!([]),
         )
         .expect("load");
 
@@ -480,6 +516,7 @@ fn refuses_to_load_when_the_agent_cannot_resume_sessions() {
             &launch,
             "fake-earlier",
             ReopenPurpose::Continue,
+            json!([]),
         )
         .unwrap_err();
 
@@ -494,7 +531,9 @@ fn reports_that_the_agent_needs_a_sign_in_with_its_methods() {
         .env
         .push(("FAKE_ACP_AUTH_REQUIRED".to_string(), "1".to_string()));
 
-    let error = manager.start("s-1", &cwd(), &launch).unwrap_err();
+    let error = manager
+        .start("s-1", &cwd(), &launch, json!([]))
+        .unwrap_err();
 
     let methods = error
         .strip_prefix(zorvo_lib::acp::manager::AUTH_REQUIRED_PREFIX)
@@ -520,7 +559,9 @@ fn signs_in_with_one_of_the_agent_methods() {
 #[test]
 fn refuses_a_prompt_whose_attachment_is_missing_before_sending_it() {
     let (manager, _rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
 
     let error = manager
         .prompt("s-1", "look", &["/definitely/not/here.png".to_string()])
@@ -541,7 +582,9 @@ fn keeps_the_sign_in_methods_parseable_when_the_agent_logs_to_stderr() {
         .env
         .push(("FAKE_ACP_STDERR".to_string(), "1".to_string()));
 
-    let error = manager.start("s-1", &cwd(), &launch).unwrap_err();
+    let error = manager
+        .start("s-1", &cwd(), &launch, json!([]))
+        .unwrap_err();
 
     let methods = error
         .strip_prefix(zorvo_lib::acp::manager::AUTH_REQUIRED_PREFIX)
@@ -560,7 +603,9 @@ fn reports_a_generic_server_error_as_is_rather_than_as_a_sign_in() {
         .env
         .push(("FAKE_ACP_NO_AUTH_METHODS".to_string(), "1".to_string()));
 
-    let error = manager.start("s-1", &cwd(), &launch).unwrap_err();
+    let error = manager
+        .start("s-1", &cwd(), &launch, json!([]))
+        .unwrap_err();
 
     assert!(!error.starts_with(zorvo_lib::acp::manager::AUTH_REQUIRED_PREFIX));
     assert!(error.contains("disk full"), "unexpected error: {error}");
@@ -577,7 +622,9 @@ fn treats_a_32000_refusal_to_open_a_session_as_a_sign_in_when_the_agent_offers_m
         .env
         .push(("FAKE_ACP_SERVER_ERROR".to_string(), "1".to_string()));
 
-    let error = manager.start("s-1", &cwd(), &launch).unwrap_err();
+    let error = manager
+        .start("s-1", &cwd(), &launch, json!([]))
+        .unwrap_err();
 
     assert!(
         error.starts_with(zorvo_lib::acp::manager::AUTH_REQUIRED_PREFIX),
@@ -603,7 +650,9 @@ fn recognizes_a_sign_in_request_however_the_agent_phrases_it() {
             .env
             .push(("FAKE_ACP_AUTH_MESSAGE".to_string(), message.to_string()));
 
-        let error = manager.start("s-1", &cwd(), &launch).unwrap_err();
+        let error = manager
+            .start("s-1", &cwd(), &launch, json!([]))
+            .unwrap_err();
 
         assert!(
             error.starts_with(zorvo_lib::acp::manager::AUTH_REQUIRED_PREFIX),
@@ -619,10 +668,14 @@ fn recognizes_a_sign_in_request_however_the_agent_phrases_it() {
 #[test]
 fn ending_a_detached_session_spares_one_reopened_under_its_id() {
     let (manager, rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
 
     let orphan = manager.detach("s-1");
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
     orphan.end();
 
     manager.prompt("s-1", "hi", &[]).unwrap();
@@ -634,8 +687,12 @@ fn ending_a_detached_session_spares_one_reopened_under_its_id() {
 #[test]
 fn stop_all_ends_every_session_a_previous_ui_left_running() {
     let (manager, _rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
-    manager.start("s-2", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
+    manager
+        .start("s-2", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
 
     assert_eq!(manager.stop_all(), 2);
 
@@ -657,7 +714,9 @@ fn reports_an_agent_error_without_its_stderr_noise() {
         .env
         .push(("FAKE_ACP_STDERR".to_string(), "1".to_string()));
 
-    let error = manager.start("s-1", &cwd(), &launch).unwrap_err();
+    let error = manager
+        .start("s-1", &cwd(), &launch, json!([]))
+        .unwrap_err();
 
     assert!(error.contains("disk full"), "unexpected error: {error}");
     assert!(!error.contains("warming up"), "stderr leaked into: {error}");
@@ -680,7 +739,9 @@ fn offers_terminal_sign_in_because_zorvo_advertises_it() {
     let (manager, _rx) = manager();
     let launch = with_env(fake_agent(), "FAKE_ACP_AUTH_REQUIRED", "1");
 
-    let err = manager.start("s-1", &cwd(), &launch).unwrap_err();
+    let err = manager
+        .start("s-1", &cwd(), &launch, json!([]))
+        .unwrap_err();
 
     let methods = auth_methods_in(&err);
     let terminal = methods
@@ -696,7 +757,9 @@ fn offers_terminal_sign_in_because_zorvo_advertises_it() {
 #[test]
 fn reports_a_sign_in_when_the_agent_refuses_a_prompt_for_it() {
     let (manager, rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
 
     manager.prompt("s-1", "needs-login", &[]).unwrap();
 
@@ -715,7 +778,7 @@ fn reports_a_sign_in_when_the_agent_refuses_a_prompt_for_it() {
 /// The error a started session's prompt ends its turn with, for an agent run as `launch`.
 fn prompt_failure(launch: &AcpLaunch) -> String {
     let (manager, rx) = manager();
-    manager.start("s-1", &cwd(), launch).unwrap();
+    manager.start("s-1", &cwd(), launch, json!([])).unwrap();
 
     manager.prompt("s-1", "hi", &[]).unwrap();
 
@@ -1121,14 +1184,18 @@ fn is_running_under_sees_a_session_started_from_that_dir() {
     let sibling = std::path::PathBuf::from(format!("{}-2", dir.0.display()));
     assert!(!manager.is_running_under(&dir.0));
 
-    manager.start("s-1", &cwd(), &launch).expect("start");
+    manager
+        .start("s-1", &cwd(), &launch, json!([]))
+        .expect("start");
 
     assert!(manager.is_running_under(&dir.0));
     assert!(
         !manager.is_running_under(&sibling),
         "a dir whose name only starts the same is another dir"
     );
-    manager.start("s-2", &cwd(), &fake_agent()).expect("start");
+    manager
+        .start("s-2", &cwd(), &fake_agent(), json!([]))
+        .expect("start");
     manager.stop("s-1");
     assert!(
         !manager.is_running_under(&dir.0),
@@ -1152,7 +1219,9 @@ fn is_running_under_sees_a_session_whose_path_reaches_into_that_dir() {
         ..fake_agent()
     };
 
-    manager.start("s-1", &cwd(), &launch).expect("start");
+    manager
+        .start("s-1", &cwd(), &launch, json!([]))
+        .expect("start");
 
     assert!(manager.is_running_under(&dir.0));
     assert!(
@@ -1290,9 +1359,11 @@ fn cancelling_a_sign_in_ends_the_agent_it_is_reading_the_method_from() {
 fn lists_the_folder_of_every_open_session_until_it_stops() {
     let (manager, _rx) = manager();
     let other = std::env::temp_dir().canonicalize().unwrap();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
     manager
-        .fork("s-1", "s-2", &other.to_string_lossy())
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
+    manager
+        .fork("s-1", "s-2", &other.to_string_lossy(), json!([]))
         .expect("fork");
 
     let mut folders = manager.session_folders();
@@ -1312,7 +1383,9 @@ fn advertises_form_and_url_elicitation() {
     let log = method_log("init-capabilities");
     let launch = with_env(fake_agent(), "FAKE_ACP_INIT_LOG", log.to_str().unwrap());
 
-    manager.start("s-1", &cwd(), &launch).expect("start");
+    manager
+        .start("s-1", &cwd(), &launch, json!([]))
+        .expect("start");
 
     let capabilities: Value =
         serde_json::from_str(&std::fs::read_to_string(&log).expect("init log")).unwrap();
@@ -1338,7 +1411,9 @@ fn elicited(rx: &Receiver<AcpEvent>) -> String {
 #[test]
 fn routes_a_form_request_to_its_session() {
     let (manager, rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
 
     manager.prompt("s-1", "elicit-form", &[]).unwrap();
 
@@ -1360,7 +1435,9 @@ fn routes_a_form_request_to_its_session() {
 #[test]
 fn refuses_an_unknown_mode_with_invalid_params() {
     let (manager, rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
 
     manager.prompt("s-1", "elicit-voice", &[]).unwrap();
 
@@ -1387,7 +1464,7 @@ fn shows_a_request_sent_while_the_session_opens() {
 
     let starting = {
         let manager = Arc::clone(&manager);
-        std::thread::spawn(move || manager.start("s-1", &cwd(), &launch))
+        std::thread::spawn(move || manager.start("s-1", &cwd(), &launch, json!([])))
     };
 
     let event = wait_for(&rx, is_elicitation);
@@ -1418,7 +1495,9 @@ fn cancels_requests_from_unrouted_agents() {
 #[test]
 fn keeps_two_requests_apart() {
     let (manager, rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
 
     manager.prompt("s-1", "elicit-twice", &[]).unwrap();
 
@@ -1437,7 +1516,9 @@ fn keeps_two_requests_apart() {
 #[test]
 fn ignores_unknown_completions() {
     let (manager, rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
 
     manager.prompt("s-1", "elicit-complete", &[]).unwrap();
 
@@ -1533,7 +1614,9 @@ fn next_key(rx: &Receiver<AcpEvent>, app_id: &str) -> String {
 /// Starts `s-1`, sends `prompt` and returns the key of the request it shows.
 fn started_with(prompt: &str) -> (Arc<AcpManager>, Receiver<AcpEvent>, Opened, String) {
     let (manager, rx, opened) = recording_manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
     manager.prompt("s-1", prompt, &[]).unwrap();
     let key = next_key(&rx, "s-1");
     (manager, rx, opened, key)
@@ -1610,7 +1693,7 @@ fn declines_and_dismisses() {
     let (manager, rx, _opened) = recording_manager();
     let log = method_log("elicit-twice-replies");
     let launch = with_env(fake_agent(), "FAKE_ACP_ELICIT_LOG", log.to_str().unwrap());
-    manager.start("s-1", &cwd(), &launch).unwrap();
+    manager.start("s-1", &cwd(), &launch, json!([])).unwrap();
     manager.prompt("s-1", "elicit-twice", &[]).unwrap();
     let first = next_key(&rx, "s-1");
     next_key(&rx, "s-1");
@@ -1725,7 +1808,9 @@ fn does_not_answer_when_the_url_cannot_open() {
             }
         }),
     );
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
     manager.prompt("s-1", "elicit-url", &[]).unwrap();
     let key = next_key(&rx, "s-1");
 
@@ -1837,7 +1922,7 @@ fn refuses_a_second_answer() {
 #[test]
 fn refuses_an_answer_from_another_session() {
     let (manager, rx, _opened, key) = started_with("elicit-form");
-    manager.fork("s-1", "s-2", &cwd()).unwrap();
+    manager.fork("s-1", "s-2", &cwd(), json!([])).unwrap();
 
     assert_eq!(
         manager.respond_elicitation("s-2", &key, "decline", None),
@@ -1875,7 +1960,7 @@ fn cancel_answers_open_requests_before_cancelling_the_turn() {
     let (manager, rx, _opened) = recording_manager();
     let log = method_log("elicit-cancel-order");
     let launch = with_env(fake_agent(), "FAKE_ACP_ARRIVAL_LOG", log.to_str().unwrap());
-    manager.start("s-1", &cwd(), &launch).unwrap();
+    manager.start("s-1", &cwd(), &launch, json!([])).unwrap();
     manager.prompt("s-1", "elicit-form", &[]).unwrap();
     next_key(&rx, "s-1");
 
@@ -1917,8 +2002,8 @@ fn stop_answers_open_requests_with_cancel_too() {
     let (manager, rx, _opened) = recording_manager();
     let log = method_log("elicit-stop-fork");
     let launch = with_env(fake_agent(), "FAKE_ACP_ELICIT_LOG", log.to_str().unwrap());
-    manager.start("s-1", &cwd(), &launch).unwrap();
-    manager.fork("s-1", "s-2", &cwd()).unwrap();
+    manager.start("s-1", &cwd(), &launch, json!([])).unwrap();
+    manager.fork("s-1", "s-2", &cwd(), json!([])).unwrap();
     manager.prompt("s-2", "elicit-form", &[]).unwrap();
     next_key(&rx, "s-2");
 
@@ -1953,8 +2038,8 @@ fn answers_cancel_when_the_session_stops_while_an_answer_fails() {
     this.set(Arc::downgrade(&manager)).unwrap();
     let log = method_log("elicit-put-back-gone");
     let launch = with_env(fake_agent(), "FAKE_ACP_ELICIT_LOG", log.to_str().unwrap());
-    manager.start("s-1", &cwd(), &launch).unwrap();
-    manager.fork("s-1", "s-2", &cwd()).unwrap();
+    manager.start("s-1", &cwd(), &launch, json!([])).unwrap();
+    manager.fork("s-1", "s-2", &cwd(), json!([])).unwrap();
     manager.prompt("s-2", "elicit-url", &[]).unwrap();
     let key = next_key(&rx, "s-2");
 
@@ -1974,7 +2059,9 @@ fn answers_cancel_when_the_session_stops_while_an_answer_fails() {
 #[test]
 fn cancels_a_request_for_an_unknown_session_on_a_routed_connection() {
     let (manager, rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent()).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
 
     manager.prompt("s-1", "stray-elicit", &[]).unwrap();
 
@@ -1999,7 +2086,7 @@ fn answers_a_request_sent_while_the_session_opens() {
     );
     let starting = {
         let manager = Arc::clone(&manager);
-        std::thread::spawn(move || manager.start("s-1", &cwd(), &launch))
+        std::thread::spawn(move || manager.start("s-1", &cwd(), &launch, json!([])))
     };
 
     let key = next_key(&rx, "s-1");
@@ -2119,4 +2206,68 @@ fn agent_setup_is_refused_for_an_agent_that_offers_none() {
         error,
         "Zorvo does not run this agent's setup: it offers none"
     );
+}
+
+/// A fresh file the fake agent logs the parameters of session-opening calls in.
+fn params_log(name: &str) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!("zorvo-params-{name}-{}.log", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    path
+}
+
+/// The `(method, mcpServers)` the fake agent logged, in order.
+fn logged_params(path: &std::path::Path) -> Vec<(String, Value)> {
+    std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).expect("a JSON line"))
+        .map(|entry| {
+            (
+                entry["method"].as_str().unwrap_or_default().to_string(),
+                entry["mcpServers"].clone(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn start_sends_the_given_mcp_servers() {
+    let (manager, _rx) = manager();
+    let log = params_log("start");
+    let launch = with_env(fake_agent(), "FAKE_ACP_PARAMS_LOG", log.to_str().unwrap());
+    let servers =
+        json!([{ "name": "zorvo", "command": "/bin/zorvo", "args": ["mcp-bridge"], "env": [] }]);
+
+    manager
+        .start("s-1", &cwd(), &launch, servers.clone())
+        .expect("start");
+
+    assert_eq!(
+        logged_params(&log),
+        vec![("session/new".to_string(), servers)]
+    );
+    manager.stop("s-1");
+}
+
+#[test]
+fn fork_sends_the_given_mcp_servers() {
+    let (manager, _rx) = manager();
+    let log = params_log("fork");
+    let launch = with_env(fake_agent(), "FAKE_ACP_PARAMS_LOG", log.to_str().unwrap());
+    let servers = json!([{ "name": "zorvo", "command": "/bin/zorvo", "args": [], "env": [] }]);
+    manager.start("s-1", &cwd(), &launch, json!([])).unwrap();
+
+    manager
+        .fork("s-1", "s-2", &cwd(), servers.clone())
+        .expect("fork");
+
+    assert_eq!(
+        logged_params(&log),
+        vec![
+            ("session/new".to_string(), json!([])),
+            ("session/fork".to_string(), servers),
+        ]
+    );
+    manager.stop("s-1");
+    manager.stop("s-2");
 }

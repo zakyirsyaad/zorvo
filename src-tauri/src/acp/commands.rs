@@ -227,6 +227,7 @@ pub fn acp_start_session(
         &session_id,
         &cwd,
         &launch_in_workspace(&store, &cwd, &profile_id)?,
+        json!([]),
     )
 }
 
@@ -295,6 +296,7 @@ pub fn acp_reopen_session(
         &launch_in_workspace(&store, &cwd, &profile_id)?,
         &acp_session_id,
         ReopenPurpose::Continue,
+        json!([]),
     )
 }
 
@@ -316,6 +318,7 @@ pub fn acp_import_session(
         &launch_in_workspace(&store, &cwd, &profile_id)?,
         &acp_session_id,
         ReopenPurpose::Import,
+        json!([]),
     )
 }
 
@@ -340,7 +343,7 @@ fn fork_in_workspace(
     cwd: &str,
 ) -> Result<StartedSession, String> {
     ensure_known_workspace(cwd, |path| store.is_known_workspace(path))?;
-    manager.fork(source_session_id, session_id, cwd)
+    manager.fork(source_session_id, session_id, cwd, json!([]))
 }
 
 #[tauri::command(async)]

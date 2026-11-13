@@ -52,6 +52,7 @@ impl AcpManager {
         launch: &AcpLaunch,
         acp_session_id: &str,
         purpose: ReopenPurpose,
+        mcp_servers: Value,
     ) -> Result<StartedSession, String> {
         self.open(app_session_id, cwd, launch, |connection, init, key| {
             let capabilities = init["agentCapabilities"].clone();
@@ -69,7 +70,7 @@ impl AcpManager {
                 connection,
                 init,
                 method.acp_method(),
-                json!({ "sessionId": acp_session_id, "cwd": cwd, "mcpServers": [] }),
+                json!({ "sessionId": acp_session_id, "cwd": cwd, "mcpServers": mcp_servers }),
                 self.route_on_answer(
                     key,
                     app_session_id,

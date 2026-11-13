@@ -90,6 +90,10 @@ pub struct Settings {
     /// Agent ids that were seen signed in, so Settings and the sidebar can say
     /// "Ready" without asking the agent again. Opaque to the backend.
     pub signed_in_agents: Vec<String>,
+    /// Whether a session is told about Zorvo's own tools (the MCP server). Off
+    /// unless the state says `true`; a value of any other type reads as off.
+    #[serde(deserialize_with = "lenient_bool")]
+    pub agent_tools: bool,
 }
 
 /// The registry agents in use until the user changes the list; matches

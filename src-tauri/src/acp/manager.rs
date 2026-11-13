@@ -192,19 +192,21 @@ impl AcpManager {
         &self.sign_ins
     }
 
-    /// Starts an agent process, initializes ACP and opens a session in `cwd`.
+    /// Starts an agent process, initializes ACP and opens a session in `cwd`,
+    /// telling the agent about `mcp_servers` (an ACP `mcpServers` array).
     pub fn start(
         &self,
         app_session_id: &str,
         cwd: &str,
         launch: &AcpLaunch,
+        mcp_servers: Value,
     ) -> Result<StartedSession, String> {
         self.open(app_session_id, cwd, launch, |connection, init, key| {
             let session = open_request(
                 connection,
                 init,
                 "session/new",
-                json!({ "cwd": cwd, "mcpServers": [] }),
+                json!({ "cwd": cwd, "mcpServers": mcp_servers }),
                 self.route_on_answer(key, app_session_id, None, true, false),
             )?;
             started_session(session, init["agentCapabilities"].clone()).map_err(OpenError::Agent)
@@ -306,6 +308,7 @@ impl AcpManager {
         source_app_id: &str,
         new_app_id: &str,
         cwd: &str,
+        mcp_servers: Value,
     ) -> Result<StartedSession, String> {
         let (connection, connection_key, acp_id, capabilities, auth_methods) =
             self.with_entry(source_app_id, |e| {
@@ -323,7 +326,7 @@ impl AcpManager {
         }
         let response = connection.request_with(
             "session/fork",
-            json!({ "sessionId": acp_id, "cwd": cwd, "mcpServers": [] }),
+            json!({ "sessionId": acp_id, "cwd": cwd, "mcpServers": mcp_servers }),
             SESSION_REQUEST_TIMEOUT,
             self.route_on_answer(connection_key, new_app_id, None, false, false),
         )?;

@@ -492,11 +492,11 @@ describe("useDelegation reports", () => {
       reason = env.result.current.delegation.sendBlockedReason("s-b");
     });
 
-    expect(reason).toBe("Claude Code is working on Codex's report.");
+    expect(reason).toBe("Codex's report waits for Claude Code to finish.");
     await act(async () => {});
   });
 
-  it("refuses A's send while B's report is handing over", async () => {
+  it("does not hold A's send while B's report is handing over", async () => {
     const env = setup({
       sessions: [sourceSession(), delegateSession()],
       transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
@@ -509,9 +509,9 @@ describe("useDelegation reports", () => {
       reason = env.result.current.delegation.sendBlockedReason("s-a");
     });
 
-    expect(reason).toBe("Codex is working on the task you delegated.");
+    // A message that takes A's turn only delays the report: it waits, it is not lost.
+    expect(reason).toBeNull();
     await act(async () => {});
-    // Once the report went out, A is no longer held by the hand-over.
     expect(env.result.current.delegation.sendBlockedReason("s-a")).toBeNull();
   });
 
@@ -523,6 +523,162 @@ describe("useDelegation reports", () => {
     });
 
     expect(env.result.current.delegation.sendBlockedReason("s-b")).toBe("Wait for Claude Code to finish.");
+  });
+});
+
+describe("useDelegation reports that wait", () => {
+  const CLAUDE_DELEGATE = () =>
+    delegateSession({ id: "s-c", name: "Claude Code: Check the docs", profileId: "claude-acp", createdAt: 20, delegatedFrom: link({ task: "Check the docs" }) });
+
+  const finish = async (env: ReturnType<typeof setup>, delegateId: string) => {
+    await act(async () => {
+      env.result.current.delegation.onTurnEnded(delegateId, "finished");
+    });
+    await act(async () => {});
+  };
+
+  /** The source's turn ended: it can be prompted again, and its transcript changed. */
+  const endSourceTurn = async (env: ReturnType<typeof setup>) => {
+    await act(async () => {
+      env.busy.delete("s-a");
+      env.waiting.delete("s-a");
+      env.cannotPrompt.delete("s-a");
+      env.result.current.setTranscripts((prev) => ({ ...prev, "s-a": [...(prev["s-a"] ?? [])] }));
+    });
+    await act(async () => {});
+  };
+
+  it("holds a report while the source is in a turn and sends it when the turn ends", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+      busy: ["s-a"],
+      cannotPrompt: ["s-a"],
+    });
+
+    await finish(env, "s-b");
+    expect(env.sends).toHaveLength(0);
+    expect(env.givesBack).toHaveLength(0);
+    expect(env.notices).toHaveLength(0);
+
+    await endSourceTurn(env);
+    await waitFor(() => expect(env.sends).toHaveLength(1));
+    expect(env.sends[0].sessionId).toBe("s-a");
+    expect(env.sends[0].text).toContain("Report from Codex");
+    expect(env.givesBack).toHaveLength(0);
+  });
+
+  it("holds a report while the source waits on a permission card", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+      waiting: ["s-a"],
+      cannotPrompt: ["s-a"],
+    });
+
+    await finish(env, "s-b");
+    expect(env.sends).toHaveLength(0);
+    expect(env.givesBack).toHaveLength(0);
+
+    await endSourceTurn(env);
+    await waitFor(() => expect(env.sends).toHaveLength(1));
+  });
+
+  it("sends two delegates' reports one per turn, oldest first", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession(), CLAUDE_DELEGATE()],
+      transcripts: {
+        "s-a": A_MESSAGES,
+        "s-b": bMessages(),
+        "s-c": bMessages(agentMessage({ id: "m-c2", content: "Docs are fine." })),
+      },
+      busy: ["s-a"],
+      cannotPrompt: ["s-a"],
+    });
+
+    await finish(env, "s-b");
+    await finish(env, "s-c");
+    expect(env.sends).toHaveLength(0);
+
+    // The source's turn ends; taking the first report starts its next turn.
+    const originalSend = env.sends.push.bind(env.sends);
+    env.sends.push = (...calls) => {
+      env.busy.add("s-a");
+      env.cannotPrompt.add("s-a");
+      return originalSend(...calls);
+    };
+    await endSourceTurn(env);
+    await waitFor(() => expect(env.sends).toHaveLength(1));
+    expect(env.sends[0].text).toContain("Report from Codex");
+    await act(async () => {});
+    expect(env.sends).toHaveLength(1);
+
+    await endSourceTurn(env);
+    await waitFor(() => expect(env.sends).toHaveLength(2));
+    expect(env.sends[1].text).toContain("Report from Claude Code");
+    expect(env.givesBack).toHaveLength(0);
+  });
+
+  it("gives the report back when the source is not running", async () => {
+    const env = setup({
+      sessions: [sourceSession({ status: "terminated" }), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+      cannotPrompt: ["s-a"],
+    });
+
+    await finish(env, "s-b");
+    expect(env.sends).toHaveLength(0);
+    expect(env.givesBack).toHaveLength(1);
+  });
+
+  it("blocks Send in the delegate while its report is queued, and not in the source", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+      busy: ["s-a"],
+      cannotPrompt: ["s-a"],
+    });
+
+    await finish(env, "s-b");
+    expect(env.result.current.delegation.sendBlockedReason("s-b")).toBe(
+      "Codex's report waits for Claude Code to finish.",
+    );
+    expect(env.result.current.delegation.sendBlockedReason("s-a")).toBeNull();
+  });
+
+  it("drops a queued report when the delegation ends", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+      busy: ["s-a"],
+      cannotPrompt: ["s-a"],
+    });
+
+    await finish(env, "s-b");
+    await act(async () => {
+      env.result.current.delegation.end("s-b");
+    });
+    await endSourceTurn(env);
+
+    expect(env.sends).toHaveLength(0);
+    expect(env.givesBack).toHaveLength(0);
+    expect(env.result.current.delegation.sendBlockedReason("s-b")).toBeNull();
+  });
+
+  it("lists one line per open delegate for the source, oldest first", () => {
+    const env = setup({
+      sessions: [sourceSession(), CLAUDE_DELEGATE(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages(), "s-c": bMessages() },
+      busy: ["s-b", "s-c"],
+    });
+
+    const views = env.result.current.delegation.viewsFor("s-a");
+    expect(views.map((view) => [view.otherSessionId, view.agentName, view.state])).toEqual([
+      ["s-b", "Codex", "working"],
+      ["s-c", "Claude Code", "working"],
+    ]);
+    expect(env.result.current.delegation.viewsFor("s-b")).toHaveLength(1);
+    expect(env.result.current.delegation.viewsFor("s-b")[0].role).toBe("delegate");
   });
 });
 

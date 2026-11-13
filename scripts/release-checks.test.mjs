@@ -3,7 +3,7 @@ import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ReleaseError, assetNames, checkArtifact, checkDownloadPolicy, readConfig } from "./release-checks.mjs";
+import { ReleaseError, assetNames, checkArtifact, checkCodeSignature, checkDownloadPolicy, readConfig } from "./release-checks.mjs";
 
 const PUBKEY = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhBRTQwMUE3MERBOEI4OUY=";
 const TAG = "v0.6.1";
@@ -150,8 +150,8 @@ describe("readConfig", () => {
   it("reads the version, the public key and the update endpoints", () => {
     const path = join(dir, "tauri.conf.json");
     const endpoints = ["https://github.com/a/b/releases/latest/download/latest.json"];
-    writeFileSync(path, JSON.stringify({ version: "0.6.1", plugins: { updater: { pubkey: PUBKEY, endpoints } } }));
-    expect(readConfig(path)).toEqual({ version: "0.6.1", pubkey: PUBKEY, endpoints });
+    writeFileSync(path, JSON.stringify({ version: "0.6.1", identifier: "xyz.zorvo.desktop", plugins: { updater: { pubkey: PUBKEY, endpoints } } }));
+    expect(readConfig(path)).toEqual({ version: "0.6.1", identifier: "xyz.zorvo.desktop", pubkey: PUBKEY, endpoints });
   });
 
   it("fails naming the file when the public key is missing or the file is not there", () => {
@@ -159,6 +159,60 @@ describe("readConfig", () => {
     writeFileSync(path, JSON.stringify({ version: "0.6.1", plugins: {} }));
     expect(() => readConfig(path)).toThrow(/plugins\.updater\.pubkey/);
     expect(() => readConfig(join(dir, "missing.json"))).toThrow(/Could not read/);
+  });
+});
+
+// A real, tiny app signed by the system's `codesign`, so the check reads what macOS reports. macOS only.
+const BUNDLE_ID = "xyz.zorvo.desktop";
+const PLIST = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
+<key>CFBundleExecutable</key><string>zorvo</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+</dict></plist>`;
+
+/** A build whose Zorvo.app is a real bundle; `sign` gets the app path and signs it (or does not). */
+function makeSignedBuild(sign) {
+  return makeBuild({
+    prepare: (app) => {
+      writeFileSync(join(app, "Contents/Info.plist"), PLIST);
+      const exe = join(app, "Contents/MacOS/zorvo");
+      writeFileSync(exe, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+      sign(app);
+    },
+  });
+}
+const adhoc = (...extra) => (app) => {
+  const run = spawnSync("/usr/bin/codesign", ["--force", "-s", "-", ...extra, app], { encoding: "utf8" });
+  if (run.status !== 0) throw new Error(`codesign failed: ${run.stderr}`);
+};
+
+describe.skipIf(process.platform !== "darwin")("checkCodeSignature", () => {
+  const verify = (build, identifier = BUNDLE_ID) => checkCodeSignature({ dir: build, tag: TAG, identifier });
+
+  it("accepts an app signed as a whole under the bundle identifier", () => {
+    expect(() => verify(makeSignedBuild(adhoc()))).not.toThrow();
+  });
+
+  it("refuses an app with no signature at all", () => {
+    expect(() => verify(makeSignedBuild(() => {}))).toThrow(ReleaseError);
+  });
+
+  it("refuses an app signed under another identifier, which macOS cannot match to a stored grant", () => {
+    expect(() => verify(makeSignedBuild(adhoc("--identifier", "zorvo-77929edb2e95102b")))).toThrow(/not as the bundle identifier xyz\.zorvo\.desktop/);
+  });
+
+  it("refuses an empty identifier", () => {
+    expect(() => verify(makeSignedBuild(adhoc()), "")).toThrow(ReleaseError);
+  });
+
+  it("refuses an app that was changed after it was signed", () => {
+    const build = makeSignedBuild((app) => {
+      adhoc()(app);
+      writeFileSync(join(app, "Contents/MacOS/zorvo"), "#!/bin/sh\nexit 1\n");
+    });
+    expect(() => verify(build)).toThrow(/codesign --verify/);
   });
 });
 

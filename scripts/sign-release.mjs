@@ -33,7 +33,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { CheckError, checkManifest } from "./check-updater-signing.mjs";
 import { releaseNotes } from "./public-docs.mjs";
-import { ReleaseError, assetNames, checkArtifact, checkDownloadPolicy, fail, readConfig } from "./release-checks.mjs";
+import { ReleaseError, assetNames, checkArtifact, checkCodeSignature, checkDownloadPolicy, fail, readConfig } from "./release-checks.mjs";
 import { SOURCE_REPO, assetUrl, downloadBuild, ensureDraft, findRun, remoteTagCommit, runGh, uploadAssets, uploadFile } from "./release-github.mjs";
 import { ensureSignerCli, scrubSecrets, withoutProjectDirs } from "./signer-cli.mjs";
 import { ManifestError, buildManifest } from "./updater-manifest.mjs";
@@ -179,9 +179,9 @@ function makeLatestJson({ root, work, tag, notes, url, packagePath, config, log 
   return latest;
 }
 
-/** The whole job. `deps` holds everything outside this repository: `gh`, git, the signer, the prompts. */
+/** The whole job. `deps` holds everything outside this repository: `gh`, git, `codesign`, the signer, the prompts. */
 export async function signRelease({ tag, keyPath, dryRun = false, root = ROOT, deps }) {
-  const { gh, git, sign, askPassword, confirm, log } = deps;
+  const { gh, git, checkSignature, sign, askPassword, confirm, log } = deps;
   const version = TAG.exec(tag)?.[1];
   if (version === undefined) fail(`The tag "${tag}" must be vMAJOR.MINOR.PATCH, or vMAJOR.MINOR.PATCH-rc.1 for a pre-release.`);
   if (!existsSync(keyPath)) fail(`No updater key at ${keyPath}. Pass --key <path>, or set TAURI_SIGNING_PRIVATE_KEY_PATH.`);
@@ -221,6 +221,8 @@ export async function signRelease({ tag, keyPath, dryRun = false, root = ROOT, d
     downloadBuild(gh, { repo: SOURCE_REPO, runId: run.id, dir: buildDir, log });
     checkArtifact({ dir: buildDir, tag, pubkey: config.pubkey });
     log("The build is the DMG and a package that holds only Zorvo.app, with the updater public key inside.");
+    checkSignature({ dir: buildDir, tag, identifier: config.identifier });
+    log(`The app is signed as a whole under ${config.identifier}, and \`codesign --verify --deep --strict\` passes.`);
 
     reviewChanges({ git, tag, log });
     if (!dryRun && !(await confirm(`Sign and publish ${tag} from this build? [y/N] `))) fail("Cancelled.");
@@ -291,6 +293,7 @@ export async function main(argv, env = process.env) {
       if (run.status !== 0) fail(`git ${gitArgs[0]} failed: ${String(run.stderr).trim().split("\n")[0]}`);
       return run.stdout;
     },
+    checkSignature: checkCodeSignature,
     sign: async (options) => signWithTauri({ ...options, entry: ensureSignerCli(ROOT, log) }),
     askPassword: () => promptHidden("Updater key password (typed hidden)> "),
     confirm: confirmOnTerminal,

@@ -1258,6 +1258,16 @@ export default function App() {
               onEndDelegation={onEndDelegation}
               moreButtonRef={moreOptionsButtonRef}
               workspaceName={activeSession ? folderNameOf(workspacePathOf(activeSession)) : activeWorkspace?.name}
+              // A run takes its folder from its first session, never from the last folder chosen.
+              folderName={
+                activeSession
+                  ? folderNameOf(workspacePathOf(activeSession))
+                  : activeRun
+                    ? folderNameOf(workspacePathOf(activeRun.sessions[0]))
+                    : activeWorkspace?.name
+              }
+              runAgentCount={activeRun?.sessions.length}
+              isDraft={isNewSessionDraft}
               branch={workspaceDetails?.branch ?? undefined}
               pullRequest={pullRequest}
               onOpenPullRequest={openPullRequest}
@@ -1461,6 +1471,9 @@ export default function App() {
                       onTextChange={review.onComposerText}
                       onRestored={review.onComposerRestored}
                       onGivenBack={review.onComposerGivenBack}
+                      onNotice={reportError}
+                      pasteScope={activeSessionId || "draft"}
+                      isHidden={isComposerHidden || settingsPage.section !== null}
                       commands={compare.isCompare ? [] : composerCommands}
                       sendLabel={delegationSendLabel ?? (compare.agentIds.length >= 2 ? `Start ${compare.agentIds.length} sessions` : undefined)}
                       agentName={activeSession ? activeAgent?.name : newSessionAgent?.name}

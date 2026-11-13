@@ -4,9 +4,22 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- **Paste an image into the message.** A screenshot or an image copied in another app attaches when you paste it into the prompt, like a file from the paperclip. Text still pastes as text, also when the copy carries a picture of that text, as web pages and spreadsheets do. Pasted images are kept in Zorvo's data folder for 30 days.
+- The Files tab shows images (PNG, JPEG, GIF, WebP) and PDFs instead of saying the file is binary. A file over 10 MB says it is too large to preview.
+
 ### Changed
 
 - The window has a layered look: the chat and the inspector are raised panels on the window's background.
+- Sidebar rows show each agent's logo with a status badge, and a filter shows only the sessions that need you or are working.
+- The chat is calmer: tool calls are a one-line summary that opens into steps on a rail, a failed turn and a stalled agent get a titled notice, and a permission request says "Waiting for you" while it is open.
+- The composer's controls are filled chips, the context meter is a ring, and a model search marks the match that Return picks.
+- The top bar shows the folder before the session's title.
+
+### Fixed
+
+- **macOS should stop asking again and again for access to your folders.** The release was signed only on its executable, so macOS could not match a permission you had given to the app on disk and asked again. The whole app is now signed under its own name, `xyz.zorvo.desktop`, so within one version macOS should no longer ask twice. It asks once more after each update, until Zorvo has an Apple Developer ID. The prompts now say why: an agent you run in Zorvo reads or changes files there.
 
 ## [0.10.1] - 2026-11-12
 

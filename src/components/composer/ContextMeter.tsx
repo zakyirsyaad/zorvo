@@ -12,6 +12,33 @@ function toneFor(percent: number): string {
   return "text-fg-subtle";
 }
 
+function arcToneFor(percent: number): string {
+  if (percent >= FULL_AT) return "stroke-danger";
+  if (percent >= WARN_AT) return "stroke-status-attention";
+  return "stroke-fg-muted";
+}
+
+const RING_RADIUS = 6;
+const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
+
+/** A 14px ring: a quiet track, and an arc as long as the share of the window in use. */
+function Ring({ percent }: { percent: number }) {
+  const arc = (percent / 100) * RING_LENGTH;
+  return (
+    <svg data-context-ring="" aria-hidden="true" viewBox="0 0 16 16" fill="none" strokeWidth={2} className="size-3.5 shrink-0 -rotate-90">
+      <circle cx={8} cy={8} r={RING_RADIUS} className="stroke-surface-hover" />
+      <circle
+        cx={8}
+        cy={8}
+        r={RING_RADIUS}
+        strokeLinecap="round"
+        strokeDasharray={`${arc.toFixed(1)} ${RING_LENGTH.toFixed(1)}`}
+        className={arcToneFor(percent)}
+      />
+    </svg>
+  );
+}
+
 const tokens = (n: number) => `${n.toLocaleString("en-US")} tokens`;
 
 /** An amount in its currency, e.g. "$0.42"; an unknown currency code is written out. */
@@ -43,9 +70,10 @@ function Gauge({ used, size }: ContextUsage) {
       aria-valuemin={0}
       aria-valuemax={100}
       title={`Context: ${used.toLocaleString("en-US")} of ${tokens(size)} (${percent}%)`}
-      // Plain words, as the canvas draws it; the colour still warns as the window fills.
-      className={`tabular-nums ${toneFor(percent)}`}
+      // A ring, then the words, as the canvas draws it; both take the warning tones as the window fills.
+      className={`inline-flex items-center gap-1.5 tabular-nums ${toneFor(percent)}`}
     >
+      <Ring percent={percent} />
       {percent}% of context
     </span>
   );
@@ -77,7 +105,7 @@ export function ContextMeter({ used, size, cost }: ContextUsage) {
         aria-label="Context details"
         aria-expanded={isOpen}
         onClick={() => setIsOpen((open) => !open)}
-        className="mr-2 rounded px-1 py-0.5 text-caption text-fg-subtle hover:bg-surface-hover focus-ring"
+        className="mr-1.5 rounded px-1 py-0.5 text-caption text-fg-subtle hover:bg-surface-hover focus-ring"
       >
         <Gauge used={used} size={size} />
       </button>
@@ -85,7 +113,7 @@ export function ContextMeter({ used, size, cost }: ContextUsage) {
         <div
           role="dialog"
           aria-label="Context usage"
-          className="absolute bottom-full right-0 z-50 mb-2 w-56 rounded-lg border border-border bg-surface-3 p-3 text-ui-sm shadow-popover"
+          className="absolute bottom-full right-0 z-50 mb-2 w-56 rounded-panel border border-border bg-surface-3 p-3 text-ui-sm shadow-popover"
         >
           <p className="mb-2 font-medium text-fg-secondary">Context usage</p>
           <dl className="space-y-1">

@@ -11,6 +11,7 @@ import type { LineChange } from "../../lib/changed-lines";
 import { TOKEN_STYLE, tokenizeLines, type Token } from "../../lib/code-tokens";
 import { errorMessage, joinWorkspacePath, openWorkspacePath } from "../../lib/files";
 import { formatSize, languageOf, splitLines, type FileContent } from "../../lib/file-content";
+import { FilePreview } from "./FilePreview";
 import { MARKER_LETTER, MARKER_WORD, type FileMarker } from "../../lib/file-markers";
 
 export interface FileViewerProps {
@@ -163,7 +164,9 @@ function Unshown({ content, failure }: { content?: FileContent; failure?: string
         ? `This file is binary (${formatSize(content.size)}), so it is not shown.`
         : content?.kind === "tooLarge"
           ? `This file is too large to show (${formatSize(content.size)}; the limit is ${formatSize(content.limit)}).`
-          : "";
+          : content?.kind === "previewTooLarge"
+            ? `This ${content.mime === "application/pdf" ? "PDF" : "image"} is too large to preview (${formatSize(content.size)}; the limit is ${formatSize(content.limit)}). Open it in its app instead.`
+            : "";
   const isError = failure !== undefined && !isGone(failure);
   return (
     <p role={isError ? "alert" : undefined} className={`px-3 py-4 text-ui-sm ${isError ? "text-danger" : "text-fg-muted"}`}>
@@ -310,6 +313,14 @@ export function FileViewer({
             bodyRef={bodyRef}
             selected={canInsertText ? range : null}
             overlay={addLines}
+          />
+        ) : read.content.kind === "preview" ? (
+          <FilePreview
+            rootPath={rootPath}
+            relativePath={relativePath}
+            mime={read.content.mime}
+            size={read.content.size}
+            version={version}
           />
         ) : (
           <Unshown content={read.content} />

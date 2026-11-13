@@ -18,10 +18,11 @@ describe("the failed turn, as drawn", () => {
     );
     const alert = screen.getByRole("alert");
     const row = alert.firstElementChild as HTMLElement;
-    expect(row).toHaveClass("flex", "items-center", "gap-2.5");
-    expect(alert).toHaveClass("px-3", "py-2.5", "rounded-lg", "border-danger", "bg-danger-surface");
+    expect(row).toHaveClass("flex", "items-center", "gap-3");
+    expect(alert).toHaveClass("py-3", "pr-3", "pl-4", "rounded-xl", "border-danger", "bg-danger-surface");
     expect(row.querySelector(".lucide-circle-alert")?.getAttribute("class")).toContain("text-danger");
-    expect(row.querySelector("p")).toHaveClass("text-ui", "text-fg");
+    expect(row.querySelector("p")).toHaveClass("text-ui", "flex-col");
+    expect(row.querySelector("[data-notice-title]")).toHaveClass("font-semibold", "text-fg");
     const tryAgain = within(row).getByRole("button", { name: "Try again" });
     expect(tryAgain).toHaveClass("h-7", "border-border-strong");
     expect(within(tryAgain).getByText("Try again")).toHaveClass("text-fg");
@@ -36,7 +37,7 @@ describe("the working line, as drawn", () => {
     render(<WorkingIndicator agentName="Claude Code" since={Date.now() - 72_000} />);
     const line = screen.getByTestId("agent-working");
     const dot = line.querySelector("[data-working-dot]") as HTMLElement;
-    expect(dot).toHaveClass("size-1.5", "rounded-full", "bg-status-running", "ring-4", "ring-status-running/20");
+    expect(dot).toHaveClass("size-1.5", "rounded-full", "bg-status-running", "ring-4", "ring-chip");
     expect(dot.parentElement).toHaveClass("gap-2.5");
     expect(within(line).getByText("Claude Code is working")).toHaveClass("text-ui", "text-fg-secondary");
     const time = within(line).getByText("1m 12s");
@@ -46,7 +47,7 @@ describe("the working line, as drawn", () => {
 });
 
 describe("the stall notice, as drawn", () => {
-  it("leads with a clock in attention, reads in fg-secondary, and offers a 24px Stop with a square", () => {
+  it("leads with a clock in attention, reads as a title over a muted sentence, and offers a 28px Stop with a square", () => {
     render(
       <AgentStallNotice
         agentName="Qwen Code"
@@ -56,11 +57,13 @@ describe("the stall notice, as drawn", () => {
       />,
     );
     const notice = screen.getByRole("status");
-    expect(notice).toHaveClass("flex", "items-center", "gap-2.5", "px-3", "py-2.5", "rounded-lg", "border-border", "bg-surface-2");
+    expect(notice).toHaveClass("flex", "items-center", "gap-3", "py-3", "pr-3", "pl-4", "rounded-xl", "border-border", "bg-surface-2");
     expect(notice.querySelector(".lucide-clock")?.getAttribute("class")).toContain("text-status-attention");
-    expect(notice.querySelector("span")).toHaveClass("text-ui", "text-fg-secondary");
+    expect(notice.querySelector("[data-notice-title]")).toHaveClass("font-semibold", "text-fg");
+    expect(notice.querySelector("[data-notice-title]")).toHaveTextContent("Qwen Code's requests failed 3 times in a row.");
+    expect(notice.querySelector("[data-notice-body]")).toBeNull();
     const stop = within(notice).getByRole("button", { name: "Stop" });
-    expect(stop).toHaveClass("h-6");
+    expect(stop).toHaveClass("h-7");
     expect(stop.querySelector(".lucide-square")).not.toBeNull();
   });
 });

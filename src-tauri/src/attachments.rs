@@ -23,7 +23,7 @@ use tauri::{AppHandle, Manager};
 pub const MAX_PREVIEW_BYTES: u64 = 10 * 1024 * 1024;
 
 /// Enough bytes to tell every supported image type apart.
-const HEADER_BYTES: u64 = 16;
+pub(crate) const HEADER_BYTES: u64 = 16;
 
 /// The image type the file's name promises, or None when it is not an image.
 fn declared_mime(path: &Path) -> Option<&'static str> {
@@ -37,7 +37,7 @@ fn declared_mime(path: &Path) -> Option<&'static str> {
 }
 
 /// The image type the bytes really are, from their magic number.
-fn sniff_mime(bytes: &[u8]) -> Option<&'static str> {
+pub(crate) fn sniff_mime(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         return Some("image/png");
     }
@@ -51,6 +51,12 @@ fn sniff_mime(bytes: &[u8]) -> Option<&'static str> {
         return Some("image/webp");
     }
     None
+}
+
+/// The type of a file the Files viewer can preview: an image [`check_previewable`] accepts, or a
+/// PDF. By magic number only, since the viewer opens files whatever their name says.
+pub(crate) fn sniff_viewable(bytes: &[u8]) -> Option<&'static str> {
+    sniff_mime(bytes).or_else(|| bytes.starts_with(b"%PDF-").then_some("application/pdf"))
 }
 
 fn too_large(path: &Path) -> String {
@@ -190,6 +196,19 @@ mod tests {
 
         assert!(error.contains("larger than 10 MB"), "{error}");
         fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn viewable_adds_pdf_to_the_image_types() {
+        assert_eq!(
+            sniff_viewable(b"%PDF-1.7\n%\xe2\xe3"),
+            Some("application/pdf")
+        );
+        assert_eq!(sniff_viewable(b"GIF89a\x01\x00"), Some("image/gif"));
+        assert_eq!(sniff_viewable(b"%PD"), None);
+        assert_eq!(sniff_viewable(b"<svg xmlns="), None);
+        // An attachment is still only ever an image.
+        assert_eq!(sniff_mime(b"%PDF-1.7"), None);
     }
 
     #[test]

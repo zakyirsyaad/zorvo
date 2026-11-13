@@ -5,6 +5,7 @@ import {
   hasRunningTool,
   isNewsUpdate,
   nextFailures,
+  stallNoticeParts,
   stallNoticeText,
   STALL_MIN_FAILURES,
 } from "../lib/agent-stall";
@@ -170,5 +171,30 @@ describe("activityKeyOf", () => {
     expect(activityKeyOf(base)).toBe(activityKeyOf([agentReply({ content: "Hel" })]));
     expect(activityKeyOf([agentReply({ content: "Hello" })])).not.toBe(activityKeyOf(base));
     expect(activityKeyOf([agentReply({ content: "Hel", thinking: "hm" })])).not.toBe(activityKeyOf(base));
+  });
+});
+
+describe("stallNoticeParts", () => {
+  it("ends the title at 'in a row.' even when the model and the error hold periods", () => {
+    const parts = stallNoticeParts("Qwen Code", {
+      failures: { count: 4, source: "qwen-lifecycle", model: "qwen3.5-coder", detail: "503 from api.example.com. Retry later" },
+      silentForMs: 0,
+    });
+    expect(parts).toEqual({
+      title: "Qwen Code's requests to qwen3.5-coder failed 4 times in a row.",
+      body: "Last error: 503 from api.example.com. Retry later.",
+    });
+  });
+
+  it("has no body for failures without a detail, and splits silence into the fact and the guess", () => {
+    expect(stallNoticeParts("Codex", { failures: { count: 3, source: "codex" }, silentForMs: 0 })).toEqual({
+      title: "Codex's requests failed 3 times in a row.",
+      body: undefined,
+    });
+    expect(stallNoticeParts("Codex", { silentForMs: 120_000 })).toEqual({
+      title: "Codex hasn't sent anything for 2 minutes.",
+      body: "It may be stuck.",
+    });
+    expect(stallNoticeParts("Codex", { silentForMs: 1_000 })).toBeNull();
   });
 });

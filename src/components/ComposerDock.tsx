@@ -4,6 +4,7 @@ import { DRAFT_CHIP } from "./composer/chip-style";
 import { CompareModelStatus } from "./composer/CompareModelStatus";
 import type { CompareModelControl } from "../lib/compare-models";
 import { AgentLogo } from "./AgentLogo";
+import { AgentTile } from "./ui/AgentTile";
 import { Button } from "./ui/Button";
 import { IconButton } from "./ui/IconButton";
 import { OptionDropdown } from "./composer/OptionDropdown";
@@ -24,6 +25,7 @@ import { matchingCommands, pendingHint, slashQuery } from "../lib/slash-commands
 import { SlashCommandMenu } from "./composer/SlashCommandMenu";
 import { useDismiss } from "../hooks/useDismiss";
 import { useLatest } from "../hooks/useLatest";
+import { usePasteImages } from "../hooks/usePasteImages";
 import type { ContextUsage, SlashCommand } from "../types";
 
 const MAX_PROMPT_HEIGHT_PX = 180;
@@ -187,6 +189,15 @@ export interface ComposerDockProps {
   onRestored?: (text: string) => void;
   /** Every time `giveBack` runs, with the message returned, not the text it joined. */
   onGivenBack?: (returnedText: string) => void;
+  /**
+   * A short plain notice for the user, e.g. why a pasted image was not attached. Without it the composer
+   * cannot report a failed paste, so it leaves pasting to the browser (a popout has no notice path).
+   */
+  onNotice?: (message: string) => void;
+  /** Names what the composer is for now (the session on screen); a pasted image saved after it changed is dropped. */
+  pasteScope?: string;
+  /** The composer is mounted but out of sight (a compare run's panel, a removed agent's panel): it takes no paste. */
+  isHidden?: boolean;
 }
 
 export function ComposerDock({
@@ -221,6 +232,9 @@ export function ComposerDock({
   onTextChange,
   onRestored,
   onGivenBack,
+  onNotice,
+  pasteScope = "",
+  isHidden = false,
 }: ComposerDockProps) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
@@ -278,11 +292,16 @@ export function ComposerDock({
   // While the agent works, Stop takes Send's place; the draft waits for the turn to end.
   const canSend = !disabled && !sendDisabled && !(isThinking && onStop);
 
+  // Counts the messages this composer has let go of (Send, clear, restore), so a pasted image still being
+  // saved is not added to the next one.
+  const messageEpochRef = useRef(0);
+
   const handleSend = () => {
     const trimmed = text.trim();
     if ((!trimmed && attachments.length === 0) || !canSend) return;
     if (attachAsFiles) onSendMessage(trimmed, attachments);
     else onSendMessage(trimmed);
+    messageEpochRef.current += 1;
     restoredRef.current = null;
     setText("");
     setAttachments([]);
@@ -421,6 +440,13 @@ export function ComposerDock({
     textareaRef.current?.focus();
   };
 
+  // An image in the clipboard is attached as the paperclip's files are; text pastes as the browser does it.
+  const handlePaste = usePasteImages({
+    scopeOf: () => (disabled || isHidden || !onNotice ? null : `${pasteScope}#${messageEpochRef.current}`),
+    onPaths: insertPaths,
+    onNotice: (message) => onNotice?.(message),
+  });
+
   useImperativeHandle(handleRef, () => ({
     insertPaths,
     insertText: (inserted) => {
@@ -430,6 +456,7 @@ export function ComposerDock({
       textareaRef.current?.focus();
     },
     restore: (restoredText, restoredAttachments = []) => {
+      messageEpochRef.current += 1;
       setText(restoredText);
       mentionMenu.close();
       if (attachAsFiles) setAttachments([...restoredAttachments]);
@@ -462,6 +489,7 @@ export function ComposerDock({
       );
     },
     clear: () => {
+      messageEpochRef.current += 1;
       restoredRef.current = null;
       setText("");
       setAttachments([]);
@@ -585,6 +613,7 @@ export function ComposerDock({
           }}
           onClick={(e) => followCaret(e.currentTarget)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           disabled={disabled}
           placeholder={placeholder ?? replyPlaceholder(agentName)}
           aria-label="Prompt"
@@ -630,8 +659,8 @@ export function ComposerDock({
 
             {sessionAgent && !agent && !agents && (
               // A running session's agent, named first: a label, since a session cannot change its agent.
-              <span data-agent-chip="" className="inline-flex h-7 min-w-0 items-center gap-1.5 px-2 text-ui-sm text-fg-secondary">
-                <AgentLogo profileId={sessionAgent.profileId} name="" size={16} />
+              <span data-agent-chip="" className="inline-flex h-6.5 min-w-0 items-center gap-1.5 pl-0.5 pr-1.5 text-ui-sm text-fg-secondary">
+                <AgentTile profileId={sessionAgent.profileId} name="" size={16} />
                 <span className="truncate">{sessionAgent.name}</span>
               </span>
             )}
@@ -648,7 +677,7 @@ export function ComposerDock({
                   key={width}
                   data-skeleton-chip=""
                   aria-hidden="true"
-                  className={`h-7 ${width} rounded-md bg-surface-hover motion-safe:animate-pulse`}
+                  className={`h-6.5 ${width} rounded-md bg-chip motion-safe:animate-pulse`}
                 />
               ))}
 

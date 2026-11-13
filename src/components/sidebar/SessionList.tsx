@@ -32,8 +32,8 @@ export function SessionTree({ nodes, label, context, isNested = false, isInRun =
   return (
     <ul
       aria-label={label}
-      // A fork sits margin-left 11px, padding-left 10px behind its guide line, as drawn.
-      className={isNested ? "ml-[11px] mt-0.5 space-y-0.5 border-l border-border pl-2.5" : "space-y-0.5"}
+      // A fork sits on a rail: margin-left 18px, padding-left 8px, as drawn.
+      className={isNested ? "ml-[18px] mt-0.5 space-y-0.5 border-l border-border pl-2" : "space-y-0.5"}
     >
       {nodes.map((node) => {
         const { session, children, run } = node;

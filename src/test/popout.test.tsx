@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, act, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, act, fireEvent, waitFor, within } from "@testing-library/react";
 
 type Listener = (event: { payload: unknown }) => void;
 const listeners = new Map<string, Listener[]>();
@@ -171,6 +171,16 @@ describe("Popout windows", () => {
     });
 
     expect(screen.getByRole("button", { name: "Plan, 1 of 2 done" })).toBeDefined();
+  });
+
+  it("shows the session's folder before its title", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", { sessionId: "s-1", session: runningSession, messages: [] });
+    const bar = screen.getByRole("banner");
+    expect(within(bar).getByText("zorvo")).toBeInTheDocument();
+    expect(within(bar).getByText("Fix login")).toBeInTheDocument();
   });
 
   it("keeps its top bar clear of the window's buttons", async () => {
@@ -419,6 +429,29 @@ describe("Popout windows", () => {
     await deliver("popout-action", { sessionId, action: { kind: "stop" } });
 
     expect(spy).toHaveBeenCalledWith("acp_cancel", { sessionId }, undefined);
+  });
+
+  it("leaves a pasted image to the browser, since a popout has no way to say a paste failed", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", { sessionId: "s-1", session: runningSession, messages: [] });
+    const image = new File(["x"], "shot.png", { type: "image/png" });
+    const clipboardData = {
+      files: [image],
+      items: [{ kind: "file", type: "image/png", getAsFile: () => image }],
+      types: ["Files"],
+      getData: () => "",
+    };
+
+    const notPrevented = fireEvent.paste(screen.getByRole("textbox", { name: "Prompt" }), { clipboardData });
+    // Long enough for a save that was wrongly started to reach the backend.
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    expect(notPrevented).toBe(true);
+    expect(spy.mock.calls.some(([cmd]) => cmd === "save_pasted_image")).toBe(false);
+    expect(screen.queryByRole("button", { name: /^Remove / })).toBeNull();
   });
 });
 

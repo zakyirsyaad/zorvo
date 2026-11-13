@@ -28,7 +28,7 @@ export function SelectionToolbar({ selection, blockedReason, onReply }: {
       // Pressing a button would otherwise drop the selection before the click reads it.
       onMouseDown={(event) => event.preventDefault()}
       style={{ top, left }}
-      className="fixed z-50 -translate-x-1/2 rounded-lg border border-border bg-surface-3 p-0.5 shadow-popover select-none"
+      className="fixed z-50 -translate-x-1/2 rounded-panel border border-border bg-surface-3 p-1 shadow-popover select-none"
     >
       <Button
         variant="ghost"

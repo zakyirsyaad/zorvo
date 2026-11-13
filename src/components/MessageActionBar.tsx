@@ -17,11 +17,11 @@ export interface MessageActionBarProps {
  */
 export function MessageActionBar({ copied, onCopy, onFork, readAloud }: MessageActionBarProps) {
   return (
-    // 24px icons in fg-secondary, the nearest primitive step to the canvas's 26px.
+    // 28px icons in fg-secondary, as the v2 canvas draws the action row.
     <div data-message-actions="" className={`-ml-1.5 mt-1.5 flex items-center gap-0.5 ${REVEAL_ON_ROW}`}>
       <IconButton
         label={copied ? "Copied" : "Copy message"}
-        size="sm"
+        size="md"
         tone="secondary"
         onClick={onCopy}
         aria-label="Copy message"
@@ -29,14 +29,14 @@ export function MessageActionBar({ copied, onCopy, onFork, readAloud }: MessageA
         {copied ? <Check size={14} className="text-status-running" /> : <Copy size={14} />}
       </IconButton>
       {onFork && (
-        <IconButton label="Fork from here" size="sm" tone="secondary" onClick={onFork}>
+        <IconButton label="Fork from here" size="md" tone="secondary" onClick={onFork}>
           <GitBranch size={14} />
         </IconButton>
       )}
       {readAloud && (
         <IconButton
           label={readAloud.speaking ? "Stop reading" : "Read aloud"}
-          size="sm"
+          size="md"
           tone="secondary"
           onClick={readAloud.onToggle}
           className={readAloud.speaking ? "text-fg" : undefined}

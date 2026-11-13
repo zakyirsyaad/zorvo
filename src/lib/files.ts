@@ -41,6 +41,17 @@ export async function readWorkspaceFile(root: string, relative: string): Promise
   return parseFileContent(await invoke("read_workspace_file", { root, relative }));
 }
 
+/**
+ * The bytes of an image or a PDF the viewer was told it can show (`read_workspace_preview`). The backend
+ * answers with raw bytes, an ArrayBuffer; anything else is an error, not a guess.
+ */
+export async function readWorkspacePreview(root: string, relative: string): Promise<Uint8Array<ArrayBuffer>> {
+  const bytes: unknown = await invoke("read_workspace_preview", { root, relative });
+  if (bytes instanceof ArrayBuffer) return new Uint8Array(bytes);
+  if (bytes instanceof Uint8Array) return new Uint8Array(bytes);
+  throw new Error("Unexpected file contents from the backend");
+}
+
 /** Opens a workspace file with the platform's default application. */
 export async function openWorkspacePath(root: string, relative: string): Promise<void> {
   await invoke("open_path", { root, relative });

@@ -5,7 +5,7 @@ The one popover style, for every menu and picker that opens from a control: the 
 `Popover` holds the trigger and, while `isOpen`, the panel. The consumer owns `isOpen` and gets `onClose` on Escape or a click outside. When the popover closes while focus is inside it, focus goes back to the trigger, so a keyboard user keeps their place.
 
 - Panel: `surface-3`, `border`, `shadow-popover`, `radius-panel` (10px), 4px padding.
-- Options (`PopoverOption`): 30px tall, `radius-md` (6px), `ui` text, `surface-hover` on hover.
+- Options (`PopoverOption`): 28px tall (a row with a line under its label grows, with 5px above and below), `radius-md` (6px), `ui` text, `surface-hover` on hover. In a list you pick from, the picked row and a `highlighted` one (the row Return would pick in a search) name their choice in `fg` and the others in `fg-secondary`; a command row is always `fg`.
   - A row you can check (an `option`, a radio item, or any row given `selected`) keeps a 14px slot on the left, holding the check while selected. A command such as Rename has no slot.
   - The selected option also has `surface-hover`.
 - A `description` goes under the label in `caption` at 11/15 in `fg-subtle` ("Edits files without asking"), and the row tops its check. `trailing` holds a short hint at the right edge ("checked out").

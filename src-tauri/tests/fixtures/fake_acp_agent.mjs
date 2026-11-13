@@ -50,11 +50,26 @@
 //                         {tool, args} the flag holds, appends each result to the log (one JSON
 //                         line each), says "mcp:<tools/call text>" and ends the turn; a session
 //                         opened with no server says "mcp:none"
+//   FAKE_ACP_ENV_LOG -> at start, appends one JSON line {socket, token, tools}: whether
+//                         ZORVO_MCP_SOCKET, ZORVO_MCP_TOKEN and ZORVO_TOOLS are set (never their values)
+//   FAKE_ACP_TOOLS_COMMAND + FAKE_ACP_MCP_LOG -> a prompt "tools" makes the agent run the program
+//                         in ZORVO_TOOLS as `tools <tool> <json args>` ({tool, args} from the flag),
+//                         appends {status, stdout, stderr} to the log, says "tools:<stdout, trimmed>"
+//                         and ends the turn; without ZORVO_TOOLS it says "tools:none"
 // (each other FAKE_ACP_* flag is documented where it is read below)
 import { spawn } from "node:child_process";
 import { appendFileSync, closeSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
+
+if (process.env.FAKE_ACP_ENV_LOG) {
+  const present = {
+    socket: Boolean(process.env.ZORVO_MCP_SOCKET),
+    token: Boolean(process.env.ZORVO_MCP_TOKEN),
+    tools: Boolean(process.env.ZORVO_TOOLS),
+  };
+  appendFileSync(process.env.FAKE_ACP_ENV_LOG, `${JSON.stringify(present)}\n`);
+}
 
 let nextSession = 1;
 // The mcpServers each session was opened with, by session id.
@@ -209,6 +224,28 @@ function handlePrompt(id, params) {
     send({ method: "elicitation/complete", params: { elicitationId: "nope" } });
     say(params.sessionId, "completed-sent");
     reply(id, { stopReason: "end_turn" });
+    return;
+  }
+  if (text === "tools") {
+    const program = process.env.ZORVO_TOOLS;
+    if (!program || !process.env.FAKE_ACP_TOOLS_COMMAND || !process.env.FAKE_ACP_MCP_LOG) {
+      say(params.sessionId, "tools:none");
+      reply(id, { stopReason: "end_turn" });
+      return;
+    }
+    const call = JSON.parse(process.env.FAKE_ACP_TOOLS_COMMAND);
+    const child = spawn(program, ["tools", call.tool, JSON.stringify(call.args ?? {})], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => (stdout += chunk));
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.on("close", (status) => {
+      appendFileSync(process.env.FAKE_ACP_MCP_LOG, `${JSON.stringify({ status, stdout, stderr })}\n`);
+      say(params.sessionId, `tools:${stdout.trim()}`);
+      reply(id, { stopReason: "end_turn" });
+    });
     return;
   }
   if (text === "mcp") {

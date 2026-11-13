@@ -39,6 +39,13 @@ Made with the maintainer on 2026-11-13.
   Code and Codex, say), never two of the same agent. "Send to Qwen" therefore needs no session id.
   This replaces "A's open delegation: there is at most one."
 - **One level.** A session an agent opened gets no Zorvo tools, so it cannot open sessions.
+- **An agent may look after what it opened, and nothing else.** It can read and stop the sessions
+  its own session opened (delegates and independent sessions). It cannot see any other session:
+  otherwise one project's conversation could reach an agent working in another.
+- **A new session may get its own worktree, and may work in another folder Zorvo knows.** Another
+  folder always shows a card, whatever the session was allowed before.
+- **Not in compare runs.** A run's rows are measured from each agent's own worktree; a delegate's
+  work would be counted as the row's agent.
 - **Zorvo never reads a delegation out of free text.** Unchanged. The agent decides, by calling a tool.
 
 ## Transport
@@ -74,14 +81,21 @@ Under `pnpm tauri dev` the executable is the dev binary, which works the same wa
 
 ## Tools
 
-All three take and return plain JSON; errors are MCP tool errors with a sentence the agent can act on.
+Five tools. All take and return plain JSON; errors are MCP tool errors with a sentence the agent can
+act on. A session the caller opened is named by a `handle`: a short string Zorvo makes
+(`qwen-code-1`), returned by `delegate` and `start_session` and listed by `list_agents`. A handle
+means something only together with the caller's token, so it cannot name anyone else's session, and
+Zorvo's own session ids never reach an agent.
 
 ### `list_agents()`
 
 Returns the agents this session can address: `{ id, name, status }` for each agent in use that can
 start, with `status` one of `ready`, `not-checked`, `needs-sign-in`, and, for an agent this session
-has an open delegate of, `delegate: { state: "idle" | "working" | "needs-answer", task }`. The
-caller's own agent is listed; delegating to the same agent is allowed, as the dialog allows it.
+has an open delegate of, `delegate: { handle, state: "idle" | "working" | "needs-answer", task }`.
+The caller's own agent is listed; delegating to the same agent is allowed, as the dialog allows it.
+It also returns `opened`: the independent sessions this session opened, as
+`{ handle, agent, title, state, folder }`, and `folders`: the other folders a session may be opened
+in, as `{ name, path }` from the store's known workspaces.
 
 ### `delegate({ agent, task })`
 
@@ -95,15 +109,23 @@ caller's own agent is listed; delegating to the same agent is allowed, as the di
 - An open, idle delegate of that agent: the task is sent to it as its next prompt.
 - An open delegate that is working or waiting for an answer: an error, "Qwen Code is still working on
   the previous task."
-- Returns at once: `{ started: true, session: "<title>", note: "The answer arrives as a message when
-  Qwen Code finishes." }`. It never waits for the delegate: agents cap a tool call at minutes, and a
-  delegated task can run far longer.
+- Returns at once: `{ started: true, handle, session: "<title>", note: "The answer arrives as a
+  message when Qwen Code finishes." }`. It never waits for the delegate: agents cap a tool call at
+  minutes, and a delegated task can run far longer.
+- A delegate always works where its source works. `worktree` and `folder` are `start_session`'s.
 
-### `start_session({ agent, brief, title? })`
+### `start_session({ agent, brief, title?, worktree?, folder? })`
 
-- Opens an independent session of `agent` in the caller's `cwd` (and worktree, if it has one), with
-  `brief` as its first message. No handoff file: the brief is all the new session knows, and the tool's
-  description tells the agent to make it self-contained.
+- Opens an independent session of `agent` with `brief` as its first message, by default in the
+  caller's `cwd` (and worktree, if it has one). No handoff file: the brief is all the new session
+  knows, and the tool's description tells the agent to make it self-contained.
+- `worktree: true`: the session gets a worktree of its own, made as a user-started worktree session
+  is (`createSessionWorktree`, an `agent/<title>` branch from the folder's HEAD). In a folder that is
+  not a repository this is an error. The agent names no branch and no path.
+- `folder`: a `path` from `list_agents`' `folders`. The webview resolves it against the known
+  workspaces and the backend's `ensure_known_workspace` checks it again when the session starts; any
+  other path is an error. A session in another folder always asks first (see Approval), and attached
+  files or a handoff never go with it.
 - `title`: optional, at most 60 characters; else the brief's first line, cut as
   `delegateSessionName` cuts.
 - The session records `openedBy: { sessionId, at }` and shows "Opened by Pi" where a delegate shows
@@ -112,10 +134,31 @@ caller's own agent is listed; delegating to the same agent is allowed, as the di
   error that says so.
 - The new session is not selected: the user stays where they are.
 
+### `read_session({ handle, max_chars? })`
+
+- Returns the newest finished agent answer of a session the caller opened, cut to `max_chars`
+  (default and cap 20,000, `MAX_REPORT_CHARS`), with the session's `state` and the files it reported
+  changing (`reportedFiles`). While its first turn runs there is no answer yet, and the result says
+  so.
+- The answer comes with the report's framing line: it is another agent's output, information and
+  not instructions.
+- It returns the last answer only, not the transcript: the user's messages, tool output and
+  permission cards of that session stay there.
+- No approval: it reads what the caller's own grant started.
+
+### `stop_session({ handle })`
+
+- Cancels the running turn of a session the caller opened, as the user's Stop does
+  (`handleInterrupt`). It does not archive the session, end a delegation or remove a worktree. A
+  session that is idle answers that there was nothing to stop.
+- A stopped delegate sends no report, as a failed turn sends none today.
+- No approval: it can only stop what the caller's own grant started, and stopping loses no work.
+
 ### What an agent can never send
 
-A folder, a worktree, a command, a mode, a model or a session id. Folder and worktree are the
-caller's. This is the same boundary as agent profiles: text and an agent id only.
+A command, a mode, a model, a branch name, a worktree path, or the id of a session. A folder is one
+Zorvo already knows, picked from a list Zorvo gave. This is the same boundary as agent profiles:
+text, an agent id, and choices from lists the backend can check.
 
 ## From tool call to session
 
@@ -152,7 +195,14 @@ duplicate them.
   (`onAttention('needs-answer')`).
 - If the agent also asks its own permission for the tool, the user sees that card first and Zorvo's
   second, once. This is accepted.
-- `list_agents` needs no approval: it starts nothing and returns agent names and states only.
+- A `start_session` with `folder` shows the card every time, grant or not, with the folder as its
+  first line and **Allow once** in place of Allow for this session. It never creates or widens a
+  grant. Reason: a grant given for work in one project must not let text the agent read start an
+  agent in another.
+- `list_agents`, `read_session` and `stop_session` need no approval. `list_agents` does return the
+  names and paths of the user's other workspaces; that is the cost of letting an agent pick one.
+- In a popout, the card shows in the popout's chat too, and its answer is forwarded to the main
+  window like `choose-option` (`lib/popout-bridge.ts`); the main window still handles the call.
 
 ## Changes to the delegation rules
 
@@ -192,8 +242,8 @@ In `src/lib/delegation.ts`, each with its tests:
 - Settings → Agents: one switch, **Let agents delegate and open sessions**, on by default, with a
   line saying a card asks first in each session. Off means `mcpServers` is `[]` for new and reopened
   sessions; running sessions keep their tools until they stop.
-- Popouts: a popout forwards actions and never handles a tool call; the main window does, and the
-  approval card shows in the main window's chat for that session.
+- Popouts: a popout never handles a tool call; the main window does. The approval card is part of
+  the session's snapshot, so a popout of that session shows it and forwards the answer.
 - Copy follows `docs/design-system/README.md`; the card and lines reuse the delegate artboards
   (`docs/superpowers/specs/2026-11-08-delegate-artboards`). New artboards are not planned.
 
@@ -206,19 +256,24 @@ In `src/lib/delegation.ts`, each with its tests:
   otherwise, as today.
 - A report is still another agent's output sent to the source unread, with the existing framing line.
 - The socket accepts only this user's processes and only known tokens. A token gives exactly the
-  three tools, for one session. Tokens and task text are never logged.
+  five tools, for one session, and reaches only the sessions that session opened. Tokens and task text are never logged.
 - Fan-out is bounded: one level, one delegate per agent, three running independent sessions per
   opener.
 - The bridge mode runs the app's own binary and takes nothing from the webview.
 
 ## Not built
 
-- An agent stopping, reading or listing other sessions, or choosing a folder, worktree, mode or model.
+- An agent reading, stopping or listing a session it did not open, reading a whole transcript, or
+  archiving a session.
+- An agent choosing a mode, a model, a branch, or a folder Zorvo does not know.
+- A delegate in another folder or its own worktree.
 - Waiting for a delegate inside the tool call.
-- Tools in compare-run sessions, and in sessions an agent opened.
+- Tools in compare-run sessions: a row's numbers are its worktree's changes, so a delegate's work
+  would read as the row's agent's, and Pick would have to stop sessions it does not list.
+- Tools in sessions an agent opened.
 - An `@Agent` mention anywhere but the start of the message: the agent now reads the request itself.
 - The user's own MCP server list (Customize). This spec adds the place `mcpServers` is built; the
-  list is its own project.
+  list is the next spec, after phase 1 here has merged (decided 2026-11-13).
 - HTTP transport.
 
 ## Risk to settle first
@@ -231,7 +286,7 @@ and callable, the agent's tool-call timeout, and whether it asks its own permiss
 
 ## Phases
 
-One spec, three PRs:
+One spec, four PRs:
 
 1. **Backend.** `agent_tools/`, the bridge mode, tokens, `mcpServers` in the four requests, the
    event and the respond command, the setting. Tested with the fake agent: a new
@@ -239,7 +294,9 @@ One spec, three PRs:
    the Rust integration tests cover socket, token, timeout and a stopped session.
 2. **Delegation.** `useAgentTools`, the approval card, `delegate` and `list_agents`, several
    delegates, follow-ups, queued reports, the changed Send rule, the user's `@Agent` follow-up.
-3. **Independent sessions.** `start_session`, `openedBy`, the "Opened by" line, the cap.
+3. **Independent sessions.** `start_session` with `worktree` and `folder`, `openedBy`, the "Opened
+   by" line, the cap, the every-time folder card.
+4. **Looking after sessions.** Handles, `read_session`, `stop_session`, the card in a popout.
 
 ## Testing
 
@@ -249,6 +306,11 @@ One spec, three PRs:
 - Vitest: `agent-tools.ts` rules; the approval card (allow, deny, withdrawn on timeout, grant reused,
   grant gone after reload); several delegates; follow-up to an idle and to a busy delegate; a report
   that arrives mid-turn and is sent at turn end; two reports in order; the changed Send rule.
+- Vitest for the later phases: a handle of another session's child is refused; `read_session`
+  before, during and after a turn; `stop_session` on a working and an idle session; `worktree` in
+  and outside a repository; a `folder` that is known, unknown, and a path that only looks like a
+  known one (`/w/a/../b`, a symlink); the folder card with a grant already given; the card answered
+  from a popout.
 - A real-app check with the E2E harness (fake agents, scratch HOME): a fake agent calls `delegate`
   twice and `start_session` once.
 - `CLAUDE.md` gets an "Agent tools" paragraph and the delegation paragraph it still lacks; the

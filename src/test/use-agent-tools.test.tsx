@@ -15,7 +15,7 @@ import { useAgentTools, type AgentToolsDeps } from "../hooks/useAgentTools";
 import type { GiveTaskResult } from "../hooks/useDelegation";
 import type { OpenRequest, OpenResult } from "../hooks/useOpenedSessions";
 import { ALLOW_ONCE, ALLOW_SESSION, DENY } from "../lib/agent-tool-card";
-import { DECLINED, NOT_YET, NO_SESSION } from "../lib/agent-tools";
+import { DECLINED, NO_SESSION } from "../lib/agent-tools";
 import type { MentionAgentStatus } from "../lib/delegation";
 import { makeProfile } from "./fixtures/agents";
 import type { ChatMessage, Session } from "../types";
@@ -46,6 +46,9 @@ interface Env {
   sessions: Session[];
   opens: Array<{ openerId: string; request: OpenRequest }>;
   notices: string[];
+  stopped: string[];
+  states: Record<string, "idle" | "working" | "needs-answer">;
+  transcripts: Record<string, ChatMessage[] | "unreadable">;
   openResult: (request: OpenRequest) => OpenResult;
 }
 
@@ -64,6 +67,9 @@ function setup(overrides: Partial<Env> = {}) {
     sessions: [SESSION],
     opens: [],
     notices: [],
+    stopped: [],
+    states: {},
+    transcripts: {},
     openResult: (request) => ({
       ok: true,
       sessionId: "o-1",
@@ -99,6 +105,15 @@ function setup(overrides: Partial<Env> = {}) {
         },
         onNotice: (message) => {
           env.notices.push(message);
+        },
+        messagesOf: async (sessionId) => {
+          const messages = env.transcripts[sessionId];
+          if (messages === "unreadable") throw new Error("ENOENT /Users/test/secret/transcripts");
+          return messages ?? [];
+        },
+        stateOf: (sessionId) => env.states[sessionId] ?? "idle",
+        stopTurn: (sessionId) => {
+          env.stopped.push(sessionId);
         },
       };
       return useAgentTools(deps);
@@ -326,13 +341,6 @@ describe("useAgentTools", () => {
       [false, NO_SESSION],
       [false, NO_SESSION],
     ]);
-  });
-
-  it("answers the tools of the last phase as not available yet", async () => {
-    const t = setup();
-    await t.call("2", "read_session", { handle: "h" });
-    await t.call("3", "stop_session", { handle: "h" });
-    expect(t.answers().map((answer) => answer.text)).toEqual([NOT_YET, NOT_YET]);
   });
 
   it("answers even when giving the task throws, and for arguments it cannot read", async () => {
@@ -584,5 +592,95 @@ describe("useAgentTools", () => {
     expect(t.answers()[1].text).toBe("Zorvo could not do that.");
     expect(t.answers()[2].text).toContain('No agent called "nobody"');
     expect(t.cards()).toHaveLength(0);
+  });
+
+  const OPENED: Session = {
+    ...SESSION,
+    id: "o-1",
+    name: "Parser port",
+    profileId: "codex-acp",
+    openedBy: { sessionId: "s-1", at: 5, handle: "session-1" },
+  };
+  const DELEGATE: Session = {
+    ...SESSION,
+    id: "d-1",
+    name: "Qwen Code: Review",
+    profileId: "qwen-code",
+    delegatedFrom: { sessionId: "s-1", task: "Review", startedAt: 5 },
+  };
+  const OTHERS: Session = { ...OPENED, id: "o-z", openedBy: { sessionId: "s-other", at: 5, handle: "session-2" } };
+  const ANSWER: ChatMessage[] = [
+    { id: "m-1", role: "user", content: "Port the parser.", timestamp: 1 },
+    { id: "m-2", role: "agent", content: "Ported. Tests pass.", timestamp: 2, isComplete: true },
+  ];
+  const UNKNOWN = "No session with that handle. Use list_agents to see yours.";
+
+  it("reads the last answer of a session it opened and of its delegate, with no card and no grant", async () => {
+    const t = setup({ sessions: [SESSION, OPENED, DELEGATE], transcripts: { "o-1": ANSWER, "d-1": ANSWER }, states: { "d-1": "working" } });
+    await t.call("1", "read_session", { handle: "session-1" });
+    await t.call("2", "read_session", { handle: "qwen-code" });
+
+    await waitFor(() => expect(t.answers()).toHaveLength(2));
+    expect(t.cards()).toHaveLength(0);
+    expect(t.result.current.hasGrant("s-1")).toBe(false);
+    expect(JSON.parse(t.answers()[0].text)).toMatchObject({ state: "idle", answer: "Ported. Tests pass." });
+    expect(JSON.parse(t.answers()[1].text)).toMatchObject({ state: "working", answer: "Ported. Tests pass." });
+    // Zorvo's own ids never reach the agent.
+    for (const answer of t.answers()) {
+      expect(answer.ok).toBe(true);
+      expect(answer.text).not.toMatch(/o-1|d-1|s-1/);
+    }
+  });
+
+  it("cuts the answer to max_chars", async () => {
+    const t = setup({ sessions: [SESSION, OPENED], transcripts: { "o-1": ANSWER } });
+    await t.call("1", "read_session", { handle: "session-1", max_chars: 6 });
+    await waitFor(() => expect(t.answers()).toHaveLength(1));
+    expect(JSON.parse(t.answers()[0].text).answer).toBe("Ported");
+  });
+
+  it("refuses a handle that is not the caller's own, with one sentence for every case", async () => {
+    const archived: Session = { ...OPENED, id: "o-2", archivedAt: 9, openedBy: { sessionId: "s-1", at: 6, handle: "session-3" } };
+    const t = setup({ sessions: [SESSION, OPENED, OTHERS, archived] });
+    const handles = ["session-2", "session-3", "o-1", "codex-acp", "s-1", "nope"];
+    for (const [index, handle] of handles.entries()) {
+      await t.call(String(index), index % 2 === 0 ? "read_session" : "stop_session", { handle });
+    }
+    await waitFor(() => expect(t.answers()).toHaveLength(handles.length));
+    expect(t.answers().map((answer) => [answer.ok, answer.text])).toEqual(handles.map(() => [false, UNKNOWN]));
+    expect(t.env.stopped).toHaveLength(0);
+  });
+
+  it("says a session could not be read without saying why", async () => {
+    const t = setup({ sessions: [SESSION, OPENED], transcripts: { "o-1": "unreadable" } });
+    await t.call("1", "read_session", { handle: "session-1" });
+    await waitFor(() => expect(t.answers()).toHaveLength(1));
+    expect(t.answers()[0]).toEqual({ callId: "1", ok: false, text: "That session could not be read." });
+  });
+
+  it("stops a working or waiting session as Stop does, and only says so for an idle one", async () => {
+    const t = setup({ sessions: [SESSION, OPENED, DELEGATE], states: { "o-1": "working", "d-1": "needs-answer" } });
+    await t.call("1", "stop_session", { handle: "session-1" });
+    await t.call("2", "stop_session", { handle: "qwen-code" });
+    expect(t.env.stopped).toEqual(["o-1", "d-1"]);
+    expect(t.answers().map((answer) => JSON.parse(answer.text))).toEqual([{ stopped: true }, { stopped: true }]);
+
+    t.env.states["o-1"] = "idle";
+    await t.call("3", "stop_session", { handle: "session-1" });
+    expect(t.env.stopped).toHaveLength(2);
+    expect(JSON.parse(t.answers()[2].text)).toEqual({ stopped: false, note: "It was not working." });
+    expect(t.cards()).toHaveLength(0);
+  });
+
+  it("answers a read or stop call it cannot read", async () => {
+    const t = setup({ sessions: [SESSION, OPENED] });
+    await t.call("1", "read_session", { handle: 3 });
+    await t.call("2", "stop_session", {});
+    await t.call("3", "read_session", { handle: "session-1", max_chars: "all" });
+    expect(t.answers().map((answer) => answer.text)).toEqual([
+      "Zorvo could not do that.",
+      "Zorvo could not do that.",
+      "Zorvo could not do that.",
+    ]);
   });
 });

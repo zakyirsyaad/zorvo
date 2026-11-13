@@ -1,5 +1,12 @@
-import type { Session } from '../types';
-import { delegateSessionName, type MentionAgentStatus } from './delegation';
+import type { ChatMessage, Session } from '../types';
+import {
+  MAX_REPORT_CHARS,
+  REPORT_FRAMING,
+  answerOf,
+  delegateSessionName,
+  reportedFiles,
+  type MentionAgentStatus,
+} from './delegation';
 import { isArchived } from './session-helpers';
 import { escapeVisible } from './visible-text';
 
@@ -45,7 +52,9 @@ type ToolsSubject = Pick<Session, 'compareRunId' | 'delegatedFrom' | 'openedBy' 
 /** Answered to the agent when the user pressed Deny. */
 export const DECLINED = 'The user declined.';
 /** Answered for a tool a later phase builds. */
-export const NOT_YET = 'This tool is not available yet.';
+/** One sentence for every handle that is not the caller's own, so nothing can be told apart. */
+export const NO_SUCH_HANDLE = 'No session with that handle. Use list_agents to see yours.';
+export const UNREADABLE = 'That session could not be read.';
 /** Answered for a session that gets no tools, or that Zorvo does not know. */
 export const NO_SESSION = "This session cannot use Zorvo's tools.";
 
@@ -269,4 +278,41 @@ export function ownedByHandle(openerId: string, handle: string, sessions: readon
       (session.openedBy?.sessionId === openerId || session.delegatedFrom?.sessionId === openerId) &&
       handleOf(session) === handle,
   );
+}
+
+// --- Reading and stopping a session an agent started.
+
+/**
+ * What `read_session` answers: the newest finished answer of the other agent,
+ * the files it reported changing, and the session's state. Only the agent's
+ * own answer: what the user typed there is never passed on.
+ */
+export function readSessionText(input: {
+  messages: readonly ChatMessage[];
+  state: DelegateState;
+  /** The session's folder: the files are named relative to it. */
+  cwd: string;
+  maxChars?: number;
+}): string {
+  const last = [...input.messages].reverse().find((message) => answerOf(message) !== '');
+  if (last === undefined) {
+    return JSON.stringify({ state: input.state, answer: null, files: [], note: 'It has not finished an answer yet.' });
+  }
+  const answer = answerOf(last);
+  const limit = Math.max(1, Math.min(Math.floor(input.maxChars ?? MAX_REPORT_CHARS), MAX_REPORT_CHARS));
+  const isCut = answer.length > limit;
+  const prefix = input.cwd.endsWith('/') ? input.cwd : `${input.cwd}/`;
+  const files = reportedFiles(last).map((file) =>
+    escapeVisible(file.startsWith(prefix) ? file.slice(prefix.length) : file),
+  );
+  return JSON.stringify({
+    state: input.state,
+    answer: isCut ? answer.slice(0, limit) : answer,
+    files,
+    note: isCut ? `${REPORT_FRAMING} The answer was cut at ${limit} characters.` : REPORT_FRAMING,
+  });
+}
+
+export function stopResultText(wasWorking: boolean): string {
+  return JSON.stringify(wasWorking ? { stopped: true } : { stopped: false, note: 'It was not working.' });
 }

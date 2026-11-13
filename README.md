@@ -291,6 +291,14 @@ before it edits files or runs commands. Pick another mode in the composer.
   and in Settings. It stores neither, never reads or keeps a token, and
   downloads no picture. **Connect** runs `gh auth login` for github.com in a
   terminal, and you sign in through your browser.
+- **Agents start other agents only after you allow it.** An agent can ask
+  Zorvo to give another agent a task. The first time in a session, Zorvo shows
+  you who asks, which agent the task is for, the folder and the task itself;
+  after **Allow for this session**, that session's agent can give further tasks
+  without asking again, until you close Zorvo or choose **Stop allowing
+  delegation** in the session's menu. The other agent works in the same folder
+  and its answer is sent back. You can turn this off for all agents in
+  **Settings → Agents**.
 - **No telemetry.** Zorvo sends nothing about you or your work anywhere.
 - **Only a few hosts, all named.** Zorvo itself contacts only:
   - the ACP registry (`cdn.agentclientprotocol.com`), to list agents, their

@@ -107,9 +107,23 @@ through its shell.
 - The token is readable by every process the agent's shell starts. That is the agent's own trust
   level, and the token gives only these tools, behind the card.
 
-Not verified, and the command path's own spike before its plan: that Pi runs the command when the
-hidden context describes it, that the three variables reach Pi's `bash` tool, and how long Pi lets a
-`bash` call wait (the approval card can hold a call for minutes).
+Checked on 2026-11-13 with `pi-acp@0.0.34`, a stand-in script as `ZORVO_TOOLS` and an empty folder
+as `cwd`:
+
+- Pi runs the command from hidden context. The context was one text block ahead of the user's
+  message, a few lines naming the tools. Asked in Indonesian, in plain words, to have Qwen Code
+  review a plan, Pi ran `"$ZORVO_TOOLS" tools list_agents '{}'` and then
+  `"$ZORVO_TOOLS" tools delegate '{"agent": "qwen-code", "task": "…"}'`, and told the user the answer
+  would arrive as a separate message. It wrote the task itself, in English, longer than the request.
+- `ZORVO_TOOLS`, `ZORVO_MCP_SOCKET` and `ZORVO_MCP_TOKEN` all reached the command Pi's `bash` ran.
+- Pi asked no permission of its own for either command.
+- Pi let a command wait 240 seconds and read its output; its limit, if it has one, is above that.
+  The 4-minute call timeout therefore holds for Pi; Antigravity's 3 minutes is the shortest.
+- Pi called `list_agents` first without being told to, so the agent id it passed was a real one.
+
+Not checked: the real `zorvo tools` mode (not built yet), a second ACP session in the same Pi
+process, and whether Pi still uses the commands late in a long session, after its context was
+compacted.
 
 ## Tools
 

@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- The Files tab shows images (PNG, JPEG, GIF, WebP) and PDFs instead of saying the file is binary. A file over 10 MB says it is too large to preview.
+
 ### Changed
 
 - The window has a layered look: the chat and the inspector are raised panels on the window's background.

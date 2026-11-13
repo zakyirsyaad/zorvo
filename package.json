@@ -27,6 +27,7 @@
     "ansis": "^4.2.0",
     "diff": "9.0.0",
     "lucide-react": "^1.61.0",
+    "pdfjs-dist": "5.4.149",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-markdown": "10.1.0",

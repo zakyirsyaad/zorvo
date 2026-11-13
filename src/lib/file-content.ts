@@ -2,7 +2,23 @@
 export type FileContent =
   | { kind: "text"; text: string; size: number }
   | { kind: "binary"; size: number }
-  | { kind: "tooLarge"; size: number; limit: number };
+  | { kind: "tooLarge"; size: number; limit: number }
+  | { kind: "preview"; mime: PreviewMime; size: number }
+  | { kind: "previewTooLarge"; mime: PreviewMime; size: number; limit: number };
+
+/** The types the viewer can show; the backend tells them by the file's header, never its name. */
+export const PREVIEW_LABEL = {
+  "image/png": "PNG image",
+  "image/jpeg": "JPEG image",
+  "image/gif": "GIF image",
+  "image/webp": "WebP image",
+  "application/pdf": "PDF",
+} as const;
+
+export type PreviewMime = keyof typeof PREVIEW_LABEL;
+
+const isPreviewMime = (value: unknown): value is PreviewMime =>
+  typeof value === "string" && Object.hasOwn(PREVIEW_LABEL, value);
 
 const isNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 
@@ -16,6 +32,17 @@ export function parseFileContent(value: unknown): FileContent {
     if (candidate.kind === "binary" && isNumber(candidate.size)) return { kind: "binary", size: candidate.size };
     if (candidate.kind === "tooLarge" && isNumber(candidate.size) && isNumber(candidate.limit)) {
       return { kind: "tooLarge", size: candidate.size, limit: candidate.limit };
+    }
+    if (candidate.kind === "preview" && isPreviewMime(candidate.mime) && isNumber(candidate.size)) {
+      return { kind: "preview", mime: candidate.mime, size: candidate.size };
+    }
+    if (
+      candidate.kind === "previewTooLarge" &&
+      isPreviewMime(candidate.mime) &&
+      isNumber(candidate.size) &&
+      isNumber(candidate.limit)
+    ) {
+      return { kind: "previewTooLarge", mime: candidate.mime, size: candidate.size, limit: candidate.limit };
     }
   }
   throw new Error("Unexpected file contents from the backend");

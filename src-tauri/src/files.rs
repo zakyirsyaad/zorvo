@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tauri::State;
 
+use crate::attachments::MAX_PREVIEW_BYTES;
 use crate::store::AppStore;
 
 #[cfg(target_os = "macos")]
@@ -39,6 +40,15 @@ pub enum FileContent {
     Binary { size: u64 },
     /// Over `MAX_VIEW_BYTES`; not read at all.
     TooLarge { size: u64, limit: u64 },
+    /// An image or a PDF by its header, within the preview cap: the UI fetches the bytes with
+    /// `read_workspace_preview`.
+    Preview { mime: &'static str, size: u64 },
+    /// An image or a PDF by its header, over the preview cap; not read.
+    PreviewTooLarge {
+        mime: &'static str,
+        size: u64,
+        limit: u64,
+    },
 }
 
 /// Reads `relative` inside `root` for the viewer. Only a regular file is read: a folder, a named
@@ -51,6 +61,18 @@ pub fn read_view_file(root: &str, relative: &str) -> Result<FileContent, String>
         return Err(format!("{relative:?} is not a file"));
     }
     let size = metadata.len();
+    // Only the first bytes: a large screenshot or PDF is told apart without being read.
+    if let Some(mime) = crate::file_preview::viewable_type(&target)? {
+        return Ok(if size > MAX_PREVIEW_BYTES {
+            FileContent::PreviewTooLarge {
+                mime,
+                size,
+                limit: MAX_PREVIEW_BYTES,
+            }
+        } else {
+            FileContent::Preview { mime, size }
+        });
+    }
     if size > MAX_VIEW_BYTES {
         return Ok(FileContent::TooLarge {
             size,
@@ -490,6 +512,85 @@ mod tests {
                 size: MAX_VIEW_BYTES + 1,
                 limit: MAX_VIEW_BYTES
             }
+        );
+    }
+
+    #[test]
+    fn offers_a_png_by_its_header_not_its_name() {
+        let ws = TempWorkspace::new("view-png");
+        fs::write(ws.path.join("shot.dat"), b"\x89PNG\r\n\x1a\n\0\0").expect("write");
+
+        assert_eq!(
+            read_view_file(ws.root(), "shot.dat").expect("read"),
+            FileContent::Preview {
+                mime: "image/png",
+                size: 10
+            }
+        );
+    }
+
+    #[test]
+    fn offers_a_pdf_and_a_pdf_named_txt_is_still_a_pdf() {
+        let ws = TempWorkspace::new("view-pdf");
+        fs::write(ws.path.join("a.txt"), b"%PDF-1.4\n\0\0").expect("write");
+
+        assert_eq!(
+            read_view_file(ws.root(), "a.txt").expect("read"),
+            FileContent::Preview {
+                mime: "application/pdf",
+                size: 11
+            }
+        );
+    }
+
+    #[test]
+    fn a_png_named_png_with_text_inside_stays_text() {
+        let ws = TempWorkspace::new("view-fake-png");
+        fs::write(ws.path.join("fake.png"), "just words").expect("write");
+
+        assert!(matches!(
+            read_view_file(ws.root(), "fake.png").expect("read"),
+            FileContent::Text { .. }
+        ));
+    }
+
+    #[test]
+    fn refuses_a_previewable_file_over_the_preview_cap_without_reading_it() {
+        let ws = TempWorkspace::new("view-big-pdf");
+        let path = ws.path.join("big.pdf");
+        let mut file = fs::File::create(&path).expect("create");
+        std::io::Write::write_all(&mut file, b"%PDF-1.7\n").expect("write header");
+        file.set_len(MAX_PREVIEW_BYTES + 1)
+            .expect("grow sparse file");
+
+        assert_eq!(
+            read_view_file(ws.root(), "big.pdf").expect("read"),
+            FileContent::PreviewTooLarge {
+                mime: "application/pdf",
+                size: MAX_PREVIEW_BYTES + 1,
+                limit: MAX_PREVIEW_BYTES
+            }
+        );
+    }
+
+    #[test]
+    fn serializes_previews_in_camel_case() {
+        assert_eq!(
+            serde_json::to_value(FileContent::Preview {
+                mime: "image/png",
+                size: 3
+            })
+            .expect("serialize"),
+            serde_json::json!({ "kind": "preview", "mime": "image/png", "size": 3 })
+        );
+        assert_eq!(
+            serde_json::to_value(FileContent::PreviewTooLarge {
+                mime: "application/pdf",
+                size: 9,
+                limit: 4
+            })
+            .expect("serialize"),
+            serde_json::json!({ "kind": "previewTooLarge", "mime": "application/pdf", "size": 9, "limit": 4 })
         );
     }
 

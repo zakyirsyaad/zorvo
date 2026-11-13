@@ -116,6 +116,32 @@ describe("before the build", () => {
   });
 });
 
+// macOS keys a folder or App Management grant to the app's bundle identifier and checks the code requirement stored
+// with it against the bundle on disk. An unsealed bundle (the linker's signature on the executable alone) never
+// matches, so the prompts come back. Signing the whole bundle ad-hoc seals it under the bundle identifier. The Tauri
+// bundler reads `APPLE_SIGNING_IDENTITY` before this setting (tauri-cli `interface/rust.rs`), so a real identity,
+// once the workflow exports one, still wins.
+describe("the app's code signature", () => {
+  const config = JSON.parse(readFileSync(join(ROOT, "src-tauri/tauri.conf.json"), "utf8"));
+
+  it("is an ad-hoc signature of the whole bundle unless a real identity is given", () => {
+    expect(config.bundle.macOS.signingIdentity).toBe("-");
+  });
+
+  it("keeps the hardened runtime on, which notarizing needs once a real identity is used", () => {
+    expect(config.bundle.macOS.hardenedRuntime ?? true).toBe(true);
+  });
+
+  it("is signed under the bundle identifier, which TCC keys its grants by", () => {
+    expect(config.identifier).toBe("xyz.zorvo.desktop");
+  });
+
+  it("gets a real identity from APPLE_SIGNING_IDENTITY only when that secret is set", () => {
+    expect(code).toContain("APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}");
+    expect(code).toContain('if [ -n "$value" ]; then');
+  });
+});
+
 describe("pinning", () => {
   it("pins every action to a commit", () => {
     const uses = [...code.matchAll(/^\s*(?:- )?uses: (\S+)/gm)].map((match) => match[1]);

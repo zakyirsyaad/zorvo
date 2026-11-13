@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- **macOS no longer asks again and again for access to your folders, or to update other apps.** The release was signed only on its executable, so macOS could not match a grant you had given to the app on disk and asked again. The whole app is now signed under its own name, `xyz.zorvo.desktop`. The prompts also say why: an agent you run in Zorvo reads or changes files there. Until Zorvo has an Apple Developer ID, macOS may still ask once after each update.
+
 ### Changed
 
 - The window has a layered look: the chat and the inspector are raised panels on the window's background.

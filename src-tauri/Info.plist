@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Merged into the app's Info.plist by Tauri. macOS shows each string in the folder prompt it raises
+	     when Zorvo, or an agent Zorvo started, first reads that place. -->
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>An agent you run in Zorvo reads or changes files in your Desktop folder.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>An agent you run in Zorvo reads or changes files in your Documents folder.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>An agent you run in Zorvo reads or changes files in your Downloads folder.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>An agent you run in Zorvo reads or changes files on a removable drive.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>An agent you run in Zorvo reads or changes files on a network drive.</string>
+</dict>
+</plist>

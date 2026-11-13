@@ -164,7 +164,27 @@ the updater key, they reach the build job:
 - `APPLE_PASSWORD` (an app-specific password)
 - `APPLE_TEAM_ID`
 
-Without them, the build is unsigned.
+Without them, the build is signed ad-hoc: `bundle.macOS.signingIdentity` in
+`tauri.conf.json` is `"-"`, so the bundler runs `codesign` on the whole app, which
+gets the identifier `xyz.zorvo.desktop`, a bound Info.plist and sealed resources.
+The bundler reads `APPLE_SIGNING_IDENTITY` before that setting, and the workflow
+exports it only when the secret is set, so a real identity wins the day the
+secrets are added with no other change. (Setting the certificate but not the
+identity fails the build, since `-` does not match the certificate.)
+
+What an ad-hoc signature fixes and what it does not:
+
+- It fixes macOS asking again and again within one version. The TCC log showed a
+  grant for `xyz.zorvo.desktop` that failed with "Failed to match existing code
+  requirement" against the unsealed bundle, then a new prompt, many times a day.
+- Its designated requirement is `cdhash H"…"`, which changes with every build.
+  Expect one prompt per folder after each update. This is from the requirement
+  and Apple's documentation; it was not observed across two real releases.
+- Only a Developer ID certificate gives a requirement that stays the same across
+  updates. That is the follow-up, and the Apple secrets above are all it needs.
+- `src-tauri/Info.plist` holds the folder usage descriptions Tauri merges in.
+  That macOS shows them in the prompt is Apple's documented behavior; it was not
+  checked on screen, since that needs a reset of the TCC grants.
 
 ### The updater key
 

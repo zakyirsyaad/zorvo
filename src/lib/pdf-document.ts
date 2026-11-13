@@ -36,16 +36,24 @@ export async function openPdf(bytes: Uint8Array): Promise<PdfDocument> {
   ]);
   pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
   // pdf.js transfers the buffer to its worker; hand it a copy so the caller's bytes stay usable.
-  const pdf: PDFDocumentProxy = await pdfjs.getDocument({
+  const loadingTask = pdfjs.getDocument({
     data: bytes.slice(),
     isEvalSupported: false,
     enableXfa: false,
     disableAutoFetch: true,
     disableStream: true,
     disableRange: true,
-  }).promise;
-  const first = await pdf.getPage(1);
-  const firstView = first.getViewport({ scale: 1 });
+  });
+  let pdf: PDFDocumentProxy;
+  let firstView: { width: number; height: number };
+  try {
+    pdf = await loadingTask.promise;
+    firstView = (await pdf.getPage(1)).getViewport({ scale: 1 });
+  } catch (error) {
+    // A corrupt or password-protected file still started a worker: end it, since nobody holds the task.
+    void loadingTask.destroy();
+    throw error;
+  }
   return {
     pageCount: pdf.numPages,
     firstPageRatio: firstView.height / firstView.width,

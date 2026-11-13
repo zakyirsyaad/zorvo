@@ -35,4 +35,12 @@ describe("the agent tools setting", () => {
     fireEvent.click(screen.getByRole("switch"));
     expect(onChange).toHaveBeenLastCalledWith(true);
   });
+
+  it("pins the thumb to the track's left edge, so only its transform places it", () => {
+    // A button centres its content, and an absolute box with no `left` starts where the
+    // line would put it: in the middle of the track, which pushed the thumb out of it.
+    render(<AgentToolsSetting isOn onChange={() => undefined} />);
+    const thumb = screen.getByRole("switch").querySelector("span > span");
+    expect(thumb?.className.split(" ")).toContain("left-0");
+  });
 });

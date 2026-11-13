@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- The switch for **Let agents delegate and open sessions** in Settings → Agents draws its knob inside the track again; it sat half a track too far right, outside the switch when on.
+
 ## [0.11.0] - 2026-11-14
 
 ### Added

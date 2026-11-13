@@ -38,7 +38,7 @@ export function AgentToolsSetting({ isOn, onChange }: AgentToolsSettingProps) {
               className={`relative block h-4 w-7 rounded-full transition-colors ${isOn ? "bg-fg" : "bg-border-strong"}`}
             >
               <span
-                className={`absolute top-0.5 h-3 w-3 rounded-full transition-transform ${isOn ? "translate-x-3.5 bg-ground" : "translate-x-0.5 bg-fg"}`}
+                className={`absolute left-0 top-0.5 h-3 w-3 rounded-full transition-transform ${isOn ? "translate-x-3.5 bg-ground" : "translate-x-0.5 bg-fg"}`}
               />
             </span>
           </button>

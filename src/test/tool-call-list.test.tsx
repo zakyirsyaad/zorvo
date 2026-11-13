@@ -17,6 +17,11 @@ describe("ToolCallList", () => {
     render(<ToolCallList tools={[editTool]} defaultOpenDiffs isTurnOver />);
 
     const diff = screen.getByRole("region", { name: "Changes to /repo/src/app.ts" });
+    // The header's path is cut at its start, so the file's name stays in sight however long the path.
+    const path = within(diff).getByText("/repo/src/app.ts").closest("span")!;
+    expect(path.className).toContain("[direction:rtl]");
+    expect(path.className).toContain("truncate");
+    expect(path.getAttribute("title")).toBe("/repo/src/app.ts");
     expect(within(diff).getByText("const a = 1;").closest("[data-line]")?.getAttribute("data-line")).toBe("removed");
     expect(within(diff).getByText("const a = 2;").closest("[data-line]")?.getAttribute("data-line")).toBe("added");
     expect(within(diff).getByText("keep").closest("[data-line]")?.getAttribute("data-line")).toBe("context");

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { DiffRow, ToolDetail } from "../../types";
 import { countChanges, type DiffRowKind } from "../../lib/diff-rows";
+import { PathText } from "../ui/PathText";
 
 const ROW_STYLE: Record<DiffRowKind, string> = {
   added: "bg-diff-added text-fg",
@@ -42,9 +43,8 @@ function DiffView({ path, isNewFile, rows }: { path: string; isNewFile: boolean;
   return (
     <section aria-label={`Changes to ${path}`} className="overflow-hidden rounded-md border border-border">
       <header className="flex items-center gap-2 border-b border-border bg-surface-2 px-2.5 py-1 text-[11px]">
-        <span className="truncate text-fg-secondary" title={path}>
-          {path}
-        </span>
+        {/* Cut at its start, as the row above it: agents send absolute paths, and the file's name is the part to keep. */}
+        <PathText path={path} className="text-fg-secondary" />
         {isNewFile && <span className="rounded bg-surface-hover px-1.5 text-fg-muted">New file</span>}
         <span className="ml-auto shrink-0 text-status-running">+{added}</span>
         {removed > 0 && <span className="shrink-0 text-danger">-{removed}</span>}

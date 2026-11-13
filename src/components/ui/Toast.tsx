@@ -36,7 +36,8 @@ export function Toast({ tone = "warning", message, action, onDismiss }: ToastPro
         {icon}
       </span>
       <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
-        <p className={`min-w-0 text-ui ${text} break-words [overflow-wrap:anywhere]`}>{message}</p>
+        {/* As wide as the card, never as wide as its longest word: an error's path has no spaces to break at. */}
+        <p className={`w-full min-w-0 text-ui ${text} [overflow-wrap:anywhere]`}>{message}</p>
         {action && (
           <Button size="sm" onClick={action.onClick}>
             <span className="text-fg">{action.label}</span>

@@ -102,9 +102,17 @@ describe("columnRequest", () => {
       kind: "plain",
       cardId: "card-1",
       line: "rm -rf build",
+      isPath: false,
       reject: { optionId: "reject", name: "Reject", kind: "reject_once" },
       allowOnce: { optionId: "allow", name: "Allow once", kind: "allow_once" },
     });
+  });
+
+  it("says when its line is one file's path, which a column cuts at its start", () => {
+    expect(columnRequest(card({ edits: [{ path: "/repo/src/a.ts" }] }), null)).toMatchObject({ line: "/repo/src/a.ts", isPath: true });
+    // Several files are a list, and a command is not a path even when the request names a file too.
+    expect(columnRequest(card({ edits: [{ path: "src/a.ts" }, { path: "src/b.ts" }] }), null)).toMatchObject({ isPath: false });
+    expect(columnRequest(card({ commandSnippet: "ls", edits: [{ path: "src/a.ts" }] }), null)).toMatchObject({ line: "ls", isPath: false });
   });
 
   it("names the files an edit would change when there is no command, else the prompt", () => {

@@ -55,7 +55,15 @@ export function openFormPrompt(messages: readonly ChatMessage[]): string | null 
 
 /** A request open in a compare column: one answered there, or one that needs the session opened. */
 export type ColumnRequest =
-  | { kind: 'plain'; cardId: string; line: string; reject: PermissionChoice; allowOnce: PermissionChoice }
+  | {
+      kind: 'plain';
+      cardId: string;
+      line: string;
+      /** The line is one file's path: a column cuts it at its start, so the file's name stays in sight. */
+      isPath: boolean;
+      reject: PermissionChoice;
+      allowOnce: PermissionChoice;
+    }
   | { kind: 'open'; line: string };
 
 /**
@@ -70,10 +78,12 @@ export function columnRequest(pendingCard: ActionCard | null, formPrompt: string
     const options = pendingCard.options ?? [];
     const allowOnce = options.find((option) => option.kind === 'allow_once');
     const reject = options.find((option) => option.kind.startsWith('reject'));
-    const subject =
-      pendingCard.commandSnippet ?? (pendingCard.edits?.map((edit) => edit.path).join(', ') || pendingCard.prompt || pendingCard.title);
+    const paths = pendingCard.commandSnippet ? [] : (pendingCard.edits ?? []).map((edit) => edit.path);
+    const subject = pendingCard.commandSnippet ?? (paths.join(', ') || pendingCard.prompt || pendingCard.title);
     const line = oneLine(subject);
-    if (allowOnce && reject) return { kind: 'plain', cardId: pendingCard.id, line, reject, allowOnce };
+    if (allowOnce && reject) {
+      return { kind: 'plain', cardId: pendingCard.id, line, isPath: paths.length === 1, reject, allowOnce };
+    }
     return { kind: 'open', line };
   }
   return formPrompt === null ? null : { kind: 'open', line: formPrompt };

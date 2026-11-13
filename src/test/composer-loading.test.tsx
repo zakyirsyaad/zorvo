@@ -1,12 +1,14 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { ComposerDock } from "../components/ComposerDock";
+import { act, render, screen } from "@testing-library/react";
+import { ComposerDock, SLOW_LOAD_MS } from "../components/ComposerDock";
 import type { ComposerControl } from "../lib/composer-controls";
 
 /**
  * While a draft asks its agent what it offers, the chips it will get show as skeletons in the row, where they
  * will land, instead of a line of text under the prompt. Not drawn on the canvas; asked for on 2026-11-06.
+ * A load that lasts gets a line under the card after all (2026-11-13): an agent slow to start can take
+ * minutes, and the skeletons alone looked stuck.
  */
 const model: ComposerControl = { options: [{ value: "opus", label: "Opus" }], selected: "opus", onChange: () => {} };
 
@@ -36,6 +38,31 @@ describe("the composer while the agent's options load", () => {
     const status = screen.getByRole("status");
     expect(status).toHaveTextContent("Loading Claude Agent's models and commands…");
     expect(status).toHaveClass("sr-only");
+  });
+
+  it("says so in words once the chips have loaded for a while, and stops when they arrive", () => {
+    vi.useFakeTimers();
+    try {
+      const view = renderDock({ isLoadingControls: true });
+      const line = () => document.querySelector("[data-slow-load]");
+      expect(line()).toBeNull();
+      act(() => vi.advanceTimersByTime(SLOW_LOAD_MS - 1));
+      expect(line()).toBeNull();
+      act(() => vi.advanceTimersByTime(1));
+      expect(line()).toHaveTextContent("Still loading Claude Agent's models and commands…");
+      // Under the card, quiet, and not read twice: the status said it when the load began.
+      expect(line()).toHaveClass("text-caption", "text-fg-subtle");
+      expect(line()).toHaveAttribute("aria-hidden", "true");
+      expect(line()?.closest("[data-composer-row]")).toBeNull();
+
+      view.rerender(<ComposerDock onSendMessage={vi.fn()} onAttach={async () => []} agentName="Claude Agent" />);
+      expect(line()).toBeNull();
+      // A new load waits its own time again.
+      view.rerender(<ComposerDock onSendMessage={vi.fn()} onAttach={async () => []} agentName="Claude Agent" isLoadingControls />);
+      expect(line()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("draws no skeleton once the agent's chips are known, and says nothing is loading", () => {

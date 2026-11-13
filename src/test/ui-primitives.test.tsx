@@ -783,7 +783,12 @@ describe("Toast", () => {
     const message = "/Users/someone/".repeat(20);
     render(<Toast message={message} onDismiss={() => {}} />);
     expect(screen.getByRole("status")).toHaveClass("w-[340px]");
-    expect(screen.getByText(message)).toHaveClass("break-words");
+    // As wide as the card, and broken anywhere: a path has no spaces, and in a column that starts its
+    // items at the left a paragraph is otherwise as wide as its longest word, past the card's edge.
+    const text = screen.getByText(message);
+    expect(text).toHaveClass("w-full", "min-w-0", "[overflow-wrap:anywhere]");
+    // `break-words` sets the same property to a value that does not shrink the paragraph, and would win.
+    expect(text).not.toHaveClass("break-words");
   });
 
   it("stacks toasts in the corner", () => {

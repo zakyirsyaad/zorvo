@@ -27,6 +27,9 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Fixed
 
+- A notice with a long path in it, such as an agent that failed to start, wraps inside its card instead of running past its edge.
+- A file's name stays in sight in two more places where a long path was cut at its end: the header of a diff under a tool call, and an edit request in a compare run's column.
+- When an agent takes long to say which models it offers, the composer says it is still loading instead of showing only placeholder chips.
 - The Activity tab keeps a file's name in sight when its path is long, by cutting the path at its start.
 - A compare run's "Last message" reads without markdown marks such as code ticks and bold asterisks.
 - **macOS should stop asking again and again for access to your folders.** The release was signed only on its executable, so macOS could not match a permission you had given to the app on disk and asked again. The whole app is now signed under its own name, `xyz.zorvo.desktop`, so within one version macOS should no longer ask twice. It asks once more after each update, until Zorvo has an Apple Developer ID. The prompts now say why: an agent you run in Zorvo reads or changes files there.

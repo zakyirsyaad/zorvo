@@ -256,12 +256,24 @@ describe("CompareRunPanel", () => {
     expect(row.queryByText("Last message")).toBeNull();
     expect(row.queryByText("I will clean the build folder.")).toBeNull();
     expect(rowOf("Claude Code").querySelector('[data-column-request="plain"]')).not.toBeNull();
+    // A command is cut at its end, as a command line reads.
+    expect(rowOf("Claude Code").querySelector("[data-column-request] p .truncate")).not.toHaveClass("[direction:rtl]");
     expect(row.getByRole("button", { name: "Allow once" })).toBeInTheDocument();
     expect(row.getByRole("button", { name: "Reject" })).toBeInTheDocument();
     // Only those two: any other choice stays in the session.
     expect(rowOf("Claude Code").querySelectorAll("[data-column-request] button")).toHaveLength(2);
     expect(row.getByRole("button", { name: "Open Claude Code" })).toHaveTextContent("Open");
     expect(within(rowOf("Qwen Code")).queryByRole("button", { name: "Allow once" })).toBeNull();
+  });
+
+  it("a request to edit one file cuts its path at the start, so the file's name stays in sight", async () => {
+    answerDiffs({});
+    const edit = card({ prompt: "Writing to src/api/retry.ts", edits: [{ path: "/a/long/worktree/folder/src/api/retry.ts" }] });
+    await renderPanel(props([facts(1, { pendingCard: edit }), facts(2)]));
+
+    const line = within(rowOf("Claude Code")).getByText("/a/long/worktree/folder/src/api/retry.ts").closest("span")!;
+    expect(line).toHaveClass("truncate", "[direction:rtl]", "flex-1");
+    expect(line.closest("p")).toHaveAttribute("title", "/a/long/worktree/folder/src/api/retry.ts");
   });
 
   it("answering it calls chooseOption for that session", async () => {

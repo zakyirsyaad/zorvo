@@ -10,6 +10,7 @@ import { IconButton } from "./ui/IconButton";
 import { OptionDropdown } from "./composer/OptionDropdown";
 import { MoreControls } from "./composer/MoreControls";
 import { splitControls } from "../lib/composer-overflow";
+import { useAfter } from "../hooks/useAfter";
 import { AgentTiles, type AgentTilesProps } from "./composer/AgentTiles";
 import type { FolderControl } from "./composer/FolderPicker";
 import { DraftChips } from "./composer/DraftChips";
@@ -31,6 +32,12 @@ import type { ContextUsage, SlashCommand } from "../types";
 const MAX_PROMPT_HEIGHT_PX = 180;
 /** What an empty composer says when the parent gives no placeholder: a running session or a popout. */
 const replyPlaceholder = (agentName: string | undefined) => `Reply to ${agentName ?? "the agent"}`;
+
+/**
+ * How long the chips may load before the composer says so in words. A healthy agent answers within
+ * seconds; one that is slow to start, or hangs, can take minutes, and three pulsing boxes explain nothing.
+ */
+export const SLOW_LOAD_MS = 8_000;
 
 /** The skeletons' widths while a draft's chips load: about a model's, a mode's and an effort's. */
 const SKELETON_CHIP_WIDTHS = ["w-18", "w-24", "w-14"] as const;
@@ -537,6 +544,7 @@ export function ComposerDock({
   ];
   const { inline: inlineControls, overflow: overflowControls } = splitControls(agentControls);
   const isShowingSkeletons = Boolean(isLoadingControls) && agentControls.length === 0;
+  const isSlowLoad = useAfter(isShowingSkeletons, SLOW_LOAD_MS);
   // A draft's composer sits near the top of its column with room below; a session's sits at the window's bottom.
   const isDraft = Boolean(folder || agents);
   const menuSide = isDraft ? "bottom" : "top";
@@ -778,6 +786,12 @@ export function ComposerDock({
       {shownNote && noteInRow && (
         <p id={noteId} data-note-below="" className="mt-2 w-full px-1 text-caption text-fg-subtle">
           {shownNote}
+        </p>
+      )}
+      {/* Said in words once the wait is long. Hidden from a screen reader, which heard it from the status when it began. */}
+      {isSlowLoad && (
+        <p data-slow-load="" aria-hidden="true" className="mt-2 w-full px-1 text-caption text-fg-subtle">
+          {`Still loading ${agentName ?? "the agent"}'s models and commands…`}
         </p>
       )}
     </footer>

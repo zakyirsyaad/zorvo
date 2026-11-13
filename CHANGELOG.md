@@ -12,6 +12,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - The window has a layered look: the chat and the inspector are raised panels on the window's background.
 - Sidebar rows show each agent's logo with a status badge, and a filter shows only the sessions that need you or are working.
+- The chat is calmer: tool calls are a one-line summary that opens into steps on a rail, a failed turn and a stalled agent get a titled notice, and a permission request says "Waiting for you" while it is open.
+- The composer's controls are filled chips, the context meter is a ring, and a model search marks the match that Return picks.
 - The top bar shows the folder before the session's title.
 
 ## [0.10.1] - 2026-11-12

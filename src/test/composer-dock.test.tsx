@@ -287,17 +287,18 @@ describe("ComposerDock", () => {
       expect(meter.getAttribute("title")).toContain("74,485 of 1,000,000 tokens");
     });
 
-    it("draws no ring, only words, and shows just the token count when the window size is unknown", () => {
+    it("draws its ring with a known window, and just the token count, with no ring, when the size is unknown", () => {
       const { container, rerender } = render(
         <ComposerDock onSendMessage={() => {}} contextUsage={{ used: 2_000, size: 1_000_000 }} />
       );
-      expect(container.querySelector("[role=meter] svg")).toBeNull();
+      expect(container.querySelector("[role=meter] svg")).not.toBeNull();
 
       rerender(<ComposerDock onSendMessage={() => {}} contextUsage={{ used: 180_000, size: 0 }} />);
       expect(screen.queryByRole("meter", { name: "Context used" })).toBeNull();
       // Named, but not a live region: usage updates are not announced one by one.
       const fallback = screen.getByRole("img", { name: "Context used: 180K tokens" });
       expect(fallback.textContent).toBe("180K tokens");
+      expect(container.querySelector("[data-context-ring]")).toBeNull();
     });
 
     it("hides the meter until the agent reports usage", () => {

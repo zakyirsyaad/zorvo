@@ -65,6 +65,10 @@ export function useOpenedSessions(deps: OpenedSessionsDeps): {
   // A session is in `sessions` only after React commits, so it cannot be counted from there yet.
   const underWay = useRef(new Map<string, { openerId: string; sessionId: string | null; handle: string }>());
 
+  // The newest handle each opener was given in this run. A deleted session leaves no trace in
+  // `sessions`, and its handle must not pass to the next one: the agent may still use it.
+  const lastHandle = useRef(new Map<string, string>());
+
   // A session that is listed is counted from `sessions` from now on.
   const { sessions } = deps;
   useEffect(() => {
@@ -97,7 +101,9 @@ export function useOpenedSessions(deps: OpenedSessionsDeps): {
         session.openedBy?.sessionId === openerId && session.openedBy.handle ? [session.openedBy.handle] : [],
       ),
       ...[...underWay.current.values()].filter((entry) => entry.openerId === openerId).map((entry) => entry.handle),
+      ...(lastHandle.current.has(openerId) ? [lastHandle.current.get(openerId) as string] : []),
     ]);
+    lastHandle.current.set(openerId, handle);
     underWay.current.set(token, { openerId, sessionId: null, handle });
 
     const name = sessionTitleOf(agent.name, request.brief, request.title);

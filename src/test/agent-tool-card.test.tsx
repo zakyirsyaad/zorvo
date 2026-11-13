@@ -169,7 +169,7 @@ describe("cards for a session an agent wants to open", () => {
     const mixed = toolCardFor(base, [delegation, { ...session, hasOwnWorktree: true }, session]);
     expect(mixed.title).toBe("pi ACP asks for 3 things");
     expect(mixed.prompt).toBe(
-      "For Qwen Code:\nReview it.\n\nNew Codex session, in its own worktree:\nPort the parser.\nKeep the tests.\n\nNew Codex session:\nPort the parser.\nKeep the tests.",
+      "For Qwen Code:\n> Review it.\n\nNew Codex session, in its own worktree:\n> Port the parser.\n> Keep the tests.\n\nNew Codex session:\n> Port the parser.\n> Keep the tests.",
     );
   });
 

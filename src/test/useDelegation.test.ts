@@ -639,7 +639,7 @@ describe("useDelegation reports", () => {
     expect(env.result.current.delegation.viewFor("s-a")).toMatchObject({ state: "failed" });
   });
 
-  it("sends no report for a turn with no answer text", async () => {
+  it("reports a finished turn that wrote no answer, with the files it changed", async () => {
     const toolsOnly = agentMessage({
       content: "",
       tools: [{ id: "t-1", name: "Edit", status: "completed", kind: "edit", locations: ["src/a.ts"] }],
@@ -654,12 +654,23 @@ describe("useDelegation reports", () => {
     });
     await act(async () => {});
 
+    // The agent that delegated was told an answer would arrive: it hears that the task ended.
+    expect(env.sends).toHaveLength(1);
+    expect(env.sends[0].text).toContain("finished without a written answer.");
+    expect(env.sends[0].text).toContain("src/a.ts");
+    expect(env.sends[0].text).not.toContain("\n> ");
+  });
+
+  it("sends no report while the delegate's last reply is not whole", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages(agentMessage({ content: "Still wri", isComplete: false })) },
+    });
+    await act(async () => {
+      env.result.current.delegation.onTurnEnded("s-b", "finished");
+    });
+    await act(async () => {});
     expect(env.sends).toHaveLength(0);
-    expect(env.givesBack).toHaveLength(0);
-    expect(env.notices).toHaveLength(0);
-    // Nothing was handed over and the delegate is not running: A has no line to show.
-    expect(env.result.current.delegation.viewFor("s-a")).toBeNull();
-    expect(env.result.current.delegation.sendBlockedReason("s-b")).toBeNull();
   });
 
   it("puts the report in A's composer with a notice when A cannot take a prompt", async () => {

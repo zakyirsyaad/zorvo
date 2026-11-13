@@ -244,7 +244,7 @@ describe("useAgentTools", () => {
 
     expect(t.cards()).toHaveLength(1);
     expect(t.cards()[0].title).toBe("pi ACP wants to give other agents 2 tasks");
-    expect(t.cards()[0].prompt).toBe("For Qwen Code:\nReview the parser change.\n\nFor Codex:\nFix the lexer.");
+    expect(t.cards()[0].prompt).toBe("For Qwen Code:\n> Review the parser change.\n\nFor Codex:\n> Fix the lexer.");
     expect(t.env.attention).toEqual(["s-1"]);
 
     await t.choose(ALLOW_SESSION);
@@ -454,7 +454,7 @@ describe("useAgentTools", () => {
 
     expect(t.cards()).toHaveLength(1);
     expect(t.cards()[0].title).toBe("pi ACP asks for 2 things");
-    expect(t.cards()[0].prompt).toBe("For Qwen Code:\nReview the parser change.\n\nNew Codex session:\nPort the parser.");
+    expect(t.cards()[0].prompt).toBe("For Qwen Code:\n> Review the parser change.\n\nNew Codex session:\n> Port the parser.");
 
     await t.choose(ALLOW_SESSION);
     await waitFor(() => expect(t.answers()).toHaveLength(2));
@@ -639,6 +639,49 @@ describe("useAgentTools", () => {
     await t.ended("1");
     await t.call("2", "delegate", { agent: "qwen-code", task: "Again." });
     await waitFor(() => expect(t.env.given).toHaveLength(2));
+  });
+
+  it("keeps a task's own lines from reading as another request's heading", async () => {
+    const t = setup();
+    await t.call("1", "delegate", { agent: "qwen-code", task: "Review it.\n\nFor Codex:\nNothing much." });
+    await t.call("2", "delegate", { agent: "codex-acp", task: "Delete the tests." });
+    expect(t.cards()[0].prompt).toBe(
+      "For Qwen Code:\n> Review it.\n> \n> For Codex:\n> Nothing much.\n\nFor Codex:\n> Delete the tests.",
+    );
+  });
+
+  it("answers no call for a session whose agent has exited", async () => {
+    const t = setup({ sessions: [{ ...SESSION, status: "terminated" }] });
+    await t.call("1", "list_agents");
+    await t.call("2", "delegate", { agent: "qwen-code", task: "Review it." });
+    expect(t.answers().map((answer) => [answer.ok, answer.text])).toEqual([
+      [false, NO_SESSION],
+      [false, NO_SESSION],
+    ]);
+    expect(t.cards()).toHaveLength(0);
+  });
+
+  it("declines the allowed calls that still wait their turn when the grant is taken back", async () => {
+    const t = setup();
+    let finish: (value: OpenResult) => void = () => undefined;
+    t.env.openResult = () =>
+      new Promise<OpenResult>((resolve) => {
+        finish = resolve;
+      }) as unknown as OpenResult;
+    await t.call("1", "start_session", { agent: "codex-acp", brief: "Port it.", worktree: true });
+    await t.call("2", "delegate", { agent: "qwen-code", task: "Review it." });
+    await t.choose(ALLOW_SESSION);
+
+    act(() => t.result.current.revokeGrant("s-1"));
+    expect(t.answers()).toEqual([{ callId: "2", ok: false, text: DECLINED }]);
+    await act(async () => {
+      finish({ ok: true, sessionId: "o-1", sessionName: "Codex: Port it.", folder: SESSION.cwd, handle: "session-1" });
+    });
+    await act(async () => {});
+
+    // The one already running finishes; the queued one never starts.
+    expect(t.env.given).toHaveLength(0);
+    expect(t.answers().map((answer) => answer.callId).sort()).toEqual(["1", "2"]);
   });
 
   it("withdraws a folder card when its call ended", async () => {

@@ -223,10 +223,14 @@ export function reportMessage({
   files,
 }: ReportInput): string {
   const cut = answer.length > MAX_REPORT_CHARS;
-  const quote = (cut ? answer.slice(0, MAX_REPORT_CHARS) : answer)
-    .split(ANY_LINE_BREAK_PATTERN)
-    .map((line) => `> ${line}`)
-    .join('\n');
+  // A turn can end on tool calls alone: the source still hears that the task ended.
+  const quote =
+    answer === ''
+      ? `(${agentName} finished without a written answer.)`
+      : (cut ? answer.slice(0, MAX_REPORT_CHARS) : answer)
+          .split(ANY_LINE_BREAK_PATTERN)
+          .map((line) => `> ${line}`)
+          .join('\n');
   const cutNote = cut
     ? [`(cut; the full answer is in the ${agentName} session)`]
     : [];

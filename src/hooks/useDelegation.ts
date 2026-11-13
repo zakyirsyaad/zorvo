@@ -546,9 +546,10 @@ export function useDelegation(deps: DelegationDeps): {
 
         const messages = current.transcripts[delegateId] ?? [];
         const last = lastMessage(messages);
+        // Only a whole reply is reported. One with no text (tool calls only) is reported too,
+        // as such: the agent that delegated was told an answer would arrive.
+        if (last === undefined || last.role !== 'agent' || last.isComplete !== true) return;
         const answer = answerOf(last);
-        // A turn with no answer text (tool calls only) reports nothing.
-        if (last === undefined || answer === '') return;
 
         const source = sourceOf(session, current.sessions);
         if (source === undefined) return;

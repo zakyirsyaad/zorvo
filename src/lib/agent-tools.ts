@@ -51,7 +51,6 @@ type ToolsSubject = Pick<Session, 'compareRunId' | 'delegatedFrom' | 'openedBy' 
 
 /** Answered to the agent when the user pressed Deny. */
 export const DECLINED = 'The user declined.';
-/** Answered for a tool a later phase builds. */
 /** One sentence for every handle that is not the caller's own, so nothing can be told apart. */
 export const NO_SUCH_HANDLE = 'No session with that handle. Use list_agents to see yours.';
 export const UNREADABLE = 'That session could not be read.';

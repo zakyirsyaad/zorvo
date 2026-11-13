@@ -124,8 +124,10 @@ export function useAgentTools(deps: AgentToolsDeps): {
   const folderCards = useRef(new Map<string, FolderCard>());
   // Calls the user allowed that have not finished: running, or queued behind another of their card.
   // Those among them whose call ended meanwhile must start nothing.
-  const approved = useRef(new Set<string>());
+  const approved = useRef(new Map<string, string>());
   const endedApproved = useRef(new Set<string>());
+  // The allowed calls that have begun: taking a grant back cannot undo those.
+  const begun = useRef(new Set<string>());
   // Bumped when a grant or a waiting card changes, so `isWaiting` and `hasGrant` are read again.
   const [, setRevision] = useState(0);
   const bump = useCallback(() => setRevision((current) => current + 1), []);
@@ -194,10 +196,12 @@ export function useAgentTools(deps: AgentToolsDeps): {
     async (sessionId: string, call: WaitingCall): Promise<void> => {
       try {
         if (endedApproved.current.has(call.callId)) return;
+        begun.current.add(call.callId);
         await (call.kind === 'delegate' ? runDelegate(sessionId, call) : runOpen(sessionId, call));
       } finally {
         approved.current.delete(call.callId);
         endedApproved.current.delete(call.callId);
+        begun.current.delete(call.callId);
       }
     },
     [runDelegate, runOpen],
@@ -224,7 +228,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
     (session: Session, waitingCall: WaitingCall) => {
       const current = latest.current;
       if (grants.current.has(session.id)) {
-        approved.current.add(waitingCall.callId);
+        approved.current.set(waitingCall.callId, session.id);
         void runCall(session.id, waitingCall);
         return;
       }
@@ -394,7 +398,9 @@ export function useAgentTools(deps: AgentToolsDeps): {
       try {
         const current = latest.current;
         const session = current.sessions.find((candidate) => candidate.id === call.sessionId);
-        if (session === undefined || !sessionGetsAgentTools(session, current.sessions)) {
+        // A session whose agent has exited makes no calls: whatever still holds its token is not it.
+        const isLive = session !== undefined && session.status !== 'terminated';
+        if (session === undefined || !isLive || !sessionGetsAgentTools(session, current.sessions)) {
           respond(call.callId, false, NO_SESSION);
           return;
         }
@@ -514,7 +520,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
         settleToolCard(prev, cardId, isAllowedOnce ? 'approved' : 'rejected'),
       );
       if (isAllowedOnce) {
-        approved.current.add(folder.call.callId);
+        approved.current.set(folder.call.callId, sessionId);
         void runCall(sessionId, folder.call);
       }
       else respond(folder.call.callId, false, DECLINED);
@@ -528,7 +534,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
     latest.current.updateMessages(sessionId, (prev) => settleToolCard(prev, cardId, isAllowed ? 'approved' : 'rejected'));
     if (isAllowed) {
       grants.current.add(sessionId);
-      for (const call of entry.calls) approved.current.add(call.callId);
+      for (const call of entry.calls) approved.current.set(call.callId, sessionId);
       // In arrival order, one after the other: a second task for the same agent must find the first's delegate.
       void entry.calls.reduce(
         (previous, call) => previous.then(() => runCall(sessionId, call)),
@@ -542,7 +548,14 @@ export function useAgentTools(deps: AgentToolsDeps): {
   };
 
   const revokeGrant = (sessionId: string): void => {
-    if (grants.current.delete(sessionId)) bump();
+    if (!grants.current.delete(sessionId)) return;
+    // What the grant allowed and has not begun is declined; a call that already runs finishes.
+    for (const [callId, owner] of approved.current) {
+      if (owner !== sessionId || begun.current.has(callId) || endedApproved.current.has(callId)) continue;
+      endedApproved.current.add(callId);
+      respond(callId, false, DECLINED);
+    }
+    bump();
   };
 
   return {

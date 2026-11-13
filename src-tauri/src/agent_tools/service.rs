@@ -63,8 +63,15 @@ impl Connection {
         let mut text = line.to_string();
         text.push('\n');
         let mut writer = lock(&self.writer);
-        let _ = writer.write_all(text.as_bytes());
-        let _ = writer.flush();
+        let written = writer
+            .write_all(text.as_bytes())
+            .and_then(|_| writer.flush());
+        drop(writer);
+        // A write that failed or timed out may have left half a line behind:
+        // anything sent after it would be unreadable, so the connection ends.
+        if written.is_err() {
+            self.close();
+        }
     }
 
     fn close(&self) {
@@ -461,5 +468,34 @@ fn discard_rest_of_line(reader: &mut BufReader<UnixStream>) -> Option<()> {
                 reader.consume(len);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_write_that_cannot_finish_closes_the_connection() {
+        let (ours, mut theirs) = UnixStream::pair().expect("pair");
+        ours.set_write_timeout(Some(Duration::from_millis(50)))
+            .expect("timeout");
+        let connection = Connection {
+            id: 1,
+            session: "s-1".to_string(),
+            writer: Mutex::new(ours.try_clone().expect("clone")),
+            shutter: ours,
+        };
+
+        // More than the socket holds, and nobody reads: the write times out mid-line.
+        connection.send(&json!({ "text": "x".repeat(8 * 1024 * 1024) }));
+
+        // A closed connection reads to its end; an open one would block until the timeout.
+        theirs
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("timeout");
+        let mut received = Vec::new();
+        assert!(theirs.read_to_end(&mut received).is_ok());
+        assert!(received.len() < 8 * 1024 * 1024);
     }
 }

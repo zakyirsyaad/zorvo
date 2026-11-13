@@ -606,6 +606,41 @@ describe("useAgentTools", () => {
     });
   });
 
+  it("skips an approved call that ended while an earlier one of its card still ran", async () => {
+    const t = setup();
+    let finish: (value: OpenResult) => void = () => undefined;
+    t.env.openResult = () =>
+      new Promise<OpenResult>((resolve) => {
+        finish = resolve;
+      }) as unknown as OpenResult;
+    await t.call("1", "start_session", { agent: "codex-acp", brief: "Port it.", worktree: true });
+    await t.call("2", "start_session", { agent: "codex-acp", brief: "Write the docs." });
+    await t.call("3", "delegate", { agent: "qwen-code", task: "Review it." });
+    await t.choose(ALLOW_SESSION);
+    expect(t.env.opens).toHaveLength(1);
+
+    // The caller is stopped: every call of the card ends, the queued ones too.
+    await t.ended("2");
+    await t.ended("3");
+    await act(async () => {
+      finish({ ok: true, sessionId: "o-1", sessionName: "Codex: Port it.", folder: SESSION.cwd, handle: "session-1" });
+    });
+    await act(async () => {});
+
+    expect(t.env.opens).toHaveLength(1);
+    expect(t.env.given).toHaveLength(0);
+    expect(t.answers().map((answer) => answer.callId)).toEqual(["1"]);
+  });
+
+  it("skips a call that ended before a grant ran it, and runs the next as usual", async () => {
+    const t = setup();
+    await t.call("1", "delegate", { agent: "qwen-code", task: "Review it." });
+    await t.choose(ALLOW_SESSION);
+    await t.ended("1");
+    await t.call("2", "delegate", { agent: "qwen-code", task: "Again." });
+    await waitFor(() => expect(t.env.given).toHaveLength(2));
+  });
+
   it("withdraws a folder card when its call ended", async () => {
     const t = setup();
     await t.call("1", "start_session", { ...OPEN, folder: TITAN });

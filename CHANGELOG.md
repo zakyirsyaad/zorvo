@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- A menu no longer opens past the edge of the dialog it is in: the model menu in **Delegate to another agent** was cut off on its left. A menu now opens from the other edge of its chip when the asked-for one would not fit.
+
 ## [0.11.1] - 2026-11-14
 
 ### Fixed

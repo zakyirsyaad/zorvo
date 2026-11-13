@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEventHandler, type ReactNode, type Ref } from "react";
 import { Check, Search } from "lucide-react";
 import { useDismiss } from "../../hooks/useDismiss";
-import { clippingBounds, fitPanel, type PanelFit } from "../../lib/popover-fit";
+import { clippingBounds, fitAlign, fitPanel, type PanelFit, type PopoverAlign } from "../../lib/popover-fit";
 
 type PopoverRole = "menu" | "listbox" | "dialog";
 
@@ -57,6 +57,8 @@ export function Popover({
   const panelRef = useRef<HTMLDivElement>(null);
   const hasFocusInside = useRef(false);
   const [fit, setFit] = useState<PanelFit | null>(null);
+  // The edge the panel shares with its trigger when the asked-for one would be cut off.
+  const [fittedAlign, setFittedAlign] = useState<PopoverAlign | null>(null);
   useDismiss(wrapperRef, isOpen, onClose);
 
   // Before paint, so the panel never shows where it is cut off: the asked-for side when it fits there, else the
@@ -68,7 +70,12 @@ export function Popover({
     const measure = () => {
       const wrapper = wrapperRef.current;
       const panel = panelRef.current;
-      if (wrapper && panel) setFit(fitPanel(wrapper.getBoundingClientRect(), clippingBounds(wrapper), panel.scrollHeight, side));
+      if (!wrapper || !panel) return;
+      const trigger = wrapper.getBoundingClientRect();
+      const bounds = clippingBounds(wrapper);
+      setFit(fitPanel(trigger, bounds, panel.scrollHeight, side));
+      // Sideways too: a dialog that scrolls clips both ways, and a chip near its edge opens a menu past it.
+      setFittedAlign(fitAlign(trigger, bounds, panel.offsetWidth, align));
     };
     const measureOnScroll = (event: Event) => {
       const wrapper = wrapperRef.current;
@@ -81,7 +88,7 @@ export function Popover({
       document.removeEventListener("scroll", measureOnScroll, true);
       window.removeEventListener("resize", measure);
     };
-  }, [isOpen, panelClassName, side]);
+  }, [isOpen, panelClassName, side, align]);
 
   useEffect(() => {
     if (isOpen || !hasFocusInside.current) return;
@@ -100,7 +107,7 @@ export function Popover({
 
   const shownSide = fit?.side ?? side;
   const maxHeight = panelClassName ? undefined : fit?.maxHeight;
-  const placement = panelClassName ?? `${SIDES[shownSide]} ${ALIGNS[align]}`;
+  const placement = panelClassName ?? `${SIDES[shownSide]} ${ALIGNS[fittedAlign ?? align]}`;
   // Its scrolling stays its own: reaching its end does not go on to scroll the column around it.
   const capped = maxHeight === undefined ? undefined : "overflow-y-auto overscroll-contain";
   const panelClasses = [PANEL, placement, capped, className].filter(Boolean).join(" ");

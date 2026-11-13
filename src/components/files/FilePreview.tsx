@@ -95,26 +95,35 @@ function PdfPage({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isNear, setIsNear] = useState(typeof IntersectionObserver === "undefined");
 
+  // Tracked for as long as the page is mounted: a page that scrolls far away gives its pixels back.
   useEffect(() => {
     const frame = frameRef.current;
-    if (isNear || !frame) return;
+    if (!frame || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) setIsNear(true);
-      },
+      (entries) => setIsNear(entries[entries.length - 1].isIntersecting),
       { root: scrollRef.current, rootMargin: `${DRAW_AHEAD_PX}px 0px` },
     );
     observer.observe(frame);
     return () => observer.disconnect();
-  }, [isNear, scrollRef]);
+  }, [scrollRef]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!isNear || !canvas) return;
     const render = doc.renderPage(pageNumber, canvas, width);
     render.done.catch((error: unknown) => onError(error instanceof Error ? error.message : PREVIEW_FAILED));
-    return () => render.cancel();
+    return () => {
+      render.cancel();
+    };
   }, [doc, pageNumber, width, isNear, onError]);
+
+  // Zero size frees the canvas's backing buffer; its CSS size, set when it was drawn, keeps the page's place.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (isNear || !canvas) return;
+    canvas.width = 0;
+    canvas.height = 0;
+  }, [isNear]);
 
   return (
     <div ref={frameRef} style={{ width, minHeight: Math.round(width * doc.firstPageRatio) }} className="shrink-0 bg-surface-2 shadow-popover">

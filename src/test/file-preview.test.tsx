@@ -174,6 +174,38 @@ describe("FileViewer — a PDF", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Out of memory.");
   });
 
+  it("gives a far page's canvas back and draws it again when it returns", async () => {
+    const callbacks: ((entries: { isIntersecting: boolean }[]) => void)[] = [];
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
+          callbacks.push(callback);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    try {
+      await renderViewer();
+      await screen.findByRole("region", { name: "Pages of run-sheet.pdf" });
+      expect(renderPage).not.toHaveBeenCalled();
+
+      await act(async () => callbacks[0]([{ isIntersecting: true }]));
+      expect(renderPage).toHaveBeenCalledTimes(1);
+      const canvas = screen.getByRole("img", { name: "Page 1 of 3" }) as HTMLCanvasElement;
+      canvas.width = 900;
+
+      await act(async () => callbacks[0]([{ isIntersecting: false }]));
+      expect(canvas.width).toBe(0);
+
+      await act(async () => callbacks[0]([{ isIntersecting: true }]));
+      expect(renderPage).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("keeps the header's actions", async () => {
     const { props } = await renderViewer();
     await screen.findByRole("region", { name: "Pages of run-sheet.pdf" });

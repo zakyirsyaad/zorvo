@@ -267,6 +267,9 @@ pub struct SessionWorktreeRecord {
 pub struct OpenedByRecord {
     pub session_id: String,
     pub at: i64,
+    /// What the opener's agent calls the session; none on a link saved before handles.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
 }
 
 /// A delegated task: the session that delegated it, the task, and when it ran.

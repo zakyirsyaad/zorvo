@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
+import { loadTranscript } from "./lib/persistence";
+import { savedThenLive } from "./lib/agent-tools";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
 import { ChatCanvas } from "./components/ChatCanvas";
@@ -620,6 +622,16 @@ export default function App() {
     updateMessages,
     onAttention: (sessionId, reason) => notifyAttention(sessionId, reason),
     onNotice: (message) => setNotice(message),
+    messagesOf: async (sessionId) => {
+      const live = transcripts[sessionId] ?? [];
+      if (transcriptStatus[sessionId] === "ready") return live;
+      if (transcriptStatus[sessionId] === "failed") throw new Error("unreadable");
+      // Not opened in this run: read what was saved, then what arrived since.
+      return savedThenLive(await loadTranscript(sessionId), live);
+    },
+    stateOf: (sessionId) =>
+      isSessionWaiting(sessionId) ? "needs-answer" : isSessionBusy(sessionId) ? "working" : "idle",
+    stopTurn: (sessionId) => handleInterrupt(sessionId),
   });
   const isSessionWaiting = (sessionId: string) =>
     agentTools.isWaiting(sessionId) ||

@@ -13,18 +13,23 @@ import {
 } from '../lib/agent-tool-card';
 import {
   DECLINED,
-  NOT_YET,
   NO_SESSION,
+  NO_SUCH_HANDLE,
+  UNREADABLE,
   delegateResultText,
   listAgentsText,
   openedResultText,
   otherFolders,
+  ownedByHandle,
+  readSessionText,
+  stopResultText,
   parseToolCall,
   resolveAgent,
   resolveFolder,
   sessionGetsAgentTools,
   statusRefusal,
   type AgentToolCall,
+  type DelegateState,
   type KnownFolder,
   type ListedDelegate,
   type ListedOpened,
@@ -54,6 +59,11 @@ export interface AgentToolsDeps {
   openedOf: (sessionId: string) => ListedOpened[];
   updateMessages: (sessionId: string, update: (prev: ChatMessage[]) => ChatMessage[]) => void;
   onAttention: (sessionId: string, reason: 'needs-answer') => void;
+  /** A session's messages, loaded from disk when it was not opened in this run. Rejects when unreadable. */
+  messagesOf: (sessionId: string) => Promise<readonly ChatMessage[]>;
+  stateOf: (sessionId: string) => DelegateState;
+  /** Stops the session's turn, as the Stop button does. */
+  stopTurn: (sessionId: string) => void;
   /** Tells the user what an agent is not told: why Zorvo itself failed. */
   onNotice?: (message: string) => void;
 }
@@ -125,7 +135,13 @@ export function useAgentTools(deps: AgentToolsDeps): {
       try {
         const result = await latest.current.giveTask(sessionId, call.targetId, call.task, { byAgent: true });
         if (result.ok) {
-          const text = delegateResultText({ kind: result.kind, sessionName: result.sessionName, agentName: call.targetName });
+          const text = delegateResultText({
+            kind: result.kind,
+            sessionName: result.sessionName,
+            agentName: call.targetName,
+            // A delegate is named by its agent's id: a session holds one per agent.
+            handle: call.targetId,
+          });
           respond(call.callId, true, text);
         } else {
           // A failure inside Zorvo is not explained to an agent: its cause could hold a path.
@@ -161,7 +177,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
           call.callId,
           result.ok,
           result.ok
-            ? openedResultText({ sessionName: result.sessionName, folder: result.folder })
+            ? openedResultText({ sessionName: result.sessionName, folder: result.folder, handle: result.handle })
             : result.reason === ''
               ? FAILED
               : result.reason,
@@ -328,6 +344,49 @@ export function useAgentTools(deps: AgentToolsDeps): {
     [latest, enqueue, bump],
   );
 
+  /** `read_session` and `stop_session`: only the caller's own sessions, by handle; no card and no grant. */
+  const handleOwned = useCallback(
+    (session: Session, call: AgentToolCall) => {
+      const current = latest.current;
+      const { handle, max_chars: maxChars } = call.args as Record<string, unknown>;
+      const isReadable =
+        typeof handle === 'string' &&
+        (maxChars === undefined || (typeof maxChars === 'number' && Number.isFinite(maxChars) && maxChars >= 1));
+      if (!isReadable) {
+        respond(call.callId, false, FAILED);
+        return;
+      }
+      const target = ownedByHandle(session.id, handle as string, current.sessions);
+      if (target === undefined) {
+        respond(call.callId, false, NO_SUCH_HANDLE);
+        return;
+      }
+      if (call.tool === 'stop_session') {
+        const wasWorking = current.stateOf(target.id) !== 'idle';
+        if (wasWorking) current.stopTurn(target.id);
+        respond(call.callId, true, stopResultText(wasWorking));
+        return;
+      }
+      current
+        .messagesOf(target.id)
+        .then((messages) =>
+          respond(
+            call.callId,
+            true,
+            readSessionText({
+              messages,
+              state: latest.current.stateOf(target.id),
+              cwd: target.cwd,
+              ...(typeof maxChars === 'number' ? { maxChars } : {}),
+            }),
+          ),
+        )
+        // The cause could hold a path, so the agent is told only that it did not work.
+        .catch(() => respond(call.callId, false, UNREADABLE));
+    },
+    [latest],
+  );
+
   const handleCall = useCallback(
     (payload: unknown) => {
       const call = parseToolCall(payload);
@@ -365,12 +424,16 @@ export function useAgentTools(deps: AgentToolsDeps): {
           handleStartSession(session, call);
           return;
         }
-        respond(call.callId, false, NOT_YET);
+        if (call.tool === 'read_session' || call.tool === 'stop_session') {
+          handleOwned(session, call);
+          return;
+        }
+        respond(call.callId, false, FAILED);
       } catch {
         respond(call.callId, false, FAILED);
       }
     },
-    [latest, handleDelegate, handleStartSession],
+    [latest, handleDelegate, handleStartSession, handleOwned],
   );
 
   /** A call ended without our answer (timeout, cancel, session stop): it no longer waits. */

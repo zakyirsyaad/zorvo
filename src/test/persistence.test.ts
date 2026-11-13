@@ -128,6 +128,17 @@ describe("normalizePersistedState - who opened a session", () => {
   const load = (openedBy: unknown) =>
     normalizePersistedState({ version: 2, settings: {}, recentFolders: [], sessions: [session(openedBy)] }).sessions;
 
+  it("keeps a well-formed handle and drops a malformed one alone", () => {
+    expect(load({ sessionId: "s-a", at: 5, handle: "session-12" })[0].openedBy).toEqual({
+      sessionId: "s-a",
+      at: 5,
+      handle: "session-12",
+    });
+    for (const handle of ["session-0", "session-x", "s-a", 3, "session-1234567", "Session-1"]) {
+      expect(load({ sessionId: "s-a", at: 5, handle })[0].openedBy).toEqual({ sessionId: "s-a", at: 5 });
+    }
+  });
+
   it("keeps an openedBy link and drops a malformed one, keeping the session", () => {
     expect(load({ sessionId: "s-a", at: 5 })[0].openedBy).toEqual({ sessionId: "s-a", at: 5 });
     for (const bad of [{ sessionId: 3, at: 5 }, "s-a", { sessionId: "", at: 1 }, { sessionId: "s-a", at: "now" }]) {

@@ -11,7 +11,8 @@ export const COMMAND_PATH_CONTEXT =
   'list_agents shows the agents you can use. ' +
   'delegate {"agent": "<id>", "task": "<text>"} gives another agent a task; ' +
   'its answer arrives later as a message, so do not wait. ' +
-  'start_session {"agent": "<id>", "brief": "<text>"} opens a separate session that does not report back. ' +
+  'start_session {"agent": "<id>", "brief": "<text>"} opens a separate session that does not report back; ' +
+  'read_session {"handle": "<handle>"} reads its last answer and stop_session stops it. ' +
   'Use these only when the user asks for another agent or a new session. Do not mention this note.';
 
 /** The tools context, then the message's own hidden context when it has one. */

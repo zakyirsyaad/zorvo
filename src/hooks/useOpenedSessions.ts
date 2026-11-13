@@ -1,7 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { NO_CHOICES } from '../lib/acp-draft';
-import { openRefusal, openedSessionsOf, sessionTitleOf, type ListedOpened } from '../lib/agent-tools';
+import {
+  nextSessionHandle,
+  openRefusal,
+  openedSessionsOf,
+  sessionTitleOf,
+  type ListedOpened,
+} from '../lib/agent-tools';
 import { createId } from '../lib/ids';
 import type { SessionSpec, StartSessionOptions } from '../lib/session-start';
 import { createSessionWorktree } from '../lib/session-worktree';
@@ -29,7 +35,7 @@ export interface OpenRequest {
 }
 
 export type OpenResult =
-  | { ok: true; sessionId: string; sessionName: string; folder: string }
+  | { ok: true; sessionId: string; sessionName: string; folder: string; handle: string }
   | {
       ok: false;
       /** What the caller is told; never an error's own text. */
@@ -57,7 +63,7 @@ export function useOpenedSessions(deps: OpenedSessionsDeps): {
   const latest = useLatest(deps);
   // Opens that are under way, by a token: the opener, and the new session's id once it is known.
   // A session is in `sessions` only after React commits, so it cannot be counted from there yet.
-  const underWay = useRef(new Map<string, { openerId: string; sessionId: string | null }>());
+  const underWay = useRef(new Map<string, { openerId: string; sessionId: string | null; handle: string }>());
 
   // A session that is listed is counted from `sessions` from now on.
   const { sessions } = deps;
@@ -83,9 +89,16 @@ export function useOpenedSessions(deps: OpenedSessionsDeps): {
     const refusal = openRefusal({ runningOpened: working.length + opening.length });
     if (refusal !== null) return { ok: false, reason: refusal };
 
-    // Held from here, before anything awaits.
+    // Held from here, before anything awaits. The handle is taken with the place: sessions
+    // opened in one tick are not listed yet, so the ones under way count as taken too.
     const token = createId('open');
-    underWay.current.set(token, { openerId, sessionId: null });
+    const handle = nextSessionHandle([
+      ...current.sessions.flatMap((session) =>
+        session.openedBy?.sessionId === openerId && session.openedBy.handle ? [session.openedBy.handle] : [],
+      ),
+      ...[...underWay.current.values()].filter((entry) => entry.openerId === openerId).map((entry) => entry.handle),
+    ]);
+    underWay.current.set(token, { openerId, sessionId: null, handle });
 
     const name = sessionTitleOf(agent.name, request.brief, request.title);
     const folder = request.folderPath ?? opener.cwd;
@@ -116,11 +129,11 @@ export function useOpenedSessions(deps: OpenedSessionsDeps): {
     }
 
     const id = createId('s');
-    underWay.current.set(token, { openerId, sessionId: id });
+    underWay.current.set(token, { openerId, sessionId: id, handle });
     try {
       // No hidden context: the brief is all the new session knows.
       latest.current.startSession(
-        { id, agent, cwd, worktree, name, openedBy: { sessionId: openerId, at: Date.now() } },
+        { id, agent, cwd, worktree, name, openedBy: { sessionId: openerId, at: Date.now(), handle } },
         { text: request.brief },
         { choices: NO_CHOICES, focus: false },
       );
@@ -129,11 +142,12 @@ export function useOpenedSessions(deps: OpenedSessionsDeps): {
       underWay.current.delete(token);
       return { ok: false, reason: 'The session could not be started.', isInternal: true, detail: String(error) };
     }
-    return { ok: true, sessionId: id, sessionName: name, folder: cwd };
+    return { ok: true, sessionId: id, sessionName: name, folder: cwd, handle };
   };
 
   const openedOf = (openerId: string): ListedOpened[] =>
     openedSessionsOf(openerId, deps.sessions).map((session) => ({
+      ...(session.openedBy?.handle ? { handle: session.openedBy.handle } : {}),
       agent: deps.agents.find((agent) => agent.id === session.profileId)?.name ?? session.profileId,
       title: session.name,
       state: deps.isBusy(session.id) ? 'working' : 'idle',

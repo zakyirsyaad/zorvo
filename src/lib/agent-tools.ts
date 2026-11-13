@@ -1,5 +1,12 @@
-import type { Session } from '../types';
-import { delegateSessionName, type MentionAgentStatus } from './delegation';
+import type { ChatMessage, Session } from '../types';
+import {
+  MAX_REPORT_CHARS,
+  REPORT_FRAMING,
+  answerOf,
+  delegateSessionName,
+  reportedFiles,
+  type MentionAgentStatus,
+} from './delegation';
 import { isArchived } from './session-helpers';
 import { escapeVisible } from './visible-text';
 
@@ -45,7 +52,9 @@ type ToolsSubject = Pick<Session, 'compareRunId' | 'delegatedFrom' | 'openedBy' 
 /** Answered to the agent when the user pressed Deny. */
 export const DECLINED = 'The user declined.';
 /** Answered for a tool a later phase builds. */
-export const NOT_YET = 'This tool is not available yet.';
+/** One sentence for every handle that is not the caller's own, so nothing can be told apart. */
+export const NO_SUCH_HANDLE = 'No session with that handle. Use list_agents to see yours.';
+export const UNREADABLE = 'That session could not be read.';
 /** Answered for a session that gets no tools, or that Zorvo does not know. */
 export const NO_SESSION = "This session cannot use Zorvo's tools.";
 
@@ -63,6 +72,8 @@ export interface ListedDelegate {
 
 /** A session this session opened, as `list_agents` reports it. */
 export interface ListedOpened {
+  /** What to call it in `read_session` and `stop_session`; absent for a session opened before handles. */
+  handle?: string;
   agent: string;
   title: string;
   state: 'idle' | 'working';
@@ -79,7 +90,7 @@ export interface ListedAgent {
   id: string;
   name: string;
   status: Exclude<MentionAgentStatus, 'not-installed'>;
-  delegate?: { state: DelegateState; task: string };
+  delegate?: { handle: string; state: DelegateState; task: string };
 }
 
 /** `list_agents`' answer: the agents a task can go to, each with this session's delegate of it. */
@@ -100,7 +111,7 @@ export function listAgentsText(input: {
         name: agent.name,
         status: agent.status,
         ...(delegate
-          ? { delegate: { state: delegate.state, task: delegate.task.slice(0, MAX_LISTED_TASK_CHARS) } }
+          ? { delegate: { handle: agent.id, state: delegate.state, task: delegate.task.slice(0, MAX_LISTED_TASK_CHARS) } }
           : {}),
       },
     ];
@@ -139,9 +150,12 @@ export function delegateResultText(result: {
   kind: 'started' | 'sent';
   sessionName: string;
   agentName: string;
+  /** The delegate's handle: its agent's id. */
+  handle?: string;
 }): string {
   return JSON.stringify({
     [result.kind]: true,
+    ...(result.handle !== undefined ? { handle: result.handle } : {}),
     session: result.sessionName,
     note: `The answer arrives as a message when ${result.agentName} finishes. Do not wait for it.`,
   });
@@ -219,11 +233,100 @@ export function openRefusal(input: { runningOpened: number }): string | null {
 }
 
 /** `start_session`'s answer once the session is open. */
-export function openedResultText(result: { sessionName: string; folder: string }): string {
+export function openedResultText(result: { sessionName: string; folder: string; handle?: string }): string {
   return JSON.stringify({
     opened: true,
+    ...(result.handle !== undefined ? { handle: result.handle } : {}),
     session: result.sessionName,
     folder: result.folder,
     note: 'It works on its own and does not report back.',
   });
+}
+
+// --- Handles: how an agent names a session it started. A handle means something
+// only for the session that owns it, and Zorvo's session ids never reach an agent.
+
+const SESSION_HANDLE_PATTERN = /^session-([1-9][0-9]*)$/;
+
+/** The next handle for a session an opener opens: one more than the highest in `taken`. */
+export function nextSessionHandle(taken: readonly string[]): string {
+  const highest = taken.reduce((max, handle) => {
+    const match = SESSION_HANDLE_PATTERN.exec(handle);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  return `session-${highest + 1}`;
+}
+
+/**
+ * What its owner's agent calls a session: the stored handle of a session it
+ * opened, or the agent's id for a delegate while its link is open (a session
+ * holds one open delegate per agent, so that needs no storing).
+ */
+export function handleOf(session: Session): string | undefined {
+  if (session.openedBy) return session.openedBy.handle;
+  const link = session.delegatedFrom;
+  if (link && (link.endedAt === null || link.endedAt === undefined)) return session.profileId;
+  return undefined;
+}
+
+/** The session `openerId` owns under `handle`: one it opened, or its open delegate. Not an archived one. */
+export function ownedByHandle(openerId: string, handle: string, sessions: readonly Session[]): Session | undefined {
+  if (handle === '') return undefined;
+  return sessions.find(
+    (session) =>
+      !isArchived(session) &&
+      (session.openedBy?.sessionId === openerId || session.delegatedFrom?.sessionId === openerId) &&
+      handleOf(session) === handle,
+  );
+}
+
+// --- Reading and stopping a session an agent started.
+
+/**
+ * What `read_session` answers: the newest finished answer of the other agent,
+ * the files it reported changing, and the session's state. Only the agent's
+ * own answer: what the user typed there is never passed on.
+ */
+export function readSessionText(input: {
+  messages: readonly ChatMessage[];
+  state: DelegateState;
+  /** The session's folder: the files are named relative to it. */
+  cwd: string;
+  maxChars?: number;
+}): string {
+  const last = [...input.messages].reverse().find((message) => answerOf(message) !== '');
+  if (last === undefined) {
+    return JSON.stringify({ state: input.state, answer: null, files: [], note: 'It has not finished an answer yet.' });
+  }
+  const answer = answerOf(last);
+  const limit = Math.max(1, Math.min(Math.floor(input.maxChars ?? MAX_REPORT_CHARS), MAX_REPORT_CHARS));
+  const isCut = answer.length > limit;
+  const prefix = input.cwd.endsWith('/') ? input.cwd : `${input.cwd}/`;
+  const files = reportedFiles(last).map((file) =>
+    escapeVisible(file.startsWith(prefix) ? file.slice(prefix.length) : file),
+  );
+  return JSON.stringify({
+    state: input.state,
+    answer: isCut ? answer.slice(0, limit) : answer,
+    files,
+    note: isCut ? `${REPORT_FRAMING} The answer was cut at ${limit} characters.` : REPORT_FRAMING,
+  });
+}
+
+export function stopResultText(wasWorking: boolean): string {
+  return JSON.stringify(wasWorking ? { stopped: true } : { stopped: false, note: 'It was not working.' });
+}
+
+/**
+ * A session's messages when it was not opened in this run: what the file holds,
+ * then what arrived since. The file is written a little behind, so for a
+ * message on both sides the live copy is the newer one.
+ */
+export function savedThenLive(saved: readonly ChatMessage[], live: readonly ChatMessage[]): ChatMessage[] {
+  const liveById = new Map(live.map((message) => [message.id, message]));
+  const savedIds = new Set(saved.map((message) => message.id));
+  return [
+    ...saved.map((message) => liveById.get(message.id) ?? message),
+    ...live.filter((message) => !savedIds.has(message.id)),
+  ];
 }

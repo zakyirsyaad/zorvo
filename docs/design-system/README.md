@@ -53,7 +53,7 @@ The logo is the **double prompt** symbol beside the `zorvo` wordmark. Two `>` pr
 
 Monochrome on the zinc scale, in a dark and a light theme. The app follows the Mac's appearance, or the Appearance setting (System, Light, Dark) in Settings. The terminal stays dark in both themes.
 
-- Paint the window `ground`; the sidebar sits on it. Raise the chat and the inspector as `sheet` panels with a `border` edge and `radius-panel`. On a sheet: the composer, cards and inputs `surface-2`; wells (code, fields inside a card) `ground`; menus and popovers `surface-3`; chips, tiles and segmented tracks `chip`. `bg` and `surface-1` remain only where a page has not moved yet.
+- Paint the window `ground`; the sidebar sits on it. Raise the chat and the inspector as `sheet` panels with a `border` edge and `radius-panel`. On a sheet: the composer, cards and inputs `surface-2`; wells (code, fields inside a card) `ground`; menus and popovers `surface-3`; chips, tiles and segmented tracks `chip`. No app screen uses `bg` or `surface-1` any more; they remain as tokens only because the marketing site under `site/` still does.
 - Set headings and the active item in `fg`, message text and button labels in `fg-secondary`, icons and secondary labels in `fg-muted`, hints, timestamps and paths in `fg-subtle`. Don't put `fg-subtle` on `surface-hover`.
 - Draw hairlines with `border`. Use `border-strong` only where an edge must be seen: inputs, the outline button.
 - Give a view **one** primary action, filled `primary` with `on-primary` text. Everything else is outline or ghost.

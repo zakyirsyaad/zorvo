@@ -1,35 +1,23 @@
-<!-- @dsCard group="Feedback" height=200 -->
+<!-- @dsCard group="Feedback" height=330 -->
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>Toast — preview</title>
-<style>
-.z-toasts { display: flex; flex-direction: column; gap: 10px; }
-.z-toast { display: flex; align-items: flex-start; gap: 10px; width: 340px; box-sizing: border-box; padding: var(--space-3); border: 1px solid var(--border); border-radius: 10px; background: var(--surface-3); box-shadow: var(--shadow-popover); font-family: var(--font-sans); }
-.z-toast--error { border-color: var(--danger); }
-.z-toast-ico { flex-shrink: 0; width: 15px; height: 15px; margin-top: 2px; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.z-toast-ico--warning { stroke: var(--status-attention); }
-.z-toast-ico--error { stroke: var(--danger); }
-.z-toast-body { display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: var(--space-2); min-width: 0; }
-.z-toast-msg { margin: 0; color: var(--fg-secondary); font: 400 13px/18px var(--font-sans); overflow-wrap: anywhere; }
-.z-toast--error .z-toast-msg { color: var(--fg); }
-.z-toast-action { height: 24px; padding: 0 var(--space-2); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: none; color: var(--fg); font: 500 12px/16px var(--font-sans); cursor: pointer; }
-.z-toast-x { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin: -2px -2px 0 0; border: 0; border-radius: var(--radius-md); background: none; color: var(--fg-muted); cursor: pointer; }
-.z-toast-x svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
-</style>
-</head>
+<head><meta charset="utf-8"><title>Toast — preview</title></head>
 <body>
-<div class="z-stage">
-  <div class="z-toasts">
-    <div class="z-toast" role="status">
-      <svg class="z-toast-ico z-toast-ico--warning" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
-      <div class="z-toast-body"><p class="z-toast-msg">Left out a dropped file whose name has control characters.</p></div>
-      <button type="button" class="z-toast-x" aria-label="Dismiss notice"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
-    </div>
-    <div class="z-toast z-toast--error" role="alert">
-      <svg class="z-toast-ico z-toast-ico--error" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
-      <div class="z-toast-body"><p class="z-toast-msg">Could not create a worktree: the repository's index is locked.</p><button type="button" class="z-toast-action">Try again</button></div>
-      <button type="button" class="z-toast-x" aria-label="Dismiss notice"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
-    </div>
+<div class="z-col" style="align-items:flex-end; gap:10px; padding:var(--space-4)">
+  <div class="z-toast" style="border-radius:var(--radius-xl); flex-direction:column; gap:var(--space-1); padding:14px var(--space-4)" role="status">
+    <span class="z-fg z-w6">Zorvo 0.9.0 is ready</span>
+    <span class="z-ui-sm z-muted">Restarting stops 2 agents mid-turn and 1 shell.</span>
+    <span class="z-hstack" style="align-self:flex-end; margin-top:var(--space-2)"><button class="z-btn z-btn--ghost" type="button" style="color:var(--fg-secondary)">Later</button><button class="z-btn z-btn--outline" type="button" style="color:var(--fg)">Update &amp; restart</button></span>
+  </div>
+  <div class="z-toast z-toast--error" role="alert">
+    <svg class="z-ico z-danger" viewBox="0 0 24 24" style="margin-top:2px"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+    <div class="z-grow-1" style="display:flex; flex-direction:column; gap:var(--space-2); align-items:flex-start"><span>Could not open the link. The system refused it.</span><button class="z-btn z-btn--outline z-btn--sm" type="button" style="color:var(--fg)">Try again</button></div>
+    <button class="z-icon-btn z-icon-btn--xs" type="button" aria-label="Dismiss notice"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </div>
+  <div class="z-toast" role="status">
+    <svg class="z-ico z-att" viewBox="0 0 24 24" style="margin-top:2px"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+    <span class="z-grow-1">Open a folder before you start a session.</span>
+    <button class="z-icon-btn z-icon-btn--xs" type="button" aria-label="Dismiss notice"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
   </div>
 </div>
 </body>

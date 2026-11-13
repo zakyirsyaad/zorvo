@@ -1,14 +1,24 @@
-<!-- @dsCard group="Actions" height=80 -->
+<!-- @dsCard group="Actions" height=190 -->
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>Button — preview</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&amp;family=Geist+Mono:wght@400&amp;display=swap"></head>
+<head><meta charset="utf-8"><title>Button — preview</title></head>
 <body>
-<div class="z-stage">
-  <button class="z-btn z-btn--primary" type="button"><svg class="z-ico" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Allow once</button>
-  <button class="z-btn z-btn--outline" type="button">Always allow</button>
-  <button class="z-btn z-btn--ghost" type="button">Cancel</button>
-  <button class="z-btn z-btn--danger" type="button"><svg class="z-ico" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>Deny</button>
-  <button class="z-btn z-btn--outline" type="button" disabled>Check again</button>
+<div class="z-col" style="gap:var(--space-4)">
+  <div class="z-stage" style="padding:0">
+    <button class="z-btn z-btn--primary" type="button">Allow once</button>
+    <button class="z-btn z-btn--outline" type="button">Always allow</button>
+    <button class="z-btn z-btn--ghost" type="button">Cancel</button>
+    <button class="z-btn z-btn--danger" type="button">Delete session</button>
+    <button class="z-btn z-btn--primary" type="button" disabled>Send</button>
+    <button class="z-btn z-btn--outline" type="button" disabled>Open in Finder</button>
+  </div>
+  <div class="z-stage" style="padding:0">
+    <button class="z-btn z-btn--outline z-btn--sm" type="button">Open (24)</button>
+    <button class="z-btn z-btn--outline z-btn--row" type="button">Path bar (26)</button>
+    <button class="z-btn z-btn--outline" type="button">Default (28)</button>
+    <button class="z-btn z-btn--outline z-btn--lg" type="button"><svg class="z-ico" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>New session (32)</button>
+    <button class="z-btn z-btn--outline z-btn--field" type="button">Check again (field)</button>
+  </div>
 </div>
 </body>
 </html>

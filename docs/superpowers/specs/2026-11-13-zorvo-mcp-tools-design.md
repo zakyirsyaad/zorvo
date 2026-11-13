@@ -305,7 +305,9 @@ In `src/lib/delegation.ts`, each with its tests:
 - Popouts: a popout never handles a tool call; the main window does. The approval card is part of
   the session's snapshot, so a popout of that session shows it and forwards the answer.
 - Copy follows `docs/design-system/README.md`; the card and lines reuse the delegate artboards
-  (`docs/superpowers/specs/2026-11-08-delegate-artboards`). New artboards are not planned.
+  (`docs/superpowers/specs/2026-11-08-delegate-artboards`). Their v2 look was drawn on 2026-11-13, from the
+  copy in code: `docs/superpowers/specs/2026-11-11-redesign-v2-artboards/Tools*.dc.html` (the approval
+  card, the sessions an agent starts, the sidebar, the Settings switch).
 
 ## Security
 

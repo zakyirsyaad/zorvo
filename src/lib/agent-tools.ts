@@ -316,3 +316,17 @@ export function readSessionText(input: {
 export function stopResultText(wasWorking: boolean): string {
   return JSON.stringify(wasWorking ? { stopped: true } : { stopped: false, note: 'It was not working.' });
 }
+
+/**
+ * A session's messages when it was not opened in this run: what the file holds,
+ * then what arrived since. The file is written a little behind, so for a
+ * message on both sides the live copy is the newer one.
+ */
+export function savedThenLive(saved: readonly ChatMessage[], live: readonly ChatMessage[]): ChatMessage[] {
+  const liveById = new Map(live.map((message) => [message.id, message]));
+  const savedIds = new Set(saved.map((message) => message.id));
+  return [
+    ...saved.map((message) => liveById.get(message.id) ?? message),
+    ...live.filter((message) => !savedIds.has(message.id)),
+  ];
+}

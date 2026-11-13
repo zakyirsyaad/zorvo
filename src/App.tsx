@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { loadTranscript } from "./lib/persistence";
+import { savedThenLive } from "./lib/agent-tools";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
 import { ChatCanvas } from "./components/ChatCanvas";
@@ -626,9 +627,7 @@ export default function App() {
       if (transcriptStatus[sessionId] === "ready") return live;
       if (transcriptStatus[sessionId] === "failed") throw new Error("unreadable");
       // Not opened in this run: read what was saved, then what arrived since.
-      const saved = await loadTranscript(sessionId);
-      const savedIds = new Set(saved.map((message) => message.id));
-      return [...saved, ...live.filter((message) => !savedIds.has(message.id))];
+      return savedThenLive(await loadTranscript(sessionId), live);
     },
     stateOf: (sessionId) =>
       isSessionWaiting(sessionId) ? "needs-answer" : isSessionBusy(sessionId) ? "working" : "idle",

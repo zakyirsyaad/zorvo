@@ -409,3 +409,28 @@ describe("readSessionText", () => {
     expect(JSON.parse(readSessionText({ messages: [huge], state: "idle", cwd: CALLER, maxChars: 99_999 })).answer).toHaveLength(20_000);
   });
 });
+
+import { savedThenLive } from "../lib/agent-tools";
+
+describe("savedThenLive", () => {
+  const saved: ChatMessage[] = [
+    { id: "m-1", role: "user", content: "Port it.", timestamp: 1 },
+    { id: "m-2", role: "agent", content: "Port", timestamp: 2 },
+  ];
+
+  it("takes the live copy of a message the file holds an older snapshot of", () => {
+    const live: ChatMessage[] = [
+      { id: "m-2", role: "agent", content: "Ported. Tests pass.", timestamp: 2, isComplete: true },
+      { id: "m-3", role: "user", content: "Thanks.", timestamp: 3 },
+    ];
+    expect(savedThenLive(saved, live).map((message) => [message.id, message.content])).toEqual([
+      ["m-1", "Port it."],
+      ["m-2", "Ported. Tests pass."],
+      ["m-3", "Thanks."],
+    ]);
+  });
+
+  it("is the saved messages when nothing is live", () => {
+    expect(savedThenLive(saved, [])).toEqual(saved);
+  });
+});

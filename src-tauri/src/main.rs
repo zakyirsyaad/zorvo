@@ -2,5 +2,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("mcp-bridge") {
+        std::process::exit(zorvo_lib::agent_tools::bridge::run());
+    }
     zorvo_lib::run();
 }

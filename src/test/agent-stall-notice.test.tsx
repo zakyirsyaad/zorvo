@@ -34,8 +34,9 @@ describe("AgentStallNotice", () => {
     act(() => void vi.advanceTimersByTime(121_000));
     const notice = screen.getByRole("status");
     expect(notice.textContent).toContain("Qwen Code hasn't sent anything for 2 minutes. It may be stuck.");
-    // The words in fg-secondary on surface-1, as drawn; only the clock carries the attention colour.
-    expect(notice.querySelector("span")?.className).toContain("text-fg-secondary");
+    // A title in fg over a muted sentence, as drawn; only the clock carries the attention colour.
+    expect(notice.querySelector("[data-notice-title]")?.className).toContain("text-fg");
+    expect(notice.querySelector("[data-notice-body]")?.className).toContain("text-fg-muted");
     expect(notice.className).not.toContain("bg-attention-surface");
   });
 

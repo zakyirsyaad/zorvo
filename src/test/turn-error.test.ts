@@ -10,6 +10,8 @@ describe("explainTurnError", () => {
     "A Network error occurred",
   ])("explains %j as a network failure and keeps the raw text for details", (raw) => {
     expect(explainTurnError("Gemini CLI", raw)).toEqual({
+      title: "Gemini CLI could not reach the network.",
+      body: "Check your connection or proxy, then try again.",
       summary: "Gemini CLI could not reach the network.",
       hint: "Check your connection or proxy, then try again.",
       details: raw,
@@ -28,12 +30,14 @@ describe("explainTurnError", () => {
 
   it("keeps the raw text of an unknown error, with nothing hidden behind details", () => {
     expect(explainTurnError("Gemini CLI", "quota exceeded for this model")).toEqual({
+      title: "The agent's turn failed",
+      body: "quota exceeded for this model",
       summary: "The agent's turn failed: quota exceeded for this model",
     });
   });
 
   it("says only that the turn failed when there is no text", () => {
-    expect(explainTurnError("Gemini CLI", "")).toEqual({ summary: "The agent's turn failed." });
-    expect(explainTurnError("Gemini CLI", "   ")).toEqual({ summary: "The agent's turn failed." });
+    expect(explainTurnError("Gemini CLI", "")).toEqual({ title: "The agent's turn failed.", summary: "The agent's turn failed." });
+    expect(explainTurnError("Gemini CLI", "   ")).toEqual({ title: "The agent's turn failed.", summary: "The agent's turn failed." });
   });
 });

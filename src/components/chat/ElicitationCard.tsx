@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { AgentLogo } from "../AgentLogo";
+import { AgentTile } from "../ui/AgentTile";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { ElicitationFields } from "./ElicitationFields";
@@ -56,7 +56,7 @@ export function ElicitationCard({ card, agentName, agentProfileId, onAnswer, onR
     >
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
-          <AgentLogo profileId={agentProfileId ?? ""} name="" size={16} />
+          <AgentTile profileId={agentProfileId ?? ""} name="" size={22} />
           <h2 className="min-w-0 flex-1 text-ui font-semibold text-fg">
             {isForm ? `${agentName} needs a few details` : `${agentName} wants to open a page`}
           </h2>

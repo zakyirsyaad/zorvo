@@ -45,7 +45,7 @@ describe("FailedTurnBanner", () => {
   it("shows an unknown error as it is, with no Details to open", () => {
     renderBanner({ error: "quota exceeded" });
 
-    expect(screen.getByRole("alert")).toHaveTextContent("The agent's turn failed: quota exceeded");
+    expect(screen.getByRole("alert")).toHaveTextContent("The agent's turn failed quota exceeded");
     expect(screen.queryByRole("button", { name: "Details" })).toBeNull();
   });
 

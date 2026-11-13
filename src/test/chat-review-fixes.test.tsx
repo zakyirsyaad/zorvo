@@ -17,8 +17,8 @@ afterEach(() => {
   window.getSelection()?.removeAllRanges();
 });
 
-describe("a tool card's focus ring", () => {
-  it("is drawn inside each button, so the card's rounded clip cannot hide it", () => {
+describe("a tool step's focus ring", () => {
+  it("is drawn inside each step, flush on its rail; the summary, with no card to clip it, has the usual ring", () => {
     const css = readFileSync(join(__dirname, "..", "styles", "globals.css"), "utf8");
     expect(css).toMatch(/@utility focus-ring-inset\s*\{[^}]*&:focus-visible\s*\{[^}]*outline-offset:\s*-1px/);
 
@@ -26,7 +26,10 @@ describe("a tool card's focus ring", () => {
     render(<ToolsPart tools={[tool]} isCurrentTurn={false} isTurnOver />);
     const header = screen.getAllByRole("button")[0];
     fireEvent.click(header);
-    for (const button of screen.getAllByRole("button")) {
+    expect(header.className.split(/\s+/)).toContain("focus-ring");
+    const steps = screen.getAllByRole("button").slice(1);
+    expect(steps.length).toBeGreaterThan(0);
+    for (const button of steps) {
       expect(button).toHaveClass("focus-ring-inset");
       expect(button.className.split(/\s+/)).not.toContain("focus-ring");
     }

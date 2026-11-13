@@ -212,6 +212,8 @@ export function PopoverList({ label, children }: { label: string; children: Reac
 
 export interface PopoverOptionProps {
   selected?: boolean;
+  /** Marked without being picked: the row Return would pick in a search. */
+  highlighted?: boolean;
   onSelect: () => void;
   /** A line under the label that says what the option does. */
   description?: ReactNode;
@@ -228,14 +230,15 @@ export interface PopoverOptionProps {
 }
 
 const OPTION =
-  "focus-ring flex min-h-7.5 w-full gap-2 rounded-md px-2 text-left text-ui text-fg transition-colors enabled:hover:bg-surface-hover disabled:text-fg-subtle";
-// A row with a line under its label tops its check and grows; a one-line row is centred in 30px.
-const OPTION_TWO_LINES = "items-start py-1.75";
-const OPTION_ONE_LINE = "items-center py-1.5";
+  "focus-ring flex min-h-7 w-full gap-2 rounded-md px-2 text-left text-ui text-fg transition-colors enabled:hover:bg-surface-hover disabled:text-fg-subtle";
+// A row with a line under its label tops its check and grows; a one-line row is centred in 28px.
+const OPTION_TWO_LINES = "items-start py-[5px]";
+const OPTION_ONE_LINE = "items-center py-1";
 
 /** One row of a popover: an option in a listbox, a menu item in a menu. */
 export function PopoverOption({
   selected,
+  highlighted = false,
   onSelect,
   description,
   descriptionId,
@@ -251,7 +254,15 @@ export function PopoverOption({
   const isSelected = selected ?? false;
   // A row you can check keeps its check's place on the left; a command (Rename, Delete) has none.
   const isCheckable = selected !== undefined || role === "option" || role === "menuitemradio";
-  const classes = [OPTION, description ? OPTION_TWO_LINES : OPTION_ONE_LINE, isSelected && "bg-surface-hover"];
+  const classes = [
+    OPTION,
+    description ? OPTION_TWO_LINES : OPTION_ONE_LINE,
+    (isSelected || highlighted) && "bg-surface-hover",
+  ];
+  // In a list you pick from, only the picked or marked row's name is fg; a command's name always is.
+  const isPickList = selected !== undefined;
+  const pickedTone = isSelected || highlighted ? "text-fg" : "text-fg-secondary";
+  const nameTone = isPickList ? pickedTone : "";
   return (
     <button
       type="button"
@@ -261,6 +272,7 @@ export function PopoverOption({
       aria-describedby={descriptionId}
       disabled={disabled}
       title={title}
+      data-highlighted={highlighted ? "" : undefined}
       onClick={onSelect}
       className={classes.filter(Boolean).join(" ")}
     >
@@ -270,7 +282,7 @@ export function PopoverOption({
         </span>
       )}
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate">{children}</span>
+        <span data-option-name="" className={`truncate ${nameTone}`}>{children}</span>
         {description && (
           <span id={descriptionId} className="text-caption leading-[15px] text-fg-subtle">
             {description}

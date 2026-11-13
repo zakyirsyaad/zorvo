@@ -72,7 +72,7 @@ describe("the composer's chips", () => {
   it("are 28px, borderless and quiet, with no leading icon and a 12px chevron", () => {
     renderDock({ controls: { model } });
     const chip = screen.getByRole("button", { name: "Model: Opus" });
-    expect(chip).toHaveClass("h-7", "rounded-md", "px-2", "text-ui-sm", "text-fg-secondary");
+    expect(chip).toHaveClass("h-6.5", "rounded-md", "bg-chip", "px-2", "text-ui-sm", "text-fg-secondary");
     expect(chip).not.toHaveClass("border");
     expect(chip.firstElementChild?.tagName.toLowerCase()).toBe("span");
     const chevron = chip.lastElementChild!;
@@ -102,7 +102,8 @@ describe("the composer's chips", () => {
     renderDock({ controls: { model }, sessionAgent: { profileId: "claude-acp", name: "Claude Code" } });
     const agent = screen.getByText("Claude Code").closest("[data-agent-chip]")!;
     expect(agent.tagName.toLowerCase()).not.toBe("button");
-    expect(agent).toHaveClass("h-7", "gap-1.5", "px-2", "text-fg-secondary");
+    expect(agent).toHaveClass("h-6.5", "gap-1.5", "pl-0.5", "pr-1.5", "text-fg-secondary");
+    expect(agent.firstElementChild).toHaveClass("size-4", "bg-chip");
     expect(before(screen.getByRole("button", { name: "Add attachment" }), agent)).toBe(true);
     expect(before(agent, screen.getByRole("button", { name: "Model: Opus" }))).toBe(true);
   });

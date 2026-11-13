@@ -85,7 +85,7 @@ export function MentionMenu({
                     e.preventDefault();
                     if (isPickable) onPickAgent?.(agent);
                   }}
-                  className={`flex items-center gap-2 rounded px-2 py-1.75 ${
+                  className={`flex items-center gap-2 rounded-md px-2 py-[5px] ${
                     isPickable ? "cursor-pointer" : "cursor-default text-fg-secondary opacity-55"
                   } ${
                     index === highlighted
@@ -133,7 +133,7 @@ export function MentionMenu({
                     e.preventDefault();
                     onPick(path);
                   }}
-                  className={`flex cursor-pointer items-start gap-2 rounded px-2 py-1.75 ${
+                  className={`flex cursor-pointer items-start gap-2 rounded-md px-2 py-[5px] ${
                     isHighlighted ? "bg-surface-hover text-fg" : "text-fg-secondary hover:bg-surface-hover"
                   }`}
                 >

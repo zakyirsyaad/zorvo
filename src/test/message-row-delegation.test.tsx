@@ -34,23 +34,23 @@ describe("a delegation report in the chat", () => {
   it("a delegation report reads From Codex", () => {
     const row = renderRow(report);
     const label = within(row).getByText("From Codex");
-    expect(label).toHaveClass("text-ui-sm", "font-medium", "text-fg-secondary");
+    expect(label).toHaveClass("text-ui-sm", "font-medium", "text-fg");
     const header = label.parentElement as HTMLElement;
     // 10px above the bubble, as the agent's own header sits above its reply.
-    expect(header).toHaveClass("mb-2.5", "gap-2");
+    expect(header).toHaveClass("mb-2", "gap-2");
 
     // The logo is decorative: the name next to it says whose it is.
     const logo = header.querySelector("img") as HTMLImageElement | null;
     expect(logo).not.toBeNull();
     expect(logo).toHaveAttribute("alt", "");
-    expect(logo).toHaveAttribute("width", "16");
-    expect(logo).toHaveAttribute("height", "16");
+    expect(logo).toHaveAttribute("width", "14");
+    expect(logo).toHaveAttribute("height", "14");
 
     // Your bubble itself is unchanged.
     const bubble = within(row).getByText("Tests pass on the branch.").closest("[data-selectable-text]") as HTMLElement;
     expect(bubble).toHaveClass(
       "ml-auto",
-      "max-w-[85%]",
+      "max-w-[80%]",
       "rounded-xl",
       "border",
       "border-border",

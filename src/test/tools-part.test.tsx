@@ -30,16 +30,14 @@ describe("ToolsPart", () => {
 
     const card = summary.parentElement;
     expect(card).not.toBeNull();
-    expect(card!.className).toContain("border");
-    expect(card!.className).toContain("rounded-lg");
-
-    // The card is the only full border; the divider is a top border.
+    // No card: the steps sit on a rail, the only edge.
+    expect(card!.className).not.toContain("border");
     expect(card!.querySelectorAll(".border")).toHaveLength(0);
+    expect(card!.querySelector("[data-tool-rail]")?.className).toContain("border-l");
 
     const row = within(card!).getByRole("button", { name: /Read src\/App\.tsx/ });
     expect(card!.contains(row)).toBe(true);
     expect(row.className).not.toContain("border");
-    expect(row.className).not.toContain("rounded");
 
     // The output stays out of the DOM until the row is opened.
     expect(within(card!).queryByText("file contents")).toBeNull();

@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { ActionCard } from "../ActionCard";
-import { AgentLogo } from "../AgentLogo";
+import { AgentTile } from "../ui/AgentTile";
 import { ElicitationCard } from "./ElicitationCard";
 import { MarkdownRenderer } from "../MarkdownRenderer";
 import { MessageActionBar } from "../MessageActionBar";
@@ -82,7 +82,7 @@ export const MessageRow = memo(function MessageRow({
       className={`text-left select-text [&_button]:select-none ${
         isUser
           ? // The edge carries the bubble on the light theme, where surface-2 is barely off the chat's ground.
-            "ml-auto max-w-[85%] rounded-xl border border-border bg-surface-2 px-3.5 py-2.5 text-body text-fg"
+            "ml-auto max-w-[80%] rounded-xl border border-border bg-surface-2 px-3.5 py-2.5 text-body text-fg"
           : "w-full text-body text-fg-secondary"
       }`}
     >
@@ -148,14 +148,9 @@ export const MessageRow = memo(function MessageRow({
         <>
           {message.delegationReport && (
             // A report from a delegated session keeps its bubble, headed like a reply, saying whose it is.
-            <div data-delegation-header="" className="mb-2.5 flex min-w-0 max-w-full items-center gap-2">
-              <AgentLogo
-                profileId={message.delegationReport.agentId ?? ""}
-                name=""
-                size={16}
-                className="shrink-0"
-              />
-              <span className="min-w-0 truncate text-ui-sm font-medium text-fg-secondary">
+            <div data-delegation-header="" className="mb-2 flex min-w-0 max-w-full items-center gap-2">
+              <AgentTile profileId={message.delegationReport.agentId ?? ""} name="" size={22} />
+              <span className="min-w-0 truncate text-ui-sm font-medium text-fg">
                 {`From ${message.delegationReport.agentName}`}
               </span>
             </div>
@@ -174,10 +169,10 @@ export const MessageRow = memo(function MessageRow({
           data-message-body=""
           className={`-mx-3 self-stretch rounded-[10px] p-3 transition-colors ${showActions ? "group-hover:bg-surface-2" : ""}`}
         >
-          {/* The agent's reply is headed by its logo, name and time; your own message only when a delegate wrote it. */}
-          <div data-message-header="" className="mb-2.5 flex min-w-0 max-w-full items-center gap-2">
-            <AgentLogo profileId={agentProfileId ?? ""} name="" size={16} className="shrink-0" />
-            <span className="min-w-0 truncate text-ui-sm font-medium text-fg-secondary">{agentName}</span>
+          {/* The agent's reply is headed by its tile, name and time; your own message only when a delegate wrote it. */}
+          <div data-message-header="" className="mb-2 flex min-w-0 max-w-full items-center gap-2">
+            <AgentTile profileId={agentProfileId ?? ""} name="" size={22} />
+            <span className="min-w-0 truncate text-ui-sm font-medium text-fg">{agentName}</span>
             {timeLabel && <span className="shrink-0 text-caption text-fg-subtle">{timeLabel}</span>}
           </div>
           {text}

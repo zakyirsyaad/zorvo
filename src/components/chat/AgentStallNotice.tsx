@@ -4,7 +4,7 @@ import { Button } from "../ui/Button";
 import {
   activityKeyOf,
   hasRunningTool,
-  stallNoticeText,
+  stallNoticeParts,
   type AgentFailures,
 } from "../../lib/agent-stall";
 import type { ChatMessage } from "../../types";
@@ -43,18 +43,21 @@ export function AgentStallNotice({ agentName, messages, failures, onStop }: Agen
 
   // A running tool is the agent working, however long it takes.
   const silentForMs = hasRunningTool(messages) ? 0 : Math.max(0, now - since);
-  const text = stallNoticeText(agentName, { failures, silentForMs });
-  if (!text) return null;
+  const parts = stallNoticeParts(agentName, { failures, silentForMs });
+  if (!parts) return null;
 
   return (
     <div
       role="status"
-      className="mx-auto flex w-full max-w-chat items-center gap-2.5 rounded-lg border border-border bg-surface-2 px-3 py-2.5"
+      className="mx-auto flex w-full max-w-chat items-center gap-3 rounded-xl border border-border bg-surface-2 py-3 pr-3 pl-4"
     >
       <Clock size={14} aria-hidden="true" className="shrink-0 text-status-attention" />
-      <span className="min-w-0 flex-1 text-ui text-fg-secondary">{text}</span>
+      <span className="flex min-w-0 flex-1 flex-col text-ui">
+        <span data-notice-title="" className="font-semibold text-fg">{parts.title}</span>
+        {parts.body && <span data-notice-body="" className="text-fg-muted">{" "}{parts.body}</span>}
+      </span>
       {onStop && (
-        <Button variant="outline" size="sm" icon={<Square size={10} aria-hidden="true" />} className="shrink-0" onClick={onStop}>
+        <Button variant="outline" icon={<Square size={10} aria-hidden="true" />} className="shrink-0" onClick={onStop}>
           Stop
         </Button>
       )}

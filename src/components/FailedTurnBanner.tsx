@@ -16,20 +16,21 @@ export interface FailedTurnBannerProps {
 }
 
 /**
- * A turn the agent failed, as one row under its last message: what happened in fg, Try again
- * on the right, then Details and Dismiss. The details open under the row.
+ * A turn the agent failed, as a card under its last message: what happened as a title over a
+ * muted sentence, Try again on the right, then Details and Dismiss. The details open under the row.
  */
 export function FailedTurnBanner({ agentName, error, isBusy, onRetry, onDismiss }: FailedTurnBannerProps) {
   const [isShowingDetails, setIsShowingDetails] = useState(false);
-  const { summary, hint, details } = explainTurnError(agentName, error);
+  const { title, body, details } = explainTurnError(agentName, error);
 
   return (
-    <div role="alert" className="mx-auto w-full max-w-chat rounded-lg border border-danger bg-danger-surface px-3 py-2.5">
-      <div className="flex items-center gap-2.5">
+    <div role="alert" className="mx-auto w-full max-w-chat rounded-xl border border-danger bg-danger-surface py-3 pr-3 pl-4">
+      <div className="flex items-center gap-3">
         <CircleAlert size={14} aria-hidden="true" className="shrink-0 text-danger" />
-        <p className="min-w-0 flex-1 break-words text-ui text-fg">
-          {summary}
-          {hint && ` ${hint}`}
+        <p className="flex min-w-0 flex-1 flex-col break-words text-ui">
+          <span data-notice-title="" className="font-semibold text-fg">{title}</span>
+          {/* The space keeps the two reading as two sentences where the text is read as one string. */}
+          {body && <span data-notice-body="" className="text-fg-muted">{" "}{body}</span>}
         </p>
         {onRetry && (
           <Button variant="outline" onClick={onRetry} disabled={isBusy} className="shrink-0">
@@ -51,7 +52,7 @@ export function FailedTurnBanner({ agentName, error, isBusy, onRetry, onDismiss 
         </IconButton>
       </div>
       {details && isShowingDetails && (
-        <pre className="mt-2 whitespace-pre-wrap break-words pl-6 font-mono text-caption text-fg-secondary">{details}</pre>
+        <pre className="mt-2 whitespace-pre-wrap break-words pl-[26px] font-mono text-caption text-fg-secondary">{details}</pre>
       )}
     </div>
   );

@@ -58,7 +58,7 @@ describe("GithubSection", () => {
     it("signed in shows initials, name and the connection line", () => {
       renderSection({ state: "signed-in", login: "zakyirsyaad", name: "Zaky Irsyad" });
       expect(within(group()).getByText("ZI")).toHaveClass("size-8", "rounded-full", "bg-surface-hover");
-      expect(within(group()).getByText("Zaky Irsyad")).toBeInTheDocument();
+      expect(within(group()).getByText("Zaky Irsyad")).toHaveClass("font-medium");
       const line = within(group()).getByText("Connected as @zakyirsyaad on github.com");
       const dot = line.querySelector("[aria-hidden]") as HTMLElement;
       expect(dot).toHaveClass("bg-status-running");

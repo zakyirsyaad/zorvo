@@ -238,7 +238,7 @@ async function renderCompareDraft({ withSlot }: { withSlot: boolean }) {
   if (withSlot) await addAll();
   await openNewDraft();
   await act(async () => {
-    fireEvent.click(await screen.findByRole("button", { name: /^Agent: / }));
+    fireEvent.click(await screen.findByRole("button", { name: "All agents" }));
   });
   await act(async () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: /^Compare Kimi CLI/ }));

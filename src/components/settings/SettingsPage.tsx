@@ -182,19 +182,22 @@ export function SettingsPage({
   })();
 
   return (
-    <div data-settings-page className="relative flex min-h-0 min-w-0 flex-1 bg-bg">
+    <div data-settings-page className="relative flex min-h-0 min-w-0 flex-1 bg-ground">
       <SettingsNav current={section} onSelect={page.select} onBack={page.close} updateCount={updateCount} />
-      {/* Keyed by section: a new section is a new scroller, so it opens at its top. */}
-      <section
-        key={section}
-        aria-labelledby={titleId}
-        data-settings-content
-        className="relative min-w-0 flex-1 overflow-y-auto px-10 py-14"
-      >
-        {/* The top of the content drags the window too, as the nav's top does. */}
-        <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-12" />
-        <div className="mx-auto max-w-[720px]">{content}</div>
-      </section>
+      {/* One sheet beside the nav, as the sessions' stage has; it clips its corners and the section inside scrolls. */}
+      <div data-sheet="settings" className="my-2 mr-2 flex min-w-0 flex-1 overflow-hidden rounded-panel border border-border bg-sheet">
+        {/* Keyed by section: a new section is a new scroller, so it opens at its top. */}
+        <section
+          key={section}
+          aria-labelledby={titleId}
+          data-settings-content
+          className="relative min-w-0 flex-1 overflow-y-auto px-10 py-12"
+        >
+          {/* The top of the content drags the window too, as the nav's top does. */}
+          <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-12" />
+          <div className="mx-auto max-w-[720px]">{content}</div>
+        </section>
+      </div>
       {notice && <ToastStack>{notice}</ToastStack>}
       {signInDialog}
       {agentDialog}

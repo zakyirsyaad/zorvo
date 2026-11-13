@@ -1,4 +1,5 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { POPOVER_PANEL_STYLE } from "../ui/Popover";
 import { Check, ChevronLeft, Copy, ExternalLink, Plus } from "lucide-react";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
@@ -239,7 +240,7 @@ export function FileViewer({
             : BODY_PADDING_PX + range.last * LINE_HEIGHT_PX + ADD_LINES_GAP_PX,
           left: ADD_LINES_LEFT_PX,
         }}
-        className={`absolute flex rounded-lg border border-border bg-surface-3 p-0.5 font-sans shadow-popover select-none ${
+        className={`absolute flex ${POPOVER_PANEL_STYLE} font-sans select-none ${
           range.isBackward ? "-translate-y-full" : ""
         }`}
       >
@@ -268,13 +269,13 @@ export function FileViewer({
           Files
         </Button>
         <Breadcrumb relativePath={relativePath} marker={marker} />
-        <IconButton label={`Add ${name} to prompt`} title="Add to prompt" size="row" onClick={() => onInsertPath(absolutePath)}>
+        <IconButton label={`Add ${name} to prompt`} title="Add to prompt" size="md" onClick={() => onInsertPath(absolutePath)}>
           <Plus size={14} />
         </IconButton>
-        <IconButton label="Open in editor" title="Open in editor" size="row" onClick={openInEditor}>
+        <IconButton label="Open in editor" title="Open in editor" size="md" onClick={openInEditor}>
           <ExternalLink size={14} />
         </IconButton>
-        <IconButton label={isCopied ? "Path copied" : "Copy path"} title="Copy path" size="row" onClick={copyPath}>
+        <IconButton label={isCopied ? "Path copied" : "Copy path"} title="Copy path" size="md" onClick={copyPath}>
           {isCopied ? <Check size={14} /> : <Copy size={14} />}
         </IconButton>
       </div>

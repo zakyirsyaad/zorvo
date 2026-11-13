@@ -133,7 +133,7 @@ function MoreOptionsMenu({
       onClose={() => setIsOpen(false)}
       label="More options"
       align="end"
-      className="w-[220px]"
+      className="w-[240px]"
       trigger={
         <IconButton
           ref={triggerRef}
@@ -150,7 +150,7 @@ function MoreOptionsMenu({
       {items.map(({ label, run, Icon, description }, index) => (
         <Fragment key={label}>
           {/* Archive ends the session's work, so a rule sets it apart from the rest. */}
-          {label === "Archive" && index > 0 && <div role="separator" className="my-1.5 h-px bg-border" />}
+          {label === "Archive" && index > 0 && <div role="separator" className="my-1 h-px bg-border" />}
           <PopoverOption
             onSelect={() => {
               setIsOpen(false);

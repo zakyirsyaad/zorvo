@@ -5,9 +5,9 @@ import { NO_CHOICES, type AcpChoices } from "../../lib/acp-draft";
 import { followUpSummary } from "../../lib/delegation";
 import { isRiskyMode, type ComposerControl, type ComposerControls } from "../../lib/composer-controls";
 import type { AgentProfile } from "../../types";
-import { AgentLogo } from "../AgentLogo";
 import { CompareModelStatus } from "../composer/CompareModelStatus";
 import { OptionDropdown } from "../composer/OptionDropdown";
+import { AgentTile } from "../ui/AgentTile";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 
@@ -69,7 +69,8 @@ const STATUS_TEXT: Readonly<Record<DelegateAgentStatus, string>> = {
 const STATUS_CLASS: Readonly<Record<DelegateAgentStatus, string>> = {
   ready: "text-fg-muted",
   "not-checked": "text-fg-subtle",
-  "needs-sign-in": "text-status-attention",
+  // The dot beside the words carries the colour.
+  "needs-sign-in": "text-fg-muted",
   "not-installed": "text-fg-subtle",
 };
 
@@ -290,7 +291,7 @@ export function DelegateDialog({
         className="flex max-h-[calc(100vh-2rem)] w-full max-w-[520px] flex-col gap-4 overflow-y-auto rounded-xl border border-border bg-surface-2 p-5 text-fg-secondary shadow-dialog outline-none"
       >
         <div className="flex items-center gap-2.5">
-          <h2 id={titleId} className="min-w-0 flex-1 truncate text-base font-semibold text-fg">
+          <h2 id={titleId} className="min-w-0 flex-1 truncate text-body font-semibold text-fg">
             Delegate to another agent
           </h2>
           <IconButton label="Close" onClick={onCancel}>
@@ -298,7 +299,7 @@ export function DelegateDialog({
           </IconButton>
         </div>
 
-        <fieldset className="flex flex-col gap-1.5">
+        <fieldset className="flex flex-col gap-1">
           <legend className="mb-1.5 p-0 text-ui font-medium text-fg">Agent</legend>
           {agents.map((agent) => {
             const statusId = `${statusIdPrefix}-${agent.profile.id}-status`;
@@ -328,8 +329,8 @@ export function DelegateDialog({
                     className="pointer-events-none absolute size-1.5 rounded-full bg-fg opacity-0 peer-checked:opacity-100"
                   />
                 </span>
-                <AgentLogo profileId={agent.profile.id} name="" size={16} />
-                <span className={isPicked ? "text-fg" : "text-fg-secondary"}>{agent.profile.name}</span>
+                <AgentTile profileId={agent.profile.id} name="" size={22} />
+                <span className={isPicked ? "font-medium text-fg" : "text-fg-secondary"}>{agent.profile.name}</span>
                 <span
                   id={statusId}
                   className={`ml-auto flex items-center gap-1.5 text-ui-sm ${STATUS_CLASS[agent.status]}`}
@@ -357,22 +358,24 @@ export function DelegateDialog({
               setIsTaskMissing(false);
             }}
             aria-describedby={isTaskMissing ? `${errorId} ${hintId}` : hintId}
-            className="w-full resize-none rounded-lg border border-border-strong bg-surface-2 px-2.5 py-2 text-ui text-fg focus-ring"
+            className={`w-full resize-none rounded-lg border bg-ground px-2.5 py-2 text-ui leading-5 text-fg focus-ring ${
+              isTaskMissing ? "border-danger" : "border-border-strong"
+            }`}
           />
           {isTaskMissing && (
-            <p id={errorId} className="text-caption text-danger">
+            <p id={errorId} className="text-ui-sm text-danger">
               Write the task first.
             </p>
           )}
           {picked?.hasDelegate ? (
             <p className="mt-1 text-ui font-medium text-fg">{followUpSummary(agentName)}</p>
           ) : (
-            <div className="mt-1 flex items-center gap-1">
-              <span className="mr-1.5 text-ui font-medium text-fg">{agentName} starts on</span>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <span className="text-ui font-medium text-fg">{agentName} starts on</span>
               {chips}
             </div>
           )}
-          <p id={hintId} className="text-caption text-fg-subtle">
+          <p id={hintId} className="text-ui-sm leading-[17px] text-fg-muted">
             {hint}
           </p>
         </div>

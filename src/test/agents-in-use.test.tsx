@@ -59,7 +59,8 @@ function notReadyProfiles() {
 }
 
 function newSessionView(): HTMLElement {
-  const view = screen.getByRole("heading", { name: /^New session/ }).parentElement;
+  // The heading sits in a row with the chips; the notice under it is in the column around that row.
+  const view = screen.getByRole("heading", { name: /^New session/ }).closest<HTMLElement>(".max-w-draft");
   if (!view) throw new Error("the new-session view has no container");
   return view;
 }
@@ -77,7 +78,7 @@ describe("Agents in use", () => {
     await renderWithRegistryAgents();
     await click(screen.getByRole("button", { name: "New session" }));
 
-    await click(screen.getByRole("button", { name: "Agent: Claude Code" }));
+    await click(screen.getByRole("button", { name: "All agents" }));
 
     const names = screen.getAllByRole("option").map((option) => option.textContent);
     expect(names).toEqual(expect.arrayContaining(["Claude Code", "Kimi CLI"]));

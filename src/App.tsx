@@ -17,7 +17,6 @@ import { CompareRunPanel } from "./components/compare/CompareRunPanel";
 import { FailedTurnBanner } from "./components/FailedTurnBanner";
 import { SignInLayer } from "./components/SignInLayer";
 import { AgentInstallPanel } from "./components/AgentInstallPanel";
-import { pickerLabelOf } from "./lib/install-plan";
 import { installPanelAgentOf } from "./lib/install-panel";
 import { NewSessionBelow, NewSessionHeading } from "./components/workspace/NewSessionView";
 import { ChangesPanel } from "./components/changes/ChangesPanel";
@@ -250,6 +249,8 @@ export default function App() {
   const [draftInstallSlotElement, setDraftInstallSlotElement] = useState<HTMLDivElement | null>(null);
   const [draftSignInSlotElement, setDraftSignInSlotElement] = useState<HTMLDivElement | null>(null);
   const draftBlockerSlots = useMemo(() => ({ install: setDraftInstallSlotElement, signIn: setDraftSignInSlotElement }), []);
+  // The draft's folder and branch chips are the composer's, drawn beside the heading.
+  const [draftChipsSlotElement, setDraftChipsSlotElement] = useState<HTMLDivElement | null>(null);
   // An agent not installed yet is offered too: picking it shows its Install panel.
   const pickableAgents = agentsInUse;
   const defaultAgentId = resolveDraftAgentId(agentsInUse, state.settings.defaultAgentId, pickableAgents);
@@ -1461,7 +1462,7 @@ export default function App() {
                   ) : draftWorkspace ? (
                     // The draft's heading, then its chips and card (the composer, below), then its sessions.
                     <NewSessionHeading
-                      workspace={draftWorkspace}
+                      chipsSlot={setDraftChipsSlotElement}
                       unavailableReason={areAgentsLoaded && !agentsInUse.some(isAgentReady) ? noAgentNotice(agentsInUse) : undefined}
                     />
                   ) : isNewSessionDraft ? (
@@ -1580,6 +1581,7 @@ export default function App() {
                       // While the draft asks its agent what it offers, its chips show as skeletons in the row.
                       isLoadingControls={Boolean(!isActiveRunning && draftAgent && agentCheck.isProbing(draftAgent.id))}
                       aboveCardSlots={draftBlockerSlots}
+                      chipsTarget={isNewSessionDraft && draftWorkspace ? draftChipsSlotElement : null}
                       contextUsage={isActiveRunning ? acp.info[activeSessionId]?.usage : undefined}
                       mentions={filesFolder ? { root: filesFolder.path, loadFiles: () => shell.loadWorkspaceFiles(filesFolder.path) } : undefined}
                       delegationAgents={delegationAgents}
@@ -1603,20 +1605,13 @@ export default function App() {
                             }
                           : undefined
                       }
-                      agent={
-                        isNewSessionDraft && newSessionAgent && !canCompare
-                          ? {
-                              options: pickableAgents.map((a) => ({ value: a.id, label: pickerLabelOf(a) })),
-                              selected: newSessionAgent.id,
-                              onChange: (agentId) => setPickedAgentId(agentId ?? null),
-                            }
-                          : undefined
-                      }
                       agents={
-                        isNewSessionDraft && newSessionAgent && canCompare
+                        isNewSessionDraft && newSessionAgent
                           ? {
                               options: agentChoices,
-                              selected: compare.agentIds,
+                              // Outside a repository there is one agent: a press picks it, nothing is ticked.
+                              selected: canCompare ? compare.agentIds : [newSessionAgent.id],
+                              canTick: canCompare,
                               onChange: compare.toggle,
                               onPick: (agentId) => {
                                 compare.reset();

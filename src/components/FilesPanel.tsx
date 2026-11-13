@@ -50,7 +50,7 @@ const BASE_INDENT_PX = 4;
 const INDENT_STEP_PX = 16;
 const FILE_INDENT_PX = 18;
 const ROW =
-  "group relative flex h-[26px] items-center gap-1.5 rounded pr-1.5 text-fg-secondary hover:bg-surface-hover hover:text-fg focus-within:bg-surface-hover";
+  "group relative flex h-[26px] items-center gap-1.5 rounded-md pr-1.5 text-fg-secondary hover:bg-surface-hover hover:text-fg focus-within:bg-surface-hover";
 const ROW_BUTTON = "flex h-[26px] min-w-0 flex-1 items-center gap-1.5 text-left focus-ring";
 const MARKER_SLOT = "w-3 shrink-0 text-center text-micro font-semibold";
 const NOTE = "py-1 pr-2 text-caption";
@@ -203,7 +203,7 @@ interface PanelHeaderProps {
 
 function PanelHeader({ rootName, rootPath, query, onQueryChange, onRefresh, onRevealRoot, onClose }: PanelHeaderProps) {
   return (
-    <div className="flex shrink-0 flex-col gap-2.5 pt-3 pr-3 pb-2 pl-4">
+    <div className="flex shrink-0 flex-col gap-2.5 pt-3 pr-2.5 pb-2 pl-3.5">
       <div className="flex items-center gap-1.5">
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-ui font-semibold text-fg">{rootName}</span>
@@ -211,21 +211,21 @@ function PanelHeader({ rootName, rootPath, query, onQueryChange, onRefresh, onRe
             {rootPath}
           </span>
         </span>
-        <IconButton label="Refresh files" title="Refresh" size="row" onClick={onRefresh}>
+        <IconButton label="Refresh files" title="Refresh" size="md" onClick={onRefresh}>
           <RefreshCw size={14} aria-hidden="true" />
         </IconButton>
         {onRevealRoot && (
-          <IconButton label="Reveal in Finder" title="Reveal in Finder" size="row" onClick={onRevealRoot}>
+          <IconButton label="Reveal in Finder" title="Reveal in Finder" size="md" onClick={onRevealRoot}>
             <ExternalLink size={14} aria-hidden="true" />
           </IconButton>
         )}
         {onClose && (
-          <IconButton label="Close files panel" title="Close" size="row" onClick={onClose}>
+          <IconButton label="Close files panel" title="Close" size="md" onClick={onClose}>
             <X size={14} aria-hidden="true" />
           </IconButton>
         )}
       </div>
-      <label className="flex h-[30px] items-center gap-2 rounded-lg border border-border-strong bg-surface-2 px-2.5 text-fg-subtle focus-ring-within">
+      <label className="flex h-8 items-center gap-2 rounded-lg border border-border bg-surface-2 px-2.5 text-fg-subtle focus-ring-within">
         <Search size={14} aria-hidden="true" className="shrink-0" />
         <input
           type="text"

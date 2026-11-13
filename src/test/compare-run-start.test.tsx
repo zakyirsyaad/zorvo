@@ -124,7 +124,7 @@ async function click(element: HTMLElement) {
 
 /** Ticks the agents in the Agent chip's menu, on top of the default one. */
 async function tickAgents(...names: string[]) {
-  await click(await screen.findByRole("button", { name: /^Agent: / }));
+  await click(await screen.findByRole("button", { name: "All agents" }));
   for (const name of names) {
     await click(await screen.findByRole("checkbox", { name: new RegExp(`^Compare ${name}`) }));
   }
@@ -407,10 +407,12 @@ describe("starting a compare run", () => {
 
     const panel = await screen.findByRole("region", { name: "Compare run" });
     await act(async () => {});
-    expect(within(panel).getAllByRole("listitem").map((row) => row.getAttribute("aria-label"))).toEqual(["Claude Code", "Qwen Code"]);
+    // The columns only: each one holds a list of its own (the files it changed).
+    const columns = Array.from(panel.querySelector("[data-columns]")!.children);
+    expect(columns.map((column) => column.getAttribute("aria-label"))).toEqual(["Claude Code", "Qwen Code"]);
     expect(screen.queryByRole("textbox", { name: "Prompt" })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Folder:/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /^Agent: / })).toBeNull();
+    expect(screen.queryByRole("button", { name: "All agents" })).toBeNull();
   });
 
   it("opens one agent's chat from its row, and leaves the panel", async () => {

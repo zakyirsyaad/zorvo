@@ -72,8 +72,8 @@ describe("AppUpdateNotice", () => {
     const onLater = vi.fn();
     render(<AppUpdateNotice {...base} update={info("0.9.0")} busyCount={1} onInstall={onInstall} onLater={onLater} />);
 
-    const card = screen.getByRole("status");
-    expect(card).toHaveClass("rounded-xl", "border", "border-border", "bg-surface-3", "shadow-popover", "px-4", "py-3.5");
+    const card = screen.getByRole("status", { name: "Zorvo update" });
+    expect(card).toHaveClass("rounded-panel", "border", "border-border", "bg-surface-3", "shadow-popover", "px-4", "py-3.5");
     expect(card).toHaveTextContent("Zorvo 0.9.0 is ready");
     expect(screen.getByText("Zorvo 0.9.0 is ready")).toHaveClass("font-semibold");
     expect(card).toHaveTextContent("Restarting stops 1 agent mid-turn.");

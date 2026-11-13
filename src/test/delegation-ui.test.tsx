@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { ComposerDock } from "../components/ComposerDock";
 import { DelegateDialog, type DelegateAgentChoice } from "../components/delegation/DelegateDialog";
 import { DelegationStatusLine } from "../components/delegation/DelegationStatusLine";
@@ -93,7 +93,9 @@ describe("the delegate dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delegate" }));
 
     const error = screen.getByText("Write the task first.");
-    expect(error).toHaveClass("text-caption", "text-danger");
+    expect(error).toHaveClass("text-ui-sm", "text-danger");
+    // The field shows it too, with its edge.
+    expect(screen.getByRole("textbox", { name: "Task" })).toHaveClass("border-danger", "bg-ground", "leading-5");
     expect(onDelegate).not.toHaveBeenCalled();
     const textarea = screen.getByRole("textbox", { name: "Task" });
     expect(textarea.getAttribute("aria-describedby")).toContain(error.id);
@@ -118,8 +120,9 @@ describe("the delegate dialog", () => {
     expect(status).toHaveClass("text-fg-subtle");
     expect(radio).toHaveAttribute("aria-describedby", status.id);
     const row = status.closest("label");
-    // The dialog's row: 36px, a 6px radius, 10px in from the sides.
+    // The dialog's row: 36px, a 6px radius, 10px in from the sides, with the shared 22px tile.
     expect(row).toHaveClass("h-9", "rounded-md", "px-2.5");
+    expect(row?.querySelector(".size-\\[22px\\].rounded-md.bg-chip")).not.toBeNull();
     expect(row).toHaveClass("opacity-55");
 
     fireEvent.click(radio);
@@ -295,13 +298,16 @@ describe("the delegation status line", () => {
       <DelegationStatusLine view={view()} now={131_000} onOpen={onOpen} canAct />,
     );
 
-    expect(screen.getByText("Codex is working on the task you delegated")).toHaveClass(
-      "text-ui",
-      "text-fg-secondary",
-    );
+    const words = screen.getByText("Codex is working on the task you delegated");
+    expect(words).toHaveClass("text-ui", "text-fg-muted");
     expect(screen.getByText("2m 10s")).toHaveClass("text-caption", "text-fg-subtle");
-    const dot = document.querySelector("[data-delegation-dot]");
-    expect(dot).toHaveClass("size-1.5", "bg-status-running", "ring-4", "ring-status-running/20");
+    // The running arc, still for a user who asks for less motion; a plain line, not a card.
+    const arc = document.querySelector("[data-delegation-arc]");
+    expect(arc).toHaveClass("text-status-running", "motion-safe:animate-spin");
+    expect(arc).toHaveAttribute("aria-hidden", "true");
+    expect(words.parentElement).toHaveClass("flex", "items-center", "gap-2");
+    expect(document.querySelector("[data-delegation-card]")).toBeNull();
+    expect(screen.getByRole("button", { name: "Open" }).className).not.toContain("border-border-strong");
 
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
     expect(onOpen).toHaveBeenCalledWith("s-b");
@@ -363,10 +369,17 @@ describe("the delegation status line", () => {
         canAct
       />,
     );
-    expect(screen.getByText("Codex's turn failed")).toHaveClass("text-ui", "text-fg-secondary");
-    const alert = document.querySelector("[data-delegation-alert]");
-    expect(alert).toHaveClass("text-danger");
-    expect(screen.getByRole("button", { name: "Open" })).toBeInTheDocument();
+    const title = screen.getByText("Codex's turn failed");
+    expect(title).toHaveClass("text-ui", "font-semibold", "text-fg", "flex-1");
+    // A card with a danger edge, its icon, and Open as its one outline action.
+    const card = document.querySelector('[data-delegation-card="failed"]') as HTMLElement;
+    expect(card).toHaveClass("rounded-xl", "border", "border-danger", "bg-danger-surface", "px-3", "py-2.5", "gap-2.5");
+    expect(card).toContainElement(title);
+    expect(card.querySelector("[data-delegation-alert]")).toHaveClass("text-danger");
+    expect(within(card).getByRole("button", { name: "Open" })).toHaveClass("h-7", "border-border-strong");
+    // Still one status region: the card is not a second live region.
+    expect(card.closest('[role="status"]')).not.toBeNull();
+    expect(card).not.toHaveAttribute("role");
   });
 
   it("the status line says Codex needs your answer", () => {
@@ -378,11 +391,12 @@ describe("the delegation status line", () => {
         canAct
       />,
     );
-    expect(screen.getByText("Codex needs your answer")).toHaveClass("text-ui", "text-fg-secondary");
-    const dot = document.querySelector("[data-delegation-dot]");
-    expect(dot).toHaveClass("bg-status-attention");
-    expect(dot).not.toHaveClass("ring-4");
-    expect(screen.getByRole("button", { name: "Open" })).toBeInTheDocument();
+    expect(screen.getByText("Codex needs your answer")).toHaveClass("text-ui", "font-semibold", "text-fg");
+    const card = document.querySelector('[data-delegation-card="needs-answer"]') as HTMLElement;
+    expect(card).toHaveClass("rounded-xl", "border", "border-attention-border", "bg-attention-surface");
+    // An icon and the sentence say it; the colour is not the only sign.
+    expect(card.querySelector("[data-delegation-alert]")).toHaveClass("text-status-attention");
+    expect(within(card).getByRole("button", { name: "Open" })).toHaveClass("h-7", "border-border-strong");
   });
 
   it("B's status line names A working on its report", () => {
@@ -404,11 +418,7 @@ describe("the delegation status line", () => {
       />,
     );
 
-    expect(document.querySelector("[data-delegation-dot]")).toHaveClass(
-      "bg-status-running",
-      "ring-4",
-      "ring-status-running/20",
-    );
+    expect(document.querySelector("[data-delegation-arc]")).toHaveClass("text-status-running", "motion-safe:animate-spin");
     expect(screen.getByText("Claude Code is working on Codex's report")).toBeInTheDocument();
     expect(screen.getByText("8s")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
@@ -431,7 +441,11 @@ describe("the delegated-from quiet line", () => {
 
     const line = screen.getByRole("note");
     expect(line).toHaveTextContent("Delegated from Fix login bug · Claude Code");
-    expect(line).toHaveClass("text-caption", "text-fg-muted");
+    expect(line).toHaveClass("flex", "items-center", "gap-2", "text-ui-sm", "text-fg-muted");
+    // The delegate glyph leads the line, and Open is the same size as the words.
+    expect(line.firstElementChild?.tagName.toLowerCase()).toBe("svg");
+    expect(line.firstElementChild).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("button", { name: "Open" })).toHaveClass("text-ui-sm", "underline");
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
     expect(onOpen).toHaveBeenCalledWith("s-a");
 

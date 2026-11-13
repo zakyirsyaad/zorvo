@@ -41,6 +41,8 @@ function facts(overrides: Partial<RowFacts> = {}): RowFacts {
     hasStarted: true,
     pendingCard: null,
     hasOpenForm: false,
+    lastMessage: null,
+    openFormPrompt: null,
     needsSignIn: false,
     failed: false,
     turnStartedAt: 1,

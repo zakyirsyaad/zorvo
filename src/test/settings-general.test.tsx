@@ -66,11 +66,14 @@ describe("General section", () => {
     const props = renderGeneral();
     const trigger = screen.getByRole("button", { name: /Claude Code/ });
     expect(trigger).toHaveAttribute("aria-haspopup", "listbox");
+    // The shared 16px tile, in the button and in each row of the list.
+    expect(trigger.querySelector(".size-4.rounded.bg-chip")).not.toBeNull();
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
     const list = screen.getByRole("listbox", { name: "Default agent" });
     expect(within(list).getAllByRole("option").map((option) => option.textContent)).toEqual(["Claude Code", "Codex"]);
     expect(within(list).getByRole("option", { name: "Claude Code" })).toHaveAttribute("aria-selected", "true");
+    expect(within(list).getByRole("option", { name: "Codex" }).querySelector(".size-4.rounded.bg-chip")).not.toBeNull();
     fireEvent.click(within(list).getByRole("option", { name: "Codex" }));
     expect(props.onChangeDefaultAgent).toHaveBeenCalledWith("codex");
     expect(screen.queryByRole("listbox", { name: "Default agent" })).toBeNull();

@@ -19,6 +19,9 @@ export interface CompareRunPanelProps {
   onPick: (winnerId: string) => void | Promise<void>;
 }
 
+/** A run of four columns is laid out two by two. */
+const FOUR_COLUMNS = 4;
+
 /** "started 12 minutes ago", from the run's oldest session. */
 function startedLine(run: CompareRun): string {
   const ago = formatRelativeTime(run.sessions[0]?.createdAt ?? Date.now());
@@ -64,22 +67,25 @@ export function CompareRunPanel({ run, rows, version, agentName, onOpen, onRevie
     }
   };
 
-  const confirmText = confirmedRow
-    ? [pickQuestion(agentName(confirmedRow.session.profileId)), working.length > 0 ? stopsLine(working) : ""].filter(Boolean).join(" ")
-    : "";
 
   return (
     <section ref={panelRef} aria-label="Compare run" className="relative flex min-h-0 flex-1 flex-col">
       {/* The bar sits outside the scroller, so it stays put while the cards scroll under it. */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-10 pb-28">
-        <div className="mx-auto flex w-full max-w-chat flex-col gap-4">
-          <div className="flex flex-col gap-1">
+      <div className="min-h-0 flex-1 overflow-y-auto px-7 pt-9 pb-30">
+        <div className="mx-auto flex w-full max-w-compare flex-col gap-6">
+          <div className="flex flex-col gap-1.5">
             <h2 className="text-xl font-semibold tracking-[-0.02em] text-fg">{run.name}</h2>
             <p className="text-ui text-fg-muted">
               {run.sessions.length} agents, each in its own worktree · {startedLine(run)}
             </p>
           </div>
-          <ul className="flex flex-col gap-2">
+          {/* Columns side by side, each at least 280px; a run of four sits two by two rather than three and one. */}
+          <ul
+            data-columns={rows.length}
+            className={`grid items-stretch gap-3 ${
+              rows.length === FOUR_COLUMNS ? "grid-cols-[repeat(auto-fit,minmax(min(360px,100%),1fr))]" : "grid-cols-[repeat(auto-fit,minmax(min(280px,100%),1fr))]"
+            }`}
+          >
             {rows.map((facts) => (
               <CompareRunRow
                 key={facts.session.id}
@@ -104,12 +110,16 @@ export function CompareRunPanel({ run, rows, version, agentName, onOpen, onRevie
           id={barId}
           role="group"
           aria-label="Confirm pick"
-          className="absolute inset-x-6 bottom-6 mx-auto flex max-w-chat items-center gap-3 rounded-xl border border-border bg-surface-3 px-4 py-3.5 shadow-popover"
+          className="absolute inset-x-7 bottom-5 mx-auto flex max-w-[640px] flex-wrap items-center gap-3 rounded-xl border border-border bg-surface-3 py-3 pr-3 pl-4 shadow-popover"
           onKeyDown={(event) => {
             if (event.key === "Escape") cancelPick();
           }}
         >
-          <p className="min-w-0 flex-1 text-ui text-fg">{confirmText}</p>
+          <p className="flex min-w-60 flex-1 flex-col text-ui">
+            <span data-confirm-question="" className="font-semibold text-fg">{pickQuestion(agentName(confirmedRow.session.profileId))}</span>
+            {/* The space keeps the two reading as two sentences where the text is read as one string. */}
+            {working.length > 0 && <span data-confirm-stops="" className="text-ui-sm text-fg-muted">{" "}{stopsLine(working)}</span>}
+          </p>
           <div className="flex shrink-0 items-center gap-2">
             <Button variant="ghost" tone="secondary" onClick={cancelPick}>
               Cancel

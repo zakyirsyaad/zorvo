@@ -117,14 +117,15 @@ export function Onboarding({
   };
 
   return (
-    <main className="relative flex h-screen w-full justify-center overflow-y-auto bg-bg px-6 py-16 text-fg-secondary">
+    <main className="relative flex h-screen w-full justify-center overflow-y-auto bg-ground px-6 py-12 text-fg-secondary">
       {/* The window's own buttons sit here; the strip drags the window. */}
       <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-12" />
-      <div className="flex w-full max-w-[640px] flex-col gap-7">
-        <header className="flex flex-col gap-3">
+      {/* One sheet: centred while it fits (the auto margins), and scrolled from its top when it does not. */}
+      <div data-sheet="welcome" className="my-auto flex w-full max-w-[640px] flex-col gap-6 rounded-xl border border-border bg-sheet p-8">
+        <header className="flex flex-col gap-2.5">
           <Wordmark />
-          <h1 className="text-[28px] leading-[34px] font-semibold tracking-[-0.03em] text-fg">Every coding agent. One desktop.</h1>
-          <p className="text-sm leading-[22px] text-fg-muted">
+          <h1 className="text-xl font-semibold tracking-[-0.02em] text-fg">Every coding agent. One desktop.</h1>
+          <p className="text-ui leading-5 text-fg-muted">
             Pick the agents you'll use and a project folder. You can change all of this later in Settings.
           </p>
         </header>
@@ -155,7 +156,7 @@ export function Onboarding({
           onPickFolder={onPickFolder}
         />
 
-        <footer className="flex items-center gap-3 pt-2">
+        <footer className="flex items-center gap-3">
           <p id={NOTE_ID} role="status" className="min-w-0 flex-1 text-ui-sm text-fg-subtle">
             {gate.note}
           </p>
@@ -164,6 +165,7 @@ export function Onboarding({
             size="lg"
             disabled={!gate.canStart}
             aria-describedby={gate.note ? NOTE_ID : undefined}
+            className="min-w-18"
             onClick={start}
           >
             Start

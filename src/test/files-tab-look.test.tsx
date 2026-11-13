@@ -44,17 +44,17 @@ describe("the Files tab as drawn", () => {
     expect(screen.queryByRole("heading", { name: "Files" })).toBeNull();
   });
 
-  it("header buttons are 26px and Reveal uses the external-arrow icon", async () => {
+  it("header buttons are 28px and Reveal uses the external-arrow icon", async () => {
     await renderPanel();
     const reveal = screen.getByRole("button", { name: "Reveal in Finder" });
-    expect(reveal).toHaveClass("h-6.5", "w-6.5");
+    expect(reveal).toHaveClass("h-7", "w-7");
     expect(reveal.querySelector("svg.lucide-external-link")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Refresh files" })).toHaveClass("h-6.5");
+    expect(screen.getByRole("button", { name: "Refresh files" })).toHaveClass("h-7");
   });
 
-  it("the filter field is 30px with a radius of 8", async () => {
+  it("the filter field is 32px with a radius of 8 and a quiet edge", async () => {
     await renderPanel();
-    expect(screen.getByRole("textbox", { name: "Filter files" }).parentElement).toHaveClass("h-[30px]", "rounded-lg", "border-border-strong");
+    expect(screen.getByRole("textbox", { name: "Filter files" }).parentElement).toHaveClass("h-8", "rounded-lg", "border-border");
   });
 
   it("rows are 26px and indent 16px a level", async () => {

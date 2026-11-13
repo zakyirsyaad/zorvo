@@ -116,7 +116,7 @@ describe("Line comments in the Changes tab", () => {
     await writeComment("Check this.");
 
     const panel = within(changes());
-    const saved = panel.getByText("Check this.").closest(".bg-surface-3") as HTMLElement;
+    const saved = panel.getByText("Check this.").closest("[data-saved-comment]") as HTMLElement;
     expect(saved.textContent).toContain("Line 42 · Current");
     expect(panel.getByRole("region", { name: "Review comments" }).textContent).toContain("1 comment not in a message");
     expect(panel.getByTitle(FILE).closest("li")?.textContent).toContain("1 comment");

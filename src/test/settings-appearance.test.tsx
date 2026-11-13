@@ -12,7 +12,7 @@ function renderAppearance(appearance: Appearance = "system") {
 }
 
 describe("Appearance section", () => {
-  it("has the canvas's title and sentence, 16px above the tiles", () => {
+  it("has the canvas's title and sentence, 16px above the control", () => {
     renderAppearance();
     const title = screen.getByRole("heading", { level: 1, name: "Appearance" });
     expect(screen.getByText("The terminal stays dark in every theme, since agents color their output for a dark ground.")).toBeInTheDocument();
@@ -23,12 +23,35 @@ describe("Appearance section", () => {
     renderAppearance("system");
     const group = screen.getByRole("radiogroup", { name: "Theme" });
     const radios = within(group).getAllByRole("radio");
-    expect(radios.map((radio) => radio.textContent)).toEqual(["System· follows your Mac", "Light", "Dark"]);
+    expect(radios.map((radio) => radio.textContent)).toEqual(["System", "Light", "Dark"]);
     expect(radios[0]).toHaveAttribute("aria-checked", "true");
-    expect(radios[0]).toHaveClass("border-fg", "ring-1", "ring-fg");
     expect(radios[1]).toHaveAttribute("aria-checked", "false");
-    expect(radios[1]).not.toHaveClass("ring-fg");
-    expect(radios[1]).toHaveClass("rounded-[10px]", "border-border", "bg-surface-2", "p-2");
+  });
+
+  it("is drawn as a segmented control: a chip track, the picked segment raised", () => {
+    renderAppearance("system");
+    const group = screen.getByRole("radiogroup", { name: "Theme" });
+    expect(group).toHaveClass("inline-flex", "rounded-lg", "bg-chip", "p-0.5");
+    const [system, light] = within(group).getAllByRole("radio");
+    expect(system).toHaveClass("h-6.5", "rounded-md", "px-3.5", "bg-surface-hover", "text-fg", "focus-ring");
+    expect(system).not.toHaveClass("px-2.5");
+    expect(light).toHaveClass("text-fg-muted");
+    expect(light).not.toHaveClass("bg-surface-hover");
+  });
+
+  it("says System follows your Mac beside the control, only while System is picked", () => {
+    const { unmount } = render(<AppearanceSection appearance="system" onChange={vi.fn()} />);
+    const note = screen.getByText("follows your Mac");
+    expect(note).toHaveClass("text-ui-sm", "text-fg-subtle");
+    // Beside the track, not inside a segment, and read with System.
+    expect(note.closest('[role="radiogroup"]')).toBeNull();
+    expect(note.parentElement).toHaveClass("flex", "items-center", "gap-3");
+    expect(screen.getByRole("radio", { name: "System" })).toHaveAccessibleDescription("follows your Mac");
+    unmount();
+
+    renderAppearance("dark");
+    expect(screen.queryByText("follows your Mac")).toBeNull();
+    expect(screen.getByRole("radio", { name: "System" })).not.toHaveAttribute("aria-describedby");
   });
 
   it("a click picks a theme", () => {
@@ -57,28 +80,15 @@ describe("Appearance section", () => {
     expect(screen.getByRole("radio", { name: "Dark" })).toHaveFocus();
   });
 
-  it("only the checked tile is in the tab order", () => {
+  it("only the checked segment is in the tab order", () => {
     renderAppearance("light");
     expect(screen.getByRole("radio", { name: "Light" })).toHaveAttribute("tabindex", "0");
     expect(screen.getByRole("radio", { name: /System/ })).toHaveAttribute("tabindex", "-1");
     expect(screen.getByRole("radio", { name: "Dark" })).toHaveAttribute("tabindex", "-1");
   });
 
-  it("previews use the fixed samples", () => {
-    renderAppearance();
-    const system = screen.getByRole("radio", { name: /System/ });
-    expect(system.querySelector(".theme-sample-light")).not.toBeNull();
-    expect(system.querySelector(".theme-sample-dark")).not.toBeNull();
-    const dark = screen.getByRole("radio", { name: "Dark" });
-    expect(dark.querySelector(".theme-sample-dark")).not.toBeNull();
-    expect(dark.querySelector(".theme-sample-light")).toBeNull();
-    expect(screen.getByRole("radio", { name: "Light" }).querySelector(".theme-sample-dark")).toBeNull();
-  });
-
-  it("the checked tile's label is the bright one", () => {
-    renderAppearance("dark");
-    expect(screen.getByText("Dark")).toHaveClass("text-fg", "font-medium");
-    expect(screen.getByText("System")).toHaveClass("text-fg-secondary");
-    expect(screen.getByText("System")).not.toHaveClass("font-medium");
+  it("draws no preview tiles", () => {
+    const { container } = render(<AppearanceSection appearance="system" onChange={vi.fn()} />);
+    expect(container.querySelector('[class*="theme-sample"]')).toBeNull();
   });
 });

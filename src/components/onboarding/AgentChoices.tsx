@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Check } from "lucide-react";
-import { AgentLogo } from "../AgentLogo";
 import { InstallBar, InstallStatus } from "../InstallProgressLine";
 import { SettingsRow } from "../settings/SettingsGroup";
+import { AgentTile } from "../ui/AgentTile";
 import { Button } from "../ui/Button";
 import { StatusLine } from "../ui/StatusLine";
 import { useAgentInstall } from "../../hooks/useAgentInstall";
@@ -41,7 +41,7 @@ export function NumberedHeading({ number, children }: { number: number; children
     <h2 className="flex items-center gap-2 text-ui font-semibold text-fg">
       <span
         aria-hidden="true"
-        className="flex size-5 items-center justify-center rounded-full border border-border-strong text-caption font-normal text-fg-secondary"
+        className="flex size-5 items-center justify-center rounded-full border border-border-strong text-caption font-medium text-fg-secondary"
       >
         {number}
       </span>
@@ -104,48 +104,49 @@ function ChoiceRow({ agent, isTicked, isDefault, signIn, isSetupOnly, onTick, on
     >
       Make default
     </Button>
-  ) : undefined;
+  ) : null;
+
+  // At the row's right end, after its button, as the canvas draws it.
+  const tick = (
+    <span className="relative flex size-4 shrink-0">
+      <input
+        type="checkbox"
+        checked={isTicked}
+        onChange={(event) => (event.target.checked ? onTick() : onUntick())}
+        aria-label={`Use ${agent.name}`}
+        className="peer size-4 shrink-0 cursor-pointer appearance-none rounded border-[1.5px] border-border-strong checked:border-primary checked:bg-primary focus-ring"
+      />
+      <Check
+        size={11}
+        strokeWidth={3}
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 m-auto hidden text-on-primary peer-checked:block"
+      />
+    </span>
+  );
 
   return (
     // The hairline is the item's: the row inside is always its item's last child.
     <li className="border-b border-border last:border-b-0">
       <SettingsRow
-        isTight
+        isCompact
         className="group"
-        leading={
-          <>
-            <span className="relative flex size-4 shrink-0">
-              <input
-                type="checkbox"
-                checked={isTicked}
-                onChange={(event) => (event.target.checked ? onTick() : onUntick())}
-                aria-label={`Use ${agent.name}`}
-                className="peer size-4 shrink-0 cursor-pointer appearance-none rounded border-[1.5px] border-border-strong checked:border-fg checked:bg-fg focus-ring"
-              />
-              <Check
-                size={11}
-                strokeWidth={3}
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 m-auto hidden text-bg peer-checked:block"
-              />
-            </span>
-            <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-[7px] bg-surface-hover">
-              <AgentLogo profileId={agent.id} name="" size={16} />
-            </span>
-          </>
-        }
+        leading={<AgentTile profileId={agent.id} name="" size={22} />}
         label={
-          <span className="flex items-center gap-2">
+          <span className={`flex items-center gap-2 font-medium ${isTicked ? "text-fg" : "text-fg-secondary"}`}>
             {agent.name}
             {isDefault && (
-              <span className="inline-flex h-4.5 items-center rounded border border-border px-1.5 text-[10px] font-medium text-fg-muted">
-                Default
-              </span>
+              <span className="inline-flex h-4.5 items-center rounded bg-chip px-1.5 text-caption font-medium text-fg-muted">Default</span>
             )}
           </span>
         }
         description={description}
-        control={control}
+        control={
+          <>
+            {control}
+            {tick}
+          </>
+        }
       />
     </li>
   );
@@ -201,7 +202,7 @@ export function AgentChoices({
         {shown.length === 0 && (isLoading || loadError) && (
           <li>
             <SettingsRow
-              isTight
+              isCompact
               label={
                 loadError ? (
                   <span className="text-danger">{`Could not load the agents: ${loadError}`}</span>

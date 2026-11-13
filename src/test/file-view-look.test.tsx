@@ -47,11 +47,11 @@ describe("the file view as drawn", () => {
     expect(meta).not.toBe(back.parentElement);
   });
 
-  it("the back button and actions are 26px", async () => {
+  it("the back button is 26px and the header actions are 28px", async () => {
     await renderViewer();
     expect(screen.getByRole("button", { name: /Files/ })).toHaveClass("h-6.5", "text-fg-secondary");
-    expect(screen.getByRole("button", { name: "Add a.ts to prompt" })).toHaveClass("h-6.5");
-    expect(screen.getByRole("button", { name: "Open in editor" })).toHaveClass("h-6.5");
+    expect(screen.getByRole("button", { name: "Add a.ts to prompt" })).toHaveClass("h-7", "w-7");
+    expect(screen.getByRole("button", { name: "Open in editor" })).toHaveClass("h-7", "w-7");
   });
 
   it("the breadcrumb is a subtle mono heading with the name in fg", async () => {
@@ -105,7 +105,7 @@ describe("the file view as drawn", () => {
     const card = screen.getByRole("button", { name: "Add lines 3–4 to prompt" }).parentElement!;
     expect(card.style.top).toBe("94px");
     expect(card.style.left).toBe("56px");
-    expect(card).toHaveClass("bg-surface-3", "shadow-popover");
+    expect(card).toHaveClass("rounded-panel", "bg-surface-3", "p-1", "shadow-popover");
     expect(card).not.toHaveClass("-translate-y-full");
     expect(screen.getByRole("region", { name: "Contents of a.ts" }).contains(card)).toBe(true);
   });

@@ -1,4 +1,4 @@
-import { CircleAlert } from "lucide-react";
+import { CircleAlert, LoaderCircle, TriangleAlert } from "lucide-react";
 import { formatElapsed } from "../../lib/background-tasks";
 import type { DelegationView } from "../../hooks/useDelegation";
 import { Button } from "../ui/Button";
@@ -24,13 +24,27 @@ export interface DelegationStatusLineProps {
   hidden?: boolean;
 }
 
-/** The soft 4px ring the turn status gives its running dot. */
-const RUNNING_DOT = "size-1.5 shrink-0 rounded-full bg-status-running ring-4 ring-status-running/20";
-const ATTENTION_DOT = "size-1.5 shrink-0 rounded-full bg-status-attention";
+/** A quiet line while a turn runs: the arc, the sentence, the time, Open. */
+const LINE = "flex items-center gap-2 py-1";
+/** A card when the delegation waits for the user or failed: its icon, a titled sentence, Open. */
+const CARD = "flex items-center gap-2.5 rounded-xl border px-3 py-2.5";
+const CARD_TITLE = "min-w-0 flex-1 text-ui font-semibold text-fg";
+
+/** The running arc, as a tool row shows it; still while the user asks for less motion. */
+function RunningArc() {
+  return (
+    <LoaderCircle
+      data-delegation-arc=""
+      size={14}
+      aria-hidden="true"
+      className="shrink-0 text-status-running motion-safe:animate-spin"
+    />
+  );
+}
 
 /**
- * The delegation's line under the chat: A's while B works, waits for an answer
- * or fails, and B's while A works on its report. The text lives in an
+ * The delegation's line under the chat: A's while B works, a card when B waits
+ * for an answer or fails, and B's line while A works on its report. The text lives in an
  * always-mounted status region, so a change is announced; the region stays
  * mounted, empty, when there is no line.
  */
@@ -51,6 +65,13 @@ export function DelegationStatusLine({
         Open
       </Button>
     ) : null;
+  // A card's Open is its one action, so it is drawn as one.
+  const cardOpen =
+    canAct && sessionId !== null ? (
+      <Button variant="outline" size="md" onClick={() => onOpen(sessionId)}>
+        Open
+      </Button>
+    ) : null;
 
   const elapsed =
     view.workingSince === null ? null : (
@@ -63,9 +84,9 @@ export function DelegationStatusLine({
   let line = null;
   if (view.role === "source" && view.state === "working") {
     line = (
-      <div className="flex items-center gap-2.5 py-1">
-        <span data-delegation-dot="" aria-hidden="true" className={RUNNING_DOT} />
-        <span className="text-ui text-fg-secondary">
+      <div className={LINE}>
+        <RunningArc />
+        <span className="text-ui text-fg-muted">
           {view.agentName} is working on the task you delegated
         </span>
         {elapsed}
@@ -74,25 +95,25 @@ export function DelegationStatusLine({
     );
   } else if (view.role === "source" && view.state === "needs-answer") {
     line = (
-      <div className="flex items-center gap-2.5 py-1">
-        <span data-delegation-dot="" aria-hidden="true" className={ATTENTION_DOT} />
-        <span className="text-ui text-fg-secondary">{view.agentName} needs your answer</span>
-        {open}
+      <div data-delegation-card="needs-answer" className={`${CARD} border-attention-border bg-attention-surface`}>
+        <TriangleAlert data-delegation-alert="" size={14} aria-hidden="true" className="shrink-0 text-status-attention" />
+        <span className={CARD_TITLE}>{view.agentName} needs your answer</span>
+        {cardOpen}
       </div>
     );
   } else if (view.role === "source" && view.state === "failed") {
     line = (
-      <div className="flex items-center gap-2.5 py-1">
+      <div data-delegation-card="failed" className={`${CARD} border-danger bg-danger-surface`}>
         <CircleAlert data-delegation-alert="" size={14} aria-hidden="true" className="shrink-0 text-danger" />
-        <span className="text-ui text-fg-secondary">{view.agentName}'s turn failed</span>
-        {open}
+        <span className={CARD_TITLE}>{view.agentName}'s turn failed</span>
+        {cardOpen}
       </div>
     );
   } else if (view.state === "source-working") {
     line = (
-      <div className="flex items-center gap-2.5 py-1">
-        <span data-delegation-dot="" aria-hidden="true" className={RUNNING_DOT} />
-        <span className="text-ui text-fg-secondary">
+      <div className={LINE}>
+        <RunningArc />
+        <span className="text-ui text-fg-muted">
           {view.agentName} is working on {delegateAgentName ? `${delegateAgentName}'s` : "the"} report
         </span>
         {elapsed}

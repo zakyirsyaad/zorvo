@@ -92,17 +92,17 @@ export function AgentSignIn({ agentId, agentName, signIn }: AgentSignInProps) {
       {state === "needed" && (
         <>
           {[copy.lead, copy.cliHint, copy.keysNote].filter(Boolean).map((line) => (
-            <p key={line} className="text-ui-sm text-fg-subtle">
+            <p key={line} className="text-ui-sm text-fg-muted">
               {line}
             </p>
           ))}
           {methods.length > 0 && (
-            <ul className="flex flex-col overflow-hidden rounded-lg border border-border bg-surface-2">
+            <ul className="flex flex-col overflow-hidden rounded-lg border border-border bg-sheet">
               {methods.map((method) => (
                 <li key={method.id} className="flex items-center gap-2.5 border-b border-border px-3 py-2.25 last:border-b-0">
                   {runs(method) ? (
                     <>
-                      <span className="min-w-0 flex-1 text-ui text-fg">{method.name}</span>
+                      <span className="min-w-0 flex-1 text-ui text-fg-secondary">{method.name}</span>
                       {/* Settings runs a sign-in, never an agent's own setup: that runs from the draft's card. */}
                       <Button size="md" disabled={isBusy} onClick={() => signIn.signInWith(agentId, method.id)}>
                         <span className="text-fg">{signInButtonLabel(method)}</span>
@@ -112,7 +112,7 @@ export function AgentSignIn({ agentId, agentName, signIn }: AgentSignInProps) {
                     <>
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="text-ui text-fg-secondary">{method.name}</span>
-                        {method.description && <span className="text-ui-sm text-fg-subtle">{method.description}</span>}
+                        {method.description && <span className="text-ui-sm text-fg-muted">{method.description}</span>}
                       </span>
                       <span className="shrink-0 text-caption text-fg-subtle">In your shell</span>
                     </>
@@ -126,7 +126,7 @@ export function AgentSignIn({ agentId, agentName, signIn }: AgentSignInProps) {
 
       <div className={`flex items-center gap-2 ${warning ? "" : "justify-end"}`}>
         {warning && (
-          <p id={warningId} className="min-w-0 flex-1 text-ui-sm text-fg-subtle">
+          <p id={warningId} className="min-w-0 flex-1 text-ui-sm text-fg-muted">
             {warning}
           </p>
         )}

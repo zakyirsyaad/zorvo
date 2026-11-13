@@ -66,8 +66,9 @@ describe("an agent's row as drawn", () => {
   it("an in-use row is one line with a logo tile, mono source, chip and buttons", () => {
     renderCatalog();
     const claude = row("Claude Code");
-    expect(claude.querySelector(".size-7.bg-surface-hover")).not.toBeNull();
-    expect(within(claude).getByText("1.2.0 · installed by Zorvo")).toHaveClass("font-mono", "text-caption");
+    expect(claude.querySelector(".size-7.rounded-lg.bg-chip")).not.toBeNull();
+    expect(within(claude).getByText("Claude Code")).toHaveClass("font-medium", "text-fg");
+    expect(within(claude).getByText("1.2.0 · installed by Zorvo")).toHaveClass("font-mono", "text-caption", "text-fg-muted");
     expect(claude).toHaveTextContent("Sign-in: Ready");
     expect(within(claude).getByRole("button", { name: "Update to 1.3.0" }).className).toContain("border-border-strong");
     expect(within(claude).getByRole("button", { name: "More actions for Claude Code" })).toBeInTheDocument();
@@ -79,7 +80,7 @@ describe("an agent's row as drawn", () => {
       catalog: catalogWith([...fakeCatalog, makeCatalogAgent({ id: "kimi", name: "Kimi CLI", description: "Moonshot's coding agent", status: "ready" })]),
     });
     const kimi = row("Kimi CLI");
-    expect(within(kimi).getByText("Moonshot's coding agent")).toHaveClass("text-ui-sm", "text-fg-subtle");
+    expect(within(kimi).getByText("Moonshot's coding agent")).toHaveClass("text-ui-sm", "text-fg-muted");
     const add = within(kimi).getByRole("button", { name: "Add" });
     expect(add.className).toContain("border-border-strong");
     expect(add.className).not.toContain("bg-primary");
@@ -102,16 +103,18 @@ describe("an agent's row as drawn", () => {
     expect(within(gemini).queryByRole("button", { name: "Add" })).toBeNull();
   });
 
-  it("an opened last row keeps the card's rounded corners", () => {
+  it("a row has no fill of its own, so the card's corners need no help", () => {
     renderCatalog();
-    expect(row("Claude Code")).toHaveClass("first:rounded-t-xl", "last:rounded-b-xl");
+    expect(row("Claude Code").className).not.toMatch(/\bbg-|rounded/);
   });
 
   it("a row opens its sign-in when the agent needs one", () => {
     renderCatalog({ signIn: fakeSignIn({ "codex-acp": "needed" }) });
     const codex = row("Codex");
     expect(within(codex).getByRole("group", { name: "Codex sign-in" })).toBeInTheDocument();
-    expect(codex).toHaveClass("bg-surface-1");
+    // An opened row has no tint: the method list under the line is what shows it.
+    expect(codex.className).not.toContain("bg-");
+    expect(within(codex).getByRole("button", { name: "Log in with Google" }).closest("ul")).toHaveClass("bg-sheet", "border-border");
     const chevron = within(codex).getByRole("button", { name: "Hide sign-in for Codex" });
     expect(chevron).toHaveAttribute("aria-expanded", "true");
     expect(within(codex).getByRole("button", { name: "Log in with Google" })).toBeInTheDocument();
@@ -172,7 +175,7 @@ describe("the Agents section as drawn", () => {
   it("the search row is drawn at 32px", () => {
     renderCatalog();
     const search = screen.getByRole("searchbox", { name: "Search agents" }).closest("label") as HTMLElement;
-    expect(search).toHaveClass("h-8", "border-border-strong", "bg-surface-2");
+    expect(search).toHaveClass("h-8", "border-border", "bg-surface-2");
     // The canvas draws Check again 32px tall to sit beside the field, with an outline button's 12px regular text.
     const checkAgain = screen.getByRole("button", { name: "Check again" });
     expect(checkAgain).toHaveClass("h-8", "text-ui-sm", "font-normal");
@@ -210,7 +213,7 @@ describe("the Agents section as drawn", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(toggle);
     const broken = screen.getByRole("listitem", { name: "Broken Agent" });
-    expect(broken.querySelector(".size-7.bg-surface-hover")).not.toBeNull();
+    expect(broken.querySelector(".size-7.rounded-lg.bg-chip")).not.toBeNull();
     expect(broken.closest(".rounded-xl")).toHaveClass("bg-surface-2");
   });
 });

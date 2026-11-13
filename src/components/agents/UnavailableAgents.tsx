@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { AgentLogo } from "../AgentLogo";
+import { AgentTile } from "../ui/AgentTile";
 import { unavailableReasonText } from "../../lib/agent-catalog";
 import type { UnavailableAgent } from "../../types";
 
@@ -41,13 +41,11 @@ export function UnavailableAgents({ agents, isSearching }: UnavailableAgentsProp
               aria-label={agent.name}
               className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"
             >
-              <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-[7px] bg-surface-hover">
-                <AgentLogo profileId={agent.id} name="" size={16} />
-              </span>
+              <AgentTile profileId={agent.id} name="" size={28} />
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="truncate text-ui text-fg">{agent.name}</span>
-                <span className="text-ui-sm text-fg-subtle">{unavailableReasonText(agent.reason)}</span>
-                {agent.description && <span className="line-clamp-2 text-ui-sm text-fg-subtle">{agent.description}</span>}
+                <span className="truncate text-ui font-medium text-fg">{agent.name}</span>
+                <span className="text-ui-sm text-fg-muted">{unavailableReasonText(agent.reason)}</span>
+                {agent.description && <span className="line-clamp-2 text-ui-sm text-fg-muted">{agent.description}</span>}
               </span>
             </li>
           ))}

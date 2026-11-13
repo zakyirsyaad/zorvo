@@ -992,7 +992,7 @@ describe("the sign-in panel as drawn", () => {
     );
     const button = screen.getByRole("button", { name: "Sign in with Claude Subscription" });
     const list = button.closest("ul") as HTMLElement;
-    expect(list).toHaveClass("rounded-lg", "border", "border-border", "bg-surface-2");
+    expect(list).toHaveClass("rounded-lg", "border", "border-border", "bg-sheet");
     expect(button.className).toContain("border-border-strong");
     expect(button.querySelector("svg")).toBeNull();
     expect(container.querySelector(".bg-attention-surface")).toBeNull();
@@ -1017,12 +1017,15 @@ describe("the sign-in panel as drawn", () => {
   it("the chip shows each state", () => {
     const { rerender, container } = render(<SignInChip state="ready" />);
     expect(container.firstElementChild).toHaveTextContent("Sign-in: Ready");
-    expect(container.querySelector(".bg-status-running")).not.toBeNull();
+    // Chip-filled with the word in fg-secondary; only the dot carries the state's colour.
+    expect(container.firstElementChild).toHaveClass("h-5.5", "rounded-md", "bg-chip", "px-2", "text-caption", "text-fg-secondary");
+    expect(container.firstElementChild?.className).not.toContain("border");
+    expect(container.querySelector(".size-1\\.5.bg-status-running")).not.toBeNull();
     rerender(<SignInChip state="needed" />);
-    expect(container.firstElementChild).toHaveClass("border-status-attention", "text-status-attention");
-    expect(container.querySelector(".bg-status-attention")).not.toBeNull();
+    expect(container.firstElementChild).toHaveClass("bg-chip", "text-fg-secondary");
+    expect(container.querySelector(".size-1\\.5.bg-status-attention")).not.toBeNull();
     rerender(<SignInChip state="unchecked" />);
     expect(container.firstElementChild).toHaveTextContent("Sign-in: Not checked");
-    expect(container.querySelector("[class*='bg-']")).toBeNull();
+    expect(container.querySelector(".size-1\\.5.bg-fg-subtle")).not.toBeNull();
   });
 });

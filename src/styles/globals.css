@@ -155,25 +155,3 @@
     background-color: var(--color-selection);
   }
 }
-
-/*
- * The Appearance tiles' previews: each shows one theme whatever theme is in use, so these
- * colours are fixed on purpose (the light and dark values of bg, surface-1, border and surface-2).
- */
-.theme-sample-light {
-  --sample-bg: #fafafa;
-  --sample-side: #f4f4f5;
-  --sample-line: #e4e4e7;
-  --sample-bar: #d4d4d8;
-  --sample-bar-2: #e4e4e7;
-  --sample-card: #ffffff;
-}
-
-.theme-sample-dark {
-  --sample-bg: #0a0a0b;
-  --sample-side: #111113;
-  --sample-line: #27272a;
-  --sample-bar: #3f3f46;
-  --sample-bar-2: #27272a;
-  --sample-card: #18181b;
-}

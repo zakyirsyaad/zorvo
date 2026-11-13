@@ -403,7 +403,7 @@ describe("Catalog actions — Install", () => {
     await waitFor(() => expect(callsTo(spy, "install_agent")).toEqual([["install_agent", { agentId: "gemini" }]]));
     expect(within(gemini()).getByText("Starting the install…")).toBeInTheDocument();
     // While it installs, the row shows the step in place of what it would install, then the download's bar.
-    expect(gemini()).toHaveClass("bg-surface-1");
+    expect(gemini().className).not.toContain("bg-");
     await act(async () => {
       listeners.get("agent-install-progress")?.({
         payload: { agentId: "gemini", stepIndex: 0, stepCount: 1, kind: "agent", name: "Gemini CLI", phase: "download", receivedBytes: 1_048_576, totalBytes: 4_194_304 },

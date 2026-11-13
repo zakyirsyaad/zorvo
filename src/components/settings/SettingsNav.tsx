@@ -18,10 +18,10 @@ export interface SettingsNavProps {
   updateCount: number;
 }
 
-const ITEM = "flex h-8 items-center gap-2.5 rounded-md px-2.5 text-ui";
+const ITEM = "flex h-7.5 items-center gap-2.5 rounded-lg px-2.5 text-ui";
 const LINK = `${ITEM} text-fg-secondary transition-colors hover:bg-surface-hover focus-ring`;
 const CURRENT = "bg-surface-hover text-fg font-medium";
-const TAG = "ml-auto flex h-4.5 items-center justify-center rounded-md bg-surface-hover text-caption";
+const TAG = "ml-auto flex h-4.5 items-center justify-center rounded-md bg-chip text-caption";
 
 /** The canvas's own glyphs where lucide has none that match: 14px, stroke 1.75, round ends. */
 function DrawnIcon({ children }: { children: ReactNode }) {
@@ -84,15 +84,15 @@ function SoonItem() {
   );
 }
 
-/** Settings' left navigation, in the sidebar's place: Back to sessions, then one link per section. */
+/** Settings' left navigation, in the sidebar's place and on the ground as it is: Back to sessions, then one link per section. */
 export function SettingsNav({ current, onSelect, onBack, updateCount }: SettingsNavProps) {
   return (
     <nav
       aria-label="Settings"
-      className="flex w-55 shrink-0 select-none flex-col gap-0.5 border-r border-border bg-surface-1 px-2.5"
+      className="flex w-60 shrink-0 select-none flex-col gap-0.5 px-2"
     >
       {/* The window's own buttons float here; the strip drags the window. */}
-      <div data-tauri-drag-region className="h-12 shrink-0" />
+      <div data-tauri-drag-region className="h-11 shrink-0" />
       <a href="#sessions" onClick={instead(onBack)} className={`${LINK} mb-2.5 text-fg-muted`}>
         <ChevronLeft size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0" />
         Back to sessions

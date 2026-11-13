@@ -15,6 +15,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - The chat is calmer: tool calls are a one-line summary that opens into steps on a rail, a failed turn and a stalled agent get a titled notice, and a permission request says "Waiting for you" while it is open.
 - The composer's controls are filled chips, the context meter is a ring, and a model search marks the match that Return picks.
 - In the diff review, the bar that adds your comments to the message floats over the diff, and the Changes tab's file cards, the Activity filters and the Files tab take the same layered look.
+- A new session shows your agents as tiles: tick two or more to compare them, and find the rest under All agents. The folder and branch sit beside the "New session" heading.
+- A compare run shows its agents side by side, each with the files it changed and its last message, and you can answer a plain permission request right in its column.
 - The top bar shows the folder before the session's title.
 
 ## [0.10.1] - 2026-11-12

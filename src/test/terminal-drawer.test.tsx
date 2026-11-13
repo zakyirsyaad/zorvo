@@ -130,6 +130,7 @@ describe("TerminalDrawer", () => {
     expect(screen.getByRole("region", { name: "Terminal" })).toHaveClass("bg-terminal-bg");
     expect(screen.getByRole("tablist").parentElement).toHaveClass("bg-terminal-bg");
     expect(screen.getByText("The shell exited.").parentElement).not.toHaveClass("bg-surface-1");
+    expect(screen.getByText("The shell exited.").closest("[data-terminal-exited]")).toHaveClass("bg-sheet");
   });
 
   it("an empty drawer paints nothing, so the sheet shows", () => {

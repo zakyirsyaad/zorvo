@@ -167,18 +167,18 @@ export function TerminalDrawer({
               label={`${labelOf(activeTab)} · ${folderName}`}
             />
             {activeTab.status === "exited" && (
-              <div className="flex items-center gap-3 border-t border-border px-3 py-2 text-ui-sm text-fg-muted">
+              <div data-terminal-exited="" className="flex items-center gap-3 border-t border-border bg-sheet px-3 py-2 text-ui-sm text-fg-muted">
                 <span>The shell exited.</span>
                 <Button onClick={startShell}>Start a new shell</Button>
               </div>
             )}
           </>
         ) : isStarting ? (
-          <div className="flex flex-1 items-center justify-center text-xs text-fg-muted">
+          <div className="flex flex-1 items-center justify-center text-ui-sm text-fg-muted">
             <p role="status">Starting a shell…</p>
           </div>
         ) : (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-xs text-fg-muted">
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-ui-sm text-fg-muted">
             <p>No terminal in {folderName}.</p>
             <Button ref={emptyActionRef} onClick={startShell}>
               New terminal

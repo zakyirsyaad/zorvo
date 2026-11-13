@@ -78,6 +78,7 @@ import { AppUpdateNotice } from "./components/AppUpdateNotice";
 import { restartWarning } from "./lib/app-update";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { useAgentTools } from "./hooks/useAgentTools";
+import { useOpenedSessions } from "./hooks/useOpenedSessions";
 import { ProfileFooter } from "./components/ProfileFooter";
 import { AgentsMenu } from "./components/sidebar/AgentsMenu";
 import { useNavigationHistory } from "./hooks/useNavigationHistory";
@@ -588,6 +589,14 @@ export default function App() {
   useEffect(() => setBranchCheck(turnsEnded), [turnsEnded]);
   // The tools Zorvo gives agents (main window only). Its helpers are bound late: they are
   // defined further down and only called when a tool call or an answer arrives.
+  // The independent sessions an agent opens through the tools. `startSession` is defined
+  // further down and only called when a call is allowed.
+  const openedSessions = useOpenedSessions({
+    sessions,
+    agents: agentsInUse,
+    isBusy: (sessionId) => isSessionBusy(sessionId),
+    startSession: (spec, first, options) => startSession(spec, first, options),
+  });
   const agentTools = useAgentTools({
     sessions,
     // Only the agents the user has in use, as the @ list and the dialog offer: an agent
@@ -604,6 +613,9 @@ export default function App() {
         task: delegate.delegatedFrom?.task ?? "",
       })),
     giveTask: (sourceId, agentId, task, options) => delegation.giveTask(sourceId, agentId, task, options),
+    workspaces,
+    openSession: openedSessions.open,
+    openedOf: openedSessions.openedOf,
     updateMessages,
     onAttention: (sessionId, reason) => notifyAttention(sessionId, reason),
   });

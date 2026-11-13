@@ -554,6 +554,48 @@ describe("delegating from the app", () => {
     expect(callsTo(spy, "acp_start_session")).toHaveLength(1);
   });
 
+  it("an agent's start_session call opens a session in the sidebar without leaving the current one", async () => {
+    seedSourceSession();
+    const spy = await renderApp();
+    await screen.findByText("Refactor the parser");
+
+    await act(async () => {
+      listeners.get("agent-tool-call")?.({
+        payload: {
+          callId: "c-1",
+          sessionId: "s-a",
+          tool: "start_session",
+          args: { agent: "codex-acp", brief: "Port the parser to the new API.", title: "Parser port" },
+        },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(await screen.findByRole("heading", { name: "Qwen Code wants to open a Codex session" })).toBeDefined();
+    expect(callsTo(spy, "acp_start_session")).toHaveLength(0);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Allow for this session" }));
+    });
+
+    await waitFor(() => expect(callsTo(spy, "acp_start_session")).toHaveLength(1));
+    // Its own agent, the caller's folder, and no tools of its own: it cannot open more.
+    expect(callsTo(spy, "acp_start_session")[0][1]).toMatchObject({
+      profileId: "codex-acp",
+      cwd: "/Users/test/developer/ai-perpetual-trading",
+      agentTools: false,
+    });
+    await waitFor(() => expect(callsTo(spy, "agent_tool_respond")).toHaveLength(1));
+    const [, answer] = callsTo(spy, "agent_tool_respond")[0];
+    expect(JSON.parse(String(answer?.text))).toMatchObject({ opened: true, session: "Parser port" });
+    // The brief is its first message, with no handoff in front of it.
+    await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
+    expect(callsTo(spy, "acp_prompt")[0][1]).toMatchObject({ text: "Port the parser to the new API." });
+    // It is in the sidebar, and the user is still in the session that asked.
+    const sidebar = within(screen.getByRole("complementary"));
+    expect(await sidebar.findByText("Parser port")).toBeDefined();
+    expect(screen.getByText("Refactor the parser")).toBeDefined();
+  });
+
   it("list_agents and delegate reach only the agents the user has in use", async () => {
     seedSourceSession();
     // Codex is on this Mac, but the user took it out of use.

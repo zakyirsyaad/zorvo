@@ -54,6 +54,13 @@ impl Tokens {
         token
     }
 
+    pub fn has_session(&self, app_session_id: &str) -> bool {
+        self.by_session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(app_session_id)
+    }
+
     pub fn forget(&self, app_session_id: &str) {
         self.by_session
             .lock()

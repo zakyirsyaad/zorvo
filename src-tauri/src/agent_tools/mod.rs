@@ -3,5 +3,8 @@
 
 pub mod bridge;
 pub mod protocol;
+pub mod service;
 pub mod socket;
 pub mod tools;
+
+pub use service::{AgentTools, ToolCall};

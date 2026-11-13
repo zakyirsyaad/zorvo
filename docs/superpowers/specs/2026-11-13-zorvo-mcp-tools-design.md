@@ -79,6 +79,38 @@ process can reach.
 
 Under `pnpm tauri dev` the executable is the dev binary, which works the same way.
 
+## Agents that ignore `mcpServers`: the command path
+
+Decided 2026-11-13, after the spike showed that Pi through `pi-acp` never starts an `mcpServers`
+entry (its tools are `read`, `bash`, `edit` and `write`). Such an agent reaches the same tools
+through its shell.
+
+- A second mode of the executable: `zorvo tools <tool> [<json arguments>]`. It reads
+  `ZORVO_MCP_SOCKET` and `ZORVO_MCP_TOKEN` from its environment, connects, sends the token line and
+  one `tools/call`, prints the result's text, and exits 0, or 1 when the result is an error. It holds
+  no logic, like the bridge. `zorvo tools` alone prints the tool list with one example each.
+- For an agent on the command path, the launch environment (`AcpLaunch.env`) gets the two variables
+  and `ZORVO_TOOLS`, the executable's path, so the agent's shell can run `"$ZORVO_TOOLS" tools …`.
+  `mcpServers` stays `[]` for it.
+- Which agents: a list in Rust, `COMMAND_PATH_AGENTS`, holding the registry ids the spike showed
+  ignore `mcpServers` (today Pi's). ACP has no capability that says so: stdio MCP is mandatory, and
+  Pi reports only `mcpCapabilities: { http: false, sse: false }`. An agent moves off the list when a
+  later version starts the server.
+- How the agent learns of it: hidden context with the session's first message, and with the first
+  message after a reopen, as `buildDelegatePrompt` adds context today. It names the five commands in
+  a few lines and says the answer to `delegate` arrives later as a message. Nothing is written into
+  the agent's own config or the project's files.
+- The token is per agent process here, not per ACP session, because the environment is. A session
+  forked natively lives in its source's process, so on the command path it gets no context and its
+  agent is not told of the commands; a call from that process counts as the source session's.
+- Everything behind the socket is the same: validation, the approval card, the rules, the limits.
+- The token is readable by every process the agent's shell starts. That is the agent's own trust
+  level, and the token gives only these tools, behind the card.
+
+Not verified, and the command path's own spike before its plan: that Pi runs the command when the
+hidden context describes it, that the three variables reach Pi's `bash` tool, and how long Pi lets a
+`bash` call wait (the approval card can hold a call for minutes).
+
 ## Tools
 
 Five tools. All take and return plain JSON; errors are MCP tool errors with a sentence the agent can
@@ -173,8 +205,10 @@ duplicate them.
    through the existing `useDelegation` and `startSession`.
 3. It answers with the command `agent_tool_respond(callId, result)`; the backend writes the MCP
    result to the bridge.
-4. No answer within 10 minutes (the card was left open), or the caller's session stopping, ends the
-   call with an error and withdraws the card. A call for a session the webview does not know is an
+4. No answer within 4 minutes (the card was left open), the agent's own
+   `notifications/cancelled` for the call, or the caller's session stopping, ends the call with an
+   error and withdraws the card. Four minutes, because the spike showed Qwen Code and Codex give up
+   on a tool call after exactly five. A call for a session the webview does not know is an
    error. A webview reload fails every open call (`end_orphaned_sessions` already ends the agents).
 
 `list_agents` takes the same path, since readiness and delegate state are webview state.
@@ -321,6 +355,10 @@ One spec, four PRs:
 3. **Independent sessions.** `start_session` with `worktree` and `folder`, `openedBy`, the "Opened
    by" line, the cap, the every-time folder card.
 4. **Looking after sessions.** Handles, `read_session`, `stop_session`, the card in a popout.
+
+The command path is planned on its own once phase 1's socket has merged: its spike, `zorvo tools`,
+the launch environment and the hidden context. It comes before phase 3, since the maintainer's main
+agent is Pi.
 
 ## Testing
 

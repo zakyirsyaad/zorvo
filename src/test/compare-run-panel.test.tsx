@@ -66,6 +66,8 @@ function facts(n: number, overrides: Partial<RowFacts> = {}, sessionOverrides: P
     hasStarted: true,
     pendingCard: null,
     hasOpenForm: false,
+    lastMessage: null,
+    openFormPrompt: null,
     needsSignIn: false,
     failed: false,
     turnStartedAt: 0,
@@ -137,6 +139,8 @@ async function renderPanel(p: CompareRunPanelProps) {
 }
 
 const rowOf = (name: string) => screen.getByRole("listitem", { name });
+/** A column's total (its Review button): the per-file rows under it repeat some of its numbers. */
+const totalOf = (name: string) => within(rowOf(name)).getByRole("button", { name: /^Review / });
 
 describe("CompareRunPanel", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -163,10 +167,10 @@ describe("CompareRunPanel", () => {
     });
     await renderPanel(props([facts(1), facts(2)]));
 
-    await waitFor(() => expect(within(rowOf("Claude Code")).getByText("2 files")).toBeInTheDocument());
-    expect(within(rowOf("Claude Code")).getByText("+15")).toBeInTheDocument();
-    expect(within(rowOf("Claude Code")).getByText("−3")).toBeInTheDocument();
-    await waitFor(() => expect(within(rowOf("Qwen Code")).getByText("1 file")).toBeInTheDocument());
+    await waitFor(() => expect(within(totalOf("Claude Code")).getByText("2 files")).toBeInTheDocument());
+    expect(within(totalOf("Claude Code")).getByText("+15")).toBeInTheDocument();
+    expect(within(totalOf("Claude Code")).getByText("−3")).toBeInTheDocument();
+    await waitFor(() => expect(within(totalOf("Qwen Code")).getByText("1 file")).toBeInTheDocument());
     expect(spy).toHaveBeenCalledWith("session_diff_stats_since", { path: "/wt/1", commit: "1".repeat(40) }, undefined);
   });
 
@@ -177,15 +181,15 @@ describe("CompareRunPanel", () => {
     });
     await renderPanel(props([facts(1, {}, { cwd: "/wt/1/packages/app" })]));
 
-    await waitFor(() => expect(within(rowOf("Claude Code")).getByText("1 file")).toBeInTheDocument());
-    expect(within(rowOf("Claude Code")).getByText("+3")).toBeInTheDocument();
+    await waitFor(() => expect(within(totalOf("Claude Code")).getByText("1 file")).toBeInTheDocument());
+    expect(within(totalOf("Claude Code")).getByText("+3")).toBeInTheDocument();
   });
 
   it("shows — when the diff cannot be read and keeps the other rows", async () => {
     answerDiffs({ "/wt/1": new Error("not a repository"), "/wt/2": [stat("c.ts", 4, 1)] });
     await renderPanel(props([facts(1), facts(2)]));
 
-    await waitFor(() => expect(within(rowOf("Qwen Code")).getByText("1 file")).toBeInTheDocument());
+    await waitFor(() => expect(within(totalOf("Qwen Code")).getByText("1 file")).toBeInTheDocument());
     expect(within(rowOf("Claude Code")).getByText("—")).toBeInTheDocument();
     expect(within(rowOf("Claude Code")).getByText("Finished")).toBeInTheDocument();
   });
@@ -198,14 +202,14 @@ describe("CompareRunPanel", () => {
     const answers = { "/wt/1": [stat("a.ts", 1, 0)] };
     answerDiffs(answers);
     const { rerender } = await renderPanel(props([facts(1, { isBusy: true }), facts(2)]));
-    await waitFor(() => expect(within(rowOf("Claude Code")).getByText("+1")).toBeInTheDocument());
+    await waitFor(() => expect(within(totalOf("Claude Code")).getByText("+1")).toBeInTheDocument());
 
     answers["/wt/1"] = [stat("a.ts", 7, 2), stat("b.ts", 1, 0)];
     rerender(<CompareRunPanel {...props([facts(1, rowChange, sessionChange), facts(2)])} />);
 
     expect(within(rowOf("Claude Code")).getByText(label)).toBeInTheDocument();
-    await waitFor(() => expect(within(rowOf("Claude Code")).getByText("+8")).toBeInTheDocument());
-    expect(within(rowOf("Claude Code")).getByText("2 files")).toBeInTheDocument();
+    await waitFor(() => expect(within(totalOf("Claude Code")).getByText("+8")).toBeInTheDocument());
+    expect(within(totalOf("Claude Code")).getByText("2 files")).toBeInTheDocument();
   });
 
   it("reads the numbers again when the version changes", async () => {
@@ -242,14 +246,21 @@ describe("CompareRunPanel", () => {
     expect(screen.queryByRole("button", { name: /^Review / })).toBeNull();
   });
 
-  it("a permission request shows the agent's own options in the row", async () => {
+  it("a plain permission is answered in the column: what it is about, then the agent's reject and allow-once choices", async () => {
     answerDiffs({});
-    await renderPanel(props([facts(1, { pendingCard: card() }), facts(2)]));
+    await renderPanel(props([facts(1, { pendingCard: card(), lastMessage: "I will clean the build folder." }), facts(2)]));
 
     const row = within(rowOf("Claude Code"));
-    expect(row.getByRole("heading", { name: "Claude Code wants to run rm -rf build?" })).toBeInTheDocument();
+    expect(row.getByText("Waiting for your answer")).toBeInTheDocument();
+    // The request takes the last message's place.
+    expect(row.queryByText("Last message")).toBeNull();
+    expect(row.queryByText("I will clean the build folder.")).toBeNull();
+    expect(rowOf("Claude Code").querySelector('[data-column-request="plain"]')).not.toBeNull();
     expect(row.getByRole("button", { name: "Allow once" })).toBeInTheDocument();
     expect(row.getByRole("button", { name: "Reject" })).toBeInTheDocument();
+    // Only those two: any other choice stays in the session.
+    expect(rowOf("Claude Code").querySelectorAll("[data-column-request] button")).toHaveLength(2);
+    expect(row.getByRole("button", { name: "Open Claude Code" })).toHaveTextContent("Open");
     expect(within(rowOf("Qwen Code")).queryByRole("button", { name: "Allow once" })).toBeNull();
   });
 
@@ -263,7 +274,7 @@ describe("CompareRunPanel", () => {
     expect(p.onChoose).toHaveBeenCalledWith("s-2", "card-2", "allow");
   });
 
-  it("answering Qwen Code's questions in the row sends the answers for that session", async () => {
+  it("a question is not answered in the column: it says what is asked, and Open reads Open to answer", async () => {
     answerDiffs({});
     const questions = [
       { question: "Which editor do you use?", header: "Editor", options: [{ label: "Vim" }, { label: "Zed" }], multiSelect: false },
@@ -281,10 +292,42 @@ describe("CompareRunPanel", () => {
     await renderPanel(p);
     const row = within(rowOf("Qwen Code"));
 
-    fireEvent.click(row.getByRole("radio", { name: "Zed" }));
-    fireEvent.click(row.getByRole("button", { name: "Submit" }));
+    expect(row.getByText("Waiting for your answer")).toBeInTheDocument();
+    expect(row.getByText("Which editor do you use?")).toBeInTheDocument();
+    expect(row.queryByRole("radio")).toBeNull();
+    expect(row.queryByRole("button", { name: "Submit" })).toBeNull();
+    const open = row.getByRole("button", { name: "Open Qwen Code to answer" });
+    expect(open).toHaveTextContent("Open to answer");
+    fireEvent.click(open);
+    expect(p.onOpen).toHaveBeenCalledWith("s-2");
+    expect(p.onChoose).not.toHaveBeenCalled();
+  });
 
-    expect(p.onChoose).toHaveBeenCalledWith("s-2", "card-2", "proceed_once", { "0": "Zed" });
+  it("an open form says what it asks and is opened to answer", async () => {
+    answerDiffs({});
+    await renderPanel(props([facts(1, { hasOpenForm: true, openFormPrompt: "Which branch should I target?" }), facts(2)]));
+    const row = within(rowOf("Claude Code"));
+    expect(row.getByText("Which branch should I target?")).toBeInTheDocument();
+    expect(row.getByRole("button", { name: "Open Claude Code to answer" })).toBeInTheDocument();
+  });
+
+  it("shows the agent's last message, and up to three files with how many more", async () => {
+    answerDiffs({
+      "/wt/1": [stat("src/small.ts", 1, 0), stat("src/big.ts", 40, 9), stat("src/mid.ts", 6, 2), stat("src/tiny.ts", 0, 1), stat("src/also.ts", 1, 0)],
+    });
+    await renderPanel(props([facts(1, { lastMessage: "Done: the save is debounced now." }), facts(2)]));
+    const row = within(rowOf("Claude Code"));
+    expect(row.getByText("Last message")).toBeInTheDocument();
+    expect(row.getByText("Done: the save is debounced now.")).toHaveClass("line-clamp-3");
+
+    const files = await row.findByRole("list", { name: "Changed files" });
+    // Most changed first; ties by path.
+    expect(within(files).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      "src/big.ts+40 −9",
+      "src/mid.ts+6 −2",
+      "src/also.ts+1 −0",
+    ]);
+    expect(row.getByText("2 more files")).toBeInTheDocument();
   });
 
   it("a request answered in the chat leaves the row", async () => {
@@ -362,7 +405,7 @@ describe("CompareRunPanel", () => {
     answerDiffs({ "/wt/1": [stat("a.ts", 1, 0)] });
     const p = props([facts(1), facts(2, {}, { status: "terminated" }), facts(3, { failed: true })]);
     await renderPanel(p);
-    await within(rowOf("Claude Code")).findByText("+1");
+    await waitFor(() => within(totalOf("Claude Code")).getByText("+1"));
 
     fireEvent.click(within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" }));
 
@@ -378,7 +421,7 @@ describe("CompareRunPanel", () => {
     answerDiffs({ "/wt/1": [stat("a.ts", 1, 0)] });
     const p = props([facts(1), facts(2)]);
     await renderPanel(p);
-    await within(rowOf("Claude Code")).findByText("+1");
+    await waitFor(() => within(totalOf("Claude Code")).getByText("+1"));
     const rowPick = within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" });
 
     fireEvent.click(rowPick);
@@ -399,7 +442,7 @@ describe("CompareRunPanel", () => {
     answerDiffs({ "/wt/1": [stat("a.ts", 1, 0)] });
     const p = props([facts(1), facts(2, { isBusy: true }), facts(3, { isBusy: true })]);
     await renderPanel(p);
-    await within(rowOf("Claude Code")).findByText("+1");
+    await waitFor(() => within(totalOf("Claude Code")).getByText("+1"));
 
     fireEvent.click(within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" }));
     expect(screen.getByText(/Qwen Code and Kimi CLI are still working and will be stopped\.$/)).toBeInTheDocument();
@@ -412,7 +455,7 @@ describe("CompareRunPanel", () => {
   it("names only the agents still working in the bar", async () => {
     answerDiffs({ "/wt/1": [stat("a.ts", 1, 0)] });
     await renderPanel(props([facts(1), facts(2, { isBusy: true }), facts(3)]));
-    await within(rowOf("Claude Code")).findByText("+1");
+    await waitFor(() => within(totalOf("Claude Code")).getByText("+1"));
 
     fireEvent.click(within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" }));
 
@@ -423,7 +466,7 @@ describe("CompareRunPanel", () => {
     answerDiffs({ "/wt/1": [stat("a.ts", 1, 0)] });
     const p = props([facts(1), facts(2, { isBusy: true })]);
     const { rerender } = await renderPanel(p);
-    await within(rowOf("Claude Code")).findByText("+1");
+    await waitFor(() => within(totalOf("Claude Code")).getByText("+1"));
     fireEvent.click(within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" }));
     expect(screen.getByText(/Qwen Code is still working and will be stopped\.$/)).toBeInTheDocument();
 
@@ -441,7 +484,7 @@ describe("CompareRunPanel", () => {
     let finish!: () => void;
     const onPick = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
     await renderPanel(props([facts(1), facts(2, { isBusy: true })], { onPick }));
-    await within(rowOf("Qwen Code")).findByText("+1");
+    await waitFor(() => within(totalOf("Qwen Code")).getByText("+1"));
 
     fireEvent.click(within(rowOf("Claude Code")).getByRole("button", { name: "Pick Claude Code" }));
     fireEvent.click(within(screen.getByRole("group", { name: "Confirm pick" })).getByRole("button", { name: "Pick Claude Code" }));

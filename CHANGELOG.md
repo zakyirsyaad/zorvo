@@ -17,6 +17,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - In the diff review, the bar that adds your comments to the message floats over the diff, and the Changes tab's file cards, the Activity filters and the Files tab take the same layered look.
 - A new session shows your agents as tiles: tick two or more to compare them, and find the rest under All agents. The folder and branch sit beside the "New session" heading.
 - A compare run shows its agents side by side, each with the files it changed and its last message, and you can answer a plain permission request right in its column.
+- Settings and the welcome screen take the layered look: the theme is a System, Light and Dark control, each agent's sign-in shows as a chip with a dot, and the welcome screen is one panel with each agent's tick at the right.
 - The top bar shows the folder before the session's title.
 
 ## [0.10.1] - 2026-11-12

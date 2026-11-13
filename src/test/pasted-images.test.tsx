@@ -24,6 +24,9 @@ function clipboard({ files, text = "" }: FakeClipboard) {
   };
 }
 
+/** Long enough for a save that was wrongly started to reach the backend. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 40));
+
 function prompt(): HTMLTextAreaElement {
   return screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement;
 }
@@ -94,7 +97,7 @@ describe("Composer paste", () => {
 
   it("attaches a pasted image and keeps the text box as it was", async () => {
     const invoke = spyOnInvoke((cmd) => (cmd === "save_pasted_image" ? "/data/pasted-images/paste-1.png" : undefined));
-    render(<ComposerDock onSendMessage={() => {}} attachAsFiles />);
+    render(<ComposerDock onSendMessage={() => {}} attachAsFiles onNotice={() => {}} />);
 
     const event = fireEvent.paste(prompt(), { clipboardData: clipboard({ files: [imageFile()] }) });
 
@@ -108,7 +111,7 @@ describe("Composer paste", () => {
   it("attaches every pasted image", async () => {
     let n = 0;
     spyOnInvoke((cmd) => (cmd === "save_pasted_image" ? `/data/pasted-images/paste-${++n}.png` : undefined));
-    render(<ComposerDock onSendMessage={() => {}} attachAsFiles />);
+    render(<ComposerDock onSendMessage={() => {}} attachAsFiles onNotice={() => {}} />);
 
     fireEvent.paste(prompt(), { clipboardData: clipboard({ files: [imageFile("a.png"), imageFile("b.png")] }) });
 
@@ -116,39 +119,42 @@ describe("Composer paste", () => {
     expect(await screen.findByRole("button", { name: "Remove paste-2.png" })).toBeTruthy();
   });
 
-  it("leaves a text paste to the browser", () => {
+  it("leaves a text paste to the browser", async () => {
     const invoke = spyOnInvoke(() => undefined);
-    render(<ComposerDock onSendMessage={() => {}} attachAsFiles />);
+    render(<ComposerDock onSendMessage={() => {}} attachAsFiles onNotice={() => {}} />);
 
     const event = fireEvent.paste(prompt(), { clipboardData: clipboard({ files: [], text: "just words" }) });
 
     expect(event).toBe(true);
+    await settle();
     expect(invoke.mock.calls.some(([cmd]) => cmd === "save_pasted_image")).toBe(false);
   });
 
-  it("leaves text and image together to the browser, which pastes the text", () => {
+  it("leaves text and image together to the browser, which pastes the text", async () => {
     const invoke = spyOnInvoke(() => undefined);
-    render(<ComposerDock onSendMessage={() => {}} attachAsFiles />);
+    render(<ComposerDock onSendMessage={() => {}} attachAsFiles onNotice={() => {}} />);
 
     const event = fireEvent.paste(prompt(), { clipboardData: clipboard({ files: [imageFile()], text: "cells" }) });
 
     expect(event).toBe(true);
+    await settle();
     expect(invoke.mock.calls.some(([cmd]) => cmd === "save_pasted_image")).toBe(false);
   });
 
-  it("attaches nothing while the composer is disabled", () => {
+  it("attaches nothing while the composer is disabled", async () => {
     const invoke = spyOnInvoke(() => undefined);
-    render(<ComposerDock onSendMessage={() => {}} attachAsFiles disabled />);
+    render(<ComposerDock onSendMessage={() => {}} attachAsFiles disabled onNotice={() => {}} />);
 
     fireEvent.paste(prompt(), { clipboardData: clipboard({ files: [imageFile()] }) });
 
+    await settle();
     expect(invoke.mock.calls.some(([cmd]) => cmd === "save_pasted_image")).toBe(false);
     expect(screen.queryByRole("button", { name: /^Remove / })).toBeNull();
   });
 
   it("types the path into the text for an agent that takes no files", async () => {
     spyOnInvoke((cmd) => (cmd === "save_pasted_image" ? "/data/pasted-images/paste-1.png" : undefined));
-    render(<ComposerDock onSendMessage={() => {}} />);
+    render(<ComposerDock onSendMessage={() => {}} onNotice={() => {}} />);
 
     fireEvent.paste(prompt(), { clipboardData: clipboard({ files: [imageFile()] }) });
 
@@ -181,6 +187,95 @@ describe("Composer paste", () => {
 
     await waitFor(() => expect(onNotice).toHaveBeenCalledTimes(1));
     expect(onNotice.mock.calls[0][0]).toContain("larger than 10 MB");
+    expect(invoke.mock.calls.some(([cmd]) => cmd === "save_pasted_image")).toBe(false);
+  });
+  describe("when the save finishes late", () => {
+    /** A save that stays pending until the test resolves it, once the backend has been asked. */
+    function pendingSave() {
+      let resolve!: (path: string) => void;
+      const saved = new Promise<string>((r) => (resolve = r));
+      const invoke = spyOnInvoke((cmd) => (cmd === "save_pasted_image" ? saved : undefined));
+      const finish = async () => {
+        await waitFor(() => expect(invoke.mock.calls.some(([cmd]) => cmd === "save_pasted_image")).toBe(true));
+        resolve("/data/pasted-images/paste-9.png");
+        await saved;
+      };
+      return finish;
+    }
+
+    const noChip = () => expect(screen.queryByRole("button", { name: /^Remove / })).toBeNull();
+
+    it("drops the image when the message was sent meanwhile, and says so", async () => {
+      const finish = pendingSave();
+      const onNotice = vi.fn();
+      render(<ComposerDock onSendMessage={() => {}} attachAsFiles onNotice={onNotice} pasteScope="a" />);
+      fireEvent.change(prompt(), { target: { value: "look" } });
+
+      fireEvent.paste(prompt(), { clipboardData: clipboard({ files: [imageFile()] }) });
+      fireEvent.keyDown(prompt(), { key: "Enter" });
+      await finish();
+
+      await waitFor(() => expect(onNotice).toHaveBeenCalledTimes(1));
+      expect(onNotice.mock.calls[0][0]).toMatch(/^Left out the pasted image/);
+      noChip();
+    });
+
+    it("drops the image when another session is on screen meanwhile", async () => {
+      const finish = pendingSave();
+      const onNotice = vi.fn();
+      const view = render(<ComposerDock onSendMessage={() => {}} attachAsFiles onNotice={onNotice} pasteScope="a" />);
+
+      fireEvent.paste(prompt(), { clipboardData: clipboard({ files: [imageFile()] }) });
+      view.rerender(<ComposerDock onSendMessage={() => {}} attachAsFiles onNotice={onNotice} pasteScope="b" />);
+      await finish();
+
+      await waitFor(() => expect(onNotice).toHaveBeenCalledTimes(1));
+      noChip();
+    });
+
+    it("drops the image when the composer was hidden meanwhile", async () => {
+      const finish = pendingSave();
+      const onNotice = vi.fn();
+      const view = render(<ComposerDock onSendMessage={() => {}} attachAsFiles onNotice={onNotice} pasteScope="a" />);
+
+      fireEvent.paste(prompt(), { clipboardData: clipboard({ files: [imageFile()] }) });
+      view.rerender(<ComposerDock onSendMessage={() => {}} attachAsFiles onNotice={onNotice} pasteScope="a" isHidden />);
+      await finish();
+
+      await waitFor(() => expect(onNotice).toHaveBeenCalledTimes(1));
+      view.rerender(<ComposerDock onSendMessage={() => {}} attachAsFiles onNotice={onNotice} pasteScope="a" />);
+      noChip();
+    });
+
+    it("still attaches when nothing changed", async () => {
+      const finish = pendingSave();
+      render(<ComposerDock onSendMessage={() => {}} attachAsFiles onNotice={() => {}} pasteScope="a" />);
+
+      fireEvent.paste(prompt(), { clipboardData: clipboard({ files: [imageFile()] }) });
+      await finish();
+
+      expect(await screen.findByRole("button", { name: "Remove paste-9.png" })).toBeTruthy();
+    });
+  });
+
+  it("attaches nothing while the composer is hidden", async () => {
+    const invoke = spyOnInvoke(() => undefined);
+    render(<ComposerDock onSendMessage={() => {}} attachAsFiles onNotice={() => {}} isHidden />);
+
+    fireEvent.paste(prompt(), { clipboardData: clipboard({ files: [imageFile()] }) });
+
+    await settle();
+    expect(invoke.mock.calls.some(([cmd]) => cmd === "save_pasted_image")).toBe(false);
+  });
+
+  it("does not swallow a paste it could not report a failure for (a popout has no notice path)", async () => {
+    const invoke = spyOnInvoke(() => undefined);
+    render(<ComposerDock onSendMessage={() => {}} attachAsFiles />);
+
+    const event = fireEvent.paste(prompt(), { clipboardData: clipboard({ files: [imageFile()] }) });
+
+    expect(event).toBe(true);
+    await settle();
     expect(invoke.mock.calls.some(([cmd]) => cmd === "save_pasted_image")).toBe(false);
   });
 });

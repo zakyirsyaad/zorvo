@@ -1460,6 +1460,8 @@ export default function App() {
                       onRestored={review.onComposerRestored}
                       onGivenBack={review.onComposerGivenBack}
                       onNotice={reportError}
+                      pasteScope={activeSessionId || "draft"}
+                      isHidden={isComposerHidden || settingsPage.section !== null}
                       commands={compare.isCompare ? [] : composerCommands}
                       sendLabel={delegationSendLabel ?? (compare.agentIds.length >= 2 ? `Start ${compare.agentIds.length} sessions` : undefined)}
                       agentName={activeSession ? activeAgent?.name : newSessionAgent?.name}

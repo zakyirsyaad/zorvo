@@ -32,6 +32,10 @@ pub fn run(args: &[String]) -> i32 {
         println!("{}", usage());
         return EXIT_OK;
     };
+    if matches!(tool.as_str(), "--help" | "-h" | "help") {
+        println!("{}", usage());
+        return EXIT_OK;
+    }
     let Some(arguments) = parse_arguments(rest) else {
         eprintln!("{QUOTING_HINT}");
         return EXIT_USAGE;
@@ -46,6 +50,27 @@ pub fn run(args: &[String]) -> i32 {
             EXIT_FAILED
         }
     }
+}
+
+/// Whether this process was started from an agent's environment: one of the
+/// variables Zorvo gives a command-path agent, or the bridge, is set.
+pub fn is_agent_environment() -> bool {
+    [SOCKET_VARIABLE, TOKEN_VARIABLE, TOOLS_VARIABLE]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some())
+}
+
+/// For a start from an agent's environment that is neither `tools` nor
+/// `mcp-bridge` (an agent trying `--help`, or the bare program): says how the
+/// command is used and returns the exit code. The app must not open then: it
+/// would be a second Zorvo window, started by an agent, that never exits.
+pub fn refuse_app_start() -> i32 {
+    eprintln!("{}", usage());
+    eprintln!(
+        "This shell belongs to an agent session, so the app itself does not start here. \
+         To start it anyway, unset {SOCKET_VARIABLE}, {TOKEN_VARIABLE} and {TOOLS_VARIABLE} first."
+    );
+    EXIT_USAGE
 }
 
 /// The words after the tool, joined, as a JSON object; none means `{}`. An

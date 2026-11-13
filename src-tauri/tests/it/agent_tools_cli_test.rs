@@ -304,3 +304,61 @@ fn neither_stream_ever_holds_the_token() {
     assert!(!text(&output.stdout).contains(&token));
     assert!(!text(&output.stderr).contains(&token));
 }
+
+/// Runs the binary with `args` (no `tools` in front) and an agent's
+/// environment; kills it if it is still running after 3 seconds, which means
+/// it went on to open the app.
+fn run_as_agent(args: &[&str], variable: &str) -> Option<Output> {
+    let mut child = Command::new(BINARY)
+        .args(args)
+        .env_remove("ZORVO_MCP_SOCKET")
+        .env_remove("ZORVO_MCP_TOKEN")
+        .env_remove("ZORVO_TOOLS")
+        .env(variable, "/tmp/zorvo-not-there")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(3) {
+        if child.try_wait().unwrap().is_some() {
+            return Some(child.wait_with_output().unwrap());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    child.kill().unwrap();
+    child.wait().unwrap();
+    None
+}
+
+#[test]
+fn from_an_agents_environment_it_never_opens_the_app() {
+    // What Pi really ran after a failed call: the program with `--help`.
+    for args in [
+        vec!["--help"],
+        vec![],
+        vec!["help"],
+        vec!["tool", "list_agents"],
+    ] {
+        for variable in ["ZORVO_TOOLS", "ZORVO_MCP_SOCKET", "ZORVO_MCP_TOKEN"] {
+            let output = run_as_agent(&args, variable)
+                .unwrap_or_else(|| panic!("{args:?} with {variable} opened the app"));
+            assert_eq!(output.status.code(), Some(2), "{args:?} {variable}");
+            assert!(
+                text(&output.stderr).contains("\"$ZORVO_TOOLS\" tools delegate"),
+                "{args:?} {variable}: {}",
+                text(&output.stderr)
+            );
+        }
+    }
+}
+
+#[test]
+fn asking_tools_for_help_lists_the_tools() {
+    for flag in ["--help", "-h", "help"] {
+        let output = command(&[flag]).output().unwrap();
+        assert_eq!(output.status.code(), Some(0), "{flag}");
+        assert!(text(&output.stdout).contains("list_agents"), "{flag}");
+    }
+}

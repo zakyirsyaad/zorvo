@@ -113,9 +113,10 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl AgentTools {
-    /// How long a call may wait for the webview. Qwen Code and Codex give up
-    /// at 5 minutes, so Zorvo answers first.
-    pub const CALL_TIMEOUT: Duration = Duration::from_secs(240);
+    /// How long a call may wait for the webview. Agents give up on a tool call
+    /// on their own (Antigravity after 3 minutes, Qwen Code and Codex after 5),
+    /// so Zorvo answers before the shortest of them.
+    pub const CALL_TIMEOUT: Duration = Duration::from_secs(170);
 
     /// Binds the socket and starts accepting. `bridge` is the program an
     /// agent runs (the app's own executable in production); `emit` receives

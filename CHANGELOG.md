@@ -6,11 +6,14 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Added
 
+- **Agents can hand work to each other.** Ask an agent in plain words ("then have Qwen Code review it") and it can give another agent the task itself. The first time in a session Zorvo shows a card with who asks, which agent the task is for, the folder and the task; **Allow for this session** lets that session's agent give further tasks without asking again. The other agent's answer comes back as a report. Works with agents that take tools from Zorvo (Qwen Code, Codex, Antigravity, Claude Code) and with Pi, which runs a Zorvo command instead. Turn it off in **Settings → Agents**.
+- A session can now have one delegate per agent, for example Qwen Code and Codex at once, and a further task for an agent goes to the session it already has, also when you write `@Agent` yourself.
 - **Paste an image into the message.** A screenshot or an image copied in another app attaches when you paste it into the prompt, like a file from the paperclip. Text still pastes as text, also when the copy carries a picture of that text, as web pages and spreadsheets do. Pasted images are kept in Zorvo's data folder for 30 days.
 - The Files tab shows images (PNG, JPEG, GIF, WebP) and PDFs instead of saying the file is binary. A file over 10 MB says it is too large to preview.
 
 ### Changed
 
+- While a delegated agent works you can keep writing to the session that delegated; its report waits until that session's turn ends instead of landing in the composer.
 - The window has a layered look: the chat and the inspector are raised panels on the window's background.
 - Sidebar rows show each agent's logo with a status badge, and a filter shows only the sessions that need you or are working.
 - The chat is calmer: tool calls are a one-line summary that opens into steps on a rail, a failed turn and a stalled agent get a titled notice, and a permission request says "Waiting for you" while it is open.

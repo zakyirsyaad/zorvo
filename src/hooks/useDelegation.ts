@@ -7,7 +7,8 @@ import {
   delegateBlockedReason as delegationBlockedReason,
   delegateSessionName,
   isOpenLink,
-  openDelegateOf,
+  taskRoute,
+  openDelegatesOf,
   reportMessage,
   reportedFiles,
   sendBlockedReason as pairSendBlockedReason,
@@ -41,7 +42,7 @@ export interface DelegationDeps {
     sessionId: string,
     text: string,
     attachments?: readonly string[],
-    marks?: Pick<ChatMessage, 'delegationReport'>,
+    marks?: Pick<ChatMessage, 'delegationReport' | 'delegationTask'>,
   ) => Promise<boolean>;
   /** `options.choices` are the dialog's picks; `changesToApply` applies them before the first prompt. */
   startSession: (spec: SessionSpec, first?: FirstMessage, options?: StartSessionOptions) => void;
@@ -75,6 +76,26 @@ export interface DelegationView {
   reportedAt: number | null;
 }
 
+/** What giving a task led to: a new delegate, a further task for the one that agent has, or a refusal. */
+export type GiveTaskResult =
+  | { ok: true; kind: 'started' | 'sent'; sessionId: string; sessionName: string }
+  | {
+      ok: false;
+      /** What the caller is told; never an error's own text. */
+      reason: string;
+      /** Zorvo failed, not a rule: an agent is told only that it did not work. */
+      isInternal?: true;
+      /** The error itself, for the user's notice. It may hold a path, so it never goes to an agent. */
+      detail?: string;
+    };
+
+export interface GiveTaskOptions {
+  attachments?: readonly string[];
+  choices?: AcpChoices;
+  /** The source's own agent asks, from inside its turn: a busy source is no reason to refuse, and the user stays where they are. */
+  byAgent?: boolean;
+}
+
 interface DelegationOutcome {
   kind: 'reported' | 'failed';
   at: number;
@@ -85,14 +106,16 @@ function agentNameIn(agents: readonly AgentProfile[], profileId: string): string
 }
 
 /** Why A cannot delegate, with the latest sessions and transcripts. */
-function blockedReasonFor(deps: DelegationDeps, sourceId: string): string | null {
+function blockedReasonFor(deps: DelegationDeps, sourceId: string, agentId?: string): string | null {
   const source = deps.sessions.find((session) => session.id === sourceId);
   // A session that is gone has no delegation item to show.
   if (source === undefined) return '';
   return delegationBlockedReason({
     source,
+    ...(agentId !== undefined ? { agentId } : {}),
     sessions: deps.sessions,
     isBusy: deps.isBusy,
+    isWaiting: deps.isWaiting,
     hasMessages: (deps.transcripts[sourceId] ?? []).length > 0,
     agentNameOf: (profileId) => agentNameIn(deps.agents, profileId),
   });
@@ -123,26 +146,39 @@ function relativeTo(cwd: string, path: string): string {
  * so they hold before React renders; the revision only triggers the drain.
  */
 export function useDelegation(deps: DelegationDeps): {
-  delegateBlockedReason: (sourceId: string) => string | null;
+  /** Why `sourceId` cannot give a task; with `agentId`, why it cannot give that agent one. */
+  delegateBlockedReason: (sourceId: string, agentId?: string) => string | null;
   start: (
     sourceId: string,
     agentId: string,
     task: string,
     options?: { attachments?: readonly string[]; choices?: AcpChoices },
   ) => Promise<boolean>;
+  /** Gives agent `agentId` a task from `sourceId`: starts its delegate, or sends the task to the one it has. */
+  giveTask: (sourceId: string, agentId: string, task: string, options?: GiveTaskOptions) => Promise<GiveTaskResult>;
   end: (delegateId: string) => void;
   onTurnEnded: (sessionId: string, reason: AttentionReason) => void;
   sendBlockedReason: (sessionId: string) => string | null;
   viewFor: (sessionId: string) => DelegationView | null;
+  /** A source's lines, one per open delegate, oldest first; a delegate's own line. */
+  viewsFor: (sessionId: string) => DelegationView[];
 } {
   const { sessions, agents, transcripts } = deps;
   const latest = useLatest(deps);
-  // Each source whose report is on its way, by source id, with the delegate it belongs to.
-  const handingOver = useRef(new Map<string, string>());
-  // Each finished delegate whose report still has to go out, by delegate id, with its source.
+  // Each finished delegate whose report waits for its source, by delegate id, in arrival order.
   const pending = useRef(new Map<string, string>());
+  // The delegates whose report is being sent right now.
+  const delivering = useRef(new Set<string>());
   // What each delegate's last turn led to: a report, or a failed turn. Memory only.
   const outcomes = useRef(new Map<string, DelegationOutcome>());
+  // The delegates being started, by source and agent, with the new session's id once it is known.
+  // A session is in `sessions` only after React commits, so a second task for the same agent in
+  // the same tick would otherwise start a second delegate.
+  const starting = useRef(new Map<string, string | null>());
+  // The delegates a further task is on its way to. Busy is React state, so it is not
+  // observable in the tick the task is sent; this is, from before the send until the
+  // delegate is seen busy or its turn ends.
+  const sendingTo = useRef(new Set<string>());
   // When the hand-over began, for B's line while the report is still on its way.
   const handoverSince = useRef(new Map<string, number>());
   // Bumped when a turn ends or a hand-over settles, so the drain runs and the lines read again.
@@ -150,49 +186,75 @@ export function useDelegation(deps: DelegationDeps): {
 
   const agentNameOf = (profileId: string) => agentNameIn(agents, profileId);
 
-  const dropHandover = useCallback((sourceId: string, delegateId: string) => {
-    if (handingOver.current.get(sourceId) === delegateId) handingOver.current.delete(sourceId);
+  const dropHandover = useCallback((delegateId: string) => {
+    delivering.current.delete(delegateId);
     handoverSince.current.delete(delegateId);
   }, []);
 
-  const delegateBlockedReason = (sourceId: string): string | null => blockedReasonFor(deps, sourceId);
+  /** B's report has not reached A yet: it waits for A's turn, or is being sent. */
+  const isHandingOver = (delegateId: string) =>
+    pending.current.has(delegateId) || delivering.current.has(delegateId);
+
+  const delegateBlockedReason = (sourceId: string, agentId?: string): string | null =>
+    blockedReasonFor(deps, sourceId, agentId);
 
   /** A works on B's report: it is on its way, or A's last prompt is B's report. */
   const isWorkingOnReport = (sourceId: string, delegateId: string): boolean => {
-    if (handingOver.current.get(sourceId) === delegateId) return true;
+    if (delivering.current.has(delegateId)) return true;
     const delegate = sessions.find((candidate) => candidate.id === delegateId);
     const report = lastUserMessage(transcripts[sourceId] ?? [])?.delegationReport;
     return delegate !== undefined && report?.agentId === delegate.profileId;
   };
 
   const sendBlockedReason = (sessionId: string): string | null => {
-    const reason = pairSendBlockedReason({
+    const session = sessions.find((candidate) => candidate.id === sessionId);
+    const link = session?.delegatedFrom;
+    if (session !== undefined && link !== null && link !== undefined && isOpenLink(link)) {
+      const source = sessions.find((candidate) => candidate.id === link.sessionId);
+      if (source !== undefined) {
+        const delegateName = agentNameOf(session.profileId);
+        const sourceName = agentNameOf(source.profileId);
+        // Its last answer is on its way to A: B must not send over it.
+        if (delivering.current.has(session.id)) return `${sourceName} is working on ${delegateName}'s report.`;
+        if (pending.current.has(session.id)) return `${delegateName}'s report waits for ${sourceName} to finish.`;
+      }
+    }
+    return pairSendBlockedReason({
       sessionId,
       sessions,
       isBusy: deps.isBusy,
       agentNameOf,
       isWorkingOnReport,
     });
-    if (reason !== null) return reason;
+  };
 
-    // Same tick as B's turn ended, seen from A: the report is about to go out, and a
-    // message sent now would take A's turn and push the report into the composer.
-    const handingOverFrom = handingOver.current.get(sessionId);
-    if (handingOverFrom !== undefined) {
-      const delegate = sessions.find((candidate) => candidate.id === handingOverFrom);
-      if (delegate !== undefined) {
-        return `${agentNameOf(delegate.profileId)} is working on the task you delegated.`;
-      }
-    }
-
-    const session = sessions.find((candidate) => candidate.id === sessionId);
-    const link = session?.delegatedFrom;
-    if (session === undefined || link === null || link === undefined || !isOpenLink(link)) return null;
-    // Same tick as the turn ended: the report is not with A yet, but B must not send over it.
-    if (handingOver.current.get(link.sessionId) !== session.id) return null;
-    const source = sessions.find((candidate) => candidate.id === link.sessionId);
-    if (source === undefined) return null;
-    return `${agentNameOf(source.profileId)} is working on ${agentNameOf(session.profileId)}'s report.`;
+  /** A's line for one of its delegates, or null when that delegate has nothing to show. */
+  const sourceViewOf = (delegate: Session): DelegationView | null => {
+    const outcome = outcomes.current.get(delegate.id);
+    // A delegate that is not running has no live turn: its last turn's outcome is
+    // the whole story, and without one (a restart, an exited agent) there is no line.
+    const state: DelegationState | null = deps.isWaiting(delegate.id)
+      ? 'needs-answer'
+      : deps.isBusy(delegate.id)
+        ? 'working'
+        : (outcome?.kind ?? null);
+    if (state === null) return null;
+    const workingSince =
+      state === 'working'
+        ? (lastUserMessage(transcripts[delegate.id] ?? [])?.timestamp ??
+           delegate.delegatedFrom?.startedAt ??
+           null)
+        : null;
+    return {
+      role: 'source',
+      otherSessionId: delegate.id,
+      otherName: delegate.name,
+      agentName: agentNameOf(delegate.profileId),
+      task: delegate.delegatedFrom?.task ?? '',
+      state,
+      workingSince,
+      reportedAt: outcome?.kind === 'reported' ? outcome.at : null,
+    };
   };
 
   const viewFor = (sessionId: string): DelegationView | null => {
@@ -228,7 +290,7 @@ export function useDelegation(deps: DelegationDeps): {
 
       const report = lastUserMessage(transcripts[source.id] ?? []);
       const isReportFromDelegate = report?.delegationReport?.agentId === session.profileId;
-      if (handingOver.current.get(source.id) === session.id || (deps.isBusy(source.id) && isReportFromDelegate)) {
+      if (isHandingOver(session.id) || (deps.isBusy(source.id) && isReportFromDelegate)) {
         return {
           ...base,
           state: 'source-working',
@@ -240,45 +302,38 @@ export function useDelegation(deps: DelegationDeps): {
       return { ...base, state: outcome?.kind ?? 'working', workingSince: null };
     }
 
-    const delegate = openDelegateOf(sessionId, sessions);
-    if (delegate === undefined) return null;
-    const outcome = outcomes.current.get(delegate.id);
-    // A delegate that is not running has no live turn: its last turn's outcome is
-    // the whole story, and without one (a restart, an exited agent) there is no line.
-    const state: DelegationState | null = deps.isWaiting(delegate.id)
-      ? 'needs-answer'
-      : deps.isBusy(delegate.id)
-        ? 'working'
-        : (outcome?.kind ?? null);
-    if (state === null) return null;
-    const workingSince =
-      state === 'working'
-        ? (lastUserMessage(transcripts[delegate.id] ?? [])?.timestamp ??
-           delegate.delegatedFrom?.startedAt ??
-           null)
-        : null;
-    return {
-      role: 'source',
-      otherSessionId: delegate.id,
-      otherName: delegate.name,
-      agentName: agentNameOf(delegate.profileId),
-      task: delegate.delegatedFrom?.task ?? '',
-      state,
-      workingSince,
-      reportedAt: outcome?.kind === 'reported' ? outcome.at : null,
-    };
+    // The newest delegate's line; `viewsFor` lists them all.
+    const newest = openDelegatesOf(sessionId, sessions).at(-1);
+    return newest === undefined ? null : sourceViewOf(newest);
+  };
+
+  /** A source's lines, one per open delegate, oldest first; a delegate's own single line. */
+  const viewsFor = (sessionId: string): DelegationView[] => {
+    const session = sessions.find((candidate) => candidate.id === sessionId);
+    if (session === undefined) return [];
+    if (session.delegatedFrom !== null && session.delegatedFrom !== undefined) {
+      const own = viewFor(sessionId);
+      return own === null ? [] : [own];
+    }
+    return openDelegatesOf(sessionId, sessions).flatMap((delegate) => {
+      const view = sourceViewOf(delegate);
+      return view === null ? [] : [view];
+    });
   };
 
   const onTurnEnded = (sessionId: string, reason: AttentionReason): void => {
     const session = latest.current.sessions.find((candidate) => candidate.id === sessionId);
     const link = session?.delegatedFrom;
+    // Its turn is over, whatever the outcome: it can take a further task again.
+    sendingTo.current.delete(sessionId);
+    // A source's turn ended: a report that waited for it may go out now.
+    if ([...pending.current.values()].includes(sessionId)) setRevision((current) => current + 1);
     // An archived delegate's link is ended with it: a late turn end has nothing to report.
     if (session === undefined || isArchived(session) || link === null || link === undefined || !isOpenLink(link)) return;
 
     if (reason === 'finished') {
       // Set before anything can await or render: Send in B is refused from now on.
       pending.current.set(session.id, link.sessionId);
-      handingOver.current.set(link.sessionId, session.id);
       handoverSince.current.set(session.id, Date.now());
       setRevision((current) => current + 1);
     } else if (reason === 'failed') {
@@ -295,42 +350,30 @@ export function useDelegation(deps: DelegationDeps): {
 
     current.patchSession(delegateId, { delegatedFrom: { ...link, endedAt: Date.now() } });
     // A report still queued for A is dropped with the link.
-    const sourceId = pending.current.get(delegateId) ?? link.sessionId;
     pending.current.delete(delegateId);
-    dropHandover(sourceId, delegateId);
+    dropHandover(delegateId);
   };
 
-  const start = async (
-    sourceId: string,
-    agentId: string,
+  /** The last message that is whole: a reply still streaming (it holds the tool call) is left out. */
+  const lastWholeMessage = (messages: readonly ChatMessage[]): ChatMessage | undefined => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role !== 'agent' || message.isComplete === true) return message;
+    }
+    return undefined;
+  };
+
+  const startDelegate = async (
+    source: Session,
+    agent: AgentProfile,
     task: string,
-    options: { attachments?: readonly string[]; choices?: AcpChoices } = {},
-  ): Promise<boolean> => {
+    options: GiveTaskOptions,
+  ): Promise<GiveTaskResult> => {
     const current = latest.current;
-    const source = current.sessions.find((session) => session.id === sourceId);
-    const agent = current.agents.find((candidate) => candidate.id === agentId);
-    if (source === undefined) {
-      current.onNotice('Could not delegate: this session no longer exists.');
-      return false;
-    }
-    if (agent === undefined) {
-      current.onNotice('Could not delegate: the agent is not available.');
-      return false;
-    }
-
-    const blocked = blockedReasonFor(current, sourceId);
-    if (blocked !== null) {
-      current.onNotice(blocked === '' ? 'Could not delegate.' : `Could not delegate: ${blocked}`);
-      return false;
-    }
-
     const messages = current.transcripts[source.id] ?? [];
-    const last = lastMessage(messages);
-    // A source with no messages is blocked above; this keeps the handoff honest.
-    if (last === undefined) {
-      current.onNotice('Could not delegate.');
-      return false;
-    }
+    const last = options.byAgent === true ? lastWholeMessage(messages) : lastMessage(messages);
+    // A source with no messages is refused by the route; this keeps the handoff honest.
+    if (last === undefined) return { ok: false, reason: '' };
 
     const id = createId('s');
     const now = Date.now();
@@ -344,12 +387,13 @@ export function useDelegation(deps: DelegationDeps): {
         note: HANDOFF_NOTE,
       });
       const handoffPath = await invoke<string>('write_fork_handoff', { handoffId: id, content });
+      const name = delegateSessionName(agent.name, task);
       const spec: SessionSpec = {
         id,
         agent,
         cwd: source.cwd,
         worktree: source.worktree,
-        name: delegateSessionName(agent.name, task),
+        name,
         delegatedFrom: { sessionId: source.id, task, startedAt: now },
       };
       const first: FirstMessage = {
@@ -360,17 +404,139 @@ export function useDelegation(deps: DelegationDeps): {
         context: buildDelegatePrompt(handoffPath),
       };
       // The dialog's picks, or the defaults: the draft's own choices stay with the draft.
-      current.startSession(spec, first, { choices: options.choices ?? NO_CHOICES });
-      current.selectSession(id);
-      return true;
+      const choices = options.choices ?? NO_CHOICES;
+      if (options.byAgent === true) {
+        // The agent started it: the user keeps looking at what they were looking at.
+        current.startSession(spec, first, { choices, focus: false });
+      } else {
+        current.startSession(spec, first, { choices });
+        current.selectSession(id);
+      }
+      return { ok: true, kind: 'started', sessionId: id, sessionName: name };
     } catch (error) {
-      current.onNotice(`Could not delegate: ${String(error)}`);
-      return false;
+      return { ok: false, reason: 'The task could not be handed over.', isInternal: true, detail: String(error) };
     }
   };
 
+  const sendFurtherTask = async (
+    source: Session,
+    delegate: Session,
+    task: string,
+    options: GiveTaskOptions,
+  ): Promise<GiveTaskResult> => {
+    const current = latest.current;
+    const link = delegate.delegatedFrom;
+    const delegateName = agentNameIn(current.agents, delegate.profileId);
+    const refusal: GiveTaskResult = { ok: false, reason: `${delegateName} did not take the task.` };
+    if (link === null || link === undefined) return refusal;
+    if (sendingTo.current.has(delegate.id)) {
+      return { ok: false, reason: `${delegateName} is still working on the previous task.` };
+    }
+    // Held before anything awaits: a second task in the same tick must not reach the same turn.
+    sendingTo.current.add(delegate.id);
+    let isTaken: boolean;
+    try {
+      isTaken = await current.send(delegate.id, task, options.attachments ?? [], {
+        delegationTask: { agentName: agentNameIn(current.agents, source.profileId), agentId: source.profileId },
+      });
+    } catch {
+      isTaken = false;
+    }
+    if (!isTaken) {
+      sendingTo.current.delete(delegate.id);
+      return refusal;
+    }
+    // The next report quotes the task it answers.
+    current.patchSession(delegate.id, { delegatedFrom: { ...link, task } });
+    return { ok: true, kind: 'sent', sessionId: delegate.id, sessionName: delegate.name };
+  };
+
+  const giveTask = async (
+    sourceId: string,
+    agentId: string,
+    task: string,
+    options: GiveTaskOptions = {},
+  ): Promise<GiveTaskResult> => {
+    const current = latest.current;
+    const source = current.sessions.find((session) => session.id === sourceId);
+    const agent = current.agents.find((candidate) => candidate.id === agentId);
+    if (source === undefined) return { ok: false, reason: 'this session no longer exists.' };
+    if (agent === undefined) return { ok: false, reason: 'the agent is not available.' };
+    const startKey = `${sourceId}\n${agentId}`;
+    if (starting.current.has(startKey)) {
+      return { ok: false, reason: `${agent.name} is still working on the previous task.` };
+    }
+
+    const route = taskRoute({
+      source,
+      agentId,
+      sessions: current.sessions,
+      isBusy: current.isBusy,
+      isWaiting: current.isWaiting,
+      hasMessages: (current.transcripts[source.id] ?? []).length > 0,
+      isSourceBusyAllowed: options.byAgent === true,
+      agentNameOf: (profileId) => agentNameIn(current.agents, profileId),
+    });
+    if (route.kind === 'blocked') return { ok: false, reason: route.reason };
+
+    if (route.kind === 'follow-up') {
+      const { delegate } = route;
+      // Its agent is gone (the app restarted, the session ended): a task sent there reaches
+      // nobody. The old link ends and the task starts a new delegate.
+      if (delegate.status !== 'terminated') {
+        if (isHandingOver(delegate.id)) {
+          // A task sent now would become the delegate's last message, and the answer that
+          // still waits to be reported would be lost.
+          return {
+            ok: false,
+            reason: `${agent.name}'s last answer has not reached this session yet. Give it the next task after its report arrives.`,
+          };
+        }
+        return sendFurtherTask(source, delegate, task, options);
+      }
+      end(delegate.id);
+    }
+
+    // Held from here, before anything awaits, until the new session is listed.
+    starting.current.set(startKey, null);
+    const started = await startDelegate(source, agent, task, options);
+    if (started.ok) starting.current.set(startKey, started.sessionId);
+    else starting.current.delete(startKey);
+    return started;
+  };
+
+  /** The dialog's and the mention's way in: a refusal is a notice. */
+  const start = async (
+    sourceId: string,
+    agentId: string,
+    task: string,
+    options: { attachments?: readonly string[]; choices?: AcpChoices } = {},
+  ): Promise<boolean> => {
+    const result = await giveTask(sourceId, agentId, task, options);
+    if (result.ok) return true;
+    const why = result.detail ?? result.reason;
+    latest.current.onNotice(why === '' ? 'Could not delegate.' : `Could not delegate: ${why}`);
+    return false;
+  };
+
+  // Once a delegate is seen busy the route refuses by itself (also when its turn is later
+  // cancelled, which ends without a turn-end notice); a delegate that is gone needs no hold.
   useEffect(() => {
-    const deliver = async (delegateId: string, sourceId: string): Promise<void> => {
+    for (const delegateId of [...sendingTo.current]) {
+      const isListed = sessions.some((session) => session.id === delegateId);
+      if (!isListed || deps.isBusy(delegateId)) sendingTo.current.delete(delegateId);
+    }
+  });
+
+  // A delegate that is listed no longer needs its start held: the rules see the session itself.
+  useEffect(() => {
+    for (const [key, sessionId] of [...starting.current]) {
+      if (sessionId !== null && sessions.some((session) => session.id === sessionId)) starting.current.delete(key);
+    }
+  }, [sessions]);
+
+  useEffect(() => {
+    const deliver = async (delegateId: string): Promise<void> => {
       const current = latest.current;
       try {
         const session = current.sessions.find((candidate) => candidate.id === delegateId);
@@ -419,17 +585,26 @@ export function useDelegation(deps: DelegationDeps): {
         current.giveBack(source.id, report);
         current.onNotice(`${agentName}'s report is in the composer of ${source.name}.`);
       } finally {
-        dropHandover(sourceId, delegateId);
+        dropHandover(delegateId);
         // The hand-over is over either way: Send in B may be judged again.
         setRevision((currentRevision) => currentRevision + 1);
       }
     };
 
     const drain = async (): Promise<void> => {
+      // One report per source per pass: taking it starts the source's next turn.
+      const served = new Set<string>();
       for (const [delegateId, sourceId] of [...pending.current]) {
+        if (served.has(sourceId)) continue;
+        const current = latest.current;
+        // The source is in a turn, or waits for the user: the report waits too. It goes
+        // out when that changes (the transcripts, the sessions or a turn end bring us back).
+        if (current.isBusy(sourceId) || current.isWaiting(sourceId)) continue;
         // Deleted first: a second run (StrictMode) must not send the report again.
         if (!pending.current.delete(delegateId)) continue;
-        await deliver(delegateId, sourceId);
+        delivering.current.add(delegateId);
+        served.add(sourceId);
+        await deliver(delegateId);
       }
     };
     void drain();
@@ -439,5 +614,5 @@ export function useDelegation(deps: DelegationDeps): {
     // queued it.
   }, [transcripts, sessions, revision, latest, dropHandover]);
 
-  return { delegateBlockedReason, start, end, onTurnEnded, sendBlockedReason, viewFor };
+  return { delegateBlockedReason, start, giveTask, end, onTurnEnded, sendBlockedReason, viewFor, viewsFor };
 }

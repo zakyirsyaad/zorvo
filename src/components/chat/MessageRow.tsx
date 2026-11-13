@@ -146,12 +146,19 @@ export const MessageRow = memo(function MessageRow({
     >
       {isUser ? (
         <>
-          {message.delegationReport && (
-            // A report from a delegated session keeps its bubble, headed like a reply, saying whose it is.
+          {(message.delegationReport ?? message.delegationTask) && (
+            // A report from a delegated session, or a task given to one, keeps its bubble,
+            // headed like a reply, saying whose it is.
             <div data-delegation-header="" className="mb-2 flex min-w-0 max-w-full items-center gap-2">
-              <AgentTile profileId={message.delegationReport.agentId ?? ""} name="" size={22} />
+              <AgentTile
+                profileId={(message.delegationReport ?? message.delegationTask)?.agentId ?? ""}
+                name=""
+                size={22}
+              />
               <span className="min-w-0 truncate text-ui-sm font-medium text-fg">
-                {`From ${message.delegationReport.agentName}`}
+                {message.delegationReport
+                  ? `From ${message.delegationReport.agentName}`
+                  : `Task from ${message.delegationTask?.agentName ?? ""}`}
               </span>
             </div>
           )}

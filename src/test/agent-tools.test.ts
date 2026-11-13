@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { renderHook, act } from "@testing-library/react";
 
 type Listener = (event: { payload: unknown }) => void;
 const listeners = new Map<string, Listener>();
@@ -11,9 +11,8 @@ vi.mock("@tauri-apps/api/event", () => ({
   },
 }));
 
-import { useAgentTools } from "../hooks/useAgentTools";
 import { useAcpEngine } from "../hooks/session-engine/useAcpEngine";
-import { NOT_READY, sessionGetsAgentTools } from "../lib/agent-tools";
+import { sessionGetsAgentTools } from "../lib/agent-tools";
 import { COMMAND_PATH_CONTEXT } from "../lib/agent-tools-context";
 import { NO_CHOICES } from "../lib/acp-draft";
 import { fakeProfiles } from "./fixtures/agents";
@@ -59,48 +58,6 @@ describe("sessionGetsAgentTools", () => {
   it("gives none to a delegated session, open or ended", () => {
     expect(sessionGetsAgentTools({ delegatedFrom: LINK })).toBe(false);
     expect(sessionGetsAgentTools({ delegatedFrom: { ...LINK, endedAt: 2 } })).toBe(false);
-  });
-});
-
-describe("useAgentTools", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-    listeners.clear();
-  });
-
-  it("answers a tool call as not ready", async () => {
-    const spy = vi.spyOn(tauriInternals(), "invoke");
-    renderHook(() => useAgentTools());
-    await waitFor(() => expect(listeners.has("agent-tool-call")).toBe(true));
-
-    await act(async () => {
-      listeners.get("agent-tool-call")?.({
-        payload: { callId: "7", sessionId: "s-1", tool: "list_agents", args: {} },
-      });
-    });
-
-    const answers = spy.mock.calls.filter(([cmd]) => cmd === "agent_tool_respond").map(([, args]) => args);
-    expect(answers).toEqual([{ callId: "7", ok: false, text: NOT_READY }]);
-  });
-
-  it("listens for a call that ended and does nothing with it", async () => {
-    const spy = vi.spyOn(tauriInternals(), "invoke");
-    renderHook(() => useAgentTools());
-    await waitFor(() => expect(listeners.has("agent-tool-call-ended")).toBe(true));
-
-    await act(async () => {
-      listeners.get("agent-tool-call-ended")?.({ payload: { callId: "7" } });
-    });
-
-    expect(spy.mock.calls.filter(([cmd]) => cmd === "agent_tool_respond")).toHaveLength(0);
-  });
-
-  it("stops listening when it unmounts", async () => {
-    const { unmount } = renderHook(() => useAgentTools());
-    await waitFor(() => expect(listeners.has("agent-tool-call")).toBe(true));
-    unmount();
-    await waitFor(() => expect(listeners.has("agent-tool-call")).toBe(false));
-    expect(listeners.has("agent-tool-call-ended")).toBe(false);
   });
 });
 

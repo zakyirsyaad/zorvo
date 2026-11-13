@@ -6,14 +6,17 @@ import {
   delegateBlockedReason,
   delegateSessionName,
   delegationMentionOf,
+  followUpSummary,
   isOpenLink,
   mentionBlockedReason,
   openDelegateOf,
+  openDelegatesOf,
   reportMessage,
   reportedFiles,
   sendBlockedReason,
   sourceOf,
   startSummary,
+  taskRoute,
 } from "../lib/delegation";
 import type { ChatMessage, DelegationLink, Session } from "../types";
 
@@ -65,22 +68,91 @@ describe("isOpenLink", () => {
   });
 });
 
-describe("openDelegateOf", () => {
-  it("finds the open delegate and ignores ended and archived ones", () => {
-    const open = delegate();
+describe("openDelegatesOf", () => {
+  it("lists every open delegate of a source, oldest first, without archived or ended ones", () => {
+    const codex = delegate({ id: "s-codex", createdAt: 20 });
+    const claude = delegate({ id: "s-claude", profileId: "claude-acp", createdAt: 10 });
     const ended = delegate({ id: "s-ended", createdAt: 30, delegatedFrom: link({ endedAt: 9 }) });
     const archived = delegate({ id: "s-archived", createdAt: 40, archivedAt: 20 });
     const otherSource = delegate({ id: "s-other", createdAt: 50, delegatedFrom: link({ sessionId: "s-z" }) });
 
-    expect(openDelegateOf("s-a", [ended, open, archived, otherSource])).toBe(open);
-    expect(openDelegateOf("s-a", [])).toBeUndefined();
+    expect(openDelegatesOf("s-a", [ended, codex, archived, otherSource, claude])).toEqual([claude, codex]);
+    expect(openDelegatesOf("s-a", [])).toEqual([]);
+  });
+});
+
+describe("openDelegateOf", () => {
+  it("finds the delegate of one agent and not another agent's", () => {
+    const codex = delegate({ id: "s-codex" });
+    const claude = delegate({ id: "s-claude", profileId: "claude-acp" });
+
+    expect(openDelegateOf("s-a", "codex-acp", [codex, claude])).toBe(codex);
+    expect(openDelegateOf("s-a", "claude-acp", [codex, claude])).toBe(claude);
+    expect(openDelegateOf("s-a", "qwen-code", [codex, claude])).toBeUndefined();
   });
 
-  it("returns the newest open delegate when a hand-edited file has several", () => {
+  it("ignores ended and archived ones, and returns the newest when a hand-edited file has two", () => {
+    const ended = delegate({ id: "s-ended", createdAt: 30, delegatedFrom: link({ endedAt: 9 }) });
+    const archived = delegate({ id: "s-archived", createdAt: 40, archivedAt: 20 });
     const older = delegate({ id: "s-older", createdAt: 10 });
     const newer = delegate({ id: "s-newer", createdAt: 20 });
 
-    expect(openDelegateOf("s-a", [older, newer])).toBe(newer);
+    expect(openDelegateOf("s-a", "codex-acp", [ended, archived])).toBeUndefined();
+    expect(openDelegateOf("s-a", "codex-acp", [older, newer, ended])).toBe(newer);
+  });
+});
+
+describe("taskRoute", () => {
+  const source = session({ id: "s-a" });
+  const codex = delegate();
+  const base = {
+    source,
+    agentId: "codex-acp",
+    sessions: [source, codex],
+    isBusy: () => false,
+    isWaiting: () => false,
+    hasMessages: true,
+    isSourceBusyAllowed: false,
+    agentNameOf,
+  };
+
+  it("starts when the agent has no open delegate, even if another agent has one", () => {
+    expect(taskRoute({ ...base, agentId: "claude-acp" })).toEqual({ kind: "start" });
+    expect(taskRoute({ ...base, sessions: [source] })).toEqual({ kind: "start" });
+  });
+
+  it("is a follow-up for an idle open delegate of that agent", () => {
+    expect(taskRoute(base)).toEqual({ kind: "follow-up", delegate: codex });
+  });
+
+  it("is blocked while that delegate works or waits for an answer", () => {
+    const reason = "Codex is still working on the previous task.";
+    expect(taskRoute({ ...base, isBusy: (id) => id === "s-b" })).toEqual({ kind: "blocked", reason });
+    expect(taskRoute({ ...base, isWaiting: (id) => id === "s-b" })).toEqual({ kind: "blocked", reason });
+  });
+
+  it("is blocked for a busy source unless the caller is its own agent", () => {
+    const busySource = (id: string) => id === "s-a";
+    expect(taskRoute({ ...base, isBusy: busySource })).toEqual({
+      kind: "blocked",
+      reason: "Wait for Claude Code to finish.",
+    });
+    expect(taskRoute({ ...base, isBusy: busySource, isSourceBusyAllowed: true })).toEqual({
+      kind: "follow-up",
+      delegate: codex,
+    });
+  });
+
+  it("is blocked for a delegated session, open or ended", () => {
+    const reason = "A delegated session can't delegate.";
+    const open = session({ id: "s-d", delegatedFrom: link({ sessionId: "s-z" }) });
+    const ended = session({ id: "s-d", delegatedFrom: link({ sessionId: "s-z", endedAt: 9 }) });
+    expect(taskRoute({ ...base, source: open, sessions: [open] })).toEqual({ kind: "blocked", reason });
+    expect(taskRoute({ ...base, source: ended, sessions: [ended] })).toEqual({ kind: "blocked", reason });
+  });
+
+  it("is blocked without words for a source with no messages", () => {
+    expect(taskRoute({ ...base, hasMessages: false })).toEqual({ kind: "blocked", reason: "" });
   });
 });
 
@@ -98,41 +170,29 @@ describe("sourceOf", () => {
 describe("delegateBlockedReason", () => {
   const source = session({ id: "s-a" });
   const open = delegate();
-  const base = { source, sessions: [source, open], hasMessages: true, agentNameOf };
+  const base = { source, sessions: [source, open], hasMessages: true, isWaiting: () => false, agentNameOf };
 
-  it("returns each reason in order", () => {
+  it("judges the source alone when no agent is named", () => {
     expect(delegateBlockedReason({ ...base, isBusy: () => true })).toBe("Wait for Claude Code to finish.");
-    expect(delegateBlockedReason({ ...base, isBusy: () => false })).toBe(
-      "Codex already has a task from this session.",
-    );
+    // Another agent may still get a task: one open delegate no longer closes the source.
+    expect(delegateBlockedReason({ ...base, isBusy: () => false })).toBeNull();
 
     const delegatedSource = session({ id: "s-d", delegatedFrom: link({ sessionId: "s-z" }) });
     expect(
-      delegateBlockedReason({
-        ...base,
-        source: delegatedSource,
-        sessions: [delegatedSource],
-        isBusy: () => false,
-      }),
+      delegateBlockedReason({ ...base, source: delegatedSource, sessions: [delegatedSource], isBusy: () => false }),
     ).toBe("A delegated session can't delegate.");
 
-    const empty = delegateBlockedReason({
-      ...base,
-      source: session({ id: "s-e" }),
-      sessions: [],
-      isBusy: () => false,
-      hasMessages: false,
-    });
-    expect(empty).not.toBeNull();
-    expect(empty).toBe("");
+    expect(
+      delegateBlockedReason({ ...base, source: session({ id: "s-e" }), sessions: [], isBusy: () => false, hasMessages: false }),
+    ).toBe("");
   });
 
-  it("returns null when the source may delegate", () => {
-    const fresh = session({ id: "s-f" });
-
-    expect(
-      delegateBlockedReason({ ...base, source: fresh, sessions: [fresh], isBusy: () => false }),
-    ).toBeNull();
+  it("judges the named agent's delegate too", () => {
+    expect(delegateBlockedReason({ ...base, agentId: "codex-acp", isBusy: () => false })).toBeNull();
+    expect(delegateBlockedReason({ ...base, agentId: "codex-acp", isBusy: (id) => id === "s-b" })).toBe(
+      "Codex is still working on the previous task.",
+    );
+    expect(delegateBlockedReason({ ...base, agentId: "claude-acp", isBusy: (id) => id === "s-b" })).toBeNull();
   });
 });
 
@@ -140,23 +200,15 @@ describe("sendBlockedReason", () => {
   const source = session({ id: "s-a" });
   const open = delegate();
 
-  it("blocks A while B is busy and B while A is busy", () => {
+  it("lets the user send in a source while its delegate works", () => {
     expect(
-      sendBlockedReason({
-        sessionId: "s-a",
-        sessions: [source, open],
-        isBusy: (id) => id === "s-b",
-        agentNameOf,
-      }),
-    ).toBe("Codex is working on the task you delegated.");
+      sendBlockedReason({ sessionId: "s-a", sessions: [source, open], isBusy: (id) => id === "s-b", agentNameOf }),
+    ).toBeNull();
+  });
 
+  it("still blocks the delegate while its source works on its report", () => {
     expect(
-      sendBlockedReason({
-        sessionId: "s-b",
-        sessions: [source, open],
-        isBusy: (id) => id === "s-a",
-        agentNameOf,
-      }),
+      sendBlockedReason({ sessionId: "s-b", sessions: [source, open], isBusy: (id) => id === "s-a", agentNameOf }),
     ).toBe("Claude Code is working on Codex's report.");
   });
 
@@ -170,44 +222,15 @@ describe("sendBlockedReason", () => {
         isWorkingOnReport: () => false,
       }),
     ).toBe("Wait for Claude Code to finish.");
-    expect(
-      sendBlockedReason({
-        sessionId: "s-b",
-        sessions: [source, open],
-        isBusy: (id) => id === "s-a",
-        agentNameOf,
-        isWorkingOnReport: (sourceId, delegateId) => sourceId === "s-a" && delegateId === "s-b",
-      }),
-    ).toBe("Claude Code is working on Codex's report.");
   });
 
-  it("blocks nothing when neither side is busy", () => {
-    expect(
-      sendBlockedReason({ sessionId: "s-a", sessions: [source, open], isBusy: () => false, agentNameOf }),
-    ).toBeNull();
+  it("blocks nothing when neither side is busy, or after End delegation", () => {
     expect(
       sendBlockedReason({ sessionId: "s-b", sessions: [source, open], isBusy: () => false, agentNameOf }),
     ).toBeNull();
-  });
-
-  it("blocks nothing after End delegation", () => {
     const ended = delegate({ delegatedFrom: link({ endedAt: 9 }) });
-
     expect(
-      sendBlockedReason({
-        sessionId: "s-a",
-        sessions: [source, ended],
-        isBusy: (id) => id === "s-b",
-        agentNameOf,
-      }),
-    ).toBeNull();
-    expect(
-      sendBlockedReason({
-        sessionId: "s-b",
-        sessions: [source, ended],
-        isBusy: (id) => id === "s-a",
-        agentNameOf,
-      }),
+      sendBlockedReason({ sessionId: "s-b", sessions: [source, ended], isBusy: (id) => id === "s-a", agentNameOf }),
     ).toBeNull();
   });
 });
@@ -399,6 +422,12 @@ describe("startSummary", () => {
 
   it("says when nothing is known", () => {
     expect(startSummary({ agentName: "Codex" })).toBe("Codex starts on its defaults.");
+  });
+});
+
+describe("followUpSummary", () => {
+  it("says the task goes to the session that agent already has", () => {
+    expect(followUpSummary("Codex")).toBe("Goes to the Codex session this session already delegated to.");
   });
 });
 

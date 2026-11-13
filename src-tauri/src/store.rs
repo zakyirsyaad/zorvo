@@ -70,7 +70,7 @@ impl Default for PersistedState {
 }
 
 /// User preferences restored across launches.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     /// The agent profile the UI preselects, or `None` to let the user choose.
@@ -90,10 +90,27 @@ pub struct Settings {
     /// Agent ids that were seen signed in, so Settings and the sidebar can say
     /// "Ready" without asking the agent again. Opaque to the backend.
     pub signed_in_agents: Vec<String>,
-    /// Whether a session is told about Zorvo's own tools (the MCP server). Off
-    /// unless the state says `true`; a value of any other type reads as off.
-    #[serde(deserialize_with = "lenient_bool")]
+    /// Whether a session is told about Zorvo's own tools (the MCP server, or
+    /// the command path). On unless the state says `false`: a state written
+    /// before the setting existed, or a value of another type, reads as on.
+    #[serde(deserialize_with = "lenient_on")]
     pub agent_tools: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            default_agent_id: None,
+            onboarding_completed: false,
+            appearance: String::new(),
+            enabled_agents: None,
+            removed_agents: Vec::new(),
+            agent_versions: BTreeMap::new(),
+            notified_updates: BTreeMap::new(),
+            signed_in_agents: Vec::new(),
+            agent_tools: true,
+        }
+    }
 }
 
 /// The registry agents in use until the user changes the list; matches
@@ -323,6 +340,12 @@ fn lenient_bool<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::E
     Ok(serde_json::Value::deserialize(deserializer)?
         .as_bool()
         .unwrap_or(false))
+}
+
+/// False only for a JSON `false`: a setting that is on by default stays on for
+/// any other value.
+fn lenient_on<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+    Ok(serde_json::Value::deserialize(deserializer)?.as_bool() != Some(false))
 }
 
 /// A string, or none when it is not one.

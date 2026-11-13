@@ -70,4 +70,17 @@ describe("a delegation report in the chat", () => {
     const row = renderRow({ ...report, id: "u-2", delegationReport: undefined });
     expect(within(row).queryByText(/^From /)).toBeNull();
   });
+
+  it("a task another session's agent gave reads Task from Claude Code", () => {
+    const row = renderRow({
+      id: "u-2",
+      role: "user",
+      content: "Review the parser change.",
+      timestamp: 2,
+      delegationTask: { agentName: "Claude Code", agentId: "claude-acp" },
+    });
+    const label = within(row).getByText("Task from Claude Code");
+    expect(label).toHaveClass("text-ui-sm", "font-medium", "text-fg");
+    expect(within(row).queryByText(/^From /)).toBeNull();
+  });
 });

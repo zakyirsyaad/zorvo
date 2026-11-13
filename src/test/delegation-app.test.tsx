@@ -471,7 +471,7 @@ describe("delegating from the app", () => {
     expect(delegationRegion()).not.toHaveClass("sr-only");
   });
 
-  it("a failed turn in A is not retried while the delegated task runs", async () => {
+  it("a failed turn in A can be retried while the delegated task runs", async () => {
     seedSourceSession();
     const spy = await renderApp();
     await screen.findByText("Refactor the parser");
@@ -484,7 +484,7 @@ describe("delegating from the app", () => {
     await acpEvent({ sessionId: "s-a", kind: "turn-end", error: "network is down" });
     expect(await screen.findByRole("button", { name: "Try again" })).toBeDefined();
 
-    // A is between turns, so the delegation starts; B's first turn then holds the pair.
+    // A is between turns, so the delegation starts. B's turn no longer holds A: the user steers it.
     await delegateToCodex(spy);
 
     const sidebar = within(screen.getByRole("complementary"));
@@ -496,9 +496,129 @@ describe("delegating from the app", () => {
       fireEvent.click(tryAgain);
     });
 
-    // Nothing was prompted to A: its message is still in the chat, and the banner can stay.
-    expect(callsTo(spy, "acp_prompt").filter(([, args]) => args?.sessionId === "s-a")).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
+    // The same prompt went to A again.
+    await waitFor(() =>
+      expect(callsTo(spy, "acp_prompt").filter(([, args]) => args?.sessionId === "s-a")).toHaveLength(2),
+    );
+  });
+
+  it("an agent's delegate call shows a card, and Allow starts the delegate without leaving the session", async () => {
+    seedSourceSession();
+    const spy = await renderApp();
+    await screen.findByText("Refactor the parser");
+    // The agent is in the middle of a turn when it calls the tool.
+    await type("then have Codex review it");
+    await act(async () => {
+      fireEvent.keyDown(prompt(), { key: "Enter" });
+    });
+    await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
+
+    await act(async () => {
+      listeners.get("agent-tool-call")?.({
+        payload: { callId: "c-1", sessionId: "s-a", tool: "delegate", args: { agent: "Codex", task: "Review the parser split." } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const heading = await screen.findByRole("heading", { name: "Qwen Code wants to give Codex a task" });
+    expect(heading).toBeDefined();
+    expect(screen.getByTestId("zorvo-tool-task").textContent).toBe("Review the parser split.");
+    expect(callsTo(spy, "agent_tool_respond")).toHaveLength(0);
+    expect(callsTo(spy, "acp_start_session")).toHaveLength(0);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Allow for this session" }));
+    });
+
+    await waitFor(() => expect(callsTo(spy, "acp_start_session")).toHaveLength(1));
+    expect(callsTo(spy, "acp_start_session")[0][1]).toMatchObject({ profileId: "codex-acp", agentTools: false });
+    await waitFor(() => expect(callsTo(spy, "agent_tool_respond")).toHaveLength(1));
+    const [, answer] = callsTo(spy, "agent_tool_respond")[0];
+    expect(answer).toMatchObject({ callId: "c-1", ok: true });
+    expect(JSON.parse(String(answer?.text))).toMatchObject({ started: true });
+    // The card was Zorvo's: the agent's own permission channel was never used.
+    expect(callsTo(spy, "acp_respond_permission")).toHaveLength(0);
+    expect(await screen.findByText("Allowed for this session")).toBeDefined();
+    // The user is still in A.
+    expect(screen.getByText("Refactor the parser")).toBeDefined();
+
+    // A second call in the same session runs with no card: the task goes to the same delegate or is refused while it works.
+    await act(async () => {
+      listeners.get("agent-tool-call")?.({
+        payload: { callId: "c-2", sessionId: "s-a", tool: "delegate", args: { agent: "codex-acp", task: "Also check the tests." } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await waitFor(() => expect(callsTo(spy, "agent_tool_respond")).toHaveLength(2));
+    expect(screen.queryByRole("button", { name: "Allow for this session" })).toBeNull();
+    expect(callsTo(spy, "acp_start_session")).toHaveLength(1);
+  });
+
+  it("list_agents and delegate reach only the agents the user has in use", async () => {
+    seedSourceSession();
+    // Codex is on this Mac, but the user took it out of use.
+    Object.assign(fakeStore().state.settings, { enabledAgents: ["qwen-code"], removedAgents: ["codex-acp"] });
+    const spy = await renderApp();
+    await screen.findByText("Refactor the parser");
+
+    await act(async () => {
+      listeners.get("agent-tool-call")?.({ payload: { callId: "c-1", sessionId: "s-a", tool: "list_agents", args: {} } });
+      listeners.get("agent-tool-call")?.({
+        payload: { callId: "c-2", sessionId: "s-a", tool: "delegate", args: { agent: "codex-acp", task: "Review it." } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await waitFor(() => expect(callsTo(spy, "agent_tool_respond")).toHaveLength(2));
+    const answers = callsTo(spy, "agent_tool_respond").map(([, args]) => args as { callId: string; ok: boolean; text: string });
+    const listed = JSON.parse(answers.find((answer) => answer.callId === "c-1")?.text ?? "{}") as { agents: { id: string }[] };
+    expect(listed.agents.map((agent) => agent.id)).toEqual(["qwen-code"]);
+    const refused = answers.find((answer) => answer.callId === "c-2");
+    expect(refused?.ok).toBe(false);
+    expect(refused?.text).toContain('No agent called "codex-acp"');
+    expect(screen.queryByRole("button", { name: "Allow for this session" })).toBeNull();
+    expect(callsTo(spy, "acp_start_session")).toHaveLength(0);
+  });
+
+  it("an @mention of an agent that already has an idle delegate sends the task there", async () => {
+    seedSourceSession();
+    fakeStore().state.sessions = [
+      ...fakeStore().state.sessions,
+      {
+        id: "s-b",
+        name: "Codex: Implement step 2",
+        profileId: "codex-acp",
+        cwd: "/Users/test/developer/ai-perpetual-trading",
+        status: "running",
+        createdAt: 3,
+        transport: "acp",
+        delegatedFrom: { sessionId: "s-a", task: "Implement step 2", startedAt: 3 },
+      },
+    ];
+    fakeStore().transcripts["s-b"] = [
+      { id: "m-b1", role: "user", content: "Implement step 2", timestamp: 3 },
+      { id: "m-b2", role: "agent", content: "Done.", timestamp: 4, isComplete: true },
+    ];
+    const spy = await renderApp();
+    // The delegate is the newest session, so the source is opened from the sidebar.
+    const sidebar = within(await screen.findByRole("complementary"));
+    await act(async () => {
+      fireEvent.click(await sidebar.findByText("Fix login bug"));
+    });
+    await screen.findByText("Refactor the parser");
+
+    await type("@Codex now add tests for it");
+    expect(
+      await screen.findByText("Goes to the Codex session this session already delegated to."),
+    ).toBeDefined();
+    await act(async () => {
+      fireEvent.keyDown(prompt(), { key: "Enter" });
+    });
+
+    await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
+    expect(callsTo(spy, "acp_prompt")[0][1]).toMatchObject({ sessionId: "s-b", text: "now add tests for it" });
+    // No second delegate was started.
+    expect(callsTo(spy, "acp_start_session")).toHaveLength(0);
   });
 
   it("Change carries the composer's attachments to the delegated task", async () => {

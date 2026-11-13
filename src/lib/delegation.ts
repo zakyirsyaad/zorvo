@@ -25,20 +25,32 @@ export function isOpenLink(link: DelegationLink | null | undefined): boolean {
   );
 }
 
+function isOpenDelegateOf(session: Session, sourceId: string): boolean {
+  return (
+    session.delegatedFrom?.sessionId === sourceId &&
+    isOpenLink(session.delegatedFrom) &&
+    !isArchived(session)
+  );
+}
+
+/** Every listed session that holds an open link to `sourceId`, oldest first. */
+export function openDelegatesOf(sourceId: string, sessions: readonly Session[]): Session[] {
+  return sessions
+    .filter((session) => isOpenDelegateOf(session, sourceId))
+    .sort((a, b) => a.createdAt - b.createdAt);
+}
+
 /**
- * B: the listed session that holds an open link to `sourceId`. A hand-edited
- * file could hold several; the newest wins, as in the session list.
+ * The open delegate of `sourceId` that runs agent `agentId`: a source holds at
+ * most one per agent. A hand-edited file could hold several; the newest wins.
  */
 export function openDelegateOf(
   sourceId: string,
+  agentId: string,
   sessions: readonly Session[],
 ): Session | undefined {
-  return sessions.reduce<Session | undefined>((newest, session) => {
-    const isCandidate =
-      session.delegatedFrom?.sessionId === sourceId && isOpenLink(session.delegatedFrom);
-    if (!isCandidate || isArchived(session)) return newest;
-    return newest === undefined || session.createdAt > newest.createdAt ? session : newest;
-  }, undefined);
+  const ofAgent = openDelegatesOf(sourceId, sessions).filter((session) => session.profileId === agentId);
+  return ofAgent[ofAgent.length - 1];
 }
 
 /** A: the session B was delegated from. An archived source still exists. */
@@ -52,38 +64,88 @@ export function sourceOf(
     : sessions.find((session) => session.id === sourceId);
 }
 
-export interface DelegateBlockedInput {
+/** Where a task for an agent goes: a new delegate, the one that agent already has, or nowhere. */
+export type TaskRoute =
+  | { kind: 'start' }
+  | { kind: 'follow-up'; delegate: Session }
+  | { kind: 'blocked'; reason: string };
+
+export interface TaskRouteInput {
   source: Session;
+  /** The agent the task is for. */
+  agentId: string;
   sessions: readonly Session[];
   isBusy: (id: string) => boolean;
+  /** Waiting on the user: a permission, a question or an elicitation. */
+  isWaiting: (id: string) => boolean;
+  hasMessages: boolean;
+  /** True when the source's own agent asks, from inside its turn. */
+  isSourceBusyAllowed: boolean;
+  agentNameOf: (profileId: string) => string;
+}
+
+/** Why the source itself cannot give anyone a task, or null. The empty string says nothing: there is no item to show. */
+function sourceBlockedReason(input: {
+  source: Session;
+  isBusy: (id: string) => boolean;
+  hasMessages: boolean;
+  isSourceBusyAllowed: boolean;
+  agentNameOf: (profileId: string) => string;
+}): string | null {
+  const { source } = input;
+  // One level only: B stays a delegated session after End delegation.
+  if (source.delegatedFrom !== null && source.delegatedFrom !== undefined) {
+    return "A delegated session can't delegate.";
+  }
+  if (!input.hasMessages) return '';
+  if (!input.isSourceBusyAllowed && input.isBusy(source.id)) {
+    return `Wait for ${input.agentNameOf(source.profileId)} to finish.`;
+  }
+  return null;
+}
+
+/**
+ * Routes a task from `source` to agent `agentId`: a source holds one open
+ * delegate per agent, so a second task for the same agent goes to that
+ * delegate once it is idle.
+ */
+export function taskRoute(input: TaskRouteInput): TaskRoute {
+  const blocked = sourceBlockedReason(input);
+  if (blocked !== null) return { kind: 'blocked', reason: blocked };
+
+  const delegate = openDelegateOf(input.source.id, input.agentId, input.sessions);
+  if (delegate === undefined) return { kind: 'start' };
+  if (input.isBusy(delegate.id) || input.isWaiting(delegate.id)) {
+    return {
+      kind: 'blocked',
+      reason: `${input.agentNameOf(delegate.profileId)} is still working on the previous task.`,
+    };
+  }
+  return { kind: 'follow-up', delegate };
+}
+
+export interface DelegateBlockedInput {
+  source: Session;
+  /** The agent the task would go to; without one only the source is judged. */
+  agentId?: string;
+  sessions: readonly Session[];
+  isBusy: (id: string) => boolean;
+  isWaiting?: (id: string) => boolean;
   hasMessages: boolean;
   agentNameOf: (profileId: string) => string;
 }
 
 /**
- * Why A cannot start a delegation, or null when it can. The empty string
- * means blocked with nothing to say: a draft has no Delegation item to show.
+ * Why A cannot give a task (to `agentId`, when named), or null when it can. The
+ * empty string means blocked with nothing to say: a draft has no Delegation item to show.
  */
-export function delegateBlockedReason({
-  source,
-  sessions,
-  isBusy,
-  hasMessages,
-  agentNameOf,
-}: DelegateBlockedInput): string | null {
-  if (isBusy(source.id)) return `Wait for ${agentNameOf(source.profileId)} to finish.`;
-
-  const delegate = openDelegateOf(source.id, sessions);
-  if (delegate !== undefined) {
-    return `${agentNameOf(delegate.profileId)} already has a task from this session.`;
+export function delegateBlockedReason(input: DelegateBlockedInput): string | null {
+  const isWaiting = input.isWaiting ?? (() => false);
+  if (input.agentId === undefined) {
+    return sourceBlockedReason({ ...input, isSourceBusyAllowed: false });
   }
-
-  // One level only: B stays a delegated session after End delegation.
-  if (source.delegatedFrom !== null && source.delegatedFrom !== undefined) {
-    return "A delegated session can't delegate.";
-  }
-
-  return hasMessages ? null : '';
+  const route = taskRoute({ ...input, agentId: input.agentId, isWaiting, isSourceBusyAllowed: false });
+  return route.kind === 'blocked' ? route.reason : null;
 }
 
 export interface SendBlockedInput {
@@ -99,8 +161,8 @@ export interface SendBlockedInput {
 }
 
 /**
- * Why Send is blocked for a session in a delegation pair: A waits for B's
- * turn, B waits for A's turn. An ended link blocks neither side.
+ * Why Send is blocked for a delegate: it waits while its source is in a turn.
+ * The source is never blocked by a delegate, and an ended link blocks nothing.
  */
 export function sendBlockedReason({
   sessionId,
@@ -122,10 +184,7 @@ export function sendBlockedReason({
     }
   }
 
-  const delegate = openDelegateOf(session.id, sessions);
-  if (delegate !== undefined && isBusy(delegate.id)) {
-    return `${agentNameOf(delegate.profileId)} is working on the task you delegated.`;
-  }
+  // A source is never blocked by its delegates: it may hold several, and the user steers it.
   return null;
 }
 
@@ -277,6 +336,11 @@ export function startSummary({
   return parts.length > 0
     ? `${agentName} starts on ${parts.join(' · ')}`
     : `${agentName} starts on its defaults.`;
+}
+
+/** What the composer says when a mention's task goes to a delegate that agent already has. */
+export function followUpSummary(agentName: string): string {
+  return `Goes to the ${agentName} session this session already delegated to.`;
 }
 
 export interface MentionBlockedInput {

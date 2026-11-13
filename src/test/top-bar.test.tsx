@@ -258,6 +258,40 @@ describe("TopBar", () => {
       expect(onEndDelegation).toHaveBeenCalledTimes(1);
       expect(screen.queryByRole("menu", { name: "More options" })).toBeNull();
     });
+
+    it("offers End delegation per delegate when there are several", () => {
+      const endCodex = vi.fn();
+      const endQwen = vi.fn();
+      renderTopBar({
+        sessionName: "Alpha",
+        delegationEnds: [
+          { label: "End delegation to Codex", run: endCodex },
+          { label: "End delegation to Qwen Code", run: endQwen },
+        ],
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+        "End delegation to Codex",
+        "End delegation to Qwen Code",
+      ]);
+      fireEvent.click(screen.getByRole("menuitem", { name: "End delegation to Qwen Code" }));
+      expect(endQwen).toHaveBeenCalledTimes(1);
+      expect(endCodex).not.toHaveBeenCalled();
+    });
+
+    it("offers Stop allowing delegation only while the session is allowed", () => {
+      const onStopAllowingDelegation = vi.fn();
+      renderTopBar({ sessionName: "Alpha", onArchive: vi.fn(), onStopAllowingDelegation });
+
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+        "Stop allowing delegation",
+        "Archive",
+      ]);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Stop allowing delegation" }));
+      expect(onStopAllowingDelegation).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("inspector toggle", () => {

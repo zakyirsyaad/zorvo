@@ -6,6 +6,7 @@ import { Button, type ButtonVariant } from "./ui/Button";
 import { UserQuestionFields } from "./UserQuestionFields";
 import { orderedChoices, permissionTitle, questionsTitle, titleHoldsPrompt } from "../lib/permission-copy";
 import { EMPTY_DRAFT, answersOf, usableQuestions, type QuestionDraft } from "../lib/user-questions";
+import { settledWords, usableZorvoTool } from "../lib/agent-tool-card";
 import type { ActionCard as ActionCardType, PermissionChoice } from "../types";
 
 /** The typed answers of Qwen Code's `ask_user_question`: question number to text. */
@@ -78,6 +79,9 @@ function PermissionChoices({
   const hintId = useId();
   const options: PermissionChoice[] = orderedChoices(card.options ?? []);
   const needsAnswers = asksQuestions && answers === undefined;
+  if (card.status !== "pending" && usableZorvoTool(card.zorvoTool)) {
+    return <p className="text-ui-sm text-fg-muted">{settledWords(card)}</p>;
+  }
   if (card.status !== "pending") {
     const chosen = options.find((o) => o.optionId === card.chosenOptionId);
     return (
@@ -123,8 +127,14 @@ export function ActionCard({ card, onChoose, disabled = false, agentName = "The 
   // A form needs a way to send it: a card with questions but no allowing option stays a plain card.
   // The questions come back from the saved transcript, so their shape is checked again.
   const questions = card.options?.some((o) => o.kind.startsWith("allow")) ? usableQuestions(card.questions) : undefined;
-  const title = questions ? questionsTitle(agentName, questions.length) : permissionTitle(agentName, card.prompt);
-  const showsPrompt = questions !== undefined || !titleHoldsPrompt(card.prompt);
+  // A card Zorvo made for an agent's tool call carries its own title, and its prompt is the task.
+  const zorvoTool = usableZorvoTool(card.zorvoTool);
+  const title = zorvoTool
+    ? card.title
+    : questions
+      ? questionsTitle(agentName, questions.length)
+      : permissionTitle(agentName, card.prompt);
+  const showsPrompt = !zorvoTool && (questions !== undefined || !titleHoldsPrompt(card.prompt));
   // What is picked or typed lives here, in memory, so an answer that did not go through keeps it. It is never stored.
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
   const answers = questions ? answersOf(questions, drafts) : undefined;
@@ -145,6 +155,24 @@ export function ActionCard({ card, onChoose, disabled = false, agentName = "The 
 
       {showsPrompt && card.prompt.trim() && (
         <p className="text-ui-sm leading-relaxed text-fg-secondary">{card.prompt}</p>
+      )}
+
+      {zorvoTool && (
+        <>
+          <p className="text-ui-sm text-fg-muted">{`In ${zorvoTool.folder}`}</p>
+          {/* The task as text, never markdown: what is shown is what the other agent reads. */}
+          <pre
+            data-testid="zorvo-tool-task"
+            className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-ground px-2.5 py-2 font-sans text-ui-sm leading-relaxed text-fg-secondary"
+          >
+            {card.prompt}
+          </pre>
+          {card.status === "pending" && (
+            <p className="text-caption text-fg-subtle">
+              {`After you allow it, ${zorvoTool.callerName} can give tasks to other agents in this session without asking again.`}
+            </p>
+          )}
+        </>
       )}
 
       {card.edits && card.edits.length > 0 && <EditedFiles edits={card.edits} />}

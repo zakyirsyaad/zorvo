@@ -246,6 +246,23 @@ export interface ActionCard {
    * Only the agent's own text; what the user types is never kept on the card.
    */
   questions?: UserQuestion[];
+  /**
+   * A card Zorvo made, not the agent: the agent called one of Zorvo's tools and the user
+   * decides. It has no `requestId`; its answer goes to Zorvo's tool server.
+   */
+  zorvoTool?: ZorvoToolRequest;
+}
+
+/** What an agent asked Zorvo's tools for, as the approval card shows it. */
+export interface ZorvoToolRequest {
+  tool: 'delegate';
+  /** The agent that asked. */
+  callerName: string;
+  /** The agent the task is for. */
+  targetName: string;
+  targetId: string;
+  /** Where the delegate would work: the caller's folder. */
+  folder: string;
 }
 
 /** One question of Qwen Code's `ask_user_question`. */
@@ -350,6 +367,8 @@ export interface ChatMessage {
   replayId?: string;
   /** A report from a delegated session in A's transcript; the chat labels it From <agent>. */
   delegationReport?: { agentName: string; agentId?: string };
+  /** On the user message that carries a task into a delegate: the agent of the session that gave it. */
+  delegationTask?: { agentName: string; agentId?: string };
   /** A question the agent asked the user (ACP elicitation); never holds the answer. */
   elicitation?: ElicitationCard;
 }

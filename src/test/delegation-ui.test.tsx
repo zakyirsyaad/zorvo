@@ -8,6 +8,7 @@ import { DelegatedFromLine } from "../components/delegation/DelegatedFromLine";
 import type { DelegationView } from "../hooks/useDelegation";
 import type { ComposerControl, ComposerControls } from "../lib/composer-controls";
 import { makeProfile } from "./fixtures/agents";
+import { NO_CHOICES } from "../lib/acp-draft";
 
 const claude = makeProfile({ id: "claude-acp", name: "Claude Code" });
 const qwen = makeProfile({ id: "qwen-code", name: "Qwen Code" });
@@ -504,5 +505,39 @@ describe("the composer's delegation summary", () => {
 
     // The dialog carries them, so Delegate's first message keeps the attachment.
     expect(onChange).toHaveBeenCalledWith(["/tmp/spec.md"]);
+  });
+});
+
+describe("DelegateDialog for an agent that already has a delegate", () => {
+  const withDelegate: readonly DelegateAgentChoice[] = [
+    { profile: claude, status: "ready" },
+    { profile: qwen, status: "ready" },
+    { profile: codex, status: "ready", hasDelegate: true },
+  ];
+
+  it("says where the task goes instead of offering what a new session starts on", () => {
+    const { onDelegate } = renderDialog({
+      agents: withDelegate,
+      controlsFor: () => ({ agentName: "Codex", controls: CHIP_CONTROLS }),
+    });
+    fireEvent.click(screen.getByRole("radio", { name: /Codex/ }));
+
+    expect(screen.getByText("Goes to the Codex session this session already delegated to.")).toBeDefined();
+    expect(screen.queryByText("Codex starts on")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Model/ })).toBeNull();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Task" }), { target: { value: "Now add tests" } });
+    fireEvent.click(screen.getByRole("button", { name: "Delegate" }));
+    // The existing session keeps its own model and mode: no pick goes with the task.
+    expect(onDelegate).toHaveBeenCalledWith("codex-acp", "Now add tests", NO_CHOICES);
+  });
+
+  it("still offers the chips for an agent without one", () => {
+    renderDialog({
+      agents: withDelegate,
+      controlsFor: () => ({ agentName: "Qwen Code", controls: CHIP_CONTROLS }),
+    });
+    fireEvent.click(screen.getByRole("radio", { name: /Qwen Code/ }));
+    expect(screen.getByText("Qwen Code starts on")).toBeDefined();
   });
 });

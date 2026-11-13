@@ -42,7 +42,7 @@ function EditedFiles({ edits }: { edits: NonNullable<ActionCardType["edits"]> })
         <li
           // A request can carry two diffs for one file, so the path alone is not a key.
           key={`${index}-${edit.path}`}
-          className="flex items-center gap-2 border-b border-border px-2.5 py-1.5 last:border-b-0"
+          className="flex items-center gap-2 border-b border-border px-2.5 py-[7px] last:border-b-0"
         >
           <PathText path={edit.path} className="flex-1 text-ui-sm text-fg-secondary" />
           {edit.added !== undefined && edit.added > 0 && (
@@ -104,6 +104,7 @@ function PermissionChoices({
           <Button
             key={option.optionId}
             variant={choiceVariant(option.kind)}
+            tone="secondary"
             disabled={disabled || waitsForAnswers}
             aria-describedby={waitsForAnswers ? hintId : undefined}
             onClick={() =>
@@ -132,12 +133,14 @@ export function ActionCard({ card, onChoose, disabled = false, agentName = "The 
   return (
     <div
       data-testid={`action-card-${card.id}`}
-      className="my-3 flex flex-col gap-3 rounded-xl border border-attention-border bg-attention-surface p-4 text-left transition-all"
+      className="my-3 flex flex-col gap-3 rounded-xl border border-attention-border bg-attention-surface px-4 py-3.5 text-left transition-all"
     >
       {/* One sentence says what the agent wants; the agent's own title follows only when the sentence cannot hold it. */}
-      <div className="flex items-start gap-2">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-status-attention" aria-hidden="true" />
-        <h2 className="text-ui font-semibold text-fg">{title}</h2>
+      <div className="flex items-center gap-2">
+        <AlertTriangle className="size-3.5 shrink-0 text-status-attention" aria-hidden="true" />
+        <h2 className="min-w-0 flex-1 text-ui font-semibold text-fg">{title}</h2>
+        {/* Only while the request is open: an answered card says what was chosen instead. */}
+        {card.status === "pending" && <span className="shrink-0 text-caption text-fg-muted">Waiting for you</span>}
       </div>
 
       {showsPrompt && card.prompt.trim() && (

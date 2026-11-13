@@ -62,7 +62,7 @@ describe("the permission card, as drawn", () => {
   it("is an attention card with a 600 title, the files it edits, and right-aligned plain buttons", () => {
     render(<ActionCard card={editCard} agentName="Claude Code" onChoose={vi.fn()} />);
     const card = screen.getByTestId("action-card-c-1");
-    expect(card).toHaveClass("flex", "flex-col", "gap-3", "p-4", "rounded-xl", "border-attention-border", "bg-attention-surface");
+    expect(card).toHaveClass("flex", "flex-col", "gap-3", "px-4", "py-3.5", "rounded-xl", "border-attention-border", "bg-attention-surface");
     expect(screen.getByRole("heading")).toHaveClass("text-ui", "font-semibold", "text-fg");
 
     const files = within(card).getByRole("list", { name: "Files to edit" });
@@ -91,6 +91,18 @@ describe("the permission card, as drawn", () => {
     expect(row.className).not.toContain("border-t");
   });
 
+  it("says Waiting for you beside the title only while the request is open, and Deny reads in fg-secondary", () => {
+    const { rerender } = render(<ActionCard card={editCard} agentName="Claude Code" onChoose={vi.fn()} />);
+    const waiting = screen.getByText("Waiting for you");
+    expect(waiting).toHaveClass("shrink-0", "text-caption", "text-fg-muted");
+    expect(waiting.parentElement).toBe(screen.getByRole("heading").parentElement);
+    expect(waiting.parentElement?.querySelector("svg")?.getAttribute("class")).toContain("size-3.5");
+    expect(screen.getByRole("button", { name: "Deny" })).toHaveClass("text-fg-secondary");
+
+    rerender(<ActionCard card={{ ...editCard, status: "approved" }} agentName="Claude Code" onChoose={vi.fn()} />);
+    expect(screen.queryByText("Waiting for you")).toBeNull();
+  });
+
   it("lists no files when the request has none", () => {
     render(<ActionCard card={{ ...editCard, edits: undefined, prompt: "Run ls" }} agentName="Claude Code" onChoose={vi.fn()} />);
     expect(screen.queryByRole("list", { name: "Files to edit" })).toBeNull();
@@ -115,6 +127,7 @@ describe("the question card, as drawn", () => {
     const heading = screen.getByRole("heading", { name: "Codex needs a few details" });
     expect(heading).toHaveClass("text-ui", "font-semibold", "text-fg");
     expect(heading.parentElement?.querySelector("img, svg, [aria-hidden='true']")).not.toBeNull();
+    expect(heading.previousElementSibling).toHaveClass("size-[22px]", "bg-chip");
     expect(within(card).getByText(form.message)).toHaveClass("text-ui", "text-fg-muted");
 
     expect(within(card).getByText("Target branch").closest("label")).toHaveClass("text-ui", "font-medium", "text-fg-secondary");

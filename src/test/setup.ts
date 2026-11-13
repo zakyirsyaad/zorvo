@@ -70,6 +70,8 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
     case "acp_import_session":
       // Shaped like Qwen Code's real answer; it starts in YOLO like the user's own config.
       return Promise.resolve({
+        // A test sets this to open sessions on a tools path ("mcp" or "command").
+        toolsPath: (window as unknown as { __FAKE_TOOLS_PATH__?: string }).__FAKE_TOOLS_PATH__,
         acpSessionId:
           (args as { acpSessionId?: string })?.acpSessionId ?? `acp-${(args as { sessionId?: string })?.sessionId}`,
         agentCapabilities: { sessionCapabilities: { fork: {} } },

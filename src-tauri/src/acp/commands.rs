@@ -14,8 +14,11 @@ use super::probe::{ProbedAgent, SignInProbe};
 use super::qwen_log::{self, QwenApiError};
 use super::session_list::ListedSessions;
 use super::terminal_auth::{is_sign_in_terminal_id, CANCELLED_MESSAGE};
-use crate::agent_tools::commands::{forget_if_failed, servers_for_session};
+use crate::agent_tools::commands::{
+    forget_if_failed, path_of_servers, servers_for_session, tools_for_session, with_tools_env,
+};
 use crate::agent_tools::AgentTools;
+use crate::agent_tools::ToolsPath;
 use crate::env_resolver::cached_user_env;
 use crate::files::ensure_known_workspace;
 use crate::installer::commands::versions_in_use;
@@ -229,12 +232,10 @@ pub fn acp_start_session(
     agent_tools: bool,
 ) -> Result<StartedSession, String> {
     let launch = launch_in_workspace(&store, &cwd, &profile_id)?;
-    let servers = servers_for_session(&tools, &store, &session_id, agent_tools)?;
-    forget_if_failed(
-        &tools,
-        &session_id,
-        manager.start(&session_id, &cwd, &launch, servers),
-    )
+    let session_tools = tools_for_session(&tools, &store, &session_id, &profile_id, agent_tools)?;
+    let launch = with_tools_env(launch, &session_tools.env);
+    let opened = manager.start(&session_id, &cwd, &launch, session_tools.servers);
+    with_tools_path(&tools, &session_id, session_tools.path, opened)
 }
 
 /// Learns what an agent offers (modes, models, efforts, commands) before a
@@ -300,19 +301,17 @@ pub fn acp_reopen_session(
     agent_tools: bool,
 ) -> Result<StartedSession, String> {
     let launch = launch_in_workspace(&store, &cwd, &profile_id)?;
-    let servers = servers_for_session(&tools, &store, &session_id, agent_tools)?;
-    forget_if_failed(
-        &tools,
+    let session_tools = tools_for_session(&tools, &store, &session_id, &profile_id, agent_tools)?;
+    let launch = with_tools_env(launch, &session_tools.env);
+    let opened = manager.reopen(
         &session_id,
-        manager.reopen(
-            &session_id,
-            &cwd,
-            &launch,
-            &acp_session_id,
-            ReopenPurpose::Continue,
-            servers,
-        ),
-    )
+        &cwd,
+        &launch,
+        &acp_session_id,
+        ReopenPurpose::Continue,
+        session_tools.servers,
+    );
+    with_tools_path(&tools, &session_id, session_tools.path, opened)
 }
 
 /// Imports the agent's earlier session `acp_session_id` as app session
@@ -331,19 +330,17 @@ pub fn acp_import_session(
     agent_tools: bool,
 ) -> Result<StartedSession, String> {
     let launch = launch_in_workspace(&store, &cwd, &profile_id)?;
-    let servers = servers_for_session(&tools, &store, &session_id, agent_tools)?;
-    forget_if_failed(
-        &tools,
+    let session_tools = tools_for_session(&tools, &store, &session_id, &profile_id, agent_tools)?;
+    let launch = with_tools_env(launch, &session_tools.env);
+    let opened = manager.reopen(
         &session_id,
-        manager.reopen(
-            &session_id,
-            &cwd,
-            &launch,
-            &acp_session_id,
-            ReopenPurpose::Import,
-            servers,
-        ),
-    )
+        &cwd,
+        &launch,
+        &acp_session_id,
+        ReopenPurpose::Import,
+        session_tools.servers,
+    );
+    with_tools_path(&tools, &session_id, session_tools.path, opened)
 }
 
 /// Lists the agent's sessions in `cwd`, for the draft to offer them.
@@ -369,12 +366,26 @@ fn fork_in_workspace(
     agent_tools: bool,
 ) -> Result<StartedSession, String> {
     ensure_known_workspace(cwd, |path| store.is_known_workspace(path))?;
+    // A fork lives in its source's process, so it cannot be given an
+    // environment: it gets the MCP entry, which a command-path agent ignores.
     let servers = servers_for_session(tools, store, session_id, agent_tools)?;
-    forget_if_failed(
-        tools,
-        session_id,
-        manager.fork(source_session_id, session_id, cwd, servers),
-    )
+    let path = path_of_servers(&servers);
+    let opened = manager.fork(source_session_id, session_id, cwd, servers);
+    with_tools_path(tools, session_id, path, opened)
+}
+
+/// The opened session with the tools path it got; a session that did not open
+/// forgets the token it was issued.
+fn with_tools_path(
+    tools: &AgentTools,
+    session_id: &str,
+    path: Option<ToolsPath>,
+    opened: Result<StartedSession, String>,
+) -> Result<StartedSession, String> {
+    forget_if_failed(tools, session_id, opened).map(|session| StartedSession {
+        tools_path: path,
+        ..session
+    })
 }
 
 #[tauri::command(async)]

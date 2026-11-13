@@ -24,6 +24,7 @@ import type { AgentProfile, ChatMessage, ElicitationCard, Session } from '../../
 import { parseAuthRequired, type AuthMethod } from '../../lib/acp-auth';
 import { isSessionGoneError, isUnknownSessionError } from '../../lib/acp-load-error';
 import { sessionGetsAgentTools } from '../../lib/agent-tools';
+import { withToolsContext } from '../../lib/agent-tools-context';
 import { writeConversationHandoff } from '../../lib/session-handoff';
 import { applyElicitation, completeElicitation, dismissPendingElicitations } from '../../lib/acp-elicitation';
 import { elicitationActions, type InFlightAnswer } from './elicitation-actions';
@@ -155,10 +156,13 @@ export function useAcpEngine({
   const isCurrentLaunch = (sessionId: string, gen: number) =>
     launchGenRef.current.get(sessionId) === gen;
   // Each session's latest prompt: an agent that refuses it for a sign-in hands it back to the composer.
-  const lastPromptRef = useRef(new Map<string, { message: ChatMessage; context?: string }>());
+  // `toolsContext`: the prompt also carried Zorvo's command-path context, which is not part of `context`.
+  const lastPromptRef = useRef(new Map<string, { message: ChatMessage; context?: string; toolsContext?: boolean }>());
   // The prompt of each session's last turn that failed with an error: what "Try again" sends.
   const failedPromptRef = useRef(new Map<string, { message: ChatMessage; context?: string }>());
   // Hidden context a refused prompt carried (a rewound session's conversation): it goes out with the next message.
+  // Sessions on the command path that have not been told of Zorvo's commands since they last opened.
+  const toolsContextDueRef = useRef(new Set<string>());
   const unsentContextRef = useRef(new Map<string, string>());
   // The picks a session was opened with when its agent refused to open it until the user signs in.
   const refusedChoicesRef = useRef(new Map<string, AcpChoices>());
@@ -223,8 +227,12 @@ export function useAcpEngine({
       }
       const sent = lastPromptRef.current.get(sessionId);
       lastPromptRef.current.delete(sessionId);
-      if (error && sent) failedPromptRef.current.set(sessionId, sent);
-      else failedPromptRef.current.delete(sessionId);
+      if (error && sent) {
+        failedPromptRef.current.set(sessionId, sent);
+        // `acp.prompt` returns on write, so the turn may have failed before the agent read
+        // anything: the tools context is due again, for the retry or the next message.
+        if (sent.toolsContext) toolsContextDueRef.current.add(sessionId);
+      } else failedPromptRef.current.delete(sessionId);
       const notice = turnEndNotice(stopReason, error);
       if (error && onTurnFailed) onTurnFailed(sessionId, error);
       else if (notice) reportError(notice);
@@ -288,12 +296,18 @@ export function useAcpEngine({
 
   /** Prompts the agent with a message already shown in the chat; removes it if the prompt is refused. */
   const prompt = async (sessionId: string, message: ChatMessage, context?: string): Promise<boolean> => {
-    lastPromptRef.current.set(sessionId, { message, context });
+    // A command-path agent hears of Zorvo's commands with the first message it takes.
+    const toolsDue = toolsContextDueRef.current.has(sessionId);
+    lastPromptRef.current.set(sessionId, { message, context, ...(toolsDue ? { toolsContext: true } : {}) });
     // A new turn starts: the failure of the last one no longer applies.
     failedPromptRef.current.delete(sessionId);
     onTurnFailed?.(sessionId, null);
+    const hidden = toolsDue ? withToolsContext(context) : context;
     try {
-      await acp.prompt(sessionId, context ? `${context}\n\n${message.content}` : message.content, message.attachments);
+      await acp.prompt(sessionId, hidden ? `${hidden}\n\n${message.content}` : message.content, message.attachments);
+      // Only now: a refused prompt leaves it due for the next message. A turn that fails
+      // later puts it back (see `onTurnEnd`).
+      if (toolsDue) toolsContextDueRef.current.delete(sessionId);
       return true;
     } catch (error) {
       lastPromptRef.current.delete(sessionId);
@@ -349,6 +363,12 @@ export function useAcpEngine({
         if (!isStopped(sessionId)) reportError(`Could not apply the session settings: ${String(error)}`);
       }
     }
+  };
+
+  /** A session that just opened: on the command path it is due the tools context again, else it is not. */
+  const noteToolsPath = (sessionId: string, info: AcpSessionInfo) => {
+    if (info.toolsPath === 'command') toolsContextDueRef.current.add(sessionId);
+    else toolsContextDueRef.current.delete(sessionId);
   };
 
   /**
@@ -411,6 +431,7 @@ export function useAcpEngine({
         if (message) updateNow(session.id, (prev) => withoutMessage(prev, message.id));
         return true;
       }
+      noteToolsPath(session.id, info);
       // A reopened session may not repeat the models: what is remembered stays then.
       rememberOptions(session.profileId, {
         modes: info.modes,
@@ -630,6 +651,8 @@ export function useAcpEngine({
     // The backend cancels the open requests, and the agent's later events (its exit) are ignored.
     elicitations.abandon(sessionId);
     stoppedRef.current.add(sessionId);
+    // Its agent process is ending: a later reopen notes the path again.
+    toolsContextDueRef.current.delete(sessionId);
     // A launch still opening is superseded. An import that made the record keeps its
     // token: when it answers it still closes its last reply and sets the history note;
     // a resume in the meantime bumps the token and makes it stale.

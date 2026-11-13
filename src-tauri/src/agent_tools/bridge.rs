@@ -9,6 +9,8 @@ use std::thread;
 
 pub const SOCKET_VARIABLE: &str = "ZORVO_MCP_SOCKET";
 pub const TOKEN_VARIABLE: &str = "ZORVO_MCP_TOKEN";
+/// The executable's own path, for an agent that runs `zorvo tools` from its shell.
+pub const TOOLS_VARIABLE: &str = "ZORVO_TOOLS";
 
 /// Returns the process exit code. Prints at most one plain line on stderr and
 /// never the token.

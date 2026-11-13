@@ -74,6 +74,10 @@ pub struct StartedSession {
     /// How an earlier session was reopened; absent for a start or a fork.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reopened_with: Option<ReopenMethod>,
+    /// How this session reaches Zorvo's tools; absent when it has none. The
+    /// command layer fills it in: the manager does not know.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools_path: Option<crate::agent_tools::ToolsPath>,
 }
 
 /// Events for the UI, already routed to the app session they belong to.
@@ -781,5 +785,6 @@ fn started_session(response: Value, agent_capabilities: Value) -> Result<Started
         models: response["models"].clone(),
         config_options: response["configOptions"].clone(),
         reopened_with: None,
+        tools_path: None,
     })
 }

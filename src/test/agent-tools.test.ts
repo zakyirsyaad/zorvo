@@ -14,6 +14,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 import { useAgentTools } from "../hooks/useAgentTools";
 import { useAcpEngine } from "../hooks/session-engine/useAcpEngine";
 import { NOT_READY, sessionGetsAgentTools } from "../lib/agent-tools";
+import { COMMAND_PATH_CONTEXT } from "../lib/agent-tools-context";
 import { NO_CHOICES } from "../lib/acp-draft";
 import { fakeProfiles } from "./fixtures/agents";
 import type { Session } from "../types";
@@ -163,5 +164,135 @@ describe("useAcpEngine and agentTools", () => {
       ["acp_start_session", false],
       ["acp_start_session", false],
     ]);
+  });
+});
+
+describe("useAcpEngine and the command path context", () => {
+  type FakeWindow = { __FAKE_TOOLS_PATH__?: string };
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete (window as unknown as FakeWindow).__FAKE_TOOLS_PATH__;
+  });
+
+  const withPath = (path: string | undefined) => {
+    (window as unknown as FakeWindow).__FAKE_TOOLS_PATH__ = path;
+  };
+
+  const engine = (session: Session, messages: { current: unknown[] } = { current: [] }) =>
+    renderHook(() =>
+      useAcpEngine({
+        sessions: [session],
+        agents: fakeProfiles,
+        updateMessages: (_id, update) => {
+          messages.current = (update as (prev: unknown[]) => unknown[])(messages.current);
+        },
+        patchSession: () => {},
+        reportError: () => {},
+        rememberOptions: () => {},
+        onAuthRequired: () => {},
+      }),
+    );
+
+  const promptTexts = (spy: { mock: { calls: unknown[][] } }) =>
+    spy.mock.calls.filter(([cmd]) => cmd === "acp_prompt").map(([, args]) => (args as { text: string }).text);
+
+  it("sends the context with the first message of a command-path session", async () => {
+    withPath("command");
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const { result } = engine(SESSION);
+    await act(async () => {
+      await result.current.start(SESSION, { text: "ask Qwen to review it" });
+    });
+    expect(promptTexts(spy)).toEqual([`${COMMAND_PATH_CONTEXT}\n\nask Qwen to review it`]);
+  });
+
+  it("sends it once: the second message goes out bare", async () => {
+    withPath("command");
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const { result } = engine(SESSION);
+    await act(async () => {
+      await result.current.start(SESSION, { text: "first" });
+      await result.current.send(SESSION.id, "second");
+    });
+    expect(promptTexts(spy)).toEqual([`${COMMAND_PATH_CONTEXT}\n\nfirst`, "second"]);
+  });
+
+  it("sends it with the first message typed after a start that had none", async () => {
+    withPath("command");
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const { result } = engine(SESSION);
+    await act(async () => {
+      await result.current.start(SESSION);
+      await result.current.send(SESSION.id, "hello");
+    });
+    expect(promptTexts(spy)).toEqual([`${COMMAND_PATH_CONTEXT}\n\nhello`]);
+  });
+
+  it("sends it again after a reopen", async () => {
+    withPath("command");
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const { result } = engine(SESSION);
+    await act(async () => {
+      await result.current.start(SESSION, { text: "first" });
+      await result.current.resume(SESSION, "acp-s-1", { text: "back again" });
+    });
+    expect(promptTexts(spy)[1]).toBe(`${COMMAND_PATH_CONTEXT}\n\nback again`);
+  });
+
+  it("keeps both contexts when the first message carries its own", async () => {
+    withPath("command");
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const { result } = engine(SESSION);
+    await act(async () => {
+      await result.current.start(SESSION, { text: "do the task", context: "Read the handoff." });
+    });
+    expect(promptTexts(spy)).toEqual([`${COMMAND_PATH_CONTEXT}\n\nRead the handoff.\n\ndo the task`]);
+  });
+
+  it("sends it with the next message when the first prompt was refused", async () => {
+    withPath("command");
+    const real = tauriInternals().invoke.bind(tauriInternals());
+    let refuse = true;
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
+      if (cmd === "acp_prompt" && refuse) {
+        refuse = false;
+        return Promise.reject(new Error("busy"));
+      }
+      return real(cmd, args);
+    });
+    const { result } = engine(SESSION);
+    await act(async () => {
+      await result.current.start(SESSION, { text: "first" });
+      await result.current.send(SESSION.id, "again");
+    });
+    expect(promptTexts(spy)).toEqual([
+      `${COMMAND_PATH_CONTEXT}\n\nfirst`,
+      `${COMMAND_PATH_CONTEXT}\n\nagain`,
+    ]);
+  });
+
+  it("sends nothing extra for an mcp session or a session without tools", async () => {
+    for (const path of ["mcp", undefined, "something-else"]) {
+      withPath(path);
+      const spy = vi.spyOn(tauriInternals(), "invoke");
+      const { result, unmount } = engine(SESSION);
+      await act(async () => {
+        await result.current.start(SESSION, { text: "plain" });
+      });
+      expect(promptTexts(spy)).toEqual(["plain"]);
+      unmount();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("does not show the context in the chat", async () => {
+    withPath("command");
+    const messages = { current: [] as unknown[] };
+    const { result } = engine(SESSION, messages);
+    await act(async () => {
+      await result.current.start(SESSION, { text: "ask Qwen to review it" });
+    });
+    const shown = messages.current as { role: string; content: string }[];
+    expect(shown.filter((m) => m.role === "user").map((m) => m.content)).toEqual(["ask Qwen to review it"]);
   });
 });

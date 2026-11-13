@@ -62,6 +62,8 @@ export interface AcpSessionInfo {
   canReopen: boolean;
   /** How the backend reopened an earlier session; absent for a start or a fork. */
   reopenedWith?: 'resume' | 'load';
+  /** How the session reaches Zorvo's tools; absent when it has none. */
+  toolsPath?: 'mcp' | 'command';
   isBusy: boolean;
 }
 
@@ -168,6 +170,7 @@ function toInfo(raw: unknown): AcpSessionInfo {
   const sessionCaps = isObject(capabilities.sessionCapabilities) ? capabilities.sessionCapabilities : {};
   const reopenedWith =
     started.reopenedWith === 'resume' || started.reopenedWith === 'load' ? started.reopenedWith : undefined;
+  const toolsPath = started.toolsPath === 'mcp' || started.toolsPath === 'command' ? started.toolsPath : undefined;
   return {
     acpSessionId: isString(started.acpSessionId) ? started.acpSessionId : '',
     modes: toModes(started.modes),
@@ -177,6 +180,7 @@ function toInfo(raw: unknown): AcpSessionInfo {
     canFork: isObject(sessionCaps.fork),
     canReopen: capabilities.loadSession === true || isObject(sessionCaps.resume),
     ...(reopenedWith ? { reopenedWith } : {}),
+    ...(toolsPath ? { toolsPath } : {}),
     isBusy: false,
   };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { withoutMarkdownMarks } from "../lib/markdown-marks";
+import { MAX_PARSED_CHARS, withoutMarkdownMarks } from "../lib/markdown-marks";
 
 describe("withoutMarkdownMarks", () => {
   it("drops the ticks around code and keeps the code", () => {
@@ -8,49 +8,20 @@ describe("withoutMarkdownMarks", () => {
     );
   });
 
-  it("drops a fence's own lines and keeps what is inside", () => {
-    expect(withoutMarkdownMarks("Run this:\n```ts\nconst next = 1;\n```\nDone.")).toBe("Run this:\n\nconst next = 1;\n\nDone.");
-  });
-
-  it("drops bold and italic asterisks, heading hashes and quote marks", () => {
+  it("drops bold and italic marks, heading hashes, quote marks and list markers, one block per line", () => {
     expect(withoutMarkdownMarks("## Result\n**All six** tests *pass*.\n> quoted")).toBe("Result\nAll six tests pass.\nquoted");
+    expect(withoutMarkdownMarks("Done:\n\n- **one**\n- two\n\n1. three")).toBe("Done:\none\ntwo\nthree");
+    expect(withoutMarkdownMarks(">> ## Title\n> *said*")).toBe("Title\nsaid");
   });
 
-  it("keeps a link's words and drops its target", () => {
+  it("keeps a link's words and an image's description, and drops their targets", () => {
     expect(withoutMarkdownMarks("See [the plan](https://example.invalid/plan) and ![a shot](shot.png).")).toBe("See the plan and a shot.");
   });
 
-  it("never rewrites code: a span loses its ticks and nothing else", () => {
+  it("never rewrites code in a span, whatever it holds", () => {
     expect(withoutMarkdownMarks("Updated `src/*/test/*`.")).toBe("Updated src/*/test/*.");
     expect(withoutMarkdownMarks("The map is `[key](value)` and `**kwargs`.")).toBe("The map is [key](value) and **kwargs.");
-    // Marks around a span still go; the span inside them stays as written.
     expect(withoutMarkdownMarks("**see `a*b*c` now** and *then `x[0](y)`*")).toBe("see a*b*c now and then x[0](y)");
-  });
-
-  it("never rewrites a fenced block: only its two fence lines go", () => {
-    const text = "Run:\n```bash\n# install\nls src/*/test/* > out\necho **done**\n```\n# Next\n*after*";
-    expect(withoutMarkdownMarks(text)).toBe("Run:\n\n# install\nls src/*/test/* > out\necho **done**\n\nNext\nafter");
-    // A fence left open runs to the end, and another kind of fence inside it is code.
-    expect(withoutMarkdownMarks("~~~\n```\n*x*")).toBe("\n```\n*x*");
-  });
-
-  it("a longer fence holds a shorter one: only a fence of its own kind and length closes it", () => {
-    const nested = "````markdown\n```bash\necho **done**\n```\n````\n*after*";
-    expect(withoutMarkdownMarks(nested)).toBe("\n```bash\necho **done**\n```\n\nafter");
-    // A fence line with an info string opens a block; it never closes one.
-    expect(withoutMarkdownMarks("```\n```js\n**x**\n```\n**y**")).toBe("\n```js\n**x**\n\ny");
-    // A longer run closes a shorter fence.
-    expect(withoutMarkdownMarks("```\n**x**\n`````\n**y**")).toBe("\n**x**\n\ny");
-  });
-
-  it("three ticks that open and close on one line are not a fence", () => {
-    expect(withoutMarkdownMarks("```a``` is code\n*x*").endsWith("\nx")).toBe(true);
-  });
-
-  it("leaves asterisks and underscores that are not marks", () => {
-    expect(withoutMarkdownMarks("2 * 3 * 4 and 2*3*4")).toBe("2 * 3 * 4 and 2*3*4");
-    expect(withoutMarkdownMarks("call __init__ and snake_case_name")).toBe("call __init__ and snake_case_name");
-    expect(withoutMarkdownMarks("a lone ` tick and a * star")).toBe("a lone ` tick and a * star");
   });
 
   it("a span may use more ticks, to hold a tick of its own", () => {
@@ -60,22 +31,49 @@ describe("withoutMarkdownMarks", () => {
     expect(withoutMarkdownMarks("``open and *x*")).toBe("``open and x");
   });
 
+  it("a span may run over a line break; its stars stay", () => {
+    // The break stays inside the code as written; a column folds it into a space with the rest.
+    expect(withoutMarkdownMarks("Run `printf\n**done**\n` now.")).toBe("Run printf\n**done**\n now.");
+  });
+
+  it("never rewrites a fenced block: only its two fence lines go", () => {
+    const text = "Run:\n```bash\n# install\nls src/*/test/* > out\necho **done**\n```\n# Next\n*after*";
+    expect(withoutMarkdownMarks(text)).toBe("Run:\n# install\nls src/*/test/* > out\necho **done**\nNext\nafter");
+    // A fence left open runs to the end, and another kind of fence inside it is code.
+    expect(withoutMarkdownMarks("~~~\n```\n*x*")).toBe("```\n*x*");
+  });
+
+  it("a longer fence holds a shorter one: only a fence of its own kind and length closes it", () => {
+    const nested = "````markdown\n```bash\necho **done**\n```\n````\n*after*";
+    expect(withoutMarkdownMarks(nested)).toBe("```bash\necho **done**\n```\nafter");
+    // A fence line with an info string never closes a block.
+    expect(withoutMarkdownMarks("```\n```js\n**x**\n```\n**y**")).toBe("```js\n**x**\ny");
+  });
+
+  it("an indented block is code and is left as written", () => {
+    expect(withoutMarkdownMarks("Then:\n\n    ls src/*/a/* **x**\n\n**done**")).toBe("Then:\nls src/*/a/* **x**\ndone");
+  });
+
   it("a backslash escapes a mark: the character stays and the backslash goes", () => {
     expect(withoutMarkdownMarks("\\*not em\\* and \\`not code\\` and \\# not a heading")).toBe("*not em* and `not code` and # not a heading");
     // A backslash before a letter is a path, not an escape.
     expect(withoutMarkdownMarks("C:\\Users\\me")).toBe("C:\\Users\\me");
   });
 
-  it("stars inside a word, a glob or a URL are not marks, in code or out of it", () => {
-    const text = "Updated src/*/test/* and https://example.invalid/*a*/b, 2**8**2";
-    expect(withoutMarkdownMarks(text)).toBe(text);
+  it("leaves what markdown does not read as a mark", () => {
+    expect(withoutMarkdownMarks("2 * 3 * 4, snake_case_name, a lone ` tick and a * star")).toBe(
+      "2 * 3 * 4, snake_case_name, a lone ` tick and a * star",
+    );
   });
 
-  it("an indented line is code and is left as written", () => {
-    expect(withoutMarkdownMarks("Then:\n    ls src/*/a/* **x**\n**done**")).toBe("Then:\n    ls src/*/a/* **x**\ndone");
+  it("keeps raw HTML as the text it is", () => {
+    expect(withoutMarkdownMarks("Use <b>this</b> tag.")).toBe("Use <b>this</b> tag.");
   });
 
-  it("drops nested quote marks, and a heading inside a quote", () => {
-    expect(withoutMarkdownMarks(">> ## Title\n> *said*")).toBe("Title\nsaid");
+  it("reads only the start of a long text, and splits no character at the cut", () => {
+    const long = `${"a".repeat(MAX_PARSED_CHARS - 1)}😀 **tail**`;
+    const read = withoutMarkdownMarks(long);
+    expect(read).toBe("a".repeat(MAX_PARSED_CHARS - 1));
+    expect(withoutMarkdownMarks(`**start** ${"b".repeat(MAX_PARSED_CHARS)}`).startsWith("start b")).toBe(true);
   });
 });

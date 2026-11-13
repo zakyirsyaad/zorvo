@@ -2,6 +2,7 @@
 //! socket and the stdio bridge, and the MCP subset spoken over them.
 
 pub mod bridge;
+pub mod cli;
 pub mod commands;
 pub mod protocol;
 pub mod service;

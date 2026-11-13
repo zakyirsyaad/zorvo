@@ -4,7 +4,15 @@ export interface VerticalBox {
   bottom: number;
 }
 
+/** The horizontal span of a box on screen. */
+export interface HorizontalBox {
+  left: number;
+  right: number;
+}
+
 export type PopoverSide = "bottom" | "top";
+/** Which edge of its trigger a panel shares: `start` grows to the right, `end` to the left. */
+export type PopoverAlign = "start" | "end";
 
 /** Where an open panel goes: its side of the trigger, and a height cap when it does not fit there whole. */
 export interface PanelFit {
@@ -38,17 +46,44 @@ export function fitPanel(trigger: VerticalBox, bounds: VerticalBox, panelHeight:
 }
 
 /**
- * The part of the window an element can show in: the viewport, narrowed by every ancestor that clips its
- * overflow (anything other than `visible`).
+ * Picks the edge of its trigger a panel shares, so the box that clips it (a dialog that scrolls) never cuts its
+ * side off: the asked-for edge when the panel fits there, else the other one when it fits, else the one that
+ * loses less. Without a layout (a panel, a trigger or bounds with no width, as in jsdom) it decides nothing.
  */
-export function clippingBounds(element: HTMLElement): VerticalBox {
+export function fitAlign(trigger: HorizontalBox, bounds: HorizontalBox, panelWidth: number, preferred: PopoverAlign): PopoverAlign | null {
+  if (panelWidth <= 0 || trigger.right - trigger.left <= 0 || bounds.right - bounds.left <= 0) return null;
+  // How far the panel would reach past the box on each edge, the margin included.
+  const cutOff = {
+    start: Math.max(0, trigger.left + panelWidth - (bounds.right - EDGE_MARGIN)),
+    end: Math.max(0, bounds.left + EDGE_MARGIN - (trigger.right - panelWidth)),
+  };
+  const other: PopoverAlign = preferred === "start" ? "end" : "start";
+  return cutOff[other] < cutOff[preferred] ? other : preferred;
+}
+
+/**
+ * The part of the window an element can show in: the viewport, narrowed by every ancestor that clips its
+ * overflow (anything other than `visible`), each way by the ancestors that clip that way.
+ */
+export function clippingBounds(element: HTMLElement): VerticalBox & HorizontalBox {
   let top = 0;
   let bottom = window.innerHeight;
+  let left = 0;
+  let right = window.innerWidth;
   for (let node = element.parentElement; node; node = node.parentElement) {
-    if (getComputedStyle(node).overflowY === "visible") continue;
+    const style = getComputedStyle(node);
+    const clipsY = style.overflowY !== "visible" && style.overflowY !== "";
+    const clipsX = style.overflowX !== "visible" && style.overflowX !== "";
+    if (!clipsY && !clipsX) continue;
     const rect = node.getBoundingClientRect();
-    top = Math.max(top, rect.top);
-    bottom = Math.min(bottom, rect.bottom);
+    if (clipsY) {
+      top = Math.max(top, rect.top);
+      bottom = Math.min(bottom, rect.bottom);
+    }
+    if (clipsX) {
+      left = Math.max(left, rect.left);
+      right = Math.min(right, rect.right);
+    }
   }
-  return { top, bottom };
+  return { top, bottom, left, right };
 }

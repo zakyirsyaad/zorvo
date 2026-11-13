@@ -35,7 +35,7 @@ function TargetPicker({ target, targets, options, onSelect }: {
           className="flex h-7 max-w-full items-center gap-1.5 rounded-md px-2 text-ui font-semibold text-fg hover:bg-surface-hover cursor-pointer focus-ring"
         >
           <span className="truncate">{label}</span>
-          <ChevronDown size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
+          <ChevronDown size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
         </button>
       }
     >
@@ -120,7 +120,7 @@ export function DiffViewHeader(props: DiffViewHeaderProps) {
   const { isExpanded, isSearching, search } = props;
   return (
     <header className="shrink-0 border-b border-border">
-      <div className="flex h-12 items-center gap-2 pr-3 pl-4">
+      <div className="flex h-12 items-center gap-2 pr-2.5 pl-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <TargetPicker target={props.target} targets={props.targets} options={props.options} onSelect={props.onTargetChange} />
           {props.totals && (

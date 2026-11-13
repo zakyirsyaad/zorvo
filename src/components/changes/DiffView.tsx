@@ -191,7 +191,9 @@ export function DiffView({
       />
       <div className="flex min-h-0 flex-1">
         {isExpanded && stats && stats.length > 0 && <DiffFileList stats={visible} selectedPath={selectedPath} onSelect={selectFile} />}
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* The comments bar floats over the diff, so the scroller leaves room under its last lines. */}
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <div data-diff-scroller="" className={`min-h-0 flex-1 overflow-y-auto${review ? " pb-20" : ""}`}>
         {stats === null ? (
           <p className="px-4 py-3 text-fg-subtle">Reading the changes…</p>
         ) : stats.length === 0 ? (
@@ -214,21 +216,22 @@ export function DiffView({
           ))
         )}
         </div>
+        {review && (
+          <ReviewCommentsBar
+            review={review}
+            adder={adder}
+            checked={checked}
+            target={target}
+            targets={targets}
+            options={options}
+            reads={reads}
+            listed={stats}
+            onTargetChange={setChosen}
+            onFocusLost={focusPanel}
+          />
+        )}
+        </div>
       </div>
-      {review && (
-        <ReviewCommentsBar
-          review={review}
-          adder={adder}
-          checked={checked}
-          target={target}
-          targets={targets}
-          options={options}
-          reads={reads}
-          listed={stats}
-          onTargetChange={setChosen}
-          onFocusLost={focusPanel}
-        />
-      )}
     </aside>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { POPOVER_PANEL_STYLE } from "../ui/Popover";
 import {
   ChevronRight,
   EllipsisVertical,
@@ -101,7 +102,7 @@ function RowMenu({ pullRequest, onOpen }: { pullRequest: PullRequestSummary; onO
           role="menu"
           aria-label={`Actions for #${pullRequest.number}`}
           style={place}
-          className="fixed z-50 w-40 rounded-lg border border-border bg-surface-3 p-1 shadow-popover"
+          className={`fixed z-50 w-40 ${POPOVER_PANEL_STYLE}`}
         >
           <button type="button" role="menuitem" onClick={pick(() => onOpen(pullRequest.url))} className={MENU_ITEM}>
             <ExternalLink size={12} aria-hidden="true" /> Open in browser

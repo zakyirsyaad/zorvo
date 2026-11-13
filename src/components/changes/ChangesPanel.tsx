@@ -80,14 +80,14 @@ function ChangeCard({ change, stat, commentCount, isChecked, isOpen, onCheck, on
   const kind = KIND_LABEL[change.kind];
   const Chevron = isOpen ? ChevronDown : ChevronRight;
   return (
-    <li className={`min-w-0 overflow-hidden rounded-lg border border-border ${isOpen ? "bg-surface-2" : ""}`}>
+    <li className="min-w-0 overflow-hidden rounded-lg border border-border bg-surface-2">
       <div className={`flex items-center gap-2 px-2.5 py-2 ${isOpen ? "border-b border-border" : ""}`}>
         <input
           type="checkbox"
           checked={isChecked}
           onChange={(e) => onCheck(e.target.checked)}
           aria-label={`Include ${change.path} in the commit`}
-          className="size-3 shrink-0 accent-primary focus-ring"
+          className="size-3.5 shrink-0 accent-primary focus-ring"
         />
         <button
           type="button"
@@ -96,18 +96,19 @@ function ChangeCard({ change, stat, commentCount, isChecked, isOpen, onCheck, on
           title={change.oldPath ? `${change.oldPath} → ${change.path}` : change.path}
           className="flex min-w-0 flex-1 items-center gap-2 rounded text-left focus-ring"
         >
-          <Chevron size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
-          <span className="min-w-0 flex-1 truncate font-mono text-caption text-fg-secondary">{change.path}</span>
+          {/* The kind leads, as drawn; its color still tells added from deleted at a glance. */}
+          <span title={kind.name} aria-label={kind.name} className={`w-2.5 shrink-0 text-center font-mono text-caption ${kind.style}`}>
+            {kind.letter}
+          </span>
+          <span className={`min-w-0 flex-1 truncate font-mono text-caption ${isOpen ? "text-fg" : "text-fg-secondary"}`}>{change.path}</span>
         </button>
         {commentCount > 0 && (
           <span className="shrink-0 text-caption text-fg-muted">
             {commentCount} {commentCount === 1 ? "comment" : "comments"}
           </span>
         )}
-        <span title={kind.name} aria-label={kind.name} className={`w-3 shrink-0 text-center font-mono text-micro ${kind.style}`}>
-          {kind.letter}
-        </span>
         {stat && !stat.isBinary && <LineCounts added={stat.added} removed={stat.removed} />}
+        <Chevron size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
       </div>
       {/* A long line scrolls here, never widening the inspector. */}
       {isOpen && <div className="overflow-x-auto">{children}</div>}
@@ -215,7 +216,7 @@ export function ChangesPanel({
           </Button>
         </section>
       )}
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto p-3.5">
         <div className="flex items-center gap-2">
           <p className={changes !== null && list.length > 0 ? "font-semibold text-fg" : "text-fg-subtle"}>
             {changes === null
@@ -241,7 +242,7 @@ export function ChangesPanel({
             <RefreshCw size={14} />
           </IconButton>
         </div>
-        <ul aria-label={`Changes in ${rootName}`} className="flex flex-col gap-2">
+        <ul aria-label={`Changes in ${rootName}`} className="flex flex-col gap-2.5">
           {list.map((change) => {
             const fileReview = fileReviewFor(change.path);
             return (
@@ -268,25 +269,26 @@ export function ChangesPanel({
             );
           })}
         </ul>
+        {/* At the bottom of the scroll area, as drawn: it rides under the last card. */}
+        {review && (
+          <ReviewCommentsBar
+            variant="card"
+            review={review}
+            adder={adder}
+            checked={onHead}
+            target={TARGET}
+            targets={targets}
+            options={ONLY_HEAD}
+            reads={reads}
+            listed={stats ?? null}
+            onTargetChange={noop}
+            onFocusLost={focusPanel}
+          />
+        )}
       </div>
-      {review && (
-        <ReviewCommentsBar
-          variant="card"
-          review={review}
-          adder={adder}
-          checked={onHead}
-          target={TARGET}
-          targets={targets}
-          options={ONLY_HEAD}
-          reads={reads}
-          listed={stats ?? null}
-          onTargetChange={noop}
-          onFocusLost={focusPanel}
-        />
-      )}
 
       {list.length > 0 && (
-        <div className="flex flex-col gap-2 border-t border-border px-4 py-3">
+        <div className="flex flex-col gap-2 border-t border-border px-3.5 pt-3 pb-3.5">
           <label htmlFor={messageId} className="sr-only">
             Commit message
           </label>

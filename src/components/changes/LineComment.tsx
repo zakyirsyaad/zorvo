@@ -112,7 +112,7 @@ function DeleteButton({ onDelete }: { onDelete: () => void }) {
         variant={isConfirming ? "danger" : "ghost"}
         aria-label={isConfirming ? "Confirm delete" : undefined}
         title={isConfirming ? "Delete this comment for good" : undefined}
-        size="sm" className="shrink-0"
+        size="row" className="shrink-0"
         onClick={isConfirming ? onDelete : () => setIsConfirming(true)}
       >
         {isConfirming ? "Delete?" : "Delete"}
@@ -121,7 +121,7 @@ function DeleteButton({ onDelete }: { onDelete: () => void }) {
         <Button
           ref={cancelButton}
           variant="ghost"
-          size="sm" className="shrink-0"
+          size="row" className="shrink-0"
           onClick={() => {
             deleteButton.current?.focus();
             setIsConfirming(false);
@@ -194,9 +194,9 @@ export function LineComment({ comment, status, review, adder, location, isQuoted
   }
 
   return (
-    // In a narrow Changes card the buttons go under the text rather than squeeze it.
-    <div className="flex flex-wrap items-start gap-2 rounded-lg border border-border bg-surface-3 p-2.5 font-sans text-ui">
-      <div className={`flex min-w-0 flex-[1_1_12rem] flex-col gap-1 ${isSent ? "opacity-60" : ""}`}>
+    // The text, then its buttons in a right-aligned row under it, as drawn.
+    <div data-saved-comment="" className="flex flex-col gap-2 rounded-lg border border-border bg-surface-2 p-2.5 font-sans text-ui">
+      <div className={`flex min-w-0 flex-col gap-1 ${isSent ? "opacity-60" : ""}`}>
         <p className="flex flex-wrap items-center gap-x-1 text-caption text-fg-subtle">
           <span className="min-w-0 truncate font-medium text-fg-secondary">{location ?? `Line ${comment.line}`}</span>
           {/* Spaces as text, so the line copies as "Line 42 · Current"; the gap draws them. */}
@@ -209,11 +209,11 @@ export function LineComment({ comment, status, review, adder, location, isQuoted
         {status === "outdated" && <p className="text-caption text-fg-subtle">{GONE_NOTE}</p>}
         <p className="whitespace-pre-wrap break-words text-fg-secondary">{comment.body}</p>
       </div>
-      <div className="ml-auto flex shrink-0 items-start gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
       {adder && addLabel && (
         <Button
           variant="outline"
-          size="sm" className="shrink-0"
+          size="row" className="shrink-0"
           disabled={adder.isWaiting || adder.blockedReason !== undefined}
           aria-describedby={adder.blockedReason ? adder.reasonId : undefined}
           onClick={() => adder.add([{ comment, status }])}
@@ -225,7 +225,7 @@ export function LineComment({ comment, status, review, adder, location, isQuoted
         ref={editButton}
         variant="ghost"
         tone="secondary"
-        size="sm" className="shrink-0"
+        size="row" className="shrink-0"
         onClick={() => {
           shouldMoveFocus.current = true;
           review.openEdit(comment);

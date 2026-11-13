@@ -19,7 +19,7 @@ export function LineCommentBox({ label, location, initialBody, error, onChange, 
   const [body, setBody] = useState(initialBody);
   const fieldId = useId();
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border-strong bg-surface-2 p-2.5 font-sans text-ui">
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-2 p-2.5 font-sans text-ui">
       {location && <p className="truncate font-mono text-caption text-fg-muted">{location}</p>}
       <label htmlFor={fieldId} className="text-caption text-fg-muted">
         {label}
@@ -29,7 +29,7 @@ export function LineCommentBox({ label, location, initialBody, error, onChange, 
         id={fieldId}
         value={body}
         maxLength={MAX_COMMENT_LENGTH}
-        rows={3}
+        rows={2}
         onChange={(event) => {
           setBody(event.target.value);
           onChange(event.target.value);

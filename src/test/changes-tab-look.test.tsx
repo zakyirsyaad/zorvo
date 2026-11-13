@@ -62,10 +62,18 @@ describe("the Changes tab as drawn", () => {
     renderPanel();
 
     const card = cardOf("src/app.ts");
-    for (const name of ["rounded-lg", "border", "border-border", "overflow-hidden"]) {
+    // Filled surface-2 closed as well as open, as drawn.
+    for (const name of ["rounded-lg", "border", "border-border", "bg-surface-2", "overflow-hidden"]) {
       expect(card.classList.contains(name), name).toBe(true);
     }
     expect(screen.getByTitle("src/app.ts").textContent).toContain("src/app.ts");
+    // The row reads: checkbox, kind letter, path, counts, and the chevron last.
+    const row = card.firstElementChild as HTMLElement;
+    expect(row.firstElementChild?.classList.contains("size-3.5")).toBe(true);
+    const opener = screen.getByTitle("src/app.ts");
+    expect(opener.firstElementChild?.getAttribute("aria-label")).toBe("Modified");
+    expect(opener.lastElementChild?.classList.contains("text-fg-secondary")).toBe(true);
+    expect(row.lastElementChild?.tagName.toLowerCase()).toBe("svg");
     expect(card.textContent).toContain("+3");
     expect(card.textContent).toContain("−1");
     // What Commit takes, and what kind of change it is, stay on the card.

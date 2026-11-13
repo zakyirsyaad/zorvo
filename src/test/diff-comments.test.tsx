@@ -412,8 +412,8 @@ describe("Writing a comment", () => {
     const bar = screen.getByRole("region", { name: "Review comments" });
     expect(within(bar).getByText("src/app.ts:42")).toBeDefined();
     expect((within(bar).getByRole("textbox", { name: "Comment on line 42" }) as HTMLTextAreaElement).value).toBe("Keep me too");
-    // The bar with Add N to message sits at the bottom of the review.
-    expect(screen.getByRole("complementary", { name: "Diff view" }).lastElementChild).toBe(bar);
+    // The bar with Add N to message floats over the diff, after its scroller.
+    expect(bar.previousElementSibling).toBe(document.querySelector("[data-diff-scroller]"));
   });
 
   it("a box saved from the top bar keeps the old path", async () => {

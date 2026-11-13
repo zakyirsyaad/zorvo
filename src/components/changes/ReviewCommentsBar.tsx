@@ -1,4 +1,5 @@
 import { MessageSquare } from "lucide-react";
+import { POPOVER_PANEL_STYLE } from "../ui/Popover";
 import { Button } from "../ui/Button";
 import { DraftBox, LineComment, ownAddLabel, type CommentAdder } from "./LineComment";
 import { draftKeyOf, parseDraftKey, type CommentAnchor, type ReviewComments } from "../../hooks/useReviewComments";
@@ -9,6 +10,12 @@ import type { ReviewComment } from "../../types";
 const commentsWord = (count: number) => `${count} ${count === 1 ? "comment" : "comments"}`;
 
 const locationOf = ({ file, line }: Pick<ReviewComment, "file" | "line">) => `${file}:${line}`;
+
+const BAR = "flex max-h-64 flex-col gap-1.5 overflow-y-auto text-ui";
+/** In the Changes tab: a card at the bottom of the scroll area. */
+const CARD_BAR = `${BAR} mt-auto shrink-0 rounded-lg border border-border bg-surface-2 py-2 pr-2 pl-3`;
+/** In the full review: a panel floating over the diff, 16px above its bottom. */
+const REVIEW_BAR = `${BAR} absolute bottom-4 left-1/2 z-10 w-max max-w-[calc(100%-2rem)] -translate-x-1/2 ${POPOVER_PANEL_STYLE} py-2 pr-2 pl-3.5`;
 
 /** The session's comments as a whole, and those no section can show: another target's, or a file gone from the diff. */
 export function ReviewCommentsBar({ variant = "review", review, adder, checked, target, targets, options, reads, listed, onTargetChange, onFocusLost }: {
@@ -49,7 +56,8 @@ export function ReviewCommentsBar({ variant = "review", review, adder, checked, 
   return (
     <section
       aria-label="Review comments"
-      className="mx-4 mb-4 flex max-h-64 shrink-0 flex-col gap-1.5 overflow-y-auto rounded-lg border border-border bg-surface-2 px-3 py-2 text-ui"
+      data-variant={variant}
+      className={variant === "review" ? REVIEW_BAR : CARD_BAR}
     >
       {(hasSent || reason || counted.length > 0) && (
         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -67,7 +75,7 @@ export function ReviewCommentsBar({ variant = "review", review, adder, checked, 
           {adder && counted.length > 0 && (
             <Button
               variant={variant === "review" ? "primary" : "outline"}
-              size={variant === "review" ? "md" : "sm"}
+              size={variant === "review" ? "md" : "row"}
               disabled={adder.isWaiting || reason !== undefined}
               // The card's short "Add 2" starts its name, so Voice Control finds it by what it shows.
               aria-label={variant === "card" ? `Add ${commentsWord(counted.length)} to message` : undefined}

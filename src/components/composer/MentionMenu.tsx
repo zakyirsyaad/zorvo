@@ -1,6 +1,6 @@
 import { FileText } from "lucide-react";
 import type { MentionAgentStatus } from "../../lib/delegation";
-import { AgentLogo } from "../AgentLogo";
+import { AgentTile } from "../ui/AgentTile";
 import { POPOVER_PANEL_STYLE } from "../ui/Popover";
 import { Highlighted } from "../ui/Highlighted";
 import { PROMPT_LIST_SIDES } from "./SlashCommandMenu";
@@ -38,7 +38,8 @@ const STATUS_TEXT: Readonly<Record<MentionAgentStatus, string>> = {
 const STATUS_CLASS: Readonly<Record<MentionAgentStatus, string>> = {
   ready: "text-fg-muted",
   "not-checked": "text-fg-subtle",
-  "needs-sign-in": "text-status-attention",
+  // The dot beside the words carries the colour.
+  "needs-sign-in": "text-fg-muted",
   "not-installed": "text-fg-subtle",
 };
 
@@ -85,7 +86,7 @@ export function MentionMenu({
                     e.preventDefault();
                     if (isPickable) onPickAgent?.(agent);
                   }}
-                  className={`flex items-center gap-2 rounded-md px-2 py-[5px] ${
+                  className={`flex min-h-7 items-center gap-2 rounded-md px-2 ${
                     isPickable ? "cursor-pointer" : "cursor-default text-fg-secondary opacity-55"
                   } ${
                     index === highlighted
@@ -95,8 +96,8 @@ export function MentionMenu({
                         : ""
                   }`}
                 >
-                  <AgentLogo profileId={agent.id} name="" size={16} />
-                  <span className="min-w-0 flex-1 truncate text-ui-sm">
+                  <AgentTile profileId={agent.id} name="" size={16} />
+                  <span className="min-w-0 flex-1 truncate text-ui">
                     <Highlighted text={agent.name} query={query} />
                   </span>
                   <span
@@ -115,7 +116,7 @@ export function MentionMenu({
       )}
       {files.length > 0 && (
         <>
-          {agents.length > 0 && <div aria-hidden="true" className="my-1.5 h-px bg-border" />}
+          {agents.length > 0 && <div aria-hidden="true" className="my-1 h-px bg-border" />}
           <p className="px-2 pb-1.5 pt-1 text-caption font-medium text-fg-muted">Files in {folderName}</p>
           <ul role="listbox" aria-label="Files to mention" className="max-h-64 overflow-y-auto">
             {files.map((path, index) => {
@@ -133,7 +134,7 @@ export function MentionMenu({
                     e.preventDefault();
                     onPick(path);
                   }}
-                  className={`flex cursor-pointer items-start gap-2 rounded-md px-2 py-[5px] ${
+                  className={`flex cursor-pointer items-start gap-2 rounded-md px-2 py-1 ${
                     isHighlighted ? "bg-surface-hover text-fg" : "text-fg-secondary hover:bg-surface-hover"
                   }`}
                 >

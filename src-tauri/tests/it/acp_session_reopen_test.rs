@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::common::{
     agent_text, called_methods, cwd, fake_agent, fake_agent_with, manager, wait_for,
@@ -81,6 +81,7 @@ fn continues_with_resume_when_offered() {
             &launch,
             "fake-earlier",
             ReopenPurpose::Continue,
+            json!([]),
         )
         .expect("reopen");
 
@@ -117,6 +118,7 @@ fn continues_with_load_and_drops_the_replay() {
             &launch,
             "fake-earlier",
             ReopenPurpose::Continue,
+            json!([]),
         )
         .expect("reopen");
 
@@ -152,6 +154,7 @@ fn refuses_to_continue_without_resume_or_load() {
             &launch,
             "fake-earlier",
             ReopenPurpose::Continue,
+            json!([]),
         )
         .unwrap_err();
 
@@ -169,6 +172,7 @@ fn import_routes_the_replay_to_the_app_session() {
             &fake_agent(),
             "fake-earlier",
             ReopenPurpose::Import,
+            json!([]),
         )
         .expect("import");
 
@@ -221,6 +225,7 @@ fn import_answers_requests_sent_during_the_replay() {
             &launch,
             "fake-earlier",
             ReopenPurpose::Import,
+            json!([]),
         )
         .expect("the import must not wait on requests sent during the replay");
     let elapsed = started.elapsed();
@@ -261,6 +266,7 @@ fn stopping_an_import_mid_replay_drops_the_rest() {
                 &launch,
                 "fake-earlier",
                 ReopenPurpose::Import,
+                json!([]),
             )
         })
     };
@@ -297,6 +303,7 @@ fn stopping_an_import_mid_replay_drops_the_rest() {
             &fake_agent(),
             "fake-earlier",
             ReopenPurpose::Import,
+            json!([]),
         )
         .expect("a new import still works");
     manager.stop("s-imp2");
@@ -320,6 +327,7 @@ fn does_not_route_a_replay_after_the_import_was_stopped() {
                 &launch,
                 "fake-earlier",
                 ReopenPurpose::Import,
+                json!([]),
             )
         })
     };
@@ -373,6 +381,7 @@ fn import_with_only_resume_has_no_replay() {
             &launch,
             "fake-earlier",
             ReopenPurpose::Import,
+            json!([]),
         )
         .expect("import");
 
@@ -392,4 +401,40 @@ fn import_with_only_resume_has_no_replay() {
         .collect();
     assert!(updates.is_empty(), "a resume replayed {updates:?}");
     manager.stop("s-imp-resume");
+}
+
+#[test]
+fn load_and_resume_send_the_given_mcp_servers() {
+    let servers = json!([{ "name": "zorvo", "command": "/bin/zorvo", "args": [], "env": [] }]);
+    for (flags, expected) in [
+        (vec![], "session/load"),
+        (vec![("FAKE_ACP_RESUME", "1")], "session/resume"),
+    ] {
+        let (manager, _rx) = manager();
+        let log = call_log(&format!("params-{expected}").replace('/', "-"));
+        let mut env = flags;
+        env.push(("FAKE_ACP_PARAMS_LOG", log.to_str().unwrap()));
+        let launch = fake_agent_with(&env);
+
+        manager
+            .reopen(
+                "s-1",
+                &cwd(),
+                &launch,
+                "fake-earlier",
+                ReopenPurpose::Continue,
+                servers.clone(),
+            )
+            .expect("reopen");
+
+        let logged: Vec<Value> = std::fs::read_to_string(&log)
+            .unwrap_or_default()
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("a JSON line"))
+            .collect();
+        assert_eq!(logged.len(), 1, "{logged:?}");
+        assert_eq!(logged[0]["method"], expected);
+        assert_eq!(logged[0]["mcpServers"], servers);
+        manager.stop("s-1");
+    }
 }

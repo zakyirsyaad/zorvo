@@ -78,6 +78,7 @@ import { UpdateNotice } from "./components/UpdateNotice";
 import { AppUpdateNotice } from "./components/AppUpdateNotice";
 import { restartWarning } from "./lib/app-update";
 import { useAppUpdate } from "./hooks/useAppUpdate";
+import { useAgentTools } from "./hooks/useAgentTools";
 import { ProfileFooter } from "./components/ProfileFooter";
 import { AgentsMenu } from "./components/sidebar/AgentsMenu";
 import { useNavigationHistory } from "./hooks/useNavigationHistory";
@@ -198,6 +199,7 @@ export default function App() {
     [saveNow, flushTranscripts],
   );
   const appUpdate = useAppUpdate(reportError, writePendingBeforeRestart);
+  useAgentTools();
   const agentUpdates = useAgentUpdates({ catalog: agentCatalog.catalog, settings: state.settings, isLoaded, updateState });
   useAutoEnabledAgents(agents, isLoaded, updateState);
   const suggestedFolders = useSuggestedFolders();

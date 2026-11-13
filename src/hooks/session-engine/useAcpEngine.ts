@@ -23,6 +23,7 @@ import { qwenErrorDetail } from '../../lib/qwen-api-error';
 import type { AgentProfile, ChatMessage, ElicitationCard, Session } from '../../types';
 import { parseAuthRequired, type AuthMethod } from '../../lib/acp-auth';
 import { isSessionGoneError, isUnknownSessionError } from '../../lib/acp-load-error';
+import { sessionGetsAgentTools } from '../../lib/agent-tools';
 import { writeConversationHandoff } from '../../lib/session-handoff';
 import { applyElicitation, completeElicitation, dismissPendingElicitations } from '../../lib/acp-elicitation';
 import { elicitationActions, type InFlightAnswer } from './elicitation-actions';
@@ -442,7 +443,7 @@ export function useAcpEngine({
   };
 
   const start = (session: Session, first?: FirstMessage, choices: AcpChoices = NO_CHOICES) =>
-    launch(session, () => acp.start(session.id, session.cwd, session.profileId), {
+    launch(session, () => acp.start(session.id, session.cwd, session.profileId, sessionGetsAgentTools(session)), {
       first,
       choices,
       applySafeMode: true,
@@ -451,7 +452,7 @@ export function useAcpEngine({
 
   /** Continues an ended session in a fresh agent process through the agent's own session/resume or session/load. */
   const resume = (session: Session, acpSessionId: string, first?: FirstMessage, choices: AcpChoices = NO_CHOICES) =>
-    launch(session, () => acp.reopen(session.id, session.cwd, session.profileId, acpSessionId), {
+    launch(session, () => acp.reopen(session.id, session.cwd, session.profileId, acpSessionId, sessionGetsAgentTools(session)), {
       first,
       choices,
       applySafeMode: true,
@@ -484,7 +485,7 @@ export function useAcpEngine({
       const opening = launch(
         session,
         async () => {
-          const info = await acp.importSession(id, session.cwd, session.profileId, acpSessionId);
+          const info = await acp.importSession(id, session.cwd, session.profileId, acpSessionId, sessionGetsAgentTools(session));
           reopenedWith = info.reopenedWith;
           return info;
         },
@@ -567,12 +568,12 @@ export function useAcpEngine({
     const openNew = async () => {
       const context = hidden ? undefined : await handoffFor(session);
       if (context) unsentContextRef.current.set(sessionId, context);
-      return acp.start(session.id, session.cwd, session.profileId).catch((error: unknown) => {
+      return acp.start(session.id, session.cwd, session.profileId, sessionGetsAgentTools(session)).catch((error: unknown) => {
         if (context) unsentContextRef.current.delete(sessionId);
         throw error;
       });
     };
-    const reopenSession = () => acp.reopen(session.id, session.cwd, session.profileId, acpSessionId);
+    const reopenSession = () => acp.reopen(session.id, session.cwd, session.profileId, acpSessionId, sessionGetsAgentTools(session));
     // A session refused at a prompt may have had no turn the agent kept: when the agent does not know it,
     // it starts anew. Any other failure keeps the session, whose conversation the agent may still have.
     const reopen = wasTerminated
@@ -582,7 +583,7 @@ export function useAcpEngine({
   };
 
   const fork = (sourceSessionId: string, session: Session) =>
-    launch(session, () => acp.fork(sourceSessionId, session.id, session.cwd), {
+    launch(session, () => acp.fork(sourceSessionId, session.id, session.cwd, sessionGetsAgentTools(session)), {
       choices: NO_CHOICES,
       applySafeMode: false,
       action: 'fork',

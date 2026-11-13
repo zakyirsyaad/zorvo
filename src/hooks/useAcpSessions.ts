@@ -301,20 +301,20 @@ export function useAcpSessions(handlers: AcpHandlers) {
   }, []);
 
   const start = useCallback(
-    async (sessionId: string, cwd: string, profileId: string) =>
-      remember(sessionId, await invoke('acp_start_session', { sessionId, cwd, profileId })),
+    async (sessionId: string, cwd: string, profileId: string, agentTools: boolean) =>
+      remember(sessionId, await invoke('acp_start_session', { sessionId, cwd, profileId, agentTools })),
     [remember],
   );
 
   const reopen = useCallback(
-    async (sessionId: string, cwd: string, profileId: string, acpSessionId: string) =>
-      remember(sessionId, await invoke('acp_reopen_session', { sessionId, cwd, profileId, acpSessionId })),
+    async (sessionId: string, cwd: string, profileId: string, acpSessionId: string, agentTools: boolean) =>
+      remember(sessionId, await invoke('acp_reopen_session', { sessionId, cwd, profileId, acpSessionId, agentTools })),
     [remember],
   );
 
   const importSession = useCallback(
-    async (sessionId: string, cwd: string, profileId: string, acpSessionId: string) =>
-      remember(sessionId, await invoke('acp_import_session', { sessionId, cwd, profileId, acpSessionId })),
+    async (sessionId: string, cwd: string, profileId: string, acpSessionId: string, agentTools: boolean) =>
+      remember(sessionId, await invoke('acp_import_session', { sessionId, cwd, profileId, acpSessionId, agentTools })),
     [remember],
   );
 
@@ -326,8 +326,8 @@ export function useAcpSessions(handlers: AcpHandlers) {
   );
 
   const fork = useCallback(
-    async (sourceSessionId: string, sessionId: string, cwd: string) =>
-      remember(sessionId, await invoke('acp_fork_session', { sourceSessionId, sessionId, cwd })),
+    async (sourceSessionId: string, sessionId: string, cwd: string, agentTools: boolean) =>
+      remember(sessionId, await invoke('acp_fork_session', { sourceSessionId, sessionId, cwd, agentTools })),
     [remember],
   );
 

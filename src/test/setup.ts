@@ -112,6 +112,7 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
     case "list_directory":
     case "background_processes":
       return Promise.resolve([]);
+    case "agent_tool_respond":
     case "open_path":
     case "remember_workspace":
     case "end_orphaned_sessions":

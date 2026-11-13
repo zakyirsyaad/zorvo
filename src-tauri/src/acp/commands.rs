@@ -4,6 +4,7 @@
 //! the detected profile, with the user's login-shell environment.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use serde_json::{json, Value};
 use tauri::State;
@@ -13,6 +14,8 @@ use super::probe::{ProbedAgent, SignInProbe};
 use super::qwen_log::{self, QwenApiError};
 use super::session_list::ListedSessions;
 use super::terminal_auth::{is_sign_in_terminal_id, CANCELLED_MESSAGE};
+use crate::agent_tools::commands::{forget_if_failed, servers_for_session};
+use crate::agent_tools::AgentTools;
 use crate::env_resolver::cached_user_env;
 use crate::files::ensure_known_workspace;
 use crate::installer::commands::versions_in_use;
@@ -219,14 +222,18 @@ fn setup_launches_in_workspace(
 pub fn acp_start_session(
     manager: State<'_, AcpManager>,
     store: State<'_, AppStore>,
+    tools: State<'_, Arc<AgentTools>>,
     session_id: String,
     cwd: String,
     profile_id: String,
+    agent_tools: bool,
 ) -> Result<StartedSession, String> {
-    manager.start(
+    let launch = launch_in_workspace(&store, &cwd, &profile_id)?;
+    let servers = servers_for_session(&tools, &store, &session_id, agent_tools)?;
+    forget_if_failed(
+        &tools,
         &session_id,
-        &cwd,
-        &launch_in_workspace(&store, &cwd, &profile_id)?,
+        manager.start(&session_id, &cwd, &launch, servers),
     )
 }
 
@@ -281,20 +288,30 @@ pub fn acp_authenticate(
 /// `session_id`, with `session/resume` or `session/load`, whichever the agent
 /// offers.
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)] // a Tauri command's parameters are what the webview sends
 pub fn acp_reopen_session(
     manager: State<'_, AcpManager>,
     store: State<'_, AppStore>,
+    tools: State<'_, Arc<AgentTools>>,
     session_id: String,
     cwd: String,
     profile_id: String,
     acp_session_id: String,
+    agent_tools: bool,
 ) -> Result<StartedSession, String> {
-    manager.reopen(
+    let launch = launch_in_workspace(&store, &cwd, &profile_id)?;
+    let servers = servers_for_session(&tools, &store, &session_id, agent_tools)?;
+    forget_if_failed(
+        &tools,
         &session_id,
-        &cwd,
-        &launch_in_workspace(&store, &cwd, &profile_id)?,
-        &acp_session_id,
-        ReopenPurpose::Continue,
+        manager.reopen(
+            &session_id,
+            &cwd,
+            &launch,
+            &acp_session_id,
+            ReopenPurpose::Continue,
+            servers,
+        ),
     )
 }
 
@@ -302,20 +319,30 @@ pub fn acp_reopen_session(
 /// `session_id`, with `session/load` when the agent offers it, so the history
 /// Zorvo does not have is replayed into the chat.
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)] // a Tauri command's parameters are what the webview sends
 pub fn acp_import_session(
     manager: State<'_, AcpManager>,
     store: State<'_, AppStore>,
+    tools: State<'_, Arc<AgentTools>>,
     session_id: String,
     cwd: String,
     profile_id: String,
     acp_session_id: String,
+    agent_tools: bool,
 ) -> Result<StartedSession, String> {
-    manager.reopen(
+    let launch = launch_in_workspace(&store, &cwd, &profile_id)?;
+    let servers = servers_for_session(&tools, &store, &session_id, agent_tools)?;
+    forget_if_failed(
+        &tools,
         &session_id,
-        &cwd,
-        &launch_in_workspace(&store, &cwd, &profile_id)?,
-        &acp_session_id,
-        ReopenPurpose::Import,
+        manager.reopen(
+            &session_id,
+            &cwd,
+            &launch,
+            &acp_session_id,
+            ReopenPurpose::Import,
+            servers,
+        ),
     )
 }
 
@@ -335,23 +362,40 @@ pub fn acp_list_sessions(
 fn fork_in_workspace(
     manager: &AcpManager,
     store: &AppStore,
+    tools: &AgentTools,
     source_session_id: &str,
     session_id: &str,
     cwd: &str,
+    agent_tools: bool,
 ) -> Result<StartedSession, String> {
     ensure_known_workspace(cwd, |path| store.is_known_workspace(path))?;
-    manager.fork(source_session_id, session_id, cwd)
+    let servers = servers_for_session(tools, store, session_id, agent_tools)?;
+    forget_if_failed(
+        tools,
+        session_id,
+        manager.fork(source_session_id, session_id, cwd, servers),
+    )
 }
 
 #[tauri::command(async)]
 pub fn acp_fork_session(
     manager: State<'_, AcpManager>,
     store: State<'_, AppStore>,
+    tools: State<'_, Arc<AgentTools>>,
     source_session_id: String,
     session_id: String,
     cwd: String,
+    agent_tools: bool,
 ) -> Result<StartedSession, String> {
-    fork_in_workspace(&manager, &store, &source_session_id, &session_id, &cwd)
+    fork_in_workspace(
+        &manager,
+        &store,
+        &tools,
+        &source_session_id,
+        &session_id,
+        &cwd,
+        agent_tools,
+    )
 }
 
 /// Runs the sign-in command of `profile_id`'s terminal method `method_id` in a
@@ -577,8 +621,13 @@ pub fn acp_qwen_last_api_error(
 }
 
 #[tauri::command(async)]
-pub fn acp_stop_session(manager: State<'_, AcpManager>, session_id: String) {
+pub fn acp_stop_session(
+    manager: State<'_, AcpManager>,
+    tools: State<'_, Arc<AgentTools>>,
+    session_id: String,
+) {
     manager.stop(&session_id);
+    tools.forget(&session_id);
 }
 
 #[cfg(test)]
@@ -840,9 +889,11 @@ mod tests {
         let Err(err) = fork_in_workspace(
             &quiet_manager(),
             &store,
+            &AgentTools::disabled(),
             "source",
             "fork",
             &scratch.folder(),
+            false,
         ) else {
             panic!("the fork is refused");
         };
@@ -865,9 +916,11 @@ mod tests {
         let Err(err) = fork_in_workspace(
             &quiet_manager(),
             &store,
+            &AgentTools::disabled(),
             "source",
             "fork",
             &scratch.folder(),
+            false,
         ) else {
             panic!("the fork is refused");
         };

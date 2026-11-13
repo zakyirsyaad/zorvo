@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Plus, Search, X } from "lucide-react";
+import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 
 export interface SidebarSearchProps {
@@ -61,14 +62,17 @@ export function SidebarSearch({ query, onQueryChange, onNewSession }: SidebarSea
 
   return (
     <div className="flex gap-1.5">
-      <button
-        type="button"
+      <Button
+        variant="outline"
+        size="lg"
+        align="start"
+        icon={<Plus size={14} aria-hidden="true" className="mr-0.5" />}
         onClick={onNewSession}
-        className={`${BOX} flex flex-1 items-center justify-start gap-1.5 px-3 text-ui font-medium text-fg transition-colors hover:bg-surface-hover focus-ring`}
+        className="flex-1 bg-surface-2"
       >
-        <Plus size={14} aria-hidden="true" className="mr-0.5" />
-        New session
-      </button>
+        <span className="text-fg">New session</span>
+      </Button>
+      {/* Hand-styled: no Button or IconButton size is the drawn 32px square. */}
       <button
         ref={searchButtonRef}
         type="button"

@@ -112,6 +112,9 @@ export function useAgentTools(deps: AgentToolsDeps): {
   const waiting = useRef(new Map<string, WaitingCard>());
   // The cards for a session in another folder, by card id: one call each, never a grant.
   const folderCards = useRef(new Map<string, FolderCard>());
+  // Opens that run now, and the ones among them whose call ended meanwhile.
+  const opening = useRef(new Set<string>());
+  const endedWhileOpening = useRef(new Set<string>());
   // Bumped when a grant or a waiting card changes, so `isWaiting` and `hasGrant` are read again.
   const [, setRevision] = useState(0);
   const bump = useCallback(() => setRevision((current) => current + 1), []);
@@ -136,6 +139,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
 
   const runOpen = useCallback(
     async (sessionId: string, call: WaitingCall): Promise<void> => {
+      opening.current.add(call.callId);
       try {
         const result = await latest.current.openSession(sessionId, {
           agentId: call.targetId,
@@ -143,6 +147,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
           ...(call.title !== undefined ? { title: call.title } : {}),
           hasOwnWorktree: call.hasOwnWorktree === true,
           ...(call.folderPath !== undefined ? { folderPath: call.folderPath } : {}),
+          isCancelled: () => endedWhileOpening.current.has(call.callId),
         });
         if (!result.ok && result.detail !== undefined) {
           // The agent is told only that it did not work; the cause is the user's to see.
@@ -163,6 +168,9 @@ export function useAgentTools(deps: AgentToolsDeps): {
         );
       } catch {
         respond(call.callId, false, FAILED);
+      } finally {
+        opening.current.delete(call.callId);
+        endedWhileOpening.current.delete(call.callId);
       }
     },
     [latest],
@@ -364,6 +372,11 @@ export function useAgentTools(deps: AgentToolsDeps): {
     (payload: unknown) => {
       const callId = (payload as { callId?: unknown } | null)?.callId;
       if (typeof callId !== 'string') return;
+      // An open that already runs is on no card: it is told through its request.
+      if (opening.current.has(callId)) {
+        endedWhileOpening.current.add(callId);
+        return;
+      }
       for (const [cardId, folder] of folderCards.current) {
         if (folder.call.callId !== callId) continue;
         folderCards.current.delete(cardId);

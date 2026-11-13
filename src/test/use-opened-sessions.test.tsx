@@ -148,6 +148,63 @@ describe("useOpenedSessions", () => {
     });
   });
 
+  it("starts no session, and removes the unused worktree, when the request ended while the worktree was made", async () => {
+    const t = setup();
+    let isCancelled = false;
+    t.spy.mockImplementation((cmd) => {
+      if (cmd === "create_session_worktree") {
+        // The caller is stopped while git works.
+        isCancelled = true;
+        return Promise.resolve(WORKTREE);
+      }
+      return Promise.resolve(null);
+    });
+    let result: unknown;
+    await act(async () => {
+      result = await t.result.current.open("s-a", { ...REQUEST, hasOwnWorktree: true, isCancelled: () => isCancelled });
+    });
+
+    expect(t.starts).toHaveLength(0);
+    expect(result).toEqual({ ok: false, reason: "The request was withdrawn." });
+    const removed = t.spy.mock.calls.filter(([cmd]) => cmd === "remove_session_worktree");
+    expect(removed.map(([, args]) => args)).toEqual([{ repoPath: FOLDER, path: WORKTREE.path }]);
+
+    // Its place is free again.
+    isCancelled = false;
+    for (let index = 0; index < 3; index += 1) {
+      await act(async () => {
+        await t.result.current.open("s-a", REQUEST);
+      });
+    }
+    expect(t.starts).toHaveLength(3);
+  });
+
+  it("starts no session when the opener went away while the worktree was made", async () => {
+    const t = setup();
+    let made: (value: typeof WORKTREE) => void = () => undefined;
+    t.spy.mockImplementation((cmd) =>
+      cmd === "create_session_worktree"
+        ? new Promise((resolve) => {
+            made = resolve;
+          })
+        : Promise.resolve(null),
+    );
+    let result: unknown;
+    let pending: Promise<unknown> = Promise.resolve();
+    await act(async () => {
+      pending = t.result.current.open("s-a", { ...REQUEST, hasOwnWorktree: true });
+    });
+    // The opener is deleted while git works.
+    t.rerender({ sessions: [] });
+    await act(async () => {
+      made(WORKTREE);
+      result = await pending;
+    });
+    expect(t.starts).toHaveLength(0);
+    expect(result).toMatchObject({ ok: false });
+    expect(t.spy.mock.calls.filter(([cmd]) => cmd === "remove_session_worktree")).toHaveLength(1);
+  });
+
   it("refuses an opener or an agent it does not know", async () => {
     const t = setup();
     let gone: unknown;

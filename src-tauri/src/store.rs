@@ -200,6 +200,12 @@ pub struct SessionRecord {
         skip_serializing_if = "Option::is_none"
     )]
     pub delegated_from: Option<DelegationLinkRecord>,
+    /// The session whose agent opened this one through Zorvo's tools.
+    #[serde(
+        deserialize_with = "lenient_opened_by",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub opened_by: Option<OpenedByRecord>,
     /// Comments the user wrote on lines of the session's diff.
     #[serde(
         deserialize_with = "lenient_review_comments",
@@ -253,6 +259,14 @@ pub struct SessionWorktreeRecord {
         skip_serializing_if = "Option::is_none"
     )]
     pub start_commit: Option<String>,
+}
+
+/// Which session's agent opened a session, and when.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenedByRecord {
+    pub session_id: String,
+    pub at: i64,
 }
 
 /// A delegated task: the session that delegated it, the task, and when it ran.
@@ -315,6 +329,15 @@ fn lenient_worktree<'de, D: Deserializer<'de>>(
 fn lenient_delegation<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<DelegationLinkRecord>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| serde_json::from_value(value).ok()))
+}
+
+/// Who opened the session, or none when the value is not a whole link: a bad
+/// one must not make the state file unreadable.
+fn lenient_opened_by<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<OpenedByRecord>, D::Error> {
     let value = Option::<serde_json::Value>::deserialize(deserializer)?;
     Ok(value.and_then(|value| serde_json::from_value(value).ok()))
 }

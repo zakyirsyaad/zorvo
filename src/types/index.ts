@@ -113,6 +113,12 @@ export interface SessionWorktree {
 }
 
 /** A delegated task: the session that delegated it, the task, and when it ran. */
+/** Which session's agent opened a session, and when. */
+export interface OpenedByLink {
+  sessionId: string;
+  at: number;
+}
+
 export interface DelegationLink {
   /** A, the session that delegated. */
   sessionId: string;
@@ -156,6 +162,8 @@ export interface Session {
   compareRunId?: string | null;
   /** The session this one was delegated from; absent when the user started it themselves. */
   delegatedFrom?: DelegationLink | null;
+  /** The session whose agent opened this one through Zorvo's tools; it reports to nobody. */
+  openedBy?: OpenedByLink | null;
   /** Comments written on lines of the session's diff; absent when there are none. */
   reviewComments?: ReviewComment[];
 }

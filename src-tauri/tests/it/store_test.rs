@@ -74,6 +74,7 @@ fn session(id: &str, status: &str) -> SessionRecord {
         has_unread: false,
         compare_run_id: None,
         delegated_from: None,
+        opened_by: None,
         review_comments: Vec::new(),
     }
 }
@@ -95,6 +96,40 @@ fn populated_state() -> PersistedState {
         sessions: vec![session("s-1", "terminated")],
         ..PersistedState::default()
     }
+}
+
+#[test]
+fn a_session_keeps_who_opened_it() {
+    let root = unique_temp_root("opened-by");
+    fs::create_dir_all(&root).expect("create root");
+    let store = AppStore::new(root.clone());
+    let mut state = PersistedState::default();
+    let mut opened = session("s-b", "idle");
+    opened.opened_by = Some(zorvo_lib::store::OpenedByRecord {
+        session_id: "s-a".to_string(),
+        at: 5,
+    });
+    state.sessions = vec![opened, session("s-c", "idle")];
+    store.save_state(&state).expect("save state");
+
+    let raw = fs::read_to_string(root.join("state.json")).expect("read state file");
+    assert_eq!(
+        raw.matches("openedBy").count(),
+        1,
+        "saved once, in camelCase: {raw}"
+    );
+    let loaded = store.load_state().expect("load state");
+    let link = loaded.sessions[0].opened_by.as_ref().expect("the link");
+    assert_eq!((link.session_id.as_str(), link.at), ("s-a", 5));
+
+    // A wrong-typed link loads the session without it.
+    let broken = raw.replace("\"sessionId\": \"s-a\"", "\"sessionId\": 7");
+    assert_ne!(broken, raw, "the fixture was changed");
+    fs::write(root.join("state.json"), broken).expect("write state file");
+    let loaded = store.load_state().expect("load state");
+    assert_eq!(loaded.sessions.len(), 2);
+    assert!(loaded.sessions[0].opened_by.is_none());
+    fs::remove_dir_all(&root).ok();
 }
 
 #[test]

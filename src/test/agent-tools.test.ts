@@ -55,6 +55,11 @@ describe("sessionGetsAgentTools", () => {
     expect(sessionGetsAgentTools({ compareRunId: "run-1" })).toBe(false);
   });
 
+  it("gives none to a session an agent opened", () => {
+    expect(sessionGetsAgentTools({ openedBy: { sessionId: "s-a", at: 1 } })).toBe(false);
+    expect(sessionGetsAgentTools({ openedBy: null })).toBe(true);
+  });
+
   it("gives none to a delegated session, open or ended", () => {
     expect(sessionGetsAgentTools({ delegatedFrom: LINK })).toBe(false);
     expect(sessionGetsAgentTools({ delegatedFrom: { ...LINK, endedAt: 2 } })).toBe(false);

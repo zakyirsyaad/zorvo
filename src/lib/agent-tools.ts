@@ -12,11 +12,14 @@ export interface AgentToolCall {
 
 /**
  * Whether a session is opened with Zorvo's tools. A compare run's agents work
- * side by side and a delegated session is already somebody's helper, so
- * neither gets the tools; a plain session and a fork do.
+ * side by side, a delegated session is already somebody's helper, and a
+ * session an agent opened must not open more (one level), so none of them
+ * gets the tools; a plain session and a fork do.
  */
-export function sessionGetsAgentTools(session: Pick<Session, 'compareRunId' | 'delegatedFrom'>): boolean {
-  return !session.compareRunId && !session.delegatedFrom;
+export function sessionGetsAgentTools(
+  session: Pick<Session, 'compareRunId' | 'delegatedFrom' | 'openedBy'>,
+): boolean {
+  return !session.compareRunId && !session.delegatedFrom && !session.openedBy;
 }
 
 // --- What a tool call means. Pure: the hook that answers calls decides with these.

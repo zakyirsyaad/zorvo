@@ -1106,4 +1106,15 @@ describe("newSessionRecord with a delegation", () => {
 
     expect(record.delegatedFrom).toEqual(delegation);
   });
+
+  it("copies the spec's openedBy onto the record, and leaves it off otherwise", () => {
+    const opened = newSessionRecord(
+      { agent: CODEX, cwd: "/Users/test/developer/zorvo", name: "Codex: Port it", openedBy: { sessionId: "s-a", at: 5 } },
+      1,
+    );
+    expect(opened.openedBy).toEqual({ sessionId: "s-a", at: 5 });
+
+    const plain = newSessionRecord({ agent: CODEX, cwd: "/Users/test/developer/zorvo", name: "Plain" }, 1);
+    expect(plain).not.toHaveProperty("openedBy");
+  });
 });

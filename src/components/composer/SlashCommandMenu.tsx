@@ -34,11 +34,11 @@ export function SlashCommandMenu({ commands, highlighted, onPick, agentName, sid
               onPick(command);
             }}
             // The command over what it does, as the canvas draws the `/` menu.
-            className={`flex cursor-pointer flex-col rounded px-2 py-1.75 ${
+            className={`flex cursor-pointer flex-col rounded-md px-2 py-[5px] ${
               index === highlighted ? "bg-surface-hover" : "hover:bg-surface-hover"
             }`}
           >
-            <span className="truncate font-mono text-ui-sm text-fg">/{command.name}</span>
+            <span className={`truncate font-mono text-ui-sm ${index === highlighted ? "text-fg" : "text-fg-secondary"}`}>/{command.name}</span>
             {command.description && (
               <span className="truncate text-caption leading-[15px] text-fg-subtle">{command.description}</span>
             )}

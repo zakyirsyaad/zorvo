@@ -284,6 +284,54 @@ describe("Popout windows", () => {
     });
   });
 
+  it("forwards the answer to a card Zorvo made for an agent's tool call", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", {
+      sessionId: "s-1",
+      session: { ...runningSession, profileId: "qwen-code" },
+      messages: [
+        {
+          id: "m-1",
+          role: "agent",
+          content: "",
+          timestamp: 1,
+          actionCard: {
+            id: "act-9",
+            sessionId: "s-1",
+            title: "Qwen Code wants to open a session in another folder",
+            prompt: "New Codex session in /w/other:\nPort the parser.",
+            status: "pending",
+            timestamp: 1,
+            requestId: 0,
+            zorvoTool: {
+              tool: "start_session",
+              callerName: "Qwen Code",
+              targetName: "Codex",
+              targetId: "codex-acp",
+              folder: "/w/other",
+              isOtherFolder: true,
+            },
+            options: [
+              { optionId: "zorvo-allow-once", name: "Allow once", kind: "allow_once" },
+              { optionId: "zorvo-deny", name: "Deny", kind: "reject_once" },
+            ],
+          },
+        },
+      ],
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Allow once" }));
+    });
+
+    expect(emitted).toContainEqual({
+      event: "popout-action",
+      payload: { sessionId: "s-1", action: { kind: "choose-option", cardId: "act-9", optionId: "zorvo-allow-once" } },
+    });
+  });
+
   it("forwards the answers to Qwen Code's questions with the option picked", async () => {
     await act(async () => {
       render(<PopoutApp sessionId="s-1" />);

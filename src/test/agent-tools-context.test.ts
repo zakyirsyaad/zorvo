@@ -16,6 +16,11 @@ describe('the command path context', () => {
     expect(COMMAND_PATH_CONTEXT).toContain('does not report back');
   });
 
+  it('tells how to read and stop a session by its handle', () => {
+    expect(COMMAND_PATH_CONTEXT).toContain('read_session {"handle": "<handle>"}');
+    expect(COMMAND_PATH_CONTEXT).toContain('stop_session');
+  });
+
   it('names only tools the backend lists', () => {
     const named = COMMAND_PATH_CONTEXT.match(/\b[a-z]+_[a-z]+\b/g) ?? [];
     expect(named.length).toBeGreaterThan(0);

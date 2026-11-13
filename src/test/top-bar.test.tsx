@@ -61,7 +61,7 @@ describe("TopBar", () => {
       expect(branch.className).not.toContain("shrink-0");
       expect(branch.className).toContain("shrink-[4]");
       expect(branch.className).toContain("min-w-0");
-      expect(title.parentElement?.className).toContain("overflow-hidden");
+      expect(title.closest(".overflow-hidden")).not.toBeNull();
     });
 
     it("is 48px tall with the session's title at weight 600 in the brightest text", () => {
@@ -300,12 +300,78 @@ describe("TopBar", () => {
   });
 
   describe("breadcrumb", () => {
-    it("shows the branch as a plain chip and no folder badge", () => {
+    it("reads folder, a slash, then the title, with the folder giving way first", () => {
+      renderTopBar({ sessionName: "Market analyzer refactor", folderName: "titan-investment", workspaceName: "titan-investment", branch: "main" });
+
+      const folder = screen.getByText("titan-investment");
+      const slash = screen.getByText("/");
+      const title = screen.getByText("Market analyzer refactor");
+      expect(folder).toHaveClass("text-fg-muted", "shrink-[3]", "truncate");
+      expect(slash).toHaveAttribute("aria-hidden", "true");
+      expect(slash).toHaveClass("text-fg-subtle");
+      expect(title).toHaveClass("min-w-12", "font-semibold", "text-fg");
+      expect(folder.compareDocumentPosition(slash) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(slash.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.getByLabelText("Branch main")).toBeDefined();
+    });
+
+    it("shows the title alone without a folder", () => {
       renderTopBar({ sessionName: "Market analyzer refactor", workspaceName: "titan-investment", branch: "main" });
 
       expect(screen.getByText("Market analyzer refactor")).toBeDefined();
-      expect(screen.getByLabelText("Branch main")).toBeDefined();
+      expect(screen.queryByText("/")).toBeNull();
       expect(screen.queryByText("titan-investment")).toBeNull();
+    });
+
+    it("reads folder / New session for a draft, with no branch chip", () => {
+      renderTopBar({ isDraft: true, folderName: "titan-investment", workspaceName: "titan-investment", branch: "main" });
+
+      expect(screen.getByText("titan-investment")).toBeDefined();
+      expect(screen.getByText("/")).toBeDefined();
+      expect(screen.getByText("New session")).toHaveClass("font-semibold", "text-fg");
+      expect(screen.queryByLabelText("Branch main")).toBeNull();
+    });
+
+    it("adds Compare and the agent count after a run's title", () => {
+      renderTopBar({ sessionName: "Fix the login", folderName: "zorvo", runAgentCount: 3 });
+
+      const compare = screen.getByText("Compare · 3 agents");
+      expect(compare.compareDocumentPosition(screen.getByText("Fix the login")) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+      expect(compare.parentElement?.querySelector("svg.lucide-columns-3")).toHaveClass("text-fg-muted");
+    });
+
+    it("pads the bar 18px left and 10px right with a 10px gap", () => {
+      const { container } = renderTopBar({ sessionName: "A" });
+      expect(headerOf(container)).toHaveClass("pl-[18px]", "pr-2.5", "gap-2.5");
+    });
+  });
+
+  describe("chips", () => {
+    it("draws the Plan, background-task and diff chips 28px high, and leaves the branch chip plain", () => {
+      renderTopBar({
+        sessionName: "A",
+        workspaceName: "w",
+        branch: "main",
+        plan: [{ content: "Step", status: "in_progress" }],
+        backgroundTasks: {
+          tasks: [{ id: "agent:s2", kind: "agent" as const, name: "Refactor", status: "Working" as const, startedAt: 0, sessionId: "s2" }],
+          isOpen: false,
+          onOpenChange: () => {},
+          onOpenTask: () => {},
+          onStopTask: async () => true,
+        },
+        diffStats: { added: 4, removed: 1 },
+        onOpenDiff: () => {},
+      });
+      for (const chip of [
+        screen.getByRole("button", { name: /^Plan,/ }),
+        screen.getByRole("button", { name: /background task/ }),
+        screen.getByRole("button", { name: /lines added/ }),
+      ]) {
+        expect(chip).toHaveClass("h-7", "text-ui-sm", "px-2.5", "rounded-md", "border-border");
+        expect(chip).not.toHaveClass("h-6");
+      }
+      expect(screen.getByLabelText("Branch main")).toHaveClass("h-6");
     });
   });
 

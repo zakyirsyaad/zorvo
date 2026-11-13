@@ -92,6 +92,7 @@ export function BackgroundTasksMenu({ tasks, isOpen, onOpenChange, onOpenTask, o
       className="w-96 select-text"
       trigger={
         <Chip
+          size="bar"
           // An arc that turns, so it never reads as the Plan chip's checklist.
           icon={<LoaderCircle size={12} strokeWidth={2.25} className="text-status-running motion-safe:animate-spin" />}
           aria-haspopup="dialog"

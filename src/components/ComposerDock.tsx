@@ -1,6 +1,6 @@
 import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
+import { createPortal } from "react-dom";
 import { ArrowUp, Paperclip, ShieldAlert, Square } from "lucide-react";
-import { DRAFT_CHIP } from "./composer/chip-style";
 import { CompareModelStatus } from "./composer/CompareModelStatus";
 import type { CompareModelControl } from "../lib/compare-models";
 import { AgentLogo } from "./AgentLogo";
@@ -10,7 +10,7 @@ import { IconButton } from "./ui/IconButton";
 import { OptionDropdown } from "./composer/OptionDropdown";
 import { MoreControls } from "./composer/MoreControls";
 import { splitControls } from "../lib/composer-overflow";
-import type { AgentMultiPickerProps } from "./composer/AgentMultiPicker";
+import { AgentTiles, type AgentTilesProps } from "./composer/AgentTiles";
 import type { FolderControl } from "./composer/FolderPicker";
 import { DraftChips } from "./composer/DraftChips";
 import { appendAttachments, formatAttachmentPath, withAttachments } from "../lib/attachments";
@@ -156,13 +156,13 @@ export interface ComposerDockProps {
    * (two portals into one node would keep the order they mounted in). The slot takes no room while both are empty.
    */
   aboveCardSlots?: { install: Ref<HTMLDivElement>; signIn: Ref<HTMLDivElement> };
+  /** Where a draft's folder and branch chips are drawn (beside its heading); without it they sit above the card. */
+  chipsTarget?: HTMLElement | null;
   /** Before a new session starts: the folder it starts in. */
   folder?: FolderControl;
-  /** Before a new session starts: the agent it runs. */
-  agent?: ComposerControl;
-  /** Before a new session starts, in a git repository: the agent chip with a checkbox to tick several; replaces `agent`. */
-  agents?: Omit<AgentMultiPickerProps, "isOpen" | "onToggle" | "onClose">;
-  /** A running session's agent, named first in the row; drafts name theirs with the `agent`/`agents` chip. */
+  /** Before a new session starts: its agents as tiles, ticked for a compare run where the folder is a repository. */
+  agents?: Omit<AgentTilesProps, "isOpen" | "onToggle" | "onClose">;
+  /** A running session's agent, named first in the row; drafts show theirs as tiles. */
   sessionAgent?: { profileId: string; name: string };
   /** In a compare draft: one model chip per ticked agent, in the run's order. */
   compareModels?: CompareModelControl[];
@@ -209,8 +209,8 @@ export function ComposerDock({
   noteInRow = false,
   isLoadingControls = false,
   aboveCardSlots,
+  chipsTarget,
   folder,
-  agent,
   agents,
   sessionAgent,
   compareModels,
@@ -241,7 +241,8 @@ export function ComposerDock({
   const onTextChangeRef = useLatest(onTextChange);
   const onDelegationMentionChangeRef = useLatest(onDelegationMentionChange);
 
-  useDismiss(containerRef, openDropdown !== null, () => setOpenDropdown(null));
+  // The draft's chips are drawn beside the heading, outside this footer: a click in them is not outside.
+  useDismiss(containerRef, openDropdown !== null, () => setOpenDropdown(null), chipsTarget);
 
   useLayoutEffect(() => {
     if (!shouldFitRef.current || !textareaRef.current) return;
@@ -510,31 +511,28 @@ export function ComposerDock({
   const { inline: inlineControls, overflow: overflowControls } = splitControls(agentControls);
   const isShowingSkeletons = Boolean(isLoadingControls) && agentControls.length === 0;
   // A draft's composer sits near the top of its column with room below; a session's sits at the window's bottom.
-  const isDraft = Boolean(folder || agent || agents);
+  const isDraft = Boolean(folder || agents);
   const menuSide = isDraft ? "bottom" : "top";
+  const inHeading = (chips: ReactNode) => (chipsTarget ? createPortal(chips, chipsTarget) : chips);
 
   return (
-    <footer ref={containerRef} className="w-full max-w-chat flex flex-col items-center select-none">
-      {(folder || agents || agent) && (
-        <DraftChips
-          folder={folder}
-          agents={agents}
-          agentChip={
-            !agents && agent ? (
-              <OptionDropdown
-                label="Agent"
-                align="left"
-                chipClassName={DRAFT_CHIP}
-                side="bottom"
-                icon={<AgentLogo profileId={agent.selected ?? ""} name="" size={16} />}
-                renderIcon={(option) => <AgentLogo profileId={option.value ?? ""} name="" size={16} />}
-                {...dropdownProps("agent", agent)}
-              />
-            ) : undefined
-          }
-          isOpen={(name) => openDropdown === name}
-          onToggle={toggle}
-          onClose={(name) => setOpenDropdown((current) => (current === name ? null : current))}
+    <footer ref={containerRef} className={`w-full ${isDraft ? "max-w-draft" : "max-w-chat"} flex flex-col items-center select-none`}>
+      {folder &&
+        inHeading(
+          <DraftChips
+            className={chipsTarget ? "contents" : "mb-4 flex w-full flex-wrap items-center gap-2"}
+            folder={folder}
+            isOpen={(name) => openDropdown === name}
+            onToggle={toggle}
+            onClose={(name) => setOpenDropdown((current) => (current === name ? null : current))}
+          />,
+        )}
+      {agents && (
+        <AgentTiles
+          {...agents}
+          isOpen={openDropdown === "agent"}
+          onToggle={() => toggle("agent")}
+          onClose={() => setOpenDropdown((current) => (current === "agent" ? null : current))}
         />
       )}
       {aboveCardSlots && (
@@ -629,7 +627,7 @@ export function ComposerDock({
               </IconButton>
             )}
 
-            {sessionAgent && !agent && !agents && (
+            {sessionAgent && !agents && (
               // A running session's agent, named first: a label, since a session cannot change its agent.
               <span data-agent-chip="" className="inline-flex h-6.5 min-w-0 items-center gap-1.5 pl-0.5 pr-1.5 text-ui-sm text-fg-secondary">
                 <AgentTile profileId={sessionAgent.profileId} name="" size={16} />
@@ -710,11 +708,6 @@ export function ComposerDock({
               />
             )}
 
-            {shownNote && noteInRow && (
-              <p id={noteId} className="pl-1 text-caption text-fg-subtle">
-                {shownNote}
-              </p>
-            )}
           </div>
 
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
@@ -753,6 +746,12 @@ export function ComposerDock({
           </div>
         </div>
       </div>
+      {/* A compare run's note sits under the card, as drawn; why Send is blocked is a sentence inside it. */}
+      {shownNote && noteInRow && (
+        <p id={noteId} data-note-below="" className="mt-2 w-full px-1 text-caption text-fg-subtle">
+          {shownNote}
+        </p>
+      )}
     </footer>
   );
 }

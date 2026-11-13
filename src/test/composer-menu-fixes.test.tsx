@@ -27,11 +27,20 @@ describe("which way the composer's menus open", () => {
       <ComposerDock
         onSendMessage={() => {}}
         folder={draftFolder}
-        agent={control(["claude-acp", "qwen-code"])}
+        agents={{
+          options: [
+            { value: "claude-acp", label: "Claude Code", name: "Claude Code", signIn: "ready" },
+            { value: "qwen-code", label: "Qwen Code", name: "Qwen Code", signIn: "unchecked" },
+          ],
+          selected: ["claude-acp"],
+          canTick: false,
+          onChange: () => {},
+          onPick: () => {},
+        }}
         controls={{ model: control(["Opus", "Sonnet"]), permission: control(["Default", "Plan"]), effort: control(["Low", "High"]), extras: [{ ...control(["Off", "On"]), id: "fast", label: "Fast mode" }] }}
       />,
     );
-    for (const name of [/^Agent:/, /^Model:/, /^Permission mode:/, /^Effort:/]) {
+    for (const name of [/^All agents$/, /^Model:/, /^Permission mode:/, /^Effort:/]) {
       const chip = screen.getByRole("button", { name });
       fireEvent.click(chip);
       expect(panelOf(chip)).toHaveClass("top-full");
@@ -217,11 +226,22 @@ describe("a risky mode's line", () => {
 });
 
 describe("the draft's agent dropdown outside a repository", () => {
-  it("shows each agent's logo on its row, as its chip does", () => {
-    render(<ComposerDock onSendMessage={() => {}} folder={draftFolder} agent={control(["claude-acp", "qwen-code"])} />);
-    fireEvent.click(screen.getByRole("button", { name: /^Agent:/ }));
-    for (const option of screen.getAllByRole("option")) {
-      expect(option.querySelector("[data-option-icon]")).not.toBeNull();
-    }
+  it("shows each agent's tile on its row, with no checkbox where nothing can be ticked", () => {
+    render(<ComposerDock onSendMessage={() => {}} folder={draftFolder} agents={{
+      options: [
+        { value: "claude-acp", label: "Claude Code", name: "Claude Code", signIn: "ready" },
+        { value: "qwen-code", label: "Qwen Code", name: "Qwen Code", signIn: "unchecked" },
+      ],
+      selected: ["claude-acp"],
+      canTick: false,
+      onChange: () => {},
+      onPick: () => {},
+    }} />);
+    fireEvent.click(screen.getByRole("button", { name: "All agents" }));
+    const options = screen.getAllByRole("option");
+    expect(options).toHaveLength(2);
+    for (const option of options) expect(option.querySelector(".bg-chip")).not.toBeNull();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryByText("Pick more than one to compare")).toBeNull();
   });
 });

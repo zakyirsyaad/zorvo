@@ -307,7 +307,7 @@ describe("Installing an agent from the new-session draft", () => {
     await waitFor(() => expect(screen.getByRole("region", { name: "Install Claude Code" })).toBeDefined());
     expect(screen.getByRole("button", { name: "Install Claude Code" })).toBeDefined();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /^Agent:/ }));
+      fireEvent.click(screen.getByRole("button", { name: "All agents" }));
     });
     await act(async () => {
       fireEvent.click(screen.getByRole("option", { name: "Codex" }));
@@ -386,7 +386,7 @@ describe("Installing an agent from the new-session draft", () => {
     await waitFor(() => expect(probedAgents()).toEqual(["qwen-code"]));
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /^Agent:/ }));
+      fireEvent.click(screen.getByRole("button", { name: "All agents" }));
     });
     await act(async () => {
       fireEvent.click(screen.getByRole("option", { name: "Codex" }));
@@ -417,7 +417,7 @@ describe("Installing an agent from the new-session draft", () => {
 
     await waitFor(() => expect(probedAgents()).toEqual(["qwen-code", "codex-acp"]));
     expect(screen.queryByRole("region", { name: "Install Codex" })).toBeNull();
-    expect(screen.getByRole("button", { name: /^Agent: Codex$/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Codex", pressed: true })).toBeDefined();
     expect((screen.getByRole("button", { name: "Send message" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
@@ -446,9 +446,9 @@ describe("Installing an agent from the new-session draft", () => {
     await act(async () => {
       render(<App />);
     });
-    await waitFor(() => expect(screen.getByRole("button", { name: /^Agent:/ })).toBeDefined());
+    await waitFor(() => expect(screen.getByRole("button", { name: "All agents" })).toBeDefined());
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /^Agent:/ }));
+      fireEvent.click(screen.getByRole("button", { name: "All agents" }));
     });
     await act(async () => {
       fireEvent.click(screen.getByRole("option", { name: "Codex" }));

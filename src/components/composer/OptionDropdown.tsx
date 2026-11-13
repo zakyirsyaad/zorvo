@@ -28,7 +28,7 @@ export interface OptionDropdownProps {
   heading?: string;
   /** After the value on the chip: a risky mode's shield. */
   trailing?: ReactNode;
-  /** The chip's look: the composer row's by default, `DRAFT_CHIP` above a draft's card. */
+  /** The chip's look: the composer row's by default. */
   chipClassName?: string;
   /**
    * Which way the menu opens: up from a session's composer at the bottom of the window (the default), down

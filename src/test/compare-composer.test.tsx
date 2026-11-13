@@ -81,9 +81,12 @@ async function renderDraft(options: DraftOptions = {}) {
   return spy;
 }
 
+/** The draft's ticked agent tiles. */
+const tickedTiles = () => [...document.querySelectorAll('[data-agent-tile][aria-pressed="true"]')];
+
 async function openAgentMenu() {
   await act(async () => {
-    fireEvent.click(await screen.findByRole("button", { name: /^Agent: / }));
+    fireEvent.click(await screen.findByRole("button", { name: "All agents" }));
   });
 }
 
@@ -120,7 +123,7 @@ describe("comparing agents in the composer", () => {
     await tick("Qwen Code");
 
     expect(screen.getByText(QUOTA_NOTE)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Agent: .*, compare$/ })).toBeInTheDocument();
+    expect(tickedTiles().length).toBeGreaterThanOrEqual(2);
   });
 
   it("words the primary button by how many sessions it starts", async () => {
@@ -189,7 +192,7 @@ describe("comparing agents in the composer", () => {
 
     const fifth = screen.getByRole("checkbox", { name: /^Compare Goose/ });
     expect(fifth).toBeDisabled();
-    expect(screen.getByRole("button", { name: /^Agent: (.*, ){3}.*, compare$/ })).toBeInTheDocument();
+    expect(tickedTiles()).toHaveLength(4);
     expect(screen.getByText("Each agent starts in its safest mode, in its own worktree.")).toBeInTheDocument();
   });
 
@@ -217,7 +220,7 @@ describe("comparing agents in the composer", () => {
       fireEvent.click(screen.getByRole("option", { name: "Kimi CLI" }));
     });
 
-    expect(screen.getByRole("button", { name: "Agent: Kimi CLI" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Kimi CLI", pressed: true })).toBeInTheDocument();
     expect(screen.queryByText(QUOTA_NOTE)).toBeNull();
   });
 
@@ -226,11 +229,11 @@ describe("comparing agents in the composer", () => {
     await openAgentMenu();
     await tick("Qwen Code");
     await tick("Claude Code");
-    expect(screen.getByRole("button", { name: "Agent: Qwen Code" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Qwen Code", pressed: true })).toBeInTheDocument();
 
     await chooseFolder("titan-investment");
 
-    expect(await screen.findByRole("button", { name: "Agent: Qwen Code" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Qwen Code", pressed: true })).toBeInTheDocument();
     await openAgentMenu();
     expect(screen.queryByRole("checkbox")).toBeNull();
   });
@@ -245,7 +248,7 @@ describe("comparing agents in the composer", () => {
     await waitFor(() => expect(screen.queryByText(QUOTA_NOTE)).toBeNull());
     await chooseFolder("zorvo");
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Agent: Claude Code" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Claude Code", pressed: true })).toBeInTheDocument());
     expect(screen.queryByText(QUOTA_NOTE)).toBeNull();
   });
 
@@ -313,7 +316,7 @@ describe("comparing agents in the composer", () => {
 
     await act(async () => {});
     expect(screen.getByText(QUOTA_NOTE)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Agent: .*, compare$/ })).toBeInTheDocument();
+    expect(tickedTiles().length).toBeGreaterThanOrEqual(2);
   });
 
   it("Send is blocked while a compare draft's folder is loading", async () => {
@@ -342,7 +345,7 @@ describe("comparing agents in the composer", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("option", { name: "Qwen Code" }));
     });
-    expect(screen.getByRole("button", { name: "Agent: Qwen Code" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Qwen Code", pressed: true })).toBeInTheDocument();
   });
 });
 

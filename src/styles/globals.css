@@ -49,6 +49,9 @@
 
   /* The chat's column: messages, cards, notices and the composer share it. */
   --container-chat: 680px;
+  /* The new-session draft's column, and the compare run's columns side by side. */
+  --container-draft: 720px;
+  --container-compare: 1040px;
   --radius-panel: 10px;
 
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;

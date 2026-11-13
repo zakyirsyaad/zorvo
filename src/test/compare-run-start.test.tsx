@@ -124,7 +124,7 @@ async function click(element: HTMLElement) {
 
 /** Ticks the agents in the Agent chip's menu, on top of the default one. */
 async function tickAgents(...names: string[]) {
-  await click(await screen.findByRole("button", { name: /^Agent: / }));
+  await click(await screen.findByRole("button", { name: "All agents" }));
   for (const name of names) {
     await click(await screen.findByRole("checkbox", { name: new RegExp(`^Compare ${name}`) }));
   }
@@ -410,7 +410,7 @@ describe("starting a compare run", () => {
     expect(within(panel).getAllByRole("listitem").map((row) => row.getAttribute("aria-label"))).toEqual(["Claude Code", "Qwen Code"]);
     expect(screen.queryByRole("textbox", { name: "Prompt" })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Folder:/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /^Agent: / })).toBeNull();
+    expect(screen.queryByRole("button", { name: "All agents" })).toBeNull();
   });
 
   it("opens one agent's chat from its row, and leaves the panel", async () => {

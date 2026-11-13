@@ -384,8 +384,16 @@ export function applyPermissionRequest(
     ...(questions ? { questions } : {}),
     ...(edits ? { edits } : {}),
   };
+  return withCardOnReply(messages, card, ctx);
+}
+
+/**
+ * Puts `card` on the agent's open reply, or on a new agent message when there
+ * is none. A reply holds one card: a second one while the first waits gets its
+ * own message.
+ */
+export function withCardOnReply(messages: ChatMessage[], card: ActionCard, ctx: AcpReducerContext): ChatMessage[] {
   const withCard = (reply: ChatMessage) => ({ ...reply, actionCard: card });
-  // A reply holds one card: a second request while the first waits gets its own message.
   const open = messages[openReplyIndex(messages)];
   if (open?.actionCard) {
     return [...messages, withCard({ id: ctx.createId('msg'), role: 'agent', content: '', ...messageTime(ctx) })];

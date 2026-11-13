@@ -20,6 +20,7 @@ export function DiffStatChip({ added, removed, commentCount = 0, isAlwaysShown =
   const commentsText = commentCount > 0 ? `, ${formatLineCount(commentCount)} ${commentCount === 1 ? "comment" : "comments"}` : "";
   return (
     <Chip
+      size="bar"
       onClick={onOpen}
       label={`${addedText} lines added, ${removedText} removed${commentsText}. Open the diff`}
       className="font-mono tabular-nums"

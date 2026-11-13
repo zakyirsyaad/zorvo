@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, act, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, act, fireEvent, waitFor, within } from "@testing-library/react";
 
 type Listener = (event: { payload: unknown }) => void;
 const listeners = new Map<string, Listener[]>();
@@ -171,6 +171,16 @@ describe("Popout windows", () => {
     });
 
     expect(screen.getByRole("button", { name: "Plan, 1 of 2 done" })).toBeDefined();
+  });
+
+  it("shows the session's folder before its title", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", { sessionId: "s-1", session: runningSession, messages: [] });
+    const bar = screen.getByRole("banner");
+    expect(within(bar).getByText("zorvo")).toBeInTheDocument();
+    expect(within(bar).getByText("Fix login")).toBeInTheDocument();
   });
 
   it("keeps its top bar clear of the window's buttons", async () => {

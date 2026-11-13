@@ -1,5 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { folderSummary, rowSubtitle, runSummary, sessionsIn, statusOf } from "../lib/sidebar-status";
+import {
+  filterCounts,
+  folderSummary,
+  matchesFilter,
+  needsYou,
+  rowSubtitle,
+  rowTime,
+  runSummary,
+  sessionsIn,
+  statusOf,
+} from "../lib/sidebar-status";
+import { formatShortTime } from "../lib/relative-time";
 import { groupSessionsByWorkspace } from "../lib/session-helpers";
 import { compareRuns } from "../lib/compare-run";
 import type { Session } from "../types";
@@ -67,5 +78,56 @@ describe("runSummary", () => {
     const run = [session("a"), session("b"), session("c")];
     expect(runSummary(run, none, among(["a", "b"]))).toBe("2 working, 1 finished");
     expect(runSummary(run.slice(0, 2), among(["a"]), among(["b"]))).toBe("1 waiting, 1 working");
+  });
+});
+
+
+describe("needsYou and matchesFilter", () => {
+  it("counts a waiting session and an unread idle one, but not an unread busy one", () => {
+    const waiting = session("w");
+    const unread = session("u", { hasUnread: true });
+    const busyUnread = session("b", { hasUnread: true });
+    expect(needsYou(waiting, among(["w"]), none)).toBe(true);
+    expect(needsYou(unread, none, none)).toBe(true);
+    expect(needsYou(busyUnread, none, among(["b"]))).toBe(false);
+    expect(matchesFilter(busyUnread, "working", none, among(["b"]))).toBe(true);
+    expect(matchesFilter(busyUnread, "needs-you", none, among(["b"]))).toBe(false);
+  });
+
+  it("matches every session under All", () => {
+    expect(matchesFilter(session("a"), "all", none, none)).toBe(true);
+  });
+
+  it("puts a waiting busy session under Needs you and Working both", () => {
+    const both = session("x");
+    expect(matchesFilter(both, "needs-you", among(["x"]), among(["x"]))).toBe(true);
+    expect(matchesFilter(both, "working", among(["x"]), among(["x"]))).toBe(true);
+  });
+});
+
+describe("filterCounts", () => {
+  it("counts over the listed sessions, archived ones left out", () => {
+    const sessions = [
+      session("waiting"),
+      session("unread", { hasUnread: true }),
+      session("busy1"),
+      session("busy2"),
+      session("idle"),
+      session("old", { archivedAt: 5, hasUnread: true }),
+    ];
+    expect(filterCounts(sessions, among(["waiting"]), among(["busy1", "busy2"]))).toEqual({
+      needsYou: 2,
+      working: 2,
+    });
+  });
+});
+
+describe("rowTime", () => {
+  it("is null while the row has a status", () => {
+    expect(rowTime({ tone: "running", label: "Working", pulse: true }, 1, NOW)).toBeNull();
+  });
+
+  it("is the short time when idle", () => {
+    expect(rowTime(null, NOW - 5 * 60_000, NOW)).toBe(formatShortTime(NOW - 5 * 60_000, NOW));
   });
 });

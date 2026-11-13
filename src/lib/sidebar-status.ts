@@ -1,6 +1,6 @@
 import type { Session } from "../types";
 import type { SessionNode } from "./session-helpers";
-import { formatRelativeTime } from "./relative-time";
+import { formatRelativeTime, formatShortTime } from "./relative-time";
 
 export type RowTone = "attention" | "running" | "unread";
 
@@ -64,6 +64,11 @@ export function rowSubtitle(
   return agentName ? `${agentName} · ${detail}` : detail;
 }
 
+/** The time an idle row shows at its right; null for a row with a status, whose words say more. */
+export function rowTime(status: RowStatus | null, createdAt: number, now: number = Date.now()): string | null {
+  return status ? null : formatShortTime(createdAt, now);
+}
+
 /** Every session in a tree, forks and a run's members included. */
 export function sessionsIn(nodes: readonly SessionNode[]): Session[] {
   return nodes.flatMap((node) => {
@@ -80,6 +85,32 @@ export interface FolderSummary {
 }
 
 type IsTrue = (sessionId: string) => boolean;
+
+export type SidebarFilter = "all" | "needs-you" | "working";
+
+/** Waiting for you, or finished while you were elsewhere. The same rule a row uses for its unread badge. */
+export function needsYou(session: Session, isWaiting: IsTrue, isBusy: IsTrue): boolean {
+  return isWaiting(session.id) || (Boolean(session.hasUnread) && !isBusy(session.id));
+}
+
+export function matchesFilter(session: Session, filter: SidebarFilter, isWaiting: IsTrue, isBusy: IsTrue): boolean {
+  if (filter === "needs-you") return needsYou(session, isWaiting, isBusy);
+  if (filter === "working") return isBusy(session.id);
+  return true;
+}
+
+/** Counts over the sessions the sidebar lists (not archived); a run's members count one each. */
+export function filterCounts(
+  sessions: readonly Session[],
+  isWaiting: IsTrue,
+  isBusy: IsTrue,
+): { needsYou: number; working: number } {
+  const listed = sessions.filter((s) => s.archivedAt == null);
+  return {
+    needsYou: listed.filter((s) => needsYou(s, isWaiting, isBusy)).length,
+    working: listed.filter((s) => isBusy(s.id)).length,
+  };
+}
 
 /** What a folded folder says on its header: who waits, else who works, else how many sessions. */
 export function folderSummary(sessions: readonly Session[], isWaiting: IsTrue, isBusy: IsTrue): FolderSummary {

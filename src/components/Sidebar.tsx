@@ -1,12 +1,14 @@
 import { useState, type ReactNode } from "react";
-import { Search, Plus, ChevronRight, PanelLeft, Pin } from "lucide-react";
-import { Button } from "./ui/Button";
+import { ChevronRight, PanelLeft, Pin } from "lucide-react";
 import { IconButton } from "./ui/IconButton";
 import { TOP_BAR_TRAFFIC_LIGHT_INSET_PX } from "./TopBar";
 import { isInUse, type EnabledSettings } from "../lib/enabled-agents";
 import type { AgentProfile, Session, Workspace } from "../types";
 import { FolderGroup } from "./sidebar/FolderGroup";
 import { SessionTree, type SessionListContext } from "./sidebar/SessionList";
+import { SidebarFilter } from "./sidebar/SidebarFilter";
+import { SidebarSearch } from "./sidebar/SidebarSearch";
+import { filterCounts, matchesFilter, type SidebarFilter as FilterId } from "../lib/sidebar-status";
 import { compareRuns } from "../lib/compare-run";
 import {
   folderNameOf,
@@ -65,36 +67,50 @@ function matches(query: string, ...values: string[]): boolean {
 /** Finds a profile id's agent name for the search. */
 type AgentNameOf = (profileId: string) => string | undefined;
 
-/**
- * True when the session or one of its forks matches the search. A run's rows are
- * named after their agent, so they match by that name too.
- */
-function nodeMatches(node: SessionNode, query: string, agentNameOf: AgentNameOf, isRunRow = false): boolean {
-  const { session } = node;
-  const own = isRunRow
-    ? matches(query, session.name, agentNameOf(session.profileId) ?? session.profileId)
-    : matches(query, session.name);
-  return own || node.children.some((child) => nodeMatches(child, query, agentNameOf, Boolean(node.run)));
+/** A test of one node, with whether the node is a row of a run (named after its agent). */
+type NodeTest = (node: SessionNode, isRunRow: boolean) => boolean;
+
+/** True when the node or one of its forks passes the test. */
+function nodeMatches(node: SessionNode, test: NodeTest, isRunRow = false): boolean {
+  return test(node, isRunRow) || node.children.some((child) => nodeMatches(child, test, Boolean(node.run)));
 }
 
-/** Keeps the sessions that match, with the sources of matching forks so the tree stays readable. */
-function filterNodes(nodes: SessionNode[], query: string, agentNameOf: AgentNameOf, isRunRow = false): SessionNode[] {
+/** Keeps the sessions that pass, with the sources of passing forks so the tree stays readable. */
+function filterNodes(nodes: SessionNode[], test: NodeTest, isRunRow = false): SessionNode[] {
   return nodes
-    .filter((node) => nodeMatches(node, query, agentNameOf, isRunRow))
-    .map((node) => ({ ...node, children: filterNodes(node.children, query, agentNameOf, Boolean(node.run)) }));
+    .filter((node) => nodeMatches(node, test, isRunRow))
+    .map((node) => ({ ...node, children: filterNodes(node.children, test, Boolean(node.run)) }));
+}
+
+/** The search as a node test: a run's rows are named after their agent, so they match by that name too. */
+function searchTest(query: string, agentNameOf: AgentNameOf): NodeTest {
+  return ({ session }, isRunRow) =>
+    isRunRow ? matches(query, session.name, agentNameOf(session.profileId) ?? session.profileId) : matches(query, session.name);
 }
 
 /** The groups to show for a search: a folder that matches keeps all its sessions. */
 function searchGroups(groups: SessionGroup[], query: string, agentNameOf: AgentNameOf): SessionGroup[] {
   if (query === "") return groups;
+  const test = searchTest(query, agentNameOf);
   return groups
     .map((group) =>
-      matches(query, group.name, group.path)
-        ? group
-        : { ...group, sessions: filterNodes(group.sessions, query, agentNameOf) },
+      matches(query, group.name, group.path) ? group : { ...group, sessions: filterNodes(group.sessions, test) },
     )
     .filter((group) => group.sessions.length > 0 || matches(query, group.name, group.path));
 }
+
+/** The groups to show for a filter: only the sessions it keeps, and no folder left empty. */
+function filterGroups(groups: SessionGroup[], filter: FilterId, test: NodeTest): SessionGroup[] {
+  if (filter === "all") return groups;
+  return groups
+    .map((group) => ({ ...group, sessions: filterNodes(group.sessions, test) }))
+    .filter((group) => group.sessions.length > 0);
+}
+
+const EMPTY_FILTER_TEXT: Record<Exclude<FilterId, "all">, string> = {
+  "needs-you": "No sessions need you.",
+  working: "No sessions are working.",
+};
 
 export function Sidebar({
   workspaces,
@@ -121,6 +137,7 @@ export function Sidebar({
   onHide,
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [filter, setFilter] = useState<FilterId>("all");
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
   const [collapsedPaths, setCollapsedPaths] = useState<ReadonlySet<string>>(() => new Set());
   const query = searchQuery.trim().toLowerCase();
@@ -131,15 +148,29 @@ export function Sidebar({
   const runMemberIds = new Set(runs.flatMap((run) => run.sessions.map((s) => s.id)));
   const listed = sessions.filter((s) => !isArchived(s) && (!isShownPinned(s) || runMemberIds.has(s.id)));
   const agentNameOf: AgentNameOf = (profileId) => agents.find((agent) => agent.id === profileId)?.name;
-  const groups = searchGroups(groupSessionsByWorkspace(workspaces, listed, runs), query, agentNameOf);
+  // The filter narrows first, then the search; neither changes which session is open.
+  const filterTest: NodeTest = ({ session }) => matchesFilter(session, filter, isSessionWaiting, isSessionBusy);
+  const groups = searchGroups(
+    filterGroups(groupSessionsByWorkspace(workspaces, listed, runs), filter, filterTest),
+    query,
+    agentNameOf,
+  );
+  const counts = filterCounts(sessions, isSessionWaiting, isSessionBusy);
   const asNodes = (list: Session[]) => list.map((session) => ({ session, children: [] }));
   // Like a listed session, one is found by its own name or its project's.
   const isFound = (s: Session) => matches(query, s.name, folderNameOf(workspacePathOf(s)), workspacePathOf(s));
   const pinned = sessions
-    .filter((s) => isShownPinned(s) && !runMemberIds.has(s.id) && isFound(s))
+    .filter(
+      (s) =>
+        isShownPinned(s) &&
+        !runMemberIds.has(s.id) &&
+        matchesFilter(s, filter, isSessionWaiting, isSessionBusy) &&
+        isFound(s),
+    )
     .sort((a, b) => b.createdAt - a.createdAt);
+  // Archived shows only under All.
   const archived = sessions
-    .filter((s) => isArchived(s) && isFound(s))
+    .filter((s) => filter === "all" && isArchived(s) && isFound(s))
     .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0));
   const detectedAgents = agents.filter((agent) => agent.detected && isInUse(agent, settings));
   const isArchiveShown = isArchiveOpen || query !== "";
@@ -181,25 +212,11 @@ export function Sidebar({
           </IconButton>
         )}
       </div>
-      <div className="flex flex-col gap-2 px-3 pb-3">
-        <Button variant="outline" size="lg" align="start" icon={<Plus size={14} className="mr-0.5" />} onClick={onNewSession}>
-          <span className="text-fg">New session</span>
-        </Button>
-        <div className="relative">
-          <Search
-            size={13}
-            aria-hidden="true"
-            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-subtle pointer-events-none"
-          />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search sessions"
-            aria-label="Search sessions"
-            className="h-7.5 w-full rounded-lg bg-surface-2 pl-8 pr-3 text-ui text-fg placeholder-fg-subtle focus-ring"
-          />
-        </div>
+      <div className="px-3 pb-2">
+        <SidebarSearch query={searchQuery} onQueryChange={setSearchQuery} onNewSession={onNewSession} />
+      </div>
+      <div className="px-3 pb-2">
+        <SidebarFilter value={filter} counts={counts} onChange={setFilter} />
       </div>
 
       <div className="flex flex-1 flex-col overflow-y-auto px-2 pb-3">
@@ -214,7 +231,11 @@ export function Sidebar({
         )}
         {groups.length === 0 && pinned.length === 0 && archived.length === 0 && (
           <p className="px-2 py-1 text-caption text-fg-subtle">
-            {query ? "Nothing matches your search." : "No folders yet. Open one to start."}
+            {query
+              ? "Nothing matches your search."
+              : filter !== "all"
+                ? EMPTY_FILTER_TEXT[filter]
+                : "No folders yet. Open one to start."}
           </p>
         )}
         <ul aria-label="Workspaces" className="space-y-3">
@@ -224,7 +245,7 @@ export function Sidebar({
               group={group}
               isActive={group.path === activeWorkspacePath}
               isFolded={collapsedPaths.has(group.path)}
-              isForcedOpen={query !== ""}
+              isForcedOpen={query !== "" || filter !== "all"}
               onToggle={() => toggle(group.path)}
               context={context}
               agents={detectedAgents}

@@ -11,7 +11,7 @@ import {
   type SessionSnapshotPayload,
   IDLE_STATUS,
 } from "../lib/popout-bridge";
-import { folderNameOf } from "../lib/session-helpers";
+import { folderNameOf, workspacePathOf } from "../lib/session-helpers";
 import { currentPlan } from "../lib/plan";
 import { MAIN_WINDOW_LABEL } from "../lib/window-mode";
 import { useAgentProfiles } from "../hooks/useDiscovery";
@@ -91,6 +91,7 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
           hasTrafficLights
           sessionName={session?.name}
           workspaceName={session ? folderNameOf(session.cwd) : undefined}
+          folderName={session ? folderNameOf(workspacePathOf(session)) : undefined}
           plan={currentPlan(messages)}
         />
         <article className="flex-1 flex flex-col relative overflow-hidden">

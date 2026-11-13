@@ -26,6 +26,13 @@ describe("AgentTile", () => {
     expect(badge).toHaveAttribute("aria-hidden", "true");
   });
 
+  it("appends the badge's own classes", () => {
+    const { container } = render(
+      <AgentTile profileId="claude-acp" name="" badge="running" badgeClassName="group-hover:ring-surface-hover" />,
+    );
+    expect(container.querySelector("[data-badge]")).toHaveClass("group-hover:ring-surface-hover", "bg-status-running");
+  });
+
   it("shows no badge when none is asked for", () => {
     const { container } = render(<AgentTile profileId="claude-acp" name="" />);
     expect(container.querySelector("[data-badge]")).toBeNull();

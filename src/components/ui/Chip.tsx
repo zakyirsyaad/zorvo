@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 export interface ChipProps {
   /** Plain: session info (branch, pull request). Outline: a contextual chip you can click. */
   variant?: "plain" | "outline";
+  /** `bar`: the 28px chip the top bar's contextual actions (Plan, background tasks, diff) use; the default is 24px. */
+  size?: "sm" | "bar";
   icon?: ReactNode;
   /** Makes the chip a button. */
   onClick?: () => void;
@@ -17,16 +19,21 @@ export interface ChipProps {
   children: ReactNode;
 }
 
-const BASE = "inline-flex h-6 items-center gap-1.5 rounded-md border text-caption whitespace-nowrap text-fg-secondary";
+const BASE = "inline-flex items-center gap-1.5 rounded-md border whitespace-nowrap text-fg-secondary";
+const SIZES = { sm: "h-6 text-caption", bar: "h-7 text-ui-sm" } as const;
 // Plain chips are session info, borderless and tight (0 4px); outline chips are actions.
-const VARIANTS = { plain: "border-transparent px-1", outline: "border-border px-2" } as const;
+const VARIANTS = {
+  plain: { sm: "border-transparent px-1", bar: "border-transparent px-1" },
+  outline: { sm: "border-border px-2", bar: "border-border px-2.5" },
+} as const;
 // An open chip (its popover showing) is filled and edged, as the canvas draws it.
 const ACTION =
   "focus-ring transition-colors enabled:hover:bg-surface-hover aria-expanded:bg-surface-hover aria-expanded:border-border-strong";
 
-/** A 24px chip for session info and contextual actions in the top bar. */
+/** A 24px chip (28px with `size="bar"`) for session info and contextual actions in the top bar. */
 export function Chip({
   variant = "outline",
+  size = "sm",
   icon,
   onClick,
   label,
@@ -46,7 +53,7 @@ export function Chip({
       {children}
     </>
   );
-  const classes = [BASE, VARIANTS[variant], onClick && ACTION, className].filter(Boolean).join(" ");
+  const classes = [BASE, SIZES[size], VARIANTS[variant][size], onClick && ACTION, className].filter(Boolean).join(" ");
   if (!onClick) {
     return (
       <span className={classes} aria-label={label} title={title}>

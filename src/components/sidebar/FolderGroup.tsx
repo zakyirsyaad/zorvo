@@ -82,6 +82,9 @@ export function FolderGroup({
           <span className="truncate">{group.name}</span>
         </button>
         {summary && <Summary summary={summary} />}
+        {isOpen && (
+          <span className="shrink-0 pr-1 text-caption text-fg-subtle">{sessionsIn(group.sessions).length}</span>
+        )}
         {onNewSessionIn && (
           <span data-testid="folder-actions" className={`flex shrink-0 ${REVEAL_ON_ROW}`}>
             <NewSessionMenu

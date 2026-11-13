@@ -120,12 +120,47 @@ describe("Window chrome wiring", () => {
     await renderApp();
 
     expect(header().getByText("Beta work")).toBeDefined();
+    expect(header().getByText("zorvo")).toBeDefined();
     expect(await header().findByLabelText("Branch main")).toBeDefined();
-    // The folder has no badge any more: Open in Finder shows which one it is.
+    // Open in Finder opens the same folder.
     const spy = vi.spyOn(tauriInternals(), "invoke");
     await click(header().getByRole("button", { name: "More options" }));
     await click(screen.getByRole("menuitem", { name: "Open in Finder" }));
     expect(spy).toHaveBeenCalledWith("reveal_in_finder", { path: "/Users/test/developer/zorvo" }, undefined);
+  });
+
+  it("names a worktree session's repository, not the worktree's folder", async () => {
+    fakeStore().state.sessions = [
+      {
+        id: "s-wt",
+        name: "Worktree work",
+        profileId: "claude-code",
+        cwd: "/Users/test/.zorvo/worktrees/fix-parser",
+        status: "terminated",
+        createdAt: 1,
+        transport: "acp",
+        worktree: { path: "/Users/test/.zorvo/worktrees/fix-parser", branch: "agent/fix-parser", repoPath: "/Users/test/developer/zorvo" },
+      },
+    ];
+    await renderApp();
+
+    expect(header().getByText("Worktree work")).toBeDefined();
+    expect(header().getByText("zorvo")).toBeDefined();
+    expect(header().queryByText("fix-parser")).toBeNull();
+  });
+
+  it("shows a compare run's task, the folder of its first session and its agent count", async () => {
+    const run = { status: "terminated", transport: "acp", name: "Fix the login", compareRunId: "run-1" };
+    fakeStore().state.sessions = [
+      { ...run, id: "r-1", profileId: "claude-code", cwd: "/Users/test/developer/zorvo", createdAt: 1 },
+      { ...run, id: "r-2", profileId: "qwen-code", cwd: "/Users/test/developer/zorvo", createdAt: 2 },
+    ];
+    await renderApp();
+    await click(within(screen.getByRole("complementary")).getByRole("button", { name: /Fix the login.*2 agents/ }));
+
+    expect(header().getByText("Fix the login")).toBeDefined();
+    expect(header().getByText("zorvo")).toBeDefined();
+    expect(header().getByText("Compare · 2 agents")).toBeDefined();
   });
 
   it("opens the files of the folder the top bar names, which is the open session's", async () => {

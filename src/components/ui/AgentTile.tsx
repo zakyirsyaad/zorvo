@@ -13,6 +13,8 @@ export interface AgentTileProps {
   badge?: AgentTileBadge;
   /** The color behind the tile, which the badge's ring takes. */
   badgeOn?: "ground" | "sheet" | "hover";
+  /** Extra classes for the badge, such as a ring that follows a group's hover. */
+  badgeClassName?: string;
   children?: ReactNode;
   className?: string;
 }
@@ -39,7 +41,7 @@ const BADGE_RING: Readonly<Record<NonNullable<AgentTileProps["badgeOn"]>, string
  * A rounded square around an agent's logo or an icon. The badge is only a dot, so the row it sits in
  * always says the state in words as well.
  */
-export function AgentTile({ profileId, name = "", size = 22, badge, badgeOn = "ground", children, className }: AgentTileProps) {
+export function AgentTile({ profileId, name = "", size = 22, badge, badgeOn = "ground", badgeClassName, children, className }: AgentTileProps) {
   const { box, logo } = BOX[size];
   const classes = [
     "relative inline-flex shrink-0 items-center justify-center bg-chip ring-1 ring-inset ring-border",
@@ -53,7 +55,14 @@ export function AgentTile({ profileId, name = "", size = 22, badge, badgeOn = "g
         <span
           data-badge
           aria-hidden="true"
-          className={`absolute -right-[3px] -bottom-[3px] size-2 rounded-full ring-2 ${BADGE_FILL[badge]} ${BADGE_RING[badgeOn]}`}
+          className={[
+            "absolute -right-[3px] -bottom-[3px] size-2 rounded-full ring-2",
+            BADGE_FILL[badge],
+            BADGE_RING[badgeOn],
+            badgeClassName,
+          ]
+            .filter(Boolean)
+            .join(" ")}
         />
       )}
     </span>

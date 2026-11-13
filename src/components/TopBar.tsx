@@ -2,6 +2,7 @@ import {
   Archive,
   ChevronLeft,
   ChevronRight,
+  Columns3,
   ExternalLink,
   Folder,
   GitBranch,
@@ -173,6 +174,12 @@ export interface TopBarProps {
   onRename?: (name: string) => void;
   /** The title while no session is open (a new-session draft's folder). */
   workspaceName?: string;
+  /** The folder the session, run or draft works in; shown before the title. */
+  folderName?: string;
+  /** Set for a compare run: the bar adds "Compare · N agents". */
+  runAgentCount?: number;
+  /** A new-session draft: the title reads "New session" and no branch chip shows. */
+  isDraft?: boolean;
   /** The workspace's git branch, shown as a chip when it is a repository. */
   branch?: string;
   /** The branch's pull request, with a chip that opens it; none when absent. */
@@ -232,6 +239,9 @@ export function TopBar({
   sessionName,
   onRename,
   workspaceName,
+  folderName,
+  runAgentCount,
+  isDraft = false,
   branch,
   pullRequest,
   onOpenPullRequest,
@@ -263,17 +273,17 @@ export function TopBar({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const titleKey = sessionId ?? "";
   const isRenaming = renamingId === titleKey;
-  const title = sessionName ?? workspaceName;
+  const title = isDraft ? "New session" : (sessionName ?? workspaceName);
 
   return (
     <header
       data-tauri-drag-region
       style={hasTrafficLights ? { paddingLeft: TOP_BAR_TRAFFIC_LIGHT_INSET_PX } : undefined}
-      className="flex h-12 w-full shrink-0 items-center gap-3 border-b border-border pr-3 pl-5 text-ui-sm select-none"
+      className="flex h-12 w-full shrink-0 items-center gap-2.5 border-b border-border pr-2.5 pl-[18px] text-ui-sm select-none"
     >
       {/* Left: with the sidebar hidden, its show button and the session history; then what is open.
           It clips, so a crowded bar never paints its chips over the right-hand ones. */}
-      <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center gap-3 self-stretch overflow-hidden">
+      <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center gap-2.5 self-stretch overflow-hidden">
         {onShowSidebar && (
           // The three sit close together, as one control, with the title 4px after them.
           <div className="-mr-2 flex shrink-0 items-center">
@@ -298,20 +308,38 @@ export function TopBar({
             </IconButton>
           </div>
         )}
-        {sessionName ? (
-          <SessionTitle
-            name={sessionName}
-            isRenaming={isRenaming}
-            onRename={onRename}
-            onStartRename={() => setRenamingId(titleKey)}
-            onEndRename={() => setRenamingId(null)}
-          />
-        ) : (
-          <span data-tauri-drag-region className="min-w-12 truncate text-ui font-semibold text-fg">
-            {title ?? "Zorvo"}
-          </span>
+        <div data-tauri-drag-region className="flex min-w-0 items-center gap-1.5">
+          {folderName && title && (
+            <>
+              {/* The folder gives way first, so a long one never pushes the title out. */}
+              <span data-tauri-drag-region className="min-w-0 shrink-[3] truncate text-ui text-fg-muted">
+                {folderName}
+              </span>
+              <span aria-hidden="true" className="shrink-0 text-ui text-fg-subtle">
+                /
+              </span>
+            </>
+          )}
+          {sessionName && !isDraft ? (
+            <SessionTitle
+              name={sessionName}
+              isRenaming={isRenaming}
+              onRename={onRename}
+              onStartRename={() => setRenamingId(titleKey)}
+              onEndRename={() => setRenamingId(null)}
+            />
+          ) : (
+            <span data-tauri-drag-region className="min-w-12 truncate text-ui font-semibold text-fg">
+              {title ?? "Zorvo"}
+            </span>
+          )}
+        </div>
+        {runAgentCount !== undefined && (
+          <Chip variant="plain" icon={<Columns3 size={12} className="text-fg-muted" />} className="shrink-0">
+            {`Compare · ${runAgentCount} agents`}
+          </Chip>
         )}
-        {title && branch && (
+        {title && branch && !isDraft && (
           <Chip
             variant="plain"
             icon={<GitBranch size={12} className="text-fg-muted" />}
@@ -322,7 +350,7 @@ export function TopBar({
             <span className="min-w-0 max-w-40 truncate">{branch}</span>
           </Chip>
         )}
-        {title && branch && pullRequest && onOpenPullRequest && (
+        {title && branch && !isDraft && pullRequest && onOpenPullRequest && (
           <PullRequestChip pullRequest={pullRequest} onOpen={onOpenPullRequest} />
         )}
       </div>

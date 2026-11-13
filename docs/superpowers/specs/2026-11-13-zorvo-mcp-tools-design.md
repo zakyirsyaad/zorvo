@@ -316,7 +316,8 @@ Whether each agent honours ACP's `mcpServers`. The plan's first task was a spike
 MCP server (no dependency, newline-delimited JSON-RPC) with a `ping` tool and a `slow` tool, passed
 in `session/new` with the entry shape `{ name, command, args, env: [{ name, value }] }` to each agent
 in a real session with an empty folder as `cwd`, using each agent's command line from Zorvo's pinned
-registry entry. Run 2026-11-13, one prompt per agent ("call the ping tool and tell me what it
+registry entry. Run 2026-11-13 (Antigravity added the same day, after the maintainer named it Gemini CLI's
+replacement), one prompt per agent ("call the ping tool and tell me what it
 returned"), plus `slow` with 90, 330 and 660 seconds.
 
 | Agent (tested version) | lists the tool | calls it | asks its own permission | tool-call timeout | notes |
@@ -325,7 +326,7 @@ returned"), plus `slow` with 90, 330 and 660 seconds.
 | Qwen Code 0.26.7 | yes | yes | no | **300 s** (90 s answered; 330 s and 660 s were cancelled after exactly 5 minutes) | Sent MCP `protocolVersion` `2025-11-25`. Also asked `prompts/list` and `resources/list`. Exposes the tool as `mcp__zorvo-spike__ping`. Sent `notifications/cancelled` on timeout. `mcpCapabilities`: `http`, `sse`. |
 | Codex (`codex-acp` 2.5.0, Codex 0.165.0) | yes | yes | no | **300 s** (90 s answered; 330 s and 660 s were cancelled after exactly 5 minutes) | Sent `protocolVersion` `2025-06-18`. Shown as `mcp.zorvo-spike.ping`. Sent `notifications/cancelled` on timeout. `mcpCapabilities`: `http`; not `sse`. |
 | Claude Code (`claude-agent-acp` 0.100.0) | yes | not tested | not tested | not tested | Started the server and sent `server/discover`, `initialize` (`2025-11-25`) and `tools/list`, so `mcpServers` is honoured. The prompt was then refused with `-32000 Authentication required` (not signed in here); not signed in for this test, so no call. `mcpCapabilities`: `http`, `sse`. |
-| Gemini CLI | not tested | not tested | not tested | not tested | Not enabled or installed in Zorvo on the test machine. |
+| Google Antigravity (`antigravity-acp` 1.4.5) | yes | yes | **yes** (its own card for `zorvo-spike_ping`; the probe allowed it and the agent cached "Allow Always") | **180 s** (90 s answered; 330 s and 660 s failed with "timed out after 3m0s" and a `notifications/cancelled` after 3 minutes) | Sent `server/discover`, then `initialize` (`2025-11-25`), `notifications/initialized`, `tools/list`. Tool shown as `zorvo-spike_ping`. `mcpCapabilities`: `http`, `sse`. Replaces Gemini CLI, which is obsolete; Antigravity is Google's replacement. |
 
 What this settles:
 
@@ -340,7 +341,13 @@ What this settles:
 - Agents sent MCP protocol versions `2025-06-18` and `2025-11-25`, so the plan's list of supported
   versions needs checking against the MCP specification before Task 4 relies on it.
 - Neither Qwen Code nor Codex asked its own permission for the tool, so Zorvo's card cannot rely on
-  one (as "Approval" already says).
+  one (as "Approval" already says). Antigravity does ask its own, so for it the user sees its card
+  first, then Zorvo's.
+- Antigravity honours `mcpServers` and gives up on a call after 3 minutes, the shortest of the
+  three. The backend's 4-minute `CALL_TIMEOUT` is therefore never reached for it: its
+  `notifications/cancelled` ends the call. Phase 2 should answer a call that waits on a card
+  within about 2.5 minutes, or show the card as withdrawn when the cancel arrives. Antigravity is
+  not a candidate for `COMMAND_PATH_AGENTS`.
 
 ## Phases
 

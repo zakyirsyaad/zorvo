@@ -80,6 +80,8 @@ pub struct AgentTools {
     connections: Mutex<HashMap<u64, Arc<Connection>>>,
     emit: Emit,
     ended: Ended,
+    /// False for `disabled()`: no socket, and `servers_for` offers nothing.
+    enabled: bool,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -122,6 +124,7 @@ impl AgentTools {
             connections: Mutex::new(HashMap::new()),
             emit: Arc::new(emit),
             ended: Arc::new(ended),
+            enabled: true,
         });
         let accepting = Arc::clone(&service);
         let tokens = Arc::clone(&service.tokens);
@@ -135,10 +138,26 @@ impl AgentTools {
         Ok(service)
     }
 
+    /// An instance with no socket, for when `start` failed: every session
+    /// gets `[]` and nothing is ever emitted.
+    pub fn disabled() -> Arc<AgentTools> {
+        Arc::new(AgentTools {
+            tokens: Arc::new(Tokens::new()),
+            socket: PathBuf::new(),
+            bridge: PathBuf::new(),
+            timeout: Self::CALL_TIMEOUT,
+            pending: Mutex::new(HashMap::new()),
+            connections: Mutex::new(HashMap::new()),
+            emit: Arc::new(|_| {}),
+            ended: Arc::new(|_| {}),
+            enabled: false,
+        })
+    }
+
     /// The `mcpServers` value for a session: one stdio entry with a fresh
-    /// token, or `[]` when `enabled` is false.
+    /// token, or `[]` when `enabled` is false or this instance is disabled.
     pub fn servers_for(&self, app_session_id: &str, enabled: bool) -> Value {
-        if !enabled {
+        if !enabled || !self.enabled {
             return json!([]);
         }
         let token = self.tokens.issue(app_session_id);
@@ -179,7 +198,9 @@ impl AgentTools {
     /// Removes the socket file and closes every connection. Call it when the
     /// app exits.
     pub fn shutdown(&self) {
-        let _ = std::fs::remove_file(&self.socket);
+        if self.enabled {
+            let _ = std::fs::remove_file(&self.socket);
+        }
         let all: Vec<Arc<Connection>> = lock(&self.connections).values().cloned().collect();
         for connection in all {
             connection.close();

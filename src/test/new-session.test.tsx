@@ -625,7 +625,7 @@ describe("Starting a new session", () => {
     await startFromNew();
 
     const args = invokeSpy.mock.calls.find(([cmd]) => cmd === "acp_start_session")?.[1] as Record<string, unknown>;
-    expect(Object.keys(args).sort()).toEqual(["cwd", "profileId", "sessionId"]);
+    expect(Object.keys(args).sort()).toEqual(["agentTools", "cwd", "profileId", "sessionId"]);
     expect(args.profileId).toBe("claude-acp");
   });
 

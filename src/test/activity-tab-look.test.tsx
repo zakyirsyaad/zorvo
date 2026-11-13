@@ -68,6 +68,16 @@ describe("the Activity tab as drawn", () => {
     expect(card).toHaveClass("bg-attention-surface", "border-attention-border");
     expect(within(card).getByText("2 files changed that Claude Code didn't report")).toHaveClass("font-semibold");
     expect(within(card).getByText("src/a.ts")).toHaveClass("font-mono");
+    // Radius 12, and the paths in a box on ground, as drawn.
+    expect(card).toHaveClass("rounded-xl", "px-3.5", "py-3", "gap-2.5");
+    expect(within(card).getByText("src/a.ts").parentElement).toHaveClass("rounded-md", "border-border", "bg-ground");
+    expect(within(card).getByRole("button", { name: "Show in Changes" })).toHaveClass("h-6.5");
+    // The filters are a segmented toggle group.
+    const filters = screen.getByRole("group", { name: "Filter activity" });
+    expect(filters).toHaveClass("bg-chip", "rounded-lg", "p-0.5", "flex-wrap");
+    const pressed = within(filters).getAllByRole("button").filter((button) => button.getAttribute("aria-pressed") === "true");
+    expect(pressed).toHaveLength(1);
+    expect(pressed[0]).toHaveClass("h-6.5", "bg-surface-hover", "text-fg");
     // The agent is not the only one who changes files: the card says so rather than blame it.
     expect(within(card).getByText("You, a command or another session may have changed them.")).toBeTruthy();
     act(() => within(card).getByRole("button", { name: "Show in Changes" }).click());

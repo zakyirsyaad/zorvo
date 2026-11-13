@@ -73,7 +73,12 @@ describe("listAgentsText", () => {
     });
     expect(JSON.parse(text)).toEqual({
       agents: [
-        { id: "qwen-code", name: "Qwen Code", status: "ready", delegate: { state: "working", task: "Review the fix" } },
+        {
+          id: "qwen-code",
+          name: "Qwen Code",
+          status: "ready",
+          delegate: { handle: "qwen-code", state: "working", task: "Review the fix" },
+        },
         { id: "codex-acp", name: "Codex", status: "not-checked" },
         { id: "claude-acp", name: "Claude Code", status: "needs-sign-in" },
       ],
@@ -274,5 +279,71 @@ describe("listAgentsText with opened sessions and folders", () => {
     );
     expect(full.opened).toEqual([{ agent: "Codex", title: "Parser port", state: "working", folder: CALLER }]);
     expect(full.folders).toEqual([WORKSPACES[1]]);
+  });
+});
+
+// --- Handles: how an agent names a session it started.
+
+import { handleOf, nextSessionHandle, ownedByHandle } from "../lib/agent-tools";
+
+describe("nextSessionHandle", () => {
+  it("counts on from the highest handle taken", () => {
+    expect(nextSessionHandle([])).toBe("session-1");
+    expect(nextSessionHandle(["session-1", "session-3"])).toBe("session-4");
+    expect(nextSessionHandle(["codex-acp", "session-x", "session-2"])).toBe("session-3");
+  });
+});
+
+describe("handleOf and ownedByHandle", () => {
+  const link = { sessionId: "s-a", task: "Fix it", startedAt: 5 };
+  const opened = sessionOf({ id: "o-1", openedBy: { sessionId: "s-a", at: 5, handle: "session-1" } });
+  const openedOld = sessionOf({ id: "o-0", openedBy: { sessionId: "s-a", at: 4 } });
+  const archived = sessionOf({ id: "o-2", archivedAt: 9, openedBy: { sessionId: "s-a", at: 6, handle: "session-2" } });
+  const someoneElses = sessionOf({ id: "o-z", openedBy: { sessionId: "s-z", at: 6, handle: "session-1" } });
+  const delegate = sessionOf({ id: "d-1", profileId: "qwen-code", delegatedFrom: link });
+  const endedDelegate = sessionOf({ id: "d-2", profileId: "pi-acp", delegatedFrom: { ...link, endedAt: 9 } });
+  const all = [opened, openedOld, archived, someoneElses, delegate, endedDelegate];
+
+  it("gives an opened session its stored handle and an open delegate its agent's id", () => {
+    expect(handleOf(opened)).toBe("session-1");
+    expect(handleOf(delegate)).toBe("qwen-code");
+    // Opened before handles existed, or no longer a delegate: nothing to call it by.
+    expect(handleOf(openedOld)).toBeUndefined();
+    expect(handleOf(endedDelegate)).toBeUndefined();
+    expect(handleOf(sessionOf({ id: "plain" }))).toBeUndefined();
+  });
+
+  it("finds only the caller's own sessions", () => {
+    expect(ownedByHandle("s-a", "session-1", all)).toBe(opened);
+    expect(ownedByHandle("s-a", "qwen-code", all)).toBe(delegate);
+    expect(ownedByHandle("s-z", "session-1", all)).toBe(someoneElses);
+  });
+
+  it("finds nothing for an archived session, an ended delegation, a session id or anyone else's", () => {
+    for (const handle of ["session-2", "pi-acp", "o-1", "d-1", "o-z", "session-9", "", "codex-acp"]) {
+      expect(ownedByHandle("s-a", handle, all), handle).toBeUndefined();
+    }
+    expect(ownedByHandle("s-z", "qwen-code", all)).toBeUndefined();
+  });
+});
+
+describe("answers carry handles", () => {
+  it("names the delegate and the opened session", () => {
+    expect(
+      JSON.parse(delegateResultText({ kind: "started", sessionName: "Qwen Code: Review", agentName: "Qwen Code", handle: "qwen-code" })),
+    ).toMatchObject({ started: true, handle: "qwen-code" });
+    expect(JSON.parse(openedResultText({ sessionName: "Parser port", folder: CALLER, handle: "session-1" }))).toMatchObject({
+      opened: true,
+      handle: "session-1",
+    });
+    const listed = JSON.parse(
+      listAgentsText({
+        agents: [{ id: "qwen-code", name: "Qwen Code", status: "ready" }],
+        delegates: [{ agentId: "qwen-code", state: "idle", task: "Review" }],
+        opened: [{ agent: "Codex", title: "Parser port", state: "idle", folder: CALLER, handle: "session-1" }],
+      }),
+    );
+    expect(listed.agents[0].delegate).toEqual({ handle: "qwen-code", state: "idle", task: "Review" });
+    expect(listed.opened[0].handle).toBe("session-1");
   });
 });

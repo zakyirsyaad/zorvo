@@ -69,6 +69,7 @@ function setup(overrides: Partial<Env> = {}) {
       sessionId: "o-1",
       sessionName: request.title ?? "Codex: brief",
       folder: request.folderPath ?? SESSION.cwd,
+      handle: "session-1",
     }),
     ...overrides,
   };
@@ -149,7 +150,12 @@ describe("useAgentTools", () => {
       agents: [
         { id: "pi-acp", name: "pi ACP", status: "ready" },
         { id: "qwen-code", name: "Qwen Code", status: "ready" },
-        { id: "codex-acp", name: "Codex", status: "not-checked", delegate: { state: "working", task: "Fix the parser" } },
+        {
+          id: "codex-acp",
+          name: "Codex",
+          status: "not-checked",
+          delegate: { handle: "codex-acp", state: "working", task: "Fix the parser" },
+        },
       ],
       opened: [{ agent: "Codex", title: "Parser port", state: "idle", folder: SESSION.cwd }],
       folders: [{ name: "titan", path: "/Users/test/developer/titan" }],
@@ -185,7 +191,7 @@ describe("useAgentTools", () => {
     ]);
     await waitFor(() => expect(t.answers()).toHaveLength(1));
     expect(t.answers()[0]).toMatchObject({ callId: "1", ok: true });
-    expect(JSON.parse(t.answers()[0].text)).toMatchObject({ started: true, session: "qwen-code: task" });
+    expect(JSON.parse(t.answers()[0].text)).toMatchObject({ started: true, handle: "qwen-code", session: "qwen-code: task" });
     expect(t.cards()[0]).toMatchObject({ status: "approved", chosenOptionId: ALLOW_SESSION });
     expect(t.result.current.isWaiting("s-1")).toBe(false);
     expect(t.result.current.hasGrant("s-1")).toBe(true);
@@ -407,6 +413,7 @@ describe("useAgentTools", () => {
     ]);
     expect(JSON.parse(t.answers()[0].text)).toEqual({
       opened: true,
+      handle: "session-1",
       session: "Parser port",
       folder: SESSION.cwd,
       note: "It works on its own and does not report back.",

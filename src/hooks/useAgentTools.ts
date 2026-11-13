@@ -121,7 +121,13 @@ export function useAgentTools(deps: AgentToolsDeps): {
       try {
         const result = await latest.current.giveTask(sessionId, call.targetId, call.task, { byAgent: true });
         if (result.ok) {
-          const text = delegateResultText({ kind: result.kind, sessionName: result.sessionName, agentName: call.targetName });
+          const text = delegateResultText({
+            kind: result.kind,
+            sessionName: result.sessionName,
+            agentName: call.targetName,
+            // A delegate is named by its agent's id: a session holds one per agent.
+            handle: call.targetId,
+          });
           respond(call.callId, true, text);
         } else {
           // A failure inside Zorvo is not explained to an agent: its cause could hold a path.
@@ -156,7 +162,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
           call.callId,
           result.ok,
           result.ok
-            ? openedResultText({ sessionName: result.sessionName, folder: result.folder })
+            ? openedResultText({ sessionName: result.sessionName, folder: result.folder, handle: result.handle })
             : result.reason === ''
               ? FAILED
               : result.reason,

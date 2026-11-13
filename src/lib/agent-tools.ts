@@ -63,6 +63,8 @@ export interface ListedDelegate {
 
 /** A session this session opened, as `list_agents` reports it. */
 export interface ListedOpened {
+  /** What to call it in `read_session` and `stop_session`; absent for a session opened before handles. */
+  handle?: string;
   agent: string;
   title: string;
   state: 'idle' | 'working';
@@ -79,7 +81,7 @@ export interface ListedAgent {
   id: string;
   name: string;
   status: Exclude<MentionAgentStatus, 'not-installed'>;
-  delegate?: { state: DelegateState; task: string };
+  delegate?: { handle: string; state: DelegateState; task: string };
 }
 
 /** `list_agents`' answer: the agents a task can go to, each with this session's delegate of it. */
@@ -100,7 +102,7 @@ export function listAgentsText(input: {
         name: agent.name,
         status: agent.status,
         ...(delegate
-          ? { delegate: { state: delegate.state, task: delegate.task.slice(0, MAX_LISTED_TASK_CHARS) } }
+          ? { delegate: { handle: agent.id, state: delegate.state, task: delegate.task.slice(0, MAX_LISTED_TASK_CHARS) } }
           : {}),
       },
     ];
@@ -139,9 +141,12 @@ export function delegateResultText(result: {
   kind: 'started' | 'sent';
   sessionName: string;
   agentName: string;
+  /** The delegate's handle: its agent's id. */
+  handle?: string;
 }): string {
   return JSON.stringify({
     [result.kind]: true,
+    ...(result.handle !== undefined ? { handle: result.handle } : {}),
     session: result.sessionName,
     note: `The answer arrives as a message when ${result.agentName} finishes. Do not wait for it.`,
   });
@@ -219,11 +224,49 @@ export function openRefusal(input: { runningOpened: number }): string | null {
 }
 
 /** `start_session`'s answer once the session is open. */
-export function openedResultText(result: { sessionName: string; folder: string }): string {
+export function openedResultText(result: { sessionName: string; folder: string; handle?: string }): string {
   return JSON.stringify({
     opened: true,
+    ...(result.handle !== undefined ? { handle: result.handle } : {}),
     session: result.sessionName,
     folder: result.folder,
     note: 'It works on its own and does not report back.',
   });
+}
+
+// --- Handles: how an agent names a session it started. A handle means something
+// only for the session that owns it, and Zorvo's session ids never reach an agent.
+
+const SESSION_HANDLE_PATTERN = /^session-([1-9][0-9]*)$/;
+
+/** The next handle for a session an opener opens: one more than the highest in `taken`. */
+export function nextSessionHandle(taken: readonly string[]): string {
+  const highest = taken.reduce((max, handle) => {
+    const match = SESSION_HANDLE_PATTERN.exec(handle);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  return `session-${highest + 1}`;
+}
+
+/**
+ * What its owner's agent calls a session: the stored handle of a session it
+ * opened, or the agent's id for a delegate while its link is open (a session
+ * holds one open delegate per agent, so that needs no storing).
+ */
+export function handleOf(session: Session): string | undefined {
+  if (session.openedBy) return session.openedBy.handle;
+  const link = session.delegatedFrom;
+  if (link && (link.endedAt === null || link.endedAt === undefined)) return session.profileId;
+  return undefined;
+}
+
+/** The session `openerId` owns under `handle`: one it opened, or its open delegate. Not an archived one. */
+export function ownedByHandle(openerId: string, handle: string, sessions: readonly Session[]): Session | undefined {
+  if (handle === '') return undefined;
+  return sessions.find(
+    (session) =>
+      !isArchived(session) &&
+      (session.openedBy?.sessionId === openerId || session.delegatedFrom?.sessionId === openerId) &&
+      handleOf(session) === handle,
+  );
 }

@@ -73,6 +73,14 @@ function isWorktree(value: unknown): value is SessionWorktree {
   );
 }
 
+const SESSION_HANDLE = /^session-[1-9][0-9]{0,5}$/;
+
+/** The link with its handle only when that is one Zorvo could have issued. */
+function withValidHandle(link: OpenedByLink): OpenedByLink {
+  const base = { sessionId: link.sessionId, at: link.at };
+  return typeof link.handle === 'string' && SESSION_HANDLE.test(link.handle) ? { ...base, handle: link.handle } : base;
+}
+
 /** Which session's agent opened a session: a non-empty session id and a finite time. */
 function isOpenedByLink(value: unknown): value is OpenedByLink {
   return isObject(value) && typeof value.sessionId === 'string' && value.sessionId !== '' && Number.isFinite(value.at);
@@ -111,7 +119,7 @@ function withValidFields(session: Session): Session {
     ...(typeof historyElsewhere === 'boolean' ? { historyElsewhere } : {}),
     ...(compareRunId == null || typeof compareRunId === 'string' ? { compareRunId } : {}),
     ...(delegatedFrom === null || isDelegationLink(delegatedFrom) ? { delegatedFrom } : {}),
-    ...(isOpenedByLink(openedBy) ? { openedBy } : {}),
+    ...(isOpenedByLink(openedBy) ? { openedBy: withValidHandle(openedBy) } : {}),
     ...(comments.length > 0 ? { reviewComments: comments } : {}),
   };
 }

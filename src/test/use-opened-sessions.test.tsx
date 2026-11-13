@@ -76,7 +76,13 @@ describe("useOpenedSessions", () => {
     expect(spec.agent.id).toBe("codex-acp");
     expect(first).toEqual({ text: "Port the parser.\nKeep the tests." });
     expect(options).toEqual({ choices: NO_CHOICES, focus: false });
-    expect(result).toEqual({ ok: true, sessionId: spec.id, sessionName: "Codex: Port the parser.", folder: FOLDER });
+    expect(result).toEqual({
+      ok: true,
+      sessionId: spec.id,
+      sessionName: "Codex: Port the parser.",
+      folder: FOLDER,
+      handle: "session-1",
+    });
   });
 
   it("records who opened it, and the session is no delegate", async () => {
@@ -85,7 +91,7 @@ describe("useOpenedSessions", () => {
       await t.result.current.open("s-a", { ...REQUEST, title: "Parser port" });
     });
     const [{ spec, first }] = t.starts;
-    expect(spec.openedBy).toEqual({ sessionId: "s-a", at: expect.any(Number) });
+    expect(spec.openedBy).toEqual({ sessionId: "s-a", at: expect.any(Number), handle: "session-1" });
     expect(spec.delegatedFrom).toBeUndefined();
     expect(first?.context).toBeUndefined();
     expect(spec.name).toBe("Parser port");
@@ -257,6 +263,19 @@ describe("useOpenedSessions", () => {
       next = (await t.result.current.open("s-a", REQUEST)) as typeof next;
     });
     expect(next.ok).toBe(true);
+  });
+
+  it("gives each session it opens a handle of its own, also in the same tick", async () => {
+    const existing: Session = { ...OPENER, id: "o-0", profileId: "codex-acp", openedBy: { sessionId: "s-a", at: 2, handle: "session-4" } };
+    const t = setup({ sessions: [OPENER, existing] });
+    let results: Array<{ ok: boolean; handle?: string }> = [];
+    await act(async () => {
+      results = (await Promise.all([1, 2].map(() => t.result.current.open("s-a", REQUEST)))) as typeof results;
+    });
+
+    expect(results.map((result) => result.handle)).toEqual(["session-5", "session-6"]);
+    expect(t.starts.map(({ spec }) => spec.openedBy?.handle)).toEqual(["session-5", "session-6"]);
+    expect(t.result.current.openedOf("s-a")[0]).toMatchObject({ handle: "session-4" });
   });
 
   it("lists the opener's sessions with their state and folder", () => {

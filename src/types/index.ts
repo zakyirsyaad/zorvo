@@ -117,6 +117,8 @@ export interface SessionWorktree {
 export interface OpenedByLink {
   sessionId: string;
   at: number;
+  /** What the opener's agent calls this session (`session-3`); absent on a link saved before handles. */
+  handle?: string;
 }
 
 export interface DelegationLink {

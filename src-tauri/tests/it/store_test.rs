@@ -108,6 +108,7 @@ fn a_session_keeps_who_opened_it() {
     opened.opened_by = Some(zorvo_lib::store::OpenedByRecord {
         session_id: "s-a".to_string(),
         at: 5,
+        handle: Some("session-1".to_string()),
     });
     state.sessions = vec![opened, session("s-c", "idle")];
     store.save_state(&state).expect("save state");
@@ -121,6 +122,18 @@ fn a_session_keeps_who_opened_it() {
     let loaded = store.load_state().expect("load state");
     let link = loaded.sessions[0].opened_by.as_ref().expect("the link");
     assert_eq!((link.session_id.as_str(), link.at), ("s-a", 5));
+    assert_eq!(link.handle.as_deref(), Some("session-1"));
+    // A link saved before handles existed still loads.
+    let older = raw.replace("\"handle\": \"session-1\"", "\"at\": 5");
+    assert_ne!(older, raw, "the fixture was changed");
+    fs::write(root.join("state.json"), older).expect("write state file");
+    let loaded_older = store.load_state().expect("load state");
+    assert!(loaded_older.sessions[0]
+        .opened_by
+        .as_ref()
+        .expect("the link")
+        .handle
+        .is_none());
 
     // A wrong-typed link loads the session without it.
     let broken = raw.replace("\"sessionId\": \"s-a\"", "\"sessionId\": 7");

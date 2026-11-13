@@ -481,6 +481,24 @@ describe("normalizeTranscript - delegation report", () => {
   });
 });
 
+describe("normalizeTranscript - delegation task", () => {
+  const message = { id: "m-1", role: "user", content: "Review it.", timestamp: 7 };
+
+  it("keeps a delegationTask mark and drops a malformed one", () => {
+    const [kept] = normalizeTranscript([{ ...message, delegationTask: { agentName: "pi ACP", agentId: "pi-acp" } }]);
+    expect(kept.delegationTask).toEqual({ agentName: "pi ACP", agentId: "pi-acp" });
+
+    const [withoutId] = normalizeTranscript([{ ...message, delegationTask: { agentName: "pi ACP", agentId: 3 } }]);
+    expect(withoutId.delegationTask).toEqual({ agentName: "pi ACP" });
+
+    for (const delegationTask of [{ agentName: "" }, "pi", null]) {
+      const [dropped] = normalizeTranscript([{ ...message, delegationTask }]);
+      expect(dropped).not.toHaveProperty("delegationTask");
+      expect(dropped.content).toBe("Review it.");
+    }
+  });
+});
+
 describe("normalizeTranscript - tool diffs", () => {
   const withDiff = (detail: unknown) => [
     { id: "m", role: "agent", content: "", timestamp: 1, tools: [{ id: "t", name: "Edit", status: "completed", details: [detail] }] },

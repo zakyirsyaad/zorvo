@@ -7,6 +7,7 @@ import {
   delegateBlockedReason as delegationBlockedReason,
   delegateSessionName,
   isOpenLink,
+  taskRoute,
   openDelegatesOf,
   reportMessage,
   reportedFiles,
@@ -41,7 +42,7 @@ export interface DelegationDeps {
     sessionId: string,
     text: string,
     attachments?: readonly string[],
-    marks?: Pick<ChatMessage, 'delegationReport'>,
+    marks?: Pick<ChatMessage, 'delegationReport' | 'delegationTask'>,
   ) => Promise<boolean>;
   /** `options.choices` are the dialog's picks; `changesToApply` applies them before the first prompt. */
   startSession: (spec: SessionSpec, first?: FirstMessage, options?: StartSessionOptions) => void;
@@ -73,6 +74,18 @@ export interface DelegationView {
   /** When B's current turn started (for "working"), else null. */
   workingSince: number | null;
   reportedAt: number | null;
+}
+
+/** What giving a task led to: a new delegate, a further task for the one that agent has, or a refusal. */
+export type GiveTaskResult =
+  | { ok: true; kind: 'started' | 'sent'; sessionId: string; sessionName: string }
+  | { ok: false; reason: string };
+
+export interface GiveTaskOptions {
+  attachments?: readonly string[];
+  choices?: AcpChoices;
+  /** The source's own agent asks, from inside its turn: a busy source is no reason to refuse, and the user stays where they are. */
+  byAgent?: boolean;
 }
 
 interface DelegationOutcome {
@@ -131,6 +144,8 @@ export function useDelegation(deps: DelegationDeps): {
     task: string,
     options?: { attachments?: readonly string[]; choices?: AcpChoices },
   ) => Promise<boolean>;
+  /** Gives agent `agentId` a task from `sourceId`: starts its delegate, or sends the task to the one it has. */
+  giveTask: (sourceId: string, agentId: string, task: string, options?: GiveTaskOptions) => Promise<GiveTaskResult>;
   end: (delegateId: string) => void;
   onTurnEnded: (sessionId: string, reason: AttentionReason) => void;
   sendBlockedReason: (sessionId: string) => string | null;
@@ -318,37 +333,26 @@ export function useDelegation(deps: DelegationDeps): {
     dropHandover(delegateId);
   };
 
-  const start = async (
-    sourceId: string,
-    agentId: string,
+  /** The last message that is whole: a reply still streaming (it holds the tool call) is left out. */
+  const lastWholeMessage = (messages: readonly ChatMessage[]): ChatMessage | undefined => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role !== 'agent' || message.isComplete === true) return message;
+    }
+    return undefined;
+  };
+
+  const startDelegate = async (
+    source: Session,
+    agent: AgentProfile,
     task: string,
-    options: { attachments?: readonly string[]; choices?: AcpChoices } = {},
-  ): Promise<boolean> => {
+    options: GiveTaskOptions,
+  ): Promise<GiveTaskResult> => {
     const current = latest.current;
-    const source = current.sessions.find((session) => session.id === sourceId);
-    const agent = current.agents.find((candidate) => candidate.id === agentId);
-    if (source === undefined) {
-      current.onNotice('Could not delegate: this session no longer exists.');
-      return false;
-    }
-    if (agent === undefined) {
-      current.onNotice('Could not delegate: the agent is not available.');
-      return false;
-    }
-
-    const blocked = blockedReasonFor(current, sourceId);
-    if (blocked !== null) {
-      current.onNotice(blocked === '' ? 'Could not delegate.' : `Could not delegate: ${blocked}`);
-      return false;
-    }
-
     const messages = current.transcripts[source.id] ?? [];
-    const last = lastMessage(messages);
-    // A source with no messages is blocked above; this keeps the handoff honest.
-    if (last === undefined) {
-      current.onNotice('Could not delegate.');
-      return false;
-    }
+    const last = options.byAgent === true ? lastWholeMessage(messages) : lastMessage(messages);
+    // A source with no messages is refused by the route; this keeps the handoff honest.
+    if (last === undefined) return { ok: false, reason: '' };
 
     const id = createId('s');
     const now = Date.now();
@@ -362,12 +366,13 @@ export function useDelegation(deps: DelegationDeps): {
         note: HANDOFF_NOTE,
       });
       const handoffPath = await invoke<string>('write_fork_handoff', { handoffId: id, content });
+      const name = delegateSessionName(agent.name, task);
       const spec: SessionSpec = {
         id,
         agent,
         cwd: source.cwd,
         worktree: source.worktree,
-        name: delegateSessionName(agent.name, task),
+        name,
         delegatedFrom: { sessionId: source.id, task, startedAt: now },
       };
       const first: FirstMessage = {
@@ -378,13 +383,84 @@ export function useDelegation(deps: DelegationDeps): {
         context: buildDelegatePrompt(handoffPath),
       };
       // The dialog's picks, or the defaults: the draft's own choices stay with the draft.
-      current.startSession(spec, first, { choices: options.choices ?? NO_CHOICES });
-      current.selectSession(id);
-      return true;
+      const choices = options.choices ?? NO_CHOICES;
+      if (options.byAgent === true) {
+        // The agent started it: the user keeps looking at what they were looking at.
+        current.startSession(spec, first, { choices, focus: false });
+      } else {
+        current.startSession(spec, first, { choices });
+        current.selectSession(id);
+      }
+      return { ok: true, kind: 'started', sessionId: id, sessionName: name };
     } catch (error) {
-      current.onNotice(`Could not delegate: ${String(error)}`);
-      return false;
+      return { ok: false, reason: String(error) };
     }
+  };
+
+  const sendFurtherTask = async (
+    source: Session,
+    delegate: Session,
+    task: string,
+    options: GiveTaskOptions,
+  ): Promise<GiveTaskResult> => {
+    const current = latest.current;
+    const link = delegate.delegatedFrom;
+    const delegateName = agentNameIn(current.agents, delegate.profileId);
+    const refusal: GiveTaskResult = { ok: false, reason: `${delegateName} did not take the task.` };
+    if (link === null || link === undefined) return refusal;
+    let isTaken: boolean;
+    try {
+      isTaken = await current.send(delegate.id, task, options.attachments ?? [], {
+        delegationTask: { agentName: agentNameIn(current.agents, source.profileId), agentId: source.profileId },
+      });
+    } catch {
+      isTaken = false;
+    }
+    if (!isTaken) return refusal;
+    // The next report quotes the task it answers.
+    current.patchSession(delegate.id, { delegatedFrom: { ...link, task } });
+    return { ok: true, kind: 'sent', sessionId: delegate.id, sessionName: delegate.name };
+  };
+
+  const giveTask = async (
+    sourceId: string,
+    agentId: string,
+    task: string,
+    options: GiveTaskOptions = {},
+  ): Promise<GiveTaskResult> => {
+    const current = latest.current;
+    const source = current.sessions.find((session) => session.id === sourceId);
+    const agent = current.agents.find((candidate) => candidate.id === agentId);
+    if (source === undefined) return { ok: false, reason: 'this session no longer exists.' };
+    if (agent === undefined) return { ok: false, reason: 'the agent is not available.' };
+
+    const route = taskRoute({
+      source,
+      agentId,
+      sessions: current.sessions,
+      isBusy: current.isBusy,
+      isWaiting: current.isWaiting,
+      hasMessages: (current.transcripts[source.id] ?? []).length > 0,
+      isSourceBusyAllowed: options.byAgent === true,
+      agentNameOf: (profileId) => agentNameIn(current.agents, profileId),
+    });
+    if (route.kind === 'blocked') return { ok: false, reason: route.reason };
+    return route.kind === 'follow-up'
+      ? sendFurtherTask(source, route.delegate, task, options)
+      : startDelegate(source, agent, task, options);
+  };
+
+  /** The dialog's and the mention's way in: a refusal is a notice. */
+  const start = async (
+    sourceId: string,
+    agentId: string,
+    task: string,
+    options: { attachments?: readonly string[]; choices?: AcpChoices } = {},
+  ): Promise<boolean> => {
+    const result = await giveTask(sourceId, agentId, task, options);
+    if (result.ok) return true;
+    latest.current.onNotice(result.reason === '' ? 'Could not delegate.' : `Could not delegate: ${result.reason}`);
+    return false;
   };
 
   useEffect(() => {
@@ -466,5 +542,5 @@ export function useDelegation(deps: DelegationDeps): {
     // queued it.
   }, [transcripts, sessions, revision, latest, dropHandover]);
 
-  return { delegateBlockedReason, start, end, onTurnEnded, sendBlockedReason, viewFor, viewsFor };
+  return { delegateBlockedReason, start, giveTask, end, onTurnEnded, sendBlockedReason, viewFor, viewsFor };
 }

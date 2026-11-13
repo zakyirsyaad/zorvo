@@ -84,7 +84,7 @@ interface SendCall {
   sessionId: string;
   text: string;
   attachments: readonly string[];
-  marks?: Pick<ChatMessage, "delegationReport">;
+  marks?: Pick<ChatMessage, "delegationReport" | "delegationTask">;
 }
 
 interface StartCall {
@@ -278,6 +278,153 @@ describe("useDelegation start", () => {
 
     expect(env.starts[0].first?.attachments).toEqual(attachments);
     expect(env.starts[0].first?.text).toBe("Fix the parser");
+  });
+});
+
+describe("useDelegation giveTask", () => {
+  const STREAMING: ChatMessage[] = [
+    ...A_MESSAGES,
+    { id: "m-a3", role: "user", content: "Now have Codex fix it", timestamp: 3 },
+    { id: "m-a4", role: "agent", content: "UNFINISHED-REPLY calling the tool", timestamp: 4 },
+  ];
+
+  it("starts a delegate from a busy source when its own agent asked", async () => {
+    const spy = vi.spyOn(internals(), "invoke");
+    const env = setup({
+      sessions: [sourceSession()],
+      transcripts: { "s-a": STREAMING },
+      busy: ["s-a"],
+      cannotPrompt: ["s-a"],
+    });
+
+    let result: unknown;
+    await act(async () => {
+      result = await env.result.current.delegation.giveTask("s-a", "codex-acp", "Fix the parser", { byAgent: true });
+    });
+
+    expect(result).toMatchObject({ ok: true, kind: "started", sessionName: "Codex: Fix the parser" });
+    expect(env.starts).toHaveLength(1);
+    expect(env.starts[0].spec.delegatedFrom).toMatchObject({ sessionId: "s-a", task: "Fix the parser" });
+    // The user stays where they are: the agent started it, not them.
+    expect(env.starts[0].options?.focus).toBe(false);
+    expect(env.selections).toHaveLength(0);
+    // The reply that holds the tool call is still streaming: it is not part of the handoff.
+    const [, args] = callsTo(spy, "write_fork_handoff")[0];
+    expect(String(args?.content)).toContain("Now have Codex fix it");
+    expect(String(args?.content)).not.toContain("UNFINISHED-REPLY");
+  });
+
+  it("refuses a busy source when the user asked", async () => {
+    const env = setup({ sessions: [sourceSession()], transcripts: { "s-a": A_MESSAGES }, busy: ["s-a"] });
+
+    let result: unknown;
+    await act(async () => {
+      result = await env.result.current.delegation.giveTask("s-a", "codex-acp", "Fix the parser");
+    });
+
+    expect(result).toEqual({ ok: false, reason: "Wait for Claude Code to finish." });
+    expect(env.starts).toHaveLength(0);
+  });
+
+  it("sends a further task to an idle delegate and marks who gave it", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+    });
+
+    let result: unknown;
+    await act(async () => {
+      result = await env.result.current.delegation.giveTask("s-a", "codex-acp", "Now add tests", { byAgent: true });
+    });
+
+    expect(result).toEqual({ ok: true, kind: "sent", sessionId: "s-b", sessionName: "Codex: Fix the parser" });
+    expect(env.starts).toHaveLength(0);
+    expect(env.sends).toEqual([
+      {
+        sessionId: "s-b",
+        text: "Now add tests",
+        attachments: [],
+        marks: { delegationTask: { agentName: "Claude Code", agentId: "claude-acp" } },
+      },
+    ]);
+    // The next report quotes the task it answers.
+    expect(env.patches).toEqual([
+      { sessionId: "s-b", patch: { delegatedFrom: expect.objectContaining({ task: "Now add tests", startedAt: 5 }) } },
+    ]);
+  });
+
+  it("makes the next report quote the further task", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+    });
+
+    await act(async () => {
+      await env.result.current.delegation.giveTask("s-a", "codex-acp", "Now add tests", { byAgent: true });
+    });
+    env.sends.length = 0;
+    await act(async () => {
+      env.result.current.delegation.onTurnEnded("s-b", "finished");
+    });
+
+    await waitFor(() => expect(env.sends).toHaveLength(1));
+    expect(env.sends[0].text).toContain('Report from Codex on the task you delegated: "Now add tests"');
+  });
+
+  it("refuses a further task while the delegate works, and when it does not take it", async () => {
+    const working = setup({
+      sessions: [sourceSession(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+      busy: ["s-b"],
+    });
+    let result: unknown;
+    await act(async () => {
+      result = await working.result.current.delegation.giveTask("s-a", "codex-acp", "Now add tests", { byAgent: true });
+    });
+    expect(result).toEqual({ ok: false, reason: "Codex is still working on the previous task." });
+    expect(working.sends).toHaveLength(0);
+
+    const refusing = setup({
+      sessions: [sourceSession(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+      sendResult: false,
+    });
+    await act(async () => {
+      result = await refusing.result.current.delegation.giveTask("s-a", "codex-acp", "Now add tests", { byAgent: true });
+    });
+    expect(result).toEqual({ ok: false, reason: "Codex did not take the task." });
+    expect(refusing.givesBack).toHaveLength(0);
+    expect(refusing.patches).toHaveLength(0);
+  });
+
+  it("starts a second delegate for another agent", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+      busy: ["s-b"],
+    });
+
+    let result: unknown;
+    await act(async () => {
+      result = await env.result.current.delegation.giveTask("s-a", "claude-acp", "Check the docs", { byAgent: true });
+    });
+
+    expect(result).toMatchObject({ ok: true, kind: "started" });
+    expect(env.starts[0].spec.agent.id).toBe("claude-acp");
+  });
+
+  it("start still selects the session and reports a refusal as a notice", async () => {
+    const env = setup({ sessions: [sourceSession()], transcripts: { "s-a": A_MESSAGES } });
+    await act(async () => {
+      expect(await env.result.current.delegation.start("s-a", "codex-acp", "Fix the parser")).toBe(true);
+    });
+    expect(env.selections).toHaveLength(1);
+
+    const busy = setup({ sessions: [sourceSession()], transcripts: { "s-a": A_MESSAGES }, busy: ["s-a"] });
+    await act(async () => {
+      expect(await busy.result.current.delegation.start("s-a", "codex-acp", "Fix the parser")).toBe(false);
+    });
+    expect(busy.notices).toEqual(["Could not delegate: Wait for Claude Code to finish."]);
   });
 });
 

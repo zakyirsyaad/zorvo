@@ -286,16 +286,20 @@ function withValidEndTime(message: ChatMessage): ChatMessage {
   return rest;
 }
 
-/** A report mark keeps a non-empty agent name and, when it is a string, the agent's id. */
-function withValidDelegationReport(message: ChatMessage): ChatMessage {
-  if (!('delegationReport' in message)) return message;
-  const { delegationReport, ...rest } = message;
-  if (!isObject(delegationReport)) return rest as ChatMessage;
-  const { agentName, agentId } = delegationReport;
+/** A report or task mark keeps a non-empty agent name and, when it is a string, the agent's id. */
+function withValidAgentMark(message: ChatMessage, key: 'delegationReport' | 'delegationTask'): ChatMessage {
+  if (!(key in message)) return message;
+  const { [key]: mark, ...rest } = message;
+  if (!isObject(mark)) return rest as ChatMessage;
+  const { agentName, agentId } = mark;
   if (typeof agentName !== 'string' || agentName === '') return rest as ChatMessage;
   return typeof agentId === 'string'
-    ? { ...rest, delegationReport: { agentName, agentId } }
-    : { ...rest, delegationReport: { agentName } };
+    ? ({ ...rest, [key]: { agentName, agentId } } as ChatMessage)
+    : ({ ...rest, [key]: { agentName } } as ChatMessage);
+}
+
+function withValidDelegationReport(message: ChatMessage): ChatMessage {
+  return withValidAgentMark(withValidAgentMark(message, 'delegationReport'), 'delegationTask');
 }
 
 /**

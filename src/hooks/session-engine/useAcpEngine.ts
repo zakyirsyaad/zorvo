@@ -323,7 +323,7 @@ export function useAcpEngine({
     sessionId: string,
     text: string,
     attachments: readonly string[] = [],
-    marks?: Pick<ChatMessage, 'delegationReport'>,
+    marks?: Pick<ChatMessage, 'delegationReport' | 'delegationTask'>,
   ): Promise<boolean> => {
     // Shown before the prompt goes out, so the agent's reply always lands after it.
     const message: ChatMessage = { ...userMessage(text, attachments), ...marks };

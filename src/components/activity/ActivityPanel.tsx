@@ -2,6 +2,7 @@ import { useDeferredValue, useMemo, useState } from "react";
 import { Info, TriangleAlert } from "lucide-react";
 import { ActivityEntryRow } from "./ActivityEntryRow";
 import { Button } from "../ui/Button";
+import { SEGMENTED_TRACK, segmentedItem } from "../ui/segmented-style";
 import { useDiffStatsSince, useDiffTargets } from "../../hooks/useDiffStats";
 import { activityOf, unreportedFiles, type ActivityEntry } from "../../lib/activity";
 import { activityTurns, type ActivityTurn } from "../../lib/activity-turns";
@@ -56,24 +57,25 @@ function Unreported({ files, agentName, compared, onShowChanges }: {
   return (
     <section
       aria-label="Unreported changes"
-      className="flex flex-col gap-2 rounded-lg border border-attention-border bg-attention-surface p-3"
+      className="flex flex-col gap-2.5 rounded-xl border border-attention-border bg-attention-surface px-3.5 py-3"
     >
       <div className="flex items-center gap-2">
         <TriangleAlert size={14} aria-hidden="true" className="shrink-0 text-status-attention" />
         <h3 className="flex-1 font-semibold text-fg">{title}</h3>
       </div>
-      <ul className="flex flex-col gap-0.5 pl-[22px] text-caption text-fg-secondary">
+      {/* The paths in a box on ground, as drawn. */}
+      <ul className="flex flex-col gap-0.5 rounded-md border border-border bg-ground px-2.5 py-2 text-caption text-fg-secondary">
         {shown.map((file) => (
           <li key={file} className="truncate font-mono">
             {escapeVisible(file)}
           </li>
         ))}
       </ul>
-      {files.length > shown.length && <p className="pl-[22px] text-caption text-fg-muted">{files.length - shown.length} more.</p>}
-      <p className="pl-[22px] text-caption text-fg-subtle">You, a command or another session may have changed them.</p>
+      {files.length > shown.length && <p className="text-caption text-fg-muted">{files.length - shown.length} more.</p>}
+      <p className="text-caption text-fg-subtle">You, a command or another session may have changed them.</p>
       <div className="flex items-center justify-between gap-2">
         <p className="text-caption text-fg-subtle">{compared}</p>
-        <Button variant="outline" size="sm" onClick={onShowChanges}>
+        <Button variant="outline" size="row" className="shrink-0" onClick={onShowChanges}>
           Show in Changes
         </Button>
       </div>
@@ -137,12 +139,13 @@ export function ActivityPanel({ messages, transcript, session, agentName, isRepo
 
   return (
     <aside aria-label="Activity panel" className="flex h-full min-h-0 flex-1 flex-col text-ui text-fg-secondary">
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3.5">
         <p className="flex gap-2 text-caption leading-4 text-fg-subtle">
           <Info size={12} aria-hidden="true" className="mt-0.5 shrink-0" />
           <span>This is {agentName}&apos;s own report of what it did. Rewinding the chat removes its entries too.</span>
         </p>
-        <div className="flex flex-wrap gap-1">
+        {/* A segmented toggle group; it wraps in a narrow inspector. */}
+        <div role="group" aria-label="Filter activity" className={`${SEGMENTED_TRACK} max-w-full flex-wrap self-start`}>
           {FILTERS.map(({ id, label }) => (
             <button
               key={id}
@@ -150,7 +153,7 @@ export function ActivityPanel({ messages, transcript, session, agentName, isRepo
               aria-pressed={filter === id}
               aria-label={`${label}, ${counts(id)}`}
               onClick={() => setFilter(id)}
-              className={`focus-ring h-6 rounded-md px-2 text-ui-sm ${filter === id ? "bg-surface-hover text-fg" : "text-fg-muted hover:bg-surface-hover"}`}
+              className={segmentedItem(filter === id)}
             >
               {label} <span className="text-fg-subtle">{counts(id)}</span>
             </button>

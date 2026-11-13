@@ -79,7 +79,8 @@ describe("comments as drawn", () => {
     expect(box.getAttribute("aria-label")).toBeNull();
     expect(label.classList.contains("text-caption")).toBe(true);
     const card = box.closest<HTMLElement>(".rounded-lg")!;
-    expect(card.classList.contains("border-border-strong")).toBe(true);
+    expect(card.classList.contains("border-border")).toBe(true);
+    expect(card.classList.contains("border-border-strong")).toBe(false);
     expect(card.classList.contains("bg-surface-2")).toBe(true);
     expect(box.closest(".ml-\\[104px\\]")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Save comment" }).className).toContain("border");
@@ -88,12 +89,12 @@ describe("comments as drawn", () => {
   it("a saved comment reads Line N · Current with Add to message", async () => {
     await renderView([commentOf(), commentOf({ id: "c-2", lineHash: lineHash("gone"), body: "Was here." })]);
 
-    const current = screen.getByText("Use AuthError here.").closest<HTMLElement>(".bg-surface-3")!;
+    const current = screen.getByText("Use AuthError here.").closest<HTMLElement>("[data-saved-comment]")!;
     expect(current.textContent).toContain("Line 42");
     expect(current.textContent).toContain("· Current");
     expect(current.classList.contains("rounded-lg")).toBe(true);
 
-    const outdated = screen.getByText("Was here.").closest<HTMLElement>(".bg-surface-3")!;
+    const outdated = screen.getByText("Was here.").closest<HTMLElement>("[data-saved-comment]")!;
     expect(outdated.textContent).toContain("· Outdated");
     expect(screen.getByRole("button", { name: "Add to message" })).toBeDefined();
     expect(screen.queryByRole("button", { name: "Add" })).toBeNull();
@@ -113,21 +114,66 @@ describe("comments as drawn", () => {
     }
     render(<One />);
 
-    expect(screen.getByText("Use AuthError here.").closest(".bg-surface-3")!.textContent).toContain("Line 42 · Unknown");
+    expect(screen.getByText("Use AuthError here.").closest("[data-saved-comment]")!.textContent).toContain("Line 42 · Unknown");
   });
 });
 
 describe("the comments bar as drawn", () => {
   const two = [commentOf(), commentOf({ id: "c-2", body: "And here." })];
 
+  it("the diff leaves room for a bar that grew tall, so its last lines are never under it", async () => {
+    const watchers: { callback: () => void; target: Element | null }[] = [];
+    class FakeResizeObserver {
+      private readonly watcher: { callback: () => void; target: Element | null };
+      constructor(callback: ResizeObserverCallback) {
+        this.watcher = { callback: () => callback([], this as unknown as ResizeObserver), target: null };
+        watchers.push(this.watcher);
+      }
+      observe = (target: Element) => {
+        this.watcher.target = target;
+      };
+      unobserve = () => {};
+      disconnect = () => {};
+    }
+    vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+    try {
+      await renderView(two);
+      const slot = document.querySelector<HTMLElement>("[data-bar-slot]")!;
+      const scroller = document.querySelector<HTMLElement>("[data-diff-scroller]")!;
+      const watcher = watchers.find((entry) => entry.target === slot)!;
+
+      // One row of the bar fits in the 80px the class leaves.
+      Object.defineProperty(slot, "offsetHeight", { configurable: true, value: 46 });
+      act(() => watcher.callback());
+      expect(scroller.style.paddingBottom).toBe("");
+
+      // A bar listing comments is taller: its height, its 16px offset and a 16px gap.
+      Object.defineProperty(slot, "offsetHeight", { configurable: true, value: 256 });
+      act(() => watcher.callback());
+      expect(scroller.style.paddingBottom).toBe("288px");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("the bar is a floating card that counts comments not in a message", async () => {
     await renderView(two);
 
     const bar = screen.getByRole("region", { name: "Review comments" });
     expect(bar.textContent).toContain("2 comments not in a message");
-    for (const name of ["rounded-lg", "border-border", "bg-surface-2", "mx-4", "mb-4"]) {
+    // A popover panel floating over the diff, centred 16px above its bottom.
+    for (const name of ["rounded-panel", "border-border", "bg-surface-3", "shadow-popover", "pointer-events-auto"]) {
       expect(bar.classList.contains(name), name).toBe(true);
     }
+    const slot = bar.parentElement as HTMLElement;
+    for (const name of ["absolute", "inset-x-4", "bottom-4", "justify-center", "pointer-events-none"]) {
+      expect(slot.classList.contains(name), name).toBe(true);
+    }
+    expect(slot.parentElement?.classList.contains("relative")).toBe(true);
+    // The scroller leaves 80px under its last lines until the bar is measured taller.
+    const scroller = slot.parentElement?.querySelector<HTMLElement>("[data-diff-scroller]");
+    expect(scroller?.classList.contains("pb-20")).toBe(true);
+    expect(scroller?.style.paddingBottom).toBe("");
     expect(bar.classList.contains("border-t")).toBe(false);
   });
 
@@ -194,6 +240,13 @@ describe("the comments bar as drawn", () => {
     const add = screen.getByRole("button", { name: "Add 2 comments to message" });
     expect(add.textContent).toBe("Add 2");
     expect(add.className).not.toContain("bg-primary");
+    expect(add.classList.contains("h-6.5")).toBe(true);
+    // A card at the bottom of the Changes tab's scroll area, not a floating panel.
+    const bar = screen.getByRole("region", { name: "Review comments" });
+    for (const name of ["mt-auto", "rounded-lg", "border-border", "bg-surface-2", "pl-3", "pr-2"]) {
+      expect(bar.classList.contains(name), name).toBe(true);
+    }
+    expect(bar.classList.contains("absolute")).toBe(false);
   });
 });
 
@@ -252,17 +305,20 @@ describe("comments after the review", () => {
     expect(screen.getByText("Line notes.md:42")).toBeDefined();
   });
 
-  it("a saved comment lets its buttons wrap under a narrow text", async () => {
+  it("a saved comment is a surface-2 card with its buttons in a row under the text", async () => {
     await renderView([commentOf()]);
 
-    const card = screen.getByText("Use AuthError here.").closest<HTMLElement>(".bg-surface-3")!;
-    expect(card.classList.contains("flex-wrap")).toBe(true);
+    const card = screen.getByText("Use AuthError here.").closest<HTMLElement>("[data-saved-comment]")!;
+    for (const name of ["flex-col", "rounded-lg", "border-border", "bg-surface-2"]) expect(card.classList.contains(name), name).toBe(true);
+    const buttons = card.lastElementChild as HTMLElement;
+    expect(buttons.classList.contains("justify-end")).toBe(true);
+    for (const button of buttons.querySelectorAll("button")) expect(button.classList.contains("h-6.5")).toBe(true);
   });
 
   it("a comment with no row to sit under keeps the review's indent", async () => {
     await renderView([commentOf({ lineHash: lineHash("gone") })]);
 
-    const card = screen.getByText("Use AuthError here.").closest<HTMLElement>(".bg-surface-3")!;
+    const card = screen.getByText("Use AuthError here.").closest<HTMLElement>("[data-saved-comment]")!;
     expect(card.parentElement?.classList.contains("mx-4")).toBe(true);
   });
 });

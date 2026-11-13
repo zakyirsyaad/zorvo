@@ -2,6 +2,7 @@ import { memo } from "react";
 import type { ActivityEntry } from "../../lib/activity";
 import { activityResult, activityVerb, dotTone, type DotTone } from "../../lib/activity-turns";
 import { escapeVisible } from "../../lib/visible-text";
+import { PathText } from "../ui/PathText";
 
 const RESULT_STYLES: Record<string, string> = {
   Failed: "text-danger",
@@ -32,7 +33,9 @@ function oneLine(text: string): string {
 function Target({ entry }: { entry: ActivityEntry }) {
   const base = "min-w-0 flex-1 truncate text-caption text-fg-secondary";
   if (entry.kind === "file") {
-    return <span className={`${base} font-mono`}>{oneLine(entry.isNamed ? entry.path : `${entry.path} (no file named)`)}</span>;
+    // Cut at its start, as a tool row's path is: agents send absolute paths, and the file's name is the part to keep.
+    if (entry.isNamed) return <PathText path={oneLine(entry.path)} className="flex-1 text-caption text-fg-secondary" />;
+    return <span className={`${base} font-mono`}>{oneLine(`${entry.path} (no file named)`)}</span>;
   }
   if (entry.kind === "command") return <span className={`${base} font-mono`}>{oneLine(entry.command)}</span>;
   return (

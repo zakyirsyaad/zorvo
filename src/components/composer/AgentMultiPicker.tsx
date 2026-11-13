@@ -26,10 +26,11 @@ const LIMIT_REASON = `You can compare up to ${MAX_COMPARE_AGENTS} agents.`;
 
 type StatusTone = "muted" | "subtle" | "attention";
 
+/** The word's own colour. A sign-in is said in the muted colour: its dot carries the attention colour, as in the delegate dialog. */
 const STATUS_TONES: Readonly<Record<StatusTone, string>> = {
   muted: "text-fg-muted",
   subtle: "text-fg-subtle",
-  attention: "text-status-attention",
+  attention: "text-fg-muted",
 };
 
 /** The dot before a status word: ready and needs-sign-in are worth a glance, the rest are words only. */

@@ -60,7 +60,9 @@ describe("the agent menu", () => {
     const row = rowOf("Qwen Code");
     expect(row).toHaveClass("opacity-55");
     const status = within(row).getByText("Needs sign-in");
-    expect(status).toHaveClass("text-status-attention");
+    // The words are muted; the dot before them carries the colour.
+    expect(status).toHaveClass("text-fg-muted");
+    expect(status).not.toHaveClass("text-status-attention");
     expect(status.previousElementSibling).toHaveClass("size-1.5", "rounded-full", "bg-status-attention");
     const checkbox = within(row).getByRole("checkbox");
     const describedBy = checkbox.getAttribute("aria-describedby")!;

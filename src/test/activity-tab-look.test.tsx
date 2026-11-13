@@ -125,7 +125,10 @@ describe("the Activity tab as drawn", () => {
 
     const edit = screen.getByText("/r/src/list.tsx").closest("li")!;
     expect(within(edit).getByText("Edited")).toHaveClass("w-[52px]");
-    expect(screen.getByText("/r/src/list.tsx")).toHaveClass("font-mono", "truncate");
+    // Cut at its start, so the file's name stays in sight however long the path.
+    const path = screen.getByText("/r/src/list.tsx").closest("span")!;
+    expect(path).toHaveClass("font-mono", "truncate", "[direction:rtl]", "text-caption", "text-fg-secondary");
+    expect(path.querySelector("bdi")).toHaveAttribute("dir", "ltr");
     expect(within(edit).getByRole("button", { name: /Done/ })).toHaveTextContent("Done");
 
     const asked = screen.getByText("Asked").closest("li")!;

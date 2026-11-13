@@ -27,12 +27,33 @@ function oneLine(text: string): string {
   return escapeVisible(text.replace(/\s+/g, ' ').trim());
 }
 
+/**
+ * An agent's prose without the marks markdown adds around its words: code ticks and fences, bold and
+ * italic asterisks, heading hashes, quote marks, and a link's target. The words stay; nothing is rendered.
+ * Underscores are left alone, since `snake_case` and `__init__` are far more common than `_emphasis_`.
+ */
+export function withoutMarkdownMarks(text: string): string {
+  return text
+    .replace(/^\s{0,3}(```|~~~)[^\n]*$/gm, '')
+    .replace(/`([^`\n]+)`/g, '$1')
+    .replace(/!?\[([^\]\n]*)\]\([^)\n]*\)/g, '$1')
+    .replace(/\*\*(?=\S)([^\n]*?\S)\*\*/g, '$1')
+    .replace(/(^|[^\w*])\*(?=\S)([^*\n]*?\S)\*(?![\w*])/g, '$1$2')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s{0,3}>\s?/gm, '');
+}
+
+/** An agent's prose as one plain line. */
+function proseLine(text: string): string {
+  return oneLine(withoutMarkdownMarks(text));
+}
+
 /** The agent's newest words in a chat, as plain text; null when it has said nothing yet. */
 export function lastAgentText(messages: readonly ChatMessage[]): string | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message.role !== 'agent') continue;
-    const text = oneLine(message.content ?? '');
+    const text = proseLine(message.content ?? '');
     if (text) return text;
   }
   return null;
@@ -42,7 +63,7 @@ export function lastAgentText(messages: readonly ChatMessage[]): string | null {
 export function openFormPrompt(messages: readonly ChatMessage[]): string | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const elicitation = messages[index].elicitation;
-    if (elicitation?.status === 'pending') return oneLine(elicitation.message ?? '') || null;
+    if (elicitation?.status === 'pending') return proseLine(elicitation.message ?? '') || null;
   }
   return null;
 }

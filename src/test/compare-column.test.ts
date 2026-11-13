@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { columnFiles, columnRequest, lastAgentText, moreFilesLabel, openFormPrompt } from "../lib/compare-column";
+import { columnFiles, columnRequest, lastAgentText, moreFilesLabel, openFormPrompt, withoutMarkdownMarks } from "../lib/compare-column";
 import type { FileStat } from "../lib/diff-stats";
 import type { ActionCard, ChatMessage } from "../types";
 
@@ -70,6 +70,39 @@ describe("lastAgentText", () => {
 
   it("shows control characters instead of obeying them", () => {
     expect(lastAgentText([message("1", "agent", "safe‮txt")])).not.toContain("‮");
+  });
+});
+
+describe("withoutMarkdownMarks", () => {
+  it("drops the ticks around code and keeps the code", () => {
+    expect(withoutMarkdownMarks("The store is a `TokenStore` class with `save` and `read`.")).toBe(
+      "The store is a TokenStore class with save and read.",
+    );
+  });
+
+  it("drops a fence's own lines and keeps what is inside", () => {
+    expect(withoutMarkdownMarks("Run this:\n```ts\nconst next = 1;\n```\nDone.")).toBe("Run this:\n\nconst next = 1;\n\nDone.");
+  });
+
+  it("drops bold and italic asterisks, heading hashes and quote marks", () => {
+    expect(withoutMarkdownMarks("## Result\n**All six** tests *pass*.\n> quoted")).toBe("Result\nAll six tests pass.\nquoted");
+  });
+
+  it("keeps a link's words and drops its target", () => {
+    expect(withoutMarkdownMarks("See [the plan](https://example.invalid/plan) and ![a shot](shot.png).")).toBe("See the plan and a shot.");
+  });
+
+  it("leaves asterisks and underscores that are not marks", () => {
+    expect(withoutMarkdownMarks("2 * 3 * 4 and 2*3*4")).toBe("2 * 3 * 4 and 2*3*4");
+    expect(withoutMarkdownMarks("call __init__ and snake_case_name")).toBe("call __init__ and snake_case_name");
+    expect(withoutMarkdownMarks("a lone ` tick and a * star")).toBe("a lone ` tick and a * star");
+  });
+});
+
+describe("an agent's prose in a column", () => {
+  it("the last message reads without markdown marks, still on one line", () => {
+    const messages = [message("1", "agent", "The store is a `TokenStore` class.\n\n- **Done**: `login.ts`")];
+    expect(lastAgentText(messages)).toBe("The store is a TokenStore class. - Done: login.ts");
   });
 });
 

@@ -138,7 +138,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
         respond(call.callId, false, refusal);
         return;
       }
-      const waitingCall: WaitingCall = { callId: call.callId, targetName, targetId: resolved.id, task };
+      const waitingCall: WaitingCall = { callId: call.callId, kind: 'delegate', targetName, targetId: resolved.id, task };
       if (grants.current.has(session.id)) {
         void runDelegate(session.id, waitingCall);
         return;

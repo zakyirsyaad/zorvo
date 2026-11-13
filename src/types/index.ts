@@ -263,14 +263,18 @@ export interface ActionCard {
 
 /** What an agent asked Zorvo's tools for, as the approval card shows it. */
 export interface ZorvoToolRequest {
-  tool: 'delegate';
+  tool: 'delegate' | 'start_session';
   /** The agent that asked. */
   callerName: string;
   /** The agent the task is for. */
   targetName: string;
   targetId: string;
-  /** Where the delegate would work: the caller's folder. */
+  /** Where the other agent would work: the caller's folder, or another one Zorvo knows. */
   folder: string;
+  /** A new session in a folder that is not the caller's: asked every time, allowed once. */
+  isOtherFolder?: true;
+  /** A new session that gets a worktree of its own. */
+  hasOwnWorktree?: true;
 }
 
 /** One question of Qwen Code's `ask_user_question`. */

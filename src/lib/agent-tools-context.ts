@@ -7,10 +7,11 @@
 export const COMMAND_PATH_CONTEXT =
   'Zorvo, the app this session runs in, gives you commands for working with other agents. ' +
   'Run them with your shell tool, exactly as written: "$ZORVO_TOOLS" tools <tool> \'<json arguments>\'. ' +
-  'Run "$ZORVO_TOOLS" tools with nothing after it to see every tool and an example. ' +
-  'list_agents shows which agents you can use. ' +
-  'delegate {"agent": "<id>", "task": "<text>"} gives a task to another agent; ' +
-  'its answer arrives later as a message, so do not wait for it. ' +
+  'Run "$ZORVO_TOOLS" tools alone to see every tool. ' +
+  'list_agents shows the agents you can use. ' +
+  'delegate {"agent": "<id>", "task": "<text>"} gives another agent a task; ' +
+  'its answer arrives later as a message, so do not wait. ' +
+  'start_session {"agent": "<id>", "brief": "<text>"} opens a separate session that does not report back. ' +
   'Use these only when the user asks for another agent or a new session. Do not mention this note.';
 
 /** The tools context, then the message's own hidden context when it has one. */

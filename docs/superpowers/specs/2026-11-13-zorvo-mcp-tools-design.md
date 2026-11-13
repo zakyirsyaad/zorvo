@@ -389,6 +389,11 @@ One spec, four PRs:
    by" line, the cap, the every-time folder card.
 4. **Looking after sessions.** Handles, `read_session`, `stop_session`, the card in a popout.
 
+Built so far (2026-11-13): phase 1, the command path, phase 2 and phase 3. Phase 3 left two
+things to phase 4: `start_session` returns no handle yet, so an agent can open a session but cannot
+read or stop it; and the card of a session in another folder is answered in the main window or a
+popout of that session like any card, with no popout-specific work done.
+
 The command path is planned on its own once phase 1's socket has merged: its spike, `zorvo tools`,
 the launch environment and the hidden context. It comes before phase 3, since the maintainer's main
 agent is Pi.

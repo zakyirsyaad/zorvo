@@ -16,7 +16,7 @@
 - The agent can never send a folder path that is not checked, a command, a mode, a model, a branch or a session id. Phase 1 only validates shapes; it starts nothing.
 - Tokens and task text are never logged, never written to disk, never put in an error message.
 - Socket: mode 0600, in a directory of mode 0700, removed on exit, replaced when stale.
-- A connection that sends no known token within 2 seconds is closed. A tool call with no answer within 10 minutes ends with an error.
+- A connection that sends no known token within 2 seconds is closed. A tool call ends with an error when it has no answer within 4 minutes (Qwen Code and Codex give up after 5), or when the agent sends `notifications/cancelled` for it.
 - `task` and `brief`: non-empty after trim, at most 20,000 characters, not starting with `/`. `title`: at most 60 characters. `max_chars`: 1 to 20,000.
 - New Tauri commands are `#[tauri::command(async)]`, registered in `generate_handler!`, and `src/test/tauri-contract.test.ts` must pass without editing its checks.
 - No new dependency. Blocking I/O on threads, as `src-tauri/src/acp/connection.rs` does.
@@ -162,7 +162,7 @@ git commit -m "feat: a private socket and a stdio bridge for agent tools"
 **Interfaces:**
 - Consumes: `tools::tool_list`, `tools::validate`.
 - Produces, in `agent_tools::protocol`:
-  - `pub const SUPPORTED_VERSIONS: [&str; 3] = ["2025-06-18", "2025-03-26", "2024-11-05"];` (check these against the MCP specification's version list before relying on them, and against what Task 1's agents sent.)
+  - `pub const SUPPORTED_VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];` (check these against the MCP specification's version list before relying on them, and against what Task 1's agents sent.)
   - `pub enum Step { Reply(Value), Silent, Call { id: Value, tool: String, args: Value } }`
   - `pub fn handle_line(line: &str) -> Step` — pure. `initialize` → the requested version if supported, else the newest; `capabilities: { tools: {} }`; `serverInfo: { name: "zorvo", version: env!("CARGO_PKG_VERSION") }`. `notifications/*` and any message without `id` → `Silent`. `ping` → `{}`. `tools/list` → `tool_list()`. `tools/call` with valid arguments → `Call`; with invalid ones → `Reply` of a tool result with `isError: true` and the validation sentence. Unknown method → error `-32601`; unparsable line or a batch array → `-32700` / `-32600` with `id: null`.
   - `pub fn tool_result(id: &Value, ok: bool, text: &str) -> Value` — `{ jsonrpc, id, result: { content: [{ type: "text", text }], isError: !ok } }`.
@@ -222,7 +222,7 @@ impl AgentTools {
     pub fn respond(&self, call_id: &str, ok: bool, text: &str);
     /// The session stopped: its token is forgotten, its connections close, its waiting calls end.
     pub fn forget(&self, app_session_id: &str);
-    pub const CALL_TIMEOUT: Duration = Duration::from_secs(600);
+    pub const CALL_TIMEOUT: Duration = Duration::from_secs(240);
 }
 ```
 
@@ -239,6 +239,7 @@ impl AgentTools {
 #[test] fn an_unanswered_call_times_out_with_an_error() { /* start_with_timeout(…, 200ms, …) */ }
 #[test] fn forget_closes_the_connection_and_a_late_respond_is_ignored() {}
 #[test] fn respond_to_an_unknown_call_does_nothing() {}
+#[test] fn a_cancelled_notification_ends_the_waiting_call_and_a_late_respond_is_ignored() { /* notifications/cancelled with params.requestId == the call's id */ }
 #[test] fn two_sessions_calls_do_not_cross() { /* tokens of s1 and s2; answers reach the right stream */ }
 #[test] fn a_line_over_one_mebibyte_is_refused_and_the_connection_survives() {}
 #[test] fn nothing_logs_the_token_or_the_task() { /* capture stderr of the bridge binary run; assert neither appears */ }

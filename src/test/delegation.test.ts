@@ -6,6 +6,7 @@ import {
   delegateBlockedReason,
   delegateSessionName,
   delegationMentionOf,
+  followUpSummary,
   isOpenLink,
   mentionBlockedReason,
   openDelegateOf,
@@ -421,6 +422,12 @@ describe("startSummary", () => {
 
   it("says when nothing is known", () => {
     expect(startSummary({ agentName: "Codex" })).toBe("Codex starts on its defaults.");
+  });
+});
+
+describe("followUpSummary", () => {
+  it("says the task goes to the session that agent already has", () => {
+    expect(followUpSummary("Codex")).toBe("Goes to the Codex session this session already delegated to.");
   });
 });
 

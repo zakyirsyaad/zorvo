@@ -98,12 +98,13 @@ function agentNameIn(agents: readonly AgentProfile[], profileId: string): string
 }
 
 /** Why A cannot delegate, with the latest sessions and transcripts. */
-function blockedReasonFor(deps: DelegationDeps, sourceId: string): string | null {
+function blockedReasonFor(deps: DelegationDeps, sourceId: string, agentId?: string): string | null {
   const source = deps.sessions.find((session) => session.id === sourceId);
   // A session that is gone has no delegation item to show.
   if (source === undefined) return '';
   return delegationBlockedReason({
     source,
+    ...(agentId !== undefined ? { agentId } : {}),
     sessions: deps.sessions,
     isBusy: deps.isBusy,
     isWaiting: deps.isWaiting,
@@ -137,7 +138,8 @@ function relativeTo(cwd: string, path: string): string {
  * so they hold before React renders; the revision only triggers the drain.
  */
 export function useDelegation(deps: DelegationDeps): {
-  delegateBlockedReason: (sourceId: string) => string | null;
+  /** Why `sourceId` cannot give a task; with `agentId`, why it cannot give that agent one. */
+  delegateBlockedReason: (sourceId: string, agentId?: string) => string | null;
   start: (
     sourceId: string,
     agentId: string,
@@ -177,7 +179,8 @@ export function useDelegation(deps: DelegationDeps): {
   const isHandingOver = (delegateId: string) =>
     pending.current.has(delegateId) || delivering.current.has(delegateId);
 
-  const delegateBlockedReason = (sourceId: string): string | null => blockedReasonFor(deps, sourceId);
+  const delegateBlockedReason = (sourceId: string, agentId?: string): string | null =>
+    blockedReasonFor(deps, sourceId, agentId);
 
   /** A works on B's report: it is on its way, or A's last prompt is B's report. */
   const isWorkingOnReport = (sourceId: string, delegateId: string): boolean => {

@@ -338,6 +338,11 @@ export function startSummary({
     : `${agentName} starts on its defaults.`;
 }
 
+/** What the composer says when a mention's task goes to a delegate that agent already has. */
+export function followUpSummary(agentName: string): string {
+  return `Goes to the ${agentName} session this session already delegated to.`;
+}
+
 export interface MentionBlockedInput {
   agentName: string;
   task: string;

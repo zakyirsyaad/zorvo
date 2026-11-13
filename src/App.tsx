@@ -115,7 +115,15 @@ import { useDelegateDialog } from "./hooks/useDelegateDialog";
 import { delegatedStartOf, delegationChoicesFor as delegationChoicesForOptions } from "./lib/delegation-start";
 import { DelegationStatusLine } from "./components/delegation/DelegationStatusLine";
 import { DelegatedFromLine } from "./components/delegation/DelegatedFromLine";
-import { isOpenLink, mentionBlockedReason, openDelegatesOf, startSummary, type MentionAgentStatus } from "./lib/delegation";
+import {
+  followUpSummary,
+  isOpenLink,
+  mentionBlockedReason,
+  openDelegateOf,
+  openDelegatesOf,
+  startSummary,
+  type MentionAgentStatus,
+} from "./lib/delegation";
 import { compareModelControls } from "./lib/compare-models";
 import { lastOfRun, runOf } from "./lib/compare-run";
 import { compareAgentOptions } from "./lib/composer-controls";
@@ -1055,7 +1063,7 @@ export default function App() {
         agentName: mentionedAgent.name,
         task: delegationMention.task,
         status: delegationStatusOf(mentionedAgent),
-        delegateReason: activeSession ? delegation.delegateBlockedReason(activeSession.id) : null,
+        delegateReason: activeSession ? delegation.delegateBlockedReason(activeSession.id, mentionedAgent.id) : null,
       });
   // Why Send waits: the mention's own reason first, then the pair's report hand-over.
   const delegationBlock = mentionBlock ?? (activeSession ? delegation.sendBlockedReason(activeSession.id) : null) ?? undefined;
@@ -1063,10 +1071,14 @@ export default function App() {
   const delegationSummary =
     delegationMention !== null && mentionedAgent !== undefined && mentionBlock === null
       ? {
-          text: startSummary({
-            agentName: mentionedAgent.name,
-            ...delegatedStartOf(state.agentOptions?.[mentionedAgent.id]),
-          }),
+          // The agent already has a delegate here: the task goes to it, and nothing new starts.
+          text:
+            activeSession !== undefined && openDelegateOf(activeSession.id, mentionedAgent.id, sessions) !== undefined
+              ? followUpSummary(mentionedAgent.name)
+              : startSummary({
+                  agentName: mentionedAgent.name,
+                  ...delegatedStartOf(state.agentOptions?.[mentionedAgent.id]),
+                }),
           onChange: (attachments?: readonly string[]) =>
             delegateDialog.open({
               initialAgentId: mentionedAgent.id,

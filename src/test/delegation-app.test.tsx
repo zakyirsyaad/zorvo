@@ -554,6 +554,47 @@ describe("delegating from the app", () => {
     expect(callsTo(spy, "acp_start_session")).toHaveLength(1);
   });
 
+  it("an @mention of an agent that already has an idle delegate sends the task there", async () => {
+    seedSourceSession();
+    fakeStore().state.sessions = [
+      ...fakeStore().state.sessions,
+      {
+        id: "s-b",
+        name: "Codex: Implement step 2",
+        profileId: "codex-acp",
+        cwd: "/Users/test/developer/ai-perpetual-trading",
+        status: "running",
+        createdAt: 3,
+        transport: "acp",
+        delegatedFrom: { sessionId: "s-a", task: "Implement step 2", startedAt: 3 },
+      },
+    ];
+    fakeStore().transcripts["s-b"] = [
+      { id: "m-b1", role: "user", content: "Implement step 2", timestamp: 3 },
+      { id: "m-b2", role: "agent", content: "Done.", timestamp: 4, isComplete: true },
+    ];
+    const spy = await renderApp();
+    // The delegate is the newest session, so the source is opened from the sidebar.
+    const sidebar = within(await screen.findByRole("complementary"));
+    await act(async () => {
+      fireEvent.click(await sidebar.findByText("Fix login bug"));
+    });
+    await screen.findByText("Refactor the parser");
+
+    await type("@Codex now add tests for it");
+    expect(
+      await screen.findByText("Goes to the Codex session this session already delegated to."),
+    ).toBeDefined();
+    await act(async () => {
+      fireEvent.keyDown(prompt(), { key: "Enter" });
+    });
+
+    await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
+    expect(callsTo(spy, "acp_prompt")[0][1]).toMatchObject({ sessionId: "s-b", text: "now add tests for it" });
+    // No second delegate was started.
+    expect(callsTo(spy, "acp_start_session")).toHaveLength(0);
+  });
+
   it("Change carries the composer's attachments to the delegated task", async () => {
     seedSourceSession();
     realInvoke = tauriInternals().invoke;

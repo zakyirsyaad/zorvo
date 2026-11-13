@@ -14,6 +14,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 import { useAcpEngine } from "../hooks/session-engine/useAcpEngine";
 import { fakeProfiles } from "./fixtures/agents";
 import type { ChatMessage, Session } from "../types";
+import { COMMAND_PATH_CONTEXT } from "../lib/agent-tools-context";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
 
@@ -128,6 +129,43 @@ describe("useAcpEngine when a turn fails", () => {
     // The failure is cleared as the new turn starts.
     expect(engine.onTurnFailed).toHaveBeenLastCalledWith("s-1", null);
     expect(engine.result.current.hasFailedPrompt("s-1")).toBe(false);
+  });
+
+  it("sends the command-path context again when the turn that carried it failed", async () => {
+    // The prompt was written but the turn failed before the model saw it: the retry is the
+    // agent's only chance to learn of Zorvo's commands.
+    (window as unknown as { __FAKE_TOOLS_PATH__?: string }).__FAKE_TOOLS_PATH__ = "command";
+    try {
+      const spy = vi.spyOn(tauriInternals(), "invoke");
+      const engine = renderEngine();
+      await startWithFailedTurn(engine, spy);
+
+      await act(async () => {
+        await engine.result.current.retryFailedTurn("s-1");
+      });
+
+      const withContext = `${COMMAND_PATH_CONTEXT}\n\nfix the parser`;
+      expect(promptsSent(spy)).toEqual([withContext, withContext]);
+    } finally {
+      delete (window as unknown as { __FAKE_TOOLS_PATH__?: string }).__FAKE_TOOLS_PATH__;
+    }
+  });
+
+  it("sends the context once when the turn that carried it succeeded", async () => {
+    (window as unknown as { __FAKE_TOOLS_PATH__?: string }).__FAKE_TOOLS_PATH__ = "command";
+    try {
+      const spy = vi.spyOn(tauriInternals(), "invoke");
+      const engine = renderEngine();
+      await act(async () => {
+        await engine.result.current.start(SESSION, { text: "fix the parser" });
+      });
+      await act(async () => {
+        await engine.result.current.send("s-1", "and the tests");
+      });
+      expect(promptsSent(spy)).toEqual([`${COMMAND_PATH_CONTEXT}\n\nfix the parser`, "and the tests"]);
+    } finally {
+      delete (window as unknown as { __FAKE_TOOLS_PATH__?: string }).__FAKE_TOOLS_PATH__;
+    }
   });
 
   it("does not try again while a turn runs", async () => {

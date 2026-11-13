@@ -156,7 +156,8 @@ export function useAcpEngine({
   const isCurrentLaunch = (sessionId: string, gen: number) =>
     launchGenRef.current.get(sessionId) === gen;
   // Each session's latest prompt: an agent that refuses it for a sign-in hands it back to the composer.
-  const lastPromptRef = useRef(new Map<string, { message: ChatMessage; context?: string }>());
+  // `toolsContext`: the prompt also carried Zorvo's command-path context, which is not part of `context`.
+  const lastPromptRef = useRef(new Map<string, { message: ChatMessage; context?: string; toolsContext?: boolean }>());
   // The prompt of each session's last turn that failed with an error: what "Try again" sends.
   const failedPromptRef = useRef(new Map<string, { message: ChatMessage; context?: string }>());
   // Hidden context a refused prompt carried (a rewound session's conversation): it goes out with the next message.
@@ -226,8 +227,12 @@ export function useAcpEngine({
       }
       const sent = lastPromptRef.current.get(sessionId);
       lastPromptRef.current.delete(sessionId);
-      if (error && sent) failedPromptRef.current.set(sessionId, sent);
-      else failedPromptRef.current.delete(sessionId);
+      if (error && sent) {
+        failedPromptRef.current.set(sessionId, sent);
+        // `acp.prompt` returns on write, so the turn may have failed before the agent read
+        // anything: the tools context is due again, for the retry or the next message.
+        if (sent.toolsContext) toolsContextDueRef.current.add(sessionId);
+      } else failedPromptRef.current.delete(sessionId);
       const notice = turnEndNotice(stopReason, error);
       if (error && onTurnFailed) onTurnFailed(sessionId, error);
       else if (notice) reportError(notice);
@@ -291,16 +296,17 @@ export function useAcpEngine({
 
   /** Prompts the agent with a message already shown in the chat; removes it if the prompt is refused. */
   const prompt = async (sessionId: string, message: ChatMessage, context?: string): Promise<boolean> => {
-    lastPromptRef.current.set(sessionId, { message, context });
+    // A command-path agent hears of Zorvo's commands with the first message it takes.
+    const toolsDue = toolsContextDueRef.current.has(sessionId);
+    lastPromptRef.current.set(sessionId, { message, context, ...(toolsDue ? { toolsContext: true } : {}) });
     // A new turn starts: the failure of the last one no longer applies.
     failedPromptRef.current.delete(sessionId);
     onTurnFailed?.(sessionId, null);
-    // A command-path agent hears of Zorvo's commands with the first message it takes.
-    const toolsDue = toolsContextDueRef.current.has(sessionId);
     const hidden = toolsDue ? withToolsContext(context) : context;
     try {
       await acp.prompt(sessionId, hidden ? `${hidden}\n\n${message.content}` : message.content, message.attachments);
-      // Only now: a refused prompt leaves it due for the next message.
+      // Only now: a refused prompt leaves it due for the next message. A turn that fails
+      // later puts it back (see `onTurnEnd`).
       if (toolsDue) toolsContextDueRef.current.delete(sessionId);
       return true;
     } catch (error) {

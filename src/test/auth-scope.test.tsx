@@ -28,7 +28,7 @@ function fakeStore(): FakeTauriStore {
 const CLAUDE_METHODS = [{ id: "claude-ai-login", name: "Claude Subscription", type: "terminal" }];
 
 async function pickAgent(name: string) {
-  const chip = await screen.findByRole("button", { name: /^Agent: / });
+  const chip = await screen.findByRole("button", { name: "All agents" });
   await act(async () => {
     fireEvent.click(chip);
   });

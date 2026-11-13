@@ -1,6 +1,6 @@
 import { Button } from "./ui/Button";
 import { BlockerCard } from "./ui/BlockerCard";
-import { InstallBar, InstallCancel, InstallStatus } from "./InstallProgressLine";
+import { InstallBar, InstallStatus } from "./InstallProgressLine";
 import { useAgentInstall } from "../hooks/useAgentInstall";
 import { describePlan } from "../lib/install-plan";
 import type { AgentProfile } from "../types";
@@ -22,13 +22,13 @@ export function AgentInstallPanel({ agent }: AgentInstallPanelProps) {
         label={installLabel}
         profileId={agent.id}
         title={`Installing ${agent.name}`}
-        // The bar spans the card, with Cancel on its own row under it, as drawn.
-        actions={
-          <div className="flex w-full flex-col gap-3.5">
-            <InstallBar progress={progress} />
-            <InstallCancel onCancel={cancel} />
-          </div>
+        // Cancel at the header's right, and the bar across the card under it, as drawn.
+        action={
+          <Button variant="ghost" tone="secondary" onClick={cancel}>
+            Cancel
+          </Button>
         }
+        below={<InstallBar progress={progress} />}
       >
         <InstallStatus progress={progress} />
         {/* A Cancel that failed leaves the install running, and says why. */}
@@ -41,7 +41,7 @@ export function AgentInstallPanel({ agent }: AgentInstallPanelProps) {
       label={installLabel}
       profileId={agent.id}
       title={`${agent.name} isn't installed yet`}
-      actions={
+      action={
         <Button variant="primary" onClick={install}>
           {status === "failed" ? "Retry" : installLabel}
         </Button>

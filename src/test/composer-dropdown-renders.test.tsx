@@ -77,10 +77,12 @@ function ChatAndComposer() {
           selectedPath: "/Users/test/developer/zorvo",
           onSelect: () => {},
         }}
-        agent={{
-          options: [{ value: "claude-acp", label: "Claude Code" }],
-          selected: "claude-acp",
+        agents={{
+          options: [{ value: "claude-acp", label: "Claude Code", name: "Claude Code", signIn: "ready" }],
+          selected: ["claude-acp"],
+          canTick: false,
           onChange: () => {},
+          onPick: () => {},
         }}
       />
     </div>
@@ -96,7 +98,7 @@ describe("Composer dropdowns and the conversation", () => {
     expect(partRenders).toHaveBeenCalledTimes(60);
     partRenders.mockClear();
 
-    for (const name of [/^Folder:/, /^Agent:/, /^Permission mode:/, /^Model:/, /^Effort:/]) {
+    for (const name of [/^Folder:/, /^All agents$/, /^Permission mode:/, /^Model:/, /^Effort:/]) {
       const button = screen.getByRole("button", { name });
       fireEvent.click(button);
       expect(button.getAttribute("aria-expanded")).toBe("true");

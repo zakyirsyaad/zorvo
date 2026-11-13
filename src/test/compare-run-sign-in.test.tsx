@@ -167,7 +167,7 @@ async function sendMessage(text: string) {
 
 /** Ticks the agents in the Agent chip's menu, on top of the default one, and sends one prompt to them. */
 async function startRun(agentNames: string[] = ["Qwen Code"]) {
-  await click(await screen.findByRole("button", { name: /^Agent: / }));
+  await click(await screen.findByRole("button", { name: "All agents" }));
   for (const name of agentNames) {
     await click(await screen.findByRole("checkbox", { name: new RegExp(`^Compare ${name}`) }));
   }
@@ -263,7 +263,7 @@ describe("a sign-in inside a compare run", () => {
     expect(screen.queryByRole("textbox", { name: "Prompt" })).toBeNull();
     // The draft's panel shows the one request there is, had this refusal taken it.
     await click(screen.getByRole("button", { name: "New session" }));
-    await click(await screen.findByRole("button", { name: "Agent: Claude Code" }));
+    await click(await screen.findByRole("button", { name: "All agents" }));
     await click(screen.getByRole("option", { name: "Qwen Code" }));
     expect(prompt().value).toBe("");
     expect(signInPanel("Qwen Code")).toBeNull();
@@ -372,7 +372,7 @@ describe("a sign-in inside a compare run", () => {
       overrides: { acp_probe_agent: (args) => (args?.profileId === "kimi" && probes++ === 0 ? Promise.reject(AUTH_ERROR) : undefined) },
     });
     expect(await screen.findByRole("region", { name: "Sign in to Kimi CLI" })).toBeInTheDocument();
-    await click(await screen.findByRole("button", { name: "Agent: Kimi CLI" }));
+    await click(await screen.findByRole("button", { name: "All agents" }));
     await click(screen.getByRole("option", { name: "Claude Code" }));
     await startRun();
     await waitFor(() => expect(calls(spy, "acp_prompt")).toHaveLength(2));
@@ -505,7 +505,7 @@ describe("a sign-in inside a compare run", () => {
     await refuse(spy, ["qwen-code"]);
 
     await click(screen.getByRole("button", { name: "New session" }));
-    await click(await screen.findByRole("button", { name: /^Agent: / }));
+    await click(await screen.findByRole("button", { name: "All agents" }));
     expect(await screen.findByRole("checkbox", { name: /^Compare Qwen Code/ })).toBeDisabled();
     expect(screen.getByRole("checkbox", { name: /^Compare Kimi CLI/ })).toBeEnabled();
   });
@@ -594,7 +594,7 @@ describe("a sign-in inside a compare run", () => {
     await openRow("Qwen Code");
     await pressSignIn("Qwen Code");
     await click(screen.getByRole("button", { name: "New session" }));
-    await click(await screen.findByRole("button", { name: /^Agent: / }));
+    await click(await screen.findByRole("button", { name: "All agents" }));
     await click(screen.getByRole("option", { name: "Kimi CLI" }));
     await sendMessage("hello");
     await waitFor(() => expect(promptsTo(spy, sessionOf(spy, "kimi"))).toHaveLength(1));
@@ -615,7 +615,7 @@ describe("a sign-in inside a compare run", () => {
     await refuse(spy, ["qwen-code"]);
     const rowSession = sessionOf(spy, "qwen-code");
     await click(screen.getByRole("button", { name: "New session" }));
-    await click(await screen.findByRole("button", { name: /^Agent: / }));
+    await click(await screen.findByRole("button", { name: "All agents" }));
     await click(screen.getByRole("option", { name: "Qwen Code" }));
     await sendMessage("hello");
     await waitFor(() => expect(calls(spy, "acp_prompt")).toHaveLength(3));
@@ -642,7 +642,7 @@ describe("a sign-in inside a compare run", () => {
     await refuse(spy, ["qwen-code"]);
     const rowSession = sessionOf(spy, "qwen-code");
     await click(screen.getByRole("button", { name: "New session" }));
-    await click(await screen.findByRole("button", { name: /^Agent: / }));
+    await click(await screen.findByRole("button", { name: "All agents" }));
     await click(screen.getByRole("option", { name: "Qwen Code" }));
     await sendMessage("hello");
     await waitFor(() => expect(calls(spy, "acp_prompt")).toHaveLength(3));
@@ -857,7 +857,7 @@ describe("a sign-in inside a compare run", () => {
     await refuse(spy, ["qwen-code"]);
 
     // Not kept for a row that no longer exists: the agent's request waits in the one slot, as for any session.
-    await click(screen.getByRole("button", { name: /^Agent: / }));
+    await click(screen.getByRole("button", { name: "All agents" }));
     await click(screen.getByRole("option", { name: "Qwen Code" }));
     expect(await screen.findByRole("region", { name: "Sign in to Qwen Code" })).toBeInTheDocument();
   });

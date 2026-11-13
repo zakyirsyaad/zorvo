@@ -17,7 +17,7 @@ export function RemovedAgentPanel({ agentName, profileId, onAdd }: RemovedAgentP
         label={title}
         profileId={profileId}
         title={title}
-        actions={
+        action={
           <Button variant="primary" onClick={onAdd}>
             {`Add ${agentName}`}
           </Button>

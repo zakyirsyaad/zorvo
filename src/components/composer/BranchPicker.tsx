@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, GitBranch } from "lucide-react";
 import { Popover, PopoverHeader, PopoverList, PopoverOption, PopoverSearch } from "../ui/Popover";
-import { DRAFT_CHIP } from "./chip-style";
+import { COMPOSER_CHIP } from "./chip-style";
 import type { BranchControl, FolderControl } from "./FolderPicker";
 
 export interface BranchPickerProps {
@@ -47,7 +47,7 @@ export function BranchPicker({ branch, worktree, isOpen, onToggle, onClose }: Br
             onToggle();
           }}
           title={current}
-          className={DRAFT_CHIP}
+          className={COMPOSER_CHIP}
         >
           <GitBranch size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
           <span className="min-w-0 truncate font-mono text-caption">{current}</span>
@@ -127,7 +127,7 @@ function WorktreeSwitch({
           className={`relative mt-px h-4 w-7 shrink-0 rounded-full transition-colors ${worktree.isOn ? "bg-fg" : "bg-border-strong"}`}
         >
           <span
-            className={`absolute top-0.5 h-3 w-3 rounded-full transition-transform ${worktree.isOn ? "translate-x-3.5 bg-ground" : "translate-x-0.5 bg-fg"}`}
+            className={`absolute top-0.5 h-3 w-3 rounded-full transition-transform ${worktree.isOn ? "translate-x-3.5 bg-surface-3" : "translate-x-0.5 bg-fg"}`}
           />
         </span>
         <span className="flex min-w-0 flex-col">

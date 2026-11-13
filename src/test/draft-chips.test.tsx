@@ -23,7 +23,7 @@ function renderDraft(folder: FolderControl, agents?: AgentChoice[]) {
     <ComposerDock
       onSendMessage={() => {}}
       folder={folder}
-      agents={agents ? { options: agents, selected: [agents[0].value], onChange: vi.fn(), onPick: vi.fn() } : undefined}
+      agents={agents ? { options: agents, selected: [agents[0].value], canTick: true, onChange: vi.fn(), onPick: vi.fn() } : undefined}
     />,
   );
 }
@@ -35,7 +35,7 @@ describe("the draft's chips", () => {
     const chip = screen.getByRole("button", { name: "Folder: agent-desktop" });
     const prompt = screen.getByRole("textbox", { name: "Prompt" });
     expect(chip.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Branch: main" })).toHaveClass("h-7");
+    expect(screen.getByRole("button", { name: "Branch: main" })).toHaveClass("h-6.5", "bg-chip");
   });
 });
 
@@ -47,7 +47,7 @@ describe("where the draft's menus open", () => {
     for (const [chip, panel] of [
       ["Folder: agent-desktop", "Choose a folder"],
       ["Branch: main", "Choose a branch"],
-      ["Agent: Claude Code", "Choose agents"],
+      ["All agents", "Choose agents"],
     ] as const) {
       fireEvent.click(screen.getByRole("button", { name: chip }));
       const dialog = screen.getByRole("dialog", { name: panel });
@@ -166,7 +166,7 @@ describe("the agent chip", () => {
   it("lists each agent with its logo, name and readiness, and says how a compare run works", () => {
     renderDraft(folderControl({ branch: branchControl() }), agents);
 
-    fireEvent.click(screen.getByRole("button", { name: "Agent: Claude Code" }));
+    fireEvent.click(screen.getByRole("button", { name: "All agents" }));
     const dialog = within(screen.getByRole("dialog", { name: "Choose agents" }));
     expect(dialog.getByText("Pick more than one to compare")).toBeInTheDocument();
     expect(dialog.getByText("With two or more agents, each runs in its own worktree in its safest mode.")).toBeInTheDocument();
@@ -178,7 +178,7 @@ describe("the agent chip", () => {
   it("dims an agent that cannot join, and says why", () => {
     renderDraft(folderControl({ branch: branchControl() }), agents);
 
-    fireEvent.click(screen.getByRole("button", { name: "Agent: Claude Code" }));
+    fireEvent.click(screen.getByRole("button", { name: "All agents" }));
     const box = screen.getByRole("checkbox", { name: "Compare Qwen Code" });
     expect(box).toBeDisabled();
     // The row's status word says why, and the whole row is dimmed.
@@ -189,7 +189,7 @@ describe("the agent chip", () => {
   it("closes on Escape and gives focus back to the chip", () => {
     renderDraft(folderControl({ branch: branchControl() }), agents);
 
-    const chip = screen.getByRole("button", { name: "Agent: Claude Code" });
+    const chip = screen.getByRole("button", { name: "All agents" });
     fireEvent.click(chip);
     const codex = screen.getByRole("option", { name: "Codex" });
     codex.focus();

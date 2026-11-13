@@ -290,7 +290,7 @@ describe("BlockerCard", () => {
         label="Install Codex"
         profileId="codex-acp"
         title="Codex isn't installed yet"
-        actions={<Button>Install Codex</Button>}
+        action={<Button>Install Codex</Button>}
         footer={<p>Footer line</p>}
       >
         Codex needs Node.js before it can start.
@@ -298,8 +298,9 @@ describe("BlockerCard", () => {
     );
 
     const card = screen.getByRole("region", { name: "Install Codex" });
-    // Padded 18px, with the popover shadow, as drawn.
-    expect(card).toHaveClass("rounded-xl", "border", "bg-surface-2", "p-[18px]", "shadow-popover", "gap-3.5");
+    // Padded 16px with no shadow of its own, as drawn.
+    expect(card).toHaveClass("rounded-xl", "border", "bg-surface-2", "p-4", "gap-3.5");
+    expect(card).not.toHaveClass("shadow-popover");
     const heading = screen.getByRole("heading", { level: 2, name: "Codex isn't installed yet" });
     expect(heading).toHaveClass("font-semibold");
     expect(screen.getByText("Codex needs Node.js before it can start.")).toHaveClass("text-ui", "text-fg-muted");
@@ -311,7 +312,7 @@ describe("BlockerCard", () => {
     expect(card.querySelector("img[alt='']")).not.toBeNull();
   });
 
-  it("puts its logo in a 32px tile", () => {
+  it("puts its logo in a 28px agent tile", () => {
     render(
       <BlockerCard label="Install Codex" profileId="codex-acp" title="Codex isn't installed yet">
         Body
@@ -319,20 +320,40 @@ describe("BlockerCard", () => {
     );
 
     const tile = screen.getByRole("region", { name: "Install Codex" }).querySelector("img[alt='']")?.parentElement;
-    expect(tile).toHaveClass("size-8", "rounded-lg", "bg-surface-hover");
+    expect(tile).toHaveClass("size-7", "rounded-lg", "bg-chip");
   });
 
-  it("puts the main button on its own row under the body", () => {
+  it("puts the main button at the header's right, and a bar across the card under the header", () => {
     render(
-      <BlockerCard label="Install Codex" title="Codex isn't installed yet" actions={<Button>Install Codex</Button>}>
+      <BlockerCard
+        label="Install Codex"
+        title="Codex isn't installed yet"
+        action={<Button>Install Codex</Button>}
+        below={<progress aria-label="Codex download" />}
+      >
         Body
       </BlockerCard>,
     );
 
-    const row = screen.getByRole("button", { name: "Install Codex" }).parentElement as HTMLElement;
-    expect(row).toHaveClass("justify-end");
-    expect(row.contains(screen.getByRole("heading", { level: 2 }))).toBe(false);
-    expect(row.parentElement).toBe(screen.getByRole("region", { name: "Install Codex" }));
+    const card = screen.getByRole("region", { name: "Install Codex" });
+    const head = card.querySelector("[data-blocker-head]") as HTMLElement;
+    expect(head).toHaveClass("flex", "items-center", "gap-3");
+    const slot = screen.getByRole("button", { name: "Install Codex" }).parentElement as HTMLElement;
+    expect(slot).toHaveClass("shrink-0");
+    expect(slot.parentElement).toBe(head);
+    expect(head.lastElementChild).toBe(slot);
+    // The bar is the header's sibling, as wide as the card.
+    expect(screen.getByRole("progressbar", { name: "Codex download" }).parentElement).toBe(card);
+    expect(head.nextElementSibling).toBe(screen.getByRole("progressbar", { name: "Codex download" }));
+  });
+
+  it("tops its header out when there is no button beside a longer body", () => {
+    render(
+      <BlockerCard label="Sign in to Codex" title="Sign in to Codex">
+        A longer body.
+      </BlockerCard>,
+    );
+    expect(screen.getByRole("region", { name: "Sign in to Codex" }).querySelector("[data-blocker-head]")).toHaveClass("items-start");
   });
 
   it("leaves out the logo, actions and footer it is not given", () => {

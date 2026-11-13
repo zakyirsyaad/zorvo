@@ -100,7 +100,7 @@ export function AuthPanel({
       <p role="status" className={`flex min-w-0 flex-1 items-center gap-2 text-ui-sm ${line.style}`}>
         {line.isWaiting ? <StatusLine status="attention">{line.text}</StatusLine> : line.text}
       </p>
-      <Button variant="ghost" aria-label="Dismiss sign-in" onClick={onDismiss}>
+      <Button variant="ghost" tone="secondary" aria-label="Dismiss sign-in" onClick={onDismiss}>
         Dismiss
       </Button>
       {!isSignedIn && (

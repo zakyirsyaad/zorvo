@@ -4,13 +4,12 @@ import { describe, expect, it } from "vitest";
 
 const SRC = join(__dirname, "..");
 
-/** Files that keep the old surfaces until their own phase: Settings and onboarding (6), the agent catalog (6), the draft chips (5). */
+/** Files that keep the old surfaces until their own phase: Settings and onboarding (6), the agent catalog (6). */
 const KEEPS_OLD_SURFACES = [
   "components/settings/",
   "components/agents/",
   "components/onboarding/",
   "components/Onboarding.tsx",
-  "components/composer/chip-style.ts",
 ];
 
 /** Any use of `bg` or `surface-1` as a fill, ring, edge, outline or gradient stop. */

@@ -1,18 +1,30 @@
-<!-- @dsCard group="Feedback" height=236 -->
+<!-- @dsCard group="Chat" height=615 -->
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>PermissionCard — preview</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&amp;family=Geist+Mono:wght@400&amp;display=swap"></head>
+<head><meta charset="utf-8"><title>PermissionCard — preview</title></head>
 <body>
-<div class="z-col">
-  <div class="z-permission" role="group" aria-label="Permission request">
-    <div class="z-permission__head"><svg class="z-ico" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>Claude Code wants to run pnpm install</div>
-    <pre>pnpm install</pre>
-    <div class="z-permission__actions">
-      <button class="z-btn z-btn--ghost" type="button">Deny</button>
-      <button class="z-btn z-btn--outline" type="button">Always allow</button>
-      <button class="z-btn z-btn--primary" type="button">Allow once</button>
+<div class="z-col" style="padding:var(--space-4)">
+ <div class="z-sheet" style="width:620px; padding:var(--space-5); display:flex; flex-direction:column; gap:var(--space-4)">
+  <div class="z-permission">
+    <div class="z-permission__head"><svg class="z-ico" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>Claude Code wants to edit 2 files<span class="z-cap">Waiting for you</span></div>
+    <div class="z-permission__box z-permission__box--files">
+      <div class="z-permission__file"><span class="z-mono z-ui-sm z-grow-1">src/lib/lexer.ts</span><span class="z-mono z-cap z-run">+48</span><span class="z-mono z-cap z-danger">−6</span></div>
+      <div class="z-permission__file"><span class="z-mono z-ui-sm z-grow-1">src/lib/parser.ts</span><span class="z-mono z-cap z-run">+12</span><span class="z-mono z-cap z-danger">−31</span></div>
     </div>
+    <div class="z-permission__actions"><button class="z-btn z-btn--ghost" type="button" style="color:var(--fg-secondary)">Deny</button><button class="z-btn z-btn--outline" type="button">Always allow</button><button class="z-btn z-btn--primary" type="button">Allow once</button></div>
   </div>
+  <div class="z-permission">
+    <div class="z-permission__head"><svg class="z-ico" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>Codex wants your permission<span class="z-cap">Waiting for you</span></div>
+    <p class="z-permission__body">Run a command in the project folder.</p>
+    <div class="z-permission__box">pnpm test --run src/test/lexer.test.ts</div>
+    <div class="z-permission__actions"><button class="z-btn z-btn--ghost" type="button" style="color:var(--fg-secondary)">Deny</button><button class="z-btn z-btn--outline" type="button">Always allow</button><button class="z-btn z-btn--primary" type="button">Allow once</button></div>
+  </div>
+  <div class="z-card" style="border-color:var(--border-strong); border-radius:var(--radius-xl)">
+    <div class="z-hstack" style="align-items:flex-start; gap:10px"><span class="z-tile z-tile--22">X</span><div class="z-grow-1"><div class="z-fg z-w6">Codex needs a few details</div><div class="z-muted">Which branch should the release be cut from?</div></div><button class="z-btn z-btn--ghost z-btn--sm" type="button">Dismiss</button></div>
+    <div class="z-field"><label>Branch</label><input value="release/0.9" style="font-family:var(--font-sans); font-size:13px; height:32px" readonly></div>
+    <div class="z-permission__actions"><button class="z-btn z-btn--ghost" type="button">Decline</button><button class="z-btn z-btn--primary" type="button">Submit</button></div>
+  </div>
+ </div>
 </div>
 </body>
 </html>

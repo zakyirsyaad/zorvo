@@ -1,14 +1,20 @@
-<!-- @dsCard group="Input" height=200 -->
+<!-- @dsCard group="Input" height=190 -->
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>Select — preview</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&amp;family=Geist+Mono:wght@400&amp;display=swap"></head>
+<head><meta charset="utf-8"><title>Select — preview</title></head>
 <body>
-<div class="z-col" style="align-items:flex-start">
-  <button class="z-select" type="button" aria-expanded="true">Default mode <svg class="z-ico" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
-  <div class="z-menu" role="listbox">
-    <div class="z-menu__item" role="option" aria-selected="true">Default <span class="z-menu__hint">asks before edits</span></div>
-    <div class="z-menu__item" role="option">Accept edits <span class="z-menu__hint">edits files freely</span></div>
-    <div class="z-menu__item" role="option">Plan <span class="z-menu__hint">reads only</span></div>
+<div class="z-stage" style="align-items:flex-start; gap:var(--space-5)">
+  <button class="z-select" type="button" aria-expanded="true">Ask before edits <svg class="z-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+  <div class="z-pop z-pop--lg" role="listbox" style="width:240px">
+    <div class="z-pop__item is-picked is-on" role="option" aria-selected="true"><span class="z-pop__label">Ask before edits</span><span class="z-pop__trail">Default</span></div>
+    <div class="z-pop__item" role="option"><span class="z-pop__label">Edit automatically</span></div>
+    <div class="z-pop__item" role="option"><span class="z-pop__label">Plan only</span><span class="z-pop__trail">Read only</span></div>
+  </div>
+  <div class="z-pop z-pop--lg" role="menu" style="width:180px">
+    <div class="z-pop__item is-cmd" role="menuitem">Rename</div>
+    <div class="z-pop__item is-cmd" role="menuitem">Pin</div>
+    <div class="z-pop__item is-cmd" role="menuitem">Archive</div>
+    <div class="z-pop__item z-pop__item--danger" role="menuitem">Delete</div>
   </div>
 </div>
 </body>

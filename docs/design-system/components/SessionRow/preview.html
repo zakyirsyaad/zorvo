@@ -1,51 +1,45 @@
-<!-- @dsCard group="Navigation" height=340 -->
+<!-- @dsCard group="Navigation" height=760 -->
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>SessionRow — preview</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400&amp;display=swap">
+<head><meta charset="utf-8"><title>SessionRow — preview</title>
 <style>
-.z-side { width: 256px; box-sizing: border-box; padding: 0 var(--space-2); background: var(--ground); font-family: var(--font-sans); }
-.z-folder { display: flex; align-items: center; gap: var(--space-1\.5); height: 28px; padding: 0 var(--space-1\.5); color: var(--fg-muted); font: 500 11px/16px var(--font-sans); }
-.z-folder svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.75; flex-shrink: 0; }
-.z-folder__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.z-folder__count { color: var(--fg-subtle); font: 400 11px/16px var(--font-sans); }
-.z-folder--folded { height: 32px; color: var(--fg-secondary); font: 400 13px/18px var(--font-sans); }
-.z-folder--folded svg { color: var(--fg-subtle); }
-.z-folder__sum { display: flex; align-items: center; gap: 6px; color: var(--status-attention); font: 400 11px/16px var(--font-sans); }
-.z-folder__sum::before { content: ""; width: 6px; height: 6px; border-radius: var(--radius-full); background: var(--status-attention); }
-.z-srow { display: flex; align-items: flex-start; gap: 10px; padding: 7px var(--space-2); border-radius: var(--radius-lg); }
-.z-srow[aria-current="true"], .z-srow--hover { background: var(--surface-hover); }
-.z-tile { position: relative; display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; width: 22px; height: 22px; margin-top: 1px; border-radius: var(--radius-md); background: var(--chip); box-shadow: inset 0 0 0 1px var(--border); }
-.z-tile__logo { width: 14px; height: 14px; border-radius: 3px; background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--border-strong); }
-.z-tile__badge { position: absolute; right: -3px; bottom: -3px; width: 8px; height: 8px; border-radius: var(--radius-full); box-shadow: 0 0 0 2px var(--ground); }
-.z-srow[aria-current="true"] .z-tile__badge, .z-srow--hover .z-tile__badge { box-shadow: 0 0 0 2px var(--surface-hover); }
-.z-tile__badge--running { background: var(--status-running); }
-.z-tile__badge--attention { background: var(--status-attention); }
-.z-tile__badge--unread { background: var(--status-unread); }
-.z-srow__line { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
-.z-srow__time { flex-shrink: 0; color: var(--fg-subtle); font: 400 11px/16px var(--font-sans); }
-.z-srow__text { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
-.z-srow__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-secondary); font: 400 13px/18px var(--font-sans); }
-.z-srow[aria-current="true"] .z-srow__title { color: var(--fg); font-weight: 500; }
-.z-srow__title--unread { font-weight: 500; }
-.z-srow__sub { display: flex; align-items: center; gap: 4px; min-width: 0; color: var(--fg-subtle); font: 400 11px/16px var(--font-sans); white-space: nowrap; }
-.z-srow[aria-current="true"] .z-srow__sub, .z-srow--hover .z-srow__sub { color: var(--fg-muted); }
-.z-srow__actions { display: flex; align-self: center; gap: var(--space-0\.5); }
-.z-srow__actions span { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: var(--radius-md); color: var(--fg-secondary); }
-.z-srow__actions svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
-.z-srow__confirm { align-self: center; height: 24px; padding: 0 var(--space-2); border: 0; border-radius: 4px; background: var(--danger-surface); color: var(--danger); font: 500 12px/16px var(--font-sans); }
+.z-nsr { height: 32px; display: flex; align-items: center; gap: var(--space-2); padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2); color: var(--fg); font: 500 13px/18px var(--font-sans); }
+.z-fold { display: flex; align-items: center; gap: var(--space-1\.5); padding: 12px 8px 4px; color: var(--fg-muted); font: 500 11px/16px var(--font-sans); }
+.z-fold .z-n { color: var(--fg-subtle); font-weight: 400; }
+.z-filter { display: flex; gap: 2px; padding: 0 var(--space-1) var(--space-1); }
+.z-filter__b { display: inline-flex; gap: var(--space-1\.5); align-items: center; height: 26px; padding: 0 10px; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--fg-muted); font: 400 12px/16px var(--font-sans); }
+.z-filter__b[aria-pressed="true"] { background: var(--surface-hover); color: var(--fg); }
+.z-tools { display: none; }
 </style>
 </head>
 <body>
-<div class="z-stage" style="padding:0;align-items:stretch">
-  <nav class="z-side" aria-label="Sessions">
-    <div class="z-folder"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg><span class="z-folder__name">agent-desktop</span><span class="z-folder__count">5</span></div>
-    <div class="z-srow" aria-current="true"><span class="z-tile"><span class="z-tile__logo"></span><span class="z-tile__badge z-tile__badge--running"></span></span><span class="z-srow__text"><span class="z-srow__line"><span class="z-srow__title">Rename the app to Zorvo</span></span><span class="z-srow__sub">Claude Code · Working</span></span></div>
-    <div class="z-srow z-srow--hover"><span class="z-tile"><span class="z-tile__logo"></span><span class="z-tile__badge z-tile__badge--attention"></span></span><span class="z-srow__text"><span class="z-srow__line"><span class="z-srow__title">Fix the flaky transcripts test</span></span><span class="z-srow__sub">Codex · Waiting for you</span></span><span class="z-srow__actions"><span><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></span></span></div>
-    <div class="z-srow"><span class="z-tile"><span class="z-tile__logo"></span><span class="z-tile__badge z-tile__badge--unread"></span></span><span class="z-srow__text"><span class="z-srow__line"><span class="z-srow__title z-srow__title--unread">Add @-mentions to the composer</span></span><span class="z-srow__sub">Qwen Code · Finished, unread</span></span></div>
-    <div class="z-srow"><span class="z-tile"><span class="z-tile__logo"></span></span><span class="z-srow__text"><span class="z-srow__line"><span class="z-srow__title">Show PR checks in the top bar</span><span class="z-srow__time">2 h ago</span></span><span class="z-srow__sub">Claude Code</span></span></div>
-    <div class="z-srow z-srow--hover"><span class="z-tile"><span class="z-tile__logo"></span></span><span class="z-srow__text"><span class="z-srow__line"><span class="z-srow__title">Retire the old session list</span></span><span class="z-srow__sub">Claude Code</span></span><button type="button" class="z-srow__confirm">Delete?</button></div>
-    <div class="z-folder z-folder--folded"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg><span class="z-folder__name">titan-investment</span><span class="z-folder__sum">1 waiting</span></div>
-  </nav>
+<div class="z-stage" style="align-items:flex-start; gap:var(--space-6)">
+ <div class="z-sidebar" aria-label="Sessions">
+  <div class="z-hstack" style="padding:2px 4px 8px"><button class="z-nsr z-grow-1" type="button"><svg class="z-ico" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>New session</button><button class="z-icon-btn" type="button" aria-label="Search sessions" style="width:32px;height:32px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface-2)"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button></div>
+  <div class="z-filter" role="group" aria-label="Filter sessions"><button class="z-filter__b" aria-pressed="true" type="button">All</button><button class="z-filter__b" aria-pressed="false" type="button">Needs you <b class="z-att z-w6">2</b></button><button class="z-filter__b" aria-pressed="false" type="button">Working <span class="z-subtle">1</span></button></div>
+  <div class="z-fold"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><path d="M12 17v5"/><path d="M9 3h6l-1 6 4 4H6l4-4z"/></svg>Pinned</div>
+  <div class="z-srow"><span class="z-tile z-tile--22">C</span><span class="z-srow__text"><span class="z-srow__t1">Release 0.9.0 notes</span><span class="z-srow__t2">Claude Code</span></span><span class="z-srow__time">Yesterday</span></div>
+  <div class="z-fold"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>agent-desktop <span class="z-n">6</span></div>
+  <div class="z-srow is-on"><span class="z-tile z-tile--22 z-on-hover">C</span><span class="z-srow__text"><span class="z-srow__t1">Split the parser in two</span><span class="z-srow__t2"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24" aria-label="Runs in its own worktree"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>Claude Code</span></span><span class="z-srow__time">now</span></div>
+  <div class="z-srow"><span class="z-tile z-tile--22">X<span class="z-tile__badge z-tile__badge--running"></span></span><span class="z-srow__text"><span class="z-srow__t1">Fix the sign-in copy</span><span class="z-srow__t2">Codex · Working</span></span></div>
+  <div class="z-srow"><span class="z-tile z-tile--22">Q<span class="z-tile__badge z-tile__badge--attention"></span></span><span class="z-srow__text"><span class="z-srow__t1">Add a settings test</span><span class="z-srow__t2">Qwen Code · Waiting for you</span></span></div>
+  <div class="z-srow is-unread"><span class="z-tile z-tile--22">G<span class="z-tile__badge z-tile__badge--unread"></span></span><span class="z-srow__text"><span class="z-srow__t1">Explain the registry cache</span><span class="z-srow__t2">Gemini CLI · Finished, unread</span></span></div>
+  <div class="z-srow"><span class="z-tile z-tile--22"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/></svg><span class="z-tile__badge z-tile__badge--running"></span></span><span class="z-srow__text"><span class="z-srow__t1">Fix the failing lexer test</span><span class="z-srow__t2">Compare · 2 working, 1 finished</span></span></div>
+  <div class="z-rail">
+   <div class="z-srow"><span class="z-tile z-tile--16" style="margin-top:3px">C</span><span class="z-srow__text"><span class="z-srow__t1">Claude Code</span><span class="z-srow__t2">Claude Code · fork</span></span></div>
+   <div class="z-srow"><span class="z-tile z-tile--16" style="margin-top:3px">X</span><span class="z-srow__text"><span class="z-srow__t1">Check the release script</span><span class="z-srow__t2">Codex · delegated</span></span><span class="z-srow__time">5 min ago</span></div>
+  </div>
+  <div class="z-srow"><span class="z-tile z-tile--22">C</span><span class="z-srow__text"><span class="z-srow__t1">Rename this session</span><span class="z-srow__t2">Claude Code</span></span><span class="z-hstack" style="gap:2px"><button class="z-icon-btn z-icon-btn--sm z-icon-btn--secondary" type="button" aria-label="More"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></span></div>
+  <div class="z-fold" style="padding-top:14px"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg><span class="z-grow-1" style="font:400 13px/18px var(--font-sans); color:var(--fg-secondary)">docs-site</span><span class="z-hstack z-cap"><span class="z-dot z-dot--attention"></span><span class="z-att">1 waiting</span></span></div>
+ </div>
+ <div class="z-vstack" style="width:280px; gap:var(--space-5)">
+  <div class="z-cap z-subtle">Rows on hover, rename and delete, on ground:</div>
+  <div class="z-sidebar" style="width:264px">
+   <div class="z-srow is-on"><span class="z-tile z-tile--22 z-on-hover">X<span class="z-tile__badge z-tile__badge--running"></span></span><span class="z-srow__text"><span class="z-srow__t1">Fix the sign-in copy</span><span class="z-srow__t2">Codex · Working</span></span><button class="z-icon-btn z-icon-btn--sm z-icon-btn--secondary" type="button" aria-label="Stop"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg></button></div>
+   <div class="z-srow is-on"><span class="z-tile z-tile--22 z-on-hover">C</span><span class="z-srow__text"><span class="z-srow__t1">Old experiment</span><span class="z-srow__t2">Claude Code</span></span><button type="button" style="height:24px; padding:0 8px; border:0; border-radius:var(--radius-sm); background:var(--danger-surface); color:var(--danger); font:500 12px/16px var(--font-sans)">Delete?</button></div>
+   <div class="z-srow is-on"><span class="z-tile z-tile--22 z-on-hover">C</span><span class="z-srow__text"><span class="z-input" style="height:26px; padding:0 8px; border-radius:var(--radius-md); border-color:var(--fg); font-family:var(--font-sans); font-size:13px; line-height:24px">Release notes</span><span class="z-cap z-subtle" style="color:var(--fg-muted)">Return saves, Esc cancels</span></span></div>
+  </div>
+ </div>
 </div>
 </body>
 </html>

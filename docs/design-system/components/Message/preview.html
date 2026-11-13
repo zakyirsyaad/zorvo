@@ -1,46 +1,52 @@
-<!-- @dsCard group="Chat" height=300 -->
+<!-- @dsCard group="Chat" height=1000 -->
 <!doctype html>
 <html>
 <head><meta charset="utf-8"><title>Message — preview</title>
 <style>
-.z-chat { display: flex; flex-direction: column; gap: 24px; width: 560px; padding: var(--space-6) var(--space-6) var(--space-4); box-sizing: border-box; background: var(--bg); font-family: var(--font-sans); }
-.z-you { align-self: flex-end; max-width: 85%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); color: var(--fg); font: 400 14px/22px var(--font-sans); }
-.z-reply { margin: 0 -12px; padding: 12px; border-radius: 10px; }
-.z-reply:hover { background: var(--surface-1); }
+.z-chat { display: flex; flex-direction: column; gap: 24px; width: 680px; max-width: 100%; margin: 0 auto; padding: 28px 24px 16px; }
+.z-you { align-self: flex-end; max-width: 80%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface-2); color: var(--fg); font: 400 14px/22px var(--font-sans); }
+.z-reply { margin: 0 -12px; padding: 12px; border-radius: 10px; transition: background-color 150ms; }
+.z-reply.is-hover { background: var(--surface-2); }
 .z-head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: 10px; }
-.z-logo { width: 16px; height: 16px; border-radius: 4px; background: var(--surface-hover); }
-.z-name { color: var(--fg-secondary); font: 500 12px/16px var(--font-sans); }
+.z-name { color: var(--fg); font: 500 12px/16px var(--font-sans); }
 .z-time { color: var(--fg-subtle); font: 400 11px/16px var(--font-sans); }
 .z-body { color: var(--fg-secondary); font: 400 14px/22px var(--font-sans); }
-.z-tools { margin-top: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-1); overflow: hidden; }
-.z-tools__sum { display: flex; align-items: center; gap: var(--space-2); height: 34px; padding: 0 var(--space-3); border-bottom: 1px solid var(--border); color: var(--fg-secondary); font: 400 12px/16px var(--font-sans); }
-.z-tools__row { display: flex; align-items: center; gap: var(--space-2); height: 30px; padding: 0 var(--space-3); color: var(--fg-secondary); font: 400 12px/16px var(--font-sans); }
-.z-verb { width: 56px; flex: none; color: var(--fg-muted); }
+.z-sum { display: inline-flex; align-items: center; gap: var(--space-2); height: 28px; padding: 0 var(--space-2); margin-top: var(--space-2); border-radius: var(--radius-md); color: var(--fg-secondary); font: 400 12px/16px var(--font-sans); }
+.z-steps { margin: 0 0 0 7px; padding-left: 0; border-left: 1px solid var(--border); }
+.z-stepr { display: flex; align-items: center; gap: var(--space-2); height: 28px; padding: 0 8px 0 14px; color: var(--fg-secondary); font: 400 12px/16px var(--font-sans); }
+.z-verb { width: 44px; flex: none; color: var(--fg-muted); }
 .z-target { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 11px/16px var(--font-mono); }
-.z-subtle { margin-left: auto; color: var(--fg-subtle); font: 400 11px/16px var(--font-sans); }
-.z-running { color: var(--status-running); font: 400 11px/16px var(--font-sans); }
-.z-out { margin: 0 var(--space-3) var(--space-2) 76px; padding: var(--space-2) 10px; border-radius: var(--radius-md); background: var(--terminal-bg); color: var(--terminal-fg); font: 400 11px/17px var(--font-mono); }
+.z-out { margin: 0 0 var(--space-1) 36px; padding: var(--space-2) 10px; border-radius: var(--radius-md); background: var(--terminal-bg); color: var(--terminal-fg); font: 400 11px/17px var(--font-mono); }
+.z-acts { display: flex; gap: 2px; margin-top: var(--space-2); }
 .z-working { display: flex; align-items: center; gap: 10px; color: var(--fg-secondary); font: 400 13px/18px var(--font-sans); }
-.z-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--status-running); box-shadow: 0 0 0 4px color-mix(in srgb, var(--status-running) 20%, transparent); }
-.z-elapsed { color: var(--fg-subtle); font: 400 11px/16px var(--font-sans); }
+.z-mid { display: flex; align-items: center; gap: var(--space-2); color: var(--fg-muted); font: 400 12px/16px var(--font-sans); }
 </style>
 </head>
 <body>
-<div class="z-stage">
+<div class="z-col">
+ <div class="z-sheet">
   <div class="z-chat">
+    <div class="z-mid"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/></svg>Delegated from Fix login bug · Claude Code <button class="z-btn z-btn--ghost z-btn--sm" type="button" style="color:var(--fg-secondary)">Open</button></div>
     <div class="z-you">Split the parser in two and keep the tests green.</div>
-    <div class="z-reply">
-      <div class="z-head"><span class="z-logo" aria-hidden="true"></span><span class="z-name">Claude Code</span><span class="z-time">2 minutes ago</span></div>
-      <div class="z-body">I split it into a lexer and a parser.</div>
-      <div class="z-tools">
-        <div class="z-tools__sum"><span>Edited 2 files, ran a command</span><span class="z-subtle">1 still running</span></div>
-        <div class="z-tools__row"><span class="z-verb">Edited</span><span class="z-target">src/lexer.ts</span><span class="z-subtle">Done</span></div>
-        <div class="z-tools__row"><span class="z-verb">Ran</span><span class="z-target">pnpm test</span><span class="z-running">Running</span></div>
-        <div class="z-out">✓ src/test/lexer.test.ts (6 tests)</div>
+    <div class="z-reply is-hover">
+      <div class="z-head"><span class="z-tile z-tile--22 z-on-sheet">C</span><span class="z-name">Claude Code</span><span class="z-time">2 minutes ago</span></div>
+      <div class="z-body">I split it into a lexer and a parser, and moved the token types next to the lexer.</div>
+      <button class="z-sum" type="button" aria-expanded="true">Edited 2 files, ran a command <span class="z-subtle">1 still running</span> <span class="z-danger">1 failed</span><svg class="z-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="z-steps">
+        <div class="z-stepr"><svg class="z-ico z-muted" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/></svg><span class="z-verb">Edited</span><span class="z-target z-fg">src/lib/lexer.ts</span><span class="z-cap z-subtle">New</span><span class="z-mono z-cap"><span class="z-run">+48</span> <span class="z-danger">−6</span></span><span class="z-cap z-subtle">Done</span><span style="width:12px"></span></div>
+        <div class="z-stepr"><svg class="z-ico z-muted" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg><span class="z-verb">Ran</span><span class="z-target">pnpm test --run</span><span class="z-cap z-run">Running</span><svg class="z-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div>
+        <div class="z-out">✓ src/test/lexer.test.ts (6 tests)<br>✓ src/test/parser.test.ts (9 tests)</div>
+        <div class="z-stepr"><svg class="z-ico z-muted" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg><span class="z-verb">Read</span><span class="z-target" style="direction:rtl; text-align:left">…/src/test/fixtures/long-input.txt</span><span class="z-cap z-danger">Failed</span><span style="width:12px"></span></div>
       </div>
+      <div class="z-acts"><button class="z-icon-btn z-icon-btn--sm z-icon-btn--secondary" type="button" aria-label="Copy"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg></button><button class="z-icon-btn z-icon-btn--sm z-icon-btn--secondary" type="button" aria-label="Fork from here"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></button></div>
     </div>
-    <div class="z-working"><span class="z-dot" aria-hidden="true"></span>Claude Code is working<span class="z-elapsed">45s</span></div>
+    <div class="z-working"><span class="z-dot z-dot--running z-dot--still z-dot--ring"></span>Claude Code is working<span class="z-time">45s</span></div>
+    <div class="z-notice"><svg class="z-ico z-att" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><div class="z-grow-1"><div class="z-notice__title">Claude Code hasn't sent anything for 2 minutes.</div><div class="z-notice__hint">It may be stuck.</div></div><button class="z-btn z-btn--outline" type="button"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>Stop</button></div>
+    <div class="z-notice z-notice--danger"><svg class="z-ico z-danger" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg><div class="z-grow-1"><div class="z-notice__title">Codex's turn failed</div><div class="z-notice__hint">The model request timed out. Try again, or open Details.</div></div><button class="z-btn z-btn--outline" type="button" style="color:var(--fg)">Try again</button><button class="z-btn z-btn--ghost" type="button">Details</button><button class="z-btn z-btn--ghost" type="button">Dismiss</button></div>
+    <div class="z-notice z-notice--attention"><svg class="z-ico z-att" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span class="z-grow-1 z-fg z-w6">Codex needs your answer</span><button class="z-btn z-btn--outline z-btn--sm" type="button">Open</button></div>
+    <div class="z-vstack" style="align-items:flex-end; gap:6px"><span class="z-hstack z-ui-sm z-w5 z-fg2"><span class="z-tile z-tile--16">X</span>From Codex</span><div class="z-you" style="align-self:auto">Done: the release script now reads the version from package.json.</div></div>
   </div>
+ </div>
 </div>
 </body>
 </html>

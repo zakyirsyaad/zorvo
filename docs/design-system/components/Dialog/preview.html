@@ -1,20 +1,36 @@
-<!-- @dsCard group="Feedback" height=330 -->
+<!-- @dsCard group="Overlays" height=825 -->
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>Dialog — preview</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&amp;family=Geist+Mono:wght@400&amp;display=swap"></head>
+<head><meta charset="utf-8"><title>Dialog — preview</title>
+<style>
+.z-opt { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 var(--space-2\.5); border-radius: var(--radius-lg); color: var(--fg-secondary); }
+.z-opt.is-picked { background: var(--surface-hover); color: var(--fg); font-weight: 500; }
+.z-opt.is-off { opacity: .55; }
+.z-opt__status { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-1\.5); color: var(--fg-muted); font: 400 11px/16px var(--font-sans); font-weight: 400; }
+.z-term { height: 120px; margin: 0 var(--space-5); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--terminal-bg); color: var(--terminal-fg); font: 400 12px/18px var(--font-mono); padding: 14px 12px; }
+</style>
+</head>
 <body>
-<div class="z-overlay">
-  <div class="z-dialog" role="dialog" aria-label="Settings">
-    <div class="z-dialog__head">Settings <button class="z-icon-btn" type="button" aria-label="Close"><svg class="z-ico" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
-    <div class="z-field">
-      <label for="codex-path">Codex path</label>
-      <input id="codex-path" value="/opt/homebrew/bin/codex">
-      <span class="z-field__hint">Found on your login shell's PATH.</span>
+<div class="z-overlay" style="gap:var(--space-5); align-items:flex-start; flex-wrap:wrap; min-height:620px">
+  <div class="z-dialog" role="dialog" aria-label="Delegate to another agent" style="max-width:520px; gap:var(--space-4)">
+    <div class="z-dialog__head">Delegate to another agent<button class="z-icon-btn z-icon-btn--sm" type="button" aria-label="Close"><svg class="z-ico" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <div class="z-field"><span class="z-label">Agent</span>
+      <div class="z-opt is-picked"><span class="z-radio is-on"></span><span class="z-tile z-tile--22">X</span>Codex<span class="z-opt__status">Ready</span></div>
+      <div class="z-opt"><span class="z-radio"></span><span class="z-tile z-tile--22">Q</span>Qwen Code<span class="z-opt__status"><span class="z-dot z-dot--attention"></span>Needs sign-in</span></div>
+      <div class="z-opt is-off"><span class="z-radio"></span><span class="z-tile z-tile--22">G</span>Gemini CLI<span class="z-opt__status z-subtle">Not installed</span></div>
     </div>
-    <div class="z-dialog__foot">
-      <button class="z-btn z-btn--ghost" type="button">Cancel</button>
-      <button class="z-btn z-btn--primary" type="button">Save</button>
-    </div>
+    <div class="z-field"><span class="z-label">Task</span><textarea class="z-input" rows="3" style="resize:none; font-family:var(--font-sans); font-size:13px; line-height:20px; border-color:var(--danger)"></textarea><span class="z-ui-sm z-danger">Write the task first.</span></div>
+    <div class="z-hstack" style="gap:var(--space-1\.5); flex-wrap:wrap"><span class="z-label">Codex starts on</span>
+      <span class="z-pill z-pill--static" style="background:transparent">gpt-5.5-codex <svg class="z-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+      <span class="z-pill z-pill--static" style="background:transparent">high <svg class="z-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+      <span class="z-pill z-pill--static" style="background:transparent">Auto review <svg class="z-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span></div>
+    <div class="z-ui-sm z-muted">Codex reads this conversation first and works in the same folder. Each answer it gives is sent to Claude Code.</div>
+    <div class="z-dialog__foot"><button class="z-btn z-btn--ghost" type="button">Cancel</button><button class="z-btn z-btn--primary" type="button">Delegate</button></div>
+  </div>
+  <div class="z-dialog" role="dialog" aria-label="Sign in to Qwen Code" style="max-width:560px; padding:0; gap:0">
+    <div class="z-hstack" style="padding:16px 20px; gap:10px"><span class="z-tile z-tile--22" style="width:24px; height:24px; background:var(--surface-hover)">Q</span><span class="z-heading z-grow-1">Sign in to Qwen Code</span><button class="z-icon-btn z-icon-btn--sm" type="button" aria-label="Cancel sign-in"><svg class="z-ico" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <div class="z-term">$ qwen auth login<br>? Pick a provider<br>&gt; Qwen OAuth<br>&nbsp;&nbsp;OpenAI-compatible</div>
+    <div class="z-hstack" style="padding:16px 20px"><span class="z-ui-sm z-muted z-grow-1" role="status">Pick with ↑ ↓ and Return, here in the terminal. Zorvo checks again when you close this.</span><button class="z-btn z-btn--outline" type="button" style="color:var(--fg)">Close</button></div>
   </div>
 </div>
 </body>

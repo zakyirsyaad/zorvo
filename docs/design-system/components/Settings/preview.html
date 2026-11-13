@@ -1,74 +1,103 @@
-<!-- @dsCard group="Layout" height=620 -->
+<!-- @dsCard group="Panels" height=1546 -->
 <!doctype html>
 <html>
 <head><meta charset="utf-8"><title>Settings — preview</title>
 <style>
-.z-settings { display: flex; width: 960px; height: 580px; overflow: hidden; background: var(--bg); color: var(--fg); font: 400 13px/18px var(--font-sans); }
-.z-settings-nav { box-sizing: border-box; flex: none; width: 220px; display: flex; flex-direction: column; gap: 2px; padding: 0 10px; background: var(--surface-1); border-right: 1px solid var(--border); }
-.z-settings-lights { height: 48px; }
-.z-settings-item { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: var(--radius-md); color: var(--fg-secondary); }
-.z-settings-item--back { color: var(--fg-muted); margin-bottom: 10px; }
-.z-settings-item--current { background: var(--surface-hover); color: var(--fg); font-weight: 500; }
-.z-settings-item--soon { color: var(--fg-subtle); }
-.z-settings-tag { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: var(--radius-md); background: var(--surface-hover); color: var(--fg); font-size: 11px; display: flex; align-items: center; justify-content: center; }
-.z-settings-tag--soon { color: var(--fg-muted); }
-.z-settings-main { flex: 1; min-width: 0; padding: 56px 40px; overflow: hidden; }
-.z-settings-column { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
-.z-settings-head { display: flex; flex-direction: column; gap: 4px; }
-.z-settings-title { margin: 0; font: 600 20px/28px var(--font-sans); letter-spacing: -0.02em; color: var(--fg); }
-.z-settings-lead { margin: 0; color: var(--fg-muted); }
-.z-settings-gh { padding: 0 4px 8px; font-size: 11px; font-weight: 500; color: var(--fg-muted); }
-.z-settings-group { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface-2); }
-.z-settings-row { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
-.z-settings-row:last-child { border-bottom: 0; }
-.z-settings-label { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.z-settings-desc { font-size: 12px; line-height: 16px; color: var(--fg-subtle); display: flex; align-items: center; gap: 6px; }
-.z-settings-mono { font-family: var(--font-mono); font-size: 11px; }
-.z-settings-dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--status-running); }
-.z-btn { height: 28px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: none; color: var(--fg-secondary); font: 500 13px/18px var(--font-sans); white-space: nowrap; }
-.z-btn--ghost { border-color: transparent; color: var(--fg-muted); }
+.z-settings { display: flex; width: 960px; height: 500px; background: var(--ground); padding: 8px 8px 8px 0; }
+.z-nav { flex: none; width: 240px; display: flex; flex-direction: column; gap: 2px; padding: 44px 8px 0; }
+.z-nav__item { display: flex; align-items: center; gap: 10px; height: 30px; padding: 0 10px; border-radius: var(--radius-lg); color: var(--fg-secondary); font: 400 13px/18px var(--font-sans); }
+.z-nav__item.is-on { background: var(--surface-hover); color: var(--fg); font-weight: 500; }
+.z-nav__item.is-off { opacity: .6; }
+.z-nav__back { color: var(--fg-muted); margin-bottom: 10px; }
+.z-nav__badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--radius-md); background: var(--chip); color: var(--fg-secondary); font: 400 11px/16px var(--font-sans); }
+.z-content { flex: 1; min-width: 0; padding: 48px 40px; overflow: hidden; }
+.z-content__col { max-width: 720px; display: flex; flex-direction: column; gap: 28px; }
+.z-arow2 { display: flex; align-items: center; gap: 12px; padding: 12px 16px; flex-wrap: wrap; }
+.z-arow2 + .z-arow2 { border-top: 1px solid var(--border); }
+.z-arow2__line { display: flex; align-items: center; gap: 12px; width: 100%; }
+.z-signin { display: inline-flex; align-items: center; gap: var(--space-1\.5); height: 22px; padding: 0 8px; border-radius: var(--radius-md); background: var(--chip); color: var(--fg-secondary); font: 400 11px/16px var(--font-sans); }
+.z-methods { margin: 0 0 0 56px; width: calc(100% - 56px); background: var(--sheet); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.z-methods > div { display: flex; align-items: center; gap: var(--space-3); padding: 9px 12px; }
+.z-methods > div + div { border-top: 1px solid var(--border); }
 </style>
 </head>
 <body>
-<div class="z-stage">
-  <div class="z-settings">
-    <nav class="z-settings-nav" aria-label="Settings">
-      <div class="z-settings-lights" aria-hidden="true"></div>
-      <a class="z-settings-item z-settings-item--back">Back to sessions</a>
-      <a class="z-settings-item z-settings-item--current" aria-current="page">General</a>
-      <a class="z-settings-item">Appearance</a>
-      <a class="z-settings-item">Agents<span class="z-settings-tag" aria-hidden="true">2</span></a>
-      <div class="z-settings-item z-settings-item--soon">MCP servers<span class="z-settings-tag z-settings-tag--soon" aria-hidden="true">Soon</span></div>
-      <a class="z-settings-item">GitHub</a>
-    </nav>
-    <section class="z-settings-main" aria-label="General">
-      <div class="z-settings-column">
-        <div class="z-settings-head">
-          <h1 class="z-settings-title">General</h1>
-          <p class="z-settings-lead">How new sessions start, and the folders Zorvo remembers.</p>
-        </div>
-        <section>
-          <div class="z-settings-gh">New sessions</div>
-          <div class="z-settings-group">
-            <div class="z-settings-row"><span class="z-settings-label"><span>Default agent</span><span class="z-settings-desc">New sessions start with this agent. You can switch in each draft.</span></span><button type="button" class="z-btn">Claude Code</button></div>
-          </div>
-        </section>
-        <section>
-          <div class="z-settings-gh">Recent folders</div>
-          <div class="z-settings-group">
-            <div class="z-settings-row"><span class="z-settings-label"><span>agent-desktop</span><span class="z-settings-desc z-settings-mono">~/developer/agent-desktop</span></span><button type="button" class="z-btn z-btn--ghost">Remove</button></div>
-          </div>
-        </section>
-        <section>
-          <div class="z-settings-gh">About</div>
-          <div class="z-settings-group">
-            <div class="z-settings-row"><span class="z-settings-label"><span>Zorvo version</span><span class="z-settings-desc"><span class="z-settings-dot"></span>0.8.0 · Up to date · checked 2 h ago</span></span><button type="button" class="z-btn">Check now</button></div>
-            <div class="z-settings-row"><span class="z-settings-label"><span>Setup</span><span class="z-settings-desc">Pick agents and a folder again.</span></span><button type="button" class="z-btn">Run setup again</button></div>
-          </div>
-        </section>
-      </div>
-    </section>
-  </div>
+<div class="z-col" style="gap:var(--space-4)">
+
+ <div class="z-settings">
+  <nav class="z-nav" aria-label="Settings">
+   <a class="z-nav__item z-nav__back"><svg class="z-ico" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Back to sessions</a>
+   <a class="z-nav__item is-on" aria-current="page"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>General</a>
+   <a class="z-nav__item"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/></svg>Appearance</a>
+   <a class="z-nav__item"><svg class="z-ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m9 10 2 2-2 2"/></svg>Agents<span class="z-nav__badge" aria-label=", 2 updates">2</span></a>
+   <a class="z-nav__item"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 20v-4c-3 1-4-1-5-2"/><path d="M15 20v-4"/></svg>GitHub</a>
+   <span class="z-nav__item is-off"><svg class="z-ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/></svg>MCP servers<span class="z-nav__badge">Soon</span></span>
+  </nav>
+  <section class="z-sheet z-content" aria-label="General">
+   <div class="z-content__col">
+    <div><h2 class="z-title">General</h2><div class="z-ui z-muted" style="margin-top:4px">How Zorvo starts new sessions and keeps itself up to date.</div></div>
+    <div class="z-group"><div class="z-group__head">New sessions</div>
+     <div class="z-group__card">
+      <div class="z-grow"><div class="z-grow__main"><div class="z-grow__label">Default agent</div><div class="z-grow__desc">The agent a new session starts with.</div></div>
+       <button class="z-btn z-btn--outline" type="button"><span class="z-tile z-tile--16">C</span>Claude Code<svg class="z-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button></div>
+      <div class="z-grow"><div class="z-grow__main"><div class="z-grow__label">agent-desktop</div><div class="z-grow__desc z-mono" style="font-size:11px">~/developer/agent-desktop</div></div><button class="z-btn z-btn--ghost" type="button">Remove</button></div>
+     </div></div>
+    <div class="z-group"><div class="z-group__head">About</div>
+     <div class="z-group__card">
+      <div class="z-grow"><div class="z-grow__main"><div class="z-grow__label">Zorvo version</div><div class="z-grow__desc"><span class="z-status z-muted"><span class="z-dot z-dot--running z-dot--still"></span>0.8.0 · Up to date · checked 2 h ago</span></div></div><button class="z-btn z-btn--outline" type="button">Check now</button></div>
+      <div class="z-grow"><div class="z-grow__main"><div class="z-grow__label">Setup</div></div><button class="z-btn z-btn--outline" type="button">Run setup again</button></div>
+     </div></div>
+   </div>
+  </section>
+ </div>
+
+ <div class="z-settings" style="height:680px">
+  <nav class="z-nav" aria-label="Settings">
+   <a class="z-nav__item z-nav__back"><svg class="z-ico" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Back to sessions</a>
+   <a class="z-nav__item"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>General</a>
+   <a class="z-nav__item"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/></svg>Appearance</a>
+   <a class="z-nav__item is-on" aria-current="page"><svg class="z-ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m9 10 2 2-2 2"/></svg>Agents<span class="z-nav__badge">2</span></a>
+   <a class="z-nav__item"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 20v-4c-3 1-4-1-5-2"/><path d="M15 20v-4"/></svg>GitHub</a>
+  </nav>
+  <section class="z-sheet z-content" aria-label="Agents">
+   <div class="z-content__col" style="gap:24px">
+    <div><h2 class="z-title">Agents</h2><div class="z-ui z-muted" style="margin-top:4px">The agents Zorvo can run. Zorvo installs them in its own folder, or uses the ones already on this Mac.</div></div>
+    <div><div class="z-hstack"><div class="z-search z-grow-1"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>Search agents</div><button class="z-btn z-btn--outline z-btn--field" type="button"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>Check again</button></div><div class="z-cap z-subtle" style="margin-top:6px">Registry checked 8 hours ago</div></div>
+    <div class="z-group"><div class="z-group__head">In use</div>
+     <div class="z-group__card">
+      <div class="z-arow2"><div class="z-arow2__line"><span class="z-tile z-tile--28">C</span><div class="z-grow-1"><div class="z-fg z-w5">Claude Code</div><div class="z-mono z-cap z-muted">0.93.0 · installed by Zorvo</div></div><span class="z-signin"><span class="z-dot z-dot--running z-dot--still"></span>Ready</span><button class="z-btn z-btn--outline" type="button">Update to 0.94.0</button><button class="z-icon-btn" type="button" aria-label="Show sign-in for Claude Code"><svg class="z-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button><button class="z-icon-btn" type="button" aria-label="More"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></div></div>
+      <div class="z-arow2"><div class="z-arow2__line"><span class="z-tile z-tile--28">Q</span><div class="z-grow-1"><div class="z-fg z-w5">Qwen Code</div><div class="z-mono z-cap z-muted">on this Mac</div></div><span class="z-signin"><span class="z-dot z-dot--attention"></span>Sign in</span><button class="z-icon-btn" type="button" aria-label="Hide sign-in for Qwen Code"><svg class="z-chev" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg></button><button class="z-icon-btn" type="button" aria-label="More"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></div>
+        <div class="z-methods"><div><span class="z-grow-1 z-fg2">Sign in with Qwen</span><button class="z-btn z-btn--outline z-btn--sm" type="button">Sign in</button></div><div><span class="z-grow-1 z-fg2">OpenAI-compatible key</span><span class="z-ui-sm z-subtle">In your shell</span></div></div>
+        <div class="z-hstack" style="margin-left:56px; width:calc(100% - 56px)"><span class="z-cap z-muted z-grow-1" role="status">Checking may open a session in Qwen Code.</span><button class="z-btn z-btn--outline z-btn--sm" type="button">Check sign-in</button></div></div>
+      <div class="z-arow2"><div class="z-arow2__line"><span class="z-tile z-tile--28">X</span><div class="z-grow-1"><div class="z-fg z-w5">Codex</div><div class="z-ui-sm z-muted">Installing Node.js · 18.2 MB of 42 MB</div></div><button class="z-btn z-btn--ghost z-btn--sm" type="button">Cancel</button><button class="z-icon-btn" type="button" aria-label="More"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></div><div class="z-progress" style="margin-left:40px; width:calc(100% - 40px)"><span style="width:43%"></span></div></div>
+     </div></div>
+    <div class="z-group"><div class="z-group__head">Available</div>
+     <div class="z-group__card">
+      <div class="z-arow2"><div class="z-arow2__line"><span class="z-tile z-tile--28">P</span><div class="z-grow-1"><div class="z-fg z-w5">Pi</div><div class="z-ui-sm z-muted">Installs Node.js 24.11.1 (49 MB) and Pi 0.9.0 into Zorvo's folder</div></div><button class="z-btn z-btn--outline" type="button">Install</button></div></div>
+      <div class="z-arow2"><div class="z-arow2__line"><span class="z-tile z-tile--28">G</span><div class="z-grow-1"><div class="z-fg z-w5">Gemini CLI</div><div class="z-ui-sm z-danger">The download failed. Check your connection.</div></div><button class="z-btn z-btn--outline" type="button">Retry</button></div></div>
+     </div></div>
+   </div>
+  </section>
+ </div>
+
+ <div class="z-settings" style="height:300px">
+  <nav class="z-nav" aria-label="Settings">
+   <a class="z-nav__item z-nav__back"><svg class="z-ico" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Back to sessions</a>
+   <a class="z-nav__item"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>General</a>
+   <a class="z-nav__item is-on" aria-current="page"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/></svg>Appearance</a>
+   <a class="z-nav__item"><svg class="z-ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m9 10 2 2-2 2"/></svg>Agents</a>
+   <a class="z-nav__item"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 20v-4c-3 1-4-1-5-2"/><path d="M15 20v-4"/></svg>GitHub</a>
+  </nav>
+  <section class="z-sheet z-content" aria-label="Appearance">
+   <div class="z-content__col" style="gap:16px">
+    <div><h2 class="z-title">Appearance</h2><div class="z-ui z-muted" style="margin-top:4px">The terminal stays dark in every theme, since agents color their output for a dark ground.</div></div>
+    <div class="z-group"><div class="z-group__card"><div class="z-grow"><div class="z-grow__main"><div class="z-grow__label">Theme</div></div>
+      <span class="z-ui-sm z-subtle">follows your Mac</span>
+      <div class="z-seg z-seg--wide" role="radiogroup" aria-label="Theme"><button class="z-seg__item" role="radio" aria-checked="true" type="button">System</button><button class="z-seg__item" role="radio" aria-checked="false" type="button">Light</button><button class="z-seg__item" role="radio" aria-checked="false" type="button">Dark</button></div>
+     </div></div></div>
+   </div>
+  </section>
+ </div>
 </div>
 </body>
 </html>

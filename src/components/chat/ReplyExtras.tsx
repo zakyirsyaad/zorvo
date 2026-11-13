@@ -37,7 +37,7 @@ export function WorkingIndicator({ agentName, since }: { agentName: string; sinc
     <div data-testid="agent-working" role="status" className="mx-auto w-full max-w-chat">
       {/* Its own dot, with a soft 4px ring, as the canvas draws it: not one of StatusLine's states. */}
       <div className="flex items-center gap-2.5 py-1">
-        <span data-working-dot="" aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-status-running ring-4 ring-status-running/20" />
+        <span data-working-dot="" aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-status-running ring-4 ring-chip" />
         <span className="text-ui text-fg-secondary">{agentName} is working</span>
         {/* Hidden from the live region: a time that ticks every second would be read out every second. */}
         {since !== undefined && (

@@ -420,5 +420,28 @@ describe("Popout windows", () => {
 
     expect(spy).toHaveBeenCalledWith("acp_cancel", { sessionId }, undefined);
   });
+
+  it("leaves a pasted image to the browser, since a popout has no way to say a paste failed", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", { sessionId: "s-1", session: runningSession, messages: [] });
+    const image = new File(["x"], "shot.png", { type: "image/png" });
+    const clipboardData = {
+      files: [image],
+      items: [{ kind: "file", type: "image/png", getAsFile: () => image }],
+      types: ["Files"],
+      getData: () => "",
+    };
+
+    const notPrevented = fireEvent.paste(screen.getByRole("textbox", { name: "Prompt" }), { clipboardData });
+    // Long enough for a save that was wrongly started to reach the backend.
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    expect(notPrevented).toBe(true);
+    expect(spy.mock.calls.some(([cmd]) => cmd === "save_pasted_image")).toBe(false);
+    expect(screen.queryByRole("button", { name: /^Remove / })).toBeNull();
+  });
 });
 

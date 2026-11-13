@@ -278,11 +278,35 @@ In `src/lib/delegation.ts`, each with its tests:
 
 ## Risk to settle first
 
-Whether each agent honours ACP's `mcpServers` is not verified: Pi through `pi-acp`, Qwen Code,
-Codex, Claude Code, Gemini CLI. The plan's first task is a spike: a throwaway stdio MCP server with
-one `ping` tool, passed to each of the five in a real session, recording whether the tool is listed
-and callable, the agent's tool-call timeout, and whether it asks its own permission. If Pi ignores
-`mcpServers`, the maintainer decides before any product code whether to go on for the others.
+Whether each agent honours ACP's `mcpServers`. The plan's first task was a spike: a throwaway stdio
+MCP server (no dependency, newline-delimited JSON-RPC) with a `ping` tool and a `slow` tool, passed
+in `session/new` with the entry shape `{ name, command, args, env: [{ name, value }] }` to each agent
+in a real session with an empty folder as `cwd`, using each agent's command line from Zorvo's pinned
+registry entry. Run 2026-11-13, one prompt per agent ("call the ping tool and tell me what it
+returned"), plus `slow` with 90, 330 and 660 seconds.
+
+| Agent (tested version) | lists the tool | calls it | asks its own permission | tool-call timeout | notes |
+|---|---|---|---|---|---|
+| Pi (`pi-acp` 0.0.34, pi 1.5.2) | **no** | **no** | n/a | n/a | `mcpServers` ignored. `initialize` reports `mcpCapabilities: { http: false, sse: false }`. The server never started (empty log). The agent's tools are `read`, `bash`, `edit`, `write`; it answered that it has no MCP tools, then ran the server file by hand with `bash` to get a result. Not a use of `mcpServers`. |
+| Qwen Code 0.26.7 | yes | yes | no | **300 s** (90 s answered; 330 s and 660 s were cancelled after exactly 5 minutes) | Sent MCP `protocolVersion` `2025-11-25`. Also asked `prompts/list` and `resources/list`. Exposes the tool as `mcp__zorvo-spike__ping`. Sent `notifications/cancelled` on timeout. `mcpCapabilities`: `http`, `sse`. |
+| Codex (`codex-acp` 2.5.0, Codex 0.165.0) | yes | yes | no | **300 s** (90 s answered; 330 s and 660 s were cancelled after exactly 5 minutes) | Sent `protocolVersion` `2025-06-18`. Shown as `mcp.zorvo-spike.ping`. Sent `notifications/cancelled` on timeout. `mcpCapabilities`: `http`; not `sse`. |
+| Claude Code (`claude-agent-acp` 0.100.0) | yes | not tested | not tested | not tested | Started the server and sent `server/discover`, `initialize` (`2025-11-25`) and `tools/list`, so `mcpServers` is honoured. The prompt was then refused with `-32000 Authentication required` (not signed in here); not signed in for this test, so no call. `mcpCapabilities`: `http`, `sse`. |
+| Gemini CLI | not tested | not tested | not tested | not tested | Not enabled or installed in Zorvo on the test machine. |
+
+What this settles:
+
+- Pi through `pi-acp` does not use `mcpServers`. The spec's stop condition holds: the maintainer
+  decides before any product code whether to go on for the agents that do.
+- The entry shape in "Transport" works as written for Qwen Code and Codex (and Claude Code starts
+  it).
+- A tool call must be answered within 5 minutes for Qwen Code and Codex, not the 10 minutes the plan
+  assumes: the backend's 10-minute call timeout is longer than the agents' own, so the agent gives up
+  first and the late answer is dropped. Phase 2 should answer a call that waits on a card within
+  about 4 minutes, or treat the agent's `notifications/cancelled` as the end of the call.
+- Agents sent MCP protocol versions `2025-06-18` and `2025-11-25`, so the plan's list of supported
+  versions needs checking against the MCP specification before Task 4 relies on it.
+- Neither Qwen Code nor Codex asked its own permission for the tool, so Zorvo's card cannot rely on
+  one (as "Approval" already says).
 
 ## Phases
 

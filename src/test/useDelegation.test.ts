@@ -509,6 +509,53 @@ describe("useDelegation giveTask under pressure", () => {
     expect(env.sends[0].text).toContain("> Done. Tests pass.");
   });
 
+  it("sends one further task when two for the same idle delegate arrive in the same tick", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+    });
+
+    let results: unknown[] = [];
+    await act(async () => {
+      results = await Promise.all([
+        env.result.current.delegation.giveTask("s-a", "codex-acp", "Now add tests", { byAgent: true }),
+        env.result.current.delegation.giveTask("s-a", "codex-acp", "And update the docs", { byAgent: true }),
+      ]);
+    });
+
+    expect(env.sends.map((send) => send.text)).toEqual(["Now add tests"]);
+    expect(results[0]).toMatchObject({ ok: true, kind: "sent" });
+    expect(results[1]).toEqual({ ok: false, reason: "Codex is still working on the previous task." });
+
+    // Once the delegate's turn is over it takes the next task again.
+    await act(async () => {
+      env.result.current.delegation.onTurnEnded("s-b", "failed");
+    });
+    let third: unknown;
+    await act(async () => {
+      third = await env.result.current.delegation.giveTask("s-a", "codex-acp", "And update the docs", { byAgent: true });
+    });
+    expect(third).toMatchObject({ ok: true, kind: "sent" });
+  });
+
+  it("frees the delegate when the further task was not taken", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+      sendResult: false,
+    });
+    let first: unknown;
+    let second: unknown;
+    await act(async () => {
+      first = await env.result.current.delegation.giveTask("s-a", "codex-acp", "Now add tests", { byAgent: true });
+    });
+    await act(async () => {
+      second = await env.result.current.delegation.giveTask("s-a", "codex-acp", "Now add tests", { byAgent: true });
+    });
+    expect(first).toEqual({ ok: false, reason: "Codex did not take the task." });
+    expect(second).toEqual({ ok: false, reason: "Codex did not take the task." });
+  });
+
   it("ends the link of a delegate whose session has ended and starts a new one", async () => {
     const env = setup({
       sessions: [sourceSession(), delegateSession({ status: "terminated" })],

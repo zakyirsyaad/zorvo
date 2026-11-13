@@ -175,6 +175,10 @@ export function useDelegation(deps: DelegationDeps): {
   // A session is in `sessions` only after React commits, so a second task for the same agent in
   // the same tick would otherwise start a second delegate.
   const starting = useRef(new Map<string, string | null>());
+  // The delegates a further task is on its way to. Busy is React state, so it is not
+  // observable in the tick the task is sent; this is, from before the send until the
+  // delegate is seen busy or its turn ends.
+  const sendingTo = useRef(new Set<string>());
   // When the hand-over began, for B's line while the report is still on its way.
   const handoverSince = useRef(new Map<string, number>());
   // Bumped when a turn ends or a hand-over settles, so the drain runs and the lines read again.
@@ -320,6 +324,8 @@ export function useDelegation(deps: DelegationDeps): {
   const onTurnEnded = (sessionId: string, reason: AttentionReason): void => {
     const session = latest.current.sessions.find((candidate) => candidate.id === sessionId);
     const link = session?.delegatedFrom;
+    // Its turn is over, whatever the outcome: it can take a further task again.
+    sendingTo.current.delete(sessionId);
     // A source's turn ended: a report that waited for it may go out now.
     if ([...pending.current.values()].includes(sessionId)) setRevision((current) => current + 1);
     // An archived delegate's link is ended with it: a late turn end has nothing to report.
@@ -423,6 +429,11 @@ export function useDelegation(deps: DelegationDeps): {
     const delegateName = agentNameIn(current.agents, delegate.profileId);
     const refusal: GiveTaskResult = { ok: false, reason: `${delegateName} did not take the task.` };
     if (link === null || link === undefined) return refusal;
+    if (sendingTo.current.has(delegate.id)) {
+      return { ok: false, reason: `${delegateName} is still working on the previous task.` };
+    }
+    // Held before anything awaits: a second task in the same tick must not reach the same turn.
+    sendingTo.current.add(delegate.id);
     let isTaken: boolean;
     try {
       isTaken = await current.send(delegate.id, task, options.attachments ?? [], {
@@ -431,7 +442,10 @@ export function useDelegation(deps: DelegationDeps): {
     } catch {
       isTaken = false;
     }
-    if (!isTaken) return refusal;
+    if (!isTaken) {
+      sendingTo.current.delete(delegate.id);
+      return refusal;
+    }
     // The next report quotes the task it answers.
     current.patchSession(delegate.id, { delegatedFrom: { ...link, task } });
     return { ok: true, kind: 'sent', sessionId: delegate.id, sessionName: delegate.name };
@@ -504,6 +518,15 @@ export function useDelegation(deps: DelegationDeps): {
     latest.current.onNotice(why === '' ? 'Could not delegate.' : `Could not delegate: ${why}`);
     return false;
   };
+
+  // Once a delegate is seen busy the route refuses by itself (also when its turn is later
+  // cancelled, which ends without a turn-end notice); a delegate that is gone needs no hold.
+  useEffect(() => {
+    for (const delegateId of [...sendingTo.current]) {
+      const isListed = sessions.some((session) => session.id === delegateId);
+      if (!isListed || deps.isBusy(delegateId)) sendingTo.current.delete(delegateId);
+    }
+  });
 
   // A delegate that is listed no longer needs its start held: the rules see the session itself.
   useEffect(() => {

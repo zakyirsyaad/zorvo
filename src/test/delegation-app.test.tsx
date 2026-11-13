@@ -554,6 +554,32 @@ describe("delegating from the app", () => {
     expect(callsTo(spy, "acp_start_session")).toHaveLength(1);
   });
 
+  it("list_agents and delegate reach only the agents the user has in use", async () => {
+    seedSourceSession();
+    // Codex is on this Mac, but the user took it out of use.
+    Object.assign(fakeStore().state.settings, { enabledAgents: ["qwen-code"], removedAgents: ["codex-acp"] });
+    const spy = await renderApp();
+    await screen.findByText("Refactor the parser");
+
+    await act(async () => {
+      listeners.get("agent-tool-call")?.({ payload: { callId: "c-1", sessionId: "s-a", tool: "list_agents", args: {} } });
+      listeners.get("agent-tool-call")?.({
+        payload: { callId: "c-2", sessionId: "s-a", tool: "delegate", args: { agent: "codex-acp", task: "Review it." } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await waitFor(() => expect(callsTo(spy, "agent_tool_respond")).toHaveLength(2));
+    const answers = callsTo(spy, "agent_tool_respond").map(([, args]) => args as { callId: string; ok: boolean; text: string });
+    const listed = JSON.parse(answers.find((answer) => answer.callId === "c-1")?.text ?? "{}") as { agents: { id: string }[] };
+    expect(listed.agents.map((agent) => agent.id)).toEqual(["qwen-code"]);
+    const refused = answers.find((answer) => answer.callId === "c-2");
+    expect(refused?.ok).toBe(false);
+    expect(refused?.text).toContain('No agent called "codex-acp"');
+    expect(screen.queryByRole("button", { name: "Allow for this session" })).toBeNull();
+    expect(callsTo(spy, "acp_start_session")).toHaveLength(0);
+  });
+
   it("an @mention of an agent that already has an idle delegate sends the task there", async () => {
     seedSourceSession();
     fakeStore().state.sessions = [

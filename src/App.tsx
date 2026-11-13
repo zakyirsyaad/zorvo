@@ -589,9 +589,11 @@ export default function App() {
   // defined further down and only called when a tool call or an answer arrives.
   const agentTools = useAgentTools({
     sessions,
-    agents,
+    // Only the agents the user has in use, as the @ list and the dialog offer: an agent
+    // taken out of use must not be listed, or started, by another agent.
+    agents: agentsInUse,
     statusOf: (agentId) => {
-      const agent = agents.find((candidate) => candidate.id === agentId);
+      const agent = agentsInUse.find((candidate) => candidate.id === agentId);
       return agent === undefined ? "not-installed" : delegationStatusOf(agent);
     },
     delegatesOf: (sessionId) =>
@@ -1095,6 +1097,10 @@ export default function App() {
   const delegateAgents: readonly DelegateAgentChoice[] = agentsInUse.map((agent) => ({
     profile: agent,
     status: delegationStatusOf(agent),
+    // Its task would go to the session it already has here, which keeps its own model and mode.
+    ...(activeSession !== undefined && openDelegateOf(activeSession.id, agent.id, sessions) !== undefined
+      ? { hasDelegate: true }
+      : {}),
   }));
 
   // End delegation: one item per open delegate of A, or B's own open link. A delegated session offers no Delegate of its own.

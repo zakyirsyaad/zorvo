@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ShieldAlert, X } from "lucide-react";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
-import type { AcpChoices } from "../../lib/acp-draft";
+import { NO_CHOICES, type AcpChoices } from "../../lib/acp-draft";
+import { followUpSummary } from "../../lib/delegation";
 import { isRiskyMode, type ComposerControl, type ComposerControls } from "../../lib/composer-controls";
 import type { AgentProfile } from "../../types";
 import { AgentLogo } from "../AgentLogo";
@@ -17,6 +18,11 @@ export type DelegateAgentStatus = "ready" | "not-checked" | "needs-sign-in" | "n
 export interface DelegateAgentChoice {
   profile: AgentProfile;
   status: DelegateAgentStatus;
+  /**
+   * This session already delegated to this agent: the task goes to that session,
+   * which keeps the model and mode it runs on, so nothing is offered to pick.
+   */
+  hasDelegate?: boolean;
 }
 
 /** What the picked agent's chips are made from, as a draft of that agent makes its own. */
@@ -269,7 +275,8 @@ export function DelegateDialog({
       return;
     }
     if (agentId === null) return;
-    onDelegate(agentId, trimmed, choicesOf(controls, picks, draft?.modeKind));
+    // An existing delegate runs on what it started with: no pick goes with a further task.
+    onDelegate(agentId, trimmed, picked?.hasDelegate ? NO_CHOICES : choicesOf(controls, picks, draft?.modeKind));
   };
 
   return (
@@ -357,10 +364,14 @@ export function DelegateDialog({
               Write the task first.
             </p>
           )}
-          <div className="mt-1 flex items-center gap-1">
-            <span className="mr-1.5 text-ui font-medium text-fg">{agentName} starts on</span>
-            {chips}
-          </div>
+          {picked?.hasDelegate ? (
+            <p className="mt-1 text-ui font-medium text-fg">{followUpSummary(agentName)}</p>
+          ) : (
+            <div className="mt-1 flex items-center gap-1">
+              <span className="mr-1.5 text-ui font-medium text-fg">{agentName} starts on</span>
+              {chips}
+            </div>
+          )}
           <p id={hintId} className="text-caption text-fg-subtle">
             {hint}
           </p>

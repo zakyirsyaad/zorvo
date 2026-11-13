@@ -42,6 +42,33 @@ describe("AgentsMenu", () => {
     expect(needed.querySelector(".bg-status-attention")).toHaveAttribute("aria-hidden", "true");
   });
 
+  it("stacks 16px tiles overlapping by 4px, with no backing behind them", () => {
+    render(
+      <AgentsMenu agents={all} settings={inUse("claude-acp", "qwen-code", "codex-acp", "gemini")} onManageAgents={vi.fn()} />,
+    );
+    const trigger = screen.getByRole("button", { name: "Agents" });
+    const tiles = trigger.querySelectorAll(".size-4.bg-chip");
+    expect(tiles).toHaveLength(3);
+    expect(tiles[0].parentElement).toHaveClass("-space-x-1");
+    expect(trigger.querySelector(".bg-ground")).toBeNull();
+  });
+
+  it("draws each agent's row 28px high with a 16px tile, and a dot only for Ready and Sign in", () => {
+    renderMenu({ "qwen-code": "needed", "codex-acp": "unchecked" });
+    fireEvent.click(screen.getByRole("button", { name: /^Agents/ }));
+    const dialog = within(screen.getByRole("dialog", { name: "Agents in use" }));
+    const rows = dialog.getAllByRole("listitem");
+    for (const row of rows) {
+      expect(row).toHaveClass("h-7");
+      expect(row.querySelector(".size-4.bg-chip")).not.toBeNull();
+    }
+    const [claudeRow, qwenRow, codexRow] = rows;
+    expect(claudeRow.querySelector(".size-1\\.5.bg-status-running")).not.toBeNull();
+    expect(qwenRow.querySelector(".size-1\\.5.bg-status-attention")).not.toBeNull();
+    expect(qwenRow.querySelector("button")).toHaveTextContent(/^Sign in$/);
+    expect(codexRow.querySelector(".size-1\\.5")).toBeNull();
+  });
+
   it("lists the agents in use with their sign-in state", () => {
     const { onSetUpAgent } = renderMenu({ "qwen-code": "needed", "codex-acp": "unchecked" });
     fireEvent.click(screen.getByRole("button", { name: /^Agents/ }));

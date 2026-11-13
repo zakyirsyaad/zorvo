@@ -15,6 +15,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - Sidebar rows show each agent's logo with a status badge, and a filter shows only the sessions that need you or are working.
 - The top bar shows the folder before the session's title.
 
+### Fixed
+
+- **macOS should stop asking again and again for access to your folders.** The release was signed only on its executable, so macOS could not match a permission you had given to the app on disk and asked again. The whole app is now signed under its own name, `xyz.zorvo.desktop`, so within one version macOS should no longer ask twice. It asks once more after each update, until Zorvo has an Apple Developer ID. The prompts now say why: an agent you run in Zorvo reads or changes files there.
+
 ## [0.10.1] - 2026-11-12
 
 ### Fixed

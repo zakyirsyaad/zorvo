@@ -16,7 +16,8 @@ name: Release
 # its signature and latest.json. Publishing the draft is the last step, by hand.
 #
 # With the Apple secrets set (see docs/development.md, "Releasing"), the app is signed and notarized;
-# without them it is built unsigned. Only tags trigger it.
+# without them it is signed ad-hoc under the bundle identifier (`bundle.macOS.signingIdentity` is "-"),
+# which is not notarized. Only tags trigger it.
 on:
   push:
     tags: ["v*"]

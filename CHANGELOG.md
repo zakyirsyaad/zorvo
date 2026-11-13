@@ -7,6 +7,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 ### Added
 
 - **Paste an image into the message.** A screenshot or an image copied in another app attaches when you paste it into the prompt, like a file from the paperclip. Text still pastes as text, also when the copy carries a picture of that text, as web pages and spreadsheets do. Pasted images are kept in Zorvo's data folder for 30 days.
+- The Files tab shows images (PNG, JPEG, GIF, WebP) and PDFs instead of saying the file is binary. A file over 10 MB says it is too large to preview.
 
 ### Changed
 

@@ -119,9 +119,9 @@ function Request({ request, onChoose }: RequestProps) {
         <>
           <p
             title={request.line}
-            className="truncate rounded-md border border-border bg-ground px-2 py-1.5 font-mono text-caption leading-4 text-fg-secondary"
+            className="flex rounded-md border border-border bg-ground px-2 py-1.5 font-mono text-caption leading-4 text-fg-secondary"
           >
-            {request.line}
+            {request.isPath ? <PathText path={request.line} className="flex-1" /> : <span className="truncate">{request.line}</span>}
           </p>
           <div className="flex justify-end gap-2">
             <Button variant="ghost" tone="secondary" size="row" onClick={() => onChoose(request.cardId, request.reject.optionId)}>

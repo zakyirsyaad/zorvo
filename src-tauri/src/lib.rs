@@ -1,4 +1,5 @@
 pub mod acp;
+pub mod agent_tools;
 pub mod app_update;
 pub mod appearance;
 pub mod attachment_paths;

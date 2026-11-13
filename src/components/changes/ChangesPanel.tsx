@@ -81,20 +81,21 @@ function ChangeCard({ change, stat, commentCount, isChecked, isOpen, onCheck, on
   const Chevron = isOpen ? ChevronDown : ChevronRight;
   return (
     <li className="min-w-0 overflow-hidden rounded-lg border border-border bg-surface-2">
-      <div className={`flex items-center gap-2 px-2.5 py-2 ${isOpen ? "border-b border-border" : ""}`}>
+      {/* The opener's hit area covers the whole row, so the counts and the chevron at its end toggle the card too. */}
+      <div className={`relative flex items-center gap-2 px-2.5 py-2 ${isOpen ? "border-b border-border" : ""}`}>
         <input
           type="checkbox"
           checked={isChecked}
           onChange={(e) => onCheck(e.target.checked)}
           aria-label={`Include ${change.path} in the commit`}
-          className="size-3.5 shrink-0 accent-primary focus-ring"
+          className="relative z-10 size-3.5 shrink-0 accent-primary focus-ring"
         />
         <button
           type="button"
           onClick={onOpen}
           aria-expanded={isOpen}
           title={change.oldPath ? `${change.oldPath} → ${change.path}` : change.path}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded text-left focus-ring"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded text-left focus-ring after:absolute after:inset-0 after:content-['']"
         >
           {/* The kind leads, as drawn; its color still tells added from deleted at a glance. */}
           <span title={kind.name} aria-label={kind.name} className={`w-2.5 shrink-0 text-center font-mono text-caption ${kind.style}`}>

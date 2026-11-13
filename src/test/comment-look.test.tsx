@@ -121,17 +121,59 @@ describe("comments as drawn", () => {
 describe("the comments bar as drawn", () => {
   const two = [commentOf(), commentOf({ id: "c-2", body: "And here." })];
 
+  it("the diff leaves room for a bar that grew tall, so its last lines are never under it", async () => {
+    const watchers: { callback: () => void; target: Element | null }[] = [];
+    class FakeResizeObserver {
+      private readonly watcher: { callback: () => void; target: Element | null };
+      constructor(callback: ResizeObserverCallback) {
+        this.watcher = { callback: () => callback([], this as unknown as ResizeObserver), target: null };
+        watchers.push(this.watcher);
+      }
+      observe = (target: Element) => {
+        this.watcher.target = target;
+      };
+      unobserve = () => {};
+      disconnect = () => {};
+    }
+    vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+    try {
+      await renderView(two);
+      const slot = document.querySelector<HTMLElement>("[data-bar-slot]")!;
+      const scroller = document.querySelector<HTMLElement>("[data-diff-scroller]")!;
+      const watcher = watchers.find((entry) => entry.target === slot)!;
+
+      // One row of the bar fits in the 80px the class leaves.
+      Object.defineProperty(slot, "offsetHeight", { configurable: true, value: 46 });
+      act(() => watcher.callback());
+      expect(scroller.style.paddingBottom).toBe("");
+
+      // A bar listing comments is taller: its height, its 16px offset and a 16px gap.
+      Object.defineProperty(slot, "offsetHeight", { configurable: true, value: 256 });
+      act(() => watcher.callback());
+      expect(scroller.style.paddingBottom).toBe("288px");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("the bar is a floating card that counts comments not in a message", async () => {
     await renderView(two);
 
     const bar = screen.getByRole("region", { name: "Review comments" });
     expect(bar.textContent).toContain("2 comments not in a message");
     // A popover panel floating over the diff, centred 16px above its bottom.
-    for (const name of ["rounded-panel", "border-border", "bg-surface-3", "shadow-popover", "absolute", "bottom-4", "left-1/2"]) {
+    for (const name of ["rounded-panel", "border-border", "bg-surface-3", "shadow-popover", "pointer-events-auto"]) {
       expect(bar.classList.contains(name), name).toBe(true);
     }
-    expect(bar.parentElement?.classList.contains("relative")).toBe(true);
-    expect(bar.parentElement?.querySelector("[data-diff-scroller]")?.classList.contains("pb-20")).toBe(true);
+    const slot = bar.parentElement as HTMLElement;
+    for (const name of ["absolute", "inset-x-4", "bottom-4", "justify-center", "pointer-events-none"]) {
+      expect(slot.classList.contains(name), name).toBe(true);
+    }
+    expect(slot.parentElement?.classList.contains("relative")).toBe(true);
+    // The scroller leaves 80px under its last lines until the bar is measured taller.
+    const scroller = slot.parentElement?.querySelector<HTMLElement>("[data-diff-scroller]");
+    expect(scroller?.classList.contains("pb-20")).toBe(true);
+    expect(scroller?.style.paddingBottom).toBe("");
     expect(bar.classList.contains("border-t")).toBe(false);
   });
 

@@ -74,6 +74,11 @@ describe("the Changes tab as drawn", () => {
     expect(opener.firstElementChild?.getAttribute("aria-label")).toBe("Modified");
     expect(opener.lastElementChild?.classList.contains("text-fg-secondary")).toBe(true);
     expect(row.lastElementChild?.tagName.toLowerCase()).toBe("svg");
+    // The opener's hit area covers the row, so a click on the counts or the chevron opens the card;
+    // the checkbox sits above it and keeps its own click.
+    expect(row.classList.contains("relative")).toBe(true);
+    for (const name of ["after:absolute", "after:inset-0"]) expect(opener.classList.contains(name), name).toBe(true);
+    for (const name of ["relative", "z-10"]) expect(row.firstElementChild?.classList.contains(name), name).toBe(true);
     expect(card.textContent).toContain("+3");
     expect(card.textContent).toContain("−1");
     // What Commit takes, and what kind of change it is, stay on the card.

@@ -4,10 +4,17 @@ import { DiffFileSection, diffSectionId } from "./DiffFileSection";
 import { DiffViewHeader } from "./DiffViewHeader";
 import { ReviewCommentsBar } from "./ReviewCommentsBar";
 import { useDiffTargets, useTargetStats } from "../../hooks/useDiffStats";
+import { useElementHeight } from "../../hooks/useElementHeight";
 import { DIFF_NOT_LOADED, useFileReviews } from "../../hooks/useFileReviews";
 import type { ReviewComments } from "../../hooks/useReviewComments";
 import type { AddReview } from "../../hooks/useReviewWiring";
 import { defaultTarget, targetOptions, type DiffTargetId } from "../../lib/diff-stats";
+
+/** The floating comments bar sits this far above the diff's bottom, and the last line stays this far above the bar. */
+const BAR_OFFSET_PX = 16;
+const BAR_GAP_PX = 16;
+/** The room `pb-20` already leaves under the diff. */
+const MIN_ROOM_UNDER_DIFF_PX = 80;
 
 /** Above this many files the sections start collapsed, so a large diff does not read them all. */
 const AUTO_OPEN_LIMIT = 25;
@@ -93,6 +100,10 @@ export function DiffView({
     reload();
   };
   const panel = useRef<HTMLElement>(null);
+  // The comments bar floats over the diff and grows with what it lists, so the scroller leaves room for its real height.
+  const barSlot = useRef<HTMLDivElement>(null);
+  const barHeight = useElementHeight(barSlot);
+  const roomUnderDiff = barHeight + BAR_OFFSET_PX + BAR_GAP_PX;
   const focusPanel = () => panel.current?.focus({ preventScroll: true });
   const { checked, reads, adder, fileReviewFor: fileReviewOf } = useFileReviews({
     rootPath,
@@ -191,9 +202,13 @@ export function DiffView({
       />
       <div className="flex min-h-0 flex-1">
         {isExpanded && stats && stats.length > 0 && <DiffFileList stats={visible} selectedPath={selectedPath} onSelect={selectFile} />}
-        {/* The comments bar floats over the diff, so the scroller leaves room under its last lines. */}
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <div data-diff-scroller="" className={`min-h-0 flex-1 overflow-y-auto${review ? " pb-20" : ""}`}>
+        <div
+          data-diff-scroller=""
+          className={`min-h-0 flex-1 overflow-y-auto${review ? " pb-20" : ""}`}
+          // 80px covers the bar's one row; a bar that lists comments is taller, and the room follows it.
+          style={barHeight > 0 && roomUnderDiff > MIN_ROOM_UNDER_DIFF_PX ? { paddingBottom: roomUnderDiff } : undefined}
+        >
         {stats === null ? (
           <p className="px-4 py-3 text-fg-subtle">Reading the changes…</p>
         ) : stats.length === 0 ? (
@@ -216,20 +231,23 @@ export function DiffView({
           ))
         )}
         </div>
-        {review && (
-          <ReviewCommentsBar
-            review={review}
-            adder={adder}
-            checked={checked}
-            target={target}
-            targets={targets}
-            options={options}
-            reads={reads}
-            listed={stats}
-            onTargetChange={setChosen}
-            onFocusLost={focusPanel}
-          />
-        )}
+        {/* Always mounted, so its height is watched from the start; it lets clicks through where the bar is not. */}
+        <div ref={barSlot} data-bar-slot="" className="pointer-events-none absolute inset-x-4 bottom-4 z-10 flex justify-center">
+          {review && (
+            <ReviewCommentsBar
+              review={review}
+              adder={adder}
+              checked={checked}
+              target={target}
+              targets={targets}
+              options={options}
+              reads={reads}
+              listed={stats}
+              onTargetChange={setChosen}
+              onFocusLost={focusPanel}
+            />
+          )}
+        </div>
         </div>
       </div>
     </aside>

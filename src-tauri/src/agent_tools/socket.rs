@@ -23,6 +23,7 @@ const MAX_SOCKET_PATH_BYTES: usize = 100;
 const TOKEN_BYTES: usize = 32;
 const FIRST_LINE_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_FIRST_LINE_BYTES: usize = 4096;
+const ACCEPT_RETRY_PAUSE: Duration = Duration::from_millis(100);
 
 extern "C" {
     fn getuid() -> u32;
@@ -150,7 +151,7 @@ impl Listener {
         &self.path
     }
 
-    /// Accepts connections until the socket fails. Each connection gets a
+    /// Accepts connections for as long as the process lives. Each connection gets a
     /// thread that reads the token line and, when it names a live session,
     /// hands the stream on; anything else is closed without a word.
     pub fn accept_loop(
@@ -170,11 +171,17 @@ impl Listener {
                 {
                     continue
                 }
-                Err(_) => break,
+                // Out of descriptors or the like: the socket is still ours, so
+                // keep it and try again shortly.
+                Err(_) => {
+                    thread::sleep(ACCEPT_RETRY_PAUSE);
+                    continue;
+                }
             };
             let tokens = Arc::clone(&tokens);
             let on_connection = Arc::clone(&on_connection);
-            thread::spawn(move || {
+            // No thread to spare: drop the connection rather than panic.
+            let _ = thread::Builder::new().spawn(move || {
                 if let Some((session, stream)) = authenticate(stream, &tokens) {
                     on_connection(session, stream);
                 }

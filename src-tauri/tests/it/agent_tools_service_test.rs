@@ -380,3 +380,67 @@ fn nothing_logs_the_token_or_the_task() {
     assert!(!stderr.contains(&token));
     assert!(!stderr.contains(task));
 }
+
+#[test]
+fn the_ninth_open_call_on_a_connection_is_refused_at_once_and_emits_nothing() {
+    let rig = rig("cap");
+    let mut client = Client::connect(&rig, "s1");
+    for id in 1..=8 {
+        client.send(delegate(id));
+        rig.calls.recv_timeout(WAIT).unwrap();
+    }
+    client.send(delegate(9));
+    let answer = client.read();
+    assert_eq!(answer["id"], 9);
+    assert_eq!(answer["result"]["isError"], true);
+    assert_eq!(
+        answer["result"]["content"][0]["text"],
+        "Too many tool calls are waiting; wait for one to finish."
+    );
+    assert!(rig.calls.recv_timeout(QUIET).is_err());
+    // Another connection has its own allowance.
+    let mut other = Client::connect(&rig, "s2");
+    other.send(delegate(1));
+    rig.calls.recv_timeout(WAIT).unwrap();
+}
+
+#[test]
+fn an_end_during_emit_is_reported_after_the_call_event_exactly_once() {
+    let log = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let (in_emit_tx, in_emit) = mpsc::channel::<()>();
+    let (release_tx, release) = mpsc::channel::<()>();
+    let (done_tx, done) = mpsc::channel::<()>();
+    let in_emit_tx = std::sync::Mutex::new(in_emit_tx);
+    let release = std::sync::Mutex::new(release);
+    let done_tx = std::sync::Mutex::new(done_tx);
+    let (emit_log, end_log) = (Arc::clone(&log), Arc::clone(&log));
+    let tools = AgentTools::start_with_timeout(
+        &scratch("order"),
+        PathBuf::from("/bin/zorvo-test"),
+        AgentTools::CALL_TIMEOUT,
+        move |_call| {
+            in_emit_tx.lock().unwrap().send(()).unwrap();
+            release.lock().unwrap().recv_timeout(WAIT).unwrap();
+            emit_log.lock().unwrap().push("call".into());
+        },
+        move |_id| {
+            end_log.lock().unwrap().push("ended".into());
+            done_tx.lock().unwrap().send(()).unwrap();
+        },
+    )
+    .unwrap();
+    let entry = tools.servers_for("s1", true);
+    let mut stream = UnixStream::connect(env_value(&entry, "ZORVO_MCP_SOCKET")).unwrap();
+    let token = env_value(&entry, "ZORVO_MCP_TOKEN");
+    stream
+        .write_all(format!("{{\"token\":\"{token}\"}}\n{}\n", delegate(1)).as_bytes())
+        .unwrap();
+    in_emit.recv_timeout(WAIT).unwrap();
+    // The call is waiting but its event has not gone out yet.
+    tools.forget("s1");
+    assert!(done.recv_timeout(QUIET).is_err());
+    release_tx.send(()).unwrap();
+    done.recv_timeout(WAIT).unwrap();
+    assert!(done.recv_timeout(QUIET).is_err());
+    assert_eq!(*log.lock().unwrap(), vec!["call", "ended"]);
+}

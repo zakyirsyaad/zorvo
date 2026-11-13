@@ -29,6 +29,11 @@ static NEXT_CALL: AtomicU64 = AtomicU64::new(1);
 static NEXT_CONNECTION: AtomicU64 = AtomicU64::new(1);
 
 const TIMEOUT_TEXT: &str = "Zorvo did not answer in time.";
+const TOO_MANY_CALLS_TEXT: &str = "Too many tool calls are waiting; wait for one to finish.";
+/// Calls one connection may have waiting at once.
+const MAX_OPEN_CALLS_PER_CONNECTION: usize = 8;
+/// A write that blocks this long (an agent that stopped reading) is given up.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// A valid tool call the webview has to answer.
 #[derive(Debug, Clone, Serialize)]
@@ -47,6 +52,9 @@ struct Connection {
     id: u64,
     session: String,
     writer: Mutex<UnixStream>,
+    /// A second handle to the same socket, used only to shut it down: it is
+    /// outside the writer's mutex, so a blocked write cannot hold `close` up.
+    shutter: UnixStream,
 }
 
 impl Connection {
@@ -59,12 +67,27 @@ impl Connection {
     }
 
     fn close(&self) {
-        let _ = lock(&self.writer).shutdown(Shutdown::Both);
+        let _ = self.shutter.shutdown(Shutdown::Both);
     }
+}
+
+/// Orders a call's two events: `ended` is never reported before the call
+/// itself went out through `emit`.
+#[derive(Default)]
+struct CallState {
+    inner: Mutex<CallPhase>,
+}
+
+#[derive(Default)]
+struct CallPhase {
+    emitted: bool,
+    /// The call ended before `emit` returned; the emitter reports it.
+    ended_early: bool,
 }
 
 struct Pending {
     connection: Arc<Connection>,
+    state: Arc<CallState>,
     /// The JSON-RPC id the agent used, to answer it and to match a cancel.
     rpc_id: Value,
     /// Dropped with the entry, which wakes the timer thread so it exits.
@@ -180,6 +203,23 @@ impl AgentTools {
         }
     }
 
+    /// Reports a call as ended, now when its event already went out, else
+    /// right after `emit` returns (see `start_call`).
+    fn report_ended(&self, call_id: String, state: &CallState) {
+        let now = {
+            let mut phase = lock(&state.inner);
+            if phase.emitted {
+                true
+            } else {
+                phase.ended_early = true;
+                false
+            }
+        };
+        if now {
+            (self.ended)(call_id);
+        }
+    }
+
     /// The session stopped: its token is forgotten, its connections close and
     /// its waiting calls end.
     pub fn forget(&self, app_session_id: &str) {
@@ -209,31 +249,35 @@ impl AgentTools {
 
     /// Removes every pending call that matches and reports each as ended.
     fn end_pending(&self, matches: impl Fn(&Pending) -> bool) {
-        let removed: Vec<String> = {
+        let removed: Vec<(String, Arc<CallState>)> = {
             let mut pending = lock(&self.pending);
             let ids: Vec<String> = pending
                 .iter()
                 .filter(|(_, p)| matches(p))
                 .map(|(id, _)| id.clone())
                 .collect();
-            for id in &ids {
-                pending.remove(id);
-            }
-            ids
+            ids.into_iter()
+                .filter_map(|id| pending.remove(&id).map(|p| (id, p.state)))
+                .collect()
         };
-        for id in removed {
-            (self.ended)(id);
+        for (id, state) in removed {
+            self.report_ended(id, &state);
         }
     }
 
     fn serve(self: &Arc<Self>, session: String, stream: UnixStream) {
-        let Ok(writer) = stream.try_clone() else {
+        let (Ok(writer), Ok(shutter)) = (stream.try_clone(), stream.try_clone()) else {
             return;
         };
+        // The timeout belongs to the socket, so the other handles share it.
+        if writer.set_write_timeout(Some(WRITE_TIMEOUT)).is_err() {
+            return;
+        }
         let connection = Arc::new(Connection {
             id: NEXT_CONNECTION.fetch_add(1, Ordering::Relaxed),
             session,
             writer: Mutex::new(writer),
+            shutter,
         });
         lock(&self.connections).insert(connection.id, Arc::clone(&connection));
         // A session forgotten while this connection was being set up.
@@ -281,29 +325,58 @@ impl AgentTools {
     ) {
         let call_id = NEXT_CALL.fetch_add(1, Ordering::Relaxed).to_string();
         let (stop, stopped) = mpsc::channel::<()>();
-        // Recorded before the event goes out, so a quick answer finds it.
-        lock(&self.pending).insert(
-            call_id.clone(),
-            Pending {
-                connection: Arc::clone(connection),
-                rpc_id: rpc_id.clone(),
-                _timer_stop: stop,
-            },
-        );
+        let state = Arc::new(CallState::default());
+        // Recorded before the event goes out, so a quick answer finds it. The
+        // count and the insert share one lock, so the cap cannot be raced.
+        {
+            let mut pending = lock(&self.pending);
+            let open = pending
+                .values()
+                .filter(|p| p.connection.id == connection.id)
+                .count();
+            if open >= MAX_OPEN_CALLS_PER_CONNECTION {
+                drop(pending);
+                connection.send(&tool_result(&rpc_id, false, TOO_MANY_CALLS_TEXT));
+                return;
+            }
+            pending.insert(
+                call_id.clone(),
+                Pending {
+                    connection: Arc::clone(connection),
+                    state: Arc::clone(&state),
+                    rpc_id: rpc_id.clone(),
+                    _timer_stop: stop,
+                },
+            );
+        }
         let service = Arc::clone(self);
         let timed = call_id.clone();
-        thread::spawn(move || {
+        let spawned = thread::Builder::new().spawn(move || {
             // Disconnected means the entry left the table some other way.
             if let Err(RecvTimeoutError::Timeout) = stopped.recv_timeout(service.timeout) {
                 service.time_out(&timed);
             }
         });
+        if spawned.is_err() {
+            lock(&self.pending).remove(&call_id);
+            connection.send(&tool_result(&rpc_id, false, TOO_MANY_CALLS_TEXT));
+            return;
+        }
         (self.emit)(ToolCall {
-            call_id,
+            call_id: call_id.clone(),
             session_id: connection.session.clone(),
             tool,
             args,
         });
+        // An end that came in during `emit` waited for it: report it now.
+        let late = {
+            let mut phase = lock(&state.inner);
+            phase.emitted = true;
+            phase.ended_early
+        };
+        if late {
+            (self.ended)(call_id);
+        }
     }
 
     fn time_out(&self, call_id: &str) {
@@ -312,7 +385,7 @@ impl AgentTools {
             entry
                 .connection
                 .send(&tool_result(&entry.rpc_id, false, TIMEOUT_TEXT));
-            (self.ended)(call_id.to_string());
+            self.report_ended(call_id.to_string(), &entry.state);
         }
     }
 }

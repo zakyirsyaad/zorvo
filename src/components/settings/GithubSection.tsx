@@ -72,7 +72,7 @@ function ConnectionRow({ status, isChecking, onCheck, onConnect, onOpenUrl }: Gi
               {initials}
             </span>
           }
-          label={status.name ?? `@${login}`}
+          label={<span className="font-medium">{status.name ?? `@${login}`}</span>}
           description={<StatusLine status="ready">{`Connected as @${login} on github.com`}</StatusLine>}
           control={<CheckAgain isChecking={isChecking} onCheck={onCheck} />}
         />

@@ -142,10 +142,19 @@ describe("Settings page", () => {
     expect(screen.getByRole("heading", { level: 1, name: "GitHub" })).toBeInTheDocument();
   });
 
-  it("keeps the old bg surface of its own until it moves to the v2 surfaces", async () => {
+  it("paints the ground, with the section on one sheet beside the nav", async () => {
     await renderApp();
     await click(settingsButton());
-    expect(document.querySelector("[data-settings-page]")).toHaveClass("bg-bg");
+    const page = document.querySelector("[data-settings-page]") as HTMLElement;
+    expect(page).toHaveClass("bg-ground");
+    const sheet = page.querySelector('[data-sheet="settings"]') as HTMLElement;
+    expect(sheet).toHaveClass("my-2", "mr-2", "overflow-hidden", "rounded-panel", "border", "border-border", "bg-sheet");
+    expect(sheet.previousElementSibling).toBe(screen.getByRole("navigation", { name: "Settings" }));
+    // The sheet clips its corners; the section inside it is what scrolls.
+    const content = sheet.querySelector("[data-settings-content]") as HTMLElement;
+    expect(content).toHaveClass("overflow-y-auto", "px-10", "py-12");
+    expect(content.querySelector("[data-tauri-drag-region]")).not.toBeNull();
+    expect(content.querySelector(".max-w-\\[720px\\]")).not.toBeNull();
   });
 
   it("a notice raised in Settings shows on the page", async () => {

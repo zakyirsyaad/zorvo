@@ -51,7 +51,31 @@ describe("agents you'll use", () => {
     expect(claude).toBeChecked();
     expect(claude.tagName).toBe("INPUT");
     expect(screen.getByRole("checkbox", { name: "Use Gemini CLI" })).not.toBeChecked();
-    expect(rowOf("Claude Code").querySelector(".size-7.bg-surface-hover")).not.toBeNull();
+    expect(rowOf("Claude Code").querySelector(".size-\\[22px\\].rounded-md.bg-chip")).not.toBeNull();
+  });
+
+  it("a row is compact, its name at weight 500: bright when ticked, quieter when not", () => {
+    renderChoices();
+    expect(rowOf("Claude Code")).toHaveClass("px-3.5", "py-2.5", "gap-3");
+    expect(within(rowOf("Claude Code")).getByText("Claude Code")).toHaveClass("font-medium", "text-fg");
+    const gemini = within(rowOf("Gemini CLI")).getByText("Gemini CLI");
+    expect(gemini).toHaveClass("font-medium", "text-fg-secondary");
+    expect(gemini).not.toHaveClass("text-fg");
+  });
+
+  it("the tick sits at the row's right end, after the row's button", () => {
+    renderChoices();
+    const row = rowOf("Codex");
+    const tick = within(row).getByRole("checkbox", { name: "Use Codex" });
+    const button = within(row).getByRole("button", { name: "Make default for Codex" });
+    // Same slot, the button first: so it comes first on screen and in the Tab order.
+    expect(button.compareDocumentPosition(tick) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tick.parentElement?.parentElement).toBe(button.parentElement);
+    expect(row.lastElementChild).toBe(button.parentElement);
+    // The tile leads the row, and the tick is filled with the primary colour when ticked.
+    expect(row.firstElementChild).toHaveClass("bg-chip");
+    expect(tick).toHaveClass("checked:border-primary", "checked:bg-primary", "focus-ring");
+    expect(tick.nextElementSibling).toHaveClass("text-on-primary");
   });
 
   it("rows are divided by hairlines, the last one without", () => {
@@ -70,7 +94,9 @@ describe("agents you'll use", () => {
 
   it("the default row carries a Default tag and the others Make default", () => {
     const { props } = renderChoices();
-    expect(within(rowOf("Claude Code")).getByText("Default")).toHaveClass("border", "text-fg-muted");
+    const tag = within(rowOf("Claude Code")).getByText("Default");
+    expect(tag).toHaveClass("h-4.5", "rounded", "bg-chip", "text-caption", "font-medium", "text-fg-muted");
+    expect(tag.className).not.toContain("border");
     expect(within(rowOf("Claude Code")).queryByRole("button", { name: /Make default/ })).toBeNull();
     const make = within(rowOf("Codex")).getByRole("button", { name: "Make default for Codex" });
     expect(make).toHaveClass("opacity-0", "group-hover:opacity-100", "group-focus-within:opacity-100");
@@ -128,6 +154,11 @@ describe("project folder", () => {
     render(<FolderChoice folder={recent[0]} recentFolders={recent} suggestedFolders={suggested} onChoose={vi.fn()} onPickFolder={onPickFolder} />);
     expect(screen.getByRole("heading", { level: 2, name: "Project folder" })).toBeInTheDocument();
     expect(screen.getByText("/Users/me/zorvo")).toHaveClass("font-mono", "text-caption");
+    // A compact row with a 22px tile around the folder icon, and the name at weight 500.
+    const row = screen.getByText("zorvo").closest("[data-settings-row]") as HTMLElement;
+    expect(row).toHaveClass("px-3.5", "py-2.5");
+    expect(row.firstElementChild).toHaveClass("size-[22px]", "bg-chip");
+    expect(screen.getByText("zorvo")).toHaveClass("font-medium");
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
     expect(onPickFolder).toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: /^Use / })).toBeNull();

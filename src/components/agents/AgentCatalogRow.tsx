@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp, MoreHorizontal } from "lucide-react";
-import { AgentLogo } from "../AgentLogo";
 import { InstallBar, InstallStatus } from "../InstallProgressLine";
 import { AgentSignIn, signInStatus } from "./AgentSignIn";
 import { SignInChip } from "./SignInChip";
+import { AgentTile } from "../ui/AgentTile";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { Popover, PopoverOption } from "../ui/Popover";
@@ -95,11 +95,11 @@ export function AgentCatalogRow({
       </div>
     </>
   ) : isInUse && (agent.status !== "not_installed" || !hasPlan) ? (
-    <span className="truncate font-mono text-caption text-fg-subtle" title={agent.location ?? undefined}>
+    <span className="truncate font-mono text-caption text-fg-muted" title={agent.location ?? undefined}>
       {sourceLine(agent)}
     </span>
   ) : (
-    <span className="text-ui-sm text-fg-subtle">{availableLine(agent, plan)}</span>
+    <span className="text-ui-sm text-fg-muted">{availableLine(agent, plan)}</span>
   );
 
   // Remove stays offered while an install runs: removing ends the install too.
@@ -167,18 +167,12 @@ export function AgentCatalogRow({
   const closedStatus = canCheckSignIn && !showsPanel ? signInStatus(agent.name, signIn, agent.id).text : null;
 
   return (
-    <li
-      aria-label={agent.name}
-      className={`flex flex-col border-b border-border first:rounded-t-xl last:rounded-b-xl last:border-b-0 ${
-        isOpen || isBusy ? "bg-surface-1" : ""
-      }`}
-    >
+    // No tint on an opened or installing row: the panel under the line is what shows it.
+    <li aria-label={agent.name} className="flex flex-col border-b border-border last:border-b-0">
       <div className="flex items-center gap-3 px-4 py-3">
-        <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-[7px] bg-surface-hover">
-          <AgentLogo profileId={agent.id} name="" size={16} />
-        </span>
+        <AgentTile profileId={agent.id} name="" size={28} />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-ui text-fg">{agent.name}</span>
+          <span className="truncate text-ui font-medium text-fg">{agent.name}</span>
           {secondLine}
         </div>
         <div className="flex shrink-0 items-center gap-2">{controls}</div>
@@ -193,7 +187,7 @@ export function AgentCatalogRow({
         <div className="mb-3.5 ml-14 mr-4 flex flex-col gap-2.5">
           {showsPanel && signIn && <AgentSignIn agentId={agent.id} agentName={agent.name} signIn={signIn} />}
           {isConfirmingRemove && (
-            <div className="flex flex-col gap-2 rounded-lg border border-border-strong bg-surface-2 px-3 py-2.5">
+            <div className="flex flex-col gap-2 rounded-lg border border-border bg-sheet px-3 py-2.5">
               <p className="text-ui text-fg-secondary">{removeQuestion(agent.name, runningSessionCount)}</p>
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" size="md" onClick={() => setIsConfirmingRemove(false)}>

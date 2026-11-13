@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Folder } from "lucide-react";
 import { SettingsRow } from "../settings/SettingsGroup";
+import { AgentTile } from "../ui/AgentTile";
 import { Button } from "../ui/Button";
 import { NumberedHeading } from "./AgentChoices";
 import { toFolderOption, type FolderOption } from "./types";
@@ -21,9 +22,9 @@ const CARD = "flex flex-col rounded-xl border border-border bg-surface-2";
 
 function FolderTile() {
   return (
-    <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-[7px] bg-surface-hover text-fg-secondary">
-      <Folder size={14} />
-    </span>
+    <AgentTile size={22} className="text-fg-secondary">
+      <Folder size={12} aria-hidden="true" />
+    </AgentTile>
   );
 }
 
@@ -76,9 +77,13 @@ export function FolderChoice({ folder, recentFolders, suggestedFolders, onChoose
       <div className={CARD}>
         {folder ? (
           <SettingsRow
-            isTight
+            isCompact
             leading={<FolderTile />}
-            label={<span id={nameId}>{folder.name}</span>}
+            label={
+              <span id={nameId} className="font-medium">
+                {folder.name}
+              </span>
+            }
             description={
               <span id={pathId} className="font-mono text-caption">
                 {folder.path}
@@ -95,9 +100,9 @@ export function FolderChoice({ folder, recentFolders, suggestedFolders, onChoose
             {offeredFolders(recentFolders, suggestedFolders).map((offered) => (
               <SettingsRow
                 key={offered.path}
-                isTight
+                isCompact
                 leading={<FolderTile />}
-                label={offered.name}
+                label={<span className="font-medium">{offered.name}</span>}
                 description={<span className="font-mono text-caption">{offered.path}</span>}
                 control={
                   <Button size="md" onClick={() => use(offered)} aria-label={`Use ${offered.name}`}>
@@ -107,9 +112,9 @@ export function FolderChoice({ folder, recentFolders, suggestedFolders, onChoose
               />
             ))}
             <SettingsRow
-              isTight
+              isCompact
               leading={<FolderTile />}
-              label="Another folder"
+              label={<span className="font-medium">Another folder</span>}
               control={
                 <Button size="md" disabled={isPicking} onClick={() => void pick()}>
                   <span className="text-fg">Open folder</span>

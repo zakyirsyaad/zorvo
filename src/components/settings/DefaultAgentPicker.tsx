@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { readyAgents, type AgentSummary } from "../../lib/agent-readiness";
-import { AgentLogo } from "../AgentLogo";
+import { AgentTile } from "../ui/AgentTile";
 import { Button } from "../ui/Button";
 import { Popover, PopoverOption } from "../ui/Popover";
 
@@ -38,13 +38,7 @@ export function DefaultAgentPicker({ agents, defaultAgentId, onChange }: Default
           aria-haspopup="listbox"
           aria-expanded={isOpen}
           onClick={() => setIsOpen((open) => !open)}
-          icon={
-            current && (
-              <span aria-hidden="true" className="flex size-4 items-center justify-center rounded bg-surface-hover">
-                <AgentLogo profileId={current.id} name="" size={12} />
-              </span>
-            )
-          }
+          icon={current && <AgentTile profileId={current.id} name="" size={16} />}
         >
           <span className="text-fg">{current?.name ?? "Choose an agent"}</span>
           <ChevronDown size={12} aria-hidden="true" className="text-fg-muted" />
@@ -53,7 +47,7 @@ export function DefaultAgentPicker({ agents, defaultAgentId, onChange }: Default
     >
       {ready.map((agent) => (
         <PopoverOption key={agent.id} selected={agent.id === defaultAgentId} onSelect={() => pick(agent.id)}>
-          <AgentLogo profileId={agent.id} name="" size={12} />
+          <AgentTile profileId={agent.id} name="" size={16} />
           <span className="truncate">{agent.name}</span>
         </PopoverOption>
       ))}

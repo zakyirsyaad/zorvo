@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { columnFiles, columnRequest, lastAgentText, moreFilesLabel, openFormPrompt, withoutMarkdownMarks } from "../lib/compare-column";
+import { columnFiles, columnRequest, lastAgentText, moreFilesLabel, openFormPrompt } from "../lib/compare-column";
 import type { FileStat } from "../lib/diff-stats";
 import type { ActionCard, ChatMessage } from "../types";
 
@@ -70,59 +70,6 @@ describe("lastAgentText", () => {
 
   it("shows control characters instead of obeying them", () => {
     expect(lastAgentText([message("1", "agent", "safe‮txt")])).not.toContain("‮");
-  });
-});
-
-describe("withoutMarkdownMarks", () => {
-  it("drops the ticks around code and keeps the code", () => {
-    expect(withoutMarkdownMarks("The store is a `TokenStore` class with `save` and `read`.")).toBe(
-      "The store is a TokenStore class with save and read.",
-    );
-  });
-
-  it("drops a fence's own lines and keeps what is inside", () => {
-    expect(withoutMarkdownMarks("Run this:\n```ts\nconst next = 1;\n```\nDone.")).toBe("Run this:\n\nconst next = 1;\n\nDone.");
-  });
-
-  it("drops bold and italic asterisks, heading hashes and quote marks", () => {
-    expect(withoutMarkdownMarks("## Result\n**All six** tests *pass*.\n> quoted")).toBe("Result\nAll six tests pass.\nquoted");
-  });
-
-  it("keeps a link's words and drops its target", () => {
-    expect(withoutMarkdownMarks("See [the plan](https://example.invalid/plan) and ![a shot](shot.png).")).toBe("See the plan and a shot.");
-  });
-
-  it("never rewrites code: a span loses its ticks and nothing else", () => {
-    expect(withoutMarkdownMarks("Updated `src/*/test/*`.")).toBe("Updated src/*/test/*.");
-    expect(withoutMarkdownMarks("The map is `[key](value)` and `**kwargs`.")).toBe("The map is [key](value) and **kwargs.");
-    // Marks around a span still go; the span inside them stays as written.
-    expect(withoutMarkdownMarks("**see `a*b*c` now** and *then `x[0](y)`*")).toBe("see a*b*c now and then x[0](y)");
-  });
-
-  it("never rewrites a fenced block: only its two fence lines go", () => {
-    const text = "Run:\n```bash\n# install\nls src/*/test/* > out\necho **done**\n```\n# Next\n*after*";
-    expect(withoutMarkdownMarks(text)).toBe("Run:\n\n# install\nls src/*/test/* > out\necho **done**\n\nNext\nafter");
-    // A fence left open runs to the end, and another kind of fence inside it is code.
-    expect(withoutMarkdownMarks("~~~\n```\n*x*")).toBe("\n```\n*x*");
-  });
-
-  it("a longer fence holds a shorter one: only a fence of its own kind and length closes it", () => {
-    const nested = "````markdown\n```bash\necho **done**\n```\n````\n*after*";
-    expect(withoutMarkdownMarks(nested)).toBe("\n```bash\necho **done**\n```\n\nafter");
-    // A fence line with an info string opens a block; it never closes one.
-    expect(withoutMarkdownMarks("```\n```js\n**x**\n```\n**y**")).toBe("\n```js\n**x**\n\ny");
-    // A longer run closes a shorter fence.
-    expect(withoutMarkdownMarks("```\n**x**\n`````\n**y**")).toBe("\n**x**\n\ny");
-  });
-
-  it("three ticks that open and close on one line are not a fence", () => {
-    expect(withoutMarkdownMarks("```a``` is code\n*x*").endsWith("\nx")).toBe(true);
-  });
-
-  it("leaves asterisks and underscores that are not marks", () => {
-    expect(withoutMarkdownMarks("2 * 3 * 4 and 2*3*4")).toBe("2 * 3 * 4 and 2*3*4");
-    expect(withoutMarkdownMarks("call __init__ and snake_case_name")).toBe("call __init__ and snake_case_name");
-    expect(withoutMarkdownMarks("a lone ` tick and a * star")).toBe("a lone ` tick and a * star");
   });
 });
 

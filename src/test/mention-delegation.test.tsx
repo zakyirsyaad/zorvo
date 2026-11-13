@@ -68,15 +68,18 @@ describe("the @ mention's delegation group", () => {
     expect(agents.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText("Delegate to an agent")).toHaveClass("text-caption", "font-medium", "text-fg-muted");
 
-    // A row reads like the dialog's: a 16px logo, the name, and the status on the right.
-    expect(agentRow("codex").querySelector("img")).toHaveAttribute("width", "16");
-    expect(within(agentRow("codex")).getByText("Codex")).toHaveClass("text-ui-sm");
+    // A 28px row: a 16px tile around the logo, the name, and the status on the right.
+    expect(agentRow("codex")).toHaveClass("min-h-7", "rounded-md", "px-2");
+    expect(agentRow("codex").querySelector(".size-4.rounded.bg-chip img")).not.toBeNull();
+    expect(within(agentRow("codex")).getByText("Codex")).toHaveClass("text-ui");
     expect(within(agentRow("codex")).getByText("Ready")).toHaveClass("text-caption", "text-fg-muted");
     expect(within(agentRow("qwen-code")).getByText("Not checked")).toHaveClass("text-fg-subtle");
     expect(within(agentRow("kimi-cli")).getByText("Not installed")).toHaveClass("text-fg-subtle");
 
     const signIn = within(agentRow("gemini-cli")).getByText("Needs sign-in");
-    expect(signIn).toHaveClass("text-caption", "text-status-attention");
+    // The words are muted; the dot beside them carries the colour.
+    expect(signIn).toHaveClass("text-caption", "text-fg-muted");
+    expect(signIn).not.toHaveClass("text-status-attention");
     expect(signIn.querySelector("span")).toHaveClass("size-1.5", "bg-status-attention");
 
     // An agent that cannot start is dimmed and says so to assistive tech.

@@ -19,6 +19,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - A new session shows your agents as tiles: tick two or more to compare them, and find the rest under All agents. The folder and branch sit beside the "New session" heading.
 - A compare run shows its agents side by side, each with the files it changed and its last message, and you can answer a plain permission request right in its column.
 - Settings and the welcome screen take the layered look: the theme is a System, Light and Dark control, each agent's sign-in shows as a chip with a dot, and the welcome screen is one panel with each agent's tick at the right.
+- Delegating reads more clearly: a delegate that failed or waits for your answer shows as a titled card with Open, and the line that says where a session was delegated from has its own icon.
 - The top bar shows the folder before the session's title.
 
 ### Fixed

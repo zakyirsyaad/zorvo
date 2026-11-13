@@ -106,6 +106,19 @@ describe("withoutMarkdownMarks", () => {
     expect(withoutMarkdownMarks("~~~\n```\n*x*")).toBe("\n```\n*x*");
   });
 
+  it("a longer fence holds a shorter one: only a fence of its own kind and length closes it", () => {
+    const nested = "````markdown\n```bash\necho **done**\n```\n````\n*after*";
+    expect(withoutMarkdownMarks(nested)).toBe("\n```bash\necho **done**\n```\n\nafter");
+    // A fence line with an info string opens a block; it never closes one.
+    expect(withoutMarkdownMarks("```\n```js\n**x**\n```\n**y**")).toBe("\n```js\n**x**\n\ny");
+    // A longer run closes a shorter fence.
+    expect(withoutMarkdownMarks("```\n**x**\n`````\n**y**")).toBe("\n**x**\n\ny");
+  });
+
+  it("three ticks that open and close on one line are not a fence", () => {
+    expect(withoutMarkdownMarks("```a``` is code\n*x*").endsWith("\nx")).toBe(true);
+  });
+
   it("leaves asterisks and underscores that are not marks", () => {
     expect(withoutMarkdownMarks("2 * 3 * 4 and 2*3*4")).toBe("2 * 3 * 4 and 2*3*4");
     expect(withoutMarkdownMarks("call __init__ and snake_case_name")).toBe("call __init__ and snake_case_name");

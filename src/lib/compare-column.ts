@@ -30,7 +30,16 @@ function oneLine(text: string): string {
 /** Stands in for a code span while the prose around it loses its marks; a private-use character no prose holds. */
 const HELD = '\uE000';
 const HELD_SPAN = /\uE000(\d+)\uE000/g;
-const FENCE = /^\s{0,3}(```|~~~)/;
+/** A line that opens a fenced block: three or more ticks (with no tick after them on the line) or tildes. */
+const OPENING_FENCE = /^\s{0,3}(?:(`{3,})[^`]*|(~{3,}).*)$/;
+/** A line that could close one: a run of ticks or tildes and nothing else. */
+const CLOSING_FENCE = /^\s{0,3}(`{3,}|~{3,})\s*$/;
+
+/** Whether `line` closes the block `fence` opened: the same character, at least as many of them, and no info string. */
+function closesFence(line: string, fence: string): boolean {
+  const run = CLOSING_FENCE.exec(line)?.[1];
+  return run !== undefined && run[0] === fence[0] && run.length >= fence.length;
+}
 
 /** A line of prose without its marks: bold and italic asterisks, a heading's hashes, a quote's mark, a link's target. */
 function proseWithoutMarks(line: string): string {
@@ -61,17 +70,16 @@ export function withoutMarkdownMarks(text: string): string {
   const lines: string[] = [];
   let fence: string | null = null;
   for (const line of text.split('\n')) {
-    const mark = FENCE.exec(line)?.[1] ?? null;
     if (fence !== null) {
-      // Inside a fence every line is code; the line that closes it goes, as the one that opened it did.
-      if (mark === fence) fence = null;
-      lines.push(mark === null || fence !== null ? line : '');
-    } else if (mark !== null) {
-      fence = mark;
-      lines.push('');
-    } else {
-      lines.push(lineWithoutMarks(line));
+      // Inside a fence every line is code, a shorter fence included; the line that closes it goes, as the one that opened it did.
+      const isClosing = closesFence(line, fence);
+      if (isClosing) fence = null;
+      lines.push(isClosing ? '' : line);
+      continue;
     }
+    const opening = OPENING_FENCE.exec(line);
+    fence = opening?.[1] ?? opening?.[2] ?? null;
+    lines.push(fence === null ? lineWithoutMarks(line) : '');
   }
   return lines.join('\n');
 }

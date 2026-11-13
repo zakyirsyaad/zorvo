@@ -129,7 +129,8 @@ describe("the app's code signature", () => {
   });
 
   it("keeps the hardened runtime on, which notarizing needs once a real identity is used", () => {
-    expect(config.bundle.macOS.hardenedRuntime ?? true).toBe(true);
+    // Launched with it on and no entitlements: the window opens, an agent starts and the Terminal tab starts a shell.
+    expect(config.bundle.macOS.hardenedRuntime).toBe(true);
   });
 
   it("is signed under the bundle identifier, which TCC keys its grants by", () => {

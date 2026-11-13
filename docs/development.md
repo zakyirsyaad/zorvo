@@ -169,14 +169,19 @@ Without them, the build is signed ad-hoc: `bundle.macOS.signingIdentity` in
 gets the identifier `xyz.zorvo.desktop`, a bound Info.plist and sealed resources.
 The bundler reads `APPLE_SIGNING_IDENTITY` before that setting, and the workflow
 exports it only when the secret is set, so a real identity wins the day the
-secrets are added with no other change. (Setting the certificate but not the
-identity fails the build, since `-` does not match the certificate.)
+secrets are added with no other change. Setting the certificate but not the
+identity fails the build, since `-` does not match the certificate. Setting
+`APPLE_ID`, `APPLE_PASSWORD` and `APPLE_TEAM_ID` without the certificate and
+identity now also fails it: with any identity set, the bundler sends the app to
+notarization (`tauri-bundler` in the pinned `@tauri-apps/cli` 2.12.4, `macos/app.rs`),
+and an ad-hoc app is not one Apple notarizes (read from that source; not run).
 
 What an ad-hoc signature fixes and what it does not:
 
-- It fixes macOS asking again and again within one version. The TCC log showed a
-  grant for `xyz.zorvo.desktop` that failed with "Failed to match existing code
-  requirement" against the unsealed bundle, then a new prompt, many times a day.
+- It should fix macOS asking again and again within one version. The TCC log
+  showed a grant for `xyz.zorvo.desktop` that failed with "Failed to match
+  existing code requirement" against the unsealed bundle, then a new prompt, many
+  times a day. Whether it stops was not yet seen on a release.
 - Its designated requirement is `cdhash H"…"`, which changes with every build.
   Expect one prompt per folder after each update. This is from the requirement
   and Apple's documentation; it was not observed across two real releases.
@@ -185,6 +190,21 @@ What an ad-hoc signature fixes and what it does not:
 - `src-tauri/Info.plist` holds the folder usage descriptions Tauri merges in.
   That macOS shows them in the prompt is Apple's documented behavior; it was not
   checked on screen, since that needs a reset of the TCC grants.
+- The hardened runtime is on, with no entitlements. A build with it was launched
+  on a scratch home: the window opened, an agent started and answered, and the
+  Terminal tab started a shell.
+
+On the first tagged build after this change, and whenever signing changes,
+check the app from the `release-build` artifact before signing the update:
+`scripts/sign-release.mjs` does it (`checkCodeSignature` in
+`scripts/release-checks.mjs`: the identifier is `xyz.zorvo.desktop`, the
+Info.plist is bound, the resources are sealed, `codesign --verify --deep --strict`
+passes). To see it yourself, unpack the `.app.tar.gz` into an empty folder and run:
+
+```bash
+codesign -dv --verbose=2 Zorvo.app
+codesign --verify --deep --strict Zorvo.app
+```
 
 ### The updater key
 

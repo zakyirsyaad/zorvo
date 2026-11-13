@@ -7,7 +7,8 @@
 // (`ALLOWED_DOWNLOADS` in src-tauri/src/app_update.rs), checked before the file is uploaded.
 
 import { spawnSync } from "node:child_process";
-import { lstatSync, readFileSync, readdirSync } from "node:fs";
+import { lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /** A check that failed; reported as a message, without a stack. */
@@ -39,7 +40,47 @@ export function readConfig(path) {
   const pubkey = config?.plugins?.updater?.pubkey;
   if (typeof pubkey !== "string" || pubkey.trim() === "") fail(`${path} has no plugins.updater.pubkey.`);
   const endpoints = config.plugins.updater.endpoints;
-  return { version: String(config.version ?? ""), pubkey, endpoints: Array.isArray(endpoints) ? endpoints : [] };
+  return {
+    version: String(config.version ?? ""),
+    identifier: String(config.identifier ?? ""),
+    pubkey,
+    endpoints: Array.isArray(endpoints) ? endpoints : [],
+  };
+}
+
+const CODESIGN = "/usr/bin/codesign";
+const CODESIGN_TIMEOUT_MS = 120_000;
+
+/** Runs `codesign`; its report goes to stderr, so the result is both streams joined. */
+function codesign(args) {
+  const run = spawnSync(CODESIGN, args, { encoding: "utf8", timeout: CODESIGN_TIMEOUT_MS, env: { ...process.env, LC_ALL: "C" } });
+  if (run.error) fail(`Could not run codesign: ${run.error.message}`);
+  return { ok: run.status === 0, report: `${run.stdout}${run.stderr}` };
+}
+
+/**
+ * Fails unless the app in the update package is signed as a whole under `identifier` (the bundle identifier macOS
+ * keys its permission grants by): the identifier is that name, the Info.plist is bound, the resources are sealed and
+ * `codesign --verify --deep --strict` passes. Run it on the Mac that signs the release, where `codesign` is. It
+ * unpacks the package into a folder of its own, which `checkArtifact` has already shown holds only `Zorvo.app`.
+ */
+export function checkCodeSignature({ dir, tag, identifier }) {
+  const packagePath = join(dir, assetNames(tag.replace(/^v/, "")).package);
+  const work = mkdtempSync(join(tmpdir(), "zorvo-signature-check-"));
+  try {
+    tar(["-xzf", packagePath, "-C", work]);
+    const app = join(work, APP);
+    const shown = codesign(["-dv", "--verbose=2", app]);
+    const actual = /^Identifier=(.*)$/m.exec(shown.report)?.[1];
+    if (!identifier || actual !== identifier) {
+      fail(`The app in the update package is signed as ${printable(actual ?? "nothing")}, not as the bundle identifier ${identifier}, so macOS cannot match the permissions a person gave it.`);
+    }
+    if (!/^Info\.plist entries=\d+/m.test(shown.report)) fail("The app in the update package has no Info.plist bound into its signature.");
+    if (!/^Sealed Resources version=/m.test(shown.report)) fail("The app in the update package has no sealed resources: only its executable is signed.");
+    if (!codesign(["--verify", "--deep", "--strict", app]).ok) fail("`codesign --verify --deep --strict` fails on the app in the update package.");
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
 }
 
 /** A file name safe to print: anything outside a plain set becomes `?`, newlines included. */

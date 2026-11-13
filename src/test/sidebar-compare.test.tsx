@@ -204,6 +204,7 @@ describe("a compare run in the sidebar", () => {
     const fork = session({ id: "fork-1", name: "Hotfix", profileId: "qwen-code", createdAt: 20, forkedFrom: "r-qwen" });
     renderSidebar([...runSessions(), fork]);
 
+    fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Search sessions" }), { target: { value: "hotfix" } });
 
     expect(screen.getByRole("button", { name: /Fix the login.*3 agents/ })).toBeInTheDocument();
@@ -212,6 +213,7 @@ describe("a compare run in the sidebar", () => {
   it("finds a run's rows by the agent's name", () => {
     renderSidebar([...runSessions(), session({ id: "alone", name: "Add a README" })]);
 
+    fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Search sessions" }), { target: { value: "qwen" } });
 
     const rows = within(screen.getByRole("list", { name: "Agents in Fix the login" }));

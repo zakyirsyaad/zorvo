@@ -7,6 +7,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 ### Changed
 
 - The window has a layered look: the chat and the inspector are raised panels on the window's background.
+- Sidebar rows show each agent's logo with a status badge, and a filter shows only the sessions that need you or are working.
+- The top bar shows the folder before the session's title.
 
 ## [0.10.1] - 2026-11-12
 

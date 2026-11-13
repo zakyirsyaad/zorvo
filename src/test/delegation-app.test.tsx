@@ -502,6 +502,58 @@ describe("delegating from the app", () => {
     );
   });
 
+  it("an agent's delegate call shows a card, and Allow starts the delegate without leaving the session", async () => {
+    seedSourceSession();
+    const spy = await renderApp();
+    await screen.findByText("Refactor the parser");
+    // The agent is in the middle of a turn when it calls the tool.
+    await type("then have Codex review it");
+    await act(async () => {
+      fireEvent.keyDown(prompt(), { key: "Enter" });
+    });
+    await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
+
+    await act(async () => {
+      listeners.get("agent-tool-call")?.({
+        payload: { callId: "c-1", sessionId: "s-a", tool: "delegate", args: { agent: "Codex", task: "Review the parser split." } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const heading = await screen.findByRole("heading", { name: "Qwen Code wants to give Codex a task" });
+    expect(heading).toBeDefined();
+    expect(screen.getByTestId("zorvo-tool-task").textContent).toBe("Review the parser split.");
+    expect(callsTo(spy, "agent_tool_respond")).toHaveLength(0);
+    expect(callsTo(spy, "acp_start_session")).toHaveLength(0);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Allow for this session" }));
+    });
+
+    await waitFor(() => expect(callsTo(spy, "acp_start_session")).toHaveLength(1));
+    expect(callsTo(spy, "acp_start_session")[0][1]).toMatchObject({ profileId: "codex-acp", agentTools: false });
+    await waitFor(() => expect(callsTo(spy, "agent_tool_respond")).toHaveLength(1));
+    const [, answer] = callsTo(spy, "agent_tool_respond")[0];
+    expect(answer).toMatchObject({ callId: "c-1", ok: true });
+    expect(JSON.parse(String(answer?.text))).toMatchObject({ started: true });
+    // The card was Zorvo's: the agent's own permission channel was never used.
+    expect(callsTo(spy, "acp_respond_permission")).toHaveLength(0);
+    expect(await screen.findByText("Allowed for this session")).toBeDefined();
+    // The user is still in A.
+    expect(screen.getByText("Refactor the parser")).toBeDefined();
+
+    // A second call in the same session runs with no card: the task goes to the same delegate or is refused while it works.
+    await act(async () => {
+      listeners.get("agent-tool-call")?.({
+        payload: { callId: "c-2", sessionId: "s-a", tool: "delegate", args: { agent: "codex-acp", task: "Also check the tests." } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await waitFor(() => expect(callsTo(spy, "agent_tool_respond")).toHaveLength(2));
+    expect(screen.queryByRole("button", { name: "Allow for this session" })).toBeNull();
+    expect(callsTo(spy, "acp_start_session")).toHaveLength(1);
+  });
+
   it("Change carries the composer's attachments to the delegated task", async () => {
     seedSourceSession();
     realInvoke = tauriInternals().invoke;

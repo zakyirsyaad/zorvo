@@ -2,9 +2,6 @@ import type { Session } from '../types';
 import type { MentionAgentStatus } from './delegation';
 import { escapeVisible } from './visible-text';
 
-/** What an agent is told when it calls one of Zorvo's tools before the tools are wired up. */
-export const NOT_READY = "Zorvo's tools are not available in this version.";
-
 /** A tool call the backend hands the webview to answer (`agent-tool-call`). */
 export interface AgentToolCall {
   callId: string;

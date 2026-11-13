@@ -57,6 +57,39 @@ export function toolCard(input: ToolCardInput): ActionCard {
   };
 }
 
+/** One task an agent asked to give, waiting for the user's answer. */
+export interface WaitingTask {
+  targetName: string;
+  targetId: string;
+  task: string;
+}
+
+/**
+ * The card for every task that waits in a session: one task reads as itself,
+ * several are listed under the agent each is for, so the user sees all that
+ * Allow would start.
+ */
+export function toolCardFor(
+  input: Omit<ToolCardInput, 'targetName' | 'targetId' | 'task'>,
+  tasks: readonly WaitingTask[],
+): ActionCard {
+  const [first] = tasks;
+  const single = toolCard({ ...input, targetName: first.targetName, targetId: first.targetId, task: first.task });
+  if (tasks.length === 1) return single;
+  return {
+    ...single,
+    title: `${input.callerName} wants to give other agents ${tasks.length} tasks`,
+    prompt: tasks.map((task) => `For ${task.targetName}:\n${visibleTask(task.task)}`).join('\n\n'),
+  };
+}
+
+/** Replaces the card `cardId` with `card`, keeping its place in the chat. */
+export function replaceToolCard(messages: ChatMessage[], cardId: string, card: ActionCard): ChatMessage[] {
+  return messages.map((message) =>
+    message.actionCard?.id === cardId ? { ...message, actionCard: card } : message,
+  );
+}
+
 /** The card on the agent's open reply, or on a new agent message. */
 export function withToolCard(messages: ChatMessage[], card: ActionCard, ctx: AcpReducerContext): ChatMessage[] {
   return withCardOnReply(messages, card, ctx);

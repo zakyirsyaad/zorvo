@@ -11,8 +11,7 @@ import {
   PanelRight,
   Pencil,
   Split,
-  Unlink,
-} from "lucide-react";
+  Unlink, ShieldOff } from "lucide-react";
 import { Fragment, useId, useState, type Ref } from "react";
 import { Chip } from "./ui/Chip";
 import { IconButton } from "./ui/IconButton";
@@ -82,6 +81,8 @@ function MoreOptionsMenu({
   onDelegate,
   delegateBlockedReason,
   onEndDelegation,
+  delegationEnds,
+  onStopAllowingDelegation,
   triggerRef,
 }: {
   onPopout?: () => void;
@@ -93,6 +94,10 @@ function MoreOptionsMenu({
   /** Why delegating is blocked; null or undefined when it is not, a non-empty reason disables the item. */
   delegateBlockedReason?: string | null;
   onEndDelegation?: () => void;
+  /** One item per open delegation when the session has several; takes the place of `onEndDelegation`. */
+  delegationEnds?: readonly { label: string; run: () => void }[];
+  /** Takes back the session's leave to give other agents tasks without asking; shown only while it has it. */
+  onStopAllowingDelegation?: () => void;
   /** The ⋯ button, which takes focus back when the dialog its Delegate item opened closes. */
   triggerRef?: Ref<HTMLButtonElement>;
 }) {
@@ -108,7 +113,12 @@ function MoreOptionsMenu({
     ...(canShowDelegate
       ? [{ label: "Delegate to another agent…", run: onDelegate, Icon: Split, description: delegateReason }]
       : []),
-    ...(onEndDelegation !== undefined ? [{ label: "End delegation", run: onEndDelegation, Icon: Unlink }] : []),
+    ...(delegationEnds ?? (onEndDelegation !== undefined ? [{ label: "End delegation", run: onEndDelegation }] : [])).map(
+      (end) => ({ label: end.label, run: end.run, Icon: Unlink }),
+    ),
+    ...(onStopAllowingDelegation !== undefined
+      ? [{ label: "Stop allowing delegation", run: onStopAllowingDelegation, Icon: ShieldOff }]
+      : []),
     { label: "Archive", run: onArchive, Icon: Archive },
   ].filter(
     (
@@ -211,6 +221,10 @@ export interface TopBarProps {
   delegateBlockedReason?: string | null;
   /** Ends the session's open delegation (A's task, or B's link), from the menu. */
   onEndDelegation?: () => void;
+  /** One item per open delegation when the session has several; takes the place of `onEndDelegation`. */
+  delegationEnds?: readonly { label: string; run: () => void }[];
+  /** Takes back the session's leave to give other agents tasks without asking; shown only while it has it. */
+  onStopAllowingDelegation?: () => void;
   /** The ⋯ button, which takes focus back when a dialog its item opened closes. */
   moreButtonRef?: Ref<HTMLButtonElement>;
   /** Opens or closes the inspector (changes, activity, files, terminal); the button is hidden when absent. */
@@ -257,6 +271,8 @@ export function TopBar({
   onDelegate,
   delegateBlockedReason,
   onEndDelegation,
+  delegationEnds,
+  onStopAllowingDelegation,
   moreButtonRef,
   onToggleInspector,
   isInspectorOpen = false,
@@ -391,6 +407,8 @@ export function TopBar({
           onDelegate={onDelegate}
           delegateBlockedReason={delegateBlockedReason}
           onEndDelegation={onEndDelegation}
+          delegationEnds={delegationEnds}
+          onStopAllowingDelegation={onStopAllowingDelegation}
           triggerRef={moreButtonRef}
         />
       </div>

@@ -199,7 +199,6 @@ export default function App() {
     [saveNow, flushTranscripts],
   );
   const appUpdate = useAppUpdate(reportError, writePendingBeforeRestart);
-  useAgentTools();
   const agentUpdates = useAgentUpdates({ catalog: agentCatalog.catalog, settings: state.settings, isLoaded, updateState });
   useAutoEnabledAgents(agents, isLoaded, updateState);
   const suggestedFolders = useSuggestedFolders();
@@ -578,7 +577,27 @@ export default function App() {
   };
   // The agent may have checked out another branch: the top bar reads it again after each turn.
   useEffect(() => setBranchCheck(turnsEnded), [turnsEnded]);
+  // The tools Zorvo gives agents (main window only). Its helpers are bound late: they are
+  // defined further down and only called when a tool call or an answer arrives.
+  const agentTools = useAgentTools({
+    sessions,
+    agents,
+    statusOf: (agentId) => {
+      const agent = agents.find((candidate) => candidate.id === agentId);
+      return agent === undefined ? "not-installed" : delegationStatusOf(agent);
+    },
+    delegatesOf: (sessionId) =>
+      openDelegatesOf(sessionId, sessions).map((delegate) => ({
+        agentId: delegate.profileId,
+        state: isSessionWaiting(delegate.id) ? "needs-answer" : isSessionBusy(delegate.id) ? "working" : "idle",
+        task: delegate.delegatedFrom?.task ?? "",
+      })),
+    giveTask: (sourceId, agentId, task, options) => delegation.giveTask(sourceId, agentId, task, options),
+    updateMessages,
+    onAttention: (sessionId, reason) => notifyAttention(sessionId, reason),
+  });
   const isSessionWaiting = (sessionId: string) =>
+    agentTools.isWaiting(sessionId) ||
     isWaitingForAnswer(sessionById(sessionId), transcripts[sessionId] ?? [], () => isSessionBusy(sessionId));
 
   /** Records a new session and shows it, unless `focus` is false; the agent is started by its engine. */
@@ -1066,35 +1085,53 @@ export default function App() {
     status: delegationStatusOf(agent),
   }));
 
-  // End delegation: A's open delegate, or B's open link. A delegated session offers no Delegate of its own.
-  const openDelegate = sessionOfItsOwn ? openDelegatesOf(sessionOfItsOwn.id, sessions).at(-1) : undefined;
-  const onEndDelegation =
-    openDelegate !== undefined
-      ? () => delegation.end(openDelegate.id)
+  // End delegation: one item per open delegate of A, or B's own open link. A delegated session offers no Delegate of its own.
+  const openDelegates = sessionOfItsOwn ? openDelegatesOf(sessionOfItsOwn.id, sessions) : [];
+  const delegationEnds =
+    openDelegates.length > 0
+      ? openDelegates.map((delegate) => ({
+          label:
+            openDelegates.length === 1
+              ? "End delegation"
+              : `End delegation to ${agents.find((agent) => agent.id === delegate.profileId)?.name ?? delegate.profileId}`,
+          run: () => delegation.end(delegate.id),
+        }))
       : sessionOfItsOwn !== undefined && isOpenLink(sessionOfItsOwn.delegatedFrom)
-        ? () => delegation.end(sessionOfItsOwn.id)
+        ? [{ label: "End delegation", run: () => delegation.end(sessionOfItsOwn.id) }]
         : undefined;
+  // The session's agent may give other agents tasks without asking: the menu takes that back.
+  const onStopAllowingDelegation =
+    sessionOfItsOwn !== undefined && agentTools.hasGrant(sessionOfItsOwn.id)
+      ? () => agentTools.revokeGrant(sessionOfItsOwn.id)
+      : undefined;
   const onDelegate =
     sessionOfItsOwn !== undefined && sessionOfItsOwn.delegatedFrom == null
       ? () => delegateDialog.open({ clearsComposer: false, returnsFocusToMenu: true })
       : undefined;
 
   // A's line while B works or waits, and B's while A works on its report; while A is in a turn its own status shows.
-  const delegationView = activeSession ? delegation.viewFor(activeSession.id) : null;
-  const showsDelegationStatus =
-    delegationView !== null &&
-    !isSessionBusy(activeSessionId) &&
-    ((delegationView.role === "source" &&
-      (delegationView.state === "working" ||
-        delegationView.state === "needs-answer" ||
-        delegationView.state === "failed")) ||
-      delegationView.state === "source-working");
-  const isDelegationWorking = showsDelegationStatus && (delegationView?.state === "working" || delegationView?.state === "source-working");
+  const delegationViews = activeSession ? delegation.viewsFor(activeSession.id) : [];
+  // B's own line, or the first of A's: the region that announces the lines stays mounted on it.
+  const delegationView = delegationViews[0] ?? null;
+  const shownDelegationViews = isSessionBusy(activeSessionId)
+    ? []
+    : delegationViews.filter(
+        (view) =>
+          (view.role === "source" &&
+            (view.state === "working" || view.state === "needs-answer" || view.state === "failed")) ||
+          view.state === "source-working",
+      );
+  const isDelegationWorking = shownDelegationViews.some(
+    (view) => view.state === "working" || view.state === "source-working",
+  );
   // One-second ticks while a working line shows; the time is read in whole seconds, as the canvas draws it.
   const delegationNow = useNow(1000, isDelegationWorking);
 
-  const chooseOption = (sessionId: string, cardId: string, optionId: string, answers?: Record<string, string>) =>
+  const chooseOption = (sessionId: string, cardId: string, optionId: string, answers?: Record<string, string>) => {
+    // A card Zorvo made for an agent's tool call is answered by Zorvo's tools, not by the agent.
+    if (agentTools.chooseCard(sessionId, cardId, optionId)) return;
     acp.chooseOption(sessionId, transcripts[sessionId], cardId, optionId, answers);
+  };
 
   usePopoutHost({
     sessions,
@@ -1254,7 +1291,8 @@ export default function App() {
               onReveal={shownFolderPath ? () => shell.revealFolder(shownFolderPath) : undefined}
               onDelegate={onDelegate}
               delegateBlockedReason={activeDelegateBlockedReason}
-              onEndDelegation={onEndDelegation}
+              delegationEnds={delegationEnds}
+              onStopAllowingDelegation={onStopAllowingDelegation}
               moreButtonRef={moreOptionsButtonRef}
               workspaceName={activeSession ? folderNameOf(workspacePathOf(activeSession)) : activeWorkspace?.name}
               // A run takes its folder from its first session, never from the last folder chosen.
@@ -1356,14 +1394,28 @@ export default function App() {
                       }
                       // Always mounted for a session, so the first line it draws is announced.
                       delegationStatus={
-                        <DelegationStatusLine
-                          view={delegationView}
-                          now={delegationNow}
-                          onOpen={handleSelectSession}
-                          canAct
-                          hidden={!showsDelegationStatus}
-                          delegateAgentName={delegationView?.role === "delegate" ? activeAgent?.name : undefined}
-                        />
+                        shownDelegationViews.length === 0 ? (
+                          <DelegationStatusLine
+                            view={delegationView}
+                            now={delegationNow}
+                            onOpen={handleSelectSession}
+                            canAct
+                            hidden
+                            delegateAgentName={delegationView?.role === "delegate" ? activeAgent?.name : undefined}
+                          />
+                        ) : (
+                          // One line per delegate that works, waits or failed, oldest first.
+                          shownDelegationViews.map((view) => (
+                            <DelegationStatusLine
+                              key={view.otherSessionId ?? "source-gone"}
+                              view={view}
+                              now={delegationNow}
+                              onOpen={handleSelectSession}
+                              canAct
+                              delegateAgentName={view.role === "delegate" ? activeAgent?.name : undefined}
+                            />
+                          ))
+                        )
                       }
                       // A turn that failed says so under its last message, with Try again.
                       footer={

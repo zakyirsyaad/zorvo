@@ -77,6 +77,8 @@ describe("listAgentsText", () => {
         { id: "codex-acp", name: "Codex", status: "not-checked" },
         { id: "claude-acp", name: "Claude Code", status: "needs-sign-in" },
       ],
+      opened: [],
+      folders: [],
     });
   });
 
@@ -132,5 +134,145 @@ describe("fixed answers", () => {
     expect(DECLINED).toBe("The user declined.");
     expect(NOT_YET).toBe("This tool is not available yet.");
     expect(NO_SESSION).toBe("This session cannot use Zorvo's tools.");
+  });
+});
+
+// --- Sessions an agent opens.
+
+import {
+  MAX_RUNNING_OPENED,
+  openRefusal,
+  openedResultText,
+  openedSessionsOf,
+  otherFolders,
+  resolveFolder,
+  sessionTitleOf,
+} from "../lib/agent-tools";
+import type { Session } from "../types";
+
+const WORKSPACES = [
+  { name: "zorvo", path: "/Users/test/developer/zorvo" },
+  { name: "titan", path: "/Users/test/developer/titan" },
+  { name: "docs", path: "/Users/test/Documents/docs" },
+];
+const CALLER = "/Users/test/developer/zorvo";
+
+function sessionOf(overrides: Partial<Session>): Session {
+  return {
+    id: "s-x",
+    name: "A session",
+    profileId: "codex-acp",
+    cwd: CALLER,
+    status: "running",
+    createdAt: 1,
+    transport: "acp",
+    ...overrides,
+  };
+}
+
+describe("resolveFolder", () => {
+  const input = { workspaces: WORKSPACES, callerCwd: CALLER };
+
+  it("takes an exact listed path, with or without one trailing slash", () => {
+    expect(resolveFolder("/Users/test/developer/titan", input)).toEqual({ path: "/Users/test/developer/titan" });
+    expect(resolveFolder("/Users/test/developer/titan/", input)).toEqual({ path: "/Users/test/developer/titan" });
+  });
+
+  it("refuses anything that only looks like a known folder, without repeating it", () => {
+    for (const wanted of [
+      "/Users/test/developer/zorvo/../titan",
+      "/Users/test/developer/Titan",
+      "/Users/test/developer/titan//",
+      "/Users/test/developer/titan‮",
+      "/Users/test/developer/titan/src",
+      "titan",
+      "/Users/test/Library/Application Support/xyz.zorvo.desktop/worktrees/a",
+      "",
+    ]) {
+      const result = resolveFolder(wanted, input);
+      expect(result, wanted).toEqual({
+        error: "That folder is not one Zorvo knows. Use a path from list_agents' folders: titan, docs.",
+      });
+    }
+  });
+
+  it("refuses the caller's own folder and says how to work here", () => {
+    for (const wanted of [CALLER, `${CALLER}/`]) {
+      expect(resolveFolder(wanted, input)).toEqual({
+        error: 'That is this session\'s own folder. Leave "folder" out to work here.',
+      });
+    }
+  });
+
+  it("says so when there is no other folder", () => {
+    expect(resolveFolder("/x", { workspaces: [WORKSPACES[0]], callerCwd: CALLER })).toEqual({
+      error: "No other folder can be used.",
+    });
+  });
+});
+
+describe("otherFolders", () => {
+  it("lists every workspace but the caller's", () => {
+    expect(otherFolders(WORKSPACES, CALLER)).toEqual([WORKSPACES[1], WORKSPACES[2]]);
+    expect(otherFolders(WORKSPACES, `${CALLER}/`)).toEqual([WORKSPACES[1], WORKSPACES[2]]);
+  });
+});
+
+describe("openedSessionsOf", () => {
+  it("lists the sessions a session opened, oldest first, without archived ones", () => {
+    const older = sessionOf({ id: "s-1", createdAt: 10, openedBy: { sessionId: "s-a", at: 10 } });
+    const newer = sessionOf({ id: "s-2", createdAt: 20, openedBy: { sessionId: "s-a", at: 20 } });
+    const archived = sessionOf({ id: "s-3", createdAt: 30, archivedAt: 31, openedBy: { sessionId: "s-a", at: 30 } });
+    const others = sessionOf({ id: "s-4", createdAt: 40, openedBy: { sessionId: "s-z", at: 40 } });
+    const plain = sessionOf({ id: "s-5", createdAt: 50 });
+    expect(openedSessionsOf("s-a", [newer, archived, others, plain, older])).toEqual([older, newer]);
+  });
+});
+
+describe("sessionTitleOf", () => {
+  it("uses the given title, trimmed, else the agent and the brief's first line", () => {
+    expect(sessionTitleOf("Codex", "Port the parser.\nDetails follow.", "  Parser port ")).toBe("Parser port");
+    expect(sessionTitleOf("Codex", "Port the parser.\nDetails follow.")).toBe("Codex: Port the parser.");
+    expect(sessionTitleOf("Codex", "Port the parser.", "   ")).toBe("Codex: Port the parser.");
+  });
+});
+
+describe("openRefusal", () => {
+  it("refuses a fourth session while three still work", () => {
+    expect(MAX_RUNNING_OPENED).toBe(3);
+    expect(openRefusal({ runningOpened: 2 })).toBeNull();
+    expect(openRefusal({ runningOpened: 3 })).toBe(
+      "Three sessions this session opened are still working. Wait for one to finish.",
+    );
+    expect(openRefusal({ runningOpened: 4 })).not.toBeNull();
+  });
+});
+
+describe("openedResultText", () => {
+  it("says the session opened, where, and that it does not report back", () => {
+    expect(JSON.parse(openedResultText({ sessionName: "Parser port", folder: CALLER }))).toEqual({
+      opened: true,
+      session: "Parser port",
+      folder: CALLER,
+      note: "It works on its own and does not report back.",
+    });
+  });
+});
+
+describe("listAgentsText with opened sessions and folders", () => {
+  it("always carries both lists", () => {
+    const bare = JSON.parse(listAgentsText({ agents: [], delegates: [] }));
+    expect(bare).toEqual({ agents: [], opened: [], folders: [] });
+
+    const full = JSON.parse(
+      listAgentsText({
+        agents: [],
+        delegates: [],
+        opened: [{ agent: "Codex", title: "Parser port", state: "working", folder: CALLER }],
+        folders: [WORKSPACES[1]],
+      }),
+    );
+    expect(full.opened).toEqual([{ agent: "Codex", title: "Parser port", state: "working", folder: CALLER }]);
+    expect(full.folders).toEqual([WORKSPACES[1]]);
   });
 });

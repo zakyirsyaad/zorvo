@@ -125,6 +125,8 @@ describe("useAgentTools", () => {
         { id: "qwen-code", name: "Qwen Code", status: "ready" },
         { id: "codex-acp", name: "Codex", status: "not-checked", delegate: { state: "working", task: "Fix the parser" } },
       ],
+      opened: [],
+      folders: [],
     });
     expect(t.cards()).toHaveLength(0);
   });

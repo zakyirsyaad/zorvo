@@ -378,6 +378,9 @@ describe("TerminalSignInDialog", () => {
     expect(heading.closest("header")?.querySelector("img[alt='']")).not.toBeNull();
     const box = dialog.querySelector(".h-\\[380px\\]");
     expect(box?.className).toContain("bg-terminal-bg");
+    expect(box?.className).toContain("rounded-md");
+    // The agent's logo sits in a 22px tile beside the title.
+    expect(heading.previousElementSibling?.className).toContain("size-[22px]");
   });
 
   it("titles an agent's setup Set up <Agent>", () => {

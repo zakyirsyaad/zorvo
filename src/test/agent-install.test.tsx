@@ -488,6 +488,8 @@ describe("Installing an agent from the new-session draft", () => {
       expect(screen.queryByText(/Zorvo downloads/)).toBeNull();
       const bar = screen.getByRole("progressbar", { name: "Node.js download" });
       expect(bar.classList.contains("h-1") && bar.classList.contains("bg-surface-hover")).toBe(true);
+      // Across the card, right under the header.
+      expect(bar.previousElementSibling?.hasAttribute("data-blocker-head")).toBe(true);
     });
 
     it("the status announces the step, not the bytes", async () => {
@@ -501,14 +503,17 @@ describe("Installing an agent from the new-session draft", () => {
       expect(status.textContent).toBe("Downloading Node.js");
     });
 
-    it("Cancel is a ghost on its own row", async () => {
+    it("Cancel is a ghost at the header's right", async () => {
       mockInstall();
       await renderPanel();
       await click("Install Codex");
 
       const cancel = screen.getByRole("button", { name: "Cancel" });
       expect(cancel.className).toContain("border-transparent");
-      expect(cancel.parentElement?.classList.contains("justify-end")).toBe(true);
+      const head = cancel.closest("[data-blocker-head]");
+      expect(head).not.toBeNull();
+      expect(head?.lastElementChild).toBe(cancel.parentElement);
+      // The bar itself shows once the installer reports a download; its place is the header's next sibling.
     });
   });
 

@@ -220,7 +220,7 @@ export function ChatCanvas({
       onTouchStart={stickToBottom.onTouchStart}
       onTouchMove={stickToBottom.onTouchMove}
       data-testid="chat-canvas-container"
-      className="flex-1 overflow-y-auto pt-8 px-6 pb-4 space-y-6"
+      className="flex-1 overflow-y-auto pt-7 px-6 pb-4 space-y-[22px]"
     >
       {header && <div className="mx-auto w-full max-w-chat">{header}</div>}
       {delegatedFrom && <div className="mx-auto w-full max-w-chat">{delegatedFrom}</div>}

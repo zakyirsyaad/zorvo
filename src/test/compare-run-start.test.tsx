@@ -407,7 +407,9 @@ describe("starting a compare run", () => {
 
     const panel = await screen.findByRole("region", { name: "Compare run" });
     await act(async () => {});
-    expect(within(panel).getAllByRole("listitem").map((row) => row.getAttribute("aria-label"))).toEqual(["Claude Code", "Qwen Code"]);
+    // The columns only: each one holds a list of its own (the files it changed).
+    const columns = Array.from(panel.querySelector("[data-columns]")!.children);
+    expect(columns.map((column) => column.getAttribute("aria-label"))).toEqual(["Claude Code", "Qwen Code"]);
     expect(screen.queryByRole("textbox", { name: "Prompt" })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Folder:/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "All agents" })).toBeNull();

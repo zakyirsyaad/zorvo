@@ -70,14 +70,61 @@ describe("SessionRow", () => {
     expect(within(row).getByText("Qwen Code").parentElement).toHaveClass("text-fg-muted");
   });
 
-  it("shows the agent's logo before the agent's name", () => {
+  it("starts with a 22px tile holding the agent's logo, and no logo in line two", () => {
     const { row } = renderRow(session({ profileId: "qwen-code" }));
-    const name = within(row).getByText("Qwen Code");
-    const logo = name.parentElement?.querySelector("img, svg, [aria-hidden='true']") as Element;
-    expect(logo).not.toBeNull();
-    // Decorative: the name is written next to it.
-    expect(logo.getAttribute("alt") === "" || logo.getAttribute("aria-hidden") === "true").toBe(true);
-    expect(logo.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const button = within(row).getByText("A session").closest("button") as HTMLElement;
+    const tile = button.firstElementChild as HTMLElement;
+    expect(tile).toHaveClass("size-[22px]");
+    expect(tile.querySelector("img, svg")).not.toBeNull();
+    const line = within(row).getByText("Qwen Code").parentElement as HTMLElement;
+    expect(line.querySelector("img, svg:not([aria-label])")).toBeNull();
+  });
+
+  it.each([
+    ["waiting", { isSessionWaiting: () => true }, {}, "bg-status-attention"],
+    ["working", { isSessionBusy: () => true }, {}, "bg-status-running"],
+    ["unread", {}, { hasUnread: true }, "bg-status-unread"],
+  ] as const)("badges a %s row's tile", (_name, overrides, extra, fill) => {
+    const { row } = renderRow(session(extra), overrides);
+    expect(row.querySelector("[data-badge]")).toHaveClass(fill);
+  });
+
+  it("badges an idle row's tile with nothing", () => {
+    const { row } = renderRow(session());
+    expect(row.querySelector("[data-badge]")).toBeNull();
+  });
+
+  it("rings the badge in the row's fill: surface-hover when open, ground and then hover otherwise", () => {
+    const open = renderRow(session(), { activeSessionId: "s-1", isSessionBusy: () => true });
+    expect(open.row.querySelector("[data-badge]")).toHaveClass("ring-surface-hover");
+    open.unmount();
+    const other = renderRow(session(), { isSessionBusy: () => true });
+    expect(other.row.querySelector("[data-badge]")).toHaveClass("ring-ground", "group-hover:ring-surface-hover");
+  });
+
+  it("shows an idle row's short time at the right of line one, and only the agent in line two", () => {
+    const createdAt = Date.now() - 2 * 60_000;
+    const { row } = renderRow(session({ createdAt }));
+    expect(within(row).getByText("2 min ago")).toHaveClass("text-caption", "text-fg-subtle", "shrink-0");
+    const line = within(row).getByText("Qwen Code").parentElement as HTMLElement;
+    expect(line.textContent?.trim()).toBe("Qwen Code");
+  });
+
+  it("shows no time on a row with a status, and words the status after the agent", () => {
+    const { row } = renderRow(session({ createdAt: Date.now() - 2 * 60_000 }), { isSessionBusy: () => true });
+    expect(within(row).queryByText("2 min ago")).toBeNull();
+    const line = within(row).getByText("Qwen Code").parentElement as HTMLElement;
+    expect(line.textContent?.replace(/\s+/g, " ").trim()).toBe("Qwen Code · Working");
+  });
+
+  it("hands the time's place to the actions on hover or focus", () => {
+    const { row } = renderRow(session({ createdAt: Date.now() - 2 * 60_000 }));
+    expect(within(row).getByText("2 min ago")).toHaveClass("group-hover:hidden", "group-focus-within:hidden");
+  });
+
+  it("pads its button as drawn", () => {
+    const { row } = renderRow(session());
+    expect(within(row).getByText("A session").closest("button")).toHaveClass("rounded-lg", "px-2", "py-[7px]", "gap-2.5");
   });
 
   it("keeps its actions shown while its menu is open", () => {
@@ -207,7 +254,7 @@ describe("SessionRow", () => {
     expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
   });
 
-  it("keeps the row's fill and dot while it is renamed, with a hint", () => {
+  it("keeps the row's fill and tile while it is renamed, with a hint", () => {
     renderRow(session(), { isSessionBusy: () => true, onStopSession: vi.fn() });
     openMenu("A session");
     fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
@@ -216,6 +263,7 @@ describe("SessionRow", () => {
     const renaming = screen.getByTestId("session-row-s-1");
     expect(renaming).toContainElement(field);
     expect(renaming).toHaveClass("bg-surface-hover");
+    expect(renaming.querySelector(".size-\\[22px\\]")).not.toBeNull();
     expect(renaming.querySelector(".bg-status-running")).not.toBeNull();
     expect(within(renaming).getByText("Return saves, Esc cancels")).toHaveClass("text-fg-subtle");
     expect(field).toHaveClass("h-6.5", "border-fg", "bg-ground");

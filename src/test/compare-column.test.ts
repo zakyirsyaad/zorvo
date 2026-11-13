@@ -73,6 +73,19 @@ describe("lastAgentText", () => {
   });
 });
 
+describe("an agent's prose in a column", () => {
+  it("the last message reads without markdown marks, still on one line", () => {
+    const messages = [message("1", "agent", "The store is a `TokenStore` class.\n\n- **Done**: `login.ts`")];
+    expect(lastAgentText(messages)).toBe("The store is a TokenStore class. Done: login.ts");
+  });
+
+  it("code in the last message is kept as written, a span over a line break included", () => {
+    expect(lastAgentText([message("1", "agent", "Run `printf\n**done**\n` now, in `src/*/test/*`.")])).toBe(
+      "Run printf **done** now, in src/*/test/*.",
+    );
+  });
+});
+
 describe("openFormPrompt", () => {
   it("is what the newest open form asks, and null when none is open", () => {
     const open = message("1", "agent", "", { elicitation: { status: "pending", message: "Which branch?" } } as unknown as Partial<ChatMessage>);

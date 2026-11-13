@@ -1,5 +1,6 @@
 import type { ActionCard, ChatMessage, PermissionChoice } from '../types';
 import type { FileStat } from './diff-stats';
+import { withoutMarkdownMarks } from './markdown-marks';
 import { usableQuestions } from './user-questions';
 import { escapeVisible } from './visible-text';
 
@@ -27,12 +28,17 @@ function oneLine(text: string): string {
   return escapeVisible(text.replace(/\s+/g, ' ').trim());
 }
 
+/** An agent's prose as one plain line. */
+function proseLine(text: string): string {
+  return oneLine(withoutMarkdownMarks(text));
+}
+
 /** The agent's newest words in a chat, as plain text; null when it has said nothing yet. */
 export function lastAgentText(messages: readonly ChatMessage[]): string | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message.role !== 'agent') continue;
-    const text = oneLine(message.content ?? '');
+    const text = proseLine(message.content ?? '');
     if (text) return text;
   }
   return null;
@@ -42,7 +48,7 @@ export function lastAgentText(messages: readonly ChatMessage[]): string | null {
 export function openFormPrompt(messages: readonly ChatMessage[]): string | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const elicitation = messages[index].elicitation;
-    if (elicitation?.status === 'pending') return oneLine(elicitation.message ?? '') || null;
+    if (elicitation?.status === 'pending') return proseLine(elicitation.message ?? '') || null;
   }
   return null;
 }

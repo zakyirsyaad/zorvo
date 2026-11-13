@@ -121,7 +121,19 @@ as `cwd`:
   The 4-minute call timeout therefore holds for Pi; Antigravity's 3 minutes is the shortest.
 - Pi called `list_agents` first without being told to, so the agent id it passed was a real one.
 
-Not checked: the real `zorvo tools` mode (not built yet), a second ACP session in the same Pi
+Built and run against the real Pi the same day (the debug binary as `ZORVO_TOOLS`, no Zorvo
+listening):
+
+- Pi ran `"$ZORVO_TOOLS" tools list_agents`, got "Zorvo is not reachable from this shell." and told
+  the user so, in 27 seconds.
+- Before a guard was added, Pi's next move after that failure was `zorvo --help`, which started a
+  second copy of the app that never exited. The executable now refuses to open the app whenever one
+  of the three variables is set: it prints the usage and exits 2. An agent's shell therefore cannot
+  start Zorvo itself without unsetting them, which also holds for `pnpm tauri dev` run by an agent.
+- `zorvo tools --help` and `zorvo tools` list the tools with one example each.
+
+Not checked: Pi against a live Zorvo socket in the running app (the fake agent covers that path in
+the tests), a second ACP session in the same Pi
 process, and whether Pi still uses the commands late in a long session, after its context was
 compacted.
 

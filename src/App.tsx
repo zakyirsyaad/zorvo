@@ -115,6 +115,7 @@ import { useDelegateDialog } from "./hooks/useDelegateDialog";
 import { delegatedStartOf, delegationChoicesFor as delegationChoicesForOptions } from "./lib/delegation-start";
 import { DelegationStatusLine } from "./components/delegation/DelegationStatusLine";
 import { DelegatedFromLine } from "./components/delegation/DelegatedFromLine";
+import { OpenedByLine } from "./components/delegation/OpenedByLine";
 import {
   followUpSummary,
   isOpenLink,
@@ -1141,6 +1142,8 @@ export default function App() {
       : undefined;
 
   // A's line while B works or waits, and B's while A works on its report; while A is in a turn its own status shows.
+  // The session whose agent opened this one, when it still exists.
+  const openerSession = activeSession?.openedBy ? sessionById(activeSession.openedBy.sessionId) : undefined;
   const delegationViews = activeSession ? delegation.viewsFor(activeSession.id) : [];
   // B's own line, or the first of A's: the region that announces the lines stays mounted on it.
   const delegationView = delegationViews[0] ?? null;
@@ -1421,6 +1424,15 @@ export default function App() {
                       delegatedFrom={
                         delegationView?.role === "delegate" ? (
                           <DelegatedFromLine view={delegationView} onOpen={handleSelectSession} canAct />
+                        ) : activeSession?.openedBy ? (
+                          // A session an agent opened: who opened it, in the delegate line's place.
+                          <OpenedByLine
+                            agentName={agents.find((agent) => agent.id === openerSession?.profileId)?.name ?? ""}
+                            sessionName={openerSession?.name ?? ""}
+                            openerSessionId={openerSession?.id ?? null}
+                            onOpen={handleSelectSession}
+                            canAct
+                          />
                         ) : undefined
                       }
                       // Always mounted for a session, so the first line it draws is announced.

@@ -596,6 +596,42 @@ describe("delegating from the app", () => {
     expect(screen.getByText("Refactor the parser")).toBeDefined();
   });
 
+  it("a session an agent opened says who opened it, and says so when that session is gone", async () => {
+    seedSourceSession();
+    const opened = {
+      id: "s-o",
+      name: "Parser port",
+      profileId: "codex-acp",
+      cwd: "/Users/test/developer/ai-perpetual-trading",
+      status: "running",
+      createdAt: 3,
+      transport: "acp",
+    };
+    fakeStore().state.sessions = [
+      ...fakeStore().state.sessions,
+      { ...opened, openedBy: { sessionId: "s-a", at: 3 } },
+      { ...opened, id: "s-orphan", name: "Orphan", createdAt: 4, openedBy: { sessionId: "s-deleted", at: 4 } },
+    ];
+    fakeStore().transcripts["s-o"] = [{ id: "m-o1", role: "user", content: "Port the parser to the new API.", timestamp: 3 }];
+    fakeStore().transcripts["s-orphan"] = [{ id: "m-x1", role: "user", content: "Lonely brief.", timestamp: 4 }];
+    await renderApp();
+    const sidebar = within(await screen.findByRole("complementary"));
+
+    await act(async () => {
+      fireEvent.click(await sidebar.findByText("Parser port"));
+    });
+    await screen.findByText("Port the parser to the new API.");
+    expect(screen.getByText(/Opened by Qwen Code from Fix login bug/)).toBeDefined();
+    // It is not a delegate: no delegation line.
+    expect(screen.queryByText(/Delegated from/)).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(sidebar.getByText("Orphan"));
+    });
+    await screen.findByText("Lonely brief.");
+    expect(screen.getByText("The session that opened this is gone.")).toBeDefined();
+  });
+
   it("list_agents and delegate reach only the agents the user has in use", async () => {
     seedSourceSession();
     // Codex is on this Mac, but the user took it out of use.

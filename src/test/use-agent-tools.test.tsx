@@ -45,6 +45,7 @@ interface Env {
   giveResult: (agentId: string) => GiveTaskResult | Promise<GiveTaskResult>;
   sessions: Session[];
   opens: Array<{ openerId: string; request: OpenRequest }>;
+  notices: string[];
   openResult: (request: OpenRequest) => OpenResult;
 }
 
@@ -62,6 +63,7 @@ function setup(overrides: Partial<Env> = {}) {
     giveResult: (agentId) => ({ ok: true, kind: "started", sessionId: `d-${agentId}`, sessionName: `${agentId}: task` }),
     sessions: [SESSION],
     opens: [],
+    notices: [],
     openResult: (request) => ({
       ok: true,
       sessionId: "o-1",
@@ -93,6 +95,9 @@ function setup(overrides: Partial<Env> = {}) {
         },
         onAttention: (sessionId) => {
           env.attention.push(sessionId);
+        },
+        onNotice: (message) => {
+          env.notices.push(message);
         },
       };
       return useAgentTools(deps);
@@ -516,6 +521,36 @@ describe("useAgentTools", () => {
       ok: false,
       text: "A worktree could not be made there. Open the session without one, or in a repository.",
     });
+  });
+
+  it("tells the user why a session could not be opened, and the agent only that it failed", async () => {
+    const t = setup({
+      openResult: () => ({
+        ok: false,
+        reason: "A worktree could not be made there. Open the session without one, or in a repository.",
+        isInternal: true,
+        detail: "Error: fatal: not a git repository",
+      }),
+    });
+    await t.call("1", "start_session", { ...OPEN, worktree: true });
+    await t.choose(ALLOW_SESSION);
+
+    await waitFor(() => expect(t.answers()).toHaveLength(1));
+    expect(t.env.notices).toEqual(["pi ACP could not open a Codex session: Error: fatal: not a git repository"]);
+    expect(t.answers()[0].text).not.toContain("fatal");
+  });
+
+  it("runs four waiting start_session calls one after another on Allow", async () => {
+    const t = setup();
+    for (const callId of ["1", "2", "3", "4"]) await t.call(callId, "start_session", OPEN);
+    expect(t.cards()).toHaveLength(1);
+    expect(t.cards()[0].title).toBe("pi ACP asks for 4 things");
+    expect(t.cards()[0].zorvoTool?.hasOwnWorktree).toBeUndefined();
+
+    await t.choose(ALLOW_SESSION);
+    await waitFor(() => expect(t.answers()).toHaveLength(4));
+    expect(t.answers().map((answer) => answer.callId)).toEqual(["1", "2", "3", "4"]);
+    expect(t.env.opens).toHaveLength(4);
   });
 
   it("withdraws a folder card when its call ended", async () => {

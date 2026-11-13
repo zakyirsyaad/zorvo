@@ -100,12 +100,18 @@ export function useOpenedSessions(deps: OpenedSessionsDeps): {
 
     const id = createId('s');
     underWay.current.set(token, { openerId, sessionId: id });
-    // No hidden context: the brief is all the new session knows.
-    latest.current.startSession(
-      { id, agent, cwd, worktree, name, openedBy: { sessionId: openerId, at: Date.now() } },
-      { text: request.brief },
-      { choices: NO_CHOICES, focus: false },
-    );
+    try {
+      // No hidden context: the brief is all the new session knows.
+      latest.current.startSession(
+        { id, agent, cwd, worktree, name, openedBy: { sessionId: openerId, at: Date.now() } },
+        { text: request.brief },
+        { choices: NO_CHOICES, focus: false },
+      );
+    } catch (error) {
+      // No session was recorded, so nothing would ever free this place.
+      underWay.current.delete(token);
+      return { ok: false, reason: 'The session could not be started.', isInternal: true, detail: String(error) };
+    }
     return { ok: true, sessionId: id, sessionName: name, folder: cwd };
   };
 

@@ -110,8 +110,11 @@ export function toolCardFor(
       : toolCard({ ...input, targetName: first.targetName, targetId: first.targetId, task: first.task });
   if (tasks.length === 1) return single;
   const areAllDelegations = tasks.every((task) => task.kind === 'delegate');
+  // What is true of one request is said in its own heading, not for the whole card.
+  const { hasOwnWorktree: _ofTheFirst, ...shared } = single.zorvoTool ?? ({} as NonNullable<ActionCard['zorvoTool']>);
   return {
     ...single,
+    zorvoTool: shared as NonNullable<ActionCard['zorvoTool']>,
     title: areAllDelegations
       ? `${input.callerName} wants to give other agents ${tasks.length} tasks`
       : `${input.callerName} asks for ${tasks.length} things`,

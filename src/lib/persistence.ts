@@ -73,11 +73,12 @@ function isWorktree(value: unknown): value is SessionWorktree {
   );
 }
 
-/** A link to the session that delegated a task: both texts non-empty, its times numeric. */
+/** Which session's agent opened a session: a non-empty session id and a finite time. */
 function isOpenedByLink(value: unknown): value is OpenedByLink {
   return isObject(value) && typeof value.sessionId === 'string' && value.sessionId !== '' && Number.isFinite(value.at);
 }
 
+/** A link to the session that delegated a task: both texts non-empty, its times numeric. */
 function isDelegationLink(value: unknown): value is DelegationLink {
   return (
     isObject(value) &&

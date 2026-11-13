@@ -54,6 +54,8 @@ export interface AgentToolsDeps {
   openedOf: (sessionId: string) => ListedOpened[];
   updateMessages: (sessionId: string, update: (prev: ChatMessage[]) => ChatMessage[]) => void;
   onAttention: (sessionId: string, reason: 'needs-answer') => void;
+  /** Tells the user what an agent is not told: why Zorvo itself failed. */
+  onNotice?: (message: string) => void;
 }
 
 /** A `delegate` or `start_session` call that waits for the user's answer on a card. */
@@ -142,6 +144,13 @@ export function useAgentTools(deps: AgentToolsDeps): {
           hasOwnWorktree: call.hasOwnWorktree === true,
           ...(call.folderPath !== undefined ? { folderPath: call.folderPath } : {}),
         });
+        if (!result.ok && result.detail !== undefined) {
+          // The agent is told only that it did not work; the cause is the user's to see.
+          const current = latest.current;
+          const opener = current.sessions.find((candidate) => candidate.id === sessionId);
+          const callerName = current.agents.find((candidate) => candidate.id === opener?.profileId)?.name ?? 'The agent';
+          current.onNotice?.(`${callerName} could not open a ${call.targetName} session: ${result.detail}`);
+        }
         // A refusal's reason is written for the caller; the error itself stays in `detail`.
         respond(
           call.callId,
@@ -312,7 +321,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
       try {
         const current = latest.current;
         const session = current.sessions.find((candidate) => candidate.id === call.sessionId);
-        if (session === undefined || !sessionGetsAgentTools(session)) {
+        if (session === undefined || !sessionGetsAgentTools(session, current.sessions)) {
           respond(call.callId, false, NO_SESSION);
           return;
         }

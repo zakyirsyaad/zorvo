@@ -619,6 +619,7 @@ export default function App() {
     openedOf: openedSessions.openedOf,
     updateMessages,
     onAttention: (sessionId, reason) => notifyAttention(sessionId, reason),
+    onNotice: (message) => setNotice(message),
   });
   const isSessionWaiting = (sessionId: string) =>
     agentTools.isWaiting(sessionId) ||

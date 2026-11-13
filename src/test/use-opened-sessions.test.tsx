@@ -203,6 +203,42 @@ describe("useOpenedSessions", () => {
     expect(after.ok).toBe(true);
   });
 
+  it("frees its place and says it failed when the session cannot be started", async () => {
+    const starts: number[] = [];
+    let shouldThrow = true;
+    const hook = renderHook(() =>
+      useOpenedSessions({
+        sessions: [OPENER],
+        agents: [PI, CODEX],
+        isBusy: () => false,
+        startSession: () => {
+          if (shouldThrow) throw new Error("state could not be written to /Users/test/secret");
+          starts.push(1);
+        },
+      }),
+    );
+
+    let failed: unknown[] = [];
+    await act(async () => {
+      failed = await Promise.all([1, 2, 3].map(() => hook.result.current.open("s-a", REQUEST)));
+    });
+    expect(failed[0]).toEqual({
+      ok: false,
+      reason: "The session could not be started.",
+      isInternal: true,
+      detail: "Error: state could not be written to /Users/test/secret",
+    });
+
+    // Three failures must not use up the opener's three places.
+    shouldThrow = false;
+    let after: { ok: boolean } = { ok: false };
+    await act(async () => {
+      after = (await hook.result.current.open("s-a", REQUEST)) as typeof after;
+    });
+    expect(after.ok).toBe(true);
+    expect(starts).toHaveLength(1);
+  });
+
   it("frees a place once the opened session is listed and idle", async () => {
     const t = setup();
     await act(async () => {

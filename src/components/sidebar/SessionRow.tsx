@@ -46,6 +46,10 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
   // How the session began, when the user did not start it: a fork or a delegated task.
   const origin = session.forkedFrom ? "fork" : session.delegatedFrom ? "delegated" : undefined;
   const words = [status?.label, origin].filter(Boolean).join(" · ");
+  // A run member's title is its agent and every member has a worktree (the run's panel says so),
+  // so with nothing else to say its second line is left out and the row is one centred line.
+  const showWorktreeMark = Boolean(session.worktree) && (!isInRun || Boolean(words));
+  const hasSecondLine = showWorktreeMark || Boolean(lineAgent) || Boolean(words);
   const tile = (
     <AgentTile
       profileId={session.profileId}
@@ -102,7 +106,9 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
         title={[session.name, rowSubtitle(agentName, status, session.createdAt), session.worktree?.branch]
           .filter(Boolean)
           .join(" · ")}
-        className="flex min-w-0 flex-1 items-start gap-2.5 rounded-lg px-2 py-[7px] text-left focus-ring"
+        className={`flex min-w-0 flex-1 gap-2.5 rounded-lg px-2 py-[7px] text-left focus-ring ${
+          hasSecondLine ? "items-start" : "items-center"
+        }`}
       >
         {tile}
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -115,19 +121,21 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
             )}
           </span>
           {/* fg-subtle at rest, fg-muted on the surface-hover fill. The status words never truncate. */}
-          <span
-            className={`flex min-w-0 items-center gap-1 text-caption ${
-              isActive ? "text-fg-muted" : "text-fg-subtle group-hover:text-fg-muted"
-            }`}
-          >
-            {session.worktree && (
-              <span role="img" aria-label="Runs in its own worktree" className="flex shrink-0">
-                <GitBranch size={11} aria-hidden="true" />
-              </span>
-            )}
-            {lineAgent && <span className="truncate">{lineAgent}</span>}
-            {words && <span className="shrink-0 whitespace-pre">{`${lineAgent ? " · " : ""}${words}`}</span>}
-          </span>
+          {hasSecondLine && (
+            <span
+              className={`flex min-w-0 items-center gap-1 text-caption ${
+                isActive ? "text-fg-muted" : "text-fg-subtle group-hover:text-fg-muted"
+              }`}
+            >
+              {showWorktreeMark && (
+                <span role="img" aria-label="Runs in its own worktree" className="flex shrink-0">
+                  <GitBranch size={11} aria-hidden="true" />
+                </span>
+              )}
+              {lineAgent && <span className="truncate">{lineAgent}</span>}
+              {words && <span className="shrink-0 whitespace-pre">{`${lineAgent ? " · " : ""}${words}`}</span>}
+            </span>
+          )}
         </span>
       </button>
       <div data-testid="session-row-actions" className={ACTIONS}>

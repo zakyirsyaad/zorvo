@@ -33,6 +33,15 @@ function tree(target: Session, overrides: Partial<SessionListContext> = {}) {
   return <SessionTree nodes={[{ session: target, children: [] }]} label="Sessions" context={context(overrides)} />;
 }
 
+const WORKTREE = { path: "/tmp/wt", branch: "agent/fix", repoPath: "/Users/test/developer/zorvo" };
+
+function runRow(target: Session, overrides: Partial<SessionListContext> = {}) {
+  const view = render(
+    <SessionTree nodes={[{ session: target, children: [] }]} label="Agents" context={context(overrides)} isInRun />,
+  );
+  return { row: screen.getByTestId(`session-row-${target.id}`), ...view };
+}
+
 function renderRow(target: Session, overrides: Partial<SessionListContext> = {}) {
   const view = render(tree(target, overrides));
   return { row: screen.getByTestId(`session-row-${target.id}`), ...view };
@@ -120,6 +129,22 @@ describe("SessionRow", () => {
   it("hands the time's place to the actions on hover or focus", () => {
     const { row } = renderRow(session({ createdAt: Date.now() - 2 * 60_000 }));
     expect(within(row).getByText("2 min ago")).toHaveClass("group-hover:hidden", "group-focus-within:hidden");
+  });
+
+  it("draws an idle run member as one centred line, with no lone worktree glyph", () => {
+    const { row } = runRow(session({ worktree: WORKTREE }));
+    expect(within(row).queryByLabelText("Runs in its own worktree")).toBeNull();
+    const button = within(row).getByText("Qwen Code").closest("button") as HTMLElement;
+    expect(button).toHaveClass("items-center");
+    expect(button).not.toHaveClass("items-start");
+    expect(button.querySelector(".text-caption.text-fg-subtle:not(.shrink-0)")).toBeNull();
+  });
+
+  it("keeps a run member's second line, with the worktree mark, while it has a status", () => {
+    const { row } = runRow(session({ worktree: WORKTREE }), { isSessionBusy: () => true });
+    expect(within(row).getByLabelText("Runs in its own worktree")).toBeInTheDocument();
+    expect(within(row).getByText(/Working$/)).toBeInTheDocument();
+    expect(within(row).getByText("Qwen Code").closest("button")).toHaveClass("items-start");
   });
 
   it("pads its button as drawn", () => {

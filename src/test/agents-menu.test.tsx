@@ -42,15 +42,17 @@ describe("AgentsMenu", () => {
     expect(needed.querySelector(".bg-status-attention")).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("stacks 16px tiles overlapping by 4px, with no backing behind them", () => {
+  it("stacks 16px tiles overlapping by 4px, each on an opaque backing", () => {
     render(
       <AgentsMenu agents={all} settings={inUse("claude-acp", "qwen-code", "codex-acp", "gemini")} onManageAgents={vi.fn()} />,
     );
     const trigger = screen.getByRole("button", { name: "Agents" });
     const tiles = trigger.querySelectorAll(".size-4.bg-chip");
     expect(tiles).toHaveLength(3);
-    expect(tiles[0].parentElement).toHaveClass("-space-x-1");
-    expect(trigger.querySelector(".bg-ground")).toBeNull();
+    // Each tile sits on an opaque backing in the sidebar's color with a 2px ring of it, so the
+    // translucent tiles never show through each other.
+    for (const tile of tiles) expect(tile.parentElement).toHaveClass("bg-ground", "ring-2", "ring-ground");
+    expect(tiles[0].parentElement?.parentElement).toHaveClass("-space-x-1");
   });
 
   it("draws each agent's row 28px high with a 16px tile, and a dot only for Ready and Sign in", () => {

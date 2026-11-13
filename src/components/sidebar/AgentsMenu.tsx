@@ -103,7 +103,10 @@ export function AgentsMenu({ agents, settings = {}, signInStateOf, onSetUpAgent,
         >
           <span aria-hidden="true" className="flex -space-x-1">
             {listed.slice(0, SHOWN_LOGOS).map((agent) => (
-              <AgentTile key={agent.id} profileId={agent.id} name={agent.name} size={16} />
+              // The tile's fill is translucent, so each sits on an opaque backing in the sidebar's color.
+              <span key={agent.id} className="flex rounded bg-ground ring-2 ring-ground">
+                <AgentTile profileId={agent.id} name={agent.name} size={16} />
+              </span>
             ))}
           </span>
           {needsSignIn && (

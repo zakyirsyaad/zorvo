@@ -113,6 +113,12 @@ export interface SessionWorktree {
 }
 
 /** A delegated task: the session that delegated it, the task, and when it ran. */
+/** Which session's agent opened a session, and when. */
+export interface OpenedByLink {
+  sessionId: string;
+  at: number;
+}
+
 export interface DelegationLink {
   /** A, the session that delegated. */
   sessionId: string;
@@ -156,6 +162,8 @@ export interface Session {
   compareRunId?: string | null;
   /** The session this one was delegated from; absent when the user started it themselves. */
   delegatedFrom?: DelegationLink | null;
+  /** The session whose agent opened this one through Zorvo's tools; it reports to nobody. */
+  openedBy?: OpenedByLink | null;
   /** Comments written on lines of the session's diff; absent when there are none. */
   reviewComments?: ReviewComment[];
 }
@@ -255,14 +263,18 @@ export interface ActionCard {
 
 /** What an agent asked Zorvo's tools for, as the approval card shows it. */
 export interface ZorvoToolRequest {
-  tool: 'delegate';
+  tool: 'delegate' | 'start_session';
   /** The agent that asked. */
   callerName: string;
   /** The agent the task is for. */
   targetName: string;
   targetId: string;
-  /** Where the delegate would work: the caller's folder. */
+  /** Where the other agent would work: the caller's folder, or another one Zorvo knows. */
   folder: string;
+  /** A new session in a folder that is not the caller's: asked every time, allowed once. */
+  isOtherFolder?: true;
+  /** A new session that gets a worktree of its own. */
+  hasOwnWorktree?: true;
 }
 
 /** One question of Qwen Code's `ask_user_question`. */

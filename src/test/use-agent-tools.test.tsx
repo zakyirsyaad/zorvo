@@ -13,7 +13,8 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 import { useAgentTools, type AgentToolsDeps } from "../hooks/useAgentTools";
 import type { GiveTaskResult } from "../hooks/useDelegation";
-import { ALLOW_SESSION, DENY } from "../lib/agent-tool-card";
+import type { OpenRequest, OpenResult } from "../hooks/useOpenedSessions";
+import { ALLOW_ONCE, ALLOW_SESSION, DENY } from "../lib/agent-tool-card";
 import { DECLINED, NOT_YET, NO_SESSION } from "../lib/agent-tools";
 import type { MentionAgentStatus } from "../lib/delegation";
 import { makeProfile } from "./fixtures/agents";
@@ -43,7 +44,15 @@ interface Env {
   statuses: Record<string, MentionAgentStatus>;
   giveResult: (agentId: string) => GiveTaskResult | Promise<GiveTaskResult>;
   sessions: Session[];
+  opens: Array<{ openerId: string; request: OpenRequest }>;
+  notices: string[];
+  openResult: (request: OpenRequest) => OpenResult;
 }
+
+const WORKSPACES = [
+  { name: "zorvo", path: "/Users/test/developer/zorvo" },
+  { name: "titan", path: "/Users/test/developer/titan" },
+];
 
 function setup(overrides: Partial<Env> = {}) {
   const env: Env = {
@@ -53,6 +62,14 @@ function setup(overrides: Partial<Env> = {}) {
     statuses: {},
     giveResult: (agentId) => ({ ok: true, kind: "started", sessionId: `d-${agentId}`, sessionName: `${agentId}: task` }),
     sessions: [SESSION],
+    opens: [],
+    notices: [],
+    openResult: (request) => ({
+      ok: true,
+      sessionId: "o-1",
+      sessionName: request.title ?? "Codex: brief",
+      folder: request.folderPath ?? SESSION.cwd,
+    }),
     ...overrides,
   };
   const spy = vi.spyOn(internals(), "invoke");
@@ -67,11 +84,20 @@ function setup(overrides: Partial<Env> = {}) {
           env.given.push({ sourceId, agentId, task, options });
           return env.giveResult(agentId);
         },
+        workspaces: WORKSPACES,
+        openSession: async (openerId, request) => {
+          env.opens.push({ openerId, request });
+          return env.openResult(request);
+        },
+        openedOf: () => [{ agent: "Codex", title: "Parser port", state: "idle", folder: SESSION.cwd }],
         updateMessages: (sessionId, update) => {
           env.messages[sessionId] = update(env.messages[sessionId] ?? []);
         },
         onAttention: (sessionId) => {
           env.attention.push(sessionId);
+        },
+        onNotice: (message) => {
+          env.notices.push(message);
         },
       };
       return useAgentTools(deps);
@@ -125,6 +151,8 @@ describe("useAgentTools", () => {
         { id: "qwen-code", name: "Qwen Code", status: "ready" },
         { id: "codex-acp", name: "Codex", status: "not-checked", delegate: { state: "working", task: "Fix the parser" } },
       ],
+      opened: [{ agent: "Codex", title: "Parser port", state: "idle", folder: SESSION.cwd }],
+      folders: [{ name: "titan", path: "/Users/test/developer/titan" }],
     });
     expect(t.cards()).toHaveLength(0);
   });
@@ -294,12 +322,11 @@ describe("useAgentTools", () => {
     ]);
   });
 
-  it("answers the tools of later phases as not available yet", async () => {
+  it("answers the tools of the last phase as not available yet", async () => {
     const t = setup();
-    await t.call("1", "start_session", { agent: "qwen-code", brief: "x" });
     await t.call("2", "read_session", { handle: "h" });
     await t.call("3", "stop_session", { handle: "h" });
-    expect(t.answers().map((answer) => answer.text)).toEqual([NOT_YET, NOT_YET, NOT_YET]);
+    expect(t.answers().map((answer) => answer.text)).toEqual([NOT_YET, NOT_YET]);
   });
 
   it("answers even when giving the task throws, and for arguments it cannot read", async () => {
@@ -348,5 +375,280 @@ describe("useAgentTools", () => {
   it("does not take a card it did not make", async () => {
     const t = setup();
     expect(t.result.current.chooseCard("s-1", "act-of-the-agent", "allow")).toBe(false);
+  });
+
+  const pendingCards = (t: ReturnType<typeof setup>) => t.cards().filter((card) => card.status === "pending");
+  const chooseOn = async (t: ReturnType<typeof setup>, cardId: string, optionId: string) => {
+    let taken = false;
+    await act(async () => {
+      taken = t.result.current.chooseCard("s-1", cardId, optionId);
+    });
+    await act(async () => {});
+    return taken;
+  };
+  const OPEN = { agent: "codex-acp", brief: "Port the parser.", title: "Parser port" };
+  const TITAN = "/Users/test/developer/titan";
+
+  it("opens a session after Allow on the session's card, and with a grant asks nothing", async () => {
+    const t = setup();
+    await t.call("1", "start_session", { ...OPEN, worktree: true });
+
+    expect(t.cards()[0]).toMatchObject({
+      title: "pi ACP wants to open a Codex session",
+      prompt: "Port the parser.",
+      zorvoTool: { tool: "start_session", hasOwnWorktree: true },
+    });
+    expect(t.env.opens).toHaveLength(0);
+
+    await t.choose(ALLOW_SESSION);
+    await waitFor(() => expect(t.answers()).toHaveLength(1));
+    expect(t.env.opens).toEqual([
+      {
+        openerId: "s-1",
+        request: {
+          agentId: "codex-acp",
+          brief: "Port the parser.",
+          title: "Parser port",
+          hasOwnWorktree: true,
+          isCancelled: expect.any(Function),
+        },
+      },
+    ]);
+    expect(JSON.parse(t.answers()[0].text)).toEqual({
+      opened: true,
+      session: "Parser port",
+      folder: SESSION.cwd,
+      note: "It works on its own and does not report back.",
+    });
+
+    await t.call("2", "start_session", { agent: "Codex", brief: "Write the docs." });
+    await waitFor(() => expect(t.answers()).toHaveLength(2));
+    expect(t.cards()).toHaveLength(1);
+    expect(t.env.opens[1].request).toEqual({
+      agentId: "codex-acp",
+      brief: "Write the docs.",
+      hasOwnWorktree: false,
+      isCancelled: expect.any(Function),
+    });
+  });
+
+  it("shows a delegate call and a start_session call on one card and runs both on Allow", async () => {
+    const t = setup();
+    await t.call("1", "delegate", REVIEW);
+    await t.call("2", "start_session", OPEN);
+
+    expect(t.cards()).toHaveLength(1);
+    expect(t.cards()[0].title).toBe("pi ACP asks for 2 things");
+    expect(t.cards()[0].prompt).toBe("For Qwen Code:\nReview the parser change.\n\nNew Codex session:\nPort the parser.");
+
+    await t.choose(ALLOW_SESSION);
+    await waitFor(() => expect(t.answers()).toHaveLength(2));
+    expect(t.env.given).toHaveLength(1);
+    expect(t.env.opens).toHaveLength(1);
+  });
+
+  it("asks with Allow once for another folder even with a grant, and keeps no grant from it", async () => {
+    const t = setup();
+    await t.call("1", "delegate", REVIEW);
+    await t.choose(ALLOW_SESSION);
+    expect(t.result.current.hasGrant("s-1")).toBe(true);
+
+    await t.call("2", "start_session", { ...OPEN, folder: TITAN });
+    expect(t.env.opens).toHaveLength(0);
+    const [card] = pendingCards(t);
+    expect(card).toMatchObject({
+      title: "pi ACP wants to open a Codex session in another folder",
+      zorvoTool: { isOtherFolder: true, folder: TITAN },
+    });
+    expect(card.options?.map((option) => option.optionId)).toEqual([ALLOW_ONCE, DENY]);
+    expect(t.result.current.isWaiting("s-1")).toBe(true);
+
+    expect(await chooseOn(t, card.id, ALLOW_ONCE)).toBe(true);
+    await waitFor(() => expect(t.answers()).toHaveLength(2));
+    expect(t.env.opens[0].request).toMatchObject({ folderPath: TITAN, agentId: "codex-acp" });
+    expect(t.cards().find((candidate) => candidate.id === card.id)).toMatchObject({ status: "approved", chosenOptionId: ALLOW_ONCE });
+
+    // The next one asks again.
+    await t.call("3", "start_session", { ...OPEN, folder: TITAN });
+    expect(pendingCards(t)).toHaveLength(1);
+    expect(t.env.opens).toHaveLength(1);
+  });
+
+  it("gives no grant when the only thing allowed was a session in another folder", async () => {
+    const t = setup();
+    await t.call("1", "start_session", { ...OPEN, folder: TITAN });
+    const [card] = pendingCards(t);
+    await chooseOn(t, card.id, ALLOW_ONCE);
+    expect(t.result.current.hasGrant("s-1")).toBe(false);
+
+    await t.call("2", "delegate", REVIEW);
+    expect(pendingCards(t)).toHaveLength(1);
+    expect(t.env.given).toHaveLength(0);
+  });
+
+  it("shows a folder card next to the session's card, each answered on its own", async () => {
+    const t = setup();
+    await t.call("1", "delegate", REVIEW);
+    await t.call("2", "start_session", { ...OPEN, folder: TITAN });
+    const cards = pendingCards(t);
+    expect(cards).toHaveLength(2);
+    const folder = cards.find((card) => card.zorvoTool?.isOtherFolder);
+    const grant = cards.find((card) => !card.zorvoTool?.isOtherFolder);
+
+    await chooseOn(t, folder?.id ?? "", DENY);
+    expect(t.answers()).toEqual([{ callId: "2", ok: false, text: DECLINED }]);
+    expect(t.result.current.isWaiting("s-1")).toBe(true);
+
+    await chooseOn(t, grant?.id ?? "", ALLOW_SESSION);
+    await waitFor(() => expect(t.answers()).toHaveLength(2));
+    expect(t.env.given).toHaveLength(1);
+    expect(t.result.current.isWaiting("s-1")).toBe(false);
+  });
+
+  it("refuses a folder that is not listed, and the session's own folder, without a card", async () => {
+    const t = setup();
+    await t.call("1", "start_session", { ...OPEN, folder: "/Users/test/developer/zorvo/../titan" });
+    await t.call("2", "start_session", { ...OPEN, folder: SESSION.cwd });
+
+    expect(t.answers()).toEqual([
+      { callId: "1", ok: false, text: "That folder is not one Zorvo knows. Use a path from list_agents' folders: titan." },
+      { callId: "2", ok: false, text: 'That is this session\'s own folder. Leave "folder" out to work here.' },
+    ]);
+    expect(t.cards()).toHaveLength(0);
+  });
+
+  it("passes a refusal to open on to the agent, and hides nothing it may know", async () => {
+    const t = setup({
+      openResult: () => ({
+        ok: false,
+        reason: "A worktree could not be made there. Open the session without one, or in a repository.",
+        isInternal: true,
+        detail: "Error: fatal: not a git repository: /Users/test/secret",
+      }),
+    });
+    await t.call("1", "start_session", { ...OPEN, worktree: true });
+    await t.choose(ALLOW_SESSION);
+
+    await waitFor(() => expect(t.answers()).toHaveLength(1));
+    expect(t.answers()[0]).toEqual({
+      callId: "1",
+      ok: false,
+      text: "A worktree could not be made there. Open the session without one, or in a repository.",
+    });
+  });
+
+  it("tells the user why a session could not be opened, and the agent only that it failed", async () => {
+    const t = setup({
+      openResult: () => ({
+        ok: false,
+        reason: "A worktree could not be made there. Open the session without one, or in a repository.",
+        isInternal: true,
+        detail: "Error: fatal: not a git repository",
+      }),
+    });
+    await t.call("1", "start_session", { ...OPEN, worktree: true });
+    await t.choose(ALLOW_SESSION);
+
+    await waitFor(() => expect(t.answers()).toHaveLength(1));
+    expect(t.env.notices).toEqual(["pi ACP could not open a Codex session: Error: fatal: not a git repository"]);
+    expect(t.answers()[0].text).not.toContain("fatal");
+  });
+
+  it("runs four waiting start_session calls one after another on Allow", async () => {
+    const t = setup();
+    for (const callId of ["1", "2", "3", "4"]) await t.call(callId, "start_session", OPEN);
+    expect(t.cards()).toHaveLength(1);
+    expect(t.cards()[0].title).toBe("pi ACP asks for 4 things");
+    expect(t.cards()[0].zorvoTool?.hasOwnWorktree).toBeUndefined();
+
+    await t.choose(ALLOW_SESSION);
+    await waitFor(() => expect(t.answers()).toHaveLength(4));
+    expect(t.answers().map((answer) => answer.callId)).toEqual(["1", "2", "3", "4"]);
+    expect(t.env.opens).toHaveLength(4);
+  });
+
+  it("marks an open whose call ended while it runs as cancelled", async () => {
+    const t = setup();
+    let finish: (value: OpenResult) => void = () => undefined;
+    let request: OpenRequest | undefined;
+    t.env.openResult = (asked) => {
+      request = asked;
+      return new Promise<OpenResult>((resolve) => {
+        finish = resolve;
+      }) as unknown as OpenResult;
+    };
+    await t.call("1", "start_session", { agent: "codex-acp", brief: "Port it.", worktree: true });
+    await t.choose(ALLOW_SESSION);
+    expect(request?.isCancelled?.()).toBe(false);
+    // Another call's end is not this one's.
+    await t.ended("other");
+    expect(request?.isCancelled?.()).toBe(false);
+
+    await t.ended("1");
+    expect(request?.isCancelled?.()).toBe(true);
+    await act(async () => {
+      finish({ ok: false, reason: "The request was withdrawn." });
+    });
+  });
+
+  it("skips an approved call that ended while an earlier one of its card still ran", async () => {
+    const t = setup();
+    let finish: (value: OpenResult) => void = () => undefined;
+    t.env.openResult = () =>
+      new Promise<OpenResult>((resolve) => {
+        finish = resolve;
+      }) as unknown as OpenResult;
+    await t.call("1", "start_session", { agent: "codex-acp", brief: "Port it.", worktree: true });
+    await t.call("2", "start_session", { agent: "codex-acp", brief: "Write the docs." });
+    await t.call("3", "delegate", { agent: "qwen-code", task: "Review it." });
+    await t.choose(ALLOW_SESSION);
+    expect(t.env.opens).toHaveLength(1);
+
+    // The caller is stopped: every call of the card ends, the queued ones too.
+    await t.ended("2");
+    await t.ended("3");
+    await act(async () => {
+      finish({ ok: true, sessionId: "o-1", sessionName: "Codex: Port it.", folder: SESSION.cwd });
+    });
+    await act(async () => {});
+
+    expect(t.env.opens).toHaveLength(1);
+    expect(t.env.given).toHaveLength(0);
+    expect(t.answers().map((answer) => answer.callId)).toEqual(["1"]);
+  });
+
+  it("skips a call that ended before a grant ran it, and runs the next as usual", async () => {
+    const t = setup();
+    await t.call("1", "delegate", { agent: "qwen-code", task: "Review it." });
+    await t.choose(ALLOW_SESSION);
+    await t.ended("1");
+    await t.call("2", "delegate", { agent: "qwen-code", task: "Again." });
+    await waitFor(() => expect(t.env.given).toHaveLength(2));
+  });
+
+  it("withdraws a folder card when its call ended", async () => {
+    const t = setup();
+    await t.call("1", "start_session", { ...OPEN, folder: TITAN });
+    const [card] = pendingCards(t);
+    await t.ended("1");
+
+    expect(t.cards()[0]).toMatchObject({ status: "rejected" });
+    expect(t.cards()[0].chosenOptionId).toBeUndefined();
+    expect(t.result.current.isWaiting("s-1")).toBe(false);
+    expect(await chooseOn(t, card.id, ALLOW_ONCE)).toBe(false);
+    expect(t.env.opens).toHaveLength(0);
+  });
+
+  it("answers a start_session call it cannot read, and an unknown agent, without a card", async () => {
+    const t = setup();
+    await t.call("1", "start_session", { agent: "codex-acp", brief: 3 });
+    await t.call("2", "start_session", { agent: "codex-acp", brief: "x", worktree: "yes" });
+    await t.call("3", "start_session", { agent: "nobody", brief: "x" });
+
+    expect(t.answers().map((answer) => answer.ok)).toEqual([false, false, false]);
+    expect(t.answers()[0].text).toBe("Zorvo could not do that.");
+    expect(t.answers()[1].text).toBe("Zorvo could not do that.");
+    expect(t.answers()[2].text).toContain('No agent called "nobody"');
+    expect(t.cards()).toHaveLength(0);
   });
 });

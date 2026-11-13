@@ -10,6 +10,12 @@ describe('the command path context', () => {
     expect(COMMAND_PATH_CONTEXT).not.toContain('\n');
   });
 
+  it('tells how to delegate and how to open a session', () => {
+    expect(COMMAND_PATH_CONTEXT).toContain('delegate {"agent": "<id>", "task": "<text>"}');
+    expect(COMMAND_PATH_CONTEXT).toContain('start_session {"agent": "<id>", "brief": "<text>"}');
+    expect(COMMAND_PATH_CONTEXT).toContain('does not report back');
+  });
+
   it('names only tools the backend lists', () => {
     const named = COMMAND_PATH_CONTEXT.match(/\b[a-z]+_[a-z]+\b/g) ?? [];
     expect(named.length).toBeGreaterThan(0);

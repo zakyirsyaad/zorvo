@@ -9,6 +9,8 @@ import { withCardOnReply, type AcpReducerContext } from './acp-events';
 import { escapeVisible } from './visible-text';
 
 export const ALLOW_SESSION = 'zorvo-allow-session';
+/** A session in another folder: allowed this once, never in advance. */
+export const ALLOW_ONCE = 'zorvo-allow-once';
 export const DENY = 'zorvo-deny';
 
 export interface ToolCardInput {
@@ -57,16 +59,44 @@ export function toolCard(input: ToolCardInput): ActionCard {
   };
 }
 
-/** One task an agent asked to give, waiting for the user's answer. */
+/** One thing an agent asked for, waiting for the user's answer: a task for an agent, or a new session. */
 export interface WaitingTask {
+  kind: 'delegate' | 'start_session';
   targetName: string;
   targetId: string;
+  /** The task, or the new session's brief. */
   task: string;
+  /** A new session that gets a worktree of its own. */
+  hasOwnWorktree?: boolean;
+}
+
+/** The card for one new session in the caller's own folder. */
+function sessionCard(input: Omit<ToolCardInput, 'targetName' | 'targetId' | 'task'>, task: WaitingTask): ActionCard {
+  const card = toolCard({ ...input, targetName: task.targetName, targetId: task.targetId, task: task.task });
+  return {
+    ...card,
+    title: `${input.callerName} wants to open a ${task.targetName} session`,
+    zorvoTool: {
+      tool: 'start_session',
+      callerName: input.callerName,
+      targetName: task.targetName,
+      targetId: task.targetId,
+      folder: input.folder,
+      ...(task.hasOwnWorktree ? { hasOwnWorktree: true as const } : {}),
+    },
+  };
+}
+
+function blockHeading(task: WaitingTask): string {
+  if (task.kind === 'delegate') return `For ${task.targetName}:`;
+  return task.hasOwnWorktree
+    ? `New ${task.targetName} session, in its own worktree:`
+    : `New ${task.targetName} session:`;
 }
 
 /**
- * The card for every task that waits in a session: one task reads as itself,
- * several are listed under the agent each is for, so the user sees all that
+ * The card for everything that waits in a session: one request reads as
+ * itself, several are listed under a heading each, so the user sees all that
  * Allow would start.
  */
 export function toolCardFor(
@@ -74,12 +104,63 @@ export function toolCardFor(
   tasks: readonly WaitingTask[],
 ): ActionCard {
   const [first] = tasks;
-  const single = toolCard({ ...input, targetName: first.targetName, targetId: first.targetId, task: first.task });
+  const single =
+    first.kind === 'start_session'
+      ? sessionCard(input, first)
+      : toolCard({ ...input, targetName: first.targetName, targetId: first.targetId, task: first.task });
   if (tasks.length === 1) return single;
+  const areAllDelegations = tasks.every((task) => task.kind === 'delegate');
+  // What is true of one request is said in its own heading, not for the whole card.
+  const { hasOwnWorktree: _ofTheFirst, ...shared } = single.zorvoTool ?? ({} as NonNullable<ActionCard['zorvoTool']>);
   return {
     ...single,
-    title: `${input.callerName} wants to give other agents ${tasks.length} tasks`,
-    prompt: tasks.map((task) => `For ${task.targetName}:\n${visibleTask(task.task)}`).join('\n\n'),
+    zorvoTool: shared as NonNullable<ActionCard['zorvoTool']>,
+    title: areAllDelegations
+      ? `${input.callerName} wants to give other agents ${tasks.length} tasks`
+      : `${input.callerName} asks for ${tasks.length} things`,
+    prompt: tasks.map((task) => `${blockHeading(task)}\n${visibleTask(task.task)}`).join('\n\n'),
+  };
+}
+
+export interface FolderCardInput {
+  cardId: string;
+  sessionId: string;
+  callerName: string;
+  targetName: string;
+  targetId: string;
+  /** The other folder the session would work in. */
+  folder: string;
+  brief: string;
+  hasOwnWorktree: boolean;
+  now: number;
+}
+
+/**
+ * The card for a session in another folder. It is asked every time, whatever
+ * the session was allowed before: leave given for work in one project must not
+ * let text the agent read start an agent in another.
+ */
+export function folderCard(input: FolderCardInput): ActionCard {
+  return {
+    id: input.cardId,
+    sessionId: input.sessionId,
+    title: `${input.callerName} wants to open a ${input.targetName} session in another folder`,
+    prompt: visibleTask(input.brief),
+    status: 'pending',
+    timestamp: input.now,
+    options: [
+      { optionId: ALLOW_ONCE, name: 'Allow once', kind: 'allow_once' },
+      { optionId: DENY, name: 'Deny', kind: 'reject_once' },
+    ],
+    zorvoTool: {
+      tool: 'start_session',
+      callerName: input.callerName,
+      targetName: input.targetName,
+      targetId: input.targetId,
+      folder: input.folder,
+      isOtherFolder: true,
+      ...(input.hasOwnWorktree ? { hasOwnWorktree: true as const } : {}),
+    },
   };
 }
 
@@ -103,9 +184,11 @@ export function settleToolCard(messages: ChatMessage[], cardId: string, outcome:
   return messages.map((message) => {
     const card = message.actionCard;
     if (card?.id !== cardId) return message;
+    // The card's own allowing option: for this session, or once.
+    const allowing = card.options?.find((option) => option.kind.startsWith('allow'))?.optionId ?? ALLOW_SESSION;
     const settled: ActionCard =
       outcome === 'approved'
-        ? { ...card, status: 'approved', chosenOptionId: ALLOW_SESSION }
+        ? { ...card, status: 'approved', chosenOptionId: allowing }
         : outcome === 'rejected'
           ? { ...card, status: 'rejected', chosenOptionId: DENY }
           : { ...card, status: 'rejected', chosenOptionId: undefined };
@@ -117,13 +200,15 @@ export function settleToolCard(messages: ChatMessage[], cardId: string, outcome:
 export function usableZorvoTool(mark: unknown): ZorvoToolRequest | undefined {
   if (typeof mark !== 'object' || mark === null) return undefined;
   const { tool, callerName, targetName, targetId, folder } = mark as Record<string, unknown>;
-  if (tool !== 'delegate') return undefined;
+  if (tool !== 'delegate' && tool !== 'start_session') return undefined;
   if (![callerName, targetName, targetId, folder].every((value) => typeof value === 'string')) return undefined;
   return mark as ZorvoToolRequest;
 }
 
 /** What a settled Zorvo card says. */
 export function settledWords(card: ActionCard): string {
-  if (card.status === 'approved') return 'Allowed for this session';
+  if (card.status === 'approved') {
+    return card.chosenOptionId === ALLOW_ONCE ? 'Allowed once' : 'Allowed for this session';
+  }
   return card.chosenOptionId === DENY ? 'Denied' : 'Not answered';
 }

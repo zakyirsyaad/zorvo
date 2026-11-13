@@ -11,6 +11,7 @@ import {
   type AgentProfile,
   type ChatMessage,
   type DelegationLink,
+  type OpenedByLink,
   type Session,
   type SessionWorktree,
 } from '../types';
@@ -35,6 +36,8 @@ export interface SessionSpec {
   compareRunId?: string | null;
   /** The session this one was delegated from, when another agent started it. */
   delegatedFrom?: DelegationLink;
+  /** The session whose agent opened this one through Zorvo's tools. */
+  openedBy?: OpenedByLink;
   /** When the session was made; a run gives its sessions successive times, so they keep the order of its agents. */
   createdAt?: number;
 }
@@ -49,7 +52,7 @@ export interface StartSessionOptions {
 
 /** The record of a session about to start: running, with the spec's agent and folder. */
 export function newSessionRecord(spec: SessionSpec, createdAt: number = spec.createdAt ?? Date.now()): Session {
-  const { id, agent, cwd, name, forkedFrom, worktree, acpSessionId, compareRunId, delegatedFrom } = spec;
+  const { id, agent, cwd, name, forkedFrom, worktree, acpSessionId, compareRunId, delegatedFrom, openedBy } = spec;
   return {
     id: id ?? createId('s'),
     name,
@@ -63,6 +66,7 @@ export function newSessionRecord(spec: SessionSpec, createdAt: number = spec.cre
     acpSessionId: acpSessionId ?? null,
     ...(compareRunId !== undefined ? { compareRunId } : {}),
     ...(delegatedFrom !== undefined ? { delegatedFrom } : {}),
+    ...(openedBy !== undefined ? { openedBy } : {}),
   };
 }
 

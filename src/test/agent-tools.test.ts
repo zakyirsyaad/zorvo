@@ -55,6 +55,30 @@ describe("sessionGetsAgentTools", () => {
     expect(sessionGetsAgentTools({ compareRunId: "run-1" })).toBe(false);
   });
 
+  it("gives none to a session an agent opened", () => {
+    expect(sessionGetsAgentTools({ openedBy: { sessionId: "s-a", at: 1 } })).toBe(false);
+    expect(sessionGetsAgentTools({ openedBy: null })).toBe(true);
+  });
+
+  it("gives none to a fork of a session that has none, however long the chain", () => {
+    const opened = { id: "s-o", openedBy: { sessionId: "s-a", at: 1 } };
+    const delegated = { id: "s-d", delegatedFrom: LINK };
+    const fork = { id: "s-f", forkedFrom: "s-o" };
+    const forkOfFork = { id: "s-g", forkedFrom: "s-f" };
+    const all = [opened, delegated, fork, forkOfFork];
+
+    expect(sessionGetsAgentTools(fork, all)).toBe(false);
+    expect(sessionGetsAgentTools(forkOfFork, all)).toBe(false);
+    expect(sessionGetsAgentTools({ id: "s-h", forkedFrom: "s-d" }, all)).toBe(false);
+    // A fork of a plain session keeps the tools, and so does one whose source is gone.
+    expect(sessionGetsAgentTools({ id: "s-i", forkedFrom: "s-plain" }, [...all, { id: "s-plain" }])).toBe(true);
+    expect(sessionGetsAgentTools({ id: "s-j", forkedFrom: "s-deleted" }, all)).toBe(true);
+    // A hand-edited loop ends.
+    const a = { id: "s-x", forkedFrom: "s-y" };
+    const b = { id: "s-y", forkedFrom: "s-x" };
+    expect(sessionGetsAgentTools(a, [a, b])).toBe(true);
+  });
+
   it("gives none to a delegated session, open or ended", () => {
     expect(sessionGetsAgentTools({ delegatedFrom: LINK })).toBe(false);
     expect(sessionGetsAgentTools({ delegatedFrom: { ...LINK, endedAt: 2 } })).toBe(false);

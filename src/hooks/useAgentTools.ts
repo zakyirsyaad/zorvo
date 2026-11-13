@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import {
+  ALLOW_ONCE,
   ALLOW_SESSION,
+  folderCard,
   replaceToolCard,
   settleToolCard,
   toolCardFor,
@@ -15,17 +17,23 @@ import {
   NO_SESSION,
   delegateResultText,
   listAgentsText,
+  openedResultText,
+  otherFolders,
   parseToolCall,
   resolveAgent,
+  resolveFolder,
   sessionGetsAgentTools,
   statusRefusal,
   type AgentToolCall,
+  type KnownFolder,
   type ListedDelegate,
+  type ListedOpened,
 } from '../lib/agent-tools';
 import type { MentionAgentStatus } from '../lib/delegation';
 import { createId } from '../lib/ids';
 import type { AgentProfile, ChatMessage, Session } from '../types';
 import type { GiveTaskResult } from './useDelegation';
+import type { OpenRequest, OpenResult } from './useOpenedSessions';
 import { useLatest } from './useLatest';
 
 /** Answered when something went wrong on Zorvo's side; never the error itself, which could hold the task. */
@@ -39,13 +47,35 @@ export interface AgentToolsDeps {
   /** The session's open delegates, for `list_agents`. */
   delegatesOf: (sessionId: string) => ListedDelegate[];
   giveTask: (sourceId: string, agentId: string, task: string, options: { byAgent: true }) => Promise<GiveTaskResult>;
+  /** The folders Zorvo knows: where else a session may be opened. */
+  workspaces: readonly KnownFolder[];
+  openSession: (openerId: string, request: OpenRequest) => Promise<OpenResult>;
+  /** The sessions this session opened, for `list_agents`. */
+  openedOf: (sessionId: string) => ListedOpened[];
   updateMessages: (sessionId: string, update: (prev: ChatMessage[]) => ChatMessage[]) => void;
   onAttention: (sessionId: string, reason: 'needs-answer') => void;
+  /** Tells the user what an agent is not told: why Zorvo itself failed. */
+  onNotice?: (message: string) => void;
 }
 
-/** A `delegate` call that waits for the user's answer on the session's card. */
+/** A `delegate` or `start_session` call that waits for the user's answer on a card. */
 interface WaitingCall extends WaitingTask {
   callId: string;
+  /** A new session's name, when the agent gave one. */
+  title?: string;
+  /** A new session in another folder Zorvo knows. */
+  folderPath?: string;
+}
+
+/** A session in another folder has a card of its own, asked every time. */
+interface FolderCard {
+  sessionId: string;
+  call: WaitingCall;
+}
+
+/** The folder the session belongs to: its repository when it works in a worktree. */
+function ownFolderOf(session: Session): string {
+  return session.worktree?.repoPath ?? session.cwd;
 }
 
 /** A session's card and the calls it stands for, in arrival order. */
@@ -80,6 +110,12 @@ export function useAgentTools(deps: AgentToolsDeps): {
   // Sessions whose agent may give tasks without asking again. Memory only.
   const grants = useRef(new Set<string>());
   const waiting = useRef(new Map<string, WaitingCard>());
+  // The cards for a session in another folder, by card id: one call each, never a grant.
+  const folderCards = useRef(new Map<string, FolderCard>());
+  // Calls the user allowed that have not finished: running, or queued behind another of their card.
+  // Those among them whose call ended meanwhile must start nothing.
+  const approved = useRef(new Set<string>());
+  const endedApproved = useRef(new Set<string>());
   // Bumped when a grant or a waiting card changes, so `isWaiting` and `hasGrant` are read again.
   const [, setRevision] = useState(0);
   const bump = useCallback(() => setRevision((current) => current + 1), []);
@@ -102,6 +138,55 @@ export function useAgentTools(deps: AgentToolsDeps): {
     [latest],
   );
 
+  const runOpen = useCallback(
+    async (sessionId: string, call: WaitingCall): Promise<void> => {
+      try {
+        const result = await latest.current.openSession(sessionId, {
+          agentId: call.targetId,
+          brief: call.task,
+          ...(call.title !== undefined ? { title: call.title } : {}),
+          hasOwnWorktree: call.hasOwnWorktree === true,
+          ...(call.folderPath !== undefined ? { folderPath: call.folderPath } : {}),
+          isCancelled: () => endedApproved.current.has(call.callId),
+        });
+        if (!result.ok && result.detail !== undefined) {
+          // The agent is told only that it did not work; the cause is the user's to see.
+          const current = latest.current;
+          const opener = current.sessions.find((candidate) => candidate.id === sessionId);
+          const callerName = current.agents.find((candidate) => candidate.id === opener?.profileId)?.name ?? 'The agent';
+          current.onNotice?.(`${callerName} could not open a ${call.targetName} session: ${result.detail}`);
+        }
+        // A refusal's reason is written for the caller; the error itself stays in `detail`.
+        respond(
+          call.callId,
+          result.ok,
+          result.ok
+            ? openedResultText({ sessionName: result.sessionName, folder: result.folder })
+            : result.reason === ''
+              ? FAILED
+              : result.reason,
+        );
+      } catch {
+        respond(call.callId, false, FAILED);
+      }
+    },
+    [latest],
+  );
+
+  /** Runs an allowed call, unless it ended while it waited its turn: nobody waits for that one. */
+  const runCall = useCallback(
+    async (sessionId: string, call: WaitingCall): Promise<void> => {
+      try {
+        if (endedApproved.current.has(call.callId)) return;
+        await (call.kind === 'delegate' ? runDelegate(sessionId, call) : runOpen(sessionId, call));
+      } finally {
+        approved.current.delete(call.callId);
+        endedApproved.current.delete(call.callId);
+      }
+    },
+    [runDelegate, runOpen],
+  );
+
   /** The card for what waits now, on the session's reply or in the place of the one it had. */
   const showCard = useCallback(
     (session: Session, entry: WaitingCard, isNew: boolean) => {
@@ -116,6 +201,37 @@ export function useAgentTools(deps: AgentToolsDeps): {
       );
     },
     [latest],
+  );
+
+  /** Runs a call the session is allowed to make, or puts it on the session's card. */
+  const enqueue = useCallback(
+    (session: Session, waitingCall: WaitingCall) => {
+      const current = latest.current;
+      if (grants.current.has(session.id)) {
+        approved.current.add(waitingCall.callId);
+        void runCall(session.id, waitingCall);
+        return;
+      }
+      const entry = waiting.current.get(session.id);
+      if (entry === undefined) {
+        const caller = current.agents.find((candidate) => candidate.id === session.profileId);
+        const created: WaitingCard = {
+          cardId: createId('act'),
+          callerName: caller?.name ?? 'The agent',
+          folder: session.cwd,
+          calls: [waitingCall],
+        };
+        waiting.current.set(session.id, created);
+        showCard(session, created, true);
+        current.onAttention(session.id, 'needs-answer');
+      } else {
+        const grown = { ...entry, calls: [...entry.calls, waitingCall] };
+        waiting.current.set(session.id, grown);
+        showCard(session, grown, false);
+      }
+      bump();
+    },
+    [latest, runCall, showCard, bump],
   );
 
   const handleDelegate = useCallback(
@@ -138,31 +254,78 @@ export function useAgentTools(deps: AgentToolsDeps): {
         respond(call.callId, false, refusal);
         return;
       }
-      const waitingCall: WaitingCall = { callId: call.callId, targetName, targetId: resolved.id, task };
-      if (grants.current.has(session.id)) {
-        void runDelegate(session.id, waitingCall);
+      enqueue(session, { callId: call.callId, kind: 'delegate', targetName, targetId: resolved.id, task });
+    },
+    [latest, enqueue],
+  );
+
+  const handleStartSession = useCallback(
+    (session: Session, call: AgentToolCall) => {
+      const current = latest.current;
+      const { agent, brief, title, worktree, folder } = call.args as Record<string, unknown>;
+      const isReadable =
+        typeof agent === 'string' &&
+        typeof brief === 'string' &&
+        (title === undefined || typeof title === 'string') &&
+        (worktree === undefined || typeof worktree === 'boolean') &&
+        (folder === undefined || typeof folder === 'string');
+      if (!isReadable) {
+        respond(call.callId, false, FAILED);
         return;
       }
-      const entry = waiting.current.get(session.id);
-      if (entry === undefined) {
-        const caller = current.agents.find((candidate) => candidate.id === session.profileId);
-        const created: WaitingCard = {
-          cardId: createId('act'),
-          callerName: caller?.name ?? 'The agent',
-          folder: session.cwd,
-          calls: [waitingCall],
-        };
-        waiting.current.set(session.id, created);
-        showCard(session, created, true);
-        current.onAttention(session.id, 'needs-answer');
-      } else {
-        const grown = { ...entry, calls: [...entry.calls, waitingCall] };
-        waiting.current.set(session.id, grown);
-        showCard(session, grown, false);
+      const resolved = resolveAgent(agent as string, current.agents);
+      if ('error' in resolved) {
+        respond(call.callId, false, resolved.error);
+        return;
       }
+      const target = current.agents.find((candidate) => candidate.id === resolved.id);
+      const targetName = target?.name ?? resolved.id;
+      const refusal = statusRefusal(targetName, current.statusOf(resolved.id));
+      if (refusal !== null) {
+        respond(call.callId, false, refusal);
+        return;
+      }
+      const waitingCall: WaitingCall = {
+        callId: call.callId,
+        kind: 'start_session',
+        targetName,
+        targetId: resolved.id,
+        task: brief as string,
+        ...(typeof title === 'string' ? { title } : {}),
+        ...(worktree === true ? { hasOwnWorktree: true } : {}),
+      };
+      if (typeof folder !== 'string') {
+        enqueue(session, waitingCall);
+        return;
+      }
+
+      // Another folder: its own card, every time, whatever the session was allowed before.
+      const place = resolveFolder(folder, { workspaces: current.workspaces, callerCwd: ownFolderOf(session) });
+      if ('error' in place) {
+        respond(call.callId, false, place.error);
+        return;
+      }
+      const caller = current.agents.find((candidate) => candidate.id === session.profileId);
+      const cardId = createId('act');
+      const card = folderCard({
+        cardId,
+        sessionId: session.id,
+        callerName: caller?.name ?? 'The agent',
+        targetName,
+        targetId: resolved.id,
+        folder: place.path,
+        brief: brief as string,
+        hasOwnWorktree: worktree === true,
+        now: Date.now(),
+      });
+      folderCards.current.set(cardId, { sessionId: session.id, call: { ...waitingCall, folderPath: place.path } });
+      current.updateMessages(session.id, (prev) =>
+        withToolCard(prev, card, { sessionId: session.id, now: Date.now(), createId }),
+      );
+      current.onAttention(session.id, 'needs-answer');
       bump();
     },
-    [latest, runDelegate, showCard, bump],
+    [latest, enqueue, bump],
   );
 
   const handleCall = useCallback(
@@ -172,7 +335,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
       try {
         const current = latest.current;
         const session = current.sessions.find((candidate) => candidate.id === call.sessionId);
-        if (session === undefined || !sessionGetsAgentTools(session)) {
+        if (session === undefined || !sessionGetsAgentTools(session, current.sessions)) {
           respond(call.callId, false, NO_SESSION);
           return;
         }
@@ -182,11 +345,24 @@ export function useAgentTools(deps: AgentToolsDeps): {
             name: agent.name,
             status: current.statusOf(agent.id),
           }));
-          respond(call.callId, true, listAgentsText({ agents, delegates: current.delegatesOf(session.id) }));
+          respond(
+            call.callId,
+            true,
+            listAgentsText({
+              agents,
+              delegates: current.delegatesOf(session.id),
+              opened: current.openedOf(session.id),
+              folders: otherFolders(current.workspaces, ownFolderOf(session)),
+            }),
+          );
           return;
         }
         if (call.tool === 'delegate') {
           handleDelegate(session, call);
+          return;
+        }
+        if (call.tool === 'start_session') {
+          handleStartSession(session, call);
           return;
         }
         respond(call.callId, false, NOT_YET);
@@ -194,7 +370,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
         respond(call.callId, false, FAILED);
       }
     },
-    [latest, handleDelegate],
+    [latest, handleDelegate, handleStartSession],
   );
 
   /** A call ended without our answer (timeout, cancel, session stop): it no longer waits. */
@@ -202,6 +378,18 @@ export function useAgentTools(deps: AgentToolsDeps): {
     (payload: unknown) => {
       const callId = (payload as { callId?: unknown } | null)?.callId;
       if (typeof callId !== 'string') return;
+      // An allowed call is on no card any more: it is skipped, or told through its request.
+      if (approved.current.has(callId)) {
+        endedApproved.current.add(callId);
+        return;
+      }
+      for (const [cardId, folder] of folderCards.current) {
+        if (folder.call.callId !== callId) continue;
+        folderCards.current.delete(cardId);
+        latest.current.updateMessages(folder.sessionId, (prev) => settleToolCard(prev, cardId, 'withdrawn'));
+        bump();
+        return;
+      }
       for (const [sessionId, entry] of waiting.current) {
         if (!entry.calls.some((call) => call.callId === callId)) continue;
         const calls = entry.calls.filter((call) => call.callId !== callId);
@@ -247,10 +435,29 @@ export function useAgentTools(deps: AgentToolsDeps): {
     for (const sessionId of [...waiting.current.keys()]) {
       if (!live.has(sessionId)) hasChanged = waiting.current.delete(sessionId) || hasChanged;
     }
+    for (const [cardId, folder] of [...folderCards.current]) {
+      if (!live.has(folder.sessionId)) hasChanged = folderCards.current.delete(cardId) || hasChanged;
+    }
     if (hasChanged) bump();
   }, [sessions, bump]);
 
   const chooseCard = (sessionId: string, cardId: string, optionId: string): boolean => {
+    const folder = folderCards.current.get(cardId);
+    if (folder !== undefined && folder.sessionId === sessionId) {
+      folderCards.current.delete(cardId);
+      // Allowed once: this session opens, and nothing is remembered for the next call.
+      const isAllowedOnce = optionId === ALLOW_ONCE;
+      latest.current.updateMessages(sessionId, (prev) =>
+        settleToolCard(prev, cardId, isAllowedOnce ? 'approved' : 'rejected'),
+      );
+      if (isAllowedOnce) {
+        approved.current.add(folder.call.callId);
+        void runCall(sessionId, folder.call);
+      }
+      else respond(folder.call.callId, false, DECLINED);
+      bump();
+      return true;
+    }
     const entry = waiting.current.get(sessionId);
     if (entry === undefined || entry.cardId !== cardId) return false;
     waiting.current.delete(sessionId);
@@ -258,9 +465,10 @@ export function useAgentTools(deps: AgentToolsDeps): {
     latest.current.updateMessages(sessionId, (prev) => settleToolCard(prev, cardId, isAllowed ? 'approved' : 'rejected'));
     if (isAllowed) {
       grants.current.add(sessionId);
+      for (const call of entry.calls) approved.current.add(call.callId);
       // In arrival order, one after the other: a second task for the same agent must find the first's delegate.
       void entry.calls.reduce(
-        (previous, call) => previous.then(() => runDelegate(sessionId, call)),
+        (previous, call) => previous.then(() => runCall(sessionId, call)),
         Promise.resolve(),
       );
     } else {
@@ -278,6 +486,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
     chooseCard,
     hasGrant: (sessionId) => grants.current.has(sessionId),
     revokeGrant,
-    isWaiting: (sessionId) => waiting.current.has(sessionId),
+    isWaiting: (sessionId) =>
+      waiting.current.has(sessionId) ||
+      [...folderCards.current.values()].some((folder) => folder.sessionId === sessionId),
   };
 }

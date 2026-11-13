@@ -114,6 +114,30 @@ describe("normalizePersistedState", () => {
   });
 });
 
+describe("normalizePersistedState - who opened a session", () => {
+  const session = (openedBy: unknown) => ({
+    id: "s-1",
+    name: "Port it",
+    profileId: "codex-acp",
+    cwd: "/Users/test/developer/zorvo",
+    status: "idle",
+    createdAt: 1,
+    transport: "acp",
+    openedBy,
+  });
+  const load = (openedBy: unknown) =>
+    normalizePersistedState({ version: 2, settings: {}, recentFolders: [], sessions: [session(openedBy)] }).sessions;
+
+  it("keeps an openedBy link and drops a malformed one, keeping the session", () => {
+    expect(load({ sessionId: "s-a", at: 5 })[0].openedBy).toEqual({ sessionId: "s-a", at: 5 });
+    for (const bad of [{ sessionId: 3, at: 5 }, "s-a", { sessionId: "", at: 1 }, { sessionId: "s-a", at: "now" }]) {
+      const sessions = load(bad);
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]).not.toHaveProperty("openedBy");
+    }
+  });
+});
+
 describe("normalizePersistedState - models", () => {
   it("keeps the models an agent reported and the model picked last, dropping malformed ones", () => {
     const models = { currentModelId: "auto", availableModels: [{ modelId: "auto", name: "Auto" }, { modelId: 3 }] };

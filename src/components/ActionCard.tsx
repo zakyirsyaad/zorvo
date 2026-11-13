@@ -167,9 +167,14 @@ export function ActionCard({ card, onChoose, disabled = false, agentName = "The 
           >
             {card.prompt}
           </pre>
+          {zorvoTool.hasOwnWorktree && (
+            <p className="text-ui-sm text-fg-muted">It gets a worktree of its own, on a new branch.</p>
+          )}
           {card.status === "pending" && (
             <p className="text-caption text-fg-subtle">
-              {`After you allow it, ${zorvoTool.callerName} can give tasks to other agents in this session without asking again.`}
+              {zorvoTool.isOtherFolder
+                ? "This asks every time: a session in another folder is never allowed in advance."
+                : `After you allow it, ${zorvoTool.callerName} can give tasks to other agents in this session without asking again.`}
             </p>
           )}
         </>

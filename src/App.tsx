@@ -78,6 +78,7 @@ import { AppUpdateNotice } from "./components/AppUpdateNotice";
 import { restartWarning } from "./lib/app-update";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { useAgentTools } from "./hooks/useAgentTools";
+import { useOpenedSessions } from "./hooks/useOpenedSessions";
 import { ProfileFooter } from "./components/ProfileFooter";
 import { AgentsMenu } from "./components/sidebar/AgentsMenu";
 import { useNavigationHistory } from "./hooks/useNavigationHistory";
@@ -114,6 +115,7 @@ import { useDelegateDialog } from "./hooks/useDelegateDialog";
 import { delegatedStartOf, delegationChoicesFor as delegationChoicesForOptions } from "./lib/delegation-start";
 import { DelegationStatusLine } from "./components/delegation/DelegationStatusLine";
 import { DelegatedFromLine } from "./components/delegation/DelegatedFromLine";
+import { OpenedByLine } from "./components/delegation/OpenedByLine";
 import {
   followUpSummary,
   isOpenLink,
@@ -588,6 +590,14 @@ export default function App() {
   useEffect(() => setBranchCheck(turnsEnded), [turnsEnded]);
   // The tools Zorvo gives agents (main window only). Its helpers are bound late: they are
   // defined further down and only called when a tool call or an answer arrives.
+  // The independent sessions an agent opens through the tools. `startSession` is defined
+  // further down and only called when a call is allowed.
+  const openedSessions = useOpenedSessions({
+    sessions,
+    agents: agentsInUse,
+    isBusy: (sessionId) => isSessionBusy(sessionId),
+    startSession: (spec, first, options) => startSession(spec, first, options),
+  });
   const agentTools = useAgentTools({
     sessions,
     // Only the agents the user has in use, as the @ list and the dialog offer: an agent
@@ -604,8 +614,12 @@ export default function App() {
         task: delegate.delegatedFrom?.task ?? "",
       })),
     giveTask: (sourceId, agentId, task, options) => delegation.giveTask(sourceId, agentId, task, options),
+    workspaces,
+    openSession: openedSessions.open,
+    openedOf: openedSessions.openedOf,
     updateMessages,
     onAttention: (sessionId, reason) => notifyAttention(sessionId, reason),
+    onNotice: (message) => setNotice(message),
   });
   const isSessionWaiting = (sessionId: string) =>
     agentTools.isWaiting(sessionId) ||
@@ -1129,6 +1143,8 @@ export default function App() {
       : undefined;
 
   // A's line while B works or waits, and B's while A works on its report; while A is in a turn its own status shows.
+  // The session whose agent opened this one, when it still exists.
+  const openerSession = activeSession?.openedBy ? sessionById(activeSession.openedBy.sessionId) : undefined;
   const delegationViews = activeSession ? delegation.viewsFor(activeSession.id) : [];
   // B's own line, or the first of A's: the region that announces the lines stays mounted on it.
   const delegationView = delegationViews[0] ?? null;
@@ -1409,6 +1425,15 @@ export default function App() {
                       delegatedFrom={
                         delegationView?.role === "delegate" ? (
                           <DelegatedFromLine view={delegationView} onOpen={handleSelectSession} canAct />
+                        ) : activeSession?.openedBy ? (
+                          // A session an agent opened: who opened it, in the delegate line's place.
+                          <OpenedByLine
+                            agentName={agents.find((agent) => agent.id === openerSession?.profileId)?.name ?? ""}
+                            sessionName={openerSession?.name ?? ""}
+                            openerSessionId={openerSession?.id ?? null}
+                            onOpen={handleSelectSession}
+                            canAct
+                          />
                         ) : undefined
                       }
                       // Always mounted for a session, so the first line it draws is announced.

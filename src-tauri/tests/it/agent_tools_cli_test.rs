@@ -362,3 +362,31 @@ fn asking_tools_for_help_lists_the_tools() {
         assert!(text(&output.stdout).contains("list_agents"), "{flag}");
     }
 }
+
+#[test]
+fn it_runs_from_a_path_with_a_space_the_way_the_context_writes_it() {
+    let rig = rig("space");
+    let folder = scratch("with space").join("Zorvo Dev.app");
+    fs::create_dir_all(&folder).unwrap();
+    let program = folder.join("zorvo");
+    std::os::unix::fs::symlink(BINARY, &program).unwrap();
+    assert!(program.to_str().unwrap().contains(' '));
+
+    // Exactly what the hidden context tells an agent to type, through a shell.
+    let child = Command::new("/bin/sh")
+        .args(["-c", r#""$ZORVO_TOOLS" tools list_agents '{}'"#])
+        .env("ZORVO_TOOLS", &program)
+        .env("ZORVO_MCP_SOCKET", &rig.socket)
+        .env("ZORVO_MCP_TOKEN", rig.token("s1"))
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let call = rig.calls.recv_timeout(WAIT).expect("the call was emitted");
+    rig.tools.respond(&call.call_id, true, "[]");
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(call.tool, "list_agents");
+    assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
+    assert_eq!(text(&output.stdout), "[]\n");
+}

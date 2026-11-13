@@ -471,7 +471,7 @@ describe("delegating from the app", () => {
     expect(delegationRegion()).not.toHaveClass("sr-only");
   });
 
-  it("a failed turn in A is not retried while the delegated task runs", async () => {
+  it("a failed turn in A can be retried while the delegated task runs", async () => {
     seedSourceSession();
     const spy = await renderApp();
     await screen.findByText("Refactor the parser");
@@ -484,7 +484,7 @@ describe("delegating from the app", () => {
     await acpEvent({ sessionId: "s-a", kind: "turn-end", error: "network is down" });
     expect(await screen.findByRole("button", { name: "Try again" })).toBeDefined();
 
-    // A is between turns, so the delegation starts; B's first turn then holds the pair.
+    // A is between turns, so the delegation starts. B's turn no longer holds A: the user steers it.
     await delegateToCodex(spy);
 
     const sidebar = within(screen.getByRole("complementary"));
@@ -496,9 +496,10 @@ describe("delegating from the app", () => {
       fireEvent.click(tryAgain);
     });
 
-    // Nothing was prompted to A: its message is still in the chat, and the banner can stay.
-    expect(callsTo(spy, "acp_prompt").filter(([, args]) => args?.sessionId === "s-a")).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
+    // The same prompt went to A again.
+    await waitFor(() =>
+      expect(callsTo(spy, "acp_prompt").filter(([, args]) => args?.sessionId === "s-a")).toHaveLength(2),
+    );
   });
 
   it("Change carries the composer's attachments to the delegated task", async () => {

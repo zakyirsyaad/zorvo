@@ -115,7 +115,7 @@ import { useDelegateDialog } from "./hooks/useDelegateDialog";
 import { delegatedStartOf, delegationChoicesFor as delegationChoicesForOptions } from "./lib/delegation-start";
 import { DelegationStatusLine } from "./components/delegation/DelegationStatusLine";
 import { DelegatedFromLine } from "./components/delegation/DelegatedFromLine";
-import { isOpenLink, mentionBlockedReason, openDelegateOf, startSummary, type MentionAgentStatus } from "./lib/delegation";
+import { isOpenLink, mentionBlockedReason, openDelegatesOf, startSummary, type MentionAgentStatus } from "./lib/delegation";
 import { compareModelControls } from "./lib/compare-models";
 import { lastOfRun, runOf } from "./lib/compare-run";
 import { compareAgentOptions } from "./lib/composer-controls";
@@ -741,8 +741,7 @@ export default function App() {
     const isArchivedNow = latestSessions.find((session) => session.id === sessionId)?.archivedAt != null;
     if (!isArchivedNow) return;
     delegation.end(sessionId);
-    const delegate = openDelegateOf(sessionId, latestSessions);
-    if (delegate !== undefined) delegation.end(delegate.id);
+    for (const delegate of openDelegatesOf(sessionId, latestSessions)) delegation.end(delegate.id);
   };
 
   /** Shows a run's panel in the chat's place; no session stays selected, or the panel would not show. */
@@ -1068,7 +1067,7 @@ export default function App() {
   }));
 
   // End delegation: A's open delegate, or B's open link. A delegated session offers no Delegate of its own.
-  const openDelegate = sessionOfItsOwn ? openDelegateOf(sessionOfItsOwn.id, sessions) : undefined;
+  const openDelegate = sessionOfItsOwn ? openDelegatesOf(sessionOfItsOwn.id, sessions).at(-1) : undefined;
   const onEndDelegation =
     openDelegate !== undefined
       ? () => delegation.end(openDelegate.id)

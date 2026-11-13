@@ -7,7 +7,7 @@ import {
   delegateBlockedReason as delegationBlockedReason,
   delegateSessionName,
   isOpenLink,
-  openDelegateOf,
+  openDelegatesOf,
   reportMessage,
   reportedFiles,
   sendBlockedReason as pairSendBlockedReason,
@@ -93,6 +93,7 @@ function blockedReasonFor(deps: DelegationDeps, sourceId: string): string | null
     source,
     sessions: deps.sessions,
     isBusy: deps.isBusy,
+    isWaiting: deps.isWaiting,
     hasMessages: (deps.transcripts[sourceId] ?? []).length > 0,
     agentNameOf: (profileId) => agentNameIn(deps.agents, profileId),
   });
@@ -240,7 +241,8 @@ export function useDelegation(deps: DelegationDeps): {
       return { ...base, state: outcome?.kind ?? 'working', workingSince: null };
     }
 
-    const delegate = openDelegateOf(sessionId, sessions);
+    // The newest for now; `viewsFor` lists them all.
+    const delegate = openDelegatesOf(sessionId, sessions).at(-1);
     if (delegate === undefined) return null;
     const outcome = outcomes.current.get(delegate.id);
     // A delegate that is not running has no live turn: its last turn's outcome is

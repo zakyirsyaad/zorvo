@@ -417,7 +417,16 @@ describe("useAgentTools", () => {
     await t.choose(ALLOW_SESSION);
     await waitFor(() => expect(t.answers()).toHaveLength(1));
     expect(t.env.opens).toEqual([
-      { openerId: "s-1", request: { agentId: "codex-acp", brief: "Port the parser.", title: "Parser port", hasOwnWorktree: true } },
+      {
+        openerId: "s-1",
+        request: {
+          agentId: "codex-acp",
+          brief: "Port the parser.",
+          title: "Parser port",
+          hasOwnWorktree: true,
+          isCancelled: expect.any(Function),
+        },
+      },
     ]);
     expect(JSON.parse(t.answers()[0].text)).toEqual({
       opened: true,
@@ -430,7 +439,12 @@ describe("useAgentTools", () => {
     await t.call("2", "start_session", { agent: "Codex", brief: "Write the docs." });
     await waitFor(() => expect(t.answers()).toHaveLength(2));
     expect(t.cards()).toHaveLength(1);
-    expect(t.env.opens[1].request).toEqual({ agentId: "codex-acp", brief: "Write the docs.", hasOwnWorktree: false });
+    expect(t.env.opens[1].request).toEqual({
+      agentId: "codex-acp",
+      brief: "Write the docs.",
+      hasOwnWorktree: false,
+      isCancelled: expect.any(Function),
+    });
   });
 
   it("shows a delegate call and a start_session call on one card and runs both on Allow", async () => {
@@ -566,6 +580,30 @@ describe("useAgentTools", () => {
     await waitFor(() => expect(t.answers()).toHaveLength(4));
     expect(t.answers().map((answer) => answer.callId)).toEqual(["1", "2", "3", "4"]);
     expect(t.env.opens).toHaveLength(4);
+  });
+
+  it("marks an open whose call ended while it runs as cancelled", async () => {
+    const t = setup();
+    let finish: (value: OpenResult) => void = () => undefined;
+    let request: OpenRequest | undefined;
+    t.env.openResult = (asked) => {
+      request = asked;
+      return new Promise<OpenResult>((resolve) => {
+        finish = resolve;
+      }) as unknown as OpenResult;
+    };
+    await t.call("1", "start_session", { agent: "codex-acp", brief: "Port it.", worktree: true });
+    await t.choose(ALLOW_SESSION);
+    expect(request?.isCancelled?.()).toBe(false);
+    // Another call's end is not this one's.
+    await t.ended("other");
+    expect(request?.isCancelled?.()).toBe(false);
+
+    await t.ended("1");
+    expect(request?.isCancelled?.()).toBe(true);
+    await act(async () => {
+      finish({ ok: false, reason: "The request was withdrawn." });
+    });
   });
 
   it("withdraws a folder card when its call ended", async () => {

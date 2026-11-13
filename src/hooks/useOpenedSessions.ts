@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { NO_CHOICES } from '../lib/acp-draft';
 import {
   nextSessionHandle,
@@ -29,6 +30,8 @@ export interface OpenRequest {
   hasOwnWorktree: boolean;
   /** Another folder Zorvo knows; absent for the opener's own folder. */
   folderPath?: string;
+  /** True once the caller's request ended (stopped, timed out, cancelled): nothing may start for it. */
+  isCancelled?: () => boolean;
 }
 
 export type OpenResult =
@@ -43,6 +46,7 @@ export type OpenResult =
       detail?: string;
     };
 
+const WITHDRAWN_REASON = 'The request was withdrawn.';
 const NO_WORKTREE_REASON = 'A worktree could not be made there. Open the session without one, or in a repository.';
 
 /**
@@ -108,6 +112,19 @@ export function useOpenedSessions(deps: OpenedSessionsDeps): {
       } catch (error) {
         underWay.current.delete(token);
         return { ok: false, reason: NO_WORKTREE_REASON, isInternal: true, detail: String(error) };
+      }
+      // Git took a while: the caller may have been stopped or deleted meanwhile, and an
+      // agent must not start working for a request nobody waits for.
+      const isGone = !latest.current.sessions.some((session) => session.id === openerId);
+      if (isGone || request.isCancelled?.() === true) {
+        underWay.current.delete(token);
+        if (worktree !== null) {
+          // Nothing ran in it. The backend keeps the branch; a failure leaves a worktree to remove by hand.
+          void invoke('remove_session_worktree', { repoPath: worktree.repoPath, path: worktree.path }).catch(
+            () => undefined,
+          );
+        }
+        return { ok: false, reason: WITHDRAWN_REASON };
       }
     }
 

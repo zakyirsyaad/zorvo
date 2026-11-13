@@ -28,7 +28,9 @@ describe("Composer attachments", () => {
     });
     expect(prompt().value).toBe("");
     // A 96×64 thumbnail, with a round button to take it off.
-    expect((await screen.findByRole("img", { name: "shot.png" })).className).toContain("h-16 w-24");
+    const thumbnail = await screen.findByRole("img", { name: "shot.png" });
+    expect(thumbnail.className).toContain("h-16 w-24");
+    expect(thumbnail.parentElement?.className).toContain("rounded-lg border border-border bg-ground");
     expect(screen.getByRole("button", { name: "Remove shot.png" }).className).toContain("rounded-full");
 
     fireEvent.click(screen.getByRole("button", { name: "Remove notes.md" }));

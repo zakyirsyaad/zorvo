@@ -4,6 +4,7 @@ import { DRAFT_CHIP } from "./composer/chip-style";
 import { CompareModelStatus } from "./composer/CompareModelStatus";
 import type { CompareModelControl } from "../lib/compare-models";
 import { AgentLogo } from "./AgentLogo";
+import { AgentTile } from "./ui/AgentTile";
 import { Button } from "./ui/Button";
 import { IconButton } from "./ui/IconButton";
 import { OptionDropdown } from "./composer/OptionDropdown";
@@ -630,8 +631,8 @@ export function ComposerDock({
 
             {sessionAgent && !agent && !agents && (
               // A running session's agent, named first: a label, since a session cannot change its agent.
-              <span data-agent-chip="" className="inline-flex h-7 min-w-0 items-center gap-1.5 px-2 text-ui-sm text-fg-secondary">
-                <AgentLogo profileId={sessionAgent.profileId} name="" size={16} />
+              <span data-agent-chip="" className="inline-flex h-6.5 min-w-0 items-center gap-1.5 pl-0.5 pr-1.5 text-ui-sm text-fg-secondary">
+                <AgentTile profileId={sessionAgent.profileId} name="" size={16} />
                 <span className="truncate">{sessionAgent.name}</span>
               </span>
             )}
@@ -648,7 +649,7 @@ export function ComposerDock({
                   key={width}
                   data-skeleton-chip=""
                   aria-hidden="true"
-                  className={`h-7 ${width} rounded-md bg-surface-hover motion-safe:animate-pulse`}
+                  className={`h-6.5 ${width} rounded-md bg-chip motion-safe:animate-pulse`}
                 />
               ))}
 

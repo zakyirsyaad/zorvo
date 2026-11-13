@@ -12,7 +12,7 @@ export interface AttachmentChipsProps {
 
 const REMOVE_PLACEMENTS = {
   // An 18px circle inside the thumbnail's corner, as the canvas draws it.
-  inside: "absolute right-1 top-1 flex size-4.5 items-center justify-center rounded-full bg-surface-3 text-fg-secondary hover:text-fg focus-ring",
+  inside: "absolute right-1 top-1 flex size-4.5 items-center justify-center rounded-full border border-border bg-surface-3 text-fg-secondary hover:text-fg focus-ring",
   inline: "rounded-full bg-surface-3 text-fg-subtle hover:text-fg focus-ring",
 } as const;
 
@@ -46,7 +46,7 @@ function ImageAttachment({
           aria-label={`Open ${name}`}
           aria-haspopup="dialog"
           onClick={() => onOpen(path)}
-          className="block overflow-hidden rounded-md border border-border focus-ring"
+          className="block overflow-hidden rounded-lg border border-border bg-ground focus-ring"
         >
           <img src={preview.src} alt={name} className="h-16 w-24 object-cover" />
         </button>
@@ -59,7 +59,7 @@ function ImageAttachment({
     <li
       title={path}
       aria-busy={preview.status === "loading"}
-      className="flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-0.5 text-caption text-fg-secondary"
+      className="flex items-center gap-1 rounded-md bg-chip px-2 py-0.5 text-caption text-fg-secondary"
     >
       <ImageIcon size={11} className="text-fg-subtle" />
       <span className="max-w-48 truncate">{name}</span>
@@ -85,7 +85,7 @@ export function AttachmentChips({ paths, onRemove }: AttachmentChipsProps) {
             <li
               key={path}
               title={path}
-              className="flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-0.5 text-caption text-fg-secondary"
+              className="flex items-center gap-1 rounded-md bg-chip px-2 py-0.5 text-caption text-fg-secondary"
             >
               <FileText size={11} className="text-fg-subtle" />
               <span className="max-w-48 truncate">{name}</span>

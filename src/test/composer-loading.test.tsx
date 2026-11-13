@@ -23,7 +23,7 @@ describe("the composer while the agent's options load", () => {
     expect(chips).toHaveLength(3);
     for (const chip of chips) {
       expect(chip).toHaveAttribute("aria-hidden", "true");
-      expect(chip).toHaveClass("h-7", "rounded-md", "bg-surface-hover", "motion-safe:animate-pulse");
+      expect(chip).toHaveClass("h-6.5", "rounded-md", "bg-chip", "motion-safe:animate-pulse");
     }
     expect(chips.map((chip) => [...chip.classList].find((name) => /^w-\d+$/.test(name)))).toEqual(["w-18", "w-24", "w-14"]);
     const attach = screen.getByRole("button", { name: "Add attachment" });

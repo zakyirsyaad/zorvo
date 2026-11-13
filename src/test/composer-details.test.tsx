@@ -41,7 +41,7 @@ describe("an image attachment's remove button", () => {
     });
     await screen.findByRole("img", { name: "shot.png" });
     const remove = screen.getByRole("button", { name: "Remove shot.png" });
-    expect(remove).toHaveClass("absolute", "right-1", "top-1", "size-4.5", "rounded-full");
+    expect(remove).toHaveClass("absolute", "right-1", "top-1", "size-4.5", "rounded-full", "border", "border-border");
     expect(remove.parentElement?.tagName.toLowerCase()).toBe("li");
     expect(remove.parentElement).toHaveClass("relative");
   });

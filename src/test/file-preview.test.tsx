@@ -166,6 +166,19 @@ describe("FileViewer — a PDF", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("This PDF could not be shown: Invalid PDF structure.");
   });
 
+  it("opens a PDF that was fixed on disk after it failed", async () => {
+    openResult = () => Promise.reject(new Error("Invalid PDF structure."));
+    const { rerender, props } = await renderViewer();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Invalid PDF structure.");
+    openResult = () => Promise.resolve({ pageCount: 3, firstPageRatio: 1.4, renderPage, destroy });
+    previewResult = () => Promise.resolve(bytesOf(0x25, 0x50, 0x44, 0x46, 0x2d));
+
+    await act(async () => rerender(<FileViewer {...props} version={1} />));
+
+    expect(await screen.findByRole("region", { name: "Pages of run-sheet.pdf" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("says why when a page cannot be drawn", async () => {
     renderPage.mockImplementation(() => ({ done: Promise.reject(new Error("Out of memory.")), cancel: vi.fn() }));
 

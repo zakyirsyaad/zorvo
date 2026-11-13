@@ -142,6 +142,8 @@ function PdfPreview({ bytes, name, size }: { bytes: Uint8Array; name: string; si
   useEffect(() => {
     let isCancelled = false;
     let opened: PdfDocument | null = null;
+    // New bytes, new try: an error about the old ones must not outlive them.
+    setFailure(null);
     openPdf(bytes).then(
       (next) => {
         if (isCancelled) return next.destroy();

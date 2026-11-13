@@ -217,6 +217,75 @@ describe("FileViewer — a PDF", () => {
   });
 });
 
+describe("FileViewer — a refresh with a preview open", () => {
+  const pdfBytes = () => bytesOf(0x25, 0x50, 0x44, 0x46);
+
+  it("keeps the open PDF, and its page, while the same bytes are read again", async () => {
+    const { rerender, props } = await renderViewer();
+    await screen.findByRole("region", { name: "Pages of run-sheet.pdf" });
+    const opens = vi.fn(openResult);
+    openResult = opens;
+    const region = screen.getByRole("region", { name: "Pages of run-sheet.pdf" });
+    region.scrollTop = 500;
+
+    let release: (bytes: ArrayBuffer) => void = () => {};
+    previewResult = () => new Promise((resolve) => (release = resolve));
+    await act(async () => rerender(<FileViewer {...props} version={1} />));
+
+    // The read is in flight: the pages are still there, not "Loading…".
+    expect(screen.getByRole("region", { name: "Pages of run-sheet.pdf" })).toBe(region);
+    expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
+    await act(async () => release(pdfBytes()));
+
+    expect(screen.getByRole("region", { name: "Pages of run-sheet.pdf" })).toBe(region);
+    expect(region.scrollTop).toBe(500);
+    expect(opens).not.toHaveBeenCalled();
+    expect(destroy).not.toHaveBeenCalled();
+  });
+
+  it("opens the PDF again when the bytes changed", async () => {
+    const { rerender, props } = await renderViewer();
+    await screen.findByRole("region", { name: "Pages of run-sheet.pdf" });
+    const opens = vi.fn(openResult);
+    openResult = opens;
+    previewResult = () => Promise.resolve(bytesOf(0x25, 0x50, 0x44, 0x46, 0x2d));
+
+    await act(async () => rerender(<FileViewer {...props} version={1} />));
+
+    await waitFor(() => expect(opens).toHaveBeenCalledTimes(1));
+    expect(destroy).toHaveBeenCalled();
+  });
+
+  it("drops a late answer for the file that was open before a quick switch", async () => {
+    let releaseOld: (bytes: ArrayBuffer) => void = () => {};
+    previewResult = () => new Promise((resolve) => (releaseOld = resolve));
+    const { rerender, props } = await renderViewer({ relativePath: "old.png" });
+    fileResult = () => Promise.resolve({ kind: "preview", mime: "image/png", size: 10 });
+    previewResult = () => Promise.resolve(bytesOf(1, 2, 3));
+    await act(async () => rerender(<FileViewer {...props} relativePath="new.png" />));
+    await screen.findByRole("img", { name: "new.png" });
+    vi.mocked(URL.createObjectURL).mockClear();
+
+    await act(async () => releaseOld(bytesOf(9, 9, 9)));
+
+    expect(screen.getByRole("img", { name: "new.png" })).toBeInTheDocument();
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it("tries a picture that failed to draw again once its file is read with other bytes", async () => {
+    fileResult = () => Promise.resolve({ kind: "preview", mime: "image/png", size: 10 });
+    const { rerender, props } = await renderViewer({ relativePath: "shot.png" });
+    fireEvent.error(await screen.findByRole("img", { name: "shot.png" }));
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    previewResult = () => Promise.resolve(bytesOf(7, 7, 7));
+
+    await act(async () => rerender(<FileViewer {...props} version={1} />));
+
+    expect(await screen.findByRole("img", { name: "shot.png" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
 describe("FileViewer — other states", () => {
   it("says a PDF over the limit is too large to preview, with its size", async () => {
     fileResult = () => Promise.resolve({ kind: "previewTooLarge", mime: "application/pdf", size: 12 * 1024 * 1024, limit: 10 * 1024 * 1024 });

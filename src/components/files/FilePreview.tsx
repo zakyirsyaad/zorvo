@@ -38,21 +38,22 @@ function Notice({ children, isError = false }: { children: string; isError?: boo
 }
 
 /** A Blob URL for `bytes`, revoked when they change or the view goes away. */
-function useBlobUrl(bytes: Uint8Array, mime: string): string | null {
+function useBlobUrl(bytes: Uint8Array<ArrayBuffer>, mime: string): string | null {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
-    // Copied into a plain ArrayBuffer so the Blob never aliases a view the caller may reuse.
-    const next = URL.createObjectURL(new Blob([bytes.slice().buffer], { type: mime }));
+    const next = URL.createObjectURL(new Blob([bytes], { type: mime }));
     setUrl(next);
     return () => URL.revokeObjectURL(next);
   }, [bytes, mime]);
   return url;
 }
 
-function ImagePreview({ bytes, mime, name, size }: { bytes: Uint8Array; mime: PreviewMime; name: string; size: number }) {
+function ImagePreview({ bytes, mime, name, size }: { bytes: Uint8Array<ArrayBuffer>; mime: PreviewMime; name: string; size: number }) {
   const url = useBlobUrl(bytes, mime);
   const [dimensions, setDimensions] = useState<string | null>(null);
-  const [isBroken, setIsBroken] = useState(false);
+  // Per bytes: a file that is fixed and read again gets another try.
+  const [brokenBytes, setBrokenBytes] = useState<Uint8Array | null>(null);
+  const isBroken = brokenBytes === bytes;
   const facts = [PREVIEW_LABEL[mime], dimensions, formatSize(size), "Read only"].filter(Boolean).join(" · ");
   return (
     <>
@@ -66,7 +67,7 @@ function ImagePreview({ bytes, mime, name, size }: { bytes: Uint8Array; mime: Pr
               src={url}
               alt={name}
               onLoad={(event) => setDimensions(`${event.currentTarget.naturalWidth} × ${event.currentTarget.naturalHeight} px`)}
-              onError={() => setIsBroken(true)}
+              onError={() => setBrokenBytes(bytes)}
               // Fitted to the pane, never enlarged past its own size.
               className="max-h-full max-w-full object-contain"
             />

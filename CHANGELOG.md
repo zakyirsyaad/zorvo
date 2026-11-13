@@ -4,6 +4,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-14
+
 ### Added
 
 - **Agents can hand work to each other.** Ask an agent in plain words ("then have Qwen Code review it") and it can give another agent the task itself. The first time in a session Zorvo shows a card with who asks, which agent the task is for, the folder and the task; **Allow for this session** lets that session's agent give further tasks without asking again. The other agent's answer comes back as a report. Works with agents that take tools from Zorvo (Qwen Code, Codex, Antigravity, Claude Code) and with Pi, which runs a Zorvo command instead. Turn it off in **Settings → Agents**.
@@ -334,7 +336,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.1...v0.9.2

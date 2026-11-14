@@ -1,11 +1,11 @@
 import { useId } from "react";
 import { ShieldCheck } from "lucide-react";
-import { DRAFT_CHIP } from "../composer/chip-style";
+import { COMPOSER_CHIP } from "../composer/chip-style";
 import type { PrivateChipControl } from "../../hooks/usePrivateDraft";
 import { Button } from "../ui/Button";
 
 /** An on chip is filled and edged stronger, as an open draft chip is; a disabled one reads muted. */
-const PRIVATE_CHIP = `${DRAFT_CHIP} aria-pressed:border-border-strong aria-pressed:bg-surface-hover aria-pressed:text-fg aria-disabled:cursor-not-allowed aria-disabled:bg-transparent aria-disabled:text-fg-muted aria-disabled:hover:bg-transparent`;
+const PRIVATE_CHIP = `${COMPOSER_CHIP} aria-pressed:border-border-strong aria-pressed:bg-surface-hover aria-pressed:text-fg aria-disabled:cursor-not-allowed aria-disabled:bg-transparent aria-disabled:text-fg-muted aria-disabled:hover:bg-transparent`;
 
 /**
  * The draft's Private chip: a toggle that makes the next session a Zorvo Private one. A disabled chip

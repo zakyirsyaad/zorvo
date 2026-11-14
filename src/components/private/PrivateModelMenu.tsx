@@ -1,6 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import { Popover, PopoverHeader, PopoverOption } from "../ui/Popover";
-import { DRAFT_CHIP } from "../composer/chip-style";
+import { COMPOSER_CHIP } from "../composer/chip-style";
 import { modelLabel, perTurnLabel, type ModelPrice } from "../../lib/private-credits";
 import type { PrivateModelChoice } from "../../hooks/usePrivateDraft";
 
@@ -38,7 +38,7 @@ export function PrivateModelMenu({ models, selected, onSelect, isOpen, onToggle,
           aria-haspopup="listbox"
           aria-expanded={isOpen}
           onClick={onToggle}
-          className={DRAFT_CHIP}
+          className={COMPOSER_CHIP}
         >
           <span className="max-w-[160px] truncate">{currentLabel}</span>
           <ChevronDown size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />

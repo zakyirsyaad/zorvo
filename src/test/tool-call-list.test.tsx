@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { ToolCallList } from "../components/chat/ToolCallList";
+import { diffDetail } from "../lib/diff-rows";
 import type { ToolExecution } from "../types";
 
 const editTool: ToolExecution = {
@@ -8,7 +9,7 @@ const editTool: ToolExecution = {
   name: "Edit src/app.ts",
   status: "completed",
   kind: "edit",
-  details: [{ kind: "diff", path: "/repo/src/app.ts", oldText: "keep\nconst a = 1;\n", newText: "keep\nconst a = 2;\n" }],
+  details: [diffDetail("/repo/src/app.ts", "keep\nconst a = 1;\n", "keep\nconst a = 2;\n")],
 };
 
 describe("ToolCallList", () => {
@@ -16,6 +17,11 @@ describe("ToolCallList", () => {
     render(<ToolCallList tools={[editTool]} defaultOpenDiffs isTurnOver />);
 
     const diff = screen.getByRole("region", { name: "Changes to /repo/src/app.ts" });
+    // The header's path is cut at its start, so the file's name stays in sight however long the path.
+    const path = within(diff).getByText("/repo/src/app.ts").closest("span")!;
+    expect(path.className).toContain("[direction:rtl]");
+    expect(path.className).toContain("truncate");
+    expect(path.getAttribute("title")).toBe("/repo/src/app.ts");
     expect(within(diff).getByText("const a = 1;").closest("[data-line]")?.getAttribute("data-line")).toBe("removed");
     expect(within(diff).getByText("const a = 2;").closest("[data-line]")?.getAttribute("data-line")).toBe("added");
     expect(within(diff).getByText("keep").closest("[data-line]")?.getAttribute("data-line")).toBe("context");
@@ -25,7 +31,7 @@ describe("ToolCallList", () => {
   it("labels a new file and counts its lines", () => {
     render(
       <ToolCallList
-        tools={[{ ...editTool, details: [{ kind: "diff", path: "/repo/new.ts", oldText: null, newText: "a\nb\n" }] }]}
+        tools={[{ ...editTool, details: [diffDetail("/repo/new.ts", null, "a\nb\n")] }]}
         defaultOpenDiffs
         isTurnOver
       />

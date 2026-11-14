@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { CompareRunPanel, type CompareRunPanelProps } from "../components/compare/CompareRunPanel";
 import type { RowFacts } from "../lib/compare-run";
 import type { Session } from "../types";
@@ -17,7 +17,7 @@ function session(n: number): Session {
   return {
     id: `s-${n}`,
     name: "Fix the login",
-    profileId: ["claude-acp", "qwen-code"][n - 1],
+    profileId: ["claude-acp", "qwen-code", "codex-acp", "gemini"][n - 1],
     cwd: `/wt/${n}`,
     status: "running",
     createdAt: NOW - 30 * MIN,
@@ -35,6 +35,8 @@ function facts(n: number, overrides: Partial<RowFacts> = {}): RowFacts {
     hasStarted: true,
     pendingCard: null,
     hasOpenForm: false,
+    lastMessage: null,
+    openFormPrompt: null,
     needsSignIn: false,
     failed: false,
     turnStartedAt: NOW - 20 * MIN,
@@ -79,17 +81,37 @@ afterEach(() => {
 });
 
 describe("the compare run as drawn", () => {
-  it("a card is one row with a logo tile, the status and its buttons", async () => {
+  it("a card is a column: a 28px tile with the name and status, the numbers, then Open and Pick at equal widths", async () => {
     answerDiffs({ "/wt/1": [stat("a.ts", 54, 9)] });
     await renderPanel([facts(1)]);
 
     const card = cardOf("Claude Code");
-    expect(card).toHaveClass("bg-surface-2", "py-3.5", "px-4");
-    expect(card.querySelector(".size-7.bg-surface-hover")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Open Claude Code" }).className).toContain("border-transparent");
-    await waitFor(() => expect(screen.getByRole("button", { name: "Pick Claude Code" })).toBeEnabled());
-    expect(screen.getByRole("button", { name: "Pick Claude Code" }).className).toContain("border-border-strong");
+    expect(card).toHaveClass("flex", "flex-col", "gap-3.5", "rounded-xl", "border-border", "bg-surface-2", "p-4");
+    expect(card.querySelector(".size-7.bg-chip")).not.toBeNull();
+    expect(within(card).getByText("Claude Code")).toHaveClass("text-body", "font-semibold", "text-fg");
+    const open = screen.getByRole("button", { name: "Open Claude Code" });
+    const pick = screen.getByRole("button", { name: "Pick Claude Code" });
+    await waitFor(() => expect(pick).toBeEnabled());
+    // Both outline, side by side at the column's bottom.
+    for (const button of [open, pick]) expect(button).toHaveClass("flex-1", "border-border-strong", "h-7");
+    expect(open.parentElement).toBe(pick.parentElement);
+    expect(open.parentElement).toHaveClass("mt-auto", "flex", "gap-2");
     expect(within(card).getByRole("button", { name: "Review Claude Code's changes" })).toHaveTextContent("1 file+54−9");
+    // The file rows keep their place even when there are fewer than three, so columns stay level.
+    expect(card.querySelector("[data-column-files]")).toHaveClass("min-h-[94px]");
+  });
+
+  it("lays the columns out as a grid, and a run of four two by two", async () => {
+    answerDiffs({});
+    const grid = () => document.querySelector<HTMLElement>("[data-columns]")!;
+    await renderPanel([facts(1), facts(2), facts(3)]);
+    expect(grid()).toHaveClass("grid", "items-stretch", "gap-3", "grid-cols-[repeat(auto-fit,minmax(min(280px,100%),1fr))]");
+    expect(grid().closest(".max-w-compare")).not.toBeNull();
+    cleanup();
+
+    await renderPanel([facts(1), facts(2), facts(3), facts(4)]);
+    expect(grid()).toHaveAttribute("data-columns", "4");
+    expect(grid()).toHaveClass("grid-cols-[repeat(auto-fit,minmax(min(360px,100%),1fr))]");
   });
 
   it("a finished unread card shows the unread dot", async () => {
@@ -136,7 +158,7 @@ describe("the compare run as drawn", () => {
     expect(cardOf("Qwen Code")).not.toHaveClass("border-border-strong");
   });
 
-  it("the confirm bar floats as one sentence", async () => {
+  it("the confirm bar floats, its question over the line about who is stopped", async () => {
     answerDiffs({ "/wt/1": [stat("a.ts", 1, 0)] });
     await renderPanel([facts(1), facts(2, { isBusy: true })]);
     const pick = screen.getByRole("button", { name: "Pick Claude Code" });
@@ -147,7 +169,12 @@ describe("the compare run as drawn", () => {
     const bar = screen.getByRole("group", { name: "Confirm pick" });
     expect(bar).toHaveClass("absolute", "bg-surface-3");
     expect(bar.closest(".overflow-y-auto")).toBeNull();
-    expect(within(bar).getByText("Keep Claude Code's work and archive the others? Qwen Code is still working and will be stopped.")).toBeInTheDocument();
+    // The question at 600 over the line about who is stopped, read as two sentences.
+    expect(bar).toHaveClass("bottom-5", "max-w-[640px]", "py-3", "pr-3", "pl-4");
+    expect(bar.querySelector("[data-confirm-question]")).toHaveClass("font-semibold", "text-fg");
+    expect(bar.querySelector("[data-confirm-question]")).toHaveTextContent("Keep Claude Code's work and archive the others?");
+    expect(bar.querySelector("[data-confirm-stops]")).toHaveClass("text-ui-sm", "text-fg-muted");
+    expect(bar.querySelector("p")?.textContent).toBe("Keep Claude Code's work and archive the others? Qwen Code is still working and will be stopped.");
   });
 
   it("the card keeps its buttons when the name is long", async () => {

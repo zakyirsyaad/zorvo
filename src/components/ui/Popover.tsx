@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEventHandler, type ReactNode, type Ref } from "react";
 import { Check, Search } from "lucide-react";
 import { useDismiss } from "../../hooks/useDismiss";
-import { clippingBounds, fitPanel, type PanelFit } from "../../lib/popover-fit";
+import { clippingBounds, fitAlign, fitPanel, type PanelFit, type PopoverAlign } from "../../lib/popover-fit";
 
 type PopoverRole = "menu" | "listbox" | "dialog";
 
@@ -30,7 +30,7 @@ export interface PopoverProps {
 }
 
 /** The panel's look without its position, for a list that keeps focus in a text field (the `/` and `@` menus). */
-export const POPOVER_PANEL_STYLE = "rounded-lg border border-border bg-surface-3 p-1.5 shadow-popover";
+export const POPOVER_PANEL_STYLE = "rounded-panel border border-border bg-surface-3 p-1 shadow-popover";
 const PANEL = `absolute z-50 ${POPOVER_PANEL_STYLE}`;
 const SIDES = { bottom: "top-full mt-1", top: "bottom-full mb-1" } as const;
 const ALIGNS = { start: "left-0", end: "right-0" } as const;
@@ -57,6 +57,8 @@ export function Popover({
   const panelRef = useRef<HTMLDivElement>(null);
   const hasFocusInside = useRef(false);
   const [fit, setFit] = useState<PanelFit | null>(null);
+  // The edge the panel shares with its trigger when the asked-for one would be cut off.
+  const [fittedAlign, setFittedAlign] = useState<PopoverAlign | null>(null);
   useDismiss(wrapperRef, isOpen, onClose);
 
   // Before paint, so the panel never shows where it is cut off: the asked-for side when it fits there, else the
@@ -68,7 +70,12 @@ export function Popover({
     const measure = () => {
       const wrapper = wrapperRef.current;
       const panel = panelRef.current;
-      if (wrapper && panel) setFit(fitPanel(wrapper.getBoundingClientRect(), clippingBounds(wrapper), panel.scrollHeight, side));
+      if (!wrapper || !panel) return;
+      const trigger = wrapper.getBoundingClientRect();
+      const bounds = clippingBounds(wrapper);
+      setFit(fitPanel(trigger, bounds, panel.scrollHeight, side));
+      // Sideways too: a dialog that scrolls clips both ways, and a chip near its edge opens a menu past it.
+      setFittedAlign(fitAlign(trigger, bounds, panel.offsetWidth, align));
     };
     const measureOnScroll = (event: Event) => {
       const wrapper = wrapperRef.current;
@@ -81,7 +88,7 @@ export function Popover({
       document.removeEventListener("scroll", measureOnScroll, true);
       window.removeEventListener("resize", measure);
     };
-  }, [isOpen, panelClassName, side]);
+  }, [isOpen, panelClassName, side, align]);
 
   useEffect(() => {
     if (isOpen || !hasFocusInside.current) return;
@@ -100,7 +107,7 @@ export function Popover({
 
   const shownSide = fit?.side ?? side;
   const maxHeight = panelClassName ? undefined : fit?.maxHeight;
-  const placement = panelClassName ?? `${SIDES[shownSide]} ${ALIGNS[align]}`;
+  const placement = panelClassName ?? `${SIDES[shownSide]} ${ALIGNS[fittedAlign ?? align]}`;
   // Its scrolling stays its own: reaching its end does not go on to scroll the column around it.
   const capped = maxHeight === undefined ? undefined : "overflow-y-auto overscroll-contain";
   const panelClasses = [PANEL, placement, capped, className].filter(Boolean).join(" ");
@@ -169,10 +176,10 @@ export interface PopoverSearchProps {
   onKeyDown?: KeyboardEventHandler<HTMLInputElement>;
 }
 
-/** The 30px search field at the top of a long menu, with its icon, as the canvas draws the branch and model menus. */
+/** The 28px search field at the top of a long menu, with its icon, as the canvas draws the branch and model menus. */
 export function PopoverSearch({ value, onChange, placeholder, type = "text", autoFocus, inputRef, onKeyDown }: PopoverSearchProps) {
   return (
-    <label className="focus-ring-within mb-1 flex h-7.5 items-center gap-2 rounded border border-border bg-surface-2 px-2 text-fg-subtle">
+    <label className="focus-ring-within mb-1 flex h-7 items-center gap-2 rounded-md border border-border bg-surface-2 px-2 text-fg-subtle">
       <Search size={12} aria-hidden="true" className="shrink-0" />
       <input
         ref={inputRef}
@@ -212,9 +219,13 @@ export function PopoverList({ label, children }: { label: string; children: Reac
 
 export interface PopoverOptionProps {
   selected?: boolean;
+  /** Marked without being picked: the row Return would pick in a search. */
+  highlighted?: boolean;
   onSelect: () => void;
   /** A line under the label that says what the option does. */
   description?: ReactNode;
+  /** The id of that line, so the row can name it as its `aria-describedby` (a disabled row's reason). */
+  descriptionId?: string;
   /** In a menu: one of a set of choices, checked when `selected` (a radio item, not a command). */
   isRadio?: boolean;
   /** Shown at the right edge, before the check (a hint such as a count). */
@@ -226,16 +237,18 @@ export interface PopoverOptionProps {
 }
 
 const OPTION =
-  "focus-ring flex min-h-7.5 w-full gap-2 rounded px-2 text-left text-ui text-fg transition-colors enabled:hover:bg-surface-hover disabled:text-fg-subtle";
-// A row with a line under its label tops its check and grows; a one-line row is centred in 30px.
-const OPTION_TWO_LINES = "items-start py-1.75";
-const OPTION_ONE_LINE = "items-center py-1.5";
+  "focus-ring flex min-h-7 w-full gap-2 rounded-md px-2 text-left text-ui text-fg transition-colors enabled:hover:bg-surface-hover disabled:text-fg-subtle";
+// A row with a line under its label tops its check and grows; a one-line row is centred in 28px.
+const OPTION_TWO_LINES = "items-start py-[5px]";
+const OPTION_ONE_LINE = "items-center py-1";
 
 /** One row of a popover: an option in a listbox, a menu item in a menu. */
 export function PopoverOption({
   selected,
+  highlighted = false,
   onSelect,
   description,
+  descriptionId,
   isRadio = false,
   trailing,
   disabled,
@@ -248,15 +261,25 @@ export function PopoverOption({
   const isSelected = selected ?? false;
   // A row you can check keeps its check's place on the left; a command (Rename, Delete) has none.
   const isCheckable = selected !== undefined || role === "option" || role === "menuitemradio";
-  const classes = [OPTION, description ? OPTION_TWO_LINES : OPTION_ONE_LINE, isSelected && "bg-surface-hover"];
+  const classes = [
+    OPTION,
+    description ? OPTION_TWO_LINES : OPTION_ONE_LINE,
+    (isSelected || highlighted) && "bg-surface-hover",
+  ];
+  // In a list you pick from, only the picked or marked row's name is fg; a command's name always is.
+  const isPickList = selected !== undefined;
+  const pickedTone = isSelected || highlighted ? "text-fg" : "text-fg-secondary";
+  const nameTone = isPickList ? pickedTone : "";
   return (
     <button
       type="button"
       role={role}
       aria-selected={role === "option" ? isSelected : undefined}
       aria-checked={role === "menuitemradio" ? isSelected : undefined}
+      aria-describedby={descriptionId}
       disabled={disabled}
       title={title}
+      data-highlighted={highlighted ? "" : undefined}
       onClick={onSelect}
       className={classes.filter(Boolean).join(" ")}
     >
@@ -266,8 +289,12 @@ export function PopoverOption({
         </span>
       )}
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate">{children}</span>
-        {description && <span className="text-caption leading-[15px] text-fg-subtle">{description}</span>}
+        <span data-option-name="" className={`truncate ${nameTone}`}>{children}</span>
+        {description && (
+          <span id={descriptionId} className="text-caption leading-[15px] text-fg-subtle">
+            {description}
+          </span>
+        )}
       </span>
       {trailing && <span className="shrink-0 text-caption text-fg-muted">{trailing}</span>}
     </button>

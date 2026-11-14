@@ -5,6 +5,7 @@ import { useLatest } from './useLatest';
 import type { PermissionRequestPayload } from '../lib/acp-events';
 import { toElicitationCard } from '../lib/acp-elicitation';
 import { toListedSessions, type ListedSessions } from '../lib/session-list';
+import { unavailableChoiceReason } from '../lib/qwen-workflow-mode';
 import type { ContextUsage, ElicitationAnswer, ElicitationCard, SlashCommand } from '../types';
 
 /** The one event channel the backend emits ACP traffic on. */
@@ -41,7 +42,8 @@ export interface AcpConfigOption {
   /** What the option does, when the agent says so. */
   description?: string;
   currentValue: string;
-  options: { value: string; name: string; description?: string }[];
+  /** `unavailable` says why the agent cannot take that choice now (Qwen Code's Workflow mode while off in its settings). */
+  options: { value: string; name: string; description?: string; unavailable?: string }[];
 }
 
 /** Live facts about one ACP session, as reported by its agent. */
@@ -60,6 +62,8 @@ export interface AcpSessionInfo {
   canReopen: boolean;
   /** How the backend reopened an earlier session; absent for a start or a fork. */
   reopenedWith?: 'resume' | 'load';
+  /** How the session reaches Zorvo's tools; absent when it has none. */
+  toolsPath?: 'mcp' | 'command';
   isBusy: boolean;
 }
 
@@ -136,11 +140,15 @@ export function toConfigOptions(raw: unknown): AcpConfigOption[] {
     const choices = option.options
       .filter(isObject)
       .filter((c) => isString(c.value) && isString(c.name))
-      .map((c) => ({
-        value: c.value as string,
-        name: c.name as string,
-        description: isString(c.description) && c.description ? c.description : undefined,
-      }));
+      .map((c) => {
+        const unavailable = unavailableChoiceReason(option, c.value as string);
+        return {
+          value: c.value as string,
+          name: c.name as string,
+          description: isString(c.description) && c.description ? c.description : undefined,
+          ...(unavailable ? { unavailable } : {}),
+        };
+      });
     return [
       {
         id: option.id,
@@ -176,6 +184,7 @@ function toInfo(raw: unknown): AcpSessionInfo {
   const sessionCaps = isObject(capabilities.sessionCapabilities) ? capabilities.sessionCapabilities : {};
   const reopenedWith =
     started.reopenedWith === 'resume' || started.reopenedWith === 'load' ? started.reopenedWith : undefined;
+  const toolsPath = started.toolsPath === 'mcp' || started.toolsPath === 'command' ? started.toolsPath : undefined;
   return {
     acpSessionId: isString(started.acpSessionId) ? started.acpSessionId : '',
     modes: toModes(started.modes),
@@ -185,6 +194,7 @@ function toInfo(raw: unknown): AcpSessionInfo {
     canFork: isObject(sessionCaps.fork),
     canReopen: capabilities.loadSession === true || isObject(sessionCaps.resume),
     ...(reopenedWith ? { reopenedWith } : {}),
+    ...(toolsPath ? { toolsPath } : {}),
     isBusy: false,
   };
 }
@@ -314,6 +324,7 @@ export function useAcpSessions(handlers: AcpHandlers) {
       sessionId: string,
       cwd: string,
       profileId: string,
+      agentTools: boolean,
       privateModelId?: string,
       privateOwnKey = false,
       privateSessionCap?: number,
@@ -324,6 +335,7 @@ export function useAcpSessions(handlers: AcpHandlers) {
           sessionId,
           cwd,
           profileId,
+          agentTools,
           ...privateArgs(privateModelId, privateOwnKey, privateSessionCap),
         }),
       ),
@@ -337,6 +349,7 @@ export function useAcpSessions(handlers: AcpHandlers) {
       cwd: string,
       profileId: string,
       acpSessionId: string,
+      agentTools: boolean,
       privateModelId?: string,
       privateOwnKey = false,
       privateSessionCap?: number,
@@ -348,6 +361,7 @@ export function useAcpSessions(handlers: AcpHandlers) {
           cwd,
           profileId,
           acpSessionId,
+          agentTools,
           ...privateArgs(privateModelId, privateOwnKey, privateSessionCap),
         }),
       ),
@@ -361,8 +375,8 @@ export function useAcpSessions(handlers: AcpHandlers) {
   );
 
   const importSession = useCallback(
-    async (sessionId: string, cwd: string, profileId: string, acpSessionId: string) =>
-      remember(sessionId, await invoke('acp_import_session', { sessionId, cwd, profileId, acpSessionId })),
+    async (sessionId: string, cwd: string, profileId: string, acpSessionId: string, agentTools: boolean) =>
+      remember(sessionId, await invoke('acp_import_session', { sessionId, cwd, profileId, acpSessionId, agentTools })),
     [remember],
   );
 
@@ -374,8 +388,8 @@ export function useAcpSessions(handlers: AcpHandlers) {
   );
 
   const fork = useCallback(
-    async (sourceSessionId: string, sessionId: string, cwd: string) =>
-      remember(sessionId, await invoke('acp_fork_session', { sourceSessionId, sessionId, cwd })),
+    async (sourceSessionId: string, sessionId: string, cwd: string, agentTools: boolean) =>
+      remember(sessionId, await invoke('acp_fork_session', { sourceSessionId, sessionId, cwd, agentTools })),
     [remember],
   );
 

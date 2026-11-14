@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zorvo · Private mode flow</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.z{--ground:#0a0a0b;--sheet:#111113;--s2:#18181b;--s3:#1f1f23;--hover:#27272a;--chip:rgba(255,255,255,.06);--line:#27272a;--strong:#71717a;--fg:#fafafa;--fg2:#d4d4d8;--muted:#a1a1aa;--subtle:#8b8b94;--primary:#fafafa;--onp:#09090b;--run:#34d399;--att:#fbbf24;--unread:#38bdf8;--danger:#f87171;--atts:#1f1a0d;--attb:#6b5416;--add:rgba(52,211,153,.12);--rem:rgba(248,113,113,.12);--pop:0 16px 40px -8px rgba(0,0,0,.6);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.z.light{--ground:#f4f4f5;--sheet:#fafafa;--s2:#ffffff;--s3:#ffffff;--hover:#e4e4e7;--chip:rgba(9,9,11,.05);--line:#e4e4e7;--strong:#808088;--fg:#09090b;--fg2:#27272a;--muted:#52525b;--subtle:#67676f;--primary:#09090b;--onp:#fafafa;--run:#047353;--att:#a34b08;--unread:#0369a1;--danger:#b91c1c;--atts:#fffbeb;--attb:#e9c46a;--add:rgba(4,120,87,.08);--rem:rgba(185,28,28,.08);--pop:0 12px 32px -8px rgba(9,9,11,.18)}
+.z button{font:inherit;cursor:pointer;margin:0}
+.z a{text-decoration:none;color:inherit}
+.mono{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.ico{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.ib{width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.tile{width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;background:var(--chip);box-shadow:inset 0 0 0 1px var(--line);color:var(--fg2)}
+.tile.sm{width:16px;height:16px;border-radius:4px;font-size:9px}
+.av{position:relative;display:flex;flex:none;margin-top:1px}
+.badge{position:absolute;right:-3px;bottom:-3px;width:8px;height:8px;border-radius:9999px;box-shadow:0 0 0 2px var(--ground)}
+.row{display:flex;align-items:flex-start;gap:10px;padding:7px 8px;border-radius:8px}
+.row.on{background:var(--hover)}
+.row.on .badge{box-shadow:0 0 0 2px var(--hover)}
+.rt{flex:1;min-width:0;display:flex;flex-direction:column}
+.t1{color:var(--fg2);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.t2{color:var(--subtle);font-size:11px;line-height:16px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tm{flex:none;color:var(--subtle);font-size:11px;line-height:18px}
+.fold{display:flex;align-items:center;gap:6px;padding:12px 8px 4px;color:var(--muted);font-size:11px;font-weight:500}
+.seg{height:26px;display:flex;align-items:center;gap:6px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px}
+.seg.on{background:var(--hover);color:var(--fg)}
+.chip{height:26px;display:flex;align-items:center;gap:6px;padding:0 8px;border:0;border-radius:6px;background:var(--chip);color:var(--fg2);font-size:12px}
+.step{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px 0 14px;border-radius:6px;font-size:12px;color:var(--fg2)}
+.step .verb{width:44px;flex:none;color:var(--muted)}
+.frow{display:flex;align-items:center;gap:8px;padding:8px 10px}
+.z b{font-weight:600}
+.nd{text-align:left;padding:8px 12px;display:flex;align-items:center;background:var(--s2);border:1px solid var(--line);border-radius:12px}
+.nd.sm{padding:4px 12px;border-radius:10px}
+.nd.run{border-color:var(--run)}
+.nd.att{border-color:var(--att)}
+.nd small{color:var(--muted);font-size:12px}
+.lane{font-size:12px;font-weight:500;color:var(--muted)}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="position: relative; width: 2080px; height: 1180px; overflow: hidden; background: var(--ground); color: var(--fg); font-size: 13px; line-height: 18px;">
+
+<div style="position: absolute; left: 64px; top: 620px; width: 1952px; height: 120px; background: var(--sheet); border-top: 1px solid var(--line);"></div>
+<div style="position: absolute; left: 64px; top: 740px; width: 1952px; height: 120px; background: var(--ground); border-top: 1px solid var(--line);"></div>
+<div style="position: absolute; left: 64px; top: 860px; width: 1952px; height: 120px; background: var(--sheet); border-top: 1px solid var(--line);"></div>
+<div style="position: absolute; left: 64px; top: 980px; width: 1952px; height: 120px; background: var(--ground); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);"></div>
+
+<svg width="47" height="8" viewBox="0 0 47 8" preserveAspectRatio="none" style="position: absolute; left: 240px; top: 208px; width: 47px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-1" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 44 4" marker-end="url(#dc-arrow-head-filled-1)"></path></svg>
+<svg width="47" height="8" viewBox="0 0 47 8" preserveAspectRatio="none" style="position: absolute; left: 464px; top: 208px; width: 47px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-2" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 44 4" marker-end="url(#dc-arrow-head-filled-2)"></path></svg>
+<svg width="47" height="8" viewBox="0 0 47 8" preserveAspectRatio="none" style="position: absolute; left: 688px; top: 208px; width: 47px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-3" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 44 4" marker-end="url(#dc-arrow-head-filled-3)"></path></svg>
+<svg width="47" height="8" viewBox="0 0 47 8" preserveAspectRatio="none" style="position: absolute; left: 912px; top: 208px; width: 47px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-4" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 44 4" marker-end="url(#dc-arrow-head-filled-4)"></path></svg>
+<svg width="47" height="8" viewBox="0 0 47 8" preserveAspectRatio="none" style="position: absolute; left: 1136px; top: 208px; width: 47px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-5" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 44 4" marker-end="url(#dc-arrow-head-filled-5)"></path></svg>
+<svg width="47" height="8" viewBox="0 0 47 8" preserveAspectRatio="none" style="position: absolute; left: 1360px; top: 208px; width: 47px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-6" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 44 4" marker-end="url(#dc-arrow-head-filled-6)"></path></svg>
+
+<svg width="8" height="48" viewBox="0 0 8 48" preserveAspectRatio="none" style="position: absolute; left: 1492px; top: 248px; width: 8px; height: 48px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 6 6"><path d="M 4 0 L 4 48"></path></svg>
+<svg width="1120" height="8" viewBox="0 0 1120 8" preserveAspectRatio="none" style="position: absolute; left: 376px; top: 292px; width: 1120px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 6 6"><path d="M 0 4 L 1120 4"></path></svg>
+<svg width="8" height="47" viewBox="0 0 8 47" preserveAspectRatio="none" style="position: absolute; left: 372px; top: 249px; width: 8px; height: 47px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-7" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 4 47 L 4 3" marker-end="url(#dc-arrow-head-filled-7)"></path></svg>
+
+<svg width="47" height="8" viewBox="0 0 47 8" preserveAspectRatio="none" style="position: absolute; left: 240px; top: 424px; width: 47px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-8" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 44 4" marker-end="url(#dc-arrow-head-filled-8)"></path></svg>
+<svg width="47" height="8" viewBox="0 0 47 8" preserveAspectRatio="none" style="position: absolute; left: 464px; top: 424px; width: 47px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-9" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 44 4" marker-end="url(#dc-arrow-head-filled-9)"></path></svg>
+<svg width="47" height="8" viewBox="0 0 47 8" preserveAspectRatio="none" style="position: absolute; left: 688px; top: 424px; width: 47px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-10" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 44 4" marker-end="url(#dc-arrow-head-filled-10)"></path></svg>
+
+<svg width="24" height="8" viewBox="0 0 24 8" preserveAspectRatio="none" style="position: absolute; left: 1216px; top: 424px; width: 24px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><path d="M 0 4 L 24 4"></path></svg>
+<svg width="8" height="120" viewBox="0 0 8 120" preserveAspectRatio="none" style="position: absolute; left: 1236px; top: 376px; width: 8px; height: 120px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><path d="M 4 0 L 4 120"></path></svg>
+<svg width="23" height="8" viewBox="0 0 23 8" preserveAspectRatio="none" style="position: absolute; left: 1240px; top: 372px; width: 23px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-11" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 20 4" marker-end="url(#dc-arrow-head-filled-11)"></path></svg>
+<svg width="23" height="8" viewBox="0 0 23 8" preserveAspectRatio="none" style="position: absolute; left: 1240px; top: 432px; width: 23px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-12" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 20 4" marker-end="url(#dc-arrow-head-filled-12)"></path></svg>
+<svg width="23" height="8" viewBox="0 0 23 8" preserveAspectRatio="none" style="position: absolute; left: 1240px; top: 492px; width: 23px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-13" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 20 4" marker-end="url(#dc-arrow-head-filled-13)"></path></svg>
+
+<svg width="32" height="8" viewBox="0 0 32 8" preserveAspectRatio="none" style="position: absolute; left: 384px; top: 676px; width: 32px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><path d="M 0 4 L 32 4"></path></svg>
+<svg width="8" height="120" viewBox="0 0 8 120" preserveAspectRatio="none" style="position: absolute; left: 412px; top: 680px; width: 8px; height: 120px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><path d="M 4 0 L 4 120"></path></svg>
+<svg width="31" height="8" viewBox="0 0 31 8" preserveAspectRatio="none" style="position: absolute; left: 416px; top: 796px; width: 31px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-14" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 28 4" marker-end="url(#dc-arrow-head-filled-14)"></path></svg>
+
+<svg width="32" height="8" viewBox="0 0 32 8" preserveAspectRatio="none" style="position: absolute; left: 608px; top: 796px; width: 32px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><path d="M 0 4 L 32 4"></path></svg>
+<svg width="8" height="120" viewBox="0 0 8 120" preserveAspectRatio="none" style="position: absolute; left: 636px; top: 800px; width: 8px; height: 120px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><path d="M 4 0 L 4 120"></path></svg>
+<svg width="31" height="8" viewBox="0 0 31 8" preserveAspectRatio="none" style="position: absolute; left: 640px; top: 916px; width: 31px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-15" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 28 4" marker-end="url(#dc-arrow-head-filled-15)"></path></svg>
+
+<svg width="32" height="8" viewBox="0 0 32 8" preserveAspectRatio="none" style="position: absolute; left: 832px; top: 916px; width: 32px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><path d="M 0 4 L 32 4"></path></svg>
+<svg width="8" height="120" viewBox="0 0 8 120" preserveAspectRatio="none" style="position: absolute; left: 860px; top: 800px; width: 8px; height: 120px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><path d="M 4 0 L 4 120"></path></svg>
+<svg width="31" height="8" viewBox="0 0 31 8" preserveAspectRatio="none" style="position: absolute; left: 864px; top: 796px; width: 31px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-16" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 28 4" marker-end="url(#dc-arrow-head-filled-16)"></path></svg>
+
+<svg width="32" height="8" viewBox="0 0 32 8" preserveAspectRatio="none" style="position: absolute; left: 1056px; top: 796px; width: 32px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><path d="M 0 4 L 32 4"></path></svg>
+<svg width="8" height="240" viewBox="0 0 8 240" preserveAspectRatio="none" style="position: absolute; left: 1084px; top: 800px; width: 8px; height: 240px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><path d="M 4 0 L 4 240"></path></svg>
+<svg width="31" height="8" viewBox="0 0 31 8" preserveAspectRatio="none" style="position: absolute; left: 1088px; top: 1036px; width: 31px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-17" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 28 4" marker-end="url(#dc-arrow-head-filled-17)"></path></svg>
+
+<svg width="32" height="8" viewBox="0 0 32 8" preserveAspectRatio="none" style="position: absolute; left: 1280px; top: 1036px; width: 32px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><path d="M 0 4 L 32 4"></path></svg>
+<svg width="8" height="360" viewBox="0 0 8 360" preserveAspectRatio="none" style="position: absolute; left: 1308px; top: 680px; width: 8px; height: 360px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><path d="M 4 0 L 4 360"></path></svg>
+<svg width="31" height="8" viewBox="0 0 31 8" preserveAspectRatio="none" style="position: absolute; left: 1312px; top: 676px; width: 31px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-18" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 28 4" marker-end="url(#dc-arrow-head-filled-18)"></path></svg>
+
+<svg width="63" height="8" viewBox="0 0 63 8" preserveAspectRatio="none" style="position: absolute; left: 1504px; top: 676px; width: 63px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-19" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 60 4" marker-end="url(#dc-arrow-head-filled-19)"></path></svg>
+
+<svg width="32" height="8" viewBox="0 0 32 8" preserveAspectRatio="none" style="position: absolute; left: 1728px; top: 676px; width: 32px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><path d="M 0 4 L 32 4"></path></svg>
+<svg width="8" height="360" viewBox="0 0 8 360" preserveAspectRatio="none" style="position: absolute; left: 1756px; top: 680px; width: 8px; height: 360px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><path d="M 4 0 L 4 360"></path></svg>
+<svg width="31" height="8" viewBox="0 0 31 8" preserveAspectRatio="none" style="position: absolute; left: 1760px; top: 1036px; width: 31px; height: 8px; overflow: visible; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><defs><marker id="dc-arrow-head-filled-20" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="var(--strong)" stroke="none" style="stroke: none; fill: var(--strong); fill: context-stroke"/></marker></defs><path d="M 0 4 L 28 4" marker-end="url(#dc-arrow-head-filled-20)"></path></svg>
+
+<div style="position: absolute; left: 64px; top: 56px; font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: -0.02em;">Private mode · how it flows</div>
+<div style="position: absolute; left: 64px; top: 92px; width: 1200px; color: var(--muted); font-size: 14px; line-height: 20px;">Qwen Code runs on private models inside NEAR AI's secure hardware. People buy credits with stablecoins from any chain, a wallet or a card. No account, no API key, no config file.</div>
+
+<div class="lane" style="position: absolute; left: 64px; top: 140px;">Someone using Zorvo</div>
+<div class="nd" style="position: absolute; left: 64px; top: 176px; width: 176px; height: 72px; box-sizing: border-box;"><span><b>Turn on Private mode</b><br><small>Settings → Private mode</small></span></div>
+<div class="nd" style="position: absolute; left: 288px; top: 176px; width: 176px; height: 72px; box-sizing: border-box;"><span><b>Pick a package</b><br><small>Stock shows first</small></span></div>
+<div class="nd" style="position: absolute; left: 512px; top: 176px; width: 176px; height: 72px; box-sizing: border-box;"><span><b>Pay in the browser</b><br><small>Wallet, deposit or card</small></span></div>
+<div class="nd" style="position: absolute; left: 736px; top: 176px; width: 176px; height: 72px; box-sizing: border-box;"><span><b>Credits arrive</b><br><small>First time: save the code</small></span></div>
+<div class="nd" style="position: absolute; left: 960px; top: 176px; width: 176px; height: 72px; box-sizing: border-box;"><span><b>Start a private session</b><br><small>Qwen Code + TEE model</small></span></div>
+<div class="nd" style="position: absolute; left: 1184px; top: 176px; width: 176px; height: 72px; box-sizing: border-box;"><span><b>Answers verified</b><br><small>Signed inside the TEE</small></span></div>
+<div class="nd att" style="position: absolute; left: 1408px; top: 176px; width: 176px; height: 72px; box-sizing: border-box;"><span><b>Low on credits</b><br><small>Warning below <span class="mono">50</span></small></span></div>
+<div style="position: absolute; left: 886px; top: 308px; width: 100px; text-align: center; font-size: 13px; line-height: 16px; color: var(--muted);">top up again</div>
+
+<div class="lane" style="position: absolute; left: 64px; top: 360px;">Moving to another Mac</div>
+<div class="nd" style="position: absolute; left: 64px; top: 392px; width: 176px; height: 72px; box-sizing: border-box;"><span><b>Enter the recovery code</b><br><small>On the new Mac</small></span></div>
+<div class="nd" style="position: absolute; left: 288px; top: 392px; width: 176px; height: 72px; box-sizing: border-box;"><span><b>Old Mac stops</b><br><small>Old code and key die</small></span></div>
+<div class="nd" style="position: absolute; left: 512px; top: 392px; width: 176px; height: 72px; box-sizing: border-box;"><span><b>New key, same balance</b><br><small>Handed over once</small></span></div>
+<div class="nd" style="position: absolute; left: 736px; top: 392px; width: 176px; height: 72px; box-sizing: border-box;"><span><b>Save the new code</b><br><small>Shown in Settings</small></span></div>
+
+<div class="lane" style="position: absolute; left: 1040px; top: 360px;">When credits run out</div>
+<div class="nd att" style="position: absolute; left: 1040px; top: 392px; width: 176px; height: 72px; box-sizing: border-box;"><span><b>Credits run out</b><br><small>History stays, message returns</small></span></div>
+<div class="nd sm" style="position: absolute; left: 1264px; top: 352px; width: 240px; height: 48px; box-sizing: border-box;"><span><b>Top up or promo code</b><br><small>Back to Pick a package</small></span></div>
+<div class="nd sm" style="position: absolute; left: 1264px; top: 412px; width: 240px; height: 48px; box-sizing: border-box;"><span><b>Use my own NEAR AI key</b><br><small>Credits from staking, your org</small></span></div>
+<div class="nd sm" style="position: absolute; left: 1264px; top: 472px; width: 240px; height: 48px; box-sizing: border-box;"><span><b>Continue with another agent</b><br><small>Leaves the TEE</small></span></div>
+
+<div style="position: absolute; left: 64px; top: 532px; font-size: 14px; line-height: 20px; font-weight: 600;"><span class="mono">One $5 top-up</span> · who does what</div>
+<div style="position: absolute; left: 64px; top: 560px; width: 1200px; color: var(--muted); font-size: 13px;">The Credits server holds the stock and the queue. Prompts never pass through it: they go from Qwen Code straight to NEAR AI.</div>
+
+<div class="lane" style="position: absolute; left: 80px; top: 632px;">Zorvo app</div>
+<div class="lane" style="position: absolute; left: 80px; top: 752px;">Credits server</div>
+<div class="lane" style="position: absolute; left: 80px; top: 872px;">PingPay</div>
+<div style="position: absolute; left: 80px; top: 892px; color: var(--muted); font-size: 11px;">on NEAR Intents</div>
+<div class="lane" style="position: absolute; left: 80px; top: 992px;">NEAR AI Cloud</div>
+
+<div class="nd sm" style="position: absolute; left: 224px; top: 648px; width: 160px; height: 64px; box-sizing: border-box; padding: 8px 12px;"><span><b>1 · Top up <span class="mono">$5</span></b><br><small><span class="mono">500 credits</span></small></span></div>
+<div class="nd sm" style="position: absolute; left: 448px; top: 768px; width: 160px; height: 64px; box-sizing: border-box; padding: 8px 12px;"><span><b>2 · Reserve stock</b><br><small>Then open checkout</small></span></div>
+<div class="nd sm" style="position: absolute; left: 672px; top: 888px; width: 160px; height: 64px; box-sizing: border-box; padding: 8px 12px;"><span><b>3 · Person pays</b><br><small>USDC, any chain</small></span></div>
+<div class="nd sm" style="position: absolute; left: 896px; top: 768px; width: 160px; height: 64px; box-sizing: border-box; padding: 8px 12px;"><span><b>4 · Webhook: paid</b><br><small>Queued, never lost</small></span></div>
+<div class="nd sm" style="position: absolute; left: 1120px; top: 1008px; width: 160px; height: 64px; box-sizing: border-box; padding: 8px 12px;"><span><b>5 · Key and limit</b><br><small>Spend cap <span class="mono">$4.16</span></small></span></div>
+<div class="nd sm" style="position: absolute; left: 1344px; top: 648px; width: 160px; height: 64px; box-sizing: border-box; padding: 8px 12px;"><span><b>6 · Fetch the key</b><br><small>First top-up only</small></span></div>
+<div class="nd sm" style="position: absolute; left: 1568px; top: 648px; width: 160px; height: 64px; box-sizing: border-box; padding: 8px 12px;"><span><b>7 · Start Qwen Code</b><br><small>Key only in its env</small></span></div>
+<div class="nd sm run" style="position: absolute; left: 1792px; top: 1008px; width: 160px; height: 64px; box-sizing: border-box; padding: 8px 12px;"><span><b>8 · Answer in TEE</b><br><small>Signed, verifiable</small></span></div>
+
+<div style="position: absolute; left: 224px; top: 1124px; color: var(--muted); font-size: 12px;">Stock is checked before the checkout opens, so nobody pays for credits that are not there. A late payment waits first in line for the next restock.</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":2080,"height":1180}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const light = (this.props.theme ?? 'dark') === 'light';
+    return { themeClass: light ? 'z light' : 'z' };
+  }
+}
+</script>
+</body>
+</html>

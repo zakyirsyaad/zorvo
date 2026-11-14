@@ -4,10 +4,10 @@ One thing that keeps an agent from starting, as a card by the message box: the a
 
 `BlockerCard` (`components/ui/BlockerCard.tsx`) gives the cards one shape; the consumer provides the label, the title, the body and the way past it.
 
-- Card: `surface-2`, `border`, `radius-xl`, 18px padding, `shadow-popover`, 14px between its parts, in the composer's 680px column (`max-w-chat`).
-- Leads with the agent's logo in a 32px `surface-hover` tile (radius 8), decorative (the title names the agent). Without a `profileId` there is no tile.
+- Card: `surface-2`, `border`, `radius-xl`, 16px padding, no shadow, 14px between its parts, in its column (the draft's 720px, the chat's 680px).
+- Leads with the agent's logo in a 28px agent tile (`chip` fill, radius 8), decorative (the title names the agent). Without a `profileId` there is no tile.
 - Title in `ui` at 600 and `fg`, as one sentence of what stands in the way: "Codex isn't installed yet", "Sign in to Gemini CLI", "Gemini CLI is no longer in use". The body under it is `ui` in `fg-muted`.
-- The main button sits on its own row under the body, at the right: a primary **Install Codex** or **Add Gemini CLI**, or **Retry** after a failure.
+- The main button sits at the header's right: a primary **Install Codex** or **Add Gemini CLI**, or **Retry** after a failure; while an install runs, a ghost **Cancel**, with the download's 4px bar across the card under the header.
 - A footer under a `border` rule holds what follows: the sign-in's status line with **Dismiss** and **Check again**.
 - The region is named by `label` ("Install Codex", "Sign in to Gemini CLI").
 
@@ -20,8 +20,8 @@ One thing that keeps an agent from starting, as a card by the message box: the a
 
 ## Other states in the chat's place
 
-- **Compare run.** The panel in the chat's place while a run is open: a 680px column 40px from the top, the run's name at 20/28 600 (`-0.02em`) over "3 agents, each in its own worktree · started 12 minutes ago" in `fg-muted`, then one card per agent, 8px apart.
-  - Each card is one row on `surface-2` with a `border` edge, `radius-xl`, 14px 16px: a 28px `surface-hover` logo tile (radius 7); the name at 500 over its status in `ui-sm` `fg-secondary` with a dot; the changes as a 26px mono `caption` button ("3 files +54 −9"), or "No changes yet" in `fg-subtle`; **Open** (ghost) and **Pick** (outline).
+- **Compare run.** The panel in the chat's place while a run is open: a column at most 1040px wide (`container-compare`), 36px from the top, the run's name at 20/28 600 (`-0.02em`) over "3 agents, each in its own worktree · started 12 minutes ago" in `fg-muted`, then one column per agent in a grid, 12px apart, each at least 280px; a run of four sits two by two.
+  - Each column is a `surface-2` card with a `border` edge, `radius-xl`, 16px padding, its parts 14px apart: a 28px agent tile with the name at 14px 600 over its status in `ui-sm` `fg-muted` with a dot; the total as a mono button that opens the changes ("3 files +54 −9"), or "No changes yet" in `fg-subtle`, then up to three files, most changed first, in mono `caption` with their counts, and "2 more files" (the rows keep their place so columns stay level); "Last message" over three clamped lines of the agent's newest words in `fg-secondary`; and at the bottom **Open** and **Pick**, two outline buttons of equal width. While the agent waits, "Waiting for your answer" takes the last message's place: a plain permission shows what it is about in one line on `ground` with the agent's reject and allow-once choices under it (26px); a question or a form shows what is asked, and Open reads **Open to answer**.
   - The status carries the turn's time: "Working · 12 min" from the prompt that started it, moving on with a minute clock while one works, and "Finished · 8 min" for how long the turn took, from the time its reply recorded when the turn ended (`completedAt`). A turn with no recorded end (one saved before Zorvo kept it, or a replayed one) reads "Finished" alone. A finished unread agent has a `status-unread` dot, and says "unread" to a screen reader.
-  - Pick opens a confirm bar floating 24px over the panel's bottom, 680px, `surface-3`, `border`, `shadow-popover`, 14px 16px, as one `fg` sentence: "Keep Codex's work and archive the others? Claude Code is still working and will be stopped." with Cancel (ghost) and **Pick Codex** (primary). Meanwhile the chosen card's edge is `border-strong` and its Pick looks pressed.
+  - Pick opens a confirm bar floating 20px over the panel's bottom, at most 640px, `surface-3`, `border`, `shadow-popover`, 12px 12px 12px 16px: "Keep Codex's work and archive the others?" at 600 over "Claude Code is still working and will be stopped." in `ui-sm` `fg-muted`, with Cancel (ghost) and **Pick Codex** (primary). Meanwhile the chosen column's edge is `border-strong` and its Pick looks pressed.
 - **Empty window.** With no folder open: a closed folder at 22px in `fg-secondary` on a 48px `surface-2` tile, "Open a folder to start" at 20/28 600 (`-0.02em`), the line under it in `fg-muted`, and a 32px primary **Open folder** with a plus.

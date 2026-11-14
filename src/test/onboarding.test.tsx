@@ -54,9 +54,21 @@ describe("the welcome screen", () => {
   it("has the wordmark, the line and the sentence as drawn", () => {
     renderOnboarding();
     expect(screen.getByRole("img", { name: "Zorvo" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 1, name: "Every coding agent. One desktop." })).toHaveClass("tracking-[-0.03em]");
-    expect(screen.getByText("Pick the agents you'll use and a project folder. You can change all of this later in Settings.")).toHaveClass("text-fg-muted");
+    expect(screen.getByRole("heading", { level: 1, name: "Every coding agent. One desktop." })).toHaveClass("text-xl", "font-semibold", "tracking-[-0.02em]");
+    expect(screen.getByText("Pick the agents you'll use and a project folder. You can change all of this later in Settings.")).toHaveClass("text-ui", "leading-5", "text-fg-muted");
     expect(screen.getByRole("main").querySelector("[data-tauri-drag-region]")).not.toBeNull();
+  });
+
+  it("is one sheet on the ground: centred while it fits, and the page scrolls when it does not", () => {
+    renderOnboarding();
+    const page = screen.getByRole("main");
+    expect(page).toHaveClass("h-screen", "overflow-y-auto", "bg-ground");
+    const sheet = page.querySelector('[data-sheet="welcome"]') as HTMLElement;
+    expect(sheet).toHaveClass("my-auto", "max-w-[640px]", "rounded-xl", "border", "border-border", "bg-sheet", "p-8", "gap-6");
+    // Everything is inside the sheet: the wordmark, both sections and Start.
+    expect(sheet).toContainElement(screen.getByRole("img", { name: "Zorvo" }));
+    expect(sheet).toContainElement(screen.getByRole("button", { name: "Start" }));
+    expect(sheet).toContainElement(screen.getByRole("heading", { level: 2, name: "Project folder" }));
   });
 
   it("Start is on with a ready agent and a folder", () => {

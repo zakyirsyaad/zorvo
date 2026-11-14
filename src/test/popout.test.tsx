@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, waitFor, within } from "@testing-library/react";
 import type { FakeTauriStore } from "./setup";
@@ -221,6 +222,36 @@ describe("Popout windows", () => {
     expect(emitted.some((e) => e.event === "popout-action")).toBe(false);
   });
 
+  it("waits its Send while the delegation pair blocks it, and says why", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", {
+      sessionId: "s-1",
+      session: runningSession,
+      messages: [],
+      status: {
+        isBusy: false,
+        isWaiting: false,
+        sendBlockedReason: "Codex is working on the task you delegated.",
+      },
+    });
+
+    const send = screen.getByRole("button", { name: "Send message" }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    const reason = screen.getByText("Codex is working on the task you delegated.");
+    expect(reason).toBeDefined();
+    expect(send.getAttribute("aria-describedby")).toBe(reason.id);
+
+    // Typing and Return must not forward a send the main window would drop.
+    const prompt = screen.getByRole("textbox", { name: "Prompt" });
+    await act(async () => {
+      fireEvent.change(prompt, { target: { value: "run the tests" } });
+      fireEvent.keyDown(prompt, { key: "Enter" });
+    });
+    expect(emitted.some((event) => event.event === "popout-action")).toBe(false);
+  });
+
   it("replies to its agent by name", async () => {
     await act(async () => {
       render(<PopoutApp sessionId="s-1" />);
@@ -253,12 +284,34 @@ describe("Popout windows", () => {
     expect(screen.getByRole("button", { name: "Plan, 1 of 2 done" })).toBeDefined();
   });
 
+  it("shows the session's folder before its title", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", { sessionId: "s-1", session: runningSession, messages: [] });
+    const bar = screen.getByRole("banner");
+    expect(within(bar).getByText("zorvo")).toBeInTheDocument();
+    expect(within(bar).getByText("Fix login")).toBeInTheDocument();
+  });
+
   it("keeps its top bar clear of the window's buttons", async () => {
     await act(async () => {
       render(<PopoutApp sessionId="s-1" />);
     });
     // The popout is an Overlay window with no sidebar: the traffic lights always float over its bar.
     expect(screen.getByRole("banner").style.paddingLeft).toBe("78px");
+  });
+
+  it("draws one sheet inset on the ground, with the top bar inside it", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    const main = screen.getByRole("main");
+    expect(main).toHaveClass("bg-ground", "p-2");
+    expect(main.hasAttribute("data-tauri-drag-region")).toBe(true);
+    const sheet = main.querySelector('[data-sheet="main"]') as HTMLElement;
+    expect(sheet).toHaveClass("rounded-panel", "border", "border-border", "bg-sheet", "overflow-hidden");
+    expect(sheet.contains(screen.getByRole("banner"))).toBe(true);
   });
 
   it("shows the history note for a resumed import with no messages", async () => {
@@ -368,6 +421,54 @@ describe("Popout windows", () => {
     expect(emitted).toContainEqual({
       event: "popout-action",
       payload: { sessionId: "s-1", action: { kind: "choose-option", cardId: "act-1", optionId: "allow" } },
+    });
+  });
+
+  it("forwards the answer to a card Zorvo made for an agent's tool call", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", {
+      sessionId: "s-1",
+      session: { ...runningSession, profileId: "qwen-code" },
+      messages: [
+        {
+          id: "m-1",
+          role: "agent",
+          content: "",
+          timestamp: 1,
+          actionCard: {
+            id: "act-9",
+            sessionId: "s-1",
+            title: "Qwen Code wants to open a session in another folder",
+            prompt: "New Codex session in /w/other:\nPort the parser.",
+            status: "pending",
+            timestamp: 1,
+            requestId: 0,
+            zorvoTool: {
+              tool: "start_session",
+              callerName: "Qwen Code",
+              targetName: "Codex",
+              targetId: "codex-acp",
+              folder: "/w/other",
+              isOtherFolder: true,
+            },
+            options: [
+              { optionId: "zorvo-allow-once", name: "Allow once", kind: "allow_once" },
+              { optionId: "zorvo-deny", name: "Deny", kind: "reject_once" },
+            ],
+          },
+        },
+      ],
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Allow once" }));
+    });
+
+    expect(emitted).toContainEqual({
+      event: "popout-action",
+      payload: { sessionId: "s-1", action: { kind: "choose-option", cardId: "act-9", optionId: "zorvo-allow-once" } },
     });
   });
 
@@ -516,6 +617,29 @@ describe("Popout windows", () => {
     await deliver("popout-action", { sessionId, action: { kind: "stop" } });
 
     expect(spy).toHaveBeenCalledWith("acp_cancel", { sessionId }, undefined);
+  });
+
+  it("leaves a pasted image to the browser, since a popout has no way to say a paste failed", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", { sessionId: "s-1", session: runningSession, messages: [] });
+    const image = new File(["x"], "shot.png", { type: "image/png" });
+    const clipboardData = {
+      files: [image],
+      items: [{ kind: "file", type: "image/png", getAsFile: () => image }],
+      types: ["Files"],
+      getData: () => "",
+    };
+
+    const notPrevented = fireEvent.paste(screen.getByRole("textbox", { name: "Prompt" }), { clipboardData });
+    // Long enough for a save that was wrongly started to reach the backend.
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    expect(notPrevented).toBe(true);
+    expect(spy.mock.calls.some(([cmd]) => cmd === "save_pasted_image")).toBe(false);
+    expect(screen.queryByRole("button", { name: /^Remove / })).toBeNull();
   });
 });
 

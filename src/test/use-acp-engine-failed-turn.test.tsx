@@ -14,6 +14,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 import { useAcpEngine } from "../hooks/session-engine/useAcpEngine";
 import { fakeProfiles } from "./fixtures/agents";
 import type { ChatMessage, Session } from "../types";
+import { COMMAND_PATH_CONTEXT } from "../lib/agent-tools-context";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
 
@@ -42,7 +43,9 @@ const emit = (payload: Record<string, unknown>) =>
   });
 
 /** The engine with its session, transcript and callbacks held in plain variables the test can read. */
-function renderEngine(options: { withTurnFailed?: boolean } = {}) {
+function renderEngine(
+  options: { withTurnFailed?: boolean; promptBlockedReason?: (sessionId: string) => string | null } = {},
+) {
   const withTurnFailed = options.withTurnFailed ?? true;
   let sessions: Session[] = [SESSION];
   let messages: ChatMessage[] = [];
@@ -62,6 +65,7 @@ function renderEngine(options: { withTurnFailed?: boolean } = {}) {
       rememberOptions: () => {},
       onAuthRequired: () => {},
       ...(withTurnFailed ? { onTurnFailed } : {}),
+      ...(options.promptBlockedReason ? { promptBlockedReason: options.promptBlockedReason } : {}),
     }),
   );
   return {
@@ -127,6 +131,43 @@ describe("useAcpEngine when a turn fails", () => {
     expect(engine.result.current.hasFailedPrompt("s-1")).toBe(false);
   });
 
+  it("sends the command-path context again when the turn that carried it failed", async () => {
+    // The prompt was written but the turn failed before the model saw it: the retry is the
+    // agent's only chance to learn of Zorvo's commands.
+    (window as unknown as { __FAKE_TOOLS_PATH__?: string }).__FAKE_TOOLS_PATH__ = "command";
+    try {
+      const spy = vi.spyOn(tauriInternals(), "invoke");
+      const engine = renderEngine();
+      await startWithFailedTurn(engine, spy);
+
+      await act(async () => {
+        await engine.result.current.retryFailedTurn("s-1");
+      });
+
+      const withContext = `${COMMAND_PATH_CONTEXT}\n\nfix the parser`;
+      expect(promptsSent(spy)).toEqual([withContext, withContext]);
+    } finally {
+      delete (window as unknown as { __FAKE_TOOLS_PATH__?: string }).__FAKE_TOOLS_PATH__;
+    }
+  });
+
+  it("sends the context once when the turn that carried it succeeded", async () => {
+    (window as unknown as { __FAKE_TOOLS_PATH__?: string }).__FAKE_TOOLS_PATH__ = "command";
+    try {
+      const spy = vi.spyOn(tauriInternals(), "invoke");
+      const engine = renderEngine();
+      await act(async () => {
+        await engine.result.current.start(SESSION, { text: "fix the parser" });
+      });
+      await act(async () => {
+        await engine.result.current.send("s-1", "and the tests");
+      });
+      expect(promptsSent(spy)).toEqual([`${COMMAND_PATH_CONTEXT}\n\nfix the parser`, "and the tests"]);
+    } finally {
+      delete (window as unknown as { __FAKE_TOOLS_PATH__?: string }).__FAKE_TOOLS_PATH__;
+    }
+  });
+
   it("does not try again while a turn runs", async () => {
     const spy = vi.spyOn(tauriInternals(), "invoke");
     const engine = renderEngine();
@@ -144,6 +185,26 @@ describe("useAcpEngine when a turn fails", () => {
 
     expect(retried).toBe(false);
     expect(promptsSent(spy)).toEqual(["fix the parser", "something else"]);
+  });
+
+  it("refuses to try again while a delegated report is handing over", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const reason = "Claude Code is working on Codex's report.";
+    const engine = renderEngine({ promptBlockedReason: () => reason });
+    await startWithFailedTurn(engine, spy);
+    expect(promptsSent(spy)).toHaveLength(1);
+
+    let retried = true;
+    await act(async () => {
+      retried = await engine.result.current.retryFailedTurn("s-1");
+    });
+
+    expect(retried).toBe(false);
+    // Nothing was prompted past the pair's other side.
+    expect(promptsSent(spy)).toEqual(["fix the parser"]);
+    expect(engine.reportError).toHaveBeenCalledWith(reason);
+    // The message is still in the chat, so the banner can stay.
+    expect(engine.result.current.hasFailedPrompt("s-1")).toBe(true);
   });
 
   it("forgets the prompt once the user sends something else", async () => {

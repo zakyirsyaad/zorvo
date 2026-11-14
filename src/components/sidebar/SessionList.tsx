@@ -20,7 +20,7 @@ export interface SessionListContext {
   onArchiveSession?: (sessionId: string, isArchived: boolean) => void;
 }
 
-/** Sessions with their forks nested beneath them, joined by a guide line. */
+/** Sessions with their forks and delegated sessions nested beneath them, joined by a guide line. */
 export function SessionTree({ nodes, label, context, isNested = false, isInRun = false }: {
   nodes: SessionNode[];
   label: string;
@@ -32,8 +32,8 @@ export function SessionTree({ nodes, label, context, isNested = false, isInRun =
   return (
     <ul
       aria-label={label}
-      // A fork sits margin-left 11px, padding-left 10px behind its guide line, as drawn.
-      className={isNested ? "ml-[11px] mt-0.5 space-y-0.5 border-l border-border pl-2.5" : "space-y-0.5"}
+      // A fork sits on a rail: margin-left 18px, padding-left 8px, as drawn.
+      className={isNested ? "ml-[18px] mt-0.5 space-y-0.5 border-l border-border pl-2" : "space-y-0.5"}
     >
       {nodes.map((node) => {
         const { session, children, run } = node;
@@ -51,7 +51,7 @@ export function SessionTree({ nodes, label, context, isNested = false, isInRun =
           <li key={session.id}>
             <SessionRow session={session} context={context} isInRun={isInRun} />
             {children.length > 0 && (
-              <SessionTree nodes={children} label={`Forks of ${session.name}`} context={context} isNested />
+              <SessionTree nodes={children} label={`Sessions from ${session.name}`} context={context} isNested />
             )}
           </li>
         );

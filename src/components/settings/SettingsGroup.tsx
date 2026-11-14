@@ -58,23 +58,26 @@ export interface SettingsRowProps {
   leading?: ReactNode;
   /** 12px gaps, as the GitHub and Agents rows are drawn; 16px otherwise. */
   isTight?: boolean;
+  /** The welcome screen's row: 10px by 14px padding, 12px gaps, and the two lines 1px apart. */
+  isCompact?: boolean;
   /** Extra classes on the row (`group`, for a control that shows on hover). */
   className?: string;
 }
 
 /** One row of a group: label and description on the left, the control on the right, hairlines between rows. */
-export function SettingsRow({ label, description, control, leading, isTight = false, className }: SettingsRowProps) {
+export function SettingsRow({ label, description, control, leading, isTight = false, isCompact = false, className }: SettingsRowProps) {
+  const box = isCompact ? "gap-3 px-3.5 py-2.5" : `px-4 py-3 ${isTight ? "gap-3" : "gap-4"}`;
   return (
     <div
       data-settings-row
-      className={`flex items-center border-b border-border px-4 py-3 last:border-b-0 ${isTight ? "gap-3" : "gap-4"} ${className ?? ""}`}
+      className={`flex items-center border-b border-border last:border-b-0 ${box} ${className ?? ""}`}
     >
       {leading}
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <div className={`flex min-w-0 flex-1 flex-col ${isCompact ? "gap-px" : "gap-0.5"}`}>
         <span className="text-ui text-fg">{label}</span>
-        {description && <span className="text-ui-sm text-fg-subtle">{description}</span>}
+        {description && <span className="text-ui-sm text-fg-muted">{description}</span>}
       </div>
-      {control && <div className="flex shrink-0 items-center gap-2">{control}</div>}
+      {control && <div className={`flex shrink-0 items-center ${isCompact ? "gap-3" : "gap-2"}`}>{control}</div>}
     </div>
   );
 }

@@ -6,6 +6,13 @@ import App from "../App";
 import type { AgentProfile, Session } from "../types";
 import { fakeProfiles, makeProfile } from "./fixtures/agents";
 
+/** The search field, opened first when the sidebar still shows its Search button. */
+function searchField(): HTMLElement {
+  const button = screen.queryByRole("button", { name: "Search sessions" });
+  if (button) fireEvent.click(button);
+  return screen.getByRole("textbox", { name: "Search sessions" });
+}
+
 describe("Navigation and Layout Components", () => {
   const mockProfiles: AgentProfile[] = fakeProfiles;
 
@@ -190,7 +197,8 @@ describe("Navigation and Layout Components", () => {
       const inOrder = [
         screen.getByRole("button", { name: "Hide sidebar" }),
         screen.getByRole("button", { name: "New session" }),
-        screen.getByRole("textbox", { name: "Search sessions" }),
+        screen.getByRole("button", { name: "Search sessions" }),
+        screen.getByRole("group", { name: "Filter sessions" }),
         screen.getByRole("list", { name: "Pinned sessions" }),
         screen.getByRole("list", { name: "Workspaces" }),
         screen.getByRole("button", { name: "Archived (1)" }),
@@ -198,6 +206,7 @@ describe("Navigation and Layout Components", () => {
       for (let i = 1; i < inOrder.length; i++) {
         expect(inOrder[i - 1].compareDocumentPosition(inOrder[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       }
+      fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
       expect(screen.getByRole("textbox", { name: "Search sessions" }).getAttribute("placeholder")).toBe("Search sessions");
     });
 
@@ -223,9 +232,13 @@ describe("Navigation and Layout Components", () => {
       expect(newSession.className).toContain("justify-start");
       expect(newSession.className).not.toContain("justify-center");
 
+      expect(newSession.className).toContain("bg-surface-2");
+      const searchButton = screen.getByRole("button", { name: "Search sessions" });
+      expect(searchButton.className).toContain("bg-surface-2");
+      expect(searchButton.className).toContain("size-8");
+      fireEvent.click(searchButton);
       const search = screen.getByRole("textbox", { name: "Search sessions" });
-      expect(search.className).toContain("bg-surface-2");
-      expect(search.className).not.toMatch(/(^|\s)border(\s|-)/);
+      expect(search.closest("div")?.className).toContain("bg-surface-2");
 
       // No Workspaces heading and no folder button: a folder opens from the draft's folder chip.
       expect(screen.queryByText("Workspaces")).toBeNull();
@@ -414,7 +427,7 @@ describe("Navigation and Layout Components", () => {
       it("finds pinned and archived sessions by their project's name", () => {
         renderOrganized();
 
-        fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: "titan" } });
+        fireEvent.change(searchField(), { target: { value: "titan" } });
 
         expect(within(screen.getByRole("list", { name: "Pinned sessions" })).getByText("Pinned work")).toBeDefined();
         expect(within(screen.getByRole("list", { name: "Archived sessions" })).getByText("Old work")).toBeDefined();
@@ -430,12 +443,12 @@ describe("Navigation and Layout Components", () => {
 
       it("keeps the Archived section's own state while a search shows it", () => {
         renderOrganized();
-        fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: "work" } });
+        fireEvent.change(searchField(), { target: { value: "work" } });
 
         const toggle = screen.getByRole("button", { name: "Archived (1)" });
         expect((toggle as HTMLButtonElement).disabled).toBe(true);
         fireEvent.click(toggle);
-        fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: "" } });
+        fireEvent.change(searchField(), { target: { value: "" } });
 
         expect(screen.queryByRole("list", { name: "Archived sessions" })).toBeNull();
       });
@@ -465,7 +478,7 @@ describe("Navigation and Layout Components", () => {
       it("finds pinned and archived sessions when searching", () => {
         renderOrganized();
 
-        fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: "work" } });
+        fireEvent.change(searchField(), { target: { value: "work" } });
 
         expect(within(screen.getByRole("list", { name: "Pinned sessions" })).getByText("Pinned work")).toBeDefined();
         expect(within(screen.getByRole("list", { name: "Archived sessions" })).getByText("Old work")).toBeDefined();
@@ -486,7 +499,7 @@ describe("Navigation and Layout Components", () => {
       );
 
       const top = within(screen.getByRole("list", { name: "Sessions in titan-investment" }));
-      const forks = within(top.getByRole("list", { name: "Forks of Refactor plan" }));
+      const forks = within(top.getByRole("list", { name: "Sessions from Refactor plan" }));
       expect(forks.getByText("Refactor plan (fork)")).toBeDefined();
       // The fork is listed once, under its source, not again at the top level.
       expect(screen.getAllByText("Refactor plan (fork)")).toHaveLength(1);
@@ -505,7 +518,7 @@ describe("Navigation and Layout Components", () => {
         />
       );
 
-      fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: "titan" } });
+      fireEvent.change(searchField(), { target: { value: "titan" } });
 
       const workspaceList = within(screen.getByRole("list", { name: "Workspaces" }));
       expect(workspaceList.getByText("titan-investment")).toBeDefined();
@@ -525,7 +538,7 @@ describe("Navigation and Layout Components", () => {
       );
       fireEvent.click(screen.getByRole("button", { name: "titan-investment" }));
 
-      fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: "analyzer" } });
+      fireEvent.change(searchField(), { target: { value: "analyzer" } });
 
       const titan = within(screen.getByRole("list", { name: "Sessions in titan-investment" }));
       expect(titan.getByText("Market analyzer refactor")).toBeDefined();
@@ -550,6 +563,7 @@ describe("Navigation and Layout Components", () => {
       expect(heading().getAttribute("aria-expanded")).toBe("false");
       expect(screen.queryByRole("button", { name: "Show sidebar" })).toBeNull();
 
+      fireEvent.click(sidebar().getByRole("button", { name: "Search sessions" }));
       fireEvent.change(sidebar().getByRole("textbox", { name: "Search sessions" }), { target: { value: "trading" } });
       fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
       fireEvent.click(screen.getByRole("button", { name: "Show sidebar" }));
@@ -562,7 +576,7 @@ describe("Navigation and Layout Components", () => {
       });
 
       expect(screen.getAllByText(/ai-perpetual-trading/i).length).toBeGreaterThan(0);
-      expect(screen.getByPlaceholderText(/search/i)).toBeDefined();
+      expect(searchField()).toBeDefined();
       expect(screen.queryByRole("button", { name: /toggle terminal/i })).toBeNull();
     });
   });

@@ -66,7 +66,7 @@ describe("popover rows as drawn", () => {
       </Popover>,
     );
     const option = screen.getByRole("option");
-    expect(option).toHaveClass("items-start", "py-1.75", "px-2", "rounded", "gap-2");
+    expect(option).toHaveClass("items-start", "min-h-7", "py-[5px]", "px-2", "rounded-md", "gap-2");
     expect(screen.getByText("Reads and plans.")).toHaveClass("text-caption", "leading-[15px]", "text-fg-subtle");
   });
 
@@ -78,20 +78,20 @@ describe("popover rows as drawn", () => {
         </PopoverOption>
       </Popover>,
     );
-    expect(screen.getByRole("option")).toHaveClass("items-center", "py-1.5");
+    expect(screen.getByRole("option")).toHaveClass("items-center", "min-h-7", "py-1");
   });
 
-  it("draws the search field 30px with its icon", () => {
+  it("draws the search field 28px with its icon", () => {
     render(<PopoverSearch value="" onChange={() => {}} placeholder="Search branches" />);
     const input = screen.getByRole("textbox", { name: "Search branches" });
     const field = input.closest("label")!;
     expect(field).toHaveClass(
       "focus-ring-within",
       "flex",
-      "h-7.5",
+      "h-7",
       "items-center",
       "gap-2",
-      "rounded",
+      "rounded-md",
       "border",
       "border-border",
       "bg-surface-2",

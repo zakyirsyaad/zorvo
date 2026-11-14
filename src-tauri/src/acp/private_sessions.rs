@@ -113,6 +113,7 @@ mod tests {
             models: Value::Null,
             config_options: Value::Null,
             reopened_with: None,
+            tools_path: None,
         }
     }
 

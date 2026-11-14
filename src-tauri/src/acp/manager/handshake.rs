@@ -160,5 +160,6 @@ pub(super) fn started_session(
         models: response["models"].clone(),
         config_options: response["configOptions"].clone(),
         reopened_with: None,
+        tools_path: None,
     })
 }

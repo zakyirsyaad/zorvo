@@ -59,7 +59,7 @@ describe("Window chrome wiring", () => {
 
     const sidebar = screen.getByRole("complementary");
     const sidebarHeader = sidebar.firstElementChild as HTMLElement;
-    expect(sidebarHeader).toHaveClass("h-12");
+    expect(sidebarHeader).toHaveClass("h-12", "mt-2");
     expect(sidebarHeader.hasAttribute("data-tauri-drag-region")).toBe(true);
     expect(sidebarHeader.style.paddingLeft).toBe("78px");
     expect(within(sidebarHeader).getByRole("button", { name: "Hide sidebar" })).toBeDefined();
@@ -68,12 +68,34 @@ describe("Window chrome wiring", () => {
     expect(sidebar.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(banner.style.paddingLeft).toBe("");
 
+    // The stage's 8px strips drag the window; the top bar sits inside the chat's sheet.
+    expect(sidebar).toHaveClass("w-66");
+    expect(sidebar).not.toHaveClass("border-r", "bg-surface-1");
+    const stage = document.querySelector("[data-stage]") as HTMLElement;
+    expect(stage.hasAttribute("data-tauri-drag-region")).toBe(true);
+    expect(stage).toHaveClass("gap-2", "py-2", "pr-2");
+    expect(stage).not.toHaveClass("pl-2");
+    const sheet = stage.querySelector('[data-sheet="main"]') as HTMLElement;
+    expect(sheet).toHaveClass("rounded-panel", "border", "border-border", "bg-sheet", "overflow-hidden");
+    expect(sheet.contains(banner)).toBe(true);
+
     // Hidden, the top bar takes the inset; shown again, the sidebar's header has it back.
     await click(within(sidebarHeader).getByRole("button", { name: "Hide sidebar" }));
+    expect(document.querySelector("[data-stage]")).toHaveClass("pl-2");
     expect(screen.getByRole("banner").style.paddingLeft).toBe("78px");
     await click(header().getByRole("button", { name: "Show sidebar" }));
     expect((screen.getByRole("complementary").firstElementChild as HTMLElement).style.paddingLeft).toBe("78px");
     expect(screen.getByRole("banner").style.paddingLeft).toBe("");
+  });
+
+  it("puts the inspector beside the chat's sheet, not inside it", async () => {
+    seedSessions();
+    await renderApp();
+    await click(await header().findByRole("button", { name: "Inspector" }));
+
+    const inspector = screen.getByRole("region", { name: "Inspector" });
+    expect(inspector.parentElement).toBe(document.querySelector("[data-stage]"));
+    expect(document.querySelector('[data-sheet="main"]')!.contains(inspector)).toBe(false);
   });
 
   it("goes back and forward through the sessions the user viewed", async () => {
@@ -98,12 +120,47 @@ describe("Window chrome wiring", () => {
     await renderApp();
 
     expect(header().getByText("Beta work")).toBeDefined();
+    expect(header().getByText("zorvo")).toBeDefined();
     expect(await header().findByLabelText("Branch main")).toBeDefined();
-    // The folder has no badge any more: Open in Finder shows which one it is.
+    // Open in Finder opens the same folder.
     const spy = vi.spyOn(tauriInternals(), "invoke");
     await click(header().getByRole("button", { name: "More options" }));
     await click(screen.getByRole("menuitem", { name: "Open in Finder" }));
     expect(spy).toHaveBeenCalledWith("reveal_in_finder", { path: "/Users/test/developer/zorvo" }, undefined);
+  });
+
+  it("names a worktree session's repository, not the worktree's folder", async () => {
+    fakeStore().state.sessions = [
+      {
+        id: "s-wt",
+        name: "Worktree work",
+        profileId: "claude-code",
+        cwd: "/Users/test/.zorvo/worktrees/fix-parser",
+        status: "terminated",
+        createdAt: 1,
+        transport: "acp",
+        worktree: { path: "/Users/test/.zorvo/worktrees/fix-parser", branch: "agent/fix-parser", repoPath: "/Users/test/developer/zorvo" },
+      },
+    ];
+    await renderApp();
+
+    expect(header().getByText("Worktree work")).toBeDefined();
+    expect(header().getByText("zorvo")).toBeDefined();
+    expect(header().queryByText("fix-parser")).toBeNull();
+  });
+
+  it("shows a compare run's task, the folder of its first session and its agent count", async () => {
+    const run = { status: "terminated", transport: "acp", name: "Fix the login", compareRunId: "run-1" };
+    fakeStore().state.sessions = [
+      { ...run, id: "r-1", profileId: "claude-code", cwd: "/Users/test/developer/zorvo", createdAt: 1 },
+      { ...run, id: "r-2", profileId: "qwen-code", cwd: "/Users/test/developer/zorvo", createdAt: 2 },
+    ];
+    await renderApp();
+    await click(within(screen.getByRole("complementary")).getByRole("button", { name: /Fix the login.*2 agents/ }));
+
+    expect(header().getByText("Fix the login")).toBeDefined();
+    expect(header().getByText("zorvo")).toBeDefined();
+    expect(header().getByText("Compare · 2 agents")).toBeDefined();
   });
 
   it("opens the files of the folder the top bar names, which is the open session's", async () => {

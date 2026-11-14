@@ -167,7 +167,7 @@ export function PrivateSection({
             >
               <span
                 aria-hidden="true"
-                className={`size-4 rounded-full transition-colors ${secretGuard ? "bg-bg" : "bg-fg"}`}
+                className={`size-4 rounded-full transition-colors ${secretGuard ? "bg-ground" : "bg-fg"}`}
               />
             </button>
           }

@@ -15,13 +15,94 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **Use your own NEAR AI key.** If you stake NEAR in your own NEAR AI organization, Settings → Private mode can check and save your key in the Keychain and use it instead of Zorvo credits. Zorvo shows the session cost in dollars and no Zorvo balance; your credits stay and you can switch back.
 - **A spending cap for each private session.** A Qwen Code private draft can cap itself at 100, 200 or 500 credits. NEAR AI enforces the cap on a key of its own, so it stops the session even if Zorvo is closed; the composer and inspector show the cap and its progress, and a capped session offers New session or a doubled cap when it reaches it.
 - **An agent can ask for a top-up.** A private Qwen Code session can ask for one of the Worker's packages with one short reason; a card above the composer shows the package and the reason, and only the user's click starts their own PingPay checkout. **Not now** starts a five-minute cooldown. The agent never opens checkout, pays or sees a key.
+## [0.11.2] - 2026-11-14
+
+### Fixed
+
+- A menu no longer opens past the edge of the dialog it is in: the model menu in **Delegate to another agent** was cut off on its left. A menu now opens from the other edge of its chip when the asked-for one would not fit.
+- The switch for **Let agents delegate and open sessions** in Settings → Agents draws its knob inside the track again; it sat half a track too far right, outside the switch when on.
+
+## [0.11.1] - 2026-11-14
+
+Tagged but never published; its fix shipped in 0.11.2.
+
+## [0.11.0] - 2026-11-14
+
+### Added
+
+- **Agents can hand work to each other.** Ask an agent in plain words ("then have Qwen Code review it") and it can give another agent the task itself. The first time in a session Zorvo shows a card with who asks, which agent the task is for, the folder and the task; **Allow for this session** lets that session's agent give further tasks without asking again. The other agent's answer comes back as a report. Works with agents that take tools from Zorvo (Qwen Code, Codex, Antigravity, Claude Code) and with Pi, which runs a Zorvo command instead. Turn it off in **Settings → Agents**.
+- **Agents can open a new session.** Ask an agent to start something in a new session and it can open one itself, with a brief it writes: in the same folder, in a worktree of its own, or in another folder Zorvo knows. The new session works on its own, shows who opened it, and appears in the sidebar without taking you away from the one you are in. Opening one in the same folder is covered by **Allow for this session**; another folder asks every time, with **Allow once**. At most three sessions an agent opened can be working at once.
+- **Agents can look after the sessions they started.** An agent can read the last answer of a session it opened or delegated to, and stop one that is still working, so you can ask "check what Codex found" or "stop that session" in plain words. It reaches only its own sessions, and reads only the other agent's answer, never what you wrote there.
+- A session can now have one delegate per agent, for example Qwen Code and Codex at once, and a further task for an agent goes to the session it already has, also when you write `@Agent` yourself.
+- **Paste an image into the message.** A screenshot or an image copied in another app attaches when you paste it into the prompt, like a file from the paperclip. Text still pastes as text, also when the copy carries a picture of that text, as web pages and spreadsheets do. Pasted images are kept in Zorvo's data folder for 30 days.
+- The Files tab shows images (PNG, JPEG, GIF, WebP) and PDFs instead of saying the file is binary. A file over 10 MB says it is too large to preview.
 
 ### Changed
 
+- While a delegated agent works you can keep writing to the session that delegated; its report waits until that session's turn ends instead of landing in the composer.
+- The window has a layered look: the chat and the inspector are raised panels on the window's background.
+- Sidebar rows show each agent's logo with a status badge, and a filter shows only the sessions that need you or are working.
+- The chat is calmer: tool calls are a one-line summary that opens into steps on a rail, a failed turn and a stalled agent get a titled notice, and a permission request says "Waiting for you" while it is open.
+- The composer's controls are filled chips, the context meter is a ring, and a model search marks the match that Return picks.
+- In the diff review, the bar that adds your comments to the message floats over the diff, and the Changes tab's file cards, the Activity filters and the Files tab take the same layered look.
+- A new session shows your agents as tiles: tick two or more to compare them, and find the rest under All agents. The folder and branch sit beside the "New session" heading.
+- A compare run shows its agents side by side, each with the files it changed and its last message, and you can answer a plain permission request right in its column.
+- Settings and the welcome screen take the layered look: the theme is a System, Light and Dark control, each agent's sign-in shows as a chip with a dot, and the welcome screen is one panel with each agent's tick at the right.
+- Delegating reads more clearly: a delegate that failed or waits for your answer shows as a titled card with Open, and the line that says where a session was delegated from has its own icon.
+- The top bar shows the folder before the session's title.
+
+### Fixed
+
+- A notice with a long path in it, such as an agent that failed to start, wraps inside its card instead of running past its edge.
+- A file's name stays in sight in two more places where a long path was cut at its end: the header of a diff under a tool call, and an edit request in a compare run's column.
+- When an agent takes long to say which models it offers, the composer says it is still loading instead of showing only placeholder chips.
+- The Activity tab keeps a file's name in sight when its path is long, by cutting the path at its start.
+- A compare run's "Last message" reads without markdown marks such as code ticks and bold asterisks.
+- **macOS should stop asking again and again for access to your folders.** The release was signed only on its executable, so macOS could not match a permission you had given to the app on disk and asked again. The whole app is now signed under its own name, `xyz.zorvo.desktop`, so within one version macOS should no longer ask twice. It asks once more after each update, until Zorvo has an Apple Developer ID. The prompts now say why: an agent you run in Zorvo reads or changes files there.
+
+## [0.10.1] - 2026-11-12
+
+### Fixed
+
+- **Pi shows one Thinking chip after a model switch too.** 0.10.0 hid Pi's second Thinking chip only while its two lists of levels matched. After a model switch Pi's adapter keeps the old model's list on one of them, so both chips came back, with different values. Zorvo now recognizes Pi's modes by their names, whatever levels each list holds.
+
+## [0.10.0] - 2026-11-11
+
+### Added
+
+- Delegate a task from a session to another agent: it works in the same folder and its answers are sent back to the session.
+
+### Changed
+
+- **The website has the new landing page.** Sessions, Compare, Delegate, Private mode on NEAR AI Cloud, Review, Control and the long-session numbers each have their own section, with motion that plays once and is off for visitors who ask for reduced motion. The site now ships one small script for it, and the docs have a new page on delegating a task.
+
+### Fixed
+
+- **Qwen Code's Workflow mode no longer fails with an error when you pick On.** Qwen Code offers Workflow mode in every session, but turns it on only when workflows are on in its own settings, and otherwise refuses with "Internal error (Workflow mode is unavailable in this session)". Zorvo now reads what Qwen Code reports and shows On as unavailable, with the reason: turn on workflows in Qwen Code's settings first.
+- **Qwen Code sees a file you attach from outside the session's folder.** Qwen Code reads an attached file only when it lies inside the session's folder, and dropped any other without a word, so a document from Downloads never reached it and it answered that nothing was attached. Zorvo now also names the path of each such file in the message, so the agent knows it is there and can read it.
+- **Pi shows one Thinking chip, not two.** Pi's adapter reports its thinking levels twice, as modes and as an effort setting, so the composer showed two Thinking chips that could disagree on an ended session. Zorvo now shows the effort chip alone when an agent's modes only repeat its thinking levels.
+
+## [0.9.2] - 2026-11-09
+
+### Fixed
+
+- **Saving a long session no longer freezes the window.** An agent sends the whole file before and after every edit, and Zorvo kept both in the session's history, though the chat only shows the changed lines and three lines around them. A long session's history grew to tens of megabytes, and the window paused for a moment each time it was saved. Zorvo now keeps only the lines the chat shows (a 43 MB history becomes 9 MB), and shrinks an older session's history the next time it saves it. The diffs look the same.
+- **A long session no longer makes the window lag while its agent works.** Each update from the agent drew every tool call of the turn again, with all their open diffs: in a turn with hundreds of edits that was tens of thousands of elements, up to a second each time, so scrolling, typing and clicks stuttered. Now only the tool that changed is drawn again.
+- **The full diff review stays inside the window.** One long line in a diff made the expanded review wider than the window, so its right edge was cut off, with the comments' Edit and Delete and the **Add N comments to message** button. The review now fits the window.
+
+## [0.9.1] - 2026-11-08
+
+### Changed
+
+- **The site is easier to find and lighter to load.** The home page's title and description name the app and the agents it runs (Claude Code, Codex, Qwen Code), the docs pages carry a breadcrumb and article data for search engines, the landing page links its Compare and Review sections to their docs, and a missing page shows a proper 404 that is never indexed. Pages ship no JavaScript: the site has none of its own, so the build drops React's runtime, and the headline font is preloaded with a matched fallback so the page does not shift as it loads.
 - **The landing page shows Zorvo 0.9.** The hero picture is the new window: the two-line sidebar with a compare run, the top bar's chips, the chat and composer, and the inspector on its Changes tab. New sections show a compare run, from ticking agents to Pick, and the diff review with a comment on its line. The features, the agents' Settings rows, the plan and the permission card follow the app as it looks now.
 - **The landing page links to the source.** GitHub sits in the header, and the footer's Project column lists the source, releases, changelog, issues and the Apache 2.0 license.
 - **Private mode keeps its limits and its keys.** A capped session keeps its cap across Stop and reopen; caps are checked against live spend, and a swept session restarts on the draft's original cap. A revoked session key is replaced on the next launch, a failed raise can be retried without a stuck cap, and Switch to Zorvo credits starts a fresh credits session. A running session follows the key it launched with, removing the own key stops its tokens, and a refused or removed key gets its own card. Usage no longer drops after a reopen, and the secret check keeps its review comments, names attachments it could not read, and queues a second message instead of replacing the first.
 - **The docs describe Zorvo 0.9.** New pages explain compare runs and reviewing changes (comments on lines, Reply, the file view, Activity). The quickstart starts from the welcome screen and walks the sidebar, top bar and inspector; Terminal lives in the inspector; signing in covers the Agents menu, Set up Qwen Code and agents whose key lives in a variable; and the update card and failed-turn row are drawn as they look now.
+
+### Fixed
+
+- **A new session's effort list follows the model you pick.** An agent reports the efforts of the model it is on, so picking another model in a new session kept the old model's list: Qwen Code with DeepSeek V4.1 Flash offered only "Thinking on" instead of Low, High and Max. Zorvo now remembers each model's list once the agent has reported it and shows the picked model's own; for a model it has not seen yet, the effort chip waits until the session starts. The effort you picked last is kept for the model that offers it.
 
 ## [0.9.0] - 2026-11-07
 
@@ -278,7 +359,14 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.11.2...HEAD
+[0.11.2]: https://github.com/zakyirsyaad/zorvo/compare/v0.11.1...v0.11.2
+[0.11.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.11.0...v0.11.1
+[0.11.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.10.1...v0.11.0
+[0.10.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.10.0...v0.10.1
+[0.10.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.2...v0.10.0
+[0.9.2]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.1...v0.9.2
+[0.9.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.7.0...v0.8.0

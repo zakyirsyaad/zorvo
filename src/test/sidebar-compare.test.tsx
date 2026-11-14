@@ -57,8 +57,9 @@ describe("a compare run in the sidebar", () => {
     expect(rows.getByRole("button", { name: /Claude Code/ })).toBeInTheDocument();
     expect(rows.getByRole("button", { name: /Qwen Code/ })).toBeInTheDocument();
     expect(rows.getByRole("button", { name: /Kimi CLI/ })).toBeInTheDocument();
-    // The shared task is the group's name and tooltip, never repeated on the rows.
-    expect(screen.queryAllByText("Fix the login")).toHaveLength(0);
+    // The shared task titles the group once and is never repeated on the rows.
+    expect(screen.getAllByText("Fix the login")).toHaveLength(1);
+    expect(rows.queryByText("Fix the login")).toBeNull();
     expect(groupButton().getAttribute("title")).toContain("Fix the login");
   });
 
@@ -147,7 +148,7 @@ describe("a compare run in the sidebar", () => {
     const fork = session({ id: "fork-1", name: "Fix the login (fork)", profileId: "qwen-code", createdAt: 20, forkedFrom: "r-qwen" });
     renderSidebar([...runSessions(), fork]);
 
-    const forks = within(screen.getByRole("list", { name: "Forks of Fix the login" }));
+    const forks = within(screen.getByRole("list", { name: "Sessions from Fix the login" }));
     expect(forks.getByTestId("session-row-fork-1")).toBeInTheDocument();
     // Under the Qwen Code row, not beside the group.
     const qwenItem = screen.getByTestId("session-row-r-qwen").closest("li");
@@ -170,20 +171,24 @@ describe("a compare run in the sidebar", () => {
     expect(onDeleteSession).toHaveBeenCalledWith("r-qwen");
   });
 
-  it("shows a run as Compare with its agents' logos and a summary", () => {
+  it("titles a run by its task, with one columns tile and Compare plus the summary below", () => {
     renderSidebar(runSessions(), { isSessionBusy: (id) => id === "r-kimi" });
 
     const group = screen.getByTestId("run-group-run-1");
-    // "Compare · 3 agents" over "1 working, 2 finished", as drawn; idle, the title is fg-secondary.
-    const title = within(group).getByText("Compare · 3 agents");
+    const title = within(group).getByText("Fix the login");
     expect(title).toHaveClass("truncate", "text-fg-secondary");
-    const summary = within(group).getByText("1 working, 2 finished");
+    const summary = within(group).getByText("Compare · 1 working, 2 finished");
     expect(title.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const logos = within(group).getAllByRole("img", { hidden: true });
-    expect(logos).toHaveLength(3);
-    // The logos come after the words.
-    expect(summary.compareDocumentPosition(logos[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(group.querySelector(".bg-status-running")).toHaveAttribute("aria-hidden", "true");
+    // The agent count moves to the name and tooltip.
+    const button = within(group).getByRole("button");
+    expect(button).toHaveAccessibleName(/Compare · 3 agents/);
+    expect(button.title).toContain("Compare · 3 agents");
+    // One tile with the columns icon; no member logos.
+    const tiles = group.querySelectorAll(".size-\\[22px\\]");
+    expect(tiles).toHaveLength(1);
+    expect(tiles[0].querySelector("svg.lucide-columns-3")).not.toBeNull();
+    expect(within(group).queryAllByRole("img", { hidden: true }).filter((el) => el.tagName === "IMG")).toHaveLength(0);
+    expect(group.querySelector("[data-badge]")).toHaveClass("bg-status-running");
   });
 
   it("keeps its sessions listed under it after a click", () => {
@@ -199,6 +204,7 @@ describe("a compare run in the sidebar", () => {
     const fork = session({ id: "fork-1", name: "Hotfix", profileId: "qwen-code", createdAt: 20, forkedFrom: "r-qwen" });
     renderSidebar([...runSessions(), fork]);
 
+    fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Search sessions" }), { target: { value: "hotfix" } });
 
     expect(screen.getByRole("button", { name: /Fix the login.*3 agents/ })).toBeInTheDocument();
@@ -207,6 +213,7 @@ describe("a compare run in the sidebar", () => {
   it("finds a run's rows by the agent's name", () => {
     renderSidebar([...runSessions(), session({ id: "alone", name: "Add a README" })]);
 
+    fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Search sessions" }), { target: { value: "qwen" } });
 
     const rows = within(screen.getByRole("list", { name: "Agents in Fix the login" }));

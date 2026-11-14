@@ -113,7 +113,7 @@ export function AgentCatalog({ catalog, error, agents, enabledIds, actions, sign
     <div className="flex flex-col gap-6 text-ui">
       <header className="flex flex-col gap-1.5">
         <div className="flex gap-2">
-          <label className="flex h-8 flex-1 items-center gap-2 rounded-lg border border-border-strong bg-surface-2 px-2.5 text-fg-subtle focus-ring-within">
+          <label className="flex h-8 flex-1 items-center gap-2 rounded-lg border border-border bg-surface-2 px-2.5 text-fg-subtle focus-ring-within">
             <Search size={14} className="shrink-0" aria-hidden="true" />
             <input
               type="search"

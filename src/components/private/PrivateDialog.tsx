@@ -46,7 +46,7 @@ export function PrivateDialog({ title, children, footer, onEscape, initialFocusR
         aria-labelledby={titleId}
         aria-describedby={describedBy}
         tabIndex={-1}
-        className="flex w-full max-w-[440px] flex-col gap-4 rounded-xl border border-border bg-surface-1 p-5 text-fg-secondary shadow-dialog outline-none"
+        className="flex w-full max-w-[440px] flex-col gap-4 rounded-xl border border-border bg-surface-2 p-5 text-fg-secondary shadow-dialog outline-none"
       >
         <h2 id={titleId} className="text-base font-semibold text-fg">
           {title}

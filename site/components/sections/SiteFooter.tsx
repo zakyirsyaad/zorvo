@@ -1,74 +1,39 @@
-import { TEXT_LINK } from "../ui/styles";
-import { ZorvoLockup } from "../ui/ZorvoSymbol";
 import { LINKS } from "../../lib/links";
 
-const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
-  {
-    title: "Product",
-    links: [
-      { label: "Agents", href: "#agents" },
-      { label: "Compare", href: "#compare" },
-      { label: "Review", href: "#review" },
-      { label: "Features", href: "#features" },
-      { label: "Privacy", href: "#privacy" },
-      { label: "Download", href: LINKS.download },
-    ],
-  },
-  {
-    title: "Docs",
-    links: [
-      { label: "Install", href: LINKS.installGuide },
-      { label: "Supported agents", href: LINKS.agentsGuide },
-      { label: "Troubleshooting", href: LINKS.troubleshooting },
-    ],
-  },
-  {
-    title: "Project",
-    links: [
-      { label: "Source on GitHub", href: LINKS.repository },
-      { label: "Releases", href: LINKS.releases },
-      { label: "Changelog", href: LINKS.changelog },
-      { label: "Report an issue", href: LINKS.issues },
-      { label: "Apache 2.0 license", href: LINKS.license },
-    ],
-  },
-];
-
-export function SiteFooter() {
+/** `anchorBase` is "/" on pages other than the home page, so the section links lead back to it. */
+export function SiteFooter({ anchorBase = "" }: { anchorBase?: "" | "/" }) {
   return (
-    <footer className="mt-auto border-t border-border bg-surface-1">
-      <div className="site-wrap flex flex-col gap-10 pt-12 pb-10">
-        <div className="flex flex-wrap justify-between gap-10">
-          <div className="flex max-w-[280px] flex-col gap-3">
-            <ZorvoLockup />
-            <p className="t-body m-0">Every coding agent. One desktop.</p>
-          </div>
-          <div className="flex flex-wrap gap-16">
-            {COLUMNS.map(({ title, links }) => (
-              <nav key={title} aria-labelledby={`footer-${title}`} className="flex flex-col gap-2.5">
-                <h2 id={`footer-${title}`} className="m-0 text-xs leading-4 font-medium text-fg">
-                  {title}
-                </h2>
-                <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
-                  {links.map(({ label, href }) => (
-                    <li key={label}>
-                      <a className={TEXT_LINK} href={href}>
-                        {label}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </nav>
-            ))}
-          </div>
+    <footer className="border-t border-border p-[56px_0_72px]">
+      <div className="lp-wrap flex flex-wrap gap-y-10 gap-x-16 text-[14px] leading-5.5">
+        <div className="flex-[1_1_240px] flex flex-col gap-2.5">
+          <span className="text-[20px] font-semibold tracking-[-0.04em] text-fg">zorvo</span>
+          <span className="text-fg-subtle">Every coding agent. One desktop.</span>
         </div>
-        <div className="flex flex-wrap justify-between gap-3 border-t border-border pt-5">
-          <p className="t-caption m-0">© 2026 Zorvo.</p>
-          <p className="t-caption m-0 max-w-[560px]">
-            Claude Code, Codex, Qwen Code and other agent names belong to their makers. Zorvo works
-            with them and is not endorsed by them.
-          </p>
+        <div className="flex flex-col">
+          <span className="text-fg-subtle pb-1.5">Product</span>
+          <a className="focus-ring min-h-8" href={`${anchorBase}#compare`}>Compare</a>
+          <a className="focus-ring min-h-8" href={`${anchorBase}#delegate`}>Delegate</a>
+          <a className="focus-ring min-h-8" href={`${anchorBase}#review`}>Review</a>
+          <a className="focus-ring min-h-8" href={`${anchorBase}#features`}>Features</a>
         </div>
+        <div className="flex flex-col">
+          <span className="text-fg-subtle pb-1.5">Docs</span>
+          <a className="focus-ring min-h-8" href={LINKS.quickstart}>Quickstart</a>
+          <a className="focus-ring min-h-8" href={LINKS.installGuide}>Install</a>
+          <a className="focus-ring min-h-8" href={LINKS.signingIn}>Signing in</a>
+          <a className="focus-ring min-h-8" href={`${anchorBase}#privacy`}>Privacy</a>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-fg-subtle pb-1.5">Project</span>
+          <a className="focus-ring min-h-8" href={LINKS.repository}>Source</a>
+          <a className="focus-ring min-h-8" href={LINKS.releases}>Releases</a>
+          <a className="focus-ring min-h-8" href={LINKS.changelog}>Changelog</a>
+          <a className="focus-ring min-h-8" href={LINKS.license}>Apache 2.0</a>
+        </div>
+        <p className="basis-full max-w-140 text-fg-subtle">
+          Claude Code, Codex, Qwen Code and other agent names belong to their makers. Zorvo works with them and is not
+          endorsed by them.
+        </p>
       </div>
     </footer>
   );

@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { lastTouchedLabel, stillRunning, summarizeTools } from "../../lib/tool-summary";
+import { stillRunning, summarizeTools } from "../../lib/tool-summary";
 import type { ToolExecution } from "../../types";
 import { ToolCallList } from "./ToolCallList";
 
@@ -13,10 +13,14 @@ export interface ToolsPartProps {
 }
 
 /**
- * One surface-1 card for a stretch of tool calls: a 34px summary, with what still runs or the
- * file touched last on the right, opens into the flat rows.
+ * A stretch of tool calls: a 28px ghost summary as wide as its words, with what still runs or
+ * failed beside it, opens into the steps on a rail.
+ *
+ * MessageRow builds each part's `tools` array afresh on every streamed frame, while a tool that did not
+ * change keeps its object. So a part is drawn again only when one of its tools is a new object: a long
+ * turn holds hundreds of open diffs, and drawing them all on every frame made the window lag.
  */
-export function ToolsPart({ tools, isCurrentTurn, isTurnOver }: ToolsPartProps) {
+export const ToolsPart = memo(function ToolsPart({ tools, isCurrentTurn, isTurnOver }: ToolsPartProps) {
   const hasDiff = tools.some((tool) => tool.details?.some((detail) => detail.kind === "diff"));
   // Only an explicit click overrides the turn rule: an auto-opened part closes
   // again when the user moves on, while a part they opened stays open.
@@ -26,32 +30,41 @@ export function ToolsPart({ tools, isCurrentTurn, isTurnOver }: ToolsPartProps) 
   const running = stillRunning(tools, isTurnOver);
   const failed = tools.filter((tool) => tool.status === "failed").length;
   const label = summarizeTools(tools);
-  const touched = lastTouchedLabel(tools);
   const Chevron = isOpen ? ChevronDown : ChevronRight;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface-1">
+    <div data-tools-part="" className="flex flex-col">
       <button
         type="button"
         aria-expanded={isOpen}
         onClick={() => setUserOpen(!isOpen)}
         title={label}
-        className={`focus-ring-inset flex h-[34px] w-full items-center gap-2 px-3 text-left text-ui-sm text-fg-secondary transition-colors hover:bg-surface-hover ${
-          isOpen ? "border-b border-border" : ""
-        }`}
+        className="focus-ring -ml-1 flex h-7 max-w-full items-center gap-2 self-start rounded-md pl-1 pr-2 text-left text-ui-sm text-fg-secondary transition-colors hover:bg-surface-hover"
       >
         <Chevron size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        {running > 0 ? (
+        <span className="min-w-0 truncate">{label}</span>
+        {running > 0 && (
           <>
             <span className="shrink-0 text-caption text-fg-subtle">{running} still running</span>
             {failed > 0 && <span className="shrink-0 text-caption text-danger">{failed} failed</span>}
           </>
-        ) : (
-          touched && <span className="min-w-0 shrink truncate font-mono text-caption text-fg-subtle">{touched}</span>
         )}
       </button>
-      {isOpen && <ToolCallList tools={tools} defaultOpenDiffs={isCurrentTurn} isTurnOver={isTurnOver} />}
+      {isOpen && (
+        <div data-tool-rail="" className="ml-[7px] border-l border-border">
+          <ToolCallList tools={tools} defaultOpenDiffs={isCurrentTurn} isTurnOver={isTurnOver} />
+        </div>
+      )}
     </div>
+  );
+}, isSamePart);
+
+/** Same flags, and the same tool objects in the same order: nothing in the part changed. */
+function isSamePart(prev: ToolsPartProps, next: ToolsPartProps): boolean {
+  return (
+    prev.isCurrentTurn === next.isCurrentTurn &&
+    prev.isTurnOver === next.isTurnOver &&
+    prev.tools.length === next.tools.length &&
+    prev.tools.every((tool, index) => tool === next.tools[index])
   );
 }

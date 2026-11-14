@@ -81,7 +81,7 @@ export function PrivateInspector({
 
   if (session.privateMode?.ownKey === true) {
     return (
-      <aside aria-label="Private panel" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui text-fg-secondary">
+      <aside aria-label="Private panel" className="flex h-full min-h-0 flex-1 flex-col text-ui text-fg-secondary">
         <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-5">
           <dl className="flex flex-col text-ui-sm">
             <div className="flex items-center gap-2 border-b border-border py-2">
@@ -110,7 +110,7 @@ export function PrivateInspector({
   }
 
   return (
-    <aside aria-label="Private panel" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1 text-ui text-fg-secondary">
+    <aside aria-label="Private panel" className="flex h-full min-h-0 flex-1 flex-col text-ui text-fg-secondary">
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-5">
         <Section heading="This session">
           {sessionCap !== undefined ? (

@@ -52,7 +52,7 @@ function PackageOption({ pkg, turns, isChecked, isDisabled, onSelect }: PackageO
       aria-label={label}
       disabled={isDisabled}
       onClick={onSelect}
-      className={`focus-ring relative flex flex-1 flex-col gap-0.5 rounded-xl border bg-surface-2 p-4 text-left disabled:cursor-default disabled:bg-surface-1 ${
+      className={`focus-ring relative flex flex-1 flex-col gap-0.5 rounded-xl border bg-surface-2 p-4 text-left disabled:cursor-default disabled:bg-chip ${
         isChecked ? "border-2 border-fg" : "border-border"
       } ${isDisabled ? "cursor-default" : "cursor-pointer"}`}
     >

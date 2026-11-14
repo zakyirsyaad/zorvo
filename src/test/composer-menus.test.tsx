@@ -59,11 +59,36 @@ describe("the model menu", () => {
     openDropdown("Model", models);
     expect(screen.getByRole("dialog", { name: "Model" })).toHaveClass("w-75");
     const search = screen.getByRole("searchbox", { name: "Search model" });
-    expect(search.closest("label")).toHaveClass("h-7.5");
+    expect(search.closest("label")).toHaveClass("h-7");
     fireEvent.change(search, { target: { value: "son" } });
-    expect(screen.getByText("2 of 14 models")).toHaveClass("text-caption", "text-fg-subtle", "pt-1.5");
+    expect(screen.getByText("2 of 14 models")).toHaveClass("text-caption", "text-fg-muted", "pt-1.5", "pb-1");
     const mark = screen.getAllByRole("option")[0].querySelector("mark");
     expect(mark).toHaveClass("font-semibold");
+  });
+
+  it("marks the row Return would pick, only while the search has text, apart from the picked model's check", () => {
+    openDropdown("Model", models, { selected: "Opus" });
+    expect(document.querySelector("[data-highlighted]")).toBeNull();
+    const picked = screen.getByRole("option", { name: "Opus" });
+    expect(picked.querySelector("[data-option-name]")).toHaveClass("text-fg");
+    expect(screen.getByRole("option", { name: "Haiku" }).querySelector("[data-option-name]")).toHaveClass("text-fg-secondary");
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search model" }), { target: { value: "son" } });
+    const [first, second] = screen.getAllByRole("option");
+    expect(first).toHaveAttribute("data-highlighted");
+    expect(first).toHaveClass("bg-surface-hover");
+    expect(first.querySelector("[data-option-name]")).toHaveClass("text-fg");
+    expect(first.querySelector("[data-check-slot] svg")).toBeNull();
+    expect(second).not.toHaveAttribute("data-highlighted");
+    expect(second.querySelector("[data-option-name]")).toHaveClass("text-fg-secondary");
+  });
+
+  it("is 260 wide for a short list with descriptions, such as modes", () => {
+    openDropdown("Permission mode", [
+      { value: "default", label: "Ask before edits", description: "Asks you before it changes a file." },
+      { value: "plan", label: "Plan" },
+    ]);
+    expect(screen.getByRole("listbox", { name: "Permission mode" })).toHaveClass("w-65");
   });
 
   it("keeps a short list without descriptions as wide as its words", () => {
@@ -88,9 +113,22 @@ describe("the slash and mention menus", () => {
     );
     expect(screen.getByText("Commands from Claude Code")).toBeInTheDocument();
     const option = screen.getByRole("option");
-    expect(option).toHaveClass("flex-col", "py-1.75");
+    expect(option).toHaveClass("flex-col", "rounded-md", "py-[5px]");
     expect(within(option).getByText("/review")).toHaveClass("font-mono", "text-ui-sm", "text-fg");
     expect(within(option).getByText("Review the changes on this branch")).toHaveClass("text-caption", "leading-[15px]", "text-fg-subtle");
+  });
+
+  it("reads a command that is not highlighted in fg-secondary", () => {
+    render(
+      <SlashCommandMenu
+        commands={[{ name: "review", description: "Review" }, { name: "plan", description: "Plan" }]}
+        highlighted={0}
+        onPick={() => {}}
+        agentName="Claude Code"
+      />,
+    );
+    expect(screen.getByText("/review")).toHaveClass("text-fg");
+    expect(screen.getByText("/plan")).toHaveClass("text-fg-secondary");
   });
 
   it("gives a file its icon, and its folder in subtle mono", () => {

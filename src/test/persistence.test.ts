@@ -165,6 +165,41 @@ describe("normalizePersistedState", () => {
   });
 });
 
+describe("normalizePersistedState - who opened a session", () => {
+  const session = (openedBy: unknown) => ({
+    id: "s-1",
+    name: "Port it",
+    profileId: "codex-acp",
+    cwd: "/Users/test/developer/zorvo",
+    status: "idle",
+    createdAt: 1,
+    transport: "acp",
+    openedBy,
+  });
+  const load = (openedBy: unknown) =>
+    normalizePersistedState({ version: 2, settings: {}, recentFolders: [], sessions: [session(openedBy)] }).sessions;
+
+  it("keeps a well-formed handle and drops a malformed one alone", () => {
+    expect(load({ sessionId: "s-a", at: 5, handle: "session-12" })[0].openedBy).toEqual({
+      sessionId: "s-a",
+      at: 5,
+      handle: "session-12",
+    });
+    for (const handle of ["session-0", "session-x", "s-a", 3, "session-1234567", "Session-1"]) {
+      expect(load({ sessionId: "s-a", at: 5, handle })[0].openedBy).toEqual({ sessionId: "s-a", at: 5 });
+    }
+  });
+
+  it("keeps an openedBy link and drops a malformed one, keeping the session", () => {
+    expect(load({ sessionId: "s-a", at: 5 })[0].openedBy).toEqual({ sessionId: "s-a", at: 5 });
+    for (const bad of [{ sessionId: 3, at: 5 }, "s-a", { sessionId: "", at: 1 }, { sessionId: "s-a", at: "now" }]) {
+      const sessions = load(bad);
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]).not.toHaveProperty("openedBy");
+    }
+  });
+});
+
 describe("normalizePersistedState - models", () => {
   it("keeps the models an agent reported and the model picked last, dropping malformed ones", () => {
     const models = { currentModelId: "auto", availableModels: [{ modelId: "auto", name: "Auto" }, { modelId: 3 }] };
@@ -184,6 +219,31 @@ describe("normalizePersistedState - models", () => {
     const qwen = state.agentOptions?.["qwen-code"];
     expect(qwen).not.toHaveProperty("models");
     expect(qwen).not.toHaveProperty("preferredModelId");
+  });
+
+  it("keeps each model's effort list, dropping malformed ones", () => {
+    const effort = {
+      id: "reasoning_effort",
+      name: "Reasoning effort",
+      category: "thought_level",
+      currentValue: "high",
+      options: [{ value: "high", name: "High" }, { value: "max", name: "Max" }],
+    };
+    const state = normalizePersistedState({
+      agentOptions: {
+        "qwen-code": { modes: null, configOptions: [], effortsByModel: { deepseek: effort, kimi: "nope", glm: { id: 3 } } },
+        "codex-acp": { modes: null, configOptions: [], effortsByModel: ["nope"] },
+      },
+    });
+
+    expect(state.agentOptions?.["qwen-code"].effortsByModel).toEqual({
+      deepseek: {
+        ...effort,
+        description: undefined,
+        options: effort.options.map((choice) => ({ ...choice, description: undefined })),
+      },
+    });
+    expect(state.agentOptions?.["codex-acp"]).not.toHaveProperty("effortsByModel");
   });
 });
 
@@ -531,5 +591,117 @@ describe("a saved verification", () => {
       expect(message).toBeDefined();
       expect("verification" in message).toBe(false);
     }
+  });
+});
+describe("normalizePersistedState - delegation", () => {
+  it("keeps a valid delegatedFrom link", () => {
+    const delegatedFrom = { sessionId: "s-a", task: "Do it", startedAt: 5, endedAt: null };
+
+    const state = normalizePersistedState({ sessions: [{ ...base, delegatedFrom }] });
+
+    expect(state.sessions).toHaveLength(1);
+    expect(state.sessions[0].delegatedFrom).toEqual(delegatedFrom);
+  });
+
+  it("drops a malformed delegatedFrom and keeps the session", () => {
+    const malformed = [
+      5,
+      { sessionId: "", task: "x", startedAt: 1 },
+      { sessionId: "s-a", task: "", startedAt: 1 },
+      { sessionId: "s-a", task: "x", startedAt: "now" },
+      { sessionId: "s-a", task: "x", startedAt: 1, endedAt: "later" },
+    ];
+
+    for (const delegatedFrom of malformed) {
+      const state = normalizePersistedState({ sessions: [{ ...base, delegatedFrom }] });
+
+      expect(state.sessions).toHaveLength(1);
+      expect(state.sessions[0]).not.toHaveProperty("delegatedFrom");
+      expect(state.sessions[0]).toMatchObject({
+        id: "s-1",
+        name: "Fix login",
+        cwd: "/w/api",
+        status: "terminated",
+        createdAt: 1,
+      });
+    }
+  });
+});
+
+describe("normalizeTranscript - delegation report", () => {
+  const reply = { id: "m-1", role: "agent", content: "Done.", timestamp: 7 };
+  const withReport = (delegationReport: unknown) => [{ ...reply, delegationReport }];
+
+  it("keeps a delegationReport mark and drops a malformed one", () => {
+    const [kept] = normalizeTranscript(withReport({ agentName: "Codex" }));
+    expect(kept.delegationReport).toEqual({ agentName: "Codex" });
+
+    for (const delegationReport of [{ agentName: 3 }, "Codex"]) {
+      const [message] = normalizeTranscript(withReport(delegationReport));
+      expect(message).toBeDefined();
+      expect(message).not.toHaveProperty("delegationReport");
+      expect(message.content).toBe("Done.");
+    }
+
+    const [withId] = normalizeTranscript(withReport({ agentName: "Codex", agentId: "codex-acp" }));
+    expect(withId.delegationReport).toEqual({ agentName: "Codex", agentId: "codex-acp" });
+
+    const [withoutId] = normalizeTranscript(withReport({ agentName: "Codex", agentId: 3 }));
+    expect(withoutId.delegationReport).toEqual({ agentName: "Codex" });
+  });
+});
+
+describe("normalizeTranscript - delegation task", () => {
+  const message = { id: "m-1", role: "user", content: "Review it.", timestamp: 7 };
+
+  it("keeps a delegationTask mark and drops a malformed one", () => {
+    const [kept] = normalizeTranscript([{ ...message, delegationTask: { agentName: "pi ACP", agentId: "pi-acp" } }]);
+    expect(kept.delegationTask).toEqual({ agentName: "pi ACP", agentId: "pi-acp" });
+
+    const [withoutId] = normalizeTranscript([{ ...message, delegationTask: { agentName: "pi ACP", agentId: 3 } }]);
+    expect(withoutId.delegationTask).toEqual({ agentName: "pi ACP" });
+
+    for (const delegationTask of [{ agentName: "" }, "pi", null]) {
+      const [dropped] = normalizeTranscript([{ ...message, delegationTask }]);
+      expect(dropped).not.toHaveProperty("delegationTask");
+      expect(dropped.content).toBe("Review it.");
+    }
+  });
+});
+
+describe("normalizeTranscript - tool diffs", () => {
+  const withDiff = (detail: unknown) => [
+    { id: "m", role: "agent", content: "", timestamp: 1, tools: [{ id: "t", name: "Edit", status: "completed", details: [detail] }] },
+  ];
+
+  it("turns a diff saved with whole files into the rows it shows", () => {
+    const [message] = normalizeTranscript(withDiff({ kind: "diff", path: "/r/a.ts", oldText: "a\n", newText: "b\n" }));
+
+    expect(message.tools?.[0].details).toEqual([
+      {
+        kind: "diff",
+        path: "/r/a.ts",
+        isNewFile: false,
+        rows: [
+          { kind: "removed", text: "a" },
+          { kind: "added", text: "b" },
+        ],
+      },
+    ]);
+  });
+
+  it("marks an old diff with no oldText as a new file, and keeps a diff already saved as rows", () => {
+    const rows = [{ kind: "added", text: "x" }];
+    const [created] = normalizeTranscript(withDiff({ kind: "diff", path: "/r/n.ts", oldText: null, newText: "x\n" }));
+    const [kept] = normalizeTranscript(withDiff({ kind: "diff", path: "/r/k.ts", isNewFile: true, rows }));
+
+    expect(created.tools?.[0].details).toEqual([{ kind: "diff", path: "/r/n.ts", isNewFile: true, rows }]);
+    expect(kept.tools?.[0].details).toEqual([{ kind: "diff", path: "/r/k.ts", isNewFile: true, rows }]);
+  });
+
+  it("drops a diff it cannot read, keeping the tool", () => {
+    const [message] = normalizeTranscript(withDiff({ kind: "diff", path: "/r/x.ts", rows: "nope" }));
+
+    expect(message.tools?.[0].details).toEqual([]);
   });
 });

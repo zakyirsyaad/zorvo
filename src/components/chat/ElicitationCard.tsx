@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { AgentLogo } from "../AgentLogo";
+import { AgentTile } from "../ui/AgentTile";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { ElicitationFields } from "./ElicitationFields";
@@ -56,7 +56,7 @@ export function ElicitationCard({ card, agentName, agentProfileId, onAnswer, onR
     >
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
-          <AgentLogo profileId={agentProfileId ?? ""} name="" size={16} />
+          <AgentTile profileId={agentProfileId ?? ""} name="" size={22} />
           <h2 className="min-w-0 flex-1 text-ui font-semibold text-fg">
             {isForm ? `${agentName} needs a few details` : `${agentName} wants to open a page`}
           </h2>
@@ -135,7 +135,7 @@ function DeclineButton({ disabled, onAnswer }: { disabled: boolean; onAnswer: (a
 function UrlRequest({ card, disabled, onAnswer }: { card: ElicitationCardData; disabled: boolean; onAnswer: (a: ElicitationAnswer) => void }) {
   return (
     <div className="flex flex-col gap-3.5">
-      <div className="rounded-md border border-border bg-bg px-2.5 py-2 font-mono text-ui-sm text-fg-secondary">
+      <div className="rounded-md border border-border bg-ground px-2.5 py-2 font-mono text-ui-sm text-fg-secondary">
         <p>
           Host: <strong className="text-fg">{card.host}</strong>
         </p>

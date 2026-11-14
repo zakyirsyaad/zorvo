@@ -5,13 +5,15 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "dev": "NEXT_TELEMETRY_DISABLED=1 next dev --port 3100",
-    "build": "NEXT_TELEMETRY_DISABLED=1 next build",
+    "dev": "node scripts/build-motion.mjs && NEXT_TELEMETRY_DISABLED=1 next dev --port 3100",
+    "build": "node scripts/build-motion.mjs && NEXT_TELEMETRY_DISABLED=1 next build && node scripts/strip-runtime.mjs",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@fontsource-variable/geist-mono": "5.3.0",
     "@fontsource-variable/instrument-sans": "5.3.0",
+    "gsap": "3.15.0",
+    "motion": "14.9.0",
     "next": "16.4.3",
     "react": "19.3.1",
     "react-dom": "19.3.1"
@@ -22,6 +24,8 @@
     "@types/node": "^26.6.5",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
+    "esbuild": "0.28.2",
+    "parse5": "8.0.1",
     "tailwindcss": "4.3.3",
     "typescript": "^6.0.3"
   }

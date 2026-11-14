@@ -49,12 +49,38 @@
 //   FAKE_ACP_PRIVATE_REFUSE=<methods> -> with FAKE_ACP_PRIVATE_ERROR, also refuses each method in
 //                         the comma-separated list (session/new, session/load, session/resume,
 //                         session/fork) the same way
+//   FAKE_ACP_PARAMS_LOG -> appends {method, mcpServers} (one JSON line) for every session/new,
+//                         session/load, session/resume and session/fork it receives
+//   FAKE_ACP_MCP_CALL + FAKE_ACP_MCP_LOG -> a prompt "mcp" makes the agent act as an MCP client:
+//                         it spawns the first mcpServers entry its session was opened with, runs
+//                         initialize, notifications/initialized, tools/list and the tools/call
+//                         {tool, args} the flag holds, appends each result to the log (one JSON
+//                         line each), says "mcp:<tools/call text>" and ends the turn; a session
+//                         opened with no server says "mcp:none"
+//   FAKE_ACP_ENV_LOG -> at start, appends one JSON line {socket, token, tools}: whether
+//                         ZORVO_MCP_SOCKET, ZORVO_MCP_TOKEN and ZORVO_TOOLS are set (never their values)
+//   FAKE_ACP_TOOLS_COMMAND + FAKE_ACP_MCP_LOG -> a prompt "tools" makes the agent run the program
+//                         in ZORVO_TOOLS as `tools <tool> <json args>` ({tool, args} from the flag),
+//                         appends {status, stdout, stderr} to the log, says "tools:<stdout, trimmed>"
+//                         and ends the turn; without ZORVO_TOOLS it says "tools:none"
 // (each other FAKE_ACP_* flag is documented where it is read below)
+import { spawn } from "node:child_process";
 import { appendFileSync, closeSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 
+if (process.env.FAKE_ACP_ENV_LOG) {
+  const present = {
+    socket: Boolean(process.env.ZORVO_MCP_SOCKET),
+    token: Boolean(process.env.ZORVO_MCP_TOKEN),
+    tools: Boolean(process.env.ZORVO_TOOLS),
+  };
+  appendFileSync(process.env.FAKE_ACP_ENV_LOG, `${JSON.stringify(present)}\n`);
+}
+
 let nextSession = 1;
+// The mcpServers each session was opened with, by session id.
+const sessionMcpServers = new Map();
 // The folder each session was opened in, by session id.
 const sessionFolders = new Map();
 let pendingPermission = null;
@@ -74,6 +100,58 @@ const reply = (id, result) => send({ id, result });
 const update = (sessionId, update) => send({ method: "session/update", params: { sessionId, update } });
 const say = (sessionId, text) =>
   update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
+
+// Acts as an MCP client against `server` (an ACP mcpServers entry) and runs the call the
+// FAKE_ACP_MCP_CALL flag describes. Resolves with the text of the tools/call result.
+function runMcpClient(server) {
+  const call = JSON.parse(process.env.FAKE_ACP_MCP_CALL);
+  const log = (value) => appendFileSync(process.env.FAKE_ACP_MCP_LOG, `${JSON.stringify(value)}\n`);
+  const env = { ...process.env };
+  for (const { name, value } of server.env ?? []) env[name] = value;
+  const child = spawn(server.command, server.args ?? [], { env, stdio: ["pipe", "pipe", "inherit"] });
+  const waiting = new Map();
+  let nextId = 1;
+  let buffer = "";
+  child.stdout.on("data", (chunk) => {
+    buffer += chunk;
+    let newline;
+    while ((newline = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, newline);
+      buffer = buffer.slice(newline + 1);
+      if (!line.trim()) continue;
+      const message = JSON.parse(line);
+      waiting.get(message.id)?.(message);
+      waiting.delete(message.id);
+    }
+  });
+  const notify = (method) => child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method }) + "\n");
+  const request = (method, params) =>
+    new Promise((resolve, reject) => {
+      const id = nextId++;
+      const timer = setTimeout(() => reject(new Error(`${method} timed out`)), 20000);
+      waiting.set(id, (message) => {
+        clearTimeout(timer);
+        resolve(message);
+      });
+      child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+    });
+  return (async () => {
+    try {
+      log(await request("initialize", {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "fake-acp-agent", version: "0" },
+      }));
+      notify("notifications/initialized");
+      log(await request("tools/list", {}));
+      const result = await request("tools/call", { name: call.tool, arguments: call.args ?? {} });
+      log(result);
+      return result.result?.content?.[0]?.text ?? JSON.stringify(result.error ?? null);
+    } finally {
+      child.kill();
+    }
+  })();
+}
 
 function writeSessionFiles(sessionId) {
   const files = JSON.parse(process.env.FAKE_ACP_WRITE_FILES ?? "{}");
@@ -167,6 +245,41 @@ function handlePrompt(id, params) {
     send({ method: "elicitation/complete", params: { elicitationId: "nope" } });
     say(params.sessionId, "completed-sent");
     reply(id, { stopReason: "end_turn" });
+    return;
+  }
+  if (text === "tools") {
+    const program = process.env.ZORVO_TOOLS;
+    if (!program || !process.env.FAKE_ACP_TOOLS_COMMAND || !process.env.FAKE_ACP_MCP_LOG) {
+      say(params.sessionId, "tools:none");
+      reply(id, { stopReason: "end_turn" });
+      return;
+    }
+    const call = JSON.parse(process.env.FAKE_ACP_TOOLS_COMMAND);
+    const child = spawn(program, ["tools", call.tool, JSON.stringify(call.args ?? {})], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => (stdout += chunk));
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.on("close", (status) => {
+      appendFileSync(process.env.FAKE_ACP_MCP_LOG, `${JSON.stringify({ status, stdout, stderr })}\n`);
+      say(params.sessionId, `tools:${stdout.trim()}`);
+      reply(id, { stopReason: "end_turn" });
+    });
+    return;
+  }
+  if (text === "mcp") {
+    const server = (sessionMcpServers.get(params.sessionId) ?? [])[0];
+    if (!server || !process.env.FAKE_ACP_MCP_CALL || !process.env.FAKE_ACP_MCP_LOG) {
+      say(params.sessionId, "mcp:none");
+      reply(id, { stopReason: "end_turn" });
+      return;
+    }
+    runMcpClient(server)
+      .then((text) => say(params.sessionId, `mcp:${text}`))
+      .catch((error) => say(params.sessionId, `mcp-error:${error.message}`))
+      .finally(() => reply(id, { stopReason: "end_turn" }));
     return;
   }
   if (text === "permission") {
@@ -361,6 +474,7 @@ const handlers = {
       return;
     }
     sessionFolders.set(params.sessionId, params.cwd);
+    sessionMcpServers.set(params.sessionId, params.mcpServers ?? []);
     update(params.sessionId, {
       sessionUpdate: "user_message_chunk",
       content: { type: "text", text: "earlier question" },
@@ -377,7 +491,10 @@ const handlers = {
     reply(id, { modes: defaultModes() });
   },
   // FAKE_ACP_RESUME: reopens the session and answers without replaying anything.
-  "session/resume": (id) => reply(id, { modes: defaultModes() }),
+  "session/resume": (id, params) => {
+    sessionMcpServers.set(params.sessionId, params.mcpServers ?? []);
+    reply(id, { modes: defaultModes() });
+  },
   // FAKE_ACP_LIST_PAGES: serves the pages from the JSON file it names. A missing
   // cursor serves page 0 and "page-<n>" serves page n; the answer names the next
   // page while one remains. Any other cursor is refused as invalid. Without the
@@ -442,6 +559,7 @@ const handlers = {
     }
     const sessionId = `fake-${nextSession++}`;
     sessionFolders.set(sessionId, params?.cwd);
+    sessionMcpServers.set(sessionId, params?.mcpServers ?? []);
     reply(id, {
       sessionId,
       modes: defaultModes(),
@@ -469,8 +587,9 @@ const handlers = {
   },
   // FAKE_ACP_SLOW_DELETE: takes three seconds to delete a session.
   "session/delete": (id) => setTimeout(() => reply(id, {}), process.env.FAKE_ACP_SLOW_DELETE ? 3000 : 0),
-  "session/fork": (id) => {
+  "session/fork": (id, params) => {
     const sessionId = `fake-${nextSession++}`;
+    sessionMcpServers.set(sessionId, params?.mcpServers ?? []);
     reply(id, { sessionId });
     askAfterOpen(sessionId);
   },
@@ -545,6 +664,14 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     if (mcpLog && ["session/new", "session/load", "session/resume", "session/fork"].includes(message.method)) {
       appendFileSync(mcpLog, `${message.method} ${JSON.stringify(message.params?.mcpServers ?? [])}\n`);
     }
+  }
+  // FAKE_ACP_PARAMS_LOG: what each session-opening call asked for.
+  if (
+    process.env.FAKE_ACP_PARAMS_LOG &&
+    ["session/new", "session/load", "session/resume", "session/fork"].includes(message.method)
+  ) {
+    const entry = { method: message.method, mcpServers: message.params?.mcpServers };
+    appendFileSync(process.env.FAKE_ACP_PARAMS_LOG, `${JSON.stringify(entry)}\n`);
   }
   if (message.method === "session/cancel" && pendingSlow) {
     reply(pendingSlow.promptId, { stopReason: "cancelled" });

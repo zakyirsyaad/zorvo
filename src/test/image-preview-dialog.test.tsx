@@ -24,7 +24,11 @@ describe("ImagePreviewDialog", () => {
 
     await loadImage(1280, 800);
 
-    expect(screen.getByText("1280 × 800")).toHaveClass("text-fg-subtle");
+    const meta = screen.getByText("1280 × 800");
+    expect(meta).toHaveClass("shrink-0", "text-fg-subtle");
+    // On one row with the name, before Close.
+    expect(meta.previousElementSibling).toBe(screen.getByRole("heading"));
+    expect(meta.parentElement).toHaveClass("flex", "items-center");
   });
 
   it("adds the file size when it is known", async () => {

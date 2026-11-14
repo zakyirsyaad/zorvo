@@ -1,60 +1,43 @@
-<!-- @dsCard group="Layout" height=640 -->
+<!-- @dsCard group="Panels" height=860 -->
 <!doctype html>
 <html>
 <head><meta charset="utf-8"><title>Onboarding — preview</title>
 <style>
-.z-welcome { box-sizing: border-box; width: 760px; padding: 48px 24px; background: var(--bg); color: var(--fg); font: 400 13px/18px var(--font-sans); }
-.z-welcome-col { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
-.z-welcome-head { display: flex; flex-direction: column; gap: 12px; }
-.z-welcome-mark { display: flex; align-items: center; gap: 10px; color: var(--fg); font: 600 28px/28px var(--font-sans); letter-spacing: -0.04em; }
-.z-welcome-mark svg { width: 28px; height: 28px; }
-.z-welcome-title { margin: 0; font: 600 28px/34px var(--font-sans); letter-spacing: -0.03em; }
-.z-welcome-lead { margin: 0; color: var(--fg-muted); font-size: 14px; line-height: 22px; }
-.z-welcome-sec { display: flex; flex-direction: column; gap: 10px; }
-.z-welcome-h { display: flex; align-items: center; gap: 8px; margin: 0; font: 600 13px/18px var(--font-sans); }
-.z-welcome-n { width: 20px; height: 20px; box-sizing: border-box; border-radius: 9999px; border: 1px solid var(--border-strong); color: var(--fg-secondary); font-size: 11px; font-weight: 400; display: flex; align-items: center; justify-content: center; }
-.z-welcome-card { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface-2); }
-.z-welcome-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
-.z-welcome-row:last-child { border-bottom: 0; }
-.z-welcome-cb { width: 16px; height: 16px; box-sizing: border-box; border-radius: 4px; border: 1.5px solid var(--border-strong); flex: none; }
-.z-welcome-cb--on { background: var(--fg); border-color: var(--fg); }
-.z-welcome-tile { width: 28px; height: 28px; border-radius: 7px; background: var(--surface-hover); flex: none; }
-.z-welcome-l { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.z-welcome-d { font-size: 12px; line-height: 16px; color: var(--fg-subtle); display: flex; align-items: center; gap: 6px; }
-.z-welcome-dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--status-running); }
-.z-welcome-tag { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; margin-left: 8px; border-radius: 4px; border: 1px solid var(--border); font-size: 10px; font-weight: 500; color: var(--fg-muted); }
-.z-welcome-mono { font-family: var(--font-mono); font-size: 11px; }
-.z-welcome-foot { display: flex; align-items: center; gap: 12px; padding-top: 8px; }
-.z-welcome-note { flex: 1; font-size: 12px; color: var(--fg-subtle); }
-.z-btn { height: 28px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: none; color: var(--fg); font: 400 12px/16px var(--font-sans); }
-.z-btn--primary { height: 32px; border-color: transparent; background: var(--primary); color: var(--on-primary); font-weight: 500; }
+.z-welcome { width: 100%; max-width: 760px; margin: 0 auto; padding: 48px 24px; }
+.z-wsheet { display: flex; flex-direction: column; gap: 24px; padding: 32px; border-radius: var(--radius-xl); }
+.z-wm { display: flex; align-items: center; gap: 10px; color: var(--fg); font: 600 28px/28px var(--font-sans); letter-spacing: -0.04em; }
+.z-h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; color: var(--fg); font: 600 13px/18px var(--font-sans); }
+.z-h2 span { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: var(--radius-full); border: 1px solid var(--border-strong); font: 500 11px/16px var(--font-sans); }
+.z-line { display: flex; align-items: center; gap: var(--space-1\.5); color: var(--fg-muted); font: 400 12px/16px var(--font-sans); margin-top: 1px; }
 </style>
 </head>
 <body>
-<div class="z-stage">
-  <div class="z-welcome">
-    <div class="z-welcome-col">
-      <div class="z-welcome-head">
-        <div class="z-welcome-mark"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 7l10 7-10 7"/><path d="M18 19l10 7-10 7"/><path d="M30 33h5"/></svg>zorvo</div>
-        <h1 class="z-welcome-title">Every coding agent. One desktop.</h1>
-        <p class="z-welcome-lead">Pick the agents you'll use and a project folder. You can change all of this later in Settings.</p>
-      </div>
-      <section class="z-welcome-sec">
-        <h2 class="z-welcome-h"><span class="z-welcome-n">1</span>Agents you'll use</h2>
-        <div class="z-welcome-card">
-          <div class="z-welcome-row"><span class="z-welcome-cb z-welcome-cb--on"></span><span class="z-welcome-tile"></span><span class="z-welcome-l"><span>Claude Code<span class="z-welcome-tag">Default</span></span><span class="z-welcome-d"><span class="z-welcome-dot"></span>On this Mac · Ready</span></span></div>
-          <div class="z-welcome-row"><span class="z-welcome-cb"></span><span class="z-welcome-tile"></span><span class="z-welcome-l"><span>Gemini CLI</span><span class="z-welcome-d">Not installed · Zorvo can install it</span></span></div>
-        </div>
-      </section>
-      <section class="z-welcome-sec">
-        <h2 class="z-welcome-h"><span class="z-welcome-n">2</span>Project folder</h2>
-        <div class="z-welcome-card">
-          <div class="z-welcome-row"><span class="z-welcome-tile"></span><span class="z-welcome-l"><span>agent-desktop</span><span class="z-welcome-d z-welcome-mono">~/developer/agent-desktop</span></span><button type="button" class="z-btn">Change</button></div>
-        </div>
-      </section>
-      <div class="z-welcome-foot"><span class="z-welcome-note"></span><button type="button" class="z-btn z-btn--primary">Start</button></div>
-    </div>
-  </div>
+<div class="z-welcome">
+ <div class="z-sheet z-wsheet">
+  <header class="z-vstack" style="gap:10px">
+   <div class="z-wm"><svg class="z-ico" viewBox="0 0 24 24" style="width:28px;height:28px;stroke-width:2.4"><path d="m4 5 6 4-6 4"/><path d="m11 13 6 4-6 4"/><path d="M19 21h2"/></svg>zorvo</div>
+   <h1 class="z-title">Every coding agent. One desktop.</h1>
+   <p style="margin:0; font:400 13px/20px var(--font-sans)" class="z-muted">Pick the agents you'll use and a project folder. You can change all of this later in Settings.</p>
+  </header>
+  <section>
+   <h2 class="z-h2"><span>1</span>Agents you'll use</h2>
+   <div class="z-group__card">
+    <div class="z-grow z-grow--compact"><span class="z-tile z-tile--22 z-on-sheet">C</span><div class="z-grow__main"><div class="z-fg z-w5">Claude Code <span class="z-tag" style="margin-left:var(--space-1\.5)">Default</span></div><div class="z-line"><span class="z-dot z-dot--running z-dot--still"></span>On this Mac · Ready</div></div><span class="z-checkbox is-on" role="checkbox" aria-checked="true" aria-label="Use Claude Code"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+    <div class="z-grow z-grow--compact"><span class="z-tile z-tile--22">X</span><div class="z-grow__main"><div class="z-fg z-w5">Codex</div><div class="z-line">Not installed yet</div></div><button class="z-btn z-btn--outline" type="button">Install</button><span class="z-checkbox is-on" role="checkbox" aria-checked="true" aria-label="Use Codex"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+    <div class="z-grow z-grow--compact"><span class="z-tile z-tile--22">Q</span><div class="z-grow__main"><div class="z-fg2 z-w5">Qwen Code</div><div class="z-line">Runs with npx · Sign in when you start</div></div><span class="z-checkbox" role="checkbox" aria-checked="false" aria-label="Use Qwen Code"></span></div>
+    <div class="z-grow z-grow--compact"><span class="z-tile z-tile--22">G</span><div class="z-grow__main"><div class="z-fg2 z-w5">Gemini CLI</div><div class="z-line">Not installed · Zorvo can install it</div></div><span class="z-checkbox" role="checkbox" aria-checked="false" aria-label="Use Gemini CLI"></span></div>
+    <div class="z-grow z-grow--compact"><span class="z-tile z-tile--22">P</span><div class="z-grow__main"><div class="z-fg2 z-w5">Pi</div><div class="z-line">Installed by Zorvo · Not checked</div></div><span class="z-checkbox" role="checkbox" aria-checked="false" aria-label="Use Pi"></span></div>
+   </div>
+   <button class="z-btn z-btn--ghost" type="button" style="margin-top:var(--space-2)">Show all agents</button>
+  </section>
+  <section>
+   <h2 class="z-h2"><span>2</span>Project folder</h2>
+   <div class="z-group__card">
+    <div class="z-grow z-grow--compact"><span class="z-tile z-tile--22"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><div class="z-grow__main"><div class="z-fg z-w5">agent-desktop</div><div class="z-mono z-cap z-muted">~/developer/agent-desktop</div></div><button class="z-btn z-btn--outline" type="button">Change</button></div>
+   </div>
+  </section>
+  <footer class="z-hstack" style="justify-content:space-between"><span class="z-ui-sm z-subtle" role="status">Codex is still installing. You can start with Claude Code now.</span><button class="z-btn z-btn--primary z-btn--lg" type="button" style="min-width:72px">Start</button></footer>
+ </div>
 </div>
 </body>
 </html>

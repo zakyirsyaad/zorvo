@@ -4,10 +4,21 @@ A modal for settings and confirmations, over the `overlay` scrim.
 
 The consumer provides the title, the fields and the actions.
 
-- `surface-1` with a `border` edge, `radius-xl`, `space-5` padding and `shadow-dialog`.
+- `surface-2` with a `border` edge, `radius-xl`, `space-5` padding and `shadow-dialog`.
 - Title in `heading`; a Close `IconButton` top right; Escape closes it.
 - Fields: a `label` in `ui` weight 500, an input with a `border-strong` edge, a hint in `caption` and `fg-subtle`.
 - Actions sit bottom right above a `border` rule: Cancel as ghost, the confirming action as primary.
+
+## Delegate to another agent
+
+The dialog the session's ⋯ menu and the composer's **Change** open: pick an agent, write the task, and see what that agent starts on.
+
+- Title "Delegate to another agent" at 14/22, weight 600, a Close `IconButton` top right; Escape closes, and an open chip's menu closes on the first Escape.
+- **Agent** label in `ui` weight 500, then one 36px row per agent in use: a 22px `AgentTile`, its name (weight 500 when picked), and its status on the right — "Ready" (`fg-muted`), "Not checked" (`fg-subtle`), "Needs sign-in" (`fg-muted`, after a `status-attention` dot) or "Not installed" (`fg-subtle`). One choice only, so each row is a radio. A row that cannot be picked (not installed) is at 55% opacity, and its status describes its control.
+- **Task** label, then a 3-row textarea filled `ground` with a `border-strong` edge and 20px lines. An empty task's error, "Write the task first.", is `ui-sm` `danger` under the textarea, whose edge turns `danger` too.
+- Under the task, "<Agent> starts on" in `ui` weight 500 and the picked agent's model, effort and mode as 28px borderless chips with `radius-md`, `ui-sm` `fg-secondary` and a 12px chevron in `fg-muted`; a risky mode keeps its `ShieldAlert`. An agent whose options are unknown shows one **Default** chip, and is asked only when that chip opens. Opening the dialog starts no agent.
+- The line about what happens follows in `ui-sm` `fg-muted`: "<Agent> reads this conversation first and works in the same folder. Each answer it gives is sent to <source agent>.", adding "<source agent> isn't running, so its reports wait in its composer." when it is not.
+- Actions bottom right above a `border` rule: **Cancel** (ghost) and **Delegate** (primary); with no task, Delegate shows the error instead of starting.
 
 ## Terminal sign-in and setup
 

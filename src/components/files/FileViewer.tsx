@@ -1,4 +1,5 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { POPOVER_PANEL_STYLE } from "../ui/Popover";
 import { Check, ChevronLeft, Copy, ExternalLink, Plus } from "lucide-react";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
@@ -11,6 +12,7 @@ import type { LineChange } from "../../lib/changed-lines";
 import { TOKEN_STYLE, tokenizeLines, type Token } from "../../lib/code-tokens";
 import { errorMessage, joinWorkspacePath, openWorkspacePath } from "../../lib/files";
 import { formatSize, languageOf, splitLines, type FileContent } from "../../lib/file-content";
+import { FilePreview } from "./FilePreview";
 import { MARKER_LETTER, MARKER_WORD, type FileMarker } from "../../lib/file-markers";
 
 export interface FileViewerProps {
@@ -111,7 +113,7 @@ export const FileLines = memo(function FileLines({
       aria-label={`Contents of ${name}`}
       // Padding and line height come from the numbers the add-lines card is placed by, so the two cannot drift.
       style={BODY_STYLE}
-      className="focus-ring relative min-h-0 flex-1 overflow-auto bg-bg font-mono text-ui-sm select-text"
+      className="focus-ring-inset relative min-h-0 flex-1 overflow-auto bg-ground font-mono text-ui-sm select-text"
     >
       {lines.map((_, index) => {
         const line = index + 1;
@@ -163,7 +165,9 @@ function Unshown({ content, failure }: { content?: FileContent; failure?: string
         ? `This file is binary (${formatSize(content.size)}), so it is not shown.`
         : content?.kind === "tooLarge"
           ? `This file is too large to show (${formatSize(content.size)}; the limit is ${formatSize(content.limit)}).`
-          : "";
+          : content?.kind === "previewTooLarge"
+            ? `This ${content.mime === "application/pdf" ? "PDF" : "image"} is too large to preview (${formatSize(content.size)}; the limit is ${formatSize(content.limit)}). Open it in its app instead.`
+            : "";
   const isError = failure !== undefined && !isGone(failure);
   return (
     <p role={isError ? "alert" : undefined} className={`px-3 py-4 text-ui-sm ${isError ? "text-danger" : "text-fg-muted"}`}>
@@ -236,7 +240,7 @@ export function FileViewer({
             : BODY_PADDING_PX + range.last * LINE_HEIGHT_PX + ADD_LINES_GAP_PX,
           left: ADD_LINES_LEFT_PX,
         }}
-        className={`absolute flex rounded-lg border border-border bg-surface-3 p-0.5 font-sans shadow-popover select-none ${
+        className={`absolute flex ${POPOVER_PANEL_STYLE} font-sans select-none ${
           range.isBackward ? "-translate-y-full" : ""
         }`}
       >
@@ -259,19 +263,19 @@ export function FileViewer({
   }, [canInsertText, range, relativePath, lines, language.fence, clearSelection, insertTextRef]);
 
   return (
-    <section aria-label="File viewer" className="flex h-full min-h-0 flex-1 flex-col bg-surface-1">
+    <section aria-label="File viewer" className="flex h-full min-h-0 flex-1 flex-col">
       <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-border px-2">
         <Button variant="ghost" tone="secondary" size="row" icon={<ChevronLeft size={14} aria-hidden="true" />} onClick={onBack}>
           Files
         </Button>
         <Breadcrumb relativePath={relativePath} marker={marker} />
-        <IconButton label={`Add ${name} to prompt`} title="Add to prompt" size="row" onClick={() => onInsertPath(absolutePath)}>
+        <IconButton label={`Add ${name} to prompt`} title="Add to prompt" size="md" onClick={() => onInsertPath(absolutePath)}>
           <Plus size={14} />
         </IconButton>
-        <IconButton label="Open in editor" title="Open in editor" size="row" onClick={openInEditor}>
+        <IconButton label="Open in editor" title="Open in editor" size="md" onClick={openInEditor}>
           <ExternalLink size={14} />
         </IconButton>
-        <IconButton label={isCopied ? "Path copied" : "Copy path"} title="Copy path" size="row" onClick={copyPath}>
+        <IconButton label={isCopied ? "Path copied" : "Copy path"} title="Copy path" size="md" onClick={copyPath}>
           {isCopied ? <Check size={14} /> : <Copy size={14} />}
         </IconButton>
       </div>
@@ -310,6 +314,14 @@ export function FileViewer({
             bodyRef={bodyRef}
             selected={canInsertText ? range : null}
             overlay={addLines}
+          />
+        ) : read.content.kind === "preview" ? (
+          <FilePreview
+            rootPath={rootPath}
+            relativePath={relativePath}
+            mime={read.content.mime}
+            size={read.content.size}
+            version={version}
           />
         ) : (
           <Unshown content={read.content} />

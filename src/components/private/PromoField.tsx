@@ -13,7 +13,7 @@ export interface PromoFieldProps {
 }
 
 const INPUT =
-  "h-8 w-44 rounded-lg border border-border-strong bg-bg px-2.5 font-mono text-ui text-fg " +
+  "h-8 w-44 rounded-lg border border-border-strong bg-ground px-2.5 font-mono text-ui text-fg " +
   "placeholder:text-fg-subtle focus-ring disabled:opacity-40";
 
 /** A code from Zorvo: its credits land in the balance as a top-up. */

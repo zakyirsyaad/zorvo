@@ -1,8 +1,7 @@
 import { useRef, type KeyboardEvent } from "react";
 import { Check, ChevronDown } from "lucide-react";
-import { AgentLogo } from "../AgentLogo";
+import { AgentTile } from "../ui/AgentTile";
 import { Popover, PopoverHeader } from "../ui/Popover";
-import { DRAFT_CHIP } from "./chip-style";
 import { MAX_COMPARE_AGENTS } from "../../lib/compare-run";
 import { SIGN_IN_LABELS } from "../../lib/agent-sign-in";
 import type { AgentChoice } from "../../lib/composer-controls";
@@ -19,17 +18,32 @@ export interface AgentMultiPickerProps {
   onChange: (agentId: string) => void;
   /** Chooses this agent alone. */
   onPick: (agentId: string) => void;
+  /** False where there is no repository: no checkboxes, a name picks the one agent. */
+  canTick?: boolean;
 }
 
 const LIMIT_REASON = `You can compare up to ${MAX_COMPARE_AGENTS} agents.`;
 
 type StatusTone = "muted" | "subtle" | "attention";
 
+/** The word's own colour. A sign-in is said in the muted colour: its dot carries the attention colour, as in the delegate dialog. */
 const STATUS_TONES: Readonly<Record<StatusTone, string>> = {
   muted: "text-fg-muted",
   subtle: "text-fg-subtle",
-  attention: "text-status-attention",
+  attention: "text-fg-muted",
 };
+
+/** The dot before a status word: ready and needs-sign-in are worth a glance, the rest are words only. */
+const STATUS_DOTS: Readonly<Partial<Record<StatusTone, string>>> = {
+  muted: "bg-status-running",
+  attention: "bg-status-attention",
+};
+
+/** Runnable agents first, then the ones that need a sign-in, then the ones not installed; otherwise as given. */
+const BLOCK_ORDER = { none: 0, "sign-in": 1, install: 2 } as const;
+function inPickOrder(options: readonly AgentChoice[]): AgentChoice[] {
+  return [...options].sort((a, b) => BLOCK_ORDER[a.blockedBy ?? "none"] - BLOCK_ORDER[b.blockedBy ?? "none"]);
+}
 
 /** The word on an agent's row, as the canvas draws it: what keeps it out first, else whether it was seen ready. */
 function statusOf(option: AgentChoice): { word: string; tone: StatusTone } | undefined {
@@ -40,20 +54,13 @@ function statusOf(option: AgentChoice): { word: string; tone: StatusTone } | und
   return undefined;
 }
 
-/** The ticked agents, in the order they were ticked: each one's id and plain name. */
-function tickedAgents(options: readonly AgentChoice[], selected: readonly string[]): { id: string; name: string }[] {
-  return selected.map((id) => ({ id, name: options.find((o) => o.value === id)?.name ?? id }));
-}
-
 /**
- * The draft's Agent chip in a git repository: a name picks that agent alone, and a checkbox ticks it for
- * a compare run. Each row shows the agent's logo and whether it is ready; the arrow keys move between the buttons.
+ * Every agent in use, behind the draft's "All agents" button: a name picks that agent alone, and in a repository
+ * a checkbox ticks it for a compare run. Each row shows the agent's tile and whether it is ready; the arrow keys
+ * move between the buttons.
  */
-export function AgentMultiPicker({ options, selected, isOpen, onToggle, onClose = onToggle, onChange, onPick }: AgentMultiPickerProps) {
+export function AgentMultiPicker({ options, selected, isOpen, onToggle, onClose = onToggle, onChange, onPick, canTick = true }: AgentMultiPickerProps) {
   const menuRef = useRef<HTMLDivElement>(null);
-  const ticked = tickedAgents(options, selected);
-  const names = ticked.map((agent) => agent.name).join(", ");
-  const isCompare = ticked.length >= 2;
   const isFull = selected.length >= MAX_COMPARE_AGENTS;
   // The only agent needs an install or a sign-in: its own panel comes before any compare.
   const onlyAgent = selected.length === 1 ? options.find((o) => o.value === selected[0]) : undefined;
@@ -75,41 +82,32 @@ export function AgentMultiPicker({ options, selected, isOpen, onToggle, onClose 
       label="Choose agents"
       role="dialog"
       side="bottom"
-      align="start"
+      align="end"
       className="w-95"
       wrapperClassName="min-w-0 max-w-full"
       trigger={
         <button
           type="button"
-          aria-label={`Agent: ${names}${isCompare ? ", compare" : ""}`}
           aria-haspopup="dialog"
           aria-expanded={isOpen}
           onClick={onToggle}
-          title={names}
-          className={DRAFT_CHIP}
+          className="focus-ring flex h-6 items-center gap-1 rounded-md px-1.5 text-ui-sm text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg aria-expanded:bg-surface-hover aria-expanded:text-fg"
         >
-          {/* Each ticked agent's logo, overlapping, as the canvas draws a compare run's chip. */}
-          <span data-agent-logos="" aria-hidden="true" className="flex shrink-0">
-            {ticked.map((agent, index) => (
-              <AgentLogo key={agent.id} profileId={agent.id} name="" size={16} className={index > 0 ? "-ml-1" : ""} />
-            ))}
-          </span>
-          <span className="min-w-0 truncate">{names}</span>
-          {isCompare && <span className="shrink-0 text-fg-subtle"> · compare</span>}
-          <ChevronDown size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
+          All agents
+          <ChevronDown size={12} aria-hidden="true" className="shrink-0" />
         </button>
       }
     >
-      <PopoverHeader aside="Pick more than one to compare">Agents</PopoverHeader>
+      <PopoverHeader aside={canTick ? "Pick more than one to compare" : undefined}>Agents</PopoverHeader>
       <div
         ref={menuRef}
         role="listbox"
         aria-label="Agent"
-        aria-multiselectable="true"
+        aria-multiselectable={canTick || undefined}
         onKeyDown={moveFocus}
         className="max-h-72 overflow-y-auto"
       >
-        {options.map((option) => {
+        {inPickOrder(options).map((option) => {
           const isTicked = selected.includes(option.value);
           const isOnly = isTicked && selected.length === 1;
           const isHeldBack = !isTicked && isOnlyBlocked;
@@ -126,8 +124,9 @@ export function AgentMultiPicker({ options, selected, isOpen, onToggle, onClose 
               <div
                 role="presentation"
                 data-agent-row=""
-                className={`flex h-7.5 items-center gap-2 rounded px-2 transition-colors hover:bg-surface-hover ${isBlocked ? "opacity-55" : ""}`}
+                className={`flex h-7 items-center gap-2 rounded-md px-2 transition-colors hover:bg-surface-hover ${isBlocked ? "opacity-55" : ""}`}
               >
+                {canTick && (
                 <button
                   type="button"
                   role="checkbox"
@@ -142,12 +141,13 @@ export function AgentMultiPicker({ options, selected, isOpen, onToggle, onClose 
                   <span
                     aria-hidden="true"
                     className={`flex size-3.5 items-center justify-center rounded-[3px] border-[1.5px] ${
-                      isTicked ? "border-fg bg-fg text-bg" : "border-border-strong"
+                      isTicked ? "border-fg bg-fg text-surface-3" : "border-border-strong"
                     }`}
                   >
                     {isTicked && <Check size={10} strokeWidth={3} />}
                   </span>
                 </button>
+                )}
                 <button
                   type="button"
                   role="option"
@@ -155,19 +155,19 @@ export function AgentMultiPicker({ options, selected, isOpen, onToggle, onClose 
                   onClick={() => onPick(option.value)}
                   className={`focus-ring flex min-w-0 flex-1 items-center gap-2 rounded text-left text-ui ${isTicked ? "text-fg" : "text-fg-secondary"}`}
                 >
-                  <AgentLogo profileId={option.value} name="" size={16} />
+                  <AgentTile profileId={option.value} name="" size={16} />
                   <span className="truncate">{option.name}</span>
                 </button>
                 {status && (
                   <span id={statusId} className="flex shrink-0 items-center gap-1.25">
-                    {status.tone === "attention" && (
-                      <span aria-hidden="true" className="size-1.5 rounded-full bg-status-attention" />
+                    {STATUS_DOTS[status.tone] && (
+                      <span aria-hidden="true" className={`size-1.5 rounded-full ${STATUS_DOTS[status.tone]}`} />
                     )}
                     <span className={`text-caption ${STATUS_TONES[status.tone]}`}>{status.word}</span>
                   </span>
                 )}
               </div>
-              {reason && (
+              {canTick && reason && (
                 <p id={reasonId} className="px-2 pb-1 text-caption text-fg-muted">
                   {reason}
                 </p>
@@ -176,10 +176,14 @@ export function AgentMultiPicker({ options, selected, isOpen, onToggle, onClose 
           );
         })}
       </div>
-      <div aria-hidden="true" className="my-1.5 h-px bg-border" />
-      <p className="px-2 pt-1 pb-1.5 text-caption text-fg-subtle">
-        With two or more agents, each runs in its own worktree in its safest mode.
-      </p>
+      {canTick && (
+        <>
+          <div aria-hidden="true" className="my-1.5 h-px bg-border" />
+          <p className="px-2 pt-1 pb-1.5 text-caption text-fg-subtle">
+            With two or more agents, each runs in its own worktree in its safest mode.
+          </p>
+        </>
+      )}
     </Popover>
   );
 }

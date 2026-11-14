@@ -8,6 +8,12 @@
   --color-surface-2: #18181b;
   --color-surface-3: #1f1f23;
   --color-surface-hover: #27272a;
+  /* The window behind the sidebar and the sheets; also wells (code, inputs) on a sheet. */
+  --color-ground: #0a0a0b;
+  /* The raised panels: chat, inspector. In light mode these two are the reverse of bg and surface-1. */
+  --color-sheet: #111113;
+  /* A translucent fill: chips, agent tiles, segmented tracks. */
+  --color-chip: rgba(255, 255, 255, 0.06);
   --color-overlay: rgba(0, 0, 0, 0.7);
   --color-border: #27272a;
   --color-border-strong: #71717a;
@@ -43,6 +49,10 @@
 
   /* The chat's column: messages, cards, notices and the composer share it. */
   --container-chat: 680px;
+  /* The new-session draft's column, and the compare run's columns side by side. */
+  --container-draft: 720px;
+  --container-compare: 1040px;
+  --radius-panel: 10px;
 
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -74,6 +84,9 @@
     --color-surface-2: #ffffff;
     --color-surface-3: #ffffff;
     --color-surface-hover: #e4e4e7;
+    --color-ground: #f4f4f5;
+    --color-sheet: #fafafa;
+    --color-chip: rgba(9, 9, 11, 0.05);
     --color-overlay: rgba(9, 9, 11, 0.4);
     --color-border: #e4e4e7;
     --color-border-strong: #808088;
@@ -130,7 +143,7 @@
 @layer base {
   body {
     color-scheme: light dark;
-    background-color: var(--color-bg);
+    background-color: var(--color-ground);
     color: var(--color-fg-secondary);
     font-family: var(--font-sans);
     margin: 0;
@@ -141,26 +154,4 @@
   ::selection {
     background-color: var(--color-selection);
   }
-}
-
-/*
- * The Appearance tiles' previews: each shows one theme whatever theme is in use, so these
- * colours are fixed on purpose (the light and dark values of bg, surface-1, border and surface-2).
- */
-.theme-sample-light {
-  --sample-bg: #fafafa;
-  --sample-side: #f4f4f5;
-  --sample-line: #e4e4e7;
-  --sample-bar: #d4d4d8;
-  --sample-bar-2: #e4e4e7;
-  --sample-card: #ffffff;
-}
-
-.theme-sample-dark {
-  --sample-bg: #0a0a0b;
-  --sample-side: #111113;
-  --sample-line: #27272a;
-  --sample-bar: #3f3f46;
-  --sample-bar-2: #27272a;
-  --sample-card: #18181b;
 }

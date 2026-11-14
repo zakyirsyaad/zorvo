@@ -40,6 +40,7 @@ export function PlanMenu({ plan, source }: PlanMenuProps) {
       className="w-[340px] select-text"
       trigger={
         <Chip
+          size="bar"
           icon={<ListChecks size={12} className="text-fg-muted" />}
           label={`Plan, ${done} of ${total} done`}
           aria-haspopup="dialog"

@@ -4,6 +4,7 @@
 //! the detected profile, with the user's login-shell environment.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use serde_json::{json, Value};
 use tauri::State;
@@ -14,6 +15,11 @@ use super::probe::{ProbedAgent, SignInProbe};
 use super::qwen_log::{self, QwenApiError};
 use super::session_list::ListedSessions;
 use super::terminal_auth::{is_sign_in_terminal_id, CANCELLED_MESSAGE};
+use crate::agent_tools::commands::{
+    forget_if_failed, path_of_servers, servers_for_session, tools_for_session, with_tools_env,
+};
+use crate::agent_tools::AgentTools;
+use crate::agent_tools::ToolsPath;
 use crate::env_resolver::cached_user_env;
 use crate::files::ensure_known_workspace;
 use crate::installer::commands::versions_in_use;
@@ -313,9 +319,11 @@ pub fn acp_start_session(
     manager: State<'_, AcpManager>,
     store: State<'_, AppStore>,
     private: State<'_, PrivateMode>,
+    tools: State<'_, Arc<AgentTools>>,
     session_id: String,
     cwd: String,
     profile_id: String,
+    agent_tools: bool,
     private_model_id: Option<String>,
     private_own_key: Option<bool>,
     private_session_cap: Option<u64>,
@@ -330,10 +338,15 @@ pub fn acp_start_session(
         private_own_key.unwrap_or(false),
         private_session_cap,
     )?;
+    // A private session gets no agent tools: its launch already carries the credits server.
+    let wants_tools = agent_tools && private_model_id.is_none();
+    let session_tools = tools_for_session(&tools, &store, &session_id, &profile_id, wants_tools)?;
+    let launch = with_tools_env(launch, &session_tools.env);
+    let opened = manager.start(&session_id, &cwd, &launch, session_tools.servers);
     note_if_private(
         &private,
         private_model_id.is_some(),
-        manager.start(&session_id, &cwd, &launch),
+        with_tools_path(&tools, &session_id, session_tools.path, opened),
     )
 }
 
@@ -395,15 +408,19 @@ pub fn acp_reopen_session(
     manager: State<'_, AcpManager>,
     store: State<'_, AppStore>,
     private: State<'_, PrivateMode>,
+    tools: State<'_, Arc<AgentTools>>,
     session_id: String,
     cwd: String,
     profile_id: String,
     acp_session_id: String,
+    agent_tools: bool,
     private_model_id: Option<String>,
     private_own_key: Option<bool>,
     private_session_cap: Option<u64>,
 ) -> Result<StartedSession, String> {
-    open_session(
+    let wants_tools = agent_tools && private_model_id.is_none();
+    let session_tools = tools_for_session(&tools, &store, &session_id, &profile_id, wants_tools)?;
+    let opened = open_session(
         &private,
         &acp_session_id,
         private_model_id.as_deref(),
@@ -418,6 +435,7 @@ pub fn acp_reopen_session(
                 private_own_key.unwrap_or(false),
                 private_session_cap,
             )
+            .map(|launch| with_tools_env(launch, &session_tools.env))
         },
         |launch| {
             manager.reopen(
@@ -426,9 +444,11 @@ pub fn acp_reopen_session(
                 launch,
                 &acp_session_id,
                 ReopenPurpose::Continue,
+                session_tools.servers.clone(),
             )
         },
-    )
+    );
+    with_tools_path(&tools, &session_id, session_tools.path, opened)
 }
 
 /// Imports the agent's earlier session `acp_session_id` as app session
@@ -436,20 +456,27 @@ pub fn acp_reopen_session(
 /// Zorvo does not have is replayed into the chat. An import is never private,
 /// so an id recorded as private is refused (`private_session`).
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)] // a Tauri command's parameters are what the webview sends
 pub fn acp_import_session(
     manager: State<'_, AcpManager>,
     store: State<'_, AppStore>,
     private: State<'_, PrivateMode>,
+    tools: State<'_, Arc<AgentTools>>,
     session_id: String,
     cwd: String,
     profile_id: String,
     acp_session_id: String,
+    agent_tools: bool,
 ) -> Result<StartedSession, String> {
-    open_session(
+    let session_tools = tools_for_session(&tools, &store, &session_id, &profile_id, agent_tools)?;
+    let opened = open_session(
         &private,
         &acp_session_id,
         None,
-        || launch_in_workspace(&store, &cwd, &profile_id),
+        || {
+            launch_in_workspace(&store, &cwd, &profile_id)
+                .map(|launch| with_tools_env(launch, &session_tools.env))
+        },
         |launch| {
             manager.reopen(
                 &session_id,
@@ -457,9 +484,11 @@ pub fn acp_import_session(
                 launch,
                 &acp_session_id,
                 ReopenPurpose::Import,
+                session_tools.servers.clone(),
             )
         },
-    )
+    );
+    with_tools_path(&tools, &session_id, session_tools.path, opened)
 }
 
 /// Lists the agent's sessions in `cwd`, for the draft to offer them, without
@@ -481,27 +510,60 @@ pub fn acp_list_sessions(
 fn fork_in_workspace(
     manager: &AcpManager,
     store: &AppStore,
+    tools: &AgentTools,
     source_session_id: &str,
     session_id: &str,
     cwd: &str,
+    agent_tools: bool,
 ) -> Result<StartedSession, String> {
     ensure_known_workspace(cwd, |path| store.is_known_workspace(path))?;
-    manager.fork(source_session_id, session_id, cwd)
+    // A fork lives in its source's process, so it cannot be given an
+    // environment: it gets the MCP entry, which a command-path agent ignores.
+    let servers = servers_for_session(tools, store, session_id, agent_tools)?;
+    let path = path_of_servers(&servers);
+    let opened = manager.fork(source_session_id, session_id, cwd, servers);
+    with_tools_path(tools, session_id, path, opened)
+}
+
+/// The opened session with the tools path it got; a session that did not open
+/// forgets the token it was issued.
+fn with_tools_path(
+    tools: &AgentTools,
+    session_id: &str,
+    path: Option<ToolsPath>,
+    opened: Result<StartedSession, String>,
+) -> Result<StartedSession, String> {
+    forget_if_failed(tools, session_id, opened).map(|session| StartedSession {
+        tools_path: path,
+        ..session
+    })
 }
 
 /// A fork of a private session lives in its source's process, so it is private
 /// too and is recorded as such.
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)] // a Tauri command's parameters are what the webview sends
 pub fn acp_fork_session(
     manager: State<'_, AcpManager>,
     store: State<'_, AppStore>,
     private: State<'_, PrivateMode>,
+    tools: State<'_, Arc<AgentTools>>,
     source_session_id: String,
     session_id: String,
     cwd: String,
+    agent_tools: bool,
 ) -> Result<StartedSession, String> {
     let source_is_private = manager.is_private_session(&source_session_id);
-    let result = fork_in_workspace(&manager, &store, &source_session_id, &session_id, &cwd);
+    // A private source's fork gets no agent tools, as a private session does.
+    let result = fork_in_workspace(
+        &manager,
+        &store,
+        &tools,
+        &source_session_id,
+        &session_id,
+        &cwd,
+        agent_tools && !source_is_private,
+    );
     if source_is_private && result.is_ok() {
         // The fork lives in the source's process: it must keep that process's token alive.
         private.share_proxy_token(&source_session_id, &session_id);
@@ -735,10 +797,12 @@ pub fn acp_qwen_last_api_error(
 pub fn acp_stop_session(
     manager: State<'_, AcpManager>,
     private: State<'_, PrivateMode>,
+    tools: State<'_, Arc<AgentTools>>,
     session_id: String,
 ) {
     private.release_proxy_token(&session_id);
     manager.stop(&session_id);
+    tools.forget(&session_id);
 }
 
 #[cfg(test)]

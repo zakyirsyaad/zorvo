@@ -10,7 +10,10 @@ function wrapTarget(container: HTMLElement, isBackward: boolean): HTMLElement | 
   const first = focusables[0];
   const last = focusables[focusables.length - 1];
   const active = document.activeElement;
-  if (!(active instanceof Node) || !container.contains(active)) return isBackward ? last : first;
+  // The container itself holds focus on open: it is first for Tab and last for Shift+Tab.
+  if (!(active instanceof Node) || active === container || !container.contains(active)) {
+    return isBackward ? last : first;
+  }
   if (isBackward && active === first) return last;
   if (!isBackward && active === last) return first;
   return null;

@@ -14,7 +14,7 @@ export function PrivateLowBalanceRow({ credits, model, onTopUp }: PrivateLowBala
   return (
     <div
       role="status"
-      className="flex items-center gap-2.5 rounded-lg border border-border bg-surface-1 px-3 py-2"
+      className="flex items-center gap-2.5 rounded-lg border border-border bg-chip px-3 py-2"
     >
       <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-status-attention" />
       <span className="flex-1 text-ui-sm text-fg-secondary">{note}</span>

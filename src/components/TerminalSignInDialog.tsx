@@ -3,7 +3,7 @@ import { X } from "lucide-react";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import type { TerminalSignInState } from "../hooks/useTerminalSignIn";
 import type { PtyOutputStore } from "../lib/pty-output-store";
-import { AgentLogo } from "./AgentLogo";
+import { AgentTile } from "./ui/AgentTile";
 import { TerminalView } from "./TerminalView";
 import { Button } from "./ui/Button";
 import { IconButton } from "./ui/IconButton";
@@ -77,14 +77,10 @@ export function TerminalSignInDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="flex w-full max-w-[760px] flex-col overflow-hidden rounded-xl border border-border bg-surface-1 text-fg-secondary shadow-dialog"
+        className="flex w-full max-w-[760px] flex-col overflow-hidden rounded-xl border border-border bg-surface-2 text-fg-secondary shadow-dialog"
       >
         <header className="flex items-center gap-2.5 px-5 py-4">
-          {profileId && (
-            <span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center rounded-md bg-surface-hover">
-              <AgentLogo profileId={profileId} name="" size={14} />
-            </span>
-          )}
+          {profileId && <AgentTile profileId={profileId} name="" size={22} />}
           <h2 id={titleId} className="min-w-0 flex-1 truncate text-base font-semibold text-fg">
             {state.isSetup ? `Set up ${state.agentName}` : `Sign in to ${state.agentName}`}
           </h2>
@@ -94,7 +90,7 @@ export function TerminalSignInDialog({
         </header>
 
         {/* TerminalView insets xterm itself (14/12), so the box adds no padding of its own. */}
-        <div className="mx-5 flex h-[380px] overflow-hidden rounded-lg border border-border bg-terminal-bg">
+        <div data-sign-in-terminal="" className="mx-5 flex h-[380px] overflow-hidden rounded-md border border-border bg-terminal-bg">
           <TerminalView
             sessionId={state.terminalId}
             output={output}

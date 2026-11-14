@@ -34,7 +34,8 @@ export function AppUpdateNotice({
     <div
       ref={cardRef}
       role="status"
-      className="flex w-[340px] flex-col gap-3 rounded-xl border border-border bg-surface-3 px-4 py-3.5 shadow-popover"
+      aria-label="Zorvo update"
+      className="flex w-[340px] flex-col gap-3 rounded-panel border border-border bg-surface-3 px-4 py-3.5 shadow-popover"
     >
       <div className="flex flex-col gap-1">
         <p className="text-ui font-semibold text-fg">{`Zorvo ${update.version} is ready`}</p>

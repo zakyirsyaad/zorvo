@@ -1,15 +1,17 @@
 import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
+import { createPortal } from "react-dom";
 import { ArrowUp, KeyRound, Paperclip, ShieldAlert, Square } from "lucide-react";
-import { DRAFT_CHIP } from "./composer/chip-style";
 import { CompareModelStatus } from "./composer/CompareModelStatus";
 import type { CompareModelControl } from "../lib/compare-models";
 import { AgentLogo } from "./AgentLogo";
+import { AgentTile } from "./ui/AgentTile";
 import { Button } from "./ui/Button";
 import { IconButton } from "./ui/IconButton";
 import { OptionDropdown } from "./composer/OptionDropdown";
 import { MoreControls } from "./composer/MoreControls";
 import { splitControls } from "../lib/composer-overflow";
-import type { AgentMultiPickerProps } from "./composer/AgentMultiPicker";
+import { useAfter } from "../hooks/useAfter";
+import { AgentTiles, type AgentTilesProps } from "./composer/AgentTiles";
 import type { FolderControl } from "./composer/FolderPicker";
 import { DraftChips } from "./composer/DraftChips";
 import { PrivateChip } from "./private/PrivateChip";
@@ -18,8 +20,9 @@ import { PrivateSessionLimitMenu } from "./private/PrivateSessionLimitMenu";
 import type { PrivateDraft } from "../hooks/usePrivateDraft";
 import { appendAttachments, formatAttachmentPath, withAttachments } from "../lib/attachments";
 import { joinWorkspacePath } from "../lib/files";
-import { MentionMenu } from "./composer/MentionMenu";
+import { MentionMenu, isPickableAgent, type MentionAgent } from "./composer/MentionMenu";
 import { useMentionMenu, type MentionSource } from "./composer/useMentionMenu";
+import { delegationMentionOf } from "../lib/delegation";
 import { AttachmentChips } from "./composer/AttachmentChips";
 import { ContextMeter } from "./composer/ContextMeter";
 import { isRiskyMode, type ComposerControl, type ComposerControls } from "../lib/composer-controls";
@@ -27,11 +30,18 @@ import { matchingCommands, pendingHint, slashQuery } from "../lib/slash-commands
 import { SlashCommandMenu } from "./composer/SlashCommandMenu";
 import { useDismiss } from "../hooks/useDismiss";
 import { useLatest } from "../hooks/useLatest";
+import { usePasteImages } from "../hooks/usePasteImages";
 import type { ContextUsage, SlashCommand } from "../types";
 
 const MAX_PROMPT_HEIGHT_PX = 180;
 /** What an empty composer says when the parent gives no placeholder: a running session or a popout. */
 const replyPlaceholder = (agentName: string | undefined) => `Reply to ${agentName ?? "the agent"}`;
+
+/**
+ * How long the chips may load before the composer says so in words. A healthy agent answers within
+ * seconds; one that is slow to start, or hangs, can take minutes, and three pulsing boxes explain nothing.
+ */
+export const SLOW_LOAD_MS = 8_000;
 
 /** The skeletons' widths while a draft's chips load: about a model's, a mode's and an effort's. */
 const SKELETON_CHIP_WIDTHS = ["w-18", "w-24", "w-14"] as const;
@@ -160,13 +170,13 @@ export interface ComposerDockProps {
    * (two portals into one node would keep the order they mounted in). The slot takes no room while both are empty.
    */
   aboveCardSlots?: { install: Ref<HTMLDivElement>; signIn: Ref<HTMLDivElement> };
+  /** Where a draft's folder and branch chips are drawn (beside its heading); without it they sit above the card. */
+  chipsTarget?: HTMLElement | null;
   /** Before a new session starts: the folder it starts in. */
   folder?: FolderControl;
-  /** Before a new session starts: the agent it runs. */
-  agent?: ComposerControl;
-  /** Before a new session starts, in a git repository: the agent chip with a checkbox to tick several; replaces `agent`. */
-  agents?: Omit<AgentMultiPickerProps, "isOpen" | "onToggle" | "onClose">;
-  /** A running session's agent, named first in the row; drafts name theirs with the `agent`/`agents` chip. */
+  /** Before a new session starts: its agents as tiles, ticked for a compare run where the folder is a repository. */
+  agents?: Omit<AgentTilesProps, "isOpen" | "onToggle" | "onClose">;
+  /** A running session's agent, named first in the row; drafts show theirs as tiles. */
   sessionAgent?: { profileId: string; name: string };
   /**
    * Before a new session starts: the Private chip after the agent chip and, while it is on, the private model
@@ -182,6 +192,15 @@ export interface ComposerDockProps {
   /** The workspace whose files `@` lists; mentions are off when absent. */
   mentions?: MentionSource;
   /**
+   * The agents an `@` at the very start of the message can delegate to; absent turns the group off
+   * (drafts, delegated sessions, popouts and compare runs).
+   */
+  delegationAgents?: readonly MentionAgent[];
+  /** The delegation the text asks for, after every change; null when it asks for none. Send clears it. */
+  onDelegationMentionChange?: (mention: { agentId: string; task: string } | null) => void;
+  /** What the named agent starts on, in the note's place, with Change; a blocking note wins while one is set. */
+  delegationSummary?: { text: string; onChange: (attachments?: readonly string[]) => void };
+  /**
    * The prompt's text, after every change and once on mount: `clear`, `restore` and Send too, since the
    * parent does not redraw on typing. A mount reports empty, because a composer that went away took its text along.
    */
@@ -190,6 +209,15 @@ export interface ComposerDockProps {
   onRestored?: (text: string) => void;
   /** Every time `giveBack` runs, with the message returned, not the text it joined. */
   onGivenBack?: (returnedText: string) => void;
+  /**
+   * A short plain notice for the user, e.g. why a pasted image was not attached. Without it the composer
+   * cannot report a failed paste, so it leaves pasting to the browser (a popout has no notice path).
+   */
+  onNotice?: (message: string) => void;
+  /** Names what the composer is for now (the session on screen); a pasted image saved after it changed is dropped. */
+  pasteScope?: string;
+  /** The composer is mounted but out of sight (a compare run's panel, a removed agent's panel): it takes no paste. */
+  isHidden?: boolean;
 }
 
 export function ComposerDock({
@@ -211,8 +239,8 @@ export function ComposerDock({
   noteInRow = false,
   isLoadingControls = false,
   aboveCardSlots,
+  chipsTarget,
   folder,
-  agent,
   agents,
   sessionAgent,
   privateDraft,
@@ -220,9 +248,15 @@ export function ComposerDock({
   compareModels,
   onOpenCompareModel,
   mentions,
+  delegationAgents,
+  onDelegationMentionChange,
+  delegationSummary,
   onTextChange,
   onRestored,
   onGivenBack,
+  onNotice,
+  pasteScope = "",
+  isHidden = false,
 }: ComposerDockProps) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
@@ -235,14 +269,28 @@ export function ComposerDock({
   const restoredRef = useRef<{ text: string; attachments: readonly string[] } | null>(null);
   // Set by `insertText`: the box can only be measured once the text is in it.
   const shouldFitRef = useRef(false);
+  // Set by a pick: where the caret goes once the new text is in the box.
+  const pendingCaretRef = useRef<number | null>(null);
+  // The delegation the last report gave, so an unchanged parse is not reported again.
+  const lastDelegationKeyRef = useRef("");
   const onTextChangeRef = useLatest(onTextChange);
+  const onDelegationMentionChangeRef = useLatest(onDelegationMentionChange);
 
-  useDismiss(containerRef, openDropdown !== null, () => setOpenDropdown(null));
+  // The draft's chips are drawn beside the heading, outside this footer: a click in them is not outside.
+  useDismiss(containerRef, openDropdown !== null, () => setOpenDropdown(null), chipsTarget);
 
   useLayoutEffect(() => {
     if (!shouldFitRef.current || !textareaRef.current) return;
     shouldFitRef.current = false;
     fitToText(textareaRef.current);
+  }, [text]);
+
+  useLayoutEffect(() => {
+    const caret = pendingCaretRef.current;
+    if (caret === null || !textareaRef.current) return;
+    pendingCaretRef.current = null;
+    textareaRef.current.setSelectionRange(caret, caret);
+    textareaRef.current.focus();
   }, [text]);
 
   useEffect(() => {
@@ -267,11 +315,16 @@ export function ComposerDock({
   // While the agent works, Stop takes Send's place; the draft waits for the turn to end.
   const canSend = !disabled && !sendDisabled && !(isThinking && onStop);
 
+  // Counts the messages this composer has let go of (Send, clear, restore), so a pasted image still being
+  // saved is not added to the next one.
+  const messageEpochRef = useRef(0);
+
   const handleSend = () => {
     const trimmed = text.trim();
     if ((!trimmed && attachments.length === 0) || !canSend) return;
     if (attachAsFiles) onSendMessage(trimmed, attachments);
     else onSendMessage(trimmed);
+    messageEpochRef.current += 1;
     restoredRef.current = null;
     setText("");
     setAttachments([]);
@@ -280,7 +333,19 @@ export function ComposerDock({
     if (textareaRef.current) textareaRef.current.style.height = "auto";
   };
 
-  const mentionMenu = useMentionMenu(mentions);
+  const mentionMenu = useMentionMenu(mentions, delegationAgents);
+  // The parent builds the list anew on every render: the parse follows its names, not its identity.
+  const delegationAgentsRef = useLatest(delegationAgents);
+  const delegationAgentsKey = delegationAgents?.map((agent) => `${agent.id}\u0001${agent.name}`).join("\u0000");
+  // Reports the delegation as the text changes; an unchanged parse stays unreported.
+  useEffect(() => {
+    const agents = delegationAgentsRef.current;
+    const mention = agents ? delegationMentionOf(text, agents) : null;
+    const key = mention ? `${mention.agentId}\u0000${mention.task}` : "";
+    if (key === lastDelegationKeyRef.current) return;
+    lastDelegationKeyRef.current = key;
+    onDelegationMentionChangeRef.current?.(mention);
+  }, [text, delegationAgentsKey, delegationAgentsRef, onDelegationMentionChangeRef]);
   /** The @-mention list follows the caret: moving it off the @word closes the list. */
   const followCaret = (field: HTMLTextAreaElement) =>
     mentionMenu.update(field.value, field.selectionStart ?? field.value.length);
@@ -304,10 +369,42 @@ export function ComposerDock({
     textareaRef.current?.focus();
   };
 
-  // The file list, when an @word is typed, takes the keys before the command list.
+  /** Replaces the @word with `@Agent name ` and puts the caret after the space. */
+  const pickAgent = (agent: MentionAgent) => {
+    const { mention } = mentionMenu;
+    if (!mention) return;
+    const before = text.slice(0, mention.start);
+    const after = text.slice(mention.end).replace(/^ /, "");
+    const next = `${before}@${agent.name} ${after}`;
+    const caret = before.length + agent.name.length + 2;
+    pendingCaretRef.current = caret;
+    setText(next);
+    mentionMenu.close();
+    if (next === text) {
+      // React keeps the text, so the change effect does not run: put the caret where the pick asked now.
+      pendingCaretRef.current = null;
+      textareaRef.current?.setSelectionRange(caret, caret);
+    }
+    textareaRef.current?.focus();
+  };
+
+  // One keyboard list: the pickable agents first, then the files; the command list only when no @word is open.
+  const pickableMentionAgents = mentionMenu.agents.filter(isPickableAgent);
+  const pickMention = (index: number) => {
+    const agent = pickableMentionAgents[index];
+    if (agent !== undefined) {
+      pickAgent(agent);
+      return;
+    }
+    const path = mentionMenu.files[index - pickableMentionAgents.length];
+    if (path !== undefined) pickFile(path);
+  };
+  const mentionCount = pickableMentionAgents.length + mentionMenu.files.length;
+  // A visible list of only unpickable agents still takes the keys: Return must not send past it.
+  const hasMentionList = mentionMenu.agents.length > 0 || mentionMenu.files.length > 0;
   const openMenu =
-    mentionMenu.files.length > 0
-      ? { count: mentionMenu.files.length, pick: (i: number) => pickFile(mentionMenu.files[i]), dismiss: mentionMenu.close }
+    hasMentionList
+      ? { count: mentionCount, pick: pickMention, dismiss: mentionMenu.close }
       : menuCommands.length > 0
         ? { count: menuCommands.length, pick: (i: number) => pickCommand(menuCommands[i]), dismiss: () => setIsMenuDismissed(true) }
         : null;
@@ -325,14 +422,20 @@ export function ComposerDock({
     textareaRef.current?.focus();
   };
 
-  /** Arrow keys, Enter/Tab and Escape drive the open menu (files or commands). */
+  /** Arrow keys, Enter/Tab and Escape drive the open menu (agents and files, or commands). */
   const handleMenuKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): boolean => {
     if (!openMenu) return false;
     const last = openMenu.count - 1;
-    if (e.key === "ArrowDown") setHighlighted((i) => (i >= last ? 0 : i + 1));
-    else if (e.key === "ArrowUp") setHighlighted((i) => (i <= 0 ? last : i - 1));
-    else if (e.key === "Enter" || e.key === "Tab") openMenu.pick(Math.min(highlighted, last));
-    else if (e.key === "Escape") openMenu.dismiss();
+    if (e.key === "ArrowDown") setHighlighted((i) => (last < 0 || i >= last ? 0 : i + 1));
+    else if (e.key === "ArrowUp") setHighlighted((i) => (last < 0 || i <= 0 ? Math.max(last, 0) : i - 1));
+    else if (e.key === "Enter" || e.key === "Tab") {
+      // Nothing can be picked: the list stays open and Return does not send the message past it.
+      if (last < 0) {
+        e.preventDefault();
+        return true;
+      }
+      openMenu.pick(Math.min(highlighted, last));
+    } else if (e.key === "Escape") openMenu.dismiss();
     else return false;
     e.preventDefault();
     return true;
@@ -360,6 +463,13 @@ export function ComposerDock({
     textareaRef.current?.focus();
   };
 
+  // An image in the clipboard is attached as the paperclip's files are; text pastes as the browser does it.
+  const handlePaste = usePasteImages({
+    scopeOf: () => (disabled || isHidden || !onNotice ? null : `${pasteScope}#${messageEpochRef.current}`),
+    onPaths: insertPaths,
+    onNotice: (message) => onNotice?.(message),
+  });
+
   useImperativeHandle(handleRef, () => ({
     insertPaths,
     insertText: (inserted) => {
@@ -369,6 +479,7 @@ export function ComposerDock({
       textareaRef.current?.focus();
     },
     restore: (restoredText, restoredAttachments = []) => {
+      messageEpochRef.current += 1;
       setText(restoredText);
       mentionMenu.close();
       if (attachAsFiles) setAttachments([...restoredAttachments]);
@@ -401,6 +512,7 @@ export function ComposerDock({
       );
     },
     clear: () => {
+      messageEpochRef.current += 1;
       restoredRef.current = null;
       setText("");
       setAttachments([]);
@@ -447,48 +559,46 @@ export function ComposerDock({
   ];
   const { inline: inlineControls, overflow: overflowControls } = splitControls(agentControls);
   const isShowingSkeletons = Boolean(isLoadingControls) && agentControls.length === 0;
+  const isSlowLoad = useAfter(isShowingSkeletons, SLOW_LOAD_MS);
   // A draft's composer sits near the top of its column with room below; a session's sits at the window's bottom.
-  const isDraft = Boolean(folder || agent || agents);
+  const isDraft = Boolean(folder || agents);
   const menuSide = isDraft ? "bottom" : "top";
+  const inHeading = (chips: ReactNode) => (chipsTarget ? createPortal(chips, chipsTarget) : chips);
 
   return (
-    <footer ref={containerRef} className="w-full max-w-chat flex flex-col items-center select-none">
-      {(folder || agents || agent) && (
-        <DraftChips
-          folder={folder}
-          agents={agents}
-          agentChip={
-            !agents && agent ? (
-              <OptionDropdown
-                label="Agent"
-                align="left"
-                chipClassName={DRAFT_CHIP}
-                side="bottom"
-                icon={<AgentLogo profileId={agent.selected ?? ""} name="" size={16} />}
-                renderIcon={(option) => <AgentLogo profileId={option.value ?? ""} name="" size={16} />}
-                {...dropdownProps("agent", agent)}
+    <footer ref={containerRef} className={`w-full ${isDraft ? "max-w-draft" : "max-w-chat"} flex flex-col items-center select-none`}>
+      {folder &&
+        inHeading(
+          <DraftChips
+            className={chipsTarget ? "contents" : "mb-4 flex w-full flex-wrap items-center gap-2"}
+            folder={folder}
+            isOpen={(name) => openDropdown === name}
+            onToggle={toggle}
+            onClose={(name) => setOpenDropdown((current) => (current === name ? null : current))}
+          >
+            {privateDraft?.chip && <PrivateChip {...privateDraft.chip} />}
+            {privateDraft?.modelMenu && (
+              <PrivateModelMenu
+                {...privateDraft.modelMenu}
+                onSelect={(modelId) => {
+                  privateDraft.modelMenu?.onSelect(modelId);
+                  setOpenDropdown(null);
+                }}
+                isOpen={openDropdown === "private-model"}
+                onToggle={() => toggle("private-model")}
+                onClose={() => setOpenDropdown((current) => (current === "private-model" ? null : current))}
               />
-            ) : undefined
-          }
-          isOpen={(name) => openDropdown === name}
-          onToggle={toggle}
-          onClose={(name) => setOpenDropdown((current) => (current === name ? null : current))}
-        >
-          {privateDraft?.chip && <PrivateChip {...privateDraft.chip} />}
-          {privateDraft?.modelMenu && (
-            <PrivateModelMenu
-              {...privateDraft.modelMenu}
-              onSelect={(modelId) => {
-                privateDraft.modelMenu?.onSelect(modelId);
-                setOpenDropdown(null);
-              }}
-              isOpen={openDropdown === "private-model"}
-              onToggle={() => toggle("private-model")}
-              onClose={() => setOpenDropdown((current) => (current === "private-model" ? null : current))}
-            />
-          )}
-          {privateDraft?.sessionLimit && <PrivateSessionLimitMenu {...privateDraft.sessionLimit} />}
-        </DraftChips>
+            )}
+            {privateDraft?.sessionLimit && <PrivateSessionLimitMenu {...privateDraft.sessionLimit} />}
+          </DraftChips>,
+        )}
+      {agents && (
+        <AgentTiles
+          {...agents}
+          isOpen={openDropdown === "agent"}
+          onToggle={() => toggle("agent")}
+          onClose={() => setOpenDropdown((current) => (current === "agent" ? null : current))}
+        />
       )}
       {aboveCardSlots && (
         // Hidden while neither place holds a panel; `empty:` no longer applies, since the two places are always there.
@@ -507,11 +617,13 @@ export function ComposerDock({
             onRemove={(path) => setAttachments((current) => current.filter((p) => p !== path))}
           />
         )}
-        {mentionMenu.files.length > 0 ? (
+        {mentionMenu.agents.length > 0 || mentionMenu.files.length > 0 ? (
           <MentionMenu
             files={mentionMenu.files}
+            agents={mentionMenu.agents}
             highlighted={highlighted}
             onPick={pickFile}
+            onPickAgent={pickAgent}
             folderName={folderNameOf(mentions?.root ?? "")}
             query={mentionMenu.mention?.query ?? ""}
             side={menuSide}
@@ -537,6 +649,7 @@ export function ComposerDock({
           }}
           onClick={(e) => followCaret(e.currentTarget)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           disabled={disabled}
           placeholder={placeholder ?? replyPlaceholder(agentName)}
           aria-label="Prompt"
@@ -550,6 +663,19 @@ export function ComposerDock({
         {shownNote && !noteInRow && (
           <p id={noteId} className="text-caption text-fg-muted">
             {shownNote}
+          </p>
+        )}
+
+        {!shownNote && !noteInRow && delegationSummary && (
+          <p className="text-caption text-fg-muted">
+            <span>{delegationSummary.text}</span>{" "}
+            <button
+              type="button"
+              onClick={() => delegationSummary.onChange(attachments)}
+              className="rounded-sm text-fg-secondary underline underline-offset-2 focus-ring"
+            >
+              Change
+            </button>
           </p>
         )}
 
@@ -567,10 +693,10 @@ export function ComposerDock({
               </IconButton>
             )}
 
-            {sessionAgent && !agent && !agents && (
+            {sessionAgent && !agents && (
               // A running session's agent, named first: a label, since a session cannot change its agent.
-              <span data-agent-chip="" className="inline-flex h-7 min-w-0 items-center gap-1.5 px-2 text-ui-sm text-fg-secondary">
-                <AgentLogo profileId={sessionAgent.profileId} name="" size={16} />
+              <span data-agent-chip="" className="inline-flex h-6.5 min-w-0 items-center gap-1.5 pl-0.5 pr-1.5 text-ui-sm text-fg-secondary">
+                <AgentTile profileId={sessionAgent.profileId} name="" size={16} />
                 <span className="truncate">{sessionAgent.name}</span>
               </span>
             )}
@@ -587,7 +713,7 @@ export function ComposerDock({
                   key={width}
                   data-skeleton-chip=""
                   aria-hidden="true"
-                  className={`h-7 ${width} rounded-md bg-surface-hover motion-safe:animate-pulse`}
+                  className={`h-6.5 ${width} rounded-md bg-chip motion-safe:animate-pulse`}
                 />
               ))}
 
@@ -648,11 +774,6 @@ export function ComposerDock({
               />
             )}
 
-            {shownNote && noteInRow && (
-              <p id={noteId} className="pl-1 text-caption text-fg-subtle">
-                {shownNote}
-              </p>
-            )}
             {privateDraft?.creditsLine && !(shownNote && noteInRow) && (
               <span className="pl-1 text-caption text-fg-subtle">{privateDraft.creditsLine}</span>
             )}
@@ -704,6 +825,18 @@ export function ComposerDock({
           </div>
         )}
       </div>
+      {/* A compare run's note sits under the card, as drawn; why Send is blocked is a sentence inside it. */}
+      {shownNote && noteInRow && (
+        <p id={noteId} data-note-below="" className="mt-2 w-full px-1 text-caption text-fg-subtle">
+          {shownNote}
+        </p>
+      )}
+      {/* Said in words once the wait is long. Hidden from a screen reader, which heard it from the status when it began. */}
+      {isSlowLoad && (
+        <p data-slow-load="" aria-hidden="true" className="mt-2 w-full px-1 text-caption text-fg-subtle">
+          {`Still loading ${agentName ?? "the agent"}'s models and commands…`}
+        </p>
+      )}
     </footer>
   );
 }

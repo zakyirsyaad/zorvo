@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, Clock } from "lucide-react";
 import { Popover, PopoverHeader, PopoverList, PopoverOption } from "../ui/Popover";
-import { DRAFT_CHIP } from "../composer/chip-style";
+import { COMPOSER_CHIP } from "../composer/chip-style";
 import { modelLabel, turnsFor, type ModelPrice } from "../../lib/private-credits";
 import type { PrivateSessionLimit } from "../../hooks/usePrivateDraft";
 
@@ -37,7 +37,7 @@ export function PrivateSessionLimitMenu({ cap, model, credits, ownKey, onChange 
           type="button"
           disabled
           aria-describedby="session-limit-off"
-          className={`${DRAFT_CHIP} disabled:text-fg-muted disabled:hover:bg-surface-1 disabled:hover:text-fg-muted`}
+          className={`${COMPOSER_CHIP} disabled:text-fg-muted disabled:hover:bg-chip disabled:hover:text-fg-muted`}
         >
           <Clock size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
           Session limit
@@ -66,7 +66,7 @@ export function PrivateSessionLimitMenu({ cap, model, credits, ownKey, onChange 
           aria-expanded={isOpen}
           title="Set a credit limit for this session. NEAR AI stops it at the limit."
           onClick={() => setIsOpen((open) => !open)}
-          className={DRAFT_CHIP}
+          className={COMPOSER_CHIP}
         >
           <Clock size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
           <span className="max-w-[150px] truncate">{label}</span>

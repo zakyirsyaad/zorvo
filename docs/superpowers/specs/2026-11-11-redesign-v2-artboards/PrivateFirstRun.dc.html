@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zorvo · Private mode first run</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.z{--ground:#0a0a0b;--sheet:#111113;--s2:#18181b;--s3:#1f1f23;--hover:#27272a;--chip:rgba(255,255,255,.06);--line:#27272a;--strong:#71717a;--fg:#fafafa;--fg2:#d4d4d8;--muted:#a1a1aa;--subtle:#8b8b94;--primary:#fafafa;--onp:#09090b;--run:#34d399;--att:#fbbf24;--unread:#38bdf8;--danger:#f87171;--atts:#1f1a0d;--attb:#6b5416;--add:rgba(52,211,153,.12);--rem:rgba(248,113,113,.12);--pop:0 16px 40px -8px rgba(0,0,0,.6);--dlg:0 24px 64px -12px rgba(0,0,0,.7);--overlay:rgba(0,0,0,.7);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.z.light{--ground:#f4f4f5;--sheet:#fafafa;--s2:#ffffff;--s3:#ffffff;--hover:#e4e4e7;--chip:rgba(9,9,11,.05);--line:#e4e4e7;--strong:#808088;--fg:#09090b;--fg2:#27272a;--muted:#52525b;--subtle:#67676f;--primary:#09090b;--onp:#fafafa;--run:#047353;--att:#a34b08;--unread:#0369a1;--danger:#b91c1c;--atts:#fffbeb;--attb:#e9c46a;--add:rgba(4,120,87,.08);--rem:rgba(185,28,28,.08);--pop:0 12px 32px -8px rgba(9,9,11,.18);--dlg:0 24px 64px -12px rgba(9,9,11,.25);--overlay:rgba(9,9,11,.4)}
+.z button{font:inherit;cursor:pointer;margin:0}
+.z a{text-decoration:none;color:inherit}
+.mono{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.ico{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.ib{width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.tile{width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;background:var(--chip);box-shadow:inset 0 0 0 1px var(--line);color:var(--fg2)}
+.tile.sm{width:16px;height:16px;border-radius:4px;font-size:9px}
+.av{position:relative;display:flex;flex:none;margin-top:1px}
+.badge{position:absolute;right:-3px;bottom:-3px;width:8px;height:8px;border-radius:9999px;box-shadow:0 0 0 2px var(--ground)}
+.row{display:flex;align-items:flex-start;gap:10px;padding:7px 8px;border-radius:8px}
+.row.on{background:var(--hover)}
+.row.on .badge{box-shadow:0 0 0 2px var(--hover)}
+.rt{flex:1;min-width:0;display:flex;flex-direction:column}
+.t1{color:var(--fg2);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.t2{color:var(--subtle);font-size:11px;line-height:16px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tm{flex:none;color:var(--subtle);font-size:11px;line-height:18px}
+.fold{display:flex;align-items:center;gap:6px;padding:12px 8px 4px;color:var(--muted);font-size:11px;font-weight:500}
+.seg{height:26px;display:flex;align-items:center;gap:6px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px}
+.seg.on{background:var(--hover);color:var(--fg)}
+.chip{height:26px;display:flex;align-items:center;gap:6px;padding:0 8px;border:0;border-radius:6px;background:var(--chip);color:var(--fg2);font-size:12px}
+.step{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px 0 14px;border-radius:6px;font-size:12px;color:var(--fg2)}
+.step .verb{width:44px;flex:none;color:var(--muted)}
+.frow{display:flex;align-items:center;gap:8px;padding:8px 10px}
+.z input{font:inherit;margin:0}
+.dot{width:6px;height:6px;border-radius:9999px;flex:none}
+.blk{display:flex;flex-direction:column;gap:14px;padding:16px;border-radius:12px;background:var(--s2);border:1px solid var(--line)}
+.ttl{font-weight:600}
+.txt{color:var(--muted)}
+.cap{color:var(--subtle);font-size:11px;font-weight:500;margin-bottom:-20px}
+.acts{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.pk{flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--fg);text-align:left}
+.z .pb{height:30px;padding:0 14px;border:0;border-radius:8px;background:var(--primary);color:var(--onp);font-weight:500}
+.z .pb:disabled{background:var(--hover);color:var(--muted);cursor:not-allowed}
+.z .ob{height:30px;padding:0 12px;border:1px solid var(--strong);border-radius:8px;background:transparent;color:var(--fg2)}
+.z .gb{height:30px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--fg2)}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 1024px; height: 700px; box-sizing: border-box; padding: 40px; display: flex; gap: 24px; overflow: hidden; background: var(--sheet); color: var(--fg); font-size: 13px; line-height: 18px;">
+
+  <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 28px;">
+    <span class="cap">Settings · first visit, no credits yet</span>
+    <section class="blk" aria-label="Balance, empty">
+      <div style="display: flex; align-items: flex-start; gap: 12px;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+          <span class="mono" style="font-size: 28px; line-height: 34px; font-weight: 600; letter-spacing: -0.02em;">0 <span style="font-family: -apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',sans-serif; font-size: 14px; font-weight: 500; color: var(--muted); letter-spacing: 0;">credits</span></span>
+          <span class="txt">You haven't topped up yet. Your first top-up also sets up the private key this Mac uses.</span>
+        </div>
+        <span style="display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px;"><span class="dot" style="background: var(--strong);"></span>No key yet</span>
+      </div>
+      <span style="color: var(--subtle); font-size: 12px;">Got a promo code? Redeem it under the packages to try Private mode for free.</span>
+    </section>
+
+    <span class="cap">Settings · stock running low</span>
+    <section class="blk" aria-label="Packages with low stock">
+      <div style="display: flex; align-items: baseline; gap: 8px;"><span style="flex: 1; color: var(--muted); font-size: 11px; font-weight: 500;">Top-up</span><span style="color: var(--subtle); font-size: 11px;">Stock: <span class="mono">600 credits</span> · more coming soon</span></div>
+      <div role="radiogroup" aria-label="Package" style="display: flex; gap: 8px;">
+        <button class="pk" role="radio" aria-checked="false"><span class="mono" style="font-size: 16px; line-height: 22px; font-weight: 600;">$5</span><span class="mono" style="color: var(--fg2); font-size: 12px;">500 credits</span></button>
+        <button class="pk" role="radio" aria-checked="false" aria-disabled="true" style="cursor: default;"><span class="mono" style="font-size: 16px; line-height: 22px; font-weight: 600; color: var(--muted);">$10</span><span style="color: var(--subtle); font-size: 12px;">Not enough stock right now</span></button>
+        <button class="pk" role="radio" aria-checked="false" aria-disabled="true" style="cursor: default;"><span class="mono" style="font-size: 16px; line-height: 22px; font-weight: 600; color: var(--muted);">$25</span><span style="color: var(--subtle); font-size: 12px;">Not enough stock right now</span></button>
+      </div>
+      <span style="color: var(--subtle); font-size: 12px;">Stock is checked before checkout, so you never pay for credits that aren't there.</span>
+    </section>
+  </div>
+
+  <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 28px;">
+    <span class="cap">Draft · Private on, no credits (above the composer)</span>
+    <section class="blk" aria-label="Add credits to start">
+      <div style="display: flex; gap: 12px; align-items: flex-start;">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" style="margin-top: 2px;"><path d="M12 3 5 6v6c0 4.2 3 7.6 7 9 4-1.4 7-4.8 7-9V6z"></path><path d="m9 12 2 2 4-4"></path></svg>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;"><span class="ttl">Add credits to start a private session</span><span class="txt">Private sessions run Qwen Code on NEAR AI's secure hardware and use credits. You have <span class="mono">0</span>.</span></div>
+      </div>
+      <span style="color: var(--subtle); font-size: 12px;">Start stays off until you have credits. Your message waits in the box.</span>
+      <div class="acts"><button class="gb">Redeem a code</button><button class="pb">Top up</button></div>
+    </section>
+
+    <span class="cap">Once, right after the first top-up</span>
+    <div style="padding: 24px 16px; border-radius: 10px; background: linear-gradient(var(--overlay), var(--overlay)), var(--sheet);">
+      <section class="blk" role="dialog" aria-label="Save your recovery code" style="box-shadow: var(--dlg);">
+        <div style="display: flex; flex-direction: column; gap: 4px;"><span class="ttl">Save your recovery code</span><span class="txt">It's the only way to move your credits to another Mac, or to get them back if this Mac is lost. Zorvo can't recover it for you.</span></div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border-radius: 8px; background: var(--ground); border: 1px solid var(--line);">
+          <span class="mono" style="flex: 1; font-size: 14px; letter-spacing: 0.04em;">ZRV-4K9P-2M7Q-8HXD-7F2Q</span>
+          <button class="ob" style="height: 26px;">Copy</button>
+        </div>
+        <span style="color: var(--subtle); font-size: 12px;">Anyone with this code can use your credits. Keep it in a password manager, not in a chat.</span>
+        <label style="display: flex; align-items: center; gap: 8px; color: var(--fg2);"><input type="checkbox" style="width: 14px; height: 14px; margin: 0;">I saved it somewhere safe</label>
+        <div class="acts"><button class="gb">Remind me later</button><button class="pb" disabled="disabled">Done</button></div>
+      </section>
+    </div>
+    <span style="color: var(--subtle); font-size: 12px; margin-top: -16px;">Remind me later keeps a note on the balance card in Settings until the code is saved.</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":1024,"height":700}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const light = (this.props.theme ?? 'dark') === 'light';
+    return { themeClass: light ? 'z light' : 'z' };
+  }
+}
+</script>
+</body>
+</html>

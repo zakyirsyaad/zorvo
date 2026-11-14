@@ -4,7 +4,7 @@ import { render, screen, within, fireEvent } from "@testing-library/react";
 import { AgentMultiPicker } from "../components/composer/AgentMultiPicker";
 import type { AgentChoice } from "../lib/composer-controls";
 
-/** The draft's agent chip and menu, as the `NewSession` and `DraftPickers` artboards draw them. */
+/** The draft's All agents list, as the `Home` and `DraftPickers` artboards draw it. */
 const choice = (value: string, name: string, extra: Partial<AgentChoice> = {}): AgentChoice => ({ value, label: name, name, ...extra });
 
 function renderPicker(options: AgentChoice[], selected: string[], isOpen = false) {
@@ -36,10 +36,13 @@ describe("the agent menu", () => {
     const checkbox = within(row).getByRole("checkbox", { name: "Compare Claude Code" });
     const name = within(row).getByRole("option", { name: "Claude Code" });
     const status = within(row).getByText("Ready");
-    expect(row).toHaveClass("flex", "h-7.5", "items-center", "gap-2", "rounded", "px-2");
+    expect(row).toHaveClass("flex", "h-7", "items-center", "gap-2", "rounded-md", "px-2");
+    // The agent's logo sits in a 16px tile, and Ready has a dot of its own.
+    expect(name.firstElementChild).toHaveClass("size-4", "bg-chip");
+    expect(status.previousElementSibling).toHaveClass("size-1.5", "rounded-full", "bg-status-running");
     expect(row.firstElementChild).toBe(checkbox);
     expect(name.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(checkbox.firstElementChild).toHaveClass("size-3.5", "rounded-[3px]", "border-[1.5px]", "bg-fg", "border-fg", "text-bg");
+    expect(checkbox.firstElementChild).toHaveClass("size-3.5", "rounded-[3px]", "border-[1.5px]", "bg-fg", "border-fg", "text-surface-3");
     expect(status).toHaveClass("text-caption", "text-fg-muted");
   });
 
@@ -57,7 +60,9 @@ describe("the agent menu", () => {
     const row = rowOf("Qwen Code");
     expect(row).toHaveClass("opacity-55");
     const status = within(row).getByText("Needs sign-in");
-    expect(status).toHaveClass("text-status-attention");
+    // The words are muted; the dot before them carries the colour.
+    expect(status).toHaveClass("text-fg-muted");
+    expect(status).not.toHaveClass("text-status-attention");
     expect(status.previousElementSibling).toHaveClass("size-1.5", "rounded-full", "bg-status-attention");
     const checkbox = within(row).getByRole("checkbox");
     const describedBy = checkbox.getAttribute("aria-describedby")!;
@@ -90,33 +95,26 @@ describe("the agent menu", () => {
   });
 });
 
-describe("the draft's agent chip", () => {
-  it("overlaps the ticked agents' logos and names them, then says it compares", () => {
-    renderPicker([choice("claude-acp", "Claude Code"), choice("codex-acp", "Codex")], ["claude-acp", "codex-acp"]);
-    const chip = screen.getByRole("button", { name: "Agent: Claude Code, Codex, compare" });
-    const logos = chip.querySelector("[data-agent-logos]")!;
-    expect(logos.children).toHaveLength(2);
-    expect(logos.children[1]).toHaveClass("-ml-1");
-    expect(within(chip).getByText("Claude Code, Codex")).toHaveClass("truncate", "min-w-0");
-    expect(within(chip).getByText("· compare")).toHaveClass("text-fg-subtle", "shrink-0");
-  });
-
-  it("names one agent alone, with its logo", () => {
+describe("the All agents button", () => {
+  it("is a quiet 24px button that opens the list", () => {
     renderPicker([choice("claude-acp", "Claude Code"), choice("codex-acp", "Codex")], ["claude-acp"]);
-    const chip = screen.getByRole("button", { name: "Agent: Claude Code" });
-    expect(chip.querySelector("[data-agent-logos]")?.children).toHaveLength(1);
-    expect(within(chip).queryByText("· compare")).toBeNull();
+    const button = screen.getByRole("button", { name: "All agents" });
+    expect(button).toHaveClass("h-6", "rounded-md", "px-1.5", "text-ui-sm", "text-fg-muted");
+    expect(button).toHaveAttribute("aria-haspopup", "dialog");
+    expect(button).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("truncates four long names", () => {
-    const long = (n: number) => `An agent with a rather long name, number ${n}`;
-    const options = [1, 2, 3, 4].map((n) => choice(`agent-${n}`, long(n)));
-    renderPicker(options, options.map((option) => option.value));
-    const chip = screen.getByRole("button", { name: /, compare$/ });
-    expect(chip).toHaveClass("max-w-full");
-    expect(within(chip).getByText([1, 2, 3, 4].map(long).join(", "))).toHaveClass("truncate");
-    // jsdom cannot measure: what lets the chip truncate in a real row is its popover wrapper, a flex item,
-    // shrinking below its content (min-w-0) and staying within the row (max-w-full).
-    expect(chip.closest("div.relative")).toHaveClass("min-w-0", "max-w-full");
+  it("lists runnable agents first, then the ones that need a sign-in, then the ones not installed", () => {
+    renderPicker(
+      [
+        choice("pi", "Pi", { blockedBy: "install", disabledReason: "You need to install it first." }),
+        choice("qwen-code", "Qwen Code", { signIn: "needed", blockedBy: "sign-in", disabledReason: "You need to sign in first." }),
+        choice("claude-acp", "Claude Code", { signIn: "ready" }),
+        choice("codex-acp", "Codex", { signIn: "unchecked" }),
+      ],
+      ["claude-acp"],
+      true,
+    );
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Claude Code", "Codex", "Qwen Code", "Pi"]);
   });
 });

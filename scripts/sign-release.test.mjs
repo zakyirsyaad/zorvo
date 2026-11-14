@@ -67,7 +67,7 @@ function makeRoot({ version = VERSION, changelog = CHANGELOG } = {}) {
   const root = join(dir, "repo");
   mkdirSync(join(root, "src-tauri"), { recursive: true });
   const endpoints = [`https://github.com/${SOURCE_REPO}/releases/latest/download/latest.json`];
-  writeFileSync(join(root, "src-tauri/tauri.conf.json"), JSON.stringify({ version, plugins: { updater: { pubkey: pubkeyOf(key), endpoints } } }));
+  writeFileSync(join(root, "src-tauri/tauri.conf.json"), JSON.stringify({ version, identifier: "xyz.zorvo.desktop", plugins: { updater: { pubkey: pubkeyOf(key), endpoints } } }));
   writeFileSync(join(root, "CHANGELOG.md"), changelog);
   writeFileSync(join(dir, "zorvo-updater.key"), KEY_SENTINEL);
   chmodSync(join(dir, "zorvo-updater.key"), 0o600);
@@ -124,16 +124,21 @@ function makeGh({ build, runSha = HEAD, tagSha = HEAD, state = "none" }) {
   return { gh, calls, uploads, notes: () => notes };
 }
 
-function makeDeps({ build = makeBuild(), head = HEAD, runSha, tagSha, state, dirty = false, password = "right", answer = true, previousTag = "v0.6.0", signingKey = key, log, headChange } = {}) {
+function makeDeps({ build = makeBuild(), head = HEAD, runSha, tagSha, state, dirty = false, password = "right", answer = true, previousTag = "v0.6.0", signingKey = key, log, headChange, badSignature = false } = {}) {
   const fake = makeGh({ build, runSha: runSha ?? head, tagSha: tagSha ?? head, state });
   const logs = [];
   const signed = [];
   const asked = [];
   const confirmed = [];
   const gitCalls = [];
+  const signatureChecks = [];
   let headReads = 0;
   const deps = {
     gh: fake.gh,
+    checkSignature: (args) => {
+      signatureChecks.push(args);
+      if (badSignature) throw new ReleaseError("The app in the update package is signed as nothing.");
+    },
     git: (args) => {
       gitCalls.push(args);
       if (args[0] === "rev-parse") {
@@ -165,7 +170,7 @@ function makeDeps({ build = makeBuild(), head = HEAD, runSha, tagSha, state, dir
     },
     log: log ?? ((message) => logs.push(message)),
   };
-  return { deps, fake, logs, signed, asked, confirmed, gitCalls };
+  return { deps, fake, logs, signed, asked, confirmed, gitCalls, signatureChecks };
 }
 
 const run = (options = {}, ctx = makeDeps(options.deps)) => signRelease({ tag: TAG, keyPath: join(dir, "zorvo-updater.key"), root: makeRoot(options.root), deps: ctx.deps, ...options.args }).then(() => ctx);
@@ -278,6 +283,13 @@ describe("what it refuses", () => {
   it("a working tree with changes, since this script and the config it reads are what is trusted", async () => {
     const ctx = await refuses({ deps: { dirty: true } }, /working tree has changes/);
     expect(ctx.fake.calls).toEqual([]);
+  });
+
+  it("an app that is not signed under the bundle identifier, before the password is asked for", async () => {
+    const ctx = await refuses({ deps: { badSignature: true } }, /signed as nothing/);
+    expect(ctx.signatureChecks).toEqual([{ dir: expect.any(String), tag: TAG, identifier: "xyz.zorvo.desktop" }]);
+    expect(ctx.asked).toEqual([]);
+    expect(ctx.signed).toEqual([]);
   });
 
   it("a config whose version is not the tag's, before it reaches GitHub", async () => {

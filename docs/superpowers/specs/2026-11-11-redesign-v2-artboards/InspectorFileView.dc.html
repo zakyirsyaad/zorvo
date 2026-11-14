@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zorvo · Inspector file view</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.z{--ground:#0a0a0b;--sheet:#111113;--s2:#18181b;--s3:#1f1f23;--hover:#27272a;--chip:rgba(255,255,255,.06);--line:#27272a;--strong:#71717a;--fg:#fafafa;--fg2:#d4d4d8;--muted:#a1a1aa;--subtle:#8b8b94;--primary:#fafafa;--onp:#09090b;--run:#34d399;--att:#fbbf24;--unread:#38bdf8;--danger:#f87171;--atts:#1f1a0d;--attb:#6b5416;--add:rgba(52,211,153,.12);--rem:rgba(248,113,113,.12);--pop:0 16px 40px -8px rgba(0,0,0,.6);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.z.light{--ground:#f4f4f5;--sheet:#fafafa;--s2:#ffffff;--s3:#ffffff;--hover:#e4e4e7;--chip:rgba(9,9,11,.05);--line:#e4e4e7;--strong:#808088;--fg:#09090b;--fg2:#27272a;--muted:#52525b;--subtle:#67676f;--primary:#09090b;--onp:#fafafa;--run:#047353;--att:#a34b08;--unread:#0369a1;--danger:#b91c1c;--atts:#fffbeb;--attb:#e9c46a;--add:rgba(4,120,87,.08);--rem:rgba(185,28,28,.08);--pop:0 12px 32px -8px rgba(9,9,11,.18)}
+.z button{font:inherit;cursor:pointer;margin:0}
+.z a{text-decoration:none;color:inherit}
+.mono{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.ico{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.ib{width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.tile{width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;background:var(--chip);box-shadow:inset 0 0 0 1px var(--line);color:var(--fg2)}
+.tile.sm{width:16px;height:16px;border-radius:4px;font-size:9px}
+.av{position:relative;display:flex;flex:none;margin-top:1px}
+.badge{position:absolute;right:-3px;bottom:-3px;width:8px;height:8px;border-radius:9999px;box-shadow:0 0 0 2px var(--ground)}
+.row{display:flex;align-items:flex-start;gap:10px;padding:7px 8px;border-radius:8px}
+.row.on{background:var(--hover)}
+.row.on .badge{box-shadow:0 0 0 2px var(--hover)}
+.rt{flex:1;min-width:0;display:flex;flex-direction:column}
+.t1{color:var(--fg2);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.t2{color:var(--subtle);font-size:11px;line-height:16px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tm{flex:none;color:var(--subtle);font-size:11px;line-height:18px}
+.fold{display:flex;align-items:center;gap:6px;padding:12px 8px 4px;color:var(--muted);font-size:11px;font-weight:500}
+.seg{height:26px;display:flex;align-items:center;gap:6px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px}
+.seg.on{background:var(--hover);color:var(--fg)}
+.chip{height:26px;display:flex;align-items:center;gap:6px;padding:0 8px;border:0;border-radius:6px;background:var(--chip);color:var(--fg2);font-size:12px}
+.step{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px 0 14px;border-radius:6px;font-size:12px;color:var(--fg2)}
+.step .verb{width:44px;flex:none;color:var(--muted)}
+.frow{display:flex;align-items:center;gap:8px;padding:8px 10px}
+@media (max-width:900px){.z .side,.z .insp{display:none}.z .stage{padding-left:8px}}
+.cl{display:flex;height:20px;white-space:pre}
+.cl .n{width:40px;flex:none;text-align:right;padding-right:12px;color:var(--subtle)}
+.cl .g{width:3px;flex:none;margin-right:10px}
+.cl.sel{background:var(--hover)}
+.cl.sel .n{color:var(--fg)}
+.k{color:var(--fg);font-weight:500}.s{color:var(--muted)}.c{color:var(--subtle);font-style:italic}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 576px; height: 800px; box-sizing: border-box; display: flex; padding: 8px; overflow: hidden; background: var(--ground); color: var(--fg); font-size: 13px; line-height: 18px;">
+<aside class="insp" aria-label="Inspector" style="position: relative; width: 560px; box-sizing: border-box; flex: none; display: flex; flex-direction: column; background: var(--sheet); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;">
+  <div style="height: 48px; flex: none; display: flex; align-items: center; padding: 0 10px; border-bottom: 1px solid var(--line);">
+    <div role="tablist" aria-label="Inspector" style="display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--chip);">
+      <button role="tab" aria-selected="false" class="seg">Changes<span style="color: var(--muted);">3</span></button>
+      <button role="tab" aria-selected="false" class="seg">Activity</button>
+      <button role="tab" aria-selected="true" class="seg on">Files</button>
+      <button role="tab" aria-selected="false" class="seg">Terminal</button>
+    </div>
+  </div>
+
+  <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-bottom: 1px solid var(--line);">
+    <button aria-label="Back to files" style="height: 28px; display: flex; align-items: center; gap: 2px; padding: 0 8px 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--fg2); font-size: 12px;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"></path></svg>Files</button>
+    <nav aria-label="Path" class="mono" style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--subtle); overflow: hidden; white-space: nowrap;"><span>src</span><span>/</span><span>components</span><span>/</span><span>sidebar</span><span>/</span><span style="color: var(--fg);">SessionList.tsx</span><span style="margin-left: 4px; font-weight: 600; color: var(--att);" aria-label="Modified">M</span></nav>
+    <button class="ib" aria-label="Add SessionList.tsx to prompt" title="Add to prompt"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
+    <button class="ib" aria-label="Open in editor" title="Open in editor"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-8 8M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"></path></svg></button>
+    <button class="ib" aria-label="Copy path" title="Copy path"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg></button>
+  </div>
+
+  <div style="height: 32px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 16px; font-size: 11px; color: var(--subtle); border-bottom: 1px solid var(--line);">
+    <span>TypeScript · 377 lines · Read only</span>
+    <span style="flex: 1;"></span>
+    <label style="display: flex; align-items: center; gap: 6px; color: var(--fg2);"><input type="checkbox" checked="checked" style="width: 12px; height: 12px; margin: 0;">Mark changed lines</label>
+  </div>
+
+  <div class="mono" style="flex: 1; min-height: 0; overflow: hidden; padding: 10px 0; font-size: 12px; line-height: 20px; color: var(--fg2); background: var(--ground);">
+    <div class="cl"><span class="n">32</span><span class="g"></span><span class="c">// Pinned sessions sit on top and archived ones at the bottom.</span></div>
+    <div class="cl"><span class="n">33</span><span class="g"></span><span><span class="k">export function</span> SessionList({ sessions, context }: Props) {</span></div>
+    <div class="cl"><span class="n">34</span><span class="g"></span><span>  <span class="k">const</span> selected = useSelectedSession()</span></div>
+    <div class="cl"><span class="n">35</span><span class="g"></span><span>  <span class="k">const</span> query = useSearchQuery()</span></div>
+    <div class="cl"><span class="n">36</span><span class="g"></span><span></span></div>
+    <div class="cl"><span class="n">37</span><span class="g"></span><span>  <span class="k">if</span> (sessions.length === <span class="s">0</span>) {</span></div>
+    <div class="cl"><span class="n">38</span><span class="g"></span><span>    <span class="k">return</span> &lt;EmptyState text=<span class="s">"No sessions yet."</span> /&gt;</span></div>
+    <div class="cl"><span class="n">39</span><span class="g"></span><span>  }</span></div>
+    <div class="cl"><span class="n">40</span><span class="g"></span><span></span></div>
+    <div class="cl sel"><span class="n">41</span><span class="g" style="background: var(--run);"></span><span>  <span class="k">const</span> groups = groupByFolder(sessions, query)</span></div>
+    <div class="cl sel"><span class="n">42</span><span class="g" style="background: var(--run);"></span><span>  <span class="k">return</span> groups.map((group) =&gt; (</span></div>
+    <div class="cl sel"><span class="n">43</span><span class="g" style="background: var(--run);"></span><span>    &lt;FolderGroup</span></div>
+    <div class="cl sel"><span class="n">44</span><span class="g" style="background: var(--run);"></span><span>      key={group.path}</span></div>
+    <div class="cl"><span class="n">45</span><span class="g" style="background: var(--run);"></span><span>      status={statusOf(group)}</span></div>
+    <div class="cl"><span class="n">46</span><span class="g" style="background: var(--run);"></span><span>      selected={selected}</span></div>
+    <div class="cl"><span class="n">47</span><span class="g" style="background: var(--run);"></span><span>    /&gt;</span></div>
+    <div class="cl"><span class="n">48</span><span class="g" style="background: var(--run);"></span><span>  ))</span></div>
+    <div class="cl"><span class="n">49</span><span class="g"></span><span>}</span></div>
+    <div class="cl"><span class="n">50</span><span class="g"></span><span></span></div>
+    <div class="cl"><span class="n">51</span><span class="g"></span><span><span class="c">/** A folder's heading and its sessions. */</span></span></div>
+    <div class="cl"><span class="n">52</span><span class="g"></span><span><span class="k">function</span> FolderGroup({ group, status, selected }: GroupProps) {</span></div>
+    <div class="cl"><span class="n">53</span><span class="g" style="background: var(--att);"></span><span>  <span class="k">const</span> summary = folderSummary(group)</span></div>
+    <div class="cl"><span class="n">54</span><span class="g"></span><span>  <span class="k">return</span> (</span></div>
+    <div class="cl"><span class="n">55</span><span class="g"></span><span>    &lt;section aria-label={group.name}&gt;</span></div>
+    <div class="cl"><span class="n">56</span><span class="g"></span><span>      &lt;FolderHeading name={group.name} summary={summary} /&gt;</span></div>
+    <div class="cl"><span class="n">57</span><span class="g"></span><span>      {group.sessions.map(renderRow)}</span></div>
+    <div class="cl"><span class="n">58</span><span class="g"></span><span>    &lt;/section&gt;</span></div>
+    <div class="cl"><span class="n">59</span><span class="g"></span><span>  )</span></div>
+    <div class="cl"><span class="n">60</span><span class="g"></span><span>}</span></div>
+  </div>
+
+  <div style="position: absolute; left: 72px; top: 268px; display: flex; padding: 4px; border-radius: 10px; background: var(--s3); border: 1px solid var(--line); box-shadow: var(--pop);">
+    <button style="height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--fg); font-size: 12px;"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Add lines 41–44 to prompt</button>
+  </div>
+</aside>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":576,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const light = (this.props.theme ?? 'dark') === 'light';
+    return { themeClass: light ? 'z light' : 'z' };
+  }
+}
+</script>
+</body>
+</html>

@@ -257,9 +257,11 @@ fn a_session_is_not_forked_into_a_folder_that_is_not_a_workspace() {
     let Err(err) = fork_in_workspace(
         &quiet_manager(),
         &store,
+        &AgentTools::disabled(),
         "source",
         "fork",
         &scratch.folder(),
+        false,
     ) else {
         panic!("the fork is refused");
     };
@@ -282,9 +284,11 @@ fn a_session_is_forked_in_a_remembered_workspace() {
     let Err(err) = fork_in_workspace(
         &quiet_manager(),
         &store,
+        &AgentTools::disabled(),
         "source",
         "fork",
         &scratch.folder(),
+        false,
     ) else {
         panic!("the fork is refused");
     };

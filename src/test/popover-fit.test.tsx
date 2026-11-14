@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { Popover } from "../components/ui/Popover";
-import { fitPanel } from "../lib/popover-fit";
+import { fitAlign, fitPanel } from "../lib/popover-fit";
 
 /**
  * A menu opens on its own side when it fits there, else on the side with more room, and is capped to that room
@@ -120,3 +120,60 @@ describe("a Popover inside a box that clips", () => {
     expect(menu.style.maxHeight).toBe("");
   });
 });
+
+/**
+ * A menu keeps the edge of its chip it was asked to share when it fits there, else takes the other edge, so a
+ * dialog that clips its content never cuts the menu's side off.
+ */
+const span = (left: number, right: number) => ({ left, right });
+
+describe("fitAlign", () => {
+  it("keeps the asked-for edge when the panel fits there", () => {
+    expect(fitAlign(span(400, 480), span(0, 1000), 300, "end")).toBe("end");
+    expect(fitAlign(span(400, 480), span(0, 1000), 300, "start")).toBe("start");
+  });
+
+  it("takes the other edge when the asked-for one would cross the clipping box", () => {
+    // Shares the chip's right edge: 230 - 300 = -70, left of the box's 100.
+    expect(fitAlign(span(150, 230), span(100, 620), 300, "end")).toBe("start");
+    // Shares the chip's left edge: 500 + 300 = 800, right of the box's 620.
+    expect(fitAlign(span(500, 580), span(100, 620), 300, "start")).toBe("end");
+  });
+
+  it("takes the edge that cuts off less when neither fits", () => {
+    // end: 330 - 300 = 30, 78 short of 100 + 8; start: 250 + 300 = 550, 138 past 420 - 8.
+    expect(fitAlign(span(250, 330), span(100, 420), 300, "start")).toBe("end");
+  });
+
+  it("decides nothing without a layout", () => {
+    expect(fitAlign(span(0, 0), span(0, 1024), 0, "end")).toBeNull();
+    expect(fitAlign(span(10, 90), span(0, 0), 300, "end")).toBeNull();
+  });
+});
+
+describe("a Popover near the side of a box that clips", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("opens from its chip's left edge when the right-aligned panel would be cut off on the left", () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const rect = (left: number, right: number, top: number, bottom: number) => ({ top, bottom, left, right, width: right - left, height: bottom - top, x: left, y: top, toJSON: () => ({}) });
+      if (this.dataset.clip !== undefined) return rect(100, 620, 0, 600);
+      if (this.dataset.popover !== undefined) return rect(150, 230, 100, 128);
+      return rect(0, 0, 0, 0);
+    });
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.getAttribute("role") === "menu" ? 300 : 0;
+    });
+    render(
+      <div data-clip="" style={{ overflowX: "hidden", overflowY: "auto" }}>
+        <Popover isOpen onClose={() => {}} label="Model" align="end" trigger={<button type="button">Model</button>}>
+          <button type="button">Sol</button>
+        </Popover>
+      </div>,
+    );
+    const menu = screen.getByRole("menu", { name: "Model" });
+    expect(menu).toHaveClass("left-0");
+    expect(menu).not.toHaveClass("right-0");
+  });
+});
+

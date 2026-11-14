@@ -26,3 +26,6 @@ dist-ssr
 
 # Tauri / Rust
 src-tauri/target
+
+# Built by site/scripts/build-motion.mjs
+site/public/motion.js

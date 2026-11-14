@@ -1,7 +1,20 @@
 import { invoke } from '@tauri-apps/api/core';
-import { TRANSPORT_ACP, type ChatMessage, type ChatMessagePart, type MessageVerification, type PersistedState, type Session, type SessionWorktree } from '../types';
+import {
+  TRANSPORT_ACP,
+  type ChatMessage,
+  type ChatMessagePart,
+  type DelegationLink,
+  type OpenedByLink,
+  type DiffRow,
+  type MessageVerification,
+  type PersistedState,
+  type Session,
+  type SessionWorktree,
+  type ToolDetail,
+} from '../types';
 import { markElicitationsUnanswered } from './acp-elicitation';
 import { settlePermissionCards } from './acp-events';
+import { diffDetail } from './diff-rows';
 import { normalizeAppearance } from './appearance';
 import type { AgentOptions } from './acp-draft';
 import { validReviewComments } from './review-comments';
@@ -78,6 +91,32 @@ function toPrivateUsage(value: unknown): Session['privateUsage'] | undefined {
   return { credits: value.credits, estimated: value.estimated === true };
 }
 
+const SESSION_HANDLE = /^session-[1-9][0-9]{0,5}$/;
+
+/** The link with its handle only when that is one Zorvo could have issued. */
+function withValidHandle(link: OpenedByLink): OpenedByLink {
+  const base = { sessionId: link.sessionId, at: link.at };
+  return typeof link.handle === 'string' && SESSION_HANDLE.test(link.handle) ? { ...base, handle: link.handle } : base;
+}
+
+/** Which session's agent opened a session: a non-empty session id and a finite time. */
+function isOpenedByLink(value: unknown): value is OpenedByLink {
+  return isObject(value) && typeof value.sessionId === 'string' && value.sessionId !== '' && Number.isFinite(value.at);
+}
+
+/** A link to the session that delegated a task: both texts non-empty, its times numeric. */
+function isDelegationLink(value: unknown): value is DelegationLink {
+  return (
+    isObject(value) &&
+    typeof value.sessionId === 'string' &&
+    value.sessionId !== '' &&
+    typeof value.task === 'string' &&
+    value.task !== '' &&
+    typeof value.startedAt === 'number' &&
+    (value.endedAt === undefined || value.endedAt === null || typeof value.endedAt === 'number')
+  );
+}
+
 /** A worktree without a startCommit that is not a string; old worktrees have none. */
 function withValidStartCommit(worktree: SessionWorktree): SessionWorktree {
   const { startCommit, ...rest } = worktree;
@@ -86,7 +125,7 @@ function withValidStartCommit(worktree: SessionWorktree): SessionWorktree {
 
 /** A session keeps everything else when one of its optional fields is malformed. */
 function withValidFields(session: Session): Session {
-  const { worktree, pinned, archivedAt, namedByUser, hasUnread, historyElsewhere, compareRunId, reviewComments, privateMode, privateUsage, ...rest } = session;
+  const { worktree, pinned, archivedAt, namedByUser, hasUnread, historyElsewhere, compareRunId, reviewComments, privateMode, privateUsage, delegatedFrom, openedBy, ...rest } = session;
   const comments = validReviewComments(reviewComments);
   const usage = toPrivateUsage(privateUsage);
   const sessionCap = isPrivateMode(privateMode) ? privateSessionCap(privateMode.sessionCap) : undefined;
@@ -99,6 +138,8 @@ function withValidFields(session: Session): Session {
     ...(typeof hasUnread === 'boolean' ? { hasUnread } : {}),
     ...(typeof historyElsewhere === 'boolean' ? { historyElsewhere } : {}),
     ...(compareRunId == null || typeof compareRunId === 'string' ? { compareRunId } : {}),
+    ...(delegatedFrom === null || isDelegationLink(delegatedFrom) ? { delegatedFrom } : {}),
+    ...(isOpenedByLink(openedBy) ? { openedBy: withValidHandle(openedBy) } : {}),
     ...(comments.length > 0 ? { reviewComments: comments } : {}),
     ...(isPrivateMode(privateMode)
       ? {
@@ -140,6 +181,16 @@ function toPreferredModelId(raw: unknown): Pick<AgentOptions, 'preferredModelId'
   return typeof raw === 'string' ? { preferredModelId: raw } : {};
 }
 
+/** Each model's effort option, keeping only well-formed ones. */
+function toEffortsByModel(raw: unknown): Pick<AgentOptions, 'effortsByModel'> {
+  if (!isObject(raw)) return {};
+  const efforts = Object.entries(raw).flatMap(([model, option]) => {
+    const [valid] = toConfigOptions([option]);
+    return valid ? [[model, valid] as const] : [];
+  });
+  return efforts.length > 0 ? { effortsByModel: Object.fromEntries(efforts) } : {};
+}
+
 function toOneAgentOptions(options: Record<string, unknown>): AgentOptions {
   const models = toModels(options.models);
   return {
@@ -149,6 +200,7 @@ function toOneAgentOptions(options: Record<string, unknown>): AgentOptions {
     commands: toCommands(options.commands),
     ...toPreferredConfig(options.preferredConfig),
     ...toPreferredModelId(options.preferredModelId),
+    ...toEffortsByModel(options.effortsByModel),
   };
 }
 
@@ -210,6 +262,8 @@ export function normalizePersistedState(raw: unknown): PersistedState {
       privateLowBalanceNotified: settings.privateLowBalanceNotified === true,
       secretGuard: settings.secretGuard !== false,
       paymentSource: settings.paymentSource === 'ownKey' ? 'ownKey' : 'credits',
+      // On unless the user turned it off: a state written before the setting existed has it on.
+      agentTools: settings.agentTools !== false,
     },
     recentFolders: Array.isArray(raw.recentFolders)
       ? raw.recentFolders.filter(
@@ -307,16 +361,70 @@ function withValidVerification(message: ChatMessage): ChatMessage {
   return rest;
 }
 
+/** A report or task mark keeps a non-empty agent name and, when it is a string, the agent's id. */
+function withValidAgentMark(message: ChatMessage, key: 'delegationReport' | 'delegationTask'): ChatMessage {
+  if (!(key in message)) return message;
+  const { [key]: mark, ...rest } = message;
+  if (!isObject(mark)) return rest as ChatMessage;
+  const { agentName, agentId } = mark;
+  if (typeof agentName !== 'string' || agentName === '') return rest as ChatMessage;
+  return typeof agentId === 'string'
+    ? ({ ...rest, [key]: { agentName, agentId } } as ChatMessage)
+    : ({ ...rest, [key]: { agentName } } as ChatMessage);
+}
+
+function withValidDelegationReport(message: ChatMessage): ChatMessage {
+  return withValidAgentMark(withValidAgentMark(message, 'delegationReport'), 'delegationTask');
+}
+
 /**
  * Keeps every well-formed saved message, dropping a `parts` list that does not
  * match the shape and dropping entries that are not messages. Messages saved
  * before parts existed simply have none, and render the way they always did.
  */
+const DIFF_ROW_KINDS = new Set(['added', 'removed', 'context', 'skipped']);
+
+function isDiffRow(value: unknown): value is DiffRow {
+  return isObject(value) && typeof value.kind === 'string' && DIFF_ROW_KINDS.has(value.kind) && typeof value.text === 'string';
+}
+
+/**
+ * A saved tool detail as this version keeps it. A diff an older Zorvo saved with the whole file before
+ * and after becomes the rows it shows, so the transcript shrinks on its next save; a diff that is
+ * neither is dropped. Other details are kept as they are.
+ */
+function toToolDetail(raw: unknown): ToolDetail | null {
+  if (!isObject(raw) || raw.kind !== 'diff') return raw as ToolDetail;
+  if (typeof raw.path !== 'string') return null;
+  if (Array.isArray(raw.rows) && raw.rows.every(isDiffRow)) {
+    return { kind: 'diff', path: raw.path, isNewFile: raw.isNewFile === true, rows: raw.rows };
+  }
+  const oldText = raw.oldText ?? null;
+  if (typeof raw.newText === 'string' && (oldText === null || typeof oldText === 'string')) {
+    return diffDetail(raw.path, oldText, raw.newText);
+  }
+  return null;
+}
+
+function withReadableDiffs(message: ChatMessage): ChatMessage {
+  if (!Array.isArray(message.tools)) return message;
+  const hasDiff = message.tools.some((tool) => Array.isArray(tool.details) && tool.details.some((detail) => isObject(detail) && detail.kind === 'diff'));
+  if (!hasDiff) return message;
+  return {
+    ...message,
+    tools: message.tools.map((tool) =>
+      Array.isArray(tool.details)
+        ? { ...tool, details: tool.details.flatMap((detail) => toToolDetail(detail) ?? []) }
+        : tool,
+    ),
+  };
+}
+
 export function normalizeTranscript(raw: unknown): ChatMessage[] {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((raw): ChatMessage[] => {
     if (!isMessage(raw)) return [];
-    const message = withValidVerification(withValidEndTime(raw));
+    const message = withValidVerification(withValidDelegationReport(withReadableDiffs(withValidEndTime(raw))));
     if (!('parts' in message)) return [message];
     const { parts, ...rest } = message;
     const isWellFormed = Array.isArray(parts) && parts.length > 0 && parts.every(isMessagePart);

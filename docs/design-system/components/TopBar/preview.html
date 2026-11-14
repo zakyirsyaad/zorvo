@@ -1,36 +1,56 @@
-<!-- @dsCard group="Navigation" height=120 -->
+<!-- @dsCard group="Navigation" height=520 -->
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>Top bar — preview</title>
+<head><meta charset="utf-8"><title>TopBar — preview</title>
 <style>
-.z-bar { display: flex; align-items: center; gap: var(--space-3); height: 44px; box-sizing: border-box; padding: 0 var(--space-3) 0 78px; border-bottom: 1px solid var(--border); background: var(--bg); font-family: var(--font-sans); }
-.z-bar__left { display: flex; flex: 1; min-width: 0; align-items: center; gap: var(--space-2); }
-.z-bar__title { overflow: hidden; color: var(--fg-secondary); font: 500 13px/18px var(--font-sans); white-space: nowrap; text-overflow: ellipsis; }
-.z-bar__right { display: flex; align-items: center; gap: var(--space-1); }
-.z-chip { display: inline-flex; align-items: center; gap: var(--space-1); height: 24px; box-sizing: border-box; padding: 0 var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--fg-secondary); font: 400 11px/16px var(--font-sans); white-space: nowrap; }
-.z-chip--plain { border-color: transparent; color: var(--fg-muted); font-family: var(--font-mono); }
-.z-chip svg, .z-icon svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.z-add { color: var(--status-running); }
-.z-del { color: var(--danger); }
-.z-icon { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: var(--radius-md); color: var(--fg-muted); }
-.z-icon svg { width: 14px; height: 14px; }
+.z-bar { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 10px 0 18px; color: var(--fg); }
+.z-bar__crumb { display: flex; align-items: center; gap: var(--space-1\.5); min-width: 0; font: 400 13px/18px var(--font-sans); color: var(--fg-muted); }
+.z-bar__title { color: var(--fg); font-weight: 600; }
+.z-step { display: flex; align-items: center; gap: 10px; height: 30px; padding: 0 var(--space-2); border-radius: var(--radius-md); font: 400 13px/18px var(--font-sans); color: var(--fg-secondary); }
+.z-step.is-now { background: var(--surface-hover); color: var(--fg); }
+.z-step.is-done { color: var(--fg-muted); }
 </style>
 </head>
 <body>
-<div class="z-stage">
-  <header class="z-bar">
-    <div class="z-bar__left">
-      <span class="z-bar__title">Split the parser in two</span>
-      <span class="z-chip z-chip--plain" aria-label="Branch agent/split-parser"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 8v8"/><path d="M18 10c0 4-6 4-12 6"/></svg>agent/split-parser</span>
-    </div>
-    <div class="z-bar__right">
-      <span class="z-chip" aria-label="Plan, 2 of 4 done"><svg viewBox="0 0 24 24" style="color:var(--fg-muted)"><path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/></svg><span style="font-family:var(--font-mono);color:var(--fg-muted)">2/4</span></span>
-      <span class="z-chip"><svg viewBox="0 0 24 24" style="color:var(--status-running);stroke-width:2.25"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>2 background tasks</span>
-      <span class="z-chip" style="font-family:var(--font-mono)"><span class="z-add">+42</span><span class="z-del">−11</span></span>
-      <span class="z-icon" aria-label="Inspector"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg></span>
-      <span class="z-icon" aria-label="More options"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></span>
-    </div>
-  </header>
+<div class="z-col" style="gap:var(--space-4)">
+ <div class="z-sheet" style="width:900px">
+  <div class="z-bar">
+    <button class="z-icon-btn z-icon-btn--secondary" type="button" aria-label="Show sidebar"><svg class="z-ico" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg></button>
+    <button class="z-icon-btn z-icon-btn--secondary" type="button" aria-label="Back"><svg class="z-ico" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
+    <button class="z-icon-btn" type="button" aria-label="Forward" disabled><svg class="z-ico" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+    <div class="z-bar__crumb z-grow-1"><span>agent-desktop</span><span class="z-subtle">/</span><span class="z-bar__title">Split the parser in two</span>
+      <span class="z-barchip" style="margin-left:var(--space-1)"><svg class="z-ico z-ico--sm z-muted" viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg><span class="z-mono">agent/split-parser</span></span>
+      <span class="z-barchip"><span class="z-mono z-muted">#134</span>Open</span></div>
+    <button class="z-barchip z-barchip--lg" type="button" aria-expanded="true"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg><span class="z-mono">2/4</span></button>
+    <button class="z-barchip z-barchip--lg" type="button"><svg class="z-ico z-ico--sm z-run z-spin" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>1 background task</button>
+    <button class="z-barchip z-barchip--lg" type="button"><span class="z-mono"><span class="z-run">+42</span> <span class="z-danger">−11</span></span></button>
+    <button class="z-icon-btn z-icon-btn--secondary" type="button" aria-pressed="true" aria-label="Inspector"><svg class="z-ico" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg></button>
+    <button class="z-icon-btn z-icon-btn--secondary" type="button" aria-label="More"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+  </div>
+  <div class="z-rule"></div>
+  <div class="z-bar" style="padding-left:18px">
+    <div class="z-bar__crumb z-grow-1"><span>agent-desktop</span><span class="z-subtle">/</span><span class="z-bar__title">New session</span></div>
+    <div class="z-bar__crumb"><span>Fix the failing lexer test</span><span class="z-barchip z-barchip--outline"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/></svg>Compare · 3 agents</span></div>
+  </div>
+ </div>
+ <div class="z-hstack" style="align-items:flex-start; gap:var(--space-5)">
+  <div class="z-pop" style="width:340px">
+    <div class="z-pop__head">Plan from Claude Code<span>2 of 4 done</span></div>
+    <div class="z-step is-done"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>Read the lexer and its tests</div>
+    <div class="z-step is-done"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>Split the token types out</div>
+    <div class="z-step is-now"><svg class="z-ico z-run z-spin" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>Move the parser to its own file</div>
+    <div class="z-step"><svg class="z-ico z-subtle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>Run the tests</div>
+  </div>
+  <div class="z-pop" style="width:260px">
+    <div class="z-pop__item" role="menuitem">Open in new window</div>
+    <div class="z-pop__item" role="menuitem">Open in Finder</div>
+    <div class="z-pop__item" role="menuitem">Rename</div>
+    <div class="z-pop__item" role="menuitem" style="align-items:flex-start; padding-top:5px; padding-bottom:5px"><span class="z-pop__label">Delegate to another agent…</span></div>
+    <div class="z-pop__item" role="menuitem">End delegation</div>
+    <div class="z-pop__sep"></div>
+    <div class="z-pop__item" role="menuitem">Archive</div>
+  </div>
+ </div>
 </div>
 </body>
 </html>

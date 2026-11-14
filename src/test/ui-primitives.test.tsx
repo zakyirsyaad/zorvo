@@ -290,7 +290,7 @@ describe("BlockerCard", () => {
         label="Install Codex"
         profileId="codex-acp"
         title="Codex isn't installed yet"
-        actions={<Button>Install Codex</Button>}
+        action={<Button>Install Codex</Button>}
         footer={<p>Footer line</p>}
       >
         Codex needs Node.js before it can start.
@@ -298,8 +298,9 @@ describe("BlockerCard", () => {
     );
 
     const card = screen.getByRole("region", { name: "Install Codex" });
-    // Padded 18px, with the popover shadow, as drawn.
-    expect(card).toHaveClass("rounded-xl", "border", "bg-surface-2", "p-[18px]", "shadow-popover", "gap-3.5");
+    // Padded 16px with no shadow of its own, as drawn.
+    expect(card).toHaveClass("rounded-xl", "border", "bg-surface-2", "p-4", "gap-3.5");
+    expect(card).not.toHaveClass("shadow-popover");
     const heading = screen.getByRole("heading", { level: 2, name: "Codex isn't installed yet" });
     expect(heading).toHaveClass("font-semibold");
     expect(screen.getByText("Codex needs Node.js before it can start.")).toHaveClass("text-ui", "text-fg-muted");
@@ -311,7 +312,7 @@ describe("BlockerCard", () => {
     expect(card.querySelector("img[alt='']")).not.toBeNull();
   });
 
-  it("puts its logo in a 32px tile", () => {
+  it("puts its logo in a 28px agent tile", () => {
     render(
       <BlockerCard label="Install Codex" profileId="codex-acp" title="Codex isn't installed yet">
         Body
@@ -319,20 +320,40 @@ describe("BlockerCard", () => {
     );
 
     const tile = screen.getByRole("region", { name: "Install Codex" }).querySelector("img[alt='']")?.parentElement;
-    expect(tile).toHaveClass("size-8", "rounded-lg", "bg-surface-hover");
+    expect(tile).toHaveClass("size-7", "rounded-lg", "bg-chip");
   });
 
-  it("puts the main button on its own row under the body", () => {
+  it("puts the main button at the header's right, and a bar across the card under the header", () => {
     render(
-      <BlockerCard label="Install Codex" title="Codex isn't installed yet" actions={<Button>Install Codex</Button>}>
+      <BlockerCard
+        label="Install Codex"
+        title="Codex isn't installed yet"
+        action={<Button>Install Codex</Button>}
+        below={<progress aria-label="Codex download" />}
+      >
         Body
       </BlockerCard>,
     );
 
-    const row = screen.getByRole("button", { name: "Install Codex" }).parentElement as HTMLElement;
-    expect(row).toHaveClass("justify-end");
-    expect(row.contains(screen.getByRole("heading", { level: 2 }))).toBe(false);
-    expect(row.parentElement).toBe(screen.getByRole("region", { name: "Install Codex" }));
+    const card = screen.getByRole("region", { name: "Install Codex" });
+    const head = card.querySelector("[data-blocker-head]") as HTMLElement;
+    expect(head).toHaveClass("flex", "items-center", "gap-3");
+    const slot = screen.getByRole("button", { name: "Install Codex" }).parentElement as HTMLElement;
+    expect(slot).toHaveClass("shrink-0");
+    expect(slot.parentElement).toBe(head);
+    expect(head.lastElementChild).toBe(slot);
+    // The bar is the header's sibling, as wide as the card.
+    expect(screen.getByRole("progressbar", { name: "Codex download" }).parentElement).toBe(card);
+    expect(head.nextElementSibling).toBe(screen.getByRole("progressbar", { name: "Codex download" }));
+  });
+
+  it("tops its header out when there is no button beside a longer body", () => {
+    render(
+      <BlockerCard label="Sign in to Codex" title="Sign in to Codex">
+        A longer body.
+      </BlockerCard>,
+    );
+    expect(screen.getByRole("region", { name: "Sign in to Codex" }).querySelector("[data-blocker-head]")).toHaveClass("items-start");
   });
 
   it("leaves out the logo, actions and footer it is not given", () => {
@@ -448,11 +469,13 @@ describe("Tabs", () => {
 
   it("marks the selected tab", () => {
     renderTabs("changes");
-    expect(screen.getByRole("tablist", { name: "Inspector" })).toBeInTheDocument();
+    const list = screen.getByRole("tablist", { name: "Inspector" });
+    expect(list).toHaveClass("inline-flex", "gap-0.5", "rounded-lg", "bg-chip", "p-0.5");
     const changes = screen.getByRole("tab", { name: /Changes/ });
     expect(changes).toHaveAttribute("aria-selected", "true");
     expect(changes).toHaveAttribute("tabindex", "0");
-    expect(changes).toHaveClass("border-fg", "text-fg");
+    expect(changes).toHaveClass("h-6.5", "rounded-md", "px-2.5", "text-ui-sm", "bg-surface-hover", "text-fg");
+    expect(changes).not.toHaveClass("border-b-2");
     expect(changes).toHaveAttribute("aria-controls", tabIds("insp", "changes").panel);
     expect(changes).toHaveAttribute("id", tabIds("insp", "changes").tab);
     const activity = screen.getByRole("tab", { name: "Activity" });
@@ -577,7 +600,7 @@ describe("Popover", () => {
     render(<Harness />);
     expect(screen.queryByRole("menu")).toBeNull();
     open();
-    expect(screen.getByRole("menu", { name: "Mode menu" })).toHaveClass("bg-surface-3", "shadow-popover", "rounded-lg");
+    expect(screen.getByRole("menu", { name: "Mode menu" })).toHaveClass("bg-surface-3", "shadow-popover", "rounded-panel", "p-1");
   });
 
   it("closes on Escape and gives focus back to the trigger", () => {
@@ -682,6 +705,11 @@ describe("Highlighted", () => {
 });
 
 describe("Toast", () => {
+  it("takes the panel radius", () => {
+    render(<Toast message="Saved." onDismiss={() => {}} />);
+    expect(screen.getByRole("status")).toHaveClass("rounded-panel", "bg-surface-3", "shadow-popover");
+  });
+
   it("brings a new notice into view once, so one that appears in a column scrolled away from it is seen", () => {
     const reveal = vi.fn();
     const original = Element.prototype.scrollIntoView;
@@ -755,7 +783,12 @@ describe("Toast", () => {
     const message = "/Users/someone/".repeat(20);
     render(<Toast message={message} onDismiss={() => {}} />);
     expect(screen.getByRole("status")).toHaveClass("w-[340px]");
-    expect(screen.getByText(message)).toHaveClass("break-words");
+    // As wide as the card, and broken anywhere: a path has no spaces, and in a column that starts its
+    // items at the left a paragraph is otherwise as wide as its longest word, past the card's edge.
+    const text = screen.getByText(message);
+    expect(text).toHaveClass("w-full", "min-w-0", "[overflow-wrap:anywhere]");
+    // `break-words` sets the same property to a value that does not shrink the paragraph, and would win.
+    expect(text).not.toHaveClass("break-words");
   });
 
   it("stacks toasts in the corner", () => {
@@ -764,6 +797,6 @@ describe("Toast", () => {
         <Toast message="One" onDismiss={() => {}} />
       </ToastStack>,
     );
-    expect(screen.getByRole("status").parentElement).toHaveClass("absolute", "right-5", "bottom-5", "z-40");
+    expect(screen.getByRole("status").parentElement).toHaveClass("absolute", "right-6", "bottom-6", "z-40");
   });
 });

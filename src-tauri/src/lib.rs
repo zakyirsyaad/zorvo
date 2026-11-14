@@ -1,4 +1,5 @@
 pub mod acp;
+pub mod agent_tools;
 pub mod app_update;
 pub mod appearance;
 pub mod attachment_paths;
@@ -9,11 +10,13 @@ pub mod changes;
 pub mod data_migration;
 pub mod diff_stats;
 pub mod env_resolver;
+pub mod file_preview;
 pub mod files;
 pub mod fork_handoff;
 pub mod git_info;
 pub mod github;
 pub mod installer;
+pub mod pasted_images;
 pub mod private_mode;
 pub mod profiles;
 pub mod pty_session;
@@ -162,6 +165,41 @@ fn terminate_session(
 
 /// Loads the persisted app state, or the default state on a first launch.
 ///
+/// The event for a tool call the webview has to answer, and the one that
+/// says a call ended without an answer (a timeout, the agent's cancel, or its
+/// session stopping).
+const AGENT_TOOL_CALL_EVENT: &str = "agent-tool-call";
+const AGENT_TOOL_CALL_ENDED_EVENT: &str = "agent-tool-call-ended";
+
+/// Starts the tool server the agents reach through the bridge. When it cannot
+/// start (the socket cannot be bound), the app runs without it: one line on
+/// stderr, and a disabled instance that gives every session no server.
+fn start_agent_tools(app: &AppHandle, data_dir: &std::path::Path) -> Arc<agent_tools::AgentTools> {
+    let calls = app.clone();
+    let ended = app.clone();
+    let started = std::env::current_exe()
+        .map_err(|e| format!("cannot find the running program: {e}"))
+        .and_then(|bridge| {
+            agent_tools::AgentTools::start(
+                data_dir,
+                bridge,
+                move |call| {
+                    let _ = calls.emit(AGENT_TOOL_CALL_EVENT, call);
+                },
+                move |call_id| {
+                    let _ = ended.emit(
+                        AGENT_TOOL_CALL_ENDED_EVENT,
+                        serde_json::json!({ "callId": call_id }),
+                    );
+                },
+            )
+        });
+    started.unwrap_or_else(|error| {
+        eprintln!("Zorvo's agent tools are off: {error}");
+        agent_tools::AgentTools::disabled()
+    })
+}
+
 /// Ends every agent and terminal a previous UI left running. The UI calls this
 /// when it loads: a webview reload leaves the backend (and its agents) running,
 /// but the new UI knows none of them and shows their sessions as ended, so they
@@ -179,19 +217,22 @@ fn end_orphaned_sessions(
     pty: State<'_, PtySessionManager>,
     acp: State<'_, acp::manager::AcpManager>,
     private: State<'_, private_mode::service::PrivateMode>,
+    tools: State<'_, Arc<agent_tools::AgentTools>>,
 ) -> usize {
     let terminals = pty.session_ids();
     // Agent sessions are taken off the routes here, not just listed: the new UI
     // reopens a saved session under the same app session id, and that one
     // must not be what the thread below ends. (PTY ids are never reused.)
-    let agents: Vec<_> = acp
-        .session_ids()
+    let agent_ids = acp.session_ids();
+    let agents: Vec<_> = agent_ids
         .iter()
         .map(|id| {
             private.release_proxy_token(id);
             (id.clone(), acp.detach(id))
         })
         .collect();
+    // The new UI reopens these under the same ids and is issued fresh tokens.
+    agent_ids.iter().for_each(|id| tools.forget(id));
     let count = terminals.len() + agents.len();
     std::thread::spawn(move || {
         workspace_terminal::end_sessions(&app.state::<PtySessionManager>(), &terminals);
@@ -380,6 +421,13 @@ pub fn run() {
             proxy_for_events.release(session_id);
         }
         if let Some(app) = acp_holder.lock().ok().and_then(|guard| guard.clone()) {
+            // An agent that exited makes no more calls: whatever still holds its
+            // session's token (a process it left behind) must not speak for it.
+            if let AcpEvent::Exited { session_id, .. } = &event {
+                if let Some(tools) = app.try_state::<Arc<agent_tools::AgentTools>>() {
+                    tools.forget(session_id);
+                }
+            }
             let _ = app.emit(ACP_EVENT, event_payload(&event));
         }
     }));
@@ -429,6 +477,7 @@ pub fn run() {
                 proxy_for_setup,
                 private_mcp_script(app.handle()),
             ));
+            app.manage(start_agent_tools(app.handle(), &data_dir));
             let (store, migration) = data_migration::open_store(data_dir);
             app.manage(store);
             if let Err(error) = migration {
@@ -441,6 +490,16 @@ pub fn run() {
                 app.handle()
                     .set_theme(appearance::theme_for(&state.settings.appearance));
             }
+
+            // Pasted images older than a month; off the main thread, since it lists a folder.
+            let pasted = pasted_images::pasted_dir(&app.state::<store::AppStore>());
+            std::thread::spawn(move || {
+                pasted_images::sweep_old(
+                    &pasted,
+                    std::time::SystemTime::now(),
+                    pasted_images::MAX_AGE,
+                );
+            });
 
             refresh_catalog_in_background(app.handle().clone());
             Ok(())
@@ -473,8 +532,10 @@ pub fn run() {
             files::list_directory,
             files::open_path,
             files::read_workspace_file,
+            file_preview::read_workspace_preview,
             files::remember_workspace,
             attachments::attachment_preview,
+            pasted_images::save_pasted_image,
             workspace_files::workspace_files,
             git_info::workspace_details,
             branches::list_branches,
@@ -515,6 +576,7 @@ pub fn run() {
             acp::commands::acp_set_config_option,
             acp::commands::acp_qwen_last_api_error,
             acp::commands::acp_stop_session,
+            agent_tools::commands::agent_tool_respond,
             installer::commands::install_agent,
             installer::commands::update_agent,
             installer::commands::install_runtime,
@@ -550,6 +612,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 let pty = app.state::<PtySessionManager>();
                 workspace_terminal::end_all_sessions(&pty);
+                app.state::<Arc<agent_tools::AgentTools>>().shutdown();
             }
         });
 }

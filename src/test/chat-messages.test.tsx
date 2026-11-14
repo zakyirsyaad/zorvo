@@ -36,7 +36,7 @@ describe("messages, as drawn", () => {
   it("draws your message as a 12px-radius bubble, with no time under it", () => {
     const row = renderRow(mine);
     const bubble = within(row).getByText("Show the status as words.").closest("[data-selectable-text]") as HTMLElement;
-    expect(bubble).toHaveClass("px-3.5", "py-2.5", "rounded-xl", "border-border", "bg-surface-2", "text-body", "text-fg", "max-w-[85%]");
+    expect(bubble).toHaveClass("px-3.5", "py-2.5", "rounded-xl", "border-border", "bg-surface-2", "text-body", "text-fg", "max-w-[80%]");
     expect(within(row).queryByText("1 hour ago")).toBeNull();
     // The time is not lost: the bubble's tooltip says it.
     expect(bubble.getAttribute("title")).toBe("1 hour ago");
@@ -44,23 +44,24 @@ describe("messages, as drawn", () => {
     expect(within(row).getByRole("button", { name: "Rewind to here" })).toBeInTheDocument();
   });
 
-  it("heads the agent's reply with its logo, its name at 12px/500 and the time in fg-subtle", () => {
+  it("heads the agent's reply with its tile, its name at 12px/500 and the time in fg-subtle", () => {
     const row = renderRow(reply);
     const name = within(row).getByText("Claude Code");
-    expect(name).toHaveClass("text-ui-sm", "font-medium", "text-fg-secondary");
+    expect(name).toHaveClass("text-ui-sm", "font-medium", "text-fg");
+    expect(name.previousElementSibling).toHaveClass("size-[22px]", "bg-chip");
     expect(within(row).getByText("1 hour ago")).toHaveClass("text-caption", "text-fg-subtle");
     const header = name.parentElement as HTMLElement;
-    expect(header).toHaveClass("gap-2", "mb-2.5");
+    expect(header).toHaveClass("gap-2", "mb-2");
   });
 
-  it("fills an ended reply with surface-1 on hover, with its actions as 24px secondary icons", () => {
+  it("fills an ended reply with surface-2 on hover, with its actions as 24px secondary icons", () => {
     const row = renderRow(reply);
     const body = row.querySelector("[data-message-body]") as HTMLElement;
-    expect(body).toHaveClass("group-hover:bg-surface-1", "p-3", "-mx-3", "rounded-[10px]");
+    expect(body).toHaveClass("group-hover:bg-surface-2", "p-3", "-mx-3", "rounded-[10px]");
     const actions = within(row).getAllByRole("button").map((button) => button.getAttribute("aria-label"));
     expect(actions).toEqual(["Copy message", "Fork from here"]);
     for (const button of within(row).getAllByRole("button")) {
-      expect(button).toHaveClass("h-6", "w-6", "text-fg-secondary");
+      expect(button).toHaveClass("h-7", "w-7", "text-fg-secondary");
     }
   });
 
@@ -76,7 +77,7 @@ describe("messages, as drawn", () => {
       options: [{ optionId: "allow", name: "Allow once", kind: "allow_once" }],
     };
     const row = renderRow({ ...reply, isComplete: false, actionCard: card }, { showActions: false });
-    expect(row.querySelector(".group-hover\\:bg-surface-1")).toBeNull();
+    expect(row.querySelector(".group-hover\\:bg-surface-2")).toBeNull();
     expect(screen.getByTestId("action-card-c-1").className).not.toContain("bg-surface-1");
   });
 });
@@ -85,7 +86,7 @@ describe("the Reply toolbar, as drawn", () => {
   it("is a 2px-padded panel with a 28px Reply in fg", () => {
     render(<SelectionToolbar selection={{ text: "status words", isCode: false, rect: null }} onReply={vi.fn()} />);
     const toolbar = screen.getByRole("toolbar", { name: "Selected text" });
-    expect(toolbar).toHaveClass("p-0.5", "rounded-lg", "border-border", "bg-surface-3", "shadow-popover");
+    expect(toolbar).toHaveClass("p-1", "rounded-panel", "border-border", "bg-surface-3", "shadow-popover");
     const reply = within(toolbar).getByRole("button", { name: "Reply" });
     expect(reply).toHaveClass("h-7", "font-normal");
     // The canvas draws Reply at 13px, so the label carries the size a 28px button no longer has.

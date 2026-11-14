@@ -11,7 +11,7 @@ import {
   type SessionSnapshotPayload,
   IDLE_STATUS,
 } from "../lib/popout-bridge";
-import { folderNameOf } from "../lib/session-helpers";
+import { folderNameOf, workspacePathOf } from "../lib/session-helpers";
 import { currentPlan } from "../lib/plan";
 import { MAIN_WINDOW_LABEL } from "../lib/window-mode";
 import { useAgentProfiles } from "../hooks/useDiscovery";
@@ -86,89 +86,85 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
   const isRunning = session?.status === "running";
 
   return (
-    <main className="flex h-screen w-screen flex-col bg-bg text-fg-secondary">
-      {/* An Overlay window with no sidebar: the traffic lights always float over its bar. */}
-      <TopBar
-        hasTrafficLights
-        sessionName={session?.name}
-        isPrivate={session?.privateMode !== undefined}
-        workspaceName={session ? folderNameOf(session.cwd) : undefined}
-        plan={currentPlan(messages)}
-      />
-      <article className="flex-1 flex flex-col bg-bg relative overflow-hidden">
-        {messages.length > 0 || session?.historyElsewhere ? (
-          <ChatCanvas
-            messages={messages}
-            agentName={agent?.name}
-            agentProfileId={session?.profileId}
-            header={
-              session?.historyElsewhere ? (
-                <HistoryElsewhereNote agentName={agent?.name ?? "the agent"} />
-              ) : undefined
-            }
-            onChooseOption={(cardId, optionId, answers) =>
-              forward(
-                answers
-                  ? { kind: "choose-option", cardId, optionId, answers }
-                  : { kind: "choose-option", cardId, optionId },
-              )
-            }
-            onAnswerElicitation={(key, answer) => forward({ kind: "answer-elicitation", key, answer })}
-            onReopenElicitationUrl={(key) => forward({ kind: "reopen-elicitation-url", key })}
-            onOpenUrl={(url) => forward({ kind: "open-url", url })}
-            privateModelId={session?.privateMode?.modelId}
-            isWorking={status.isBusy && !status.isWaiting}
-            failures={status.failures}
-            onStop={() => forward({ kind: "stop" })}
-          />
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-sm text-fg-subtle">
-            {session ? "No messages yet." : "Connecting to the main window…"}
-          </div>
-        )}
-        <div className="p-4 flex flex-col items-center gap-3">
-          {status.privateTopupRequest && (
-            <div className="w-full max-w-chat">
-              <PrivateTopupRequestCard
-                request={status.privateTopupRequest}
-                onTopUp={() =>
-                  forward({
-                    kind: "approve-topup",
-                    requestId: status.privateTopupRequest!.requestId,
-                  })
-                }
-                onNotNow={() =>
-                  forward({
-                    kind: "decline-topup",
-                    requestId: status.privateTopupRequest!.requestId,
-                  })
-                }
-              />
+    <main data-tauri-drag-region className="flex h-screen w-screen flex-col bg-ground p-2 text-fg-secondary">
+      <div data-sheet="main" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel border border-border bg-sheet">
+        {/* An Overlay window with no sidebar: the traffic lights always float over its bar. */}
+        <TopBar
+          hasTrafficLights
+          sessionName={session?.name}
+          isPrivate={session?.privateMode !== undefined}
+          workspaceName={session ? folderNameOf(session.cwd) : undefined}
+          folderName={session ? folderNameOf(workspacePathOf(session)) : undefined}
+          plan={currentPlan(messages)}
+        />
+        <article className="flex-1 flex flex-col relative overflow-hidden">
+          {messages.length > 0 || session?.historyElsewhere ? (
+            <ChatCanvas
+              messages={messages}
+              agentName={agent?.name}
+              agentProfileId={session?.profileId}
+              header={
+                session?.historyElsewhere ? (
+                  <HistoryElsewhereNote agentName={agent?.name ?? "the agent"} />
+                ) : undefined
+              }
+              onChooseOption={(cardId, optionId, answers) =>
+                forward(
+                  answers
+                    ? { kind: "choose-option", cardId, optionId, answers }
+                    : { kind: "choose-option", cardId, optionId },
+                )
+              }
+              onAnswerElicitation={(key, answer) => forward({ kind: "answer-elicitation", key, answer })}
+              onReopenElicitationUrl={(key) => forward({ kind: "reopen-elicitation-url", key })}
+              onOpenUrl={(url) => forward({ kind: "open-url", url })}
+              privateModelId={session?.privateMode?.modelId}
+              isWorking={status.isBusy && !status.isWaiting}
+              failures={status.failures}
+              onStop={() => forward({ kind: "stop" })}
+            />
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-sm text-fg-subtle">
+              {session ? "No messages yet." : "Connecting to the main window…"}
             </div>
           )}
-          {removedAgentName ? (
-            <RemovedAgentPanel agentName={removedAgentName} profileId={session?.profileId} onAdd={() => forward({ kind: "add-agent" })} />
-          ) : (
-            <ComposerDock
-              agentName={agent?.name}
-              disabled={!isRunning}
-              placeholder={isRunning ? undefined : "This session is not running"}
-              // Out of credits, Send waits and says why; Top up and Continue are the main window's.
-              sendDisabled={status.privateCreditsOut !== undefined}
-              note={status.privateCreditsOut ? creditsOutText(status.privateCreditsOut) : undefined}
-              onSendMessage={(text) => forward({ kind: "send", text })}
-              isThinking={status.isBusy}
-              onStop={() => forward({ kind: "stop" })}
-              contextUsage={status.contextUsage}
-              privateSessionLine={
-                session?.privateMode?.sessionCap !== undefined
-                  ? `${Math.floor(session.privateUsage?.credits ?? 0)} of ${session.privateMode.sessionCap} credits this session`
-                  : undefined
-              }
-            />
-          )}
-        </div>
-      </article>
+          <div className="p-4 flex flex-col items-center gap-3">
+            {status.privateTopupRequest && (
+              <div className="w-full max-w-chat">
+                <PrivateTopupRequestCard
+                  request={status.privateTopupRequest}
+                  onTopUp={() => forward({ kind: "approve-topup", requestId: status.privateTopupRequest!.requestId })}
+                  onNotNow={() => forward({ kind: "decline-topup", requestId: status.privateTopupRequest!.requestId })}
+                />
+              </div>
+            )}
+            {removedAgentName ? (
+              <RemovedAgentPanel agentName={removedAgentName} profileId={session?.profileId} onAdd={() => forward({ kind: "add-agent" })} />
+            ) : (
+              <ComposerDock
+                agentName={agent?.name}
+                disabled={!isRunning}
+                placeholder={isRunning ? undefined : "This session is not running"}
+                onSendMessage={(text) => forward({ kind: "send", text })}
+                isThinking={status.isBusy}
+                onStop={() => forward({ kind: "stop" })}
+                contextUsage={status.contextUsage}
+                // The pair's hand-over blocks Send here as it does in the main window, and says why.
+                // Out of credits, Send waits and says why; Top up and Continue are the main window's.
+                sendDisabled={Boolean(status.sendBlockedReason) || status.privateCreditsOut !== undefined}
+                note={
+                  status.privateCreditsOut ? creditsOutText(status.privateCreditsOut) : (status.sendBlockedReason ?? undefined)
+                }
+                privateSessionLine={
+                  session?.privateMode?.sessionCap !== undefined
+                    ? `${Math.floor(session.privateUsage?.credits ?? 0)} of ${session.privateMode.sessionCap} credits this session`
+                    : undefined
+                }
+              />
+            )}
+          </div>
+        </article>
+      </div>
     </main>
   );
 }

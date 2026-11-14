@@ -53,22 +53,21 @@ export function ImagePreviewDialog({ path, bytes, onClose }: ImagePreviewDialogP
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="flex max-h-[85vh] w-full max-w-[520px] flex-col rounded-xl border border-border bg-surface-1 text-fg-secondary shadow-dialog"
+        className="flex max-h-[85vh] w-full max-w-[520px] flex-col rounded-xl border border-border bg-surface-2 text-fg-secondary shadow-dialog"
         onClick={(event) => event.stopPropagation()}
       >
-        <header className="flex items-center justify-between gap-3 py-2.5 pr-3 pl-4">
-          <div className="flex min-w-0 flex-col">
-            <h2 id={titleId} className="truncate text-ui font-medium text-fg" title={path}>
-              {name}
-            </h2>
-            {meta && <p className="text-caption text-fg-subtle">{meta}</p>}
-          </div>
+        {/* One row: the name gives way, the size and Close never do. */}
+        <header className="flex items-center gap-2 py-2.5 pr-3 pl-4">
+          <h2 id={titleId} className="min-w-0 flex-1 truncate text-ui font-medium text-fg" title={path}>
+            {name}
+          </h2>
+          {meta && <p className="shrink-0 text-caption text-fg-subtle">{meta}</p>}
           <IconButton ref={closeRef} label="Close preview" onClick={onClose}>
             <X size={15} aria-hidden="true" />
           </IconButton>
         </header>
 
-        <div className="mx-3 mb-3 flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg border border-border bg-bg">
+        <div className="mx-3 mb-3 flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg border border-border bg-ground">
           {preview.status === "ready" ? (
             <img
               src={preview.src}

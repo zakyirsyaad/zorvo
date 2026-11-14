@@ -1,4 +1,5 @@
 import type { ActionCard, ChatMessage, Session } from '../types';
+import { lastAgentText, openFormPrompt } from './compare-column';
 import { pendingCardsInTurn } from './acp-events';
 import { hasPendingElicitation } from './acp-elicitation';
 import { isListed } from './session-helpers';
@@ -33,6 +34,10 @@ export interface RowFacts {
   finishedAt: number | null;
   /** The session finished something the user has not looked at. */
   hasUnread: boolean;
+  /** The agent's newest words, as plain text for its column; null before it has said anything. */
+  lastMessage: string | null;
+  /** What an open form or page request asks, in one line; null when none is open. */
+  openFormPrompt: string | null;
 }
 
 const STATUS_LABELS: Record<RunRowStatus, string> = {
@@ -214,6 +219,8 @@ export function rowFactsOf(run: CompareRun, { isBusy, transcripts, failedTurns, 
       failed: session.id in failedTurns || exitedBadly,
       ...turnTimes(session, messages),
       hasUnread: session.hasUnread === true,
+      lastMessage: lastAgentText(messages),
+      openFormPrompt: isLive ? openFormPrompt(messages) : null,
     };
   });
 }

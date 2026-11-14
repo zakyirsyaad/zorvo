@@ -240,7 +240,15 @@ describe("tool call details", () => {
 
     expect(result[0].tools?.[0]).toMatchObject({
       details: [
-        { kind: "diff", path: "/repo/src/app.ts", oldText: "const a = 1;", newText: "const a = 2;" },
+        {
+          kind: "diff",
+          path: "/repo/src/app.ts",
+          isNewFile: false,
+          rows: [
+            { kind: "removed", text: "const a = 1;" },
+            { kind: "added", text: "const a = 2;" },
+          ],
+        },
         { kind: "text", text: "1 file changed" },
       ],
       locations: ["/repo/src/app.ts:12"],
@@ -294,7 +302,25 @@ describe("tool call details", () => {
       ctx()
     );
 
-    expect(result[0].tools?.[0].details).toEqual([{ kind: "diff", path: "/repo/new.ts", oldText: null, newText: "export {};" }]);
+    expect(result[0].tools?.[0].details).toEqual([
+      { kind: "diff", path: "/repo/new.ts", isNewFile: true, rows: [{ kind: "added", text: "export {};" }] },
+    ]);
+  });
+
+  it("keeps a diff as the rows it shows, not the whole file before and after", () => {
+    const file = Array.from({ length: 500 }, (_, index) => `line ${index}`);
+    const edited = file.map((line, index) => (index === 250 ? "changed" : line));
+    const result = applyAcpUpdate(
+      [],
+      { ...edit, content: [{ type: "diff", path: "/repo/long.ts", oldText: file.join("\n"), newText: edited.join("\n") }] },
+      ctx()
+    );
+
+    const [diff] = result[0].tools?.[0].details ?? [];
+    expect(diff).not.toHaveProperty("oldText");
+    expect(diff).not.toHaveProperty("newText");
+    expect(diff.kind === "diff" && diff.rows.filter((row) => row.kind === "skipped")).toHaveLength(2);
+    expect(JSON.stringify(diff).length).toBeLessThan(500);
   });
 });
 

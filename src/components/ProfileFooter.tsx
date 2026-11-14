@@ -76,7 +76,7 @@ export function ProfileFooter({
 
   return (
     // `relative`: the Agents menu anchors to this bar, across the sidebar, not to its own button.
-    <footer className="relative flex h-13 shrink-0 items-center justify-between border-t border-border bg-surface-1 px-3">
+    <footer className="relative flex h-13 shrink-0 items-center justify-between px-3">
       <div className="flex min-w-0 items-center gap-2">
         <span className="relative shrink-0">
           <span
@@ -91,7 +91,7 @@ export function ProfileFooter({
               role="img"
               aria-label="Connected to GitHub"
               title="Connected to GitHub"
-              className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full border border-border-strong bg-bg text-fg-secondary"
+              className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full border border-border-strong bg-ground text-fg-secondary"
             >
               <GithubMark size={8} />
             </span>

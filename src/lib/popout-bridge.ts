@@ -31,6 +31,8 @@ export interface SessionLiveStatus {
   privateCreditsOut?: CreditsOutReason;
   /** The agent's pending top-up ask, shown above the popout's composer. */
   privateTopupRequest?: PrivateTopupRequest | null;
+  /** Why Send is refused here, in the main window's words: a delegation pair's hand-over. */
+  sendBlockedReason?: string | null;
 }
 
 export const IDLE_STATUS: SessionLiveStatus = { isBusy: false, isWaiting: false };

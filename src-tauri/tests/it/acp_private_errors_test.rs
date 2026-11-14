@@ -39,7 +39,7 @@ fn turn_error(
 fn a_private_session_out_of_credits_ends_its_turn_with_the_empty_reason() {
     let (manager, rx) = manager();
     manager
-        .start("p-1", &cwd(), &private_launch("402"))
+        .start("p-1", &cwd(), &private_launch("402"), serde_json::json!([]))
         .unwrap();
 
     let error = turn_error(&manager, &rx, "p-1");
@@ -52,7 +52,7 @@ fn a_private_session_out_of_credits_ends_its_turn_with_the_empty_reason() {
 fn a_private_session_whose_key_is_refused_ends_its_turn_with_the_key_reason() {
     let (manager, rx) = manager();
     manager
-        .start("p-1", &cwd(), &private_launch("401"))
+        .start("p-1", &cwd(), &private_launch("401"), serde_json::json!([]))
         .unwrap();
 
     let error = turn_error(&manager, &rx, "p-1");
@@ -71,7 +71,9 @@ fn the_same_agent_launched_without_privacy_keeps_its_own_error_text() {
         ("FAKE_ACP_NO_AUTH_METHODS", "1"),
     ]);
     assert!(!launch.private);
-    manager.start("s-1", &cwd(), &launch).unwrap();
+    manager
+        .start("s-1", &cwd(), &launch, serde_json::json!([]))
+        .unwrap();
 
     let error = turn_error(&manager, &rx, "s-1");
 
@@ -85,9 +87,11 @@ fn the_same_agent_launched_without_privacy_keeps_its_own_error_text() {
 fn only_sessions_started_from_a_private_launch_are_private() {
     let (manager, _rx) = manager();
     manager
-        .start("p-1", &cwd(), &private_launch("402"))
+        .start("p-1", &cwd(), &private_launch("402"), serde_json::json!([]))
         .unwrap();
-    manager.start("s-1", &cwd(), &fake_agent_with(&[])).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent_with(&[]), serde_json::json!([]))
+        .unwrap();
 
     assert!(manager.is_private_session("p-1"));
     assert!(!manager.is_private_session("s-1"));
@@ -107,6 +111,7 @@ fn a_reopened_private_session_is_private_and_reports_credits_too() {
             &private_launch("402"),
             "fake-earlier",
             ReopenPurpose::Continue,
+            serde_json::json!([]),
         )
         .expect("reopen");
 
@@ -129,6 +134,7 @@ fn an_imported_private_session_is_private() {
             &private_launch("402"),
             "fake-earlier",
             ReopenPurpose::Import,
+            serde_json::json!([]),
         )
         .expect("import");
 
@@ -140,10 +146,12 @@ fn an_imported_private_session_is_private() {
 fn a_native_fork_of_a_private_session_is_private() {
     let (manager, rx) = manager();
     manager
-        .start("p-1", &cwd(), &private_launch("401"))
+        .start("p-1", &cwd(), &private_launch("401"), serde_json::json!([]))
         .unwrap();
 
-    manager.fork("p-1", "p-2", &cwd()).expect("fork");
+    manager
+        .fork("p-1", "p-2", &cwd(), serde_json::json!([]))
+        .expect("fork");
 
     assert!(manager.is_private_session("p-2"));
     assert_eq!(
@@ -157,9 +165,13 @@ fn a_native_fork_of_a_private_session_is_private() {
 #[test]
 fn a_native_fork_of_an_ordinary_session_is_not_private() {
     let (manager, _rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent_with(&[])).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent_with(&[]), serde_json::json!([]))
+        .unwrap();
 
-    manager.fork("s-1", "s-2", &cwd()).expect("fork");
+    manager
+        .fork("s-1", "s-2", &cwd(), serde_json::json!([]))
+        .expect("fork");
 
     assert!(!manager.is_private_session("s-2"));
     manager.stop("s-1");
@@ -170,7 +182,7 @@ fn a_native_fork_of_an_ordinary_session_is_not_private() {
 fn a_stopped_session_is_no_longer_private() {
     let (manager, _rx) = manager();
     manager
-        .start("p-1", &cwd(), &private_launch("402"))
+        .start("p-1", &cwd(), &private_launch("402"), serde_json::json!([]))
         .unwrap();
 
     manager.stop("p-1");
@@ -198,7 +210,12 @@ fn a_private_session_refuses_the_model_and_auth_commands_before_the_agent_sees_t
     let (manager, _rx) = manager();
     let log = call_log("model-command");
     manager
-        .start("p-1", &cwd(), &logged_private_launch(&log))
+        .start(
+            "p-1",
+            &cwd(),
+            &logged_private_launch(&log),
+            serde_json::json!([]),
+        )
         .unwrap();
 
     for text in [
@@ -235,7 +252,7 @@ fn a_private_session_refuses_the_model_and_auth_commands_before_the_agent_sees_t
 fn a_private_session_still_sends_other_commands_and_text_that_mentions_model() {
     let (manager, rx) = manager();
     manager
-        .start("p-1", &cwd(), &private_launch("402"))
+        .start("p-1", &cwd(), &private_launch("402"), serde_json::json!([]))
         .unwrap();
 
     for text in [
@@ -258,7 +275,9 @@ fn a_private_session_still_sends_other_commands_and_text_that_mentions_model() {
 #[test]
 fn an_ordinary_session_sends_the_model_command_to_its_agent() {
     let (manager, rx) = manager();
-    manager.start("s-1", &cwd(), &fake_agent_with(&[])).unwrap();
+    manager
+        .start("s-1", &cwd(), &fake_agent_with(&[]), serde_json::json!([]))
+        .unwrap();
 
     assert_eq!(manager.prompt("s-1", "/model smart", &[]), Ok(()));
     wait_for(&rx, |e| matches!(e, AcpEvent::TurnEnded { .. }));
@@ -270,7 +289,12 @@ fn a_private_session_refuses_a_model_change_by_set_model_or_the_model_option() {
     let (manager, _rx) = manager();
     let log = call_log("set-model");
     manager
-        .start("p-1", &cwd(), &logged_private_launch(&log))
+        .start(
+            "p-1",
+            &cwd(),
+            &logged_private_launch(&log),
+            serde_json::json!([]),
+        )
         .unwrap();
 
     let by_set_model = manager.set_model("p-1", "smart");
@@ -297,7 +321,12 @@ fn a_private_session_still_sends_other_config_options() {
     let (manager, _rx) = manager();
     let log = call_log("set-effort");
     manager
-        .start("p-1", &cwd(), &logged_private_launch(&log))
+        .start(
+            "p-1",
+            &cwd(),
+            &logged_private_launch(&log),
+            serde_json::json!([]),
+        )
         .unwrap();
 
     // The fake agent does not know the method: what matters is that it was asked.
@@ -316,7 +345,9 @@ fn an_ordinary_session_sends_model_changes_to_its_agent() {
         ("FAKE_ACP_MODELS", "1"),
         ("FAKE_ACP_CALL_LOG", log.to_str().unwrap()),
     ]);
-    manager.start("s-1", &cwd(), &launch).unwrap();
+    manager
+        .start("s-1", &cwd(), &launch, serde_json::json!([]))
+        .unwrap();
 
     let by_option = manager.set_config_option("s-1", "model", "smart");
 
@@ -350,11 +381,13 @@ fn a_private_session_refused_by_session_new_reads_as_credits() {
         "p-1",
         &cwd(),
         &refusing_private_launch("402", "session/new"),
+        serde_json::json!([]),
     );
     let key = manager.start(
         "p-2",
         &cwd(),
         &refusing_private_launch("401", "session/new"),
+        serde_json::json!([]),
     );
 
     assert_eq!(empty.err().as_deref(), Some(EMPTY));
@@ -371,6 +404,7 @@ fn a_private_session_refused_by_session_load_or_resume_reads_as_credits() {
         &refusing_private_launch("402", "session/load"),
         "fake-earlier",
         ReopenPurpose::Import,
+        serde_json::json!([]),
     );
     let resumed = manager.reopen(
         "p-2",
@@ -378,6 +412,7 @@ fn a_private_session_refused_by_session_load_or_resume_reads_as_credits() {
         &refusing_private_launch("401", "session/resume"),
         "fake-earlier",
         ReopenPurpose::Continue,
+        serde_json::json!([]),
     );
 
     assert_eq!(loaded.err().as_deref(), Some(EMPTY));
@@ -393,7 +428,9 @@ fn the_same_open_refusal_of_an_ordinary_session_keeps_its_own_text() {
         ("FAKE_ACP_NO_AUTH_METHODS", "1"),
     ]);
 
-    let error = manager.start("s-1", &cwd(), &launch).expect_err("refused");
+    let error = manager
+        .start("s-1", &cwd(), &launch, serde_json::json!([]))
+        .expect_err("refused");
 
     assert!(!error.starts_with("PRIVATE_CREDITS:"), "{error}");
     assert!(error.contains("402 api_key_limit_exceeded"), "{error}");
@@ -407,10 +444,11 @@ fn a_fork_of_a_private_session_refused_for_credits_reads_as_credits() {
             "p-1",
             &cwd(),
             &refusing_private_launch("402", "session/fork"),
+            serde_json::json!([]),
         )
         .unwrap();
 
-    let forked = manager.fork("p-1", "p-2", &cwd());
+    let forked = manager.fork("p-1", "p-2", &cwd(), serde_json::json!([]));
 
     assert_eq!(forked.err().as_deref(), Some(EMPTY));
     assert!(!manager.is_private_session("p-2"));
@@ -424,9 +462,13 @@ fn a_refused_fork_of_an_ordinary_session_keeps_its_own_text() {
         ("FAKE_ACP_PRIVATE_ERROR", "402"),
         ("FAKE_ACP_PRIVATE_REFUSE", "session/fork"),
     ]);
-    manager.start("s-1", &cwd(), &launch).unwrap();
+    manager
+        .start("s-1", &cwd(), &launch, serde_json::json!([]))
+        .unwrap();
 
-    let error = manager.fork("s-1", "s-2", &cwd()).expect_err("refused");
+    let error = manager
+        .fork("s-1", "s-2", &cwd(), serde_json::json!([]))
+        .expect_err("refused");
 
     assert!(error.starts_with("session/fork failed: "), "{error}");
     manager.stop("s-1");
@@ -437,7 +479,12 @@ fn a_private_session_sends_a_model_command_after_leading_spaces_as_a_prompt() {
     let (manager, rx) = manager();
     let log = call_log("spaced-model");
     manager
-        .start("p-1", &cwd(), &logged_private_launch(&log))
+        .start(
+            "p-1",
+            &cwd(),
+            &logged_private_launch(&log),
+            serde_json::json!([]),
+        )
         .unwrap();
 
     assert_eq!(manager.prompt("p-1", "  /model x", &[]), Ok(()));

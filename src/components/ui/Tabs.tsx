@@ -1,4 +1,5 @@
 import { useRef, type KeyboardEvent } from "react";
+import { SEGMENTED_TRACK, segmentedItem } from "./segmented-style";
 
 export interface TabItem<T extends string> {
   id: T;
@@ -22,8 +23,6 @@ export interface TabsProps<T extends string> {
 export function tabIds(prefix: string, id: string): { tab: string; panel: string } {
   return { tab: `${prefix}-tab-${id}`, panel: `${prefix}-panel-${id}` };
 }
-
-const TAB = "flex items-center gap-1.5 border-b-2 px-2 text-ui transition-colors focus-ring";
 
 /** A tab strip: a click or Left/Right (wrapping), Home and End pick a tab and focus it. */
 export function Tabs<T extends string>({ tabs, selected, onSelect, label, idPrefix, className }: TabsProps<T>) {
@@ -49,7 +48,7 @@ export function Tabs<T extends string>({ tabs, selected, onSelect, label, idPref
   };
 
   return (
-    <div role="tablist" aria-label={label} onKeyDown={handleKeyDown} className={["flex gap-1", className].filter(Boolean).join(" ")}>
+    <div role="tablist" aria-label={label} onKeyDown={handleKeyDown} className={[SEGMENTED_TRACK, className].filter(Boolean).join(" ")}>
       {tabs.map((tab) => {
         const isSelected = tab.id === selected;
         const ids = tabIds(idPrefix, tab.id);
@@ -67,10 +66,10 @@ export function Tabs<T extends string>({ tabs, selected, onSelect, label, idPref
             aria-controls={isSelected ? ids.panel : undefined}
             tabIndex={isSelected ? 0 : -1}
             onClick={() => onSelect(tab.id)}
-            className={`${TAB} ${isSelected ? "border-fg font-medium text-fg" : "border-transparent text-fg-muted hover:text-fg"}`}
+            className={segmentedItem(isSelected)}
           >
             {tab.label}
-            {tab.count !== undefined && tab.count > 0 && <span className="text-caption text-fg-muted">{tab.count}</span>}
+            {tab.count !== undefined && tab.count > 0 && <span className="text-fg-muted">{tab.count}</span>}
           </button>
         );
       })}

@@ -95,6 +95,14 @@ afterEach(() => {
 });
 
 describe("Line comments in the Changes tab", () => {
+  it("draws the panel's focus ring inside, since the inspector's sheet clips an outer one", async () => {
+    await openChanges([sessionOf("s-a", "Alpha work", [])]);
+
+    const classes = changes().className.split(" ");
+    expect(classes).toContain("focus-ring-inset");
+    expect(classes).not.toContain("focus-ring");
+  });
+
   it("the Changes inline diff offers a comment on its active line", async () => {
     await openChanges([sessionOf("s-a", "Alpha work", [])]);
 
@@ -108,7 +116,7 @@ describe("Line comments in the Changes tab", () => {
     await writeComment("Check this.");
 
     const panel = within(changes());
-    const saved = panel.getByText("Check this.").closest(".bg-surface-3") as HTMLElement;
+    const saved = panel.getByText("Check this.").closest("[data-saved-comment]") as HTMLElement;
     expect(saved.textContent).toContain("Line 42 · Current");
     expect(panel.getByRole("region", { name: "Review comments" }).textContent).toContain("1 comment not in a message");
     expect(panel.getByTitle(FILE).closest("li")?.textContent).toContain("1 comment");

@@ -15,6 +15,8 @@ export interface DropdownOption {
   description?: string;
   /** The choice lets the agent act without asking; the open menu marks it before it is picked. */
   risky?: boolean;
+  /** Why the agent cannot take this choice now; the row is shown disabled, with this in place of its description. */
+  unavailable?: string;
 }
 
 export interface OptionDropdownProps {
@@ -26,7 +28,7 @@ export interface OptionDropdownProps {
   heading?: string;
   /** After the value on the chip: a risky mode's shield. */
   trailing?: ReactNode;
-  /** The chip's look: the composer row's by default, `DRAFT_CHIP` above a draft's card. */
+  /** The chip's look: the composer row's by default. */
   chipClassName?: string;
   /**
    * Which way the menu opens: up from a session's composer at the bottom of the window (the default), down
@@ -115,6 +117,7 @@ function matches(option: DropdownOption, query: string): boolean {
  * ended before the risky sentence joins it.
  */
 function detailOf(option: DropdownOption): string | undefined {
+  if (option.unavailable) return option.unavailable;
   const description = option.description?.trim() || undefined;
   if (!option.risky) return description;
   return description ? `${asSentence(description)} ${RISKY_LINE}.` : `${RISKY_LINE}.`;
@@ -124,6 +127,8 @@ interface OptionRowsProps {
   options: readonly DropdownOption[];
   current: DropdownOption | undefined;
   query: string;
+  /** The row Return would pick, marked while a search has text. */
+  highlighted?: DropdownOption;
   onSelect: (value: string | undefined) => void;
   renderIcon?: (option: DropdownOption) => ReactNode;
 }
@@ -141,7 +146,7 @@ function tagRangesOf(tag: string, options: readonly DropdownOption[], query: str
   return [];
 }
 
-function OptionRow({ option, current, query, onSelect, renderIcon }: Omit<OptionRowsProps, "options"> & { option: DropdownOption }) {
+function OptionRow({ option, current, query, highlighted, onSelect, renderIcon }: Omit<OptionRowsProps, "options"> & { option: DropdownOption }) {
   const { tag, name } = splitTag(option.label);
   // Matched in the full label, then cut to the name the row shows, so a match that starts in the tag still marks the name.
   const nameRanges = rangesWithin(matchRanges(option.label, query), option.label.length - name.length, option.label.length);
@@ -149,7 +154,9 @@ function OptionRow({ option, current, query, onSelect, renderIcon }: Omit<Option
   return (
     <PopoverOption
       selected={option.value === current?.value}
+      highlighted={option === highlighted}
       onSelect={() => onSelect(option.value)}
+      disabled={Boolean(option.unavailable)}
       // A choice found by its description shows why it is listed.
       description={detail && query.trim() !== "" ? <Highlighted text={detail} query={query} /> : detail}
       // The full label, tag and all, for a name cut short.
@@ -232,9 +239,17 @@ function SearchableOptions({
         placeholder={`Search ${label.toLowerCase()}`}
       />
       <PopoverList label={label}>
-        <OptionRows options={visible} current={current} query={query} onSelect={onSelect} renderIcon={renderIcon} />
+        <OptionRows
+          options={visible}
+          current={current}
+          query={query}
+          // The same row Return picks above.
+          highlighted={query.trim() !== "" ? visible[0] : undefined}
+          onSelect={onSelect}
+          renderIcon={renderIcon}
+        />
       </PopoverList>
-      <p className="px-2 pt-1.5 pb-0.5 text-caption text-fg-subtle">
+      <p className="px-2 pt-1.5 pb-1 text-caption text-fg-muted">
         {visible.length} of {options.length} {pluralOf(label)}
       </p>
     </>
@@ -267,8 +282,10 @@ export function OptionDropdown({
   const detail = current?.description ?? description;
   const hasStatus = status !== undefined && status !== null;
   const hasSearch = !hasStatus && options.length > SEARCH_THRESHOLD;
-  // Options with a line under them wrap at the canvas's 300px; a short plain list stays as wide as its words.
-  const isWide = hasStatus || hasSearch || options.some((option) => detailOf(option) !== undefined);
+  // A searched list or one with a status is 300px; options with a line under them (modes) wrap at 260px; a short
+  // plain list stays as wide as its words.
+  const hasDetails = options.some((option) => detailOf(option) !== undefined);
+  const width = hasStatus || hasSearch ? "w-75" : hasDetails ? "w-65" : "w-max min-w-40 max-w-80";
   const onOpenRef = useLatest(onOpen);
 
   // Once per opening, never on a re-render while it stays open.
@@ -284,7 +301,7 @@ export function OptionDropdown({
       role={hasSearch ? "dialog" : "listbox"}
       side={side}
       align={align === "left" ? "start" : "end"}
-      className={isWide ? "w-75" : "w-max min-w-40 max-w-80"}
+      className={width}
       trigger={
         <button
           type="button"

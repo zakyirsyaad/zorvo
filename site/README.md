@@ -8,11 +8,16 @@ fonts (`@fontsource-variable`) and its agent logos (`src/assets/agents/`).
 ```bash
 pnpm install                      # from the repository root
 pnpm --filter zorvo-site dev      # http://localhost:3100
-SITE_URL=https://zorvo.xyz pnpm --filter zorvo-site build   # writes site/out/
+SITE_URL=https://zorvolabs.xyz pnpm --filter zorvo-site build   # writes site/out/
 ```
 
-`out/` is plain files: any static host serves it. Next.js telemetry is off in
-both scripts. The page makes no requests to other sites. Every link comes from
+`out/` is plain files: any static host serves it. The site has no client components, so the build
+ends with `scripts/strip-runtime.mjs`, which removes React's hydration runtime from every page. The one
+script a visitor downloads is `/motion.js`, the landing page's motion (`scripts/motion/landing.ts`, GSAP and
+Motion, bundled by `scripts/build-motion.mjs` before `next build`): it hydrates nothing, plays only
+when the visitor has not asked for reduced motion, and the page is complete without it. The strip step keeps
+exactly that tag and fails the build if any other script survives. `vercel.json` allows scripts from the site's
+own origin only (`script-src 'self'`). Structured data stays. Next.js telemetry is off in both scripts. The page makes no requests to other sites. Every link comes from
 `lib/links.ts`: the docs links point at the pages under `app/docs/` and the
 downloads and the changelog at the repository, and changing that one file moves
 them all. The docs pages are listed in `lib/docs-nav.ts`, which the sidebar, the
@@ -21,10 +26,14 @@ pager, the docs home and the sitemap all read.
 ## Deploying on Vercel
 
 Import the repository in Vercel and set **Root Directory** to `site`. The
-rest comes from `vercel.json`: install and build with pnpm 12 (the version
+rest comes from `vercel.json`: no framework preset, so Vercel serves `out/` as plain
+files (the Next.js preset would deploy its own build from `.next/`, which keeps React's
+runtime and drops the headers below), install and build with pnpm 12 (the version
 the workspace's settings need), security headers including a CSP that only
-allows the site's own origin, and a skipped build when a commit touches
-nothing the site uses.
+allows the site's own origin, and a skipped preview build when a commit touches
+nothing the site uses. Production always builds: a redeploy after changing an
+environment variable such as `SITE_URL` has no new commit to compare, and would
+otherwise be skipped.
 
 The canonical URL, sitemap and Open Graph links use `SITE_URL` if set,
 otherwise Vercel's production domain, so adding a custom domain in Vercel

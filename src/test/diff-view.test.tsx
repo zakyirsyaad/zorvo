@@ -234,6 +234,34 @@ describe("DiffView", () => {
     expect(statCalls(spy).map((c) => (c[1] as { target: string }).target)).toEqual(["base"]);
   });
 
+  it("lets the expanded review shrink below its longest line", async () => {
+    // A flex item's minimum width is its content's by default, so one long unwrapped line pushed the
+    // expanded review past the window and cut off "Add N comments to message". jsdom has no layout,
+    // so this checks the class that allows the shrink; the overflow itself was measured in the app.
+    mockDiff(THREE);
+    await renderView({ isExpanded: true });
+
+    expect(screen.getByRole("complementary", { name: "Diff view" }).className.split(" ")).toContain("min-w-0");
+  });
+
+  it("sits on the chat's sheet: no fill of its own, a hairline on its left", async () => {
+    mockDiff(THREE);
+    await renderView({ isExpanded: false });
+
+    const view = screen.getByRole("complementary", { name: "Diff view" });
+    const classes = view.className.split(" ");
+    expect(classes).not.toContain("bg-bg");
+    expect(classes).toEqual(expect.arrayContaining(["border-l", "border-border"]));
+  });
+
+  it("fills the sheet when expanded, with no hairline doubling the sheet's own edge", async () => {
+    mockDiff(THREE);
+    await renderView({ isExpanded: true });
+
+    const classes = screen.getByRole("complementary", { name: "Diff view" }).className.split(" ");
+    expect(classes).not.toContain("border-l");
+  });
+
   it("reads HEAD and reports once when the targets cannot be read", async () => {
     const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd) =>
       cmd === "session_diff_targets"

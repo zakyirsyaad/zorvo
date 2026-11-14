@@ -157,6 +157,8 @@ export function composerNote(state: {
   agentToSignIn?: string;
   /** What a private draft waits for before it can start (credits, the models). */
   privateNote?: string;
+  /** Why the mention, or the session's delegation pair, blocks Send; after the install and sign-in notes. */
+  delegationBlock?: string;
   /** The next message continues a session rather than starting one. */
   continuesSession: boolean;
 }): string | undefined {
@@ -165,6 +167,7 @@ export function composerNote(state: {
   if (state.agentToInstall) return installPlaceholder(state.agentToInstall, state.continuesSession);
   if (state.agentToSignIn) return signInPlaceholder(state.agentToSignIn, state.continuesSession);
   if (state.privateNote) return state.privateNote;
+  if (state.delegationBlock) return state.delegationBlock;
   return undefined;
 }
 

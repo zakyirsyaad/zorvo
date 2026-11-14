@@ -90,6 +90,24 @@ describe("buildForkHandoff header", () => {
     expect(doc).toContain(`- Folder: ${meta.cwd}`);
   });
 
+  it("uses the given title and note", () => {
+    const note =
+      "Another agent's session delegated a task to you and waits for your answer. The task is in the message that follows.";
+    const doc = buildForkHandoff(messages, "msg-2", {
+      ...meta,
+      title: "# Delegation handoff",
+      note,
+    });
+
+    expect(doc.startsWith(`# Delegation handoff\n${note}`)).toBe(true);
+    expect(doc).not.toContain("# Session handoff");
+    expect(doc.indexOf(note)).toBeLessThan(doc.indexOf("- Source session:"));
+  });
+
+  it("keeps the default title when none is given", () => {
+    expect(buildForkHandoff(messages, "msg-2", meta).startsWith("# Session handoff")).toBe(true);
+  });
+
   it("renders Created as an ISO-8601 timestamp", () => {
     const doc = buildForkHandoff(messages, "msg-2", meta);
 

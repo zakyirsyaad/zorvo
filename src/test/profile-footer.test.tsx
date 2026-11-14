@@ -64,12 +64,12 @@ describe("ProfileFooter", () => {
   });
 
   describe("as the canvas draws it", () => {
-    it("is one surface-1 bar under one border, with no version line", () => {
+    it("sits on the window ground: no fill, no border, no version line", () => {
       const { container } = render(<ProfileFooter name="Iwang" onOpenSettings={() => {}} />);
 
       const footer = container.querySelector("footer") as HTMLElement;
-      expect(footer.className).toContain("border-t");
-      expect(footer.className).toContain("bg-surface-1");
+      expect(footer.className).not.toContain("border-t");
+      expect(footer.className).not.toContain("bg-surface-1");
       expect(footer.className).not.toContain("bg-bg");
       expect(screen.queryByText(/Zorvo v/)).toBeNull();
     });

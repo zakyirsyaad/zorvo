@@ -96,6 +96,11 @@ pub struct Settings {
     /// Agent ids that were seen signed in, so Settings and the sidebar can say
     /// "Ready" without asking the agent again. Opaque to the backend.
     pub signed_in_agents: Vec<String>,
+    /// Whether a session is told about Zorvo's own tools (the MCP server, or
+    /// the command path). On unless the state says `false`: a state written
+    /// before the setting existed, or a value of another type, reads as on.
+    #[serde(deserialize_with = "lenient_on")]
+    pub agent_tools: bool,
 }
 
 impl Default for Settings {
@@ -104,14 +109,15 @@ impl Default for Settings {
             default_agent_id: None,
             onboarding_completed: false,
             appearance: String::new(),
-            payment_source: String::new(),
-            secret_guard: true,
-            private_low_balance_notified: false,
             enabled_agents: None,
             removed_agents: Vec::new(),
             agent_versions: BTreeMap::new(),
             notified_updates: BTreeMap::new(),
             signed_in_agents: Vec::new(),
+            agent_tools: true,
+            payment_source: String::new(),
+            secret_guard: true,
+            private_low_balance_notified: false,
         }
     }
 }
@@ -197,6 +203,18 @@ pub struct SessionRecord {
     /// The compare run this session belongs to, when it was started from one.
     #[serde(deserialize_with = "lenient_string")]
     pub compare_run_id: Option<String>,
+    /// The session this one was delegated from, when the user delegated its task.
+    #[serde(
+        deserialize_with = "lenient_delegation",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub delegated_from: Option<DelegationLinkRecord>,
+    /// The session whose agent opened this one through Zorvo's tools.
+    #[serde(
+        deserialize_with = "lenient_opened_by",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub opened_by: Option<OpenedByRecord>,
     /// Comments the user wrote on lines of the session's diff.
     #[serde(
         deserialize_with = "lenient_review_comments",
@@ -289,6 +307,30 @@ pub struct SessionWorktreeRecord {
     pub start_commit: Option<String>,
 }
 
+/// Which session's agent opened a session, and when.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenedByRecord {
+    pub session_id: String,
+    pub at: i64,
+    /// What the opener's agent calls the session; none on a link saved before handles.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
+}
+
+/// A delegated task: the session that delegated it, the task, and when it ran.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DelegationLinkRecord {
+    /// The session that delegated the task.
+    pub session_id: String,
+    /// The task as the user typed it.
+    pub task: String,
+    pub started_at: i64,
+    /// When the user ended the delegation; no report is sent after it.
+    pub ended_at: Option<i64>,
+}
+
 /// Where the app keeps its data: the platform app-data dir, or a sibling
 /// `<identifier>.dev` folder for a dev build. Dev and release builds share an
 /// identifier, and two processes writing one data dir can lose sessions.
@@ -341,6 +383,15 @@ fn lenient_private_mode<'de, D: Deserializer<'de>>(
     Ok(value.and_then(|value| serde_json::from_value(value).ok()))
 }
 
+/// A saved delegation link, or none when it is malformed, for the same reason
+/// as [`lenient_worktree`]: one bad link must not lose every saved session.
+fn lenient_delegation<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<DelegationLinkRecord>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| serde_json::from_value(value).ok()))
+}
+
 /// A saved usage total, or none when it is malformed or negative.
 fn lenient_private_usage<'de, D: Deserializer<'de>>(
     deserializer: D,
@@ -349,6 +400,15 @@ fn lenient_private_usage<'de, D: Deserializer<'de>>(
     Ok(value
         .and_then(|value| serde_json::from_value::<PrivateUsageRecord>(value).ok())
         .filter(|usage| usage.credits.is_finite() && usage.credits >= 0.0))
+}
+
+/// Who opened the session, or none when the value is not a whole link: a bad
+/// one must not make the state file unreadable.
+fn lenient_opened_by<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<OpenedByRecord>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| serde_json::from_value(value).ok()))
 }
 
 /// The saved review comments, each read on its own: a field that is not a
@@ -372,6 +432,12 @@ fn lenient_bool<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::E
     Ok(serde_json::Value::deserialize(deserializer)?
         .as_bool()
         .unwrap_or(false))
+}
+
+/// False only for a JSON `false`: a setting that is on by default stays on for
+/// any other value.
+fn lenient_on<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+    Ok(serde_json::Value::deserialize(deserializer)?.as_bool() != Some(false))
 }
 
 /// A string, or none when it is not one.
@@ -427,6 +493,11 @@ impl AppStore {
             legacy_worktrees_root: Some(root),
             ..self
         }
+    }
+
+    /// The app's data folder.
+    pub fn root(&self) -> &Path {
+        &self.root
     }
 
     /// Where session worktrees are made.
@@ -898,5 +969,46 @@ mod tests {
         let value = serde_json::to_value(SessionRecord::default()).expect("serialize");
 
         assert!(value.get("reviewComments").is_none(), "{value}");
+    }
+
+    #[test]
+    fn a_delegated_from_link_survives_a_save() {
+        let record = SessionRecord {
+            id: "s-1".to_string(),
+            delegated_from: Some(DelegationLinkRecord {
+                session_id: "s-a".to_string(),
+                task: "Do it".to_string(),
+                started_at: 5,
+                ended_at: Some(9),
+            }),
+            ..SessionRecord::default()
+        };
+
+        let value = serde_json::to_value(&record).expect("serialize");
+        let back: SessionRecord = serde_json::from_value(value.clone()).expect("deserialize");
+
+        assert_eq!(back, record);
+        assert_eq!(value["delegatedFrom"]["sessionId"], "s-a");
+    }
+
+    #[test]
+    fn a_delegated_from_field_of_the_wrong_shape_loads_none() {
+        for delegated_from in [serde_json::json!(5), serde_json::json!({ "task": "x" })] {
+            let record: SessionRecord = serde_json::from_value(session_json(
+                serde_json::json!({ "delegatedFrom": delegated_from }),
+            ))
+            .expect("a bad delegatedFrom must not fail the record");
+
+            assert_eq!(record.delegated_from, None);
+            assert_eq!(record.id, "s-1");
+            assert_eq!(record.name, "Fix login");
+        }
+    }
+
+    #[test]
+    fn no_delegated_from_is_not_written() {
+        let value = serde_json::to_value(SessionRecord::default()).expect("serialize");
+
+        assert!(value.get("delegatedFrom").is_none(), "{value}");
     }
 }

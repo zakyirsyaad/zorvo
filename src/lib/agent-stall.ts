@@ -71,15 +71,33 @@ export interface StallState {
 }
 
 /** The notice's text, or null while there is nothing worth saying. Only states what the agent reported. */
-export function stallNoticeText(agentName: string, { failures, silentForMs }: StallState): string | null {
+/** The stall notice as a title and the sentence under it. Built apart, since a model name or an error may hold periods. */
+export interface StallNoticeParts {
+  title: string;
+  body?: string;
+}
+
+export function stallNoticeParts(agentName: string, { failures, silentForMs }: StallState): StallNoticeParts | null {
   if (failures && failures.count >= STALL_MIN_FAILURES) {
     const target = failures.model ? ` to ${failures.model}` : '';
-    const last = failures.detail ? ` Last error: ${asSentence(failures.detail)}` : '';
-    return `${agentName}'s requests${target} failed ${failures.count} times in a row.${last}`;
+    return {
+      title: `${agentName}'s requests${target} failed ${failures.count} times in a row.`,
+      body: failures.detail ? `Last error: ${asSentence(failures.detail)}` : undefined,
+    };
   }
   if (silentForMs < STALL_SILENCE_MS) return null;
   const minutes = Math.floor(silentForMs / MS_PER_MINUTE);
-  return `${agentName} hasn't sent anything for ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}. It may be stuck.`;
+  return {
+    title: `${agentName} hasn't sent anything for ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.`,
+    body: 'It may be stuck.',
+  };
+}
+
+/** The stall notice as one line of text. */
+export function stallNoticeText(agentName: string, state: StallState): string | null {
+  const parts = stallNoticeParts(agentName, state);
+  if (!parts) return null;
+  return parts.body ? `${parts.title} ${parts.body}` : parts.title;
 }
 
 function lastAgentMessage(messages: readonly ChatMessage[]): ChatMessage | undefined {

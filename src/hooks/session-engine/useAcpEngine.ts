@@ -23,6 +23,8 @@ import { qwenErrorDetail } from '../../lib/qwen-api-error';
 import type { AgentProfile, ChatMessage, ElicitationCard, Session } from '../../types';
 import { parseAuthRequired, type AuthMethod } from '../../lib/acp-auth';
 import { isSessionGoneError, isUnknownSessionError } from '../../lib/acp-load-error';
+import { sessionGetsAgentTools } from '../../lib/agent-tools';
+import { withToolsContext } from '../../lib/agent-tools-context';
 import { writeConversationHandoff } from '../../lib/session-handoff';
 import { applyElicitation, completeElicitation, dismissPendingElicitations } from '../../lib/acp-elicitation';
 import { elicitationActions, type InFlightAnswer } from './elicitation-actions';
@@ -89,6 +91,11 @@ export interface AcpEngineDeps extends EngineDeps {
    * a key or a sign-in, which Zorvo, not the user, gives the agent. Without it the message is only taken off the chat.
    */
   giveBack?: (sessionId: string, message: FirstMessage) => void;
+  /**
+   * Why a retry must not prompt the agent now, or null. A retry sends without the
+   * composer, so the same one-at-a-time rule that blocks Send applies here.
+   */
+  promptBlockedReason?: (sessionId: string) => string | null;
 }
 
 /**
@@ -111,6 +118,7 @@ export function useAcpEngine({
   onPrivateCreditsOut,
   onPrivateTurnEnd,
   giveBack,
+  promptBlockedReason,
 }: AcpEngineDeps) {
   const [starting, setStarting] = useState<ReadonlySet<string>>(new Set());
   const agentFailures = useAgentFailures();
@@ -143,10 +151,13 @@ export function useAcpEngine({
   const isCurrentLaunch = (sessionId: string, gen: number) =>
     launchGenRef.current.get(sessionId) === gen;
   // Each session's latest prompt: an agent that refuses it for a sign-in hands it back to the composer.
-  const lastPromptRef = useRef(new Map<string, { message: ChatMessage; context?: string }>());
+  // `toolsContext`: the prompt also carried Zorvo's command-path context, which is not part of `context`.
+  const lastPromptRef = useRef(new Map<string, { message: ChatMessage; context?: string; toolsContext?: boolean }>());
   // The prompt of each session's last turn that failed with an error: what "Try again" sends.
   const failedPromptRef = useRef(new Map<string, { message: ChatMessage; context?: string }>());
   // Hidden context a refused prompt carried (a rewound session's conversation): it goes out with the next message.
+  // Sessions on the command path that have not been told of Zorvo's commands since they last opened.
+  const toolsContextDueRef = useRef(new Set<string>());
   const unsentContextRef = useRef(new Map<string, string>());
   // The picks a session was opened with when its agent refused to open it until the user signs in.
   const refusedChoicesRef = useRef(new Map<string, AcpChoices>());
@@ -227,8 +238,12 @@ export function useAcpEngine({
       }
       const sent = lastPromptRef.current.get(sessionId);
       lastPromptRef.current.delete(sessionId);
-      if (error && sent) failedPromptRef.current.set(sessionId, sent);
-      else failedPromptRef.current.delete(sessionId);
+      if (error && sent) {
+        failedPromptRef.current.set(sessionId, sent);
+        // `acp.prompt` returns on write, so the turn may have failed before the agent read
+        // anything: the tools context is due again, for the retry or the next message.
+        if (sent.toolsContext) toolsContextDueRef.current.add(sessionId);
+      } else failedPromptRef.current.delete(sessionId);
       const notice = turnEndNotice(stopReason, error);
       if (error && onTurnFailed) onTurnFailed(sessionId, error);
       else if (notice) reportError(notice);
@@ -311,12 +326,18 @@ export function useAcpEngine({
 
   /** Prompts the agent with a message already shown in the chat; removes it if the prompt is refused. */
   const prompt = async (sessionId: string, message: ChatMessage, context?: string): Promise<boolean> => {
-    lastPromptRef.current.set(sessionId, { message, context });
+    // A command-path agent hears of Zorvo's commands with the first message it takes.
+    const toolsDue = toolsContextDueRef.current.has(sessionId);
+    lastPromptRef.current.set(sessionId, { message, context, ...(toolsDue ? { toolsContext: true } : {}) });
     // A new turn starts: the failure of the last one no longer applies.
     failedPromptRef.current.delete(sessionId);
     onTurnFailed?.(sessionId, null);
+    const hidden = toolsDue ? withToolsContext(context) : context;
     try {
-      await acp.prompt(sessionId, context ? `${context}\n\n${message.content}` : message.content, message.attachments);
+      await acp.prompt(sessionId, hidden ? `${hidden}\n\n${message.content}` : message.content, message.attachments);
+      // Only now: a refused prompt leaves it due for the next message. A turn that fails
+      // later puts it back (see `onTurnEnd`).
+      if (toolsDue) toolsContextDueRef.current.delete(sessionId);
       return true;
     } catch (error) {
       lastPromptRef.current.delete(sessionId);
@@ -330,9 +351,14 @@ export function useAcpEngine({
   };
 
   /** Resolves to whether the agent took the message. */
-  const send = async (sessionId: string, text: string, attachments: readonly string[] = []): Promise<boolean> => {
+  const send = async (
+    sessionId: string,
+    text: string,
+    attachments: readonly string[] = [],
+    marks?: Pick<ChatMessage, 'delegationReport' | 'delegationTask'>,
+  ): Promise<boolean> => {
     // Shown before the prompt goes out, so the agent's reply always lands after it.
-    const message = userMessage(text, attachments);
+    const message: ChatMessage = { ...userMessage(text, attachments), ...marks };
     updateNow(sessionId, (prev) => [...prev, message]);
     return prompt(sessionId, message, takeUnsentContext(sessionId));
   };
@@ -372,6 +398,12 @@ export function useAcpEngine({
         if (!isStopped(sessionId)) reportError(`Could not apply the session settings: ${String(error)}`);
       }
     }
+  };
+
+  /** A session that just opened: on the command path it is due the tools context again, else it is not. */
+  const noteToolsPath = (sessionId: string, info: AcpSessionInfo) => {
+    if (info.toolsPath === 'command') toolsContextDueRef.current.add(sessionId);
+    else toolsContextDueRef.current.delete(sessionId);
   };
 
   /**
@@ -450,6 +482,7 @@ export function useAcpEngine({
         if (message) updateNow(session.id, (prev) => withoutMessage(prev, message.id));
         return true;
       }
+      noteToolsPath(session.id, info);
       // A reopened session may not repeat the models: what is remembered stays then. A private session's
       // options (its TEE model) are not what the agent offers an ordinary draft, so they are not remembered.
       if (!isPrivate) {
@@ -496,7 +529,8 @@ export function useAcpEngine({
   };
 
   const start = (session: Session, first?: FirstMessage, choices: AcpChoices = NO_CHOICES) =>
-    launch(session, () => acp.start(session.id, session.cwd, session.profileId, privateModelIdOf(session), privateOwnKeyOf(session), privateSessionCapOf(session)), {
+    // A private session gets no agent tools: its launch already carries the credits server.
+    launch(session, () => acp.start(session.id, session.cwd, session.profileId, !session.privateMode && sessionGetsAgentTools(session, sessions), privateModelIdOf(session), privateOwnKeyOf(session), privateSessionCapOf(session)), {
       first,
       choices,
       applySafeMode: true,
@@ -505,7 +539,7 @@ export function useAcpEngine({
 
   /** Continues an ended session in a fresh agent process through the agent's own session/resume or session/load. */
   const resume = (session: Session, acpSessionId: string, first?: FirstMessage, choices: AcpChoices = NO_CHOICES) =>
-    launch(session, () => acp.reopen(session.id, session.cwd, session.profileId, acpSessionId, privateModelIdOf(session), privateOwnKeyOf(session), privateSessionCapOf(session)), {
+    launch(session, () => acp.reopen(session.id, session.cwd, session.profileId, acpSessionId, !session.privateMode && sessionGetsAgentTools(session, sessions), privateModelIdOf(session), privateOwnKeyOf(session), privateSessionCapOf(session)), {
       first,
       choices,
       applySafeMode: true,
@@ -538,7 +572,7 @@ export function useAcpEngine({
       const opening = launch(
         session,
         async () => {
-          const info = await acp.importSession(id, session.cwd, session.profileId, acpSessionId);
+          const info = await acp.importSession(id, session.cwd, session.profileId, acpSessionId, sessionGetsAgentTools(session, sessions));
           reopenedWith = info.reopenedWith;
           return info;
         },
@@ -581,6 +615,12 @@ export function useAcpEngine({
    * other than a sign-in: the caller gives it back to the user.
    */
   const retryAfterSignIn = async (sessionId: string, message: FirstMessage): Promise<boolean> => {
+    // The pair may be busy since the refusal: a retry never prompts past it.
+    const blocked = promptBlockedReason?.(sessionId) ?? null;
+    if (blocked !== null) {
+      reportError(blocked);
+      return false;
+    }
     const session = sessions.find((s) => s.id === sessionId);
     // Deleted meanwhile: there is no session to give the message back to.
     if (!session) return true;
@@ -615,13 +655,13 @@ export function useAcpEngine({
     const openNew = async () => {
       const context = hidden ? undefined : await handoffFor(session);
       if (context) unsentContextRef.current.set(sessionId, context);
-      return acp.start(session.id, session.cwd, session.profileId, privateModelIdOf(session), privateOwnKeyOf(session), privateSessionCapOf(session)).catch((error: unknown) => {
+      return acp.start(session.id, session.cwd, session.profileId, !session.privateMode && sessionGetsAgentTools(session, sessions), privateModelIdOf(session), privateOwnKeyOf(session), privateSessionCapOf(session)).catch((error: unknown) => {
         if (context) unsentContextRef.current.delete(sessionId);
         throw error;
       });
     };
     const reopenSession = () =>
-      acp.reopen(session.id, session.cwd, session.profileId, acpSessionId, privateModelIdOf(session), privateOwnKeyOf(session), privateSessionCapOf(session));
+      acp.reopen(session.id, session.cwd, session.profileId, acpSessionId, !session.privateMode && sessionGetsAgentTools(session, sessions), privateModelIdOf(session), privateOwnKeyOf(session), privateSessionCapOf(session));
     // A session refused at a prompt may have had no turn the agent kept: when the agent does not know it,
     // it starts anew. Any other failure keeps the session, whose conversation the agent may still have.
     const reopen = wasTerminated
@@ -631,7 +671,7 @@ export function useAcpEngine({
   };
 
   const fork = (sourceSessionId: string, session: Session) =>
-    launch(session, () => acp.fork(sourceSessionId, session.id, session.cwd), {
+    launch(session, () => acp.fork(sourceSessionId, session.id, session.cwd, sessionGetsAgentTools(session, sessions)), {
       choices: NO_CHOICES,
       applySafeMode: false,
       action: 'fork',
@@ -678,6 +718,8 @@ export function useAcpEngine({
     // The backend cancels the open requests, and the agent's later events (its exit) are ignored.
     elicitations.abandon(sessionId);
     stoppedRef.current.add(sessionId);
+    // Its agent process is ending: a later reopen notes the path again.
+    toolsContextDueRef.current.delete(sessionId);
     // A launch still opening is superseded. An import that made the record keeps its
     // token: when it answers it still closes its last reply and sets the history note;
     // a resume in the meantime bumps the token and makes it stale.
@@ -771,6 +813,13 @@ export function useAcpEngine({
    * Resolves to whether the agent took the message.
    */
   const retryFailedTurn = async (sessionId: string, giveBack?: (message: FirstMessage) => void): Promise<boolean> => {
+    // The pair may be busy since the failure: a retry never prompts past it. The
+    // message stays in the chat, so nothing goes back to the composer.
+    const blocked = promptBlockedReason?.(sessionId) ?? null;
+    if (blocked !== null) {
+      reportError(blocked);
+      return false;
+    }
     const failed = failedPromptRef.current.get(sessionId);
     const session = sessions.find((s) => s.id === sessionId);
     if (!failed || !session || isBusy(sessionId)) return false;

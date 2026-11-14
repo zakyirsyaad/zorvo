@@ -112,6 +112,25 @@ export interface SessionWorktree {
   startCommit?: string;
 }
 
+/** A delegated task: the session that delegated it, the task, and when it ran. */
+/** Which session's agent opened a session, and when. */
+export interface OpenedByLink {
+  sessionId: string;
+  at: number;
+  /** What the opener's agent calls this session (`session-3`); absent on a link saved before handles. */
+  handle?: string;
+}
+
+export interface DelegationLink {
+  /** A, the session that delegated. */
+  sessionId: string;
+  /** The task as the user typed it. */
+  task: string;
+  startedAt: number;
+  /** Set by End delegation; no report is sent after it. */
+  endedAt?: number | null;
+}
+
 export interface Session {
   id: string;
   name: string;
@@ -143,6 +162,10 @@ export interface Session {
   historyElsewhere?: boolean;
   /** The compare run this session belongs to, when it was started from one. */
   compareRunId?: string | null;
+  /** The session this one was delegated from; absent when the user started it themselves. */
+  delegatedFrom?: DelegationLink | null;
+  /** The session whose agent opened this one through Zorvo's tools; it reports to nobody. */
+  openedBy?: OpenedByLink | null;
   /** Comments written on lines of the session's diff; absent when there are none. */
   reviewComments?: ReviewComment[];
   /** Set when the session runs privately; the model it was started with, whose key it spends, and its credit cap. */
@@ -196,6 +219,8 @@ export interface Settings {
   secretGuard?: boolean;
   /** Which key private sessions spend: Zorvo credits or the user's own NEAR AI key. */
   paymentSource?: 'credits' | 'ownKey';
+  /** Whether sessions are told about Zorvo's own tools. Off unless true; kept so a save does not drop it. */
+  agentTools?: boolean;
 }
 
 export interface RecentFolder {
@@ -241,6 +266,27 @@ export interface ActionCard {
    * Only the agent's own text; what the user types is never kept on the card.
    */
   questions?: UserQuestion[];
+  /**
+   * A card Zorvo made, not the agent: the agent called one of Zorvo's tools and the user
+   * decides. It has no `requestId`; its answer goes to Zorvo's tool server.
+   */
+  zorvoTool?: ZorvoToolRequest;
+}
+
+/** What an agent asked Zorvo's tools for, as the approval card shows it. */
+export interface ZorvoToolRequest {
+  tool: 'delegate' | 'start_session';
+  /** The agent that asked. */
+  callerName: string;
+  /** The agent the task is for. */
+  targetName: string;
+  targetId: string;
+  /** Where the other agent would work: the caller's folder, or another one Zorvo knows. */
+  folder: string;
+  /** A new session in a folder that is not the caller's: asked every time, allowed once. */
+  isOtherFolder?: true;
+  /** A new session that gets a worktree of its own. */
+  hasOwnWorktree?: true;
 }
 
 /** One question of Qwen Code's `ask_user_question`. */
@@ -289,10 +335,22 @@ export interface ToolExecution {
   command?: string;
 }
 
+export type DiffRowKind = 'added' | 'removed' | 'context' | 'skipped';
+
+export interface DiffRow {
+  kind: DiffRowKind;
+  /** The line, or for `skipped` how many unchanged lines were folded. */
+  text: string;
+}
+
 export type ToolDetail =
   | { kind: 'text'; text: string }
-  /** `oldText` is null for a file the tool created. */
-  | { kind: 'diff'; path: string; oldText: string | null; newText: string }
+  /**
+   * The rows a diff shows (changed lines, 3 lines of context, folded runs), worked out once when the
+   * agent sends it. ACP sends the whole file before and after every edit, so keeping those made a long
+   * session's transcript tens of megabytes, and the page froze each time it was saved.
+   */
+  | { kind: 'diff'; path: string; isNewFile: boolean; rows: DiffRow[] }
   /** A diff too large to keep: the file stays named. */
   | { kind: 'changed'; path: string };
 
@@ -348,6 +406,10 @@ export interface ChatMessage {
   attachments?: string[];
   /** The agent's `messageId` for a user message replayed by `session/load`; its chunks share it. */
   replayId?: string;
+  /** A report from a delegated session in A's transcript; the chat labels it From <agent>. */
+  delegationReport?: { agentName: string; agentId?: string };
+  /** On the user message that carries a task into a delegate: the agent of the session that gave it. */
+  delegationTask?: { agentName: string; agentId?: string };
   /** A question the agent asked the user (ACP elicitation); never holds the answer. */
   elicitation?: ElicitationCard;
   /** The NEAR AI signature state of a private reply's model calls. */

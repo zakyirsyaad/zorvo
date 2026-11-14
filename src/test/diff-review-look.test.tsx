@@ -48,11 +48,19 @@ beforeAll(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("the full diff review as drawn", () => {
+  it("draws its focus ring inside, since the sheet clips an outer one", async () => {
+    await renderView();
+
+    const classes = screen.getByRole("complementary", { name: "Diff view" }).className.split(" ");
+    expect(classes).toContain("focus-ring-inset");
+    expect(classes).not.toContain("focus-ring");
+  });
+
   it("the review header is 48px with the target, count and totals", async () => {
     await renderView();
 
     const bar = document.querySelector<HTMLElement>('[aria-label="Diff view"] header > div')!;
-    for (const name of ["h-12", "gap-2", "pl-4", "pr-3"]) expect(bar.classList.contains(name), name).toBe(true);
+    for (const name of ["h-12", "gap-2", "pl-3", "pr-2.5"]) expect(bar.classList.contains(name), name).toBe(true);
     const trigger = screen.getByRole("button", { name: "Diff target: main → working tree" });
     expect(trigger.className).toContain("font-semibold");
     const totals = within(screen.getByRole("group", { name: "Diff totals" }));

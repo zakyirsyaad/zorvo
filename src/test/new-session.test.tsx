@@ -27,14 +27,14 @@ function tauriInternals(): TauriInternals {
 }
 
 describe("The new-session heading", () => {
-  it("names the folder the session starts in", () => {
-    render(<NewSessionHeading workspace={{ name: "api", path: "/Users/test/developer/api" }} />);
+  it("reads New session; the folder is on its chip", () => {
+    render(<NewSessionHeading />);
 
-    expect(screen.getByRole("heading", { name: "New session in api" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "New session" })).toBeDefined();
   });
 
   it("says why nothing can start when no agent is ready", () => {
-    render(<NewSessionHeading workspace={{ name: "api", path: "/w/api" }} unavailableReason="Install an agent first." />);
+    render(<NewSessionHeading unavailableReason="Install an agent first." />);
 
     expect(screen.getByText("Install an agent first.")).toBeDefined();
   });
@@ -123,12 +123,12 @@ describe("Starting a new session", () => {
       fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Agent: Claude Code" }));
+      fireEvent.click(screen.getByRole("button", { name: "All agents" }));
     });
     await act(async () => {
       fireEvent.click(screen.getByRole("option", { name: "Qwen Code" }));
     });
-    expect(screen.getByRole("button", { name: "Agent: Qwen Code" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Qwen Code", pressed: true })).toBeDefined();
 
     await act(async () => {
       fireEvent.click(within(screen.getByRole("complementary")).getByText("Old work"));
@@ -137,8 +137,8 @@ describe("Starting a new session", () => {
       fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
 
-    expect(screen.getByRole("button", { name: "Agent: Claude Code" })).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Agent: Qwen Code" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Claude Code", pressed: true })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Qwen Code", pressed: true })).toBeNull();
   });
 
   it("starts the agent in the workspace's absolute path, not its display name", async () => {
@@ -179,7 +179,7 @@ describe("Starting a new session", () => {
       fireEvent.click(screen.getByRole("button", { name: "New session" }));
     });
 
-    const heading = screen.getByRole("heading", { name: "New session in ai-perpetual-trading" });
+    const heading = screen.getByRole("heading", { name: "New session" });
     const card = await screen.findByRole("region", { name: "Install Claude Code" });
     const prompt = screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement;
     expect(heading.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -188,8 +188,8 @@ describe("Starting a new session", () => {
     const folderChip = screen.getByRole("button", { name: /^Folder:/ });
     expect(folderChip.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(prompt.disabled).toBe(false);
-    // As wide as the composer's card: the 680px column with its 24px gutter outside it.
-    const column = card.closest(".max-w-chat")!;
+    // As wide as the composer's card: the draft's 720px column with its 24px gutter outside it.
+    const column = card.closest(".max-w-draft")!;
     expect(column.className).not.toContain("px-4");
     expect(column.parentElement!.className).toContain("px-6");
   });
@@ -205,7 +205,7 @@ describe("Starting a new session", () => {
     });
 
     expect(invokeSpy.mock.calls.find(([cmd]) => cmd === "acp_start_session")).toBeUndefined();
-    expect(screen.getByRole("heading", { name: "New session in ai-perpetual-trading" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "New session" })).toBeDefined();
     // The chips say where the session starts; the draft has no summary card any more.
     expect(screen.getByRole("button", { name: "Folder: ai-perpetual-trading" })).toBeDefined();
     expect(await screen.findByRole("button", { name: "Branch: main" })).toBeDefined();
@@ -297,7 +297,7 @@ describe("Starting a new session", () => {
     await act(async () => {
       fireEvent.click(menu.getByRole("menuitem", { name: /Qwen Code/ }));
     });
-    expect(screen.getByRole("button", { name: "Agent: Qwen Code" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Qwen Code", pressed: true })).toBeDefined();
     await sendFirst();
 
     const args = invokeSpy.mock.calls.find(([cmd]) => cmd === "acp_start_session")?.[1] as { cwd: string; profileId: string };
@@ -323,7 +323,7 @@ describe("Starting a new session", () => {
       fireEvent.click(folders.getByRole("option", { name: "zorvo" }));
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Agent: Claude Code" }));
+      fireEvent.click(screen.getByRole("button", { name: "All agents" }));
     });
     await act(async () => {
       fireEvent.click(screen.getByRole("option", { name: "Qwen Code" }));
@@ -625,7 +625,7 @@ describe("Starting a new session", () => {
     await startFromNew();
 
     const args = invokeSpy.mock.calls.find(([cmd]) => cmd === "acp_start_session")?.[1] as Record<string, unknown>;
-    expect(Object.keys(args).sort()).toEqual(["cwd", "profileId", "sessionId"]);
+    expect(Object.keys(args).sort()).toEqual(["agentTools", "cwd", "profileId", "sessionId"]);
     expect(args.profileId).toBe("claude-acp");
   });
 

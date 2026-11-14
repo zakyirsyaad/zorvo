@@ -16,7 +16,7 @@ type CheckState = "idle" | "checking" | "accepted" | "noCredits" | "invalid" | "
 
 const CHECK_DEBOUNCE_MS = 400;
 const KEY_INPUT =
-  "h-8 w-full rounded-lg border border-border-strong bg-bg px-2.5 font-mono text-ui text-fg " +
+  "h-8 w-full rounded-lg border border-border-strong bg-ground px-2.5 font-mono text-ui text-fg " +
   "placeholder:text-fg-subtle focus-ring disabled:opacity-40";
 
 function checkStateText(state: CheckState): string | undefined {
@@ -153,7 +153,7 @@ export function OwnKeySection({ credits, paymentSource, onPaymentSourceChange }:
               <span id={labelId} className="text-ui text-fg">
                 Private sessions pay with
               </span>
-              <div role="radiogroup" aria-labelledby={labelId} className="flex rounded-lg border border-border bg-surface-1 p-0.5">
+              <div role="radiogroup" aria-labelledby={labelId} className="flex rounded-lg border border-border bg-chip p-0.5">
                 {(
                   [
                     ["credits", "Zorvo credits"],

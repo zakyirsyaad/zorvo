@@ -8,7 +8,7 @@ import type {
   ToolExecution,
 } from '../types';
 import { fileNameOf } from './attachments';
-import { countChanges, diffRows } from './diff-rows';
+import { countChanges, diffDetail } from './diff-rows';
 import { parseUserQuestions } from './user-questions';
 
 /**
@@ -147,7 +147,7 @@ function toDetails(content: unknown): ToolDetail[] | undefined {
       if (newText.length + (oldText?.length ?? 0) > MAX_DIFF_TEXT) {
         return [{ kind: 'changed', path }];
       }
-      return [{ kind: 'diff', path, oldText, newText }];
+      return [diffDetail(path, oldText, newText)];
     }
     if (item.type === 'content') {
       const text = textOf(item.content);
@@ -167,7 +167,7 @@ export function editsOf(content: unknown): ActionCard['edits'] {
   const edits = (toDetails(content) ?? []).flatMap((detail): NonNullable<ActionCard['edits']> => {
     if (detail.kind === 'changed') return [{ path: detail.path }];
     if (detail.kind !== 'diff') return [];
-    const { added, removed } = countChanges(diffRows(detail.oldText, detail.newText));
+    const { added, removed } = countChanges(detail.rows);
     return [{ path: detail.path, added, removed }];
   });
   return edits.length > 0 ? edits : undefined;
@@ -384,8 +384,16 @@ export function applyPermissionRequest(
     ...(questions ? { questions } : {}),
     ...(edits ? { edits } : {}),
   };
+  return withCardOnReply(messages, card, ctx);
+}
+
+/**
+ * Puts `card` on the agent's open reply, or on a new agent message when there
+ * is none. A reply holds one card: a second one while the first waits gets its
+ * own message.
+ */
+export function withCardOnReply(messages: ChatMessage[], card: ActionCard, ctx: AcpReducerContext): ChatMessage[] {
   const withCard = (reply: ChatMessage) => ({ ...reply, actionCard: card });
-  // A reply holds one card: a second request while the first waits gets its own message.
   const open = messages[openReplyIndex(messages)];
   if (open?.actionCard) {
     return [...messages, withCard({ id: ctx.createId('msg'), role: 'agent', content: '', ...messageTime(ctx) })];

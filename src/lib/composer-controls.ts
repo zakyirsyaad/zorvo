@@ -1,4 +1,4 @@
-import type { AcpOptions } from '../hooks/useAcpSessions';
+import type { AcpConfigOption, AcpOptions } from '../hooks/useAcpSessions';
 import type { DropdownOption } from '../components/composer/OptionDropdown';
 import { isAgentRunnable } from './agent-readiness';
 import { pickerLabelOf } from './install-plan';
@@ -62,10 +62,11 @@ function modeOption(value: string, name: string, description: string | undefined
 }
 
 /** One choice of a config option, in the form its category calls for. */
-function choiceOption(category: string | undefined, choice: { value: string; name: string; description?: string }): DropdownOption {
-  if (category === 'model') return modelOption(choice.value, choice.name, choice.description);
-  if (category === 'mode') return modeOption(choice.value, choice.name, choice.description);
-  return { value: choice.value, label: choice.name, description: choice.description };
+function choiceOption(category: string | undefined, choice: AcpConfigOption['options'][number]): DropdownOption {
+  const unavailable = choice.unavailable ? { unavailable: choice.unavailable } : {};
+  if (category === 'model') return { ...modelOption(choice.value, choice.name, choice.description), ...unavailable };
+  if (category === 'mode') return { ...modeOption(choice.value, choice.name, choice.description), ...unavailable };
+  return { value: choice.value, label: choice.name, description: choice.description, ...unavailable };
 }
 
 /** `undefined` when there is nothing real to choose from. */
@@ -77,6 +78,30 @@ export interface AcpControlActions {
   setMode: (modeId: string) => void;
   setModel: (modelId: string) => void;
   setConfigOption: (configId: string, value: string) => void;
+}
+
+/**
+ * Whether the agent's modes are its thinking levels over again. pi ACP has no permission modes, so its adapter
+ * fills ACP's modes with the levels ("Thinking: medium") and reports them as a `thought_level` option as well:
+ * two chips for one setting.
+ *
+ * The two lists cannot be relied on to match. The effort list follows the model, but after a model switch the
+ * adapter sends only the new current mode, never a new mode list, and a draft or an ended session shows the modes
+ * reported last beside the effort list remembered for its model: the modes of one model (off … high) beside the
+ * levels of another (low, high, max), with neither list inside the other. So the names decide first: every mode
+ * is called after the effort option ("Thinking: low" for the option "Thinking"). One list inside the other still
+ * counts, for an adapter that names them differently.
+ */
+function modesRepeatEffort(info: AcpOptions): boolean {
+  const effort = info.configOptions.find((o) => o.category === 'thought_level');
+  if (!info.modes || !effort) return false;
+  const modes = info.modes.availableModes;
+  const levels = effort.options.map((o) => o.value);
+  if (modes.length === 0 || levels.length === 0) return false;
+  const prefix = `${effort.name.trim().toLowerCase()}:`;
+  if (prefix.length > 1 && modes.every((m) => m.name.trim().toLowerCase().startsWith(prefix))) return true;
+  const ids = modes.map((m) => m.id);
+  return ids.every((id) => levels.includes(id)) || levels.every((value) => ids.includes(value));
 }
 
 /** Controls for an ACP session: exactly what its agent reported, applied live. */
@@ -95,13 +120,15 @@ export function acpControls(
     );
   };
 
-  const permission = info.modes
+  const modeControl = info.modes
     ? controlIf(
         info.modes.availableModes.map((m) => modeOption(m.id, m.name, m.description)),
         1,
         { selected: info.modes.currentModeId, onChange: (value) => value && actions.setMode(value) },
       )
     : fromConfig('mode');
+  // The effort chip already offers these levels.
+  const permission = modesRepeatEffort(info) ? undefined : modeControl;
 
   // A model config option is the agent's newer way to offer models; `models` is the older one.
   const fromModels = (): ComposerControl | undefined =>

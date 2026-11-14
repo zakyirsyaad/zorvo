@@ -56,6 +56,11 @@ export const DOCS_NAV: DocsGroup[] = [
         summary: "Send one prompt to up to four agents, each in its own worktree, and keep the one you pick.",
       },
       {
+        href: "/docs/delegate",
+        label: "Delegate a task",
+        summary: "Hand a task from one session to another agent with an @ mention or the session menu, and get its answer back.",
+      },
+      {
         href: "/docs/review",
         label: "Review changes",
         summary: "Read what an agent changed, comment on lines, and send the comments in your next message.",

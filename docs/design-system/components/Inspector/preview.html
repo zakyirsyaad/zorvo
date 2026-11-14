@@ -1,68 +1,124 @@
-<!-- @dsCard group="Navigation" height=420 -->
+<!-- @dsCard group="Panels" height=1394 -->
 <!doctype html>
 <html>
 <head><meta charset="utf-8"><title>Inspector — preview</title>
 <style>
-.z-insp { position: relative; display: flex; flex-direction: column; width: 380px; height: 180px; box-sizing: border-box; border-left: 1px solid var(--border); background: var(--surface-1); font-family: var(--font-sans); }
-.z-insp__edge { position: absolute; top: 0; bottom: 0; left: -1px; width: 2px; background: var(--border-strong); }
-.z-insp__head { display: flex; align-items: stretch; justify-content: space-between; height: 40px; padding: 0 var(--space-1\.5) 0 var(--space-2); border-bottom: 1px solid var(--border); }
-.z-insp__tabs { display: flex; gap: var(--space-1); }
-.z-insp__tab { display: flex; align-items: center; gap: var(--space-1\.5); padding: 0 var(--space-2); border: 0; border-bottom: 2px solid transparent; background: none; color: var(--fg-muted); font: 400 13px/18px var(--font-sans); }
-.z-insp__tab[aria-selected="true"] { border-bottom-color: var(--fg); color: var(--fg); font-weight: 500; }
-.z-insp__count { color: var(--fg-muted); font: 400 11px/16px var(--font-sans); }
-.z-insp__close { display: flex; align-items: center; justify-content: center; align-self: center; width: 28px; height: 28px; border-radius: var(--radius-md); color: var(--fg-muted); }
-.z-insp__close svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
-.z-insp__body { padding: var(--space-3); color: var(--fg-secondary); font: 400 12px/16px var(--font-sans); }
-.z-insp__row { display: flex; justify-content: space-between; padding: var(--space-1) 0; }
-.z-insp__path { font: 400 11px/16px var(--font-mono); color: var(--fg-secondary); }
-.z-insp__add { color: var(--status-running); }
-.z-insp__del { color: var(--danger); }
-.z-view__head { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); }
-.z-view__back { color: var(--fg-muted); font: 500 12px/16px var(--font-sans); }
-.z-view__path { color: var(--fg-muted); font: 400 11px/16px var(--font-mono); }
-.z-view__path b { color: var(--fg); font-weight: 400; }
-.z-view__mark { margin-left: var(--space-1\.5); color: var(--status-attention); }
-.z-view__info { color: var(--fg-muted); font: 400 11px/16px var(--font-sans); }
-.z-view__line { display: flex; gap: var(--space-2); color: var(--fg-secondary); font: 400 12px/18px var(--font-mono); }
-.z-view__num { width: 24px; text-align: right; color: var(--fg-subtle); }
-.z-view__bar { width: 2px; }
-.z-view__bar--mod { background: var(--status-attention); }
-.z-view__bar--add { background: var(--status-running); }
-.z-view__kw { color: var(--fg); }
-.z-view__str { color: var(--fg-muted); }
+.z-panel { position: relative; width: 380px; height: 560px; display: flex; flex-direction: column; font: 400 13px/18px var(--font-sans); color: var(--fg); }
+.z-panel__head { flex: none; display: flex; align-items: center; justify-content: space-between; height: 48px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--border); }
+.z-panel__body { flex: 1; min-height: 0; overflow: hidden; }
+.z-ch { display: flex; flex-direction: column; gap: 12px; padding: 16px; color: var(--fg-secondary); }
+.z-fcard { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.z-fcard__head { display: flex; align-items: center; gap: var(--space-2); padding: 8px 10px; }
+.z-kind { font: 400 11px/16px var(--font-mono); }
+.z-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 11px/16px var(--font-mono); color: var(--fg-secondary); }
+.z-fcard.is-open .z-path { color: var(--fg); }
+.z-commit { padding: 12px 14px 14px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--space-2); }
+.z-msg { height: 52px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--ground); color: var(--fg-subtle); font: 400 12px/18px var(--font-sans); }
+.z-act { display: flex; flex-direction: column; gap: 16px; padding: 16px; }
+.z-turn h4 { margin: 0 0 var(--space-2); color: var(--fg); font: 500 12px/16px var(--font-sans); display: flex; gap: var(--space-2); }
+.z-turn h4 span { color: var(--fg-subtle); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.z-arow { position: relative; display: flex; align-items: center; gap: var(--space-2); min-height: 26px; padding-left: 16px; border-left: 1px solid var(--border); margin-left: 4px; }
+.z-arow::before { content: ""; position: absolute; left: -5px; width: 9px; height: 9px; border-radius: var(--radius-full); background: var(--status-running); }
+.z-arow.is-fail::before { background: var(--sheet); box-shadow: inset 0 0 0 1.5px var(--danger); }
+.z-arow.is-wait::before { background: var(--status-attention); }
+.z-arow.is-idle::before { background: var(--border-strong); }
+.z-arow__verb { width: 52px; flex: none; color: var(--fg-muted); font: 400 12px/16px var(--font-sans); }
+.z-arow__target { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 11px/16px var(--font-mono); color: var(--fg-secondary); }
+.z-unrep { display: flex; flex-direction: column; gap: var(--space-2); padding: 12px; border: 1px solid var(--attention-border); border-radius: var(--radius-xl); background: var(--attention-surface); }
+.z-tree { padding: 4px 8px; display: flex; flex-direction: column; }
+.z-trow { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border-radius: var(--radius-md); color: var(--fg-secondary); font: 400 12px/16px var(--font-mono); }
+.z-trow:hover, .z-trow.is-on { background: var(--surface-hover); color: var(--fg); }
+.z-trow .z-mark { margin-left: auto; width: 12px; text-align: center; font: 600 10px/14px var(--font-sans); }
+.z-bar-c { margin: 0 12px 12px; display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.z-tab { display: flex; flex-direction: column; background: var(--terminal-bg); color: var(--terminal-fg); height: 100%; }
+.z-tab__strip { display: flex; align-items: center; gap: 4px; height: 36px; padding: 0 12px; border-bottom: 1px solid var(--terminal-surface); }
+.z-tab__t { display: inline-flex; align-items: center; gap: var(--space-2); height: 24px; padding: 0 10px; border-radius: var(--radius-md); color: var(--terminal-fg-muted); font: 400 12px/16px var(--font-sans); }
+.z-tab__t.is-on { background: var(--terminal-surface); color: var(--terminal-fg-strong); }
+.z-tab__out { padding: 12px 14px; font: 400 12px/18px var(--font-mono); }
+.z-vline { display: flex; gap: 10px; height: 20px; font: 400 12px/20px var(--font-mono); color: var(--fg-secondary); }
+.z-vline i { font-style: normal; width: 40px; flex: none; text-align: right; color: var(--fg-subtle); }
+.z-vline b { width: 3px; flex: none; }
 </style>
 </head>
 <body>
-<div class="z-stage" style="flex-direction:column;align-items:flex-end;gap:16px">
-  <section class="z-insp" aria-label="Inspector">
-    <div class="z-insp__edge" role="separator" aria-label="Resize inspector" aria-valuenow="380" aria-valuemin="320" aria-valuemax="720"></div>
-    <div class="z-insp__head">
-      <div class="z-insp__tabs" role="tablist" aria-label="Inspector">
-        <button type="button" class="z-insp__tab" role="tab" aria-selected="true">Changes <span class="z-insp__count">3</span></button>
-        <button type="button" class="z-insp__tab" role="tab" aria-selected="false" tabindex="-1">Activity</button>
-        <button type="button" class="z-insp__tab" role="tab" aria-selected="false" tabindex="-1">Files</button>
-        <button type="button" class="z-insp__tab" role="tab" aria-selected="false" tabindex="-1">Terminal</button>
-      </div>
-      <span class="z-insp__close" aria-label="Close inspector"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
+<div class="z-stage" style="align-items:flex-start; gap:var(--space-5)">
+
+ <div class="z-sheet z-panel">
+  <div class="z-panel__head"><div class="z-seg" role="tablist"><button class="z-seg__item" role="tab" aria-selected="true" type="button">Changes <span class="z-seg__count">3</span></button><button class="z-seg__item" role="tab" type="button">Activity</button><button class="z-seg__item" role="tab" type="button">Files</button><button class="z-seg__item" role="tab" type="button">Terminal</button></div><button class="z-icon-btn z-icon-btn--sm" type="button" aria-label="Close inspector"><svg class="z-ico" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+  <div class="z-panel__body">
+   <div class="z-ch">
+    <div class="z-hstack"><span class="z-fg z-w6">3 files changed</span><span class="z-mono z-cap z-run">+54</span><span class="z-mono z-cap z-danger">−9</span><span class="z-grow-1"></span><button class="z-btn z-btn--ghost z-btn--row" type="button">Open the diff<svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><path d="m15 3 6 0 0 6"/><path d="M9 21H3v-6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/></svg></button><button class="z-icon-btn z-icon-btn--sm" type="button" aria-label="Refresh changes"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button></div>
+    <div class="z-fcard is-open">
+     <div class="z-fcard__head"><span class="z-checkbox is-on" style="width:14px;height:14px"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span class="z-kind z-att">M</span><span class="z-path">src/lib/lexer.ts</span><span class="z-cap z-muted">1 comment</span><span class="z-mono z-cap z-run">+38</span><span class="z-mono z-cap z-danger">−4</span><svg class="z-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div>
+     <div style="border-top:1px solid var(--border); padding:4px 0">
+      <div class="z-diffrow z-diffrow--hunk"><span class="z-diffrow__n"></span>@@ -12,6 +12,9 @@ export function lex</div>
+      <div class="z-diffrow"><span class="z-diffrow__n">12</span>  const tokens = [];</div>
+      <div class="z-diffrow z-diffrow--del"><span class="z-diffrow__n">13</span>- let i = 1;</div>
+      <div class="z-diffrow z-diffrow--add"><span class="z-diffrow__n">13</span>+ let i = 0;</div>
+      <div class="z-diffrow z-diffrow--add"><span class="z-diffrow__n">14</span>+ const end = input.length;</div>
+     </div>
     </div>
-    <div class="z-insp__body">
-      <div class="z-insp__row"><span class="z-insp__path">src/components/Sidebar.tsx</span><span><span class="z-insp__add">+42</span> <span class="z-insp__del">−11</span></span></div>
-      <div class="z-insp__row"><span class="z-insp__path">src/lib/sidebar-status.ts</span><span><span class="z-insp__add">+86</span></span></div>
-      <div class="z-insp__row"><span class="z-insp__path">CHANGELOG.md</span><span><span class="z-insp__add">+1</span></span></div>
-    </div>
-  </section>
-  <section class="z-insp" aria-label="Inspector, a file open in Files" style="width:560px">
-    <div class="z-view__head">
-      <span class="z-view__back">← Files</span>
-      <span class="z-view__path">src / lib / <b>files.ts</b><span class="z-view__mark">M</span></span>
-      <span class="z-view__info">TypeScript · 3 lines · Read only</span>
-    </div>
-    <div class="z-insp__body">
-      <div class="z-view__line"><span class="z-view__num">1</span><span class="z-view__bar"></span><span><span class="z-view__kw">import</span> { invoke } <span class="z-view__kw">from</span> <span class="z-view__str">"@tauri-apps/api/core"</span>;</span></div>
-      <div class="z-view__line"><span class="z-view__num">2</span><span class="z-view__bar z-view__bar--mod"></span><span><span class="z-view__kw">export const</span> ROOT = <span class="z-view__str">""</span>;</span></div>
-      <div class="z-view__line"><span class="z-view__num">3</span><span class="z-view__bar z-view__bar--add"></span><span><span class="z-view__kw">export const</span> MAX = 2000;</span></div>
-    </div>
-  </section>
+    <div class="z-fcard"><div class="z-fcard__head"><span class="z-checkbox is-on" style="width:14px;height:14px"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span class="z-kind z-run">A</span><span class="z-path">src/test/lexer.test.ts</span><span class="z-mono z-cap z-run">+12</span><svg class="z-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></div></div>
+    <div class="z-fcard"><div class="z-fcard__head"><span class="z-checkbox is-on" style="width:14px;height:14px"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span class="z-kind z-att">M</span><span class="z-path">src/lib/parser.ts</span><span class="z-mono z-cap z-run">+4</span><span class="z-mono z-cap z-danger">−5</span><svg class="z-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></div></div>
+   </div>
+  </div>
+  <div class="z-bar-c"><svg class="z-ico z-muted" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="z-ui-sm z-grow-1">2 comments not in a message</span><button class="z-btn z-btn--outline z-btn--row" type="button">Add 2</button></div>
+  <div class="z-commit"><div class="z-msg">Commit message</div><button class="z-btn z-btn--primary" type="button" style="width:100%">Commit 3 files</button></div>
+ </div>
+
+ <div class="z-sheet z-panel">
+  <div class="z-panel__head"><div class="z-seg" role="tablist"><button class="z-seg__item" role="tab" type="button">Changes <span class="z-seg__count">3</span></button><button class="z-seg__item" role="tab" aria-selected="true" type="button">Activity</button><button class="z-seg__item" role="tab" type="button">Files</button><button class="z-seg__item" role="tab" type="button">Terminal</button></div><button class="z-icon-btn z-icon-btn--sm" type="button" aria-label="Close inspector"><svg class="z-ico" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+  <div class="z-panel__body"><div class="z-act">
+   <div class="z-hstack z-cap z-subtle" style="align-items:flex-start"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24" style="margin-top:2px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>This is Claude Code's own report of what it did. Rewinding the chat removes its entries too.</div>
+   <div class="z-seg" role="group" aria-label="Filter" style="align-self:flex-start"><button class="z-seg__item" aria-pressed="true" type="button">All <span class="z-subtle">8</span></button><button class="z-seg__item" aria-pressed="false" type="button">Files <span class="z-subtle">3</span></button><button class="z-seg__item" aria-pressed="false" type="button">Commands <span class="z-subtle">4</span></button><button class="z-seg__item" aria-pressed="false" type="button">Permissions <span class="z-subtle">1</span></button></div>
+   <div class="z-unrep"><div class="z-hstack"><svg class="z-ico z-att" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span class="z-fg z-w6">2 files changed that Claude Code didn't report</span></div>
+    <div class="z-well z-mono z-cap" style="padding:6px 8px; border-radius:var(--radius-md)">scripts/release.mjs<br>package.json</div>
+    <div class="z-cap z-muted">Compared with uncommitted changes.</div><button class="z-btn z-btn--outline z-btn--row" type="button" style="align-self:flex-start">Show in Changes</button></div>
+   <div class="z-turn"><h4>Turn 3 <span>2 min ago · Split the parser in two and keep the tests green</span></h4>
+    <div class="z-arow"><span class="z-arow__verb">Edited</span><span class="z-arow__target">src/lib/lexer.ts</span><a class="z-cap z-subtle">Done</a></div>
+    <div class="z-arow is-wait"><span class="z-arow__verb">Asked</span><span class="z-arow__target">to run pnpm test --run</span><a class="z-cap z-att">Waiting for you</a></div>
+    <div class="z-arow is-fail"><span class="z-arow__verb">Read</span><span class="z-arow__target">fixtures/long-input.txt</span><a class="z-cap z-danger">Failed</a></div>
+    <div class="z-arow is-idle"><span class="z-arow__verb">Run</span><span class="z-arow__target">pnpm lint</span><a class="z-cap z-muted">Did not finish</a></div></div>
+   <div class="z-turn"><h4>Turn 2 <span>Yesterday · Add the parser tests</span></h4>
+    <div class="z-arow"><span class="z-arow__verb">Searched</span><span class="z-arow__target">parseExpression</span><a class="z-cap z-subtle">Done</a></div>
+    <div class="z-arow"><span class="z-arow__verb">Asked</span><span class="z-arow__target">to run pnpm test</span><a class="z-cap z-subtle">Allowed</a></div></div>
+  </div></div>
+ </div>
+
+ <div class="z-sheet z-panel">
+  <div class="z-panel__head"><div class="z-seg" role="tablist"><button class="z-seg__item" role="tab" type="button">Changes <span class="z-seg__count">3</span></button><button class="z-seg__item" role="tab" type="button">Activity</button><button class="z-seg__item" role="tab" aria-selected="true" type="button">Files</button><button class="z-seg__item" role="tab" type="button">Terminal</button></div><button class="z-icon-btn z-icon-btn--sm" type="button" aria-label="Close inspector"><svg class="z-ico" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+  <div class="z-panel__body">
+   <div class="z-hstack" style="padding:12px 10px 8px 14px"><div class="z-grow-1"><div class="z-ui z-w6 z-fg">agent-desktop</div><div class="z-mono z-cap z-subtle">~/developer/agent-desktop</div></div><button class="z-icon-btn" type="button" aria-label="Refresh files"><svg class="z-ico" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button><button class="z-icon-btn" type="button" aria-label="Reveal in Finder"><svg class="z-ico" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></button></div>
+   <div style="padding:0 14px 8px"><div class="z-search" style="font-size:12px"><svg class="z-ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>Filter files</div></div>
+   <div class="z-tree">
+    <div class="z-trow"><svg class="z-chev" viewBox="0 0 24 24" style="stroke:var(--fg-subtle)"><path d="m6 9 6 6 6-6"/></svg><svg class="z-ico z-muted" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>src<span class="z-mark z-att">•</span></div>
+    <div class="z-trow" style="padding-left:24px"><svg class="z-chev" viewBox="0 0 24 24" style="stroke:var(--fg-subtle)"><path d="m9 18 6-6-6-6"/></svg><svg class="z-ico z-muted" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>lib<span class="z-mark z-att">•</span></div>
+    <div class="z-trow is-on" style="padding-left:24px"><span style="width:12px"></span><svg class="z-ico z-subtle" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>App.tsx<span class="z-hstack z-cap" style="margin-left:auto; height:20px; padding:0 8px; border:1px solid var(--border-strong); border-radius:var(--radius-full); background:var(--surface-hover); color:var(--fg)">+ Add to prompt</span><span class="z-mark z-att" style="margin-left:0">M</span></div>
+    <div class="z-trow" style="padding-left:24px"><span style="width:12px"></span><svg class="z-ico z-subtle" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>main.tsx</div>
+    <div class="z-trow" style="padding-left:24px"><span style="width:12px"></span><svg class="z-ico z-subtle" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>notes.md<span class="z-mark z-run">A</span></div>
+    <div class="z-trow"><svg class="z-chev" viewBox="0 0 24 24" style="stroke:var(--fg-subtle)"><path d="m9 18 6-6-6-6"/></svg><svg class="z-ico z-muted" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>docs</div>
+   </div>
+  </div>
+ </div>
+
+ <div class="z-sheet z-panel">
+  <div class="z-panel__head" style="height:44px"><span class="z-btn z-btn--ghost z-btn--row" style="color:var(--fg-secondary)"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Files</span><span class="z-grow-1 z-mono z-cap z-subtle" style="padding-left:var(--space-2)">src/<b class="z-fg" style="font-weight:600">App.tsx</b> <span class="z-att">M</span></span><button class="z-icon-btn" type="button" aria-label="Copy path"><svg class="z-ico" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg></button></div>
+  <div class="z-cap z-subtle" style="height:32px; display:flex; align-items:center; padding:0 14px; gap:var(--space-3)">TypeScript · 120 lines · Read only<span class="z-fg2" style="margin-left:auto">Mark changed lines</span></div>
+  <div class="z-panel__body" style="background:var(--ground); padding:10px 0; border-top:1px solid var(--border)">
+   <div class="z-vline"><i>10</i><b></b><span>import { useState } from "react";</span></div>
+   <div class="z-vline"><i>11</i><b style="background:var(--status-running)"></b><span><span class="z-fg z-w5">const</span> [open, setOpen] = useState(<span class="z-muted">"none"</span>);</span></div>
+   <div class="z-vline" style="background:var(--line-selected)"><i class="z-fg">12</i><b style="background:var(--status-attention)"></b><span>// <em class="z-subtle">keeps the draft</em></span></div>
+   <div class="z-vline" style="background:var(--line-selected)"><i class="z-fg">13</i><b></b><span><span class="z-fg z-w5">return</span> open;</span></div>
+   <div class="z-pop" style="margin:8px 0 0 60px; width:230px; min-width:0"><div class="z-pop__item is-cmd">Add lines 12–13 to prompt</div></div>
+  </div>
+ </div>
+
+ <div class="z-sheet z-panel" style="height:200px">
+  <div class="z-tab">
+   <div class="z-tab__strip"><span class="z-tab__t is-on">zsh <span class="z-mono z-cap" style="color:var(--terminal-fg-muted)">agent-desktop</span></span><span class="z-tab__t">zsh 2</span><span class="z-icon-btn z-icon-btn--sm" style="color:var(--terminal-fg-muted)"><svg class="z-ico z-ico--sm" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></span><span class="z-grow-1"></span><span class="z-cap" style="color:var(--terminal-fg-subtle)">80 × 38</span></div>
+   <div class="z-tab__out">~/agent-desktop $ pnpm test<br><span style="color:var(--terminal-fg-subtle)">✓ 24 tests passed</span><br>~/agent-desktop $ <span style="background:var(--terminal-fg); color:var(--terminal-bg)">&nbsp;</span></div>
+  </div>
+ </div>
 </div>
 </body>
 </html>

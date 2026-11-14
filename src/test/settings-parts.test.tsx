@@ -21,6 +21,8 @@ describe("SettingsNav", () => {
     const current = within(nav).getByRole("link", { name: "Appearance" });
     expect(current).toHaveAttribute("aria-current", "page");
     expect(current).toHaveClass("bg-surface-hover", "text-fg", "font-medium");
+    // 30px items with radius 8, as the canvas draws them.
+    expect(current).toHaveClass("h-7.5", "rounded-lg", "px-2.5", "gap-2.5");
     expect(within(nav).getByRole("link", { name: "General" })).not.toHaveAttribute("aria-current");
   });
 
@@ -72,12 +74,20 @@ describe("SettingsNav", () => {
     expect(screen.getByRole("link", { name: "GitHub" }).querySelectorAll("circle")).toHaveLength(3);
   });
 
-  it("is drawn on surface-1, 220px wide, with room for the window's buttons", () => {
+  it("sits on the ground, 240px wide, with no fill or edge of its own and room for the window's buttons", () => {
     renderNav();
     const nav = screen.getByRole("navigation", { name: "Settings" });
-    expect(nav).toHaveClass("w-55", "bg-surface-1", "border-r", "border-border");
+    expect(nav).toHaveClass("w-60", "px-2", "gap-0.5");
+    expect(nav.className).not.toMatch(/\bbg-|\bborder/);
     expect(nav.firstElementChild).toHaveAttribute("data-tauri-drag-region");
-    expect(nav.firstElementChild).toHaveClass("h-12");
+    expect(nav.firstElementChild).toHaveClass("h-11");
+  });
+
+  it("the update count and the Soon tag are chip-filled", () => {
+    renderNav({ updateCount: 2 });
+    const nav = screen.getByRole("navigation", { name: "Settings" });
+    expect(within(nav).getByText("2")).toHaveClass("bg-chip", "rounded-md", "text-caption", "text-fg");
+    expect(within(nav).getByText("Soon")).toHaveClass("bg-chip", "text-fg-muted");
   });
 });
 
@@ -96,7 +106,7 @@ describe("SettingsGroup and SettingsRow", () => {
     expect(card).not.toHaveClass("overflow-hidden");
     const row = within(region).getByText("agent-desktop").closest("[data-settings-row]") as HTMLElement;
     expect(row).toHaveClass("px-4", "py-3", "gap-4", "border-b", "last:border-b-0");
-    expect(within(region).getByText("~/developer/agent-desktop")).toHaveClass("text-ui-sm", "text-fg-subtle");
+    expect(within(region).getByText("~/developer/agent-desktop")).toHaveClass("text-ui-sm", "text-fg-muted");
     expect(within(region).getByText("agent-desktop")).toHaveClass("text-ui", "text-fg");
   });
 
@@ -105,6 +115,15 @@ describe("SettingsGroup and SettingsRow", () => {
     const row = screen.getByText("Tight").closest("[data-settings-row]");
     expect(row).toHaveClass("gap-3");
     expect(row).not.toHaveClass("gap-4");
+  });
+
+  it("a compact row is the welcome screen's: 10px by 14px, its lines 1px apart, 12px before each control", () => {
+    render(<SettingsRow label="Compact" description="Second line" control={<button type="button">Go</button>} isCompact />);
+    const row = screen.getByText("Compact").closest("[data-settings-row]") as HTMLElement;
+    expect(row).toHaveClass("px-3.5", "py-2.5", "gap-3");
+    expect(row).not.toHaveClass("px-4", "py-3", "gap-4");
+    expect(screen.getByText("Compact").parentElement).toHaveClass("gap-px");
+    expect(screen.getByRole("button", { name: "Go" }).parentElement).toHaveClass("gap-3");
   });
 
   it("the header's title can take focus", () => {

@@ -66,6 +66,13 @@ pub struct AcpLaunch {
     pub mcp_servers: Vec<serde_json::Value>,
 }
 
+/// The `mcpServers` a session is opened with: a private launch's own (its credits server), then the
+/// ones the command layer hands in (Zorvo's agent tools). A value that is not an array adds none.
+pub(super) fn all_servers(own: &[Value], given: &Value) -> Value {
+    let given = given.as_array().map(Vec::as_slice).unwrap_or_default();
+    Value::Array(own.iter().chain(given).cloned().collect())
+}
+
 /// Prints the environment's names only: a private launch holds a proxy token
 /// in its env, and no `{:?}` may ever print it.
 impl std::fmt::Debug for AcpLaunch {
@@ -107,6 +114,10 @@ pub struct StartedSession {
     /// How an earlier session was reopened; absent for a start or a fork.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reopened_with: Option<ReopenMethod>,
+    /// How this session reaches Zorvo's tools; absent when it has none. The
+    /// command layer fills it in: the manager does not know.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools_path: Option<crate::agent_tools::ToolsPath>,
 }
 
 /// Events for the UI, already routed to the app session they belong to.
@@ -241,19 +252,21 @@ impl AcpManager {
         &self.sign_ins
     }
 
-    /// Starts an agent process, initializes ACP and opens a session in `cwd`.
+    /// Starts an agent process, initializes ACP and opens a session in `cwd`,
+    /// telling the agent about `mcp_servers` (an ACP `mcpServers` array).
     pub fn start(
         &self,
         app_session_id: &str,
         cwd: &str,
         launch: &AcpLaunch,
+        mcp_servers: Value,
     ) -> Result<StartedSession, String> {
         self.open(app_session_id, cwd, launch, |connection, init, key| {
             let session = open_request(
                 connection,
                 init,
                 "session/new",
-                json!({ "cwd": cwd, "mcpServers": launch.mcp_servers }),
+                json!({ "cwd": cwd, "mcpServers": all_servers(&launch.mcp_servers, &mcp_servers) }),
                 launch,
                 self.route_on_answer(key, app_session_id, None, true, false),
             )?;
@@ -361,6 +374,7 @@ impl AcpManager {
         source_app_id: &str,
         new_app_id: &str,
         cwd: &str,
+        mcp_servers: Value,
     ) -> Result<StartedSession, String> {
         let (connection, connection_key, acp_id, capabilities, traits) =
             self.with_entry(source_app_id, |e| {
@@ -385,7 +399,7 @@ impl AcpManager {
         let response = connection
             .request_raw_with(
                 "session/fork",
-                json!({ "sessionId": acp_id, "cwd": cwd, "mcpServers": traits.mcp_servers.clone() }),
+                json!({ "sessionId": acp_id, "cwd": cwd, "mcpServers": all_servers(&traits.mcp_servers, &mcp_servers) }),
                 SESSION_REQUEST_TIMEOUT,
                 self.route_on_answer(connection_key, new_app_id, None, false, false),
             )?
@@ -416,7 +430,7 @@ impl AcpManager {
         text: &str,
         attachments: &[String],
     ) -> Result<(), String> {
-        let (connection, acp_id, capabilities, auth_methods, private) =
+        let (connection, acp_id, capabilities, auth_methods, private, cwd) =
             self.with_entry(app_session_id, |e| {
                 (
                     Arc::clone(&e.connection),
@@ -424,6 +438,7 @@ impl AcpManager {
                     e.agent_capabilities.clone(),
                     e.auth_methods.clone(),
                     e.private,
+                    e.cwd.clone(),
                 )
             })?;
         // `/model` or `/auth` would move the running process, history and all,
@@ -432,7 +447,7 @@ impl AcpManager {
             return Err(PrivateError::ModelLocked.into());
         }
         let supports_images = capabilities["promptCapabilities"]["image"] == Value::Bool(true);
-        let prompt = prompt_blocks(text, attachments, supports_images)?;
+        let prompt = prompt_blocks(text, attachments, supports_images, &cwd)?;
         let sink = Arc::clone(&self.sink);
         let session_id = app_session_id.to_string();
         connection.send_request(

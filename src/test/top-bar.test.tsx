@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import {
   TopBar,
   TOP_BAR_TRAFFIC_LIGHT_INSET_PX,
@@ -61,7 +61,7 @@ describe("TopBar", () => {
       expect(branch.className).not.toContain("shrink-0");
       expect(branch.className).toContain("shrink-[4]");
       expect(branch.className).toContain("min-w-0");
-      expect(title.parentElement?.className).toContain("overflow-hidden");
+      expect(title.closest(".overflow-hidden")).not.toBeNull();
     });
 
     it("is 48px tall with the session's title at weight 600 in the brightest text", () => {
@@ -188,6 +188,110 @@ describe("TopBar", () => {
       fireEvent.click(screen.getByRole("button", { name: "More options" }));
       expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Open in new window"]);
     });
+
+    it("lists Delegate after Rename and before Archive", () => {
+      const onRename = vi.fn();
+      const onArchive = vi.fn();
+      const onDelegate = vi.fn();
+      renderTopBar({ sessionName: "Alpha", onRename, onArchive, onDelegate, delegateBlockedReason: null });
+
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      const menu = screen.getByRole("menu", { name: "More options" });
+      const labels = screen.getAllByRole("menuitem").map((item) => item.textContent);
+      expect(labels).toEqual(["Rename", "Delegate to another agent…", "Archive"]);
+
+      // Delegate sits above the rule that sets Archive apart.
+      const delegate = screen.getByRole("menuitem", { name: "Delegate to another agent…" });
+      const separator = menu.querySelector('[role="separator"]');
+      expect(separator).not.toBeNull();
+      expect(delegate.compareDocumentPosition(separator!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(separator!.nextElementSibling?.textContent).toBe("Archive");
+
+      fireEvent.click(delegate);
+      expect(onDelegate).toHaveBeenCalledTimes(1);
+      expect(onArchive).not.toHaveBeenCalled();
+    });
+
+    it("a blocked Delegate is disabled with its reason", () => {
+      const onDelegate = vi.fn();
+      const reason = "Codex already has a task from this session.";
+      renderTopBar({ sessionName: "Alpha", onDelegate, delegateBlockedReason: reason });
+
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      const item = screen.getByRole("menuitem", { name: /Delegate to another agent…/ });
+      expect(item).toBeDisabled();
+      expect(item).toHaveClass("disabled:text-fg-subtle");
+
+      const description = within(item).getByText(reason);
+      expect(description).toHaveClass("text-caption", "text-fg-subtle");
+      expect(item).toHaveAttribute("aria-describedby", description.id);
+
+      fireEvent.click(item);
+      expect(onDelegate).not.toHaveBeenCalled();
+    });
+
+    it("no Delegate for an empty reason", () => {
+      const onDelegate = vi.fn();
+      // Archive keeps the menu itself: only the Delegate item is left out.
+      renderTopBar({ sessionName: "Alpha", onArchive: vi.fn(), onDelegate, delegateBlockedReason: "" });
+
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Archive"]);
+      expect(screen.queryByRole("menuitem", { name: /Delegate/ })).toBeNull();
+    });
+
+    it("End delegation shows when it applies", () => {
+      const onDelegate = vi.fn();
+      const onEndDelegation = vi.fn();
+      renderTopBar({
+        sessionName: "Alpha",
+        onDelegate,
+        delegateBlockedReason: null,
+        onEndDelegation,
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      const labels = screen.getAllByRole("menuitem").map((item) => item.textContent);
+      expect(labels).toEqual(["Delegate to another agent…", "End delegation"]);
+
+      fireEvent.click(screen.getByRole("menuitem", { name: "End delegation" }));
+      expect(onEndDelegation).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("menu", { name: "More options" })).toBeNull();
+    });
+
+    it("offers End delegation per delegate when there are several", () => {
+      const endCodex = vi.fn();
+      const endQwen = vi.fn();
+      renderTopBar({
+        sessionName: "Alpha",
+        delegationEnds: [
+          { label: "End delegation to Codex", run: endCodex },
+          { label: "End delegation to Qwen Code", run: endQwen },
+        ],
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+        "End delegation to Codex",
+        "End delegation to Qwen Code",
+      ]);
+      fireEvent.click(screen.getByRole("menuitem", { name: "End delegation to Qwen Code" }));
+      expect(endQwen).toHaveBeenCalledTimes(1);
+      expect(endCodex).not.toHaveBeenCalled();
+    });
+
+    it("offers Stop allowing delegation only while the session is allowed", () => {
+      const onStopAllowingDelegation = vi.fn();
+      renderTopBar({ sessionName: "Alpha", onArchive: vi.fn(), onStopAllowingDelegation });
+
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+        "Stop allowing delegation",
+        "Archive",
+      ]);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Stop allowing delegation" }));
+      expect(onStopAllowingDelegation).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("inspector toggle", () => {
@@ -230,12 +334,78 @@ describe("TopBar", () => {
   });
 
   describe("breadcrumb", () => {
-    it("shows the branch as a plain chip and no folder badge", () => {
+    it("reads folder, a slash, then the title, with the folder giving way first", () => {
+      renderTopBar({ sessionName: "Market analyzer refactor", folderName: "titan-investment", workspaceName: "titan-investment", branch: "main" });
+
+      const folder = screen.getByText("titan-investment");
+      const slash = screen.getByText("/");
+      const title = screen.getByText("Market analyzer refactor");
+      expect(folder).toHaveClass("text-fg-muted", "shrink-[3]", "truncate");
+      expect(slash).toHaveAttribute("aria-hidden", "true");
+      expect(slash).toHaveClass("text-fg-subtle");
+      expect(title).toHaveClass("min-w-12", "font-semibold", "text-fg");
+      expect(folder.compareDocumentPosition(slash) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(slash.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.getByLabelText("Branch main")).toBeDefined();
+    });
+
+    it("shows the title alone without a folder", () => {
       renderTopBar({ sessionName: "Market analyzer refactor", workspaceName: "titan-investment", branch: "main" });
 
       expect(screen.getByText("Market analyzer refactor")).toBeDefined();
-      expect(screen.getByLabelText("Branch main")).toBeDefined();
+      expect(screen.queryByText("/")).toBeNull();
       expect(screen.queryByText("titan-investment")).toBeNull();
+    });
+
+    it("reads folder / New session for a draft, with no branch chip", () => {
+      renderTopBar({ isDraft: true, folderName: "titan-investment", workspaceName: "titan-investment", branch: "main" });
+
+      expect(screen.getByText("titan-investment")).toBeDefined();
+      expect(screen.getByText("/")).toBeDefined();
+      expect(screen.getByText("New session")).toHaveClass("font-semibold", "text-fg");
+      expect(screen.queryByLabelText("Branch main")).toBeNull();
+    });
+
+    it("adds Compare and the agent count after a run's title", () => {
+      renderTopBar({ sessionName: "Fix the login", folderName: "zorvo", runAgentCount: 3 });
+
+      const compare = screen.getByText("Compare · 3 agents");
+      expect(compare.compareDocumentPosition(screen.getByText("Fix the login")) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+      expect(compare.parentElement?.querySelector("svg.lucide-columns-3")).toHaveClass("text-fg-muted");
+    });
+
+    it("pads the bar 18px left and 10px right with a 10px gap", () => {
+      const { container } = renderTopBar({ sessionName: "A" });
+      expect(headerOf(container)).toHaveClass("pl-[18px]", "pr-2.5", "gap-2.5");
+    });
+  });
+
+  describe("chips", () => {
+    it("draws the Plan, background-task and diff chips 28px high, and leaves the branch chip plain", () => {
+      renderTopBar({
+        sessionName: "A",
+        workspaceName: "w",
+        branch: "main",
+        plan: [{ content: "Step", status: "in_progress" }],
+        backgroundTasks: {
+          tasks: [{ id: "agent:s2", kind: "agent" as const, name: "Refactor", status: "Working" as const, startedAt: 0, sessionId: "s2" }],
+          isOpen: false,
+          onOpenChange: () => {},
+          onOpenTask: () => {},
+          onStopTask: async () => true,
+        },
+        diffStats: { added: 4, removed: 1 },
+        onOpenDiff: () => {},
+      });
+      for (const chip of [
+        screen.getByRole("button", { name: /^Plan,/ }),
+        screen.getByRole("button", { name: /background task/ }),
+        screen.getByRole("button", { name: /lines added/ }),
+      ]) {
+        expect(chip).toHaveClass("h-7", "text-ui-sm", "px-2.5", "rounded-md", "border-border");
+        expect(chip).not.toHaveClass("h-6");
+      }
+      expect(screen.getByLabelText("Branch main")).toHaveClass("h-6");
     });
   });
 

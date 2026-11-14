@@ -25,7 +25,7 @@ const READY: PrivateStatus = {
   pendingTopup: null,
 };
 
-const AGENT = { options: [{ value: "qwen-code", label: "Qwen Code" }], selected: "qwen-code", onChange: vi.fn() };
+const FOLDER = { folders: [{ id: "w", name: "api", path: "/w/api" }], selectedPath: "/w/api", onSelect: vi.fn() };
 const MODEL_CONTROL = {
   options: [
     { value: "qwen-max", label: "Qwen Max" },
@@ -140,7 +140,7 @@ function Draft({ credits, controls = { model: MODEL_CONTROL } }: { credits: Priv
   return (
     <ComposerDock
       controls={draft.isOn ? {} : controls}
-      agent={AGENT}
+      folder={FOLDER}
       privateDraft={draft}
       sendDisabled={draft.blocksSend}
       sendLabel={draft.isOn ? "Start private session" : undefined}

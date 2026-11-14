@@ -6,6 +6,7 @@ import { Button, type ButtonVariant } from "./ui/Button";
 import { UserQuestionFields } from "./UserQuestionFields";
 import { orderedChoices, permissionTitle, questionsTitle, titleHoldsPrompt } from "../lib/permission-copy";
 import { EMPTY_DRAFT, answersOf, usableQuestions, type QuestionDraft } from "../lib/user-questions";
+import { settledWords, usableZorvoTool } from "../lib/agent-tool-card";
 import type { ActionCard as ActionCardType, PermissionChoice } from "../types";
 
 /** The typed answers of Qwen Code's `ask_user_question`: question number to text. */
@@ -37,12 +38,12 @@ function choiceVariant(kind: string): ButtonVariant {
  */
 function EditedFiles({ edits }: { edits: NonNullable<ActionCardType["edits"]> }) {
   return (
-    <ul aria-label="Files to edit" className="rounded-md border border-border bg-bg">
+    <ul aria-label="Files to edit" className="rounded-md border border-border bg-ground">
       {edits.map((edit, index) => (
         <li
           // A request can carry two diffs for one file, so the path alone is not a key.
           key={`${index}-${edit.path}`}
-          className="flex items-center gap-2 border-b border-border px-2.5 py-1.5 last:border-b-0"
+          className="flex items-center gap-2 border-b border-border px-2.5 py-[7px] last:border-b-0"
         >
           <PathText path={edit.path} className="flex-1 text-ui-sm text-fg-secondary" />
           {edit.added !== undefined && edit.added > 0 && (
@@ -78,6 +79,9 @@ function PermissionChoices({
   const hintId = useId();
   const options: PermissionChoice[] = orderedChoices(card.options ?? []);
   const needsAnswers = asksQuestions && answers === undefined;
+  if (card.status !== "pending" && usableZorvoTool(card.zorvoTool)) {
+    return <p className="text-ui-sm text-fg-muted">{settledWords(card)}</p>;
+  }
   if (card.status !== "pending") {
     const chosen = options.find((o) => o.optionId === card.chosenOptionId);
     return (
@@ -104,6 +108,7 @@ function PermissionChoices({
           <Button
             key={option.optionId}
             variant={choiceVariant(option.kind)}
+            tone="secondary"
             disabled={disabled || waitsForAnswers}
             aria-describedby={waitsForAnswers ? hintId : undefined}
             onClick={() =>
@@ -122,8 +127,14 @@ export function ActionCard({ card, onChoose, disabled = false, agentName = "The 
   // A form needs a way to send it: a card with questions but no allowing option stays a plain card.
   // The questions come back from the saved transcript, so their shape is checked again.
   const questions = card.options?.some((o) => o.kind.startsWith("allow")) ? usableQuestions(card.questions) : undefined;
-  const title = questions ? questionsTitle(agentName, questions.length) : permissionTitle(agentName, card.prompt);
-  const showsPrompt = questions !== undefined || !titleHoldsPrompt(card.prompt);
+  // A card Zorvo made for an agent's tool call carries its own title, and its prompt is the task.
+  const zorvoTool = usableZorvoTool(card.zorvoTool);
+  const title = zorvoTool
+    ? card.title
+    : questions
+      ? questionsTitle(agentName, questions.length)
+      : permissionTitle(agentName, card.prompt);
+  const showsPrompt = !zorvoTool && (questions !== undefined || !titleHoldsPrompt(card.prompt));
   // What is picked or typed lives here, in memory, so an answer that did not go through keeps it. It is never stored.
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
   const answers = questions ? answersOf(questions, drafts) : undefined;
@@ -132,23 +143,48 @@ export function ActionCard({ card, onChoose, disabled = false, agentName = "The 
   return (
     <div
       data-testid={`action-card-${card.id}`}
-      className="my-3 flex flex-col gap-3 rounded-xl border border-attention-border bg-attention-surface p-4 text-left transition-all"
+      className="my-3 flex flex-col gap-3 rounded-xl border border-attention-border bg-attention-surface px-4 py-3.5 text-left transition-all"
     >
       {/* One sentence says what the agent wants; the agent's own title follows only when the sentence cannot hold it. */}
-      <div className="flex items-start gap-2">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-status-attention" aria-hidden="true" />
-        <h2 className="text-ui font-semibold text-fg">{title}</h2>
+      <div className="flex items-center gap-2">
+        <AlertTriangle className="size-3.5 shrink-0 text-status-attention" aria-hidden="true" />
+        <h2 className="min-w-0 flex-1 text-ui font-semibold text-fg">{title}</h2>
+        {/* Only while the request is open: an answered card says what was chosen instead. */}
+        {card.status === "pending" && <span className="shrink-0 text-caption text-fg-muted">Waiting for you</span>}
       </div>
 
       {showsPrompt && card.prompt.trim() && (
         <p className="text-ui-sm leading-relaxed text-fg-secondary">{card.prompt}</p>
       )}
 
+      {zorvoTool && (
+        <>
+          <p className="text-ui-sm text-fg-muted">{`In ${zorvoTool.folder}`}</p>
+          {/* The task as text, never markdown: what is shown is what the other agent reads. */}
+          <pre
+            data-testid="zorvo-tool-task"
+            className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-ground px-2.5 py-2 font-sans text-ui-sm leading-relaxed text-fg-secondary"
+          >
+            {card.prompt}
+          </pre>
+          {zorvoTool.hasOwnWorktree && (
+            <p className="text-ui-sm text-fg-muted">It gets a worktree of its own, on a new branch.</p>
+          )}
+          {card.status === "pending" && (
+            <p className="text-caption text-fg-subtle">
+              {zorvoTool.isOtherFolder
+                ? "This asks every time: a session in another folder is never allowed in advance."
+                : `After you allow it, ${zorvoTool.callerName} can give tasks to other agents in this session without asking again.`}
+            </p>
+          )}
+        </>
+      )}
+
       {card.edits && card.edits.length > 0 && <EditedFiles edits={card.edits} />}
 
       {/* Command Snippet */}
       {card.commandSnippet && (
-        <div className="overflow-x-auto rounded-md border border-border bg-bg px-2.5 py-2 font-mono text-ui-sm text-fg-secondary">
+        <div className="overflow-x-auto rounded-md border border-border bg-ground px-2.5 py-2 font-mono text-ui-sm text-fg-secondary">
           <code>{card.commandSnippet}</code>
         </div>
       )}

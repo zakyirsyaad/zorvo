@@ -6,7 +6,7 @@ import type { FormValue } from "../../lib/elicitation-form";
 const MAX_RADIO_OPTIONS = 4;
 
 export const INPUT =
-  "h-8 w-full rounded-lg border border-border-strong bg-bg px-2.5 text-ui text-fg " +
+  "h-8 w-full rounded-lg border border-border-strong bg-ground px-2.5 text-ui text-fg " +
   "placeholder:text-fg-subtle focus-ring disabled:opacity-40";
 
 export interface ElicitationFieldsProps {

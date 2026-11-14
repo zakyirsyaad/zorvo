@@ -1,9 +1,15 @@
 // Global test setup for Vitest (JSDOM environment mocks)
 
 import { afterEach } from "vitest";
+import { configure } from "@testing-library/react";
 import { fakeProfiles } from "./fixtures/agents";
 import { fakeCatalog } from "./fixtures/catalog";
 import { handlePrivateCommand, resetFakePrivate } from "./fixtures/private-backend";
+
+// App tests wait for real state; under the pre-push hook's load a query can take
+// longer than Testing Library's 1 s default. A passing test still ends as soon
+// as the condition is met, so only a slow or stuck one waits this long.
+configure({ asyncUtilTimeout: 10_000 });
 
 /**
  * In-memory stand-in for the backend store commands. Tests seed it through
@@ -70,6 +76,8 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
     case "acp_import_session":
       // Shaped like Qwen Code's real answer; it starts in YOLO like the user's own config.
       return Promise.resolve({
+        // A test sets this to open sessions on a tools path ("mcp" or "command").
+        toolsPath: (window as unknown as { __FAKE_TOOLS_PATH__?: string }).__FAKE_TOOLS_PATH__,
         acpSessionId:
           (args as { acpSessionId?: string })?.acpSessionId ?? `acp-${(args as { sessionId?: string })?.sessionId}`,
         agentCapabilities: { sessionCapabilities: { fork: {} } },
@@ -112,6 +120,7 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
     case "list_directory":
     case "background_processes":
       return Promise.resolve([]);
+    case "agent_tool_respond":
     case "open_path":
     case "remember_workspace":
     case "end_orphaned_sessions":

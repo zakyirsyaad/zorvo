@@ -73,6 +73,8 @@ fn session(id: &str, status: &str) -> SessionRecord {
         named_by_user: false,
         has_unread: false,
         compare_run_id: None,
+        delegated_from: None,
+        opened_by: None,
         review_comments: Vec::new(),
         private_mode: None,
         private_usage: None,
@@ -96,6 +98,53 @@ fn populated_state() -> PersistedState {
         sessions: vec![session("s-1", "terminated")],
         ..PersistedState::default()
     }
+}
+
+#[test]
+fn a_session_keeps_who_opened_it() {
+    let root = unique_temp_root("opened-by");
+    fs::create_dir_all(&root).expect("create root");
+    let store = AppStore::new(root.clone());
+    let mut state = PersistedState::default();
+    let mut opened = session("s-b", "idle");
+    opened.opened_by = Some(zorvo_lib::store::OpenedByRecord {
+        session_id: "s-a".to_string(),
+        at: 5,
+        handle: Some("session-1".to_string()),
+    });
+    state.sessions = vec![opened, session("s-c", "idle")];
+    store.save_state(&state).expect("save state");
+
+    let raw = fs::read_to_string(root.join("state.json")).expect("read state file");
+    assert_eq!(
+        raw.matches("openedBy").count(),
+        1,
+        "saved once, in camelCase: {raw}"
+    );
+    let loaded = store.load_state().expect("load state");
+    let link = loaded.sessions[0].opened_by.as_ref().expect("the link");
+    assert_eq!((link.session_id.as_str(), link.at), ("s-a", 5));
+    assert_eq!(link.handle.as_deref(), Some("session-1"));
+    // A link saved before handles existed still loads.
+    let older = raw.replace("\"handle\": \"session-1\"", "\"at\": 5");
+    assert_ne!(older, raw, "the fixture was changed");
+    fs::write(root.join("state.json"), older).expect("write state file");
+    let loaded_older = store.load_state().expect("load state");
+    assert!(loaded_older.sessions[0]
+        .opened_by
+        .as_ref()
+        .expect("the link")
+        .handle
+        .is_none());
+
+    // A wrong-typed link loads the session without it.
+    let broken = raw.replace("\"sessionId\": \"s-a\"", "\"sessionId\": 7");
+    assert_ne!(broken, raw, "the fixture was changed");
+    fs::write(root.join("state.json"), broken).expect("write state file");
+    let loaded = store.load_state().expect("load state");
+    assert_eq!(loaded.sessions.len(), 2);
+    assert!(loaded.sessions[0].opened_by.is_none());
+    fs::remove_dir_all(&root).ok();
 }
 
 #[test]
@@ -1037,5 +1086,42 @@ fn drops_a_malformed_private_mode_but_keeps_the_saved_session() {
         "the session survives its bad privateMode"
     );
     assert_eq!(state.sessions[0].private_mode, None);
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn agent_tools_is_on_unless_the_state_says_off() {
+    let root = unique_temp_root("agent-tools");
+    fs::create_dir_all(&root).expect("create root");
+    let store = AppStore::new(root.clone());
+    let load = |settings: &str| {
+        fs::write(
+            root.join("state.json"),
+            format!(r#"{{"version":1,"settings":{settings},"recentFolders":[],"sessions":[]}}"#),
+        )
+        .expect("write state file");
+        store.load_state().expect("load state").settings
+    };
+
+    // A state written before the setting existed has it on.
+    assert!(load(r#"{"onboardingCompleted":true}"#).agent_tools);
+    assert!(load(r#"{"agentTools":true}"#).agent_tools);
+    assert!(!load(r#"{"agentTools":false}"#).agent_tools);
+    // A wrong type must not make the state unreadable, and is not a "no".
+    let bad = load(r#"{"agentTools":"no","onboardingCompleted":true}"#);
+    assert!(bad.agent_tools);
+    assert!(bad.onboarding_completed);
+    // A first run, with no state file's settings at all.
+    assert!(zorvo_lib::store::Settings::default().agent_tools);
+
+    let mut state = store.load_state().expect("load state");
+    state.settings.agent_tools = false;
+    store.save_state(&state).expect("save state");
+    let raw = fs::read_to_string(root.join("state.json")).expect("read state file");
+    assert!(
+        raw.contains("\"agentTools\": false"),
+        "saved in camelCase: {raw}"
+    );
+    assert!(!store.load_state().expect("load state").settings.agent_tools);
     fs::remove_dir_all(&root).ok();
 }

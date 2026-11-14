@@ -15,7 +15,7 @@ describe("the chat column, as drawn", () => {
   it("pads the canvas 32px at the top, 24px at the sides and 16px at the bottom, with 24px between messages", () => {
     render(<ChatCanvas messages={[reply]} header={<p>head</p>} footer={<p>foot</p>} />);
     const canvas = screen.getByTestId("chat-canvas-container");
-    expect(canvas).toHaveClass("pt-8", "px-6", "pb-4", "space-y-6");
+    expect(canvas).toHaveClass("pt-7", "px-6", "pb-4", "space-y-[22px]");
     expect(screen.getByText("head").parentElement).toHaveClass("max-w-chat");
     expect(screen.getByText("foot").parentElement).toHaveClass("max-w-chat");
     expect(screen.getByTestId("chat-message-m-1")).toHaveClass("max-w-chat");

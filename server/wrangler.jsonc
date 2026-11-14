@@ -12,7 +12,7 @@
   "vars": {
     "CREDITS_PER_USD_PAID": "100",
     "BURN_PER_USD_COST": "120",
-    "PACKAGES_USD": "1,5,25",
+    "PACKAGES_USD": "5,10,25",
     "DEVICE_CAP_CREDITS": "5000",
     "STOCK_BUFFER_NANO": "200000000",
     "MODELS": "Qwen/Qwen3.8-27B-abliterated,Qwen/Qwen3.8-27B,deepseek-ai/DeepSeek-V4.1-Flash-1017-abliterated,deepseek-ai/DeepSeek-V4.1-Flash-1017,z-ai/glm-5.3-flash",

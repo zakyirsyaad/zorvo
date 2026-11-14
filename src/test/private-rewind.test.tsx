@@ -89,7 +89,7 @@ describe("rewinding a private session", () => {
 
     await waitFor(() =>
       expect((spy.mock.calls as unknown as Call[]).filter(([cmd]) => cmd === "acp_start_session").map(([, args]) => args)).toEqual([
-        { sessionId: "s-1", cwd: PRIVATE.cwd, profileId: "qwen-code", privateModelId: MODEL_ID },
+        { sessionId: "s-1", cwd: PRIVATE.cwd, profileId: "qwen-code", agentTools: false, privateModelId: MODEL_ID },
       ]),
     );
   });

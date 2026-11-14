@@ -132,7 +132,7 @@ describe("useAcpEngine with a private session", () => {
     });
 
     const [privateStart, ordinaryStart] = callsTo(spy, "acp_start_session");
-    expect(privateStart).toEqual({ sessionId: "s-1", cwd: PRIVATE.cwd, profileId: "qwen-code", privateModelId: MODEL_ID });
+    expect(privateStart).toEqual({ sessionId: "s-1", cwd: PRIVATE.cwd, profileId: "qwen-code", agentTools: false, privateModelId: MODEL_ID });
     expect(Object.keys(ordinaryStart)).not.toContain("privateModelId");
   });
 
@@ -181,7 +181,7 @@ describe("useAcpEngine with a private session", () => {
     });
 
     expect(callsTo(spy, "acp_reopen_session")).toEqual([
-      { sessionId: "s-1", cwd: PRIVATE.cwd, profileId: "qwen-code", acpSessionId: "acp-s-1", privateModelId: MODEL_ID },
+      { sessionId: "s-1", cwd: PRIVATE.cwd, profileId: "qwen-code", acpSessionId: "acp-s-1", agentTools: false, privateModelId: MODEL_ID },
     ]);
   });
 
@@ -202,7 +202,7 @@ describe("useAcpEngine with a private session", () => {
     });
 
     expect(callsTo(spy, "acp_reopen_session")).toEqual([
-      { sessionId: "s-1", cwd: PRIVATE.cwd, profileId: "qwen-code", acpSessionId: "acp-s-1", privateModelId: MODEL_ID },
+      { sessionId: "s-1", cwd: PRIVATE.cwd, profileId: "qwen-code", acpSessionId: "acp-s-1", agentTools: false, privateModelId: MODEL_ID },
     ]);
   });
 

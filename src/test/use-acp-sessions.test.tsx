@@ -382,6 +382,7 @@ describe("useAcpSessions", () => {
       sessionId: "s-1",
       cwd: "/w",
       profileId: "qwen-code",
+      agentTools: false,
       privateModelId: "Qwen/Qwen3.8-27B",
     });
     expect(argsOf("acp_reopen_session")[0]).toEqual({
@@ -389,6 +390,7 @@ describe("useAcpSessions", () => {
       cwd: "/w",
       profileId: "qwen-code",
       acpSessionId: "acp-2",
+      agentTools: false,
       privateModelId: "Qwen/Qwen3.8-27B",
     });
     expect(Object.keys(argsOf("acp_start_session")[1])).not.toContain("privateModelId");

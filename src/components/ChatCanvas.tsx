@@ -1,3 +1,4 @@
+import type { ModelPrice } from "../lib/private-credits";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MessageRow } from "./chat/MessageRow";
 import { WorkingIndicator } from "./chat/ReplyExtras";
@@ -56,6 +57,8 @@ export interface ChatCanvasProps {
   onOpenUrl?: (url: string) => void;
   /** The private model id, for a reply's verification popover. */
   privateModelId?: string;
+  /** That model's listed price, for a reply's credits. */
+  privateModel?: ModelPrice | null;
   /** True while the agent works on its turn: shown under the last message. */
   isWorking?: boolean;
   /** Failed requests in a row the agent reported while it works. */
@@ -88,6 +91,7 @@ export function ChatCanvas({
   onReopenElicitationUrl,
   onOpenUrl,
   privateModelId,
+  privateModel,
   isWorking = false,
   failures,
   onStop,
@@ -244,6 +248,7 @@ export function ChatCanvas({
           onReopenElicitationUrl={onReopenElicitationUrl ? handleReopenElicitationUrl : undefined}
           onOpenUrl={onOpenUrl}
           privateModelId={privateModelId}
+          privateModel={privateModel}
         />
       ))}
       {isWorking && <WorkingIndicator agentName={shownAgentName} since={workStartedAt} />}

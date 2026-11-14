@@ -9,6 +9,7 @@ import { AttachmentChips } from "../composer/AttachmentChips";
 import { ToolsPart } from "./ToolsPart";
 import { PlanUpdatedRow, ThinkingBlock } from "./ReplyExtras";
 import { VerificationBadge } from "../private/VerificationBadge";
+import type { ModelPrice } from "../../lib/private-credits";
 import { partsOf } from "../../lib/acp-events";
 import { formatRelativeTime } from "../../lib/relative-time";
 import type { ChatMessage, ElicitationAnswer } from "../../types";
@@ -44,6 +45,8 @@ export interface MessageRowProps {
   onOpenUrl?: (url: string) => void;
   /** The private model id, for the badge's popover. */
   privateModelId?: string;
+  /** That model's listed price, for a reply's credits. */
+  privateModel?: ModelPrice | null;
 }
 
 /**
@@ -71,6 +74,7 @@ export const MessageRow = memo(function MessageRow({
   onReopenElicitationUrl,
   onOpenUrl,
   privateModelId,
+  privateModel,
 }: MessageRowProps) {
   const isUser = message.role === "user";
   const timeLabel = timeLabelOf(message);
@@ -178,6 +182,7 @@ export const MessageRow = memo(function MessageRow({
             <VerificationBadge
               verification={message.verification}
               modelId={privateModelId}
+              model={privateModel}
               onOpenUrl={onOpenUrl}
             />
           )}

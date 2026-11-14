@@ -105,6 +105,23 @@ describe("usePrivateVerification", () => {
     expect(invoke).toHaveBeenCalledTimes(2);
   });
 
+  it("asks again when the proxy has no record yet, and lands the late one", async () => {
+    const invoke = mockAnswers([], [], [VERIFIED]);
+    const view = renderVerification();
+
+    await start(view);
+    await advance(2_000);
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(view.updateMessages).not.toHaveBeenCalled();
+
+    await advance(8_000);
+    expect(invoke).toHaveBeenCalledTimes(3);
+    expect(view.updateMessages).toHaveBeenCalledTimes(1);
+
+    await advance(30_000);
+    expect(invoke).toHaveBeenCalledTimes(3);
+  });
+
   it("stops after three checking answers", async () => {
     const invoke = mockAnswers([CHECKING], [CHECKING], [CHECKING], [VERIFIED]);
     const view = renderVerification();

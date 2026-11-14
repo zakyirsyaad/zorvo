@@ -321,6 +321,9 @@ export interface MessageVerification {
   /** Calls NEAR AI signed, out of the calls this reply made. */
   signed: number;
   total: number;
+  /** Tokens the reply's calls sent and got back, summed; absent when no call reported any. */
+  promptTokens?: number;
+  completionTokens?: number;
 }
 
 export interface ChatMessage {

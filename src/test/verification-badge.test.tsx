@@ -24,6 +24,31 @@ function open(verification: MessageVerification, modelId = MODEL_ID) {
   return { onOpenUrl, panel: screen.getByRole("dialog", { name: "Signature" }), view };
 }
 
+describe("the reply's usage line", () => {
+  it("shows input and output with their credits when the price is known", () => {
+    const { container } = render(
+      <VerificationBadge
+        verification={{ ...VERIFIED, promptTokens: 1_204, completionTokens: 86 }}
+        modelId={MODEL_ID}
+        model={{ id: MODEL_ID, inputPerM: 0.5, outputPerM: 1 }}
+      />,
+    );
+    expect(container.querySelector("[data-reply-usage]")).toHaveTextContent(
+      "Input 1,204 tokens · 0.07 credits · Output 86 tokens · 0.01 credits (estimate)",
+    );
+  });
+
+  it("shows tokens alone without a price, and nothing without token counts", () => {
+    const priced = render(
+      <VerificationBadge verification={{ ...VERIFIED, promptTokens: 10, completionTokens: 2 }} modelId={MODEL_ID} />,
+    );
+    expect(priced.container.querySelector("[data-reply-usage]")).toHaveTextContent("Input 10 tokens · Output 2 tokens");
+    priced.unmount();
+    const bare = render(<VerificationBadge verification={VERIFIED} modelId={MODEL_ID} />);
+    expect(bare.container.querySelector("[data-reply-usage]")).toBeNull();
+  });
+});
+
 describe("VerificationBadge", () => {
   it("draws the four 24px states with the canvas icons", () => {
     const cases = [

@@ -1394,6 +1394,7 @@ export default function App() {
                     onReply={(quote) => composerRef.current?.insertText(quote)}
                     onOpenUrl={openLink}
                     privateModelId={activeSession?.privateMode?.modelId}
+                    privateModel={activeSession?.privateMode ? privateModel : undefined}
                     replyBlockedReason={replyBlockedReason({
                       isComposerHidden,
                       isComposerDisabled,

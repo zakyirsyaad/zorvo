@@ -53,6 +53,11 @@ pub struct RecordVerification {
     pub kind: Option<SignatureKind>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signer: Option<String>,
+    /// The call's token counts as NEAR AI reported them; absent when the answer named none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion_tokens: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -400,6 +405,8 @@ fn result_of(
         state,
         kind,
         signer: signer.map(str::to_string),
+        prompt_tokens: record.usage.as_ref().map(|usage| usage.prompt_tokens),
+        completion_tokens: record.usage.as_ref().map(|usage| usage.completion_tokens),
     }
 }
 

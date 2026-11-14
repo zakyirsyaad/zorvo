@@ -4,6 +4,7 @@ import type {
   VerificationKind,
   VerificationState,
 } from '../types';
+import { CREDITS_PER_USD_COST, isPricedModel, type ModelPrice } from './private-credits';
 
 /** One record as the `private_verify` command returns it. */
 export interface VerificationRecord {
@@ -12,6 +13,8 @@ export interface VerificationRecord {
   state: VerificationState;
   kind?: VerificationKind;
   signer?: string;
+  promptTokens?: number;
+  completionTokens?: number;
 }
 
 /** The state a reply's records fold into: a failure beats pending, which beats a missing signature. */
@@ -39,6 +42,20 @@ function foldedSigner(records: readonly VerificationRecord[]): string | undefine
   return signers.every((signer) => signer.toLowerCase() === first.toLowerCase()) ? first : undefined;
 }
 
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+/** The token counts of the calls that reported both, summed; undefined when none did. */
+function foldedTokens(records: readonly VerificationRecord[]): { promptTokens: number; completionTokens: number } | undefined {
+  const counted = records.filter((record) => isCount(record.promptTokens) && isCount(record.completionTokens));
+  if (counted.length === 0) return undefined;
+  return {
+    promptTokens: counted.reduce((sum, record) => sum + (record.promptTokens ?? 0), 0),
+    completionTokens: counted.reduce((sum, record) => sum + (record.completionTokens ?? 0), 0),
+  };
+}
+
 export function summarizeVerification(records: readonly VerificationRecord[]): MessageVerification {
   const state = foldedState(records);
   const signed = records.filter((record) => record.state === 'verified').length;
@@ -50,6 +67,7 @@ export function summarizeVerification(records: readonly VerificationRecord[]): M
     ...(signer === undefined ? {} : { signer }),
     signed,
     total: records.length,
+    ...(foldedTokens(records) ?? {}),
   };
 }
 
@@ -78,6 +96,41 @@ export function foldVerifications(
     if (inWindow.length === 0) return message;
     return { ...message, verification: summarizeVerification(inWindow) };
   });
+}
+
+export interface ReplyUsage {
+  promptTokens: number;
+  completionTokens: number;
+  /** Credits for the input and for the output at the model's price; absent when the price is unknown. */
+  inputCredits?: number;
+  outputCredits?: number;
+}
+
+/**
+ * What one reply used. The credits are an estimate from the token counts and the model's listed
+ * price, at the rate the balance burns (`CREDITS_PER_USD_COST`); NEAR AI's final cost can differ.
+ */
+export function replyUsage(verification: MessageVerification, model?: ModelPrice | null): ReplyUsage | undefined {
+  const { promptTokens, completionTokens } = verification;
+  if (!isCount(promptTokens) || !isCount(completionTokens)) return undefined;
+  if (!model || !isPricedModel(model)) return { promptTokens, completionTokens };
+  return {
+    promptTokens,
+    completionTokens,
+    inputCredits: (promptTokens * model.inputPerM * CREDITS_PER_USD_COST) / 1e6,
+    outputCredits: (completionTokens * model.outputPerM * CREDITS_PER_USD_COST) / 1e6,
+  };
+}
+
+function creditsWords(credits: number): string {
+  if (credits === 0) return '0 credits';
+  return credits < 0.01 ? 'under 0.01 credits' : `${credits.toFixed(2)} credits`;
+}
+
+/** "Input 1,204 tokens · 0.07 credits", or the tokens alone when the price is unknown. */
+export function usageLine(label: 'Input' | 'Output', tokens: number, credits?: number): string {
+  const count = `${tokens.toLocaleString('en-US')} tokens`;
+  return credits === undefined ? `${label} ${count}` : `${label} ${count} · ${creditsWords(credits)}`;
 }
 
 export function shortSigner(signer: string): string {

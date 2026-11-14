@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   foldVerifications,
+  replyUsage,
+  usageLine,
   shortSigner,
   summarizeVerification,
   VERIFICATION_LABEL,
@@ -112,6 +114,46 @@ describe("foldVerifications", () => {
     const message = reply({ id: "a-other", timestamp: 5_000, completedAt: 6_000 });
 
     expect(foldVerifications([message], [record()])[0]).toBe(message);
+  });
+});
+
+describe("a reply's usage", () => {
+  it("sums the tokens of the calls that reported them", () => {
+    const summary = summarizeVerification([
+      record({ promptTokens: 1_000, completionTokens: 40 }),
+      record({ promptTokens: 204, completionTokens: 46 }),
+      record(),
+    ]);
+    expect(summary.promptTokens).toBe(1_204);
+    expect(summary.completionTokens).toBe(86);
+  });
+
+  it("names no tokens when no call reported any", () => {
+    const summary = summarizeVerification([record()]);
+    expect("promptTokens" in summary).toBe(false);
+    expect(replyUsage(summary, { id: "m", inputPerM: 1, outputPerM: 1 })).toBeUndefined();
+  });
+
+  it("prices input and output apart at 120 credits per dollar of cost", () => {
+    const summary = summarizeVerification([record({ promptTokens: 1_000_000, completionTokens: 500_000 })]);
+    const usage = replyUsage(summary, { id: "m", inputPerM: 0.5, outputPerM: 1 });
+    expect(usage?.inputCredits).toBeCloseTo(60);
+    expect(usage?.outputCredits).toBeCloseTo(60);
+  });
+
+  it("keeps to tokens when the model has no usable price", () => {
+    const summary = summarizeVerification([record({ promptTokens: 10, completionTokens: 2 })]);
+    expect(replyUsage(summary)).toEqual({ promptTokens: 10, completionTokens: 2 });
+    expect(replyUsage(summary, { id: "m", inputPerM: Number.NaN, outputPerM: 1 })).toEqual({
+      promptTokens: 10,
+      completionTokens: 2,
+    });
+  });
+
+  it("words a line with and without credits", () => {
+    expect(usageLine("Input", 1_204, 0.0722)).toBe("Input 1,204 tokens · 0.07 credits");
+    expect(usageLine("Output", 86, 0.004)).toBe("Output 86 tokens · under 0.01 credits");
+    expect(usageLine("Output", 86)).toBe("Output 86 tokens");
   });
 });
 

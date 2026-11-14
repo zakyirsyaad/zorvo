@@ -96,8 +96,14 @@ export function usePrivateVerification({ updateMessages, saveSoon, isKnownSessio
             forget(sessionId);
             return;
           }
-          if (!Array.isArray(records) || records.length === 0) {
+          if (!Array.isArray(records)) {
             clearAgain(sessionId);
+            return;
+          }
+          // The proxy closes a call's record a moment after the agent ends its turn (seen live): no
+          // record yet is asked again like a checking one, or the badge waits for the next turn.
+          if (records.length === 0) {
+            noteChecking(sessionId, run);
             return;
           }
           updateMessages(sessionId, (prev) => foldVerifications(prev, records));

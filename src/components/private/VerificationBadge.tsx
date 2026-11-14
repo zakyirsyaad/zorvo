@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { Loader2, ShieldCheck, ShieldMinus, ShieldX } from "lucide-react";
 import type { MessageVerification, VerificationKind, VerificationState } from "../../types";
-import { shortSigner, VERIFICATION_LABEL } from "../../lib/private-verification";
+import { replyUsage, shortSigner, usageLine, VERIFICATION_LABEL } from "../../lib/private-verification";
+import type { ModelPrice } from "../../lib/private-credits";
 import { verificationCenterUrl } from "./PrivateInspector";
 import { Chip } from "../ui/Chip";
 import { Popover } from "../ui/Popover";
@@ -42,6 +43,8 @@ export interface VerificationBadgeProps {
   verification: MessageVerification;
   /** The model that made the calls, for the popover's Model row. */
   modelId?: string;
+  /** The model's listed price, for the reply's credits; without it only the tokens show. */
+  model?: ModelPrice | null;
   onOpenUrl?: (url: string) => void;
 }
 
@@ -49,14 +52,16 @@ export interface VerificationBadgeProps {
  * A private reply's signature state: a 24px outlined badge, with the verified signer beside it and
  * the canvas's details in the popover. Hashes and prompts are never shown.
  */
-export function VerificationBadge({ verification, modelId, onOpenUrl }: VerificationBadgeProps) {
+export function VerificationBadge({ verification, modelId, model, onOpenUrl }: VerificationBadgeProps) {
+  const usage = replyUsage(verification, model);
   const [isOpen, setIsOpen] = useState(false);
   const look = LOOK[verification.state];
   const Icon = look.icon;
   const label = VERIFICATION_LABEL[verification.state];
 
   return (
-    <div className="mt-1.5 flex items-center gap-2">
+    <div className="mt-1.5 flex flex-col gap-1">
+    <div className="flex items-center gap-2">
       <Popover
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
@@ -124,6 +129,15 @@ export function VerificationBadge({ verification, modelId, onOpenUrl }: Verifica
       </Popover>
       {verification.state === "verified" && verification.signer && (
         <span className="font-mono text-caption text-fg-subtle">signed by {shortSigner(verification.signer)}</span>
+      )}
+    </div>
+      {usage && (
+        <p data-reply-usage="" className="text-caption text-fg-muted">
+          {usageLine("Input", usage.promptTokens, usage.inputCredits)}
+          {" · "}
+          {usageLine("Output", usage.completionTokens, usage.outputCredits)}
+          {usage.inputCredits !== undefined && " (estimate)"}
+        </p>
       )}
     </div>
   );

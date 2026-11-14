@@ -75,7 +75,7 @@ _Add the demo screenshot here: the **Verified in TEE** badge and its popover._
    → `{"error":"unauthorized"}` and `401`: the live Worker is up and refuses a request without a device
    secret.
 4. With a judge code, Node 20 or newer:
-   `node server/scripts/judge-demo.mjs https://zorvo-credits-server.zkyxentertain.workers.dev JUDGE-…`
+   `node server/scripts/judge-demo.mjs https://zorvo-credits-server.zkyxentertain.workers.dev JUDGE-64cb8c2fa0b4`
    → `Model: Qwen/Qwen3.8-27B-abliterated`, `Kind: provider_tee` (or `gateway`), `Signer: 0x…`, and
    `Verified: NEAR AI signed the exact request and response, and its attestation names the signer.`
    The script registers a fresh device, redeems the code, waits for the credit, checks that the Worker
@@ -114,7 +114,11 @@ on a cold cache; later builds are much faster.
 9. The Private inspector shows **This session** usage and its **Average per turn**; Settings → Private
    mode lists the total **Used by N models** and the turns each model's price leaves.
 
-The judge code is a placeholder here: `JUDGE-…`. The user creates it after M5.
+The judge code is `JUDGE-64cb8c2fa0b4`: 10 credits, 10 uses in all, one per device. Measured live, a short
+turn of Qwen Code costs about 0.4 credits (its system prompt is large: one "say ok" sent about 79,000
+input tokens over several model calls), so one redemption is about 20 short turns. The top-up packages
+show **Not enough stock right now** while the judge code holds the stock: the operator funded only
+about $2 of NEAR AI credit for the hackathon. Redeeming the code is the path to try.
 
 ## Attack demo
 
@@ -140,8 +144,32 @@ by NEAR AI's gateway, not by Zorvo, so it holds even if Zorvo is closed.
 prompt → Zorvo holds the message and names the match before anything leaves this Mac. Choose **Send
 anyway** or **Edit message**; nothing the check finds is stored or sent.
 
-TODO (user): paste the real log lines captured at M5 here, one short block per step. They must not
-contain a key, token, device secret or prompt.
+Log lines from the live run on 2026-11-14 (`wrangler tail` on the deployed Worker; no key, token, device
+secret or prompt is in them):
+
+```text
+# before the fix in 8740804: NEAR AI binds a refresh token to the login's User-Agent
+(error) Alert refresh_failed: operator token refresh failed: NearAiError: NEAR AI POST /users/me/access-tokens failed with 401
+
+# after it: the operator session refreshes and the stock is read
+Alarm @ 11/14/2026, 11:43:58 AM - Ok
+  (error) Alert low_stock: 200 credits left to sell
+
+# a promo code redeemed, credited by the next alarm, and the device's key collected once
+Ledger.redeemPromo - Ok @ 11/14/2026, 11:45:20 AM
+POST https://zorvo-credits-server.zkyxentertain.workers.dev/v1/promo - Ok @ 11/14/2026, 11:45:20 AM
+Alarm @ 11/14/2026, 11:45:58 AM - Ok
+Ledger.takeKey - Ok @ 11/14/2026, 11:45:59 AM
+
+# private turns followed: the Worker saw only balance and stock reads, never a chat request
+GET https://zorvo-credits-server.zkyxentertain.workers.dev/v1/balance - Ok @ 11/14/2026, 11:46:41 AM
+GET https://zorvo-credits-server.zkyxentertain.workers.dev/v1/stock - Ok @ 11/14/2026, 11:47:15 AM
+```
+
+In the app the same run showed `30 credits`, `Key ready`, a Qwen Code answer on
+`Qwen/Qwen3.8-27B-abliterated` with **Verified in TEE**, and under it
+`Input 78,898 tokens · 0.38 credits · Output 110 tokens · 0.02 credits (estimate)`. The 402 of attack
+demo (c) was not captured live.
 
 ## Hardware proof
 
@@ -198,6 +226,17 @@ Both tags are created at submission; until then the compare link has nothing to 
 ## Known limits
 
 - The operator restocks NEAR AI by hand; credits are custodial and non-refundable.
+- Not run live: a real PingPay top-up through the app (the stock went to the judge code), and the 402
+  of a spent cap. The top-up path is covered by tests only.
+- PingPay's hosted checkout failed on its Solana path on 2026-11-14 ("Payment failed: Buffer is not
+  defined", in two browsers); paying with USDC on NEAR worked.
+- A reply made of several model calls can be signed by more than one NEAR AI signer; the popover then
+  says so instead of naming one. NEAR AI's Verification Center page checks a model's deployment, not one
+  reply, so the badge's link opens it on the session's model.
+- The composer's "about N turns" overstates what a balance buys with Qwen Code, whose turns send far
+  more input than the estimate assumes; the line under each reply shows what that reply used.
+- Signature records live in memory: a reply made before the app was restarted keeps the badge it had
+  and gets no new one.
 - Qwen Code is the only agent that can run privately for now, and Zorvo is macOS only.
 - No DCAP/NRAS check in Zorvo. Streamed answers are usually gateway-signed; an answer cut off before it is
   signed reads **Not signed**. The live NEAR AI signature and attestation shapes are confirmed at M5; the

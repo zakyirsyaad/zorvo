@@ -18,7 +18,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2.8.1"
-tauri-plugin-notification = "=2.7.0"
+tauri-plugin-notification = "=2.8.0"
 # Not the default features: `zip` only serves Windows .zip bundles and Linux AppImage, and it pins
 # zip 4 (RUSTSEC-2026-0367/0368/0369, no 4.x fix), which would keep `cargo audit` red. `system-proxy`
 # is kept so the update check follows the macOS proxy settings.
@@ -30,7 +30,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 base64 = "0.23"
 url = "2"
 regex = "1"
-ureq = { version = "=3.5.0", default-features = false, features = ["rustls"] }
+ureq = { version = "=3.5.1", default-features = false, features = ["rustls"] }
 sha2 = "0.11.1"
 # The OS random source for the recovery code and proxy tokens; the version already in Cargo.lock.
 getrandom = "=0.3.4"

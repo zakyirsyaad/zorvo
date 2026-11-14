@@ -70,7 +70,8 @@ impl AcpManager {
                 connection,
                 init,
                 method.acp_method(),
-                json!({ "sessionId": acp_session_id, "cwd": cwd, "mcpServers": mcp_servers }),
+                json!({ "sessionId": acp_session_id, "cwd": cwd, "mcpServers": super::all_servers(&launch.mcp_servers, &mcp_servers) }),
+                launch,
                 self.route_on_answer(
                     key,
                     app_session_id,

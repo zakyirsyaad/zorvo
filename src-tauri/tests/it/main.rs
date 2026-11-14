@@ -6,6 +6,7 @@ mod common;
 
 mod acp_jsonrpc_test;
 mod acp_manager_test;
+mod acp_private_errors_test;
 mod acp_prompt_blocks_test;
 mod acp_session_list_test;
 mod acp_session_reopen_test;
@@ -31,6 +32,8 @@ mod installer_layout_test;
 mod installer_plan_test;
 mod installer_prerequisites_test;
 mod installer_runtimes_test;
+mod private_proxy_test;
+mod private_verify_test;
 mod profiles_test;
 mod pty_session_test;
 mod registry_catalog_test;
@@ -47,7 +50,7 @@ mod workspaces_test;
 mod worktrees_test;
 
 /// Test files that are binaries of their own, directly in `tests/`.
-const OWN_BINARIES: &[&str] = &["installer_state_test.rs"];
+const OWN_BINARIES: &[&str] = &["installer_state_test.rs", "private_proxy_test.rs"];
 
 /// The `.rs` file names directly in `dir`.
 fn rust_files_in(dir: &std::path::Path) -> Vec<String> {

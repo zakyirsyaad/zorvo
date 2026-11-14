@@ -30,6 +30,8 @@ export interface ReviewMessage {
   onComposerGivenBack: (sessionId: string, text: string) => void;
   /** Marks the slot's comments Sent and clears it, when `text` went to the slot's session. */
   sendFrom: (sessionId: string, text: string) => void;
+  /** Puts back the slot of a message that was held (a secret review) before it could be sent. */
+  rearm: (slot: ReviewSlot) => void;
 }
 
 /** Whether `block` stands alone in `text`: at either end or between blank lines, as messages given back together are joined. */
@@ -100,5 +102,6 @@ export function useReviewMessage({ activeSessionId, markSent, sessionIds }: {
       lastSends.current.set(sessionId, { text, lastTarget: slot.lastTarget });
       setSlot(null);
     },
+    rearm: (slot) => setSlot(slot),
   };
 }

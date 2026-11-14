@@ -17,6 +17,7 @@ pub mod git_info;
 pub mod github;
 pub mod installer;
 pub mod pasted_images;
+pub mod private_mode;
 pub mod profiles;
 pub mod pty_session;
 pub mod pull_requests;
@@ -215,6 +216,7 @@ fn end_orphaned_sessions(
     app: AppHandle,
     pty: State<'_, PtySessionManager>,
     acp: State<'_, acp::manager::AcpManager>,
+    private: State<'_, private_mode::service::PrivateMode>,
     tools: State<'_, Arc<agent_tools::AgentTools>>,
 ) -> usize {
     let terminals = pty.session_ids();
@@ -222,15 +224,24 @@ fn end_orphaned_sessions(
     // reopens a saved session under the same app session id, and that one
     // must not be what the thread below ends. (PTY ids are never reused.)
     let agent_ids = acp.session_ids();
-    let agents: Vec<_> = agent_ids.iter().map(|id| acp.detach(id)).collect();
+    let agents: Vec<_> = agent_ids
+        .iter()
+        .map(|id| {
+            private.release_proxy_token(id);
+            (id.clone(), acp.detach(id))
+        })
+        .collect();
     // The new UI reopens these under the same ids and is issued fresh tokens.
     agent_ids.iter().for_each(|id| tools.forget(id));
     let count = terminals.len() + agents.len();
     std::thread::spawn(move || {
         workspace_terminal::end_sessions(&app.state::<PtySessionManager>(), &terminals);
-        agents
-            .into_iter()
-            .for_each(acp::manager::DetachedSession::end);
+        agents.into_iter().for_each(|(id, session)| {
+            let _ = app
+                .state::<private_mode::service::PrivateMode>()
+                .end_session_cap(&id);
+            session.end();
+        });
     });
     count
 }
@@ -287,6 +298,20 @@ fn write_fork_handoff(
     path.into_os_string()
         .into_string()
         .map_err(|p| format!("Handoff path is not valid UTF-8: {}", p.to_string_lossy()))
+}
+
+/// The bundled MCP script in a packaged app, with the source tree as a dev fallback.
+fn private_mcp_script(app: &AppHandle) -> Option<std::path::PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(dir) = app.path().resource_dir() {
+        candidates.push(dir.join("resources/zorvo-private-mcp.mjs"));
+        candidates.push(dir.join("_up_/resources/zorvo-private-mcp.mjs"));
+    }
+    candidates.push(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/zorvo-private-mcp.mjs"),
+    );
+    candidates.into_iter().find(|path| path.is_file())
 }
 
 /// The app's data dir; a debug build (`pnpm tauri dev`) gets its own, so
@@ -387,7 +412,14 @@ pub fn run() {
     }));
 
     let acp_holder = Arc::clone(&app_handle_holder);
+    // The loopback proxy private launches talk to. It starts on the first private launch; its
+    // tokens go when their session exits, and the listener goes with the app.
+    let private_proxy = Arc::new(private_mode::proxy::PrivateProxy::new());
+    let proxy_for_events = Arc::clone(&private_proxy);
     let acp_manager = AcpManager::new(Box::new(move |event| {
+        if let AcpEvent::Exited { session_id, .. } = &event {
+            proxy_for_events.release(session_id);
+        }
         if let Some(app) = acp_holder.lock().ok().and_then(|guard| guard.clone()) {
             // An agent that exited makes no more calls: whatever still holds its
             // session's token (a process it left behind) must not speak for it.
@@ -399,6 +431,7 @@ pub fn run() {
             let _ = app.emit(ACP_EVENT, event_payload(&event));
         }
     }));
+    let proxy_for_setup = Arc::clone(&private_proxy);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -425,6 +458,26 @@ pub fn run() {
             app.manage(AppInstaller::new(ToolsDir::new(&data_dir)));
             // Reads two small files; fetching and `npm` wait for the thread below.
             registry::install(Catalog::open(data_dir.clone(), registry::BUNDLED_HISTORY));
+            // An agent's top-up ask goes to the main window only; a popout gets it in its snapshot.
+            let topup_app = app.handle().clone();
+            proxy_for_setup
+                .topup_requests()
+                .set_sink(Box::new(move |request| {
+                    let _ = topup_app.emit_to(
+                        "main",
+                        // The literal the contract test reads; `TOPUP_REQUEST_EVENT` holds the same name.
+                        "private-topup-request",
+                        request,
+                    );
+                }));
+            // Builds clients only. The UI's first `private_status`, sent at start for
+            // every user, reads the Keychain items; the Worker is asked only once this
+            // Mac has a device.
+            app.manage(private_mode::commands::private_mode_for(
+                &data_dir,
+                proxy_for_setup,
+                private_mcp_script(app.handle()),
+            ));
             app.manage(start_agent_tools(app.handle(), &data_dir));
             let (store, migration) = data_migration::open_store(data_dir);
             app.manage(store);
@@ -529,7 +582,28 @@ pub fn run() {
             installer::commands::update_agent,
             installer::commands::install_runtime,
             installer::commands::cancel_agent_install,
-            installer::commands::remove_agent_install
+            installer::commands::remove_agent_install,
+            private_mode::commands::private_status,
+            private_mode::commands::private_check_own_key,
+            private_mode::commands::private_set_own_key,
+            private_mode::commands::private_remove_own_key,
+            private_mode::commands::private_stock,
+            private_mode::commands::private_models,
+            private_mode::commands::private_create_topup,
+            private_mode::commands::private_open_checkout,
+            private_mode::commands::private_topup_status,
+            private_mode::commands::private_cancel_topup,
+            private_mode::commands::private_redeem_promo,
+            private_mode::commands::private_recovery_code,
+            private_mode::commands::private_mark_recovery,
+            private_mode::commands::private_recover,
+            private_mode::commands::private_forget_device,
+            private_mode::commands::private_verify,
+            private_mode::commands::private_session_usage,
+            private_mode::commands::private_raise_session_cap,
+            private_mode::commands::private_take_session_cap_reset,
+            private_mode::commands::private_answer_topup_request,
+            private_mode::commands::private_forget_session
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

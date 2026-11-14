@@ -1,6 +1,6 @@
 [package]
 name = "zorvo"
-version = "0.11.2"
+version = "0.12.0"
 description = "Every coding agent, one desktop."
 authors = ["zakyirsyaad <zkyxentertain@gmail.com>"]
 license = "Apache-2.0"
@@ -32,6 +32,21 @@ url = "2"
 regex = "1"
 ureq = { version = "=3.5.0", default-features = false, features = ["rustls"] }
 sha2 = "0.11.1"
+# The OS random source for the recovery code and proxy tokens; the version already in Cargo.lock.
+getrandom = "=0.3.4"
+# The private-session loopback proxy: a hyper server in the backend and a streaming reqwest client
+# upstream. Pin the versions already in Cargo.lock. reqwest gets no TLS provider of its own; the
+# proxy builds its rustls config with ring (the provider ureq already uses), so aws-lc stays out.
+hyper = { version = "=1.12.0", features = ["server", "http1"] }
+hyper-util = { version = "=0.1.21", features = ["tokio"] }
+http-body-util = "=0.1.5"
+reqwest = { version = "=0.13.5", default-features = false, features = ["rustls-no-provider", "stream"] }
+rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-platform-verifier = "=0.7.1"
+futures-util = { version = "=0.3.34", default-features = false, features = ["std"] }
+# Verifying NEAR AI's per-answer ECDSA signature (secp256k1, EIP-191).
+k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+sha3 = "0.10"
 flate2 = "1"
 tar = { version = "0.4", default-features = false }
 bzip2 = { version = "0.5", default-features = false, features = ["libbz2-rs-sys"] }
@@ -39,6 +54,8 @@ zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
+# Keychain for the Zorvo Private device secret; the version the updater already compiles.
+security-framework = "=3.7.0"
 objc2-foundation = { version = "0.3", features = ["NSDictionary", "NSString", "NSUserDefaults", "NSValue"] }
 
 # Line numbers for our own code, no debug info for dependencies: keeps

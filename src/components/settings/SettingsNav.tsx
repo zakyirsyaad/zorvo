@@ -1,12 +1,13 @@
 import type { MouseEvent, ReactNode } from "react";
-import { ChevronLeft, LayoutGrid, Settings2 } from "lucide-react";
+import { ChevronLeft, LayoutGrid, Settings2, ShieldCheck } from "lucide-react";
 
-export type SettingsTab = "general" | "appearance" | "agents" | "github";
+export type SettingsTab = "general" | "appearance" | "agents" | "private" | "github";
 
 export const SETTINGS_SECTIONS: readonly { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "appearance", label: "Appearance" },
   { id: "agents", label: "Agents" },
+  { id: "private", label: "Private mode" },
   { id: "github", label: "GitHub" },
 ];
 
@@ -52,6 +53,7 @@ const ICONS: Record<SettingsTab, ReactNode> = {
     </DrawnIcon>
   ),
   agents: <LayoutGrid size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0" />,
+  private: <ShieldCheck size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0" />,
   github: (
     <DrawnIcon>
       <circle cx="6" cy="6" r="2.5" />
@@ -119,7 +121,7 @@ export function SettingsNav({ current, onSelect, onBack, updateCount }: Settings
                 </>
               )}
             </a>
-            {section.id === "agents" && <SoonItem />}
+            {section.id === "private" && <SoonItem />}
           </div>
         );
       })}

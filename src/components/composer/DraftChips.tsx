@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { BranchPicker } from "./BranchPicker";
 import { FolderPicker, type FolderControl } from "./FolderPicker";
 
@@ -11,6 +12,8 @@ export interface DraftChipsProps {
   onClose: (name: DraftChipName) => void;
   /** The row's own layout above the card; `contents` when the chips join the heading's row. */
   className?: string;
+  /** Chips after the folder's and the branch's: the Private chip and its model menu. */
+  children?: ReactNode;
 }
 
 /** Where the draft's session starts: its folder and, in a repository, its branch. The agents are tiles under the heading. */
@@ -20,6 +23,7 @@ export function DraftChips({
   onToggle,
   onClose,
   className = "mb-4 flex w-full flex-wrap items-center gap-2",
+  children,
 }: DraftChipsProps) {
   const hasBranch = Boolean(folder.branch || folder.worktree);
   return (
@@ -42,6 +46,7 @@ export function DraftChips({
           onClose={() => onClose("branch")}
         />
       )}
+      {children}
     </div>
   );
 }

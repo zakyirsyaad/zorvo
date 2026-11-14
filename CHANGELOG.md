@@ -4,6 +4,19 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-14
+
+### Added
+
+- **Private mode, opt in.** Qwen Code can run on NEAR AI models inside secure hardware (TEE), paid with prepaid credits you top up in Settings → Private mode. Turn it on with the Private chip of a Qwen Code draft; until you do, nothing changes.
+- **Verified private answers.** Each private reply now carries a badge saying whether NEAR AI signed every model call behind it, with the signer and a link to NEAR AI's Verification Center.
+- **Low-credit warning.** Below 50 credits, a private session shows the balance left and, when it can price the model, about how many turns remain, with a Top up button; the inspector marks a low balance with an amber dot, and Zorvo notifies once if you are away.
+- **Private sessions can check their credits.** Qwen Code can read the balance and model prices through a small local server, so it can tell you when credits are low and suggest a cheaper model. The server talks only to Zorvo's loopback proxy and never sees the NEAR AI key.
+- **A secret check before private messages.** Before a private message goes out, Zorvo looks for keys and passwords in the text and its attached files on this Mac. It pauses on a match so you can send anyway or edit; Settings → Private mode turns the check off, and no match is stored.
+- **Per-session private usage.** The Private tab shows what this session used and its average per turn, and Settings' balance lists the total by model with the turns each model's price leaves. The total survives a restart.
+- **Use your own NEAR AI key.** If you stake NEAR in your own NEAR AI organization, Settings → Private mode can check and save your key in the Keychain and use it instead of Zorvo credits. Zorvo shows the session cost in dollars and no Zorvo balance; your credits stay and you can switch back.
+- **A spending cap for each private session.** A Qwen Code private draft can cap itself at 100, 200 or 500 credits. NEAR AI enforces the cap on a key of its own, so it stops the session even if Zorvo is closed; the composer and inspector show the cap and its progress, and a capped session offers New session or a doubled cap when it reaches it.
+- **An agent can ask for a top-up.** A private Qwen Code session can ask for one of the Worker's packages with one short reason; a card above the composer shows the package and the reason, and only the user's click starts their own PingPay checkout. **Not now** starts a five-minute cooldown. The agent never opens checkout, pays or sees a key.
 ## [0.11.2] - 2026-11-14
 
 ### Fixed
@@ -86,6 +99,7 @@ Tagged but never published; its fix shipped in 0.11.2.
 - **The site is easier to find and lighter to load.** The home page's title and description name the app and the agents it runs (Claude Code, Codex, Qwen Code), the docs pages carry a breadcrumb and article data for search engines, the landing page links its Compare and Review sections to their docs, and a missing page shows a proper 404 that is never indexed. Pages ship no JavaScript: the site has none of its own, so the build drops React's runtime, and the headline font is preloaded with a matched fallback so the page does not shift as it loads.
 - **The landing page shows Zorvo 0.9.** The hero picture is the new window: the two-line sidebar with a compare run, the top bar's chips, the chat and composer, and the inspector on its Changes tab. New sections show a compare run, from ticking agents to Pick, and the diff review with a comment on its line. The features, the agents' Settings rows, the plan and the permission card follow the app as it looks now.
 - **The landing page links to the source.** GitHub sits in the header, and the footer's Project column lists the source, releases, changelog, issues and the Apache 2.0 license.
+- **Private mode keeps its limits and its keys.** A capped session keeps its cap across Stop and reopen; caps are checked against live spend, and a swept session restarts on the draft's original cap. A revoked session key is replaced on the next launch, a failed raise can be retried without a stuck cap, and Switch to Zorvo credits starts a fresh credits session. A running session follows the key it launched with, removing the own key stops its tokens, and a refused or removed key gets its own card. Usage no longer drops after a reopen, and the secret check keeps its review comments, names attachments it could not read, and queues a second message instead of replacing the first.
 - **The docs describe Zorvo 0.9.** New pages explain compare runs and reviewing changes (comments on lines, Reply, the file view, Activity). The quickstart starts from the welcome screen and walks the sidebar, top bar and inspector; Terminal lives in the inspector; signing in covers the Agents menu, Set up Qwen Code and agents whose key lives in a variable; and the update card and failed-turn row are drawn as they look now.
 
 ### Fixed
@@ -347,7 +361,8 @@ Tagged but never published; its fix shipped in 0.11.2.
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.11.2...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/zakyirsyaad/zorvo/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.10.1...v0.11.0

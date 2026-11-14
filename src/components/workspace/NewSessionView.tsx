@@ -1,6 +1,8 @@
 import type { ReactNode, Ref } from "react";
 
 export interface NewSessionHeadingProps {
+  /** The draft is private: the title says so. */
+  isPrivate?: boolean;
   /** Why no session can start in the folder (no agent is ready). */
   unavailableReason?: string;
   /** Where the composer draws the draft's folder and branch chips, beside the title. */
@@ -13,13 +15,15 @@ export interface NewSessionHeadingProps {
  * from starting. It is not centred: content that arrives below (the agent's sessions, a sign-in panel) would
  * make it jump.
  */
-export function NewSessionHeading({ unavailableReason, chipsSlot }: NewSessionHeadingProps) {
+export function NewSessionHeading({ isPrivate = false, unavailableReason, chipsSlot }: NewSessionHeadingProps) {
   return (
     // The gutter outside the column, as the composer's and the session list's are, so all of them line up.
     <div className="px-6 pt-16 pb-5">
       <div className="mx-auto w-full max-w-draft">
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="min-w-[200px] flex-1 break-words text-xl font-semibold tracking-[-0.02em] text-fg">New session</h1>
+          <h1 className="min-w-[200px] flex-1 break-words text-xl font-semibold tracking-[-0.02em] text-fg">
+            {isPrivate ? "New private session" : "New session"}
+          </h1>
           <div ref={chipsSlot} data-draft-chips-slot="" className="flex flex-wrap items-center gap-2 empty:hidden" />
         </div>
         {unavailableReason && <p className="mt-1 text-ui text-fg-muted">{unavailableReason}</p>}

@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, waitFor, within } from "@testing-library/react";
+import type { FakeTauriStore } from "./setup";
 
 type Listener = (event: { payload: unknown }) => void;
 const listeners = new Map<string, Listener[]>();
@@ -30,6 +31,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 import App from "../App";
 import { PopoutApp } from "../components/PopoutApp";
+import { verificationCenterUrl } from "../components/private/PrivateInspector";
 import { readWindowMode } from "../lib/window-mode";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
@@ -55,6 +57,12 @@ const runningSession = {
   createdAt: 1,
   transport: "acp",
 };
+
+const AWS = ["AKIA", "IOSFODNN7EXAMPL", "E"].join("");
+
+function fakeStore(): FakeTauriStore {
+  return (window as unknown as { __FAKE_TAURI_STORE__: FakeTauriStore }).__FAKE_TAURI_STORE__;
+}
 
 /** Starts a session in the main window with its first message; resolves with its id. */
 async function startSessionInMainWindow(spy: { mock: { calls: unknown[][] } }): Promise<string> {
@@ -109,6 +117,109 @@ describe("Popout windows", () => {
       event: "popout-action",
       payload: { sessionId: "s-1", action: { kind: "send", text: "run the tests" } },
     });
+  });
+
+  it("shows an agent's top-up ask and forwards the choice to the main window", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", {
+      sessionId: "s-1",
+      session: { ...runningSession, profileId: "qwen-code", privateMode: { modelId: "Qwen/Qwen3.8-27B" } },
+      messages: [],
+      status: {
+        isBusy: false,
+        isWaiting: false,
+        privateTopupRequest: {
+          sessionId: "s-1",
+          requestId: "r-1",
+          usd: 5,
+          credits: 500,
+          reason: "The review needs credits.",
+        },
+      },
+      removedAgentName: null,
+    });
+
+    expect(await screen.findByRole("heading", { name: "Qwen Code asks to top up $5" })).toBeDefined();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Top up $5" }));
+    });
+    expect(emitted).toContainEqual({
+      event: "popout-action",
+      payload: { sessionId: "s-1", action: { kind: "approve-topup", requestId: "r-1" } },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+    });
+    expect(emitted).toContainEqual({
+      event: "popout-action",
+      payload: { sessionId: "s-1", action: { kind: "decline-topup", requestId: "r-1" } },
+    });
+  });
+
+  it("shows a private reply's verification from the snapshot and forwards the Verification Center link", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", {
+      sessionId: "s-1",
+      session: { ...runningSession, profileId: "qwen-code", privateMode: { modelId: "Qwen/Qwen3.8-27B" } },
+      messages: [
+        {
+          id: "m-1",
+          role: "agent",
+          content: "Done.",
+          timestamp: 1,
+          verification: {
+            state: "verified",
+            kind: "provider_tee",
+            signer: "0x1234567890abcdef1234567890abcdef12345678",
+            signed: 1,
+            total: 1,
+          },
+        },
+      ],
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Verified in TEE/ }));
+    });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Check it yourself in NEAR AI's Verification Center" }),
+      );
+    });
+
+    expect(emitted).toContainEqual({
+      event: "popout-action",
+      payload: { sessionId: "s-1", action: { kind: "open-url", url: verificationCenterUrl("Qwen/Qwen3.8-27B") } },
+    });
+  });
+
+  it("says a private session's credits ran out and blocks its own Send", async () => {
+    await act(async () => {
+      render(<PopoutApp sessionId="s-1" />);
+    });
+    await deliver("session-snapshot", {
+      sessionId: "s-1",
+      session: { ...runningSession, profileId: "qwen-code", privateMode: { modelId: "Qwen/Qwen3.8-27B" } },
+      messages: [],
+      status: { isBusy: false, isWaiting: false, privateCreditsOut: "empty" },
+    });
+
+    const prompt = screen.getByRole("textbox", { name: "Prompt" });
+    await act(async () => {
+      fireEvent.change(prompt, { target: { value: "go on" } });
+    });
+    const send = screen.getByRole("button", { name: "Send message" });
+    expect(send).toHaveProperty("disabled", true);
+    expect(screen.getByText("Your credits ran out. Top up to continue.")).toBeDefined();
+    await act(async () => {
+      fireEvent.keyDown(prompt, { key: "Enter" });
+    });
+    expect(emitted.some((e) => e.event === "popout-action")).toBe(false);
   });
 
   it("waits its Send while the delegation pair blocks it, and says why", async () => {
@@ -244,6 +355,35 @@ describe("Popout windows", () => {
     await deliver("popout-action", { sessionId, action: { kind: "send", text: "hello" } });
     await waitFor(() =>
       expect(spy).toHaveBeenCalledWith("acp_prompt", expect.objectContaining({ sessionId, text: "hello" }), undefined),
+    );
+  });
+
+  it("holds a secret sent from a private popout until Send anyway", async () => {
+    fakeStore().state.sessions = [
+      {
+        ...runningSession,
+        profileId: "qwen-code",
+        privateMode: { modelId: "Qwen/Qwen3.8-27B" },
+      },
+    ];
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    await act(async () => {
+      render(<App />);
+    });
+
+    await deliver("popout-action", { sessionId: "s-1", action: { kind: "send", text: `key ${AWS}` } });
+    const dialog = await screen.findByRole("dialog", { name: "This message may hold a secret" });
+    expect(spy.mock.calls.some(([cmd]) => cmd === "acp_prompt")).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Send anyway" }));
+    });
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith(
+        "acp_prompt",
+        expect.objectContaining({ sessionId: "s-1", text: `key ${AWS}` }),
+        undefined,
+      ),
     );
   });
 

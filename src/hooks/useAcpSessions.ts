@@ -304,16 +304,66 @@ export function useAcpSessions(handlers: AcpHandlers) {
     return started;
   }, []);
 
+  /** A `privateModelId` makes it a Zorvo Private session; an ordinary start sends no such key at all. */
   const start = useCallback(
-    async (sessionId: string, cwd: string, profileId: string, agentTools: boolean) =>
-      remember(sessionId, await invoke('acp_start_session', { sessionId, cwd, profileId, agentTools })),
+    async (
+      sessionId: string,
+      cwd: string,
+      profileId: string,
+      agentTools: boolean,
+      privateModelId?: string,
+      privateOwnKey = false,
+      privateSessionCap?: number,
+    ) =>
+      remember(
+        sessionId,
+        await invoke('acp_start_session', {
+          sessionId,
+          cwd,
+          profileId,
+          agentTools,
+          // An ordinary launch carries none of the private keys.
+          ...(privateModelId !== undefined ? { privateModelId } : {}),
+          ...(privateModelId !== undefined && privateOwnKey ? { privateOwnKey: true } : {}),
+          ...(privateModelId !== undefined && privateSessionCap !== undefined ? { privateSessionCap } : {}),
+        }),
+      ),
     [remember],
   );
 
+  /** A private session is reopened on its model again; the backend refuses a plain reopen of one. */
   const reopen = useCallback(
-    async (sessionId: string, cwd: string, profileId: string, acpSessionId: string, agentTools: boolean) =>
-      remember(sessionId, await invoke('acp_reopen_session', { sessionId, cwd, profileId, acpSessionId, agentTools })),
+    async (
+      sessionId: string,
+      cwd: string,
+      profileId: string,
+      acpSessionId: string,
+      agentTools: boolean,
+      privateModelId?: string,
+      privateOwnKey = false,
+      privateSessionCap?: number,
+    ) =>
+      remember(
+        sessionId,
+        await invoke('acp_reopen_session', {
+          sessionId,
+          cwd,
+          profileId,
+          acpSessionId,
+          agentTools,
+          // An ordinary launch carries none of the private keys.
+          ...(privateModelId !== undefined ? { privateModelId } : {}),
+          ...(privateModelId !== undefined && privateOwnKey ? { privateOwnKey: true } : {}),
+          ...(privateModelId !== undefined && privateSessionCap !== undefined ? { privateSessionCap } : {}),
+        }),
+      ),
     [remember],
+  );
+
+  const takeSessionCapReset = useCallback(
+    async (sessionId: string): Promise<number | null> =>
+      invoke<number | null>('private_take_session_cap_reset', { sessionId }).catch(() => null),
+    [],
   );
 
   const importSession = useCallback(
@@ -423,6 +473,7 @@ export function useAcpSessions(handlers: AcpHandlers) {
     info,
     start,
     reopen,
+    takeSessionCapReset,
     importSession,
     listSessions,
     fork,

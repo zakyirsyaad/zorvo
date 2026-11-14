@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { GitBranch, Square } from "lucide-react";
+import { GitBranch, ShieldCheck, Square } from "lucide-react";
 import type { Session } from "../../types";
 import { SHOW_IN_ROW, rowSubtitle, rowTime, statusOf } from "../../lib/sidebar-status";
 import { AgentTile } from "../ui/AgentTile";
@@ -45,7 +45,7 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
   const isUnread = Boolean(session.hasUnread) && !isBusy;
   // How the session began, when the user did not start it: a fork or a delegated task.
   const origin = session.forkedFrom ? "fork" : session.delegatedFrom ? "delegated" : undefined;
-  const words = [status?.label, origin].filter(Boolean).join(" · ");
+  const words = [session.privateMode ? "Private" : undefined, status?.label, origin].filter(Boolean).join(" · ");
   // A run member's title is its agent and every member has a worktree (the run's panel says so),
   // so with nothing else to say its second line is left out and the row is one centred line.
   const showWorktreeMark = Boolean(session.worktree) && (!isInRun || Boolean(words));
@@ -103,7 +103,11 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
       <button
         type="button"
         onClick={() => context.onSelectSession(session.id)}
-        title={[session.name, rowSubtitle(agentName, status, session.createdAt), session.worktree?.branch]
+        title={[
+          session.name,
+          rowSubtitle(agentName, status, session.createdAt, Date.now(), session.privateMode !== undefined),
+          session.worktree?.branch,
+        ]
           .filter(Boolean)
           .join(" · ")}
         className={`flex min-w-0 flex-1 gap-2.5 rounded-lg px-2 py-[7px] text-left focus-ring ${
@@ -130,6 +134,11 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
               {showWorktreeMark && (
                 <span role="img" aria-label="Runs in its own worktree" className="flex shrink-0">
                   <GitBranch size={11} aria-hidden="true" />
+                </span>
+              )}
+              {session.privateMode && (
+                <span role="img" aria-label="Private session" className="flex shrink-0">
+                  <ShieldCheck size={11} aria-hidden="true" />
                 </span>
               )}
               {lineAgent && <span className="truncate">{lineAgent}</span>}

@@ -424,6 +424,15 @@ describe("TopBar", () => {
       expect(screen.getByText("api")).toBeDefined();
       expect(screen.queryByText("/")).toBeNull();
     });
+
+    it("puts the Private · TEE chip after a private session's title", () => {
+      const { unmount } = render(<TopBar sessionName="Private review" isPrivate />);
+      expect(screen.getByText("Private · TEE")).toBeDefined();
+      expect(screen.getByText("Private · TEE")).toHaveClass("h-6");
+      unmount();
+      render(<TopBar sessionName="Plain review" />);
+      expect(screen.queryByText("Private · TEE")).toBeNull();
+    });
   });
 
   describe("background tasks", () => {

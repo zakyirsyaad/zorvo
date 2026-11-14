@@ -168,6 +168,10 @@ export interface Session {
   openedBy?: OpenedByLink | null;
   /** Comments written on lines of the session's diff; absent when there are none. */
   reviewComments?: ReviewComment[];
+  /** Set when the session runs privately; the model it was started with, whose key it spends, and its credit cap. */
+  privateMode?: { modelId: string; ownKey?: boolean; sessionCap?: number };
+  /** The last total this session used, kept across restarts; records themselves are in memory. */
+  privateUsage?: { credits: number; estimated: boolean };
 }
 
 /** What a diff is compared with: the last commit, the base branch, or where the worktree started. */
@@ -209,6 +213,12 @@ export interface Settings {
   notifiedUpdates?: Record<string, string>;
   /** Agents last seen signed in, by agent id: what lets the sidebar say Ready without asking again. */
   signedInAgents?: string[];
+  /** Set once the live balance crossed below 50 and was handled; cleared when it reaches 50 again. */
+  privateLowBalanceNotified?: boolean;
+  /** Check private messages for secrets before sending; on unless the user turns it off. */
+  secretGuard?: boolean;
+  /** Which key private sessions spend: Zorvo credits or the user's own NEAR AI key. */
+  paymentSource?: 'credits' | 'ownKey';
   /** Whether sessions are told about Zorvo's own tools. Off unless true; kept so a save does not drop it. */
   agentTools?: boolean;
 }
@@ -357,6 +367,23 @@ export interface PlanEntry {
   priority?: string;
 }
 
+/** NEAR AI's signature check for one of a private reply's model calls. */
+export type VerificationState = 'verified' | 'didnt_verify' | 'not_signed' | 'checking';
+export type VerificationKind = 'provider_tee' | 'gateway' | 'unknown';
+
+/** The folded signature state of a private reply; hashes and prompts are never kept here. */
+export interface MessageVerification {
+  state: VerificationState;
+  kind?: VerificationKind;
+  signer?: string;
+  /** Calls NEAR AI signed, out of the calls this reply made. */
+  signed: number;
+  total: number;
+  /** Tokens the reply's calls sent and got back, summed; absent when no call reported any. */
+  promptTokens?: number;
+  completionTokens?: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'agent';
@@ -385,6 +412,8 @@ export interface ChatMessage {
   delegationTask?: { agentName: string; agentId?: string };
   /** A question the agent asked the user (ACP elicitation); never holds the answer. */
   elicitation?: ElicitationCard;
+  /** The NEAR AI signature state of a private reply's model calls. */
+  verification?: MessageVerification;
 }
 
 export interface ElicitationChoice {

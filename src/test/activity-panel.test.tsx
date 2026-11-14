@@ -212,7 +212,7 @@ describe("ActivityPanel", () => {
 
   it("shows a bidi control in a command as text", async () => {
     stubBackend();
-    await show({ messages: [reply([{ kind: "execute", command: "rm ‮fdp.exe" }])] });
+    await show({ messages: [reply([{ kind: "execute", command: "rm \u202Efdp.exe" }])] });
     expect(screen.getByText("rm \\u202Efdp.exe")).toBeDefined();
   });
 

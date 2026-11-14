@@ -24,13 +24,25 @@ export function SettingsHeader({
 }
 
 /** A small muted heading over a card of rows. */
-export function SettingsGroup({ heading, children }: { heading: string; children: ReactNode }) {
+export function SettingsGroup({
+  heading,
+  meta,
+  children,
+}: {
+  heading: string;
+  /** A subtle line at the heading's right (a stock count). */
+  meta?: ReactNode;
+  children: ReactNode;
+}) {
   const headingId = useId();
   return (
     <section aria-labelledby={headingId}>
-      <h2 id={headingId} className="px-1 pb-2 text-caption font-medium text-fg-muted">
-        {heading}
-      </h2>
+      <div className="flex items-baseline gap-2 px-1 pb-2">
+        <h2 id={headingId} className="text-caption font-medium text-fg-muted">
+          {heading}
+        </h2>
+        {meta && <span className="ml-auto text-[11px] text-fg-subtle">{meta}</span>}
+      </div>
       {/* No overflow clip: a row's popover (the default agent list) opens past the card's edge. */}
       <div className="flex flex-col rounded-xl border border-border bg-surface-2">{children}</div>
     </section>

@@ -82,7 +82,7 @@ describe("Settings page", () => {
   it("names the content region by every section's title", async () => {
     await renderApp();
     await click(settingsButton());
-    for (const name of ["General", "Appearance", "Agents", "GitHub"]) {
+    for (const name of ["General", "Appearance", "Agents", "Private mode", "GitHub"]) {
       await click(within(nav()).getByRole("link", { name: new RegExp(`^${name}`) }));
       expect(screen.getByRole("region", { name })).toHaveAttribute("data-settings-content");
     }
@@ -127,6 +127,32 @@ describe("Settings page", () => {
     screen.getByRole("region", { name: "Agents" }).scrollTop = 400;
     await click(within(nav()).getByRole("link", { name: "General" }));
     expect(screen.getByRole("region", { name: "General" }).scrollTop).toBe(0);
+  });
+
+  it("Private mode is a section of its own, after Agents", async () => {
+    await renderApp();
+    await click(settingsButton());
+    const links = within(nav()).getAllByRole("link").map((link) => link.textContent ?? "");
+    const agents = links.findIndex((text) => text.startsWith("Agents"));
+    expect(links.indexOf("Private mode")).toBe(agents + 1);
+    await click(within(nav()).getByRole("link", { name: "Private mode" }));
+    expect(screen.getByRole("heading", { level: 1, name: "Private mode" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Private mode" })).toBeInTheDocument();
+    expect(await screen.findByText("0 credits")).toBeInTheDocument();
+  });
+
+  it("asks for the recovery code in the app, with Settings closed", async () => {
+    const fakePrivate = (window as unknown as { __FAKE_PRIVATE__: { status: Record<string, unknown> } }).__FAKE_PRIVATE__;
+    fakePrivate.status = {
+      ...fakePrivate.status,
+      device: "ready",
+      keyReady: true,
+      balance: { credits: 500, usedCredits: 0, keyReady: true, updatedAt: "2026-11-07T10:00:00Z" },
+    };
+    await renderApp();
+    expect(await screen.findByRole("dialog", { name: "Save your recovery code" })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Settings" })).toBeNull();
+    expect(await screen.findByText("ZRV-FAKE-CODE")).toBeInTheDocument();
   });
 
   it("the nav switches sections", async () => {

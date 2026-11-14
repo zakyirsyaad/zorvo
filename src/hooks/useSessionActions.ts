@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import type { AcpEngine } from './session-engine/useAcpEngine';
 import type { NavigationHistory } from './useNavigationHistory';
 import { useLatest } from './useLatest';
@@ -56,6 +57,7 @@ export function useSessionActions(deps: SessionActionsDeps): SessionActions {
   const deleteSession = (sessionId: string) => {
     const session = sessionById(sessionId);
     const stopped = stopAgent(session);
+    void invoke('private_forget_session', { sessionId }).catch(() => {});
     deps.navigation.remove(sessionId);
     deps.updateState((prev) => removeSessionFrom(prev, sessionId));
     deps.removeTranscript(sessionId);

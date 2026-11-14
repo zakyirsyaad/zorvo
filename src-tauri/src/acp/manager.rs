@@ -12,14 +12,18 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-use super::connection::{error_message, AcpConnection, ConnectionEvent, EventSink};
+use super::connection::{error_message, AcpConnection, EventSink};
 use super::elicitation::{Pending, PendingElicitations};
 use super::permission_response::permission_response;
 use super::prompt_blocks::prompt_blocks;
-use super::terminal_auth::{terminal_method, SignInAttempts, TerminalMethodError};
+use super::terminal_auth::SignInAttempts;
+use crate::private_mode::PrivateError;
 use crate::pty_session::validate_cwd;
+use private_errors::{is_model_command, is_model_option, model_option_ids, private_credits_error};
 
 mod elicitation_routes;
+mod handshake;
+mod private_errors;
 mod reopen;
 mod routing;
 mod sign_in;
@@ -27,8 +31,13 @@ mod sign_in;
 pub use elicitation_routes::{
     UrlOpener, ELICITATION_GONE, ELICITATION_INVALID_PREFIX, ELICITATION_UNDELIVERED,
 };
+pub(super) use handshake::{
+    agent_error, auth_methods_of, auth_required_error, failure_message, initialize, open_request,
+    spawn_unrouted,
+};
+use handshake::{is_terminal_method, started_session};
 pub use reopen::{ReopenMethod, ReopenPurpose};
-use routing::{answer, route_event};
+use routing::route_event;
 use sign_in::{is_auth_required, offers_sign_in};
 
 /// ACP protocol version this client speaks.
@@ -44,11 +53,42 @@ const AUTHENTICATE_TIMEOUT: Duration = Duration::from_secs(300);
 pub const AUTH_REQUIRED_PREFIX: &str = "ACP_AUTH_REQUIRED:";
 
 /// How to start an ACP agent.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct AcpLaunch {
     pub program: String,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
+    /// A Zorvo Private session: the env holds a loopback proxy token, never the
+    /// NEAR AI key. Only `private_mode::launch::private_launch` sets this.
+    pub private: bool,
+    /// MCP servers to pass to session/new, session/load and session/resume. Only a private launch
+    /// has one; every plain launch and the probe pass none.
+    pub mcp_servers: Vec<serde_json::Value>,
+}
+
+/// The `mcpServers` a session is opened with: a private launch's own (its credits server), then the
+/// ones the command layer hands in (Zorvo's agent tools). A value that is not an array adds none.
+pub(super) fn all_servers(own: &[Value], given: &Value) -> Value {
+    let given = given.as_array().map(Vec::as_slice).unwrap_or_default();
+    Value::Array(own.iter().chain(given).cloned().collect())
+}
+
+/// Prints the environment's names only: a private launch holds a proxy token
+/// in its env, and no `{:?}` may ever print it.
+impl std::fmt::Debug for AcpLaunch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let env: Vec<(&str, &str)> = self
+            .env
+            .iter()
+            .map(|(name, _)| (name.as_str(), "…"))
+            .collect();
+        f.debug_struct("AcpLaunch")
+            .field("program", &self.program)
+            .field("args", &self.args)
+            .field("env", &env)
+            .field("private", &self.private)
+            .finish()
+    }
 }
 
 /// What `authenticate` says for a method that signs in through a terminal.
@@ -125,6 +165,22 @@ struct SessionEntry {
     auth_methods: Value,
     /// The folder the session works in.
     cwd: PathBuf,
+    /// A Zorvo Private session: NEAR AI's credit and key refusals are reported
+    /// as `PRIVATE_CREDITS:` errors, and the session is never offered a sign-in.
+    private: bool,
+    /// The ids, lower-cased, of the options the agent reported in the `model`
+    /// category, which a private session refuses to change.
+    model_options: Vec<String>,
+    /// The MCP servers the session was opened with; a native fork passes the same ones.
+    mcp_servers: Vec<serde_json::Value>,
+}
+
+/// What opening a session learned that its entry keeps: the sign-in methods
+/// the agent reported, and whether the launch was private.
+struct EntryTraits {
+    auth_methods: Value,
+    private: bool,
+    mcp_servers: Vec<serde_json::Value>,
 }
 
 #[derive(Default)]
@@ -210,7 +266,8 @@ impl AcpManager {
                 connection,
                 init,
                 "session/new",
-                json!({ "cwd": cwd, "mcpServers": mcp_servers }),
+                json!({ "cwd": cwd, "mcpServers": all_servers(&launch.mcp_servers, &mcp_servers) }),
+                launch,
                 self.route_on_answer(key, app_session_id, None, true, false),
             )?;
             started_session(session, init["agentCapabilities"].clone()).map_err(OpenError::Agent)
@@ -259,12 +316,17 @@ impl AcpManager {
                 return Err(failure_message(&connection, error));
             }
         };
+        let traits = EntryTraits {
+            auth_methods,
+            private: launch.private,
+            mcp_servers: launch.mcp_servers.clone(),
+        };
         self.register(
             app_session_id,
             connection,
             connection_key,
             &started,
-            auth_methods,
+            traits,
             cwd,
         );
         self.set_opening(connection_key, None);
@@ -314,33 +376,48 @@ impl AcpManager {
         cwd: &str,
         mcp_servers: Value,
     ) -> Result<StartedSession, String> {
-        let (connection, connection_key, acp_id, capabilities, auth_methods) =
+        let (connection, connection_key, acp_id, capabilities, traits) =
             self.with_entry(source_app_id, |e| {
                 (
                     Arc::clone(&e.connection),
                     e.connection_key,
                     e.acp_session_id.clone(),
                     e.agent_capabilities.clone(),
-                    e.auth_methods.clone(),
+                    // The fork lives in its source's process, so it is as private as its source.
+                    EntryTraits {
+                        auth_methods: e.auth_methods.clone(),
+                        private: e.private,
+                        mcp_servers: e.mcp_servers.clone(),
+                    },
                 )
             })?;
         // The UI offers fork only when the agent can, but don't rely on it.
         if !capabilities["sessionCapabilities"]["fork"].is_object() {
             return Err("This agent cannot fork sessions".to_string());
         }
-        let response = connection.request_with(
-            "session/fork",
-            json!({ "sessionId": acp_id, "cwd": cwd, "mcpServers": mcp_servers }),
-            SESSION_REQUEST_TIMEOUT,
-            self.route_on_answer(connection_key, new_app_id, None, false, false),
-        )?;
+        let private = traits.private;
+        let response = connection
+            .request_raw_with(
+                "session/fork",
+                json!({ "sessionId": acp_id, "cwd": cwd, "mcpServers": all_servers(&traits.mcp_servers, &mcp_servers) }),
+                SESSION_REQUEST_TIMEOUT,
+                self.route_on_answer(connection_key, new_app_id, None, false, false),
+            )?
+            // A private source's fork runs on NEAR AI too: its credit and key
+            // refusals read as `PRIVATE_CREDITS:` like an open's.
+            .map_err(|error| {
+                private
+                    .then(|| private_credits_error(&error))
+                    .flatten()
+                    .unwrap_or_else(|| format!("session/fork failed: {}", error_message(&error)))
+            })?;
         let started = started_session(response, capabilities)?;
         self.register(
             new_app_id,
             connection,
             connection_key,
             &started,
-            auth_methods,
+            traits,
             cwd,
         );
         Ok(started)
@@ -353,16 +430,22 @@ impl AcpManager {
         text: &str,
         attachments: &[String],
     ) -> Result<(), String> {
-        let (connection, acp_id, capabilities, auth_methods, cwd) =
+        let (connection, acp_id, capabilities, auth_methods, private, cwd) =
             self.with_entry(app_session_id, |e| {
                 (
                     Arc::clone(&e.connection),
                     e.acp_session_id.clone(),
                     e.agent_capabilities.clone(),
                     e.auth_methods.clone(),
+                    e.private,
                     e.cwd.clone(),
                 )
             })?;
+        // `/model` or `/auth` would move the running process, history and all,
+        // to a provider from the user's own settings, outside the TEE.
+        if private && is_model_command(text) {
+            return Err(PrivateError::ModelLocked.into());
+        }
         let supports_images = capabilities["promptCapabilities"]["image"] == Value::Bool(true);
         let prompt = prompt_blocks(text, attachments, supports_images, &cwd)?;
         let sink = Arc::clone(&self.sink);
@@ -373,10 +456,15 @@ impl AcpManager {
             Box::new(move |result| {
                 // An agent can open a session signed out and refuse only the
                 // prompt (Claude Code does): the UI then asks for a sign-in.
+                // A private session is never asked to sign in: used-up credits
+                // and a refused key come first, as `PRIVATE_CREDITS:` errors.
                 let stop_reason = result
                     .map(|r| r["stopReason"].as_str().unwrap_or("end_turn").to_string())
                     .map_err(|e| {
-                        if is_auth_required(&e, offers_sign_in(&auth_methods)) {
+                        if let Some(credits) = private.then(|| private_credits_error(&e)).flatten()
+                        {
+                            credits
+                        } else if is_auth_required(&e, offers_sign_in(&auth_methods)) {
                             auth_required_error(&auth_methods)
                         } else {
                             error_message(&e)
@@ -429,7 +517,11 @@ impl AcpManager {
     /// Sets the model of a session whose agent reported `models` (the unstable
     /// `session/set_model`; agents that moved to a model config option use
     /// `set_config_option` instead). An agent that does not know the model refuses it.
+    /// A private session keeps its model and refuses with `model_locked`.
     pub fn set_model(&self, app_session_id: &str, model_id: &str) -> Result<(), String> {
+        if self.is_private_session(app_session_id) {
+            return Err(PrivateError::ModelLocked.into());
+        }
         let (connection, acp_id) = self.connection_for(app_session_id)?;
         connection
             .request(
@@ -440,14 +532,24 @@ impl AcpManager {
             .map(|_| ())
     }
 
-    /// Sets a session config option (e.g. the model); returns the agent's updated options.
+    /// Sets a session config option (e.g. the model); returns the agent's updated
+    /// options. A private session refuses a model option with `model_locked`.
     pub fn set_config_option(
         &self,
         app_session_id: &str,
         config_id: &str,
         value: &str,
     ) -> Result<Value, String> {
-        let (connection, acp_id) = self.connection_for(app_session_id)?;
+        let (connection, acp_id, model_locked) = self.with_entry(app_session_id, |e| {
+            (
+                Arc::clone(&e.connection),
+                e.acp_session_id.clone(),
+                e.private && is_model_option(config_id, &e.model_options),
+            )
+        })?;
+        if model_locked {
+            return Err(PrivateError::ModelLocked.into());
+        }
         let response = connection.request(
             "session/set_config_option",
             json!({ "sessionId": acp_id, "configId": config_id, "value": value }),
@@ -460,6 +562,13 @@ impl AcpManager {
     pub fn acp_session_id(&self, app_session_id: &str) -> Option<String> {
         self.with_entry(app_session_id, |e| e.acp_session_id.clone())
             .ok()
+    }
+
+    /// Whether the running session `app_session_id` is a Zorvo Private session
+    /// (false for an unknown id).
+    pub fn is_private_session(&self, app_session_id: &str) -> bool {
+        self.with_entry(app_session_id, |e| e.private)
+            .unwrap_or(false)
     }
 
     /// The app session ids of every running session, in no particular order.
@@ -574,7 +683,7 @@ impl AcpManager {
         connection: Arc<AcpConnection>,
         key: u64,
         started: &StartedSession,
-        auth_methods: Value,
+        traits: EntryTraits,
         cwd: &str,
     ) {
         if let Ok(mut routes) = self.routes.lock() {
@@ -589,8 +698,11 @@ impl AcpManager {
                     connection_key: key,
                     acp_session_id: started.acp_session_id.clone(),
                     agent_capabilities: started.agent_capabilities.clone(),
-                    auth_methods,
+                    auth_methods: traits.auth_methods,
                     cwd: PathBuf::from(cwd),
+                    private: traits.private,
+                    model_options: model_option_ids(&started.config_options),
+                    mcp_servers: traits.mcp_servers,
                 },
             );
         }
@@ -663,128 +775,5 @@ impl AcpManager {
     }
 }
 
-/// Opens a session; an "authentication required" answer becomes an error
-/// carrying [`AUTH_REQUIRED_PREFIX`] and the agent's auth methods. A
-/// successful answer also goes to `on_answer`, on the reader thread.
-pub(super) fn open_request(
-    connection: &AcpConnection,
-    init: &Value,
-    method: &str,
-    params: Value,
-    on_answer: impl FnOnce(&Value) + Send + 'static,
-) -> Result<Value, OpenError> {
-    match connection
-        .request_raw_with(method, params, HANDSHAKE_TIMEOUT, on_answer)
-        .map_err(OpenError::Transport)?
-    {
-        Ok(result) => Ok(result),
-        Err(error) => Err(OpenError::Agent(agent_error(method, init, &error))),
-    }
-}
-
-/// The error a request the agent refused reads as: the sign-in error the UI
-/// parses when it is about signing in, else `<method> failed: <its message>`.
-pub(super) fn agent_error(method: &str, init: &Value, error: &Value) -> String {
-    let auth_methods = auth_methods_of(init);
-    // Only a request that opens a session may be refused for want of a sign-in on its code alone.
-    let may_need_sign_in = matches!(method, "session/new" | "session/load" | "session/resume");
-    if is_auth_required(error, may_need_sign_in && offers_sign_in(&auth_methods)) {
-        auth_required_error(&auth_methods)
-    } else {
-        format!("{} failed: {}", method, error_message(error))
-    }
-}
-
-/// Whether `method_id` is a `type: "terminal"` method, which only a terminal can run.
-fn is_terminal_method(init: &Value, method_id: &str) -> bool {
-    // Refused or not, a method found here is one only a terminal can run.
-    !matches!(
-        terminal_method(init, method_id),
-        Err(TerminalMethodError::NotOffered)
-    )
-}
-
-/// The sign-in methods `initialize` reported, always as a JSON array.
-pub(super) fn auth_methods_of(init: &Value) -> Value {
-    match &init["authMethods"] {
-        Value::Array(methods) => Value::Array(methods.clone()),
-        _ => Value::Array(Vec::new()),
-    }
-}
-
-/// The error the UI reads as "sign in first": [`AUTH_REQUIRED_PREFIX`] and the methods.
-pub(super) fn auth_required_error(auth_methods: &Value) -> String {
-    format!("{}{}", AUTH_REQUIRED_PREFIX, auth_methods)
-}
-
-/// Ends a connection that failed to open and says why. A transport failure
-/// gets the agent's stderr tail; an agent's own answer (sign-in JSON
-/// included, which the UI parses) is kept as it is.
-pub(super) fn failure_message(connection: &AcpConnection, error: OpenError) -> String {
-    let stderr = connection.stderr_tail();
-    connection.kill();
-    match error {
-        OpenError::Agent(message) => message,
-        OpenError::Transport(message) if stderr.is_empty() => message,
-        OpenError::Transport(message) => format!("{}\n{}", message, stderr),
-    }
-}
-
-/// Spawns an agent that hosts no app session (a sign-in or a probe). Its
-/// requests are refused here (an elicitation is cancelled), so the agent
-/// never waits on us; its notifications go to `on_notification`.
-pub(super) fn spawn_unrouted(
-    cwd: &str,
-    launch: &AcpLaunch,
-    on_notification: impl Fn(&str, &Value) + Send + Sync + 'static,
-) -> Result<Arc<AcpConnection>, String> {
-    AcpConnection::spawn(
-        &launch.program,
-        &launch.args,
-        cwd,
-        &launch.env,
-        |connection| -> EventSink {
-            Arc::new(move |event| match event {
-                ConnectionEvent::Request { id, method, .. } if method == "elicitation/create" => {
-                    elicitation_routes::cancel_request(&connection, id)
-                }
-                ConnectionEvent::Request { id, .. } => answer(&connection, move |c| {
-                    c.respond_error(&id, METHOD_NOT_FOUND, "Not available here")
-                }),
-                ConnectionEvent::Notification { method, params } => {
-                    on_notification(&method, &params)
-                }
-                ConnectionEvent::Exited { .. } => {}
-            })
-        },
-    )
-}
-
-/// Initializes ACP and returns the agent's answer: capabilities and auth methods.
-pub(super) fn initialize(connection: &AcpConnection) -> Result<Value, String> {
-    connection.request(
-        "initialize",
-        json!({
-            "protocolVersion": PROTOCOL_VERSION,
-            "clientCapabilities": { "fs": { "readTextFile": false, "writeTextFile": false }, "terminal": false, "auth": { "terminal": true }, "elicitation": { "form": {}, "url": {} } },
-            "clientInfo": { "name": "zorvo", "version": env!("CARGO_PKG_VERSION") },
-        }),
-        HANDSHAKE_TIMEOUT,
-    )
-}
-
-fn started_session(response: Value, agent_capabilities: Value) -> Result<StartedSession, String> {
-    let acp_session_id = response["sessionId"]
-        .as_str()
-        .ok_or("The agent did not return a session id")?
-        .to_string();
-    Ok(StartedSession {
-        acp_session_id,
-        agent_capabilities,
-        modes: response["modes"].clone(),
-        models: response["models"].clone(),
-        config_options: response["configOptions"].clone(),
-        reopened_with: None,
-        tools_path: None,
-    })
-}
+#[cfg(test)]
+mod tests;

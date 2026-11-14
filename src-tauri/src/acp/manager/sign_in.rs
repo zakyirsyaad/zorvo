@@ -173,13 +173,13 @@ mod tests {
         let init = json!({ "authMethods": [{ "id": "z-ai-api-key", "name": "Z.AI API key" }] });
 
         for method in ["session/new", "session/load", "session/resume"] {
-            let error = super::super::agent_error(method, &init, &glm_refusal());
+            let error = super::super::agent_error(method, &init, &glm_refusal(), false);
             assert!(
                 error.starts_with(super::super::AUTH_REQUIRED_PREFIX),
                 "{method}: {error}"
             );
         }
-        let listing = super::super::agent_error("session/list", &init, &glm_refusal());
+        let listing = super::super::agent_error("session/list", &init, &glm_refusal(), false);
         assert!(
             !listing.starts_with(super::super::AUTH_REQUIRED_PREFIX),
             "{listing}"

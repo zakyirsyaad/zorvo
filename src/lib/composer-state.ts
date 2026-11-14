@@ -24,6 +24,15 @@ export interface ComposerInputs {
   onPick?: (profileId: string, configId: string, value: string, reported?: AcpConfigOption[]) => void;
   /** Called for every model the user picks among the agent's `models`, with the agent it is for; in a running session once the agent took it. */
   onPickModel?: (profileId: string, modelId: string) => void;
+  /** The draft's Private chip is on: its private model menu takes the model chip's place. */
+  isPrivate?: boolean;
+}
+
+/** A private session runs the TEE model it was launched on: the agent's own model chip is not offered. */
+function withoutModel(controls: ComposerControls): ComposerControls {
+  if (!controls.model) return controls;
+  const { model: _hidden, ...rest } = controls;
+  return rest;
 }
 
 /**
@@ -32,6 +41,11 @@ export interface ComposerInputs {
  * options it reported last time, applied once it is up.
  */
 export function composerStateFor(inputs: ComposerInputs): ComposerState {
+  const { controls } = composerControlsFor(inputs);
+  return { controls: inputs.isPrivate || inputs.session?.privateMode ? withoutModel(controls) : controls };
+}
+
+function composerControlsFor(inputs: ComposerInputs): ComposerState {
   const { session, draftAgent, acp } = inputs;
   if (session?.status === 'running') {
     const info = acp.info[session.id];
@@ -141,6 +155,8 @@ export function composerNote(state: {
   agentToInstall?: string;
   /** The draft agent's name while its sign-in panel is open. */
   agentToSignIn?: string;
+  /** What a private draft waits for before it can start (credits, the models). */
+  privateNote?: string;
   /** Why the mention, or the session's delegation pair, blocks Send; after the install and sign-in notes. */
   delegationBlock?: string;
   /** The next message continues a session rather than starting one. */
@@ -150,21 +166,32 @@ export function composerNote(state: {
   if (state.compareCount !== undefined && state.compareCount >= 2) return COMPARE_NOTE;
   if (state.agentToInstall) return installPlaceholder(state.agentToInstall, state.continuesSession);
   if (state.agentToSignIn) return signInPlaceholder(state.agentToSignIn, state.continuesSession);
+  if (state.privateNote) return state.privateNote;
   if (state.delegationBlock) return state.delegationBlock;
   return undefined;
 }
 
 /**
+ * Qwen Code's commands that switch the model or the provider of the running process (`login` and
+ * `connect` are names of `auth`): in a private session they would take its history out of the TEE
+ * (the backend refuses them too).
+ */
+const PRIVATE_HIDDEN_COMMANDS: ReadonlySet<string> = new Set(['model', 'auth', 'login', 'connect']);
+
+/**
  * The slash commands the composer offers: a live ACP session's own; before
- * it runs, the ones its agent offered last time.
+ * it runs, the ones its agent offered last time. A private session or draft
+ * (`isPrivate`) is never offered the model and auth commands.
  */
 export function composerCommandsFor(inputs: {
   isRunning: boolean;
   liveCommands: SlashCommand[] | undefined;
   draftAgent: AgentProfile | undefined;
   agentOptions: Readonly<Record<string, AgentOptions>> | undefined;
+  isPrivate?: boolean;
 }): SlashCommand[] | undefined {
-  if (inputs.isRunning) return inputs.liveCommands;
   const agent = inputs.draftAgent;
-  return agent ? inputs.agentOptions?.[agent.id]?.commands : undefined;
+  const commands = inputs.isRunning ? inputs.liveCommands : agent ? inputs.agentOptions?.[agent.id]?.commands : undefined;
+  if (!inputs.isPrivate || !commands) return commands;
+  return commands.filter((command) => !PRIVATE_HIDDEN_COMMANDS.has(command.name.toLowerCase()));
 }

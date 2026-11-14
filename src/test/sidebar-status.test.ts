@@ -48,6 +48,9 @@ describe("rowSubtitle", () => {
     expect(rowSubtitle("Claude Code", statusOf(false, true, false), 0)).toBe("Claude Code · Working");
     expect(rowSubtitle("Codex", null, NOW - 2 * 3_600_000, NOW)).toBe("Codex · 2 hours ago");
     expect(rowSubtitle(undefined, null, NOW, NOW)).toBe("Just now");
+    expect(rowSubtitle("Qwen Code", statusOf(false, true, false), 0, 0, true)).toBe(
+      "Qwen Code · Private · Working",
+    );
   });
 });
 

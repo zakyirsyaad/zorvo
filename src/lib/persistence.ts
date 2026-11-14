@@ -6,6 +6,7 @@ import {
   type DelegationLink,
   type OpenedByLink,
   type DiffRow,
+  type MessageVerification,
   type PersistedState,
   type Session,
   type SessionWorktree,
@@ -24,7 +25,7 @@ export const STATE_VERSION = 2;
 export function emptyPersistedState(): PersistedState {
   return {
     version: STATE_VERSION,
-    settings: { appearance: 'system', defaultAgentId: null, onboardingCompleted: false },
+    settings: { appearance: 'system', defaultAgentId: null, onboardingCompleted: false, secretGuard: true, paymentSource: 'credits' },
     recentFolders: [],
     sessions: [],
   };
@@ -73,6 +74,23 @@ function isWorktree(value: unknown): value is SessionWorktree {
   );
 }
 
+function isPrivateMode(value: unknown): value is { modelId: string; ownKey?: boolean; sessionCap?: number } {
+  return isObject(value) && typeof value.modelId === 'string' && value.modelId.length > 0;
+}
+
+/** A whole positive credit cap, or nothing; an old or malformed value drops only the cap. */
+function privateSessionCap(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
+/** A saved usage total, with its estimated flag; malformed entries are dropped. */
+function toPrivateUsage(value: unknown): Session['privateUsage'] | undefined {
+  if (!isObject(value) || typeof value.credits !== 'number' || !Number.isFinite(value.credits) || value.credits < 0) {
+    return undefined;
+  }
+  return { credits: value.credits, estimated: value.estimated === true };
+}
+
 const SESSION_HANDLE = /^session-[1-9][0-9]{0,5}$/;
 
 /** The link with its handle only when that is one Zorvo could have issued. */
@@ -107,8 +125,10 @@ function withValidStartCommit(worktree: SessionWorktree): SessionWorktree {
 
 /** A session keeps everything else when one of its optional fields is malformed. */
 function withValidFields(session: Session): Session {
-  const { worktree, pinned, archivedAt, namedByUser, hasUnread, historyElsewhere, compareRunId, reviewComments, delegatedFrom, openedBy, ...rest } = session;
+  const { worktree, pinned, archivedAt, namedByUser, hasUnread, historyElsewhere, compareRunId, reviewComments, privateMode, privateUsage, delegatedFrom, openedBy, ...rest } = session;
   const comments = validReviewComments(reviewComments);
+  const usage = toPrivateUsage(privateUsage);
+  const sessionCap = isPrivateMode(privateMode) ? privateSessionCap(privateMode.sessionCap) : undefined;
   return {
     ...rest,
     ...(worktree == null ? { worktree } : isWorktree(worktree) ? { worktree: withValidStartCommit(worktree) } : {}),
@@ -121,6 +141,16 @@ function withValidFields(session: Session): Session {
     ...(delegatedFrom === null || isDelegationLink(delegatedFrom) ? { delegatedFrom } : {}),
     ...(isOpenedByLink(openedBy) ? { openedBy: withValidHandle(openedBy) } : {}),
     ...(comments.length > 0 ? { reviewComments: comments } : {}),
+    ...(isPrivateMode(privateMode)
+      ? {
+          privateMode: {
+            modelId: privateMode.modelId,
+            ...(privateMode.ownKey === true ? { ownKey: true } : {}),
+            ...(sessionCap !== undefined ? { sessionCap } : {}),
+          },
+        }
+      : {}),
+    ...(usage ? { privateUsage: usage } : {}),
   };
 }
 
@@ -229,6 +259,9 @@ export function normalizePersistedState(raw: unknown): PersistedState {
       agentVersions: toAgentVersions(settings.agentVersions),
       notifiedUpdates: toNotifiedUpdates(settings.notifiedUpdates),
       signedInAgents: toAgentIdList(settings.signedInAgents) ?? [],
+      privateLowBalanceNotified: settings.privateLowBalanceNotified === true,
+      secretGuard: settings.secretGuard !== false,
+      paymentSource: settings.paymentSource === 'ownKey' ? 'ownKey' : 'credits',
       // On unless the user turned it off: a state written before the setting existed has it on.
       agentTools: settings.agentTools !== false,
     },
@@ -302,6 +335,32 @@ function withValidEndTime(message: ChatMessage): ChatMessage {
   return rest;
 }
 
+const VERIFICATION_STATES = new Set(['verified', 'didnt_verify', 'not_signed', 'checking']);
+const VERIFICATION_KINDS = new Set(['provider_tee', 'gateway', 'unknown']);
+
+function isVerification(value: unknown): value is MessageVerification {
+  return (
+    isObject(value) &&
+    typeof value.state === 'string' &&
+    VERIFICATION_STATES.has(value.state) &&
+    typeof value.signed === 'number' &&
+    Number.isFinite(value.signed) &&
+    value.signed >= 0 &&
+    typeof value.total === 'number' &&
+    Number.isFinite(value.total) &&
+    value.total >= 0 &&
+    (value.kind === undefined || (typeof value.kind === 'string' && VERIFICATION_KINDS.has(value.kind))) &&
+    (value.signer === undefined || typeof value.signer === 'string')
+  );
+}
+
+/** A verification that does not match the shape is dropped; the reply itself stays. */
+function withValidVerification(message: ChatMessage): ChatMessage {
+  if (!('verification' in message) || isVerification(message.verification)) return message;
+  const { verification: _dropped, ...rest } = message;
+  return rest;
+}
+
 /** A report or task mark keeps a non-empty agent name and, when it is a string, the agent's id. */
 function withValidAgentMark(message: ChatMessage, key: 'delegationReport' | 'delegationTask'): ChatMessage {
   if (!(key in message)) return message;
@@ -365,7 +424,7 @@ export function normalizeTranscript(raw: unknown): ChatMessage[] {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((raw): ChatMessage[] => {
     if (!isMessage(raw)) return [];
-    const message = withValidDelegationReport(withReadableDiffs(withValidEndTime(raw)));
+    const message = withValidVerification(withValidDelegationReport(withReadableDiffs(withValidEndTime(raw))));
     if (!('parts' in message)) return [message];
     const { parts, ...rest } = message;
     const isWellFormed = Array.isArray(parts) && parts.length > 0 && parts.every(isMessagePart);

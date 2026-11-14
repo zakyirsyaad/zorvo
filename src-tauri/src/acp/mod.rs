@@ -11,6 +11,7 @@ pub mod jsonrpc;
 pub mod key_env;
 pub mod manager;
 pub mod permission_response;
+pub mod private_sessions;
 pub mod probe;
 pub mod prompt_blocks;
 pub mod qwen_log;

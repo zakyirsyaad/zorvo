@@ -1,0 +1,320 @@
+import { authDevice, BEARER, clientIp, ledgerOf, SECRET_HASH } from "./auth";
+import { parseConfig, type Env } from "./config";
+import { error, json } from "./http";
+import { sha256Hex, timingSafeEqual } from "./crypto";
+import { verifyWebhook } from "./pingpay";
+import { HOUR_MS } from "./time";
+
+export { Ledger } from "./ledger/Ledger";
+
+/** New devices per address and hour. High, since a venue shares one public address; a device holds nothing until it is paid for. */
+const REGISTRATIONS_PER_HOUR = 100;
+const TOPUPS_PER_HOUR = 10;
+const PROMO_ATTEMPTS_PER_HOUR = 5;
+/** Refused promo attempts per address and hour, across devices, so registering devices buys no extra guesses. */
+const PROMO_ATTEMPTS_PER_IP_HOUR = 20;
+const RECOVER_ATTEMPTS_PER_HOUR = 5;
+/** Admin attempts per address and hour, right or wrong, so the token cannot be guessed at speed. */
+const ADMIN_ATTEMPTS_PER_HOUR = 20;
+/** A promo code as the admin may create it: 4 to 64 visible ASCII characters. */
+const PROMO_CODE = /^[\x21-\x7E]{4,64}$/;
+const MAX_PROMO_USES = 10_000;
+/** Longest promo or recovery code the API reads; longer ones cannot be real. */
+const MAX_CODE_LENGTH = 100;
+const TOPUP_PATH = /^\/v1\/topups\/([0-9a-f-]{36})(\/cancel)?$/;
+/** A private session id and its one action; the id is the UUID the Ledger made. */
+const SESSION_PATH = /^\/v1\/sessions\/([0-9a-f-]{36})(\/end|\/seen|\/raise)?$/;
+/** The PingPay events that settle a checkout; their `resourceId` is the checkout session id. */
+const SESSION_EVENTS = new Set(["checkout.session.completed", "checkout.session.expired"]);
+/**
+ * The events PingPay's dashboard sends (it has no event picker). Their `resourceId` may be a payment
+ * id, so the checkout session may only be named in `data`; `paymentSessionCandidates` reads both.
+ */
+const PAYMENT_EVENTS = new Set(["payment.success", "payment.failed"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The session ids a `payment.*` event may name, in the order to try them: `resourceId`, then the
+ * fields of `data` PingPay has used or may use. Strings only, deduplicated, at most four.
+ */
+function paymentSessionCandidates(resourceId: unknown, data: unknown): string[] {
+  const record = isRecord(data) ? data : {};
+  const session = isRecord(record.checkoutSession) ? record.checkoutSession : {};
+  const values = [resourceId, record.checkoutSessionId, record.sessionId, session.id];
+  return [...new Set(values.filter((value): value is string => typeof value === "string" && value !== ""))].slice(0, 4);
+}
+
+/** The sorted key names of `data`: enough to fix a payload without logging a value or an id. */
+function dataKeys(data: unknown): string[] {
+  return isRecord(data) ? Object.keys(data).sort() : [];
+}
+
+async function registerDevice(req: Request, env: Env): Promise<Response> {
+  const ledger = ledgerOf(env);
+  const { allowed } = await ledger.rateLimit(`devices:${clientIp(req)}`, REGISTRATIONS_PER_HOUR, HOUR_MS);
+  if (!allowed) return error("rate_limited", 429);
+
+  const body: unknown = await req.json().catch(() => null);
+  const secretHash = (body as { secretHash?: unknown } | null)?.secretHash;
+  if (typeof secretHash !== "string" || !SECRET_HASH.test(secretHash)) return error("bad_request", 400);
+
+  const result = await ledger.registerDevice(secretHash);
+  return "error" in result ? error(result.error, 400) : json({ deviceId: result.deviceId }, 201);
+}
+
+/**
+ * Each top-up opens a PingPay checkout the alarm then polls, so a device gets 10 an hour. A malformed
+ * request is refused before it counts; a refused one (409, 502) still counts, since it may have read
+ * NEAR AI's stock or asked PingPay. Cancel is not limited.
+ */
+async function createTopup(req: Request, env: Env, deviceId: string): Promise<Response> {
+  const body: unknown = await req.json().catch(() => null);
+  const packageUsd = (body as { packageUsd?: unknown } | null)?.packageUsd;
+  if (typeof packageUsd !== "number" || !parseConfig(env).packagesUsd.includes(packageUsd)) return error("bad_request", 400);
+  const { allowed } = await ledgerOf(env).rateLimit(`topups:${deviceId}`, TOPUPS_PER_HOUR, HOUR_MS);
+  if (!allowed) return error("rate_limited", 429);
+
+  const result = await ledgerOf(env).createTopup(deviceId, packageUsd, Date.now());
+  if (!("error" in result)) return json(result, 201);
+  return result.error === "upstream" ? error("upstream", 502) : error(result.error, 409);
+}
+
+async function topupRoute(env: Env, deviceId: string, topupId: string, cancel: boolean): Promise<Response> {
+  const ledger = ledgerOf(env);
+  const topup = cancel ? await ledger.cancelTopup(deviceId, topupId, Date.now()) : await ledger.topupFor(deviceId, topupId);
+  return topup ? json(topup) : error("not_found", 404);
+}
+
+/**
+ * The device's NEAR AI key, once: the Ledger deletes it as it hands it over. Never cached on the way.
+ * A stored key that cannot be decrypted stays stored and is answered 503: the server, not the app,
+ * is at fault, and the app asks again later.
+ */
+async function handOverKey(env: Env, deviceId: string): Promise<Response> {
+  let response: Response;
+  try {
+    const key = await ledgerOf(env).takeKey(deviceId);
+    response = key === null ? error("not_found", 404) : json({ key });
+  } catch (failure) {
+    console.error(`Handing over the key of device ${deviceId} failed: ${describe(failure)}`);
+    response = error("upstream", 503);
+  }
+  response.headers.set("cache-control", "no-store");
+  return response;
+}
+
+/** A positive whole number up to `max`, or null. */
+function boundedInt(value: unknown, max: number): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= max ? value : null;
+}
+
+/** The admin token is a secret compared in constant time; without one configured nobody is admin. */
+function isAdmin(req: Request, env: Env): boolean {
+  const expected = env.ADMIN_TOKEN;
+  if (expected === undefined || expected === "") return false;
+  const given = BEARER.exec(req.headers.get("Authorization") ?? "")?.[1];
+  return given !== undefined && timingSafeEqual(given, expected);
+}
+
+/** Admin: creates or updates a promo code. Only the code's hash is stored; the code is never logged. */
+async function adminPromo(req: Request, env: Env): Promise<Response> {
+  const ledger = ledgerOf(env);
+  if (!(await ledger.rateLimit(`admin:${clientIp(req)}`, ADMIN_ATTEMPTS_PER_HOUR, HOUR_MS)).allowed) return error("rate_limited", 429);
+  if (!isAdmin(req, env)) return error("unauthorized", 401);
+  const body = ((await req.json().catch(() => null)) ?? {}) as { code?: unknown; credits?: unknown; maxUses?: unknown };
+  const credits = boundedInt(body.credits, parseConfig(env).deviceCapCredits);
+  const maxUses = boundedInt(body.maxUses, MAX_PROMO_USES);
+  if (typeof body.code !== "string" || !PROMO_CODE.test(body.code) || credits === null || maxUses === null) return error("bad_request", 400);
+  await ledger.addPromo(await sha256Hex(body.code), credits, maxUses);
+  return json({ ok: true });
+}
+
+/**
+ * Every attempt of a device counts, wrong or malformed, so a code cannot be guessed at more than 5 an
+ * hour per device. Per address only refused codes count (20 an hour, like `authenticate` counts only
+ * wrong secrets), so devices sharing a venue's address can all redeem. Unknown, used-up and
+ * already-redeemed codes all answer the same 400; only a valid code can reach the 409s (stock,
+ * device cap), which the app needs to word.
+ */
+async function redeemPromoRoute(req: Request, env: Env, deviceId: string): Promise<Response> {
+  const ledger = ledgerOf(env);
+  if (!(await ledger.rateLimit(`promo:${deviceId}`, PROMO_ATTEMPTS_PER_HOUR, HOUR_MS)).allowed) return error("rate_limited", 429);
+  const code = ((await req.json().catch(() => null)) as { code?: unknown } | null)?.code;
+  if (typeof code !== "string" || code === "" || code.length > MAX_CODE_LENGTH) return error("bad_request", 400);
+  const refusals = { key: `promo-ip:${clientIp(req)}`, limit: PROMO_ATTEMPTS_PER_IP_HOUR, windowMs: HOUR_MS };
+  const result = await ledger.redeemPromo(deviceId, await sha256Hex(code), Date.now(), refusals);
+  if (!("error" in result)) return json(result, 201);
+  if (result.error === "rate_limited") return error("rate_limited", 429);
+  return result.error === "bad_request" ? error("bad_request", 400) : error(result.error, 409);
+}
+
+/** The recovery code is the credential, so there is no Bearer; attempts are limited per address. */
+async function recoverRoute(req: Request, env: Env): Promise<Response> {
+  const ledger = ledgerOf(env);
+  if (!(await ledger.rateLimit(`recover:${clientIp(req)}`, RECOVER_ATTEMPTS_PER_HOUR, HOUR_MS)).allowed) return error("rate_limited", 429);
+  const body = (await req.json().catch(() => null)) as { recoveryCode?: unknown; newSecretHash?: unknown } | null;
+  const { recoveryCode, newSecretHash } = body ?? {};
+  if (typeof recoveryCode !== "string" || recoveryCode === "" || recoveryCode.length > MAX_CODE_LENGTH) return error("bad_request", 400);
+  if (typeof newSecretHash !== "string" || !SECRET_HASH.test(newSecretHash)) return error("bad_request", 400);
+  const result = await ledger.recover(await sha256Hex(recoveryCode), newSecretHash, Date.now());
+  return "ok" in result ? json({ ok: true }) : error("bad_request", 400);
+}
+
+/** PingPay webhooks: the signature is checked on the raw body before anything is parsed or changed. */
+async function pingPayWebhook(req: Request, env: Env): Promise<Response> {
+  const rawBody = await req.text();
+  if (!(await verifyWebhook(rawBody, req.headers, env.PINGPAY_WEBHOOK_SECRET ?? "", Date.now()))) {
+    return error("unauthorized", 401);
+  }
+  let event: unknown;
+  try {
+    event = JSON.parse(rawBody);
+  } catch {
+    return error("bad_request", 400);
+  }
+  const { id, type, resourceId, data } = (typeof event === "object" && event !== null ? event : {}) as Record<string, unknown>;
+  if (typeof id !== "string" || id === "" || typeof type !== "string") return error("bad_request", 400);
+  const isSessionEvent = SESSION_EVENTS.has(type);
+  const isPaymentEvent = PAYMENT_EVENTS.has(type);
+  if (!isSessionEvent && !isPaymentEvent) return json({ received: true });
+
+  const ledger = ledgerOf(env);
+  const now = Date.now();
+  let sessionId: string | undefined;
+  if (isSessionEvent) {
+    if (typeof resourceId !== "string" || resourceId === "") return error("bad_request", 400);
+    sessionId = resourceId;
+  } else {
+    for (const candidate of paymentSessionCandidates(resourceId, data)) {
+      if (await ledger.hasSession(candidate)) {
+        sessionId = candidate;
+        break;
+      }
+    }
+    if (sessionId === undefined) {
+      const keys = dataKeys(data);
+      console.error(
+        `PingPay ${type} webhook names no known checkout session; data keys: ${keys.length === 0 ? "(none)" : keys.join(", ")}`,
+      );
+      // `payment.success` may name only the payment id: read the open checkouts now. The event id is
+      // recorded only if one of them settled. A 200 is not redelivered, so an unsettled event waits
+      // for the alarm's polling rather than a retry.
+      if (type === "payment.success") {
+        const settled = await ledger.nudgePolling(now);
+        if (settled) await ledger.recordEvent(id, now);
+      }
+      return json({ received: true });
+    }
+  }
+
+  const result = await ledger.webhookEvent(sessionId, id, now);
+  if (!("error" in result)) return json({ received: true });
+  // A failed payment on a session that is still open is settled by polling its expiry, not by a redelivery.
+  if (type === "payment.failed" && result.error === "retry") return json({ received: true });
+  // 502: PingPay could not be read. 503: the session is not settled yet. Either way PingPay redelivers.
+  return error("upstream", result.error === "retry" ? 503 : 502);
+}
+
+/** An error as `Name: message`. Our errors and the clients' name the request and status, never a secret. */
+function describe(failure: unknown): string {
+  return failure instanceof Error ? `${failure.name}: ${failure.message}` : String(failure);
+}
+
+export default {
+  /** Every route; anything a route throws becomes a logged `502 {"error":"upstream"}`, never a bare 500. */
+  async fetch(req: Request, env: Env): Promise<Response> {
+    try {
+      return await route(req, env);
+    } catch (failure) {
+      console.error(`${req.method} ${new URL(req.url).pathname} failed: ${describe(failure)}`);
+      return error("upstream", 502);
+    }
+  },
+} satisfies ExportedHandler<Env>;
+
+async function route(req: Request, env: Env): Promise<Response> {
+  const { pathname } = new URL(req.url);
+  if (req.method === "POST" && pathname === "/v1/devices") return registerDevice(req, env);
+
+  if (req.method === "GET" && pathname === "/v1/balance") {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    return json(await ledgerOf(env).balanceFor(device.deviceId, new URL(req.url).searchParams.get("fresh") === "1"));
+  }
+  if (req.method === "GET" && pathname === "/v1/models") {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    const result = await ledgerOf(env).models();
+    return "error" in result ? error("upstream", 502) : json(result);
+  }
+  if (req.method === "GET" && pathname === "/v1/stock") {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    return json(await ledgerOf(env).stockFor(device.deviceId));
+  }
+  if (req.method === "GET" && pathname === "/v1/key") {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    return handOverKey(env, device.deviceId);
+  }
+  if (req.method === "POST" && pathname === "/v1/admin/promos") return adminPromo(req, env);
+  if (req.method === "POST" && pathname === "/v1/recover") return recoverRoute(req, env);
+  if (req.method === "POST" && pathname === "/v1/sessions") {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    const credits = ((await req.json().catch(() => null)) as { credits?: unknown } | null)?.credits;
+    const result = await ledgerOf(env).createSession(device.deviceId, credits as number);
+    if ("error" in result) {
+      if (result.error === "bad_request") return error("bad_request", 400);
+      if (result.error === "recovering") return error("recovering", 409);
+      return result.error === "upstream" ? error("upstream", 502) : error("insufficient", 409);
+    }
+    const response = json({ sessionId: result.sessionId, key: result.key }, 201);
+    response.headers.set("cache-control", "no-store");
+    return response;
+  }
+  const session = SESSION_PATH.exec(pathname);
+  if (session && req.method === "POST") {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    const id = session[1]!;
+    if (session[2] === "/end") {
+      const result = await ledgerOf(env).endSession(device.deviceId, id);
+      return result ? json(result) : error("not_found", 404);
+    }
+    if (session[2] === "/seen") {
+      return (await ledgerOf(env).seenSession(device.deviceId, id)) ? json({ ok: true }) : error("not_found", 404);
+    }
+    if (session[2] === "/raise") {
+      const credits = ((await req.json().catch(() => null)) as { credits?: unknown } | null)?.credits;
+      const result = await ledgerOf(env).raiseSession(device.deviceId, id, credits as number);
+      if (!("error" in result)) return json(result);
+      if (result.error === "not_found") return error("not_found", 404);
+      if (result.error === "bad_request") return error("bad_request", 400);
+      if (result.error === "recovering") return error("recovering", 409);
+      return result.error === "upstream" ? error("upstream", 502) : error("insufficient", 409);
+    }
+    return error("not_found", 404);
+  }
+  if (req.method === "POST" && pathname === "/v1/promo") {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    return redeemPromoRoute(req, env, device.deviceId);
+  }
+  if (req.method === "POST" && pathname === "/v1/webhooks/pingpay") return pingPayWebhook(req, env);
+  if (req.method === "POST" && pathname === "/v1/topups") {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    return createTopup(req, env, device.deviceId);
+  }
+  const topup = TOPUP_PATH.exec(pathname);
+  if (topup && (topup[2] ? req.method === "POST" : req.method === "GET")) {
+    const device = await authDevice(req, env);
+    if (device instanceof Response) return device;
+    return topupRoute(env, device.deviceId, topup[1]!, topup[2] !== undefined);
+  }
+  return error("not_found", 404);
+}

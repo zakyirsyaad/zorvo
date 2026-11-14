@@ -154,6 +154,8 @@ pub fn login_command(launch: &AcpLaunch, method: &TerminalMethod) -> AcpLaunch {
         program: launch.program.clone(),
         args,
         env,
+        private: false,
+        mcp_servers: Vec::new(),
     }
 }
 
@@ -416,6 +418,8 @@ mod tests {
             program: "npx".into(),
             args: vec!["-y".into(), "pkg@1".into()],
             env: vec![("A".into(), "base".into()), ("B".into(), "keep".into())],
+            private: false,
+            mcp_servers: Vec::new(),
         };
         let method = TerminalMethod {
             args: vec!["--cli".into(), "auth".into(), "login".into()],

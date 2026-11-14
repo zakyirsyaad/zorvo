@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "zorvo-credits-server",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-22",
+  "durable_objects": {
+    "bindings": [{ "name": "LEDGER", "class_name": "Ledger" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Ledger"] }],
+  // Every variable is parsed by src/config.ts (parseConfig), which documents each one.
+  // Secrets are not listed here: set them with `wrangler secret put`.
+  "vars": {
+    "CREDITS_PER_USD_PAID": "100",
+    "BURN_PER_USD_COST": "120",
+    "PACKAGES_USD": "5,10,25",
+    "DEVICE_CAP_CREDITS": "5000",
+    "STOCK_BUFFER_NANO": "200000000",
+    "MODELS": "Qwen/Qwen3.8-27B-abliterated,Qwen/Qwen3.8-27B,deepseek-ai/DeepSeek-V4.1-Flash-1017-abliterated,deepseek-ai/DeepSeek-V4.1-Flash-1017,z-ai/glm-5.3-flash",
+    "WORKSPACE_ID": "a294a09f-c9b0-4998-83e2-579330b324aa",
+    "ORGANIZATION_ID": "5fc317d1-dc92-40ce-aa2f-303f022d3d56",
+    "OPERATOR_ACCOUNT": "zorvo-ops.near",
+    "NEAR_AI_BASE": "https://cloud-api.near.ai/v1",
+    "PINGPAY_BASE": "https://pay.pingpay.io/api",
+    "CHECKOUT_PAID_URL": "https://github.com/zakyirsyaad/zorvo/blob/hackathon/near-credits/server/README.md#checkout-paid",
+    "CHECKOUT_CANCELLED_URL": "https://github.com/zakyirsyaad/zorvo/blob/hackathon/near-credits/server/README.md#checkout-cancelled"
+  }
+}

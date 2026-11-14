@@ -8,7 +8,7 @@ export interface AttentionNotice {
 }
 
 /** Whether any of the app's windows has focus: the main one, or a session popout. */
-async function isAppFocused(): Promise<boolean> {
+export async function isAppFocused(): Promise<boolean> {
   if (document.hasFocus()) return true;
   const windows = await getAllWindows();
   const focused = await Promise.all(windows.map((window) => window.isFocused()));

@@ -358,6 +358,58 @@ describe("useAcpSessions", () => {
     expect(result.current.info["s-1"].reopenedWith).toBe("resume");
   });
 
+  it("starts and reopens a private session with its model, and an ordinary one with no privateModelId key at all", async () => {
+    const spy = stubInvoke({
+      acp_start_session: () => Promise.resolve(STARTED),
+      acp_reopen_session: () => Promise.resolve(STARTED),
+    });
+    const { result } = renderHook(() => useAcpSessions(handlers()));
+
+    await act(async () => {
+      await result.current.start("s-1", "/w", "qwen-code", false, "Qwen/Qwen3.8-27B");
+      await result.current.reopen("s-2", "/w", "qwen-code", "acp-2", false, "Qwen/Qwen3.8-27B");
+      await result.current.start("s-3", "/w", "qwen-code", false);
+      await result.current.reopen("s-4", "/w", "qwen-code", "acp-4", false);
+      await result.current.start("s-5", "/w", "qwen-code", false, "Qwen/Qwen3.8-27B", true);
+      await result.current.reopen("s-6", "/w", "qwen-code", "acp-6", false, "Qwen/Qwen3.8-27B", true);
+      await result.current.start("s-7", "/w", "qwen-code", false, "Qwen/Qwen3.8-27B", false, 200);
+      await result.current.reopen("s-8", "/w", "qwen-code", "acp-8", false, "Qwen/Qwen3.8-27B", false, 200);
+    });
+
+    const argsOf = (cmd: string) =>
+      spy.mock.calls.filter(([name]) => name === cmd).map(([, args]) => args as Record<string, unknown>);
+    expect(argsOf("acp_start_session")[0]).toEqual({
+      sessionId: "s-1",
+      cwd: "/w",
+      profileId: "qwen-code",
+      agentTools: false,
+      privateModelId: "Qwen/Qwen3.8-27B",
+    });
+    expect(argsOf("acp_reopen_session")[0]).toEqual({
+      sessionId: "s-2",
+      cwd: "/w",
+      profileId: "qwen-code",
+      acpSessionId: "acp-2",
+      agentTools: false,
+      privateModelId: "Qwen/Qwen3.8-27B",
+    });
+    expect(Object.keys(argsOf("acp_start_session")[1])).not.toContain("privateModelId");
+    expect(Object.keys(argsOf("acp_reopen_session")[1])).not.toContain("privateModelId");
+    expect(argsOf("acp_start_session")[2]).toMatchObject({
+      privateModelId: "Qwen/Qwen3.8-27B",
+      privateOwnKey: true,
+    });
+    expect(argsOf("acp_reopen_session")[2]).toMatchObject({
+      privateModelId: "Qwen/Qwen3.8-27B",
+      privateOwnKey: true,
+    });
+    expect(Object.keys(argsOf("acp_start_session")[1])).not.toContain("privateOwnKey");
+    expect(argsOf("acp_start_session")[3]).toMatchObject({ privateSessionCap: 200 });
+    expect(argsOf("acp_reopen_session")[3]).toMatchObject({ privateSessionCap: 200 });
+    expect(Object.keys(argsOf("acp_start_session")[0])).not.toContain("privateSessionCap");
+    expect(Object.keys(argsOf("acp_reopen_session")[0])).not.toContain("privateSessionCap");
+  });
+
   it("reopens, imports and lists through the backend commands", async () => {
     const spy = stubInvoke({
       acp_reopen_session: () => Promise.resolve(STARTED),

@@ -15,7 +15,9 @@ export default mergeConfig(
       // test still ends as soon as it is done; only a stuck one waits this long.
       testTimeout: 60_000,
       // Agent worktrees under .claude/ hold copies of the tests; run only this checkout's.
-      exclude: [...configDefaults.exclude, ".claude/**"],
+      // server/ is its own package with its own Vitest setup (Workers runtime).
+      // src-tauri/resources/ tests run with Node's own `node --test`, not in jsdom.
+      exclude: [...configDefaults.exclude, ".claude/**", "server/**", "src-tauri/**"],
     },
   }),
 );

@@ -215,6 +215,33 @@ fn forks_into_a_new_app_session_on_the_same_agent() {
 }
 
 #[test]
+fn a_native_fork_passes_the_sources_mcp_servers() {
+    let (manager, _rx) = manager();
+    let log = method_log("mcp-fork");
+    let mut launch = with_env(fake_agent(), "FAKE_ACP_SERVERS_LOG", log.to_str().unwrap());
+    launch.private = true;
+    launch.mcp_servers = vec![json!({
+        "name": "zorvo-credits",
+        "command": "node",
+        "args": ["mcp.mjs"],
+    })];
+    manager
+        .start("s-1", &cwd(), &launch, serde_json::json!([]))
+        .unwrap();
+
+    manager
+        .fork("s-1", "s-2", &cwd(), serde_json::json!([]))
+        .expect("fork");
+
+    let servers = mcp_servers_in(&log);
+    assert_eq!(servers.len(), 2, "{servers:?}");
+    assert_eq!(servers[0], servers[1]);
+    assert_eq!(servers[1][0]["name"], "zorvo-credits");
+    manager.stop("s-1");
+    manager.stop("s-2");
+}
+
+#[test]
 fn refuses_to_fork_when_the_agent_cannot() {
     let (manager, _rx) = manager();
     let launch = with_env(fake_agent(), "FAKE_ACP_NO_FORK", "1");
@@ -456,6 +483,8 @@ fn rejects_bad_starts_and_unknown_sessions() {
         program: "/nonexistent/agent".into(),
         args: vec![],
         env: vec![],
+        private: false,
+        mcp_servers: Vec::new(),
     };
     assert!(manager.start("s-2", &cwd(), &missing, json!([])).is_err());
     assert!(manager.prompt("nope", "hi", &[]).is_err());
@@ -935,6 +964,16 @@ fn methods_in(path: &std::path::Path) -> Vec<String> {
         .collect()
 }
 
+/// The `mcpServers` each session/new, load, resume or fork carried, in order.
+fn mcp_servers_in(path: &std::path::Path) -> Vec<Vec<Value>> {
+    std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| line.split_once(' '))
+        .filter_map(|(_, servers)| serde_json::from_str(servers).ok())
+        .collect()
+}
+
 #[test]
 fn probing_deletes_the_session_it_opened() {
     let (manager, _rx) = manager();
@@ -1173,6 +1212,8 @@ fn agent_copied_under(tag: &str) -> (AgentDir, AcpLaunch) {
         program: script.to_string_lossy().to_string(),
         args: vec![],
         env: vec![],
+        private: false,
+        mcp_servers: Vec::new(),
     };
     (AgentDir(dir), launch)
 }
@@ -2176,6 +2217,8 @@ fn agent_setup_runs_the_setup_launch_as_given_when_the_agent_offers_a_setup() {
         program: "node".to_string(),
         args: vec!["setup.mjs".to_string()],
         env: vec![("A".to_string(), "1".to_string())],
+        private: false,
+        mcp_servers: Vec::new(),
     };
 
     let run = manager
@@ -2196,6 +2239,8 @@ fn agent_setup_is_refused_for_an_agent_that_offers_none() {
         program: "node".to_string(),
         args: vec![],
         env: vec![],
+        private: false,
+        mcp_servers: Vec::new(),
     };
 
     let error = manager

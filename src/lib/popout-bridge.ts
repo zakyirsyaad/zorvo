@@ -1,4 +1,6 @@
 import type { AgentFailures } from './agent-stall';
+import type { CreditsOutReason } from './private-session';
+import type { PrivateTopupRequest } from './private-topup-request';
 import type { ChatMessage, ContextUsage, ElicitationAnswer, Session } from '../types';
 
 /**
@@ -25,6 +27,10 @@ export interface SessionLiveStatus {
   contextUsage?: ContextUsage;
   /** Failed requests in a row the agent reported. */
   failures?: AgentFailures;
+  /** A private session out of credits, with a key that stopped working, or at its cap: its Send waits. */
+  privateCreditsOut?: CreditsOutReason;
+  /** The agent's pending top-up ask, shown above the popout's composer. */
+  privateTopupRequest?: PrivateTopupRequest | null;
   /** Why Send is refused here, in the main window's words: a delegation pair's hand-over. */
   sendBlockedReason?: string | null;
 }
@@ -45,8 +51,11 @@ export type PopoutAction =
   | { kind: 'choose-option'; cardId: string; optionId: string; answers?: Record<string, string> }
   | { kind: 'answer-elicitation'; key: string; answer: ElicitationAnswer }
   | { kind: 'reopen-elicitation-url'; key: string }
+  | { kind: 'open-url'; url: string }
   | { kind: 'stop' }
-  | { kind: 'add-agent' };
+  | { kind: 'add-agent' }
+  | { kind: 'approve-topup'; requestId: string }
+  | { kind: 'decline-topup'; requestId: string };
 
 export interface PopoutActionPayload {
   sessionId: string;

@@ -5,6 +5,8 @@ export interface ChipProps {
   variant?: "plain" | "outline";
   /** `bar`: the 28px chip the top bar's contextual actions (Plan, background tasks, diff) use; the default is 24px. */
   size?: "sm" | "bar";
+  /** 12px text on a 24px chip, for the verification badge; the size sets it otherwise. */
+  textSize?: "ui-sm";
   icon?: ReactNode;
   /** Makes the chip a button. */
   onClick?: () => void;
@@ -20,7 +22,8 @@ export interface ChipProps {
 }
 
 const BASE = "inline-flex items-center gap-1.5 rounded-md border whitespace-nowrap text-fg-secondary";
-const SIZES = { sm: "h-6 text-caption", bar: "h-7 text-ui-sm" } as const;
+const HEIGHTS = { sm: "h-6", bar: "h-7" } as const;
+const TEXT_SIZES = { sm: "text-caption", bar: "text-ui-sm" } as const;
 // Plain chips are session info, borderless and tight (0 4px); outline chips are actions.
 const VARIANTS = {
   plain: { sm: "border-transparent px-1", bar: "border-transparent px-1" },
@@ -34,6 +37,7 @@ const ACTION =
 export function Chip({
   variant = "outline",
   size = "sm",
+  textSize,
   icon,
   onClick,
   label,
@@ -53,7 +57,10 @@ export function Chip({
       {children}
     </>
   );
-  const classes = [BASE, SIZES[size], VARIANTS[variant][size], onClick && ACTION, className].filter(Boolean).join(" ");
+  const text = textSize === "ui-sm" ? "text-ui-sm" : TEXT_SIZES[size];
+  const classes = [BASE, HEIGHTS[size], text, VARIANTS[variant][size], onClick && ACTION, className]
+    .filter(Boolean)
+    .join(" ");
   if (!onClick) {
     return (
       <span className={classes} aria-label={label} title={title}>

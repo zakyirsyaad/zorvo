@@ -1,0 +1,16 @@
+{
+  "orders": [
+    {
+      "id": "ord_demo_1001",
+      "customer": "Jordan Demo",
+      "email": "jordan@example.test",
+      "amountCents": 4900
+    },
+    {
+      "id": "ord_demo_1002",
+      "customer": "Sam Example",
+      "email": "sam@example.test",
+      "amountCents": 12500
+    }
+  ]
+}

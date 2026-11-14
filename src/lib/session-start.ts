@@ -40,6 +40,8 @@ export interface SessionSpec {
   openedBy?: OpenedByLink;
   /** When the session was made; a run gives its sessions successive times, so they keep the order of its agents. */
   createdAt?: number;
+  /** A Zorvo Private session, its model, whose key it spends, and its credit cap. */
+  privateMode?: { modelId: string; ownKey?: boolean; sessionCap?: number };
 }
 
 /** How a session is started beyond its spec. */
@@ -52,7 +54,7 @@ export interface StartSessionOptions {
 
 /** The record of a session about to start: running, with the spec's agent and folder. */
 export function newSessionRecord(spec: SessionSpec, createdAt: number = spec.createdAt ?? Date.now()): Session {
-  const { id, agent, cwd, name, forkedFrom, worktree, acpSessionId, compareRunId, delegatedFrom, openedBy } = spec;
+  const { id, agent, cwd, name, forkedFrom, worktree, acpSessionId, compareRunId, privateMode, delegatedFrom, openedBy } = spec;
   return {
     id: id ?? createId('s'),
     name,
@@ -65,6 +67,15 @@ export function newSessionRecord(spec: SessionSpec, createdAt: number = spec.cre
     worktree: worktree ?? null,
     acpSessionId: acpSessionId ?? null,
     ...(compareRunId !== undefined ? { compareRunId } : {}),
+    ...(privateMode
+      ? {
+          privateMode: {
+            modelId: privateMode.modelId,
+            ...(privateMode.ownKey ? { ownKey: true } : {}),
+            ...(privateMode.sessionCap !== undefined ? { sessionCap: privateMode.sessionCap } : {}),
+          },
+        }
+      : {}),
     ...(delegatedFrom !== undefined ? { delegatedFrom } : {}),
     ...(openedBy !== undefined ? { openedBy } : {}),
   };

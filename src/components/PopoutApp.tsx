@@ -20,6 +20,8 @@ import { ChatCanvas } from "./ChatCanvas";
 import { ComposerDock } from "./ComposerDock";
 import { RemovedAgentPanel } from "./RemovedAgentPanel";
 import { HistoryElsewhereNote } from "./chat/HistoryElsewhereNote";
+import { PrivateTopupRequestCard } from "./private/PrivateTopupRequestCard";
+import { creditsOutText } from "../lib/private-session";
 
 export interface PopoutAppProps {
   sessionId: string;
@@ -90,6 +92,7 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
         <TopBar
           hasTrafficLights
           sessionName={session?.name}
+          isPrivate={session?.privateMode !== undefined}
           workspaceName={session ? folderNameOf(session.cwd) : undefined}
           folderName={session ? folderNameOf(workspacePathOf(session)) : undefined}
           plan={currentPlan(messages)}
@@ -114,6 +117,8 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
               }
               onAnswerElicitation={(key, answer) => forward({ kind: "answer-elicitation", key, answer })}
               onReopenElicitationUrl={(key) => forward({ kind: "reopen-elicitation-url", key })}
+              onOpenUrl={(url) => forward({ kind: "open-url", url })}
+              privateModelId={session?.privateMode?.modelId}
               isWorking={status.isBusy && !status.isWaiting}
               failures={status.failures}
               onStop={() => forward({ kind: "stop" })}
@@ -123,7 +128,16 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
               {session ? "No messages yet." : "Connecting to the main window…"}
             </div>
           )}
-          <div className="p-4 flex justify-center">
+          <div className="p-4 flex flex-col items-center gap-3">
+            {status.privateTopupRequest && (
+              <div className="w-full max-w-chat">
+                <PrivateTopupRequestCard
+                  request={status.privateTopupRequest}
+                  onTopUp={() => forward({ kind: "approve-topup", requestId: status.privateTopupRequest!.requestId })}
+                  onNotNow={() => forward({ kind: "decline-topup", requestId: status.privateTopupRequest!.requestId })}
+                />
+              </div>
+            )}
             {removedAgentName ? (
               <RemovedAgentPanel agentName={removedAgentName} profileId={session?.profileId} onAdd={() => forward({ kind: "add-agent" })} />
             ) : (
@@ -136,8 +150,16 @@ export function PopoutApp({ sessionId }: PopoutAppProps) {
                 onStop={() => forward({ kind: "stop" })}
                 contextUsage={status.contextUsage}
                 // The pair's hand-over blocks Send here as it does in the main window, and says why.
-                sendDisabled={Boolean(status.sendBlockedReason)}
-                note={status.sendBlockedReason ?? undefined}
+                // Out of credits, Send waits and says why; Top up and Continue are the main window's.
+                sendDisabled={Boolean(status.sendBlockedReason) || status.privateCreditsOut !== undefined}
+                note={
+                  status.privateCreditsOut ? creditsOutText(status.privateCreditsOut) : (status.sendBlockedReason ?? undefined)
+                }
+                privateSessionLine={
+                  session?.privateMode?.sessionCap !== undefined
+                    ? `${Math.floor(session.privateUsage?.credits ?? 0)} of ${session.privateMode.sessionCap} credits this session`
+                    : undefined
+                }
               />
             )}
           </div>

@@ -55,6 +55,57 @@ describe("normalizePersistedState", () => {
     expect(state.sessions[1]).not.toHaveProperty("reviewComments");
   });
 
+  it("keeps a session's private mode when it names a model", () => {
+    const state = normalizePersistedState({ sessions: [{ ...base, privateMode: { modelId: "a" } }] });
+
+    expect(state.sessions[0].privateMode).toEqual({ modelId: "a" });
+  });
+
+  it.each([[{ modelId: 3 }], [{ modelId: "" }], [{}], ["x"], [null], [[]]])("drops a malformed private mode %j and keeps the session", (privateMode) => {
+    const state = normalizePersistedState({ sessions: [{ ...base, privateMode }] });
+
+    expect(state.sessions).toHaveLength(1);
+    expect(state.sessions[0]).not.toHaveProperty("privateMode");
+  });
+
+  it("keeps only the model id of a private mode", () => {
+    const state = normalizePersistedState({ sessions: [{ ...base, privateMode: { modelId: "a", key: "secret" } }] });
+
+    expect(state.sessions[0].privateMode).toEqual({ modelId: "a" });
+  });
+
+  it("keeps a private session's credit cap, and drops a malformed one", () => {
+    const state = normalizePersistedState({
+      sessions: [
+        { ...base, privateMode: { modelId: "a", sessionCap: 200 } },
+        { ...base, id: "s-2", privateMode: { modelId: "a", ownKey: true, sessionCap: 500 } },
+        { ...base, id: "s-3", privateMode: { modelId: "a", sessionCap: 12.5 } },
+        { ...base, id: "s-4", privateMode: { modelId: "a", sessionCap: -100 } },
+        { ...base, id: "s-5", privateMode: { modelId: "a", sessionCap: "200" } },
+      ],
+    });
+
+    expect(state.sessions[0].privateMode).toEqual({ modelId: "a", sessionCap: 200 });
+    expect(state.sessions[1].privateMode).toEqual({ modelId: "a", ownKey: true, sessionCap: 500 });
+    for (const session of state.sessions.slice(2)) {
+      expect(session.privateMode).toEqual({ modelId: "a" });
+    }
+  });
+
+  it("keeps a session's saved private usage and drops a malformed one", () => {
+    const state = normalizePersistedState({
+      sessions: [
+        { ...base, privateUsage: { credits: 12.5, estimated: true } },
+        { ...base, id: "s-2", privateUsage: { credits: -1, estimated: false } },
+        { ...base, id: "s-3", privateUsage: "oops" },
+      ],
+    });
+
+    expect(state.sessions[0].privateUsage).toEqual({ credits: 12.5, estimated: true });
+    expect(state.sessions[1]).not.toHaveProperty("privateUsage");
+    expect(state.sessions[2]).not.toHaveProperty("privateUsage");
+  });
+
   it("keeps a session's compareRunId and worktree startCommit", () => {
     const worktree = { repoPath: "/w/api", path: "/data/worktrees/api/fix", branch: "agent/fix", startCommit: "abc123" };
 
@@ -271,6 +322,60 @@ describe("normalizePersistedState - catalog settings", () => {
   });
 });
 
+describe("normalizePersistedState - private low balance flag", () => {
+  it("keeps only a literal true", () => {
+    expect(
+      normalizePersistedState({ settings: { privateLowBalanceNotified: true } }).settings
+        .privateLowBalanceNotified,
+    ).toBe(true);
+    for (const value of [false, "true", 1, null, {}]) {
+      expect(
+        normalizePersistedState({ settings: { privateLowBalanceNotified: value } }).settings
+          .privateLowBalanceNotified,
+      ).toBe(false);
+    }
+    expect(normalizePersistedState({}).settings.privateLowBalanceNotified).toBe(false);
+  });
+});
+
+describe("normalizePersistedState - private payment source", () => {
+  it("defaults to Zorvo credits and keeps only ownKey", () => {
+    expect(normalizePersistedState({}).settings.paymentSource).toBe("credits");
+    expect(normalizePersistedState({ settings: { paymentSource: "ownKey" } }).settings.paymentSource).toBe(
+      "ownKey",
+    );
+    for (const value of ["credits", "other", false, 1, null]) {
+      expect(normalizePersistedState({ settings: { paymentSource: value } }).settings.paymentSource).toBe(
+        "credits",
+      );
+    }
+  });
+
+  it("keeps ownKey on a private mode only when true", () => {
+    const state = normalizePersistedState({
+      sessions: [
+        { ...base, privateMode: { modelId: "a", ownKey: true } },
+        { ...base, id: "s-2", privateMode: { modelId: "a", ownKey: false } },
+        { ...base, id: "s-3", privateMode: { modelId: "a", ownKey: "yes" } },
+      ],
+    });
+
+    expect(state.sessions[0].privateMode).toEqual({ modelId: "a", ownKey: true });
+    expect(state.sessions[1].privateMode).toEqual({ modelId: "a" });
+    expect(state.sessions[2].privateMode).toEqual({ modelId: "a" });
+  });
+});
+
+describe("normalizePersistedState - secret guard", () => {
+  it("is on unless the saved value is literally false", () => {
+    expect(normalizePersistedState({}).settings.secretGuard).toBe(true);
+    expect(normalizePersistedState({ settings: { secretGuard: false } }).settings.secretGuard).toBe(false);
+    for (const value of [true, "false", 0, null, {}]) {
+      expect(normalizePersistedState({ settings: { secretGuard: value } }).settings.secretGuard).toBe(true);
+    }
+  });
+});
+
 describe("normalizePersistedState - notified updates", () => {
   it("keeps string pairs and drops non-string values", () => {
     const { settings } = normalizePersistedState({
@@ -458,6 +563,36 @@ describe("a saved turn-end time", () => {
   });
 });
 
+describe("a saved verification", () => {
+  const reply = {
+    id: "a",
+    role: "agent",
+    content: "Done.",
+    timestamp: 1_000,
+    completedAt: 2_000,
+    verification: { state: "verified", kind: "provider_tee", signer: "0xabc", signed: 1, total: 1 },
+  };
+
+  it("keeps a well-formed verification", () => {
+    const [message] = normalizeTranscript([reply]);
+
+    expect(message.verification).toEqual(reply.verification);
+  });
+
+  it("drops a malformed verification but keeps the reply", () => {
+    for (const verification of [
+      { ...reply.verification, state: "maybe" },
+      { ...reply.verification, signed: "one" },
+      { ...reply.verification, kind: "nope" },
+      { ...reply.verification, total: -1 },
+    ]) {
+      const [message] = normalizeTranscript([{ ...reply, verification }]);
+
+      expect(message).toBeDefined();
+      expect("verification" in message).toBe(false);
+    }
+  });
+});
 describe("normalizePersistedState - delegation", () => {
   it("keeps a valid delegatedFrom link", () => {
     const delegatedFrom = { sessionId: "s-a", task: "Do it", startedAt: 5, endedAt: null };

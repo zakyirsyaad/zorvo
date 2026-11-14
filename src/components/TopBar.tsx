@@ -10,6 +10,7 @@ import {
   PanelLeft,
   PanelRight,
   Pencil,
+  ShieldCheck,
   Split,
   Unlink, ShieldOff } from "lucide-react";
 import { Fragment, useId, useState, type Ref } from "react";
@@ -184,6 +185,8 @@ export interface TopBarProps {
   onRename?: (name: string) => void;
   /** The title while no session is open (a new-session draft's folder). */
   workspaceName?: string;
+  /** A private session: the title takes the Private · TEE chip. */
+  isPrivate?: boolean;
   /** The folder the session, run or draft works in; shown before the title. */
   folderName?: string;
   /** Set for a compare run: the bar adds "Compare · N agents". */
@@ -253,6 +256,7 @@ export function TopBar({
   sessionName,
   onRename,
   workspaceName,
+  isPrivate = false,
   folderName,
   runAgentCount,
   isDraft = false,
@@ -353,6 +357,11 @@ export function TopBar({
         {runAgentCount !== undefined && (
           <Chip variant="plain" icon={<Columns3 size={12} className="text-fg-muted" />} className="shrink-0">
             {`Compare · ${runAgentCount} agents`}
+          </Chip>
+        )}
+        {title && isPrivate && (
+          <Chip variant="plain" icon={<ShieldCheck size={11} aria-hidden="true" />} className="bg-chip px-2">
+            Private · TEE
           </Chip>
         )}
         {title && branch && !isDraft && (

@@ -17,7 +17,7 @@ describe("SettingsNav", () => {
     renderNav({ current: "appearance" });
     const nav = screen.getByRole("navigation", { name: "Settings" });
     const names = within(nav).getAllByRole("link").map((link) => link.textContent);
-    expect(names).toEqual(["Back to sessions", "General", "Appearance", "Agents", "GitHub"]);
+    expect(names).toEqual(["Back to sessions", "General", "Appearance", "Agents", "Private mode", "GitHub"]);
     const current = within(nav).getByRole("link", { name: "Appearance" });
     expect(current).toHaveAttribute("aria-current", "page");
     expect(current).toHaveClass("bg-surface-hover", "text-fg", "font-medium");
@@ -61,9 +61,10 @@ describe("SettingsNav", () => {
     expect(item).not.toHaveAttribute("tabindex");
     expect(item.querySelector("a, button, [tabindex]")).toBeNull();
     const all = Array.from(screen.getByRole("navigation").querySelectorAll("a, [data-soon]"));
-    const agents = all.indexOf(screen.getByRole("link", { name: "Agents" }));
-    expect(all.indexOf(item)).toBe(agents + 1);
-    expect(all.indexOf(screen.getByRole("link", { name: "GitHub" }))).toBe(agents + 2);
+    const priv = all.indexOf(screen.getByRole("link", { name: "Private mode" }));
+    expect(all.indexOf(screen.getByRole("link", { name: "Agents" }))).toBe(priv - 1);
+    expect(all.indexOf(item)).toBe(priv + 1);
+    expect(all.indexOf(screen.getByRole("link", { name: "GitHub" }))).toBe(priv + 2);
   });
 
   it("the hand-drawn icons match the canvas", () => {

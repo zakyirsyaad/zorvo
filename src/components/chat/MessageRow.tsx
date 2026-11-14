@@ -8,6 +8,8 @@ import { UserMessageBar } from "./UserMessageBar";
 import { AttachmentChips } from "../composer/AttachmentChips";
 import { ToolsPart } from "./ToolsPart";
 import { PlanUpdatedRow, ThinkingBlock } from "./ReplyExtras";
+import { VerificationBadge } from "../private/VerificationBadge";
+import type { ModelPrice } from "../../lib/private-credits";
 import { partsOf } from "../../lib/acp-events";
 import { formatRelativeTime } from "../../lib/relative-time";
 import type { ChatMessage, ElicitationAnswer } from "../../types";
@@ -39,6 +41,12 @@ export interface MessageRowProps {
   onChooseOption?: (cardId: string, optionId: string, answers?: Record<string, string>) => void;
   onAnswerElicitation?: (key: string, answer: ElicitationAnswer) => void;
   onReopenElicitationUrl?: (key: string) => void;
+  /** Opens NEAR AI's Verification Center from a private reply's badge. */
+  onOpenUrl?: (url: string) => void;
+  /** The private model id, for the badge's popover. */
+  privateModelId?: string;
+  /** That model's listed price, for a reply's credits. */
+  privateModel?: ModelPrice | null;
 }
 
 /**
@@ -64,6 +72,9 @@ export const MessageRow = memo(function MessageRow({
   onChooseOption,
   onAnswerElicitation,
   onReopenElicitationUrl,
+  onOpenUrl,
+  privateModelId,
+  privateModel,
 }: MessageRowProps) {
   const isUser = message.role === "user";
   const timeLabel = timeLabelOf(message);
@@ -183,6 +194,14 @@ export const MessageRow = memo(function MessageRow({
             {timeLabel && <span className="shrink-0 text-caption text-fg-subtle">{timeLabel}</span>}
           </div>
           {text}
+          {message.verification && (
+            <VerificationBadge
+              verification={message.verification}
+              modelId={privateModelId}
+              model={privateModel}
+              onOpenUrl={onOpenUrl}
+            />
+          )}
           {/* The reply's actions, once its turn has ended */}
           {showActions && (
             <MessageActionBar

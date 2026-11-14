@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
+  Clock,
   FileText,
   Globe,
   LoaderCircle,
@@ -61,8 +62,16 @@ const ROW = "flex h-7 w-full items-center gap-2 rounded-md pl-3.5 pr-2 text-left
 
 function ToolRow({ tool, isTurnOver, isOpen }: { tool: ToolExecution; isTurnOver: boolean; isOpen?: boolean }) {
   const Chevron = isOpen ? ChevronDown : ChevronRight;
-  const Icon = (tool.kind && KIND_ICONS[tool.kind]) || Wrench;
-  const { verb, target } = toolRow(tool);
+  // The MCP credits check is a read in words, not the agent's own fetch: the canvas draws a clock,
+  // the verb Checked and the result's first line at the right. Agents may prefix the tool with the
+  // `zorvo-credits` server name, so match that spelling too (and only that server's tool).
+  const name = tool.name.trim().toLowerCase();
+  const isCredits = name === "credits_balance" || /^(?:mcp__)?zorvo-credits[_-]+credits_balance$/.test(name);
+  const Icon = isCredits ? Clock : (tool.kind && KIND_ICONS[tool.kind]) || Wrench;
+  const { verb, target } = isCredits ? { verb: "Checked", target: "credits_balance" } : toolRow(tool);
+  const creditsLine = isCredits
+    ? tool.details?.find((detail) => detail.kind === "text")?.text.split("\n")[0]
+    : undefined;
   // A file's path is cut at its start, so its name stays in sight however long the path;
   // a command reads from its start, so it is cut at its end.
   const isFile = Boolean(target) && tool.kind !== "execute";
@@ -106,9 +115,13 @@ function ToolRow({ tool, isTurnOver, isOpen }: { tool: ToolExecution; isTurnOver
           </span>
         </span>
       )}
-      <span className={`shrink-0 text-caption ${word === null ? "text-status-running" : STATUS_CLASSES[word]}`}>
-        {word ?? "Running"}
-      </span>
+      {creditsLine && tool.status === "completed" ? (
+        <span className="min-w-0 shrink truncate text-caption text-fg-subtle">{creditsLine}</span>
+      ) : (
+        <span className={`shrink-0 text-caption ${word === null ? "text-status-running" : STATUS_CLASSES[word]}`}>
+          {word ?? "Running"}
+        </span>
+      )}
       {/* Every step keeps the chevron's slot, so the columns line up whether or not it opens. */}
       <span data-tool-chevron="" aria-hidden="true" className="flex w-3 shrink-0 justify-center text-fg-muted">
         {isOpen !== undefined && <Chevron size={12} />}

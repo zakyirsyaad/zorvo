@@ -172,7 +172,7 @@ impl PrivateVerifier {
                     continue;
                 }
                 if checked.attempts >= MAX_ATTEMPTS {
-                    self.emit(
+                    self.record_result(
                         &mut out,
                         &record,
                         VerificationState::NotSigned,
@@ -184,7 +184,7 @@ impl PrivateVerifier {
                 }
             }
             if !record.signed {
-                self.emit(
+                self.record_result(
                     &mut out,
                     &record,
                     VerificationState::NotSigned,
@@ -197,7 +197,7 @@ impl PrivateVerifier {
             let attempts = cached.as_ref().map_or(0, |checked| checked.attempts);
             match self.signature(&id, &record.model, key) {
                 SignatureLookup::NotFound => {
-                    self.emit(
+                    self.record_result(
                         &mut out,
                         &record,
                         VerificationState::NotSigned,
@@ -211,7 +211,7 @@ impl PrivateVerifier {
                 }
                 SignatureLookup::Found(proof) => {
                     if !text_matches(&proof, &record) {
-                        self.emit(
+                        self.record_result(
                             &mut out,
                             &record,
                             VerificationState::DidntVerify,
@@ -224,7 +224,7 @@ impl PrivateVerifier {
                     if recover_address(&proof.text, &proof.signature)
                         .is_none_or(|address| address != proof.signer)
                     {
-                        self.emit(
+                        self.record_result(
                             &mut out,
                             &record,
                             VerificationState::DidntVerify,
@@ -237,7 +237,7 @@ impl PrivateVerifier {
                     match self.attestation(&record.model, key, &mut local_attestations) {
                         Err(()) => self.retry_later(&mut out, &record, attempts),
                         Ok(attestation) if attestation.allows(&proof) => {
-                            self.emit(
+                            self.record_result(
                                 &mut out,
                                 &record,
                                 VerificationState::Verified,
@@ -247,7 +247,7 @@ impl PrivateVerifier {
                             );
                         }
                         Ok(_) => {
-                            self.emit(
+                            self.record_result(
                                 &mut out,
                                 &record,
                                 VerificationState::DidntVerify,
@@ -270,10 +270,10 @@ impl PrivateVerifier {
         } else {
             VerificationState::Checking
         };
-        self.emit(out, record, state, None, None, attempts);
+        self.record_result(out, record, state, None, None, attempts);
     }
 
-    fn emit(
+    fn record_result(
         &self,
         out: &mut Vec<RecordVerification>,
         record: &ProxyRecord,

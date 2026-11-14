@@ -34,7 +34,7 @@
 //   FAKE_ACP_PROMPT_ERROR_DETAILS=<text> -> refuses a plain prompt with -32603 "Internal error"
 //                         and <text> in data.details, as GLM Agent does without an API key
 //   FAKE_ACP_CALL_LOG -> appends every received method name to the file it names
-//   FAKE_ACP_MCP_LOG -> appends "<method> <mcpServers JSON>" for every session/new, load, resume or fork
+//   FAKE_ACP_SERVERS_LOG -> appends "<method> <mcpServers JSON>" for every session/new, load, resume or fork
 //   FAKE_ACP_SLOW_INIT=<ms> -> answers initialize only after that many milliseconds
 //                         (ten seconds when set without a delay)
 //   FAKE_ACP_SLOW_REPLAY -> session/load sends another chunk three seconds later, then answers
@@ -660,7 +660,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       const path = process.env[key];
       if (path) appendFileSync(path, `${message.method}\n`);
     }
-    const mcpLog = process.env.FAKE_ACP_MCP_LOG;
+    const mcpLog = process.env.FAKE_ACP_SERVERS_LOG;
     if (mcpLog && ["session/new", "session/load", "session/resume", "session/fork"].includes(message.method)) {
       appendFileSync(mcpLog, `${message.method} ${JSON.stringify(message.params?.mcpServers ?? [])}\n`);
     }

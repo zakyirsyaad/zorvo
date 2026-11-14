@@ -93,20 +93,6 @@ type Json = Record<string, unknown>;
 const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isString = (v: unknown): v is string => typeof v === 'string';
 
-/** The private model as a command argument, or nothing: an ordinary launch carries no `privateModelId` key. */
-const privateArgs = (
-  privateModelId: string | undefined,
-  privateOwnKey = false,
-  privateSessionCap?: number,
-) =>
-  privateModelId === undefined
-    ? {}
-    : {
-        privateModelId,
-        ...(privateOwnKey ? { privateOwnKey: true } : {}),
-        ...(privateSessionCap !== undefined ? { privateSessionCap } : {}),
-      };
-
 /** Validates modes an agent reported; null when malformed. */
 export function toModes(raw: unknown): AcpModes | null {
   if (!isObject(raw) || !isString(raw.currentModeId) || !Array.isArray(raw.availableModes)) return null;
@@ -336,7 +322,10 @@ export function useAcpSessions(handlers: AcpHandlers) {
           cwd,
           profileId,
           agentTools,
-          ...privateArgs(privateModelId, privateOwnKey, privateSessionCap),
+          // An ordinary launch carries none of the private keys.
+          ...(privateModelId !== undefined ? { privateModelId } : {}),
+          ...(privateModelId !== undefined && privateOwnKey ? { privateOwnKey: true } : {}),
+          ...(privateModelId !== undefined && privateSessionCap !== undefined ? { privateSessionCap } : {}),
         }),
       ),
     [remember],
@@ -362,7 +351,10 @@ export function useAcpSessions(handlers: AcpHandlers) {
           profileId,
           acpSessionId,
           agentTools,
-          ...privateArgs(privateModelId, privateOwnKey, privateSessionCap),
+          // An ordinary launch carries none of the private keys.
+          ...(privateModelId !== undefined ? { privateModelId } : {}),
+          ...(privateModelId !== undefined && privateOwnKey ? { privateOwnKey: true } : {}),
+          ...(privateModelId !== undefined && privateSessionCap !== undefined ? { privateSessionCap } : {}),
         }),
       ),
     [remember],

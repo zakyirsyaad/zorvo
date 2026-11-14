@@ -465,7 +465,8 @@ pub fn run() {
                 .set_sink(Box::new(move |request| {
                     let _ = topup_app.emit_to(
                         "main",
-                        private_mode::proxy::TOPUP_REQUEST_EVENT,
+                        // The literal the contract test reads; `TOPUP_REQUEST_EVENT` holds the same name.
+                        "private-topup-request",
                         request,
                     );
                 }));

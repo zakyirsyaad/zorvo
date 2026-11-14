@@ -218,7 +218,7 @@ fn forks_into_a_new_app_session_on_the_same_agent() {
 fn a_native_fork_passes_the_sources_mcp_servers() {
     let (manager, _rx) = manager();
     let log = method_log("mcp-fork");
-    let mut launch = with_env(fake_agent(), "FAKE_ACP_MCP_LOG", log.to_str().unwrap());
+    let mut launch = with_env(fake_agent(), "FAKE_ACP_SERVERS_LOG", log.to_str().unwrap());
     launch.private = true;
     launch.mcp_servers = vec![json!({
         "name": "zorvo-credits",

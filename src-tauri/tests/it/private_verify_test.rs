@@ -140,7 +140,7 @@ fn signing_key() -> SigningKey {
 }
 
 fn address_of(key: &SigningKey) -> String {
-    let point = key.verifying_key().to_encoded_point(false);
+    let point = key.verifying_key().to_sec1_point(false);
     let digest = Keccak256::digest(&point.as_bytes()[1..]);
     format!("0x{}", hex(&digest[12..]))
 }
@@ -148,9 +148,7 @@ fn address_of(key: &SigningKey) -> String {
 fn sign(text: &str) -> String {
     let prefixed = format!("\x19Ethereum Signed Message:\n{}{}", text.len(), text);
     let digest = Keccak256::digest(prefixed.as_bytes());
-    let (signature, recovery) = signing_key()
-        .sign_prehash_recoverable(&digest)
-        .expect("sign");
+    let (signature, recovery) = signing_key().sign_prehash_recoverable(&digest);
     let mut bytes = signature.to_bytes().to_vec();
     bytes.push(recovery.to_byte());
     hex(&bytes)

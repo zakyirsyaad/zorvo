@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Loader2, ShieldCheck, ShieldMinus, ShieldX } from "lucide-react";
 import type { MessageVerification, VerificationKind, VerificationState } from "../../types";
 import { shortSigner, VERIFICATION_LABEL } from "../../lib/private-verification";
-import { VERIFICATION_CENTER_URL } from "./PrivateInspector";
+import { verificationCenterUrl } from "./PrivateInspector";
 import { Chip } from "../ui/Chip";
 import { Popover } from "../ui/Popover";
 
@@ -111,7 +111,7 @@ export function VerificationBadge({ verification, modelId, onOpenUrl }: Verifica
             <button
               type="button"
               className="focus-ring mt-2 self-start text-left text-ui-sm text-fg-secondary hover:text-fg"
-              onClick={() => onOpenUrl?.(VERIFICATION_CENTER_URL)}
+              onClick={() => onOpenUrl?.(verificationCenterUrl(modelId))}
             >
               Check it yourself in NEAR AI's Verification Center
             </button>

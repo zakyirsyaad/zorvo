@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { VerificationBadge } from "../components/private/VerificationBadge";
-import { VERIFICATION_CENTER_URL } from "../components/private/PrivateInspector";
+import { verificationCenterUrl } from "../components/private/PrivateInspector";
 import { VERIFICATION_LABEL } from "../lib/private-verification";
 import type { MessageVerification } from "../types";
 
@@ -69,7 +69,9 @@ describe("VerificationBadge", () => {
     fireEvent.click(
       within(panel).getByRole("button", { name: "Check it yourself in NEAR AI's Verification Center" }),
     );
-    expect(onOpenUrl).toHaveBeenCalledWith(VERIFICATION_CENTER_URL);
+    expect(onOpenUrl).toHaveBeenCalledWith(verificationCenterUrl(MODEL_ID));
+    expect(verificationCenterUrl("Qwen/Qwen3.8-27B")).toBe("https://cloud.near.ai/verify?model=Qwen%2FQwen3.8-27B");
+    expect(verificationCenterUrl(undefined)).toBe("https://cloud.near.ai/verify");
   });
 
   it("names the gateway and an unknown kind honestly", () => {

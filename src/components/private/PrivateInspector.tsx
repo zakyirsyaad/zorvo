@@ -14,6 +14,15 @@ import { Button } from "../ui/Button";
 /** NEAR AI's public page that checks a model's attestation and a reply's signature in the browser (docs.near.ai/cloud/verification/verification-center). */
 export const VERIFICATION_CENTER_URL = "https://cloud.near.ai/verify";
 
+/**
+ * The page for one model's deployment. Without `?model=` the page only asks for one (seen live
+ * 2026-11-14); it has no address for a single reply, so the link names the model, never a chat id.
+ */
+export function verificationCenterUrl(modelId: string | undefined): string {
+  const id = modelId?.trim();
+  return id ? `${VERIFICATION_CENTER_URL}?model=${encodeURIComponent(id)}` : VERIFICATION_CENTER_URL;
+}
+
 const WHERE_IT_RUNS =
   "NEAR AI Cloud, inside Intel TDX and NVIDIA confidential computing. The credits server never sees your prompts.";
 
@@ -178,7 +187,7 @@ export function PrivateInspector({
             size="sm"
             className="self-start"
             icon={<ExternalLink size={12} strokeWidth={1.75} aria-hidden="true" />}
-            onClick={() => onOpenUrl(VERIFICATION_CENTER_URL)}
+            onClick={() => onOpenUrl(verificationCenterUrl(modelId))}
           >
             Open the Verification Center
           </Button>

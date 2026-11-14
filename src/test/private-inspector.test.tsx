@@ -142,7 +142,7 @@ describe("PrivateInspector", () => {
       "NEAR AI Cloud, inside Intel TDX and NVIDIA confidential computing. The credits server never sees your prompts.",
     );
     fireEvent.click(within(where).getByRole("button", { name: "Open the Verification Center" }));
-    expect(onOpenUrl).toHaveBeenCalledWith(VERIFICATION_CENTER_URL);
+    expect(onOpenUrl).toHaveBeenCalledWith(`${VERIFICATION_CENTER_URL}?model=${encodeURIComponent(MODEL_ID)}`);
     expect(VERIFICATION_CENTER_URL).toBe("https://cloud.near.ai/verify");
   });
 

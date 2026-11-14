@@ -4,6 +4,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-14
+
 ### Added
 
 - **Private mode, opt in.** Qwen Code can run on NEAR AI models inside secure hardware (TEE), paid with prepaid credits you top up in Settings → Private mode. Turn it on with the Private chip of a Qwen Code draft; until you do, nothing changes.
@@ -359,7 +361,8 @@ Tagged but never published; its fix shipped in 0.11.2.
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.11.2...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/zakyirsyaad/zorvo/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.10.1...v0.11.0

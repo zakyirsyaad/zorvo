@@ -24,6 +24,14 @@ function open(verification: MessageVerification, modelId = MODEL_ID) {
   return { onOpenUrl, panel: screen.getByRole("dialog", { name: "Signature" }), view };
 }
 
+describe("a reply whose calls have different signers", () => {
+  it("says so in place of one signer", () => {
+    render(<VerificationBadge verification={{ state: "verified", signed: 3, total: 3 }} modelId={MODEL_ID} />);
+    fireEvent.click(screen.getByRole("button", { name: /Verified in TEE/ }));
+    expect(screen.getByText("3 calls, more than one signer")).toBeInTheDocument();
+  });
+});
+
 describe("the reply's usage line", () => {
   it("shows input and output with their credits when the price is known", () => {
     const { container } = render(

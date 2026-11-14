@@ -103,11 +103,16 @@ export function VerificationBadge({ verification, modelId, model, onOpenUrl }: V
                 <span className="font-mono text-caption">{modelId ?? "—"}</span>
               </Row>
               <Row label="Signed by">
-                <span className="font-mono text-caption">
-                  {verification.signer
-                    ? `${shortSigner(verification.signer)} · ${kindLabel(verification.kind)}`
-                    : "—"}
-                </span>
+                {verification.signer ? (
+                  <span className="font-mono text-caption">
+                    {`${shortSigner(verification.signer)} · ${kindLabel(verification.kind)}`}
+                  </span>
+                ) : (
+                  // A reply made of several model calls can be signed by more than one NEAR AI signer.
+                  <span className="text-ui-sm">
+                    {verification.signed > 1 ? `${verification.signed} calls, more than one signer` : "—"}
+                  </span>
+                )}
               </Row>
               <Row label="Checked">
                 <span className="text-ui-sm">The request and the answer match their signed hashes</span>

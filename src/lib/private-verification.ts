@@ -71,15 +71,28 @@ export function summarizeVerification(records: readonly VerificationRecord[]): M
   };
 }
 
-/** A record belongs to the reply whose turn contains its start. */
-function belongsTo(message: ChatMessage, record: VerificationRecord): boolean {
+/**
+ * A record belongs to the reply whose turn contains its start. The turn starts at `turnStart`, the
+ * user's message, not at the reply: a reply's own time is its first chunk, which arrives after the
+ * model call that produced it began (seen live: a one-call turn never got its badge).
+ */
+function belongsTo(message: ChatMessage, turnStart: number, record: VerificationRecord): boolean {
   return (
     message.role === 'agent' &&
     message.hasKnownTime !== false &&
     message.completedAt !== undefined &&
-    record.startedAt >= message.timestamp &&
+    record.startedAt >= turnStart &&
     record.startedAt <= message.completedAt
   );
+}
+
+/** When each message's turn began: the nearest user message before it, else its own time. */
+function turnStarts(messages: readonly ChatMessage[]): number[] {
+  let start: number | undefined;
+  return messages.map((message) => {
+    if (message.role === 'user' && message.hasKnownTime !== false) start = message.timestamp;
+    return Math.min(start ?? message.timestamp, message.timestamp);
+  });
 }
 
 /**
@@ -91,8 +104,9 @@ export function foldVerifications(
   records: readonly VerificationRecord[],
 ): ChatMessage[] {
   if (records.length === 0) return messages;
-  return messages.map((message) => {
-    const inWindow = records.filter((record) => belongsTo(message, record));
+  const starts = turnStarts(messages);
+  return messages.map((message, index) => {
+    const inWindow = records.filter((record) => belongsTo(message, starts[index] ?? message.timestamp, record));
     if (inWindow.length === 0) return message;
     return { ...message, verification: summarizeVerification(inWindow) };
   });

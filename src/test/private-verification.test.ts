@@ -98,6 +98,17 @@ describe("foldVerifications", () => {
     expect(folded[2].verification).toMatchObject({ state: "verified", signed: 1, total: 1 });
   });
 
+  it("takes a call that began before the reply's first chunk, back to the user's message", () => {
+    const messages: ChatMessage[] = [
+      reply({ id: "a-0", timestamp: 100, completedAt: 500 }),
+      { id: "u-1", role: "user", content: "say ok", timestamp: 1_000 },
+      reply({ id: "a-1", timestamp: 1_900, completedAt: 2_400 }),
+    ];
+    const folded = foldVerifications(messages, [record({ startedAt: 1_050, endedAt: 2_300 })]);
+    expect(folded[0]?.verification).toBeUndefined();
+    expect(folded[2]?.verification?.state).toBe("verified");
+  });
+
   it("leaves replies with no records, an unknown time or no end time alone", () => {
     const noRecords = reply({ id: "a-empty", timestamp: 3_000, completedAt: 4_000 });
     const replayed = reply({ id: "a-replayed", hasKnownTime: false });

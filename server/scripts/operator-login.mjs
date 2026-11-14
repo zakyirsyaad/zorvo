@@ -14,12 +14,11 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { KeyPair } from "@near-js/crypto";
-import { buildLoginRequest, buildNep413Payload, LOGIN_MESSAGE, LOGIN_RECIPIENT } from "./nep413.mjs";
+import { buildLoginRequest, buildNep413Payload, LOGIN_MESSAGE, LOGIN_RECIPIENT, LOGIN_USER_AGENT } from "./nep413.mjs";
 
 export { buildNep413Payload };
 
 const LOGIN_URL = "https://cloud-api.near.ai/v1/auth/near";
-const USER_AGENT = "zorvo-credits-operator-login/1";
 const REQUEST_TIMEOUT_MS = 20_000;
 const ACCOUNT_ID = /^[a-z0-9][a-z0-9._-]{1,63}$/;
 const FALLBACK =
@@ -121,7 +120,7 @@ export async function main(argv, fetcher = fetch) {
   try {
     response = await fetcher(LOGIN_URL, {
       method: "POST",
-      headers: { "content-type": "application/json", "user-agent": USER_AGENT },
+      headers: { "content-type": "application/json", "user-agent": LOGIN_USER_AGENT },
       body: JSON.stringify(request),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });

@@ -155,6 +155,13 @@ function spendLimitBody(limitNano: bigint): { spendLimit: { amount: number; curr
 /** A workspace key as the list shows it; `name` when NEAR AI states one. */
 export type ListedKey = { id: string; name?: string; limitNano: bigint | null; usageNano: bigint };
 
+/**
+ * Sent on every NEAR AI request. NEAR AI binds the operator's refresh token, and the access tokens made
+ * from it, to the User-Agent of the login (`LOGIN_USER_AGENT` in `scripts/nep413.mjs`): a request with
+ * another value, or none, is refused 401. A test keeps the two strings equal.
+ */
+export const NEAR_AI_USER_AGENT = "zorvo-credits-operator-login/1";
+
 export class NearAiClient {
   private readonly base: string;
 
@@ -167,7 +174,7 @@ export class NearAiClient {
   }
 
   private async request(method: string, path: string, token: string | undefined, body?: unknown): Promise<unknown> {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { "user-agent": NEAR_AI_USER_AGENT };
     if (token !== undefined) headers.authorization = `Bearer ${token}`;
     if (body !== undefined) headers["content-type"] = "application/json";
     const signal = AbortSignal.timeout(this.timeoutMs);

@@ -85,10 +85,15 @@ What is known and what is not (**unverified until you run it**):
   not list `POST /v1/auth/near`: `signed_message` with `accountId`, `publicKey` and a base64 `signature`,
   and `payload` with `message`, a 32-number `nonce`, `recipient` and an optional `callbackUrl`. The NEP-413
   hashing is pinned in the tests to wallet fixtures from that same source.
-- No one has run the script against the real NEAR AI Cloud. If it is refused, it prints the HTTP status and
-  the fallback: sign in to the NEAR AI Cloud dashboard with the operator account, copy a refresh token from
-  that session by hand, and store it with `wrangler secret put OPERATOR_REFRESH_TOKEN`. If it is refused,
-  record the answer here.
+- The login works against the real NEAR AI Cloud (first run 2026-11-14). If it is ever refused, the script
+  prints the HTTP status and the fallback: sign in to the NEAR AI Cloud dashboard with the operator
+  account, copy a refresh token from that session by hand, and store it with
+  `wrangler secret put OPERATOR_REFRESH_TOKEN`.
+- **The refresh token is bound to the login's User-Agent.** NEAR AI refuses (401) a refresh, or a request
+  with the access token it gives, that sends another User-Agent or none (`refresh_middleware` in
+  `nearai/cloud-api`). The script and the server send the same value (`LOGIN_USER_AGENT` in
+  `scripts/nep413.mjs`, `NEAR_AI_USER_AGENT` in `src/nearai.ts`; a test keeps them equal). A token copied
+  from a browser session is bound to that browser's User-Agent and will not work with the server.
 - NEAR AI's refresh tokens live 7 days (from its source). Once the alarm is running (it starts with the
   first device registration) the server renews its access token about every 30 minutes, whatever the traffic,
   spends the refresh token for it, and stores the new refresh token (encrypted) before using it. So a

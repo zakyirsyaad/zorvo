@@ -19,6 +19,12 @@ import { serialize } from "borsh";
 
 export const LOGIN_MESSAGE = "Sign in to NEAR AI Cloud";
 export const LOGIN_RECIPIENT = "cloud.near.ai";
+/**
+ * NEAR AI binds a refresh token to the User-Agent of the login: a refresh, and every request with the
+ * access token it gives, must send this same value or is refused 401. The Worker sends it too
+ * (`NEAR_AI_USER_AGENT` in `src/nearai.ts`); a test keeps the two equal.
+ */
+export const LOGIN_USER_AGENT = "zorvo-credits-operator-login/1";
 
 const TIMESTAMP_BYTES = 8;
 const RANDOM_BYTES = 24;

@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../src/config";
 import { decrypt } from "../src/crypto";
 import type { Ledger } from "../src/ledger/Ledger";
-import { NearAiClient, NearAiError } from "../src/nearai";
+import { LOGIN_USER_AGENT } from "../scripts/nep413.mjs";
+import { NEAR_AI_USER_AGENT, NearAiClient, NearAiError } from "../src/nearai";
 
 /** The NEAR AI client's edges: amounts, paths, error codes, odd model lists and empty tokens. */
 
@@ -37,6 +38,25 @@ const model = (modelId: unknown, extra: Record<string, unknown> = {}) => ({
   outputCostPerToken: price(2),
   metadata: { verifiable: true },
   ...extra,
+});
+
+describe("the User-Agent NEAR AI binds the operator's tokens to", () => {
+  it("is the one the login script sends", () => {
+    expect(NEAR_AI_USER_AGENT).toBe(LOGIN_USER_AGENT);
+  });
+
+  it("goes out on a refresh and on a request made with the access token", async () => {
+    const { fetcher, calls } = stubFetch((call) =>
+      call.url.endsWith("/users/me/access-tokens") ? json({ access_token: "acc-1", refresh_token: "ref-2" }) : json({}),
+    );
+    const client = new NearAiClient(BASE, fetcher);
+
+    await client.refresh("ref-1");
+    await client.setSpendLimit("acc-1", "ws-1", "key-1", 1_000n);
+
+    expect(calls).toHaveLength(2);
+    for (const call of calls) expect(call.headers.get("user-agent")).toBe(LOGIN_USER_AGENT);
+  });
 });
 
 describe("spend limits NEAR AI is sent", () => {

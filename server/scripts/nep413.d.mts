@@ -1,5 +1,6 @@
 export const LOGIN_MESSAGE: "Sign in to NEAR AI Cloud";
 export const LOGIN_RECIPIENT: "cloud.near.ai";
+export const LOGIN_USER_AGENT: "zorvo-credits-operator-login/1";
 
 export type Nep413Payload = { message: string; nonce: number[] | Uint8Array; recipient: string; callbackUrl: string | null };
 /** The operator's key as the CLI wraps it: `publicKey` is "ed25519:<base58>", `sign` signs the digest as it is. */

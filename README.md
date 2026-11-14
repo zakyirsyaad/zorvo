@@ -210,7 +210,9 @@ Both tags are created at submission; until then the compare link has nothing to 
   `@noble/hashes`.
 - **AI-assisted code.** Parts of this branch were written with Claude Code and Qwen Code under the
   author's direction and review; the author reviewed and tested every change.
-- **Other projects by the author.** TODO (user): list other projects, or say "none".
+- **Other projects by the author.** One other submission to this hackathon, independent of this one:
+  [Foundling](https://github.com/zakyirsyaad/foundling), a USDC vault on NEAR whose strategy runs sealed
+  in an OutLayer TEE. It shares no code, contract or service with Zorvo Private.
 
 ## Security and privacy model
 

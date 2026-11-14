@@ -1,3 +1,12 @@
+> **NEAR HACKATHON: Zorvo Private.** The hackathon work is not on this branch. It lives on
+> [`hackathon/near-credits`](https://github.com/zakyirsyaad/zorvo/tree/hackathon/near-credits): a private
+> mode where Qwen Code runs only on NEAR AI Cloud models inside a TEE, each answer's signature is checked
+> on your Mac, and credits are bought with USDC on NEAR. Start with
+> [that branch's README](https://github.com/zakyirsyaad/zorvo/blob/hackathon/near-credits/README.md): it
+> has the steps to reproduce, a judge code, and what existed before the hackathon. To verify without a
+> Mac: `git clone -b hackathon/near-credits https://github.com/zakyirsyaad/zorvo && cd zorvo && pnpm install`,
+> then follow its "Reproduce" section.
+
 <p align="center">
   <img src="docs/assets/zorvo-icon.png" alt="" width="112" height="112">
 </p>

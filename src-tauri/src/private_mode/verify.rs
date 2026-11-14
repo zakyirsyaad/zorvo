@@ -520,7 +520,7 @@ fn recover_address(text: &str, signature_hex: &str) -> Option<String> {
     let key =
         VerifyingKey::recover_from_prehash(&digest, &signature, RecoveryId::from_byte(recovery)?)
             .ok()?;
-    let point = key.to_encoded_point(false);
+    let point = key.to_sec1_point(false);
     let address = Keccak256::digest(&point.as_bytes()[1..]);
     Some(format!("0x{}", hex(&address[12..])))
 }
@@ -568,7 +568,7 @@ mod tests {
     }
 
     fn address_of(key: &SigningKey) -> String {
-        let point = key.verifying_key().to_encoded_point(false);
+        let point = key.verifying_key().to_sec1_point(false);
         let digest = Keccak256::digest(&point.as_bytes()[1..]);
         format!("0x{}", hex(&digest[12..]))
     }
@@ -576,9 +576,7 @@ mod tests {
     fn sign(text: &str, v_offset: u8) -> String {
         let prefixed = format!("\x19Ethereum Signed Message:\n{}{}", text.len(), text);
         let digest = Keccak256::digest(prefixed.as_bytes());
-        let (signature, recovery) = signing_key()
-            .sign_prehash_recoverable(&digest)
-            .expect("sign");
+        let (signature, recovery) = signing_key().sign_prehash_recoverable(&digest);
         let mut bytes = signature.to_bytes().to_vec();
         bytes.push(recovery.to_byte() + v_offset);
         hex(&bytes)
@@ -595,6 +593,19 @@ mod tests {
         assert_eq!(
             recover_address(text, &sign(text, 27)),
             Some(address_of(&signing_key()))
+        );
+    }
+
+    /// A signature made outside this crate (@noble/curves 1.8.1, key `[7; 32]`), so an upgrade
+    /// of the curve library cannot change recovery and its own signer together unnoticed.
+    #[test]
+    fn recovers_the_address_from_a_signature_another_library_made() {
+        let signature = "d86b13a66193c9eb19d3d7549f833eeb4305e71e38801db06461ee27edf129fb\
+                         3615ae2ebd99e25edd691e253314a31da00824e403dfb922da7be8c17bd9655e1c";
+
+        assert_eq!(
+            recover_address("Qwen/Qwen3.8-27B:req:resp", signature),
+            Some("0x4a62316623ad457f02cdc5d997ded67a383ec569".to_string())
         );
     }
 

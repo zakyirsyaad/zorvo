@@ -114,12 +114,23 @@ describe("usePrivateVerification", () => {
     expect(invoke).toHaveBeenCalledTimes(2);
     expect(view.updateMessages).not.toHaveBeenCalled();
 
-    await advance(8_000);
+    await advance(3_000);
     expect(invoke).toHaveBeenCalledTimes(3);
     expect(view.updateMessages).toHaveBeenCalledTimes(1);
 
     await advance(30_000);
     expect(invoke).toHaveBeenCalledTimes(3);
+  });
+
+  it("gives up on a record that never comes after two minutes", async () => {
+    const invoke = mockAnswers();
+    const view = renderVerification();
+
+    await start(view);
+    for (let step = 0; step < 40; step += 1) await advance(5_000);
+
+    expect(invoke).toHaveBeenCalledTimes(26);
+    expect(view.updateMessages).not.toHaveBeenCalled();
   });
 
   it("stops after three checking answers", async () => {

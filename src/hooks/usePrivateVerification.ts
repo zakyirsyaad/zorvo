@@ -9,11 +9,18 @@ const EXTRA_CHECK_MS = 2_000;
 const CHECK_AGAIN_MS = 10_000;
 /** The Rust verifier gives up after three calls; stop asking after three checking answers too. */
 const MAX_CHECKS = 3;
+/**
+ * The proxy closes a call's record only when NEAR AI ends the response body, which live came well
+ * after the agent's turn end. An answer with no record yet is asked again this often, this many times.
+ */
+const WAIT_AGAIN_MS = 5_000;
+const MAX_WAITS = 24;
 
 type SessionTimers = {
   extra?: ReturnType<typeof setTimeout>;
   again?: ReturnType<typeof setTimeout>;
   checks: number;
+  waits: number;
 };
 
 export interface PrivateVerificationDeps {
@@ -80,6 +87,19 @@ export function usePrivateVerification({ updateMessages, saveSoon, isKnownSessio
     [clearAgain],
   );
 
+  /** No record yet, or the check failed: ask again, on its own longer count. */
+  const noteWaiting = useCallback((sessionId: string, run: number) => {
+    const entry = timersRef.current.get(sessionId);
+    if (!entry || entry.again !== undefined) return;
+    entry.waits += 1;
+    if (entry.waits > MAX_WAITS) return;
+    entry.again = setTimeout(() => {
+      const current = timersRef.current.get(sessionId);
+      if (current) current.again = undefined;
+      checkRef.current(sessionId, run);
+    }, WAIT_AGAIN_MS);
+  }, []);
+
   const check = useCallback(
     (sessionId: string, run: number) => {
       if (!mountedRef.current || runsRef.current.get(sessionId) !== run) return;
@@ -103,7 +123,7 @@ export function usePrivateVerification({ updateMessages, saveSoon, isKnownSessio
           // The proxy closes a call's record a moment after the agent ends its turn (seen live): no
           // record yet is asked again like a checking one, or the badge waits for the next turn.
           if (records.length === 0) {
-            noteChecking(sessionId, run);
+            noteWaiting(sessionId, run);
             return;
           }
           updateMessages(sessionId, (prev) => foldVerifications(prev, records));
@@ -115,11 +135,11 @@ export function usePrivateVerification({ updateMessages, saveSoon, isKnownSessio
           noteChecking(sessionId, run);
         })
         .catch(() => {
-          // No key, or the app is closing: the next turn end tries again.
-          if (mountedRef.current && runsRef.current.get(sessionId) === run) clearAgain(sessionId);
+          // No key yet, or the app is closing: asked again like a missing record, then the next turn end.
+          if (mountedRef.current && runsRef.current.get(sessionId) === run) noteWaiting(sessionId, run);
         });
     },
-    [clearAgain, forget, noteChecking],
+    [clearAgain, forget, noteChecking, noteWaiting],
   );
   checkRef.current = check;
 
@@ -130,7 +150,7 @@ export function usePrivateVerification({ updateMessages, saveSoon, isKnownSessio
       runsRef.current.set(sessionId, run);
       const previous = timersRef.current.get(sessionId);
       if (previous) clearTimers(previous);
-      const entry: SessionTimers = { checks: 0 };
+      const entry: SessionTimers = { checks: 0, waits: 0 };
       timersRef.current.set(sessionId, entry);
       check(sessionId, run);
       // A new turn replaces the last turn's timers: its late answers belong to an old reply window.

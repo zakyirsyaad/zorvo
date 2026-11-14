@@ -8,8 +8,13 @@ inside a TEE (Intel TDX with NVIDIA confidential computing), not on the user's o
 ordinary cloud endpoint. The user pays with prepaid credits bought with USDC through PingPay. There is no
 sign-up, wallet or email: the balance belongs to the Mac, and a recovery code moves it to another Mac.
 
-<!-- TODO (user): replace this line with a screenshot of the Verified in TEE badge and its popover. -->
-_Add the demo screenshot here: the **Verified in TEE** badge and its popover._
+![A Qwen Code reply in a private session with the Verified in TEE badge and the tokens and credits it used](docs/hackathon/verified-in-tee.png)
+
+_A private reply on 2026-11-14: NEAR AI's signature checked, and what the reply used._
+
+![NEAR AI's Verification Center showing Qwen 3.8 27B Abliterated as Verified, with GPU and TDX attestation](docs/hackathon/near-ai-verification-center.png)
+
+_The badge's link opens NEAR AI's Verification Center on the session's model: the hardware check Zorvo does not run itself._
 
 ## Role of NEAR
 

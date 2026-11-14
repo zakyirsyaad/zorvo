@@ -30,7 +30,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 import App from "../App";
 import { PopoutApp } from "../components/PopoutApp";
-import { VERIFICATION_CENTER_URL } from "../components/private/PrivateInspector";
+import { verificationCenterUrl } from "../components/private/PrivateInspector";
 import { readWindowMode } from "../lib/window-mode";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
@@ -193,7 +193,7 @@ describe("Popout windows", () => {
 
     expect(emitted).toContainEqual({
       event: "popout-action",
-      payload: { sessionId: "s-1", action: { kind: "open-url", url: VERIFICATION_CENTER_URL } },
+      payload: { sessionId: "s-1", action: { kind: "open-url", url: verificationCenterUrl("Qwen/Qwen3.8-27B") } },
     });
   });
 

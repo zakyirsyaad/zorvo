@@ -18,6 +18,9 @@ const NEAR_AI_URL = "https://cloud-api.near.ai/v1";
 const MODEL = "Qwen/Qwen3.8-27B-abliterated";
 const TOPUP_POLL_MS = 3_000;
 const TOPUP_WAIT_MS = 120_000;
+/** A new key is tried this often, this far apart, before a 401 counts as final. */
+const NEW_KEY_TRIES = 8;
+const NEW_KEY_RETRY_MS = 5_000;
 const SIGNATURE_TRIES = 3;
 const SIGNATURE_RETRY_MS = 3_000;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -270,12 +273,21 @@ async function run(worker, code) {
   };
   const requestText = JSON.stringify(chat);
   const requestSha = sha256Hex(bytesOf(requestText));
-  const { response, parsed, bytes: responseBytes } = await jsonRequest(`${NEAR_AI_URL}/chat/completions`, {
-    method: "POST",
-    token: key,
-    body: requestText,
-    headers: { "accept-encoding": "identity", "x-no-aliasing": "true" },
-  });
+  const send = () =>
+    jsonRequest(`${NEAR_AI_URL}/chat/completions`, {
+      method: "POST",
+      token: key,
+      body: requestText,
+      headers: { "accept-encoding": "identity", "x-no-aliasing": "true" },
+    });
+  // A key made seconds ago can still be refused: live, the first call right after the redemption
+  // answered 401 (2026-11-14). The same bytes are sent again, so the hashes below stay true.
+  let answer = await send();
+  for (let attempt = 1; answer.response.status === 401 && attempt < NEW_KEY_TRIES; attempt += 1) {
+    await sleep(NEW_KEY_RETRY_MS);
+    answer = await send();
+  }
+  const { response, parsed, bytes: responseBytes } = answer;
   if (!response.ok) throw new Error(`chat answered ${response.status}`);
   if (!isObject(parsed) || typeof parsed.id !== "string" || parsed.id === "") {
     throw new Error("chat answer had no completion id");

@@ -114,7 +114,7 @@ on a cold cache; later builds are much faster.
 9. The Private inspector shows **This session** usage and its **Average per turn**; Settings → Private
    mode lists the total **Used by N models** and the turns each model's price leaves.
 
-The judge code is `JUDGE-64cb8c2fa0b4`: 10 credits, 10 uses in all, one per device. Measured live, a short
+The judge code is `JUDGE-64cb8c2fa0b4`: 10 credits, 10 uses in all, one per device (8 left on 2026-11-14: two went to checking the judge script, the second of which printed `Verified`). Measured live, a short
 turn of Qwen Code costs about 0.4 credits (its system prompt is large: one "say ok" sent about 79,000
 input tokens over several model calls), so one redemption is about 20 short turns. The top-up packages
 show **Not enough stock right now** while the judge code holds the stock: the operator funded only

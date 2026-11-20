@@ -9,7 +9,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
-use super::canvas::{canvas_file, file_sha256, read_canvas, resolve_canvas, Canvas};
+use super::canvas::{board_key, read_canvas, resolve_canvas, Canvas};
 use super::canvas_export::{
     export_boards, pdf_file_name, png_width, split_drawn, write_new_file, ExportBoard,
     ExportFormat, ExportOutcome, COULD_NOT_EXPORT, COULD_NOT_SAVE,
@@ -55,7 +55,8 @@ pub struct ListedCanvas {
     pub folder_gone: bool,
 }
 
-/// One artboard's file hash; `None` when the file is missing or not servable.
+/// One artboard's key (`canvas::board_key`): its page, the folder's other files and its size.
+/// `None` when the file is missing or not servable.
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardState {
@@ -82,7 +83,7 @@ fn board_states(root: &Path, canvas: &Canvas) -> Vec<BoardState> {
         .flat_map(|section| &section.artboards)
         .map(|board| BoardState {
             id: board.id.clone(),
-            sha256: canvas_file(root, &board.file).and_then(|(path, _)| file_sha256(&path)),
+            sha256: board_key(root, &board.file, board.width, board.height),
         })
         .collect()
 }
@@ -268,14 +269,13 @@ impl Drop for WorkerGuard<'_> {
     }
 }
 
-/// Draws the queued pictures one at a time, until the queue is empty. A file's hash is read
+/// Draws the queued pictures one at a time, until the queue is empty. An artboard's key is read
 /// outside the lock, before drawing and again after it: a picture is saved only for the file
 /// it shows, and only while its canvas is remembered.
 fn draw_thumbs(app: &AppHandle, served: &Arc<Served>, queue: &Thumbs) {
     let _guard = WorkerGuard(queue);
     let lock = || queue.lock().unwrap_or_else(PoisonError::into_inner);
-    let current_hash =
-        |job: &ThumbJob| canvas_file(&job.root, &job.file).and_then(|(path, _)| file_sha256(&path));
+    let current_hash = |job: &ThumbJob| board_key(&job.root, &job.file, job.width, job.height);
     let is_known = |job: &ThumbJob| served.store.canvas(&job.session_id, &job.key).is_some();
     while let Some(job) = lock().pop() {
         // Changed or forgotten since it was queued: dropped before it is drawn.

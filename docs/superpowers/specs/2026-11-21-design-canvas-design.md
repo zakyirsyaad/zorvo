@@ -110,7 +110,7 @@ Per session, in the artifacts index it already keeps
 (`<data dir>/artifacts/<sessionId>/index.json`), the canvases the session has
 shown: a key, the canvas folder relative to the session's folder, the title
 last read, and when it was last shown. Pictures of artboards are cached under
-`<data dir>/canvas-thumbs/<sha256 of the file>.png` and removed when no shown
+`<data dir>/canvas-thumbs/<artboard key>.png` and removed when no shown
 canvas has used them for 30 days. Deleting a session forgets its canvases
 (the files in the project stay). `STATE_VERSION` stays 2: nothing goes in
 `state.json`.
@@ -205,9 +205,13 @@ The backend makes an artboard's picture in a hidden WKWebView at the
 artboard's size (no window, as the spike did), 720 px wide at most, one at a
 time, under the same CSP and navigation rules as the viewer, and ends that
 view's page with `_killWebContentProcess` like `view::end`. A picture is keyed
-by the SHA-256 of the artboard's file, so only a changed artboard is drawn
-again. A failure leaves the titled box and is not retried until the file
-changes.
+by the artboard key (`canvas::board_key`): the SHA-256 of the artboard's file's
+hash, a digest of the folder's other servable files (each one's relative path,
+size and modification time, no contents read; HTML pages and `canvas.json` left
+out) and its width and height. So a changed artboard, a changed shared
+stylesheet or a new size is drawn again, and the same key in a live frame's
+`?v=` reloads it. A failure leaves the titled box and is not retried until the
+key changes.
 
 ### Selecting and Focus
 
@@ -239,9 +243,8 @@ that is not an artboard of the canvas on screen is refused. Everything else
 in `picks.rs` stays: known kinds, field limits, picks only in comment mode, 5
 picks a second, `FloodGuard` for every message.
 
-A comment records the canvas key, the artboard id and the SHA-256 of the
-artboard's file when it was written. It reads Current while the file is
-unchanged and Outdated after; it never moves. Numbers run over the whole
+A comment records the canvas key, the artboard id and the artboard key when it
+was written. It reads Current while that key is unchanged and Outdated after; it never moves. Numbers run over the whole
 canvas. Comment mode and marks reach an artboard through the wrapper, which
 posts them to that frame (the spike's relay); wry offers no way to run a
 script in one frame. Besides marking text or an element, the bar's Comment

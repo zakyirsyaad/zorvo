@@ -93,12 +93,87 @@ pub fn canvas_file(root: &Path, relative: &str) -> Option<(PathBuf, &'static str
 /// Lowercase hex SHA-256 of a file read through the same checks as every other read.
 pub fn file_sha256(path: &Path) -> Option<String> {
     let bytes = read_checked(path).ok()?;
-    Some(
-        Sha256::digest(bytes)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect(),
-    )
+    Some(hex(Sha256::digest(bytes)))
+}
+
+/// How deep and how wide the folder digest of `board_key` walks; past either, the rest is left out.
+pub const MAX_DIGEST_DEPTH: usize = 8;
+pub const MAX_DIGEST_FILES: usize = 2000;
+
+fn hex(digest: impl AsRef<[u8]>) -> String {
+    digest
+        .as_ref()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// Whether a file of the folder is one an artboard may load but is no artboard's page:
+/// `canvas.json` and HTML pages are left out, since each artboard's key already holds its own
+/// page and its width and height.
+fn is_shared_file(relative: &str) -> bool {
+    let lower = relative.to_ascii_lowercase();
+    lower != CANVAS_FILE && !lower.ends_with(".html") && !lower.ends_with(".htm")
+}
+
+/// The servable files of the canvas folder that are no page (CSS, scripts, images, fonts), each
+/// as its relative path, size and modification time, in path order. No file is opened. Links
+/// are followed only to files inside the folder, never into folders.
+fn folder_digest(root: &Path) -> String {
+    let mut lines = Vec::new();
+    let mut folders = vec![(root.to_path_buf(), String::new(), 0usize)];
+    while let Some((folder, prefix, depth)) = folders.pop() {
+        let Ok(entries) = fs::read_dir(&folder) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            if lines.len() >= MAX_DIGEST_FILES {
+                break;
+            }
+            let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+                continue;
+            };
+            let relative = format!("{prefix}{name}");
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_dir() {
+                if depth + 1 < MAX_DIGEST_DEPTH {
+                    folders.push((entry.path(), format!("{relative}/"), depth + 1));
+                }
+                continue;
+            }
+            if !is_shared_file(&relative) {
+                continue;
+            }
+            let Some((path, _)) = canvas_file(root, &relative) else {
+                continue;
+            };
+            let Ok(meta) = fs::metadata(&path) else {
+                continue;
+            };
+            let modified = meta
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |since| since.as_nanos());
+            lines.push(format!("{relative}\0{}\0{modified}", meta.len()));
+        }
+    }
+    lines.sort();
+    hex(Sha256::digest(lines.join("\n")))
+}
+
+/// What an artboard's picture and live frame are keyed by: the SHA-256 of its page's hash, the
+/// folder digest and its width and height. A change to any of them, a shared stylesheet's
+/// included, draws a new picture and reloads the frame. `None` when the page cannot be served.
+pub fn board_key(root: &Path, file: &str, width: u32, height: u32) -> Option<String> {
+    let (path, _) = canvas_file(root, file)?;
+    let page = file_sha256(&path)?;
+    let folder = folder_digest(root);
+    Some(hex(Sha256::digest(format!(
+        "{page}\0{folder}\0{width}x{height}"
+    ))))
 }
 
 pub const MAX_CANVAS_JSON_BYTES: usize = 256 * 1024;
@@ -598,6 +673,48 @@ mod folder_tests {
 
         assert!(canvas_file(&root.0, "x.png").is_none());
         assert!(read_checked(&root.0.join("x.png")).is_err());
+    }
+
+    #[test]
+    fn an_artboards_key_follows_the_folders_other_files_and_its_size() {
+        let root = Temp::new("canvas-key");
+        fs::write(root.0.join("cart.html"), b"<p>cart</p>").unwrap();
+        fs::write(root.0.join("other.html"), b"<p>other</p>").unwrap();
+        fs::create_dir_all(root.0.join("css")).unwrap();
+        fs::write(root.0.join("css/shared.css"), b"p{color:red}").unwrap();
+        let key = |width, height| board_key(&root.0, "cart.html", width, height).unwrap();
+        let first = key(1440, 900);
+
+        assert_eq!(first.len(), 64);
+        assert_eq!(key(1440, 900), first, "nothing changed");
+        assert_ne!(key(390, 900), first, "width");
+        assert_ne!(key(1440, 844), first, "height");
+
+        // Another artboard's page and canvas.json are not part of this one's key.
+        fs::write(root.0.join("other.html"), b"<p>other, changed</p>").unwrap();
+        fs::write(root.0.join("canvas.json"), b"{}").unwrap();
+        assert_eq!(key(1440, 900), first);
+
+        fs::write(root.0.join("css/shared.css"), b"p{color:blue;}").unwrap();
+        let resized = key(1440, 900);
+        assert_ne!(resized, first, "the shared CSS's size");
+
+        let touched = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        fs::File::options()
+            .write(true)
+            .open(root.0.join("css/shared.css"))
+            .unwrap()
+            .set_modified(touched)
+            .unwrap();
+        assert_ne!(
+            key(1440, 900),
+            resized,
+            "the shared CSS's modification time"
+        );
+
+        fs::write(root.0.join("cart.html"), b"<p>cart, changed</p>").unwrap();
+        assert_ne!(key(1440, 900), resized, "its own page");
+        assert!(board_key(&root.0, "missing.html", 1440, 900).is_none());
     }
 
     #[test]

@@ -144,6 +144,24 @@ describe("the canvas viewer", () => {
     await waitFor(() => expect(calls("canvas_view_apply")).toHaveLength(3));
   });
 
+  it("reloads a live artboard when its key changes, a shared file's or its size's change included", async () => {
+    show();
+    await waitFor(() => expect(calls("canvas_view_apply")).toHaveLength(1));
+    const urlOf = (call: unknown, id: string) => JSON.parse((call as { state: string }).state).boards.find((board: { id: string }) => board.id === id).url;
+    const before = urlOf(calls("canvas_view_apply")[0], "cart");
+    expect(before).toContain(`?v=${"a".repeat(12)}`);
+
+    // The backend's key moved (shared.css changed): only the frame's address tells the wrapper to load it again.
+    answer = { ...readOf("a".repeat(64)), boards: [{ id: "cart", sha256: "c".repeat(64) }, { id: "pay-a", sha256: "a".repeat(64) }, { id: "pay-b", sha256: "a".repeat(64) }] };
+    act(() => deliver("artifacts-changed", { sessionId: SESSION }));
+
+    await waitFor(() => expect(calls("canvas_view_apply")).toHaveLength(2));
+    const after = calls("canvas_view_apply")[1];
+    expect(urlOf(after, "cart")).toContain(`?v=${"c".repeat(12)}`);
+    expect(urlOf(after, "cart")).not.toBe(before);
+    expect(urlOf(after, "pay-a")).toBe(urlOf(calls("canvas_view_apply")[0], "pay-a"));
+  });
+
   it("drives the view from the header", async () => {
     show();
     await waitFor(() => expect(calls("canvas_view_apply")).toHaveLength(1));

@@ -55,6 +55,8 @@ export interface ReviewWiring {
   blocksSend: boolean;
   /** The composer holds another session's comments, so nothing of `sessionId`'s may join them. */
   isHeldFor: (sessionId: string) => boolean;
+  /** A canvas's Pick and Build: leaves an expanded canvas first, which hides the composer, then puts the text in. */
+  insertCanvasText: (text: string) => void;
   sendFrom: (sessionId: string, text: string) => void;
   /** Puts back the slot of a message a secret review held, so its comments still go with it. */
   rearm: (slot: ReviewSlot) => void;
@@ -166,6 +168,11 @@ export function useReviewWiring({
     message.addArtifact(session.id, ids, `${entry.key}/${lastArtboardId ?? first.id}`);
   };
 
+  const insertCanvasText = (text: string) => {
+    flushSync(() => collapseArtifact?.());
+    composerRef.current?.insertText(text);
+  };
+
   const owner = blocksSend && slot ? sessions.find((candidate) => candidate.id === slot.sessionId) : undefined;
   // A run's sessions share one title, so only the agent tells them apart: in the run, and once archived out of it.
   // A Pick's winner keeps its id, but it is a plain session again and the sidebar lists it by title.
@@ -193,6 +200,7 @@ export function useReviewWiring({
       : undefined,
     blocksSend,
     isHeldFor: message.isHeldFor,
+    insertCanvasText,
     sendFrom,
     rearm,
     onComposerText,

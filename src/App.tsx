@@ -1804,7 +1804,8 @@ export default function App() {
 
   // A canvas's Pick and Build put text in the message box on the same terms as Reply.
   const canvasInsertBlockedReason = replyBlockedReason({ isComposerHidden, isComposerDisabled, isHeldElsewhere: review.isHeldFor(activeSessionId) });
-  const canvasInsertText = (text: string) => composerRef.current?.insertText(text);
+  // An expanded canvas hides the composer, so it is left first and the text lands where it can be seen.
+  const canvasInsertText = review.insertCanvasText;
 
   return (
     <main className="flex h-screen w-screen flex-col bg-ground text-fg-secondary">

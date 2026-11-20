@@ -166,6 +166,15 @@ describe('adding artifact comments to the message', () => {
     expect([...result.current.addArtifactReview.inMessage]).toEqual(['ac-1']);
   });
 
+  it("a canvas's Pick and Build leave the expanded canvas before the text goes in, so it lands once in a composer you can see", () => {
+    const { result, order, text } = renderWiring();
+
+    act(() => result.current.insertCanvasText('Pick Payment B.'));
+
+    expect(order).toEqual(['collapse', 'insert']);
+    expect(text()).toBe('Pick Payment B.');
+  });
+
   it('marks added comments unsent again', () => {
     const { result, updateArtifactComments } = renderWiring();
 

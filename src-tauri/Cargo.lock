@@ -6064,6 +6064,7 @@ dependencies = [
  "libc",
  "objc2",
  "objc2-foundation",
+ "plist",
  "portable-pty",
  "regex",
  "reqwest",

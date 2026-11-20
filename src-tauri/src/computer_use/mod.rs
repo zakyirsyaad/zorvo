@@ -6,13 +6,17 @@
 //! and asks for Zorvo's own macOS permissions.
 //! Agents never reach the driver: Zorvo's backend is its only client.
 
+pub mod apps;
 pub mod commands;
 pub mod driver;
 pub mod permissions;
 pub mod state;
+pub mod tiers;
 pub mod worker;
 
+pub use apps::AppIdentity;
 pub use driver::{DriverPin, DriverUnavailable};
 pub use permissions::ComputerUseStatus;
 pub use state::{ComputerUse, DriverStarter, NoDriver};
+pub use tiers::{Action, Tier};
 pub use worker::{CallId, DriverClient, DriverError, SessionHandle, StartOptions};

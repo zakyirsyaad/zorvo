@@ -27,10 +27,9 @@ import {
 } from '../lib/delegation-helpers';
 import { createId } from '../lib/ids';
 import { createSessionWorktree } from '../lib/session-worktree';
-import { firstChars, isArchived } from '../lib/session-helpers';
-import { escapeVisible } from '../lib/visible-text';
+import { isArchived } from '../lib/session-helpers';
 import type { StartPlaces } from '../lib/start-places';
-import { atWorkCount, isReportOf, issuedWorkerHandles, nextWorkerHandle, startRefusal, withNewTask, withOutcome, workerHandleOf, WORKER_FILES_MAX, WORKER_SUMMARY_MAX } from '../lib/workers';
+import { atWorkCount, cleanFiles, cleanSummary, isReportOf, issuedWorkerHandles, nextWorkerHandle, startRefusal, withNewTask, withOutcome, workerHandleOf } from '../lib/workers';
 import type { SessionSpec, StartSessionOptions } from '../lib/session-start';
 import type { AgentProfile, ChatMessage, Session, SessionWorktree } from '../types';
 import type { AttentionReason, FirstMessage } from './session-engine/useAcpEngine';
@@ -327,17 +326,15 @@ export function useDelegation(deps: DelegationDeps): {
     if (session === undefined || isArchived(session) || link === null || link === undefined || !isOpenLink(link)) {
       return false;
     }
-    const files = (done.files ?? [])
-      .map((file) => escapeVisible(file).trim())
-      .filter((file) => file !== '')
-      .slice(0, WORKER_FILES_MAX);
-    const summary = firstChars(escapeVisible(done.summary).trim(), WORKER_SUMMARY_MAX);
+    const files = cleanFiles(done.files);
+    const summary = cleanSummary(done.summary);
+    if (summary === '') return false;
     current.patchSession(workerId, {
       delegatedFrom: withOutcome(link, {
         result: done.result,
         at: Date.now(),
         summary,
-        ...(files.length > 0 ? { files } : {}),
+        ...(files !== undefined ? { files } : {}),
       }),
     });
     return true;

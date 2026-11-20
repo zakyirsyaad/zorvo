@@ -1,6 +1,7 @@
 import type { DelegationLink, Session, WorkerOutcome, WorkerTurnEnd } from '../types';
 import { isOpenLink, openDelegatesOf } from './delegation';
-import { isArchived } from './session-helpers';
+import { firstChars, isArchived } from './session-helpers';
+import { escapeVisible, escapeVisibleLines } from './visible-text';
 
 /** What decides whether a session gets Zorvo's tools. */
 export type ToolsSubject = Pick<Session, 'compareRunId' | 'delegatedFrom' | 'openedBy' | 'forkedFrom'> &
@@ -216,4 +217,23 @@ export function withNewTask(link: DelegationLink, task: string): DelegationLink 
 export function withReported(link: DelegationLink, at: number): DelegationLink {
   if (!link.outcome) return { ...link, reportedAt: at };
   return { ...link, reportedAt: at, outcome: { result: link.outcome.result, at: link.outcome.at } };
+}
+
+/**
+ * A worker's summary as it is stored: line breaks normalised and kept, the raw text cut at
+ * `WORKER_SUMMARY_MAX` characters (so escape codes never use up the budget or get split), and
+ * everything else that hides or reshapes text spelled out.
+ */
+export function cleanSummary(summary: string): string {
+  const raw = summary.replace(/\r\n?/g, '\n').trim();
+  return escapeVisibleLines(firstChars(raw, WORKER_SUMMARY_MAX).trimEnd());
+}
+
+/** The files a worker reported: one line each, escaped, at most `WORKER_FILES_MAX`; `undefined` when none remain. */
+export function cleanFiles(files: readonly string[] | undefined): string[] | undefined {
+  const cleaned = (files ?? [])
+    .map((file) => escapeVisible(file).trim())
+    .filter((file) => file !== '')
+    .slice(0, WORKER_FILES_MAX);
+  return cleaned.length > 0 ? cleaned : undefined;
 }

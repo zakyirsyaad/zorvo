@@ -3,6 +3,8 @@ import {
   MAX_AT_WORK,
   atWorkCount,
   WORKER_CLOSE_MS,
+  cleanFiles,
+  cleanSummary,
   WORKER_FILES_MAX,
   WORKER_SUMMARY_MAX,
   isReportOwed,
@@ -226,5 +228,56 @@ describe('issuedWorkerHandles', () => {
       session({ id: 'plain' }),
     ];
     expect(issuedWorkerHandles('a', sessions)).toEqual([]);
+  });
+});
+
+describe('cleanSummary', () => {
+  test('keeps the line breaks of a summary of several lines', () => {
+    const cleaned = cleanSummary('one\ntwo\nthree');
+    expect(cleaned).toBe('one\ntwo\nthree');
+    expect(cleaned).not.toContain('\\u000A');
+  });
+
+  test('turns \\r\\n and \\r into \\n', () => {
+    expect(cleanSummary('a\r\nb\rc')).toBe('a\nb\nc');
+  });
+
+  test('cuts the raw text before escaping and keeps a whole emoji last', () => {
+    const cleaned = cleanSummary('a'.repeat(1999) + '\u{1F600}\u{1F600}');
+    expect([...cleaned]).toHaveLength(WORKER_SUMMARY_MAX);
+    expect([...cleaned].at(-1)).toBe('\u{1F600}');
+  });
+
+  test('escape codes do not eat the budget', () => {
+    expect(cleanSummary('\u0001'.repeat(WORKER_SUMMARY_MAX))).toBe('\\u0001'.repeat(WORKER_SUMMARY_MAX));
+  });
+
+  test('spells out a bidi control character', () => {
+    expect(cleanSummary('x\u202Ey')).toBe('x\\u202Ey');
+  });
+
+  test('gives an empty string for only white space', () => {
+    expect(cleanSummary(' \n\t \r\n ')).toBe('');
+  });
+});
+
+describe('cleanFiles', () => {
+  test('escapes a control character, line breaks included', () => {
+    expect(cleanFiles(['a\u0007b.ts', 'c\nd.ts'])).toEqual(['a\\u0007b.ts', 'c\\u000Ad.ts']);
+  });
+
+  test('drops empty entries and trims', () => {
+    expect(cleanFiles([' a.ts ', '  ', ''])).toEqual(['a.ts']);
+  });
+
+  test('keeps at most WORKER_FILES_MAX', () => {
+    const files = Array.from({ length: 60 }, (_, i) => `f${i}.ts`);
+    expect(cleanFiles(files)).toHaveLength(WORKER_FILES_MAX);
+  });
+
+  test('gives undefined when none remain', () => {
+    expect(cleanFiles([])).toBeUndefined();
+    expect(cleanFiles(undefined)).toBeUndefined();
+    expect(cleanFiles([' '])).toBeUndefined();
   });
 });

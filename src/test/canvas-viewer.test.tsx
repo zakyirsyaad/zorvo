@@ -19,6 +19,31 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: (cmd: string, args?: Record<str
 
 import { CanvasViewer, type CanvasViewerProps } from "../components/artifacts/CanvasViewer";
 import { FOLDER_NOT_FOUND } from "../lib/canvas";
+import type { ArtifactCommentsState } from "../hooks/useArtifactComments";
+import type { AddArtifactReview } from "../hooks/useReviewWiring";
+import type { ArtifactComment } from "../types";
+
+function commentsState(overrides: Partial<ArtifactCommentsState> = {}): ArtifactCommentsState {
+  return {
+    sessionId: SESSION,
+    comments: [],
+    isCommenting: false,
+    setCommenting: vi.fn(),
+    candidate: null,
+    candidateBody: () => "",
+    setCandidateBody: vi.fn(),
+    cancelCandidate: vi.fn(),
+    saveCandidate: vi.fn(() => "saved" as const),
+    startArtboardComment: vi.fn(),
+    missing: new Set(),
+    canvasMissing: new Map(),
+    editComment: vi.fn(),
+    deleteComment: vi.fn(),
+    clearSent: vi.fn(),
+    ...overrides,
+  };
+}
+const addReview = (): AddArtifactReview => ({ inMessage: new Set(), blockedReason: undefined, add: vi.fn(), addCanvas: vi.fn() });
 
 // Each test is a session of its own: the hook remembers each canvas for the run.
 let run = 0;
@@ -168,5 +193,50 @@ describe("the canvas viewer", () => {
 
     await waitFor(() => expect(screen.getByText("Folder not found")).toBeTruthy());
     expect(calls("canvas_view_show")).toEqual([]);
+  });
+
+  it("offers Comment on artboard for the selected artboard", async () => {
+    const comments = commentsState();
+    show({ comments, addReview: addReview(), cwd: "/w" });
+    await waitFor(() => expect(calls("canvas_view_apply")).toHaveLength(1));
+    expect(screen.queryByRole("button", { name: "Comment on artboard" })).toBeNull();
+
+    act(() => deliver("canvas-view", { sessionId: SESSION, key: KEY, kind: "select", artboardId: "pay-b" }));
+    fireEvent.click(screen.getByRole("button", { name: "Comment on artboard" }));
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    expect(comments.startArtboardComment).toHaveBeenCalledWith("pay-b");
+    expect(comments.setCommenting).toHaveBeenCalledWith(true);
+  });
+
+  it("hides Comment on artboard while comment mode is on", async () => {
+    show({ comments: commentsState({ isCommenting: true }), addReview: addReview(), cwd: "/w" });
+    await waitFor(() => expect(calls("canvas_view_apply")).toHaveLength(1));
+    act(() => deliver("canvas-view", { sessionId: SESSION, key: KEY, kind: "select", artboardId: "pay-b" }));
+
+    expect(screen.getByRole("button", { name: "Comment" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByRole("button", { name: "Comment on artboard" })).toBeNull();
+  });
+
+  it("sends an artboard's marks when its frame loads and when its comments change", async () => {
+    const onBoard: ArtifactComment = {
+      id: "ac-1",
+      artifactId: KEY,
+      version: 0,
+      anchor: { kind: "text", quote: "Pay now", before: "", after: "" },
+      body: "Wider.",
+      createdAt: 1,
+      canvas: { key: KEY, artboardId: "pay-b", fileHash: "a".repeat(64) },
+    };
+    const { rerenderWith } = show({ comments: commentsState({ comments: [onBoard] }), addReview: addReview(), cwd: "/w" });
+    const marks = [{ n: 1, anchor: onBoard.anchor }];
+    await waitFor(() => expect(calls("canvas_view_marks")).toEqual([{ sessionId: SESSION, key: KEY, artboardId: "pay-b", marks }]));
+
+    act(() => deliver("canvas-view", { sessionId: SESSION, key: KEY, kind: "board-loaded", artboardId: "pay-b" }));
+    await waitFor(() => expect(calls("canvas_view_marks")).toHaveLength(2));
+
+    rerenderWith({ comments: commentsState({ comments: [] }), addReview: addReview(), cwd: "/w" });
+    await waitFor(() => expect(calls("canvas_view_marks").at(-1)).toEqual({ sessionId: SESSION, key: KEY, artboardId: "pay-b", marks: [] }));
+    expect(calls("canvas_view_marks")).toHaveLength(3);
   });
 });

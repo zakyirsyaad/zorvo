@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, Minus, Plus, Scan } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Maximize2, MessageSquarePlus, Minimize2, Minus, Plus, Scan } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Chip } from "../ui/Chip";
 import { IconButton } from "../ui/IconButton";
@@ -22,17 +22,31 @@ export interface CanvasHeaderProps {
   onCommand: (name: string) => void;
   /** Whether a menu of the header is open over the canvas. */
   onMenuOpen: (isOpen: boolean) => void;
+  /** Comments on the canvas; absent (a popout), no Comment button. */
+  commenting?: CanvasCommenting;
+}
+
+export interface CanvasCommenting {
+  isCommenting: boolean;
+  setCommenting: (on: boolean) => void;
+  /** Opens the comment box for the selected artboard as a whole. */
+  onCommentOnArtboard: () => void;
 }
 
 const DIVIDER = <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-border" />;
 
 /** What the selected artboard offers: its title, Focus, and the artboards before and after it. */
-function SelectionTools({ title, onCommand }: { title: string; onCommand: (name: string) => void }) {
+function SelectionTools({ title, onCommand, commenting }: { title: string; onCommand: (name: string) => void; commenting?: CanvasCommenting }) {
   return (
     <>
       <span aria-label={`Selected: ${title}`} className="min-w-0 truncate px-1 text-ui font-medium text-fg">
         {title}
       </span>
+      {commenting && !commenting.isCommenting && (
+        <Button variant="ghost" size="sm" tone="secondary" onClick={commenting.onCommentOnArtboard} className="shrink-0 whitespace-nowrap">
+          Comment on artboard
+        </Button>
+      )}
       <IconButton label="Focus" size="row" onClick={() => onCommand("focus")}>
         <Scan size={14} />
       </IconButton>
@@ -51,7 +65,7 @@ function SelectionTools({ title, onCommand }: { title: string; onCommand: (name:
  * zoom, the Sections menu and Expand. With an artboard selected it also shows that artboard's title
  * with Focus, Previous and Next: in the header when expanded, else in a row of its own under it.
  */
-export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBack, isExpanded, onToggleExpanded, onCommand, onMenuOpen }: CanvasHeaderProps) {
+export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBack, isExpanded, onToggleExpanded, onCommand, onMenuOpen, commenting }: CanvasHeaderProps) {
   const [isSectionsOpen, setIsSectionsOpen] = useState(false);
   const percent = `${Math.round(zoom * 100)}%`;
   const setSectionsOpen = (isOpen: boolean) => {
@@ -116,17 +130,27 @@ export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBa
         {isExpanded && selectedTitle !== null && (
           <>
             {DIVIDER}
-            <SelectionTools title={selectedTitle} onCommand={onCommand} />
+            <SelectionTools title={selectedTitle} onCommand={onCommand} commenting={commenting} />
           </>
         )}
         {DIVIDER}
+        {commenting && (
+          <IconButton
+            label="Comment"
+            size="row"
+            aria-pressed={commenting.isCommenting}
+            onClick={() => commenting.setCommenting(!commenting.isCommenting)}
+          >
+            <MessageSquarePlus size={14} />
+          </IconButton>
+        )}
         <IconButton label={isExpanded ? "Shrink" : "Expand"} size="row" onClick={onToggleExpanded}>
           {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </IconButton>
       </div>
       {!isExpanded && selectedTitle !== null && (
         <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-2">
-          <SelectionTools title={selectedTitle} onCommand={onCommand} />
+          <SelectionTools title={selectedTitle} onCommand={onCommand} commenting={commenting} />
         </div>
       )}
     </>

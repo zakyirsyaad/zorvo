@@ -54,7 +54,6 @@ const NON_LITERAL_CALLS: NonLiteralEntry[] = [
 
 /** Events Rust emits that the frontend does not listen to, each with the reason. */
 const EVENT_ALLOWLIST: Record<string, string> = {
-  'canvas-pick': 'a comment pick on an artboard; listened to from Task 9',
 };
 
 function filesUnder(dir: string, extensions: string[]): string[] {

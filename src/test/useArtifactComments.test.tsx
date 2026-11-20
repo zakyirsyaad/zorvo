@@ -37,6 +37,7 @@ const pageComment = (id: string, overrides: Partial<ArtifactComment> = {}): Arti
 
 interface Props {
   shownPage: PageRef | null;
+  shownCanvas?: { sessionId: string; key: string } | null;
   initial?: ArtifactComment[];
 }
 
@@ -44,13 +45,14 @@ function renderComments(props: Props) {
   const forget = vi.fn();
   const onError = vi.fn();
   const view = renderHook(
-    ({ shownPage }: Props) => {
+    ({ shownPage, shownCanvas = null }: Props) => {
       const [comments, setComments] = useState<ArtifactComment[]>(props.initial ?? []);
       const state = useArtifactComments({
         sessionId: 's-1',
         comments,
         update: (_sessionId, change) => setComments(change),
         shownPage,
+        shownCanvas,
         forget,
         onError,
       });
@@ -331,5 +333,88 @@ describe('useArtifactCommentSweep', () => {
     renderHook(() => useArtifactCommentSweep(sessions, new Map([['s-1', [artifact(A1)]]]), new Set(['s-1']), update, vi.fn()));
 
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe('useArtifactComments on a canvas', () => {
+  const KEY = 'c-0123456789abcdef';
+  const CANVAS = { sessionId: 's-1', key: KEY };
+  const HASH = 'b'.repeat(64);
+  const canvasPick = (overrides: Record<string, unknown> = {}) => ({
+    sessionId: 's-1',
+    key: KEY,
+    artboardId: 'pay-b',
+    message: { kind: 'pick-text', quote: 'Pay now', before: '', after: '' },
+    ...overrides,
+  });
+  const deliverCanvas = (payload: unknown) => act(() => (listeners.get('canvas-pick') ?? []).forEach((cb) => cb({ payload })));
+
+  it('turns a canvas-pick into a candidate on that artboard', async () => {
+    const { result } = renderComments({ shownPage: null, shownCanvas: CANVAS });
+    act(() => result.current.state.setCommenting(true));
+
+    deliverCanvas(canvasPick({ key: 'c-ffffffffffffffff' }));
+    deliverCanvas(canvasPick({ artboardId: 'Pay B' }));
+    expect(result.current.state.candidate).toBeNull();
+    deliverCanvas(canvasPick());
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('canvas_comment_mode', { sessionId: 's-1', key: KEY, on: true }));
+    expect(result.current.state.candidate).toEqual({
+      page: { sessionId: 's-1', artifactId: KEY, version: 0 },
+      artboardId: 'pay-b',
+      anchor: { kind: 'text', quote: 'Pay now', before: '', after: '' },
+      isPickHeld: false,
+    });
+
+    act(() => result.current.state.setCandidateBody('Make it wider.'));
+    let outcome = '';
+    act(() => {
+      outcome = result.current.state.saveCandidate([{ id: 'pay-b', sha256: HASH }]);
+    });
+
+    expect(outcome).toBe('saved');
+    expect(result.current.comments).toEqual([
+      expect.objectContaining({
+        artifactId: KEY,
+        version: 0,
+        body: 'Make it wider.',
+        canvas: { key: KEY, artboardId: 'pay-b', fileHash: HASH },
+      }),
+    ]);
+  });
+
+  it('drops a canvas-pick while comment mode is off, and a page pick on a canvas', () => {
+    const { result } = renderComments({ shownPage: null, shownCanvas: CANVAS });
+
+    deliverCanvas(canvasPick());
+    expect(result.current.state.candidate).toBeNull();
+  });
+
+  it('writes on the whole artboard without comment mode', () => {
+    const { result } = renderComments({ shownPage: null, shownCanvas: CANVAS });
+
+    act(() => result.current.state.startArtboardComment('pay-b'));
+
+    expect(result.current.state.candidate).toEqual({
+      page: { sessionId: 's-1', artifactId: KEY, version: 0 },
+      artboardId: 'pay-b',
+      anchor: { kind: 'artboard' },
+      isPickHeld: false,
+    });
+    act(() => result.current.state.setCandidateBody('More space.'));
+    let outcome = '';
+    act(() => {
+      outcome = result.current.state.saveCandidate([{ id: 'pay-b', sha256: null }]);
+    });
+    // An artboard whose file is gone takes no comment.
+    expect(outcome).toBe('gone');
+  });
+
+  it('keeps the numbers an artboard could not find, by artboard', () => {
+    const { result } = renderComments({ shownPage: null, shownCanvas: CANVAS });
+
+    deliverCanvas(canvasPick({ message: { kind: 'marks-missing', numbers: [2] } }));
+
+    expect([...(result.current.state.canvasMissing.get('pay-b') ?? [])]).toEqual([2]);
   });
 });

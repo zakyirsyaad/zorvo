@@ -5,7 +5,7 @@ import type { ComposerHandle } from '../components/ComposerDock';
 import type { ReviewComments } from '../hooks/useReviewComments';
 import { useReviewMessage } from '../hooks/useReviewMessage';
 import { useReviewWiring } from '../hooks/useReviewWiring';
-import { artifactHeading } from '../lib/artifact-comments';
+import { artifactHeading, canvasHeading } from '../lib/artifact-comments';
 import type { Artifact, ArtifactComment, Session } from '../types';
 
 const artifact: Artifact = {
@@ -187,6 +187,24 @@ describe('adding artifact comments to the message', () => {
 
     expect(text().split(heading)).toHaveLength(2);
     expect(text()).toContain('2. On the text:');
+  });
+
+  it('canvas comments get one heading per artboard, written once while the composer holds it', () => {
+    const { result, text } = renderWiring();
+    const key = 'c-0123456789abcdef';
+    const entry = { key, folder: '/w/api/design/checkout', relative: 'design/checkout', title: 'Checkout', shownAt: 1, artboards: 2 };
+    const board = (id: string, title: string) => ({ id, title, file: `${id}.html`, width: 1440, height: 900, group: null });
+    const canvas = { title: 'Checkout', sections: [{ id: 'pay', title: 'Payment', artboards: [board('pay-a', 'Payment A'), board('pay-b', 'Payment B')] }] };
+    const onBoard = (id: string, artboardId: string) =>
+      pageComment(id, { artifactId: key, version: 0, canvas: { key, artboardId, fileHash: 'b'.repeat(64) } });
+    const headingB = canvasHeading(entry, canvas, canvas.sections[0].artboards[1], '/w/api');
+
+    act(() => result.current.addArtifactReview.addCanvas([checked(onBoard('ac-1', 'pay-b'))], entry, canvas, '/w/api'));
+    act(() => result.current.addArtifactReview.addCanvas([checked(onBoard('ac-2', 'pay-b'), 2)], entry, canvas, '/w/api'));
+
+    expect(text().split(headingB)).toHaveLength(2);
+    expect(text()).toContain('2. On the text:');
+    expect([...result.current.addArtifactReview.inMessage]).toEqual(['ac-1', 'ac-2']);
   });
 
   it("add while the slot is another session's does nothing and blockedReason says so", () => {

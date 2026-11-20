@@ -39,6 +39,8 @@ function state(overrides: Partial<ArtifactCommentsState> = {}): ArtifactComments
     cancelCandidate: vi.fn(),
     saveCandidate: vi.fn(() => "saved" as const),
     missing: new Set(),
+    startArtboardComment: vi.fn(),
+    canvasMissing: new Map(),
     editComment: vi.fn(),
     deleteComment: vi.fn(),
     clearSent: vi.fn(),
@@ -47,7 +49,7 @@ function state(overrides: Partial<ArtifactCommentsState> = {}): ArtifactComments
 }
 
 function review(overrides: Partial<AddArtifactReview> = {}): AddArtifactReview {
-  return { inMessage: new Set(), blockedReason: undefined, add: vi.fn(), ...overrides };
+  return { inMessage: new Set(), blockedReason: undefined, add: vi.fn(), addCanvas: vi.fn(), ...overrides };
 }
 
 function strip(comments: ArtifactCommentsState, addReview: AddArtifactReview = review(), shownVersion = 3) {

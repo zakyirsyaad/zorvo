@@ -118,6 +118,12 @@ export function shownArtifactOf(
   return artifacts.length === 1 && otherRows === 0 ? artifacts[0] : undefined;
 }
 
+/** The canvas the viewer shows: the one viewed, else the only row when it is a canvas. Kept equal to `ArtifactsPanel`'s choice. */
+export function shownCanvasOf(canvases: readonly CanvasEntry[], viewed: ViewedArtifact | null, otherRows: number): CanvasEntry | undefined {
+  if (viewed?.canvasKey) return canvases.find((canvas) => canvas.key === viewed.canvasKey);
+  return canvases.length === 1 && otherRows === 0 ? canvases[0] : undefined;
+}
+
 export function hasVersion(artifact: Artifact | undefined, version: number): boolean {
   return artifact !== undefined && artifact.versions.some((listed) => listed.n === version);
 }

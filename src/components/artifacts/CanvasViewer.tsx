@@ -2,9 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AlertTriangle } from "lucide-react";
 import { useCanvas } from "../../hooks/useCanvas";
+import { useCanvasMarks } from "../../hooks/useCanvasMarks";
+import type { ArtifactCommentsState } from "../../hooks/useArtifactComments";
+import type { AddArtifactReview } from "../../hooks/useReviewWiring";
 import { enqueueArtifactViewCall } from "../../hooks/useArtifactView";
 import { useLatest } from "../../hooks/useLatest";
 import { FOLDER_NOT_FOUND, artboardCount, canvasShellState } from "../../lib/canvas";
+import { ArtifactCommentStrip } from "./ArtifactCommentStrip";
 import { ArtifactPageBox } from "./ArtifactPageBox";
 import { CanvasHeader } from "./CanvasHeader";
 
@@ -20,6 +24,11 @@ export interface CanvasViewerProps {
   onError: (message: string) => void;
   /** Something of the viewer's parent is open over the canvas. */
   isCovered?: boolean;
+  /** The session's artifact comments; absent (a popout), no Comment button and no strip. */
+  comments?: ArtifactCommentsState;
+  addReview?: AddArtifactReview;
+  /** The session's folder, for the artboard's file in a comment's message. */
+  cwd?: string;
 }
 
 const COULD_NOT_SHOW = "Zorvo could not show that canvas.";
@@ -29,11 +38,24 @@ const COULD_NOT_SHOW = "Zorvo could not show that canvas.";
  * to show with `canvas_view_apply` whenever the canvas, its files or its pictures change, and driven by
  * the header's commands. A `canvas.json` that cannot be read keeps the last layout under a bar.
  */
-export function CanvasViewer({ sessionId, canvasKey, turnsEnded, onBack, isExpanded, onToggleExpanded, onError, isCovered = false }: CanvasViewerProps) {
+export function CanvasViewer({
+  sessionId,
+  canvasKey,
+  turnsEnded,
+  onBack,
+  isExpanded,
+  onToggleExpanded,
+  onError,
+  isCovered = false,
+  comments,
+  addReview,
+  cwd,
+}: CanvasViewerProps) {
   const canvas = useCanvas(sessionId, canvasKey, turnsEnded);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const onErrorRef = useLatest(onError);
   const { shown, read, selected, lastGood, thumbs } = canvas;
+  useCanvasMarks(sessionId, canvasKey, comments?.comments, shown?.boards, onError);
 
   // A string, so an equal state (a new but empty picture map, a render) sends nothing.
   const state = useMemo(() => (shown === null ? null : canvasShellState(shown, sessionId, thumbs, selected)), [shown, sessionId, thumbs, selected]);
@@ -70,6 +92,15 @@ export function CanvasViewer({ sessionId, canvasKey, turnsEnded, onBack, isExpan
         onToggleExpanded={onToggleExpanded}
         onCommand={command}
         onMenuOpen={setIsMenuOpen}
+        commenting={
+          comments && shown !== null
+            ? {
+                isCommenting: comments.isCommenting,
+                setCommenting: comments.setCommenting,
+                onCommentOnArtboard: () => selected !== null && comments.startArtboardComment(selected),
+              }
+            : undefined
+        }
       />
       {error !== null && (
         <div role="status" className="flex shrink-0 items-start gap-2 border-b border-attention-border bg-attention-surface px-3 py-2 text-ui-sm text-fg">
@@ -99,6 +130,14 @@ export function CanvasViewer({ sessionId, canvasKey, turnsEnded, onBack, isExpan
         />
       ) : (
         <div className="min-h-0 flex-1" />
+      )}
+      {comments && addReview && shown?.canvas && !isFolderGone && (
+        <ArtifactCommentStrip
+          canvasSource={{ entry: shown.entry, canvas: shown.canvas, boards: shown.boards }}
+          cwd={cwd ?? ""}
+          comments={comments}
+          addReview={addReview}
+        />
       )}
     </div>
   );

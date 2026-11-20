@@ -398,12 +398,14 @@ describe("comments", () => {
     cancelCandidate: vi.fn(),
     saveCandidate: vi.fn(() => "saved" as const),
     missing: new Set<number>(),
+    startArtboardComment: vi.fn(),
+    canvasMissing: new Map(),
     editComment: vi.fn(),
     deleteComment: vi.fn(),
     clearSent: vi.fn(),
     ...overrides,
   });
-  const addReview = () => ({ inMessage: new Set<string>(), blockedReason: undefined, add: vi.fn() });
+  const addReview = () => ({ inMessage: new Set<string>(), blockedReason: undefined, add: vi.fn(), addCanvas: vi.fn() });
 
   it("Comment is off on an older version, with the reason", () => {
     show({ viewed: { artifactId: REPORT.id, version: 2 }, comments: commentsState(), addReview: addReview(), cwd: "/w" });

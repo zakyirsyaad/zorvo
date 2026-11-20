@@ -71,6 +71,18 @@ describe("normalizePersistedState", () => {
     expect(state.sessions[1]).not.toHaveProperty("artifactComments");
   });
 
+  it("keeps a canvas comment through save and load, and drops a malformed canvas field", () => {
+    const canvas = { key: "c-0123456789abcdef", artboardId: "pay-b", fileHash: "b".repeat(64) };
+    const good = { id: "ac-1", artifactId: canvas.key, version: 0, anchor: { kind: "artboard" }, body: "More space", createdAt: 1, canvas };
+    const bad = { ...good, id: "ac-2", canvas: { ...canvas, artboardId: "Pay B" } };
+
+    const loaded = normalizePersistedState({ sessions: [{ ...base, artifactComments: [good, bad] }] });
+    const again = normalizePersistedState(JSON.parse(JSON.stringify(loaded)));
+
+    expect(loaded.sessions[0].artifactComments).toEqual([good]);
+    expect(again.sessions[0].artifactComments).toEqual([good]);
+  });
+
   it("keeps a session's private mode when it names a model", () => {
     const state = normalizePersistedState({ sessions: [{ ...base, privateMode: { modelId: "a" } }] });
 

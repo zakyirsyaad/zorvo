@@ -497,7 +497,8 @@ export interface Artifact {
 }
 
 /** Where a comment is on an artifact page: selected text with its context, or a clicked element. */
-export type ArtifactAnchor =
+/** Where on a page a comment is: text or an element, which the page can mark. */
+export type PageAnchor =
   | { kind: 'text'; quote: string; before: string; after: string }
   | {
       kind: 'element';
@@ -508,6 +509,16 @@ export type ArtifactAnchor =
       text: string;
       path: string;
     };
+
+/** A page anchor, or (on a canvas artboard only) the whole artboard, which has no mark. */
+export type ArtifactAnchor = PageAnchor | { kind: 'artboard' };
+
+/** Which canvas artboard a comment is on, and the SHA-256 of its file when it was written. */
+export interface CanvasCommentRef {
+  key: string;
+  artboardId: string;
+  fileHash: string;
+}
 
 /** A comment on an artifact page, for the agent. It never moves to another version. */
 export interface ArtifactComment {
@@ -520,6 +531,8 @@ export interface ArtifactComment {
   createdAt: number;
   /** Send was pressed with it in the message, not that the agent acted. */
   sentAt?: number;
+  /** Set on a canvas comment: `artifactId` is then the canvas key and `version` is 0. */
+  canvas?: CanvasCommentRef;
 }
 
 /** One version of one artifact, as the page view shows it. */
@@ -532,7 +545,7 @@ export interface PageRef {
 /** A comment's number and where it is, for the page to draw. */
 export interface PageMark {
   n: number;
-  anchor: ArtifactAnchor;
+  anchor: PageAnchor;
 }
 
 /** What an artifact page reported through Zorvo's script. */

@@ -1,6 +1,6 @@
 import { ChevronRight, FileText, LayoutGrid, PanelsTopLeft } from "lucide-react";
 import { FOLDER_NOT_FOUND, canvasCountLabel, type CanvasEntry } from "../../lib/canvas";
-import { newestVersion, shownArtifactOf, type ViewedArtifact } from "../../lib/artifacts";
+import { newestVersion, shownArtifactOf, shownCanvasOf, type ViewedArtifact } from "../../lib/artifacts";
 import { fileNameAndFolder, pathInFolder, type CreatedFile } from "../../lib/created-files";
 import { formatRelativeTime } from "../../lib/relative-time";
 import type { ArtifactCommentsState } from "../../hooks/useArtifactComments";
@@ -148,11 +148,7 @@ export function ArtifactsPanel({
   const rowCount = artifacts.length + canvases.length + files.length;
   const isOnly = rowCount === 1;
   const open = shownArtifactOf(artifacts, viewed, files.length + canvases.length);
-  const openCanvas = viewed?.canvasKey
-    ? canvases.find((canvas) => canvas.key === viewed.canvasKey)
-    : isOnly && canvases.length === 1
-      ? canvases[0]
-      : undefined;
+  const openCanvas = shownCanvasOf(canvases, viewed, artifacts.length + files.length);
 
   if (openCanvas) {
     return (
@@ -166,6 +162,9 @@ export function ArtifactsPanel({
         isExpanded={isExpanded}
         onToggleExpanded={onToggleExpanded}
         onError={onError}
+        comments={comments}
+        addReview={addReview}
+        cwd={cwd}
       />
     );
   }

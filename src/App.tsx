@@ -18,7 +18,7 @@ import { ArtifactGallery } from "./components/artifacts/ArtifactGallery";
 import { useArtifactComments, useArtifactCommentSweep } from "./hooks/useArtifactComments";
 import { useArtifacts } from "./hooks/useArtifacts";
 import { useArtifactOpening } from "./hooks/useArtifactOpening";
-import { galleryRows, hasVersion, newestVersion, shownArtifactOf } from "./lib/artifacts";
+import { galleryRows, hasVersion, newestVersion, shownArtifactOf, shownCanvasOf } from "./lib/artifacts";
 import { markersOf } from "./lib/file-markers";
 import { EmptyFolderState, FileDropOverlay } from "./components/AppPlaceholders";
 import { Toast, ToastStack } from "./components/ui/Toast";
@@ -847,6 +847,15 @@ export default function App() {
     activeSession && shownArtifact && hasVersion(shownArtifact, shownVersion)
       ? { sessionId: activeSession.id, artifactId: shownArtifact.id, version: shownVersion }
       : null;
+  // The canvas on screen, for its comments, chosen as the Output tab's viewer chooses it.
+  const shownCanvasEntry =
+    inspectorTab === "artifacts" && !shownArtifact
+      ? shownCanvasOf(sessionCanvases, inspector.viewedArtifact, sessionArtifacts.length + createdFiles.length)
+      : undefined;
+  const shownCanvas = useMemo(
+    () => (activeSession && shownCanvasEntry ? { sessionId: activeSession.id, key: shownCanvasEntry.key } : null),
+    [activeSession, shownCanvasEntry],
+  );
   // The review wiring is built further down; its `forget` reaches the comments through this ref.
   const forgetReviewRef = useRef<((ids: readonly string[]) => void) | null>(null);
   const forgetInMessage = useCallback((ids: readonly string[]) => forgetReviewRef.current?.(ids), []);
@@ -855,6 +864,7 @@ export default function App() {
     comments: activeSession?.artifactComments,
     update: updateArtifactComments,
     shownPage,
+    shownCanvas,
     forget: forgetInMessage,
     onError: reportError,
   });

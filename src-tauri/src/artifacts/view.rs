@@ -21,10 +21,11 @@ use std::time::Instant;
 
 use tauri::{AppHandle, Emitter, Manager};
 
+use super::canvas::Canvas;
 pub use super::canvas_view::ShownCanvas;
 use super::canvas_view::{
-    apply_script, canvas_message_source, command_script, parse_shell_message, view_event,
-    CanvasNavigation, Source, CANVAS_VIEW, MAX_SHELL_PER_SECOND,
+    apply_script, canvas_intake, command_script, pick_event, view_event, CanvasIntake,
+    CanvasNavigation, CANVAS_PICK, CANVAS_VIEW, MAX_SHELL_PER_SECOND,
 };
 use super::page_script::{marks_script, mode_script, PAGE_SCRIPT};
 use super::picks::{
@@ -99,6 +100,11 @@ thread_local! {
     static FLOOD: RefCell<FloodGuard> = RefCell::new(FloodGuard::default());
     /// The last state asked for, with its canvas, as the script that applies it. Kept across
     /// views of the same canvas, and run again once such a view has loaded.
+    /// How many messages the wrapper has had through this second (its own limit, not a page's).
+    static SHELL_RATE: RefCell<RateLimit> = RefCell::new(RateLimit::default());
+    /// The shown canvas as `canvas.json` last read, to know which files are its artboards.
+    /// Replaced whenever the frontend hands the wrapper a state, since it read the canvas again.
+    static CANVAS_BOARDS: RefCell<Option<(ShownCanvas, Canvas)>> = const { RefCell::new(None) };
     static CANVAS_STATE: RefCell<Option<(ShownCanvas, String)>> = const { RefCell::new(None) };
 }
 
@@ -220,28 +226,59 @@ fn admits(app: &AppHandle, generation: u64, body: &str) -> bool {
     }
 }
 
-/// What the canvas view sent. Only the wrapper's own frame may select or report the zoom; an
-/// artboard's messages (its comment picks) are not read yet. Main thread only.
+/// What the canvas view sent, read by `canvas_intake`: the wrapper's kinds only from its own
+/// frame, a comment pick only from an artboard of this canvas. Main thread only.
 fn on_canvas_message(app: &AppHandle, generation: u64, frame_url: &str, body: &str) {
     if !admits(app, generation, body) {
         return;
     }
-    let Some(canvas) = shown_canvas() else {
+    let Some(shown) = shown_canvas() else {
         return;
     };
-    match canvas_message_source(frame_url, &canvas) {
-        Source::Shell => {}
-        Source::Board(_) | Source::Other => return,
-    }
-    let Some(message) = parse_shell_message(body) else {
+    let Some(canvas) = CANVAS_BOARDS.with(|boards| {
+        boards
+            .borrow()
+            .as_ref()
+            .filter(|(of, _)| *of == shown)
+            .map(|(_, canvas)| canvas.clone())
+    }) else {
         return;
     };
-    let is_allowed = RATE.with(|rate| {
-        rate.borrow_mut()
-            .allow_up_to(Instant::now(), MAX_SHELL_PER_SECOND)
+    let state = ViewState {
+        is_commenting: COMMENTING.get(),
+        has_marks: false,
+    };
+    let intake = RATE.with(|rate| {
+        canvas_intake(
+            frame_url,
+            body,
+            &shown,
+            &canvas,
+            state,
+            &mut rate.borrow_mut(),
+            Instant::now(),
+        )
     });
-    if is_allowed {
-        let _ = app.emit(CANVAS_VIEW, view_event(&canvas, &message));
+    match intake {
+        CanvasIntake::Shell(message) => {
+            let is_allowed = SHELL_RATE.with(|rate| {
+                rate.borrow_mut()
+                    .allow_up_to(Instant::now(), MAX_SHELL_PER_SECOND)
+            });
+            if is_allowed {
+                let _ = app.emit(CANVAS_VIEW, view_event(&shown, &message));
+            }
+        }
+        CanvasIntake::Board {
+            artboard_id,
+            message,
+        } => {
+            if message.takes_keyboard() {
+                focus_zorvo(app);
+            }
+            let _ = app.emit(CANVAS_PICK, pick_event(&shown, &artboard_id, &message));
+        }
+        CanvasIntake::Refused => {}
     }
 }
 
@@ -422,11 +459,15 @@ pub fn show_canvas(
 pub fn apply_canvas(
     app: &AppHandle,
     canvas: ShownCanvas,
+    boards: Option<Canvas>,
     state_json: String,
 ) -> Result<(), String> {
     let script = apply_script(&state_json).ok_or_else(|| COULD_NOT_SHOW.to_string())?;
     let _ = app.run_on_main_thread(move || {
         let is_shown = shown_canvas().as_ref() == Some(&canvas);
+        CANVAS_BOARDS.with(|slot| {
+            *slot.borrow_mut() = boards.map(|boards| (canvas.clone(), boards));
+        });
         CANVAS_STATE.with(|state| *state.borrow_mut() = Some((canvas, script.clone())));
         if is_shown && DISPLAY.get().is_loaded {
             evaluate(&script);

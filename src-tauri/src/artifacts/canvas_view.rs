@@ -4,7 +4,10 @@
 
 use serde_json::Value;
 
-use super::canvas::is_id;
+use std::time::Instant;
+
+use super::canvas::{is_id, Canvas};
+use super::picks::{is_accepted, parse_page_message, PageMessage, RateLimit, ViewState};
 use super::protocol::{
     canvas_shell_url, is_allowed_canvas_navigation, parse_canvas_url, CanvasUrl,
 };
@@ -75,6 +78,71 @@ pub fn parse_shell_message(body: &str) -> Option<ShellMessage> {
         }
         _ => None,
     }
+}
+
+/// Emitted with `{sessionId, key, artboardId, message}` for a comment pick on an artboard.
+pub const CANVAS_PICK: &str = "canvas-pick";
+
+/// What a message of the canvas view is, by the frame it came from and what it says.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CanvasIntake {
+    Shell(ShellMessage),
+    Board {
+        artboard_id: String,
+        message: PageMessage,
+    },
+    Refused,
+}
+
+/// The wrapper's kinds are read only from the wrapper's frame, and a page's kinds only from an
+/// artboard of this canvas (a file `canvas.json` lists); an artboard saying what the wrapper
+/// says, or the wrapper saying a pick, is refused. Board picks share `rate` (5 a second);
+/// the wrapper's own rate is the caller's.
+pub fn canvas_intake(
+    frame_url: &str,
+    raw: &str,
+    shown: &ShownCanvas,
+    canvas: &Canvas,
+    state: ViewState,
+    rate: &mut RateLimit,
+    now: Instant,
+) -> CanvasIntake {
+    match canvas_message_source(frame_url, shown) {
+        Source::Shell => {
+            parse_shell_message(raw).map_or(CanvasIntake::Refused, CanvasIntake::Shell)
+        }
+        Source::Board(file) => {
+            let Some(artboard) = canvas
+                .sections
+                .iter()
+                .flat_map(|section| &section.artboards)
+                .find(|artboard| artboard.file == file)
+            else {
+                return CanvasIntake::Refused;
+            };
+            match parse_page_message(raw)
+                .filter(|message| is_accepted(message, state))
+                .filter(|_| rate.allow(now))
+            {
+                Some(message) => CanvasIntake::Board {
+                    artboard_id: artboard.id.clone(),
+                    message,
+                },
+                None => CanvasIntake::Refused,
+            }
+        }
+        Source::Other => CanvasIntake::Refused,
+    }
+}
+
+/// The `canvas-pick` event for a pick on an artboard of the canvas on screen.
+pub fn pick_event(canvas: &ShownCanvas, artboard_id: &str, message: &PageMessage) -> Value {
+    serde_json::json!({
+        "sessionId": canvas.session_id,
+        "key": canvas.key,
+        "artboardId": artboard_id,
+        "message": message,
+    })
 }
 
 /// The `canvas-view` event for a message of the canvas on screen.
@@ -320,5 +388,96 @@ mod tests {
             event,
             serde_json::json!({ "sessionId": SESSION, "key": KEY, "kind": "zoom", "zoom": 0.5 })
         );
+    }
+
+    fn two_boards() -> Canvas {
+        use crate::artifacts::canvas::{Artboard, Section};
+        let board = |id: &str, file: &str| Artboard {
+            id: id.to_string(),
+            title: id.to_string(),
+            file: file.to_string(),
+            width: 100,
+            height: 100,
+            group: None,
+        };
+        Canvas {
+            title: "c".to_string(),
+            sections: vec![Section {
+                id: "s".to_string(),
+                title: "s".to_string(),
+                artboards: vec![board("pay-a", "pay/a.html"), board("pay-b", "pay/b.html")],
+            }],
+        }
+    }
+
+    const PICK: &str = r#"{"kind":"pick-text","quote":"Pay","before":"","after":""}"#;
+    const SELECT: &str = r#"{"kind":"canvas-select","artboardId":"pay-a"}"#;
+
+    fn intake(frame: &str, raw: &str, shown: &ShownCanvas) -> CanvasIntake {
+        let state = ViewState {
+            is_commenting: true,
+            has_marks: false,
+        };
+        canvas_intake(
+            frame,
+            raw,
+            shown,
+            &two_boards(),
+            state,
+            &mut RateLimit::default(),
+            Instant::now(),
+        )
+    }
+
+    #[test]
+    fn a_board_cannot_send_shell_kinds() {
+        let url = canvas_file_url(SESSION, KEY, "pay/a.html");
+        assert_eq!(intake(&url, SELECT, &canvas()), CanvasIntake::Refused);
+    }
+
+    #[test]
+    fn the_shell_cannot_send_picks() {
+        let url = canvas_shell_url(SESSION, KEY);
+        assert_eq!(intake(&url, PICK, &canvas()), CanvasIntake::Refused);
+        assert_eq!(
+            intake(&url, SELECT, &canvas()),
+            CanvasIntake::Shell(ShellMessage::Select(Some("pay-a".to_string())))
+        );
+    }
+
+    #[test]
+    fn a_board_of_another_canvas_is_refused() {
+        let url = canvas_file_url(SESSION, "c-ffffffffffffffff", "pay/a.html");
+        assert_eq!(intake(&url, PICK, &canvas()), CanvasIntake::Refused);
+    }
+
+    #[test]
+    fn a_file_that_is_not_an_artboard_is_refused() {
+        let url = canvas_file_url(SESSION, KEY, "assets/frame.html");
+        assert_eq!(intake(&url, PICK, &canvas()), CanvasIntake::Refused);
+    }
+
+    #[test]
+    fn picks_from_a_board_name_that_board() {
+        let url = format!(
+            "{}?v=0123456789ab",
+            canvas_file_url(SESSION, KEY, "pay/b.html")
+        );
+        match intake(&url, PICK, &canvas()) {
+            CanvasIntake::Board { artboard_id, .. } => assert_eq!(artboard_id, "pay-b"),
+            other => panic!("{other:?}"),
+        }
+        // Outside comment mode a pick is refused, as on a page.
+        let off = ViewState::default();
+        let refused = canvas_intake(
+            &url,
+            PICK,
+            &canvas(),
+            &two_boards(),
+            off,
+            &mut RateLimit::default(),
+            Instant::now(),
+        );
+        assert_eq!(refused, CanvasIntake::Refused);
     }
 }

@@ -547,11 +547,17 @@ pub fn canvas_view_show(
 #[tauri::command(async)]
 pub fn canvas_view_apply(
     app: AppHandle,
+    artifacts: State<'_, Arc<ArtifactStore>>,
     session_id: String,
     key: String,
     state: String,
 ) -> Result<(), String> {
-    view::apply_canvas(&app, ShownCanvas { session_id, key }, state)
+    // The artboards as the folder holds them now; none (so every artboard message is refused)
+    // when the canvas is forgotten or unreadable.
+    let boards = artifacts
+        .canvas(&session_id, &key)
+        .and_then(|entry| read_canvas(Path::new(&entry.folder)).ok());
+    view::apply_canvas(&app, ShownCanvas { session_id, key }, boards, state)
 }
 
 /// Runs one of the wrapper's commands (Fit, 100%, zoom, a section, Focus, Previous, Next).

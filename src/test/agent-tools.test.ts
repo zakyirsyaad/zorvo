@@ -12,8 +12,8 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 import { useAcpEngine } from "../hooks/session-engine/useAcpEngine";
-import { sessionGetsAgentTools } from "../lib/agent-tools";
-import { COMMAND_PATH_CONTEXT, MCP_PATH_CONTEXT } from "../lib/agent-tools-context";
+import { toolsRoleOf } from "../lib/workers";
+import { COMMAND_PATH_CONTEXT, MCP_PATH_CONTEXT, workerContext } from "../lib/agent-tools-context";
 import { NO_CHOICES } from "../lib/acp-draft";
 import { fakeProfiles } from "./fixtures/agents";
 import type { Session } from "../types";
@@ -42,46 +42,13 @@ const OPENING = ["acp_start_session", "acp_reopen_session", "acp_import_session"
 function openCalls(spy: { mock: { calls: unknown[][] } }) {
   return spy.mock.calls
     .filter(([cmd]) => OPENING.includes(cmd as string))
-    .map(([cmd, args]) => [cmd, (args as { agentTools?: unknown }).agentTools]);
+    .map(([cmd, args]) => [cmd, (args as { agentTools?: unknown }).agentTools, (args as { workerTools?: unknown }).workerTools]);
 }
 
-describe("sessionGetsAgentTools", () => {
-  it("gives tools to a plain session and to a fork", () => {
-    expect(sessionGetsAgentTools({})).toBe(true);
-    expect(sessionGetsAgentTools({ compareRunId: null, delegatedFrom: null })).toBe(true);
-  });
-
-  it("gives none to a compare run session", () => {
-    expect(sessionGetsAgentTools({ compareRunId: "run-1" })).toBe(false);
-  });
-
-  it("gives none to a session an agent opened", () => {
-    expect(sessionGetsAgentTools({ openedBy: { sessionId: "s-a", at: 1 } })).toBe(false);
-    expect(sessionGetsAgentTools({ openedBy: null })).toBe(true);
-  });
-
-  it("gives none to a fork of a session that has none, however long the chain", () => {
-    const opened = { id: "s-o", openedBy: { sessionId: "s-a", at: 1 } };
-    const delegated = { id: "s-d", delegatedFrom: LINK };
-    const fork = { id: "s-f", forkedFrom: "s-o" };
-    const forkOfFork = { id: "s-g", forkedFrom: "s-f" };
-    const all = [opened, delegated, fork, forkOfFork];
-
-    expect(sessionGetsAgentTools(fork, all)).toBe(false);
-    expect(sessionGetsAgentTools(forkOfFork, all)).toBe(false);
-    expect(sessionGetsAgentTools({ id: "s-h", forkedFrom: "s-d" }, all)).toBe(false);
-    // A fork of a plain session keeps the tools, and so does one whose source is gone.
-    expect(sessionGetsAgentTools({ id: "s-i", forkedFrom: "s-plain" }, [...all, { id: "s-plain" }])).toBe(true);
-    expect(sessionGetsAgentTools({ id: "s-j", forkedFrom: "s-deleted" }, all)).toBe(true);
-    // A hand-edited loop ends.
-    const a = { id: "s-x", forkedFrom: "s-y" };
-    const b = { id: "s-y", forkedFrom: "s-x" };
-    expect(sessionGetsAgentTools(a, [a, b])).toBe(true);
-  });
-
-  it("gives none to a delegated session, open or ended", () => {
-    expect(sessionGetsAgentTools({ delegatedFrom: LINK })).toBe(false);
-    expect(sessionGetsAgentTools({ delegatedFrom: { ...LINK, endedAt: 2 } })).toBe(false);
+describe("toolsRoleOf, the null fields of a stored session", () => {
+  it("reads null links and run ids as absent", () => {
+    expect(toolsRoleOf({})).toBe("coordinator");
+    expect(toolsRoleOf({ compareRunId: null, delegatedFrom: null, openedBy: null })).toBe("coordinator");
   });
 });
 
@@ -113,20 +80,20 @@ describe("useAcpEngine and agentTools", () => {
     });
 
     expect(openCalls(spy)).toEqual([
-      ["acp_start_session", true],
-      ["acp_reopen_session", true],
-      ["acp_import_session", true],
-      ["acp_fork_session", true],
+      ["acp_start_session", true, false],
+      ["acp_reopen_session", true, false],
+      ["acp_import_session", true, undefined],
+      ["acp_fork_session", true, undefined],
     ]);
   });
 
-  it("passes false for a compare run session and a delegated one", async () => {
+  it("passes the role: a worker gets the worker tools, a coordinator the coordinator's", async () => {
     const spy = vi.spyOn(tauriInternals(), "invoke");
-    const compared: Session = { ...SESSION, id: "s-2", compareRunId: "run-1" };
-    const delegated: Session = { ...SESSION, id: "s-3", delegatedFrom: LINK };
+    const worker: Session = { ...SESSION, id: "s-3", delegatedFrom: LINK };
+    const coordinator: Session = { ...SESSION, id: "a" };
     const { result } = renderHook(() =>
       useAcpEngine({
-        sessions: [compared, delegated],
+        sessions: [coordinator, worker],
         agents: fakeProfiles,
         updateMessages: () => {},
         patchSession: () => {},
@@ -137,14 +104,69 @@ describe("useAcpEngine and agentTools", () => {
     );
 
     await act(async () => {
-      await result.current.start(compared);
-      await result.current.start(delegated);
+      await result.current.start(worker);
+      await result.current.resume(worker, "acp-s-3");
+      await result.current.start(coordinator);
     });
 
     expect(openCalls(spy)).toEqual([
-      ["acp_start_session", false],
-      ["acp_start_session", false],
+      ["acp_start_session", true, true],
+      ["acp_reopen_session", true, true],
+      ["acp_start_session", true, false],
     ]);
+  });
+
+  it("passes no tools for a compare run session, a handoff session, an ended worker and a private one", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const compared: Session = { ...SESSION, id: "s-2", compareRunId: "run-1" };
+    const opened: Session = { ...SESSION, id: "s-4", openedBy: { sessionId: "a", at: 1 } };
+    const ended: Session = { ...SESSION, id: "s-5", delegatedFrom: { ...LINK, endedAt: 2 } };
+    const priv: Session = { ...SESSION, id: "s-6", privateMode: { modelId: "m" } };
+    const { result } = renderHook(() =>
+      useAcpEngine({
+        sessions: [compared, opened, ended, priv],
+        agents: fakeProfiles,
+        updateMessages: () => {},
+        patchSession: () => {},
+        reportError: () => {},
+        rememberOptions: () => {},
+        onAuthRequired: () => {},
+      }),
+    );
+
+    await act(async () => {
+      for (const session of [compared, opened, ended, priv]) await result.current.start(session);
+    });
+
+    expect(openCalls(spy)).toEqual([
+      ["acp_start_session", false, false],
+      ["acp_start_session", false, false],
+      ["acp_start_session", false, false],
+      ["acp_start_session", false, false],
+    ]);
+  });
+
+  it("starts a fork of a worker with no tools", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const worker: Session = { ...SESSION, id: "w", delegatedFrom: LINK };
+    const fork: Session = { ...SESSION, id: "f", forkedFrom: "w" };
+    const { result } = renderHook(() =>
+      useAcpEngine({
+        sessions: [worker, fork],
+        agents: fakeProfiles,
+        updateMessages: () => {},
+        patchSession: () => {},
+        reportError: () => {},
+        rememberOptions: () => {},
+        onAuthRequired: () => {},
+      }),
+    );
+
+    await act(async () => {
+      await result.current.fork("w", fork);
+    });
+
+    expect(openCalls(spy)).toEqual([["acp_fork_session", false, undefined]]);
   });
 });
 
@@ -300,5 +322,92 @@ describe("useAcpEngine and the command path context", () => {
     });
     const shown = messages.current as { role: string; content: string }[];
     expect(shown.filter((m) => m.role === "user").map((m) => m.content)).toEqual(["ask Qwen to review it"]);
+  });
+});
+
+describe("useAcpEngine and a worker's note", () => {
+  type FakeWindow = { __FAKE_TOOLS_PATH__?: string; __FAKE_AGENT_TOOLS__?: boolean };
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete (window as unknown as FakeWindow).__FAKE_TOOLS_PATH__;
+    delete (window as unknown as FakeWindow).__FAKE_AGENT_TOOLS__;
+  });
+
+  const coordinator: Session = { ...SESSION, id: "a", profileId: "claude-acp" };
+  const worker: Session = { ...SESSION, id: "w", delegatedFrom: { ...LINK, sessionId: "a" } };
+  const coordinatorName = "Claude Code";
+
+  const engine = (sessions: Session[]) =>
+    renderHook(() =>
+      useAcpEngine({
+        sessions,
+        agents: fakeProfiles,
+        updateMessages: () => {},
+        patchSession: () => {},
+        reportError: () => {},
+        rememberOptions: () => {},
+        onAuthRequired: () => {},
+      }),
+    );
+
+  const promptTexts = (spy: { mock: { calls: unknown[][] } }) =>
+    spy.mock.calls.filter(([cmd]) => cmd === "acp_prompt").map(([, args]) => (args as { text: string }).text);
+
+  const open = (path: string | undefined) => {
+    (window as unknown as FakeWindow).__FAKE_TOOLS_PATH__ = path;
+    // The backend says true for a worker too: the note must follow the role, not this flag.
+    (window as unknown as FakeWindow).__FAKE_AGENT_TOOLS__ = true;
+  };
+
+  it("gives a worker its own note and never the coordinator's", async () => {
+    open("mcp");
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const { result } = engine([coordinator, worker]);
+    await act(async () => {
+      await result.current.start(worker, { text: "do the task" });
+    });
+    expect(promptTexts(spy)).toEqual([`${workerContext("mcp", coordinatorName)}\n\ndo the task`]);
+    expect(promptTexts(spy)[0]).not.toContain(MCP_PATH_CONTEXT);
+    expect(promptTexts(spy)[0]).not.toContain(COMMAND_PATH_CONTEXT);
+  });
+
+  it("gives a command-path worker the command form", async () => {
+    open("command");
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const { result } = engine([coordinator, worker]);
+    await act(async () => {
+      await result.current.start(worker, { text: "do the task" });
+    });
+    expect(promptTexts(spy)).toEqual([`${workerContext("command", coordinatorName)}\n\ndo the task`]);
+  });
+
+  it("names a coordinator that is gone as Another agent", async () => {
+    open("mcp");
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const { result } = engine([worker]);
+    await act(async () => {
+      await result.current.start(worker, { text: "do the task" });
+    });
+    expect(promptTexts(spy)[0]).toContain("Another agent, in another Zorvo session");
+  });
+
+  it("gives a reopened worker the note again", async () => {
+    open("mcp");
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const { result } = engine([coordinator, worker]);
+    await act(async () => {
+      await result.current.resume(worker, "acp-w", { text: "carry on" });
+    });
+    expect(promptTexts(spy)).toEqual([`${workerContext("mcp", coordinatorName)}\n\ncarry on`]);
+  });
+
+  it("gives a worker with no tools path no note", async () => {
+    open(undefined);
+    const spy = vi.spyOn(tauriInternals(), "invoke");
+    const { result } = engine([coordinator, worker]);
+    await act(async () => {
+      await result.current.start(worker, { text: "do the task" });
+    });
+    expect(promptTexts(spy)).toEqual(["do the task"]);
   });
 });

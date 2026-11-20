@@ -25,7 +25,6 @@ import {
   parseToolCall,
   resolveAgent,
   resolveFolder,
-  sessionGetsAgentTools,
   statusRefusal,
   workerSentText,
   workerStartedText,
@@ -37,6 +36,7 @@ import {
 } from '../lib/agent-tools';
 import type { MentionAgentStatus } from '../lib/delegation';
 import { createId } from '../lib/ids';
+import { toolsRoleOf } from '../lib/workers';
 import { ARTIFACT_GUIDE, ARTIFACT_REFUSALS, parseShown, shownResultText, type ShownArtifact } from '../lib/artifacts';
 import { withArtifactCard } from '../lib/artifact-card';
 import { escapeVisible } from '../lib/visible-text';
@@ -535,7 +535,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
         const session = current.sessions.find((candidate) => candidate.id === call.sessionId);
         // A session whose agent has exited makes no calls: whatever still holds its token is not it.
         const isLive = session !== undefined && session.status !== 'terminated';
-        if (session === undefined || !isLive || !sessionGetsAgentTools(session, current.sessions)) {
+        // A worker reports through `done` only, which is not answered here; a session with no role has no tools.
+        if (session === undefined || !isLive || toolsRoleOf(session, current.sessions) !== 'coordinator') {
           respond(call.callId, false, NO_SESSION);
           return;
         }

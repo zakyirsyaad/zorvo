@@ -8,7 +8,7 @@ import {
   type MentionAgentStatus,
 } from './delegation';
 import { isArchived } from './session-helpers';
-import { toolsRoleOf, workerHandleOf, type ToolsSubject, type WorkerState } from './workers';
+import { workerHandleOf, type ToolsSubject, type WorkerState } from './workers';
 import { escapeVisible } from './visible-text';
 
 export type { ToolsSubject };
@@ -19,19 +19,6 @@ export interface AgentToolCall {
   sessionId: string;
   tool: string;
   args: unknown;
-}
-
-/**
- * Whether a session is opened with Zorvo's tools. A compare run's agents work
- * side by side, a delegated session is already somebody's helper, and a
- * session an agent opened must not open more (one level), so none of them
- * gets the tools; a plain session and a fork do.
- */
-export function sessionGetsAgentTools(
-  session: ToolsSubject,
-  sessions: readonly (ToolsSubject & Pick<Session, 'id'>)[] = [],
-): boolean {
-  return toolsRoleOf(session, sessions) === 'coordinator';
 }
 
 // --- What a tool call means. Pure: the hook that answers calls decides with these.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COMMAND_PATH_CONTEXT, MCP_PATH_CONTEXT } from "../lib/agent-tools-context";
+import { COMMAND_PATH_CONTEXT, MCP_PATH_CONTEXT, workerContext } from "../lib/agent-tools-context";
 
 describe("the command path's context", () => {
   it("names the artifact tools with their arguments", () => {
@@ -38,5 +38,27 @@ describe("the MCP path's context", () => {
   it("stays hidden and leaves short answers in the chat", () => {
     expect(MCP_PATH_CONTEXT).toContain("short text or code");
     expect(MCP_PATH_CONTEXT.endsWith("Do not mention this note.")).toBe(true);
+  });
+});
+
+describe("a worker's note", () => {
+  it("names the coordinator and the done tool", () => {
+    const note = workerContext("mcp", "Claude Code");
+    expect(note).toContain(
+      "You are a worker. Claude Code, in another Zorvo session, gave you this task and cannot see this chat.",
+    );
+    expect(note).toContain("call the done tool once with outcome succeeded or failed");
+    expect(note).not.toContain("start_worker");
+    expect(note).not.toContain("Do not mention");
+  });
+
+  it("shows the done command on the command path", () => {
+    const note = workerContext("command", "Claude Code");
+    expect(note).toContain("\"$ZORVO_TOOLS\" tools done '{\"outcome\":\"succeeded\",\"summary\":");
+    expect(note).not.toContain("call the done tool once");
+  });
+
+  it("makes a name from the registry visible text", () => {
+    expect(workerContext("mcp", "Bad\u202eName")).not.toContain("\u202e");
   });
 });

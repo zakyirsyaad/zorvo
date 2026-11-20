@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { parseToolCall, sessionGetsAgentTools, type AgentToolCall } from "../lib/agent-tools";
+import { parseToolCall, type AgentToolCall } from "../lib/agent-tools";
+import { toolsRoleOf } from "../lib/workers";
 import type { AgentProfile, Session } from "../types";
 import { useLatest } from "./useLatest";
 
@@ -81,7 +82,7 @@ export function useBrowserAgentTools(options: {
       if (calls.current.has(call.callId)) return;
       calls.current.set(call.callId, call);
       const session = latest.current.sessions.find(item => item.id === call.sessionId);
-      if (!session || session.status === "terminated" || !sessionGetsAgentTools(session, latest.current.sessions)) {
+      if (!session || session.status === "terminated" || toolsRoleOf(session, latest.current.sessions) !== "coordinator") {
         void respond(call.callId, false, "This session cannot use Zorvo's browser.").catch(error => latest.current.onError(String(error)));
       } else if (call.tool === "browser_guide") {
         void invoke("browser_catalog").then(result => respond(call.callId, true, JSON.stringify(result)))

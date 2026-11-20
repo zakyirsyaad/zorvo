@@ -23,8 +23,8 @@ import { qwenErrorDetail } from '../../lib/qwen-api-error';
 import type { AgentProfile, ChatMessage, ElicitationCard, Session } from '../../types';
 import { parseAuthRequired, type AuthMethod } from '../../lib/acp-auth';
 import { isSessionGoneError, isUnknownSessionError } from '../../lib/acp-load-error';
-import { sessionGetsAgentTools } from '../../lib/agent-tools';
-import { withToolsContext, type ToolsPath } from '../../lib/agent-tools-context';
+import { toolsRoleOf } from '../../lib/workers';
+import { withToolsContext, type ToolsNote } from '../../lib/agent-tools-context';
 import { writeConversationHandoff } from '../../lib/session-handoff';
 import { applyElicitation, completeElicitation, dismissPendingElicitations } from '../../lib/acp-elicitation';
 import { elicitationActions, type InFlightAnswer } from './elicitation-actions';
@@ -161,12 +161,12 @@ export function useAcpEngine({
     launchGenRef.current.get(sessionId) === gen;
   // Each session's latest prompt: an agent that refuses it for a sign-in hands it back to the composer.
   // `toolsContext`: the prompt also carried Zorvo's tools context for that path, which is not part of `context`.
-  const lastPromptRef = useRef(new Map<string, { message: ChatMessage; context?: string; toolsContext?: ToolsPath }>());
+  const lastPromptRef = useRef(new Map<string, { message: ChatMessage; context?: string; toolsContext?: ToolsNote }>());
   // The prompt of each session's last turn that failed with an error: what "Try again" sends.
   const failedPromptRef = useRef(new Map<string, { message: ChatMessage; context?: string }>());
   // Hidden context a refused prompt carried (a rewound session's conversation): it goes out with the next message.
   // Sessions with Zorvo's tools that have not been told of them since they last opened, by the way they reach them.
-  const toolsContextDueRef = useRef(new Map<string, ToolsPath>());
+  const toolsContextDueRef = useRef(new Map<string, ToolsNote>());
   const unsentContextRef = useRef(new Map<string, string>());
   // The picks a session was opened with when its agent refused to open it until the user signs in.
   const refusedChoicesRef = useRef(new Map<string, AcpChoices>());
@@ -438,9 +438,21 @@ export function useAcpEngine({
    * MCP note is about pages, so it goes only to a session with the agent tools: computer use alone
    * also gets the zorvo server, without `show_artifact`.
    */
-  const noteToolsPath = (sessionId: string, info: AcpSessionInfo) => {
-    if (info.toolsPath === 'command') toolsContextDueRef.current.set(sessionId, 'command');
-    else if (info.toolsPath === 'mcp' && info.agentTools) toolsContextDueRef.current.set(sessionId, 'mcp');
+  const noteToolsPath = (session: Session, info: AcpSessionInfo) => {
+    const sessionId = session.id;
+    const path = info.toolsPath;
+    if (path === undefined) {
+      toolsContextDueRef.current.delete(sessionId);
+      return;
+    }
+    // A worker hears its own note and never a coordinator's, whatever the answer's `agentTools` says.
+    if (toolsRoleOf(session, sessions) === 'worker') {
+      const link = session.delegatedFrom;
+      const coordinator = sessions.find((candidate) => candidate.id === link?.sessionId);
+      const name = agents.find((agent) => agent.id === coordinator?.profileId)?.name ?? 'Another agent';
+      toolsContextDueRef.current.set(sessionId, { role: 'worker', path, coordinator: name });
+    } else if (path === 'command') toolsContextDueRef.current.set(sessionId, 'command');
+    else if (info.agentTools) toolsContextDueRef.current.set(sessionId, 'mcp');
     else toolsContextDueRef.current.delete(sessionId);
   };
 
@@ -520,7 +532,7 @@ export function useAcpEngine({
         if (message) updateNow(session.id, (prev) => withoutMessage(prev, message.id));
         return true;
       }
-      noteToolsPath(session.id, info);
+      noteToolsPath(session, info);
       // A reopened session may not repeat the models: what is remembered stays then. A private session's
       // options (its TEE model) are not what the agent offers an ordinary draft, so they are not remembered.
       if (!isPrivate) {
@@ -568,7 +580,7 @@ export function useAcpEngine({
 
   const start = (session: Session, first?: FirstMessage, choices: AcpChoices = NO_CHOICES) =>
     // A private session gets no agent tools: its launch already carries the credits server.
-    launch(session, () => acp.start(session.id, session.cwd, session.profileId, !session.privateMode && sessionGetsAgentTools(session, sessions), privateModelIdOf(session), privateOwnKeyOf(session), privateSessionCapOf(session)), {
+    launch(session, () => acp.start(session.id, session.cwd, session.profileId, session.privateMode ? null : toolsRoleOf(session, sessions), privateModelIdOf(session), privateOwnKeyOf(session), privateSessionCapOf(session)), {
       first,
       choices,
       applySafeMode: true,
@@ -577,7 +589,7 @@ export function useAcpEngine({
 
   /** Continues an ended session in a fresh agent process through the agent's own session/resume or session/load. */
   const resume = (session: Session, acpSessionId: string, first?: FirstMessage, choices: AcpChoices = NO_CHOICES) =>
-    launch(session, () => acp.reopen(session.id, session.cwd, session.profileId, acpSessionId, !session.privateMode && sessionGetsAgentTools(session, sessions), privateModelIdOf(session), privateOwnKeyOf(session), privateSessionCapOf(session)), {
+    launch(session, () => acp.reopen(session.id, session.cwd, session.profileId, acpSessionId, session.privateMode ? null : toolsRoleOf(session, sessions), privateModelIdOf(session), privateOwnKeyOf(session), privateSessionCapOf(session)), {
       first,
       choices,
       applySafeMode: true,
@@ -610,7 +622,7 @@ export function useAcpEngine({
       const opening = launch(
         session,
         async () => {
-          const info = await acp.importSession(id, session.cwd, session.profileId, acpSessionId, sessionGetsAgentTools(session, sessions));
+          const info = await acp.importSession(id, session.cwd, session.profileId, acpSessionId, toolsRoleOf(session, sessions) === 'coordinator');
           reopenedWith = info.reopenedWith;
           return info;
         },
@@ -693,13 +705,13 @@ export function useAcpEngine({
     const openNew = async () => {
       const context = hidden ? undefined : await handoffFor(session);
       if (context) unsentContextRef.current.set(sessionId, context);
-      return acp.start(session.id, session.cwd, session.profileId, !session.privateMode && sessionGetsAgentTools(session, sessions), privateModelIdOf(session), privateOwnKeyOf(session), privateSessionCapOf(session)).catch((error: unknown) => {
+      return acp.start(session.id, session.cwd, session.profileId, session.privateMode ? null : toolsRoleOf(session, sessions), privateModelIdOf(session), privateOwnKeyOf(session), privateSessionCapOf(session)).catch((error: unknown) => {
         if (context) unsentContextRef.current.delete(sessionId);
         throw error;
       });
     };
     const reopenSession = () =>
-      acp.reopen(session.id, session.cwd, session.profileId, acpSessionId, !session.privateMode && sessionGetsAgentTools(session, sessions), privateModelIdOf(session), privateOwnKeyOf(session), privateSessionCapOf(session));
+      acp.reopen(session.id, session.cwd, session.profileId, acpSessionId, session.privateMode ? null : toolsRoleOf(session, sessions), privateModelIdOf(session), privateOwnKeyOf(session), privateSessionCapOf(session));
     // A session refused at a prompt may have had no turn the agent kept: when the agent does not know it,
     // it starts anew. Any other failure keeps the session, whose conversation the agent may still have.
     const reopen = wasTerminated
@@ -709,7 +721,7 @@ export function useAcpEngine({
   };
 
   const fork = (sourceSessionId: string, session: Session) =>
-    launch(session, () => acp.fork(sourceSessionId, session.id, session.cwd, sessionGetsAgentTools(session, sessions)), {
+    launch(session, () => acp.fork(sourceSessionId, session.id, session.cwd, toolsRoleOf(session, sessions) === 'coordinator'), {
       choices: NO_CHOICES,
       applySafeMode: false,
       action: 'fork',

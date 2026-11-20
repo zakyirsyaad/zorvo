@@ -1,3 +1,5 @@
+import { escapeVisible } from './visible-text';
+
 /**
  * What an agent on the command path is told about Zorvo's tools. It ignores
  * ACP's `mcpServers`, so it cannot see a tool list: it runs `zorvo tools` from
@@ -36,8 +38,40 @@ export const MCP_PATH_CONTEXT =
 /** Which of Zorvo's ways in a session has, and so which note it is due. */
 export type ToolsPath = 'command' | 'mcp';
 
-/** The tools context for `path`, then the message's own hidden context when it has one. */
-export function withToolsContext(context: string | undefined, path: ToolsPath): string {
-  const note = path === 'mcp' ? MCP_PATH_CONTEXT : COMMAND_PATH_CONTEXT;
-  return context ? `${note}\n\n${context}` : note;
+/** A worker's note: which way in it has and the agent that gave it the task. */
+export interface WorkerNote {
+  role: 'worker';
+  path: ToolsPath;
+  /** The name of the coordinator's agent, as it goes into the note. */
+  coordinator: string;
+}
+
+/** What a session is due: its coordinator's note for a path, or a worker's own. */
+export type ToolsNote = ToolsPath | WorkerNote;
+
+/**
+ * What a worker is told: who gave it the task, to do only that, and to end with `done`. Its agent's
+ * name comes from the registry, so it goes through `escapeVisible` before it is part of a sentence.
+ */
+export function workerContext(path: ToolsPath, coordinatorAgentName: string): string {
+  const report =
+    path === 'mcp'
+      ? 'call the done tool once with outcome succeeded or failed and a short summary: what you did, what you found, what is left.'
+      : 'run "$ZORVO_TOOLS" tools done \'{"outcome":"succeeded","summary":"<what you did, what you found, what is left>"}\' once, with outcome succeeded or failed and a short summary.';
+  return (
+    `You are a worker. ${escapeVisible(coordinatorAgentName)}, in another Zorvo session, gave you this task and cannot see this chat. ` +
+    `Do only this task. When you finish, ${report} ` +
+    'Use failed when the work is not done. Then end your turn.'
+  );
+}
+
+/** The note due for `note`, then the message's own hidden context when it has one. */
+export function withToolsContext(context: string | undefined, note: ToolsNote): string {
+  const text =
+    typeof note !== 'string'
+      ? workerContext(note.path, note.coordinator)
+      : note === 'mcp'
+        ? MCP_PATH_CONTEXT
+        : COMMAND_PATH_CONTEXT;
+  return context ? `${text}\n\n${context}` : text;
 }

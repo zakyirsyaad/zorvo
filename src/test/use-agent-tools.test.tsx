@@ -361,6 +361,21 @@ describe("useAgentTools", () => {
     ]);
   });
 
+  it("tells a worker that every tool is out of its reach", async () => {
+    const worker: Session = { ...SESSION, id: "s-w", delegatedFrom: { sessionId: "s-1", task: "t", startedAt: 1 } };
+    const t = setup({ sessions: [SESSION, worker] });
+    const tools = ["list_agents", "start_worker", "send", "start_session", "read_session", "stop_session", "show_artifact", "artifact_guide", "done"];
+    for (const [index, tool] of tools.entries()) await t.call(String(index), tool, {}, "s-w");
+
+    expect(t.answers().map((answer) => [answer.ok, answer.text])).toEqual(tools.map(() => [false, NO_SESSION]));
+  });
+
+  it("does not answer done for a coordinator with a handler, and says it could not", async () => {
+    const t = setup();
+    await t.call("1", "done", { outcome: "succeeded", summary: "x" });
+    expect(t.answers().map((answer) => [answer.ok, answer.text])).toEqual([[false, "Zorvo could not do that."]]);
+  });
+
   it("answers even when giving the task throws, and for arguments it cannot read", async () => {
     const t = setup({
       giveResult: () => {

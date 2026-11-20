@@ -536,7 +536,7 @@ describe("delegating from the app", () => {
     });
 
     await waitFor(() => expect(callsTo(spy, "acp_start_session")).toHaveLength(1));
-    expect(callsTo(spy, "acp_start_session")[0][1]).toMatchObject({ profileId: "codex-acp", agentTools: false });
+    expect(callsTo(spy, "acp_start_session")[0][1]).toMatchObject({ profileId: "codex-acp", agentTools: true, workerTools: true });
     await waitFor(() => expect(callsTo(spy, "agent_tool_respond")).toHaveLength(1));
     const [, answer] = callsTo(spy, "agent_tool_respond")[0];
     expect(answer).toMatchObject({ callId: "c-1", ok: true });
@@ -588,6 +588,7 @@ describe("delegating from the app", () => {
       profileId: "codex-acp",
       cwd: "/Users/test/developer/ai-perpetual-trading",
       agentTools: false,
+      workerTools: false,
     });
     await waitFor(() => expect(callsTo(spy, "agent_tool_respond")).toHaveLength(1));
     const [, answer] = callsTo(spy, "agent_tool_respond")[0];

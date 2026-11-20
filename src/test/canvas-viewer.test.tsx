@@ -239,4 +239,71 @@ describe("the canvas viewer", () => {
     await waitFor(() => expect(calls("canvas_view_marks").at(-1)).toEqual({ sessionId: SESSION, key: KEY, artboardId: "pay-b", marks: [] }));
     expect(calls("canvas_view_marks")).toHaveLength(3);
   });
+
+  describe("Pick and Build this", () => {
+    const select = async (id: string) => {
+      await waitFor(() => expect(calls("canvas_view_apply")).toHaveLength(1));
+      act(() => deliver("canvas-view", { sessionId: SESSION, key: KEY, kind: "select", artboardId: id }));
+    };
+
+    it("puts the Pick text in the box once, and sends nothing", async () => {
+      const onInsertText = vi.fn();
+      show({ onInsertText });
+      await select("pay-b");
+      fireEvent.click(screen.getByRole("button", { name: "Pick" }));
+
+      expect(onInsertText).toHaveBeenCalledTimes(1);
+      expect(onInsertText).toHaveBeenCalledWith(
+        "Use variant Payment B (`design/checkout/pay-b.html`) from the Checkout canvas. Drop the other pay variants: `pay-a.html`.",
+      );
+      expect(calls("acp_prompt")).toEqual([]);
+    });
+
+    it("offers no Pick for an artboard without a group", async () => {
+      show({ onInsertText: vi.fn() });
+      await select("cart");
+
+      expect(screen.queryByRole("button", { name: "Pick" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Build this" })).toBeTruthy();
+    });
+
+    it("puts the Build this text in the box once", async () => {
+      const onInsertText = vi.fn();
+      show({ onInsertText });
+      await select("pay-b");
+      fireEvent.click(screen.getByRole("button", { name: "Build this" }));
+
+      expect(onInsertText).toHaveBeenCalledTimes(1);
+      expect(onInsertText).toHaveBeenCalledWith("Build the Payment B screen from `design/checkout/pay-b.html` (1440 × 900) in this repository.");
+    });
+
+    it("builds a section from the Sections menu", async () => {
+      const onInsertText = vi.fn();
+      show({ onInsertText });
+      await waitFor(() => expect(calls("canvas_view_apply")).toHaveLength(1));
+      fireEvent.click(screen.getByRole("button", { name: "Sections" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Build section Flow" }));
+
+      expect(onInsertText).toHaveBeenCalledWith(
+        "Build the screens of the Flow section of the Checkout canvas in this repository, in this order:\n- Cart: `design/checkout/cart.html` (1440 × 900)",
+      );
+    });
+
+    it("disables the buttons with the reason when the box cannot take text", async () => {
+      const onInsertText = vi.fn();
+      show({ onInsertText, insertBlockedReason: "There is no message box for this session." });
+      await select("pay-b");
+
+      const build = screen.getByRole("button", { name: "Build this" }) as HTMLButtonElement;
+      expect(build.disabled).toBe(true);
+      expect(build.title).toBe("There is no message box for this session.");
+      expect((screen.getByRole("button", { name: "Pick" }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it("has no buttons without an inserter (a popout)", async () => {
+      show();
+      await select("pay-b");
+      expect(screen.queryByRole("button", { name: "Build this" })).toBeNull();
+    });
+  });
 });

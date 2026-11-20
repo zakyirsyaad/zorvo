@@ -1,4 +1,6 @@
 import guide from './canvas-guide.md?raw';
+import { codeSpan } from './artifact-comments';
+import { escapeVisible } from './visible-text';
 
 /** What `artifact_guide` answers for `kind: "canvas"`: how to lay out several screens. */
 export const CANVAS_GUIDE: string = guide;
@@ -208,4 +210,36 @@ export function canvasShellState(read: CanvasRead, sessionId: string, thumbs: Re
     boards,
     selected: selected ?? null,
   });
+}
+
+/** An artboard's file as the agent finds it: `folder` is the canvas folder relative to the session's folder. */
+function boardPath(folder: string, board: CanvasArtboard): string {
+  const base = folder.replace(/\/+$/, '');
+  return codeSpan(escapeVisible(base === '' ? board.file : `${base}/${board.file}`));
+}
+
+const sizeOf = (board: CanvasArtboard): string => `${board.width} × ${board.height}`;
+
+/** What Pick puts in the message box: keep this variant, drop the others of its group. */
+export function pickMessage(canvas: Canvas, folder: string, board: CanvasArtboard): string {
+  const group = board.group;
+  const others =
+    group === null
+      ? []
+      : canvas.sections.flatMap((section) => section.artboards).filter((other) => other.group === group && other.id !== board.id);
+  const head = `Use variant ${escapeVisible(board.title)} (${boardPath(folder, board)}) from the ${escapeVisible(canvas.title)} canvas.`;
+  if (others.length === 0 || group === null) return head;
+  return `${head} Drop the other ${escapeVisible(group)} variants: ${others.map((other) => codeSpan(escapeVisible(other.file))).join(', ')}.`;
+}
+
+/** What Build this puts in the message box. */
+export function buildMessage(folder: string, board: CanvasArtboard): string {
+  return `Build the ${escapeVisible(board.title)} screen from ${boardPath(folder, board)} (${sizeOf(board)}) in this repository.`;
+}
+
+/** What Build section puts in the message box: the section's artboards, in order. */
+export function buildSectionMessage(canvas: Canvas, folder: string, section: CanvasSection): string {
+  const head = `Build the screens of the ${escapeVisible(section.title)} section of the ${escapeVisible(canvas.title)} canvas in this repository, in this order:`;
+  const lines = section.artboards.map((board) => `- ${escapeVisible(board.title)}: ${boardPath(folder, board)} (${sizeOf(board)})`);
+  return [head, ...lines].join('\n');
 }

@@ -1802,6 +1802,10 @@ export default function App() {
     );
   }
 
+  // A canvas's Pick and Build put text in the message box on the same terms as Reply.
+  const canvasInsertBlockedReason = replyBlockedReason({ isComposerHidden, isComposerDisabled, isHeldElsewhere: review.isHeldFor(activeSessionId) });
+  const canvasInsertText = (text: string) => composerRef.current?.insertText(text);
+
   return (
     <main className="flex h-screen w-screen flex-col bg-ground text-fg-secondary">
       {/* Hidden, not unmounted, while Settings shows: a draft, its comments and the terminals stay as they were. */}
@@ -2325,6 +2329,8 @@ export default function App() {
                     comments={artifactComments}
                     addReview={review.addArtifactReview}
                     cwd={activeSession.cwd}
+                    onInsertText={canvasInsertText}
+                    insertBlockedReason={canvasInsertBlockedReason}
                   />
                   {/* The chat, which draws the app's notice, is hidden under an expanded page: a failure here
                       (export, rename, delete, a page that cannot be shown) is said here. The page hides under it. */}
@@ -2475,6 +2481,8 @@ export default function App() {
                   files={createdFiles}
                   canvases={sessionCanvases}
                   turnsEnded={turnsEnded}
+                  onInsertText={canvasInsertText}
+                  insertBlockedReason={canvasInsertBlockedReason}
                   filesRoot={filesFolder?.path}
                   agentName={activeAgent?.name}
                   onOpenFile={(relative) => {

@@ -37,6 +37,10 @@ export interface ArtifactsPanelProps {
   canvases?: readonly CanvasEntry[];
   /** Moves when one of the session's turns ends, so an open canvas is read again. */
   turnsEnded?: number;
+  /** Puts text in the message box (a canvas's Pick and Build); absent, those buttons are not offered. */
+  onInsertText?: (text: string) => void;
+  /** Why the message box cannot take text now. */
+  insertBlockedReason?: string;
 }
 
 /** The mark every artifact row and card carries; a canvas has its own. */
@@ -143,6 +147,8 @@ export function ArtifactsPanel({
   onOpenFile,
   canvases = [],
   turnsEnded,
+  onInsertText,
+  insertBlockedReason,
 }: ArtifactsPanelProps) {
   // A single page or canvas opens by itself, unless something else is listed beside it.
   const rowCount = artifacts.length + canvases.length + files.length;
@@ -165,6 +171,8 @@ export function ArtifactsPanel({
         comments={comments}
         addReview={addReview}
         cwd={cwd}
+        onInsertText={onInsertText}
+        insertBlockedReason={insertBlockedReason}
       />
     );
   }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { CANVAS_GUIDE, CANVAS_REFUSALS, FOLDER_NOT_FOUND, artboardCount, parseCanvasEntries, canvasFileUrl, canvasResultText, canvasShellState, parseCanvasRead, type Canvas, type CanvasRead } from "../lib/canvas";
+import { CANVAS_GUIDE, CANVAS_REFUSALS, FOLDER_NOT_FOUND, artboardCount, parseCanvasEntries, canvasFileUrl, canvasResultText, pickMessage, buildMessage, buildSectionMessage, canvasShellState, parseCanvasRead, type Canvas, type CanvasRead } from "../lib/canvas";
 
 const KEY = "c-0123456789abcdef";
 const ENTRY = { key: KEY, folder: "/w/design/x", relative: "design/x", title: "Checkout", shownAt: 5, artboards: 3 };
@@ -110,5 +110,64 @@ describe("the wrapper's state", () => {
 
   it("counts a canvas's artboards", () => {
     expect(artboardCount(CANVAS as Canvas)).toBe(3);
+  });
+});
+
+const SPEC_CANVAS: Canvas = {
+  title: "Checkout",
+  sections: [
+    { id: "flow", title: "Flow", artboards: [{ id: "cart", title: "Cart", file: "cart.html", width: 1440, height: 900, group: null }] },
+    {
+      id: "pay",
+      title: "Payment variants",
+      artboards: [
+        { id: "pay-a", title: "Payment A", file: "pay-a.html", width: 1440, height: 900, group: "pay" },
+        { id: "pay-b", title: "Payment B", file: "pay-b.html", width: 1440, height: 900, group: "pay" },
+      ],
+    },
+  ],
+};
+const PAY_B = SPEC_CANVAS.sections[1].artboards[1];
+
+describe("the Pick and Build messages", () => {
+  it("words Pick as the spec does", () => {
+    expect(pickMessage(SPEC_CANVAS, "design/checkout", PAY_B)).toBe(
+      "Use variant Payment B (`design/checkout/pay-b.html`) from the Checkout canvas. Drop the other pay variants: `pay-a.html`.",
+    );
+  });
+
+  it("lists every other variant in canvas order, across sections", () => {
+    const canvas: Canvas = {
+      title: "C",
+      sections: [
+        { id: "a", title: "A", artboards: [{ id: "x1", title: "X1", file: "x1.html", width: 1, height: 1, group: "g" }] },
+        { id: "b", title: "B", artboards: [{ id: "x2", title: "X2", file: "x2.html", width: 1, height: 1, group: "g" }, { id: "x3", title: "X3", file: "x3.html", width: 1, height: 1, group: "g" }] },
+      ],
+    };
+    expect(pickMessage(canvas, "d", canvas.sections[1].artboards[0])).toContain("variants: `x1.html`, `x3.html`.");
+  });
+
+  it("words Build this as the spec does", () => {
+    expect(buildMessage("design/checkout", PAY_B)).toBe("Build the Payment B screen from `design/checkout/pay-b.html` (1440 × 900) in this repository.");
+  });
+
+  it("words Build section with one line per artboard", () => {
+    const flow = { id: "f", title: "Flow", artboards: [SPEC_CANVAS.sections[0].artboards[0], PAY_B] };
+    expect(buildSectionMessage(SPEC_CANVAS, "design/checkout", flow)).toBe(
+      "Build the screens of the Flow section of the Checkout canvas in this repository, in this order:\n" +
+        "- Cart: `design/checkout/cart.html` (1440 × 900)\n" +
+        "- Payment B: `design/checkout/pay-b.html` (1440 × 900)",
+    );
+  });
+
+  it("escapes a title with a bidi control and keeps a backtick in a file inside its code span", () => {
+    const board = { id: "x", title: "Pay\u202Eevil", file: "a`b.html", width: 10, height: 20, group: null };
+    const text = buildMessage("d", board);
+    expect(text).not.toContain("\u202E");
+    expect(text).toContain("``d/a`b.html``");
+  });
+
+  it("builds from a canvas at the session's folder", () => {
+    expect(buildMessage("", PAY_B)).toContain("`pay-b.html`");
   });
 });

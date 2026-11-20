@@ -24,6 +24,18 @@ export interface CanvasHeaderProps {
   onMenuOpen: (isOpen: boolean) => void;
   /** Comments on the canvas; absent (a popout), no Comment button. */
   commenting?: CanvasCommenting;
+  /** Pick, Build this and Build section; absent (a popout), none of them. */
+  handoff?: CanvasHandoff;
+}
+
+export interface CanvasHandoff {
+  /** Why the message box cannot take text now; the buttons are disabled with it. */
+  blockedReason?: string;
+  /** Whether the selected artboard belongs to a group of variants. */
+  canPick: boolean;
+  onPick: () => void;
+  onBuild: () => void;
+  onBuildSection: (sectionId: string) => void;
 }
 
 export interface CanvasCommenting {
@@ -36,7 +48,17 @@ export interface CanvasCommenting {
 const DIVIDER = <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-border" />;
 
 /** What the selected artboard offers: its title, Focus, and the artboards before and after it. */
-function SelectionTools({ title, onCommand, commenting }: { title: string; onCommand: (name: string) => void; commenting?: CanvasCommenting }) {
+function SelectionTools({
+  title,
+  onCommand,
+  commenting,
+  handoff,
+}: {
+  title: string;
+  onCommand: (name: string) => void;
+  commenting?: CanvasCommenting;
+  handoff?: CanvasHandoff;
+}) {
   return (
     <>
       <span aria-label={`Selected: ${title}`} className="min-w-0 truncate px-1 text-ui font-medium text-fg">
@@ -45,6 +67,16 @@ function SelectionTools({ title, onCommand, commenting }: { title: string; onCom
       {commenting && !commenting.isCommenting && (
         <Button variant="ghost" size="sm" tone="secondary" onClick={commenting.onCommentOnArtboard} className="shrink-0 whitespace-nowrap">
           Comment on artboard
+        </Button>
+      )}
+      {handoff?.canPick && (
+        <Button variant="ghost" size="sm" tone="secondary" onClick={handoff.onPick} disabled={handoff.blockedReason !== undefined} title={handoff.blockedReason} className="shrink-0 whitespace-nowrap">
+          Pick
+        </Button>
+      )}
+      {handoff && (
+        <Button variant="ghost" size="sm" tone="secondary" onClick={handoff.onBuild} disabled={handoff.blockedReason !== undefined} title={handoff.blockedReason} className="shrink-0 whitespace-nowrap">
+          Build this
         </Button>
       )}
       <IconButton label="Focus" size="row" onClick={() => onCommand("focus")}>
@@ -65,7 +97,7 @@ function SelectionTools({ title, onCommand, commenting }: { title: string; onCom
  * zoom, the Sections menu and Expand. With an artboard selected it also shows that artboard's title
  * with Focus, Previous and Next: in the header when expanded, else in a row of its own under it.
  */
-export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBack, isExpanded, onToggleExpanded, onCommand, onMenuOpen, commenting }: CanvasHeaderProps) {
+export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBack, isExpanded, onToggleExpanded, onCommand, onMenuOpen, commenting, handoff }: CanvasHeaderProps) {
   const [isSectionsOpen, setIsSectionsOpen] = useState(false);
   const percent = `${Math.round(zoom * 100)}%`;
   const setSectionsOpen = (isOpen: boolean) => {
@@ -126,11 +158,29 @@ export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBa
               {section.title}
             </PopoverOption>
           ))}
+          {handoff && (
+            <>
+              <div role="separator" className="my-1 h-px bg-border" />
+              {sections.map((section) => (
+                <PopoverOption
+                  key={`build:${section.id}`}
+                  disabled={handoff.blockedReason !== undefined}
+                  title={handoff.blockedReason}
+                  onSelect={() => {
+                    setSectionsOpen(false);
+                    handoff.onBuildSection(section.id);
+                  }}
+                >
+                  {`Build section ${section.title}`}
+                </PopoverOption>
+              ))}
+            </>
+          )}
         </Popover>
         {isExpanded && selectedTitle !== null && (
           <>
             {DIVIDER}
-            <SelectionTools title={selectedTitle} onCommand={onCommand} commenting={commenting} />
+            <SelectionTools title={selectedTitle} onCommand={onCommand} commenting={commenting} handoff={handoff} />
           </>
         )}
         {DIVIDER}
@@ -150,7 +200,7 @@ export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBa
       </div>
       {!isExpanded && selectedTitle !== null && (
         <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-2">
-          <SelectionTools title={selectedTitle} onCommand={onCommand} commenting={commenting} />
+          <SelectionTools title={selectedTitle} onCommand={onCommand} commenting={commenting} handoff={handoff} />
         </div>
       )}
     </>

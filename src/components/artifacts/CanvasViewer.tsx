@@ -7,7 +7,7 @@ import type { ArtifactCommentsState } from "../../hooks/useArtifactComments";
 import type { AddArtifactReview } from "../../hooks/useReviewWiring";
 import { enqueueArtifactViewCall } from "../../hooks/useArtifactView";
 import { useLatest } from "../../hooks/useLatest";
-import { FOLDER_NOT_FOUND, artboardCount, canvasShellState } from "../../lib/canvas";
+import { FOLDER_NOT_FOUND, artboardCount, buildMessage, buildSectionMessage, canvasShellState, pickMessage } from "../../lib/canvas";
 import { ArtifactCommentStrip } from "./ArtifactCommentStrip";
 import { ArtifactPageBox } from "./ArtifactPageBox";
 import { CanvasHeader } from "./CanvasHeader";
@@ -29,6 +29,10 @@ export interface CanvasViewerProps {
   addReview?: AddArtifactReview;
   /** The session's folder, for the artboard's file in a comment's message. */
   cwd?: string;
+  /** Puts text in the session's message box, never sends it; absent (a popout), no Pick or Build. */
+  onInsertText?: (text: string) => void;
+  /** Why the message box cannot take text now. */
+  insertBlockedReason?: string;
 }
 
 const COULD_NOT_SHOW = "Zorvo could not show that canvas.";
@@ -50,6 +54,8 @@ export function CanvasViewer({
   comments,
   addReview,
   cwd,
+  onInsertText,
+  insertBlockedReason,
 }: CanvasViewerProps) {
   const canvas = useCanvas(sessionId, canvasKey, turnsEnded);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -76,6 +82,21 @@ export function CanvasViewer({
   const title = lastGood?.title ?? read?.entry.title ?? "";
   const count = lastGood ? artboardCount(lastGood) : (read?.entry.artboards ?? 0);
   const selectedTitle = selected === null ? null : (lastGood?.sections.flatMap((section) => section.artboards).find((board) => board.id === selected)?.title ?? null);
+  const selectedBoard = selected === null ? null : (lastGood?.sections.flatMap((section) => section.artboards).find((board) => board.id === selected) ?? null);
+  const folder = shown?.entry.relative ?? read?.entry.relative ?? "";
+  const handoff =
+    onInsertText && lastGood
+      ? {
+          blockedReason: insertBlockedReason,
+          canPick: selectedBoard?.group != null,
+          onPick: () => selectedBoard && onInsertText(pickMessage(lastGood, folder, selectedBoard)),
+          onBuild: () => selectedBoard && onInsertText(buildMessage(folder, selectedBoard)),
+          onBuildSection: (id: string) => {
+            const section = lastGood.sections.find((candidate) => candidate.id === id);
+            if (section) onInsertText(buildSectionMessage(lastGood, folder, section));
+          },
+        }
+      : undefined;
   const isFolderGone = read?.error === FOLDER_NOT_FOUND;
   const error = read?.error && !isFolderGone ? read.error : null;
 
@@ -92,6 +113,7 @@ export function CanvasViewer({
         onToggleExpanded={onToggleExpanded}
         onCommand={command}
         onMenuOpen={setIsMenuOpen}
+        handoff={handoff}
         commenting={
           comments && shown !== null
             ? {

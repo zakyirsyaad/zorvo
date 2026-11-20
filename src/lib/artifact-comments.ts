@@ -249,7 +249,7 @@ export function canvasHeading(entry: CanvasEntry, canvas: Canvas, board: CanvasA
 }
 
 /** `text` as one Markdown code span: a fence longer than any run of backticks in it, padded when it starts or ends with one. */
-function codeSpan(text: string): string {
+export function codeSpan(text: string): string {
   const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
   const fence = '`'.repeat(longest + 1);
   const pad = text.startsWith('`') || text.endsWith('`') ? ' ' : '';

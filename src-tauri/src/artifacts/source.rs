@@ -42,7 +42,7 @@ fn has_html_name(path: &Path) -> bool {
 /// a path can name another thing between a check and the open that follows it.
 /// A link in the last place is not followed, and the open does not wait, since
 /// a pipe nobody writes to would otherwise hold the call forever.
-fn read_checked(path: &Path) -> Result<Vec<u8>, String> {
+pub(crate) fn read_checked(path: &Path) -> Result<Vec<u8>, String> {
     use std::os::unix::fs::OpenOptionsExt;
     let refused = || NOT_ALLOWED.to_string();
     let file = fs::OpenOptions::new()

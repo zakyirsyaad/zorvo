@@ -3,8 +3,103 @@
 //! Agent data is read field by field from a `serde_json::Value`, never deserialized into
 //! the types, so every refusal can name its field and none repeats the file's text.
 
+use super::source::{read_checked, MAX_PATH_CHARS};
 use super::store::clean_title_within;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+pub const NOT_A_CANVAS: &str = "The canvas must be a folder with a canvas.json inside this folder.";
+const CANVAS_FILE: &str = "canvas.json";
+
+/// What an artboard's page may load, by extension (lowercase), with the type it is served as.
+pub const SERVED_TYPES: &[(&str, &str)] = &[
+    ("html", "text/html; charset=utf-8"),
+    ("htm", "text/html; charset=utf-8"),
+    ("css", "text/css"),
+    ("js", "text/javascript"),
+    ("mjs", "text/javascript"),
+    ("json", "application/json"),
+    ("png", "image/png"),
+    ("jpg", "image/jpeg"),
+    ("jpeg", "image/jpeg"),
+    ("gif", "image/gif"),
+    ("webp", "image/webp"),
+    ("avif", "image/avif"),
+    ("svg", "image/svg+xml"),
+    ("woff", "font/woff"),
+    ("woff2", "font/woff2"),
+    ("ttf", "font/ttf"),
+    ("otf", "font/otf"),
+];
+
+/// A canvas folder: its canonical path, and its path relative to the session's folder.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CanvasFolder {
+    pub root: PathBuf,
+    pub relative: String,
+}
+
+/// Finds the canvas the agent names (its folder or its `canvas.json`). Only a folder inside
+/// the session's folder counts, never a temporary one, and a refusal never repeats the path.
+pub fn resolve_canvas(session_folder: &Path, path: &str) -> Result<CanvasFolder, String> {
+    let refused = || NOT_A_CANVAS.to_string();
+    if path.is_empty() || path.chars().count() > MAX_PATH_CHARS {
+        return Err(refused());
+    }
+    let session = fs::canonicalize(session_folder).map_err(|_| refused())?;
+    let mut root = fs::canonicalize(session.join(path)).map_err(|_| refused())?;
+    if root.is_file() && root.file_name().is_some_and(|name| name == CANVAS_FILE) {
+        root.pop();
+    }
+    let relative = root.strip_prefix(&session).map_err(|_| refused())?;
+    if !root.is_dir() || !root.join(CANVAS_FILE).is_file() {
+        return Err(refused());
+    }
+    let relative = relative
+        .components()
+        .map(|part| part.as_os_str().to_str().map(str::to_string))
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(refused)?
+        .join("/");
+    Ok(CanvasFolder { root, relative })
+}
+
+pub fn read_canvas(root: &Path) -> Result<Canvas, String> {
+    parse_canvas(&read_checked(&root.join(CANVAS_FILE))?)
+}
+
+/// The file a canvas page asks for: its canonical path inside `root` and the type it is served
+/// as, or `None` for anything else. The text is judged before the disk is touched.
+pub fn canvas_file(root: &Path, relative: &str) -> Option<(PathBuf, &'static str)> {
+    let is_plain = !relative.starts_with('/')
+        && !relative.chars().any(|c| c.is_control() || c == '\\')
+        && relative
+            .split('/')
+            .all(|part| !part.is_empty() && part != "." && part != "..");
+    if !is_plain {
+        return None;
+    }
+    let canonical = fs::canonicalize(root.join(relative)).ok()?;
+    if !canonical.starts_with(root) {
+        return None;
+    }
+    let extension = canonical.extension()?.to_str()?.to_ascii_lowercase();
+    let (_, kind) = SERVED_TYPES.iter().find(|(name, _)| *name == extension)?;
+    Some((canonical, kind))
+}
+
+/// Lowercase hex SHA-256 of a file read through the same checks as every other read.
+pub fn file_sha256(path: &Path) -> Option<String> {
+    let bytes = read_checked(path).ok()?;
+    Some(
+        Sha256::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+    )
+}
 
 pub const MAX_CANVAS_JSON_BYTES: usize = 256 * 1024;
 pub const MAX_SECTIONS: usize = 50;
@@ -429,5 +524,91 @@ mod tests {
             1,
         );
         assert!(!err(&json).contains("secret"));
+    }
+}
+
+#[cfg(test)]
+mod folder_tests {
+    use super::*;
+    use crate::artifacts::test_support::Temp;
+    use std::fs;
+
+    #[test]
+    fn resolves_the_folder_or_its_canvas_json() {
+        let session = Temp::new("canvas-resolve");
+        fs::create_dir_all(session.0.join("design/c")).unwrap();
+        fs::write(session.0.join("design/c/canvas.json"), b"{}").unwrap();
+
+        let by_folder = resolve_canvas(&session.0, "design/c").unwrap();
+        let by_file = resolve_canvas(&session.0, "design/c/canvas.json").unwrap();
+
+        assert_eq!(by_folder, by_file);
+        assert_eq!(by_folder.relative, "design/c");
+        assert_eq!(by_folder.root, session.0.join("design/c"));
+    }
+
+    #[test]
+    fn refuses_a_folder_outside_the_session_or_in_temp() {
+        let session = Temp::new("canvas-outside");
+        let other = Temp::new("canvas-other");
+        fs::write(other.0.join("canvas.json"), b"{}").unwrap();
+        fs::create_dir_all(session.0.join("c")).unwrap();
+        fs::write(session.0.join("c/canvas.json"), b"{}").unwrap();
+        let outside = other.0.to_str().unwrap();
+
+        for path in [outside, "/tmp", "../other", "", "missing"] {
+            assert_eq!(resolve_canvas(&session.0, path).unwrap_err(), NOT_A_CANVAS);
+        }
+        fs::create_dir_all(session.0.join("empty")).unwrap();
+        assert_eq!(
+            resolve_canvas(&session.0, "empty").unwrap_err(),
+            NOT_A_CANVAS
+        );
+    }
+
+    #[test]
+    fn serves_only_listed_types_inside_the_root() {
+        let root = Temp::new("canvas-serve");
+        for name in ["a.png", "a.exe", "B.PNG", "noext"] {
+            fs::write(root.0.join(name), b"x").unwrap();
+        }
+
+        let (path, kind) = canvas_file(&root.0, "a.png").unwrap();
+        assert_eq!(path, root.0.join("a.png"));
+        assert_eq!(kind, "image/png");
+        assert_eq!(canvas_file(&root.0, "B.PNG").unwrap().1, "image/png");
+        for bad in [
+            "a.exe",
+            "noext",
+            "../a.png",
+            "/a.png",
+            "a//b.png",
+            "a\\b.png",
+            "",
+            "missing.png",
+        ] {
+            assert!(canvas_file(&root.0, bad).is_none(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn refuses_a_link_out_of_the_root() {
+        let root = Temp::new("canvas-link");
+        std::os::unix::fs::symlink("/etc/hosts", root.0.join("x.png")).unwrap();
+
+        assert!(canvas_file(&root.0, "x.png").is_none());
+        assert!(read_checked(&root.0.join("x.png")).is_err());
+    }
+
+    #[test]
+    fn hashes_a_file_and_none_for_a_missing_one() {
+        let root = Temp::new("canvas-hash");
+        fs::write(root.0.join("a.txt"), b"abc").unwrap();
+
+        assert_eq!(
+            file_sha256(&root.0.join("a.txt")).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert!(file_sha256(&root.0.join("nope")).is_none());
     }
 }

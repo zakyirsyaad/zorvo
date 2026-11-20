@@ -99,7 +99,7 @@ export interface GiveTaskOptions {
  * The side effects of delegating: starts B from a fork-style handoff of A's
  * conversation, ends the link, and sends a finished B turn back to A. The
  * same-tick decisions (Send refused while a report is on its way) read refs,
- * so they hold before React renders; the revision only triggers the drain.
+ * so they hold before React renders; the report queue's revision (in `useWorkerReports`) only triggers its drain.
  */
 export function useDelegation(deps: DelegationDeps): {
   /** Why `sourceId` cannot give a task; with `agentId`, why it cannot give that agent one. */
@@ -269,7 +269,7 @@ export function useDelegation(deps: DelegationDeps): {
     // Its turn is over, whatever the outcome: it can take a further task again.
     sendingTo.current.delete(sessionId);
     // A source's turn ended: a report that waited for it may go out now.
-    reports.recheck();
+    reports.recheck(sessionId);
     // An archived delegate's link is ended with it: a late turn end has nothing to report.
     if (session === undefined || isArchived(session) || link === null || link === undefined || !isOpenLink(link)) return;
 

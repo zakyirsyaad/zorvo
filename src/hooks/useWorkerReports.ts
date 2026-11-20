@@ -40,8 +40,8 @@ export function useWorkerReports(deps: ReportDeps): {
   handoverSince: (workerId: string) => number | null;
   outcomeOf: (workerId: string) => { kind: 'reported' | 'failed'; at: number } | undefined;
   noteFailed: (workerId: string) => void;
-  /** A turn ended somewhere: queued reports are looked at again. */
-  recheck: () => void;
+  /** A turn ended in `sessionId`: reports queued for it are looked at again. */
+  recheck: (sessionId: string) => void;
 } {
   const { sessions, transcripts } = deps;
   const latest = useLatest(deps);
@@ -79,9 +79,9 @@ export function useWorkerReports(deps: ReportDeps): {
     setRevision((current) => current + 1);
   };
 
-  const recheck = (): void => {
+  const recheck = (sessionId: string): void => {
     // A source's turn ended: a report that waited for it may go out now.
-    if (pending.current.size > 0) setRevision((current) => current + 1);
+    if ([...pending.current.values()].includes(sessionId)) setRevision((current) => current + 1);
   };
 
   useEffect(() => {

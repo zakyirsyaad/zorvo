@@ -1,6 +1,5 @@
-import type { AgentProfile, ChatMessage } from '../types';
+import type { AgentProfile, ChatMessage, Session } from '../types';
 import { delegateBlockedReason as delegationBlockedReason } from './delegation';
-import type { DelegationDeps } from '../hooks/useDelegation';
 
 /** The handoff's heading: a delegation, not a fork. */
 export const HANDOFF_TITLE = '# Delegation handoff';
@@ -13,8 +12,17 @@ export function agentNameIn(agents: readonly AgentProfile[], profileId: string):
   return agents.find((agent) => agent.id === profileId)?.name ?? profileId;
 }
 
+/** What `blockedReasonFor` reads. */
+export interface BlockedReasonDeps {
+  sessions: readonly Session[];
+  agents: readonly AgentProfile[];
+  transcripts: Readonly<Record<string, ChatMessage[]>>;
+  isBusy: (sessionId: string) => boolean;
+  isWaiting: (sessionId: string) => boolean;
+}
+
 /** Why A cannot delegate, with the latest sessions and transcripts. */
-export function blockedReasonFor(deps: DelegationDeps, sourceId: string, agentId?: string): string | null {
+export function blockedReasonFor(deps: BlockedReasonDeps, sourceId: string, agentId?: string): string | null {
   const source = deps.sessions.find((session) => session.id === sourceId);
   // A session that is gone has no delegation item to show.
   if (source === undefined) return '';

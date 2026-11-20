@@ -44,7 +44,6 @@ export type ArtifactCommentStripProps = StripCommon &
 
 const FULL = "This session has 200 artifact comments. Delete some, or clear the sent ones.";
 const HELD = "Finish or cancel this comment first.";
-const GONE = "This artboard's file is gone, so it cannot take a comment.";
 const FILE_CHANGED = "The artboard's file changed after this was written.";
 
 /** What the strip needs of what it is under: a page of an artifact, or a canvas. */
@@ -57,7 +56,8 @@ interface StripSubject {
   noteOf: (comment: ArtifactComment) => string;
   isMissing: (comment: ArtifactComment, number: number) => boolean;
   add: (picked: CheckedArtifactComment[]) => void;
-  save: () => ReturnType<ArtifactCommentsState["saveCandidate"]>;
+  /** How a row says its mark was not found where it was written. */
+  notFound: string;
 }
 
 function subjectOf(props: ArtifactCommentStripProps): StripSubject {
@@ -81,7 +81,7 @@ function subjectOf(props: ArtifactCommentStripProps): StripSubject {
         canvasCommentStatus(comment, boards) === "current" &&
         comments.canvasMissing.get(comment.canvas.artboardId)?.has(number) === true,
       add: (picked) => addReview.addCanvas(picked, entry, canvas, cwd),
-      save: () => comments.saveCandidate(boards),
+      notFound: "Not found on the artboard",
     };
   }
   const { artifact, shownVersion } = props;
@@ -94,7 +94,7 @@ function subjectOf(props: ArtifactCommentStripProps): StripSubject {
     noteOf: (comment) => `Written on Version ${comment.version}; the page is now Version ${newest}.`,
     isMissing: (comment, number) => comment.version === shownVersion && comments.missing.has(number),
     add: (picked) => addReview.add(picked, artifact, cwd),
-    save: () => comments.saveCandidate(),
+    notFound: "Not found on the page",
   };
 }
 
@@ -126,8 +126,8 @@ function CandidateBox({ comments, number, subject }: { comments: ArtifactComment
     boxRef.current?.focus();
   }, [candidate.isPickHeld]);
   const save = () => {
-    const outcome = subject.save();
-    setRefusal(outcome === "full" ? FULL : outcome === "gone" ? GONE : null);
+    const outcome = comments.saveCandidate();
+    setRefusal(outcome === "full" ? FULL : null);
   };
   return (
     <div className="mx-2 mt-2 flex flex-col gap-2 rounded-lg border border-border bg-surface-2 p-2.5">
@@ -167,6 +167,7 @@ function CandidateBox({ comments, number, subject }: { comments: ArtifactComment
 interface RowProps {
   checked: CheckedArtifactComment;
   summary: string;
+  notFound: string;
   word: string;
   note?: string;
   isMissing: boolean;
@@ -178,7 +179,7 @@ interface RowProps {
 }
 
 /** One saved comment: its number, where it is, its status, its text, and what can be done with it. */
-function CommentRow({ checked, summary, word, note, isMissing, canAdd, blockedReason, onAdd, onEdit, onDelete }: RowProps) {
+function CommentRow({ checked, summary, notFound, word, note, isMissing, canAdd, blockedReason, onAdd, onEdit, onDelete }: RowProps) {
   const { comment, number } = checked;
   const [draft, setDraft] = useState<string | null>(null);
   const [isAsking, setIsAsking] = useState(false);
@@ -189,7 +190,7 @@ function CommentRow({ checked, summary, word, note, isMissing, canAdd, blockedRe
       <div className="flex min-w-0 items-center gap-1.5 text-caption">
         <NumberBadge n={number} isOutline={isOutdated} />
         <span className="truncate font-medium text-fg-secondary">{summary}</span>
-        <span className="shrink-0 text-fg-subtle">{`· ${word}${isMissing ? " · Not found on the page" : ""}`}</span>
+        <span className="shrink-0 text-fg-subtle">{`· ${word}${isMissing ? ` · ${notFound}` : ""}`}</span>
       </div>
       {note && <span className="text-caption text-status-attention">{note}</span>}
       {draft === null ? (
@@ -289,6 +290,7 @@ export function ArtifactCommentStrip(props: ArtifactCommentStripProps) {
             <CommentRow
               key={entry.comment.id}
               checked={entry}
+              notFound={subject.notFound}
               summary={subject.summaryOf({ anchor: entry.comment.anchor, artboardId: entry.comment.canvas?.artboardId })}
               word={statusWord(entry.comment, isCurrent, isInMessage)}
               note={isCurrent ? undefined : subject.noteOf(entry.comment)}

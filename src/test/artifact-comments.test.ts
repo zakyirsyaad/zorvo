@@ -310,6 +310,13 @@ describe('comments on canvas artboards', () => {
     );
   });
 
+  it('keeps a file name holding a backtick inside its code span', () => {
+    const odd = { ...canvas.sections[0].artboards[1], file: 'a`b.html' };
+    expect(canvasHeading(entry, canvas, odd, '/w/api')).toBe('Comments on ``design/checkout/a`b.html`` (Checkout, artboard Payment B)');
+    const edge = { ...odd, file: '`b.html' };
+    expect(canvasHeading(entry, canvas, edge, '/w/api/design/checkout')).toBe('Comments on `` `b.html `` (Checkout, artboard Payment B)');
+  });
+
   it('groups the comments under one heading per artboard, in canvas order', () => {
     const checked = [
       { comment: onBoard('b1', 'pay-b', { anchor: { kind: 'artboard' }, body: 'More space.' }), number: 2, status: 'current' as const },

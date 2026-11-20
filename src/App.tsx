@@ -16,6 +16,7 @@ import { FilesPanel } from "./components/FilesPanel";
 import { ArtifactsPanel } from "./components/artifacts/ArtifactsPanel";
 import { ArtifactGallery } from "./components/artifacts/ArtifactGallery";
 import { useArtifactComments, useArtifactCommentSweep } from "./hooks/useArtifactComments";
+import { canvasBoardsNow } from "./hooks/useCanvas";
 import { useArtifacts } from "./hooks/useArtifacts";
 import { useArtifactOpening } from "./hooks/useArtifactOpening";
 import { galleryRows, hasVersion, newestVersion, shownArtifactOf, shownCanvasOf } from "./lib/artifacts";
@@ -853,7 +854,12 @@ export default function App() {
       ? shownCanvasOf(sessionCanvases, inspector.viewedArtifact, sessionArtifacts.length + createdFiles.length)
       : undefined;
   const shownCanvas = useMemo(
-    () => (activeSession && shownCanvasEntry ? { sessionId: activeSession.id, key: shownCanvasEntry.key } : null),
+    () => {
+      if (!activeSession || !shownCanvasEntry) return null;
+      const { key } = shownCanvasEntry;
+      const sessionId = activeSession.id;
+      return { sessionId, key, boardsNow: () => canvasBoardsNow(sessionId, key) };
+    },
     [activeSession, shownCanvasEntry],
   );
   // The review wiring is built further down; its `forget` reaches the comments through this ref.

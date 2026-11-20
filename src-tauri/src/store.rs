@@ -339,9 +339,10 @@ pub struct ArtifactCommentRecord {
     pub canvas: Option<CanvasCommentRecord>,
 }
 
-/// Which artboard a canvas comment is on, and the hash of its file when it was written.
+/// Which artboard a canvas comment is on, and the hash of its file when it was written. All
+/// three are required; a field this version does not know is ignored, as the UI's reader does.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct CanvasCommentRecord {
     pub key: String,
     pub artboard_id: String,
@@ -1079,12 +1080,27 @@ mod tests {
             .expect("object")
             .remove("fileHash");
 
+        let mut extra_field = canvas.clone();
+        extra_field["id"] = serde_json::json!("ac-5");
+        extra_field["canvas"]["later"] = serde_json::json!(true);
+
         let record: SessionRecord = serde_json::from_value(session_json(serde_json::json!({
-            "artifactComments": [canvas.clone(), not_an_object, missing_hash]
+            "artifactComments": [canvas.clone(), not_an_object, missing_hash, extra_field]
         })))
         .expect("deserialize");
 
-        assert_eq!(record.artifact_comments.len(), 1);
+        let ids: Vec<&str> = record
+            .artifact_comments
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
+        // An unknown field inside `canvas` is dropped, not the comment.
+        assert_eq!(ids, ["ac-1", "ac-5"]);
+        assert!(
+            serde_json::to_value(&record.artifact_comments[1]).expect("serialize")["canvas"]
+                .get("later")
+                .is_none()
+        );
         let value = serde_json::to_value(&record).expect("serialize");
         assert_eq!(value["artifactComments"][0], canvas);
         // A page comment writes no `canvas` field.

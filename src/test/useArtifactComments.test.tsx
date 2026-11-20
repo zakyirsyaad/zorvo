@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 
 type Listener = (event: { payload: unknown }) => void;
@@ -18,7 +18,9 @@ vi.mock('@tauri-apps/api/event', () => ({
 const invoke = vi.fn<(cmd: string, args?: Record<string, unknown>) => Promise<unknown>>(() => Promise.resolve(undefined));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (cmd: string, args?: Record<string, unknown>) => invoke(cmd, args) }));
 
-import { useArtifactComments, useArtifactCommentSweep } from '../hooks/useArtifactComments';
+import { useArtifactComments, useArtifactCommentSweep, type ShownCanvasRef } from '../hooks/useArtifactComments';
+import type { BoardState } from '../lib/canvas';
+import { canvasCommentStatus } from '../lib/artifact-comments';
 import type { Artifact, ArtifactComment, PageRef, Session } from '../types';
 
 const A1 = 'a-0123456789abcdef';
@@ -37,7 +39,7 @@ const pageComment = (id: string, overrides: Partial<ArtifactComment> = {}): Arti
 
 interface Props {
   shownPage: PageRef | null;
-  shownCanvas?: { sessionId: string; key: string } | null;
+  shownCanvas?: ShownCanvasRef | null;
   initial?: ArtifactComment[];
 }
 
@@ -338,8 +340,14 @@ describe('useArtifactCommentSweep', () => {
 
 describe('useArtifactComments on a canvas', () => {
   const KEY = 'c-0123456789abcdef';
-  const CANVAS = { sessionId: 's-1', key: KEY };
   const HASH = 'b'.repeat(64);
+  const OTHER_HASH = 'c'.repeat(64);
+  // What the backend read last of the canvas's files; a test changes it as the agent would.
+  let boards: BoardState[] = [];
+  const CANVAS: ShownCanvasRef = { sessionId: 's-1', key: KEY, boardsNow: () => boards };
+  beforeEach(() => {
+    boards = [{ id: 'pay-b', sha256: HASH }];
+  });
   const canvasPick = (overrides: Record<string, unknown> = {}) => ({
     sessionId: 's-1',
     key: KEY,
@@ -362,6 +370,7 @@ describe('useArtifactComments on a canvas', () => {
     expect(result.current.state.candidate).toEqual({
       page: { sessionId: 's-1', artifactId: KEY, version: 0 },
       artboardId: 'pay-b',
+      fileHash: HASH,
       anchor: { kind: 'text', quote: 'Pay now', before: '', after: '' },
       isPickHeld: false,
     });
@@ -369,7 +378,7 @@ describe('useArtifactComments on a canvas', () => {
     act(() => result.current.state.setCandidateBody('Make it wider.'));
     let outcome = '';
     act(() => {
-      outcome = result.current.state.saveCandidate([{ id: 'pay-b', sha256: HASH }]);
+      outcome = result.current.state.saveCandidate();
     });
 
     expect(outcome).toBe('saved');
@@ -390,7 +399,21 @@ describe('useArtifactComments on a canvas', () => {
     expect(result.current.state.candidate).toBeNull();
   });
 
-  it('writes on the whole artboard without comment mode', () => {
+  it('keeps the file a pick was made on when the agent rewrites it before Save', () => {
+    const { result } = renderComments({ shownPage: null, shownCanvas: CANVAS });
+    act(() => result.current.state.setCommenting(true));
+    deliverCanvas(canvasPick());
+
+    boards = [{ id: 'pay-b', sha256: OTHER_HASH }];
+    act(() => result.current.state.setCandidateBody('Make it wider.'));
+    act(() => void result.current.state.saveCandidate());
+
+    const [saved] = result.current.comments;
+    expect(saved.canvas).toEqual({ key: KEY, artboardId: 'pay-b', fileHash: HASH });
+    expect(canvasCommentStatus(saved, boards)).toBe('outdated');
+  });
+
+  it('writes on the whole artboard without comment mode, on the file shown then', () => {
     const { result } = renderComments({ shownPage: null, shownCanvas: CANVAS });
 
     act(() => result.current.state.startArtboardComment('pay-b'));
@@ -398,16 +421,22 @@ describe('useArtifactComments on a canvas', () => {
     expect(result.current.state.candidate).toEqual({
       page: { sessionId: 's-1', artifactId: KEY, version: 0 },
       artboardId: 'pay-b',
+      fileHash: HASH,
       anchor: { kind: 'artboard' },
       isPickHeld: false,
     });
-    act(() => result.current.state.setCandidateBody('More space.'));
-    let outcome = '';
-    act(() => {
-      outcome = result.current.state.saveCandidate([{ id: 'pay-b', sha256: null }]);
-    });
-    // An artboard whose file is gone takes no comment.
-    expect(outcome).toBe('gone');
+  });
+
+  it('starts no comment on an artboard whose file is missing', () => {
+    boards = [{ id: 'pay-b', sha256: null }];
+    const { result } = renderComments({ shownPage: null, shownCanvas: CANVAS });
+    act(() => result.current.state.setCommenting(true));
+
+    act(() => result.current.state.startArtboardComment('pay-b'));
+    deliverCanvas(canvasPick());
+    deliverCanvas(canvasPick({ artboardId: 'pay-z' }));
+
+    expect(result.current.state.candidate).toBeNull();
   });
 
   it('keeps the numbers an artboard could not find, by artboard', () => {

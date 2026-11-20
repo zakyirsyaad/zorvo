@@ -25,6 +25,8 @@ type ArtifactCommentsChange = (prev: ArtifactComment[]) => ArtifactComment[];
 export interface ArtifactCandidate {
   page: PageRef;
   artboardId?: string;
+  /** On a canvas: the artboard's file hash when the pick arrived, which the comment keeps. */
+  fileHash?: string;
   anchor: ArtifactAnchor;
   /** A newer pick arrived while text was typed here, so it was not taken. */
   isPickHeld: boolean;
@@ -42,8 +44,7 @@ export interface ArtifactCommentsState {
   candidateBody: () => string;
   setCandidateBody: (body: string) => void;
   cancelCandidate: () => void;
-  /** On a canvas, `boards` gives the artboard's file hash now; `gone` when its file is missing. */
-  saveCandidate: (boards?: readonly BoardState[]) => SaveOutcome;
+  saveCandidate: () => SaveOutcome;
   /** Opens the candidate box for a comment on a whole artboard of the canvas on screen. */
   startArtboardComment: (artboardId: string) => void;
   /** Numbers the page on screen could not find again. */
@@ -57,16 +58,18 @@ export interface ArtifactCommentsState {
   clearSent: (artifactId: string) => void;
 }
 
-export type SaveOutcome = 'saved' | 'empty' | 'full' | 'gone';
+export type SaveOutcome = 'saved' | 'empty' | 'full';
 
 /** The canvas the viewer shows, for its comments. */
 export interface ShownCanvasRef {
   sessionId: string;
   key: string;
+  /** Its files' hashes as last read, asked when a pick arrives: a comment keeps the file it was picked on. */
+  boardsNow: () => readonly BoardState[];
 }
 
 const keyOf = (page: PageRef | null) => (page === null ? null : `${page.sessionId}/${page.artifactId}/${page.version}`);
-const canvasKeyOf = (canvas: ShownCanvasRef | null) => (canvas === null ? null : `canvas:${canvas.sessionId}/${canvas.key}`);
+const canvasKeyOf = (canvas: Pick<ShownCanvasRef, "sessionId" | "key"> | null) => (canvas === null ? null : `canvas:${canvas.sessionId}/${canvas.key}`);
 /** A canvas has no versions: its comments' place is the canvas key with this version. */
 const CANVAS_VERSION = 0;
 const NO_NUMBERS: ReadonlySet<number> = new Set();
@@ -126,7 +129,7 @@ export function useArtifactComments({
   const [missing, setMissing] = useState<{ key: string; numbers: ReadonlySet<number> } | null>(null);
   const [canvasMissing, setCanvasMissing] = useState<{ key: string; byBoard: ReadonlyMap<string, ReadonlySet<number>> } | null>(null);
 
-  const latest = useLatest({ shownPage, shownKey, isCommenting, marksKey });
+  const latest = useLatest({ shownPage, shownCanvas, shownKey, isCommenting, marksKey });
 
   const dropCandidate = (owner: string) => {
     delete bodies.current[owner];
@@ -171,8 +174,17 @@ export function useArtifactComments({
     }
     const anchor = anchorOfPick(message);
     if (anchor === null) return;
-    offerCandidate(owner, { page, anchor, isPickHeld: false, ...(artboardId === undefined ? {} : { artboardId }) }, isBlank);
+    if (artboardId === undefined) {
+      offerCandidate(owner, { page, anchor, isPickHeld: false }, isBlank);
+      return;
+    }
+    const fileHash = hashNow(artboardId);
+    if (fileHash !== null) offerCandidate(owner, { page, artboardId, fileHash, anchor, isPickHeld: false }, isBlank);
   });
+
+  /** The artboard's file hash as last read, or null when its file is missing or it is not listed. */
+  const hashNow = (artboardId: string): string | null =>
+    latest.current.shownCanvas?.boardsNow().find((board) => board.id === artboardId)?.sha256 ?? null;
 
   // A new candidate never replaces typed text: the one being written is marked as holding a pick.
   const offerCandidate = (owner: string, next: ArtifactCandidate, isBlank: () => boolean) =>
@@ -239,17 +251,18 @@ export function useArtifactComments({
     if (shownCanvas === null) return;
     const owner = shownCanvas.sessionId;
     const page = { sessionId: owner, artifactId: shownCanvas.key, version: CANVAS_VERSION };
-    offerCandidate(owner, { page, artboardId, anchor: { kind: 'artboard' }, isPickHeld: false }, () => (bodies.current[owner] ?? '').trim() === '');
+    const fileHash = hashNow(artboardId);
+    if (fileHash === null) return;
+    const isBlank = () => (bodies.current[owner] ?? '').trim() === '';
+    offerCandidate(owner, { page, artboardId, fileHash, anchor: { kind: 'artboard' }, isPickHeld: false }, isBlank);
   };
 
-  const saveCandidate = (boards: readonly BoardState[] = []): SaveOutcome => {
+  const saveCandidate = (): SaveOutcome => {
     const waiting = candidates[session];
     const body = (bodies.current[session] ?? '').trim().slice(0, MAX_COMMENT_LENGTH);
     if (!waiting || body === '') return 'empty';
     if (list.length >= MAX_ARTIFACT_COMMENTS) return 'full';
-    const { artboardId } = waiting;
-    const fileHash = artboardId === undefined ? null : (boards.find((board) => board.id === artboardId)?.sha256 ?? null);
-    if (artboardId !== undefined && fileHash === null) return 'gone';
+    const { artboardId, fileHash } = waiting;
     const comment: ArtifactComment = {
       id: createId('ac'),
       artifactId: waiting.page.artifactId,
@@ -257,7 +270,7 @@ export function useArtifactComments({
       anchor: waiting.anchor,
       body,
       createdAt: Date.now(),
-      ...(artboardId !== undefined && fileHash !== null ? { canvas: { key: waiting.page.artifactId, artboardId, fileHash } } : {}),
+      ...(artboardId !== undefined && fileHash !== undefined ? { canvas: { key: waiting.page.artifactId, artboardId, fileHash } } : {}),
     };
     update(session, (prev) => [...prev, comment]);
     dropCandidate(session);

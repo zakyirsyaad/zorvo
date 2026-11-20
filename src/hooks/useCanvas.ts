@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { canvasThumbUrl, parseCanvasRead, type Canvas, type CanvasRead } from '../lib/canvas';
+import { canvasThumbUrl, parseCanvasRead, type BoardState, type Canvas, type CanvasRead } from '../lib/canvas';
 
 /** Emitted by the backend with `{ sessionId }` after a session's artifacts changed. */
 const ARTIFACTS_CHANGED = 'artifacts-changed';
@@ -36,6 +36,12 @@ interface ReadMemory {
  */
 const lastReads = new Map<string, ReadMemory>();
 const NO_READ: ReadMemory = { read: null, shown: null };
+const NO_BOARDS: readonly BoardState[] = [];
+
+/** The files' hashes of the canvas as the wrapper shows it now (its last read with a canvas), for a comment picked on it. */
+export function canvasBoardsNow(sessionId: string, key: string): readonly BoardState[] {
+  return lastReads.get(`${sessionId}/${key}`)?.shown?.boards ?? NO_BOARDS;
+}
 
 export interface CanvasState {
   /** The newest answer that fit, which may carry an error and no canvas. */

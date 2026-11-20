@@ -245,7 +245,15 @@ function sourceOf(artifact: Artifact, cwd: string): string {
 /** "Comments on `design/checkout/pay-b.html` (Checkout, artboard Payment B)". */
 export function canvasHeading(entry: CanvasEntry, canvas: Canvas, board: CanvasArtboard, cwd: string): string {
   const file = relativeTo(`${entry.folder.replace(/\/+$/, '')}/${board.file}`, cwd);
-  return `Comments on \`${escapeVisible(file)}\` (${escapeVisible(canvas.title)}, artboard ${escapeVisible(board.title)})`;
+  return `Comments on ${codeSpan(escapeVisible(file))} (${escapeVisible(canvas.title)}, artboard ${escapeVisible(board.title)})`;
+}
+
+/** `text` as one Markdown code span: a fence longer than any run of backticks in it, padded when it starts or ends with one. */
+function codeSpan(text: string): string {
+  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = '`'.repeat(longest + 1);
+  const pad = text.startsWith('`') || text.endsWith('`') ? ' ' : '';
+  return `${fence}${pad}${text}${pad}${fence}`;
 }
 
 /** What follows a canvas heading in the message. */

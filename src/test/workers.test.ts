@@ -25,6 +25,7 @@ import {
   workerStateWord,
   workersReportMessage,
   WORKERS_REPORT_FRAMING,
+  MAX_REPORT_WORKERS,
   type WorkerReportEntry,
 } from '../lib/workers';
 import { MAX_REPORT_CHARS } from '../lib/delegation';
@@ -409,7 +410,7 @@ describe('workersReportMessage', () => {
     ['did-not-report', { answer: 'All done.' }, 'ended its turn without reporting. Its last answer:\n> All done.'],
     ['did-not-report', {}, 'ended its turn without reporting, and left no written answer.'],
     ['did-not-report', { answer: '' }, 'ended its turn without reporting, and left no written answer.'],
-    ['errored', { reason: 'The agent hit a rate limit.' }, 'stopped on an error: The agent hit a rate limit.'],
+    ['errored', { reason: 'The agent hit a rate limit.' }, 'stopped on an error.\nIts error:\n> The agent hit a rate limit.'],
     ['errored', {}, 'stopped on an error.'],
     ['gone', {}, 'is gone: its agent exited. Start a new worker to continue.'],
     ['failed', { summary: 'Tests still fail.' }, 'failed\n> Tests still fail.'],
@@ -466,6 +467,85 @@ describe('workersReportMessage', () => {
       expect(text).toContain(`worker-${n} (Qwen Code), "Review the login fix": ended its turn without reporting. Its last answer:`);
     }
     expect(text.split('(cut; the full text is in that worker\'s session)')).toHaveLength(4);
+  });
+
+  test('the cut note follows a cut quote on its own line, directly', () => {
+    const text = workersReportMessage([entry({ state: 'did-not-report', answer: 'q'.repeat(25_000) })]);
+    expect(text.endsWith(`\n(cut; the full text is in that worker's session)`)).toBe(true);
+    expect([...text].length).toBeLessThanOrEqual(MAX_REPORT_CHARS);
+  });
+
+  test('a cut never leaves a partial escape or a dangling backslash before the note', () => {
+    for (let pad = 0; pad < 10; pad += 1) {
+      const text = workersReportMessage([
+        entry({ state: 'did-not-report', answer: 'a'.repeat(pad) + '\u0001'.repeat(25_000) }),
+      ]);
+      const [, tail] = text.split('\n> ');
+      expect(text).toContain('(cut;');
+      expect(tail).toMatch(/(\\u[0-9A-F]{4})*\n\(cut;/);
+      expect(text).not.toMatch(/\\(u[0-9A-F]{0,3})?\n\(cut;/);
+    }
+  });
+
+  test('astral characters never leave a lone surrogate at any cut', () => {
+    for (let pad = 0; pad < 4; pad += 1) {
+      const text = workersReportMessage([
+        entry({ task: '\u{1F600}'.repeat(250), state: 'did-not-report', answer: 'a'.repeat(pad) + '\u{1F600}'.repeat(25_000), folder: '\u{1F600}'.repeat(400) }),
+      ]);
+      expect(text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+    }
+  });
+
+  test('a short quote keeps its length and a long one takes the rest', () => {
+    const text = workersReportMessage([
+      entry({ state: 'did-not-report', answer: 'x'.repeat(30_000) }),
+      entry({ handle: 'worker-2', summary: 'ok' }),
+    ]);
+    expect(text).toContain('succeeded\n> ok');
+    expect([...text].length).toBeGreaterThan(15_000);
+    expect([...text].length).toBeLessThanOrEqual(MAX_REPORT_CHARS);
+  });
+
+  test('a long file list keeps whole paths and says how many more', () => {
+    const files = Array.from({ length: 10 }, () => 'p'.repeat(400));
+    const line = workersReportMessage([entry({ files })]).split('\n').find((l) => l.startsWith('Files: ')) ?? '';
+    expect(line).toBe(`Files: ${[files[0], files[1]].join(', ')} and 8 more`);
+  });
+
+  test('a single path over the cap is cut and still named', () => {
+    const line = workersReportMessage([entry({ files: ['z'.repeat(5_000), 'b'] })]).split('\n').find((l) => l.startsWith('Files: ')) ?? '';
+    expect(line.endsWith(' and 1 more')).toBe(true);
+    expect([...line.slice(7)].length).toBe(1_000);
+  });
+
+  test('a folder is cut at 300 code points', () => {
+    const text = workersReportMessage([entry({ folder: 'f'.repeat(500) })]);
+    expect(text).toContain(`Folder: ${'f'.repeat(300)}…`);
+  });
+
+  test('a worker with ten long file lists no longer hides the next worker', () => {
+    const files = Array.from({ length: 10 }, () => 'p'.repeat(4_004));
+    const text = workersReportMessage([
+      entry({ summary: 'ok', files }),
+      entry({ handle: 'worker-2', state: 'failed', summary: 'BAD' }),
+    ]);
+    expect(text).toContain('worker-2 (Qwen Code), "Review the login fix": failed\n> BAD');
+  });
+
+  test('more than MAX_REPORT_WORKERS long entries drop whole trailing ones, with a last line', () => {
+    expect(MAX_REPORT_WORKERS).toBe(8);
+    const entries = Array.from({ length: 20 }, (_, i) =>
+      entry({ handle: `worker-${i + 1}`, task: 't'.repeat(200), folder: 'f'.repeat(300), files: Array.from({ length: 5 }, () => 'p'.repeat(250)), summary: 'ok' }),
+    );
+    const text = workersReportMessage(entries);
+    expect([...text].length).toBeLessThanOrEqual(MAX_REPORT_CHARS);
+    const match = /\n\n(\d+) more workers ended; their reports did not fit\.$/.exec(text);
+    expect(match).not.toBeNull();
+    const shown = 20 - Number(match?.[1]);
+    expect(shown).toBeGreaterThan(0);
+    expect(text).toContain(`worker-${shown} (`);
+    expect(text).not.toContain(`worker-${shown + 1} (`);
+    expect(text).toMatch(/Files: [^\n]*\n\n(worker-|\d+ more)/);
   });
 
   test('an answer that fits is not cut', () => {

@@ -26,7 +26,7 @@ import { validArtifactComments } from './artifact-comments';
 import { validReviewComments } from './review-comments';
 import { validAgentWork } from './agent-work';
 import { parseArtifactCard } from './artifacts';
-import type { WorkerState } from './workers';
+import { WORKER_STATES, type WorkerState } from './workers';
 import { toCommands, toConfigOptions, toModels, toModes } from '../hooks/useAcpSessions';
 
 export const STATE_VERSION = 2;
@@ -450,19 +450,9 @@ function withValidArtifactCard(message: ChatMessage): ChatMessage {
   return card === null ? (rest as ChatMessage) : { ...rest, artifactCard: card };
 }
 
-const WORKER_STATES: readonly string[] = [
-  'working',
-  'needs-you',
-  'succeeded',
-  'failed',
-  'did-not-report',
-  'errored',
-  'stopped',
-  'gone',
-];
 const MAX_REPORTED_WORKERS = 50;
 
-/** A worker report mark keeps its well-formed entries (at most 50); a mark left with none is dropped. */
+/** A worker report mark keeps its well-formed entries (the first of a repeated handle, at most 50); a mark left with none is dropped. */
 function withValidWorkerReport(message: ChatMessage): ChatMessage {
   if (!('workerReport' in message)) return message;
   const { workerReport, ...rest } = message;
@@ -473,9 +463,10 @@ function withValidWorkerReport(message: ChatMessage): ChatMessage {
       if (!isObject(item)) return [];
       const { agentName, agentId, handle, state } = item as Record<string, unknown>;
       if (typeof agentName !== 'string' || typeof handle !== 'string') return [];
-      if (typeof state !== 'string' || !WORKER_STATES.includes(state)) return [];
+      if (typeof state !== 'string' || !(WORKER_STATES as readonly string[]).includes(state)) return [];
       return [{ agentName, ...(typeof agentId === 'string' ? { agentId } : {}), handle, state: state as WorkerState }];
     })
+    .filter((worker, index, all) => all.findIndex((other) => other.handle === worker.handle) === index)
     .slice(0, MAX_REPORTED_WORKERS);
   return workers.length === 0 ? (rest as ChatMessage) : { ...rest, workerReport: { workers } };
 }

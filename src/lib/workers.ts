@@ -18,6 +18,18 @@ export type WorkerState =
   | 'stopped'
   | 'gone';
 
+/** Every state a worker can be in. */
+export const WORKER_STATES = [
+  'working',
+  'needs-you',
+  'succeeded',
+  'failed',
+  'did-not-report',
+  'errored',
+  'stopped',
+  'gone',
+] as const satisfies readonly WorkerState[];
+
 /** Which tools a session gets: a coordinator starts workers, a worker reports back. */
 export type ToolsRole = 'coordinator' | 'worker';
 
@@ -317,11 +329,18 @@ export interface WorkerReportEntry {
   folder?: string;
 }
 
-const TASK_MAX = 200;
+/** One message carries at most this many entries; the caller slices, the builder still accepts more. */
+export const MAX_REPORT_WORKERS = 8;
+/** Code points of the task shown in a worker's first line. */
+export const WORKER_REPORT_TASK_CHARS = 200;
+/** Code points of the folder shown under a worker's first line. */
+export const WORKER_REPORT_FOLDER_CHARS = 300;
+/** Code points of a worker's `Files:` list, the words "and N more" included. */
+export const WORKER_REPORT_FILES_CHARS = 1_000;
 const CUT_NOTE = "(cut; the full text is in that worker's session)";
 
-/** The words after the first line's colon, and the text to quote, for each state that is a report. */
-function wordsOf(entry: WorkerReportEntry): { words: string; quote: string } | null {
+/** What follows the first line, and the text to quote, for each state that is a report. */
+function wordsOf(entry: WorkerReportEntry): { words: string; label?: string; quote: string } | null {
   const text = (value: string | undefined) => (value ?? '').trim();
   switch (entry.state) {
     case 'succeeded':
@@ -334,11 +353,12 @@ function wordsOf(entry: WorkerReportEntry): { words: string; quote: string } | n
         ? { words: 'ended its turn without reporting, and left no written answer.', quote: '' }
         : { words: 'ended its turn without reporting. Its last answer:', quote: answer };
     }
-    case 'errored':
-      return {
-        words: entry.reason ? `stopped on an error: ${escapeVisible(entry.reason)}` : 'stopped on an error.',
-        quote: '',
-      };
+    case 'errored': {
+      const reason = text(entry.reason);
+      return reason === ''
+        ? { words: 'stopped on an error.', quote: '' }
+        : { words: 'stopped on an error.', label: 'Its error:', quote: reason };
+    }
     case 'stopped':
       return { words: 'stopped before it finished', quote: '' };
     case 'gone':
@@ -355,50 +375,107 @@ function quoted(text: string): string {
     .join('\n');
 }
 
-/** A cut quote never ends inside an escape sequence such as `\u20`. */
-function cutQuote(text: string, share: number): string {
-  return firstChars(text, share).replace(/\\(?:u[0-9A-F]{0,3})?$/, '');
+const length = (text: string): number => [...text].length;
+
+/** `firstChars`, but never ending inside an escape sequence such as `\u20` or on a lone backslash. */
+function cutEscaped(text: string, count: number): string {
+  if (length(text) <= count) return text;
+  return firstChars(text, count).replace(/\\(?:u[0-9A-F]{0,3})?$/, '');
 }
 
-/**
- * The one message that tells a coordinator how its workers' turns ended. Everything another agent
- * wrote is escaped and quoted. The whole message is at most `MAX_REPORT_CHARS` code points: each
- * quote gets an equal share of what the framing and the workers' own lines leave, so no worker
- * drops out of a long report.
- */
-export function workersReportMessage(entries: readonly WorkerReportEntry[]): string {
-  const parts = entries.flatMap((entry) => {
-    const found = wordsOf(entry);
-    if (found === null) return [];
-    const oneLineTask = entry.task.replace(/\s+/g, ' ').trim();
-    const task = oneLineTask.length > 0 && [...oneLineTask].length > TASK_MAX ? `${firstChars(oneLineTask, TASK_MAX)}…` : oneLineTask;
-    const head = [
-      `${escapeVisible(entry.handle)} (${escapeVisible(entry.agentName)}), "${escapeVisible(task)}": ${found.words}`,
-      ...(entry.folder ? [`Folder: ${escapeVisible(entry.folder)}`] : []),
-    ];
-    const files = entry.files.length > 0 ? `Files: ${entry.files.map(escapeVisible).join(', ')}` : '';
-    return [{ head, quote: found.quote === '' ? '' : quoted(found.quote), files }];
+function cutWithEllipsis(text: string, max: number): string {
+  return length(text) > max ? `${cutEscaped(text, max)}…` : text;
+}
+
+/** The `Files:` line: whole paths while they fit, then "and N more"; always at least the first path. */
+function filesLine(files: readonly string[]): string {
+  if (files.length === 0) return '';
+  const escaped = files.map(escapeVisible);
+  const suffix = (taken: number) => (taken < escaped.length ? ` and ${escaped.length - taken} more` : '');
+  for (let taken = escaped.length; taken >= 1; taken -= 1) {
+    const text = escaped.slice(0, taken).join(', ') + suffix(taken);
+    if (length(text) <= WORKER_REPORT_FILES_CHARS) return `Files: ${text}`;
+  }
+  const tail = suffix(1);
+  return `Files: ${cutEscaped(escaped[0], WORKER_REPORT_FILES_CHARS - length(tail))}${tail}`;
+}
+
+/** Each length's share of `budget`: a quote shorter than an equal share keeps its length, the rest split what is left. */
+function sharesOf(lengths: readonly number[], budget: number): number[] {
+  const shares = lengths.map(() => 0);
+  const order = lengths.map((_, index) => index).sort((a, b) => lengths[a] - lengths[b]);
+  let left = Math.max(0, budget);
+  order.forEach((index, position) => {
+    const equal = Math.floor(left / (order.length - position));
+    shares[index] = Math.min(lengths[index], equal);
+    left -= shares[index];
   });
-  if (parts.length === 0) return WORKERS_REPORT_FRAMING;
-  const quoting = parts.filter((part) => part.quote !== '').length;
-  const fixed = parts.map((part) => [...part.head, ...(part.files ? [part.files] : [])].join('\n'));
-  const fixedLength = fixed.reduce((sum, block) => sum + [...block].length, 0);
-  const separators = 2 * parts.length;
-  const noteLines = quoting * ([...CUT_NOTE].length + 1);
-  const quoteLines = quoting * 2;
-  const budget = MAX_REPORT_CHARS - [...WORKERS_REPORT_FRAMING].length - fixedLength - separators - noteLines - quoteLines;
-  const share = quoting === 0 ? 0 : Math.max(0, Math.floor(budget / quoting));
+  return shares;
+}
+
+interface ReportPart {
+  head: string[];
+  label?: string;
+  quote: string;
+  files: string;
+}
+
+function render(parts: readonly ReportPart[], dropped: number): string {
+  const quoting = parts.filter((part) => part.quote !== '');
+  const fixed =
+    length(WORKERS_REPORT_FRAMING) +
+    2 * parts.length +
+    (dropped > 0 ? 2 + length(droppedLine(dropped)) : 0) +
+    parts.reduce(
+      (sum, part) => sum + length([...part.head, ...(part.label ? [part.label] : []), ...(part.files ? [part.files] : [])].join('\n')),
+      0,
+    ) +
+    quoting.length * (length(CUT_NOTE) + 2);
+  const shares = sharesOf(quoting.map((part) => length(part.quote)), MAX_REPORT_CHARS - fixed);
   const blocks = parts.map((part) => {
     const lines = [...part.head];
     if (part.quote !== '') {
-      const isCut = [...part.quote].length > share;
-      const body = isCut ? cutQuote(part.quote, share) : part.quote;
+      const share = shares[quoting.indexOf(part)];
+      const isCut = length(part.quote) > share;
+      if (part.label) lines.push(part.label);
+      const body = isCut ? cutEscaped(part.quote, share) : part.quote;
       if (body !== '') lines.push(body);
       if (isCut) lines.push(CUT_NOTE);
     }
     if (part.files) lines.push(part.files);
     return lines.join('\n');
   });
-  const text = [WORKERS_REPORT_FRAMING, ...blocks].join('\n\n');
-  return firstChars(text, MAX_REPORT_CHARS);
+  return [WORKERS_REPORT_FRAMING, ...blocks, ...(dropped > 0 ? [droppedLine(dropped)] : [])].join('\n\n');
+}
+
+function droppedLine(count: number): string {
+  return count === 1
+    ? '1 more worker ended; its report did not fit.'
+    : `${count} more workers ended; their reports did not fit.`;
+}
+
+/**
+ * The one message that tells a coordinator how its workers' turns ended. Everything another agent
+ * wrote is escaped and quoted. The whole message is at most `MAX_REPORT_CHARS` code points: the
+ * task, folder and file list of each worker are capped, then each quote gets its share of what is
+ * left (a short quote keeps its length). Should the entries still not fit, whole trailing entries
+ * are left out and counted in a last line; a block is never cut through.
+ */
+export function workersReportMessage(entries: readonly WorkerReportEntry[]): string {
+  const parts = entries.flatMap((entry): ReportPart[] => {
+    const found = wordsOf(entry);
+    if (found === null) return [];
+    const task = cutWithEllipsis(escapeVisible(entry.task.replace(/\s+/g, ' ').trim()), WORKER_REPORT_TASK_CHARS);
+    const head = [
+      `${escapeVisible(entry.handle)} (${escapeVisible(entry.agentName)}), "${task}": ${found.words}`,
+      ...(entry.folder ? [`Folder: ${cutWithEllipsis(escapeVisible(entry.folder), WORKER_REPORT_FOLDER_CHARS)}`] : []),
+    ];
+    return [{ head, label: found.label, quote: found.quote === '' ? '' : quoted(found.quote), files: filesLine(entry.files) }];
+  });
+  if (parts.length === 0) return WORKERS_REPORT_FRAMING;
+  for (let keep = parts.length; keep >= 0; keep -= 1) {
+    const text = render(parts.slice(0, keep), parts.length - keep);
+    if (length(text) <= MAX_REPORT_CHARS) return text;
+  }
+  return WORKERS_REPORT_FRAMING;
 }

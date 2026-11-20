@@ -68,6 +68,22 @@ describe("a delegation report in the chat", () => {
     expect(within(row).getByText("Reports from your workers.")).toBeInTheDocument();
   });
 
+  it("two rows with one handle both show", () => {
+    const row = renderRow({
+      id: "u-10",
+      role: "user",
+      content: "r",
+      timestamp: 1,
+      workerReport: {
+        workers: [
+          { agentName: "Codex", handle: "worker-1", state: "succeeded" },
+          { agentName: "Pi", handle: "worker-1", state: "failed" },
+        ],
+      },
+    });
+    expect(within(row).getAllByText("worker-1")).toHaveLength(2);
+  });
+
   it("a delegation report reads From Codex", () => {
     const row = renderRow(report);
     const label = within(row).getByText("From Codex");

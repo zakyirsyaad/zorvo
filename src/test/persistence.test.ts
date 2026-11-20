@@ -785,6 +785,11 @@ describe("normalizeTranscript - worker report", () => {
     }
   });
 
+  it("keeps the first of a repeated handle", () => {
+    const kept = withMark({ workers: [worker, { ...worker, state: "failed" }] });
+    expect(kept.workerReport?.workers).toEqual([worker]);
+  });
+
   it("keeps at most 50 entries", () => {
     const many = Array.from({ length: 60 }, (_, i) => ({ ...worker, handle: `worker-${i + 1}` }));
     expect(withMark({ workers: many }).workerReport?.workers).toHaveLength(50);

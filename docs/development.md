@@ -50,6 +50,7 @@ pnpm tauri dev
 | Rust lint | `cd src-tauri && cargo clippy --all-targets -- -D warnings` |
 | Production build | `pnpm tauri build` |
 | Refresh the bundled registry history | `pnpm registry:update` |
+| Fetch the pinned computer-use driver | `pnpm cua-driver:fetch` |
 
 To run the fast checks before each commit (types, ESLint, `cargo fmt`), opt in
 with `pnpm lefthook install`.
@@ -66,6 +67,31 @@ applies the Content Security Policy. A build also signs the update package, so
 it needs the updater key in the environment; to build without it, add
 `--config '{"bundle":{"createUpdaterArtifacts":false}}'` (see
 [Releasing](#releasing)).
+
+### The computer-use driver
+
+Computer use runs on trycua's `cua-driver`, which ships inside `Zorvo.app`
+with trycua's own signature. `src-tauri/resources/cua-driver.json` pins one
+release: its version, the archive's URL, size and SHA-256, and the SHA-256 of
+the one file taken from it.
+
+- `pnpm cua-driver:fetch` downloads that archive from
+  `github.com/trycua/cua` releases into `src-tauri/binaries/` (git-ignored),
+  checks both hashes and keeps only `cua-driver`. `pnpm tauri dev` and
+  `pnpm tauri build` run it first; it does nothing when the file is already
+  the pinned one. A development build starts even when the download fails
+  (only computer use is missing then); a production build does not.
+- `pnpm cua-driver:update` rewrites the pin to the newest release that is at
+  least 7 days old and not older than 0.52.1. Run it by hand and read the
+  diff: trycua publishes several releases a day, and a new pin can change the
+  driver's tools. After it, run
+  `cd src-tauri && cargo test --test it real_driver -- --ignored`, which
+  starts the pinned driver and talks to it.
+- Under `pnpm tauri dev`, macOS ties Screen Recording and Accessibility to the
+  terminal or editor that started it, since that app is at the top of the
+  launch chain. Allow them for that app to try computer use in development.
+- The Computer use group in Settings → Agents shows in development builds
+  only, until agents get the tools that use it.
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for how to propose a change,
 [SECURITY.md](../SECURITY.md) for how to report a vulnerability, and

@@ -94,8 +94,8 @@ describe("the Tasks inspector tab", () => {
 
   it("is offered before Terminal only while a task tab is open", () => {
     expect(offeredTabs(on)).not.toContain("tasks");
-    expect(offeredTabs({ ...on, hasTaskTabs: true })).toEqual(["changes", "activity", "files", "artifacts", "tasks", "terminal"]);
-    expect(offeredTabs({ hasFolder: false, isRepository: false, hasSession: true, hasTaskTabs: true })).toEqual(["activity", "artifacts", "tasks"]);
+    expect(offeredTabs({ ...on, hasTaskTabs: true })).toEqual(["changes", "activity", "files", "artifacts", "browser", "tasks", "terminal"]);
+    expect(offeredTabs({ hasFolder: false, isRepository: false, hasSession: true, hasTaskTabs: true })).toEqual(["activity", "artifacts", "browser", "tasks"]);
     expect(offeredTabs({ ...on, hasSession: false, hasTaskTabs: true })).not.toContain("tasks");
   });
 

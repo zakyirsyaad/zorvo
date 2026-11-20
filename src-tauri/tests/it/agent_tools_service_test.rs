@@ -176,10 +176,15 @@ fn list_and_initialize_are_answered_without_an_event() {
     assert_eq!(client.read()["result"]["protocolVersion"], "2025-06-18");
     client.send(json!({"jsonrpc":"2.0","method":"notifications/initialized"}));
     client.send(json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}));
-    assert_eq!(
-        client.read()["result"]["tools"].as_array().unwrap().len(),
-        8
-    );
+    let listed = client.read();
+    let tools = listed["result"]["tools"].as_array().unwrap();
+    assert_eq!(tools.len(), zorvo_lib::agent_tools::tools::TOOL_NAMES.len());
+    let browser = tools.iter().find(|tool| tool["name"] == "browser").unwrap();
+    let properties = &browser["inputSchema"]["properties"];
+    assert_eq!(properties["url"]["type"], "string");
+    assert_eq!(properties["tabID"]["type"], "string");
+    assert_eq!(properties["deltaY"]["type"], "number");
+    assert_eq!(browser["inputSchema"]["additionalProperties"], false);
     client.send(json!({"jsonrpc":"2.0","id":3,"method":"prompts/list"}));
     assert_eq!(client.read()["error"]["code"], -32601);
     assert!(rig.calls.recv_timeout(QUIET).is_err());
@@ -199,6 +204,49 @@ fn an_invalid_call_is_answered_at_once_and_emits_nothing() {
     assert_eq!(answer["result"]["isError"], true);
     assert!(rig.calls.recv_timeout(QUIET).is_err());
     assert!(rig.ended.try_recv().is_err());
+}
+
+#[test]
+fn a_browser_dispatch_reads_only_its_original_live_request() {
+    let rig = rig("browser-request");
+    let mut client = Client::connect(&rig, "s1");
+    client.send(call(
+        44,
+        "browser",
+        json!({"operation":"tabs.open","url":"https://example.com/","approval":{"url":"forged"}}),
+    ));
+    let emitted = rig.calls.recv_timeout(WAIT).unwrap();
+    let (owner, args) = rig.tools.browser_call(&emitted.call_id).unwrap();
+    assert_eq!(owner, "s1");
+    assert_eq!(args["url"], "https://example.com/");
+    assert!(args.get("approval").is_none());
+    assert!(rig.tools.browser_call("another-call").is_none());
+    client.send(
+        json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":44}}),
+    );
+    assert_eq!(rig.ended.recv_timeout(WAIT).unwrap(), emitted.call_id);
+    assert!(rig.tools.browser_call(&emitted.call_id).is_none());
+}
+
+#[test]
+fn browser_screenshots_are_mcp_images_instead_of_base64_text() {
+    let rig = rig("browser-image");
+    let mut client = Client::connect(&rig, "s1");
+    client.send(call(45, "browser", json!({"operation":"screenshot"})));
+    let emitted = rig.calls.recv_timeout(WAIT).unwrap();
+    let data="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+bY9sAAAAASUVORK5CYII=";
+    rig.tools.respond(
+        &emitted.call_id,
+        true,
+        &json!({"mimeType":"image/png","base64":data,"engine":"WebKit"}).to_string(),
+    );
+    let result = client.read();
+    assert_eq!(result["result"]["content"][1]["type"], "image");
+    assert_eq!(result["result"]["content"][1]["data"], data);
+    assert!(!result["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("base64"));
 }
 
 #[test]

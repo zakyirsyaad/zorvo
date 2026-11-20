@@ -1,5 +1,5 @@
 /** The inspector's tabs, in the order they show. */
-export type InspectorTab = "changes" | "activity" | "files" | "artifacts" | "context" | "tasks" | "terminal" | "private";
+export type InspectorTab = "changes" | "activity" | "files" | "artifacts" | "browser" | "context" | "tasks" | "terminal" | "private";
 
 export const INSPECTOR_WIDTH = { min: 320, max: 720, initial: 380, wide: 560, step: 16 } as const;
 
@@ -25,7 +25,7 @@ export function clampInspectorWidth(px: number): number {
  * shell, a page or a line of code. Output is wide for its list too, so opening a page does not move the edge.
  */
 function isWideTab(tab: InspectorTab, isViewingFile: boolean): boolean {
-  return tab === "terminal" || tab === "artifacts" || tab === "tasks" || (tab === "files" && isViewingFile);
+  return tab === "terminal" || tab === "artifacts" || tab === "browser" || tab === "tasks" || (tab === "files" && isViewingFile);
 }
 
 /** The narrowest the main sheet may get beside the inspector, so its top bar is never crushed. */
@@ -82,6 +82,7 @@ export function offeredTabs(on: {
   if (on.hasFolder) tabs.push("files");
   // Output is always offered for a session: empty, it says what will show there.
   if (on.hasSession) tabs.push("artifacts");
+  if (on.hasSession) tabs.push("browser");
   if (on.hasSession && on.hasUsage) tabs.push("context");
   if (on.hasSession && on.hasTaskTabs) tabs.push("tasks");
   if (on.hasFolder) tabs.push("terminal");

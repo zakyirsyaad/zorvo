@@ -10,12 +10,13 @@ const LABELS: Record<InspectorTab, string> = {
   activity: "Activity",
   files: "Files",
   artifacts: "Output",
+  browser: "Browser",
   context: "Context",
   tasks: "Tasks",
   terminal: "Terminal",
   private: "Private",
 };
-const ORDER: readonly InspectorTab[] = ["changes", "activity", "files", "artifacts", "context", "tasks", "terminal", "private"];
+const ORDER: readonly InspectorTab[] = ["changes", "activity", "files", "artifacts", "browser", "context", "tasks", "terminal", "private"];
 const ID_PREFIX = "inspector";
 
 export interface InspectorProps {

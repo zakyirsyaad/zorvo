@@ -298,6 +298,14 @@ pub async fn app_update_restart(
     app.restart()
 }
 
+/// Restarts Zorvo with no update involved: macOS applies a newly allowed Screen Recording
+/// permission to Zorvo only after a restart. The page writes what it still holds first, as it
+/// does before `app_update_restart`.
+#[tauri::command]
+pub async fn app_restart(app: AppHandle) -> Result<(), String> {
+    app.restart()
+}
+
 async fn download_and_install(app: &AppHandle, update: &Update) -> Result<(), String> {
     let mut throttle = ProgressThrottle::default();
     let progress_app = app.clone();

@@ -34,10 +34,10 @@ describe("inspector layout", () => {
   });
 
   it("offers only the tabs that apply", () => {
-    expect(offeredTabs({ hasFolder: true, isRepository: true, hasSession: true })).toEqual(["changes", "activity", "files", "artifacts", "terminal"]);
-    expect(offeredTabs({ hasFolder: true, isRepository: false, hasSession: true })).toEqual(["activity", "files", "artifacts", "terminal"]);
+    expect(offeredTabs({ hasFolder: true, isRepository: true, hasSession: true })).toEqual(["changes", "activity", "files", "artifacts", "browser", "terminal"]);
+    expect(offeredTabs({ hasFolder: true, isRepository: false, hasSession: true })).toEqual(["activity", "files", "artifacts", "browser", "terminal"]);
     expect(offeredTabs({ hasFolder: true, isRepository: true, hasSession: false })).toEqual(["changes", "files", "terminal"]);
-    expect(offeredTabs({ hasFolder: false, isRepository: false, hasSession: true })).toEqual(["activity", "artifacts"]);
+    expect(offeredTabs({ hasFolder: false, isRepository: false, hasSession: true })).toEqual(["activity", "artifacts", "browser"]);
     expect(offeredTabs({ hasFolder: false, isRepository: false, hasSession: false })).toEqual([]);
   });
 

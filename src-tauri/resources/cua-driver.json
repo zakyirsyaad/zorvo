@@ -1,0 +1,13 @@
+{
+  "version": "0.52.13",
+  "released": "2026-11-17",
+  "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.52.13/cua-driver-rs-0.52.13-darwin-universal-binary.tar.gz",
+  "sha256": "347dda339046744206fe065b10d8cdaa52483154b5d96ffdc5c24dfc086b584c",
+  "size": 43589122,
+  "file": {
+    "path": "cua-driver",
+    "sha256": "d27736ef5e5b778b8aa06439821c3f43c5c6cd857e8abe3a12663a87a1583a93"
+  },
+  "team": "YCK386LBJ7",
+  "minimum": "0.52.1"
+}

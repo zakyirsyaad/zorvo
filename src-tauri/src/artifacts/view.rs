@@ -426,6 +426,37 @@ pub fn close(app: &AppHandle) {
     let _ = app.run_on_main_thread(end_current);
 }
 
+/// Native observations for the explicit browser integration harness, never IPC.
+#[cfg(all(target_os = "macos", debug_assertions))]
+pub(crate) async fn smoke_state(app: &AppHandle) -> Result<serde_json::Value, String> {
+    use serde_json::json;
+    use wry::WebViewExtMacOS;
+    let (send, receive) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || {
+        let state = VIEW.with(|slot| {
+            let view = slot.borrow();
+            let Some((view, _)) = view.as_ref() else {
+                return json!({"exists":false});
+            };
+            // SAFETY: the retained WKWebView is inspected on its main thread.
+            unsafe {
+                let native = view.webview();
+                let frame = native.frame();
+                json!({"exists":true,"hidden":native.isHidden(),"loading":native.isLoading(),
+                    "loaded":DISPLAY.get().is_loaded,
+                    "url":native.URL().and_then(|url|url.absoluteString()).map(|url|url.to_string()),
+                    "bounds":{"x":frame.origin.x,"y":frame.origin.y,
+                        "width":frame.size.width,"height":frame.size.height}})
+            }
+        });
+        let _ = send.send(state);
+    }).map_err(|_| "The artifact main thread is unavailable.")?;
+    tokio::time::timeout(std::time::Duration::from_secs(3), receive)
+        .await
+        .map_err(|_| "Native artifact inspection timed out.")?
+        .map_err(|_| "Native artifact inspection was cancelled.".into())
+}
+
 /// Closes the view only when it shows a page of `session_id` (and of
 /// `artifact_id` when one is named): what is deleted must not stay on screen,
 /// and nothing else may be taken off it.

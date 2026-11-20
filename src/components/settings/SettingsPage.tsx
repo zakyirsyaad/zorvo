@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { AgentCatalogPanel } from "../agents/AgentCatalogPanel";
 import { AgentToolsSetting } from "./AgentToolsSetting";
+import { ComputerUseGroup } from "./ComputerUseGroup";
 import { TerminalSignInDialog } from "../TerminalSignInDialog";
 import type { FolderOption } from "../onboarding/types";
 import { ToastStack } from "../ui/Toast";
@@ -51,6 +52,8 @@ export interface SettingsPageProps {
   onRestoringChange?: (isRestoring: boolean) => void;
   /** Opens a web link in the user's browser. */
   onOpenUrl?: (url: string) => void;
+  /** Computer use: restarting Zorvo and reporting a failure. The Agents section shows no such group without it. */
+  computerUse?: { onRestart: () => void; onError: (message: string) => void };
 }
 
 /**
@@ -78,6 +81,7 @@ export function SettingsPage({
   onShowRecoveryCode,
   onRestoringChange,
   onOpenUrl,
+  computerUse,
 }: SettingsPageProps) {
   const { section } = page;
   const titleId = useId();
@@ -175,6 +179,14 @@ export function SettingsPage({
               isOn={settings.agentTools !== false}
               onChange={(agentTools) => updateSettings({ agentTools })}
             />
+            {computerUse && (
+              <ComputerUseGroup
+                isOn={settings.computerUse === true}
+                onChange={(isOn) => updateSettings({ computerUse: isOn })}
+                onRestart={computerUse.onRestart}
+                onError={computerUse.onError}
+              />
+            )}
           </div>
         );
       case "private":

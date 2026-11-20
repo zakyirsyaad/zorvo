@@ -104,6 +104,29 @@ pub fn show_canvas(
     })
 }
 
+/// The canvas folder still exists, and the session folder it was shown from (its path minus
+/// `relative`) is a known workspace that still holds it. Workspaces are known by exact path,
+/// so the canvas folder itself is never asked about.
+fn is_inside_known_session_folder(
+    root: &Path,
+    relative: &str,
+    is_known: &impl Fn(&Path) -> bool,
+) -> bool {
+    let Ok(root) = std::fs::canonicalize(root) else {
+        return false;
+    };
+    let mut session = root.clone();
+    for _ in relative.split('/').filter(|part| !part.is_empty()) {
+        if !session.pop() {
+            return false;
+        }
+    }
+    let Ok(session) = std::fs::canonicalize(session) else {
+        return false;
+    };
+    root.is_dir() && root.starts_with(&session) && is_known(&session)
+}
+
 /// Reads a remembered canvas again. Its entry stays whatever the folder now holds.
 pub fn read_canvas_entry(
     artifacts: &ArtifactStore,
@@ -121,7 +144,7 @@ pub fn read_canvas_entry(
         error: Some(error.to_string()),
         boards: Vec::new(),
     };
-    if !root.is_dir() || !is_known(&root) {
+    if !is_inside_known_session_folder(&root, &entry.relative, &is_known) {
         return Ok(failed(entry, FOLDER_NOT_FOUND));
     }
     Ok(match read_canvas(&root) {
@@ -633,6 +656,22 @@ mod tests {
         let unknown = read_canvas_entry(&artifacts, |_| true, SESSION, &entry.key).unwrap();
         assert_eq!(unknown.entry, entry);
         assert!(read_canvas_entry(&artifacts, |_| true, SESSION, "c-0000000000000000").is_err());
+    }
+
+    #[test]
+    fn canvas_read_asks_about_the_session_folder_not_the_canvas_folder() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        let artifacts = ArtifactStore::new(data.0.clone());
+        let entry = show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 1)
+            .unwrap()
+            .entry;
+
+        let read =
+            read_canvas_entry(&artifacts, |root| root == work.0, SESSION, &entry.key).unwrap();
+
+        assert_eq!(read.error, None);
+        assert!(read.canvas.is_some());
     }
 
     #[test]

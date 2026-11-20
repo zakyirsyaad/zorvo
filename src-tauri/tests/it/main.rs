@@ -21,7 +21,6 @@ mod agent_tools_service_test;
 mod agent_tools_socket_test;
 mod background_processes_test;
 mod branches_test;
-mod canvas_render_test;
 mod changes_test;
 mod computer_use_driver_test;
 mod computer_use_e2e_test;
@@ -59,6 +58,8 @@ mod worktrees_test;
 
 /// Test files that are binaries of their own, directly in `tests/`.
 const OWN_BINARIES: &[&str] = &[
+    // harness = false: its `main` must run on the process's main thread.
+    "canvas_render.rs",
     "installer_state_test.rs",
     "private_proxy_test.rs",
     "spawn_test.rs",

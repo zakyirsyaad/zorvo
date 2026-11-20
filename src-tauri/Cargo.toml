@@ -58,6 +58,13 @@ tar = { version = "0.4", default-features = false }
 bzip2 = { version = "0.5", default-features = false, features = ["libbz2-rs-sys"] }
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 
+# Draws a real artboard; its own `main` runs on the process's main thread, which Tauri's
+# event loop needs and libtest never gives a test. Skips unless ZORVO_RENDER_TEST=1.
+[[test]]
+name = "canvas_render"
+path = "tests/canvas_render.rs"
+harness = false
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 block2 = "0.6"

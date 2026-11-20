@@ -12,7 +12,7 @@ use tauri_plugin_dialog::DialogExt;
 use super::canvas::{canvas_file, file_sha256, read_canvas, resolve_canvas, Canvas};
 use super::picks::{checked_marks, PageMark};
 use super::protocol::{canvas_file_url, page_url, Served};
-use super::render::{self, Pushed, ThumbJob, ThumbQueue};
+use super::render::{self, Ended, Pushed, ThumbJob, ThumbQueue};
 use super::source::{read_source, temp_roots};
 use super::store::{
     is_artifact_id, is_session_id, ArtifactRecord, ArtifactStore, CanvasEntry, Shown, FAILED,
@@ -250,24 +250,40 @@ pub fn list_thumbs(
 /// The artboards waiting for a picture, shared by `canvas_thumbs` and its worker.
 pub type Thumbs = Arc<Mutex<ThumbQueue>>;
 
-/// Draws the queued pictures one at a time, until the queue is empty.
+/// Ends the worker in the queue if it panics, so the next `canvas_thumbs` starts another.
+/// Only on a panic: a worker that ran out of jobs already ended, and another may run since.
+struct WorkerGuard<'a>(&'a Thumbs);
+
+impl Drop for WorkerGuard<'_> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .end_worker();
+        }
+    }
+}
+
+/// Draws the queued pictures one at a time, until the queue is empty. A file's hash is read
+/// outside the lock, before drawing and again after it: a picture is saved only for the file
+/// it shows, and only while its canvas is remembered.
 fn draw_thumbs(app: &AppHandle, served: &Arc<Served>, queue: &Thumbs) {
+    let _guard = WorkerGuard(queue);
     let lock = || queue.lock().unwrap_or_else(PoisonError::into_inner);
     let current_hash =
         |job: &ThumbJob| canvas_file(&job.root, &job.file).and_then(|(path, _)| file_sha256(&path));
-    while let Some(job) = lock().next(current_hash) {
-        let url = canvas_file_url(&job.session_id, &job.key, &job.file);
-        let drawn = render::snapshot_png(
-            app,
-            Arc::clone(served),
-            url,
-            job.width,
-            job.height,
-            render::thumb_width(job.width),
-        )
-        .and_then(|png| render::save_thumb(&served.thumbs, &job.sha256, &png));
-        lock().finish(&job.sha256, drawn.is_ok());
-        if drawn.is_ok() {
+    let is_known = |job: &ThumbJob| served.store.canvas(&job.session_id, &job.key).is_some();
+    while let Some(job) = lock().pop() {
+        // Changed or forgotten since it was queued: dropped before it is drawn.
+        let is_current = current_hash(&job).as_deref() == Some(job.sha256.as_str());
+        let ended = if is_current && is_known(&job) {
+            draw_thumb(app, served, &job, &current_hash, &is_known)
+        } else {
+            Ended::Stale
+        };
+        lock().finish(&job.sha256, ended);
+        if ended == Ended::Drawn {
             let _ = app.emit(
                 CANVAS_THUMB,
                 serde_json::json!({
@@ -278,6 +294,38 @@ fn draw_thumbs(app: &AppHandle, served: &Arc<Served>, queue: &Thumbs) {
                 }),
             );
         }
+    }
+}
+
+/// Draws one job and saves its picture when the file and its canvas are still the same.
+fn draw_thumb(
+    app: &AppHandle,
+    served: &Arc<Served>,
+    job: &ThumbJob,
+    current_hash: &impl Fn(&ThumbJob) -> Option<String>,
+    is_known: &impl Fn(&ThumbJob) -> bool,
+) -> Ended {
+    let url = canvas_file_url(&job.session_id, &job.key, &job.file);
+    let png = render::snapshot_png(
+        app,
+        Arc::clone(served),
+        url,
+        job.width,
+        job.height,
+        render::thumb_width(job.width),
+    );
+    let ended = render::outcome(
+        png.is_ok(),
+        job,
+        current_hash(job).as_deref(),
+        is_known(job),
+    );
+    match (ended, png) {
+        (Ended::Drawn, Ok(png)) => match render::save_thumb(&served.thumbs, &job.sha256, &png) {
+            Ok(()) => Ended::Drawn,
+            Err(_) => Ended::Failed,
+        },
+        (ended, _) => ended,
     }
 }
 
@@ -472,7 +520,11 @@ pub fn canvas_thumbs(
         // Every job is pushed; only the first push into an idle queue starts the worker.
         let pushed: Vec<Pushed> = jobs
             .into_iter()
-            .map(|job| queued.push(job, false))
+            .map(|job| {
+                // Drawn since it was listed: not drawn twice.
+                let is_cached = render::thumb_path(&served.thumbs, &job.sha256).is_file();
+                queued.push(job, is_cached)
+            })
             .collect();
         pushed.contains(&Pushed::QueuedStartWorker)
     };

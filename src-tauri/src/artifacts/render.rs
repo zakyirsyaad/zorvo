@@ -91,27 +91,53 @@ impl ThumbQueue {
         }
     }
 
-    /// The next job whose artboard still has its hash (`current_hash`, read now); jobs whose
-    /// file changed or is gone are dropped. `None` ends the worker.
-    pub fn next(&mut self, current_hash: impl Fn(&ThumbJob) -> Option<String>) -> Option<ThumbJob> {
-        while let Some(job) = self.jobs.pop_front() {
-            if current_hash(&job).as_ref() == Some(&job.sha256) {
-                self.drawing = Some(job.sha256.clone());
-                return Some(job);
-            }
-        }
-        self.is_running = false;
-        None
+    /// The next job, counted as being drawn until `finish`: the worker checks its file's hash
+    /// outside the lock. `None` ends the worker.
+    pub fn pop(&mut self) -> Option<ThumbJob> {
+        let Some(job) = self.jobs.pop_front() else {
+            self.is_running = false;
+            return None;
+        };
+        self.drawing = Some(job.sha256.clone());
+        Some(job)
     }
 
-    /// The job being drawn ended; a failed hash is not tried again this run.
-    pub fn finish(&mut self, sha256: &str, is_drawn: bool) {
+    /// The job being drawn ended. A failed hash is not tried again this run; a stale one
+    /// (its file changed, or its canvas was forgotten) may be queued again.
+    pub fn finish(&mut self, sha256: &str, ended: Ended) {
         if self.drawing.as_deref() == Some(sha256) {
             self.drawing = None;
         }
-        if !is_drawn {
+        if ended == Ended::Failed {
             self.failed.insert(sha256.to_string());
         }
+    }
+
+    /// The worker stopped without emptying the queue (it panicked): the next push starts one.
+    pub fn end_worker(&mut self) {
+        self.is_running = false;
+        self.drawing = None;
+    }
+}
+
+/// How a job ended.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Ended {
+    Drawn,
+    Failed,
+    /// The file is not the one drawn any more, or its canvas is forgotten: dropped, not failed.
+    Stale,
+}
+
+/// How a job ends, from whether it was drawn, its file's hash now and whether its canvas is
+/// still remembered. A picture is kept only for the file it shows.
+pub fn outcome(is_drawn: bool, job: &ThumbJob, hash_now: Option<&str>, is_known: bool) -> Ended {
+    if !is_known || hash_now != Some(job.sha256.as_str()) {
+        Ended::Stale
+    } else if is_drawn {
+        Ended::Drawn
+    } else {
+        Ended::Failed
     }
 }
 
@@ -167,11 +193,17 @@ pub fn save_thumb(dir: &Path, sha256: &str, png: &[u8]) -> Result<(), String> {
 }
 
 /// Marks a picture as listed now, so the sweep keeps it.
+/// A link is never followed and only a regular file is touched; the file is opened to read.
 pub fn touch(path: &Path, now: SystemTime) -> std::io::Result<()> {
-    std::fs::File::options()
-        .write(true)
-        .open(path)?
-        .set_modified(now)
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = std::fs::File::options()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::other("not a regular file"));
+    }
+    file.set_modified(now)
 }
 
 /// How wide an artboard's picture is drawn.
@@ -444,21 +476,20 @@ mod tests {
         assert_eq!(queue.push(job("copy", 'a'), false), Pushed::Skipped);
         assert_eq!(queue.push(job("pay", 'b'), false), Pushed::Queued);
 
-        let same = |job: &ThumbJob| Some(job.sha256.clone());
-        let first = queue.next(same).expect("a job");
+        let first = queue.pop().expect("a job");
         assert_eq!(first.artboard_id, "cart");
-        // Being drawn counts as queued.
+        // Taken out to be checked and drawn counts as queued.
         assert_eq!(queue.push(job("cart", 'a'), false), Pushed::Skipped);
-        queue.finish(&first.sha256, false);
+        queue.finish(&first.sha256, Ended::Failed);
         // A failed hash waits for the file to change.
         assert_eq!(queue.push(job("cart", 'a'), false), Pushed::Skipped);
         assert_eq!(queue.push(job("cart", 'c'), false), Pushed::Queued);
 
-        assert_eq!(queue.next(same).map(|j| j.artboard_id), Some("pay".into()));
-        queue.finish(&"b".repeat(64), true);
-        assert_eq!(queue.next(same).map(|j| j.sha256), Some("c".repeat(64)));
-        queue.finish(&"c".repeat(64), true);
-        assert_eq!(queue.next(same), None);
+        assert_eq!(queue.pop().map(|j| j.artboard_id), Some("pay".into()));
+        queue.finish(&"b".repeat(64), Ended::Drawn);
+        assert_eq!(queue.pop().map(|j| j.sha256), Some("c".repeat(64)));
+        queue.finish(&"c".repeat(64), Ended::Drawn);
+        assert_eq!(queue.pop(), None);
         // The worker stopped with the empty queue, so the next push starts one.
         assert_eq!(
             queue.push(job("menu", 'd'), false),
@@ -474,23 +505,70 @@ mod tests {
         // A newer list for the same artboard replaces its waiting job.
         queue.push(job("pay", 'e'), false);
 
-        // By its turn, cart's file changed: it is dropped, not drawn.
-        let now = |job: &ThumbJob| {
-            Some(if job.artboard_id == "cart" {
-                "f".repeat(64)
-            } else {
-                job.sha256.clone()
-            })
-        };
-        let next = queue.next(now).expect("pay");
+        // By its turn, cart's file changed: it is dropped, not drawn, and not failed.
+        let cart = queue.pop().expect("cart");
+        let ended = outcome(true, &cart, Some(&"f".repeat(64)), true);
+        assert_eq!(ended, Ended::Stale);
+        queue.finish(&cart.sha256, ended);
+        assert_eq!(queue.push(job("cart", 'a'), false), Pushed::Queued);
+
+        let pay = queue.pop().expect("pay");
         assert_eq!(
-            (next.artboard_id.as_str(), next.sha256),
-            ("pay", "e".repeat(64))
+            (pay.artboard_id.as_str(), pay.sha256.as_str()),
+            ("pay", "e".repeat(64).as_str())
         );
-        queue.finish(&"e".repeat(64), true);
-        // A file that is gone is dropped too.
-        queue.push(job("menu", 'd'), false);
-        assert_eq!(queue.next(|_| None), None);
+    }
+
+    #[test]
+    fn a_drawing_is_kept_only_for_an_unchanged_file_of_a_known_canvas() {
+        let cart = job("cart", 'a');
+        let same = Some(cart.sha256.as_str());
+        assert_eq!(outcome(true, &cart, same, true), Ended::Drawn);
+        assert_eq!(outcome(false, &cart, same, true), Ended::Failed);
+        // Changed or gone while it was drawn, or the canvas forgotten: dropped, never failed.
+        for (hash_now, is_known) in [(Some("f"), true), (None, true), (same, false)] {
+            assert_eq!(outcome(true, &cart, hash_now, is_known), Ended::Stale);
+            assert_eq!(outcome(false, &cart, hash_now, is_known), Ended::Stale);
+        }
+    }
+
+    #[test]
+    fn a_worker_that_ends_early_leaves_the_queue_able_to_start_another() {
+        let mut queue = ThumbQueue::default();
+        queue.push(job("cart", 'a'), false);
+        queue.push(job("pay", 'b'), false);
+        let _ = queue.pop();
+        // The worker panicked mid-drawing: its guard ends it.
+        queue.end_worker();
+        assert_eq!(
+            queue.push(job("menu", 'c'), false),
+            Pushed::QueuedStartWorker
+        );
+        // The hash it was drawing is no longer counted as drawn.
+        assert_eq!(queue.push(job("cart", 'a'), false), Pushed::Queued);
+    }
+
+    #[test]
+    fn touch_never_follows_a_link_or_touches_a_folder() {
+        let temp = Temp::new("touch");
+        let target = temp.0.join("target.txt");
+        std::fs::write(&target, b"x").unwrap();
+        let before = std::fs::metadata(&target).unwrap().modified().unwrap();
+        let link = thumb_path(&temp.0, &"a".repeat(64));
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let later = SystemTime::now() + Duration::from_secs(3600);
+
+        assert!(touch(&link, later).is_err());
+        assert_eq!(
+            std::fs::metadata(&target).unwrap().modified().unwrap(),
+            before
+        );
+        assert!(touch(&temp.0, later).is_err());
+        touch(&target, later).unwrap();
+        assert_eq!(
+            std::fs::metadata(&target).unwrap().modified().unwrap(),
+            later
+        );
     }
 
     #[test]

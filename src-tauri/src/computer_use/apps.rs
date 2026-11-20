@@ -248,16 +248,22 @@ fn executable_of(_pid: i32) -> Option<PathBuf> {
 /// The app the process `pid` runs from, with the process's start time so a
 /// reused pid is another process. `None` for a process outside an app bundle.
 pub fn running(pid: i32) -> Option<(AppIdentity, ProcessId)> {
-    static SEEN: Mutex<Option<HashMap<ProcessId, AppIdentity>>> = Mutex::new(None);
+    type Seen = HashMap<ProcessId, (PathBuf, AppIdentity)>;
+    static SEEN: Mutex<Option<Seen>> = Mutex::new(None);
 
     let process = ProcessId::of(pid)?;
-    let remembered = |seen: &Mutex<Option<HashMap<ProcessId, AppIdentity>>>| {
-        seen.lock().ok()?.as_ref()?.get(&process).cloned()
+    // Read every time: a process keeps its pid and start time when it
+    // replaces itself with another program.
+    let executable = executable_of(pid)?;
+    let remembered = |seen: &Mutex<Option<Seen>>| {
+        let seen = seen.lock().ok()?;
+        let (path, app) = seen.as_ref()?.get(&process)?;
+        (*path == executable).then(|| app.clone())
     };
     if let Some(app) = remembered(&SEEN) {
         return Some((app, process));
     }
-    let app = identity_of_path(&enclosing_app(&executable_of(pid)?)?)?;
+    let app = identity_of_path(&enclosing_app(&executable)?)?;
     // The path was read after the start time: a pid reused in between would
     // pair one process's time with another's app.
     if ProcessId::of(pid) != Some(process) {
@@ -268,7 +274,7 @@ pub fn running(pid: i32) -> Option<(AppIdentity, ProcessId)> {
         if seen.len() >= MAX_REMEMBERED {
             seen.clear();
         }
-        seen.insert(process, app.clone());
+        seen.insert(process, (executable, app.clone()));
     }
     Some((app, process))
 }

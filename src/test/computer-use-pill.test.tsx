@@ -58,7 +58,7 @@ describe("the computer-use pill", () => {
     emit(USING);
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     expect(invoke).toHaveBeenCalledWith("computer_use_revoke", { sessionId: "s-1" });
-    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    await waitFor(() => expect(screen.getByRole("status")).toBeEmptyDOMElement());
   });
 
   it("drops an action that is not whole and shows odd characters as text", () => {

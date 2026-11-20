@@ -180,6 +180,11 @@ impl ScreenServer {
 
     /// The user answered a card: `allowed` holds the keys of the ticked rows.
     pub fn answer(&self, call_id: &str, allowed: &[String]) {
+        // A call that already ended (its time ran out a moment ago) told the
+        // agent so: an answer that comes after must grant nothing.
+        if self.tools().is_some_and(|tools| !tools.is_waiting(call_id)) {
+            return self.end_request(call_id);
+        }
         let Some(answered) = self.requests.answer(call_id, allowed) else {
             return;
         };
@@ -284,15 +289,27 @@ impl ScreenServer {
         agent_name: &str,
         driver: &DriverClient,
     ) -> Result<SessionHandle, DriverError> {
-        let mut bound = lock(&self.bound);
-        // A handle of a worker that ended means nothing to this one.
-        bound.retain(|_, entry| entry.worker_pid == driver.pid());
-        if let Some(entry) = bound.get(session) {
-            return Ok(entry.handle.clone());
-        }
-        let taken: Vec<String> = bound.values().map(|entry| entry.label.clone()).collect();
-        let label = driver::session_label(agent_name, &taken);
+        let label = {
+            let mut bound = lock(&self.bound);
+            // A handle of a worker that ended means nothing to this one.
+            bound.retain(|_, entry| entry.worker_pid == driver.pid());
+            if let Some(entry) = bound.get(session) {
+                return Ok(entry.handle.clone());
+            }
+            let taken: Vec<String> = bound.values().map(|entry| entry.label.clone()).collect();
+            driver::session_label(agent_name, &taken)
+        };
+        // Not under the lock: the bind waits behind whatever the driver is
+        // doing, and a session that stops meanwhile must not wait for it.
         let handle = driver.bind_session(&label)?;
+        let mut bound = lock(&self.bound);
+        if let Some(entry) = bound.get(session) {
+            if entry.worker_pid == driver.pid() {
+                // Another call of this session bound it first.
+                driver.close_session(&handle);
+                return Ok(entry.handle.clone());
+            }
+        }
         bound.insert(
             session.to_string(),
             Bound {
@@ -514,6 +531,7 @@ impl ScreenServer {
             &GateContext {
                 session: &call.session_id,
                 grants: &self.grants,
+                snapshots: &self.snapshots,
                 running: &self.hooks.running,
                 windows_of: &|pid| self.windows_of(call, &driver, &handle, pid),
             },

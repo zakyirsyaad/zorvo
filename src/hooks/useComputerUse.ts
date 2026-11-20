@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { withToolCard } from '../lib/agent-tool-card';
+import { replaceToolCard, withToolCard } from '../lib/agent-tool-card';
 import {
   COMPUTER_USE_ALLOW,
   COMPUTER_USE_CARD_COPY,
@@ -64,7 +64,8 @@ export function useComputerUse(deps: ComputerUseDeps): {
       open.current.set(cardId, { callId: event.callId, sessionId: event.sessionId, card });
       latest.current.updateMessages(event.sessionId, (prev) =>
         prev.some((message) => message.actionCard?.id === cardId)
-          ? prev
+          ? // After a reload the saved card reads Not answered while its call still waits: it is asked again.
+            replaceToolCard(prev, cardId, card)
           : withToolCard(prev, card, { sessionId: event.sessionId, now: Date.now(), createId }),
       );
       latest.current.onAttention(event.sessionId, 'needs-answer');
@@ -86,11 +87,14 @@ export function useComputerUse(deps: ComputerUseDeps): {
   useEffect(() => {
     let isActive = true;
     const stops: (() => void)[] = [];
-    const keep = (listening: Promise<() => void>) => {
-      void listening.then((stop) => {
-        if (isActive) stops.push(stop);
-        else stop();
-      });
+    const listening: Promise<void>[] = [];
+    const keep = (started: Promise<() => void>) => {
+      listening.push(
+        started.then((stop) => {
+          if (isActive) stops.push(stop);
+          else stop();
+        }),
+      );
     };
     keep(
       listen('computer-use-request', ({ payload }) => {
@@ -113,7 +117,10 @@ export function useComputerUse(deps: ComputerUseDeps): {
     keep(listen('computer-use-request-ended', ({ payload }) => onEnded(payload)));
     keep(listen('computer-use-changed', () => void readState(false)));
     keep(listen('computer-use-notice', () => latest.current.onNotice(COMPUTER_USE_CARD_COPY.notSetUp)));
-    void readState(true);
+    // Read once every listener is on, so a request cannot fall between the read and the first event.
+    void Promise.all(listening).then(() => {
+      if (isActive) void readState(true);
+    });
     return () => {
       isActive = false;
       stops.forEach((stop) => stop());

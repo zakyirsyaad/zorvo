@@ -54,6 +54,17 @@ describe("a computer-use request", () => {
     expect(event?.request.apps[0].name).not.toContain("‮");
   });
 
+  it("cuts a name, a path and the reason that are far too long", () => {
+    const event = parseComputerUseRequest({
+      ...PAYLOAD,
+      reason: "r".repeat(5000),
+      apps: [{ ...PAYLOAD.apps[0], name: "n".repeat(5000), path: "/" + "p".repeat(5000) }],
+    });
+    expect(event?.request.reason).toHaveLength(600);
+    expect(event?.request.apps[0].name).toHaveLength(80);
+    expect(event?.request.apps[0].path).toHaveLength(1024);
+  });
+
   it("keeps an icon only when it is a PNG data URL", () => {
     const withIcons = parseComputerUseRequest({
       ...PAYLOAD,
@@ -78,7 +89,7 @@ describe("the computer-use card", () => {
     expect(within(rows[1]).getByText("Apple")).toBeInTheDocument();
     expect(rows[1]).toHaveTextContent("/System/Library/CoreServices/Finder.app");
     expect(within(rows[1]).getByText("Can open, move and delete your files.")).toBeInTheDocument();
-    expect(tick("Finder")).toHaveAccessibleDescription("Can open, move and delete your files.");
+    expect(tick("Finder")).toHaveAccessibleDescription("Full use Can open, move and delete your files.");
     expect(within(rows[2]).getByText("Click only")).toBeInTheDocument();
     expect(screen.getByText("What Qwen Code sees in these apps goes to its model provider.")).toBeInTheDocument();
   });
@@ -90,6 +101,8 @@ describe("the computer-use card", () => {
     expect(tick("Zorvo")).not.toBeChecked();
     expect(tick("Zorvo")).toBeDisabled();
     expect(tick("com.example.missing")).toBeDisabled();
+    expect(tick("com.example.missing")).toHaveAccessibleDescription("Not on this Mac");
+    expect(tick("Zorvo")).toHaveAccessibleDescription("Never allowed");
     expect(screen.getByText("Not on this Mac")).toBeInTheDocument();
     expect(tick("Notes")).toHaveClass("focus-ring");
   });

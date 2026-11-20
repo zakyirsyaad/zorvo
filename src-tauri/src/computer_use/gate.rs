@@ -170,9 +170,11 @@ pub const TOOLS: &[ToolSpec] = &[
             ),
             field(
                 "timeout_ms",
+                // One slow read holds the driver for every session: the walk
+                // gets far less than the driver's own two minutes.
                 Kind::Int {
                     min: 100,
-                    max: 120_000,
+                    max: 20_000,
                 },
                 false,
                 "Time for the tree walk. Default 1000.",
@@ -339,11 +341,72 @@ fn checked_value(field: &Field, value: &Value) -> Option<Value> {
             .as_array()
             .filter(|list| {
                 (1..=8).contains(&list.len())
-                    && list.iter().all(Value::is_object)
+                    && list.iter().all(is_predicate)
                     && value.to_string().len() <= MAX_PREDICATE_BYTES
             })
             .map(|_| value.clone()),
     }
+}
+
+/// Whether `value` is an object holding only `keys`, each passing its check.
+type KeyCheck = (&'static str, fn(&Value) -> bool);
+
+fn holds_only(value: &Value, keys: &[KeyCheck]) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.iter().all(|(key, value)| {
+            keys.iter()
+                .any(|(name, is_valid)| name == key && is_valid(value))
+        })
+    })
+}
+
+fn is_text(value: &Value) -> bool {
+    value.as_str().is_some_and(|text| text.len() <= 500)
+}
+
+fn is_number(value: &Value) -> bool {
+    value.as_f64().is_some_and(f64::is_finite)
+}
+
+/// One `verify_state` condition, in the shape the driver documents and no
+/// other: a key the driver might read as another target never gets through.
+fn is_predicate(value: &Value) -> bool {
+    fn is_selector(value: &Value) -> bool {
+        holds_only(value, &[("role", is_text), ("label_contains", is_text)])
+    }
+    fn is_element(value: &Value) -> bool {
+        value.get("selector").is_some()
+            && holds_only(
+                value,
+                &[
+                    ("selector", is_selector),
+                    ("exists", Value::is_boolean),
+                    ("enabled", Value::is_boolean),
+                    ("selected", Value::is_boolean),
+                    ("value_equals", is_text),
+                ],
+            )
+    }
+    fn is_bounds(value: &Value) -> bool {
+        holds_only(
+            value,
+            &[
+                ("x", is_number),
+                ("y", is_number),
+                ("width", is_number),
+                ("height", is_number),
+                ("tolerance_px", is_number),
+            ],
+        )
+    }
+    fn is_window(value: &Value) -> bool {
+        holds_only(
+            value,
+            &[("exists", Value::is_boolean), ("bounds", is_bounds)],
+        )
+    }
+    value.as_object().is_some_and(|object| !object.is_empty())
+        && holds_only(value, &[("element", is_element), ("window", is_window)])
 }
 
 fn takes(spec: &ToolSpec) -> String {
@@ -411,6 +474,7 @@ pub struct Checked {
 pub struct GateContext<'a> {
     pub session: &'a str,
     pub grants: &'a Grants,
+    pub snapshots: &'a Snapshots,
     /// The app a pid runs from, with the process's start time.
     pub running: &'a dyn Fn(i32) -> Option<(AppIdentity, ProcessId)>,
     /// The window ids of a pid, asked of the driver.
@@ -481,6 +545,19 @@ pub fn check(tool: &str, args: &Value, ctx: &GateContext<'_>) -> Result<Checked,
             ));
         }
         target.window_id = Some(window_id);
+    }
+    // A diff read names an earlier read: only one this session made of this
+    // very window, by this very process.
+    if let Some(since) = clean.get("since").and_then(Value::as_str) {
+        let is_own = since == "latest"
+            || ctx.snapshots.owner(ctx.session, since).is_some_and(|read| {
+                read.process == target.process && Some(read.window_id) == target.window_id
+            });
+        if !is_own {
+            return Err(
+                "since must be \"latest\" or a snapshot id you read from this window.".to_string(),
+            );
+        }
     }
     Ok(Checked {
         args: Value::Object(clean),
@@ -578,12 +655,22 @@ mod tests {
     }
 
     fn check_in(grants: &Grants, tool: &str, args: Value) -> Result<Checked, String> {
+        check_with(grants, &Snapshots::default(), tool, args)
+    }
+
+    fn check_with(
+        grants: &Grants,
+        snapshots: &Snapshots,
+        tool: &str,
+        args: Value,
+    ) -> Result<Checked, String> {
         check(
             tool,
             &args,
             &GateContext {
                 session: "s-1",
                 grants,
+                snapshots,
                 running: &running,
                 windows_of: &windows_of,
             },
@@ -735,9 +822,11 @@ mod tests {
                 tier: Tier::Full,
             }],
         );
+        let snapshots = Snapshots::default();
         let ctx = GateContext {
             session: "s-1",
             grants: &grants,
+            snapshots: &snapshots,
             running: &running,
             windows_of: &windows_of,
         };
@@ -746,6 +835,81 @@ mod tests {
             Err("Terminal is click-only in Zorvo.".to_string())
         );
         assert!(target_of(TERMINAL_PID, Action::Observe, &ctx).is_ok());
+    }
+
+    #[test]
+    fn a_diff_read_names_only_a_snapshot_this_session_read_from_this_window() {
+        let grants = grants_with_notes();
+        let snapshots = Snapshots::default();
+        let read = |since: &str| {
+            check_with(
+                &grants,
+                &snapshots,
+                "get_window_state",
+                json!({ "pid": NOTES_PID, "window_id": 7, "since": since }),
+            )
+        };
+        assert!(read("latest").is_ok());
+        assert!(read("s00000001").is_err());
+
+        snapshots.record(
+            "s-2",
+            "s00000001",
+            Snapshot {
+                process: process(NOTES_PID),
+                window_id: 7,
+                size: None,
+            },
+        );
+        assert!(read("s00000001").is_err(), "another session's snapshot");
+
+        snapshots.record(
+            "s-1",
+            "s00000002",
+            Snapshot {
+                process: process(NOTES_PID),
+                window_id: 8,
+                size: None,
+            },
+        );
+        assert!(read("s00000002").is_err(), "another window's snapshot");
+
+        snapshots.record(
+            "s-1",
+            "s00000003",
+            Snapshot {
+                process: process(NOTES_PID),
+                window_id: 7,
+                size: None,
+            },
+        );
+        assert!(read("s00000003").is_ok());
+    }
+
+    #[test]
+    fn a_condition_holds_only_the_documented_keys() {
+        let grants = grants_with_notes();
+        let verify = |expect: Value| {
+            check_in(
+                &grants,
+                "verify_state",
+                json!({ "pid": NOTES_PID, "window_id": 7, "expect": expect }),
+            )
+        };
+        assert!(verify(json!([
+            { "element": { "selector": { "role": "AXButton", "label_contains": "Save" }, "enabled": true } },
+            { "window": { "exists": true, "bounds": { "x": 0, "y": 0, "width": 10, "height": 10 } } }
+        ]))
+        .is_ok());
+        let refused = Err("expect is not valid for verify_state.".to_string());
+        assert_eq!(
+            verify(json!([{ "window": { "exists": true, "pid": 1 } }])),
+            refused
+        );
+        assert_eq!(verify(json!([{ "app": "Keychain Access" }])), refused);
+        assert_eq!(verify(json!([{ "element": { "exists": true } }])), refused);
+        assert_eq!(verify(json!([{}])), refused);
+        assert_eq!(verify(json!([])), refused);
     }
 
     #[test]

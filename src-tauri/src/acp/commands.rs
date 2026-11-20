@@ -109,7 +109,20 @@ fn without_images(update: &Value) -> Value {
     let mut stripped = update.clone();
     for key in ["content", "rawOutput"] {
         if let Some(part) = stripped.get_mut(key) {
-            if is_image_block(part) {
+            // Some agents send a tool's raw output as JSON inside a string.
+            let unpacked = part
+                .as_str()
+                .filter(|text| text.contains("\"image\""))
+                .and_then(|text| serde_json::from_str::<Value>(text).ok())
+                .filter(|parsed| parsed.is_object() || parsed.is_array());
+            if let Some(mut parsed) = unpacked {
+                if is_image_block(&parsed) {
+                    parsed = Value::Null;
+                } else {
+                    drop_images(&mut parsed);
+                }
+                *part = Value::String(parsed.to_string());
+            } else if is_image_block(part) {
                 *part = Value::Null;
             } else {
                 drop_images(part);

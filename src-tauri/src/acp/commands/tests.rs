@@ -795,6 +795,30 @@ fn a_tool_update_reaches_the_webview_without_its_images() {
 }
 
 #[test]
+fn a_raw_output_that_is_json_in_a_string_loses_its_images_too() {
+    let raw = json!({ "content": [
+        { "type": "text", "text": "AXButton" },
+        { "type": "image", "data": "AAAA", "mimeType": "image/jpeg" }
+    ] })
+    .to_string();
+    let payload = event_payload(&AcpEvent::Update {
+        session_id: "s-1".into(),
+        update: json!({ "sessionUpdate": "tool_call_update", "rawOutput": raw }),
+    });
+
+    let kept = payload["update"]["rawOutput"].as_str().unwrap();
+    assert!(kept.contains("AXButton"));
+    assert!(!kept.contains("AAAA"));
+
+    // Plain text that only mentions the word stays as it is.
+    let plain = event_payload(&AcpEvent::Update {
+        session_id: "s-1".into(),
+        update: json!({ "sessionUpdate": "tool_call_update", "rawOutput": "an \"image\" of it" }),
+    });
+    assert_eq!(plain["update"]["rawOutput"], "an \"image\" of it");
+}
+
+#[test]
 fn an_update_that_is_not_a_tools_keeps_its_images() {
     let update = json!({
         "sessionUpdate": "user_message_chunk",

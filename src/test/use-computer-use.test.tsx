@@ -137,6 +137,20 @@ describe("useComputerUse", () => {
     expect(invoke).toHaveBeenCalledWith("computer_use_revoke", { sessionId: "s-1" });
   });
 
+  it("asks again on a card the transcript settled while its call still waits", async () => {
+    const { hook, emit, cardOf, messages } = rig();
+    await ready();
+    emit("computer-use-request", REQUEST);
+    // What a reload leaves: the saved card, settled on load, and no open entry.
+    emit("computer-use-request-ended", { callId: "7" });
+    expect(cardOf("s-1")?.status).toBe("rejected");
+
+    emit("computer-use-request", REQUEST);
+    expect(messages["s-1"].filter((message) => message.actionCard)).toHaveLength(1);
+    expect(cardOf("s-1")?.status).toBe("pending");
+    expect(hook.result.current.isWaiting("s-1")).toBe(true);
+  });
+
   it("shows the cards that still wait after a reload", async () => {
     const { hook, cardOf } = rig({ grants: [], requests: [REQUEST] });
     await waitFor(() => expect(hook.result.current.isWaiting("s-1")).toBe(true));

@@ -50,6 +50,7 @@ function AppRow({
   onToggle: () => void;
 }) {
   const warningId = useId();
+  const labelId = useId();
   const tickable = canTick(app);
   return (
     <li className="flex flex-col gap-1.5 border-t border-border py-2.5 first:border-t-0 first:pt-0 last:pb-0">
@@ -57,22 +58,28 @@ function AppRow({
         <AppIcon app={app} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex min-w-0 items-baseline gap-2">
-            <span className={`shrink-0 text-ui font-medium text-fg ${app.installed ? "" : "font-mono"}`}>{app.name}</span>
-            {app.signer && <span className="truncate text-ui-sm text-fg-muted">{app.signer}</span>}
+            <span className={`min-w-0 truncate text-ui font-medium text-fg ${app.installed ? "" : "font-mono"}`}>
+              {app.name}
+            </span>
+            {app.signer && <span className="min-w-0 shrink-[2] truncate text-ui-sm text-fg-muted">{app.signer}</span>}
           </span>
           {app.path && <PathText path={app.path} className="text-caption text-fg-subtle" />}
         </span>
-        <span className={`shrink-0 text-ui-sm ${tickable ? "text-fg-secondary" : "text-fg-muted"}`}>{app.label}</span>
+        <span id={labelId} className={`shrink-0 text-ui-sm ${tickable ? "text-fg-secondary" : "text-fg-muted"}`}>
+          {app.label}
+        </span>
         {isOpen && (
           <button
             type="button"
             role="checkbox"
             aria-checked={isTicked}
             aria-label={app.name}
-            aria-describedby={app.warning ? warningId : undefined}
+            // What the agent may do there, and why the row cannot be ticked when it cannot.
+            aria-describedby={app.warning ? `${labelId} ${warningId}` : labelId}
             disabled={disabled || !tickable}
             onClick={onToggle}
-            className={`focus-ring flex size-4 shrink-0 items-center justify-center rounded-sm border disabled:cursor-not-allowed disabled:opacity-50 ${
+            // The box is 16px; the area that takes a click or a tap reaches 8px past it.
+            className={`focus-ring relative flex size-4 shrink-0 items-center justify-center rounded-sm border after:absolute after:-inset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
               isTicked ? "border-primary bg-primary text-on-primary" : "border-border-strong hover:border-fg-muted"
             }`}
           >
@@ -81,7 +88,7 @@ function AppRow({
         )}
       </div>
       {app.warning && (
-        <p id={warningId} className="ml-11 flex items-center gap-1.5 text-ui-sm text-fg-secondary">
+        <p id={warningId} className="ml-11 flex items-start gap-1.5 break-words text-ui-sm text-fg-secondary">
           <AlertTriangle className="size-3 shrink-0 text-status-attention" aria-hidden="true" />
           {app.warning}
         </p>

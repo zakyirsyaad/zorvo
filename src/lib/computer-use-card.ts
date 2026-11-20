@@ -14,6 +14,8 @@ const CARD_PREFIX = 'computer-use-';
 const TIERS: readonly ComputerUseTier[] = ['full', 'click', 'view', 'never'];
 const MAX_APPS = 10;
 const MAX_ICON_CHARS = 200_000;
+/** The longest of each string kept from an event; the backend sends far less. */
+const MAX = { name: 80, signer: 120, path: 1024, label: 40, warning: 200, reason: 600 } as const;
 
 export const COMPUTER_USE_CARD_COPY = {
   title: (agentName: string) => `${agentName} wants to use apps on your Mac`,
@@ -33,26 +35,31 @@ export interface ComputerUseRequestEvent {
   request: ComputerUseRequest;
 }
 
-const text = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
+const text = (value: unknown, max = 256): string | undefined =>
+  typeof value === 'string' && value !== '' ? value.slice(0, max) : undefined;
+/** Text from a file on this Mac that an agent may have written: cut, then made safe to show. */
+const shown = (value: unknown, max: number): string | undefined => {
+  const kept = text(value, max);
+  return kept === undefined ? undefined : escapeVisible(kept);
+};
 
 function parseApp(value: unknown): ComputerUseApp | null {
   if (typeof value !== 'object' || value === null) return null;
   const raw = value as Record<string, unknown>;
   const tier = TIERS.find((known) => known === raw.tier);
-  const key = text(raw.key);
-  const name = text(raw.name);
-  const label = text(raw.label);
+  const key = text(raw.key, 32);
+  const name = shown(raw.name, MAX.name);
+  const label = text(raw.label, MAX.label);
   if (!tier || !key || !name || !label) return null;
-  const icon = text(raw.icon);
+  const icon = text(raw.icon, MAX_ICON_CHARS + 1);
   return {
     key,
-    // Names, paths and signers come from files on this Mac that an agent may have written.
-    name: escapeVisible(name),
-    path: text(raw.path) && escapeVisible(text(raw.path) as string),
-    signer: text(raw.signer) && escapeVisible(text(raw.signer) as string),
+    name,
+    path: shown(raw.path, MAX.path),
+    signer: shown(raw.signer, MAX.signer),
     tier,
     label,
-    warning: text(raw.warning),
+    warning: text(raw.warning, MAX.warning),
     installed: raw.installed === true,
     icon: icon?.startsWith('data:image/png;base64,') && icon.length <= MAX_ICON_CHARS ? icon : undefined,
   };
@@ -72,13 +79,16 @@ export function parseComputerUseRequest(payload: unknown): ComputerUseRequestEve
     sessionId,
     request: {
       kind: 'apps',
-      reason: escapeVisible(text(raw.reason) ?? ''),
+      reason: shown(raw.reason, MAX.reason) ?? '',
       apps: apps as ComputerUseApp[],
     },
   };
 }
 
 export const computerUseCardId = (callId: string): string => `${CARD_PREFIX}${callId}`;
+
+/** A computer-use card's id: its answer is never the agent's to take. */
+export const isComputerUseCardId = (cardId: string): boolean => cardId.startsWith(CARD_PREFIX);
 
 export function computerUseCard(event: ComputerUseRequestEvent, agentName: string, now: number): ActionCard {
   return {
@@ -176,9 +186,9 @@ export function parseComputerUseState(value: unknown): ComputerUseState {
     if (!grant || !sessionId || !Array.isArray(grant.apps)) return [];
     const apps = grant.apps.flatMap((app: unknown) => {
       const row = app as Record<string, unknown> | null;
-      const name = text(row?.name);
+      const name = shown(row?.name, MAX.name);
       const tier = TIERS.find((known) => known === row?.tier);
-      return name && tier ? [{ name: escapeVisible(name), tier }] : [];
+      return name && tier ? [{ name, tier }] : [];
     });
     return [{ sessionId, apps, fullScreen: grant.fullScreen === true }];
   });

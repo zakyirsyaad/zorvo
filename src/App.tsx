@@ -118,6 +118,7 @@ import { restartWarning } from "./lib/app-update";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { useAgentTools } from "./hooks/useAgentTools";
 import { useComputerUse } from "./hooks/useComputerUse";
+import { isComputerUseCardId } from "./lib/computer-use-card";
 import { ComputerUseStatusLine } from "./components/chat/ComputerUseStatusLine";
 import { useOpenedSessions } from "./hooks/useOpenedSessions";
 import { ProfileFooter } from "./components/ProfileFooter";
@@ -1192,8 +1193,6 @@ export default function App() {
   const handleArchiveSession = async (sessionId: string, isArchived: boolean) => {
     await sessionActions.archiveSession(sessionId, isArchived);
     if (!isArchived) return;
-    // An archived session's agent keeps no leave to use apps on this Mac.
-    if (computerUse.grantOf(sessionId)) computerUse.stop(sessionId);
     const latestSessions = getState().sessions;
     const isArchivedNow = latestSessions.find((session) => session.id === sessionId)?.archivedAt != null;
     if (!isArchivedNow) return;
@@ -1609,6 +1608,8 @@ export default function App() {
     if (agentTools.chooseCard(sessionId, cardId, optionId)) return;
     // So is an agent's request to use apps: the ticks go to Zorvo's backend as row keys.
     if (computerUse.chooseCard(sessionId, cardId, optionId, answers)) return;
+    // One that is no longer open (its call ended) has no answer to give, least of all to the agent.
+    if (isComputerUseCardId(cardId)) return;
     acp.chooseOption(sessionId, transcripts[sessionId], cardId, optionId, answers);
   };
 

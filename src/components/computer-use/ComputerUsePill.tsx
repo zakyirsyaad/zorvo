@@ -65,8 +65,11 @@ export function ComputerUsePill() {
 
   const stopComputerUse = () => {
     if (!activity) return;
-    void invoke("computer_use_revoke", { sessionId: activity.sessionId }).catch(() => undefined);
-    setActivity(null);
+    const stopped = activity;
+    // Cleared once the backend stopped it: a Stop that failed must not read as done.
+    void invoke("computer_use_revoke", { sessionId: stopped.sessionId })
+      .then(() => setActivity((current) => (current === stopped ? null : current)))
+      .catch(() => undefined);
   };
 
   return (

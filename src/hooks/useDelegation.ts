@@ -221,7 +221,10 @@ export function useDelegation(deps: DelegationDeps): {
         const sourceName = agentNameOf(source.profileId);
         // Its last answer is on its way to A: B must not send over it.
         if (reports.isDelivering(session.id)) return `${sourceName} is working on ${delegateName}'s report.`;
-        if (isOwed(session.id)) return `${delegateName}'s report waits for ${sourceName} to finish.`;
+        // A coordinator that is not running does nothing: waiting on it would block until it is resumed.
+        if (isOwed(session.id) && source.status === 'running') {
+          return `${delegateName}'s report waits for ${sourceName} to finish.`;
+        }
       }
     }
     return pairSendBlockedReason({
@@ -346,6 +349,8 @@ export function useDelegation(deps: DelegationDeps): {
   };
 
   const onTurnSettled = (sessionId: string, end: { how: WorkerTurnEnd; reason?: string }): void => {
+    // Any route a turn settles by (a stop and a sign-in refusal send no attention) frees what a failed send held.
+    reports.recheck(sessionId);
     const current = latest.current;
     const session = current.sessions.find((candidate) => candidate.id === sessionId);
     if (session === undefined || isArchived(session) || !isOpenLink(session.delegatedFrom)) return;

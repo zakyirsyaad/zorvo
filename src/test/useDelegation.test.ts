@@ -36,7 +36,7 @@ function sourceSession(overrides: Partial<Session> = {}): Session {
     name: "Parser work",
     profileId: "claude-acp",
     cwd: "/Users/test/developer/zorvo",
-    status: "idle",
+    status: "running",
     createdAt: 1,
     transport: "acp",
     worktree: null,
@@ -106,6 +106,7 @@ interface HarnessInput {
   strict?: boolean;
   messagesOf?: (sessionId: string) => Promise<ChatMessage[] | null>;
   giveBackThrows?: boolean;
+  updateLinkThrows?: boolean;
 }
 
 function setup(input: HarnessInput) {
@@ -121,6 +122,7 @@ function setup(input: HarnessInput) {
   const sendResult = input.sendResult ?? true;
   const places = createStartPlaces();
   const giveBackAttempts = { count: 0 };
+  const flags = { giveBackThrows: input.giveBackThrows === true, updateLinkThrows: input.updateLinkThrows === true };
   // What the state holds now: changes made in one tick compose, as the app's functional updater does.
   const owned: { current: readonly Session[] } = { current: input.sessions };
 
@@ -151,6 +153,7 @@ function setup(input: HarnessInput) {
         },
         messagesOf: input.messagesOf ?? (async () => null),
         updateLink: (sessionId, change) => {
+          if (flags.updateLinkThrows) throw new Error("/secret/mark");
           const next = withLinkChange({ sessions: owned.current } as unknown as PersistedState, sessionId, change)
             .sessions as readonly Session[];
           if (next === owned.current) return;
@@ -160,7 +163,7 @@ function setup(input: HarnessInput) {
           setSessions(next);
         },
         giveBack: (sessionId, text) => {
-          if (input.giveBackThrows) {
+          if (flags.giveBackThrows) {
             giveBackAttempts.count += 1;
             throw new Error("/secret/path");
           }
@@ -188,6 +191,7 @@ function setup(input: HarnessInput) {
     cannotPrompt,
     places,
     giveBackAttempts,
+    flags,
   };
 }
 
@@ -2205,7 +2209,7 @@ describe("useDelegation owed reports", () => {
     await bump(env);
     expect(env.giveBackAttempts.count).toBe(1);
     expect(env.notices).toEqual([
-      "A worker's report could not be sent. Zorvo will try again when Parser work's next turn ends.",
+      "A worker's report could not be sent. Zorvo will try again after Parser work's next turn.",
     ]);
     expect(env.notices[0]).not.toContain("secret");
     // The coordinator's next turn end tries again.
@@ -2213,5 +2217,81 @@ describe("useDelegation owed reports", () => {
       env.result.current.delegation.onTurnEnded("s-a", "finished");
     });
     await waitFor(() => expect(env.giveBackAttempts.count).toBe(2));
+  });
+
+  it("does not block a worker's Send for an owed report while its coordinator is not running", async () => {
+    const env = setup({
+      sessions: [sourceSession({ status: "terminated" }), owedWorker("w1", 1)],
+      transcripts: { "s-a": A_MESSAGES },
+      cannotPrompt: ["s-a"],
+    });
+    await act(async () => {});
+    expect(env.result.current.delegation.sendBlockedReason("w1")).toBeNull();
+    // The agent paths still refuse it.
+    let result: unknown;
+    await act(async () => {
+      result = await env.result.current.delegation.sendToWorker("s-a", "w1", "More");
+    });
+    expect(result).toMatchObject({ ok: false });
+  });
+
+  it("sends a held report after a cancelled turn settles in the coordinator", async () => {
+    const env = setup({
+      sessions: [sourceSession(), owedWorker("w1", 1)],
+      transcripts: { "s-a": A_MESSAGES },
+      cannotPrompt: ["s-a"],
+      giveBackThrows: true,
+    });
+    await waitFor(() => expect(env.notices).toHaveLength(1));
+    env.flags.giveBackThrows = false;
+    await act(async () => {
+      env.result.current.delegation.onTurnSettled("s-a", { how: "cancelled" });
+    });
+    await waitFor(() => expect(env.givesBack).toHaveLength(1));
+  });
+
+  it("clears the failure hold when the coordinator's status changes", async () => {
+    const env = setup({
+      sessions: [sourceSession(), owedWorker("w1", 1)],
+      transcripts: { "s-a": A_MESSAGES },
+      cannotPrompt: ["s-a"],
+      giveBackThrows: true,
+    });
+    await waitFor(() => expect(env.notices).toHaveLength(1));
+    env.flags.giveBackThrows = false;
+    const setStatus = (status: Session["status"]) =>
+      act(async () => {
+        env.result.current.setSessions((prev) => prev.map((session) => (session.id === "s-a" ? { ...session, status } : session)));
+      });
+    await setStatus("terminated");
+    await setStatus("running");
+    await waitFor(() => expect(env.givesBack).toHaveLength(1));
+  });
+
+  it("clears the failure hold when the coordinator goes away", async () => {
+    const env = setup({
+      sessions: [sourceSession(), owedWorker("w1", 1)],
+      transcripts: { "s-a": A_MESSAGES },
+      cannotPrompt: ["s-a"],
+      giveBackThrows: true,
+    });
+    await waitFor(() => expect(env.notices).toHaveLength(1));
+    await act(async () => {
+      env.result.current.setSessions((prev) => prev.filter((session) => session.id !== "s-a"));
+    });
+    await waitFor(() => expect(linkOf(env, "w1")?.endedAt).toEqual(expect.any(Number)));
+  });
+
+  it("does not report a send as failed, or send it again, when marking it reported throws", async () => {
+    const env = setup({
+      sessions: [sourceSession(), owedWorker("w1", 1)],
+      transcripts: { "s-a": A_MESSAGES },
+      updateLinkThrows: true,
+    });
+    await waitFor(() => expect(env.sends).toHaveLength(1));
+    await bump(env);
+    await bump(env);
+    expect(env.sends).toHaveLength(1);
+    expect(env.notices).toHaveLength(0);
   });
 });

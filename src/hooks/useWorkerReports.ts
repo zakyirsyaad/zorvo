@@ -61,8 +61,11 @@ export function useWorkerReports(deps: ReportDeps): {
   const latest = useLatest(deps);
   // The workers whose report is being sent right now.
   const delivering = useRef(new Set<string>());
-  // Coordinators whose last send threw: not retried on every render, only when their next turn ends.
-  const failed = useRef(new Set<string>());
+  // Coordinators whose last send threw, with their status then: not retried on every render, only
+  // after their next turn settles, their status changes (a resume) or they go away.
+  const failed = useRef(new Map<string, Session['status']>());
+  // Workers whose report went out but could not be marked, with that turn's time: never sent again for it.
+  const unmarked = useRef(new Map<string, number | undefined>());
   // Bumped when a coordinator's turn ends or a hand-over settles, so the drain runs and the lines read again.
   const [revision, setRevision] = useState(0);
   const bump = () => setRevision((current) => current + 1);
@@ -131,10 +134,22 @@ export function useWorkerReports(deps: ReportDeps): {
       return (
         coordinator !== undefined &&
         !isArchived(coordinator) &&
-        coordinator.status !== 'terminated' &&
+        coordinator.status === 'running' &&
         !current.isBusy(coordinatorId) &&
         !current.isWaiting(coordinatorId)
       );
+    };
+
+    /** Marks reported; a throw here must not read as a failed send, nor send it again. */
+    const mark = (items: readonly { id: string; endedAt: number | undefined }[], at: number): void => {
+      for (const item of items) {
+        try {
+          latest.current.updateLink(item.id, (link) => reportedLink(link, at, item.endedAt));
+        } catch {
+          // The report went out: remember it so no pass sends it again; a newer turn end is judged afresh.
+          unmarked.current.set(item.id, item.endedAt);
+        }
+      }
     };
 
     const deliver = async (coordinator: Session, workers: readonly Session[]): Promise<void> => {
@@ -159,11 +174,6 @@ export function useWorkerReports(deps: ReportDeps): {
         });
         if (fresh.length === 0) return;
         const entries = fresh.map((item) => item.entry);
-        const markReported = (): void => {
-          for (const item of fresh) {
-            latest.current.updateLink(item.id, (link) => reportedLink(link, at, item.endedAt));
-          }
-        };
         const text = workersReportMessage(entries);
         const workerReport = {
           workers: entries.map(({ agentName, agentId, handle, state }) => ({ agentName, agentId, handle, state })),
@@ -179,7 +189,7 @@ export function useWorkerReports(deps: ReportDeps): {
         if (!latest.current.canPrompt(coordinator.id)) {
           // A live coordinator that cannot be prompted (sign-in, agent removed): waiting in its composer is delivery.
           toComposer();
-          markReported();
+          mark(fresh, at);
           return;
         }
         let isSent: boolean;
@@ -190,13 +200,13 @@ export function useWorkerReports(deps: ReportDeps): {
         }
         // The agent refused the prompt: the report waits in the composer, which counts as reported.
         if (!isSent) toComposer();
-        markReported();
+        mark(fresh, at);
       } catch {
         isFailed = true;
-        failed.current.add(coordinator.id);
+        failed.current.set(coordinator.id, latest.current.sessions.find((session) => session.id === coordinator.id)?.status ?? coordinator.status);
         // Never the error's text: it may hold a path.
         latest.current.onNotice(
-          `A worker's report could not be sent. Zorvo will try again when ${coordinator.name}'s next turn ends.`,
+          `A worker's report could not be sent. Zorvo will try again after ${coordinator.name}'s next turn.`,
         );
       } finally {
         for (const worker of workers) delivering.current.delete(worker.id);
@@ -216,7 +226,15 @@ export function useWorkerReports(deps: ReportDeps): {
       );
       for (const coordinatorId of coordinatorIds) {
         const coordinator = current.sessions.find((session) => session.id === coordinatorId);
-        const owed = owedWorkersOf(coordinatorId, current.sessions).filter((worker) => !delivering.current.has(worker.id));
+        // A resume (a status change) or a coordinator that is gone ends the failure hold.
+        if (failed.current.has(coordinatorId) && failed.current.get(coordinatorId) !== coordinator?.status) {
+          failed.current.delete(coordinatorId);
+        }
+        const owed = owedWorkersOf(coordinatorId, current.sessions).filter(
+          (worker) =>
+            !delivering.current.has(worker.id) &&
+            !(unmarked.current.has(worker.id) && unmarked.current.get(worker.id) === worker.delegatedFrom?.lastTurn?.endedAt),
+        );
         if (owed.length === 0) continue;
         // Nobody to tell: the workers' links end, and no notice, since nothing was lost the user can act on.
         if (coordinator === undefined || isArchived(coordinator)) {

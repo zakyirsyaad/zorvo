@@ -23,9 +23,14 @@
   var outline = null;
   var shownMarks = [];
 
+  // wry defines `window.ipc` in the main frame only; in a canvas artboard's frame the handler is
+  // reached through WebKit's own name for it, which every frame has.
   function post(message) {
+    var body = JSON.stringify(message);
     var ipc = window.ipc;
-    if (ipc && typeof ipc.postMessage === "function") ipc.postMessage(JSON.stringify(message));
+    if (ipc && typeof ipc.postMessage === "function") { ipc.postMessage(body); return; }
+    var handlers = window.webkit && window.webkit.messageHandlers;
+    if (handlers && handlers.ipc) handlers.ipc.postMessage(body);
   }
 
   // Limits count code points, as Rust counts characters.

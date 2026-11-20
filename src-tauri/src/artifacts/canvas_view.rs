@@ -183,6 +183,12 @@ pub fn command_script(name: &str) -> Option<String> {
     })
 }
 
+/// The script that turns the wrapper's comment mode on or off; the wrapper posts it to every
+/// live artboard.
+pub fn canvas_mode_script(on: bool) -> String {
+    format!("window.__zorvoCanvas.mode({on});")
+}
+
 /// The script that hands the wrapper a state, or `None` when it is not one JSON object of at
 /// most `MAX_STATE_BYTES`. The text run is the object written out again, never what was sent.
 pub fn apply_script(state_json: &str) -> Option<String> {

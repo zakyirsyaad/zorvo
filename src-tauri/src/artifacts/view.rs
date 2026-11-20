@@ -24,8 +24,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use super::canvas::Canvas;
 pub use super::canvas_view::ShownCanvas;
 use super::canvas_view::{
-    apply_script, canvas_intake, command_script, pick_event, view_event, CanvasIntake,
-    CanvasNavigation, CANVAS_PICK, CANVAS_VIEW,
+    apply_script, canvas_intake, canvas_mode_script, command_script, pick_event, view_event,
+    CanvasIntake, CanvasNavigation, CANVAS_PICK, CANVAS_VIEW,
 };
 use super::page_script::{marks_script, mode_script, PAGE_SCRIPT};
 use super::picks::{
@@ -602,6 +602,20 @@ pub fn set_comment_mode(app: &AppHandle, page: ShownPage, on: bool) {
         COMMENTING.set(on);
         if DISPLAY.get().is_loaded {
             evaluate(&mode_script(on));
+        }
+    });
+}
+
+/// Turns comment mode on or off for the canvas view, only when it shows `canvas`: the intake
+/// reads it, and the wrapper passes it on to each live artboard's frame.
+pub fn set_canvas_comment_mode(app: &AppHandle, canvas: ShownCanvas, on: bool) {
+    let _ = app.run_on_main_thread(move || {
+        if shown_canvas().as_ref() != Some(&canvas) {
+            return;
+        }
+        COMMENTING.set(on);
+        if DISPLAY.get().is_loaded {
+            evaluate(&canvas_mode_script(on));
         }
     });
 }

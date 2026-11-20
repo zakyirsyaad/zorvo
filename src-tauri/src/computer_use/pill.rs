@@ -54,11 +54,19 @@ impl Pill {
 
     /// A read ended. Counts down, never below nothing.
     fn finish_one(&self) {
-        let _ = self
-            .active
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
-                active.checked_sub(1)
-            });
+        let mut active = self.active.load(Ordering::Acquire);
+        while active > 0 {
+            let counted = self.active.compare_exchange_weak(
+                active,
+                active - 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            );
+            match counted {
+                Ok(_) => break,
+                Err(now) => active = now,
+            }
+        }
         // The wait to hide starts again from here.
         self.turn.fetch_add(1, Ordering::AcqRel);
     }

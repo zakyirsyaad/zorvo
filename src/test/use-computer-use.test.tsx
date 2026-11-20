@@ -187,6 +187,23 @@ describe("useComputerUse", () => {
     expect(cardOf("s-1")?.id).toBe(CARD_ID);
   });
 
+  it("shows no card for a request that ended while the state at start was read", async () => {
+    const { hook, emit, cardOf, onAttention } = rig();
+    let answerState: (state: unknown) => void = () => undefined;
+    invoke.mockImplementation((command: string) =>
+      command === "computer_use_state" ? new Promise((resolve) => (answerState = resolve)) : Promise.resolve(undefined),
+    );
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("computer_use_state"));
+
+    // The backend listed the request, then its call ended before the answer was read.
+    emit("computer-use-request-ended", { callId: "7" });
+    await act(async () => answerState({ grants: [], requests: [REQUEST] }));
+
+    expect(cardOf("s-1")).toBeUndefined();
+    expect(hook.result.current.isWaiting("s-1")).toBe(false);
+    expect(onAttention).not.toHaveBeenCalled();
+  });
+
   it("tells the user when computer use is not set up", async () => {
     const { emit, onNotice } = rig();
     await ready();

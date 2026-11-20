@@ -51,6 +51,8 @@ export function useComputerUse(deps: ComputerUseDeps): {
 } {
   const latest = useLatest(deps);
   const open = useRef(new Map<string, OpenCard>());
+  // The calls that ended while the state read at start was under way: its answer may still list them.
+  const endedDuringRead = useRef<Set<string> | null>(new Set());
   const [grants, setGrants] = useState<readonly ComputerUseGrant[]>([]);
   const [, setRevision] = useState(0);
   const bump = useCallback(() => setRevision((current) => current + 1), []);
@@ -78,8 +80,11 @@ export function useComputerUse(deps: ComputerUseDeps): {
     async (withRequests: boolean) => {
       const state = parseComputerUseState(await invoke('computer_use_state').catch(() => null));
       setGrants(state.grants);
+      if (!withRequests) return;
+      const ended = endedDuringRead.current;
+      endedDuringRead.current = null;
       // A reload loses the cards on screen while their calls still wait.
-      if (withRequests) state.requests.forEach(show);
+      state.requests.filter((request) => !ended?.has(request.callId)).forEach(show);
     },
     [show],
   );
@@ -105,6 +110,7 @@ export function useComputerUse(deps: ComputerUseDeps): {
     const onEnded = (payload: unknown) => {
       const callId = (payload as { callId?: unknown } | null)?.callId;
       if (typeof callId !== 'string') return;
+      endedDuringRead.current?.add(callId);
       const cardId = computerUseCardId(callId);
       const entry = open.current.get(cardId);
       if (!entry) return;

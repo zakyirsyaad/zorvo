@@ -600,3 +600,54 @@ fn a_command_path_agent_gets_the_image_as_a_file_only_it_can_read() {
     rig.tools.forget("s-1");
     assert!(!path.exists());
 }
+
+#[test]
+fn two_sessions_of_one_agent_calling_at_once_get_their_own_driver_sessions() {
+    let rig = rig_with(
+        "labels",
+        AgentTools::CALL_TIMEOUT,
+        &[("FAKE_CUA_SLOW_MS", "50")],
+    );
+    let mut first = Client::connect(&rig, "s-1");
+    let mut second = Client::connect(&rig, "s-2");
+
+    // Both first calls bind: neither may take the label the other is binding.
+    let a = first.start_call("list_apps", json!({}));
+    let b = second.start_call("list_apps", json!({}));
+    let (one, two) = (first.read(), second.read());
+    assert_eq!(one["id"], json!(a));
+    assert_eq!(two["id"], json!(b));
+    assert_eq!(one["result"]["isError"], json!(false), "{one}");
+    assert_eq!(two["result"]["isError"], json!(false), "{two}");
+
+    let mut labels: Vec<String> = rig
+        .driver_requests()
+        .iter()
+        .filter(|request| request["operation"] == "bind_session")
+        .map(|request| {
+            request["arguments"]["public_session"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        })
+        .collect();
+    labels.sort();
+    assert_eq!(labels, ["Qwen Code", "Qwen Code 2"]);
+}
+
+#[test]
+fn an_answer_for_a_session_that_stopped_grants_nothing() {
+    let rig = rig("stopped");
+    let mut client = Client::connect(&rig, "s-1");
+    client.start_call(
+        "request_access",
+        json!({ "apps": ["com.apple.Notes"], "reason": "Read your notes." }),
+    );
+    let request = rig.wait_for_event("computer-use-request");
+
+    rig.tools.forget("s-1");
+    rig.server
+        .answer(request["callId"].as_str().unwrap(), &["app-1".to_string()]);
+
+    assert!(rig.server.views().is_empty());
+}

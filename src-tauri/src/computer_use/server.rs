@@ -107,6 +107,13 @@ pub struct ScreenServer {
     requests: Requests,
     snapshots: Snapshots,
     bound: Mutex<HashMap<String, Bound>>,
+    /// Held for one bind at a time, so two first calls never pick one label
+    /// or bind one session twice. Apart from `bound`, which a stopping
+    /// session must reach without waiting for the driver.
+    binding: Mutex<()>,
+    /// Held while an answer is checked and granted, and while a session's
+    /// grants are taken away: a grant never lands after its session ended.
+    granting: Mutex<()>,
     in_flight: Mutex<HashMap<String, InFlight>>,
 }
 
@@ -129,6 +136,8 @@ impl ScreenServer {
             requests: Requests::default(),
             snapshots: Snapshots::default(),
             bound: Mutex::new(HashMap::new()),
+            binding: Mutex::new(()),
+            granting: Mutex::new(()),
             in_flight: Mutex::new(HashMap::new()),
         })
     }
@@ -180,9 +189,13 @@ impl ScreenServer {
 
     /// The user answered a card: `allowed` holds the keys of the ticked rows.
     pub fn answer(&self, call_id: &str, allowed: &[String]) {
-        // A call that already ended (its time ran out a moment ago) told the
-        // agent so: an answer that comes after must grant nothing.
+        // A call that already ended (its time ran out, or its session
+        // stopped) told the agent so: an answer that comes after must grant
+        // nothing. `forget` ends a session's calls before it takes this lock
+        // to revoke, so a grant made here is either refused or revoked.
+        let granting = lock(&self.granting);
         if self.tools().is_some_and(|tools| !tools.is_waiting(call_id)) {
+            drop(granting);
             return self.end_request(call_id);
         }
         let Some(answered) = self.requests.answer(call_id, allowed) else {
@@ -190,6 +203,7 @@ impl ScreenServer {
         };
         let granted = !answered.grants.is_empty();
         self.grants.grant(&answered.session, answered.grants);
+        drop(granting);
         if let Some(tools) = self.tools() {
             tools.respond(call_id, true, &answered.text);
         }
@@ -210,7 +224,10 @@ impl ScreenServer {
                 flight.ended_as = Some(STOPPED_TEXT);
             }
         }
-        let held = self.grants.revoke(session);
+        let held = {
+            let _granting = lock(&self.granting);
+            self.grants.revoke(session)
+        };
         self.state.stop_driver();
         self.forget_driver_sessions();
         if held {
@@ -289,27 +306,29 @@ impl ScreenServer {
         agent_name: &str,
         driver: &DriverClient,
     ) -> Result<SessionHandle, DriverError> {
-        let label = {
-            let mut bound = lock(&self.bound);
+        let known = |bound: &mut HashMap<String, Bound>| {
             // A handle of a worker that ended means nothing to this one.
             bound.retain(|_, entry| entry.worker_pid == driver.pid());
-            if let Some(entry) = bound.get(session) {
-                return Ok(entry.handle.clone());
+            bound.get(session).map(|entry| entry.handle.clone())
+        };
+        if let Some(handle) = known(&mut lock(&self.bound)) {
+            return Ok(handle);
+        }
+        // One bind at a time: the label is chosen from the sessions bound so
+        // far, and a second first call of this session finds the first one's.
+        let _binding = lock(&self.binding);
+        let label = {
+            let mut bound = lock(&self.bound);
+            if let Some(handle) = known(&mut bound) {
+                return Ok(handle);
             }
             let taken: Vec<String> = bound.values().map(|entry| entry.label.clone()).collect();
             driver::session_label(agent_name, &taken)
         };
-        // Not under the lock: the bind waits behind whatever the driver is
-        // doing, and a session that stops meanwhile must not wait for it.
+        // `bound` is free meanwhile: the bind waits behind whatever the
+        // driver is doing, and a session that stops must not wait for it.
         let handle = driver.bind_session(&label)?;
         let mut bound = lock(&self.bound);
-        if let Some(entry) = bound.get(session) {
-            if entry.worker_pid == driver.pid() {
-                // Another call of this session bound it first.
-                driver.close_session(&handle);
-                return Ok(entry.handle.clone());
-            }
-        }
         bound.insert(
             session.to_string(),
             Bound {
@@ -611,7 +630,10 @@ impl ScreenTools for ScreenServer {
     }
 
     fn forget(&self, session: &str) {
-        let held = self.grants.revoke(session);
+        let held = {
+            let _granting = lock(&self.granting);
+            self.grants.revoke(session)
+        };
         self.snapshots.forget(session);
         if let Some(entry) = lock(&self.bound).remove(session) {
             if let Ok(driver) = self.state.driver() {

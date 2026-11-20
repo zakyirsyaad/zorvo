@@ -175,6 +175,65 @@ fn worker_token(rig: &Rig, session: &str) -> String {
         .1
 }
 
+const COORDINATOR_TOOLS: [&str; 8] = [
+    "list_agents",
+    "start_worker",
+    "send",
+    "start_session",
+    "read_session",
+    "stop_session",
+    "show_artifact",
+    "artifact_guide",
+];
+
+fn listing(rig: &Rig, token: &str, args: &[&str]) -> String {
+    let output = command(args)
+        .env("ZORVO_MCP_SOCKET", &rig.socket)
+        .env("ZORVO_MCP_TOKEN", token)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let listed = text(&output.stdout);
+    assert!(!listed.contains(token), "the token is never printed");
+    listed
+}
+
+#[test]
+fn a_workers_listing_shows_done_alone() {
+    let rig = rig("worker-list");
+    let token = worker_token(&rig, "w1");
+    for args in [&[][..], &["--help"][..]] {
+        let listed = listing(&rig, &token, args);
+        assert!(
+            listed.contains("\"$ZORVO_TOOLS\" tools done '{\"outcome\""),
+            "{listed}"
+        );
+        for tool in COORDINATOR_TOOLS {
+            assert!(!listed.contains(tool), "{tool} listed: {listed}");
+        }
+    }
+}
+
+#[test]
+fn a_coordinators_listing_shows_the_eight_and_not_done() {
+    let rig = rig("coord-list");
+    let token = rig.token("s1");
+    let _ = bound(&rig.tools, "s1");
+    let listed = listing(&rig, &token, &[]);
+    for tool in COORDINATOR_TOOLS {
+        assert!(listed.contains(tool), "{tool} missing: {listed}");
+    }
+    assert!(!listed.contains("tools done"), "{listed}");
+}
+
+#[test]
+fn a_listing_with_an_unknown_token_falls_back_to_the_fixed_table() {
+    let rig = rig("stale-list");
+    let listed = listing(&rig, "0000", &[]);
+    assert!(listed.contains("start_worker"));
+    assert!(!listed.contains("tools done"));
+}
+
 #[test]
 fn a_worker_runs_done_and_nothing_else_from_its_shell() {
     let rig = rig("worker");

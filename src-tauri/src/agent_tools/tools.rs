@@ -304,9 +304,8 @@ fn put_outcome(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Res
 }
 
 fn put_summary(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result<(), String> {
-    let text = string_of(object, "summary", true)?
-        .unwrap_or_default()
-        .trim();
+    // `required` makes `string_of` fail on a missing value, so it is always `Some` here.
+    let text = string_of(object, "summary", true)?.map_or("", str::trim);
     if text.is_empty() {
         return Err("summary must not be empty.".to_string());
     }
@@ -336,6 +335,10 @@ fn put_files(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Resul
         }
         if text.chars().count() > MAX_PATH_CHARS {
             return Err("a file path is too long.".to_string());
+        }
+        // These paths are quoted in a report another agent reads: a line break could fake a line.
+        if text.chars().any(char::is_control) {
+            return Err("a file path must not contain control characters.".to_string());
         }
         files.push(json!(text));
     }
@@ -749,6 +752,13 @@ mod tests {
             &json!({"outcome": "failed", "summary": "x", "extra": 1})
         )
         .is_err());
+    }
+
+    #[test]
+    fn a_done_file_path_with_a_control_character_is_refused() {
+        let args = json!({"outcome": "failed", "summary": "x", "files": ["SECRET\nfake line"]});
+        let error = validate("done", &args).unwrap_err();
+        assert!(!error.contains("SECRET"));
     }
 
     #[test]

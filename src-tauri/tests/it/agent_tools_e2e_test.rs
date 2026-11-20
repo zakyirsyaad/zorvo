@@ -192,7 +192,8 @@ fn a_worker_gets_no_tools_when_the_setting_is_off_or_it_was_not_asked_for() {
     let none = tools_for_session(&rig.tools, &on, "w", "qwen-code", false, true).unwrap();
     assert_eq!(none.servers, json!([]));
     assert_eq!(none.path, None);
-    // A worker does not carry computer use even when the setting gives it.
+    // A worker has the agent tools but, even with the setting on, no computer use (its
+    // capabilities are asserted in the unit tests of agent_tools::commands).
     let both = store_with(&rig.dir.join("both"), true, true);
     let worker = tools_for_session(&rig.tools, &both, "w2", "qwen-code", true, true).unwrap();
     assert_eq!(worker.path, Some(ToolsPath::Mcp));

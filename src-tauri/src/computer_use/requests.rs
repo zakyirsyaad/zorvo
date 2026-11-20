@@ -319,6 +319,22 @@ impl Requests {
         None
     }
 
+    /// Every request ends unanswered: each call's id, and whether its card
+    /// was on screen.
+    pub fn end_all(&self) -> Vec<(String, bool)> {
+        self.sessions()
+            .drain()
+            .flat_map(|(_, cards)| {
+                let open = cards.open.map(|waiting| (waiting.call_id, true));
+                let queued = cards
+                    .queued
+                    .into_iter()
+                    .map(|waiting| (waiting.call_id, false));
+                open.into_iter().chain(queued).collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
     /// The cards on screen, for a webview that just loaded.
     pub fn open_views(&self) -> Vec<RequestView> {
         self.sessions()
@@ -489,5 +505,27 @@ mod tests {
         assert_eq!(open.next.unwrap().call_id, "3");
         assert_eq!(requests.end("1"), None);
         assert_eq!(requests.open_views().len(), 1);
+    }
+
+    #[test]
+    fn ending_all_leaves_no_card_open_or_queued() {
+        let requests = Requests::default();
+        requests.arrive("s-1", "1", "a".into(), rows(&["com.apple.Notes"]));
+        requests.arrive("s-1", "2", "b".into(), rows(&["com.apple.Notes"]));
+        requests.arrive("s-2", "3", "c".into(), rows(&["com.apple.Notes"]));
+
+        let mut ended = requests.end_all();
+        ended.sort();
+
+        assert_eq!(
+            ended,
+            vec![
+                ("1".to_string(), true),
+                ("2".to_string(), false),
+                ("3".to_string(), true)
+            ]
+        );
+        assert!(requests.open_views().is_empty());
+        assert_eq!(requests.end("2"), None);
     }
 }

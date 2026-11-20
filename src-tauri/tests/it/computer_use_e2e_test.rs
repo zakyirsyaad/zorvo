@@ -693,6 +693,57 @@ fn switching_computer_use_off_ends_every_grant() {
 }
 
 #[test]
+fn switching_computer_use_off_ends_a_waiting_card() {
+    let rig = rig("switchcard");
+    let mut client = Client::connect(&rig, "s-1");
+    let id = client.start_call(
+        "request_access",
+        json!({ "apps": ["com.apple.Notes"], "reason": "Read your notes." }),
+    );
+    let request = rig.wait_for_event("computer-use-request");
+    let call_id = request["callId"].as_str().unwrap();
+
+    rig.state.set_enabled(false);
+    rig.server.switched_off();
+
+    let answer = client.read();
+    assert_eq!(answer["id"], json!(id));
+    assert_eq!(answer["result"]["isError"], json!(true));
+    let ended = rig.events_named("computer-use-request-ended");
+    assert_eq!(ended.len(), 1);
+    assert_eq!(ended[0]["callId"], json!(call_id));
+    assert!(rig.server.open_requests().is_empty());
+
+    // An answer that comes after grants nothing, also once the switch is on.
+    assert_eq!(rig.server.answer(call_id, &["app-1".to_string()]), None);
+    rig.state.set_enabled(true);
+    assert_eq!(rig.server.answer(call_id, &["app-1".to_string()]), None);
+    assert!(rig.server.views().is_empty());
+}
+
+#[test]
+fn an_answer_after_the_switch_went_off_grants_nothing() {
+    let rig = rig("switchanswer");
+    let mut client = Client::connect(&rig, "s-1");
+    let id = client.start_call(
+        "request_access",
+        json!({ "apps": ["com.apple.Notes"], "reason": "Read your notes." }),
+    );
+    let request = rig.wait_for_event("computer-use-request");
+    let call_id = request["callId"].as_str().unwrap();
+
+    // The answer arrives before `switched_off` has run.
+    rig.state.set_enabled(false);
+    assert_eq!(rig.server.answer(call_id, &["app-1".to_string()]), None);
+
+    let answer = client.read();
+    assert_eq!(answer["id"], json!(id));
+    assert_eq!(answer["result"]["isError"], json!(true));
+    assert!(rig.server.views().is_empty());
+    assert!(rig.server.open_requests().is_empty());
+}
+
+#[test]
 fn stopping_a_session_starts_no_driver() {
     let rig = rig_with(
         "nostart",

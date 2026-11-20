@@ -229,8 +229,14 @@ impl ScreenServer {
         // nothing. `forget` ends a session's calls before it takes this lock
         // to revoke, so a grant made here is either refused or revoked.
         let granting = lock(&self.granting);
-        if self.tools().is_some_and(|tools| !tools.is_waiting(call_id)) {
+        // The switch went off while the card waited: `switched_off` may not
+        // have reached it yet, and an answer must not outlive the switch.
+        let is_off = !self.state.is_enabled();
+        if is_off || self.tools().is_some_and(|tools| !tools.is_waiting(call_id)) {
             drop(granting);
+            if is_off {
+                self.respond(call_id, Err(OFF_TEXT.to_string()));
+            }
             self.end_request(call_id);
             return None;
         }
@@ -255,15 +261,22 @@ impl ScreenServer {
         Some(keys)
     }
 
-    /// The switch went off: every session's grants end with it, so turning
-    /// it on again starts from nothing. The driver is already killed.
+    /// The switch went off: every session's grants and waiting cards end
+    /// with it, so turning it on again starts from nothing. The driver is
+    /// already killed.
     pub fn switched_off(&self) {
-        let held = {
+        let (held, ended) = {
             let _granting = lock(&self.granting);
             let held = !self.grants.views().is_empty();
             self.grants.revoke_all();
-            held
+            (held, self.requests.end_all())
         };
+        for (call_id, was_open) in ended {
+            self.respond(&call_id, Err(OFF_TEXT.to_string()));
+            if was_open {
+                self.emit(REQUEST_ENDED_EVENT, json!({ "callId": call_id }));
+            }
+        }
         self.forget_driver_sessions();
         if held {
             self.emit(CHANGED_EVENT, Value::Null);
@@ -309,9 +322,16 @@ impl ScreenServer {
         // The call may have ended while its apps were looked up: before
         // `arrive`, and nothing would ever take it off the list, or between
         // `arrive` and the card, and the card would never be settled.
-        if self
-            .tools()
-            .is_some_and(|tools| !tools.is_waiting(&call.call_id))
+        // The switch may also have gone off meanwhile, after `switched_off`
+        // ended the cards it found.
+        let is_off = !self.state.is_enabled();
+        if is_off {
+            self.respond(&call.call_id, Err(OFF_TEXT.to_string()));
+        }
+        if is_off
+            || self
+                .tools()
+                .is_some_and(|tools| !tools.is_waiting(&call.call_id))
         {
             let ended = self.requests.end(&call.call_id);
             if was_shown {

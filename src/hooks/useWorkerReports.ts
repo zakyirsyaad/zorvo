@@ -39,9 +39,10 @@ function relativeTo(cwd: string, path: string): string {
 
 /** The link as the state holds it now, marked reported; a worker that is gone also ends. */
 function reportedLink(link: DelegationLink, at: number, endedTurnAt: number | undefined): DelegationLink {
-  if (!isOpenLink(link)) return link;
+  // A newer turn end is never covered by an older report: it stays owed.
+  if (!isOpenLink(link) || link.lastTurn?.endedAt !== endedTurnAt) return link;
   const reported = withReported(link, at);
-  const isGone = link.lastTurn?.how === 'exited' && link.lastTurn.endedAt === endedTurnAt;
+  const isGone = link.lastTurn?.how === 'exited';
   return isGone ? { ...reported, endedAt: at } : reported;
 }
 
@@ -60,6 +61,8 @@ export function useWorkerReports(deps: ReportDeps): {
   const latest = useLatest(deps);
   // The workers whose report is being sent right now.
   const delivering = useRef(new Set<string>());
+  // Coordinators whose last send threw: not retried on every render, only when their next turn ends.
+  const failed = useRef(new Set<string>());
   // Bumped when a coordinator's turn ends or a hand-over settles, so the drain runs and the lines read again.
   const [revision, setRevision] = useState(0);
   const bump = () => setRevision((current) => current + 1);
@@ -69,6 +72,7 @@ export function useWorkerReports(deps: ReportDeps): {
   };
 
   const recheck = (sessionId: string): void => {
+    failed.current.delete(sessionId);
     if (latest.current.sessions.some((session) => session.delegatedFrom?.sessionId === sessionId && isReportOwed(session.delegatedFrom))) {
       bump();
     }
@@ -120,58 +124,84 @@ export function useWorkerReports(deps: ReportDeps): {
       }
     };
 
-    const deliver = async (coordinator: Session, workers: readonly Session[]): Promise<void> => {
+    /** The coordinator can be told now: alive, not archived, not in a turn, not waiting on the user. */
+    const isFree = (coordinatorId: string): boolean => {
       const current = latest.current;
+      const coordinator = current.sessions.find((session) => session.id === coordinatorId);
+      return (
+        coordinator !== undefined &&
+        !isArchived(coordinator) &&
+        coordinator.status !== 'terminated' &&
+        !current.isBusy(coordinatorId) &&
+        !current.isWaiting(coordinatorId)
+      );
+    };
+
+    const deliver = async (coordinator: Session, workers: readonly Session[]): Promise<void> => {
       const at = Date.now();
-      const endedTurns = new Map(workers.map((worker) => [worker.id, worker.delegatedFrom?.lastTurn?.endedAt]));
+      let isFailed = false;
+      let isStale = false;
       try {
-        const settled = await Promise.all(
+        const built = await Promise.all(
           workers.map(async (worker) => {
             const link = worker.delegatedFrom;
-            return link == null ? null : entryOf(worker, coordinator, link);
+            const entry = link == null ? null : await entryOf(worker, coordinator, link);
+            return entry === null ? null : { id: worker.id, endedAt: link?.lastTurn?.endedAt, entry };
           }),
         );
-        const entries = settled.filter((entry): entry is WorkerReportEntry => entry !== null);
+        // The awaits took time: judge the coordinator and each worker as they are now.
+        if (!isFree(coordinator.id)) return;
+        const fresh = built.filter((item): item is NonNullable<typeof item> => item !== null).filter((item) => {
+          const link = latest.current.sessions.find((session) => session.id === item.id)?.delegatedFrom;
+          const isCurrent = link != null && isOpenLink(link) && isReportOwed(link) && link.lastTurn?.endedAt === item.endedAt;
+          if (!isCurrent) isStale = true;
+          return isCurrent;
+        });
+        if (fresh.length === 0) return;
+        const entries = fresh.map((item) => item.entry);
         const markReported = (): void => {
-          for (const worker of workers) {
-            current.updateLink(worker.id, (link) => reportedLink(link, at, endedTurns.get(worker.id)));
+          for (const item of fresh) {
+            latest.current.updateLink(item.id, (link) => reportedLink(link, at, item.endedAt));
           }
         };
-        if (entries.length === 0) {
-          markReported();
-          return;
-        }
         const text = workersReportMessage(entries);
         const workerReport = {
           workers: entries.map(({ agentName, agentId, handle, state }) => ({ agentName, agentId, handle, state })),
         };
         const toComposer = (): void => {
-          current.giveBack(coordinator.id, text);
-          current.onNotice(
+          latest.current.giveBack(coordinator.id, text);
+          latest.current.onNotice(
             entries.length === 1
               ? `${entries[0].agentName}'s report is in the composer of ${coordinator.name}.`
               : `${entries.length} workers' reports are in the composer of ${coordinator.name}.`,
           );
         };
-        if (!current.canPrompt(coordinator.id)) {
-          // Waiting in the coordinator's composer is delivery.
+        if (!latest.current.canPrompt(coordinator.id)) {
+          // A live coordinator that cannot be prompted (sign-in, agent removed): waiting in its composer is delivery.
           toComposer();
           markReported();
           return;
         }
         let isSent: boolean;
         try {
-          isSent = await current.send(coordinator.id, text, [], { workerReport });
+          isSent = await latest.current.send(coordinator.id, text, [], { workerReport });
         } catch {
           isSent = false;
         }
         // The agent refused the prompt: the report waits in the composer, which counts as reported.
         if (!isSent) toComposer();
         markReported();
+      } catch {
+        isFailed = true;
+        failed.current.add(coordinator.id);
+        // Never the error's text: it may hold a path.
+        latest.current.onNotice(
+          `A worker's report could not be sent. Zorvo will try again when ${coordinator.name}'s next turn ends.`,
+        );
       } finally {
         for (const worker of workers) delivering.current.delete(worker.id);
-        // The hand-over is over either way: Send in a worker may be judged again.
-        bump();
+        // A failure must not rerun the drain by itself; a turn that moved on while we waited must.
+        if (!isFailed && isStale) bump();
       }
     };
 
@@ -193,9 +223,9 @@ export function useWorkerReports(deps: ReportDeps): {
           endLinks(owed);
           continue;
         }
-        // In a turn, or waiting on the user: the report waits. A turn end or a change of the
-        // sessions brings us back.
-        if (current.isBusy(coordinatorId) || current.isWaiting(coordinatorId)) continue;
+        // In a turn, waiting on the user, or not running (after a reload every session is
+        // terminated): the report stays owed. A turn end, or resuming the session, brings us back.
+        if (!isFree(coordinatorId) || failed.current.has(coordinatorId)) continue;
         const batch = owed.slice(0, MAX_REPORT_WORKERS);
         // Marked before anything awaits: a second run (StrictMode) must not send it again.
         for (const worker of batch) delivering.current.add(worker.id);

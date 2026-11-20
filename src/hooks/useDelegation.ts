@@ -168,14 +168,31 @@ export function useDelegation(deps: DelegationDeps): {
     sendingTo.current.get(delegateId)?.();
     sendingTo.current.delete(delegateId);
   };
+  // The workers whose turn end was written but is not in `sessions` yet, with that turn's time.
+  const settling = useRef(new Map<string, number>());
   // The newest worker handle each coordinator was given in this run.
   const lastHandle = useRef(new Map<string, string>());
 
   const agentNameOf = (profileId: string) => agentNameIn(agents, profileId);
 
+  /**
+   * A worker whose turn just settled but whose link has not been rendered yet: the same tick
+   * must already refuse its Send and a further task. Clears once the link shows that turn end.
+   */
+  const isSettling = (delegateId: string): boolean => {
+    const settledAt = settling.current.get(delegateId);
+    if (settledAt === undefined) return false;
+    const link = sessions.find((candidate) => candidate.id === delegateId)?.delegatedFrom;
+    if (link == null || !isOpenLink(link) || (link.lastTurn?.endedAt ?? 0) >= settledAt) {
+      settling.current.delete(delegateId);
+      return false;
+    }
+    return true;
+  };
+
   /** B's report is owed to A (its last turn ended after the last report), or is being sent. */
   const isOwed = (delegateId: string) =>
-    isReportOwed(sessions.find((candidate) => candidate.id === delegateId)?.delegatedFrom);
+    isReportOwed(sessions.find((candidate) => candidate.id === delegateId)?.delegatedFrom) || isSettling(delegateId);
   const isHandingOver = (delegateId: string) => isOwed(delegateId) || reports.isDelivering(delegateId);
 
   /** Whether a message of A's carries B's report, in the current or the older mark. */
@@ -333,6 +350,7 @@ export function useDelegation(deps: DelegationDeps): {
     const session = current.sessions.find((candidate) => candidate.id === sessionId);
     if (session === undefined || isArchived(session) || !isOpenLink(session.delegatedFrom)) return;
     const at = Date.now();
+    settling.current.set(sessionId, at);
     // The link as it is when the write lands, so a `done` recorded just before is seen.
     current.updateLink(sessionId, (latestLink) => (isOpenLink(latestLink) ? withTurnEnd(latestLink, { ...end, at }) : latestLink));
   };

@@ -105,6 +105,7 @@ interface HarnessInput {
   sendResult?: boolean;
   strict?: boolean;
   messagesOf?: (sessionId: string) => Promise<ChatMessage[] | null>;
+  giveBackThrows?: boolean;
 }
 
 function setup(input: HarnessInput) {
@@ -119,6 +120,7 @@ function setup(input: HarnessInput) {
   const cannotPrompt = new Set(input.cannotPrompt ?? []);
   const sendResult = input.sendResult ?? true;
   const places = createStartPlaces();
+  const giveBackAttempts = { count: 0 };
   // What the state holds now: changes made in one tick compose, as the app's functional updater does.
   const owned: { current: readonly Session[] } = { current: input.sessions };
 
@@ -158,6 +160,10 @@ function setup(input: HarnessInput) {
           setSessions(next);
         },
         giveBack: (sessionId, text) => {
+          if (input.giveBackThrows) {
+            giveBackAttempts.count += 1;
+            throw new Error("/secret/path");
+          }
           givesBack.push({ sessionId, text });
         },
         onNotice: (message) => {
@@ -181,6 +187,7 @@ function setup(input: HarnessInput) {
     waiting,
     cannotPrompt,
     places,
+    giveBackAttempts,
   };
 }
 
@@ -1346,9 +1353,9 @@ describe("useDelegation reports that wait", () => {
     expect(env.sends).toHaveLength(1);
   });
 
-  it("gives the report back when the source is not running", async () => {
+  it("gives the report back when the source runs but cannot be prompted", async () => {
     const env = setup({
-      sessions: [sourceSession({ status: "terminated" }), delegateSession()],
+      sessions: [sourceSession({ status: "running" }), delegateSession()],
       transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
       cannotPrompt: ["s-a"],
     });
@@ -1996,19 +2003,21 @@ describe("useDelegation owed reports", () => {
     await waitFor(() => expect(env.result.current.delegation.sendBlockedReason("w1")).toBeNull());
   });
 
-  it("holds Send in a worker whose report waits for a free coordinator", async () => {
+  it("holds Send in a worker whose report waits for a busy coordinator, and frees it after delivery", async () => {
     const env = setup({
       sessions: [sourceSession(), owedWorker("w1", 1)],
       transcripts: { "s-a": A_MESSAGES },
       busy: ["s-a"],
-      cannotPrompt: ["s-a"],
     });
     await act(async () => {});
-    env.busy.delete("s-a");
-    env.busy.add("s-b");
+    expect(env.sends).toHaveLength(0);
     expect(env.result.current.delegation.sendBlockedReason("w1")).toBe(
       "Codex's report waits for Claude Code to finish.",
     );
+    env.busy.delete("s-a");
+    await bump(env);
+    await waitFor(() => expect(env.sends).toHaveLength(1));
+    await waitFor(() => expect(env.result.current.delegation.sendBlockedReason("w1")).toBeNull());
   });
 
   it("a worker that is gone is reported once and its link then ends", async () => {
@@ -2083,5 +2092,126 @@ describe("useDelegation owed reports", () => {
       ok: false,
       reason: "worker-1's last result has not reached this session yet. Give it the next task after its report arrives.",
     });
+  });
+
+  it("keeps a report owed while the coordinator is not running, then sends it once when it runs", async () => {
+    const env = setup({
+      sessions: [sourceSession({ status: "terminated" }), owedWorker("w1", 1, { outcome: null })],
+      transcripts: {},
+      cannotPrompt: ["s-a"],
+      messagesOf: async () => bMessages(),
+    });
+    await act(async () => {});
+    await act(async () => {});
+    expect(env.sends).toHaveLength(0);
+    expect(env.givesBack).toHaveLength(0);
+    expect(env.notices).toHaveLength(0);
+    expect(linkOf(env, "w1")?.reportedAt).toBeUndefined();
+
+    await act(async () => {
+      env.cannotPrompt.delete("s-a");
+      env.result.current.setSessions((prev) =>
+        prev.map((session) => (session.id === "s-a" ? { ...session, status: "running" } : session)),
+      );
+    });
+    await waitFor(() => expect(env.sends).toHaveLength(1));
+    await waitFor(() => expect(linkOf(env, "w1")).toMatchObject({ reportedAt: expect.any(Number) }));
+    await act(async () => {});
+    expect(env.sends).toHaveLength(1);
+  });
+
+  it("does not send to a coordinator that became busy while a transcript was read", async () => {
+    let release: (messages: ChatMessage[]) => void = () => undefined;
+    const messagesOf = vi
+      .fn<(id: string) => Promise<ChatMessage[] | null>>()
+      .mockImplementationOnce(() => new Promise<ChatMessage[]>((resolve) => (release = resolve)))
+      .mockResolvedValue(bMessages());
+    const env = setup({
+      sessions: [sourceSession(), owedWorker("w1", 1, { outcome: null })],
+      transcripts: { "s-a": A_MESSAGES },
+      messagesOf,
+    });
+    await waitFor(() => expect(messagesOf).toHaveBeenCalled());
+    env.busy.add("s-a");
+    await act(async () => {
+      release(bMessages());
+    });
+    await act(async () => {});
+    expect(env.sends).toHaveLength(0);
+    expect(env.givesBack).toHaveLength(0);
+    expect(linkOf(env, "w1")?.reportedAt).toBeUndefined();
+
+    env.busy.delete("s-a");
+    await bump(env);
+    await waitFor(() => expect(env.sends).toHaveLength(1));
+  });
+
+  it("does not let an older report cover a turn that ended while it was prepared", async () => {
+    let release: (messages: ChatMessage[]) => void = () => undefined;
+    const messagesOf = vi
+      .fn<(id: string) => Promise<ChatMessage[] | null>>()
+      .mockImplementationOnce(() => new Promise<ChatMessage[]>((resolve) => (release = resolve)))
+      .mockResolvedValue(bMessages());
+    const env = setup({
+      sessions: [sourceSession(), owedWorker("w1", 1, { outcome: null })],
+      transcripts: { "s-a": A_MESSAGES },
+      messagesOf,
+    });
+    await waitFor(() => expect(messagesOf).toHaveBeenCalled());
+    await act(async () => {
+      env.result.current.setSessions((prev) =>
+        prev.map((session) =>
+          session.id === "w1" && session.delegatedFrom
+            ? { ...session, delegatedFrom: { ...session.delegatedFrom, lastTurn: { endedAt: 999_999, how: "finished" as const } } }
+            : session,
+        ),
+      );
+    });
+    await act(async () => {
+      release(bMessages());
+    });
+    // The stale entry was dropped; the drain runs again for the newer turn end and sends it once.
+    await waitFor(() => expect(env.sends).toHaveLength(1));
+    await act(async () => {});
+    expect(env.sends).toHaveLength(1);
+  });
+
+  it("refuses a further task in the tick a turn settled, before the link is rendered", async () => {
+    const env = setup({
+      sessions: [sourceSession(), owedWorker("w1", 1, { lastTurn: null, outcome: null, reportedAt: null })],
+      transcripts: { "s-a": A_MESSAGES },
+      busy: ["s-a"],
+    });
+    let result: unknown;
+    await act(async () => {
+      env.result.current.delegation.onTurnSettled("w1", { how: "finished" });
+      result = await env.result.current.delegation.sendToWorker("s-a", "w1", "More");
+    });
+    expect(result).toEqual({
+      ok: false,
+      reason: "worker-1's last result has not reached this session yet. Give it the next task after its report arrives.",
+    });
+  });
+
+  it("raises one plain notice when sending fails and does not retry on every render", async () => {
+    const env = setup({
+      sessions: [sourceSession({ status: "running" }), owedWorker("w1", 1)],
+      transcripts: { "s-a": A_MESSAGES },
+      cannotPrompt: ["s-a"],
+      giveBackThrows: true,
+    });
+    await waitFor(() => expect(env.notices).toHaveLength(1));
+    await bump(env);
+    await bump(env);
+    expect(env.giveBackAttempts.count).toBe(1);
+    expect(env.notices).toEqual([
+      "A worker's report could not be sent. Zorvo will try again when Parser work's next turn ends.",
+    ]);
+    expect(env.notices[0]).not.toContain("secret");
+    // The coordinator's next turn end tries again.
+    await act(async () => {
+      env.result.current.delegation.onTurnEnded("s-a", "finished");
+    });
+    await waitFor(() => expect(env.giveBackAttempts.count).toBe(2));
   });
 });

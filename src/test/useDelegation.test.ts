@@ -242,7 +242,7 @@ describe("useDelegation start", () => {
     expect(isStarted).toBe(false);
     expect(callsTo(invokeSpy, "write_fork_handoff")).toHaveLength(0);
     expect(env.starts).toHaveLength(0);
-    expect(env.notices).toEqual(["Could not delegate: Wait for Claude Code to finish."]);
+    expect(env.notices).toEqual(["Could not delegate. Wait for Claude Code to finish."]);
   });
 
   it("start reports a failed handoff write", async () => {
@@ -259,7 +259,7 @@ describe("useDelegation start", () => {
 
     expect(isStarted).toBe(false);
     expect(env.starts).toHaveLength(0);
-    expect(env.notices).toEqual(["Could not delegate: Error: disk full"]);
+    expect(env.notices).toEqual(["Could not delegate. Error: disk full"]);
   });
 
   it("start passes the dialog's choices to B's start", async () => {
@@ -429,7 +429,7 @@ describe("useDelegation giveTask", () => {
     await act(async () => {
       expect(await busy.result.current.delegation.start("s-a", "codex-acp", "Fix the parser")).toBe(false);
     });
-    expect(busy.notices).toEqual(["Could not delegate: Wait for Claude Code to finish."]);
+    expect(busy.notices).toEqual(["Could not delegate. Wait for Claude Code to finish."]);
   });
 });
 
@@ -625,6 +625,34 @@ describe("useDelegation workers", () => {
     expect(r).toMatchObject({ ok: true, folder: "/wt/a" });
     expect(starts[0].spec.worktree?.branch).toBe("agent/a");
     expect(starts[0].spec.cwd).toBe("/wt/a");
+  });
+
+  it("tells a worker with its own worktree where it works, and a worker without one nothing of the kind", async () => {
+    const spy = withWorktreeMock((cmd) => (cmd === "create_session_worktree" ? Promise.resolve(WORKTREE) : undefined));
+    const { result, starts } = setup(base());
+    await act(async () =>
+      result.current.delegation.startWorker("s-a", {
+        agentId: "codex-acp",
+        task: "Part one",
+        hasOwnWorktree: true,
+        byAgent: true,
+      }),
+    );
+    const own = String(callsTo(spy, "write_fork_handoff")[0][1]?.content);
+    const worktree = starts[0].spec.worktree;
+    expect(own).toContain("- Folder: /wt/a");
+    expect(own).not.toContain("- Folder: /Users/test/developer/zorvo");
+    expect(own).toContain(
+      `You work in /wt/a, a worktree of ${worktree?.repoPath}. Make your changes there, not in the folder of the session that gave you this task.`,
+    );
+
+    spy.mockClear();
+    await act(async () =>
+      result.current.delegation.startWorker("s-a", { agentId: "codex-acp", task: "Part two", byAgent: true }),
+    );
+    const shared = String(callsTo(spy, "write_fork_handoff")[0][1]?.content);
+    expect(shared).toContain("- Folder: /Users/test/developer/zorvo");
+    expect(shared).not.toContain("You work in");
   });
 
   it("names the worktree and the session by the title when given", async () => {

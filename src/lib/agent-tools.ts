@@ -44,17 +44,9 @@ export const UNREADABLE = 'That session could not be read.';
 /** Answered for a session that gets no tools, or that Zorvo does not know. */
 export const NO_SESSION = "This session cannot use Zorvo's tools.";
 
-const MAX_LISTED_TASK_CHARS = 200;
 const MAX_QUOTED_NAME_CHARS = 60;
 
 export type DelegateState = 'idle' | 'working' | 'needs-answer';
-
-/** One of the session's open delegates, as `list_agents` reports it. */
-export interface ListedDelegate {
-  agentId: string;
-  state: DelegateState;
-  task: string;
-}
 
 /** A session this session opened, as `list_agents` reports it. */
 export interface ListedOpened {
@@ -87,13 +79,11 @@ export interface ListedAgent {
   id: string;
   name: string;
   status: Exclude<MentionAgentStatus, 'not-installed'>;
-  delegate?: { handle: string; state: DelegateState; task: string };
 }
 
-/** `list_agents`' answer: the agents a task can go to, each with this session's delegate of it. */
+/** `list_agents`' answer: the agents a task can go to, the session's own workers, sessions it opened and the other folders. */
 export function listAgentsText(input: {
   agents: readonly { id: string; name: string; status: MentionAgentStatus }[];
-  delegates: readonly ListedDelegate[];
   /** The workers this session started, oldest first. */
   workers?: readonly ListedWorker[];
   /** The independent sessions this session opened. */
@@ -103,17 +93,7 @@ export function listAgentsText(input: {
 }): string {
   const agents: ListedAgent[] = input.agents.flatMap((agent) => {
     if (agent.status === 'not-installed') return [];
-    const delegate = input.delegates.find((candidate) => candidate.agentId === agent.id);
-    return [
-      {
-        id: agent.id,
-        name: agent.name,
-        status: agent.status,
-        ...(delegate
-          ? { delegate: { handle: agent.id, state: delegate.state, task: delegate.task.slice(0, MAX_LISTED_TASK_CHARS) } }
-          : {}),
-      },
-    ];
+    return [{ id: agent.id, name: agent.name, status: agent.status }];
   });
   return JSON.stringify({ agents, workers: input.workers ?? [], opened: input.opened ?? [], folders: input.folders ?? [] });
 }
@@ -248,15 +228,15 @@ export function nextSessionHandle(taken: readonly string[]): string {
 
 /**
  * What its owner's agent calls a session: the stored handle of a session it
- * opened, or the agent's id for a delegate while its link is open (a session
- * holds one open delegate per agent, so that needs no storing).
+ * opened, or a worker's handle (`worker-N` on its link; a link saved by an
+ * older version is named by its agent's id).
  */
 export function handleOf(session: Session): string | undefined {
   if (session.openedBy) return session.openedBy.handle;
   return workerHandleOf(session);
 }
 
-/** The session `openerId` owns under `handle`: one it opened, or its open delegate. Not an archived one. */
+/** The session `openerId` owns under `handle`: one it opened, or one of its open workers. Not an archived one. */
 export function ownedByHandle(openerId: string, handle: string, sessions: readonly Session[]): Session | undefined {
   if (handle === '') return undefined;
   return sessions.find(

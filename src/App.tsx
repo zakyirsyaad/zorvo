@@ -905,12 +905,6 @@ export default function App() {
       const agent = agentsInUse.find((candidate) => candidate.id === agentId);
       return agent === undefined ? "not-installed" : delegationStatusOf(agent);
     },
-    delegatesOf: (sessionId) =>
-      openDelegatesOf(sessionId, sessions).map((delegate) => ({
-        agentId: delegate.profileId,
-        state: isSessionWaiting(delegate.id) ? "needs-answer" : isSessionBusy(delegate.id) ? "working" : "idle",
-        task: delegate.delegatedFrom?.task ?? "",
-      })),
     workersOf: (sessionId) =>
       openDelegatesOf(sessionId, sessions).flatMap((worker) => {
         const link = worker.delegatedFrom;

@@ -97,7 +97,6 @@ function setup(overrides: Partial<Env> = {}) {
         sessions: props.sessions,
         agents: [PI, QWEN, CODEX],
         statusOf: (agentId) => env.statuses[agentId] ?? "ready",
-        delegatesOf: () => [{ agentId: "codex-acp", state: "working", task: "Fix the parser" }],
         workersOf: () => [
           { handle: "worker-1", agent: "qwen-code", title: "Qwen Code: Review", state: "working", outcome: null },
           { handle: "worker-2", agent: "qwen-code", title: "Qwen Code: Lint", state: "succeeded", outcome: "succeeded" },
@@ -185,12 +184,7 @@ describe("useAgentTools", () => {
       agents: [
         { id: "pi-acp", name: "pi ACP", status: "ready" },
         { id: "qwen-code", name: "Qwen Code", status: "ready" },
-        {
-          id: "codex-acp",
-          name: "Codex",
-          status: "not-checked",
-          delegate: { handle: "codex-acp", state: "working", task: "Fix the parser" },
-        },
+        { id: "codex-acp", name: "Codex", status: "not-checked" },
       ],
       workers: [
         { handle: "worker-1", agent: "qwen-code", title: "Qwen Code: Review", state: "working", outcome: null },

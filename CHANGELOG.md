@@ -6,7 +6,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Added
 
-- An agent can start several workers of the same agent, each in its own worktree.
+- An agent can start several workers, of one agent or several, in your folder or each in a worktree of its own, and give an idle worker a further task.
 
 ## [0.14.1] - 2026-11-21
 

@@ -79,6 +79,8 @@ export interface WaitingTask {
   task: string;
   /** A new session that gets a worktree of its own. */
   hasOwnWorktree?: boolean;
+  /** For `send`: the handle of the worker that gets the task, as the agent gave it. */
+  handle?: string;
 }
 
 /** The card for one new session in the caller's own folder. */
@@ -104,6 +106,7 @@ function blockHeading(task: WaitingTask): string {
       ? `New ${task.targetName} session, in its own worktree:`
       : `New ${task.targetName} session:`;
   }
+  if (task.kind === 'send' && task.handle !== undefined) return `For ${task.targetName} (${escapeVisible(task.handle)}):`;
   return task.kind === 'start_worker' && task.hasOwnWorktree
     ? `For ${task.targetName}, in its own worktree:`
     : `For ${task.targetName}:`;
@@ -133,7 +136,9 @@ export function toolCardFor(
             ...(first.hasOwnWorktree ? { hasOwnWorktree: true as const } : {}),
           },
         }
-      : built;
+      : first.kind === 'send' && first.handle !== undefined
+        ? { ...built, title: `${input.callerName} wants to give ${first.targetName} (${escapeVisible(first.handle)}) a task` }
+        : built;
   if (tasks.length === 1) return single;
   const areAllDelegations = tasks.every((task) => task.kind !== 'start_session');
   // What is true of one request is said in its own heading, not for the whole card.

@@ -32,7 +32,6 @@ import {
   type AgentToolCall,
   type DelegateState,
   type KnownFolder,
-  type ListedDelegate,
   type ListedOpened,
   type ListedWorker,
 } from '../lib/agent-tools';
@@ -57,7 +56,6 @@ export interface AgentToolsDeps {
   /** An agent's install and sign-in state, as the @ list shows it. */
   statusOf: (agentId: string) => MentionAgentStatus;
   /** The session's open delegates, for `list_agents`. */
-  delegatesOf: (sessionId: string) => ListedDelegate[];
   /** The session's open workers, oldest first, for `list_agents`. */
   workersOf: (sessionId: string) => ListedWorker[];
   startWorker: (coordinatorId: string, input: StartWorkerInput) => Promise<StartWorkerResult>;
@@ -89,8 +87,6 @@ interface WaitingCall extends WaitingTask {
   folderPath?: string;
   /** For `send`: the worker's session. */
   workerId?: string;
-  /** For `send`: the handle the agent used. */
-  handle?: string;
 }
 
 /** A session in another folder has a card of its own, asked every time. */
@@ -552,7 +548,6 @@ export function useAgentTools(deps: AgentToolsDeps): {
             true,
             listAgentsText({
               agents,
-              delegates: current.delegatesOf(session.id),
               workers: current.workersOf(session.id),
               opened: current.openedOf(session.id),
               folders: otherFolders(current.workspaces, ownFolderOf(session)),

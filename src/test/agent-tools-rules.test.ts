@@ -64,7 +64,7 @@ describe("statusRefusal", () => {
 });
 
 describe("listAgentsText", () => {
-  it("lists usable agents with this session's delegates", () => {
+  it("lists usable agents", () => {
     const text = listAgentsText({
       agents: [
         { id: "qwen-code", name: "Qwen Code", status: "ready" },
@@ -72,16 +72,10 @@ describe("listAgentsText", () => {
         { id: "claude-acp", name: "Claude Code", status: "needs-sign-in" },
         { id: "kilo", name: "Kilo", status: "not-installed" },
       ],
-      delegates: [{ agentId: "qwen-code", state: "working", task: "Review the fix" }],
     });
     expect(JSON.parse(text)).toEqual({
       agents: [
-        {
-          id: "qwen-code",
-          name: "Qwen Code",
-          status: "ready",
-          delegate: { handle: "qwen-code", state: "working", task: "Review the fix" },
-        },
+        { id: "qwen-code", name: "Qwen Code", status: "ready" },
         { id: "codex-acp", name: "Codex", status: "not-checked" },
         { id: "claude-acp", name: "Claude Code", status: "needs-sign-in" },
       ],
@@ -89,14 +83,6 @@ describe("listAgentsText", () => {
       opened: [],
       folders: [],
     });
-  });
-
-  it("cuts a delegate's task at 200 characters", () => {
-    const text = listAgentsText({
-      agents: [{ id: "qwen-code", name: "Qwen Code", status: "ready" }],
-      delegates: [{ agentId: "qwen-code", state: "idle", task: "t".repeat(500) }],
-    });
-    expect(JSON.parse(text).agents[0].delegate.task).toHaveLength(200);
   });
 });
 
@@ -123,13 +109,31 @@ describe("workerStartedText and workerSentText", () => {
 });
 
 describe("listAgentsText workers", () => {
+  it("lists a new worker and an old-style link under their handles and puts no delegate on an agent", () => {
+    const workers: ListedWorker[] = [
+      { handle: "worker-1", agent: "qwen-code", title: "Qwen Code: A", state: "working", outcome: null },
+      { handle: "codex-acp", agent: "codex-acp", title: "Codex: B", state: "idle", outcome: null },
+    ];
+    const answer = JSON.parse(
+      listAgentsText({
+        agents: [
+          { id: "qwen-code", name: "Qwen Code", status: "ready" },
+          { id: "codex-acp", name: "Codex", status: "ready" },
+        ],
+        workers,
+      }),
+    );
+    expect(answer.workers.map((worker: ListedWorker) => worker.handle)).toEqual(["worker-1", "codex-acp"]);
+    for (const agent of answer.agents) expect(agent).not.toHaveProperty("delegate");
+  });
+
   it("lists the workers oldest first with state and outcome", () => {
     const workers: ListedWorker[] = [
       { handle: "worker-1", agent: "qwen-code", title: "Qwen Code: A", state: "working", outcome: null },
       { handle: "worker-2", agent: "qwen-code", title: "Qwen Code: B", state: "succeeded", outcome: "succeeded" },
     ];
-    expect(JSON.parse(listAgentsText({ agents: [], delegates: [], workers })).workers).toEqual(workers);
-    expect(JSON.parse(listAgentsText({ agents: [], delegates: [] })).workers).toEqual([]);
+    expect(JSON.parse(listAgentsText({ agents: [], workers })).workers).toEqual(workers);
+    expect(JSON.parse(listAgentsText({ agents: [] })).workers).toEqual([]);
   });
 });
 
@@ -277,13 +281,12 @@ describe("openedResultText", () => {
 
 describe("listAgentsText with opened sessions and folders", () => {
   it("always carries both lists", () => {
-    const bare = JSON.parse(listAgentsText({ agents: [], delegates: [] }));
+    const bare = JSON.parse(listAgentsText({ agents: [] }));
     expect(bare).toEqual({ agents: [], workers: [], opened: [], folders: [] });
 
     const full = JSON.parse(
       listAgentsText({
         agents: [],
-        delegates: [],
         opened: [{ agent: "Codex", title: "Parser port", state: "working", folder: CALLER }],
         folders: [WORKSPACES[1]],
       }),
@@ -348,11 +351,10 @@ describe("answers carry handles", () => {
     const listed = JSON.parse(
       listAgentsText({
         agents: [{ id: "qwen-code", name: "Qwen Code", status: "ready" }],
-        delegates: [{ agentId: "qwen-code", state: "idle", task: "Review" }],
         opened: [{ agent: "Codex", title: "Parser port", state: "idle", folder: CALLER, handle: "session-1" }],
       }),
     );
-    expect(listed.agents[0].delegate).toEqual({ handle: "qwen-code", state: "idle", task: "Review" });
+    expect(listed.agents[0]).not.toHaveProperty("delegate");
     expect(listed.opened[0].handle).toBe("session-1");
   });
 });

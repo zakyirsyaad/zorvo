@@ -41,7 +41,6 @@ function setup(show: (args: Record<string, unknown>) => unknown | Promise<unknow
     sessions,
     agents: [makeProfile({ id: "pi-acp", name: "pi ACP", detected: true })],
     statusOf: () => "ready",
-    delegatesOf: () => [],
     workersOf: () => [],
     startWorker: async () => ({ ok: false, reason: "no" }),
     sendToWorker: async () => ({ ok: false, reason: "no" }),

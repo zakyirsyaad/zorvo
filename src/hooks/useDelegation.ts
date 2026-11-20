@@ -320,8 +320,8 @@ export function useDelegation(deps: DelegationDeps): {
     const current = latest.current;
     const source = current.sessions.find((session) => session.id === coordinatorId);
     const agent = current.agents.find((candidate) => candidate.id === input.agentId);
-    if (source === undefined) return { ok: false, reason: 'this session no longer exists.' };
-    if (agent === undefined) return { ok: false, reason: 'the agent is not available.' };
+    if (source === undefined) return { ok: false, reason: 'This session no longer exists.' };
+    if (agent === undefined) return { ok: false, reason: 'The agent is not available.' };
     const messages = current.transcripts[source.id] ?? [];
     const blocked = sourceBlockedReason({
       source,
@@ -402,10 +402,13 @@ export function useDelegation(deps: DelegationDeps): {
       const content = buildForkHandoff(freshMessages, freshLast.id, {
         sourceSessionName: source.name,
         agentName: agentNameIn(current.agents, source.profileId),
-        cwd: source.cwd,
+        cwd,
         createdAt: now,
         title: HANDOFF_TITLE,
-        note: HANDOFF_NOTE,
+        note:
+          madeWorktree === null
+            ? HANDOFF_NOTE
+            : `${HANDOFF_NOTE} You work in ${cwd}, a worktree of ${madeWorktree.repoPath}. Make your changes there, not in the folder of the session that gave you this task.`,
       });
       const handoffPath = await invoke<string>('write_fork_handoff', { handoffId: id, content });
       if (isWithdrawn()) return withdraw();
@@ -473,7 +476,7 @@ export function useDelegation(deps: DelegationDeps): {
   ): Promise<GiveTaskResult> => {
     const current = latest.current;
     const source = current.sessions.find((session) => session.id === coordinatorId);
-    if (source === undefined) return { ok: false, reason: 'this session no longer exists.' };
+    if (source === undefined) return { ok: false, reason: 'This session no longer exists.' };
     const worker = openDelegatesOf(coordinatorId, current.sessions).find((candidate) => candidate.id === workerId);
     if (worker === undefined) return { ok: false, reason: NO_SUCH_HANDLE };
     const handle = workerHandleOf(worker) ?? worker.profileId;
@@ -503,8 +506,8 @@ export function useDelegation(deps: DelegationDeps): {
     const current = latest.current;
     const source = current.sessions.find((session) => session.id === sourceId);
     const agent = current.agents.find((candidate) => candidate.id === agentId);
-    if (source === undefined) return { ok: false, reason: 'this session no longer exists.' };
-    if (agent === undefined) return { ok: false, reason: 'the agent is not available.' };
+    if (source === undefined) return { ok: false, reason: 'This session no longer exists.' };
+    if (agent === undefined) return { ok: false, reason: 'The agent is not available.' };
 
     const route = taskRoute({
       source,
@@ -551,7 +554,7 @@ export function useDelegation(deps: DelegationDeps): {
     const result = await giveTask(sourceId, agentId, task, options);
     if (result.ok) return true;
     const why = result.detail ?? result.reason;
-    latest.current.onNotice(why === '' ? 'Could not delegate.' : `Could not delegate: ${why}`);
+    latest.current.onNotice(why === '' ? 'Could not delegate.' : `Could not delegate. ${why}`);
     return false;
   };
 

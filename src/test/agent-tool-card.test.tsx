@@ -182,6 +182,15 @@ describe("cards for a session an agent wants to open", () => {
     expect(both.prompt).toBe("For Qwen Code:\n> Review it.\n\nFor Qwen Code:\n> Now the lexer.");
   });
 
+  it("names the worker that gets a send, on the single card and under its heading", () => {
+    const further = { ...delegation, kind: "send" as const, task: "Now the lexer.", handle: "worker-2" };
+    expect(toolCardFor(base, [further]).title).toBe("pi ACP wants to give Qwen Code (worker-2) a task");
+    const both = toolCardFor(base, [delegation, further]);
+    expect(both.prompt).toBe("For Qwen Code:\n> Review it.\n\nFor Qwen Code (worker-2):\n> Now the lexer.");
+    const odd = toolCardFor(base, [{ ...further, handle: "w\u202e1" }, delegation]);
+    expect(odd.prompt).not.toContain("\u202e");
+  });
+
   it("says on a worker card when the worker gets a worktree of its own, and only then", () => {
     const own = toolCardFor(base, [{ ...delegation, hasOwnWorktree: true }]);
     expect(own.zorvoTool?.hasOwnWorktree).toBe(true);

@@ -4,7 +4,7 @@ import { AlertTriangle } from "lucide-react";
 import { useCanvas } from "../../hooks/useCanvas";
 import { enqueueArtifactViewCall } from "../../hooks/useArtifactView";
 import { useLatest } from "../../hooks/useLatest";
-import { artboardCount, canvasShellState } from "../../lib/canvas";
+import { FOLDER_NOT_FOUND, artboardCount, canvasShellState } from "../../lib/canvas";
 import { ArtifactPageBox } from "./ArtifactPageBox";
 import { CanvasHeader } from "./CanvasHeader";
 
@@ -24,8 +24,6 @@ export interface CanvasViewerProps {
   isCovered?: boolean;
 }
 
-/** What the backend says when the canvas's folder, or the session folder it was shown from, is gone. */
-const FOLDER_NOT_FOUND = "Folder not found";
 const NO_PICTURES: ReadonlyMap<string, string> = new Map();
 const COULD_NOT_SHOW = "Zorvo could not show that canvas.";
 

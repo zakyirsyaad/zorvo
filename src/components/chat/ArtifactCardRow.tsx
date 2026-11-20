@@ -21,7 +21,7 @@ export function ArtifactCardRow({ card, state, onOpen }: ArtifactCardRowProps) {
   const openLabel = card.kind === "canvas" ? `Open the canvas ${card.title}` : `Open ${card.title}, version ${card.version}`;
   return (
     <div data-artifact-card="" className="flex items-center gap-3 rounded-panel border border-border bg-surface-2 py-2.5 pr-2.5 pl-3">
-      <ArtifactMark />
+      <ArtifactMark kind={card.kind === "canvas" ? "canvas" : "page"} />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className={`truncate text-ui ${isRemoved ? "text-fg-muted" : "font-medium text-fg"}`}>{card.title}</span>
         <span className="text-caption text-fg-subtle">{detail}</span>

@@ -1848,6 +1848,7 @@ export default function App() {
               rows={gallery}
               onOpen={openFromGallery}
               onOpenCanvas={openCanvasFromGallery}
+              onError={reportError}
               onShowSidebar={isSidebarHidden ? () => setSidebarHidden(false) : undefined}
               notice={settingsPage.section === null && noticeToast}
             />

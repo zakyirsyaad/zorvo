@@ -8,6 +8,7 @@ import { filterGallery, newestVersion, rowTitle, type GalleryRow } from "../../l
 import { canvasCountLabel } from "../../lib/canvas";
 import { formatRelativeTime } from "../../lib/relative-time";
 import { ArtifactMark } from "./ArtifactsPanel";
+import { CanvasMenu } from "./CanvasMenu";
 
 export interface ArtifactGalleryProps {
   /** Every session's artifacts, the most recently changed first. */
@@ -23,6 +24,8 @@ export interface ArtifactGalleryProps {
   onShowSidebar?: () => void;
   /** The app's notice, drawn here because the chat that usually shows it is hidden under the gallery. */
   notice?: ReactNode;
+  /** Says why a canvas could not be removed. */
+  onError?: (message: string) => void;
 }
 
 const COLUMNS = "grid grid-cols-[minmax(0,1fr)_minmax(0,200px)_96px] items-center gap-4";
@@ -36,7 +39,7 @@ function countLine(rows: readonly GalleryRow[]): string {
 }
 
 /** Every page every session's agent showed, in the chat's place: find one again by its title. */
-export function ArtifactGallery({ rows, onOpen, onOpenCanvas, onShowSidebar, notice }: ArtifactGalleryProps) {
+export function ArtifactGallery({ rows, onOpen, onOpenCanvas, onShowSidebar, notice, onError = () => undefined }: ArtifactGalleryProps) {
   const [query, setQuery] = useState("");
   const shown = filterGallery(rows, query);
 
@@ -73,19 +76,19 @@ export function ArtifactGallery({ rows, onOpen, onOpenCanvas, onShowSidebar, not
             <p className="px-3 text-ui text-fg-muted">No artifacts match.</p>
           ) : (
             <>
-              <div aria-hidden="true" className={`${COLUMNS} px-3 text-caption text-fg-subtle`}>
+              <div aria-hidden="true" className={`${COLUMNS} mr-7.5 px-3 text-caption text-fg-subtle`}>
                 <span>Page and session</span>
                 <span>Agent</span>
                 <span className="text-right">Updated</span>
               </div>
               <ul aria-label="Output" className="-mt-2 flex flex-col gap-0.5">
                 {shown.map((row) => (
-                  <li key={`${row.sessionId}/${row.kind === "canvas" ? row.canvas.key : row.artifact.id}`}>
+                  <li key={`${row.sessionId}/${row.kind === "canvas" ? row.canvas.key : row.artifact.id}`} className="flex items-center gap-1">
                     <button
                       type="button"
                       aria-label={`${rowTitle(row)}, in ${row.sessionName}`}
                       onClick={() => (row.kind === "canvas" ? onOpenCanvas?.(row.sessionId, row.canvas.key) : onOpen(row.sessionId, row.artifact.id))}
-                      className={`${COLUMNS} focus-ring w-full rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-surface-hover`}
+                      className={`${COLUMNS} focus-ring min-w-0 flex-1 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-surface-hover`}
                     >
                       <span className="flex min-w-0 items-center gap-3">
                         <ArtifactMark kind={row.kind} />
@@ -105,6 +108,12 @@ export function ArtifactGallery({ rows, onOpen, onOpenCanvas, onShowSidebar, not
                       </span>
                       <span className="text-right text-ui-sm text-fg-subtle">{formatRelativeTime(row.at)}</span>
                     </button>
+                    {/* Pages keep the menu's place, so every row's columns line up. */}
+                    {row.kind === "canvas" ? (
+                      <CanvasMenu sessionId={row.sessionId} canvasKey={row.canvas.key} title={row.canvas.title} onError={onError} />
+                    ) : (
+                      <span aria-hidden="true" className="size-6.5 shrink-0" />
+                    )}
                   </li>
                 ))}
               </ul>

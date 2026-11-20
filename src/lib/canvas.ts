@@ -21,7 +21,12 @@ export interface CanvasEntry {
   shownAt: number;
   /** How many artboards it had when last shown (or as read now, in a `CanvasRead`). */
   artboards: number;
+  /** In `artifact_list` only, and only when true: the canvas's folder is gone. */
+  folderGone?: boolean;
 }
+
+/** What the backend says when a canvas's folder, or the session folder it was shown from, is gone. A test keeps it equal to the Rust. */
+export const FOLDER_NOT_FOUND = 'Folder not found';
 
 export interface CanvasArtboard {
   id: string;
@@ -67,11 +72,12 @@ function isCount(value: unknown): value is number {
 
 function parseEntry(value: unknown): CanvasEntry | null {
   if (!isObject(value)) return null;
-  const { key, folder, relative, title, shownAt, artboards } = value;
+  const { key, folder, relative, title, shownAt, artboards, folderGone } = value;
   if (typeof key !== 'string' || !CANVAS_KEY.test(key)) return null;
   if (typeof folder !== 'string' || typeof relative !== 'string' || typeof title !== 'string' || !isCount(shownAt)) return null;
   if (artboards !== undefined && !isCount(artboards)) return null;
-  return { key, folder, relative, title, shownAt, artboards: artboards ?? 0 };
+  const entry = { key, folder, relative, title, shownAt, artboards: artboards ?? 0 };
+  return folderGone === true ? { ...entry, folderGone: true } : entry;
 }
 
 function parseArtboard(value: unknown): CanvasArtboard | null {

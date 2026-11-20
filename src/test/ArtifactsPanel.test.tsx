@@ -525,6 +525,19 @@ describe("canvases", () => {
     expect(calls("artifact_view_show")).toEqual([]);
   });
 
+  it("says when a canvas's folder is gone", () => {
+    show({ canvases: [{ ...ENTRY, folderGone: true }] });
+
+    // As in the artboard, a row whose folder is gone opens nothing: only its menu is left.
+    expect(screen.queryByRole("button", { name: /^Checkout/ })).toBeNull();
+    const row = within(screen.getByRole("list", { name: "Output" }))
+      .getAllByRole("listitem")
+      .find((item) => item.textContent?.includes("Checkout"))!;
+    expect(row.textContent).toContain("Canvas · design/checkout");
+    expect(row.textContent).not.toContain("12 artboards");
+    expect(row.textContent).toContain("Folder not found");
+  });
+
   it("removes a canvas from its menu", async () => {
     const { props } = show({ canvases: [ENTRY] });
 

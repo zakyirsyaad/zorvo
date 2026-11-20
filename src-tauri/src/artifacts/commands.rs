@@ -37,7 +37,18 @@ pub struct SessionArtifacts {
     pub artifacts: Vec<ArtifactRecord>,
     /// The index exists but could not be read: `artifacts` is empty, not known to be.
     pub failed: bool,
-    pub canvases: Vec<CanvasEntry>,
+    pub canvases: Vec<ListedCanvas>,
+}
+
+/// A canvas in `artifact_list`: its entry, and whether its folder is gone. Only the folder is
+/// looked at, never `canvas.json`, so listing stays one `is_dir` per canvas.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ListedCanvas {
+    #[serde(flatten)]
+    pub entry: CanvasEntry,
+    #[serde(default)]
+    pub folder_gone: bool,
 }
 
 /// One artboard's file hash; `None` when the file is missing or not servable.
@@ -222,7 +233,15 @@ pub fn list_sessions(artifacts: &ArtifactStore, session_ids: &[String]) -> Vec<S
                 session_id: session_id.clone(),
                 failed: listed.is_err(),
                 artifacts: listed.unwrap_or_default(),
-                canvases: artifacts.canvases(session_id).unwrap_or_default(),
+                canvases: artifacts
+                    .canvases(session_id)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|entry| ListedCanvas {
+                        folder_gone: !Path::new(&entry.folder).is_dir(),
+                        entry,
+                    })
+                    .collect(),
             }
         })
         .collect()
@@ -682,6 +701,30 @@ mod tests {
         let kept = artifacts.canvases(SESSION).unwrap();
         assert_eq!(kept, vec![read.entry]);
         assert_eq!(kept[0].relative, "design/x");
+    }
+
+    #[test]
+    fn the_list_says_which_canvas_folders_are_gone() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        std::fs::create_dir_all(work.0.join("design/y")).unwrap();
+        std::fs::write(work.0.join("design/y/canvas.json"), CANVAS_JSON).unwrap();
+        let artifacts = ArtifactStore::new(data.0.clone());
+        show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 1).unwrap();
+        show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/y", 2).unwrap();
+        std::fs::remove_dir_all(work.0.join("design/y")).unwrap();
+
+        let listed = list_sessions(&artifacts, &[SESSION.to_string()]);
+        let gone: Vec<(&str, bool)> = listed[0]
+            .canvases
+            .iter()
+            .map(|canvas| (canvas.entry.relative.as_str(), canvas.folder_gone))
+            .collect();
+
+        assert_eq!(gone, vec![("design/y", true), ("design/x", false)]);
+        let json = serde_json::to_value(&listed[0].canvases[0]).unwrap();
+        assert_eq!(json["folderGone"], true);
+        assert_eq!(json["relative"], "design/y");
     }
 
     #[test]

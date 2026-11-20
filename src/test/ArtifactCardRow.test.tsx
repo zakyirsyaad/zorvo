@@ -26,7 +26,8 @@ describe("the artifact card", () => {
   it("draws a canvas card in the chat", () => {
     const onOpen = vi.fn();
     const canvas = { kind: "canvas" as const, canvasKey: "c-0123456789abcdef", title: "Checkout", artboards: 12 };
-    render(<ArtifactCardRow card={canvas} state="open" onOpen={onOpen} />);
+    const { container } = render(<ArtifactCardRow card={canvas} state="open" onOpen={onOpen} />);
+    expect(container.querySelector('[data-mark="canvas"]')).not.toBeNull();
 
     expect(screen.getByText("Checkout")).toBeTruthy();
     expect(screen.getByText("Canvas · 12 artboards")).toBeTruthy();

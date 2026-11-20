@@ -1,9 +1,5 @@
-import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { ChevronRight, FileText, LayoutGrid, MoreHorizontal, PanelsTopLeft } from "lucide-react";
-import { IconButton } from "../ui/IconButton";
-import { Popover, PopoverOption } from "../ui/Popover";
-import { canvasCountLabel, type CanvasEntry } from "../../lib/canvas";
+import { ChevronRight, FileText, LayoutGrid, PanelsTopLeft } from "lucide-react";
+import { FOLDER_NOT_FOUND, canvasCountLabel, type CanvasEntry } from "../../lib/canvas";
 import { newestVersion, shownArtifactOf, type ViewedArtifact } from "../../lib/artifacts";
 import { fileNameAndFolder, pathInFolder, type CreatedFile } from "../../lib/created-files";
 import { formatRelativeTime } from "../../lib/relative-time";
@@ -11,6 +7,7 @@ import type { ArtifactCommentsState } from "../../hooks/useArtifactComments";
 import type { AddArtifactReview } from "../../hooks/useReviewWiring";
 import type { Artifact } from "../../types";
 import { ArtifactViewer } from "./ArtifactViewer";
+import { CanvasMenu } from "./CanvasMenu";
 import { CanvasViewer } from "./CanvasViewer";
 
 export interface ArtifactsPanelProps {
@@ -45,7 +42,7 @@ export interface ArtifactsPanelProps {
 /** The mark every artifact row and card carries; a canvas has its own. */
 export function ArtifactMark({ kind = "page" }: { kind?: "page" | "canvas" }) {
   return (
-    <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-chip text-fg-secondary">
+    <span aria-hidden="true" data-mark={kind} className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-chip text-fg-secondary">
       {kind === "canvas" ? <LayoutGrid size={14} /> : <PanelsTopLeft size={14} />}
     </span>
   );
@@ -94,40 +91,36 @@ function CreatedFileRow({ file, root, onOpenFile }: { file: CreatedFile; root?: 
   );
 }
 
-/** A canvas the agent showed: its title, artboard count and folder, and a menu to remove it from the list. */
+/**
+ * A canvas the agent showed: its title, artboard count and folder, and its menu. One whose folder is
+ * gone opens nothing and says so, as in the artboard.
+ */
 function CanvasRow({ sessionId, canvas, onOpen, onError }: { sessionId: string; canvas: CanvasEntry; onOpen: () => void; onError: (message: string) => void }) {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const remove = () => {
-    setIsMenuOpen(false);
-    invoke("canvas_forget", { sessionId, key: canvas.key }).catch(() => onError("Zorvo could not remove the canvas."));
-  };
-  const detail = [canvasCountLabel(canvas.artboards), canvas.relative].filter(Boolean).join(" · ");
+  const isGone = canvas.folderGone === true;
+  const detail = [isGone ? "Canvas" : canvasCountLabel(canvas.artboards), canvas.relative].filter(Boolean).join(" · ");
+  const content = (
+    <>
+      <ArtifactMark kind="canvas" />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className={`truncate text-ui ${isGone ? "text-fg-muted" : "text-fg"}`}>{canvas.title}</span>
+        <span className="truncate text-caption text-fg-subtle">{detail}</span>
+      </span>
+    </>
+  );
   return (
     <div className="flex items-center gap-1">
-      <button type="button" title={canvas.folder} onClick={onOpen} className={`focus-ring ${ROW} min-w-0 flex-1 transition-colors hover:bg-surface-hover`}>
-        <ArtifactMark kind="canvas" />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-ui text-fg">{canvas.title}</span>
-          <span className="truncate text-caption text-fg-subtle">{detail}</span>
-        </span>
-        <ChevronRight size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
-      </button>
-      <Popover
-        isOpen={isMenuOpen}
-        onClose={() => setIsMenuOpen(false)}
-        label={`More actions for ${canvas.title}`}
-        align="end"
-        className="w-44"
-        trigger={
-          <IconButton label={`More actions for ${canvas.title}`} size="row" aria-haspopup="menu" aria-expanded={isMenuOpen} onClick={() => setIsMenuOpen(!isMenuOpen)}>
-            <MoreHorizontal size={14} />
-          </IconButton>
-        }
-      >
-        <PopoverOption description="The folder stays where it is." onSelect={remove}>
-          Remove
-        </PopoverOption>
-      </Popover>
+      {isGone ? (
+        <div title={canvas.folder} className={`${ROW} min-w-0 flex-1`}>
+          {content}
+          <span className="shrink-0 pr-1.5 text-ui-sm text-fg-subtle">{FOLDER_NOT_FOUND}</span>
+        </div>
+      ) : (
+        <button type="button" title={canvas.folder} onClick={onOpen} className={`focus-ring ${ROW} min-w-0 flex-1 transition-colors hover:bg-surface-hover`}>
+          {content}
+          <ChevronRight size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
+        </button>
+      )}
+      <CanvasMenu sessionId={sessionId} canvasKey={canvas.key} title={canvas.title} onError={onError} />
     </div>
   );
 }

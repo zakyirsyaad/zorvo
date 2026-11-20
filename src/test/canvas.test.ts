@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { CANVAS_GUIDE, CANVAS_REFUSALS, artboardCount, canvasFileUrl, canvasResultText, canvasShellState, parseCanvasRead, type Canvas, type CanvasRead } from "../lib/canvas";
+import { CANVAS_GUIDE, CANVAS_REFUSALS, FOLDER_NOT_FOUND, artboardCount, parseCanvasEntries, canvasFileUrl, canvasResultText, canvasShellState, parseCanvasRead, type Canvas, type CanvasRead } from "../lib/canvas";
 
 const KEY = "c-0123456789abcdef";
 const ENTRY = { key: KEY, folder: "/w/design/x", relative: "design/x", title: "Checkout", shownAt: 5, artboards: 3 };
@@ -37,6 +37,11 @@ describe("canvas answers", () => {
     for (const bad of [null, "x", [], { ...READ, entry: { ...ENTRY, key: "nope" } }, { ...READ, boards: [{ id: 3 }] }, { ...READ, error: 3 }, { ...READ, canvas: { title: 3, sections: [] } }]) {
       expect(parseCanvasRead(bad)).toBeNull();
     }
+  });
+
+  it("keeps FOLDER_NOT_FOUND equal to the Rust sentence, and a listed canvas's folderGone", () => {
+    expect(readFileSync("src-tauri/src/artifacts/commands.rs", "utf8")).toContain(`const FOLDER_NOT_FOUND: &str = "${FOLDER_NOT_FOUND}";`);
+    expect(parseCanvasEntries([{ ...ENTRY, folderGone: true }, ENTRY])).toEqual([{ ...ENTRY, folderGone: true }, ENTRY]);
   });
 
   it("words the answer to the agent", () => {

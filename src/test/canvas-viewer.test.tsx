@@ -18,6 +18,7 @@ const invoke = vi.fn<(cmd: string, args?: Record<string, unknown>) => Promise<un
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (cmd: string, args?: Record<string, unknown>) => invoke(cmd, args) }));
 
 import { CanvasViewer, type CanvasViewerProps } from "../components/artifacts/CanvasViewer";
+import { FOLDER_NOT_FOUND } from "../lib/canvas";
 
 // Each test is a session of its own: the hook remembers each canvas for the run.
 let run = 0;
@@ -159,7 +160,7 @@ describe("the canvas viewer", () => {
   });
 
   it("says when the folder is gone and shows no view", async () => {
-    answer = { entry: ENTRY, canvas: null, error: "Folder not found", boards: [] };
+    answer = { entry: ENTRY, canvas: null, error: FOLDER_NOT_FOUND, boards: [] };
     show();
 
     await waitFor(() => expect(screen.getByText("Folder not found")).toBeTruthy());

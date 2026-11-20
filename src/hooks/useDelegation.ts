@@ -150,10 +150,14 @@ export function useDelegation(deps: DelegationDeps): {
   const starting = useRef(
     new Map<string, { coordinatorId: string; sessionId: string | null; handle: string; free: () => void }>(),
   );
-  // The delegates a further task is on its way to. Busy is React state, so it is not
-  // observable in the tick the task is sent; this is, from before the send until the
-  // delegate is seen busy or its turn ends.
-  const sendingTo = useRef(new Set<string>());
+  // The delegates a further task is on its way to, with the call that frees the place the send
+  // holds. Busy is React state, so it is not observable in the tick the task is sent; this is,
+  // from before the send until the delegate is seen busy or its turn ends.
+  const sendingTo = useRef(new Map<string, () => void>());
+  const stopSending = (delegateId: string): void => {
+    sendingTo.current.get(delegateId)?.();
+    sendingTo.current.delete(delegateId);
+  };
   // The newest worker handle each coordinator was given in this run.
   const lastHandle = useRef(new Map<string, string>());
 
@@ -293,7 +297,7 @@ export function useDelegation(deps: DelegationDeps): {
     const session = latest.current.sessions.find((candidate) => candidate.id === sessionId);
     const link = session?.delegatedFrom;
     // Its turn is over, whatever the outcome: it can take a further task again.
-    sendingTo.current.delete(sessionId);
+    stopSending(sessionId);
     // A source's turn ended: a report that waited for it may go out now.
     reports.recheck(sessionId);
     // An archived delegate's link is ended with it: a late turn end has nothing to report.
@@ -459,8 +463,19 @@ export function useDelegation(deps: DelegationDeps): {
     const refusal: GiveTaskResult = { ok: false, reason: `${delegateName} did not take the task.` };
     if (link === null || link === undefined) return refusal;
     if (sendingTo.current.has(delegate.id)) return { ok: false, reason: stillWorking };
-    // Held before anything awaits: a second task in the same tick must not reach the same turn.
-    sendingTo.current.add(delegate.id);
+    const limit = startRefusal(
+      atWorkCount({
+        coordinatorId: source.id,
+        sessions: current.sessions,
+        isBusy: current.isBusy,
+        isWaiting: current.isWaiting,
+        underWay: current.places.underWay(source.id),
+      }),
+    );
+    if (limit !== null) return { ok: false, reason: limit };
+    // Held before anything awaits: a second task in the same tick must not reach the same turn,
+    // and the send takes a place, so it counts against the limit until the delegate is at work.
+    sendingTo.current.set(delegate.id, current.places.take(source.id));
     let isTaken: boolean;
     try {
       isTaken = await current.send(delegate.id, task, options.attachments ?? [], {
@@ -470,7 +485,7 @@ export function useDelegation(deps: DelegationDeps): {
       isTaken = false;
     }
     if (!isTaken) {
-      sendingTo.current.delete(delegate.id);
+      stopSending(delegate.id);
       return refusal;
     }
     // The next report quotes the task it answers.
@@ -571,9 +586,9 @@ export function useDelegation(deps: DelegationDeps): {
   // Once a delegate is seen busy the route refuses by itself (also when its turn is later
   // cancelled, which ends without a turn-end notice); a delegate that is gone needs no hold.
   useEffect(() => {
-    for (const delegateId of [...sendingTo.current]) {
+    for (const delegateId of [...sendingTo.current.keys()]) {
       const isListed = sessions.some((session) => session.id === delegateId);
-      if (!isListed || deps.isBusy(delegateId)) sendingTo.current.delete(delegateId);
+      if (!isListed || deps.isBusy(delegateId)) stopSending(delegateId);
     }
   });
 

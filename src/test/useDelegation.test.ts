@@ -1565,3 +1565,86 @@ describe("newSessionRecord with a delegation", () => {
     expect(plain).not.toHaveProperty("openedBy");
   });
 });
+describe("useDelegation further tasks and the limit", () => {
+  const LIMIT_SENTENCE = "4 are running. Start this one when one finishes.";
+  const fiveWorkers = () => ["w1", "w2", "w3", "w4", "w5"].map((id, index) => worker(`worker-${index + 1}`, id));
+  const withWorkers = (atWork: readonly string[], overrides: Partial<HarnessInput> = {}) =>
+    setup({
+      sessions: [sourceSession(), ...fiveWorkers()],
+      transcripts: { "s-a": A_MESSAGES },
+      busy: atWork,
+      ...overrides,
+    });
+
+  it("refuses a further task when four others are at work", async () => {
+    const { result, sends } = withWorkers(["w1", "w2", "w3", "w4"]);
+    const r = await act(async () => result.current.delegation.sendToWorker("s-a", "w5", "More"));
+    expect(r).toEqual({ ok: false, reason: LIMIT_SENTENCE });
+    expect(sends).toHaveLength(0);
+  });
+
+  it("sends a further task when three others are at work", async () => {
+    const { result, sends } = withWorkers(["w1", "w2", "w3"]);
+    const r = await act(async () => result.current.delegation.sendToWorker("s-a", "w5", "More"));
+    expect(r).toMatchObject({ ok: true, kind: "sent" });
+    expect(sends).toHaveLength(1);
+  });
+
+  it("applies the limit to a mention's further task too", async () => {
+    const { result, sends } = setup({
+      sessions: [sourceSession(), worker("worker-1", "w1"), ...["w2", "w3", "w4", "w5"].map((id, i) => sourceSession({ id, createdAt: 20 + i, openedBy: { sessionId: "s-a", at: 1 } }))],
+      transcripts: { "s-a": A_MESSAGES },
+      busy: ["w2", "w3", "w4", "w5"],
+    });
+    const r = await act(async () => result.current.delegation.giveTask("s-a", "codex-acp", "More", { byAgent: true }));
+    expect(r).toEqual({ ok: false, reason: LIMIT_SENTENCE });
+    expect(sends).toHaveLength(0);
+  });
+
+  it("admits one of two further tasks for two idle workers in one tick while three others work", async () => {
+    const { result, sends } = withWorkers(["w1", "w2", "w3"]);
+    const [first, second] = await act(async () =>
+      Promise.all([
+        result.current.delegation.sendToWorker("s-a", "w4", "One"),
+        result.current.delegation.sendToWorker("s-a", "w5", "Two"),
+      ]),
+    );
+    expect(first).toMatchObject({ ok: true });
+    expect(second).toEqual({ ok: false, reason: LIMIT_SENTENCE });
+    expect(sends.map((entry) => entry.sessionId)).toEqual(["w4"]);
+  });
+
+  it("frees the place when the worker's turn ends", async () => {
+    const { result, sends, places } = withWorkers(["w1", "w2", "w3"]);
+    await act(async () => {
+      await result.current.delegation.sendToWorker("s-a", "w4", "One");
+    });
+    expect(places.underWay("s-a")).toBe(1);
+    expect(await act(async () => result.current.delegation.sendToWorker("s-a", "w5", "Two"))).toEqual({
+      ok: false,
+      reason: LIMIT_SENTENCE,
+    });
+    await act(async () => result.current.delegation.onTurnEnded("w4", "finished"));
+    expect(places.underWay("s-a")).toBe(0);
+    expect(await act(async () => result.current.delegation.sendToWorker("s-a", "w5", "Two"))).toMatchObject({ ok: true });
+    expect(sends.map((entry) => entry.sessionId)).toEqual(["w4", "w5"]);
+  });
+
+  it("frees the place when the agent does not take the task", async () => {
+    const { result, places } = withWorkers([], { sendResult: false });
+    const r = await act(async () => result.current.delegation.sendToWorker("s-a", "w5", "More"));
+    expect(r).toMatchObject({ ok: false });
+    expect(places.underWay("s-a")).toBe(0);
+  });
+
+  it("frees the place once the worker is seen busy", async () => {
+    const { result, places, busy } = withWorkers([]);
+    await act(async () => {
+      await result.current.delegation.sendToWorker("s-a", "w5", "More");
+    });
+    expect(places.underWay("s-a")).toBe(1);
+    busy.add("w5");
+    await act(async () => result.current.setSessions((prev) => [...prev]));
+    expect(places.underWay("s-a")).toBe(0);
+  });
+});

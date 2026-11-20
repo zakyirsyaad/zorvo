@@ -162,6 +162,21 @@ describe("the canvas viewer", () => {
     expect(urlOf(after, "pay-a")).toBe(urlOf(calls("canvas_view_apply")[0], "pay-a"));
   });
 
+  it("Reload makes a new view of the canvas, with comment mode off", async () => {
+    const comments = commentsState({ isCommenting: true });
+    show({ comments, addReview: addReview(), cwd: "/w" });
+    await waitFor(() => expect(calls("canvas_view_show")).toHaveLength(1));
+    await act(async () => {});
+    const boundsBefore = calls("artifact_view_bounds").length;
+
+    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+
+    await waitFor(() => expect(calls("canvas_view_show")).toHaveLength(2));
+    expect(calls("canvas_view_show")[1]).toEqual({ sessionId: SESSION, key: KEY, ...RECT });
+    expect(calls("artifact_view_bounds")).toHaveLength(boundsBefore);
+    expect(comments.setCommenting).toHaveBeenCalledWith(false);
+  });
+
   it("drives the view from the header", async () => {
     show();
     await waitFor(() => expect(calls("canvas_view_apply")).toHaveLength(1));

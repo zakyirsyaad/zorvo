@@ -65,6 +65,8 @@ export function CanvasViewer({
   const canvas = useCanvas(sessionId, canvasKey, turnsEnded);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  // A new number makes a new view: a canvas whose view ended (a flood, a dead page) or hangs comes back.
+  const [reload, setReload] = useState(0);
   const onErrorRef = useLatest(onError);
   const { shown, read, selected, lastGood, thumbs } = canvas;
   useCanvasMarks(sessionId, canvasKey, comments?.comments, shown?.boards, onError);
@@ -119,6 +121,11 @@ export function CanvasViewer({
       .finally(() => setIsExporting(false));
   };
   const isFolderGone = read?.error === FOLDER_NOT_FOUND;
+  const reloadCanvas = () => {
+    // A new view starts with comment mode off; the button must say so too.
+    if (comments?.isCommenting) comments.setCommenting(false);
+    setReload((count) => count + 1);
+  };
   const error = read?.error && !isFolderGone ? read.error : null;
 
   return (
@@ -135,6 +142,7 @@ export function CanvasViewer({
         onCommand={command}
         onMenuOpen={setIsMenuOpen}
         handoff={handoff}
+        onReload={shown !== null && !isFolderGone ? reloadCanvas : undefined}
         exporting={shown !== null && !isFolderGone ? { isExporting, onExport: exportArtboards } : undefined}
         commenting={
           comments && shown !== null
@@ -167,7 +175,7 @@ export function CanvasViewer({
         </div>
       ) : shown !== null ? (
         <ArtifactPageBox
-          target={{ kind: "canvas", sessionId, key: canvasKey }}
+          target={{ kind: "canvas", sessionId, key: canvasKey, reload }}
           title={`The canvas ${title}`}
           isCovered={isMenuOpen || isCovered}
           onError={onError}

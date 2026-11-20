@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Maximize2, MessageSquarePlus, Minimize2, Minus, Plus, Scan } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Maximize2, MessageSquarePlus, Minimize2, Minus, Plus, RotateCw, Scan } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Chip } from "../ui/Chip";
 import { IconButton } from "../ui/IconButton";
@@ -29,6 +29,8 @@ export interface CanvasHeaderProps {
   handoff?: CanvasHandoff;
   /** The Export menu; absent (a popout), no Export. */
   exporting?: CanvasExporting;
+  /** Makes a new view of the canvas, which is how one that ended or hangs comes back; absent, no Reload. */
+  onReload?: () => void;
 }
 
 export interface CanvasHandoff {
@@ -106,7 +108,7 @@ function SelectionTools({
  * with Focus, Previous and Next: in the header when expanded, else in a row of its own under it.
  * Export sits with the selection, or in the header when nothing is selected.
  */
-export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBack, isExpanded, onToggleExpanded, onCommand, onMenuOpen, commenting, handoff, exporting }: CanvasHeaderProps) {
+export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBack, isExpanded, onToggleExpanded, onCommand, onMenuOpen, commenting, handoff, exporting, onReload }: CanvasHeaderProps) {
   const [isSectionsOpen, setIsSectionsOpen] = useState(false);
   const percent = `${Math.round(zoom * 100)}%`;
   const setSectionsOpen = (isOpen: boolean) => {
@@ -194,6 +196,11 @@ export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBa
         )}
         {exporting && selectedTitle === null && <CanvasExportMenu exporting={exporting} hasSelection={false} onMenuOpen={onMenuOpen} />}
         {DIVIDER}
+        {onReload && (
+          <IconButton label="Reload" size="row" onClick={onReload}>
+            <RotateCw size={14} />
+          </IconButton>
+        )}
         {commenting && (
           <IconButton
             label="Comment"

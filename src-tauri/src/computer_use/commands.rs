@@ -5,7 +5,12 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, State};
 
+use serde::Serialize;
+
+use super::grants::GrantView;
 use super::permissions::{self, ComputerUseStatus};
+use super::requests::RequestView;
+use super::server::ScreenServer;
 use super::state::ComputerUse;
 
 fn status(state: &ComputerUse) -> ComputerUseStatus {
@@ -56,4 +61,51 @@ pub fn computer_use_reset_permissions(
     permissions::request();
     state.note_screen_recording_asked();
     status(&state)
+}
+
+/// What the webview shows of computer use: what each session may use, and
+/// the cards that wait for an answer.
+#[derive(Debug, Clone, Serialize)]
+pub struct ComputerUseView {
+    pub grants: Vec<GrantView>,
+    pub requests: Vec<RequestView>,
+}
+
+/// The user answered a card. `allowed` holds the keys Rust gave the ticked
+/// rows of that card ("app-1"); a key of another card grants nothing.
+#[tauri::command(async)]
+pub fn computer_use_answer(
+    server: State<'_, Arc<ScreenServer>>,
+    call_id: String,
+    allowed: Vec<String>,
+) -> Option<Vec<String>> {
+    server.answer(&call_id, &allowed)
+}
+
+/// Read when the webview loads, since a reload loses its copy, and after
+/// every `computer-use-changed`.
+#[tauri::command]
+pub fn computer_use_state(server: State<'_, Arc<ScreenServer>>) -> ComputerUseView {
+    ComputerUseView {
+        grants: server.views(),
+        requests: server.open_requests(),
+    }
+}
+
+/// Stop computer use for a session: its grants end and the driver is killed.
+/// The pill goes with it.
+#[tauri::command(async)]
+pub fn computer_use_revoke(
+    app: AppHandle,
+    server: State<'_, Arc<ScreenServer>>,
+    session_id: String,
+) {
+    server.revoke(&session_id);
+    super::pill::hide(&app);
+}
+
+/// What the pill shows when its page loads: the newest thing an agent did.
+#[tauri::command]
+pub fn computer_use_pill_state(pill: State<'_, super::pill::Pill>) -> Option<serde_json::Value> {
+    pill.latest()
 }

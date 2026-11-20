@@ -241,6 +241,13 @@ describe("SessionRow", () => {
     expect(within(row).getByText(long.name).closest("button")).toHaveClass("min-w-0");
   });
 
+  it("marks a session whose agent may use apps on this Mac, and no other", () => {
+    const { row } = renderRow(session(), { usesComputer: (sessionId) => sessionId === session().id });
+    expect(within(row).getByLabelText("Can use apps on your Mac")).toBeInTheDocument();
+    const { row: plain } = renderRow(session({ id: "another-session" }), { usesComputer: () => false });
+    expect(within(plain).queryByLabelText("Can use apps on your Mac")).toBeNull();
+  });
+
   it("marks a session that runs in its own worktree at the start of its subtitle", () => {
     const { row } = renderRow(
       session({ worktree: { path: "/tmp/wt", branch: "agent/fix", repoPath: "/Users/test/developer/zorvo" } }),

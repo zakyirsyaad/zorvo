@@ -84,6 +84,8 @@ export interface ChatCanvasProps {
   delegatedFrom?: ReactNode;
   /** A delegation's status under the messages, before the turn's own status. */
   delegationStatus?: ReactNode;
+  /** The line that says which apps the session's agent may use, always mounted for a session. */
+  computerUseStatus?: ReactNode;
   /** A window with no overview card (a popout) shows a subagent's steps under the reply's tools. */
   showSubagentSteps?: boolean;
   /** Shown under the last message and the turn's status (a failed turn's card). */
@@ -131,6 +133,7 @@ export function ChatCanvas({
   header,
   delegatedFrom,
   delegationStatus,
+  computerUseStatus,
   showSubagentSteps = false,
   footer,
   onReply,
@@ -297,6 +300,7 @@ export function ChatCanvas({
         />
       ))}
       {delegationStatus}
+      {computerUseStatus}
       {isWorking && <WorkingIndicator agentName={shownAgentName} since={workStartedAt} />}
       {isWorking && (
         <AgentStallNotice

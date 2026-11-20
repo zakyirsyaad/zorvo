@@ -289,6 +289,39 @@ export interface ActionCard {
    * decides. It has no `requestId`; its answer goes to Zorvo's tool server.
    */
   zorvoTool?: ZorvoToolRequest;
+  /**
+   * A card Zorvo made for an agent's `request_access`: the apps the agent asks to use.
+   * Its answer goes to `computer_use_answer`, never to the agent.
+   */
+  computerUse?: ComputerUseRequest;
+}
+
+/** How far an agent may go in an app: everything, look and click, look, or nothing. */
+export type ComputerUseTier = 'full' | 'click' | 'view' | 'never';
+
+/** One app on a computer-use card, as Zorvo read it from this Mac. */
+export interface ComputerUseApp {
+  /** What goes back for a ticked row; Rust gave it, and it names nothing outside its card. */
+  key: string;
+  name: string;
+  path?: string;
+  signer?: string;
+  tier: ComputerUseTier;
+  /** "Full use", "Click only", "View only", "Never allowed" or "Not on this Mac". */
+  label: string;
+  warning?: string;
+  installed: boolean;
+  /** A PNG data URL; dropped once the card is answered. */
+  icon?: string;
+}
+
+export interface ComputerUseRequest {
+  kind: 'apps';
+  /** The agent's reason, already made safe to show. */
+  reason: string;
+  apps: ComputerUseApp[];
+  /** The names of the apps the user allowed, once answered. */
+  allowed?: string[];
 }
 
 /** What an agent asked Zorvo's tools for, as the approval card shows it. */

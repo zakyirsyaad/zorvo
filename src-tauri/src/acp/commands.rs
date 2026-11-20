@@ -41,7 +41,7 @@ pub const ACP_EVENT: &str = "acp-event";
 pub fn event_payload(event: &AcpEvent) -> Value {
     match event {
         AcpEvent::Update { session_id, update } => {
-            json!({ "sessionId": session_id, "kind": "update", "update": update })
+            json!({ "sessionId": session_id, "kind": "update", "update": without_images(update) })
         }
         AcpEvent::PermissionRequest {
             session_id,
@@ -75,6 +75,61 @@ pub fn event_payload(event: &AcpEvent) -> Value {
             json!({ "sessionId": session_id, "kind": "elicitation-complete", "key": key })
         }
     }
+}
+
+/// Whether `value` is an image content block, bare or wrapped as ACP wraps a
+/// tool's content (`{ type: "content", content: { type: "image" } }`).
+fn is_image_block(value: &Value) -> bool {
+    let is_image = |block: &Value| block["type"] == "image" && block["data"].is_string();
+    is_image(value) || (value["type"] == "content" && is_image(&value["content"]))
+}
+
+fn drop_images(value: &mut Value) {
+    match value {
+        Value::Array(items) => {
+            items.retain(|item| !is_image_block(item));
+            items.iter_mut().for_each(drop_images);
+        }
+        Value::Object(fields) => fields.values_mut().for_each(drop_images),
+        _ => {}
+    }
+}
+
+/// A tool update without its images: the webview shows none (a screenshot an
+/// agent took of the user's apps stays out of the page and its transcript),
+/// and the text the tool returned stays. Other updates pass as they are.
+fn without_images(update: &Value) -> Value {
+    let is_tool_update = matches!(
+        update["sessionUpdate"].as_str(),
+        Some("tool_call" | "tool_call_update")
+    );
+    if !is_tool_update {
+        return update.clone();
+    }
+    let mut stripped = update.clone();
+    for key in ["content", "rawOutput"] {
+        if let Some(part) = stripped.get_mut(key) {
+            // Some agents send a tool's raw output as JSON inside a string.
+            let unpacked = part
+                .as_str()
+                .filter(|text| text.contains("\"image\""))
+                .and_then(|text| serde_json::from_str::<Value>(text).ok())
+                .filter(|parsed| parsed.is_object() || parsed.is_array());
+            if let Some(mut parsed) = unpacked {
+                if is_image_block(&parsed) {
+                    parsed = Value::Null;
+                } else {
+                    drop_images(&mut parsed);
+                }
+                *part = Value::String(parsed.to_string());
+            } else if is_image_block(part) {
+                *part = Value::Null;
+            } else {
+                drop_images(part);
+            }
+        }
+    }
+    stripped
 }
 
 /// Resolves how to launch an installed ACP agent for `profile_id` (a legacy
@@ -538,6 +593,7 @@ fn fork_in_workspace(
     // A fork lives in its source's process, so it cannot be given an
     // environment: it gets the MCP entry, which a command-path agent ignores.
     let session_tools = servers_for_session(tools, store, session_id, agent_tools)?;
+    tools.copy_profile(source_session_id, session_id);
     let opened = manager.fork(source_session_id, session_id, cwd, session_tools.servers);
     with_tools_path(
         tools,

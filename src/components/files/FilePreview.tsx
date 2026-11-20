@@ -133,7 +133,7 @@ function PdfPage({
   );
 }
 
-function PdfPreview({ bytes, name, size }: { bytes: Uint8Array; name: string; size: number }) {
+export function PdfPreview({ bytes, name, size }: { bytes: Uint8Array; name: string; size: number }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [doc, setDoc] = useState<PdfDocument | null>(null);
   const [failure, setFailure] = useState<string | null>(null);

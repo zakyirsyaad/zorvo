@@ -117,6 +117,10 @@ import { AppUpdateNotice } from "./components/AppUpdateNotice";
 import { restartWarning } from "./lib/app-update";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { useAgentTools } from "./hooks/useAgentTools";
+import { useBrowserAgentTools } from "./hooks/useBrowserAgentTools";
+import { useBrowserOpening } from "./hooks/useBrowserOpening";
+import { BrowserPanel } from "./components/browser/BrowserPanel";
+import { BrowserPermissionLayer } from "./components/browser/BrowserPermissionLayer";
 import { useOpenedSessions } from "./hooks/useOpenedSessions";
 import { ProfileFooter } from "./components/ProfileFooter";
 import { AgentsMenu } from "./components/sidebar/AgentsMenu";
@@ -266,6 +270,17 @@ export default function App() {
     [saveNow, flushTranscripts],
   );
   const appUpdate = useAppUpdate(reportError, writePendingBeforeRestart);
+  // macOS applies a newly allowed Screen Recording permission only after Zorvo restarts.
+  const restartZorvo = useCallback(() => {
+    writePendingBeforeRestart().then(
+      () => invoke("app_restart").catch(() => reportError("Zorvo could not restart. Quit and open it again.")),
+      () => reportError("Zorvo could not save your work, so it did not restart."),
+    );
+  }, [writePendingBeforeRestart, reportError]);
+  const computerUseSetting = useMemo(
+    () => ({ onRestart: restartZorvo, onError: reportError }),
+    [restartZorvo, reportError],
+  );
   const agentUpdates = useAgentUpdates({ catalog: agentCatalog.catalog, settings: state.settings, isLoaded, updateState });
   useAutoEnabledAgents(agents, isLoaded, updateState);
   const suggestedFolders = useSuggestedFolders();
@@ -773,6 +788,7 @@ export default function App() {
     showTab: () => inspector.show("artifacts"),
     view: inspector.viewArtifact,
   });
+  useBrowserOpening({ sessionId: activeSession?.id ?? null, show: () => inspector.show("browser"), onError: reportError, onArtifactShown });
   const gallery = useMemo(
     () => galleryRows(sessions, artifacts.bySession, (profileId) => agentNameOr(agents.find((agent) => agent.id === profileId))),
     [sessions, artifacts.bySession, agents],
@@ -926,8 +942,10 @@ export default function App() {
     stopTurn: (sessionId) => handleInterrupt(sessionId),
   });
   const isSessionWaiting = (sessionId: string) =>
+    browserAgentTools.isWaiting(sessionId) ||
     agentTools.isWaiting(sessionId) ||
     isWaitingForAnswer(sessionById(sessionId), transcripts[sessionId] ?? [], () => isSessionBusy(sessionId));
+  const browserAgentTools = useBrowserAgentTools({ sessions, agents: agentsInUse, onAttention: (sessionId, reason) => notifyAttention(sessionId, reason), onError: reportError });
 
   /** Records a new session and shows it, unless `focus` is false; the agent is started by its engine. */
   const recordSession = (spec: SessionSpec, options?: { focus?: boolean }): Session => {
@@ -2401,6 +2419,16 @@ export default function App() {
                   onOpenUrl={openLink}
                 />
               )}
+              {inspectorTab === "browser" && activeSession && <BrowserPanel
+                key={activeSession.id}
+                sessionId={activeSession.id}
+                onError={reportError}
+                onAddContext={replyBlockedReason({ isComposerHidden, isComposerDisabled, isHeldElsewhere: review.isHeldFor(activeSessionId) })
+                  ? undefined
+                  : (text) => {
+                    if (activeSessionIdRef.current === activeSession.id) composerRef.current?.insertText(text);
+                  }}
+              />}
               {inspectorTab === "terminal" && filesFolder && (
                 <TerminalDrawer
                   folderPath={filesFolder.path}
@@ -2414,6 +2442,7 @@ export default function App() {
           )}
         </div>
       </section>
+      <BrowserPermissionLayer request={browserAgentTools.request} busy={browserAgentTools.answering} answer={browserAgentTools.answer} />
       <SettingsPage
         page={settingsPage}
         persisted={{ state, updateState }}
@@ -2435,6 +2464,9 @@ export default function App() {
         onShowRecoveryCode={recoveryDialog.show}
         onRestoringChange={recoveryDialog.setIsRestoring}
         onOpenUrl={openLink}
+        // Development builds only until agents get the computer-use tools (the plan's Tasks 9 to 12):
+        // a release must not ship a switch that asks macOS for permissions and then does nothing.
+        computerUse={import.meta.env.DEV ? computerUseSetting : undefined}
       />
       <RecoveryCodeLayer
         credits={privateCredits}

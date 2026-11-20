@@ -7,7 +7,9 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
+use base64::Engine;
 use serde_json::{json, Value};
+use std::os::unix::fs::OpenOptionsExt;
 
 use super::bridge::{SOCKET_VARIABLE, TOKEN_VARIABLE, TOOLS_VARIABLE};
 use super::service::AgentTools;
@@ -108,6 +110,7 @@ fn example_arguments(tool: &str) -> &'static str {
         "start_session" => r#"'{"agent":"<id>","brief":"<everything the new session must know>"}'"#,
         "read_session" | "stop_session" => r#"'{"handle":"<handle>"}'"#,
         "show_artifact" => r#"'{"path":"<file.html>","title":"<a short name>"}'"#,
+        "browser" => r#"'{"operation":"tabs.open","url":"https://example.com/"}'"#,
         _ => "",
     }
 }
@@ -142,7 +145,49 @@ fn call(tool: &str, arguments: Value) -> Result<String, String> {
     if !matches!(read, Ok(n) if n > 0) {
         return Err(NO_ANSWER.to_string());
     }
-    let answer: Value = serde_json::from_str(&line).map_err(|_| NO_ANSWER.to_string())?;
+    let mut answer: Value = serde_json::from_str(&line).map_err(|_| NO_ANSWER.to_string())?;
+    // Command-path agents read local image files; MCP agents receive the image
+    // block directly. Never dump megabytes of base64 into a terminal answer.
+    if let Some(blocks) = answer["result"]["content"].as_array_mut() {
+        let mut paths = Vec::new();
+        for image in blocks
+            .iter()
+            .filter(|block| block["type"] == "image" && block["mimeType"] == "image/png")
+        {
+            let Some(encoded) = image["data"]
+                .as_str()
+                .filter(|data| data.len() <= 7 * 1024 * 1024)
+            else {
+                return Err("Screenshot exceeds the command output limit.".into());
+            };
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .map_err(|_| "Invalid screenshot.".to_string())?;
+            if bytes.len() > 5 * 1024 * 1024 || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+                return Err("Invalid screenshot.".into());
+            }
+            let mut random = [0u8; 16];
+            getrandom::fill(&mut random).map_err(|_| "Cannot save the screenshot.".to_string())?;
+            let name = random
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>();
+            let path = std::env::temp_dir().join(format!("zorvo-browser-{name}.png"));
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&path)
+                .map_err(|_| "Cannot save the screenshot.".to_string())?;
+            file.write_all(&bytes)
+                .map_err(|_| "Cannot save the screenshot.".to_string())?;
+            paths.push(path);
+        }
+        for path in paths {
+            blocks
+                .push(json!({"type":"text","text":format!("Screenshot file: {}",path.display())}));
+        }
+    }
     read_answer(&answer)
 }
 

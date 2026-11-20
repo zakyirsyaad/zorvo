@@ -239,11 +239,12 @@ describe("PrivateInspector", () => {
 describe("offeredTabs", () => {
   it("offers the Private tab only for a private session, after the others", () => {
     const on = { hasFolder: true, isRepository: true, hasSession: true };
-    expect(offeredTabs(on)).toEqual(["changes", "activity", "files", "artifacts", "terminal"]);
-    expect(offeredTabs({ ...on, isPrivate: true })).toEqual(["changes", "activity", "files", "artifacts", "terminal", "private"]);
+    expect(offeredTabs(on)).toEqual(["changes", "activity", "files", "artifacts", "browser", "terminal"]);
+    expect(offeredTabs({ ...on, isPrivate: true })).toEqual(["changes", "activity", "files", "artifacts", "browser", "terminal", "private"]);
     expect(offeredTabs({ hasFolder: false, isRepository: false, hasSession: true, isPrivate: true })).toEqual([
       "activity",
       "artifacts",
+      "browser",
       "private",
     ]);
   });

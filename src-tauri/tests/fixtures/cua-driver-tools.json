@@ -1,0 +1,814 @@
+{
+ "driver": "0.52.13",
+ "tools": [
+  {
+   "name": "bring_to_front",
+   "fields": [
+    "pid",
+    "session",
+    "window_id"
+   ],
+   "required": [
+    "pid"
+   ]
+  },
+  {
+   "name": "browser_click",
+   "fields": [
+    "delivery_mode",
+    "input_route",
+    "ref",
+    "session",
+    "tab_id",
+    "target_id",
+    "x",
+    "y"
+   ],
+   "required": [
+    "tab_id",
+    "target_id"
+   ]
+  },
+  {
+   "name": "browser_dialog",
+   "fields": [
+    "action",
+    "delivery_mode",
+    "dialog_id",
+    "prompt_text",
+    "session",
+    "tab_id",
+    "target_id"
+   ],
+   "required": [
+    "action",
+    "tab_id",
+    "target_id"
+   ]
+  },
+  {
+   "name": "browser_download",
+   "fields": [
+    "destination_root",
+    "ref",
+    "session",
+    "tab_id",
+    "target_id"
+   ],
+   "required": [
+    "destination_root",
+    "ref",
+    "session",
+    "tab_id",
+    "target_id"
+   ]
+  },
+  {
+   "name": "browser_motion_policy",
+   "fields": [
+    "mode",
+    "session",
+    "tab_id",
+    "target_id"
+   ],
+   "required": [
+    "mode",
+    "tab_id",
+    "target_id"
+   ]
+  },
+  {
+   "name": "browser_navigate",
+   "fields": [
+    "session",
+    "tab_id",
+    "target_id",
+    "url"
+   ],
+   "required": [
+    "tab_id",
+    "target_id",
+    "url"
+   ]
+  },
+  {
+   "name": "browser_pointer",
+   "fields": [
+    "action",
+    "delivery_mode",
+    "delta_x",
+    "delta_y",
+    "destination_ref",
+    "input_route",
+    "ref",
+    "session",
+    "tab_id",
+    "target_id",
+    "to_x",
+    "to_y",
+    "x",
+    "y"
+   ],
+   "required": [
+    "action",
+    "session",
+    "tab_id",
+    "target_id"
+   ]
+  },
+  {
+   "name": "browser_prepare",
+   "fields": [
+    "allow_launch",
+    "delivery_mode",
+    "pid",
+    "profile",
+    "session",
+    "strategy",
+    "window_id"
+   ],
+   "required": []
+  },
+  {
+   "name": "browser_select",
+   "fields": [
+    "label",
+    "ref",
+    "session",
+    "tab_id",
+    "target_id",
+    "value"
+   ],
+   "required": [
+    "ref",
+    "tab_id",
+    "target_id"
+   ]
+  },
+  {
+   "name": "browser_set_input_files",
+   "fields": [
+    "files",
+    "ref",
+    "session",
+    "tab_id",
+    "target_id"
+   ],
+   "required": [
+    "files",
+    "ref",
+    "tab_id",
+    "target_id"
+   ]
+  },
+  {
+   "name": "browser_type",
+   "fields": [
+    "mode",
+    "ref",
+    "replace",
+    "session",
+    "tab_id",
+    "target_id",
+    "text"
+   ],
+   "required": [
+    "ref",
+    "tab_id",
+    "target_id",
+    "text"
+   ]
+  },
+  {
+   "name": "check_for_update",
+   "fields": [
+    "session"
+   ],
+   "required": []
+  },
+  {
+   "name": "check_permissions",
+   "fields": [
+    "probe_direct_capture",
+    "prompt",
+    "session"
+   ],
+   "required": []
+  },
+  {
+   "name": "click",
+   "fields": [
+    "action",
+    "button",
+    "capture_id",
+    "count",
+    "debug_image_out",
+    "delivery_mode",
+    "element_token",
+    "from_zoom",
+    "modifier",
+    "pid",
+    "post_action_wait",
+    "scope",
+    "session",
+    "target",
+    "window_id",
+    "x",
+    "y"
+   ],
+   "required": []
+  },
+  {
+   "name": "clipboard_read",
+   "fields": [
+    "include_text",
+    "session"
+   ],
+   "required": []
+  },
+  {
+   "name": "clipboard_write",
+   "fields": [
+    "file_path",
+    "image_path",
+    "session",
+    "text"
+   ],
+   "required": []
+  },
+  {
+   "name": "double_click",
+   "fields": [
+    "delivery_mode",
+    "element_token",
+    "pid",
+    "post_action_wait",
+    "session",
+    "window_id",
+    "x",
+    "y"
+   ],
+   "required": []
+  },
+  {
+   "name": "drag",
+   "fields": [
+    "button",
+    "delivery_mode",
+    "duration_ms",
+    "from_x",
+    "from_y",
+    "from_zoom",
+    "modifier",
+    "pid",
+    "post_action_wait",
+    "scope",
+    "session",
+    "steps",
+    "target",
+    "to_x",
+    "to_y",
+    "window_id"
+   ],
+   "required": [
+    "from_x",
+    "from_y",
+    "to_x",
+    "to_y"
+   ]
+  },
+  {
+   "name": "end_session",
+   "fields": [
+    "session"
+   ],
+   "required": []
+  },
+  {
+   "name": "get_accessibility_tree",
+   "fields": [
+    "session"
+   ],
+   "required": []
+  },
+  {
+   "name": "get_agent_cursor_state",
+   "fields": [
+    "session"
+   ],
+   "required": [
+    "session"
+   ]
+  },
+  {
+   "name": "get_browser_state",
+   "fields": [
+    "continuation",
+    "include_screenshot",
+    "pid",
+    "query",
+    "scope_ref",
+    "session",
+    "snapshot_format",
+    "tab_id",
+    "target_id",
+    "window_id"
+   ],
+   "required": []
+  },
+  {
+   "name": "get_config",
+   "fields": [
+    "session"
+   ],
+   "required": []
+  },
+  {
+   "name": "get_cursor_position",
+   "fields": [
+    "session"
+   ],
+   "required": []
+  },
+  {
+   "name": "get_desktop_state",
+   "fields": [
+    "max_image_dimension",
+    "screenshot_out_file",
+    "session"
+   ],
+   "required": []
+  },
+  {
+   "name": "get_guide",
+   "fields": [
+    "session",
+    "topic"
+   ],
+   "required": []
+  },
+  {
+   "name": "get_recording_state",
+   "fields": [
+    "session"
+   ],
+   "required": []
+  },
+  {
+   "name": "get_screen_size",
+   "fields": [
+    "session"
+   ],
+   "required": []
+  },
+  {
+   "name": "get_session",
+   "fields": [
+    "session"
+   ],
+   "required": []
+  },
+  {
+   "name": "get_window_state",
+   "fields": [
+    "capture_mode",
+    "display_only",
+    "full_output",
+    "include_accessibility_tree",
+    "include_screenshot",
+    "max_depth",
+    "max_dimension",
+    "max_elements",
+    "max_image_dimension",
+    "pid",
+    "query",
+    "screenshot_format",
+    "screenshot_out_file",
+    "screenshot_quality",
+    "session",
+    "since",
+    "timeout_ms",
+    "tree_format",
+    "verbose",
+    "window_id"
+   ],
+   "required": [
+    "pid",
+    "window_id"
+   ]
+  },
+  {
+   "name": "health_report",
+   "fields": [
+    "include",
+    "session",
+    "skip"
+   ],
+   "required": []
+  },
+  {
+   "name": "hotkey",
+   "fields": [
+    "delivery_mode",
+    "element_token",
+    "keys",
+    "pid",
+    "post_action_wait",
+    "scope",
+    "session",
+    "target",
+    "window_id",
+    "x",
+    "y"
+   ],
+   "required": [
+    "keys"
+   ]
+  },
+  {
+   "name": "install_ffmpeg",
+   "fields": [
+    "confirm",
+    "session"
+   ],
+   "required": []
+  },
+  {
+   "name": "invoke_menu",
+   "fields": [
+    "delivery_mode",
+    "path",
+    "pid",
+    "session",
+    "window_id"
+   ],
+   "required": [
+    "path",
+    "pid",
+    "window_id"
+   ]
+  },
+  {
+   "name": "kill_app",
+   "fields": [
+    "pid",
+    "session"
+   ],
+   "required": [
+    "pid"
+   ]
+  },
+  {
+   "name": "launch_app",
+   "fields": [
+    "additional_arguments",
+    "bundle_id",
+    "creates_new_application_instance",
+    "name",
+    "session",
+    "urls",
+    "webkit_inspector_port"
+   ],
+   "required": []
+  },
+  {
+   "name": "list_apps",
+   "fields": [
+    "session"
+   ],
+   "required": []
+  },
+  {
+   "name": "list_sessions",
+   "fields": [
+    "cursor",
+    "limit"
+   ],
+   "required": []
+  },
+  {
+   "name": "list_windows",
+   "fields": [
+    "app",
+    "on_screen_only",
+    "pid",
+    "session"
+   ],
+   "required": []
+  },
+  {
+   "name": "move_cursor",
+   "fields": [
+    "cursor_id",
+    "delivery_mode",
+    "scope",
+    "session",
+    "target",
+    "x",
+    "y"
+   ],
+   "required": [
+    "x",
+    "y"
+   ]
+  },
+  {
+   "name": "page",
+   "fields": [
+    "action",
+    "attributes",
+    "css_selector",
+    "pid",
+    "session",
+    "window_id"
+   ],
+   "required": [
+    "action"
+   ]
+  },
+  {
+   "name": "parse_visual_regions",
+   "fields": [
+    "capture_id",
+    "options",
+    "session"
+   ],
+   "required": [
+    "capture_id"
+   ]
+  },
+  {
+   "name": "press_key",
+   "fields": [
+    "delivery_mode",
+    "element_token",
+    "key",
+    "modifiers",
+    "pid",
+    "post_action_wait",
+    "scope",
+    "session",
+    "target",
+    "window_id",
+    "x",
+    "y"
+   ],
+   "required": [
+    "key"
+   ]
+  },
+  {
+   "name": "replay_trajectory",
+   "fields": [
+    "delay_ms",
+    "dir",
+    "session",
+    "stop_on_error"
+   ],
+   "required": [
+    "dir"
+   ]
+  },
+  {
+   "name": "right_click",
+   "fields": [
+    "delivery_mode",
+    "element_token",
+    "modifier",
+    "pid",
+    "post_action_wait",
+    "session",
+    "window_id",
+    "x",
+    "y"
+   ],
+   "required": []
+  },
+  {
+   "name": "run_steps",
+   "fields": [
+    "app",
+    "delay_ms",
+    "delivery_mode",
+    "foreground_fallback",
+    "observe",
+    "pid",
+    "session",
+    "steps",
+    "window",
+    "window_id"
+   ],
+   "required": [
+    "steps"
+   ]
+  },
+  {
+   "name": "scroll",
+   "fields": [
+    "amount",
+    "by",
+    "delivery_mode",
+    "direction",
+    "element_token",
+    "pid",
+    "post_action_wait",
+    "scope",
+    "session",
+    "target",
+    "window_id",
+    "x",
+    "y"
+   ],
+   "required": [
+    "direction"
+   ]
+  },
+  {
+   "name": "set_agent_cursor_enabled",
+   "fields": [
+    "enabled",
+    "session"
+   ],
+   "required": [
+    "enabled",
+    "session"
+   ]
+  },
+  {
+   "name": "set_agent_cursor_motion",
+   "fields": [
+    "arc_flow",
+    "arc_size",
+    "dwell_after_click_ms",
+    "effects",
+    "end_handle",
+    "glide_duration_ms",
+    "idle_hide_ms",
+    "session",
+    "spring",
+    "start_handle",
+    "style",
+    "timing",
+    "turn_radius"
+   ],
+   "required": [
+    "session"
+   ]
+  },
+  {
+   "name": "set_agent_cursor_theme",
+   "fields": [
+    "reduced_motion",
+    "session",
+    "theme_id"
+   ],
+   "required": [
+    "session",
+    "theme_id"
+   ]
+  },
+  {
+   "name": "set_config",
+   "fields": [
+    "cursor.badges",
+    "cursor.float",
+    "cursor.halo",
+    "cursor.marks",
+    "cursor.motion",
+    "cursor.motion.effects.glow",
+    "cursor.motion.effects.magnet",
+    "cursor.motion.effects.ripple",
+    "cursor.motion.effects.squish",
+    "cursor.motion.effects.trail",
+    "cursor.motion.style",
+    "cursor.motion.timing",
+    "cursor.rotate",
+    "fast_path",
+    "max_image_dimension",
+    "session"
+   ],
+   "required": []
+  },
+  {
+   "name": "set_value",
+   "fields": [
+    "element_token",
+    "pid",
+    "post_action_wait",
+    "session",
+    "value",
+    "window_id"
+   ],
+   "required": [
+    "value"
+   ]
+  },
+  {
+   "name": "set_window_frame",
+   "fields": [
+    "height",
+    "pid",
+    "session",
+    "width",
+    "window_id",
+    "x",
+    "y"
+   ],
+   "required": [
+    "height",
+    "pid",
+    "width",
+    "window_id",
+    "x",
+    "y"
+   ]
+  },
+  {
+   "name": "start_recording",
+   "fields": [
+    "include_accessibility_tree",
+    "output_dir",
+    "record_video",
+    "redact_values",
+    "session",
+    "state_timeout_ms"
+   ],
+   "required": [
+    "output_dir"
+   ]
+  },
+  {
+   "name": "start_session",
+   "fields": [
+    "capture_scope",
+    "cursor_motion",
+    "cursor_theme",
+    "session"
+   ],
+   "required": []
+  },
+  {
+   "name": "stop_recording",
+   "fields": [
+    "session"
+   ],
+   "required": []
+  },
+  {
+   "name": "type_text",
+   "fields": [
+    "delay_ms",
+    "delivery_mode",
+    "element_token",
+    "pid",
+    "post_action_wait",
+    "scope",
+    "session",
+    "target",
+    "text",
+    "window_id",
+    "x",
+    "y"
+   ],
+   "required": [
+    "text"
+   ]
+  },
+  {
+   "name": "verify_state",
+   "fields": [
+    "expect",
+    "include_screenshot",
+    "pid",
+    "session",
+    "stable_samples",
+    "timeout_ms",
+    "window_id"
+   ],
+   "required": [
+    "expect",
+    "pid",
+    "window_id"
+   ]
+  },
+  {
+   "name": "zoom",
+   "fields": [
+    "pid",
+    "session",
+    "window_id",
+    "x1",
+    "x2",
+    "y1",
+    "y2"
+   ],
+   "required": [
+    "window_id",
+    "x1",
+    "x2",
+    "y1",
+    "y2"
+   ]
+  }
+ ]
+}

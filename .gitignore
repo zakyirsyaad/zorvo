@@ -27,5 +27,8 @@ dist-ssr
 # Tauri / Rust
 src-tauri/target
 
+# The pinned cua-driver, fetched by `pnpm cua-driver:fetch`
+src-tauri/binaries/
+
 # Built by site/scripts/build-motion.mjs
 site/public/motion.js

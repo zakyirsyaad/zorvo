@@ -1,7 +1,8 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, act, fireEvent } from "@testing-library/react";
+import { render, renderHook, screen, act, fireEvent } from "@testing-library/react";
 import { AgentStallNotice } from "../components/chat/AgentStallNotice";
+import { useAgentFailures } from "../hooks/useAgentFailures";
 import type { ChatMessage } from "../types";
 
 const question: ChatMessage = { id: "u-1", role: "user", content: "Reply with just the word OK.", timestamp: 1 };
@@ -77,6 +78,30 @@ describe("AgentStallNotice", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       "Qwen Code's requests to deepseek-v4.1-flash-1017 failed 3 times in a row. Last error: 429 Your token-plan quota has been exhausted.",
     );
+  });
+
+  it('shows OpenCode retry metadata through the failure hook and clears it when the next step starts', () => {
+    const { result } = renderHook(() => useAgentFailures());
+    const retry = (attempt: number | null) => ({
+      sessionUpdate: 'session_info_update',
+      _meta: { 'opencode/retry': attempt === null ? null : {
+        attempt, nextRetryAt: '2026-11-20T14:59:05.476Z',
+        error: { type: 'provider.internal', message: 'Streaming response failed: [500] Internal server error' },
+      } },
+    });
+    act(() => { result.current.observe('s-1', retry(1)); });
+    const { rerender } = render(<AgentStallNotice agentName="OpenCode V2" messages={[question]} failures={result.current.failures['s-1']} />);
+    expect(screen.queryByRole('status')).toBeNull();
+
+    act(() => { result.current.observe('s-1', retry(2)); });
+    rerender(<AgentStallNotice agentName="OpenCode V2" messages={[question]} failures={result.current.failures['s-1']} />);
+    expect(screen.getByRole('status')).toHaveTextContent("OpenCode V2's requests failed 2 times in a row. Last error: Streaming response failed: [500] Internal server error.");
+    act(() => { result.current.observe('s-1', retry(2)); });
+    expect(result.current.failures['s-1'].count).toBe(2);
+
+    act(() => { result.current.observe('s-1', retry(null)); });
+    rerender(<AgentStallNotice agentName="OpenCode V2" messages={[question]} failures={result.current.failures['s-1']} />);
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it("offers Stop, which stops the turn", () => {

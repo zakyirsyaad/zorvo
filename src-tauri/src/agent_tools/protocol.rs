@@ -94,7 +94,7 @@ fn notification(method: &str, params: &Value) -> Step {
 
 /// Read by the agent at the start, unlike a tool's description, which an agent that loads its
 /// MCP tools on demand (Qwen Code) never sees before it answers.
-pub const ARTIFACT_INSTRUCTIONS: &str = "Zorvo shows web pages beside the chat. When your answer is better seen than read (a report, a summary of what changed, a comparison, a chart, a diagram, a dashboard, a mockup of a screen, or something the user can click through), show it as a page without being asked: call artifact_guide once, write one self-contained .html file, then call show_artifact with its path. If your tools are loaded on demand, look up show_artifact first. Keep short text and code answers in the chat.";
+pub const ARTIFACT_INSTRUCTIONS: &str = "Zorvo shows web pages beside the chat. When your answer is better seen than read (a report, a summary of what changed, a comparison, a chart, a diagram, a dashboard, a mockup of a screen, or something the user can click through), show it as a page without being asked: call artifact_guide once, write one self-contained .html file, then call show_artifact with its path. If your tools are loaded on demand, look up show_artifact first. Keep short text and code answers in the chat. For browsing websites call browser directly: {\"operation\":\"tabs.open\",\"url\":\"https://example.com/\"} opens the native Browser panel after its session grant; {\"operation\":\"scroll\",\"deltaY\":800} scrolls the active WebKit tab down. A tabID is optional for the active WebKit tab. Use browser_guide for advanced parameters, rather than before every simple action. Do not start a local HTTP server just to open a remote page.";
 
 fn initialize_result(params: &Value, caller: &Caller) -> Value {
     let requested = params.get("protocolVersion").and_then(Value::as_str);
@@ -310,9 +310,12 @@ mod tests {
     }
 
     #[test]
-    fn tools_list_returns_the_seven_tools() {
+    fn tools_list_returns_the_registered_tools() {
         let got = reply(r#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#);
-        assert_eq!(got["result"]["tools"].as_array().unwrap().len(), 7);
+        assert_eq!(
+            got["result"]["tools"].as_array().unwrap().len(),
+            TOOL_NAMES.len()
+        );
         assert_eq!(
             reply(r#"{"jsonrpc":"2.0","id":4,"method":"ping"}"#)["result"],
             json!({})

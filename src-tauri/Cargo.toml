@@ -21,8 +21,8 @@ tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2.8.1"
 # The artifact page's own webview is made with wry directly, so Tauri gives it no IPC.
 # Keep this at the version Tauri uses: one wry in Cargo.lock (a test checks).
-wry = { version = "=0.57.0", default-features = false }
-tauri-plugin-notification = "=2.7.0"
+wry = { version = "=0.57.2", default-features = false }
+tauri-plugin-notification = "=2.8.1"
 # Not the default features: `zip` only serves Windows .zip bundles and Linux AppImage, and it pins
 # zip 4 (RUSTSEC-2026-0367/0368/0369, no 4.x fix), which would keep `cargo audit` red. `system-proxy`
 # is kept so the update check follows the macOS proxy settings.
@@ -34,7 +34,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 base64 = "0.23"
 url = "2"
 regex = "1"
-ureq = { version = "=3.5.0", default-features = false, features = ["rustls"] }
+ureq = { version = "=3.5.2", default-features = false, features = ["rustls"] }
 sha2 = "0.11.1"
 # The OS random source for the recovery code and proxy tokens; the version already in Cargo.lock.
 getrandom = "=0.3.4"
@@ -58,6 +58,9 @@ zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
+block2 = "0.6"
+objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "block2", "WKContentWorld", "WKFrameInfo", "WKHTTPCookieStore", "WKPreferences", "WKScriptMessage", "WKScriptMessageHandler", "WKSecurityOrigin", "WKSnapshotConfiguration", "WKUIDelegate", "WKUserContentController", "WKUserScript", "WKWebView", "WKWebViewConfiguration", "WKWebsiteDataStore"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSBitmapImageRep", "NSImageRep", "NSImage"] }
 # Keychain for the Zorvo Private device secret; the version the updater already compiles.
 security-framework = "=3.7.0"
 objc2-foundation = { version = "0.3", features = ["NSDictionary", "NSString", "NSUserDefaults", "NSValue"] }

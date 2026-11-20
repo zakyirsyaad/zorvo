@@ -22,6 +22,7 @@ mod agent_tools_socket_test;
 mod background_processes_test;
 mod branches_test;
 mod changes_test;
+mod computer_use_driver_test;
 mod config_test;
 mod data_migration_test;
 mod diff_since_test;

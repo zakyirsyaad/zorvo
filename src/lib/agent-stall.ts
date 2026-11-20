@@ -12,13 +12,14 @@ export const STALL_TOOL_SILENCE_MS = 5 * 60_000;
 export const STOP_IGNORED_MS = 10_000;
 /** A tool's name past this many characters is cut, as the notice is one line of it. */
 const MAX_TOOL_NAME_CHARS = 80;
+const MAX_FAILURE_DETAIL_CHARS = 500;
 
 const MS_PER_MINUTE = 60_000;
 
 /** Requests an agent reported as failed in a row, and what it said about them. */
 export interface AgentFailures {
   count: number;
-  source: 'qwen-lifecycle' | 'codex';
+  source: 'qwen-lifecycle' | 'codex' | 'opencode';
   model?: string;
   /** The agent's own words for the last error, when it gave any. */
   detail?: string;
@@ -27,7 +28,8 @@ export interface AgentFailures {
 export type FailureReport =
   | { kind: 'failed'; source: 'qwen-lifecycle'; model?: string }
   | { kind: 'failed'; source: 'codex'; detail?: string }
-  | { kind: 'recovered' };
+  | { kind: 'failed'; source: 'opencode'; attempt: number; detail: string }
+  | { kind: 'recovered'; source?: 'opencode' };
 
 function recordOf(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
@@ -51,20 +53,44 @@ function codexReport(meta: Record<string, unknown>): FailureReport | null {
   return { kind: 'failed', source: 'codex', detail };
 }
 
+/** OpenCode V2 reports retries as an extension on session_info_update. */
+function opencodeReport(update: Record<string, unknown>, meta: Record<string, unknown>): FailureReport | null {
+  if (update.sessionUpdate !== 'session_info_update') return null;
+  const value = meta['opencode/retry'];
+  if (value === null) return { kind: 'recovered', source: 'opencode' };
+  const retry = recordOf(value);
+  if (!retry || typeof retry.attempt !== 'number' || !Number.isSafeInteger(retry.attempt) || retry.attempt < 1) return null;
+  const at = retry.nextRetryAt;
+  if (typeof at !== 'string' || at.length > 40 || !Number.isFinite(Date.parse(at)) || new Date(at).toISOString() !== at) return null;
+  const message = textOf(recordOf(retry.error)?.message);
+  if (!message) return null;
+  // Only the error message belongs in the notice, never response bodies or other
+  // provider metadata. Bound it before escaping controls, then bound the result.
+  const detail = escapeVisible(message.slice(0, MAX_FAILURE_DETAIL_CHARS)).slice(0, MAX_FAILURE_DETAIL_CHARS);
+  return { kind: 'failed', source: 'opencode', attempt: retry.attempt, detail };
+}
+
 /** What a session update says about the agent's failed requests, if anything. */
 export function failureReportOf(update: unknown): FailureReport | null {
-  const meta = recordOf(recordOf(update)?._meta);
-  if (!meta) return null;
-  return qwenReport(meta) ?? codexReport(meta);
+  const record = recordOf(update);
+  const meta = recordOf(record?._meta);
+  if (!record || !meta) return null;
+  return qwenReport(meta) ?? codexReport(meta) ?? opencodeReport(record, meta);
 }
 
 /** The failures after one more report; `undefined` once a request goes through. */
 export function nextFailures(prev: AgentFailures | undefined, report: FailureReport): AgentFailures | undefined {
-  if (report.kind === 'recovered') return undefined;
-  const model = report.source === 'qwen-lifecycle' ? (report.model ?? prev?.model) : prev?.model;
-  const detail = report.source === 'codex' ? (report.detail ?? prev?.detail) : prev?.detail;
+  if (report.kind === 'recovered') return report.source && prev?.source !== report.source ? prev : undefined;
+  const sameSource = prev?.source === report.source ? prev : undefined;
+  if (report.source === 'opencode') {
+    // OpenCode gives an absolute attempt, which may be delivered more than once.
+    if (sameSource && report.attempt <= sameSource.count) return sameSource;
+    return { count: report.attempt, source: report.source, detail: report.detail };
+  }
+  const model = report.source === 'qwen-lifecycle' ? (report.model ?? sameSource?.model) : sameSource?.model;
+  const detail = report.source === 'codex' ? (report.detail ?? sameSource?.detail) : sameSource?.detail;
   return {
-    count: (prev?.count ?? 0) + 1,
+    count: (sameSource?.count ?? 0) + 1,
     source: report.source,
     ...(model ? { model } : {}),
     ...(detail ? { detail } : {}),

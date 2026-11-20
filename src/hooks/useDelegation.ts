@@ -29,7 +29,7 @@ import { createId } from '../lib/ids';
 import { createSessionWorktree } from '../lib/session-worktree';
 import { isArchived } from '../lib/session-helpers';
 import type { StartPlaces } from '../lib/start-places';
-import { atWorkCount, issuedWorkerHandles, nextWorkerHandle, startRefusal, withNewTask, workerHandleOf } from '../lib/workers';
+import { atWorkCount, isReportOf, issuedWorkerHandles, nextWorkerHandle, startRefusal, withNewTask, workerHandleOf } from '../lib/workers';
 import type { SessionSpec, StartSessionOptions } from '../lib/session-start';
 import type { AgentProfile, ChatMessage, Session, SessionWorktree } from '../types';
 import type { AttentionReason, FirstMessage } from './session-engine/useAcpEngine';
@@ -175,7 +175,7 @@ export function useDelegation(deps: DelegationDeps): {
     if (reports.isDelivering(delegateId)) return true;
     const delegate = sessions.find((candidate) => candidate.id === delegateId);
     const report = lastUserMessage(transcripts[sourceId] ?? [])?.delegationReport;
-    return delegate !== undefined && report?.agentId === delegate.profileId;
+    return delegate !== undefined && report !== undefined && isReportOf(report, delegate);
   };
 
   const sendBlockedReason = (sessionId: string): string | null => {
@@ -261,7 +261,7 @@ export function useDelegation(deps: DelegationDeps): {
       if (!isOpenLink(link)) return { ...base, state: 'ended', workingSince: null };
 
       const report = lastUserMessage(transcripts[source.id] ?? []);
-      const isReportFromDelegate = report?.delegationReport?.agentId === session.profileId;
+      const isReportFromDelegate = report?.delegationReport !== undefined && isReportOf(report.delegationReport, session);
       if (isHandingOver(session.id) || (deps.isBusy(source.id) && isReportFromDelegate)) {
         return {
           ...base,

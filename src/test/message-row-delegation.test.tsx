@@ -31,6 +31,17 @@ function renderRow(message: ChatMessage) {
 }
 
 describe("a delegation report in the chat", () => {
+  it("a report that names its worker reads From Codex (worker-2), escaped", () => {
+    const row = renderRow({ ...report, delegationReport: { agentName: "Codex", agentId: "codex-acp", handle: "worker-2" } });
+    expect(within(row).getByText("From Codex (worker-2)")).toBeInTheDocument();
+    const escaped = renderRow({
+      ...report,
+      id: "u-2",
+      delegationReport: { agentName: "Codex", agentId: "codex-acp", handle: "w\u202e1" },
+    });
+    expect(escaped.textContent).not.toContain("\u202e");
+  });
+
   it("a delegation report reads From Codex", () => {
     const row = renderRow(report);
     const label = within(row).getByText("From Codex");

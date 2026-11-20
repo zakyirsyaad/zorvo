@@ -426,16 +426,19 @@ function withValidVerification(message: ChatMessage): ChatMessage {
     : message;
 }
 
-/** A report or task mark keeps a non-empty agent name and, when it is a string, the agent's id. */
+/** A report or task mark keeps a non-empty agent name and, when they are strings, the agent's id and a report's worker handle. */
 function withValidAgentMark(message: ChatMessage, key: 'delegationReport' | 'delegationTask'): ChatMessage {
   if (!(key in message)) return message;
   const { [key]: mark, ...rest } = message;
   if (!isObject(mark)) return rest as ChatMessage;
-  const { agentName, agentId } = mark;
+  const { agentName, agentId, handle } = mark as { agentName?: unknown; agentId?: unknown; handle?: unknown };
   if (typeof agentName !== 'string' || agentName === '') return rest as ChatMessage;
-  return typeof agentId === 'string'
-    ? ({ ...rest, [key]: { agentName, agentId } } as ChatMessage)
-    : ({ ...rest, [key]: { agentName } } as ChatMessage);
+  const kept = {
+    agentName,
+    ...(typeof agentId === 'string' ? { agentId } : {}),
+    ...(key === 'delegationReport' && typeof handle === 'string' ? { handle } : {}),
+  };
+  return { ...rest, [key]: kept } as ChatMessage;
 }
 
 /** An artifact card keeps its three fields when they fit, else the message goes on without it. */

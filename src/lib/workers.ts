@@ -120,6 +120,14 @@ export function workerHandleOf(session: Session): string | undefined {
 }
 
 /**
+ * Whether a report mark on the coordinator's message is this worker's. A mark
+ * with a handle names one worker; an older mark names only the agent.
+ */
+export function isReportOf(mark: { agentId?: string; handle?: string }, worker: Session): boolean {
+  return mark.handle !== undefined ? mark.handle === workerHandleOf(worker) : mark.agentId === worker.profileId;
+}
+
+/**
  * The coordinator's open, unarchived worker named `handle`. Old links are
  * named by agent id, so several can match; the newest wins.
  */

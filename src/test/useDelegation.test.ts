@@ -1673,3 +1673,60 @@ describe("useDelegation handles after a restart", () => {
     expect(await startOne(hook)).toMatchObject({ ok: true, handle: "worker-3" });
   });
 });
+
+describe("useDelegation reports name their worker", () => {
+  it("words and marks a new worker's report with its handle", async () => {
+    const env = setup({
+      sessions: [sourceSession(), worker("worker-2", "s-b")],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+      strict: true,
+    });
+    await act(async () => {
+      env.result.current.delegation.onTurnEnded("s-b", "finished");
+    });
+    await waitFor(() => expect(env.sends).toHaveLength(1));
+    expect(env.sends[0].text).toContain('Report from Codex (worker-2) on the task you delegated: "Fix the parser"');
+    expect(env.sends[0].marks).toEqual({
+      delegationReport: { agentName: "Codex", agentId: "codex-acp", handle: "worker-2" },
+    });
+  });
+
+  it("leaves an older link's report as it was", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+      strict: true,
+    });
+    await act(async () => {
+      env.result.current.delegation.onTurnEnded("s-b", "finished");
+    });
+    await waitFor(() => expect(env.sends).toHaveLength(1));
+    expect(env.sends[0].text).toContain('Report from Codex on the task you delegated: "Fix the parser"');
+    expect(env.sends[0].marks).toEqual({ delegationReport: { agentName: "Codex", agentId: "codex-acp" } });
+  });
+
+  const twoWorkers = (mark: NonNullable<ChatMessage["delegationReport"]>) =>
+    setup({
+      sessions: [sourceSession(), worker("worker-1", "w1"), worker("worker-2", "w2")],
+      transcripts: {
+        "s-a": [
+          ...A_MESSAGES,
+          { id: "m-a3", role: "user", content: "Report", timestamp: 3, delegationReport: mark },
+        ],
+      },
+      busy: ["s-a"],
+    });
+
+  it("blocks only the worker whose report the coordinator reads", () => {
+    const env = twoWorkers({ agentName: "Codex", agentId: "codex-acp", handle: "worker-1" });
+    expect(env.result.current.delegation.sendBlockedReason("w1")).toBe("Claude Code is working on Codex's report.");
+    expect(env.result.current.delegation.sendBlockedReason("w2")).toBe("Wait for Claude Code to finish.");
+    expect(env.result.current.delegation.viewFor("w1")?.state).toBe("source-working");
+    expect(env.result.current.delegation.viewFor("w2")?.state).not.toBe("source-working");
+  });
+
+  it("matches by agent for a report that names no worker", () => {
+    const env = twoWorkers({ agentName: "Codex", agentId: "codex-acp" });
+    expect(env.result.current.delegation.sendBlockedReason("w2")).toBe("Claude Code is working on Codex's report.");
+  });
+});

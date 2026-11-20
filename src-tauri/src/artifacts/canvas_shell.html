@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Canvas</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #f3f3f3; }
+  body { font: 13px/1.3 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; color: rgba(0, 0, 0, 0.55); }
+  #viewport { position: fixed; inset: 0; overflow: hidden; cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; }
+  #viewport.panning { cursor: grabbing; }
+  #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; --inv: 1; }
+  .section-title { position: absolute; font-size: calc(20px * var(--inv)); font-weight: 600; white-space: nowrap; color: rgba(0, 0, 0, 0.7); }
+  .group-label { position: absolute; font-size: calc(13px * var(--inv)); white-space: nowrap; border-bottom: calc(1px * var(--inv)) solid rgba(0, 0, 0, 0.25); padding-bottom: calc(4px * var(--inv)); overflow: hidden; text-overflow: ellipsis; }
+  .board { position: absolute; cursor: default; }
+  .frame { position: absolute; inset: 0; background: #fff; box-shadow: 0 calc(1px * var(--inv)) calc(4px * var(--inv)) rgba(0, 0, 0, 0.22); overflow: hidden; }
+  .board.selected .frame { outline: calc(2px * var(--inv)) solid #4a7cf7; outline-offset: calc(2px * var(--inv)); }
+  .frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
+  .frame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top left; pointer-events: none; }
+  .hit { position: absolute; inset: 0; }
+  .board.selected .hit { pointer-events: none; }
+  .box { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(6px * var(--inv)); font-size: calc(14px * var(--inv)); background: #fafafa; text-align: center; padding: 8px; box-sizing: border-box; }
+  .box strong { font-weight: 600; color: rgba(0, 0, 0, 0.7); }
+  .title { position: absolute; left: 0; top: 100%; margin-top: calc(8px * var(--inv)); font-size: calc(13px * var(--inv)); white-space: nowrap; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .board.selected .title { color: #2b5fd9; }
+  .error { position: fixed; left: 0; right: 0; top: 0; padding: 8px 12px; background: #fdecea; color: #8a1c14; border-bottom: 1px solid rgba(138, 28, 20, 0.3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 2; }
+  .error[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div id="viewport"><div id="world"></div></div>
+<div class="error" role="status" hidden></div>
+<script>
+(function () {
+  "use strict";
+
+  var TITLE_BAND = 48, GROUP_BAND = 32, GAP_X = 80, GAP_Y = 160;
+  var MIN_ZOOM = 0.05, MAX_ZOOM = 2, LIVE_MIN_ZOOM = 0.25, LIVE_BUDGET = 8;
+  var STEP = 1.25, FIT_PAD = 48, MAX_INV = 3, ZOOM_REPORT_MS = 100, DRAG_PX = 4;
+
+  var viewportEl = document.getElementById("viewport");
+  var worldEl = document.getElementById("world");
+  var errorEl = document.querySelector(".error");
+
+  var current = { boards: [], sections: [], selected: null };
+  var lay = layout(current);
+  var view = { x: 0, y: 0, zoom: 1 };
+  var fitted = false;
+  var entries = {};
+  var labels = [];
+  var modeOn = false;
+  var marksById = {};
+  var refreshQueued = false;
+  var zoomTimer = null;
+  var lastZoomPost = -Infinity;
+
+  function clamp(value, low, high) { return Math.min(high, Math.max(low, value)); }
+
+  function post(message) {
+    var body = JSON.stringify(message);
+    var ipc = window.ipc;
+    if (ipc && typeof ipc.postMessage === "function") { ipc.postMessage(body); return; }
+    var handlers = window.webkit && window.webkit.messageHandlers;
+    if (handlers && handlers.ipc) handlers.ipc.postMessage(body);
+  }
+
+  function layout(state) {
+    var boards = [], sections = [], groups = [], y = 0, width = 0;
+    var all = (state && state.boards) || [];
+    ((state && state.sections) || []).forEach(function (section) {
+      var items = all.filter(function (board) { return board.section === section.id; });
+      var ordered = [], seen = {};
+      items.forEach(function (board) {
+        if (!board.group) { ordered.push(board); return; }
+        if (seen[board.group]) return;
+        seen[board.group] = true;
+        items.forEach(function (other) { if (other.group === board.group) ordered.push(other); });
+      });
+      var hasGroup = ordered.some(function (board) { return board.group; });
+      var top = y + TITLE_BAND + (hasGroup ? GROUP_BAND : 0);
+      var x = 0, rowHeight = 0, spans = {}, order = [];
+      sections.push({ id: section.id, x: 0, y: y });
+      ordered.forEach(function (board) {
+        boards.push({ id: board.id, x: x, y: top, width: board.width, height: board.height });
+        if (board.group) {
+          if (!spans[board.group]) { spans[board.group] = { x: x, end: x }; order.push(board.group); }
+          spans[board.group].end = x + board.width;
+        }
+        x += board.width + GAP_X;
+        rowHeight = Math.max(rowHeight, board.height);
+      });
+      order.forEach(function (id) {
+        groups.push({ id: id, x: spans[id].x, y: top - 28, width: spans[id].end - spans[id].x });
+      });
+      width = Math.max(width, ordered.length ? x - GAP_X : 0);
+      y = top + rowHeight + GAP_Y;
+    });
+    return { boards: boards, sections: sections, groups: groups, width: width, height: Math.max(0, y - GAP_Y) };
+  }
+
+  function liveIds(state, v, viewport, budget) {
+    if (!(v.zoom >= LIVE_MIN_ZOOM)) return [];
+    var left = v.x, top = v.y;
+    var right = v.x + viewport.width / v.zoom, bottom = v.y + viewport.height / v.zoom;
+    var cx = (left + right) / 2, cy = (top + bottom) / 2;
+    return layout(state).boards
+      .filter(function (b) { return b.x < right && b.x + b.width > left && b.y < bottom && b.y + b.height > top; })
+      .map(function (b) {
+        return { id: b.id, d: Math.abs(b.x + b.width / 2 - cx) + Math.abs(b.y + b.height / 2 - cy) };
+      })
+      .sort(function (a, b) { return a.d - b.d; })
+      .slice(0, Math.max(0, budget))
+      .map(function (item) { return item.id; });
+  }
+
+  function viewportSize() {
+    return {
+      width: viewportEl.clientWidth || window.innerWidth || 1,
+      height: viewportEl.clientHeight || window.innerHeight || 1
+    };
+  }
+
+  function boardOf(id) {
+    for (var i = 0; i < current.boards.length; i += 1) if (current.boards[i].id === id) return current.boards[i];
+    return null;
+  }
+
+  function element(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function select(id) { post({ kind: "canvas-select", artboardId: id }); }
+
+  function entryFor(id) {
+    var entry = entries[id];
+    if (entry) return entry;
+    var el = element("div", "board");
+    el.setAttribute("data-id", id);
+    var frame = element("div", "frame");
+    var title = element("div", "title");
+    el.appendChild(frame);
+    el.appendChild(title);
+    el.addEventListener("click", function (event) {
+      event.stopPropagation();
+      select(id);
+    });
+    worldEl.appendChild(el);
+    entry = entries[id] = { el: el, frame: frame, title: title, sig: "" };
+    return entry;
+  }
+
+  function postTo(frameEl, message) {
+    var target = frameEl && frameEl.contentWindow;
+    if (target && typeof target.postMessage === "function") target.postMessage(message, "*");
+  }
+
+  function liveFrame(entry, board) {
+    var iframe = document.createElement("iframe");
+    iframe.setAttribute("sandbox", "allow-scripts");
+    iframe.setAttribute("title", board.title);
+    iframe.addEventListener("load", function () {
+      if (modeOn) postTo(iframe, { zorvo: "mode", on: true });
+      if (marksById[board.id]) postTo(iframe, { zorvo: "marks", marks: marksById[board.id] });
+    });
+    iframe.setAttribute("src", board.url);
+    entry.frame.textContent = "";
+    entry.frame.appendChild(iframe);
+    entry.frame.appendChild(element("div", "hit"));
+    entry.iframe = iframe;
+  }
+
+  function stillFrame(entry, board) {
+    entry.frame.textContent = "";
+    entry.iframe = null;
+    if (board.missing) {
+      var gone = element("div", "box");
+      gone.appendChild(element("strong", "", board.title));
+      gone.appendChild(element("span", "", "File not found"));
+      entry.frame.appendChild(gone);
+    } else if (board.thumb) {
+      var img = document.createElement("img");
+      img.setAttribute("alt", board.title);
+      img.setAttribute("draggable", "false");
+      img.setAttribute("src", board.thumb);
+      entry.frame.appendChild(img);
+    } else {
+      var wait = element("div", "box");
+      wait.appendChild(element("strong", "", board.title));
+      wait.appendChild(element("span", "", "Rendering…"));
+      entry.frame.appendChild(wait);
+    }
+  }
+
+  function refreshLive() {
+    var live = liveIds(current, view, viewportSize(), LIVE_BUDGET);
+    current.boards.forEach(function (board) {
+      var entry = entries[board.id];
+      if (!entry) return;
+      var isLive = live.indexOf(board.id) !== -1;
+      var sig = isLive ? "live|" + board.url : "still|" + (board.missing ? "missing" : board.thumb || "");
+      if (entry.sig === sig) return;
+      entry.sig = sig;
+      if (isLive) liveFrame(entry, board); else stillFrame(entry, board);
+    });
+  }
+
+  function queueRefresh() {
+    if (refreshQueued) return;
+    refreshQueued = true;
+    var run = function () { refreshQueued = false; refreshLive(); };
+    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(run); else setTimeout(run, 16);
+  }
+
+  function paintView() {
+    var inv = Math.min(MAX_INV, 1 / view.zoom);
+    worldEl.style.transform = "scale(" + view.zoom + ") translate(" + -view.x + "px, " + -view.y + "px)";
+    worldEl.style.setProperty("--inv", String(inv));
+  }
+
+  function reportZoom() {
+    if (zoomTimer !== null) return;
+    var wait = Math.max(0, ZOOM_REPORT_MS - (Date.now() - lastZoomPost));
+    zoomTimer = setTimeout(function () {
+      zoomTimer = null;
+      lastZoomPost = Date.now();
+      post({ kind: "canvas-zoom", zoom: view.zoom });
+    }, wait);
+  }
+
+  function setView(next, reportsZoom) {
+    var zoomed = next.zoom !== view.zoom;
+    view = { x: next.x, y: next.y, zoom: clamp(next.zoom, MIN_ZOOM, MAX_ZOOM) };
+    paintView();
+    queueRefresh();
+    if (zoomed || reportsZoom) reportZoom();
+  }
+
+  function zoomAbout(factor, px, py) {
+    var size = viewportSize();
+    var ax = px === undefined ? size.width / 2 : px;
+    var ay = py === undefined ? size.height / 2 : py;
+    var zoom = clamp(view.zoom * factor, MIN_ZOOM, MAX_ZOOM);
+    var wx = view.x + ax / view.zoom, wy = view.y + ay / view.zoom;
+    setView({ x: wx - ax / zoom, y: wy - ay / zoom, zoom: zoom });
+    refreshLive();
+  }
+
+  function fitRect(x, y, width, height) {
+    var size = viewportSize();
+    var zoom = clamp(Math.min(size.width / (width + 2 * FIT_PAD), size.height / (height + 2 * FIT_PAD), 1), MIN_ZOOM, MAX_ZOOM);
+    setView({ x: x + width / 2 - size.width / (2 * zoom), y: y + height / 2 - size.height / (2 * zoom), zoom: zoom });
+    refreshLive();
+  }
+
+  function fit() { fitRect(0, 0, lay.width, lay.height); }
+
+  function focusBoard(id) {
+    for (var i = 0; i < lay.boards.length; i += 1) {
+      var b = lay.boards[i];
+      if (b.id === id) { fitRect(b.x, b.y, b.width, b.height); return true; }
+    }
+    return false;
+  }
+
+  function sectionRect(id) {
+    var at = -1;
+    for (var i = 0; i < lay.sections.length; i += 1) if (lay.sections[i].id === id) at = i;
+    if (at < 0) return null;
+    var top = lay.sections[at].y;
+    var bottom = at + 1 < lay.sections.length ? lay.sections[at + 1].y - GAP_Y : lay.height;
+    return { x: 0, y: top, width: Math.max(lay.width, 1), height: Math.max(bottom - top, 1) };
+  }
+
+  function step(direction) {
+    var ids = lay.boards.map(function (b) { return b.id; });
+    if (!ids.length) return;
+    var at = ids.indexOf(current.selected);
+    if (at < 0) {
+      var size = viewportSize();
+      var cx = view.x + size.width / (2 * view.zoom), cy = view.y + size.height / (2 * view.zoom);
+      var best = Infinity;
+      lay.boards.forEach(function (b, i) {
+        var d = Math.abs(b.x + b.width / 2 - cx) + Math.abs(b.y + b.height / 2 - cy);
+        if (d < best) { best = d; at = i; }
+      });
+    } else {
+      at = clamp(at + direction, 0, ids.length - 1);
+    }
+    current.selected = ids[at];
+    syncSelection();
+    focusBoard(ids[at]);
+    select(ids[at]);
+  }
+
+  function command(name) {
+    name = String(name);
+    if (name === "fit") fit();
+    else if (name === "actual") zoomAbout(1 / view.zoom);
+    else if (name === "in") zoomAbout(STEP);
+    else if (name === "out") zoomAbout(1 / STEP);
+    else if (name === "prev") step(-1);
+    else if (name === "next") step(1);
+    else if (name.indexOf("section:") === 0) {
+      var rect = sectionRect(name.slice(8));
+      if (rect) fitRect(rect.x, rect.y, rect.width, rect.height);
+    } else if (name.indexOf("focus:") === 0) focusBoard(name.slice(6));
+  }
+
+  function syncSelection() {
+    Object.keys(entries).forEach(function (id) {
+      entries[id].el.classList.toggle("selected", id === current.selected);
+    });
+  }
+
+  function sync() {
+    var wanted = {};
+    lay.boards.forEach(function (placed) {
+      var board = boardOf(placed.id);
+      if (!board) return;
+      wanted[placed.id] = true;
+      var entry = entryFor(placed.id);
+      entry.el.style.left = placed.x + "px";
+      entry.el.style.top = placed.y + "px";
+      entry.el.style.width = placed.width + "px";
+      entry.el.style.height = placed.height + "px";
+      entry.title.textContent = board.title;
+      entry.title.setAttribute("title", board.title);
+      if (entry.url !== board.url) { entry.url = board.url; entry.sig = ""; }
+    });
+    Object.keys(entries).forEach(function (id) {
+      if (wanted[id]) return;
+      entries[id].el.remove();
+      delete entries[id];
+    });
+    labels.forEach(function (node) { node.remove(); });
+    labels = [];
+    var titles = {};
+    current.sections.forEach(function (section) { titles[section.id] = section.title; });
+    lay.sections.forEach(function (placed) {
+      var node = element("div", "section-title", titles[placed.id] || "");
+      node.style.left = placed.x + "px";
+      node.style.top = placed.y + "px";
+      worldEl.appendChild(node);
+      labels.push(node);
+    });
+    lay.groups.forEach(function (group) {
+      var node = element("div", "group-label", group.id);
+      node.style.left = group.x + "px";
+      node.style.top = group.y + "px";
+      node.style.width = group.width + "px";
+      worldEl.appendChild(node);
+      labels.push(node);
+    });
+    syncSelection();
+  }
+
+  function list(value) { return Array.isArray(value) ? value : []; }
+
+  function apply(state) {
+    state = state || {};
+    if (typeof state.error === "string" && state.error) {
+      errorEl.textContent = "canvas.json could not be read: " + state.error;
+      errorEl.hidden = false;
+      return;
+    }
+    errorEl.hidden = true;
+    errorEl.textContent = "";
+    current = {
+      boards: list(state.boards),
+      sections: list(state.sections),
+      selected: typeof state.selected === "string" ? state.selected : null
+    };
+    if (!current.boards.length) fitted = false;
+    lay = layout(current);
+    sync();
+    if (!fitted && current.boards.length) { fitted = true; fit(); } else refreshLive();
+  }
+
+  function mode(on, artboardId) {
+    modeOn = !!on;
+    Object.keys(entries).forEach(function (id) {
+      if (artboardId !== undefined && id !== artboardId) return;
+      postTo(entries[id].iframe, { zorvo: "mode", on: modeOn });
+    });
+  }
+
+  function marks(artboardId, list) {
+    marksById[artboardId] = list;
+    var entry = entries[artboardId];
+    if (entry) postTo(entry.iframe, { zorvo: "marks", marks: list });
+  }
+
+  // Pan with a drag on the background, and with a two-finger scroll.
+  var drag = null;
+  viewportEl.addEventListener("pointerdown", function (event) {
+    if (event.button !== 0 || (event.target.closest && event.target.closest(".board"))) return;
+    drag = { x: event.clientX, y: event.clientY, view: view, moved: false };
+    if (viewportEl.setPointerCapture) { try { viewportEl.setPointerCapture(event.pointerId); } catch (e) { /* not capturable */ } }
+  });
+  viewportEl.addEventListener("pointermove", function (event) {
+    if (!drag) return;
+    var dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+    if (!drag.moved && Math.abs(dx) + Math.abs(dy) < DRAG_PX) return;
+    drag.moved = true;
+    viewportEl.classList.add("panning");
+    setView({ x: drag.view.x - dx / drag.view.zoom, y: drag.view.y - dy / drag.view.zoom, zoom: view.zoom }, false);
+  });
+  function endDrag() {
+    if (!drag) return;
+    var moved = drag.moved;
+    drag = null;
+    viewportEl.classList.remove("panning");
+    if (!moved) select(null);
+  }
+  viewportEl.addEventListener("pointerup", endDrag);
+  viewportEl.addEventListener("pointercancel", function () { drag = null; viewportEl.classList.remove("panning"); });
+
+  viewportEl.addEventListener("wheel", function (event) {
+    event.preventDefault();
+    if (event.ctrlKey) {
+      zoomAbout(Math.exp(-event.deltaY * 0.01), event.clientX, event.clientY);
+      return;
+    }
+    setView({ x: view.x + event.deltaX / view.zoom, y: view.y + event.deltaY / view.zoom, zoom: view.zoom }, false);
+  }, { passive: false });
+
+  var pinchStart = 1;
+  document.addEventListener("gesturestart", function (event) { event.preventDefault(); pinchStart = view.zoom; });
+  document.addEventListener("gesturechange", function (event) {
+    event.preventDefault();
+    zoomAbout((pinchStart * event.scale) / view.zoom, event.clientX, event.clientY);
+  });
+  document.addEventListener("gestureend", function (event) { event.preventDefault(); });
+
+  if (typeof ResizeObserver === "function") new ResizeObserver(queueRefresh).observe(viewportEl);
+  paintView();
+
+  var api = { apply: apply, command: command, mode: mode, marks: marks, layout: layout, liveIds: liveIds };
+  Object.freeze(api);
+  Object.defineProperty(window, "__zorvoCanvas", { value: api, writable: false, configurable: false, enumerable: false });
+})();
+</script>
+</body>
+</html>

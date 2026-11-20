@@ -594,9 +594,21 @@ pub fn run() {
             app.manage(start_screen_server(app.handle(), screen_state));
             // Images left for command-path agents by sessions long gone.
             std::thread::spawn(move || computer_use::images::sweep_old(&computer_use_dir));
-            app.manage(Arc::new(artifacts::store::ArtifactStore::new(
+            let artifact_store = Arc::new(artifacts::store::ArtifactStore::new(
                 app.state::<store::AppStore>().root().join("artifacts"),
-            )));
+            ));
+            let known_workspaces = app.handle().clone();
+            app.manage(Arc::new(artifacts::protocol::Served {
+                store: Arc::clone(&artifact_store),
+                thumbs: app.state::<store::AppStore>().root().join("canvas-thumbs"),
+                is_known: Arc::new(move |path| {
+                    known_workspaces
+                        .state::<store::AppStore>()
+                        .is_known_workspace(path)
+                        .unwrap_or(false)
+                }),
+            }));
+            app.manage(artifact_store);
             if let Err(error) = migration {
                 report_migration_failure(app.handle(), &error);
             }

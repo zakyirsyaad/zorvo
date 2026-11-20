@@ -43,6 +43,15 @@ fn has_html_name(path: &Path) -> bool {
 /// A link in the last place is not followed, and the open does not wait, since
 /// a pipe nobody writes to would otherwise hold the call forever.
 pub(crate) fn read_checked(path: &Path) -> Result<Vec<u8>, String> {
+    let bytes = read_bytes_checked(path)?;
+    if std::str::from_utf8(&bytes).is_err() {
+        return Err(NOT_TEXT.to_string());
+    }
+    Ok(bytes)
+}
+
+/// `read_checked` without the text check: a canvas serves pictures and fonts too.
+pub(crate) fn read_bytes_checked(path: &Path) -> Result<Vec<u8>, String> {
     use std::os::unix::fs::OpenOptionsExt;
     let refused = || NOT_ALLOWED.to_string();
     let file = fs::OpenOptions::new()
@@ -63,9 +72,6 @@ pub(crate) fn read_checked(path: &Path) -> Result<Vec<u8>, String> {
         .map_err(|_| refused())?;
     if bytes.len() as u64 > MAX_PAGE_BYTES {
         return Err(TOO_LARGE.to_string());
-    }
-    if std::str::from_utf8(&bytes).is_err() {
-        return Err(NOT_TEXT.to_string());
     }
     Ok(bytes)
 }

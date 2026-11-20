@@ -11,7 +11,7 @@ use tauri_plugin_dialog::DialogExt;
 
 use super::canvas::{canvas_file, file_sha256, read_canvas, resolve_canvas, Canvas};
 use super::picks::{checked_marks, PageMark};
-use super::protocol::page_url;
+use super::protocol::{page_url, Served};
 use super::source::{read_source, temp_roots};
 use super::store::{
     is_artifact_id, is_session_id, ArtifactRecord, ArtifactStore, CanvasEntry, Shown, FAILED,
@@ -107,7 +107,7 @@ pub fn show_canvas(
 /// The canvas folder still exists, and the session folder it was shown from (its path minus
 /// `relative`) is a known workspace that still holds it. Workspaces are known by exact path,
 /// so the canvas folder itself is never asked about.
-fn is_inside_known_session_folder(
+pub(crate) fn is_inside_known_session_folder(
     root: &Path,
     relative: &str,
     is_known: &impl Fn(&Path) -> bool,
@@ -425,6 +425,7 @@ fn bounds_in_window(app: &AppHandle, bounds: Bounds) -> Option<Bounds> {
 pub fn artifact_view_show(
     app: AppHandle,
     artifacts: State<'_, Arc<ArtifactStore>>,
+    served: State<'_, Arc<Served>>,
     session_id: String,
     artifact_id: String,
     version: u32,
@@ -450,7 +451,7 @@ pub fn artifact_view_show(
     match (is_stored, bounds) {
         (true, Some(bounds)) => view::show(
             &app,
-            Arc::clone(&artifacts),
+            Arc::clone(&served),
             ShownPage {
                 session_id: session_id.clone(),
                 artifact_id: artifact_id.clone(),

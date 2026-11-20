@@ -22,8 +22,7 @@ use super::picks::{
     accepted_message, FloodGuard, Intake, PageMark, PagePickEvent, RateLimit, ViewState,
     ARTIFACT_PAGE_PICK,
 };
-use super::protocol::{is_allowed_navigation, respond, SCHEME};
-use super::store::ArtifactStore;
+use super::protocol::{is_allowed_navigation, respond, Served, SCHEME};
 
 const MAIN_WINDOW: &str = "main";
 pub const COULD_NOT_SHOW: &str = "Zorvo could not show that page.";
@@ -306,7 +305,7 @@ fn rect(bounds: Bounds) -> wry::Rect {
 /// Shows the page at `url` in a new webview at `bounds`, ending any earlier one.
 pub fn show(
     app: &AppHandle,
-    store: Arc<ArtifactStore>,
+    served: Arc<Served>,
     page: ShownPage,
     url: String,
     bounds: Bounds,
@@ -342,7 +341,7 @@ pub fn show(
                     .with_bounds(rect(bounds))
                     .with_custom_protocol(SCHEME.to_string(), move |_id, request| {
                         respond(
-                            &store,
+                            &served,
                             request.method().as_str(),
                             &request.uri().to_string(),
                         )

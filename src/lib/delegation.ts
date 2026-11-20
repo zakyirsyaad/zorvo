@@ -41,16 +41,17 @@ export function openDelegatesOf(sourceId: string, sessions: readonly Session[]):
 }
 
 /**
- * The open delegate of `sourceId` that runs agent `agentId`: a source holds at
- * most one per agent. A hand-edited file could hold several; the newest wins.
+ * The open worker of `sourceId` that runs agent `agentId` when there is exactly
+ * one: only then does a task for that agent go to an existing session. With none
+ * or several a new worker starts.
  */
-export function openDelegateOf(
+export function soleOpenDelegateOf(
   sourceId: string,
   agentId: string,
   sessions: readonly Session[],
 ): Session | undefined {
   const ofAgent = openDelegatesOf(sourceId, sessions).filter((session) => session.profileId === agentId);
-  return ofAgent[ofAgent.length - 1];
+  return ofAgent.length === 1 ? ofAgent[0] : undefined;
 }
 
 /** A: the session B was delegated from. An archived source still exists. */
@@ -116,11 +117,8 @@ export function taskRoute(input: TaskRouteInput): TaskRoute {
   const blocked = sourceBlockedReason(input);
   if (blocked !== null) return { kind: 'blocked', reason: blocked };
 
-  const ofAgent = openDelegatesOf(input.source.id, input.sessions).filter(
-    (session) => session.profileId === input.agentId,
-  );
-  if (ofAgent.length !== 1) return { kind: 'start' };
-  const delegate = ofAgent[0];
+  const delegate = soleOpenDelegateOf(input.source.id, input.agentId, input.sessions);
+  if (delegate === undefined) return { kind: 'start' };
   if (input.isBusy(delegate.id) || input.isWaiting(delegate.id)) {
     return {
       kind: 'blocked',

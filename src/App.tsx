@@ -163,7 +163,7 @@ import {
   followUpSummary,
   isOpenLink,
   mentionBlockedReason,
-  openDelegateOf,
+  soleOpenDelegateOf,
   openDelegatesOf,
   startSummary,
   type MentionAgentStatus,
@@ -1505,9 +1505,9 @@ export default function App() {
   const delegationSummary =
     delegationMention !== null && mentionedAgent !== undefined && mentionBlock === null
       ? {
-          // The agent already has a delegate here: the task goes to it, and nothing new starts.
+          // The agent has exactly one worker here: the task goes to it, and nothing new starts.
           text:
-            activeSession !== undefined && openDelegateOf(activeSession.id, mentionedAgent.id, sessions) !== undefined
+            activeSession !== undefined && soleOpenDelegateOf(activeSession.id, mentionedAgent.id, sessions) !== undefined
               ? followUpSummary(mentionedAgent.name)
               : startSummary({
                   agentName: mentionedAgent.name,
@@ -1529,8 +1529,8 @@ export default function App() {
   const delegateAgents: readonly DelegateAgentChoice[] = agentsInUse.map((agent) => ({
     profile: agent,
     status: delegationStatusOf(agent),
-    // Its task would go to the session it already has here, which keeps its own model and mode.
-    ...(activeSession !== undefined && openDelegateOf(activeSession.id, agent.id, sessions) !== undefined
+    // Its task would go to its one worker here, which keeps its own model and mode.
+    ...(activeSession !== undefined && soleOpenDelegateOf(activeSession.id, agent.id, sessions) !== undefined
       ? { hasDelegate: true }
       : {}),
   }));

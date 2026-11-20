@@ -5,6 +5,7 @@ import { useDelegation } from "../hooks/useDelegation";
 import { NO_CHOICES, type AcpChoices } from "../lib/acp-draft";
 import { buildDelegatePrompt } from "../lib/delegation";
 import { createStartPlaces } from "../lib/start-places";
+import { MAX_AT_WORK } from "../lib/workers";
 import { newSessionRecord, type SessionSpec, type StartSessionOptions } from "../lib/session-start";
 import type { FirstMessage } from "../hooks/session-engine/useAcpEngine";
 import type { AgentProfile, ChatMessage, DelegationLink, Session } from "../types";
@@ -666,10 +667,9 @@ describe("useDelegation workers", () => {
   });
 
   it("a call that ended while git worked starts nothing and removes the worktree", async () => {
-    const spy = withWorktreeMock((cmd) => (cmd === "create_session_worktree" ? Promise.resolve(WORKTREE) : undefined));
     const { result, starts, places } = setup(base());
     let isCancelled = false;
-    withWorktreeMock((cmd) => {
+    const spy = withWorktreeMock((cmd) => {
       if (cmd !== "create_session_worktree") return undefined;
       isCancelled = true;
       return Promise.resolve(WORKTREE);
@@ -704,6 +704,167 @@ describe("useDelegation workers", () => {
     );
     expect(r).toEqual({ ok: false, reason: "4 are running. Start this one when one finishes." });
     expect(starts).toHaveLength(0);
+  });
+
+  it("never issues an ended worker's handle again", async () => {
+    const { result, starts } = setup(base());
+    const start = () =>
+      act(async () => result.current.delegation.startWorker("s-a", { agentId: "codex-acp", task: "T", byAgent: true }));
+    await start();
+    await start();
+    expect(starts.map((entry) => entry.spec.delegatedFrom?.handle)).toEqual(["worker-1", "worker-2"]);
+    await act(async () => {
+      result.current.setSessions((prev) => [
+        ...prev,
+        ...starts.map((entry, index) =>
+          sourceSession({
+            id: entry.spec.id,
+            profileId: "codex-acp",
+            createdAt: 10 + index,
+            delegatedFrom: index === 1 ? { ...entry.spec.delegatedFrom!, endedAt: 99 } : entry.spec.delegatedFrom,
+          }),
+        ),
+      ]);
+    });
+    await start();
+    expect(starts).toHaveLength(3);
+    expect(starts[2].spec.delegatedFrom?.handle).toBe("worker-3");
+  });
+
+  it("still reports a start that was recorded when selecting the session throws", async () => {
+    const env = setup(base());
+    const { result, starts, places } = env;
+    // selectSession is the harness's own recorder: make the next call throw through the hook's deps.
+    env.selections.push = () => {
+      throw new Error("boom");
+    };
+    const r = await act(async () => result.current.delegation.startWorker("s-a", { agentId: "codex-acp", task: "T" }));
+    expect(r).toMatchObject({ ok: true });
+    expect(starts).toHaveLength(1);
+    expect(places.underWay("s-a")).toBe(1);
+    expect(env.notices).toEqual(["The worker started but could not be opened: Error: boom"]);
+  });
+
+  it("starts nothing when the coordinator is removed while the worktree is made", async () => {
+    const env = setup(base());
+    const spy = withWorktreeMock((cmd) => {
+      if (cmd !== "create_session_worktree") return undefined;
+      act(() => env.result.current.setSessions([]));
+      return Promise.resolve(WORKTREE);
+    });
+    // Not wrapped in act: the mock's own state change must commit while the worktree is made.
+    const running = env.result.current.delegation.startWorker("s-a", {
+      agentId: "codex-acp",
+      task: "Part one",
+      hasOwnWorktree: true,
+      byAgent: true,
+    });
+    const r = await act(async () => running);
+    expect(r).toEqual({ ok: false, reason: "" });
+    expect(env.starts).toHaveLength(0);
+    expect(env.places.underWay("s-a")).toBe(0);
+    expect(callsTo(spy, "remove_session_worktree")).toHaveLength(1);
+  });
+
+  it("starts nothing and removes the worktree when the call ends during the handoff write", async () => {
+    let isCancelled = false;
+    const spy = withWorktreeMock((cmd) => {
+      if (cmd === "create_session_worktree") return Promise.resolve(WORKTREE);
+      if (cmd !== "write_fork_handoff") return undefined;
+      isCancelled = true;
+      return Promise.resolve("/fake/handoff.md");
+    });
+    const { result, starts, places } = setup(base());
+    const r = await act(async () =>
+      result.current.delegation.startWorker("s-a", {
+        agentId: "codex-acp",
+        task: "Part one",
+        hasOwnWorktree: true,
+        byAgent: true,
+        isCancelled: () => isCancelled,
+      }),
+    );
+    expect(r).toEqual({ ok: false, reason: "" });
+    expect(starts).toHaveLength(0);
+    expect(places.underWay("s-a")).toBe(0);
+    expect(callsTo(spy, "remove_session_worktree")).toHaveLength(1);
+  });
+
+  it("builds the handoff from the conversation as it is after the worktree is made", async () => {
+    const env = setup(base());
+    const spy = withWorktreeMock((cmd) => {
+      if (cmd !== "create_session_worktree") return undefined;
+      act(() =>
+        env.result.current.setTranscripts({
+          "s-a": [...A_MESSAGES, { id: "m-a3", role: "user", content: "LATE-MESSAGE", timestamp: 3 }],
+        }),
+      );
+      return Promise.resolve(WORKTREE);
+    });
+    const running = env.result.current.delegation.startWorker("s-a", {
+      agentId: "codex-acp",
+      task: "T",
+      hasOwnWorktree: true,
+    });
+    await act(async () => {
+      await running;
+    });
+    expect(String(callsTo(spy, "write_fork_handoff")[0][1]?.content)).toContain("LATE-MESSAGE");
+  });
+
+  it("frees the place when startSession throws", async () => {
+    const { result, starts, places } = setup(base());
+    const original = starts.push.bind(starts);
+    let failures = MAX_AT_WORK;
+    starts.push = (...items) => {
+      if (failures > 0) {
+        failures -= 1;
+        throw new Error("no start");
+      }
+      return original(...items);
+    };
+    for (let index = 0; index < MAX_AT_WORK; index += 1) {
+      const r = await act(async () =>
+        result.current.delegation.startWorker("s-a", { agentId: "codex-acp", task: "T", byAgent: true }),
+      );
+      expect(r).toMatchObject({ ok: false, reason: "The task could not be handed over.", isInternal: true });
+    }
+    expect(places.underWay("s-a")).toBe(0);
+    const next = await act(async () =>
+      result.current.delegation.startWorker("s-a", { agentId: "codex-acp", task: "T", byAgent: true }),
+    );
+    expect(next.ok).toBe(true);
+  });
+
+  it("admits four of five starts in one tick", async () => {
+    const { result, starts } = setup(base());
+    const results = await act(async () =>
+      Promise.all(
+        [1, 2, 3, 4, 5].map((n) =>
+          result.current.delegation.startWorker("s-a", { agentId: "codex-acp", task: `T${n}`, byAgent: true }),
+        ),
+      ),
+    );
+    expect(results.filter((r) => r.ok)).toHaveLength(4);
+    expect(results[4]).toEqual({ ok: false, reason: "4 are running. Start this one when one finishes." });
+    expect(starts).toHaveLength(4);
+  });
+
+  it("makes the worktree from the repository of a coordinator that works in one", async () => {
+    const spy = withWorktreeMock((cmd) => (cmd === "create_session_worktree" ? Promise.resolve(WORKTREE) : undefined));
+    const { result } = setup({
+      sessions: [
+        sourceSession({
+          cwd: "/wt/source",
+          worktree: { repoPath: "/repo/main", path: "/wt/source", branch: "agent/s", startCommit: "c0" },
+        }),
+      ],
+      transcripts: { "s-a": A_MESSAGES },
+    });
+    await act(async () => {
+      await result.current.delegation.startWorker("s-a", { agentId: "codex-acp", task: "T", hasOwnWorktree: true });
+    });
+    expect(callsTo(spy, "create_session_worktree")[0][1]).toMatchObject({ repoPath: "/repo/main" });
   });
 
   it("frees the place when the handoff cannot be written", async () => {

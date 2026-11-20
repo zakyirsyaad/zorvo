@@ -154,6 +154,8 @@ export function useDelegation(deps: DelegationDeps): {
   // observable in the tick the task is sent; this is, from before the send until the
   // delegate is seen busy or its turn ends.
   const sendingTo = useRef(new Set<string>());
+  // The newest worker handle each coordinator was given in this run.
+  const lastHandle = useRef(new Map<string, string>());
 
   const agentNameOf = (profileId: string) => agentNameIn(agents, profileId);
 
@@ -346,9 +348,12 @@ export function useDelegation(deps: DelegationDeps): {
     // Held from here, before anything awaits: the place and the handle.
     const token = createId('start');
     const handle = nextWorkerHandle([
+      // The newest handle given in this run: an ended worker's handle must not pass to the next one.
+      ...(lastHandle.current.has(coordinatorId) ? [lastHandle.current.get(coordinatorId) as string] : []),
       ...openDelegatesOf(coordinatorId, current.sessions).flatMap((worker) => workerHandleOf(worker) ?? []),
       ...[...starting.current.values()].filter((entry) => entry.coordinatorId === coordinatorId).map((entry) => entry.handle),
     ]);
+    lastHandle.current.set(coordinatorId, handle);
     const free = current.places.take(coordinatorId);
     starting.current.set(token, { coordinatorId, sessionId: null, handle, free });
     const release = () => {
@@ -371,21 +376,30 @@ export function useDelegation(deps: DelegationDeps): {
         return { ok: false, reason: 'A worktree could not be made for this worker.', isInternal: true, detail: String(error) };
       }
     }
-    if (input.isCancelled?.() === true) {
+    // Nothing ran in a worktree made for a start that is withdrawn; the backend keeps its branch,
+    // and a failed removal leaves a worktree to remove by hand.
+    const withdraw = (): StartWorkerResult => {
       release();
       if (madeWorktree !== null) {
-        // Nothing ran in it. The backend keeps the branch; a failure leaves a worktree to remove by hand.
         void invoke('remove_session_worktree', { repoPath: madeWorktree.repoPath, path: madeWorktree.path }).catch(
           () => undefined,
         );
       }
       return { ok: false, reason: '' };
-    }
+    };
+    const isWithdrawn = () =>
+      input.isCancelled?.() === true || !latest.current.sessions.some((session) => session.id === coordinatorId);
+    if (isWithdrawn()) return withdraw();
+
+    // The conversation as it is now: git took a while.
+    const freshMessages = latest.current.transcripts[source.id] ?? messages;
+    const freshLast = input.byAgent === true ? lastWholeMessage(freshMessages) : lastMessage(freshMessages);
+    if (freshLast === undefined) return withdraw();
 
     const id = createId('s');
     const now = Date.now();
     try {
-      const content = buildForkHandoff(messages, last.id, {
+      const content = buildForkHandoff(freshMessages, freshLast.id, {
         sourceSessionName: source.name,
         agentName: agentNameIn(current.agents, source.profileId),
         cwd: source.cwd,
@@ -394,6 +408,7 @@ export function useDelegation(deps: DelegationDeps): {
         note: HANDOFF_NOTE,
       });
       const handoffPath = await invoke<string>('write_fork_handoff', { handoffId: id, content });
+      if (isWithdrawn()) return withdraw();
       const { spec, first } = workerLaunch({
         id, agent, source, cwd, worktree, name, task, handle, now, handoffPath,
         ...(input.attachments !== undefined ? { attachments: input.attachments } : {}),
@@ -401,18 +416,21 @@ export function useDelegation(deps: DelegationDeps): {
       // The dialog's picks, or the defaults: the draft's own choices stay with the draft.
       const choices = input.choices ?? NO_CHOICES;
       starting.current.set(token, { coordinatorId, sessionId: id, handle, free });
-      if (input.byAgent === true) {
-        // The agent started it: the user keeps looking at what they were looking at.
-        latest.current.startSession(spec, first, { choices, focus: false });
-      } else {
-        latest.current.startSession(spec, first, { choices });
-        latest.current.selectSession(id);
-      }
-      return { ok: true, sessionId: id, sessionName: name, handle, folder: cwd };
+      // The agent started it: the user keeps looking at what they were looking at.
+      latest.current.startSession(spec, first, input.byAgent === true ? { choices, focus: false } : { choices });
     } catch (error) {
       release();
       return { ok: false, reason: 'The task could not be handed over.', isInternal: true, detail: String(error) };
     }
+    // The session is recorded: a failure to show it is no reason to report the start as failed.
+    if (input.byAgent !== true) {
+      try {
+        latest.current.selectSession(id);
+      } catch (error) {
+        latest.current.onNotice(`The worker started but could not be opened: ${String(error)}`);
+      }
+    }
+    return { ok: true, sessionId: id, sessionName: name, handle, folder: cwd };
   };
 
   const sendFurtherTask = async (

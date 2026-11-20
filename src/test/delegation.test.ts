@@ -9,7 +9,7 @@ import {
   followUpSummary,
   isOpenLink,
   mentionBlockedReason,
-  openDelegateOf,
+  soleOpenDelegateOf,
   openDelegatesOf,
   reportMessage,
   reportedFiles,
@@ -81,24 +81,25 @@ describe("openDelegatesOf", () => {
   });
 });
 
-describe("openDelegateOf", () => {
-  it("finds the delegate of one agent and not another agent's", () => {
+describe("soleOpenDelegateOf", () => {
+  it("returns the worker only when the agent has exactly one open", () => {
     const codex = delegate({ id: "s-codex" });
     const claude = delegate({ id: "s-claude", profileId: "claude-acp" });
+    const second = delegate({ id: "s-codex-2", createdAt: 20 });
 
-    expect(openDelegateOf("s-a", "codex-acp", [codex, claude])).toBe(codex);
-    expect(openDelegateOf("s-a", "claude-acp", [codex, claude])).toBe(claude);
-    expect(openDelegateOf("s-a", "qwen-code", [codex, claude])).toBeUndefined();
+    expect(soleOpenDelegateOf("s-a", "codex-acp", [codex, claude])).toBe(codex);
+    expect(soleOpenDelegateOf("s-a", "claude-acp", [codex, claude])).toBe(claude);
+    expect(soleOpenDelegateOf("s-a", "qwen-code", [codex, claude])).toBeUndefined();
+    expect(soleOpenDelegateOf("s-a", "codex-acp", [codex, second])).toBeUndefined();
   });
 
-  it("ignores ended and archived ones, and returns the newest when a hand-edited file has two", () => {
+  it("ignores ended and archived ones", () => {
     const ended = delegate({ id: "s-ended", createdAt: 30, delegatedFrom: link({ endedAt: 9 }) });
     const archived = delegate({ id: "s-archived", createdAt: 40, archivedAt: 20 });
-    const older = delegate({ id: "s-older", createdAt: 10 });
-    const newer = delegate({ id: "s-newer", createdAt: 20 });
+    const open = delegate({ id: "s-open", createdAt: 10 });
 
-    expect(openDelegateOf("s-a", "codex-acp", [ended, archived])).toBeUndefined();
-    expect(openDelegateOf("s-a", "codex-acp", [older, newer, ended])).toBe(newer);
+    expect(soleOpenDelegateOf("s-a", "codex-acp", [ended, archived])).toBeUndefined();
+    expect(soleOpenDelegateOf("s-a", "codex-acp", [open, ended, archived])).toBe(open);
   });
 });
 

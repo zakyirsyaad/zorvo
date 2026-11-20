@@ -658,6 +658,39 @@ describe("delegating from the app", () => {
     expect(callsTo(spy, "acp_start_session")).toHaveLength(0);
   });
 
+  it("with two workers of an agent the mention and the dialog describe a new session", async () => {
+    seedSourceSession();
+    const worker = (id: string, createdAt: number) => ({
+      id,
+      name: "Codex: Implement step 2",
+      profileId: "codex-acp",
+      cwd: "/Users/test/developer/ai-perpetual-trading",
+      status: "running" as const,
+      createdAt,
+      transport: "acp" as const,
+      delegatedFrom: { sessionId: "s-a", task: "Implement step 2", startedAt: createdAt },
+    });
+    fakeStore().state.sessions = [...fakeStore().state.sessions, worker("s-b", 3), worker("s-c", 4)];
+    await renderApp();
+    const sidebar = within(await screen.findByRole("complementary"));
+    await act(async () => {
+      fireEvent.click(await sidebar.findByText("Fix login bug"));
+    });
+    await screen.findByText("Refactor the parser");
+
+    await type("@Codex now add tests for it");
+    expect(await screen.findByText(/^Codex starts on/)).toBeDefined();
+    expect(screen.queryByText("Goes to the Codex session this session already delegated to.")).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    });
+    const dialog = screen.getByRole("dialog", { name: "Delegate to another agent" });
+    expect(within(dialog).getByRole("radio", { name: /Codex/ })).toBeChecked();
+    expect(within(dialog).getByText("Codex starts on")).toBeDefined();
+    expect(within(dialog).queryByText("Goes to the Codex session this session already delegated to.")).toBeNull();
+  });
+
   it("an @mention of an agent that already has an idle delegate sends the task there", async () => {
     seedSourceSession();
     fakeStore().state.sessions = [

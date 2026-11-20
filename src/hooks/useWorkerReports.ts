@@ -64,8 +64,9 @@ export function useWorkerReports(deps: ReportDeps): {
   // Coordinators whose last send threw, with their status then: not retried on every render, only
   // after their next turn settles, their status changes (a resume) or they go away.
   const failed = useRef(new Map<string, Session['status']>());
-  // Workers whose report went out but could not be marked, with that turn's time: never sent again for it.
-  const unmarked = useRef(new Map<string, number | undefined>());
+  // Workers whose report went out but could not be marked: the reported turn's time and the report
+  // time. Only the marking is retried, at the start of each pass; that turn is never sent again.
+  const unmarked = useRef(new Map<string, { endedAt: number | undefined; at: number }>());
   // Bumped when a coordinator's turn ends or a hand-over settles, so the drain runs and the lines read again.
   const [revision, setRevision] = useState(0);
   const bump = () => setRevision((current) => current + 1);
@@ -147,10 +148,31 @@ export function useWorkerReports(deps: ReportDeps): {
           latest.current.updateLink(item.id, (link) => reportedLink(link, at, item.endedAt));
         } catch {
           // The report went out: remember it so no pass sends it again; a newer turn end is judged afresh.
-          unmarked.current.set(item.id, item.endedAt);
+          unmarked.current.set(item.id, { endedAt: item.endedAt, at });
         }
       }
     };
+
+    /** Retries the marking of reports that went out. Nothing here throws out of the drain. */
+    const retryMarks = (): void => {
+      for (const [workerId, item] of [...unmarked.current]) {
+        const link = latest.current.sessions.find((session) => session.id === workerId)?.delegatedFrom;
+        // The worker or its open link is gone, or a newer turn ended: nothing left to mark.
+        if (link == null || !isOpenLink(link) || link.lastTurn?.endedAt !== item.endedAt || !isReportOwed(link)) {
+          unmarked.current.delete(workerId);
+          continue;
+        }
+        try {
+          latest.current.updateLink(workerId, (latestLink) => reportedLink(latestLink, item.at, item.endedAt));
+          unmarked.current.delete(workerId);
+        } catch {
+          // Tried again in the next pass.
+        }
+      }
+    };
+
+    /** A worker in a turn is skipped: its report would be built from a conversation that is still moving. */
+    const isWorking = (workerId: string): boolean => latest.current.isBusy(workerId) || latest.current.isWaiting(workerId);
 
     const deliver = async (coordinator: Session, workers: readonly Session[]): Promise<void> => {
       const at = Date.now();
@@ -168,7 +190,10 @@ export function useWorkerReports(deps: ReportDeps): {
         if (!isFree(coordinator.id)) return;
         const fresh = built.filter((item): item is NonNullable<typeof item> => item !== null).filter((item) => {
           const link = latest.current.sessions.find((session) => session.id === item.id)?.delegatedFrom;
-          const isCurrent = link != null && isOpenLink(link) && isReportOwed(link) && link.lastTurn?.endedAt === item.endedAt;
+          const isCurrent =
+            link != null && isOpenLink(link) && isReportOwed(link) && link.lastTurn?.endedAt === item.endedAt;
+          // A worker now in a turn stays owed; its turn end changes its link and brings the drain back.
+          if (isCurrent && isWorking(item.id)) return false;
           if (!isCurrent) isStale = true;
           return isCurrent;
         });
@@ -216,6 +241,7 @@ export function useWorkerReports(deps: ReportDeps): {
     };
 
     const drain = (): void => {
+      retryMarks();
       const current = latest.current;
       const coordinatorIds = new Set(
         current.sessions.flatMap((session) =>
@@ -233,7 +259,8 @@ export function useWorkerReports(deps: ReportDeps): {
         const owed = owedWorkersOf(coordinatorId, current.sessions).filter(
           (worker) =>
             !delivering.current.has(worker.id) &&
-            !(unmarked.current.has(worker.id) && unmarked.current.get(worker.id) === worker.delegatedFrom?.lastTurn?.endedAt),
+            !isWorking(worker.id) &&
+            !(unmarked.current.has(worker.id) && unmarked.current.get(worker.id)?.endedAt === worker.delegatedFrom?.lastTurn?.endedAt),
         );
         if (owed.length === 0) continue;
         // Nobody to tell: the workers' links end, and no notice, since nothing was lost the user can act on.

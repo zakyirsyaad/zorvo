@@ -106,7 +106,8 @@ interface HarnessInput {
   strict?: boolean;
   messagesOf?: (sessionId: string) => Promise<ChatMessage[] | null>;
   giveBackThrows?: boolean;
-  updateLinkThrows?: boolean;
+  /** How many updateLink calls throw before they work. */
+  updateLinkThrows?: number;
 }
 
 function setup(input: HarnessInput) {
@@ -122,7 +123,7 @@ function setup(input: HarnessInput) {
   const sendResult = input.sendResult ?? true;
   const places = createStartPlaces();
   const giveBackAttempts = { count: 0 };
-  const flags = { giveBackThrows: input.giveBackThrows === true, updateLinkThrows: input.updateLinkThrows === true };
+  const flags = { giveBackThrows: input.giveBackThrows === true, updateLinkThrows: input.updateLinkThrows ?? 0 };
   // What the state holds now: changes made in one tick compose, as the app's functional updater does.
   const owned: { current: readonly Session[] } = { current: input.sessions };
 
@@ -153,7 +154,10 @@ function setup(input: HarnessInput) {
         },
         messagesOf: input.messagesOf ?? (async () => null),
         updateLink: (sessionId, change) => {
-          if (flags.updateLinkThrows) throw new Error("/secret/mark");
+          if (flags.updateLinkThrows > 0) {
+            flags.updateLinkThrows -= 1;
+            throw new Error("/secret/mark");
+          }
           const next = withLinkChange({ sessions: owned.current } as unknown as PersistedState, sessionId, change)
             .sessions as readonly Session[];
           if (next === owned.current) return;
@@ -2282,16 +2286,56 @@ describe("useDelegation owed reports", () => {
     await waitFor(() => expect(linkOf(env, "w1")?.endedAt).toEqual(expect.any(Number)));
   });
 
-  it("does not report a send as failed, or send it again, when marking it reported throws", async () => {
+  it("retries only the marking after it threw, and frees the worker", async () => {
     const env = setup({
       sessions: [sourceSession(), owedWorker("w1", 1)],
       transcripts: { "s-a": A_MESSAGES },
-      updateLinkThrows: true,
+      updateLinkThrows: 1,
     });
     await waitFor(() => expect(env.sends).toHaveLength(1));
     await bump(env);
-    await bump(env);
-    expect(env.sends).toHaveLength(1);
+    await waitFor(() => expect(linkOf(env, "w1")).toMatchObject({ reportedAt: expect.any(Number) }));
     expect(env.notices).toHaveLength(0);
+    expect(env.result.current.delegation.sendBlockedReason("w1")).toBeNull();
+    let result: unknown;
+    await act(async () => {
+      result = await env.result.current.delegation.sendToWorker("s-a", "w1", "More");
+    });
+    expect(result).toMatchObject({ ok: true });
+    expect(env.sends.filter((send) => send.sessionId === "s-a")).toHaveLength(1);
+  });
+
+  it("skips a worker whose turn runs, and reports its new answer once it settles", async () => {
+    const env = setup({
+      sessions: [sourceSession({ status: "terminated" }), owedWorker("w1", 1, { outcome: null })],
+      transcripts: { "s-a": A_MESSAGES, w1: bMessages(agentMessage({ content: "Old answer." })) },
+      cannotPrompt: ["s-a"],
+    });
+    await act(async () => {});
+    env.busy.add("w1");
+    await act(async () => {
+      env.cannotPrompt.delete("s-a");
+      env.result.current.setSessions((prev) =>
+        prev.map((session) => (session.id === "s-a" ? { ...session, status: "running" as const } : session)),
+      );
+    });
+    await act(async () => {});
+    expect(env.sends).toHaveLength(0);
+
+    await act(async () => {
+      env.result.current.setTranscripts((prev) => ({
+        ...prev,
+        w1: [...bMessages(agentMessage({ content: "Old answer." })), { id: "m-b3", role: "user", content: "Go on", timestamp: 400 }, agentMessage({ id: "m-b4", content: "New answer.", timestamp: 500 })],
+      }));
+    });
+    // A turn end frees the worker and writes its link in one handler.
+    await act(async () => {
+      env.busy.delete("w1");
+      env.result.current.delegation.onTurnSettled("w1", { how: "finished" });
+    });
+    await waitFor(() => expect(env.sends).toHaveLength(1));
+    expect(env.sends[0].text).toContain("> New answer.");
+    await act(async () => {});
+    expect(env.sends).toHaveLength(1);
   });
 });

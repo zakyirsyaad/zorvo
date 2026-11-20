@@ -8,6 +8,7 @@ import {
 } from '../lib/delegation';
 import { agentNameIn, lastMessage } from '../lib/delegation-helpers';
 import { isArchived } from '../lib/session-helpers';
+import { workerHandleOf } from '../lib/workers';
 import type { DelegationDeps } from './useDelegation';
 import { useLatest } from './useLatest';
 
@@ -107,7 +108,9 @@ export function useWorkerReports(deps: ReportDeps): {
         const files = [
           ...new Set(reportedFiles(last).map((path) => relativeTo(source.cwd, path))),
         ];
-        const report = reportMessage({ agentName, task: link.task, answer, files });
+        // An older link has no stored handle: its report is worded and marked as before.
+        const handle = link.handle !== undefined ? workerHandleOf(session) : undefined;
+        const report = reportMessage({ agentName, task: link.task, answer, files, ...(handle !== undefined ? { handle } : {}) });
 
         if (!current.canPrompt(source.id)) {
           // Waiting in A's composer is delivery: A's line shows the report, not a running turn.
@@ -121,7 +124,7 @@ export function useWorkerReports(deps: ReportDeps): {
         let isSent: boolean;
         try {
           isSent = await current.send(source.id, report, [], {
-            delegationReport: { agentName, agentId: session.profileId },
+            delegationReport: { agentName, agentId: session.profileId, ...(handle !== undefined ? { handle } : {}) },
           });
         } catch {
           isSent = false;

@@ -302,6 +302,15 @@ describe("reportMessage", () => {
     );
   });
 
+  it("names the worker in the first line when given its handle, and not otherwise", () => {
+    const input = { agentName: "Codex", task: "Do it", answer: "Done.", files: [] };
+    expect(reportMessage({ ...input, handle: "worker-2" }).split("\n")[0]).toBe(
+      'Report from Codex (worker-2) on the task you delegated: "Do it"',
+    );
+    expect(reportMessage(input).split("\n")[0]).toBe('Report from Codex on the task you delegated: "Do it"');
+    expect(reportMessage({ ...input, handle: "w\u202e1" }).split("\n")[0]).not.toContain("\u202e");
+  });
+
   it("leaves out the files line when there are none", () => {
     const text = reportMessage({ agentName: "Codex", task: "Do it", answer: "Done.", files: [] });
 

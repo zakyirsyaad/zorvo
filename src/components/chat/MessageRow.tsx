@@ -13,6 +13,7 @@ import { PlanUpdatedRow, ThinkingBlock } from "./ReplyExtras";
 import { VerificationBadge } from "../private/VerificationBadge";
 import type { ModelPrice } from "../../lib/private-credits";
 import { partsOf } from "../../lib/acp-events";
+import { escapeVisible } from "../../lib/visible-text";
 import { formatRelativeTime } from "../../lib/relative-time";
 import type { ChatMessage, ElicitationAnswer, ToolExecution } from "../../types";
 import { SELECTABLE_TEXT_ATTRIBUTE } from "../../hooks/useChatSelection";
@@ -234,7 +235,11 @@ export const MessageRow = memo(function MessageRow({
               />
               <span className="min-w-0 truncate text-ui-sm font-medium text-fg">
                 {message.delegationReport
-                  ? `From ${message.delegationReport.agentName}`
+                  ? `From ${message.delegationReport.agentName}${
+                      message.delegationReport.handle !== undefined
+                        ? ` (${escapeVisible(message.delegationReport.handle)})`
+                        : ""
+                    }`
                   : `Task from ${message.delegationTask?.agentName ?? ""}`}
               </span>
             </div>

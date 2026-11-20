@@ -458,7 +458,7 @@ export interface ChatMessage {
   /** The agent's `messageId` for a user message replayed by `session/load`; its chunks share it. */
   replayId?: string;
   /** A report from a delegated session in A's transcript; the chat labels it From <agent>. */
-  delegationReport?: { agentName: string; agentId?: string };
+  delegationReport?: { agentName: string; agentId?: string; handle?: string };
   /** On the user message that carries a task into a delegate: the agent of the session that gave it. */
   delegationTask?: { agentName: string; agentId?: string };
   /** A question the agent asked the user (ACP elicitation); never holds the answer. */

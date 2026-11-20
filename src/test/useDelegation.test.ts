@@ -1565,3 +1565,168 @@ describe("newSessionRecord with a delegation", () => {
     expect(plain).not.toHaveProperty("openedBy");
   });
 });
+describe("useDelegation further tasks and the limit", () => {
+  const LIMIT_SENTENCE = "4 are running. Start this one when one finishes.";
+  const fiveWorkers = () => ["w1", "w2", "w3", "w4", "w5"].map((id, index) => worker(`worker-${index + 1}`, id));
+  const withWorkers = (atWork: readonly string[], overrides: Partial<HarnessInput> = {}) =>
+    setup({
+      sessions: [sourceSession(), ...fiveWorkers()],
+      transcripts: { "s-a": A_MESSAGES },
+      busy: atWork,
+      ...overrides,
+    });
+
+  it("refuses a further task when four others are at work", async () => {
+    const { result, sends } = withWorkers(["w1", "w2", "w3", "w4"]);
+    const r = await act(async () => result.current.delegation.sendToWorker("s-a", "w5", "More"));
+    expect(r).toEqual({ ok: false, reason: LIMIT_SENTENCE });
+    expect(sends).toHaveLength(0);
+  });
+
+  it("sends a further task when three others are at work", async () => {
+    const { result, sends } = withWorkers(["w1", "w2", "w3"]);
+    const r = await act(async () => result.current.delegation.sendToWorker("s-a", "w5", "More"));
+    expect(r).toMatchObject({ ok: true, kind: "sent" });
+    expect(sends).toHaveLength(1);
+  });
+
+  it("applies the limit to a mention's further task too", async () => {
+    const { result, sends } = setup({
+      sessions: [sourceSession(), worker("worker-1", "w1"), ...["w2", "w3", "w4", "w5"].map((id, i) => sourceSession({ id, createdAt: 20 + i, openedBy: { sessionId: "s-a", at: 1 } }))],
+      transcripts: { "s-a": A_MESSAGES },
+      busy: ["w2", "w3", "w4", "w5"],
+    });
+    const r = await act(async () => result.current.delegation.giveTask("s-a", "codex-acp", "More", { byAgent: true }));
+    expect(r).toEqual({ ok: false, reason: LIMIT_SENTENCE });
+    expect(sends).toHaveLength(0);
+  });
+
+  it("admits one of two further tasks for two idle workers in one tick while three others work", async () => {
+    const { result, sends } = withWorkers(["w1", "w2", "w3"]);
+    const [first, second] = await act(async () =>
+      Promise.all([
+        result.current.delegation.sendToWorker("s-a", "w4", "One"),
+        result.current.delegation.sendToWorker("s-a", "w5", "Two"),
+      ]),
+    );
+    expect(first).toMatchObject({ ok: true });
+    expect(second).toEqual({ ok: false, reason: LIMIT_SENTENCE });
+    expect(sends.map((entry) => entry.sessionId)).toEqual(["w4"]);
+  });
+
+  it("frees the place when the worker's turn ends", async () => {
+    const { result, sends, places } = withWorkers(["w1", "w2", "w3"]);
+    await act(async () => {
+      await result.current.delegation.sendToWorker("s-a", "w4", "One");
+    });
+    expect(places.underWay("s-a")).toBe(1);
+    expect(await act(async () => result.current.delegation.sendToWorker("s-a", "w5", "Two"))).toEqual({
+      ok: false,
+      reason: LIMIT_SENTENCE,
+    });
+    await act(async () => result.current.delegation.onTurnEnded("w4", "finished"));
+    expect(places.underWay("s-a")).toBe(0);
+    expect(await act(async () => result.current.delegation.sendToWorker("s-a", "w5", "Two"))).toMatchObject({ ok: true });
+    expect(sends.map((entry) => entry.sessionId)).toEqual(["w4", "w5"]);
+  });
+
+  it("frees the place when the agent does not take the task", async () => {
+    const { result, places } = withWorkers([], { sendResult: false });
+    const r = await act(async () => result.current.delegation.sendToWorker("s-a", "w5", "More"));
+    expect(r).toMatchObject({ ok: false });
+    expect(places.underWay("s-a")).toBe(0);
+  });
+
+  it("frees the place once the worker is seen busy", async () => {
+    const { result, places, busy } = withWorkers([]);
+    await act(async () => {
+      await result.current.delegation.sendToWorker("s-a", "w5", "More");
+    });
+    expect(places.underWay("s-a")).toBe(1);
+    busy.add("w5");
+    await act(async () => result.current.setSessions((prev) => [...prev]));
+    expect(places.underWay("s-a")).toBe(0);
+  });
+});
+
+describe("useDelegation handles after a restart", () => {
+  const startOne = (hook: ReturnType<typeof setup>) =>
+    act(async () => hook.result.current.delegation.startWorker("s-a", { agentId: "codex-acp", task: "T", byAgent: true }));
+
+  it("does not reissue the handle of a worker whose link ended", async () => {
+    const hook = setup({
+      sessions: [
+        sourceSession(),
+        worker("worker-1", "w1"),
+        worker("worker-2", "w2", { delegatedFrom: link({ handle: "worker-2", endedAt: 99 }) }),
+      ],
+      transcripts: { "s-a": A_MESSAGES },
+    });
+    expect(await startOne(hook)).toMatchObject({ ok: true, handle: "worker-3" });
+  });
+
+  it("does not reissue the handle of an archived worker", async () => {
+    const hook = setup({
+      sessions: [sourceSession(), worker("worker-1", "w1"), worker("worker-2", "w2", { archivedAt: 50 })],
+      transcripts: { "s-a": A_MESSAGES },
+    });
+    expect(await startOne(hook)).toMatchObject({ ok: true, handle: "worker-3" });
+  });
+});
+
+describe("useDelegation reports name their worker", () => {
+  it("words and marks a new worker's report with its handle", async () => {
+    const env = setup({
+      sessions: [sourceSession(), worker("worker-2", "s-b")],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+      strict: true,
+    });
+    await act(async () => {
+      env.result.current.delegation.onTurnEnded("s-b", "finished");
+    });
+    await waitFor(() => expect(env.sends).toHaveLength(1));
+    expect(env.sends[0].text).toContain('Report from Codex (worker-2) on the task you delegated: "Fix the parser"');
+    expect(env.sends[0].marks).toEqual({
+      delegationReport: { agentName: "Codex", agentId: "codex-acp", handle: "worker-2" },
+    });
+  });
+
+  it("leaves an older link's report as it was", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession()],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+      strict: true,
+    });
+    await act(async () => {
+      env.result.current.delegation.onTurnEnded("s-b", "finished");
+    });
+    await waitFor(() => expect(env.sends).toHaveLength(1));
+    expect(env.sends[0].text).toContain('Report from Codex on the task you delegated: "Fix the parser"');
+    expect(env.sends[0].marks).toEqual({ delegationReport: { agentName: "Codex", agentId: "codex-acp" } });
+  });
+
+  const twoWorkers = (mark: NonNullable<ChatMessage["delegationReport"]>) =>
+    setup({
+      sessions: [sourceSession(), worker("worker-1", "w1"), worker("worker-2", "w2")],
+      transcripts: {
+        "s-a": [
+          ...A_MESSAGES,
+          { id: "m-a3", role: "user", content: "Report", timestamp: 3, delegationReport: mark },
+        ],
+      },
+      busy: ["s-a"],
+    });
+
+  it("blocks only the worker whose report the coordinator reads", () => {
+    const env = twoWorkers({ agentName: "Codex", agentId: "codex-acp", handle: "worker-1" });
+    expect(env.result.current.delegation.sendBlockedReason("w1")).toBe("Claude Code is working on Codex's report.");
+    expect(env.result.current.delegation.sendBlockedReason("w2")).toBe("Wait for Claude Code to finish.");
+    expect(env.result.current.delegation.viewFor("w1")?.state).toBe("source-working");
+    expect(env.result.current.delegation.viewFor("w2")?.state).not.toBe("source-working");
+  });
+
+  it("matches by agent for a report that names no worker", () => {
+    const env = twoWorkers({ agentName: "Codex", agentId: "codex-acp" });
+    expect(env.result.current.delegation.sendBlockedReason("w2")).toBe("Claude Code is working on Codex's report.");
+  });
+});

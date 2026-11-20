@@ -98,6 +98,18 @@ export function nextWorkerHandle(taken: readonly string[]): string {
 }
 
 /**
+ * Every handle the coordinator has given, whether the worker's link is open or
+ * ended or the session archived: its saved conversation still names them. A
+ * deleted session leaves nothing to read.
+ */
+export function issuedWorkerHandles(coordinatorId: string, sessions: readonly Session[]): string[] {
+  return sessions.flatMap((session) => {
+    const link = session.delegatedFrom;
+    return link?.sessionId === coordinatorId && link.handle !== undefined ? [link.handle] : [];
+  });
+}
+
+/**
  * What its coordinator's agent calls a worker: the link's handle, else the
  * agent's id for a link made before handles, and only while the link is open.
  */
@@ -105,6 +117,14 @@ export function workerHandleOf(session: Session): string | undefined {
   const link = session.delegatedFrom;
   if (!link || !isOpenLink(link)) return undefined;
   return link.handle ?? session.profileId;
+}
+
+/**
+ * Whether a report mark on the coordinator's message is this worker's. A mark
+ * with a handle names one worker; an older mark names only the agent.
+ */
+export function isReportOf(mark: { agentId?: string; handle?: string }, worker: Session): boolean {
+  return mark.handle !== undefined ? mark.handle === workerHandleOf(worker) : mark.agentId === worker.profileId;
 }
 
 /**

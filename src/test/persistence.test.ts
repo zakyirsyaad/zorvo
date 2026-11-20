@@ -744,6 +744,13 @@ describe("normalizeTranscript - delegation report", () => {
     const [withoutId] = normalizeTranscript(withReport({ agentName: "Codex", agentId: 3 }));
     expect(withoutId.delegationReport).toEqual({ agentName: "Codex" });
   });
+
+  it("keeps a string handle and drops a handle that is not one, keeping the mark", () => {
+    const [kept] = normalizeTranscript(withReport({ agentName: "Codex", agentId: "codex-acp", handle: "worker-2" }));
+    expect(kept.delegationReport).toEqual({ agentName: "Codex", agentId: "codex-acp", handle: "worker-2" });
+    const [dropped] = normalizeTranscript(withReport({ agentName: "Codex", agentId: "codex-acp", handle: 2 }));
+    expect(dropped.delegationReport).toEqual({ agentName: "Codex", agentId: "codex-acp" });
+  });
 });
 
 describe("normalizeTranscript - delegation task", () => {

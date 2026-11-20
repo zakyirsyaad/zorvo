@@ -214,6 +214,8 @@ export interface ReportInput {
   task: string;
   answer: string;
   files: readonly string[];
+  /** The worker's handle, so the coordinator can tell workers of one agent apart. */
+  handle?: string;
 }
 
 export const REPORT_FRAMING =
@@ -225,6 +227,7 @@ export function reportMessage({
   task,
   answer,
   files,
+  handle,
 }: ReportInput): string {
   const cut = answer.length > MAX_REPORT_CHARS;
   // A turn can end on tool calls alone: the source still hears that the task ended.
@@ -248,7 +251,7 @@ export function reportMessage({
       : [];
 
   return [
-    `Report from ${agentName} on the task you delegated: "${escapeVisible(task)}"`,
+    `Report from ${agentName}${handle !== undefined ? ` (${escapeVisible(handle)})` : ''} on the task you delegated: "${escapeVisible(task)}"`,
     REPORT_FRAMING,
     '',
     quote,

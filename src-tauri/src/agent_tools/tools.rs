@@ -1,10 +1,10 @@
-//! The eight tools an agent can call, their JSON schemas, and the checks on
+//! The tools an agent can call, their JSON schemas, and the checks on
 //! their arguments. Only shapes are checked here; what a folder or an agent
 //! name means is decided later, with the webview and the store.
 
 use serde_json::{json, Map, Value};
 
-pub const TOOL_NAMES: [&str; 8] = [
+pub const TOOL_NAMES: [&str; 10] = [
     "list_agents",
     "start_worker",
     "send",
@@ -13,6 +13,8 @@ pub const TOOL_NAMES: [&str; 8] = [
     "stop_session",
     "show_artifact",
     "artifact_guide",
+    "browser",
+    "browser_guide",
 ];
 pub const MAX_TEXT_CHARS: usize = 20_000;
 pub const MAX_TITLE_CHARS: usize = 60;
@@ -24,7 +26,7 @@ const MAX_PATH_CHARS: usize = 4096;
 
 /// The `tools` array for `tools/list`.
 pub fn tool_list() -> Value {
-    json!([
+    let mut tools = json!([
         {
             "name": "list_agents",
             "description": "List the coding agents you can start as workers, the workers and sessions you have started, and the folders a new session may be opened in.",
@@ -125,7 +127,60 @@ pub fn tool_list() -> Value {
                 "additionalProperties": false
             }
         }
-    ])
+    ]);
+    tools.as_array_mut().unwrap().extend([
+        json!({"name":"browser", "description":"Operate Zorvo's browser. Open a page with operation tabs.open and url. Scroll the current WebKit page with operation scroll and deltaY (positive is down), without listing tabs first. Omit tabID to use the active WebKit tab; Chromium requires tabID from tabs.open or tabs.list. WebKit is the native in-app view; engine chromium opens an isolated installed Chromium window for advanced diagnostics. Requires the user's session browser grant. File transfers need separate approval. Read browser_guide for advanced operation details.",
+            "inputSchema":browser_input_schema()}),
+        json!({"name":"browser_guide","description":"List browser operations, parameters, engine limits and permission rules.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}),
+    ]);
+    tools
+}
+
+/// Code-mode clients generate function signatures from named properties, not
+/// `additionalProperties`. Publish every public parameter so they can pass a
+/// URL, tab id or scroll distance without first fetching the whole guide.
+fn browser_input_schema() -> Value {
+    let catalog: Value =
+        serde_json::from_str(include_str!("../../resources/browser-cdp/catalog.json"))
+            .expect("bundled browser catalog");
+    let mut properties = Map::new();
+    for tool in catalog.as_object().expect("browser operations").values() {
+        for (name, schema) in tool["inputSchema"]["properties"]
+            .as_object()
+            .expect("browser operation parameters")
+        {
+            properties
+                .entry(name.clone())
+                .or_insert_with(|| schema.clone());
+        }
+    }
+    properties.insert(
+        "operation".into(),
+        json!({"type":"string", "enum":crate::browser_commands::OPERATIONS}),
+    );
+    properties.insert(
+        "engine".into(),
+        json!({"type":"string", "enum":["webkit","chromium"], "default":"webkit"}),
+    );
+    properties.insert(
+        "title".into(),
+        json!({"type":"string", "description":"Title when previewing a local HTML file."}),
+    );
+    // Some model adapters reject an array branch without an items schema.
+    properties.get_mut("fields").expect("form fields")["items"]["properties"]["value"] = json!({
+        "anyOf":[{"type":"string"},{"type":"boolean"},{"type":"array","items":{"type":"string"}}]
+    });
+    for (name, description) in [
+        ("url", "HTTP or HTTPS URL for tabs.open or navigate."),
+        ("tabID", "Tab id from tabs.open or tabs.list. Omit for the active WebKit tab; required for Chromium tab operations."),
+        ("frameID", "Optional frame id returned by frames."),
+        ("ref", "Element reference returned by snapshot."),
+        ("deltaX", "Horizontal scroll distance in pixels."),
+        ("deltaY", "Vertical scroll distance in pixels; positive scrolls down."),
+    ] {
+        properties.get_mut(name).expect("browser parameter")["description"] = json!(description);
+    }
+    json!({"type":"object", "properties":properties, "required":["operation"], "additionalProperties":false})
 }
 
 /// Checks `args` for `tool` and returns them cleaned (strings trimmed), or a
@@ -134,8 +189,11 @@ pub fn validate(tool: &str, args: &Value) -> Result<Value, String> {
     let object = args
         .as_object()
         .ok_or_else(|| "The arguments must be a JSON object.".to_string())?;
+    if tool == "browser" {
+        return crate::browser_commands::validate_args(args);
+    }
     let allowed: &[&str] = match tool {
-        "list_agents" | "artifact_guide" => &[],
+        "list_agents" | "artifact_guide" | "browser_guide" => &[],
         "show_artifact" => &["path", "title"],
         "start_worker" => &["agent", "task", "title", "worktree"],
         "send" => &["handle", "message"],
@@ -443,7 +501,7 @@ mod tests {
     }
 
     #[test]
-    fn lists_exactly_the_eight_tools() {
+    fn lists_exactly_the_registered_tools() {
         let list = tool_list();
         let tools = list.as_array().unwrap();
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
@@ -458,13 +516,61 @@ mod tests {
                 "read_session",
                 "stop_session",
                 "show_artifact",
-                "artifact_guide"
+                "artifact_guide",
+                "browser",
+                "browser_guide"
             ]
         );
         for tool in tools {
             assert_eq!(tool["inputSchema"]["type"], "object");
             assert_eq!(tool["inputSchema"]["additionalProperties"], false);
             assert!(!tool["description"].as_str().unwrap().is_empty());
+        }
+    }
+
+    #[test]
+    fn browser_signature_exposes_the_public_operation_parameters() {
+        let schema = browser_input_schema();
+        let properties = schema["properties"].as_object().unwrap();
+        let catalog: Value =
+            serde_json::from_str(include_str!("../../resources/browser-cdp/catalog.json")).unwrap();
+        for (operation, tool) in catalog.as_object().unwrap() {
+            for (name, source) in tool["inputSchema"]["properties"].as_object().unwrap() {
+                let mut expected = source.clone();
+                if name == "fields" {
+                    expected["items"]["properties"]["value"] = json!({"anyOf":[
+                        {"type":"string"}, {"type":"boolean"},
+                        {"type":"array", "items":{"type":"string"}}
+                    ]});
+                }
+                let mut actual = properties
+                    .get(name)
+                    .unwrap_or_else(|| panic!("missing {operation} parameter {name}"))
+                    .clone();
+                actual.as_object_mut().unwrap().remove("description");
+                assert_eq!(actual, expected, "{operation} parameter {name}");
+            }
+        }
+        assert_eq!(schema["required"], json!(["operation"]));
+        assert_eq!(
+            properties["operation"]["enum"],
+            json!(crate::browser_commands::OPERATIONS)
+        );
+        assert_eq!(properties["engine"]["default"], "webkit");
+        assert_eq!(properties["title"]["type"], "string");
+        for internal in ["approval", "_zorvoCallId", "_zorvoGrant"] {
+            assert!(!properties.contains_key(internal), "{internal}");
+        }
+    }
+
+    #[test]
+    fn browser_calls_keep_navigation_and_scroll_parameters() {
+        for args in [
+            json!({"operation":"tabs.open", "url":"https://example.com/", "focus":true}),
+            json!({"operation":"scroll", "deltaY":800}),
+            json!({"operation":"scroll", "tabID":"tab_1", "deltaX":0, "deltaY":640}),
+        ] {
+            assert_eq!(validate("browser", &args).unwrap(), args);
         }
     }
 

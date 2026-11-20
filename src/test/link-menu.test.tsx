@@ -101,13 +101,16 @@ describe("LinkMenuLayer", () => {
     const anchor = link("https://example.com/docs");
     rightClick(anchor);
 
+    const inApp = screen.getByRole("menuitem", { name: "Open in Zorvo's browser" });
     const open = screen.getByRole("menuitem", { name: "Open in browser" });
     const copy = screen.getByRole("menuitem", { name: "Copy link" });
+    expect(document.activeElement).toBe(inApp);
+    fireEvent.keyDown(inApp, { key: "ArrowDown" });
     expect(document.activeElement).toBe(open);
     fireEvent.keyDown(open, { key: "ArrowDown" });
     expect(document.activeElement).toBe(copy);
     fireEvent.keyDown(copy, { key: "ArrowDown" });
-    expect(document.activeElement).toBe(open);
+    expect(document.activeElement).toBe(inApp);
 
     fireEvent.keyDown(open, { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();

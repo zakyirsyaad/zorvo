@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
 
+use base64::Engine;
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -96,6 +97,8 @@ struct CallPhase {
 }
 
 struct Pending {
+    tool: String,
+    args: Value,
     connection: Arc<Connection>,
     state: Arc<CallState>,
     /// The JSON-RPC id the agent used, to answer it and to match a cancel.
@@ -122,6 +125,18 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl AgentTools {
+    /// Read the authenticated, still-pending browser request. UI-supplied arguments
+    /// never stand in for the request received from the bound agent process.
+    pub fn browser_call(&self, call_id: &str) -> Option<(String, Value)> {
+        let pending = lock(&self.pending);
+        let call = pending.get(call_id)?;
+        (call.tool == "browser")
+            .then(|| (call.connection.caller.session.clone(), call.args.clone()))
+    }
+
+    pub fn browser_owner(&self, call_id: &str) -> Option<String> {
+        self.browser_call(call_id).map(|(session, _)| session)
+    }
     /// How long a call may wait for the webview. Agents give up on a tool call
     /// on their own (Antigravity after 3 minutes, Qwen Code and Codex after 5),
     /// so Zorvo answers before the shortest of them.
@@ -252,6 +267,36 @@ impl AgentTools {
     pub fn respond(&self, call_id: &str, ok: bool, text: &str) {
         let entry = lock(&self.pending).remove(call_id);
         if let Some(entry) = entry {
+            if entry.tool == "browser" && ok && entry.args["operation"] == "screenshot" {
+                if let Ok(mut value) = serde_json::from_str::<Value>(text) {
+                    if value["mimeType"] == "image/png" {
+                        if let Some(data) = value
+                            .get("base64")
+                            .and_then(Value::as_str)
+                            .map(str::to_owned)
+                        {
+                            let valid = data.len() <= 7 * 1024 * 1024
+                                && base64::engine::general_purpose::STANDARD
+                                    .decode(&data)
+                                    .is_ok_and(|bytes| {
+                                        bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+                                            && bytes.len() <= 5 * 1024 * 1024
+                                    });
+                            if valid {
+                                value.as_object_mut().unwrap().remove("base64");
+                                entry.connection.send(&json!({"jsonrpc":"2.0","id":entry.rpc_id,"result":{"content":[{"type":"text","text":value.to_string()},{"type":"image","mimeType":"image/png","data":data}],"isError":false}}));
+                                return;
+                            }
+                        }
+                        entry.connection.send(&tool_result(
+                            &entry.rpc_id,
+                            false,
+                            "The browser screenshot is invalid or exceeds 5 MiB.",
+                        ));
+                        return;
+                    }
+                }
+            }
             entry.connection.send(&tool_result(&entry.rpc_id, ok, text));
         }
     }
@@ -401,6 +446,8 @@ impl AgentTools {
             pending.insert(
                 call_id.clone(),
                 Pending {
+                    tool: tool.clone(),
+                    args: args.clone(),
                     connection: Arc::clone(connection),
                     state: Arc::clone(&state),
                     rpc_id: rpc_id.clone(),

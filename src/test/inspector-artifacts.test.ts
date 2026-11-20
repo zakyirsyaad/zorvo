@@ -4,7 +4,7 @@ import { INSPECTOR_WIDTH, minInspectorWidth, offeredTabs, shownInspectorWidth } 
 describe("the Output tab", () => {
   it("is offered for every session on screen, empty or not, between Files and Terminal", () => {
     const on = { hasFolder: true, isRepository: true, hasSession: true };
-    expect(offeredTabs(on)).toEqual(["changes", "activity", "files", "artifacts", "terminal"]);
+    expect(offeredTabs(on)).toEqual(["changes", "activity", "files", "artifacts", "browser", "terminal"]);
     // A draft has no session, so nothing to show there yet.
     expect(offeredTabs({ ...on, hasSession: false })).toEqual(["changes", "files", "terminal"]);
   });

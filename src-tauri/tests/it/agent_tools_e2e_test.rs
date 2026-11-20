@@ -93,7 +93,11 @@ fn the_fake_agent_calls_a_tool_through_the_bridge_and_gets_the_answer() {
         .iter()
         .filter_map(|t| t["name"].as_str())
         .collect();
-    assert_eq!(names.len(), 8, "tool names: {names:?}");
+    assert_eq!(
+        names.len(),
+        zorvo_lib::agent_tools::tools::TOOL_NAMES.len(),
+        "tool names: {names:?}"
+    );
     assert_eq!(entries[2]["result"]["content"][0]["text"], "started");
     manager.stop("s1");
     rig.tools.shutdown();

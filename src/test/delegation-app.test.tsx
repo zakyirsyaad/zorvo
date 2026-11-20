@@ -5,11 +5,15 @@ import type { FakeTauriStore } from "./setup";
 
 type Listener = (event: { payload: unknown }) => void;
 const listeners = new Map<string, Listener>();
+const subscriptions = new Map<string, Set<Listener>>();
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: (event: string, cb: Listener) => {
-    listeners.set(event, cb);
-    return Promise.resolve(() => listeners.delete(event));
+    const group = subscriptions.get(event) ?? new Set<Listener>();
+    group.add(cb);
+    subscriptions.set(event, group);
+    listeners.set(event, payload => { for (const callback of [...group]) callback(payload); });
+    return Promise.resolve(() => { group.delete(cb); if (!group.size) { subscriptions.delete(event); listeners.delete(event); } });
   },
   emit: () => Promise.resolve(),
 }));
@@ -210,6 +214,7 @@ function claudeStartAnswer(args: Record<string, unknown> | undefined) {
 afterEach(() => {
   vi.restoreAllMocks();
   listeners.clear();
+  subscriptions.clear();
 });
 
 describe("delegating from the app", () => {

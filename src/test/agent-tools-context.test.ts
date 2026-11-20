@@ -24,7 +24,7 @@ describe("the command path's context", () => {
 
 describe("the MCP path's context", () => {
   it("says when to show a page without being asked, and how to find the tool", () => {
-    for (const words of ["without being asked", "show_artifact", "artifact_guide", "diagram", "tool_search"]) {
+    for (const words of ["without being asked", "show_artifact", "artifact_guide", "diagram", "tool discovery"]) {
       expect(MCP_PATH_CONTEXT).toContain(words);
     }
   });

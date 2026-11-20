@@ -182,6 +182,23 @@ describe("cards for a session an agent wants to open", () => {
     expect(both.prompt).toBe("For Qwen Code:\n> Review it.\n\nFor Qwen Code:\n> Now the lexer.");
   });
 
+  it("says on a worker card when the worker gets a worktree of its own, and only then", () => {
+    const own = toolCardFor(base, [{ ...delegation, hasOwnWorktree: true }]);
+    expect(own.zorvoTool?.hasOwnWorktree).toBe(true);
+    render(<ActionCard card={own} agentName="pi ACP" onChoose={vi.fn()} />);
+    expect(screen.getByText("It gets a worktree of its own, on a new branch.")).toBeInTheDocument();
+    expect(toolCardFor(base, [delegation]).zorvoTool?.hasOwnWorktree).toBeUndefined();
+  });
+
+  it("heads a listed worker request with its worktree, and a send or plain worker without", () => {
+    const further = { ...delegation, kind: "send" as const, task: "Next." };
+    const card = toolCardFor(base, [{ ...delegation, hasOwnWorktree: true }, delegation, further]);
+    expect(card.zorvoTool?.hasOwnWorktree).toBeUndefined();
+    expect(card.prompt).toBe(
+      "For Qwen Code, in its own worktree:\n> Review it.\n\nFor Qwen Code:\n> Review it.\n\nFor Qwen Code:\n> Next.",
+    );
+  });
+
   it("says when the session gets a worktree of its own", () => {
     const card = toolCardFor(base, [{ ...session, hasOwnWorktree: true }]);
     expect(card.zorvoTool?.hasOwnWorktree).toBe(true);

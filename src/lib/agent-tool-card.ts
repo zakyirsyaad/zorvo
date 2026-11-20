@@ -99,10 +99,14 @@ function sessionCard(input: Omit<ToolCardInput, 'targetName' | 'targetId' | 'tas
 }
 
 function blockHeading(task: WaitingTask): string {
-  if (task.kind !== 'start_session') return `For ${task.targetName}:`;
-  return task.hasOwnWorktree
-    ? `New ${task.targetName} session, in its own worktree:`
-    : `New ${task.targetName} session:`;
+  if (task.kind === 'start_session') {
+    return task.hasOwnWorktree
+      ? `New ${task.targetName} session, in its own worktree:`
+      : `New ${task.targetName} session:`;
+  }
+  return task.kind === 'start_worker' && task.hasOwnWorktree
+    ? `For ${task.targetName}, in its own worktree:`
+    : `For ${task.targetName}:`;
 }
 
 /**
@@ -121,7 +125,14 @@ export function toolCardFor(
       : toolCard({ ...input, targetName: first.targetName, targetId: first.targetId, task: first.task });
   const single: ActionCard =
     first.kind === 'start_worker'
-      ? { ...built, title: `${input.callerName} wants to start a ${first.targetName} worker` }
+      ? {
+          ...built,
+          title: `${input.callerName} wants to start a ${first.targetName} worker`,
+          zorvoTool: {
+            ...(built.zorvoTool as NonNullable<ActionCard['zorvoTool']>),
+            ...(first.hasOwnWorktree ? { hasOwnWorktree: true as const } : {}),
+          },
+        }
       : built;
   if (tasks.length === 1) return single;
   const areAllDelegations = tasks.every((task) => task.kind !== 'start_session');

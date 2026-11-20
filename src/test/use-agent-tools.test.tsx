@@ -407,6 +407,15 @@ describe("useAgentTools", () => {
     expect(t.env.given).toHaveLength(0);
   });
 
+  it("a start_worker call with worktree new and no grant shows a card that says so", async () => {
+    const t = setup();
+    await t.call("1", "start_worker", { ...REVIEW, worktree: "new" });
+    expect(t.cards()[0].zorvoTool?.hasOwnWorktree).toBe(true);
+    await t.call("2", "start_worker", { agent: "codex-acp", task: "Plain." });
+    expect(t.cards()[0].zorvoTool?.hasOwnWorktree).toBeUndefined();
+    expect(t.cards()[0].prompt).toContain("For Qwen Code, in its own worktree:");
+  });
+
   it("an internal failure is FAILED to the agent and its detail goes to the user's notice", async () => {
     const t = setup({
       giveResult: () => ({

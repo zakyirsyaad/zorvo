@@ -892,7 +892,35 @@ describe("useDelegation workers", () => {
     await act(async () => {
       await result.current.delegation.startWorker("s-a", { agentId: "codex-acp", task: "T", hasOwnWorktree: true });
     });
-    expect(callsTo(spy, "create_session_worktree")[0][1]).toMatchObject({ repoPath: "/repo/main" });
+    // From the coordinator's own branch: what it committed there is in the worker's worktree.
+    expect(callsTo(spy, "create_session_worktree")[0][1]).toMatchObject({ repoPath: "/repo/main", baseBranch: "agent/s" });
+  });
+
+  it("makes the worktree from the folder's HEAD for a coordinator outside a worktree", async () => {
+    const spy = withWorktreeMock((cmd) => (cmd === "create_session_worktree" ? Promise.resolve(WORKTREE) : undefined));
+    const { result } = setup(base());
+    await act(async () => {
+      await result.current.delegation.startWorker("s-a", { agentId: "codex-acp", task: "T", hasOwnWorktree: true });
+    });
+    expect(callsTo(spy, "create_session_worktree")[0][1]).not.toHaveProperty("baseBranch");
+  });
+
+  it("removes the worktree it made when the handoff cannot be written", async () => {
+    const spy = withWorktreeMock((cmd) => {
+      if (cmd === "create_session_worktree") return Promise.resolve(WORKTREE);
+      if (cmd === "write_fork_handoff") return Promise.reject(new Error("disk full"));
+      if (cmd === "remove_session_worktree") return Promise.resolve(null);
+      return undefined;
+    });
+    const { result, starts, places } = setup(base());
+    const r = await act(async () =>
+      result.current.delegation.startWorker("s-a", { agentId: "codex-acp", task: "T", hasOwnWorktree: true, byAgent: true }),
+    );
+    expect(r).toMatchObject({ ok: false, reason: "The task could not be handed over.", isInternal: true });
+    expect(starts).toHaveLength(0);
+    expect(places.underWay("s-a")).toBe(0);
+    expect(callsTo(spy, "remove_session_worktree")).toHaveLength(1);
+    expect(callsTo(spy, "remove_session_worktree")[0][1]).toEqual({ repoPath: sourceSession().cwd, path: WORKTREE.path });
   });
 
   it("frees the place when the handoff cannot be written", async () => {

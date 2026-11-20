@@ -369,7 +369,13 @@ export function useDelegation(deps: DelegationDeps): {
     if (input.hasOwnWorktree === true) {
       const worktreeTitle = input.title ?? name.slice(agent.name.length + 2);
       try {
-        ({ worktree, cwd } = await createSessionWorktree(source.worktree?.repoPath ?? source.cwd, worktreeTitle));
+        // A coordinator in a worktree works on its own branch: the worker starts from that branch,
+        // not from whatever the repository's main checkout has out.
+        ({ worktree, cwd } = await createSessionWorktree(
+          source.worktree?.repoPath ?? source.cwd,
+          worktreeTitle,
+          source.worktree?.branch,
+        ));
         madeWorktree = worktree;
       } catch (error) {
         release();
@@ -378,13 +384,15 @@ export function useDelegation(deps: DelegationDeps): {
     }
     // Nothing ran in a worktree made for a start that is withdrawn; the backend keeps its branch,
     // and a failed removal leaves a worktree to remove by hand.
+    const removeMadeWorktree = (): void => {
+      if (madeWorktree === null) return;
+      void invoke('remove_session_worktree', { repoPath: madeWorktree.repoPath, path: madeWorktree.path }).catch(
+        () => undefined,
+      );
+    };
     const withdraw = (): StartWorkerResult => {
       release();
-      if (madeWorktree !== null) {
-        void invoke('remove_session_worktree', { repoPath: madeWorktree.repoPath, path: madeWorktree.path }).catch(
-          () => undefined,
-        );
-      }
+      removeMadeWorktree();
       return { ok: false, reason: '' };
     };
     const isWithdrawn = () =>
@@ -423,6 +431,8 @@ export function useDelegation(deps: DelegationDeps): {
       latest.current.startSession(spec, first, input.byAgent === true ? { choices, focus: false } : { choices });
     } catch (error) {
       release();
+      // No session was recorded, so nothing else would ever remove a worktree made for it.
+      removeMadeWorktree();
       return { ok: false, reason: 'The task could not be handed over.', isInternal: true, detail: String(error) };
     }
     // The session is recorded: a failure to show it is no reason to report the start as failed.

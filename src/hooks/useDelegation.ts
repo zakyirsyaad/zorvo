@@ -1,13 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useEffect, useRef } from 'react';
 import { NO_CHOICES, type AcpChoices } from '../lib/acp-draft';
+import { NO_SUCH_HANDLE } from '../lib/agent-tools';
 import {
-  buildDelegatePrompt,
-  delegateSessionName,
   isOpenLink,
   taskRoute,
   openDelegatesOf,
   sendBlockedReason as pairSendBlockedReason,
+  sourceBlockedReason,
   sourceOf,
 } from '../lib/delegation';
 import { buildForkHandoff } from '../lib/fork-handoff';
@@ -19,11 +19,19 @@ import {
   lastMessage,
   lastUserMessage,
   lastWholeMessage,
+  handoverPendingReason,
+  type StartWorkerInput,
+  type StartWorkerResult,
+  workerLaunch,
+  workerNameOf,
 } from '../lib/delegation-helpers';
 import { createId } from '../lib/ids';
+import { createSessionWorktree } from '../lib/session-worktree';
 import { isArchived } from '../lib/session-helpers';
+import type { StartPlaces } from '../lib/start-places';
+import { atWorkCount, nextWorkerHandle, startRefusal, withNewTask, workerHandleOf } from '../lib/workers';
 import type { SessionSpec, StartSessionOptions } from '../lib/session-start';
-import type { AgentProfile, ChatMessage, Session } from '../types';
+import type { AgentProfile, ChatMessage, Session, SessionWorktree } from '../types';
 import type { AttentionReason, FirstMessage } from './session-engine/useAcpEngine';
 import { useLatest } from './useLatest';
 import { useWorkerReports } from './useWorkerReports';
@@ -37,6 +45,8 @@ export interface DelegationDeps {
   canPrompt: (sessionId: string) => boolean;
   /** Waiting on the user: a permission, a question or an elicitation. */
   isWaiting: (sessionId: string) => boolean;
+  /** Shared with every other way a coordinator starts a session, so one limit covers all. */
+  places: StartPlaces;
   send: (
     sessionId: string,
     text: string,
@@ -77,7 +87,7 @@ export interface DelegationView {
 
 /** What giving a task led to: a new delegate, a further task for the one that agent has, or a refusal. */
 export type GiveTaskResult =
-  | { ok: true; kind: 'started' | 'sent'; sessionId: string; sessionName: string }
+  | { ok: true; kind: 'started' | 'sent'; sessionId: string; sessionName: string; handle?: string }
   | {
       ok: false;
       /** What the caller is told; never an error's own text. */
@@ -94,6 +104,8 @@ export interface GiveTaskOptions {
   /** The source's own agent asks, from inside its turn: a busy source is no reason to refuse, and the user stays where they are. */
   byAgent?: boolean;
 }
+
+export type { StartWorkerInput, StartWorkerResult };
 
 /**
  * The side effects of delegating: starts B from a fork-style handoff of A's
@@ -113,6 +125,15 @@ export function useDelegation(deps: DelegationDeps): {
   ) => Promise<boolean>;
   /** Gives agent `agentId` a task from `sourceId`: starts its delegate, or sends the task to the one it has. */
   giveTask: (sourceId: string, agentId: string, task: string, options?: GiveTaskOptions) => Promise<GiveTaskResult>;
+  /** Starts a worker for `coordinatorId`, in its folder or in a worktree of its own. */
+  startWorker: (coordinatorId: string, input: StartWorkerInput) => Promise<StartWorkerResult>;
+  /** Gives an idle worker of `coordinatorId` a further task. */
+  sendToWorker: (
+    coordinatorId: string,
+    workerId: string,
+    task: string,
+    options?: { attachments?: readonly string[] },
+  ) => Promise<GiveTaskResult>;
   end: (delegateId: string) => void;
   onTurnEnded: (sessionId: string, reason: AttentionReason) => void;
   sendBlockedReason: (sessionId: string) => string | null;
@@ -123,10 +144,12 @@ export function useDelegation(deps: DelegationDeps): {
   const { sessions, agents, transcripts } = deps;
   const latest = useLatest(deps);
   const reports = useWorkerReports(deps);
-  // The delegates being started, by source and agent, with the new session's id once it is known.
-  // A session is in `sessions` only after React commits, so a second task for the same agent in
-  // the same tick would otherwise start a second delegate.
-  const starting = useRef(new Map<string, string | null>());
+  // The workers being started, by a token per start: the coordinator, the new session's id once
+  // it is known, its handle, and the call that frees its place. A session is in `sessions` only
+  // after React commits, so starts in one tick need this to get different handles.
+  const starting = useRef(
+    new Map<string, { coordinatorId: string; sessionId: string | null; handle: string; free: () => void }>(),
+  );
   // The delegates a further task is on its way to. Busy is React state, so it is not
   // observable in the tick the task is sent; this is, from before the send until the
   // delegate is seen busy or its turn ends.
@@ -291,17 +314,73 @@ export function useDelegation(deps: DelegationDeps): {
     reports.drop(delegateId);
   };
 
-  const startDelegate = async (
-    source: Session,
-    agent: AgentProfile,
-    task: string,
-    options: GiveTaskOptions,
-  ): Promise<GiveTaskResult> => {
+  const startWorker = async (coordinatorId: string, input: StartWorkerInput): Promise<StartWorkerResult> => {
     const current = latest.current;
+    const source = current.sessions.find((session) => session.id === coordinatorId);
+    const agent = current.agents.find((candidate) => candidate.id === input.agentId);
+    if (source === undefined) return { ok: false, reason: 'this session no longer exists.' };
+    if (agent === undefined) return { ok: false, reason: 'the agent is not available.' };
     const messages = current.transcripts[source.id] ?? [];
-    const last = options.byAgent === true ? lastWholeMessage(messages) : lastMessage(messages);
-    // A source with no messages is refused by the route; this keeps the handoff honest.
+    const blocked = sourceBlockedReason({
+      source,
+      isBusy: current.isBusy,
+      hasMessages: messages.length > 0,
+      isSourceBusyAllowed: input.byAgent === true,
+      agentNameOf: (profileId) => agentNameIn(current.agents, profileId),
+    });
+    if (blocked !== null) return { ok: false, reason: blocked };
+    const refusal = startRefusal(
+      atWorkCount({
+        coordinatorId,
+        sessions: current.sessions,
+        isBusy: current.isBusy,
+        isWaiting: current.isWaiting,
+        underWay: current.places.underWay(coordinatorId),
+      }),
+    );
+    if (refusal !== null) return { ok: false, reason: refusal };
+    const last = input.byAgent === true ? lastWholeMessage(messages) : lastMessage(messages);
+    // A source with no messages is refused above; this keeps the handoff honest.
     if (last === undefined) return { ok: false, reason: '' };
+
+    // Held from here, before anything awaits: the place and the handle.
+    const token = createId('start');
+    const handle = nextWorkerHandle([
+      ...openDelegatesOf(coordinatorId, current.sessions).flatMap((worker) => workerHandleOf(worker) ?? []),
+      ...[...starting.current.values()].filter((entry) => entry.coordinatorId === coordinatorId).map((entry) => entry.handle),
+    ]);
+    const free = current.places.take(coordinatorId);
+    starting.current.set(token, { coordinatorId, sessionId: null, handle, free });
+    const release = () => {
+      free();
+      starting.current.delete(token);
+    };
+
+    const { task } = input;
+    const name = workerNameOf(agent.name, task, input.title);
+    let cwd = source.cwd;
+    let worktree: SessionWorktree | null = source.worktree ?? null;
+    let madeWorktree: SessionWorktree | null = null;
+    if (input.hasOwnWorktree === true) {
+      const worktreeTitle = input.title ?? name.slice(agent.name.length + 2);
+      try {
+        ({ worktree, cwd } = await createSessionWorktree(source.worktree?.repoPath ?? source.cwd, worktreeTitle));
+        madeWorktree = worktree;
+      } catch (error) {
+        release();
+        return { ok: false, reason: 'A worktree could not be made for this worker.', isInternal: true, detail: String(error) };
+      }
+    }
+    if (input.isCancelled?.() === true) {
+      release();
+      if (madeWorktree !== null) {
+        // Nothing ran in it. The backend keeps the branch; a failure leaves a worktree to remove by hand.
+        void invoke('remove_session_worktree', { repoPath: madeWorktree.repoPath, path: madeWorktree.path }).catch(
+          () => undefined,
+        );
+      }
+      return { ok: false, reason: '' };
+    }
 
     const id = createId('s');
     const now = Date.now();
@@ -315,33 +394,23 @@ export function useDelegation(deps: DelegationDeps): {
         note: HANDOFF_NOTE,
       });
       const handoffPath = await invoke<string>('write_fork_handoff', { handoffId: id, content });
-      const name = delegateSessionName(agent.name, task);
-      const spec: SessionSpec = {
-        id,
-        agent,
-        cwd: source.cwd,
-        worktree: source.worktree,
-        name,
-        delegatedFrom: { sessionId: source.id, task, startedAt: now },
-      };
-      const first: FirstMessage = {
-        text: task,
-        ...(options.attachments !== undefined && options.attachments.length > 0
-          ? { attachments: options.attachments }
-          : {}),
-        context: buildDelegatePrompt(handoffPath),
-      };
+      const { spec, first } = workerLaunch({
+        id, agent, source, cwd, worktree, name, task, handle, now, handoffPath,
+        ...(input.attachments !== undefined ? { attachments: input.attachments } : {}),
+      });
       // The dialog's picks, or the defaults: the draft's own choices stay with the draft.
-      const choices = options.choices ?? NO_CHOICES;
-      if (options.byAgent === true) {
+      const choices = input.choices ?? NO_CHOICES;
+      starting.current.set(token, { coordinatorId, sessionId: id, handle, free });
+      if (input.byAgent === true) {
         // The agent started it: the user keeps looking at what they were looking at.
-        current.startSession(spec, first, { choices, focus: false });
+        latest.current.startSession(spec, first, { choices, focus: false });
       } else {
-        current.startSession(spec, first, { choices });
-        current.selectSession(id);
+        latest.current.startSession(spec, first, { choices });
+        latest.current.selectSession(id);
       }
-      return { ok: true, kind: 'started', sessionId: id, sessionName: name };
+      return { ok: true, sessionId: id, sessionName: name, handle, folder: cwd };
     } catch (error) {
+      release();
       return { ok: false, reason: 'The task could not be handed over.', isInternal: true, detail: String(error) };
     }
   };
@@ -351,15 +420,14 @@ export function useDelegation(deps: DelegationDeps): {
     delegate: Session,
     task: string,
     options: GiveTaskOptions,
+    stillWorking: string,
   ): Promise<GiveTaskResult> => {
     const current = latest.current;
     const link = delegate.delegatedFrom;
     const delegateName = agentNameIn(current.agents, delegate.profileId);
     const refusal: GiveTaskResult = { ok: false, reason: `${delegateName} did not take the task.` };
     if (link === null || link === undefined) return refusal;
-    if (sendingTo.current.has(delegate.id)) {
-      return { ok: false, reason: `${delegateName} is still working on the previous task.` };
-    }
+    if (sendingTo.current.has(delegate.id)) return { ok: false, reason: stillWorking };
     // Held before anything awaits: a second task in the same tick must not reach the same turn.
     sendingTo.current.add(delegate.id);
     let isTaken: boolean;
@@ -375,8 +443,37 @@ export function useDelegation(deps: DelegationDeps): {
       return refusal;
     }
     // The next report quotes the task it answers.
-    current.patchSession(delegate.id, { delegatedFrom: { ...link, task } });
+    current.patchSession(delegate.id, { delegatedFrom: withNewTask(link, task) });
     return { ok: true, kind: 'sent', sessionId: delegate.id, sessionName: delegate.name };
+  };
+
+  const sendToWorker = async (
+    coordinatorId: string,
+    workerId: string,
+    task: string,
+    options: { attachments?: readonly string[] } = {},
+  ): Promise<GiveTaskResult> => {
+    const current = latest.current;
+    const source = current.sessions.find((session) => session.id === coordinatorId);
+    if (source === undefined) return { ok: false, reason: 'this session no longer exists.' };
+    const worker = openDelegatesOf(coordinatorId, current.sessions).find((candidate) => candidate.id === workerId);
+    if (worker === undefined) return { ok: false, reason: NO_SUCH_HANDLE };
+    const handle = workerHandleOf(worker) ?? worker.profileId;
+    const stillWorking = `${handle} is still working. Send this when it reports.`;
+    if (current.isBusy(worker.id) || current.isWaiting(worker.id) || sendingTo.current.has(worker.id)) {
+      return { ok: false, reason: stillWorking };
+    }
+    if (isHandingOver(worker.id)) {
+      // A task sent now would become the worker's last message, and the answer that
+      // still waits to be reported would be lost.
+      return { ok: false, reason: handoverPendingReason(agentNameIn(current.agents, worker.profileId)) };
+    }
+    // Its agent is gone (the app restarted, the session ended): a task sent there reaches nobody.
+    if (worker.status === 'terminated') {
+      end(worker.id);
+      return { ok: false, reason: `${handle} can't take more work. Start a new worker.` };
+    }
+    return sendFurtherTask(source, worker, task, options, stillWorking);
   };
 
   const giveTask = async (
@@ -390,10 +487,6 @@ export function useDelegation(deps: DelegationDeps): {
     const agent = current.agents.find((candidate) => candidate.id === agentId);
     if (source === undefined) return { ok: false, reason: 'this session no longer exists.' };
     if (agent === undefined) return { ok: false, reason: 'the agent is not available.' };
-    const startKey = `${sourceId}\n${agentId}`;
-    if (starting.current.has(startKey)) {
-      return { ok: false, reason: `${agent.name} is still working on the previous task.` };
-    }
 
     const route = taskRoute({
       source,
@@ -409,28 +502,25 @@ export function useDelegation(deps: DelegationDeps): {
 
     if (route.kind === 'follow-up') {
       const { delegate } = route;
-      // Its agent is gone (the app restarted, the session ended): a task sent there reaches
-      // nobody. The old link ends and the task starts a new delegate.
       if (delegate.status !== 'terminated') {
         if (isHandingOver(delegate.id)) {
-          // A task sent now would become the delegate's last message, and the answer that
-          // still waits to be reported would be lost.
-          return {
-            ok: false,
-            reason: `${agent.name}'s last answer has not reached this session yet. Give it the next task after its report arrives.`,
-          };
+          return { ok: false, reason: handoverPendingReason(agent.name) };
         }
-        return sendFurtherTask(source, delegate, task, options);
+        return sendFurtherTask(source, delegate, task, options, `${agent.name} is still working on the previous task.`);
       }
+      // The old link ends and the task starts a new worker.
       end(delegate.id);
     }
 
-    // Held from here, before anything awaits, until the new session is listed.
-    starting.current.set(startKey, null);
-    const started = await startDelegate(source, agent, task, options);
-    if (started.ok) starting.current.set(startKey, started.sessionId);
-    else starting.current.delete(startKey);
-    return started;
+    const started = await startWorker(sourceId, {
+      agentId,
+      task,
+      ...(options.attachments !== undefined ? { attachments: options.attachments } : {}),
+      ...(options.choices !== undefined ? { choices: options.choices } : {}),
+      ...(options.byAgent !== undefined ? { byAgent: options.byAgent } : {}),
+    });
+    if (!started.ok) return started;
+    return { ok: true, kind: 'started', sessionId: started.sessionId, sessionName: started.sessionName, handle: started.handle };
   };
 
   /** The dialog's and the mention's way in: a refusal is a notice. */
@@ -456,12 +546,15 @@ export function useDelegation(deps: DelegationDeps): {
     }
   });
 
-  // A delegate that is listed no longer needs its start held: the rules see the session itself.
+  // A worker that is listed no longer needs its place held: the rules see the session itself.
   useEffect(() => {
-    for (const [key, sessionId] of [...starting.current]) {
-      if (sessionId !== null && sessions.some((session) => session.id === sessionId)) starting.current.delete(key);
+    for (const [token, entry] of [...starting.current]) {
+      if (entry.sessionId !== null && sessions.some((session) => session.id === entry.sessionId)) {
+        entry.free();
+        starting.current.delete(token);
+      }
     }
   }, [sessions]);
 
-  return { delegateBlockedReason, start, giveTask, end, onTurnEnded, sendBlockedReason, viewFor, viewsFor };
+  return { delegateBlockedReason, start, giveTask, startWorker, sendToWorker, end, onTurnEnded, sendBlockedReason, viewFor, viewsFor };
 }

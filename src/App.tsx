@@ -1149,6 +1149,7 @@ export default function App() {
     isBusy: isSessionBusy,
     canPrompt,
     isWaiting: isSessionWaiting,
+    places: startPlaces,
     send: acp.send,
     startSession,
     selectSession: handleSelectSession,

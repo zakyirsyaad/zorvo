@@ -85,7 +85,7 @@ export interface TaskRouteInput {
 }
 
 /** Why the source itself cannot give anyone a task, or null. The empty string says nothing: there is no item to show. */
-function sourceBlockedReason(input: {
+export function sourceBlockedReason(input: {
   source: Session;
   isBusy: (id: string) => boolean;
   hasMessages: boolean;
@@ -108,16 +108,19 @@ function sourceBlockedReason(input: {
 }
 
 /**
- * Routes a task from `source` to agent `agentId`: a source holds one open
- * delegate per agent, so a second task for the same agent goes to that
- * delegate once it is idle.
+ * Routes a task from `source` to agent `agentId`: with no open worker of that
+ * agent it starts one, with exactly one it goes to that worker once it is idle,
+ * and with several it starts another (the mention cannot name which one).
  */
 export function taskRoute(input: TaskRouteInput): TaskRoute {
   const blocked = sourceBlockedReason(input);
   if (blocked !== null) return { kind: 'blocked', reason: blocked };
 
-  const delegate = openDelegateOf(input.source.id, input.agentId, input.sessions);
-  if (delegate === undefined) return { kind: 'start' };
+  const ofAgent = openDelegatesOf(input.source.id, input.sessions).filter(
+    (session) => session.profileId === input.agentId,
+  );
+  if (ofAgent.length !== 1) return { kind: 'start' };
+  const delegate = ofAgent[0];
   if (input.isBusy(delegate.id) || input.isWaiting(delegate.id)) {
     return {
       kind: 'blocked',

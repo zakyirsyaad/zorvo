@@ -4,6 +4,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { useDelegation } from "../hooks/useDelegation";
 import { NO_CHOICES, type AcpChoices } from "../lib/acp-draft";
 import { buildDelegatePrompt } from "../lib/delegation";
+import { createStartPlaces } from "../lib/start-places";
 import { newSessionRecord, type SessionSpec, type StartSessionOptions } from "../lib/session-start";
 import type { FirstMessage } from "../hooks/session-engine/useAcpEngine";
 import type { AgentProfile, ChatMessage, DelegationLink, Session } from "../types";
@@ -115,6 +116,7 @@ function setup(input: HarnessInput) {
   const waiting = new Set(input.waiting ?? []);
   const cannotPrompt = new Set(input.cannotPrompt ?? []);
   const sendResult = input.sendResult ?? true;
+  const places = createStartPlaces();
 
   const hook = renderHook(
     () => {
@@ -127,6 +129,7 @@ function setup(input: HarnessInput) {
         agents: input.agents ?? AGENTS,
         transcripts,
         isBusy: (sessionId) => busy.has(sessionId),
+        places,
         canPrompt: (sessionId) => !cannotPrompt.has(sessionId),
         isWaiting: (sessionId) => waiting.has(sessionId),
         send: async (sessionId, text, attachments = [], marks) => {
@@ -166,6 +169,7 @@ function setup(input: HarnessInput) {
     busy,
     waiting,
     cannotPrompt,
+    places,
   };
 }
 
@@ -429,7 +433,7 @@ describe("useDelegation giveTask", () => {
 });
 
 describe("useDelegation giveTask under pressure", () => {
-  it("starts one delegate when two tasks for the same agent arrive in the same tick", async () => {
+  it("starts two workers when two tasks for the same agent arrive in the same tick", async () => {
     const env = setup({ sessions: [sourceSession()], transcripts: { "s-a": A_MESSAGES } });
 
     let results: unknown[] = [];
@@ -440,9 +444,10 @@ describe("useDelegation giveTask under pressure", () => {
       ]);
     });
 
-    expect(env.starts).toHaveLength(1);
+    expect(env.starts).toHaveLength(2);
     expect(results[0]).toMatchObject({ ok: true, kind: "started" });
-    expect(results[1]).toEqual({ ok: false, reason: "Codex is still working on the previous task." });
+    expect(results[1]).toMatchObject({ ok: true, kind: "started" });
+    expect(env.starts.map((start) => start.spec.delegatedFrom?.handle)).toEqual(["worker-1", "worker-2"]);
   });
 
   it("still starts a delegate for another agent in the same tick", async () => {
@@ -575,6 +580,220 @@ describe("useDelegation giveTask under pressure", () => {
     });
     expect(env.starts).toHaveLength(1);
     expect(env.starts[0].spec.delegatedFrom).toMatchObject({ sessionId: "s-a", task: "Now add tests" });
+  });
+});
+
+const WORKTREE = { path: "/wt/a", cwd: "/wt/a", branch: "agent/a", startCommit: "abc" };
+
+function withWorktreeMock(handler: (cmd: string) => Promise<unknown> | undefined) {
+  const real = internals().invoke.bind(internals());
+  return vi.spyOn(internals(), "invoke").mockImplementation((cmd, args) => handler(cmd) ?? real(cmd, args));
+}
+
+function worker(handle: string, id: string, overrides: Partial<Session> = {}): Session {
+  return delegateSession({ id, delegatedFrom: link({ handle }), ...overrides });
+}
+
+describe("useDelegation workers", () => {
+  const base = () => ({ sessions: [sourceSession()], transcripts: { "s-a": A_MESSAGES } });
+
+  it("two workers of one agent start in one tick with two handles", async () => {
+    const { result, starts } = setup(base());
+    const [first, second] = await act(async () =>
+      Promise.all([
+        result.current.delegation.startWorker("s-a", { agentId: "codex-acp", task: "Part one", byAgent: true }),
+        result.current.delegation.startWorker("s-a", { agentId: "codex-acp", task: "Part two", byAgent: true }),
+      ]),
+    );
+    expect([first, second].map((r) => r.ok && r.handle)).toEqual(["worker-1", "worker-2"]);
+    expect(starts).toHaveLength(2);
+    expect(starts[0].spec.delegatedFrom?.handle).toBe("worker-1");
+  });
+
+  it("a worker with its own worktree starts in it", async () => {
+    withWorktreeMock((cmd) => (cmd === "create_session_worktree" ? Promise.resolve(WORKTREE) : undefined));
+    const { result, starts } = setup(base());
+    const r = await act(async () =>
+      result.current.delegation.startWorker("s-a", {
+        agentId: "codex-acp",
+        task: "Part one",
+        hasOwnWorktree: true,
+        byAgent: true,
+      }),
+    );
+    expect(r).toMatchObject({ ok: true, folder: "/wt/a" });
+    expect(starts[0].spec.worktree?.branch).toBe("agent/a");
+    expect(starts[0].spec.cwd).toBe("/wt/a");
+  });
+
+  it("names the worktree and the session by the title when given", async () => {
+    const spy = withWorktreeMock((cmd) => (cmd === "create_session_worktree" ? Promise.resolve(WORKTREE) : undefined));
+    const { result, starts } = setup(base());
+    await act(async () =>
+      result.current.delegation.startWorker("s-a", {
+        agentId: "codex-acp",
+        task: "Part one",
+        title: "Lexer",
+        hasOwnWorktree: true,
+        byAgent: true,
+      }),
+    );
+    expect(callsTo(spy, "create_session_worktree")[0][1]).toMatchObject({ title: "Lexer" });
+    expect(starts[0].spec.name).toBe("Codex: Lexer");
+  });
+
+  it("a worktree that cannot be made starts nothing and frees its place", async () => {
+    withWorktreeMock((cmd) =>
+      cmd === "create_session_worktree" ? Promise.reject(new Error("fatal: /Users/x is locked")) : undefined,
+    );
+    const { result, starts, places } = setup(base());
+    const r = await act(async () =>
+      result.current.delegation.startWorker("s-a", {
+        agentId: "codex-acp",
+        task: "Part one",
+        hasOwnWorktree: true,
+        byAgent: true,
+      }),
+    );
+    expect(r).toEqual({
+      ok: false,
+      reason: "A worktree could not be made for this worker.",
+      isInternal: true,
+      detail: expect.stringContaining("locked"),
+    });
+    expect(starts).toHaveLength(0);
+    expect(places.underWay("s-a")).toBe(0);
+  });
+
+  it("a call that ended while git worked starts nothing and removes the worktree", async () => {
+    const spy = withWorktreeMock((cmd) => (cmd === "create_session_worktree" ? Promise.resolve(WORKTREE) : undefined));
+    const { result, starts, places } = setup(base());
+    let isCancelled = false;
+    withWorktreeMock((cmd) => {
+      if (cmd !== "create_session_worktree") return undefined;
+      isCancelled = true;
+      return Promise.resolve(WORKTREE);
+    });
+    const r = await act(async () =>
+      result.current.delegation.startWorker("s-a", {
+        agentId: "codex-acp",
+        task: "Part one",
+        hasOwnWorktree: true,
+        byAgent: true,
+        isCancelled: () => isCancelled,
+      }),
+    );
+    expect(r).toEqual({ ok: false, reason: "" });
+    expect(starts).toHaveLength(0);
+    expect(places.underWay("s-a")).toBe(0);
+    expect(callsTo(spy, "remove_session_worktree")[0][1]).toEqual({
+      repoPath: "/Users/test/developer/zorvo",
+      path: "/wt/a",
+    });
+  });
+
+  it("the fifth start is refused", async () => {
+    const workers = ["w1", "w2", "w3", "w4"].map((id, index) => worker(`worker-${index + 1}`, id));
+    const { result, starts } = setup({
+      sessions: [sourceSession(), ...workers],
+      transcripts: { "s-a": A_MESSAGES },
+      busy: ["w1", "w2", "w3", "w4"],
+    });
+    const r = await act(async () =>
+      result.current.delegation.startWorker("s-a", { agentId: "codex-acp", task: "One more", byAgent: true }),
+    );
+    expect(r).toEqual({ ok: false, reason: "4 are running. Start this one when one finishes." });
+    expect(starts).toHaveLength(0);
+  });
+
+  it("frees the place when the handoff cannot be written", async () => {
+    withWorktreeMock((cmd) => (cmd === "write_fork_handoff" ? Promise.reject(new Error("disk full")) : undefined));
+    const { result, places } = setup(base());
+    const r = await act(async () =>
+      result.current.delegation.startWorker("s-a", { agentId: "codex-acp", task: "Part one", byAgent: true }),
+    );
+    expect(r).toMatchObject({ ok: false, reason: "The task could not be handed over.", isInternal: true });
+    expect(places.underWay("s-a")).toBe(0);
+  });
+
+  it("frees the place once the new session is listed", async () => {
+    const { result, starts, places } = setup(base());
+    await act(async () => {
+      await result.current.delegation.startWorker("s-a", { agentId: "codex-acp", task: "Part one", byAgent: true });
+    });
+    expect(places.underWay("s-a")).toBe(1);
+    await act(async () => {
+      const spec = starts[0].spec;
+      result.current.setSessions((prev) => [
+        ...prev,
+        sourceSession({ id: spec.id, profileId: "codex-acp", createdAt: 10, delegatedFrom: spec.delegatedFrom }),
+      ]);
+    });
+    expect(places.underWay("s-a")).toBe(0);
+  });
+
+  it("a further task goes to the worker and replaces its task and outcome", async () => {
+    const w = worker("worker-1", "s-b", {
+      delegatedFrom: link({ handle: "worker-1", outcome: { result: "succeeded", at: 50 } }),
+    });
+    const { result, patches, sends } = setup({
+      sessions: [sourceSession(), w],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+    });
+    const r = await act(async () =>
+      result.current.delegation.sendToWorker("s-a", "s-b", "Also fix the tests"),
+    );
+    expect(r).toMatchObject({ ok: true, kind: "sent" });
+    expect(sends[0].text).toBe("Also fix the tests");
+    expect(patches.at(-1)).toEqual({
+      sessionId: "s-b",
+      patch: { delegatedFrom: expect.objectContaining({ task: "Also fix the tests", outcome: null, handle: "worker-1" }) },
+    });
+  });
+
+  it("a worker in a turn refuses a further task", async () => {
+    const { result } = setup({
+      sessions: [sourceSession(), worker("worker-1", "s-b")],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+      busy: ["s-b"],
+    });
+    expect(await act(async () => result.current.delegation.sendToWorker("s-a", "s-b", "x"))).toEqual({
+      ok: false,
+      reason: "worker-1 is still working. Send this when it reports.",
+    });
+  });
+
+  it("refuses a session that is not an open worker of the coordinator", async () => {
+    const { result } = setup({
+      sessions: [sourceSession(), worker("worker-1", "s-b")],
+      transcripts: { "s-a": A_MESSAGES },
+    });
+    expect(await act(async () => result.current.delegation.sendToWorker("s-a", "s-zzz", "x"))).toEqual({
+      ok: false,
+      reason: "No session with that handle. Use list_agents to see yours.",
+    });
+  });
+
+  it("a terminated worker ends its link and is told to start a new one", async () => {
+    const { result, patches } = setup({
+      sessions: [sourceSession(), worker("worker-1", "s-b", { status: "terminated" })],
+      transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
+    });
+    expect(await act(async () => result.current.delegation.sendToWorker("s-a", "s-b", "x"))).toEqual({
+      ok: false,
+      reason: "worker-1 can't take more work. Start a new worker.",
+    });
+    expect(patches[0].patch.delegatedFrom?.endedAt).toEqual(expect.any(Number));
+  });
+
+  it("a mention with two workers of that agent starts a third", async () => {
+    const { result, starts } = setup({
+      sessions: [sourceSession(), worker("worker-1", "w1"), worker("worker-2", "w2")],
+      transcripts: { "s-a": A_MESSAGES },
+    });
+    const r = await act(async () => result.current.delegation.giveTask("s-a", "codex-acp", "Third", { byAgent: true }));
+    expect(r).toMatchObject({ ok: true, kind: "started" });
+    expect(starts[0].spec.delegatedFrom?.handle).toBe("worker-3");
   });
 });
 

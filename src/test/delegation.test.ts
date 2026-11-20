@@ -121,6 +121,12 @@ describe("taskRoute", () => {
     expect(taskRoute({ ...base, sessions: [source] })).toEqual({ kind: "start" });
   });
 
+  it("starts when the agent already has two open delegates", () => {
+    const second = delegate({ id: "s-c", createdAt: 11 });
+    expect(taskRoute({ ...base, sessions: [source, codex, second] })).toEqual({ kind: "start" });
+    expect(taskRoute({ ...base, sessions: [source, codex, second], isBusy: (id) => id !== "s-a" })).toEqual({ kind: "start" });
+  });
+
   it("is a follow-up for an idle open delegate of that agent", () => {
     expect(taskRoute(base)).toEqual({ kind: "follow-up", delegate: codex });
   });

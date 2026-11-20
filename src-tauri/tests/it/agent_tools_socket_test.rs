@@ -11,12 +11,13 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use zorvo_lib::agent_tools::path::ToolsPath;
 use zorvo_lib::agent_tools::peer::ProcessId;
-use zorvo_lib::agent_tools::socket::Capabilities;
+use zorvo_lib::agent_tools::socket::{Capabilities, ToolsRole};
 
 const CAPS: Capabilities = Capabilities {
     agent_tools: true,
     computer_use: false,
     path: ToolsPath::Mcp,
+    role: ToolsRole::Coordinator,
 };
 
 use zorvo_lib::agent_tools::socket::{socket_path, Listener, Tokens};

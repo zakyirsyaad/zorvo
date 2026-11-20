@@ -12,8 +12,8 @@
 
 use serde_json::{json, Value};
 
-use super::socket::Caller;
-use super::tools::{tool_list, validate, TOOL_NAMES};
+use super::socket::{Caller, ToolsRole};
+use super::tools::{tool_list, validate, worker_tool_list, TOOL_NAMES, WORKER_TOOL_NAMES};
 
 /// Newest first. 2025-11-25 and 2025-06-18 are what the tested agents send.
 pub const SUPPORTED_VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -106,7 +106,8 @@ fn initialize_result(params: &Value, caller: &Caller) -> Value {
         "capabilities": { "tools": {} },
         "serverInfo": { "name": "zorvo", "version": env!("CARGO_PKG_VERSION") }
     });
-    if caller.capabilities.agent_tools {
+    // The page note is for a coordinator: a worker's only tool is `done`.
+    if caller.capabilities.agent_tools && caller.capabilities.role == ToolsRole::Coordinator {
         result["instructions"] = json!(ARTIFACT_INSTRUCTIONS);
     }
     result
@@ -114,10 +115,19 @@ fn initialize_result(params: &Value, caller: &Caller) -> Value {
 
 /// The tools `caller` may see and call.
 fn tools_for(caller: &Caller) -> Value {
-    if caller.capabilities.agent_tools {
-        tool_list()
-    } else {
-        json!([])
+    match (caller.capabilities.agent_tools, caller.capabilities.role) {
+        (true, ToolsRole::Coordinator) => tool_list(),
+        (true, ToolsRole::Worker) => worker_tool_list(),
+        (false, _) => json!([]),
+    }
+}
+
+/// The names `caller` may call: the same set `tools_for` lists.
+fn callable_names(caller: &Caller) -> &'static [&'static str] {
+    match (caller.capabilities.agent_tools, caller.capabilities.role) {
+        (true, ToolsRole::Coordinator) => &TOOL_NAMES,
+        (true, ToolsRole::Worker) => &WORKER_TOOL_NAMES,
+        (false, _) => &[],
     }
 }
 
@@ -125,7 +135,8 @@ fn tools_call(id: Value, params: &Value, caller: &Caller) -> Step {
     let Some(name) = params.get("name").and_then(Value::as_str) else {
         return error_step(id, INVALID_PARAMS, "A tool name is required.");
     };
-    if !caller.capabilities.agent_tools || !TOOL_NAMES.contains(&name) {
+    // One answer for a tool that exists for the other role and for a made-up name.
+    if !callable_names(caller).contains(&name) {
         return error_step(id, INVALID_PARAMS, "Unknown tool.");
     }
     let args = match params.get("arguments") {
@@ -167,7 +178,7 @@ mod tests {
     use super::*;
 
     use crate::agent_tools::path::ToolsPath;
-    use crate::agent_tools::socket::{Caller, Capabilities};
+    use crate::agent_tools::socket::{Caller, Capabilities, ToolsRole};
 
     fn caller(agent_tools: bool, computer_use: bool) -> Caller {
         Caller {
@@ -176,7 +187,23 @@ mod tests {
                 agent_tools,
                 computer_use,
                 path: ToolsPath::Mcp,
+                role: ToolsRole::Coordinator,
             },
+        }
+    }
+
+    fn worker() -> Caller {
+        Caller {
+            session: "w-1".to_string(),
+            capabilities: Capabilities::worker(ToolsPath::Mcp),
+        }
+    }
+
+    fn call_as(caller: &Caller, name: &str, args: Value) -> Value {
+        let line = json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":name,"arguments":args}});
+        match super::handle_line(&line.to_string(), caller) {
+            Step::Reply(value) => value,
+            other => panic!("expected a reply, got {other:?}"),
         }
     }
 
@@ -203,6 +230,58 @@ mod tests {
         assert_eq!(tool_names(&caller(true, false)), TOOL_NAMES);
         assert!(tool_names(&caller(false, true)).is_empty());
         assert!(tool_names(&caller(false, false)).is_empty());
+    }
+
+    #[test]
+    fn a_worker_lists_and_calls_only_done() {
+        let worker = worker();
+        assert_eq!(tool_names(&worker), vec!["done"]);
+        let unknown = call_as(
+            &worker,
+            "start_worker",
+            json!({"agent": "codex", "task": "x"}),
+        );
+        let made_up = call_as(&worker, "nonsense", json!({}));
+        for other in TOOL_NAMES {
+            let got = call_as(&worker, other, json!({}));
+            assert_eq!(got["error"], unknown["error"], "{other}");
+        }
+        assert_eq!(unknown["error"]["code"], INVALID_PARAMS);
+        assert_eq!(unknown["error"]["message"], "Unknown tool.");
+        assert_eq!(made_up["error"], unknown["error"]);
+    }
+
+    #[test]
+    fn a_worker_call_to_done_becomes_a_call_step_with_cleaned_arguments() {
+        let line = r#"{"jsonrpc":"2.0","id":"d1","method":"tools/call","params":{"name":"done","arguments":{"outcome":"failed","summary":" no ","files":[" a.ts "]}}}"#;
+        assert_eq!(
+            super::handle_line(line, &worker()),
+            Step::Call {
+                id: json!("d1"),
+                tool: "done".to_string(),
+                args: json!({"outcome": "failed", "summary": "no", "files": ["a.ts"]}),
+            }
+        );
+    }
+
+    #[test]
+    fn a_coordinator_cannot_call_done() {
+        let got = call_as(
+            &caller(true, false),
+            "done",
+            json!({"outcome": "succeeded", "summary": "x"}),
+        );
+        assert_eq!(got["error"]["message"], "Unknown tool.");
+        assert!(!tool_names(&caller(true, false)).contains(&"done".to_string()));
+    }
+
+    #[test]
+    fn a_worker_gets_no_artifact_instructions() {
+        let line = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#;
+        let Step::Reply(got) = super::handle_line(line, &worker()) else {
+            panic!("initialize must reply");
+        };
+        assert!(got["result"].get("instructions").is_none());
     }
 
     #[test]

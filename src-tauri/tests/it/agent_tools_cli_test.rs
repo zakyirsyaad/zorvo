@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
+use zorvo_lib::agent_tools::socket::Capabilities;
 use zorvo_lib::agent_tools::{AgentTools, ToolCall};
 
 const WAIT: Duration = Duration::from_secs(5);
@@ -156,6 +157,70 @@ fn a_call_reaches_the_service_with_its_session_and_prints_the_answer() {
     );
     assert_eq!(text(&output.stdout), "started\n");
     assert_eq!(output.status.code(), Some(0));
+}
+
+/// The token of a worker on the command path, bound to this test process.
+fn worker_token(rig: &Rig, session: &str) -> String {
+    let env = rig.tools.launch_env_with(
+        session,
+        Capabilities::worker(zorvo_lib::agent_tools::ToolsPath::Command),
+    );
+    rig.tools.bind_process(
+        session,
+        zorvo_lib::agent_tools::peer::ProcessId::of(std::process::id() as i32).unwrap(),
+    );
+    env.into_iter()
+        .find(|(name, _)| name == "ZORVO_MCP_TOKEN")
+        .expect("a token")
+        .1
+}
+
+#[test]
+fn a_worker_runs_done_and_nothing_else_from_its_shell() {
+    let rig = rig("worker");
+    let token = worker_token(&rig, "w1");
+    let run = |args: &[&str]| {
+        command(args)
+            .env("ZORVO_MCP_SOCKET", &rig.socket)
+            .env("ZORVO_MCP_TOKEN", &token)
+            .spawn()
+            .unwrap()
+    };
+
+    let child = run(&["done", r#"{"outcome":"succeeded","summary":"ok"}"#]);
+    let call = rig
+        .calls
+        .recv_timeout(WAIT)
+        .expect("done reaches the service");
+    assert_eq!(call.session_id, "w1");
+    assert_eq!(call.tool, "done");
+    rig.tools.respond(&call.call_id, true, "recorded");
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(text(&output.stdout), "recorded\n");
+
+    for tool in [
+        "start_worker",
+        "send",
+        "start_session",
+        "show_artifact",
+        "list_agents",
+        "nonsense",
+    ] {
+        let output = run(&[tool, r#"{"agent":"qwen-code","task":"x","path":"a.html"}"#])
+            .wait_with_output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1), "{tool}");
+        assert!(
+            text(&output.stderr).contains("Unknown tool."),
+            "{tool}: {}",
+            text(&output.stderr)
+        );
+    }
+    assert!(
+        rig.calls.recv_timeout(QUIET).is_err(),
+        "nothing else was emitted"
+    );
 }
 
 #[test]

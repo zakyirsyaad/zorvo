@@ -7,7 +7,7 @@ use serde_json::Value;
 use tauri::State;
 
 use super::path::{path_for, ToolsPath};
-use super::socket::Capabilities;
+use super::socket::{Capabilities, ToolsRole};
 use super::AgentTools;
 use crate::acp::manager::AcpLaunch;
 use crate::store::AppStore;
@@ -49,6 +49,7 @@ fn capabilities_of(store: &AppStore, path: ToolsPath) -> Result<Capabilities, St
         agent_tools: settings.agent_tools,
         computer_use: settings.computer_use && cfg!(target_os = "macos"),
         path,
+        role: ToolsRole::Coordinator,
     })
 }
 
@@ -70,12 +71,18 @@ pub struct SessionTools {
 /// on; then an `mcpServers` entry, or, for an agent that ignores `mcpServers`,
 /// the socket in its environment. Never both. Only reads the state file when
 /// the webview asked.
+///
+/// `worker_tools` makes the session a worker, which sees `done` only. It
+/// changes nothing unless `agent_tools` is also true, and a worker needs the
+/// saved Agent tools setting on: with it off the session gets nothing, not
+/// even computer use, since a worker's token never carries that.
 pub fn tools_for_session(
     tools: &AgentTools,
     store: &AppStore,
     session_id: &str,
     profile_id: &str,
     agent_tools: bool,
+    worker_tools: bool,
 ) -> Result<SessionTools, String> {
     let none = SessionTools {
         servers: Value::Array(Vec::new()),
@@ -87,7 +94,13 @@ pub fn tools_for_session(
         return Ok(none);
     }
     let path = path_for(profile_id);
-    let capabilities = capabilities_of(store, path)?;
+    let mut capabilities = capabilities_of(store, path)?;
+    if worker_tools {
+        if !capabilities.agent_tools {
+            return Ok(none);
+        }
+        capabilities = Capabilities::worker(path);
+    }
     if !capabilities.any() {
         return Ok(none);
     }

@@ -14,6 +14,8 @@ pub const TOOL_NAMES: [&str; 8] = [
     "show_artifact",
     "artifact_guide",
 ];
+/// The only tool a worker's token lists or calls. Not in `TOOL_NAMES`: a coordinator never sees it.
+pub const WORKER_TOOL_NAMES: [&str; 1] = ["done"];
 pub const MAX_TEXT_CHARS: usize = 20_000;
 pub const MAX_TITLE_CHARS: usize = 60;
 pub const MAX_SUMMARY_CHARS: usize = 2_000;
@@ -128,6 +130,26 @@ pub fn tool_list() -> Value {
     ])
 }
 
+/// The `tools` array for `tools/list` of a worker: `done` and nothing else.
+pub fn worker_tool_list() -> Value {
+    json!([
+        {
+            "name": "done",
+            "description": "Report the result of your task to the session that gave it to you. Call it once when you finish: outcome succeeded or failed, and a short summary of what you did, what you found and what is left. Then end your turn.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "outcome": { "type": "string", "enum": ["succeeded", "failed"], "description": "succeeded when the task is done, failed when it is not." },
+                    "summary": { "type": "string", "maxLength": MAX_SUMMARY_CHARS, "description": "What you did, what you found, what is left." },
+                    "files": { "type": "array", "items": { "type": "string" }, "maxItems": MAX_FILES, "description": "Paths you changed, relative to your folder." }
+                },
+                "required": ["outcome", "summary"],
+                "additionalProperties": false
+            }
+        }
+    ])
+}
+
 /// Checks `args` for `tool` and returns them cleaned (strings trimmed), or a
 /// sentence for the agent. An error never repeats what the agent sent.
 pub fn validate(tool: &str, args: &Value) -> Result<Value, String> {
@@ -142,6 +164,7 @@ pub fn validate(tool: &str, args: &Value) -> Result<Value, String> {
         "start_session" => &["agent", "brief", "title", "worktree", "folder"],
         "read_session" => &["handle", "max_chars"],
         "stop_session" => &["handle"],
+        "done" => &["outcome", "summary", "files"],
         _ => return Err("That tool does not exist.".to_string()),
     };
     if object.keys().any(|key| !allowed.contains(&key.as_str())) {
@@ -178,6 +201,11 @@ pub fn validate(tool: &str, args: &Value) -> Result<Value, String> {
             put_max_chars(&mut clean, object)?;
         }
         "stop_session" => put_name(&mut clean, object, "handle", true)?,
+        "done" => {
+            put_outcome(&mut clean, object)?;
+            put_summary(&mut clean, object)?;
+            put_files(&mut clean, object)?;
+        }
         "show_artifact" => {
             put_path(&mut clean, object)?;
             put_title(&mut clean, object)?;
@@ -262,6 +290,56 @@ fn put_title(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Resul
     if !text.is_empty() {
         out.insert("title".to_string(), json!(text));
     }
+    Ok(())
+}
+
+fn put_outcome(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result<(), String> {
+    match string_of(object, "outcome", true)? {
+        Some(choice @ ("succeeded" | "failed")) => {
+            out.insert("outcome".to_string(), json!(choice));
+            Ok(())
+        }
+        _ => Err("outcome must be succeeded or failed.".to_string()),
+    }
+}
+
+fn put_summary(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result<(), String> {
+    let text = string_of(object, "summary", true)?
+        .unwrap_or_default()
+        .trim();
+    if text.is_empty() {
+        return Err("summary must not be empty.".to_string());
+    }
+    if text.chars().count() > MAX_SUMMARY_CHARS {
+        return Err(format!("summary is over {MAX_SUMMARY_CHARS} characters."));
+    }
+    out.insert("summary".to_string(), json!(text));
+    Ok(())
+}
+
+fn put_files(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result<(), String> {
+    let list = match object.get("files") {
+        None | Some(Value::Null) => return Ok(()),
+        Some(Value::Array(list)) => list,
+        Some(_) => return Err("files must be a list of paths.".to_string()),
+    };
+    if list.len() > MAX_FILES {
+        return Err(format!("files has more than {MAX_FILES} paths."));
+    }
+    let mut files = Vec::with_capacity(list.len());
+    for entry in list {
+        let Some(text) = entry.as_str().map(str::trim) else {
+            return Err("every file must be a string.".to_string());
+        };
+        if text.is_empty() {
+            return Err("a file path must not be empty.".to_string());
+        }
+        if text.chars().count() > MAX_PATH_CHARS {
+            return Err("a file path is too long.".to_string());
+        }
+        files.push(json!(text));
+    }
+    out.insert("files".to_string(), Value::Array(files));
     Ok(())
 }
 
@@ -610,6 +688,97 @@ mod tests {
         let args = json!({"agent": "codex", "task": "x", "worktree": "SECRET-VALUE"});
         let error = validate("start_worker", &args).unwrap_err();
         assert!(!error.contains("SECRET-VALUE"));
+    }
+
+    #[test]
+    fn done_needs_an_outcome_and_a_summary() {
+        let ok = validate(
+            "done",
+            &json!({"outcome": "succeeded", "summary": " Fixed it ", "files": [" a.ts "]}),
+        )
+        .unwrap();
+        assert_eq!(
+            ok,
+            json!({"outcome": "succeeded", "summary": "Fixed it", "files": ["a.ts"]})
+        );
+        assert!(validate("done", &json!({"outcome": "failed", "summary": "x"})).is_ok());
+        assert!(validate("done", &json!({"outcome": "maybe", "summary": "x"})).is_err());
+        assert!(validate("done", &json!({"outcome": 1, "summary": "x"})).is_err());
+        assert!(validate("done", &json!({"outcome": "failed"})).is_err());
+        assert!(validate("done", &json!({"summary": "x"})).is_err());
+        assert!(validate("done", &json!({"outcome": "failed", "summary": "  "})).is_err());
+        let long = "é".repeat(MAX_SUMMARY_CHARS);
+        assert!(validate("done", &json!({"outcome": "failed", "summary": long})).is_ok());
+        let longer = "é".repeat(MAX_SUMMARY_CHARS + 1);
+        assert!(validate("done", &json!({"outcome": "failed", "summary": longer})).is_err());
+        let many = vec!["a"; MAX_FILES + 1];
+        let fifty = vec!["a"; MAX_FILES];
+        assert!(validate(
+            "done",
+            &json!({"outcome": "failed", "summary": "x", "files": many})
+        )
+        .is_err());
+        assert!(validate(
+            "done",
+            &json!({"outcome": "failed", "summary": "x", "files": fifty})
+        )
+        .is_ok());
+        assert!(validate(
+            "done",
+            &json!({"outcome": "failed", "summary": "x", "files": [" "]})
+        )
+        .is_err());
+        assert!(validate(
+            "done",
+            &json!({"outcome": "failed", "summary": "x", "files": [1]})
+        )
+        .is_err());
+        assert!(validate(
+            "done",
+            &json!({"outcome": "failed", "summary": "x", "files": "a"})
+        )
+        .is_err());
+        let path = "p".repeat(MAX_PATH_CHARS + 1);
+        assert!(validate(
+            "done",
+            &json!({"outcome": "failed", "summary": "x", "files": [path]})
+        )
+        .is_err());
+        assert!(validate(
+            "done",
+            &json!({"outcome": "failed", "summary": "x", "extra": 1})
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn a_done_error_never_repeats_what_was_sent() {
+        let args = json!({"outcome": "SECRET-OUTCOME", "summary": "x"});
+        assert!(!validate("done", &args)
+            .unwrap_err()
+            .contains("SECRET-OUTCOME"));
+        let args = json!({"outcome": "failed", "summary": "x", "files": ["SECRET-FILE", 1]});
+        assert!(!validate("done", &args).unwrap_err().contains("SECRET-FILE"));
+    }
+
+    #[test]
+    fn the_worker_list_holds_done_alone_and_the_coordinator_list_never_does() {
+        assert_eq!(WORKER_TOOL_NAMES, ["done"]);
+        let worker = worker_tool_list();
+        let tools = worker.as_array().unwrap();
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["name"], "done");
+        assert_eq!(
+            tools[0]["inputSchema"]["required"],
+            json!(["outcome", "summary"])
+        );
+        assert_eq!(tools[0]["inputSchema"]["additionalProperties"], false);
+        assert!(!TOOL_NAMES.contains(&"done"));
+        assert!(tool_list()
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|tool| tool["name"] != "done"));
     }
 
     #[test]

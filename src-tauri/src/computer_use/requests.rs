@@ -335,6 +335,16 @@ impl Requests {
             .collect()
     }
 
+    /// Whether the card of `call_id` is the one on screen.
+    pub fn is_open(&self, call_id: &str) -> bool {
+        self.sessions().values().any(|cards| {
+            cards
+                .open
+                .as_ref()
+                .is_some_and(|open| open.call_id == call_id)
+        })
+    }
+
     /// The cards on screen, for a webview that just loaded.
     pub fn open_views(&self) -> Vec<RequestView> {
         self.sessions()
@@ -503,6 +513,10 @@ mod tests {
         let open = requests.end("1").unwrap();
         assert!(open.was_open);
         assert_eq!(open.next.unwrap().call_id, "3");
+        // The promoted card is the one on screen; an ended one is not.
+        assert!(requests.is_open("3"));
+        assert!(!requests.is_open("1"));
+        assert!(!requests.is_open("2"));
         assert_eq!(requests.end("1"), None);
         assert_eq!(requests.open_views().len(), 1);
     }

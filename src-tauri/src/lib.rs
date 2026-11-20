@@ -234,6 +234,9 @@ fn start_screen_server(
             _ => Ok(()),
         };
     });
+    // The pill stays while a read runs, and counts down from its end.
+    let pill_owner = app.clone();
+    hooks.read_ended = Box::new(move || computer_use::pill::ended(&pill_owner));
     hooks.agent_name = Box::new(move |profile_id| {
         let versions = names
             .state::<store::AppStore>()

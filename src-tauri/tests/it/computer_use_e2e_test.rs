@@ -117,6 +117,7 @@ fn rig_with(tag: &str, timeout: Duration, driver_env: &[(&str, &str)]) -> Rig {
     let events: Events = Arc::new(Mutex::new(Vec::new()));
     let permitted = Arc::new(AtomicBool::new(true));
     let (seen, allowed) = (Arc::clone(&events), Arc::clone(&permitted));
+    let ends = Arc::clone(&events);
     let hooks = Hooks {
         emit: Box::new(move |event, payload| {
             seen.lock().unwrap().push((event.to_string(), payload));
@@ -133,6 +134,11 @@ fn rig_with(tag: &str, timeout: Duration, driver_env: &[(&str, &str)]) -> Rig {
             })
         }),
         icon: Box::new(|_| None),
+        read_ended: Box::new(move || {
+            ends.lock()
+                .unwrap()
+                .push(("read-ended".to_string(), Value::Null));
+        }),
     };
     let server = ScreenServer::new(Arc::clone(&state), hooks);
     server.attach(&tools);
@@ -494,6 +500,16 @@ fn hung_driver_call_ends_at_the_timeout_and_kills_the_worker() {
         .filter(|request| request["operation"] == "bind_session")
         .count();
     assert_eq!(binds, 2);
+
+    // The read that hung was announced before it ran, and every announced
+    // read reported its end, so the pill neither misses it nor stays.
+    let started = rig.events_named("computer-use-activity").len();
+    assert!(started >= 1);
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while rig.events_named("read-ended").len() != started && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(rig.events_named("read-ended").len(), started);
 }
 
 #[test]

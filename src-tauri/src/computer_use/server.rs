@@ -63,6 +63,8 @@ pub struct Hooks {
     pub running: RunningApp,
     /// An app's icon as a data URL.
     pub icon: IconOf,
+    /// The read an activity event announced ended, whatever its outcome.
+    pub read_ended: Box<dyn Fn() + Send + Sync>,
 }
 
 impl Hooks {
@@ -77,6 +79,7 @@ impl Hooks {
             resolve: Box::new(apps::resolve_bundle_id),
             running: Box::new(apps::running),
             icon: Box::new(|app| apps::icon_png(&app.path)),
+            read_ended: Box::new(|| {}),
         }
     }
 }
@@ -116,6 +119,15 @@ pub struct ScreenServer {
     in_flight: Mutex<HashMap<String, InFlight>>,
     /// Agents' names by registry id: looking one up reads the state file.
     names: Mutex<HashMap<String, String>>,
+}
+
+/// A read the pill was told of: dropped on every way out of the call.
+struct Reading<'a>(&'a ScreenServer);
+
+impl Drop for Reading<'_> {
+    fn drop(&mut self) {
+        (self.0.hooks.read_ended)();
+    }
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -208,6 +220,12 @@ impl ScreenServer {
 
     fn show(&self, view: &RequestView) {
         self.emit(REQUEST_EVENT, json!(view));
+        // A card that waited its turn may have ended between its promotion
+        // and this event: the webview then saw the end before the card, so
+        // it is told again, in the order it can use.
+        if !self.requests.is_open(&view.call_id) {
+            self.emit(REQUEST_ENDED_EVENT, json!({ "callId": view.call_id }));
+        }
     }
 
     /// What the webview shows: each session's granted apps.
@@ -625,15 +643,9 @@ impl ScreenServer {
                 windows_of: &|pid| self.windows_of(call, &driver, &handle, pid),
             },
         )?;
-        let result = self.call_driver(call, &driver, &handle, &call.tool, checked.args)?;
-        if let Some(target) = &checked.target {
-            // The pid was checked before the read; a pid that now names
-            // another process may have been read as that one.
-            let still = (self.hooks.running)(target.pid).map(|(_, process)| process);
-            if still != Some(target.process) {
-                return Err(CHANGED_APP_TEXT.to_string());
-            }
-            self.record_snapshot(&call.session_id, target, &result);
+        // Said before the read, which may be slow or never answer: the pill
+        // and its Stop show while it runs, and until it ended.
+        let _reading = checked.target.as_ref().map(|target| {
             self.emit(
                 ACTIVITY_EVENT,
                 json!({
@@ -643,6 +655,17 @@ impl ScreenServer {
                     "fullScreen": false
                 }),
             );
+            Reading(self)
+        });
+        let result = self.call_driver(call, &driver, &handle, &call.tool, checked.args)?;
+        if let Some(target) = &checked.target {
+            // The pid was checked before the read; a pid that now names
+            // another process may have been read as that one.
+            let still = (self.hooks.running)(target.pid).map(|(_, process)| process);
+            if still != Some(target.process) {
+                return Err(CHANGED_APP_TEXT.to_string());
+            }
+            self.record_snapshot(&call.session_id, target, &result);
         }
         self.content_of(call, &result)
     }

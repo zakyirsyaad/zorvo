@@ -18,7 +18,7 @@ const WIDTH: f64 = 360.0;
 const HEIGHT: f64 = 40.0;
 /// Under the menu bar of the main display.
 const TOP: f64 = 34.0;
-/// How long the pill stays after the last thing an agent did.
+/// How long the pill stays after the last thing an agent did ended.
 pub const LINGER: Duration = Duration::from_secs(5);
 
 /// The newest thing an agent did, which the pill's page reads when it loads
@@ -31,6 +31,8 @@ pub struct Pill {
     turn: AtomicU64,
     /// A thread is waiting to hide the pill.
     is_waiting: AtomicBool,
+    /// Reads the driver is still running: the pill stays while there are any.
+    active: AtomicU64,
 }
 
 impl Pill {
@@ -44,6 +46,21 @@ impl Pill {
     fn set(&self, activity: Option<Value>) -> u64 {
         *self.latest.lock().unwrap_or_else(|e| e.into_inner()) = activity;
         self.turn.fetch_add(1, Ordering::AcqRel) + 1
+    }
+
+    fn is_busy(&self) -> bool {
+        self.active.load(Ordering::Acquire) > 0
+    }
+
+    /// A read ended. Counts down, never below nothing.
+    fn finish_one(&self) {
+        let _ = self
+            .active
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
+                active.checked_sub(1)
+            });
+        // The wait to hide starts again from here.
+        self.turn.fetch_add(1, Ordering::AcqRel);
     }
 }
 
@@ -82,12 +99,14 @@ fn place_and_show(app: &AppHandle) {
     let _ = window.show();
 }
 
-/// An agent did something: the pill shows, and hides `LINGER` after the last
-/// such call.
+/// An agent started to read an app: the pill shows, stays while the read
+/// runs, and hides `LINGER` after the last one ended. Each call is followed
+/// by one `ended`.
 pub fn note(app: &AppHandle, activity: Value) {
     let Some(pill) = app.try_state::<Pill>() else {
         return;
     };
+    pill.active.fetch_add(1, Ordering::AcqRel);
     let turn = pill.set(Some(activity));
     let on_main = app.clone();
     // Windows are made on the main thread.
@@ -105,7 +124,7 @@ pub fn note(app: &AppHandle, activity: Value) {
         loop {
             thread::sleep(LINGER);
             let now = pill.turn.load(Ordering::Acquire);
-            if now != seen {
+            if now != seen || pill.is_busy() {
                 seen = now;
                 continue;
             }
@@ -127,6 +146,13 @@ pub fn note(app: &AppHandle, activity: Value) {
     });
 }
 
+/// The read a `note` announced ended, whatever its outcome.
+pub fn ended(app: &AppHandle) {
+    if let Some(pill) = app.try_state::<Pill>() {
+        pill.finish_one();
+    }
+}
+
 /// Computer use stopped, or nothing happened for a while.
 pub fn hide(app: &AppHandle) {
     if let Some(pill) = app.try_state::<Pill>() {
@@ -138,4 +164,30 @@ pub fn hide(app: &AppHandle) {
             let _ = window.hide();
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_pill_is_busy_until_every_read_ended() {
+        let pill = Pill::default();
+        pill.active.fetch_add(2, Ordering::AcqRel);
+        pill.finish_one();
+        assert!(pill.is_busy());
+        pill.finish_one();
+        assert!(!pill.is_busy());
+        // An end with no start counts nothing down.
+        pill.finish_one();
+        assert!(!pill.is_busy());
+    }
+
+    #[test]
+    fn a_read_that_ends_restarts_the_wait_to_hide() {
+        let pill = Pill::default();
+        let before = pill.turn.load(Ordering::Acquire);
+        pill.finish_one();
+        assert_ne!(pill.turn.load(Ordering::Acquire), before);
+    }
 }

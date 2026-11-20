@@ -3,12 +3,13 @@ import { invoke } from '@tauri-apps/api/core';
 import { NO_CHOICES } from '../lib/acp-draft';
 import {
   nextSessionHandle,
-  openRefusal,
   openedSessionsOf,
   sessionTitleOf,
   type ListedOpened,
 } from '../lib/agent-tools';
 import { createId } from '../lib/ids';
+import type { StartPlaces } from '../lib/start-places';
+import { atWorkCount, startRefusal } from '../lib/workers';
 import type { SessionSpec, StartSessionOptions } from '../lib/session-start';
 import { createSessionWorktree } from '../lib/session-worktree';
 import type { AgentProfile, Session, SessionWorktree } from '../types';
@@ -19,6 +20,9 @@ export interface OpenedSessionsDeps {
   sessions: readonly Session[];
   agents: readonly AgentProfile[];
   isBusy: (sessionId: string) => boolean;
+  isWaiting: (sessionId: string) => boolean;
+  /** Shared with every other way a coordinator starts a session, so one limit covers all. */
+  places: StartPlaces;
   startSession: (spec: SessionSpec, first?: FirstMessage, options?: StartSessionOptions) => void;
 }
 
@@ -63,7 +67,9 @@ export function useOpenedSessions(deps: OpenedSessionsDeps): {
   const latest = useLatest(deps);
   // Opens that are under way, by a token: the opener, and the new session's id once it is known.
   // A session is in `sessions` only after React commits, so it cannot be counted from there yet.
-  const underWay = useRef(new Map<string, { openerId: string; sessionId: string | null; handle: string }>());
+  const underWay = useRef(
+    new Map<string, { openerId: string; sessionId: string | null; handle: string; free: () => void }>(),
+  );
 
   // The newest handle each opener was given in this run. A deleted session leaves no trace in
   // `sessions`, and its handle must not pass to the next one: the agent may still use it.
@@ -74,6 +80,7 @@ export function useOpenedSessions(deps: OpenedSessionsDeps): {
   useEffect(() => {
     for (const [token, entry] of [...underWay.current]) {
       if (entry.sessionId !== null && sessions.some((session) => session.id === entry.sessionId)) {
+        entry.free();
         underWay.current.delete(token);
       }
     }
@@ -86,11 +93,15 @@ export function useOpenedSessions(deps: OpenedSessionsDeps): {
     if (opener === undefined) return { ok: false, reason: 'This session no longer exists.' };
     if (agent === undefined) return { ok: false, reason: 'The agent is not available.' };
 
-    const working = openedSessionsOf(openerId, current.sessions).filter((session) => current.isBusy(session.id));
-    const opening = [...underWay.current.values()].filter(
-      (entry) => entry.openerId === openerId && !working.some((session) => session.id === entry.sessionId),
+    const refusal = startRefusal(
+      atWorkCount({
+        coordinatorId: openerId,
+        sessions: current.sessions,
+        isBusy: current.isBusy,
+        isWaiting: current.isWaiting,
+        underWay: current.places.underWay(openerId),
+      }),
     );
-    const refusal = openRefusal({ runningOpened: working.length + opening.length });
     if (refusal !== null) return { ok: false, reason: refusal };
 
     // Held from here, before anything awaits. The handle is taken with the place: sessions
@@ -104,7 +115,8 @@ export function useOpenedSessions(deps: OpenedSessionsDeps): {
       ...(lastHandle.current.has(openerId) ? [lastHandle.current.get(openerId) as string] : []),
     ]);
     lastHandle.current.set(openerId, handle);
-    underWay.current.set(token, { openerId, sessionId: null, handle });
+    const free = current.places.take(openerId);
+    underWay.current.set(token, { openerId, sessionId: null, handle, free });
 
     const name = sessionTitleOf(agent.name, request.brief, request.title);
     const folder = request.folderPath ?? opener.cwd;
@@ -116,6 +128,7 @@ export function useOpenedSessions(deps: OpenedSessionsDeps): {
       try {
         ({ worktree, cwd } = await createSessionWorktree(repoPath, name));
       } catch (error) {
+        free();
         underWay.current.delete(token);
         return { ok: false, reason: NO_WORKTREE_REASON, isInternal: true, detail: String(error) };
       }
@@ -123,6 +136,7 @@ export function useOpenedSessions(deps: OpenedSessionsDeps): {
       // agent must not start working for a request nobody waits for.
       const isGone = !latest.current.sessions.some((session) => session.id === openerId);
       if (isGone || request.isCancelled?.() === true) {
+        free();
         underWay.current.delete(token);
         if (worktree !== null) {
           // Nothing ran in it. The backend keeps the branch; a failure leaves a worktree to remove by hand.
@@ -135,7 +149,7 @@ export function useOpenedSessions(deps: OpenedSessionsDeps): {
     }
 
     const id = createId('s');
-    underWay.current.set(token, { openerId, sessionId: id, handle });
+    underWay.current.set(token, { openerId, sessionId: id, handle, free });
     try {
       // No hidden context: the brief is all the new session knows.
       latest.current.startSession(
@@ -145,6 +159,7 @@ export function useOpenedSessions(deps: OpenedSessionsDeps): {
       );
     } catch (error) {
       // No session was recorded, so nothing would ever free this place.
+      free();
       underWay.current.delete(token);
       return { ok: false, reason: 'The session could not be started.', isInternal: true, detail: String(error) };
     }

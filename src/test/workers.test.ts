@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   MAX_AT_WORK,
+  atWorkCount,
   WORKER_CLOSE_MS,
   WORKER_FILES_MAX,
   WORKER_SUMMARY_MAX,
@@ -170,5 +171,36 @@ describe('toolsRoleOf', () => {
   test('a loop of forks ends', () => {
     const sessions = [{ id: 'x', forkedFrom: 'y' }, { id: 'y', forkedFrom: 'x' }];
     expect(toolsRoleOf({ forkedFrom: 'x' }, sessions)).toBe('coordinator');
+  });
+});
+
+describe('atWorkCount', () => {
+  const worker = (id: string, from: string) =>
+    session({ id, delegatedFrom: { sessionId: from, task: 't', startedAt: 100 } });
+  const opened = (id: string, from: string) => session({ id, openedBy: { sessionId: from, at: 2 } });
+
+  test('workers and opened sessions count together', () => {
+    const sessions = [worker('w1', 'a'), worker('w2', 'a'), opened('o1', 'a'), worker('w3', 'other')];
+    expect(
+      atWorkCount({
+        coordinatorId: 'a',
+        sessions,
+        isBusy: (id) => id !== 'w2',
+        isWaiting: () => false,
+        underWay: 1,
+      }),
+    ).toBe(3);
+  });
+
+  test('a session that waits counts, an archived opened one does not', () => {
+    const sessions = [opened('o1', 'a'), session({ id: 'o2', openedBy: { sessionId: 'a', at: 2 }, archivedAt: 5 })];
+    const count = atWorkCount({
+      coordinatorId: 'a',
+      sessions,
+      isBusy: () => true,
+      isWaiting: (id) => id === 'o1',
+      underWay: 0,
+    });
+    expect(count).toBe(1);
   });
 });

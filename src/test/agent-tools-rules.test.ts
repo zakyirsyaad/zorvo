@@ -147,8 +147,6 @@ describe("fixed answers", () => {
 // --- Sessions an agent opens.
 
 import {
-  MAX_RUNNING_OPENED,
-  openRefusal,
   openedResultText,
   openedSessionsOf,
   otherFolders,
@@ -241,17 +239,6 @@ describe("sessionTitleOf", () => {
     expect(sessionTitleOf("Codex", "Port the parser.\nDetails follow.", "  Parser port ")).toBe("Parser port");
     expect(sessionTitleOf("Codex", "Port the parser.\nDetails follow.")).toBe("Codex: Port the parser.");
     expect(sessionTitleOf("Codex", "Port the parser.", "   ")).toBe("Codex: Port the parser.");
-  });
-});
-
-describe("openRefusal", () => {
-  it("refuses a fourth session while three still work", () => {
-    expect(MAX_RUNNING_OPENED).toBe(3);
-    expect(openRefusal({ runningOpened: 2 })).toBeNull();
-    expect(openRefusal({ runningOpened: 3 })).toBe(
-      "Three sessions this session opened are still working. Wait for one to finish.",
-    );
-    expect(openRefusal({ runningOpened: 4 })).not.toBeNull();
   });
 });
 

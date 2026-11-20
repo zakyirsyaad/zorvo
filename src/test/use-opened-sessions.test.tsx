@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { useOpenedSessions, type OpenRequest } from "../hooks/useOpenedSessions";
 import { NO_CHOICES } from "../lib/acp-draft";
+import { createStartPlaces } from "../lib/start-places";
 import type { SessionSpec, StartSessionOptions } from "../lib/session-start";
 import type { FirstMessage } from "../hooks/session-engine/useAcpEngine";
 import type { Session } from "../types";
@@ -43,12 +44,15 @@ function setup(input: { sessions?: Session[]; busy?: string[]; worktreeFails?: b
       ? Promise.reject(new Error("fatal: not a git repository: /Users/test/secret"))
       : Promise.resolve(WORKTREE);
   });
+  const places = createStartPlaces();
   const hook = renderHook(
     (props: { sessions: Session[] }) =>
       useOpenedSessions({
         sessions: props.sessions,
         agents: [PI, CODEX],
         isBusy: (sessionId) => busy.has(sessionId),
+        isWaiting: () => false,
+        places,
         startSession: (spec, first, options) => {
           starts.push({ spec, first, options });
         },
@@ -224,15 +228,15 @@ describe("useOpenedSessions", () => {
     expect(t.starts).toHaveLength(0);
   });
 
-  it("opens three of four requests made in the same tick", async () => {
+  it("opens four requests made in the same tick and refuses a fifth", async () => {
     const t = setup();
     let results: Array<{ ok: boolean; reason?: string }> = [];
     await act(async () => {
-      results = (await Promise.all([1, 2, 3, 4].map(() => t.result.current.open("s-a", REQUEST)))) as typeof results;
+      results = (await Promise.all([1, 2, 3, 4, 5].map(() => t.result.current.open("s-a", REQUEST)))) as typeof results;
     });
-    expect(t.starts).toHaveLength(3);
-    expect(results.map((result) => result.ok)).toEqual([true, true, true, false]);
-    expect(results[3].reason).toBe("Three sessions this session opened are still working. Wait for one to finish.");
+    expect(t.starts).toHaveLength(4);
+    expect(results.map((result) => result.ok)).toEqual([true, true, true, true, false]);
+    expect(results[4].reason).toBe("4 are running. Start this one when one finishes.");
   });
 
   it("counts only the opener's sessions that are in a turn", async () => {
@@ -254,6 +258,17 @@ describe("useOpenedSessions", () => {
     expect(refused.ok).toBe(false);
   });
 
+  it("counts a worker at work with the opened sessions against one limit", async () => {
+    const opened = (id: string): Session => ({ ...OPENER, id, profileId: "codex-acp", openedBy: { sessionId: "s-a", at: 2 } });
+    const worker: Session = { ...OPENER, id: "w-1", profileId: "codex-acp", delegatedFrom: { sessionId: "s-a", task: "t", startedAt: 3 } };
+    const t = setup({ sessions: [OPENER, opened("o-1"), opened("o-2"), opened("o-3"), worker], busy: ["o-1", "o-2", "o-3", "w-1"] });
+    let refused: { ok: boolean; reason?: string } = { ok: true };
+    await act(async () => {
+      refused = (await t.result.current.open("s-a", REQUEST)) as typeof refused;
+    });
+    expect(refused).toEqual({ ok: false, reason: "4 are running. Start this one when one finishes." });
+  });
+
   it("frees its place when an open failed", async () => {
     const t = setup({ worktreeFails: true });
     await act(async () => {
@@ -269,11 +284,14 @@ describe("useOpenedSessions", () => {
   it("frees its place and says it failed when the session cannot be started", async () => {
     const starts: number[] = [];
     let shouldThrow = true;
+    const places = createStartPlaces();
     const hook = renderHook(() =>
       useOpenedSessions({
         sessions: [OPENER],
         agents: [PI, CODEX],
         isBusy: () => false,
+        isWaiting: () => false,
+        places,
         startSession: () => {
           if (shouldThrow) throw new Error("state could not be written to /Users/test/secret");
           starts.push(1);

@@ -158,9 +158,6 @@ export function parseToolCall(payload: unknown): AgentToolCall | null {
 
 // --- Sessions an agent opens (`start_session`).
 
-/** How many sessions one session opened may be in a turn at once. */
-export const MAX_RUNNING_OPENED = 3;
-
 /** The listed sessions that `openerId`'s agent opened, oldest first. */
 export function openedSessionsOf(openerId: string, sessions: readonly Session[]): Session[] {
   return sessions
@@ -209,13 +206,6 @@ export function resolveFolder(
 export function sessionTitleOf(agentName: string, brief: string, title?: string): string {
   const given = title?.trim() ?? '';
   return given !== '' ? given : delegateSessionName(agentName, brief);
-}
-
-/** Why another session cannot be opened now, or null. */
-export function openRefusal(input: { runningOpened: number }): string | null {
-  return input.runningOpened >= MAX_RUNNING_OPENED
-    ? 'Three sessions this session opened are still working. Wait for one to finish.'
-    : null;
 }
 
 /** `start_session`'s answer once the session is open. */

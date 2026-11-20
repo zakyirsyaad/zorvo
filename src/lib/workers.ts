@@ -145,6 +145,26 @@ export function startRefusal(atWork: number): string | null {
 }
 
 /**
+ * How many starts count against the limit: the coordinator's open workers and
+ * the sessions it opened that are in a turn or wait for an answer, plus the
+ * starts still under way, which are not listed yet.
+ */
+export function atWorkCount(input: {
+  coordinatorId: string;
+  sessions: readonly Session[];
+  isBusy: (sessionId: string) => boolean;
+  isWaiting: (sessionId: string) => boolean;
+  underWay: number;
+}): number {
+  const { coordinatorId, sessions, isBusy, isWaiting } = input;
+  const opened = sessions.filter((session) => session.openedBy?.sessionId === coordinatorId && !isArchived(session));
+  const atWork = [...openDelegatesOf(coordinatorId, sessions), ...opened].filter(
+    (session) => isBusy(session.id) || isWaiting(session.id),
+  );
+  return atWork.length + input.underWay;
+}
+
+/**
  * Records how a turn ended. An outcome stays only when the turn finished and
  * the worker reported it after the turn before; any other outcome belongs to
  * an earlier task and is dropped.

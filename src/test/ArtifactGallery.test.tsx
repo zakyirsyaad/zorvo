@@ -86,7 +86,10 @@ describe("a canvas in the gallery", () => {
 
   it("opens a canvas and removes it from its menu", async () => {
     const internals = (window as unknown as { __TAURI_INTERNALS__: TauriInternals }).__TAURI_INTERNALS__;
-    const spy = vi.spyOn(internals, "invoke").mockResolvedValue(undefined);
+    const original = internals.invoke.bind(internals);
+    const spy = vi
+      .spyOn(internals, "invoke")
+      .mockImplementation((cmd, args) => (cmd === "canvas_forget" ? Promise.resolve(undefined) : original(cmd, args)));
     const onOpenCanvas = vi.fn();
     render(<ArtifactGallery rows={[CANVAS_ROW]} onOpen={vi.fn()} onOpenCanvas={onOpenCanvas} />);
 

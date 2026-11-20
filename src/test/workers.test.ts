@@ -331,10 +331,10 @@ describe('withLinkChange', () => {
 });
 
 describe('withNewTask since', () => {
-  test('an outcome recorded since the task went out stays', () => {
+  test('an outcome recorded after the task went out stays, one in the same millisecond is the previous task\'s', () => {
     const answered = { ...link, outcome: { result: 'succeeded' as const, at: 50, summary: 's' } };
-    expect(withNewTask(answered, 'next', 50).outcome).toEqual(answered.outcome);
-    expect(withNewTask(answered, 'next', 51).outcome).toBeNull();
+    expect(withNewTask(answered, 'next', 49).outcome).toEqual(answered.outcome);
+    expect(withNewTask(answered, 'next', 50).outcome).toBeNull();
     expect(withNewTask(answered, 'next').outcome).toBeNull();
   });
 });

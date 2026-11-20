@@ -13,14 +13,14 @@ import {
   type PermissionRequestPayload,
 } from '../../lib/acp-events';
 import { changesToApply, NO_CHOICES, type AcpChange, type AcpChoices, type AgentOptions } from '../../lib/acp-draft';
-import { findCard, titleFromPrompt, titleSourceFor, userMessage, withoutMessage } from '../../lib/session-helpers';
+import { findCard, firstChars, titleFromPrompt, titleSourceFor, userMessage, withoutMessage } from '../../lib/session-helpers';
 import { createId } from '../../lib/ids';
 import { toCommands, useAcpSessions, type AcpOptions, type AcpSessionInfo, type TurnResult } from '../useAcpSessions';
 import { useLatest } from '../useLatest';
 import { useBatchedUpdates } from '../useBatchedUpdates';
 import { useAgentFailures } from '../useAgentFailures';
 import { qwenErrorDetail } from '../../lib/qwen-api-error';
-import type { AgentProfile, ChatMessage, ElicitationCard, Session } from '../../types';
+import type { AgentProfile, ChatMessage, ElicitationCard, Session, WorkerTurnEnd } from '../../types';
 import { parseAuthRequired, type AuthMethod } from '../../lib/acp-auth';
 import { isSessionGoneError, isUnknownSessionError } from '../../lib/acp-load-error';
 import { toolsRoleOf } from '../../lib/workers';
@@ -41,6 +41,11 @@ export interface FirstMessage {
 }
 
 export type AttentionReason = 'needs-answer' | 'finished' | 'failed';
+
+/** The longest reason a settled turn carries. */
+const TURN_REASON_MAX = 300;
+const SIGN_IN_REASON = 'It needs a sign-in.';
+
 
 export interface EngineDeps {
   sessions: readonly Session[];
@@ -69,6 +74,8 @@ interface LaunchOptions {
 export interface AcpEngineDeps extends EngineDeps {
   /** The agent needs the user's answer, or ended its turn: worth a notification when the user is away. */
   onAttention?: (sessionId: string, reason: AttentionReason) => void;
+  /** Every end of a turn, once: finished, failed, cancelled, or the agent's exit. Not called after Zorvo's own stop. */
+  onTurnSettled?: (sessionId: string, end: { how: WorkerTurnEnd; reason?: string }) => void;
   /** The agent refused to start, or to answer, until the user signs in: the ways it offers and the unsent message. */
   onAuthRequired: (session: Pick<Session, 'id' | 'profileId' | 'cwd'>, methods: AuthMethod[], unsent?: FirstMessage) => void;
   /** Called with what an agent offers when one of its sessions opens or its commands change. */
@@ -112,6 +119,7 @@ export function useAcpEngine({
   rememberOptions,
   onAuthRequired,
   onAttention,
+  onTurnSettled,
   transcripts,
   onTurnFailed,
   saveSoon,
@@ -241,12 +249,14 @@ export function useAcpEngine({
         handBackRefused(sessionId);
         if ('creditsOut' in refusal) onPrivateCreditsOut?.(sessionId, refusal.creditsOut);
         else reportError(refusal.report);
+        onTurnSettled?.(sessionId, { how: 'failed' });
         onAttention?.(sessionId, 'failed');
         return;
       }
       const authMethods = parseAuthRequired(error);
       if (authMethods) {
         handBackForSignIn(sessionId, authMethods);
+        onTurnSettled?.(sessionId, { how: 'failed', reason: SIGN_IN_REASON });
         return;
       }
       const sent = lastPromptRef.current.get(sessionId);
@@ -260,6 +270,10 @@ export function useAcpEngine({
       const notice = turnEndNotice(stopReason, error);
       if (error && onTurnFailed) onTurnFailed(sessionId, error);
       else if (notice) reportError(notice);
+      // Written before the notification, so what reacts to it sees how the turn ended.
+      if (stopReason === 'cancelled') onTurnSettled?.(sessionId, { how: 'cancelled' });
+      else if (notice) onTurnSettled?.(sessionId, { how: 'failed', reason: firstChars(notice, TURN_REASON_MAX) });
+      else onTurnSettled?.(sessionId, { how: 'finished' });
       // A turn the user cancelled needs no notification: they were there.
       if (stopReason !== 'cancelled') onAttention?.(sessionId, notice ? 'failed' : 'finished');
     }),
@@ -271,6 +285,7 @@ export function useAcpEngine({
       // The agent leaves no more updates: the cards it showed are the ones marked unanswered.
       elicitations.abandon(sessionId);
       patchSession(sessionId, { status: 'terminated', endedAt: Date.now(), exitCode: code });
+      onTurnSettled?.(sessionId, { how: 'exited' });
     }),
     onError: reportError,
   });

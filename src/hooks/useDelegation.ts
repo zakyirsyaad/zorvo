@@ -29,9 +29,9 @@ import { createId } from '../lib/ids';
 import { createSessionWorktree } from '../lib/session-worktree';
 import { isArchived } from '../lib/session-helpers';
 import type { StartPlaces } from '../lib/start-places';
-import { atWorkCount, cleanFiles, cleanSummary, isReportOf, issuedWorkerHandles, nextWorkerHandle, startRefusal, withNewTask, withOutcome, workerHandleOf } from '../lib/workers';
+import { atWorkCount, cleanFiles, cleanSummary, isReportOf, issuedWorkerHandles, nextWorkerHandle, startRefusal, withNewTask, withOutcome, withTurnEnd, workerHandleOf } from '../lib/workers';
 import type { SessionSpec, StartSessionOptions } from '../lib/session-start';
-import type { AgentProfile, ChatMessage, DelegationLink, Session, SessionWorktree } from '../types';
+import type { AgentProfile, ChatMessage, DelegationLink, Session, SessionWorktree, WorkerTurnEnd } from '../types';
 import type { AttentionReason, FirstMessage } from './session-engine/useAcpEngine';
 import { useLatest } from './useLatest';
 import { useWorkerReports } from './useWorkerReports';
@@ -142,6 +142,8 @@ export function useDelegation(deps: DelegationDeps): {
   ) => boolean;
   end: (delegateId: string) => void;
   onTurnEnded: (sessionId: string, reason: AttentionReason) => void;
+  /** How a worker's turn ended, written on its open link. */
+  onTurnSettled: (sessionId: string, end: { how: WorkerTurnEnd; reason?: string }) => void;
   sendBlockedReason: (sessionId: string) => string | null;
   viewFor: (sessionId: string) => DelegationView | null;
   /** A source's lines, one per open delegate, oldest first; a delegate's own line. */
@@ -314,6 +316,15 @@ export function useDelegation(deps: DelegationDeps): {
     } else if (reason === 'failed') {
       reports.noteFailed(session.id);
     }
+  };
+
+  const onTurnSettled = (sessionId: string, end: { how: WorkerTurnEnd; reason?: string }): void => {
+    const current = latest.current;
+    const session = current.sessions.find((candidate) => candidate.id === sessionId);
+    if (session === undefined || isArchived(session) || !isOpenLink(session.delegatedFrom)) return;
+    const at = Date.now();
+    // The link as it is when the write lands, so a `done` recorded just before is seen.
+    current.updateLink(sessionId, (latestLink) => (isOpenLink(latestLink) ? withTurnEnd(latestLink, { ...end, at }) : latestLink));
   };
 
   /** A worker's `done`: the outcome goes on its link, whether or not its turn still runs. */
@@ -636,5 +647,5 @@ export function useDelegation(deps: DelegationDeps): {
     }
   }, [sessions]);
 
-  return { delegateBlockedReason, start, giveTask, startWorker, sendToWorker, recordDone, end, onTurnEnded, sendBlockedReason, viewFor, viewsFor };
+  return { delegateBlockedReason, start, giveTask, startWorker, sendToWorker, recordDone, end, onTurnEnded, onTurnSettled, sendBlockedReason, viewFor, viewsFor };
 }

@@ -38,6 +38,33 @@ const promptsSent = (spy: { mock: { calls: unknown[][] } }) =>
 describe("useAcpEngine when the agent refuses a prompt for a sign-in", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it("settles a turn refused for a sign-in as failed, once, with its reason", async () => {
+    const onTurnSettled = vi.fn();
+    const { result } = renderHook(() =>
+      useAcpEngine({
+        sessions: [SESSION],
+        agents: fakeProfiles,
+        updateMessages: () => {},
+        patchSession: () => {},
+        reportError: () => {},
+        rememberOptions: () => {},
+        onAuthRequired: () => {},
+        onTurnSettled,
+      }),
+    );
+    await act(async () => {
+      await result.current.start(SESSION, { text: "try again" });
+    });
+    await act(async () => {
+      listeners.get("acp-event")?.({
+        payload: { sessionId: "s-1", kind: "turn-end", error: `ACP_AUTH_REQUIRED:${JSON.stringify([])}` },
+      });
+    });
+
+    expect(onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(onTurnSettled).toHaveBeenCalledWith("s-1", { how: "failed", reason: "It needs a sign-in." });
+  });
+
   it("hands the hidden context to the agent again with the message the user resends", async () => {
     const spy = vi.spyOn(tauriInternals(), "invoke");
     const onAuthRequired = vi.fn();

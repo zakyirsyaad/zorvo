@@ -85,6 +85,7 @@ function renderEngine(session: Session = PRIVATE) {
   const onAuthRequired = vi.fn();
   const onTurnFailed = vi.fn();
   const giveBack = vi.fn();
+  const onTurnSettled = vi.fn();
   const hook = renderHook(() =>
     useAcpEngine({
       sessions,
@@ -101,6 +102,7 @@ function renderEngine(session: Session = PRIVATE) {
       onTurnFailed,
       onPrivateCreditsOut,
       giveBack,
+      onTurnSettled,
       // As the app passes them: the chat as of this render.
       transcripts: { [session.id]: messages },
     }),
@@ -113,6 +115,7 @@ function renderEngine(session: Session = PRIVATE) {
     onAuthRequired,
     onTurnFailed,
     giveBack,
+    onTurnSettled,
     session: () => sessions[0],
     userMessages: () => messages.filter((m) => m.role === "user"),
     agentMessages: () => messages.filter((m) => m.role === "agent"),
@@ -145,6 +148,15 @@ describe("useAcpEngine with a private session", () => {
     await emit({ kind: "turn-end", error: 'PRIVATE_CREDITS:{"reason":"empty"}' });
 
     expect(engine.onPrivateCreditsOut).toHaveBeenCalledWith("s-1", "empty");
+  });
+
+  it("settles a turn refused for credits as failed, once", async () => {
+    const engine = renderEngine();
+
+    await emit({ kind: "turn-end", error: 'PRIVATE_CREDITS:{"reason":"empty"}' });
+
+    expect(engine.onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", { how: "failed" });
   });
 
   it("records a cap the backend restarted and says why", async () => {

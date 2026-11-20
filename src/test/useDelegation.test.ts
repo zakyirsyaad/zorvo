@@ -1819,8 +1819,11 @@ describe("useDelegation recordDone", () => {
       sessions: [sourceSession(), delegateSession({ id: "w-1", delegatedFrom: link({ handle: "worker-1" }) })],
       transcripts: { "s-a": [{ id: "m1", role: "user", content: "Do it" } as ChatMessage] },
     });
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
     await act(async () => {
       const sent = env.result.current.delegation.sendToWorker("s-a", "w-1", "Next task");
+      // A done is strictly after the task went out, as it is in real time.
+      now.mockReturnValue(1_001);
       env.result.current.delegation.recordDone("w-1", { result: "succeeded", summary: "Fine" });
       await sent;
     });
@@ -1875,5 +1878,63 @@ describe("useDelegation recordDone", () => {
       result.current.delegation.recordDone("w-1", { result: "succeeded", summary: "s", files: ["  ", ""] });
     });
     expect(lastOutcome(patches)).not.toHaveProperty("files");
+  });
+});
+
+describe("useDelegation onTurnSettled", () => {
+  const worker = () => delegateSession({ id: "w-1", delegatedFrom: link({ handle: "worker-1" }) });
+  const base = () => ({ sessions: [sourceSession(), worker()] });
+  const lastLink = (patches: Array<{ sessionId: string; patch: Partial<Session> }>) =>
+    patches.at(-1)?.patch.delegatedFrom;
+
+  it("writes each end on the worker's link", () => {
+    const { result, patches } = setup(base());
+    act(() => result.current.delegation.onTurnSettled("w-1", { how: "cancelled" }));
+    expect(lastLink(patches)?.lastTurn).toMatchObject({ how: "cancelled" });
+  });
+
+  it("writes an exit as exited and keeps the link open", () => {
+    const { result, patches } = setup(base());
+    act(() => result.current.delegation.onTurnSettled("w-1", { how: "exited" }));
+    expect(lastLink(patches)?.lastTurn).toMatchObject({ how: "exited" });
+    expect(lastLink(patches)?.endedAt).toBeNull();
+  });
+
+  it("keeps the reason of a failed turn", () => {
+    const { result, patches } = setup(base());
+    act(() => result.current.delegation.onTurnSettled("w-1", { how: "failed", reason: "It needs a sign-in." }));
+    expect(lastLink(patches)?.lastTurn).toMatchObject({ how: "failed", reason: "It needs a sign-in." });
+  });
+
+  it("writes nothing for a coordinator, an ended link, an archived or a missing session", () => {
+    const ended = delegateSession({ id: "w-2", delegatedFrom: link({ endedAt: 9 }) });
+    const archived = delegateSession({ id: "w-3", archivedAt: 5, delegatedFrom: link({ handle: "worker-3" }) });
+    const { result, patches } = setup({ sessions: [sourceSession(), ended, archived] });
+    act(() => {
+      for (const id of ["s-a", "w-2", "w-3", "nope"]) {
+        result.current.delegation.onTurnSettled(id, { how: "finished" });
+      }
+    });
+    expect(patches).toEqual([]);
+  });
+
+  it("a done recorded just before a finished end keeps its outcome", () => {
+    const { result, patches } = setup(base());
+    act(() => {
+      result.current.delegation.recordDone("w-1", { result: "succeeded", summary: "Fixed" });
+      result.current.delegation.onTurnSettled("w-1", { how: "finished" });
+    });
+    expect(lastLink(patches)?.outcome).toMatchObject({ result: "succeeded", summary: "Fixed" });
+    expect(lastLink(patches)?.lastTurn?.how).toBe("finished");
+  });
+
+  it("a done followed by a cancelled end leaves no outcome", () => {
+    const { result, patches } = setup(base());
+    act(() => {
+      result.current.delegation.recordDone("w-1", { result: "succeeded", summary: "Fixed" });
+      result.current.delegation.onTurnSettled("w-1", { how: "cancelled" });
+    });
+    expect(lastLink(patches)?.outcome).toBeNull();
+    expect(lastLink(patches)?.lastTurn?.how).toBe("cancelled");
   });
 });

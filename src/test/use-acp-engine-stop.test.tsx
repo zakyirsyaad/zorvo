@@ -36,7 +36,7 @@ const emit = (payload: Record<string, unknown>) =>
     listeners.get("acp-event")?.({ payload: { sessionId: "s-1", ...payload } });
   });
 
-function renderEngine({ reportError = vi.fn() }: { reportError?: (message: string) => void } = {}) {
+function renderEngine({ reportError = vi.fn(), onTurnSettled = vi.fn() }: { reportError?: (message: string) => void; onTurnSettled?: (id: string, end: unknown) => void } = {}) {
   let sessions: Session[] = [SESSION];
   let messages: ChatMessage[] = [];
   const hook = renderHook(() =>
@@ -52,6 +52,7 @@ function renderEngine({ reportError = vi.fn() }: { reportError?: (message: strin
       reportError,
       rememberOptions: () => {},
       onAuthRequired: () => {},
+      onTurnSettled,
     }),
   );
   return { ...hook, session: () => sessions[0], messages: () => messages };
@@ -156,5 +157,19 @@ describe("useAcpEngine when Stop is pressed", () => {
 
     expect(ended).toBe(true);
     expect(reportError).not.toHaveBeenCalled();
+  });
+
+  it("settles nothing for an exit that follows Zorvo's own stop", async () => {
+    const onTurnSettled = vi.fn();
+    const engine = renderEngine({ onTurnSettled });
+    await startTurn(engine);
+    await act(async () => {
+      await engine.result.current.stop("s-1");
+    });
+
+    await emit({ kind: "exit", code: 0 });
+    await emit({ kind: "turn-end", stopReason: "cancelled" });
+
+    expect(onTurnSettled).not.toHaveBeenCalled();
   });
 });

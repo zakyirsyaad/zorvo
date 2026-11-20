@@ -50,6 +50,7 @@ function renderEngine(
   let sessions: Session[] = [SESSION];
   let messages: ChatMessage[] = [];
   const onTurnFailed = vi.fn();
+  const onTurnSettled = vi.fn();
   const reportError = vi.fn();
   const hook = renderHook(() =>
     useAcpEngine({
@@ -64,6 +65,7 @@ function renderEngine(
       reportError,
       rememberOptions: () => {},
       onAuthRequired: () => {},
+      onTurnSettled,
       ...(withTurnFailed ? { onTurnFailed } : {}),
       ...(options.promptBlockedReason ? { promptBlockedReason: options.promptBlockedReason } : {}),
     }),
@@ -71,6 +73,7 @@ function renderEngine(
   return {
     ...hook,
     onTurnFailed,
+    onTurnSettled,
     reportError,
     userMessages: () => messages.filter((m) => m.role === "user"),
     /** Renders again so the engine sees the sessions the test (or the engine) changed. */
@@ -291,5 +294,59 @@ describe("useAcpEngine when a turn fails", () => {
     expect(promptsSent(spy)[1]).toContain("fix the parser");
     expect(engine.userMessages()).toHaveLength(1);
     expect(engine.userMessages()[0]?.content).toBe("fix the parser");
+  });
+});
+
+describe("useAcpEngine reports how every turn ended", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  async function startTurn(engine: ReturnType<typeof renderEngine>) {
+    await act(async () => {
+      await engine.result.current.start(SESSION, { text: "fix the parser" });
+    });
+    await waitFor(() => expect(engine.result.current.isBusy("s-1")).toBe(true));
+  }
+
+  it("settles a finished turn as finished, once", async () => {
+    const engine = renderEngine();
+    await startTurn(engine);
+    await emit({ kind: "turn-end", stopReason: "end_turn" });
+    expect(engine.onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", { how: "finished" });
+  });
+
+  it("settles a cancelled turn as cancelled, once", async () => {
+    const engine = renderEngine();
+    await startTurn(engine);
+    await emit({ kind: "turn-end", stopReason: "cancelled" });
+    expect(engine.onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", { how: "cancelled" });
+  });
+
+  it("settles a failed turn as failed with the notice as its reason, once", async () => {
+    const engine = renderEngine();
+    await startTurn(engine);
+    await emit({ kind: "turn-end", error: NETWORK_ERROR });
+    expect(engine.onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", { how: "failed", reason: expect.stringContaining("") });
+    const reason = engine.onTurnSettled.mock.calls[0]![1].reason as string;
+    expect(reason.length).toBeGreaterThan(0);
+    expect(reason.length).toBeLessThanOrEqual(300);
+  });
+
+  it("cuts a long reason to 300 characters", async () => {
+    const engine = renderEngine();
+    await startTurn(engine);
+    await emit({ kind: "turn-end", error: "x".repeat(2000) });
+    const reason = engine.onTurnSettled.mock.calls[0]![1].reason as string;
+    expect(reason.length).toBeLessThanOrEqual(300);
+  });
+
+  it("settles an exit as exited, once", async () => {
+    const engine = renderEngine();
+    await startTurn(engine);
+    await emit({ kind: "exit", code: 1 });
+    expect(engine.onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", { how: "exited" });
   });
 });

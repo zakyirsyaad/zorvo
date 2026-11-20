@@ -213,7 +213,7 @@ export function withOutcome(link: DelegationLink, outcome: WorkerOutcome): Deleg
  * task went out: an outcome the worker recorded since then answers this task and stays.
  */
 export function withNewTask(link: DelegationLink, task: string, sentAt?: number): DelegationLink {
-  const answersThis = sentAt !== undefined && link.outcome != null && link.outcome.at >= sentAt;
+  const answersThis = sentAt !== undefined && link.outcome != null && link.outcome.at > sentAt;
   return { ...link, task, outcome: answersThis ? link.outcome : null };
 }
 

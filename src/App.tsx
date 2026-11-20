@@ -189,7 +189,7 @@ import {
   type AgentOptions,
   type ProbedOptions,
 } from "./lib/acp-draft";
-import type { AgentProfile, ArtifactCard, ArtifactComment, ReviewComment, DelegationLink, Session, SessionWorktree, Settings } from "./types";
+import type { AgentProfile, ArtifactCard, ArtifactComment, ReviewComment, DelegationLink, Session, SessionWorktree, Settings, WorkerTurnEnd } from "./types";
 import { replyBlockedReason } from "./lib/reply-quote";
 
 const NO_FOLDER_NOTICE = "Open a project folder first: choose one from the folder chip by the message box.";
@@ -237,6 +237,7 @@ export default function App() {
   const [delegationMention, setDelegationMention] = useState<{ agentId: string; task: string } | null>(null);
   // Set once useDelegation is built: the engine's turns reach it through this, as it is built before the hook.
   const delegationTurnEndedRef = useRef<(sessionId: string, reason: AttentionReason) => void>(() => {});
+  const delegationTurnSettledRef = useRef<(sessionId: string, end: { how: WorkerTurnEnd; reason?: string }) => void>(() => {});
   // Set once useDelegation is built: the engine's retries read why the pair blocks them, as it is built before the hook.
   const delegationBlockedRef = useRef<(sessionId: string) => string | null>(() => null);
 
@@ -679,6 +680,7 @@ export default function App() {
       delegationTurnEndedRef.current(id, reason);
       if (reason !== "needs-answer") setRunVersion((n) => n + 1);
     },
+    onTurnSettled: (id, end) => delegationTurnSettledRef.current(id, end),
     onAuthRequired: (session, methods, unsent) => {
       if (!compareRun.isInRun(session.id)) {
         signIn.handBack(session, methods, unsent);
@@ -1196,6 +1198,7 @@ export default function App() {
   });
   // The engine was built before this hook: its turn ends reach it through the ref.
   delegationTurnEndedRef.current = delegation.onTurnEnded;
+  delegationTurnSettledRef.current = delegation.onTurnSettled;
   // A retry reads this when it runs: the hook's latest verdict, not the render that built the engine.
   useEffect(() => {
     delegationBlockedRef.current = delegation.sendBlockedReason;

@@ -97,24 +97,27 @@ pub enum CanvasIntake {
 /// The wrapper's kinds are read only from the wrapper's frame, and a page's kinds only from an
 /// artboard of this canvas (a file `canvas.json` lists); an artboard saying what the wrapper
 /// says, or the wrapper saying a pick, is refused. Board picks share `rate` (5 a second);
-/// the wrapper's own rate is the caller's.
+/// the wrapper's kinds share `shell_rate` (20 a second). Without a canvas read, only
+/// board messages are refused.
+#[allow(clippy::too_many_arguments)]
 pub fn canvas_intake(
     frame_url: &str,
     raw: &str,
     shown: &ShownCanvas,
-    canvas: &Canvas,
+    canvas: Option<&Canvas>,
     state: ViewState,
     rate: &mut RateLimit,
+    shell_rate: &mut RateLimit,
     now: Instant,
 ) -> CanvasIntake {
     match canvas_message_source(frame_url, shown) {
-        Source::Shell => {
-            parse_shell_message(raw).map_or(CanvasIntake::Refused, CanvasIntake::Shell)
-        }
+        Source::Shell => parse_shell_message(raw)
+            .filter(|_| shell_rate.allow_up_to(now, MAX_SHELL_PER_SECOND))
+            .map_or(CanvasIntake::Refused, CanvasIntake::Shell),
         Source::Board(file) => {
             let Some(artboard) = canvas
-                .sections
-                .iter()
+                .into_iter()
+                .flat_map(|canvas| &canvas.sections)
                 .flat_map(|section| &section.artboards)
                 .find(|artboard| artboard.file == file)
             else {
@@ -422,8 +425,9 @@ mod tests {
             frame,
             raw,
             shown,
-            &two_boards(),
+            Some(&two_boards()),
             state,
+            &mut RateLimit::default(),
             &mut RateLimit::default(),
             Instant::now(),
         )
@@ -473,11 +477,64 @@ mod tests {
             &url,
             PICK,
             &canvas(),
-            &two_boards(),
+            Some(&two_boards()),
             off,
+            &mut RateLimit::default(),
             &mut RateLimit::default(),
             Instant::now(),
         );
         assert_eq!(refused, CanvasIntake::Refused);
+    }
+
+    #[test]
+    fn the_shell_is_heard_without_a_canvas_read_but_a_board_is_not() {
+        let shell = canvas_shell_url(SESSION, KEY);
+        let board = canvas_file_url(SESSION, KEY, "pay/a.html");
+        let run = |frame: &str, raw: &str| {
+            canvas_intake(
+                frame,
+                raw,
+                &canvas(),
+                None,
+                ViewState {
+                    is_commenting: true,
+                    has_marks: false,
+                },
+                &mut RateLimit::default(),
+                &mut RateLimit::default(),
+                Instant::now(),
+            )
+        };
+        assert_eq!(
+            run(&shell, SELECT),
+            CanvasIntake::Shell(ShellMessage::Select(Some("pay-a".to_string())))
+        );
+        assert_eq!(run(&board, PICK), CanvasIntake::Refused);
+    }
+
+    #[test]
+    fn the_shell_is_limited_to_twenty_a_second() {
+        let shell = canvas_shell_url(SESSION, KEY);
+        let state = ViewState::default();
+        let mut rate = RateLimit::default();
+        let mut shell_rate = RateLimit::default();
+        let now = Instant::now();
+        let mut results = (0..21).map(|_| {
+            canvas_intake(
+                &shell,
+                SELECT,
+                &canvas(),
+                None,
+                state,
+                &mut rate,
+                &mut shell_rate,
+                now,
+            )
+        });
+        assert!(results
+            .by_ref()
+            .take(20)
+            .all(|r| r != CanvasIntake::Refused));
+        assert_eq!(results.next(), Some(CanvasIntake::Refused));
     }
 }

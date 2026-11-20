@@ -25,7 +25,7 @@ use super::canvas::Canvas;
 pub use super::canvas_view::ShownCanvas;
 use super::canvas_view::{
     apply_script, canvas_intake, command_script, pick_event, view_event, CanvasIntake,
-    CanvasNavigation, CANVAS_PICK, CANVAS_VIEW, MAX_SHELL_PER_SECOND,
+    CanvasNavigation, CANVAS_PICK, CANVAS_VIEW,
 };
 use super::page_script::{marks_script, mode_script, PAGE_SCRIPT};
 use super::picks::{
@@ -98,13 +98,13 @@ thread_local! {
     static RATE: RefCell<RateLimit> = RefCell::new(RateLimit::default());
     /// Every message the view on screen has sent, refused or not, to end a page that floods.
     static FLOOD: RefCell<FloodGuard> = RefCell::new(FloodGuard::default());
-    /// The last state asked for, with its canvas, as the script that applies it. Kept across
-    /// views of the same canvas, and run again once such a view has loaded.
     /// How many messages the wrapper has had through this second (its own limit, not a page's).
     static SHELL_RATE: RefCell<RateLimit> = RefCell::new(RateLimit::default());
     /// The shown canvas as `canvas.json` last read, to know which files are its artboards.
     /// Replaced whenever the frontend hands the wrapper a state, since it read the canvas again.
     static CANVAS_BOARDS: RefCell<Option<(ShownCanvas, Canvas)>> = const { RefCell::new(None) };
+    /// The last state asked for, with its canvas, as the script that applies it. Kept across
+    /// views of the same canvas, and run again once such a view has loaded.
     static CANVAS_STATE: RefCell<Option<(ShownCanvas, String)>> = const { RefCell::new(None) };
 }
 
@@ -235,39 +235,34 @@ fn on_canvas_message(app: &AppHandle, generation: u64, frame_url: &str, body: &s
     let Some(shown) = shown_canvas() else {
         return;
     };
-    let Some(canvas) = CANVAS_BOARDS.with(|boards| {
-        boards
-            .borrow()
-            .as_ref()
-            .filter(|(of, _)| *of == shown)
-            .map(|(_, canvas)| canvas.clone())
-    }) else {
-        return;
-    };
     let state = ViewState {
         is_commenting: COMMENTING.get(),
         has_marks: false,
     };
-    let intake = RATE.with(|rate| {
-        canvas_intake(
-            frame_url,
-            body,
-            &shown,
-            &canvas,
-            state,
-            &mut rate.borrow_mut(),
-            Instant::now(),
-        )
+    let intake = CANVAS_BOARDS.with(|boards| {
+        let boards = boards.borrow();
+        let canvas = boards
+            .as_ref()
+            .filter(|(of, _)| *of == shown)
+            .map(|(_, canvas)| canvas);
+        RATE.with(|rate| {
+            SHELL_RATE.with(|shell_rate| {
+                canvas_intake(
+                    frame_url,
+                    body,
+                    &shown,
+                    canvas,
+                    state,
+                    &mut rate.borrow_mut(),
+                    &mut shell_rate.borrow_mut(),
+                    Instant::now(),
+                )
+            })
+        })
     });
     match intake {
         CanvasIntake::Shell(message) => {
-            let is_allowed = SHELL_RATE.with(|rate| {
-                rate.borrow_mut()
-                    .allow_up_to(Instant::now(), MAX_SHELL_PER_SECOND)
-            });
-            if is_allowed {
-                let _ = app.emit(CANVAS_VIEW, view_event(&shown, &message));
-            }
+            let _ = app.emit(CANVAS_VIEW, view_event(&shown, &message));
         }
         CanvasIntake::Board {
             artboard_id,
@@ -505,6 +500,7 @@ fn show_view(
         DISPLAY.set(Display::default());
         COMMENTING.set(false);
         RATE.with(|rate| *rate.borrow_mut() = RateLimit::default());
+        SHELL_RATE.with(|rate| *rate.borrow_mut() = RateLimit::default());
         FLOOD.with(|flood| *flood.borrow_mut() = FloodGuard::default());
         let messages = handle.clone();
         let built = handle

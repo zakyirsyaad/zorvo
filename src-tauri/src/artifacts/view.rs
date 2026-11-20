@@ -416,8 +416,9 @@ pub fn show_canvas(
     show_view(app, served, ShownView::Canvas(canvas), url, bounds)
 }
 
-/// Hands the wrapper `state_json` (one JSON object of at most 1 MiB), only while that canvas is
-/// shown; a wrapper still loading gets the last one once it has.
+/// Keeps `state_json` (one JSON object of at most 1 MiB) for `canvas` and hands it to the
+/// wrapper now when that canvas is shown and loaded; a view of it made or loaded later gets it
+/// then, so a state sent before its view exists is not lost.
 pub fn apply_canvas(
     app: &AppHandle,
     canvas: ShownCanvas,
@@ -425,11 +426,9 @@ pub fn apply_canvas(
 ) -> Result<(), String> {
     let script = apply_script(&state_json).ok_or_else(|| COULD_NOT_SHOW.to_string())?;
     let _ = app.run_on_main_thread(move || {
-        if shown_canvas().as_ref() != Some(&canvas) {
-            return;
-        }
+        let is_shown = shown_canvas().as_ref() == Some(&canvas);
         CANVAS_STATE.with(|state| *state.borrow_mut() = Some((canvas, script.clone())));
-        if DISPLAY.get().is_loaded {
+        if is_shown && DISPLAY.get().is_loaded {
             evaluate(&script);
         }
     });

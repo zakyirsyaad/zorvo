@@ -1,4 +1,9 @@
-import { ChevronRight, FileText, PanelsTopLeft } from "lucide-react";
+import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { ChevronRight, FileText, LayoutGrid, MoreHorizontal, PanelsTopLeft } from "lucide-react";
+import { IconButton } from "../ui/IconButton";
+import { Popover, PopoverOption } from "../ui/Popover";
+import { canvasCountLabel, type CanvasEntry } from "../../lib/canvas";
 import { newestVersion, shownArtifactOf, type ViewedArtifact } from "../../lib/artifacts";
 import { fileNameAndFolder, pathInFolder, type CreatedFile } from "../../lib/created-files";
 import { formatRelativeTime } from "../../lib/relative-time";
@@ -6,6 +11,7 @@ import type { ArtifactCommentsState } from "../../hooks/useArtifactComments";
 import type { AddArtifactReview } from "../../hooks/useReviewWiring";
 import type { Artifact } from "../../types";
 import { ArtifactViewer } from "./ArtifactViewer";
+import { CanvasViewer } from "./CanvasViewer";
 
 export interface ArtifactsPanelProps {
   sessionId: string;
@@ -30,13 +36,17 @@ export interface ArtifactsPanelProps {
   filesRoot?: string;
   /** Opens a created file in the file viewer; given its path inside `filesRoot`. */
   onOpenFile?: (relative: string) => void;
+  /** The canvases the session's agent showed, the most recently shown first. */
+  canvases?: readonly CanvasEntry[];
+  /** Moves when one of the session's turns ends, so an open canvas is read again. */
+  turnsEnded?: number;
 }
 
-/** The mark every artifact row and card carries. */
-export function ArtifactMark() {
+/** The mark every artifact row and card carries; a canvas has its own. */
+export function ArtifactMark({ kind = "page" }: { kind?: "page" | "canvas" }) {
   return (
     <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-chip text-fg-secondary">
-      <PanelsTopLeft size={14} />
+      {kind === "canvas" ? <LayoutGrid size={14} /> : <PanelsTopLeft size={14} />}
     </span>
   );
 }
@@ -84,7 +94,45 @@ function CreatedFileRow({ file, root, onOpenFile }: { file: CreatedFile; root?: 
   );
 }
 
-/** The Output tab: the pages this session's agent showed, one of them open, and the files it created. */
+/** A canvas the agent showed: its title, artboard count and folder, and a menu to remove it from the list. */
+function CanvasRow({ sessionId, canvas, onOpen, onError }: { sessionId: string; canvas: CanvasEntry; onOpen: () => void; onError: (message: string) => void }) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const remove = () => {
+    setIsMenuOpen(false);
+    invoke("canvas_forget", { sessionId, key: canvas.key }).catch(() => onError("Zorvo could not remove the canvas."));
+  };
+  const detail = [canvasCountLabel(canvas.artboards), canvas.relative].filter(Boolean).join(" · ");
+  return (
+    <div className="flex items-center gap-1">
+      <button type="button" title={canvas.folder} onClick={onOpen} className={`focus-ring ${ROW} min-w-0 flex-1 transition-colors hover:bg-surface-hover`}>
+        <ArtifactMark kind="canvas" />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-ui text-fg">{canvas.title}</span>
+          <span className="truncate text-caption text-fg-subtle">{detail}</span>
+        </span>
+        <ChevronRight size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
+      </button>
+      <Popover
+        isOpen={isMenuOpen}
+        onClose={() => setIsMenuOpen(false)}
+        label={`More actions for ${canvas.title}`}
+        align="end"
+        className="w-44"
+        trigger={
+          <IconButton label={`More actions for ${canvas.title}`} size="row" aria-haspopup="menu" aria-expanded={isMenuOpen} onClick={() => setIsMenuOpen(!isMenuOpen)}>
+            <MoreHorizontal size={14} />
+          </IconButton>
+        }
+      >
+        <PopoverOption description="The folder stays where it is." onSelect={remove}>
+          Remove
+        </PopoverOption>
+      </Popover>
+    </div>
+  );
+}
+
+/** The Output tab: the pages and canvases this session's agent showed, one of them open, and the files it created. */
 export function ArtifactsPanel({
   sessionId,
   artifacts,
@@ -100,10 +148,34 @@ export function ArtifactsPanel({
   agentName = "The agent",
   filesRoot,
   onOpenFile,
+  canvases = [],
+  turnsEnded,
 }: ArtifactsPanelProps) {
-  // A single page opens by itself, unless files are listed beside it.
-  const isOnly = artifacts.length === 1 && files.length === 0;
-  const open = shownArtifactOf(artifacts, viewed, files.length);
+  // A single page or canvas opens by itself, unless something else is listed beside it.
+  const rowCount = artifacts.length + canvases.length + files.length;
+  const isOnly = rowCount === 1;
+  const open = shownArtifactOf(artifacts, viewed, files.length + canvases.length);
+  const openCanvas = viewed?.canvasKey
+    ? canvases.find((canvas) => canvas.key === viewed.canvasKey)
+    : isOnly && canvases.length === 1
+      ? canvases[0]
+      : undefined;
+
+  if (openCanvas) {
+    return (
+      <CanvasViewer
+        // Another canvas starts with its menus closed.
+        key={openCanvas.key}
+        sessionId={sessionId}
+        canvasKey={openCanvas.key}
+        turnsEnded={turnsEnded}
+        onBack={isOnly ? undefined : () => onView(null)}
+        isExpanded={isExpanded}
+        onToggleExpanded={onToggleExpanded}
+        onError={onError}
+      />
+    );
+  }
 
   if (open) {
     return (
@@ -125,7 +197,7 @@ export function ArtifactsPanel({
     );
   }
 
-  if (artifacts.length === 0 && files.length === 0) {
+  if (rowCount === 0) {
     return (
       <p className="px-4 py-3.5 text-ui-sm text-fg-muted">
         {`Nothing yet. Pages and files ${agentName} makes in this session show here.`}
@@ -155,6 +227,11 @@ export function ArtifactsPanel({
           </li>
         );
       })}
+      {canvases.map((canvas) => (
+        <li key={canvas.key}>
+          <CanvasRow sessionId={sessionId} canvas={canvas} onOpen={() => onView({ canvasKey: canvas.key })} onError={onError} />
+        </li>
+      ))}
       {files.map((file) => (
         <li key={file.path}>
           <CreatedFileRow file={file} root={filesRoot} onOpenFile={onOpenFile} />

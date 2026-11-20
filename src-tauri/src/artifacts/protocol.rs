@@ -318,6 +318,25 @@ pub fn is_allowed_navigation(url: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The same pairs `src/test/canvas.test.ts` checks `canvasFileUrl` against.
+    #[test]
+    fn file_urls_match_the_shared_fixture() {
+        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../../src/test/fixtures/canvas-file-urls.json"
+        ))
+        .unwrap();
+        assert!(!rows.is_empty());
+        for row in rows {
+            let field = |name: &str| row[name].as_str().unwrap().to_string();
+            let url = canvas_file_url(&field("sessionId"), &field("key"), &field("relative"));
+            assert_eq!(url, field("url"));
+            assert!(matches!(
+                parse_canvas_url(&format!("{url}?v=0123456789ab")),
+                Some(CanvasUrl::File { relative, .. }) if relative == field("relative")
+            ));
+        }
+    }
     use crate::artifacts::test_support::Temp;
 
     const SESSION: &str = "session-1794800000000-k3x9a";
@@ -513,6 +532,7 @@ mod tests {
                     relative: "design".to_string(),
                 },
                 "Shop",
+                1,
                 1,
             )
             .unwrap();

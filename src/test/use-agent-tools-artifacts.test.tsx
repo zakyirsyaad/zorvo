@@ -102,6 +102,7 @@ describe("canvases", () => {
     expect(env.answers()[0].ok).toBe(true);
     expect(JSON.parse(env.answers()[0].text)).toEqual({ shown: true, canvas: "c-0123456789abcdef", artboards: 1 });
     expect(env.shown).toEqual([{ sessionId: "s-1", shown: { kind: "canvas", key: "c-0123456789abcdef" } }]);
+    expect(env.cards()).toEqual([{ kind: "canvas", canvasKey: "c-0123456789abcdef", title: "T", artboards: 1 }]);
   });
 
   it("answers artifact_guide kind canvas with the canvas guide", async () => {
@@ -168,7 +169,7 @@ describe("show_artifact", () => {
     });
     await env.call("c-1", "show_artifact", { path: "r.html", title: "Report" });
     await env.call("c-2", "show_artifact", { path: "r.html" });
-    expect(env.cards().map((card) => card.version)).toEqual([1, 2]);
+    expect(env.cards().map((card) => ("version" in card ? card.version : null))).toEqual([1, 2]);
   });
 
   it("passes the backend's own refusals to the agent as they are", async () => {

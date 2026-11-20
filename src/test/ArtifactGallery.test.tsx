@@ -4,7 +4,7 @@ import { ArtifactGallery } from "../components/artifacts/ArtifactGallery";
 import type { GalleryRow } from "../lib/artifacts";
 
 const NOW = 1_800_000_000_000;
-const row = (overrides: Partial<GalleryRow> & { title: string; id: string }): GalleryRow => ({
+const row = (overrides: Partial<Extract<GalleryRow, { artifact: unknown }>> & { title: string; id: string }): GalleryRow => ({
   sessionId: "s-1",
   sessionName: "Session list performance",
   profileId: "claude-code",

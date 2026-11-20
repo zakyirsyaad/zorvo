@@ -72,6 +72,11 @@ fn board_states(root: &Path, canvas: &Canvas) -> Vec<BoardState> {
         .collect()
 }
 
+fn artboard_count(canvas: &Canvas) -> u32 {
+    let count: usize = canvas.sections.iter().map(|s| s.artboards.len()).sum();
+    u32::try_from(count).unwrap_or(u32::MAX)
+}
+
 /// Reads the canvas the agent names, keeps it in the session's list and hashes its boards.
 /// An unreadable canvas is an error the agent must fix.
 pub fn show_canvas(
@@ -94,7 +99,13 @@ pub fn show_canvas(
     }
     let folder = resolve_canvas(&session_folder, path)?;
     let canvas = read_canvas(&folder.root)?;
-    let entry = artifacts.remember_canvas(session_id, &folder, &canvas.title, now_ms)?;
+    let entry = artifacts.remember_canvas(
+        session_id,
+        &folder,
+        &canvas.title,
+        artboard_count(&canvas),
+        now_ms,
+    )?;
     let boards = board_states(&folder.root, &canvas);
     Ok(CanvasRead {
         entry,
@@ -150,6 +161,11 @@ pub fn read_canvas_entry(
     Ok(match read_canvas(&root) {
         Ok(canvas) => {
             let boards = board_states(&root, &canvas);
+            // The count as the folder holds it now; the index keeps the one from the last show.
+            let entry = CanvasEntry {
+                artboards: artboard_count(&canvas),
+                ..entry
+            };
             CanvasRead {
                 entry,
                 canvas: Some(canvas),

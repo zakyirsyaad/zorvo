@@ -73,6 +73,9 @@ pub struct CanvasEntry {
     pub relative: String,
     pub title: String,
     pub shown_at: u64,
+    /// How many artboards the canvas had when it was last shown; 0 in an index from before.
+    #[serde(default)]
+    pub artboards: u32,
 }
 
 pub fn is_session_id(id: &str) -> bool {
@@ -270,6 +273,7 @@ impl ArtifactStore {
         session_id: &str,
         folder: &super::canvas::CanvasFolder,
         title: &str,
+        artboards: u32,
         now: u64,
     ) -> Result<CanvasEntry, String> {
         if !is_session_id(session_id) {
@@ -283,6 +287,7 @@ impl ArtifactStore {
             existing.title = title.to_string();
             existing.relative = folder.relative.clone();
             existing.shown_at = now;
+            existing.artboards = artboards;
             existing.clone()
         } else {
             if entries.len() >= MAX_CANVASES {
@@ -294,6 +299,7 @@ impl ArtifactStore {
                 relative: folder.relative.clone(),
                 title: title.to_string(),
                 shown_at: now,
+                artboards,
             };
             entries.push(entry.clone());
             entry
@@ -1031,17 +1037,27 @@ mod tests {
         let temp = Temp::new("canvas-key");
         let store = temp.store();
         let first = store
-            .remember_canvas(SESSION, &folder("a"), "One", 10)
+            .remember_canvas(SESSION, &folder("a"), "One", 1, 10)
             .unwrap();
         let second = store
-            .remember_canvas(SESSION, &folder("a"), "Two", 20)
+            .remember_canvas(SESSION, &folder("a"), "Two", 12, 20)
             .unwrap();
         assert!(is_canvas_key(&first.key));
         assert_eq!(first.key, second.key);
         assert_eq!(second.title, "Two");
         assert_eq!(second.shown_at, 20);
+        assert_eq!(second.artboards, 12);
         assert_eq!(store.canvases(SESSION).unwrap().len(), 1);
         assert_eq!(store.canvas(SESSION, &first.key), Some(second));
+    }
+
+    #[test]
+    fn an_index_written_before_counts_reads_as_no_artboards() {
+        let entries: Vec<CanvasEntry> = serde_json::from_str(
+            r#"[{"key":"c-0123456789abcdef","folder":"/w/d","relative":"d","title":"T","shownAt":1}]"#,
+        )
+        .unwrap();
+        assert_eq!(entries[0].artboards, 0);
     }
 
     #[test]
@@ -1049,10 +1065,10 @@ mod tests {
         let temp = Temp::new("canvas-list");
         let store = temp.store();
         let old = store
-            .remember_canvas(SESSION, &folder("a"), "A", 10)
+            .remember_canvas(SESSION, &folder("a"), "A", 1, 10)
             .unwrap();
         let new = store
-            .remember_canvas(SESSION, &folder("b"), "B", 20)
+            .remember_canvas(SESSION, &folder("b"), "B", 1, 20)
             .unwrap();
         let keys: Vec<_> = store
             .canvases(SESSION)
@@ -1078,16 +1094,16 @@ mod tests {
         let store = temp.store();
         for n in 0..MAX_CANVASES {
             store
-                .remember_canvas(SESSION, &folder(&n.to_string()), "T", n as u64)
+                .remember_canvas(SESSION, &folder(&n.to_string()), "T", 1, n as u64)
                 .unwrap();
         }
         assert_eq!(
-            store.remember_canvas(SESSION, &folder("extra"), "T", 99),
+            store.remember_canvas(SESSION, &folder("extra"), "T", 1, 99),
             Err(TOO_MANY_CANVASES.to_string())
         );
         // A folder already remembered still updates at the limit.
         assert!(store
-            .remember_canvas(SESSION, &folder("0"), "New", 100)
+            .remember_canvas(SESSION, &folder("0"), "New", 1, 100)
             .is_ok());
     }
 
@@ -1096,7 +1112,7 @@ mod tests {
         let temp = Temp::new("canvas-delete");
         let store = temp.store();
         store
-            .remember_canvas(SESSION, &folder("a"), "A", 1)
+            .remember_canvas(SESSION, &folder("a"), "A", 1, 1)
             .unwrap();
         store.delete_session(SESSION).unwrap();
         assert_eq!(store.canvases(SESSION).unwrap(), vec![]);
@@ -1107,12 +1123,12 @@ mod tests {
         let temp = Temp::new("canvas-bad");
         let store = temp.store();
         store
-            .remember_canvas(SESSION, &folder("a"), "A", 1)
+            .remember_canvas(SESSION, &folder("a"), "A", 1, 1)
             .unwrap();
         fs::write(temp.0.join(SESSION).join("canvases.json"), "{").unwrap();
         assert!(store.canvases(SESSION).is_err());
         assert!(store
-            .remember_canvas(SESSION, &folder("b"), "B", 2)
+            .remember_canvas(SESSION, &folder("b"), "B", 1, 2)
             .is_err());
     }
 

@@ -47,6 +47,15 @@ describe("useArtifacts", () => {
     expect(result.current.error).toBe(false);
   });
 
+  it("carries each session's canvases", async () => {
+    const canvas = { key: "c-0123456789abcdef", folder: "/w/d", relative: "d", title: "Checkout", shownAt: 1, artboards: 4 };
+    invoke.mockResolvedValue([{ sessionId: "s-1", artifacts: [], canvases: [canvas, { key: "bad" }] }]);
+
+    const { result } = renderHook(() => useArtifacts(["s-1"]));
+
+    await waitFor(() => expect(result.current.canvasesBySession.get("s-1")).toEqual([canvas]));
+  });
+
   it("asks nothing for no sessions", () => {
     renderHook(() => useArtifacts([]));
     expect(invoke).not.toHaveBeenCalled();

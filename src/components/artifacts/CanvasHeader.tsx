@@ -1,0 +1,134 @@
+import { useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, Minus, Plus, Scan } from "lucide-react";
+import { Button } from "../ui/Button";
+import { Chip } from "../ui/Chip";
+import { IconButton } from "../ui/IconButton";
+import { Popover, PopoverOption } from "../ui/Popover";
+import type { CanvasSection } from "../../lib/canvas";
+
+export interface CanvasHeaderProps {
+  title: string;
+  /** How many artboards the canvas has. */
+  count: number;
+  sections: readonly CanvasSection[];
+  zoom: number;
+  /** The selected artboard's title, when one is selected. */
+  selectedTitle: string | null;
+  /** Back to the Output list; absent when there is no list to go back to. */
+  onBack?: () => void;
+  isExpanded: boolean;
+  onToggleExpanded: () => void;
+  /** Runs one of the wrapper's commands: `fit`, `actual`, `in`, `out`, `section:<id>`, `focus`, `prev`, `next`. */
+  onCommand: (name: string) => void;
+  /** Whether a menu of the header is open over the canvas. */
+  onMenuOpen: (isOpen: boolean) => void;
+}
+
+const DIVIDER = <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-border" />;
+
+/** What the selected artboard offers: its title, Focus, and the artboards before and after it. */
+function SelectionTools({ title, onCommand }: { title: string; onCommand: (name: string) => void }) {
+  return (
+    <>
+      <span aria-label={`Selected: ${title}`} className="min-w-0 truncate px-1 text-ui font-medium text-fg">
+        {title}
+      </span>
+      <IconButton label="Focus" size="row" onClick={() => onCommand("focus")}>
+        <Scan size={14} />
+      </IconButton>
+      <IconButton label="Previous artboard" size="row" onClick={() => onCommand("prev")}>
+        <ChevronLeft size={14} />
+      </IconButton>
+      <IconButton label="Next artboard" size="row" onClick={() => onCommand("next")}>
+        <ChevronRight size={14} />
+      </IconButton>
+    </>
+  );
+}
+
+/**
+ * The canvas viewer's header: back, the title and artboard count, Fit, 100%, zoom out and in with the
+ * zoom, the Sections menu and Expand. With an artboard selected it also shows that artboard's title
+ * with Focus, Previous and Next: in the header when expanded, else in a row of its own under it.
+ */
+export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBack, isExpanded, onToggleExpanded, onCommand, onMenuOpen }: CanvasHeaderProps) {
+  const [isSectionsOpen, setIsSectionsOpen] = useState(false);
+  const percent = `${Math.round(zoom * 100)}%`;
+  const setSectionsOpen = (isOpen: boolean) => {
+    setIsSectionsOpen(isOpen);
+    onMenuOpen(isOpen);
+  };
+
+  return (
+    <>
+      <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-2">
+        {onBack && !isExpanded && (
+          <Button variant="ghost" size="sm" tone="secondary" aria-label="Back to output" onClick={onBack} className="gap-0.5 pl-1">
+            <ChevronLeft size={14} aria-hidden="true" />
+            Output
+          </Button>
+        )}
+        <h3 title={title} className="max-w-[40%] shrink-0 truncate pl-1 text-ui font-semibold text-fg">
+          {title}
+        </h3>
+        <span className="min-w-0 flex-1 truncate text-caption text-fg-subtle">{`${count} ${count === 1 ? "artboard" : "artboards"}`}</span>
+        <Button variant="ghost" size="sm" tone="secondary" onClick={() => onCommand("fit")}>
+          Fit
+        </Button>
+        <Button variant="ghost" size="sm" tone="secondary" onClick={() => onCommand("actual")}>
+          100%
+        </Button>
+        <IconButton label="Zoom out" size="row" onClick={() => onCommand("out")}>
+          <Minus size={14} />
+        </IconButton>
+        <span aria-label={`Zoom ${percent}`} className="min-w-10 shrink-0 text-center text-ui-sm text-fg-secondary tabular-nums">
+          {percent}
+        </span>
+        <IconButton label="Zoom in" size="row" onClick={() => onCommand("in")}>
+          <Plus size={14} />
+        </IconButton>
+        <Popover
+          isOpen={isSectionsOpen}
+          onClose={() => setSectionsOpen(false)}
+          label="Sections"
+          align="end"
+          className="w-56"
+          trigger={
+            <Chip label="Sections" aria-haspopup="menu" aria-expanded={isSectionsOpen} onClick={() => setSectionsOpen(!isSectionsOpen)} className="shrink-0 whitespace-nowrap">
+              Sections
+              <ChevronDown size={12} aria-hidden="true" className="text-fg-muted" />
+            </Chip>
+          }
+        >
+          {sections.map((section) => (
+            <PopoverOption
+              key={section.id}
+              trailing={`${section.artboards.length}`}
+              onSelect={() => {
+                setSectionsOpen(false);
+                onCommand(`section:${section.id}`);
+              }}
+            >
+              {section.title}
+            </PopoverOption>
+          ))}
+        </Popover>
+        {isExpanded && selectedTitle !== null && (
+          <>
+            {DIVIDER}
+            <SelectionTools title={selectedTitle} onCommand={onCommand} />
+          </>
+        )}
+        {DIVIDER}
+        <IconButton label={isExpanded ? "Shrink" : "Expand"} size="row" onClick={onToggleExpanded}>
+          {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+        </IconButton>
+      </div>
+      {!isExpanded && selectedTitle !== null && (
+        <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-2">
+          <SelectionTools title={selectedTitle} onCommand={onCommand} />
+        </div>
+      )}
+    </>
+  );
+}

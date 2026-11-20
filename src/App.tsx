@@ -748,6 +748,10 @@ export default function App() {
   // The pages each session's agent showed; the backend owns them and says when they change.
   const artifacts = useArtifacts(useMemo(() => sessions.map((session) => session.id), [sessions]));
   const sessionArtifacts = useMemo(() => (activeSession ? artifacts.bySession.get(activeSession.id) ?? [] : []), [artifacts.bySession, activeSession]);
+  const sessionCanvases = useMemo(
+    () => (activeSession ? artifacts.canvasesBySession.get(activeSession.id) ?? [] : []),
+    [artifacts.canvasesBySession, activeSession],
+  );
   // The files the agent created in this session, listed in the Output tab under its pages.
   const activeTranscript = activeSessionId ? transcripts[activeSessionId] : undefined;
   const activeCwd = activeSession?.cwd;
@@ -791,15 +795,12 @@ export default function App() {
     showTab: () => inspector.show("artifacts"),
     view: inspector.viewArtifact,
   });
-  // A shown canvas needs nothing here yet: its viewer opens it.
-  const onArtifactShown = (sessionId: string, shown: Parameters<typeof openArtifact>[1] | { kind: "canvas"; key: string }) => {
-    if ("kind" in shown) return;
-    openArtifact(sessionId, shown);
-  };
+  const onArtifactShown = openArtifact;
   useBrowserOpening({ sessionId: activeSession?.id ?? null, show: () => inspector.show("browser"), onError: reportError, onArtifactShown });
   const gallery = useMemo(
-    () => galleryRows(sessions, artifacts.bySession, (profileId) => agentNameOr(agents.find((agent) => agent.id === profileId))),
-    [sessions, artifacts.bySession, agents],
+    () =>
+      galleryRows(sessions, artifacts.bySession, (profileId) => agentNameOr(agents.find((agent) => agent.id === profileId)), artifacts.canvasesBySession),
+    [sessions, artifacts.bySession, artifacts.canvasesBySession, agents],
   );
   // The last artifact may go while the gallery is open: then there is nothing to show, and the chat is back.
   const isGalleryShown = isGalleryOpen && gallery.length > 0;
@@ -809,9 +810,24 @@ export default function App() {
     inspector.viewArtifact({ artifactId, version: null }, sessionId);
     inspector.show("artifacts");
   };
-  const artifactIds = useMemo(() => new Set(sessionArtifacts.map((artifact) => artifact.id)), [sessionArtifacts]);
-  /** A chat card's Open: the version it marks, in the Artifacts tab (the newest is followed, not pinned). */
+  const openCanvasFromGallery = (sessionId: string, canvasKey: string) => {
+    handleSelectSession(sessionId);
+    inspector.viewArtifact({ canvasKey }, sessionId);
+    inspector.show("artifacts");
+  };
+  // Artifact ids and canvas keys never look alike, so one set tells a card whether its output is still listed.
+  const artifactIds = useMemo(
+    () => new Set([...sessionArtifacts.map((artifact) => artifact.id), ...sessionCanvases.map((canvas) => canvas.key)]),
+    [sessionArtifacts, sessionCanvases],
+  );
+  /** A chat card's Open: the version it marks, in the Artifacts tab (the newest is followed, not pinned), or the canvas. */
   const openArtifactCard = (card: ArtifactCard) => {
+    if (card.kind === "canvas") {
+      if (!sessionCanvases.some((canvas) => canvas.key === card.canvasKey)) return;
+      inspector.viewArtifact({ canvasKey: card.canvasKey });
+      inspector.show("artifacts");
+      return;
+    }
     const artifact = sessionArtifacts.find((candidate) => candidate.id === card.artifactId);
     if (!artifact) return;
     inspector.viewArtifact({ artifactId: card.artifactId, version: card.version === newestVersion(artifact) ? null : card.version });
@@ -822,9 +838,9 @@ export default function App() {
   // A tab that no longer applies (another folder, a draft) does not show.
   const inspectorTab = inspector.tab && inspectorTabs.includes(inspector.tab) ? inspector.tab : null;
   // The open artifact's page takes the chat's place: only on the Artifacts tab of a session that still has one.
-  const isArtifactExpanded = inspector.isArtifactExpanded && inspectorTab === "artifacts" && sessionArtifacts.length > 0;
+  const isArtifactExpanded = inspector.isArtifactExpanded && inspectorTab === "artifacts" && sessionArtifacts.length + sessionCanvases.length > 0;
   // The artifact page on screen, for its comments: the Artifacts tab's viewer shows it, expanded or not.
-  const shownArtifact = inspectorTab === "artifacts" ? shownArtifactOf(sessionArtifacts, inspector.viewedArtifact, createdFiles.length) : undefined;
+  const shownArtifact = inspectorTab === "artifacts" ? shownArtifactOf(sessionArtifacts, inspector.viewedArtifact, createdFiles.length + sessionCanvases.length) : undefined;
   const viewedVersion = inspector.viewedArtifact?.artifactId === shownArtifact?.id ? inspector.viewedArtifact?.version : null;
   const shownVersion = shownArtifact ? (viewedVersion ?? newestVersion(shownArtifact)) : 0;
   const shownPage =
@@ -1831,6 +1847,7 @@ export default function App() {
             <ArtifactGallery
               rows={gallery}
               onOpen={openFromGallery}
+              onOpenCanvas={openCanvasFromGallery}
               onShowSidebar={isSidebarHidden ? () => setSidebarHidden(false) : undefined}
               notice={settingsPage.section === null && noticeToast}
             />
@@ -2286,6 +2303,8 @@ export default function App() {
                     isExpanded
                     onToggleExpanded={() => inspector.setArtifactExpanded(false)}
                     onError={reportError}
+                    canvases={sessionCanvases}
+                    turnsEnded={turnsEnded}
                     comments={artifactComments}
                     addReview={review.addArtifactReview}
                     cwd={activeSession.cwd}
@@ -2427,6 +2446,9 @@ export default function App() {
                     // makes meanwhile would otherwise turn the tab back into a list under the expanded page,
                     // and comments would lose the page they are on.
                     if (!inspector.viewedArtifact && shownArtifact) inspector.viewArtifact({ artifactId: shownArtifact.id, version: null });
+                    // So is a canvas that opened by itself, being the only thing listed.
+                    const onlyCanvas = sessionCanvases.length === 1 && sessionArtifacts.length === 0 && createdFiles.length === 0 ? sessionCanvases[0] : undefined;
+                    if (!inspector.viewedArtifact && onlyCanvas) inspector.viewArtifact({ canvasKey: onlyCanvas.key });
                     inspector.setArtifactExpanded(true);
                   }}
                   onError={reportError}
@@ -2434,6 +2456,8 @@ export default function App() {
                   addReview={review.addArtifactReview}
                   cwd={activeSession.cwd}
                   files={createdFiles}
+                  canvases={sessionCanvases}
+                  turnsEnded={turnsEnded}
                   filesRoot={filesFolder?.path}
                   agentName={activeAgent?.name}
                   onOpenFile={(relative) => {

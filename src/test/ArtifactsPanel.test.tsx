@@ -499,3 +499,44 @@ describe("the Output tab's files and empty state", () => {
   });
 });
 
+
+describe("canvases", () => {
+  const CANVAS_KEY = "c-0123456789abcdef";
+  const ENTRY = { key: CANVAS_KEY, folder: "/w/design/checkout", relative: "design/checkout", title: "Checkout", shownAt: 4_000, artboards: 12 };
+  const READ = {
+    entry: ENTRY,
+    canvas: { title: "Checkout", sections: [{ id: "flow", title: "Flow", artboards: [{ id: "cart", title: "Cart", file: "cart.html", width: 1440, height: 900, group: null }] }] },
+    error: null,
+    boards: [{ id: "cart", sha256: "a".repeat(64) }],
+  };
+
+  it("lists a canvas in the Output tab and opens it", async () => {
+    spy.mockImplementation((cmd: string, args?: Record<string, unknown>) => (cmd === "canvas_read" ? Promise.resolve(READ) : fakeTauriInvoke(cmd, args)));
+    const { props, rerender } = show({ canvases: [ENTRY] });
+
+    const row = screen.getByRole("button", { name: /^Checkout/ });
+    expect(row.textContent).toContain("Canvas · 12 artboards · design/checkout");
+    fireEvent.click(row);
+    expect(props.onView).toHaveBeenCalledWith({ canvasKey: CANVAS_KEY });
+
+    rerender(<ArtifactsPanel {...props} canvases={[ENTRY]} viewed={{ canvasKey: CANVAS_KEY }} />);
+    await waitFor(() => expect(calls("canvas_view_show")).toHaveLength(1));
+    expect(calls("canvas_view_show")[0]).toEqual({ sessionId: "s-1", key: CANVAS_KEY, ...RECT });
+    expect(calls("artifact_view_show")).toEqual([]);
+  });
+
+  it("removes a canvas from its menu", async () => {
+    const { props } = show({ canvases: [ENTRY] });
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Checkout" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Remove/ }));
+
+    await waitFor(() => expect(calls("canvas_forget")).toEqual([{ sessionId: "s-1", key: CANVAS_KEY }]));
+    expect(props.onError).not.toHaveBeenCalled();
+  });
+
+  it("does not open a single page by itself while a canvas is listed", () => {
+    show({ artifacts: [REPORT], canvases: [ENTRY] });
+    expect(screen.getByRole("list", { name: "Output" })).toBeTruthy();
+  });
+});

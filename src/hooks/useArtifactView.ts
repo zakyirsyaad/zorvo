@@ -2,12 +2,22 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useLatest } from './useLatest';
 
-/** The page a box shows; a new `reload` number makes a new view of the same page. */
-export interface ArtifactViewTarget {
-  sessionId: string;
-  artifactId: string;
-  version: number;
-  reload: number;
+/**
+ * What a box shows: a stored page, or a canvas through Zorvo's wrapper. A new `reload` number
+ * makes a new view of the same thing.
+ */
+export type ArtifactViewTarget =
+  | { kind?: 'page'; sessionId: string; artifactId: string; version: number; reload: number }
+  | { kind: 'canvas'; sessionId: string; key: string; reload?: number };
+
+/** What the view holds, whatever its reload number: Expand and Shrink keep one view for it. */
+function viewKeyOf(target: ArtifactViewTarget): string {
+  return target.kind === 'canvas' ? `canvas/${target.sessionId}/${target.key}` : `${target.sessionId}/${target.artifactId}/${target.version}`;
+}
+
+function showCall(target: ArtifactViewTarget, { x, y, width, height }: Rect): Promise<unknown> {
+  if (target.kind === 'canvas') return invoke('canvas_view_show', { sessionId: target.sessionId, key: target.key, x, y, width, height });
+  return invoke('artifact_view_show', { sessionId: target.sessionId, artifactId: target.artifactId, version: target.version, x, y, width, height });
 }
 
 interface Rect {
@@ -74,9 +84,9 @@ export function useArtifactView(
   // A view is made visible, so only a change from that is worth a call.
   const wasCovered = useRef(false);
 
-  const targetKey = target === null ? null : `${target.sessionId}/${target.artifactId}/${target.version}/${target.reload}`;
   // The page itself, whatever its reload number: a box that arrives with the page another just left keeps the view.
-  const pageKey = target === null ? null : `${target.sessionId}/${target.artifactId}/${target.version}`;
+  const pageKey = target === null ? null : viewKeyOf(target);
+  const targetKey = target === null ? null : `${pageKey}/${target.reload ?? 0}`;
   // The reload number this box last showed; a new one in the same box asks for a new view.
   const lastReload = useRef<number | null>(null);
   // Names this box in the shared claim, so a box that leaves gives up its own claim only.
@@ -99,8 +109,9 @@ export function useArtifactView(
         shownKey.current = targetKey;
         lastRect.current = rect;
         claimed = { page: pageKey, owner };
-        const isReload = lastReload.current !== null && lastReload.current !== shown.reload;
-        lastReload.current = shown.reload;
+        const reload = shown.reload ?? 0;
+        const isReload = lastReload.current !== null && lastReload.current !== reload;
+        lastReload.current = reload;
         const place = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
         enqueue(
           async () => {
@@ -111,15 +122,7 @@ export function useArtifactView(
             } else {
               live = pageKey;
               try {
-                await invoke('artifact_view_show', {
-                  sessionId: shown.sessionId,
-                  artifactId: shown.artifactId,
-                  version: shown.version,
-                  x: place.x,
-                  y: place.y,
-                  width: place.width,
-                  height: place.height,
-                });
+                await showCall(shown, place);
               } catch (error) {
                 // The backend closes the view when it cannot show the page.
                 if (live === pageKey) live = null;

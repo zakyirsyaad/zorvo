@@ -38,7 +38,7 @@ import type { MentionAgentStatus } from '../lib/delegation';
 import { createId } from '../lib/ids';
 import { CANVAS_GUIDE, CANVAS_REFUSALS, canvasResultText, parseCanvasRead } from '../lib/canvas';
 import { ARTIFACT_GUIDE, ARTIFACT_REFUSALS, parseShown, shownResultText, type ShownArtifact } from '../lib/artifacts';
-import { withArtifactCard } from '../lib/artifact-card';
+import { withArtifactCard, withCanvasCard } from '../lib/artifact-card';
 import { escapeVisible } from '../lib/visible-text';
 import type { AgentProfile, ChatMessage, Session } from '../types';
 import type { GiveTaskResult } from './useDelegation';
@@ -365,6 +365,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
           respond(call.callId, false, FAILED);
           return;
         }
+        latest.current.updateMessages(session.id, (prev) => withCanvasCard(prev, read, { sessionId: session.id, now: Date.now(), createId }));
         latest.current.onArtifactShown(session.id, { kind: 'canvas', key: read.entry.key });
         respond(call.callId, true, canvasResultText(read));
       } catch (error) {

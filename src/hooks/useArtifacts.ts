@@ -3,21 +3,25 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { Artifact } from '../types';
 import { parseArtifacts } from '../lib/artifacts';
+import { parseCanvasEntries, type CanvasEntry } from '../lib/canvas';
 
 /** Emitted by the backend with `{ sessionId }` after a session's artifacts changed. */
 const ARTIFACTS_CHANGED = 'artifacts-changed';
 
 type BySession = ReadonlyMap<string, readonly Artifact[]>;
+type CanvasesBySession = ReadonlyMap<string, readonly CanvasEntry[]>;
 
-/** One session's answer: its artifacts, and whether its index could not be read (then they are not known). */
-type Entry = [sessionId: string, artifacts: Artifact[], failed: boolean];
+/** One session's answer: its artifacts, whether its index could not be read (then they are not known), and its canvases. */
+type Entry = [sessionId: string, artifacts: Artifact[], failed: boolean, canvases: CanvasEntry[]];
 
 function parseAnswer(answer: unknown): Entry[] {
   if (!Array.isArray(answer)) return [];
   return answer.flatMap((entry): Entry[] => {
-    const fields = entry as { sessionId?: unknown; artifacts?: unknown; failed?: unknown } | null;
+    const fields = entry as { sessionId?: unknown; artifacts?: unknown; failed?: unknown; canvases?: unknown } | null;
     const sessionId = fields?.sessionId;
-    return typeof sessionId === 'string' ? [[sessionId, parseArtifacts(fields?.artifacts), fields?.failed === true]] : [];
+    return typeof sessionId === 'string'
+      ? [[sessionId, parseArtifacts(fields?.artifacts), fields?.failed === true, parseCanvasEntries(fields?.canvases)]]
+      : [];
   });
 }
 
@@ -27,8 +31,14 @@ function parseAnswer(answer: unknown): Entry[] {
  * index could not be read keeps the list it had, and is left out of
  * `readSessions`: nothing may be removed because its artifacts seem gone.
  */
-export function useArtifacts(sessionIds: readonly string[]): { bySession: BySession; error: boolean; readSessions: ReadonlySet<string> } {
+export function useArtifacts(sessionIds: readonly string[]): {
+  bySession: BySession;
+  canvasesBySession: CanvasesBySession;
+  error: boolean;
+  readSessions: ReadonlySet<string>;
+} {
   const [bySession, setBySession] = useState<BySession>(new Map());
+  const [canvasesBySession, setCanvasesBySession] = useState<CanvasesBySession>(new Map());
   const [readSessions, setReadSessions] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState(false);
   // The ids as one string, so a new array with the same ids asks nothing.
@@ -53,6 +63,12 @@ export function useArtifacts(sessionIds: readonly string[]): { bySession: BySess
       if (isFullList) for (const sessionId of next.keys()) if (!idsRef.current.includes(sessionId)) next.delete(sessionId);
       return next;
     });
+    setCanvasesBySession((previous) => {
+      const next = new Map(previous);
+      for (const [sessionId, , , canvases] of entries) next.set(sessionId, canvases);
+      if (isFullList) for (const sessionId of next.keys()) if (!idsRef.current.includes(sessionId)) next.delete(sessionId);
+      return next;
+    });
     setReadSessions((previous) => {
       const next = new Set(previous);
       for (const [sessionId, , failed] of entries) {
@@ -71,6 +87,7 @@ export function useArtifacts(sessionIds: readonly string[]): { bySession: BySess
     const current = ++generation.current;
     if (ids.length === 0) {
       setBySession(new Map());
+      setCanvasesBySession(new Map());
       setReadSessions(new Set());
       return;
     }
@@ -106,5 +123,5 @@ export function useArtifacts(sessionIds: readonly string[]): { bySession: BySess
     };
   }, []);
 
-  return { bySession, error, readSessions };
+  return { bySession, canvasesBySession, error, readSessions };
 }

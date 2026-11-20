@@ -1,4 +1,5 @@
 import type { Artifact, ArtifactCard, ArtifactVersion, Session } from '../types';
+import type { CanvasEntry } from './canvas';
 import { isArchived } from './session-helpers';
 import guide from './artifact-guide.md?raw';
 
@@ -26,13 +27,13 @@ export interface ShownArtifact {
   isNewVersion: boolean;
 }
 
-/** The artifact the viewer shows; a `version` of null follows the newest. */
-export interface ViewedArtifact {
-  artifactId: string;
-  version: number | null;
-}
+/** The artifact the viewer shows (a `version` of null follows the newest), or a canvas. */
+export type ViewedArtifact =
+  | { artifactId: string; version: number | null; canvasKey?: undefined }
+  | { canvasKey: string; artifactId?: undefined; version?: undefined };
 
 const ARTIFACT_ID = /^a-[0-9a-f]{16}$/;
+const CANVAS_KEY = /^c-[0-9a-f]{16}$/;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -83,6 +84,11 @@ export function parseShown(value: unknown): ShownArtifact | null {
 /** A card saved in a transcript, or null when it does not fit. */
 export function parseArtifactCard(value: unknown): ArtifactCard | null {
   if (!isObject(value)) return null;
+  if (value.kind === 'canvas') {
+    const { canvasKey, title, artboards } = value;
+    if (typeof canvasKey !== 'string' || !CANVAS_KEY.test(canvasKey) || typeof title !== 'string' || !isCount(artboards)) return null;
+    return { kind: 'canvas', canvasKey, title, artboards };
+  }
   const { artifactId, title, version } = value;
   if (!isArtifactId(artifactId) || typeof title !== 'string' || !isCount(version) || version === 0) return null;
   return { artifactId, title, version };
@@ -137,46 +143,67 @@ export function openingFor(input: {
   return followsNewest ? 'replace' : 'none';
 }
 
-export function cardState(card: ArtifactCard, artifacts: readonly Artifact[]): 'open' | 'removed' {
-  return artifacts.some((artifact) => artifact.id === card.artifactId) ? 'open' : 'removed';
+/**
+ * What the window does when an agent shows a canvas: one of the session on screen opens in the tab,
+ * unless it is the one shown already (its viewer reads it again by itself).
+ */
+export function canvasOpeningFor(input: { isOnScreen: boolean; key: string; viewed: ViewedArtifact | null }): 'show-tab' | 'none' {
+  if (!input.isOnScreen || input.viewed?.canvasKey === input.key) return 'none';
+  return 'show-tab';
 }
 
-/** One line of the gallery: an artifact with the session it belongs to. */
-export interface GalleryRow {
+/** The id a card names: an artifact's id or a canvas's key (they never look alike). */
+export function cardIdOf(card: ArtifactCard): string {
+  return card.kind === 'canvas' ? card.canvasKey : card.artifactId;
+}
+
+export function cardState(card: ArtifactCard, artifacts: readonly Artifact[]): 'open' | 'removed' {
+  return artifacts.some((artifact) => artifact.id === cardIdOf(card)) ? 'open' : 'removed';
+}
+
+interface GalleryRowBase {
   sessionId: string;
   sessionName: string;
   /** The session's agent, for its logo. */
   profileId: string;
   agentName: string;
   isArchived: boolean;
-  artifact: Artifact;
-  /** When its newest version was shown. */
+  /** When its newest version (or the canvas) was shown. */
   at: number;
 }
 
-/** Every listed session's artifacts, the most recently changed first. */
+/** One line of the gallery: an artifact or a canvas, with the session it belongs to. */
+export type GalleryRow = GalleryRowBase & ({ kind?: 'page'; artifact: Artifact } | { kind: 'canvas'; canvas: CanvasEntry });
+
+export function rowTitle(row: GalleryRow): string {
+  return row.kind === 'canvas' ? row.canvas.title : row.artifact.title;
+}
+
+/** Every listed session's artifacts and canvases, the most recently changed first. */
 export function galleryRows(
   sessions: readonly Session[],
   bySession: ReadonlyMap<string, readonly Artifact[]>,
   agentNameOf: (profileId: string) => string,
+  canvasesBySession: ReadonlyMap<string, readonly CanvasEntry[]> = new Map(),
 ): GalleryRow[] {
   return sessions
-    .flatMap((session) =>
-      (bySession.get(session.id) ?? []).map((artifact) => ({
+    .flatMap((session): GalleryRow[] => {
+      const base = {
         sessionId: session.id,
         sessionName: session.name,
         profileId: session.profileId,
         agentName: agentNameOf(session.profileId),
         isArchived: isArchived(session),
-        artifact,
-        at: newestAt(artifact),
-      })),
-    )
+      };
+      const pages = (bySession.get(session.id) ?? []).map((artifact) => ({ ...base, artifact, at: newestAt(artifact) }));
+      const canvases = (canvasesBySession.get(session.id) ?? []).map((canvas) => ({ ...base, kind: 'canvas' as const, canvas, at: canvas.shownAt }));
+      return [...pages, ...canvases];
+    })
     .sort((a, b) => b.at - a.at);
 }
 
 export function filterGallery(rows: readonly GalleryRow[], query: string): GalleryRow[] {
   const needle = query.trim().toLowerCase();
   if (needle === '') return [...rows];
-  return rows.filter((row) => row.artifact.title.toLowerCase().includes(needle));
+  return rows.filter((row) => rowTitle(row).toLowerCase().includes(needle));
 }

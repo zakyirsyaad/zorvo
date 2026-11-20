@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { CANVAS_GUIDE, CANVAS_REFUSALS, canvasResultText, parseCanvasRead } from "../lib/canvas";
+import { CANVAS_GUIDE, CANVAS_REFUSALS, artboardCount, canvasFileUrl, canvasResultText, canvasShellState, parseCanvasRead, type Canvas, type CanvasRead } from "../lib/canvas";
 
 const KEY = "c-0123456789abcdef";
-const ENTRY = { key: KEY, folder: "/w/design/x", relative: "design/x", title: "Checkout", shownAt: 5 };
+const ENTRY = { key: KEY, folder: "/w/design/x", relative: "design/x", title: "Checkout", shownAt: 5, artboards: 3 };
 const CANVAS = {
   title: "Checkout",
   sections: [
@@ -56,5 +56,54 @@ describe("canvas answers", () => {
     for (const words of ["canvas.json", "design/", "1440", "390", "group", "cdnjs.cloudflare.com", "kind"]) {
       expect(CANVAS_GUIDE).toContain(words);
     }
+  });
+});
+
+describe("the wrapper's state", () => {
+  const SESSION = "session-1794800000000-k3x9a";
+  const SHA_A = "a".repeat(64);
+  const SHA_B = "b".repeat(64);
+  const read = (boards: { id: string; sha256: string | null }[]): CanvasRead => ({
+    ...(READ as CanvasRead),
+    boards,
+  });
+
+  it("builds the shell state with file URLs equal to the backend's", () => {
+    const rows = JSON.parse(readFileSync("src/test/fixtures/canvas-file-urls.json", "utf8")) as { sessionId: string; key: string; relative: string; url: string }[];
+    for (const row of rows) expect(canvasFileUrl(row.sessionId, row.key, row.relative)).toBe(row.url);
+
+    const state = JSON.parse(
+      canvasShellState(read([{ id: "cart", sha256: SHA_A }, { id: "pay", sha256: null }, { id: "pay2", sha256: SHA_B }]), SESSION, new Map([["cart", "zorvo-artifact://localhost/thumb/x.png"]]), "pay2"),
+    );
+
+    expect(state.sections).toEqual([{ id: "flow", title: "Flow" }]);
+    expect(state.selected).toBe("pay2");
+    expect(state.boards[0]).toEqual({
+      id: "cart",
+      section: "flow",
+      group: null,
+      title: "Cart",
+      width: 1440,
+      height: 900,
+      url: `${canvasFileUrl(SESSION, KEY, "cart.html")}?v=aaaaaaaaaaaa`,
+      thumb: "zorvo-artifact://localhost/thumb/x.png",
+    });
+    // A file that is gone has no URL and says so.
+    expect(state.boards[1]).toEqual({ id: "pay", section: "flow", group: "p", title: "Pay", width: 390, height: 844, missing: true });
+    expect(state.boards[2].url).toBe(`${canvasFileUrl(SESSION, KEY, "pay2.html")}?v=bbbbbbbbbbbb`);
+  });
+
+  it("gives a changed artboard a new URL and an unchanged one the same", () => {
+    const before = JSON.parse(canvasShellState(read([{ id: "cart", sha256: SHA_A }, { id: "pay", sha256: SHA_A }, { id: "pay2", sha256: SHA_A }]), SESSION, new Map()));
+    const after = JSON.parse(canvasShellState(read([{ id: "cart", sha256: SHA_A }, { id: "pay", sha256: SHA_B }, { id: "pay2", sha256: SHA_A }]), SESSION, new Map()));
+
+    expect(after.boards[0].url).toBe(before.boards[0].url);
+    expect(after.boards[1].url).not.toBe(before.boards[1].url);
+    expect(after.boards[2].url).toBe(before.boards[2].url);
+    expect(after.selected).toBeNull();
+  });
+
+  it("counts a canvas's artboards", () => {
+    expect(artboardCount(CANVAS as Canvas)).toBe(3);
   });
 });

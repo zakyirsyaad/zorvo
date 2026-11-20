@@ -23,6 +23,17 @@ describe("the artifact card", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
+  it("draws a canvas card in the chat", () => {
+    const onOpen = vi.fn();
+    const canvas = { kind: "canvas" as const, canvasKey: "c-0123456789abcdef", title: "Checkout", artboards: 12 };
+    render(<ArtifactCardRow card={canvas} state="open" onOpen={onOpen} />);
+
+    expect(screen.getByText("Checkout")).toBeTruthy();
+    expect(screen.getByText("Canvas · 12 artboards")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open the canvas Checkout" }));
+    expect(onOpen).toHaveBeenCalledWith(canvas);
+  });
+
   it("has no button where nothing can open it", () => {
     render(<ArtifactCardRow card={CARD} state="open" />);
     expect(screen.getByText("Session list performance")).toBeTruthy();

@@ -23,6 +23,7 @@ function timeLabelOf(message: ChatMessage): string | undefined {
 }
 import { ArtifactCardRow } from "./ArtifactCardRow";
 import type { ArtifactCard } from "../../types";
+import { cardIdOf } from "../../lib/artifacts";
 
 /** A message or card that arrives on screen fades in once (the appear token); streamed text does not move. */
 const APPEAR = "motion-safe:animate-appear";
@@ -207,7 +208,7 @@ export const MessageRow = memo(function MessageRow({
       {message.artifactCard && (
         <ArtifactCardRow
           card={message.artifactCard}
-          state={artifactIds === undefined || artifactIds.has(message.artifactCard.artifactId) ? "open" : "removed"}
+          state={artifactIds === undefined || artifactIds.has(cardIdOf(message.artifactCard)) ? "open" : "removed"}
           onOpen={onOpenArtifact}
         />
       )}

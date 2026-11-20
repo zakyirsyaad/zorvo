@@ -4,7 +4,8 @@ import { IconButton } from "../ui/IconButton";
 import { ToastStack } from "../ui/Toast";
 import { TOP_BAR_TRAFFIC_LIGHT_INSET_PX } from "../TopBar";
 import { AgentTile } from "../ui/AgentTile";
-import { filterGallery, newestVersion, type GalleryRow } from "../../lib/artifacts";
+import { filterGallery, newestVersion, rowTitle, type GalleryRow } from "../../lib/artifacts";
+import { canvasCountLabel } from "../../lib/canvas";
 import { formatRelativeTime } from "../../lib/relative-time";
 import { ArtifactMark } from "./ArtifactsPanel";
 
@@ -13,6 +14,8 @@ export interface ArtifactGalleryProps {
   rows: readonly GalleryRow[];
   /** Selects the session and shows the artifact in its Output tab. */
   onOpen: (sessionId: string, artifactId: string) => void;
+  /** Selects the session and shows the canvas in its Output tab. */
+  onOpenCanvas?: (sessionId: string, key: string) => void;
   /**
    * Brings the sidebar back; given only while it is hidden. The top bar, which has this button for
    * every other view, is not drawn under the gallery, so without it there would be no way back.
@@ -23,13 +26,19 @@ export interface ArtifactGalleryProps {
 }
 
 const COLUMNS = "grid grid-cols-[minmax(0,1fr)_minmax(0,200px)_96px] items-center gap-4";
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+const plural = (count: number, word: string, many = `${word}s`) => `${count} ${count === 1 ? word : many}`;
+
+function countLine(rows: readonly GalleryRow[]): string {
+  const canvases = rows.filter((row) => row.kind === "canvas").length;
+  const pages = plural(rows.length - canvases, "page");
+  const sessions = plural(new Set(rows.map((row) => row.sessionId)).size, "session");
+  return canvases === 0 ? `${pages} in ${sessions}` : `${pages} and ${plural(canvases, "canvas", "canvases")} in ${sessions}`;
+}
 
 /** Every page every session's agent showed, in the chat's place: find one again by its title. */
-export function ArtifactGallery({ rows, onOpen, onShowSidebar, notice }: ArtifactGalleryProps) {
+export function ArtifactGallery({ rows, onOpen, onOpenCanvas, onShowSidebar, notice }: ArtifactGalleryProps) {
   const [query, setQuery] = useState("");
   const shown = filterGallery(rows, query);
-  const sessionCount = new Set(rows.map((row) => row.sessionId)).size;
 
   return (
     <section aria-label="Artifact gallery" className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-panel border border-border bg-sheet text-ui text-fg">
@@ -45,7 +54,7 @@ export function ArtifactGallery({ rows, onOpen, onShowSidebar, notice }: Artifac
           </IconButton>
         )}
         <h2 className="text-ui font-semibold text-fg">Output</h2>
-        <span className="text-ui-sm text-fg-subtle">{`${plural(rows.length, "page")} in ${plural(sessionCount, "session")}`}</span>
+        <span className="text-ui-sm text-fg-subtle">{countLine(rows)}</span>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
         <div className="mx-auto flex max-w-[880px] flex-col gap-3.5">
@@ -71,21 +80,23 @@ export function ArtifactGallery({ rows, onOpen, onShowSidebar, notice }: Artifac
               </div>
               <ul aria-label="Output" className="-mt-2 flex flex-col gap-0.5">
                 {shown.map((row) => (
-                  <li key={`${row.sessionId}/${row.artifact.id}`}>
+                  <li key={`${row.sessionId}/${row.kind === "canvas" ? row.canvas.key : row.artifact.id}`}>
                     <button
                       type="button"
-                      aria-label={`${row.artifact.title}, in ${row.sessionName}`}
-                      onClick={() => onOpen(row.sessionId, row.artifact.id)}
+                      aria-label={`${rowTitle(row)}, in ${row.sessionName}`}
+                      onClick={() => (row.kind === "canvas" ? onOpenCanvas?.(row.sessionId, row.canvas.key) : onOpen(row.sessionId, row.artifact.id))}
                       className={`${COLUMNS} focus-ring w-full rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-surface-hover`}
                     >
                       <span className="flex min-w-0 items-center gap-3">
-                        <ArtifactMark />
+                        <ArtifactMark kind={row.kind} />
                         <span className="flex min-w-0 flex-col">
                           <span className="flex min-w-0 items-center gap-2">
-                            <span className="truncate font-medium text-fg">{row.artifact.title}</span>
+                            <span className="truncate font-medium text-fg">{rowTitle(row)}</span>
                             {row.isArchived && <span className="shrink-0 rounded bg-chip px-1.5 text-caption text-fg-muted">Archived</span>}
                           </span>
-                          <span className="truncate text-caption text-fg-subtle">{`${row.sessionName} · Version ${newestVersion(row.artifact)}`}</span>
+                          <span className="truncate text-caption text-fg-subtle">
+                            {`${row.sessionName} · ${row.kind === "canvas" ? canvasCountLabel(row.canvas.artboards) : `Version ${newestVersion(row.artifact)}`}`}
+                          </span>
                         </span>
                       </span>
                       <span className="flex min-w-0 items-center gap-2 text-ui-sm text-fg-secondary">

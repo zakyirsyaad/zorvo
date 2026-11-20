@@ -19,6 +19,8 @@ export interface CanvasEntry {
   relative: string;
   title: string;
   shownAt: number;
+  /** How many artboards it had when last shown (or as read now, in a `CanvasRead`). */
+  artboards: number;
 }
 
 export interface CanvasArtboard {
@@ -65,10 +67,11 @@ function isCount(value: unknown): value is number {
 
 function parseEntry(value: unknown): CanvasEntry | null {
   if (!isObject(value)) return null;
-  const { key, folder, relative, title, shownAt } = value;
+  const { key, folder, relative, title, shownAt, artboards } = value;
   if (typeof key !== 'string' || !CANVAS_KEY.test(key)) return null;
   if (typeof folder !== 'string' || typeof relative !== 'string' || typeof title !== 'string' || !isCount(shownAt)) return null;
-  return { key, folder, relative, title, shownAt };
+  if (artboards !== undefined && !isCount(artboards)) return null;
+  return { key, folder, relative, title, shownAt, artboards: artboards ?? 0 };
 }
 
 function parseArtboard(value: unknown): CanvasArtboard | null {
@@ -105,6 +108,15 @@ function parseBoard(value: unknown): BoardState | null {
   return { id, sha256 };
 }
 
+/** The canvases in a backend list; anything that does not fit is dropped. */
+export function parseCanvasEntries(value: unknown): CanvasEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const parsed = parseEntry(entry);
+    return parsed === null ? [] : [parsed];
+  });
+}
+
 /** A backend canvas answer, or null when it does not fit. */
 export function parseCanvasRead(value: unknown): CanvasRead | null {
   if (!isObject(value)) return null;
@@ -121,6 +133,68 @@ export function parseCanvasRead(value: unknown): CanvasRead | null {
 
 /** What the agent is told after a canvas was shown. */
 export function canvasResultText(read: CanvasRead): string {
-  const artboards = read.canvas?.sections.reduce((total, section) => total + section.artboards.length, 0) ?? 0;
+  const artboards = read.canvas ? artboardCount(read.canvas) : 0;
   return JSON.stringify({ shown: true, canvas: read.entry.key, artboards });
+}
+
+export function artboardCount(canvas: Canvas): number {
+  return canvas.sections.reduce((total, section) => total + section.artboards.length, 0);
+}
+
+/** "Canvas · 12 artboards". */
+export function canvasCountLabel(count: number): string {
+  return `Canvas · ${count} ${count === 1 ? 'artboard' : 'artboards'}`;
+}
+
+const ORIGIN = 'zorvo-artifact://localhost/';
+
+/** One path segment as the backend writes it: RFC 3986 unreserved characters kept, every other byte `%XX`. */
+function encodeSegment(segment: string): string {
+  let out = '';
+  for (const byte of new TextEncoder().encode(segment)) {
+    const char = String.fromCharCode(byte);
+    out += /[A-Za-z0-9\-._~]/.test(char) ? char : `%${byte.toString(16).toUpperCase().padStart(2, '0')}`;
+  }
+  return out;
+}
+
+/** The URL of a canvas file, the same as `protocol.rs`'s `canvas_file_url` (a test compares them). */
+export function canvasFileUrl(sessionId: string, key: string, relative: string): string {
+  return `${ORIGIN}canvas/${sessionId}/${key}/f/${relative.split('/').map(encodeSegment).join('/')}`;
+}
+
+/** Hex characters of a file's hash in its URL: a changed artboard gets a new URL, so its frame loads once again. */
+const VERSION_CHARS = 12;
+
+/**
+ * What the wrapper's `apply` takes, as JSON: the sections, each artboard with its file's URL (none, and
+ * `missing`, when the file is gone), its picture when it has one, and the selection. The wrapper gets
+ * keys and relative names only, never a path.
+ */
+export function canvasShellState(read: CanvasRead, sessionId: string, thumbs: ReadonlyMap<string, string>, selected?: string | null): string {
+  const hashes = new Map(read.boards.map((board) => [board.id, board.sha256]));
+  const sections = read.canvas?.sections ?? [];
+  const boards = sections.flatMap((section) =>
+    section.artboards.map((board) => {
+      const sha256 = hashes.get(board.id) ?? null;
+      const thumb = thumbs.get(board.id);
+      return {
+        id: board.id,
+        section: section.id,
+        group: board.group,
+        title: board.title,
+        width: board.width,
+        height: board.height,
+        ...(sha256 === null
+          ? { missing: true }
+          : { url: `${canvasFileUrl(sessionId, read.entry.key, board.file)}?v=${sha256.slice(0, VERSION_CHARS)}` }),
+        ...(thumb === undefined ? {} : { thumb }),
+      };
+    }),
+  );
+  return JSON.stringify({
+    sections: sections.map(({ id, title }) => ({ id, title })),
+    boards,
+    selected: selected ?? null,
+  });
 }

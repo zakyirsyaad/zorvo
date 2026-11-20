@@ -550,11 +550,10 @@ export type PageMessage =
   | { kind: 'cancel' }
   | { kind: 'marks-missing'; numbers: number[] };
 
-export interface ArtifactCard {
-  artifactId: string;
-  title: string;
-  version: number;
-}
+/** Where the agent showed a page (with the version shown then) or a canvas (with its artboard count then). */
+export type ArtifactCard =
+  | { kind?: undefined; artifactId: string; title: string; version: number }
+  | { kind: 'canvas'; canvasKey: string; title: string; artboards: number };
 
 export interface ElicitationChoice {
   value: string;

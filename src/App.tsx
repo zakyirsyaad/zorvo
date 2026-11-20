@@ -886,7 +886,7 @@ export default function App() {
   // defined further down and only called when a tool call or an answer arrives.
   // The independent sessions an agent opens through the tools. `startSession` is defined
   // further down and only called when a call is allowed.
-  const startPlaces = useRef(createStartPlaces()).current;
+  const [startPlaces] = useState(createStartPlaces);
   const openedSessions = useOpenedSessions({
     sessions,
     agents: agentsInUse,

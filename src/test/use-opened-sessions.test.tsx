@@ -3,6 +3,7 @@ import { act, renderHook } from "@testing-library/react";
 import { useOpenedSessions, type OpenRequest } from "../hooks/useOpenedSessions";
 import { NO_CHOICES } from "../lib/acp-draft";
 import { createStartPlaces } from "../lib/start-places";
+import { MAX_AT_WORK } from "../lib/workers";
 import type { SessionSpec, StartSessionOptions } from "../lib/session-start";
 import type { FirstMessage } from "../hooks/session-engine/useAcpEngine";
 import type { Session } from "../types";
@@ -179,14 +180,19 @@ describe("useOpenedSessions", () => {
     const removed = t.spy.mock.calls.filter(([cmd]) => cmd === "remove_session_worktree");
     expect(removed.map(([, args]) => args)).toEqual([{ repoPath: FOLDER, path: WORKTREE.path }]);
 
-    // Its place is free again.
-    isCancelled = false;
-    for (let index = 0; index < 3; index += 1) {
+    // Withdrawn opens up to the limit leave no place taken.
+    for (let index = 1; index < MAX_AT_WORK; index += 1) {
       await act(async () => {
-        await t.result.current.open("s-a", REQUEST);
+        await t.result.current.open("s-a", { ...REQUEST, hasOwnWorktree: true, isCancelled: () => isCancelled });
       });
     }
-    expect(t.starts).toHaveLength(3);
+    isCancelled = false;
+    t.spy.mockImplementation((cmd) => (cmd === "create_session_worktree" ? Promise.resolve(WORKTREE) : Promise.resolve(null)));
+    let next: { ok: boolean } = { ok: false };
+    await act(async () => {
+      next = (await t.result.current.open("s-a", REQUEST)) as typeof next;
+    });
+    expect(next.ok).toBe(true);
   });
 
   it("starts no session when the opener went away while the worktree was made", async () => {
@@ -272,7 +278,7 @@ describe("useOpenedSessions", () => {
   it("frees its place when an open failed", async () => {
     const t = setup({ worktreeFails: true });
     await act(async () => {
-      await Promise.all([1, 2, 3].map(() => t.result.current.open("s-a", { ...REQUEST, hasOwnWorktree: true })));
+      await Promise.all(Array.from({ length: MAX_AT_WORK }, () => t.result.current.open("s-a", { ...REQUEST, hasOwnWorktree: true })));
     });
     let after: { ok: boolean } = { ok: false };
     await act(async () => {
@@ -301,7 +307,7 @@ describe("useOpenedSessions", () => {
 
     let failed: unknown[] = [];
     await act(async () => {
-      failed = await Promise.all([1, 2, 3].map(() => hook.result.current.open("s-a", REQUEST)));
+      failed = await Promise.all(Array.from({ length: MAX_AT_WORK }, () => hook.result.current.open("s-a", REQUEST)));
     });
     expect(failed[0]).toEqual({
       ok: false,
@@ -310,7 +316,7 @@ describe("useOpenedSessions", () => {
       detail: "Error: state could not be written to /Users/test/secret",
     });
 
-    // Three failures must not use up the opener's three places.
+    // Failures up to the limit must not use up the opener's places.
     shouldThrow = false;
     let after: { ok: boolean } = { ok: false };
     await act(async () => {
@@ -323,9 +329,16 @@ describe("useOpenedSessions", () => {
   it("frees a place once the opened session is listed and idle", async () => {
     const t = setup();
     await act(async () => {
-      await Promise.all([1, 2, 3].map(() => t.result.current.open("s-a", REQUEST)));
+      await Promise.all(Array.from({ length: MAX_AT_WORK }, () => t.result.current.open("s-a", REQUEST)));
     });
-    // The three sessions are now listed, and none is in a turn.
+    // Until they are listed, every place is taken.
+    let refused: { ok: boolean; reason?: string } = { ok: true };
+    await act(async () => {
+      refused = (await t.result.current.open("s-a", REQUEST)) as typeof refused;
+    });
+    expect(refused).toEqual({ ok: false, reason: "4 are running. Start this one when one finishes." });
+
+    // The sessions are now listed, and none is in a turn.
     const listed = t.starts.map(({ spec }) => ({
       ...OPENER,
       id: spec.id ?? "",

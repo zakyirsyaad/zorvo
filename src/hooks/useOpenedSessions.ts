@@ -163,6 +163,8 @@ export function useOpenedSessions(deps: OpenedSessionsDeps): {
       underWay.current.delete(token);
       return { ok: false, reason: 'The session could not be started.', isInternal: true, detail: String(error) };
     }
+    // `free` stays in the entry for the effect above. A session that is started but never listed
+    // keeps its place until restart, as its token did before.
     return { ok: true, sessionId: id, sessionName: name, folder: cwd, handle };
   };
 

@@ -108,13 +108,18 @@ fn draws_nothing(c: char) -> bool {
 /// A title as it is stored: without what reorders or breaks its line, trimmed,
 /// at most 60 characters; `None` when nothing of it could be read.
 fn clean_title(title: &str) -> Option<String> {
+    clean_title_within(title, MAX_TITLE_CHARS)
+}
+
+/// `clean_title` with a limit of the caller's choosing.
+pub(crate) fn clean_title_within(title: &str, max_chars: usize) -> Option<String> {
     let kept: String = title
         .chars()
         // A break between words stays a gap, so the words do not run together.
         .map(|c| if c.is_whitespace() { ' ' } else { c })
         .filter(|c| !reshapes_a_line(*c))
         .collect();
-    let cut: String = kept.trim().chars().take(MAX_TITLE_CHARS).collect();
+    let cut: String = kept.trim().chars().take(max_chars).collect();
     let cut = cut.trim_end().to_string();
     cut.chars().any(|c| !draws_nothing(c)).then_some(cut)
 }

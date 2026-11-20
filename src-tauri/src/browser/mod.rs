@@ -6,8 +6,6 @@ use tauri::AppHandle;
 pub mod history;
 
 #[cfg(all(target_os = "macos", debug_assertions))]
-mod dialog_smoke;
-#[cfg(all(target_os = "macos", debug_assertions))]
 mod forms_smoke;
 #[cfg(all(target_os = "macos", debug_assertions))]
 mod lifecycle_smoke;

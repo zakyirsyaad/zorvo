@@ -293,7 +293,7 @@ export interface ActionCard {
 
 /** What an agent asked Zorvo's tools for, as the approval card shows it. */
 export interface ZorvoToolRequest {
-  tool: 'delegate' | 'start_session';
+  tool: 'delegate' | 'start_session' | 'browser';
   /** The agent that asked. */
   callerName: string;
   /** The agent the task is for. */

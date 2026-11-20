@@ -6,6 +6,7 @@ import {
   ALLOW_ONCE,
   ALLOW_SESSION,
   DENY,
+  browserCard,
   folderCard,
   settleToolCard,
   toolCard,
@@ -30,6 +31,17 @@ const INPUT = {
 const ctx = { sessionId: "s-1", now: 100, createId: (prefix: string) => `${prefix}-new` };
 
 describe("toolCard", () => {
+  it("renders and restores browser access as a normal inline permission card", () => {
+    const card = browserCard({ ...INPUT, operations: ['tabs.open', 'snapshot'] });
+    const messages = withToolCard([], card, ctx);
+    const restored = normalizeTranscript(messages)[0].actionCard!;
+    expect(restored.zorvoTool?.tool).toBe('browser');
+    render(<ActionCard card={restored} />);
+    expect(screen.getByRole('button', { name: 'Allow for this session' })).toBeEnabled();
+    expect(screen.getByText(/including signed-in pages/)).toBeDefined();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText(/give tasks to other agents/)).toBeNull();
+  });
   it("builds the card with the exact title and the two buttons", () => {
     const card = toolCard(INPUT);
     expect(card).toMatchObject({

@@ -157,7 +157,9 @@ export function ActionCard({ card, onChoose, disabled = false, agentName = "The 
           )}
           {card.status === "pending" && (
             <p className="text-caption text-fg-subtle">
-              {zorvoTool.isOtherFolder
+              {zorvoTool.tool === "browser"
+                ? `${zorvoTool.callerName} can read pages, run scripts, click and fill forms in this session's browser, including signed-in pages. Access lasts until you revoke it or the agent ends.`
+                : zorvoTool.isOtherFolder
                 ? "This asks every time: a session in another folder is never allowed in advance."
                 : `After you allow it, ${zorvoTool.callerName} can give tasks to other agents in this session without asking again.`}
             </p>

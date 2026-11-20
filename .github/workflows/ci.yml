@@ -32,7 +32,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: node --test experiments/browser-wk/report.test.mjs experiments/browser-wk/fixture.test.mjs experiments/browser-wk/snapshot.test.mjs experiments/browser-wk/scroll/timing.test.mjs
-      - run: node --test src-tauri/resources/browser-cdp/runtime.test.mjs
       - run: pnpm test
       - run: pnpm build
 

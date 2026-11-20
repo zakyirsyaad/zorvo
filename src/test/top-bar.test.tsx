@@ -290,6 +290,17 @@ describe("TopBar", () => {
       fireEvent.click(screen.getByRole("menuitem", { name: "Stop allowing delegation" }));
       expect(onStopAllowingDelegation).toHaveBeenCalledTimes(1);
     });
+
+    it("keeps browser revocation beside delegation revocation", () => {
+      const onStopAllowingBrowser = vi.fn();
+      renderTopBar({ sessionName: "Alpha", onStopAllowingDelegation: vi.fn(), onStopAllowingBrowser });
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      expect(screen.getAllByRole("menuitem").map(item => item.textContent)).toEqual([
+        "Stop allowing delegation", "Stop allowing browser access",
+      ]);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Stop allowing browser access" }));
+      expect(onStopAllowingBrowser).toHaveBeenCalledOnce();
+    });
   });
 
   describe("inspector toggle", () => {

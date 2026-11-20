@@ -2,14 +2,12 @@ import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { BROWSER_OPEN } from "../lib/browser";
-import { parseShown, type ShownArtifact } from "../lib/artifacts";
 import { useLatest } from "./useLatest";
 
 export function useBrowserOpening(options: {
   sessionId: string | null;
   show: () => void;
   onError: (message: string) => void;
-  onArtifactShown?: (sessionId: string, shown: ShownArtifact) => void;
 }): void {
   const latest = useLatest(options);
   useEffect(() => {
@@ -29,15 +27,10 @@ export function useBrowserOpening(options: {
     const unlisten = listen<{ sessionId: string }>("browser-reveal", event => {
       if (event.payload.sessionId === latest.current.sessionId) latest.current.show();
     }).catch(error => { latest.current.onError(String(error)); return () => {}; });
-    const stopPreview = listen<{ sessionId: string; shown: unknown }>("browser-preview", event => {
-      const shown = parseShown(event.payload.shown);
-      if (shown) latest.current.onArtifactShown?.(event.payload.sessionId, shown);
-    }).catch(error => { latest.current.onError(String(error)); return () => {}; });
     window.addEventListener(BROWSER_OPEN, open);
     return () => {
       window.removeEventListener(BROWSER_OPEN, open);
       void unlisten.then(stop => stop());
-      void stopPreview.then(stop => stop());
     };
   }, [latest]);
 }

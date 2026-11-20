@@ -151,6 +151,7 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
     case "install_agent":
       return Promise.resolve(undefined);
     case "cancel_agent_install":
+    case "browser_permission_status":
       return Promise.resolve(false);
     default:
       return null;

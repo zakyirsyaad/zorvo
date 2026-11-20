@@ -117,10 +117,8 @@ import { AppUpdateNotice } from "./components/AppUpdateNotice";
 import { restartWarning } from "./lib/app-update";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { useAgentTools } from "./hooks/useAgentTools";
-import { useBrowserAgentTools } from "./hooks/useBrowserAgentTools";
 import { useBrowserOpening } from "./hooks/useBrowserOpening";
 import { BrowserPanel } from "./components/browser/BrowserPanel";
-import { BrowserPermissionLayer } from "./components/browser/BrowserPermissionLayer";
 import { useOpenedSessions } from "./hooks/useOpenedSessions";
 import { ProfileFooter } from "./components/ProfileFooter";
 import { AgentsMenu } from "./components/sidebar/AgentsMenu";
@@ -788,7 +786,7 @@ export default function App() {
     showTab: () => inspector.show("artifacts"),
     view: inspector.viewArtifact,
   });
-  useBrowserOpening({ sessionId: activeSession?.id ?? null, show: () => inspector.show("browser"), onError: reportError, onArtifactShown });
+  useBrowserOpening({ sessionId: activeSession?.id ?? null, show: () => inspector.show("browser"), onError: reportError });
   const gallery = useMemo(
     () => galleryRows(sessions, artifacts.bySession, (profileId) => agentNameOr(agents.find((agent) => agent.id === profileId))),
     [sessions, artifacts.bySession, agents],
@@ -942,10 +940,8 @@ export default function App() {
     stopTurn: (sessionId) => handleInterrupt(sessionId),
   });
   const isSessionWaiting = (sessionId: string) =>
-    browserAgentTools.isWaiting(sessionId) ||
     agentTools.isWaiting(sessionId) ||
     isWaitingForAnswer(sessionById(sessionId), transcripts[sessionId] ?? [], () => isSessionBusy(sessionId));
-  const browserAgentTools = useBrowserAgentTools({ sessions, agents: agentsInUse, onAttention: (sessionId, reason) => notifyAttention(sessionId, reason), onError: reportError });
 
   /** Records a new session and shows it, unless `focus` is false; the agent is started by its engine. */
   const recordSession = (spec: SessionSpec, options?: { focus?: boolean }): Session => {
@@ -1567,6 +1563,10 @@ export default function App() {
     sessionOfItsOwn !== undefined && agentTools.hasGrant(sessionOfItsOwn.id)
       ? () => agentTools.revokeGrant(sessionOfItsOwn.id)
       : undefined;
+  const onStopAllowingBrowser =
+    sessionOfItsOwn !== undefined && agentTools.hasBrowserGrant(sessionOfItsOwn.id)
+      ? () => agentTools.revokeBrowserGrant(sessionOfItsOwn.id)
+      : undefined;
   const onDelegate =
     sessionOfItsOwn !== undefined && sessionOfItsOwn.delegatedFrom == null
       ? () => delegateDialog.open({ clearsComposer: false, returnsFocusToMenu: true })
@@ -1828,6 +1828,7 @@ export default function App() {
               delegateBlockedReason={activeDelegateBlockedReason}
               delegationEnds={delegationEnds}
               onStopAllowingDelegation={onStopAllowingDelegation}
+              onStopAllowingBrowser={onStopAllowingBrowser}
               moreButtonRef={moreOptionsButtonRef}
               workspaceName={activeSession ? folderNameOf(workspacePathOf(activeSession)) : activeWorkspace?.name}
               // A run takes its folder from its first session, never from the last folder chosen.
@@ -2442,7 +2443,6 @@ export default function App() {
           )}
         </div>
       </section>
-      <BrowserPermissionLayer request={browserAgentTools.request} busy={browserAgentTools.answering} answer={browserAgentTools.answer} />
       <SettingsPage
         page={settingsPage}
         persisted={{ state, updateState }}

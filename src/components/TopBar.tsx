@@ -81,6 +81,7 @@ function MoreOptionsMenu({
   onEndDelegation,
   delegationEnds,
   onStopAllowingDelegation,
+  onStopAllowingBrowser,
   triggerRef,
 }: {
   onPopout?: () => void;
@@ -96,6 +97,7 @@ function MoreOptionsMenu({
   delegationEnds?: readonly { label: string; run: () => void }[];
   /** Takes back the session's leave to give other agents tasks without asking; shown only while it has it. */
   onStopAllowingDelegation?: () => void;
+  onStopAllowingBrowser?: () => void;
   /** The ⋯ button, which takes focus back when the dialog its Delegate item opened closes. */
   triggerRef?: Ref<HTMLButtonElement>;
 }) {
@@ -116,6 +118,9 @@ function MoreOptionsMenu({
     ),
     ...(onStopAllowingDelegation !== undefined
       ? [{ label: "Stop allowing delegation", run: onStopAllowingDelegation, Icon: ShieldOff }]
+      : []),
+    ...(onStopAllowingBrowser !== undefined
+      ? [{ label: "Stop allowing browser access", run: onStopAllowingBrowser, Icon: ShieldOff }]
       : []),
     { label: "Archive", run: onArchive, Icon: Archive },
   ].filter(
@@ -222,6 +227,7 @@ export interface TopBarProps {
   delegationEnds?: readonly { label: string; run: () => void }[];
   /** Takes back the session's leave to give other agents tasks without asking; shown only while it has it. */
   onStopAllowingDelegation?: () => void;
+  onStopAllowingBrowser?: () => void;
   /** The ⋯ button, which takes focus back when a dialog its item opened closes. */
   moreButtonRef?: Ref<HTMLButtonElement>;
   /** Opens or closes the inspector (changes, activity, files, terminal); the button is hidden when absent. */
@@ -267,6 +273,7 @@ export function TopBar({
   onEndDelegation,
   delegationEnds,
   onStopAllowingDelegation,
+  onStopAllowingBrowser,
   moreButtonRef,
   onToggleInspector,
   isInspectorOpen = false,
@@ -408,6 +415,7 @@ export function TopBar({
           onEndDelegation={onEndDelegation}
           delegationEnds={delegationEnds}
           onStopAllowingDelegation={onStopAllowingDelegation}
+          onStopAllowingBrowser={onStopAllowingBrowser}
           triggerRef={moreButtonRef}
         />
       </div>

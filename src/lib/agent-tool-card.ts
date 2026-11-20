@@ -175,6 +175,25 @@ export function folderCard(input: FolderCardInput): ActionCard {
   };
 }
 
+/** Browser access is a separate grant, shown and answered in the requesting chat. */
+export function browserCard(input: {
+  cardId: string; sessionId: string; callerName: string; folder: string; operations: readonly string[]; now: number;
+}): ActionCard {
+  return {
+    id: input.cardId,
+    sessionId: input.sessionId,
+    title: `${input.callerName} wants to use this session's browser`,
+    prompt: input.operations.map(operation => `> ${escapeVisible(operation)}`).join('\n'),
+    timestamp: input.now,
+    status: 'pending',
+    options: [
+      { optionId: ALLOW_SESSION, name: 'Allow for this session', kind: 'allow_always' },
+      { optionId: DENY, name: 'Deny', kind: 'reject_once' },
+    ],
+    zorvoTool: { tool: 'browser', callerName: input.callerName, targetName: 'Browser', targetId: 'browser', folder: input.folder },
+  };
+}
+
 /** Replaces the card `cardId` with `card`, keeping its place in the chat. */
 export function replaceToolCard(messages: ChatMessage[], cardId: string, card: ActionCard): ChatMessage[] {
   return messages.map((message) =>
@@ -211,7 +230,7 @@ export function settleToolCard(messages: ChatMessage[], cardId: string, outcome:
 export function usableZorvoTool(mark: unknown): ZorvoToolRequest | undefined {
   if (typeof mark !== 'object' || mark === null) return undefined;
   const { tool, callerName, targetName, targetId, folder } = mark as Record<string, unknown>;
-  if (tool !== 'delegate' && tool !== 'start_session') return undefined;
+  if (tool !== 'delegate' && tool !== 'start_session' && tool !== 'browser') return undefined;
   if (![callerName, targetName, targetId, folder].every((value) => typeof value === 'string')) return undefined;
   return mark as ZorvoToolRequest;
 }

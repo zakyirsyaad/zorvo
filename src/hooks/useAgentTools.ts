@@ -43,6 +43,7 @@ import type { AgentProfile, ChatMessage, Session } from '../types';
 import type { GiveTaskResult } from './useDelegation';
 import type { OpenRequest, OpenResult } from './useOpenedSessions';
 import { useLatest } from './useLatest';
+import { useBrowserToolCards } from './useBrowserToolCards';
 
 /** Answered when something went wrong on Zorvo's side; never the error itself, which could hold the task. */
 const FAILED = 'Zorvo could not do that.';
@@ -118,10 +119,15 @@ export function useAgentTools(deps: AgentToolsDeps): {
   chooseCard: (sessionId: string, cardId: string, optionId: string) => boolean;
   hasGrant: (sessionId: string) => boolean;
   revokeGrant: (sessionId: string) => void;
+  hasBrowserGrant: (sessionId: string) => boolean;
+  revokeBrowserGrant: (sessionId: string) => void;
   /** A Zorvo card of this session waits for the user. */
   isWaiting: (sessionId: string) => boolean;
 } {
   const latest = useLatest(deps);
+  const browser = useBrowserToolCards(deps);
+  const handleBrowserCall = browser.handleCall;
+  const handleBrowserEnded = browser.handleEnded;
   // Sessions whose agent may give tasks without asking again. Memory only.
   const grants = useRef(new Set<string>());
   const waiting = useRef(new Map<string, WaitingCard>());
@@ -446,8 +452,6 @@ export function useAgentTools(deps: AgentToolsDeps): {
     (payload: unknown) => {
       const call = parseToolCall(payload);
       if (call === null) return;
-      // Browser calls have an independent session grant and upload approval flow.
-      if (call.tool === 'browser' || call.tool === 'browser_guide') return;
       try {
         const current = latest.current;
         const session = current.sessions.find((candidate) => candidate.id === call.sessionId);
@@ -457,6 +461,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
           respond(call.callId, false, NO_SESSION);
           return;
         }
+        if (handleBrowserCall(session, call)) return;
         if (call.tool === 'list_agents') {
           const agents = current.agents.map((agent) => ({
             id: agent.id,
@@ -500,7 +505,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
         respond(call.callId, false, FAILED);
       }
     },
-    [latest, handleDelegate, handleStartSession, handleOwned, handleShowArtifact],
+    [latest, handleDelegate, handleStartSession, handleOwned, handleShowArtifact, handleBrowserCall],
   );
 
   /** A call ended without our answer (timeout, cancel, session stop): it no longer waits. */
@@ -508,6 +513,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
     (payload: unknown) => {
       const callId = (payload as { callId?: unknown } | null)?.callId;
       if (typeof callId !== 'string') return;
+      handleBrowserEnded(callId);
       // An allowed call is on no card any more: it is skipped, or told through its request.
       if (approved.current.has(callId)) {
         endedApproved.current.add(callId);
@@ -536,7 +542,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
         return;
       }
     },
-    [latest, showCard, bump],
+    [latest, showCard, bump, handleBrowserEnded],
   );
 
   useEffect(() => {
@@ -572,6 +578,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
   }, [sessions, bump]);
 
   const chooseCard = (sessionId: string, cardId: string, optionId: string): boolean => {
+    if (browser.chooseCard(sessionId, cardId, optionId)) return true;
     const folder = folderCards.current.get(cardId);
     if (folder !== undefined && folder.sessionId === sessionId) {
       folderCards.current.delete(cardId);
@@ -623,8 +630,10 @@ export function useAgentTools(deps: AgentToolsDeps): {
     chooseCard,
     hasGrant: (sessionId) => grants.current.has(sessionId),
     revokeGrant,
+    hasBrowserGrant: browser.hasGrant,
+    revokeBrowserGrant: browser.revokeGrant,
     isWaiting: (sessionId) =>
-      waiting.current.has(sessionId) ||
+      browser.isWaiting(sessionId) || waiting.current.has(sessionId) ||
       [...folderCards.current.values()].some((folder) => folder.sessionId === sessionId),
   };
 }

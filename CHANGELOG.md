@@ -6,17 +6,19 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Added
 
-- **A browser beside the chat.** Open links or addresses in the Browser inspector tab, with session-isolated WebKit pages, navigation, console, snapshots and agent interactions. Browser tools ask for a session grant; sending files asks separately. Chromium debug opens an isolated installed Chrome or Brave window for full network, file, trace, CPU, heap and optional Lighthouse tools.
+- **A browser beside the chat.** Open links or addresses in the Browser inspector tab, with session-isolated WebKit pages, navigation, console, snapshots and agent interactions. The 19 WebKit operations ask for a session grant on a card in the chat. Capture, downloads and file uploads are refused.
 
 ### Changed
 
-- **A compact browser toolbar.** Navigation, the address and element selection share one row, with page tabs above it. Browser choices and debugging tools have their own menu.
+- **A compact browser toolbar.** Navigation, the address and element selection share one row, with page tabs above it. Console and supported debugging tools have their own menu.
 - **Site information in the browser.** See the connection, cookie count and agent access for the current page, and clear its cookies and origin storage. A menu keeps a still image of the page behind it instead of showing an empty panel.
 
 ### Fixed
 
+- **Browser tools wait for a new page.** An operation issued immediately after opening a tab waits for its page helper, instead of failing before the document is ready. The wait keeps its original tab and timeout.
+- **Private browser form values.** Snapshots omit passwords, one-time codes and card autocomplete values. Automatic popups are blocked and permitted page-created tabs stay in the background.
+- **Browser tabs survive an agent exit.** Ending or crashing an agent revokes its browser access without closing the user's pages or losing their login and unfinished forms.
 - **Browser tools on sites with a strict content policy.** Native JavaScript expressions and console reads use WebKit's page-world compiler, so a site's ban on `eval` does not block the tools. The site's policy remains unchanged.
-- **Navigation past a page dialog.** Navigating, reloading or going back/forward dismisses a pending page dialog before WebKit starts the new document, so the dialog cannot keep the navigation waiting.
 - **Closing browser pages releases their process state.** Closed views cancel pending operations and ask WebKit to end and reset the page process, including a page running a script that never yields.
 - **Browser tabs and page controls.** A tab strip, blank new tabs and the page menu now follow the compact browser layout, with native page zoom, copying/opening links and a clearable list of recent pages. Diagnostic tools have their own menu.
 - **Responsive pages in the browser.** WebKit now includes its Safari compatibility token and Zorvo identity, so sites such as Google serve a layout that follows the panel width.

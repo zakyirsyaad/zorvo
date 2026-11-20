@@ -208,10 +208,31 @@ fn a_workers_listing_shows_done_alone() {
             listed.contains("\"$ZORVO_TOOLS\" tools done '{\"outcome\""),
             "{listed}"
         );
-        for tool in COORDINATOR_TOOLS {
+        for tool in zorvo_lib::agent_tools::tools::TOOL_NAMES {
             assert!(!listed.contains(tool), "{tool} listed: {listed}");
         }
     }
+}
+
+#[test]
+fn the_bare_program_in_a_workers_shell_lists_done_alone() {
+    let rig = rig("worker-bare");
+    let token = worker_token(&rig, "w1");
+    let output = Command::new(BINARY)
+        .env("ZORVO_MCP_SOCKET", &rig.socket)
+        .env("ZORVO_MCP_TOKEN", &token)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let shown = text(&output.stderr);
+    assert!(shown.contains("tools done"), "{shown}");
+    for tool in zorvo_lib::agent_tools::tools::TOOL_NAMES {
+        assert!(!shown.contains(tool), "{tool} listed: {shown}");
+    }
+    assert!(!shown.contains(&token), "the token is never printed");
 }
 
 #[test]

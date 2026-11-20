@@ -1,4 +1,4 @@
-import type { DelegationLink, Session, WorkerOutcome, WorkerTurnEnd } from '../types';
+import type { DelegationLink, PersistedState, Session, WorkerOutcome, WorkerTurnEnd } from '../types';
 import { isOpenLink, openDelegatesOf } from './delegation';
 import { firstChars, isArchived } from './session-helpers';
 import { escapeVisible, escapeVisibleLines } from './visible-text';
@@ -208,9 +208,13 @@ export function withOutcome(link: DelegationLink, outcome: WorkerOutcome): Deleg
   return { ...link, outcome };
 }
 
-/** A further task for the same worker: the earlier outcome no longer applies. */
-export function withNewTask(link: DelegationLink, task: string): DelegationLink {
-  return { ...link, task, outcome: null };
+/**
+ * A further task for the same worker: the earlier outcome no longer applies. `sentAt` is when the
+ * task went out: an outcome the worker recorded since then answers this task and stays.
+ */
+export function withNewTask(link: DelegationLink, task: string, sentAt?: number): DelegationLink {
+  const answersThis = sentAt !== undefined && link.outcome != null && link.outcome.at >= sentAt;
+  return { ...link, task, outcome: answersThis ? link.outcome : null };
 }
 
 /** Marks the report as delivered. Its words are not kept: only the result and its time. */
@@ -236,4 +240,24 @@ export function cleanFiles(files: readonly string[] | undefined): string[] | und
     .filter((file) => file !== '')
     .slice(0, WORKER_FILES_MAX);
   return cleaned.length > 0 ? cleaned : undefined;
+}
+
+/**
+ * Applies `change` to the link the state holds now for a session. A session with no link, or an id
+ * the state does not know, is left alone and the same state comes back.
+ */
+export function withLinkChange(
+  state: PersistedState,
+  sessionId: string,
+  change: (link: DelegationLink) => DelegationLink,
+): PersistedState {
+  const target = state.sessions.find((session) => session.id === sessionId);
+  if (target === undefined || target.delegatedFrom == null) return state;
+  const link = target.delegatedFrom;
+  return {
+    ...state,
+    sessions: state.sessions.map((session) =>
+      session.id === sessionId ? { ...session, delegatedFrom: change(link) } : session,
+    ),
+  };
 }

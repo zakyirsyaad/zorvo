@@ -117,7 +117,7 @@ import { AppUpdateNotice } from "./components/AppUpdateNotice";
 import { restartWarning } from "./lib/app-update";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { useAgentTools } from "./hooks/useAgentTools";
-import { workerHandleOf, workerStateOf } from "./lib/workers";
+import { withLinkChange, workerHandleOf, workerStateOf } from "./lib/workers";
 import { useBrowserAgentTools } from "./hooks/useBrowserAgentTools";
 import { useBrowserOpening } from "./hooks/useBrowserOpening";
 import { BrowserPanel } from "./components/browser/BrowserPanel";
@@ -189,7 +189,7 @@ import {
   type AgentOptions,
   type ProbedOptions,
 } from "./lib/acp-draft";
-import type { AgentProfile, ArtifactCard, ArtifactComment, ReviewComment, Session, SessionWorktree, Settings } from "./types";
+import type { AgentProfile, ArtifactCard, ArtifactComment, ReviewComment, DelegationLink, Session, SessionWorktree, Settings } from "./types";
 import { replyBlockedReason } from "./lib/reply-quote";
 
 const NO_FOLDER_NOTICE = "Open a project folder first: choose one from the folder chip by the message box.";
@@ -494,6 +494,12 @@ export default function App() {
   const patchSession = useCallback(
     (sessionId: string, patch: Partial<Session>) =>
       updateState((prev) => patchSessionIn(prev, sessionId, patch)),
+    [updateState],
+  );
+
+  const updateLink = useCallback(
+    (sessionId: string, change: (link: DelegationLink) => DelegationLink) =>
+      updateState((prev) => withLinkChange(prev, sessionId, change)),
     [updateState],
   );
 
@@ -1184,7 +1190,7 @@ export default function App() {
     send: acp.send,
     startSession,
     selectSession: handleSelectSession,
-    patchSession,
+    updateLink,
     giveBack: giveBackMessage,
     onNotice: setNotice,
   });

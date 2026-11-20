@@ -5,10 +5,10 @@ import { useDelegation } from "../hooks/useDelegation";
 import { NO_CHOICES, type AcpChoices } from "../lib/acp-draft";
 import { buildDelegatePrompt } from "../lib/delegation";
 import { createStartPlaces } from "../lib/start-places";
-import { MAX_AT_WORK } from "../lib/workers";
+import { MAX_AT_WORK, withLinkChange } from "../lib/workers";
 import { newSessionRecord, type SessionSpec, type StartSessionOptions } from "../lib/session-start";
 import type { FirstMessage } from "../hooks/session-engine/useAcpEngine";
-import type { AgentProfile, ChatMessage, DelegationLink, Session } from "../types";
+import type { AgentProfile, ChatMessage, DelegationLink, PersistedState, Session } from "../types";
 import { makeProfile } from "./fixtures/agents";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
@@ -118,10 +118,13 @@ function setup(input: HarnessInput) {
   const cannotPrompt = new Set(input.cannotPrompt ?? []);
   const sendResult = input.sendResult ?? true;
   const places = createStartPlaces();
+  // What the state holds now: changes made in one tick compose, as the app's functional updater does.
+  const owned: { current: readonly Session[] } = { current: input.sessions };
 
   const hook = renderHook(
     () => {
       const [sessions, setSessions] = useState<readonly Session[]>(input.sessions);
+      owned.current = sessions;
       const [transcripts, setTranscripts] = useState<Readonly<Record<string, ChatMessage[]>>>(
         input.transcripts ?? {},
       );
@@ -143,9 +146,14 @@ function setup(input: HarnessInput) {
         selectSession: (sessionId) => {
           selections.push(sessionId);
         },
-        patchSession: (sessionId, patch) => {
-          patches.push({ sessionId, patch });
-          setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, ...patch } : s)));
+        updateLink: (sessionId, change) => {
+          const next = withLinkChange({ sessions: owned.current } as unknown as PersistedState, sessionId, change)
+            .sessions as readonly Session[];
+          if (next === owned.current) return;
+          owned.current = next;
+          const delegatedFrom = next.find((s) => s.id === sessionId)?.delegatedFrom;
+          patches.push({ sessionId, patch: { delegatedFrom } });
+          setSessions(next);
         },
         giveBack: (sessionId, text) => {
           givesBack.push({ sessionId, text });
@@ -1761,16 +1769,64 @@ describe("useDelegation recordDone", () => {
 
   it("writes nothing and returns false for an ended link, an archived or a missing session", () => {
     const ended = delegateSession({ id: "w-1", delegatedFrom: link({ endedAt: 9 }) });
-    const { result, patches } = setup({ sessions: [sourceSession(), ended] });
+    const archived = delegateSession({ id: "w-2", archivedAt: 5, delegatedFrom: link({ handle: "worker-2" }) });
+    const { result, patches } = setup({ sessions: [sourceSession(), ended, archived] });
     let results: boolean[] = [];
     act(() => {
       results = [
         result.current.delegation.recordDone("w-1", { result: "failed", summary: "x" }),
+        result.current.delegation.recordDone("w-2", { result: "failed", summary: "x" }),
         result.current.delegation.recordDone("nope", { result: "failed", summary: "x" }),
       ];
     });
-    expect(results).toEqual([false, false]);
+    expect(results).toEqual([false, false, false]);
     expect(patches).toEqual([]);
+  });
+
+  it("answers false when the summary is empty once cleaned", () => {
+    const { result, patches } = setup(base());
+    let ok = true;
+    act(() => {
+      ok = result.current.delegation.recordDone("w-1", { result: "failed", summary: " \n " });
+    });
+    expect(ok).toBe(false);
+    expect(patches).toEqual([]);
+  });
+
+  it("End worker followed by done in one tick leaves the link ended with no outcome", () => {
+    const env = setup(base());
+    act(() => {
+      env.result.current.delegation.end("w-1");
+      env.result.current.delegation.recordDone("w-1", { result: "succeeded", summary: "late" });
+    });
+    const final = env.result.current.sessions.find((s) => s.id === "w-1")?.delegatedFrom;
+    expect(final?.endedAt).toEqual(expect.any(Number));
+    expect(final?.outcome ?? null).toBeNull();
+  });
+
+  it("two done calls in one tick leave the second outcome", () => {
+    const env = setup(base());
+    act(() => {
+      env.result.current.delegation.recordDone("w-1", { result: "succeeded", summary: "One" });
+      env.result.current.delegation.recordDone("w-1", { result: "failed", summary: "Two" });
+    });
+    const final = env.result.current.sessions.find((s) => s.id === "w-1")?.delegatedFrom;
+    expect(final?.outcome).toMatchObject({ result: "failed", summary: "Two" });
+  });
+
+  it("done in the same tick as a further task keeps both the task and the outcome", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession({ id: "w-1", delegatedFrom: link({ handle: "worker-1" }) })],
+      transcripts: { "s-a": [{ id: "m1", role: "user", content: "Do it" } as ChatMessage] },
+    });
+    await act(async () => {
+      const sent = env.result.current.delegation.sendToWorker("s-a", "w-1", "Next task");
+      env.result.current.delegation.recordDone("w-1", { result: "succeeded", summary: "Fine" });
+      await sent;
+    });
+    const final = env.result.current.sessions.find((s) => s.id === "w-1")?.delegatedFrom;
+    expect(final?.task).toBe("Next task");
+    expect(final?.outcome).toMatchObject({ summary: "Fine" });
   });
 
   it("is recorded even when the worker's turn is not running", () => {

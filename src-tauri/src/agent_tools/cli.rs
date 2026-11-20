@@ -67,7 +67,7 @@ pub fn is_agent_environment() -> bool {
 /// command is used and returns the exit code. The app must not open then: it
 /// would be a second Zorvo window, started by an agent, that never exits.
 pub fn refuse_app_start() -> i32 {
-    eprintln!("{}", usage(&tool_list()));
+    eprintln!("{}", usage(&served_tools()));
     eprintln!(
         "This shell belongs to an agent session, so the app itself does not start here. \
          To start it anyway, unset {SOCKET_VARIABLE}, {TOKEN_VARIABLE} and {TOOLS_VARIABLE} first."

@@ -31,7 +31,7 @@ import { isArchived } from '../lib/session-helpers';
 import type { StartPlaces } from '../lib/start-places';
 import { atWorkCount, cleanFiles, cleanSummary, isReportOf, issuedWorkerHandles, nextWorkerHandle, startRefusal, withNewTask, withOutcome, workerHandleOf } from '../lib/workers';
 import type { SessionSpec, StartSessionOptions } from '../lib/session-start';
-import type { AgentProfile, ChatMessage, Session, SessionWorktree } from '../types';
+import type { AgentProfile, ChatMessage, DelegationLink, Session, SessionWorktree } from '../types';
 import type { AttentionReason, FirstMessage } from './session-engine/useAcpEngine';
 import { useLatest } from './useLatest';
 import { useWorkerReports } from './useWorkerReports';
@@ -56,7 +56,8 @@ export interface DelegationDeps {
   /** `options.choices` are the dialog's picks; `changesToApply` applies them before the first prompt. */
   startSession: (spec: SessionSpec, first?: FirstMessage, options?: StartSessionOptions) => void;
   selectSession: (sessionId: string) => void;
-  patchSession: (sessionId: string, patch: Partial<Session>) => void;
+  /** Changes the link the state holds now for a session; two changes in one tick compose. */
+  updateLink: (sessionId: string, change: (link: DelegationLink) => DelegationLink) => void;
   giveBack: (sessionId: string, text: string) => void;
   onNotice: (message: string) => void;
 }
@@ -329,14 +330,14 @@ export function useDelegation(deps: DelegationDeps): {
     const files = cleanFiles(done.files);
     const summary = cleanSummary(done.summary);
     if (summary === '') return false;
-    current.patchSession(workerId, {
-      delegatedFrom: withOutcome(link, {
-        result: done.result,
-        at: Date.now(),
-        summary,
-        ...(files !== undefined ? { files } : {}),
-      }),
-    });
+    const outcome = {
+      result: done.result,
+      at: Date.now(),
+      summary,
+      ...(files !== undefined ? { files } : {}),
+    };
+    // The link as it is when the write lands: a worker ended meanwhile stays ended and gets no outcome.
+    current.updateLink(workerId, (latestLink) => (isOpenLink(latestLink) ? withOutcome(latestLink, outcome) : latestLink));
     return true;
   };
 
@@ -346,7 +347,8 @@ export function useDelegation(deps: DelegationDeps): {
     const link = session?.delegatedFrom;
     if (session === undefined || link === null || link === undefined) return;
 
-    current.patchSession(delegateId, { delegatedFrom: { ...link, endedAt: Date.now() } });
+    const endedAt = Date.now();
+    current.updateLink(delegateId, (latestLink) => (latestLink.endedAt == null ? { ...latestLink, endedAt } : latestLink));
     reports.drop(delegateId);
   };
 
@@ -507,6 +509,7 @@ export function useDelegation(deps: DelegationDeps): {
     // Held before anything awaits: a second task in the same tick must not reach the same turn,
     // and the send takes a place, so it counts against the limit until the delegate is at work.
     sendingTo.current.set(delegate.id, current.places.take(source.id));
+    const sentAt = Date.now();
     let isTaken: boolean;
     try {
       isTaken = await current.send(delegate.id, task, options.attachments ?? [], {
@@ -520,7 +523,7 @@ export function useDelegation(deps: DelegationDeps): {
       return refusal;
     }
     // The next report quotes the task it answers.
-    current.patchSession(delegate.id, { delegatedFrom: withNewTask(link, task) });
+    current.updateLink(delegate.id, (latestLink) => withNewTask(latestLink, task, sentAt));
     return { ok: true, kind: 'sent', sessionId: delegate.id, sessionName: delegate.name };
   };
 

@@ -13,6 +13,7 @@ import {
   owedWorkersOf,
   startRefusal,
   toolsRoleOf,
+  withLinkChange,
   withNewTask,
   withOutcome,
   withReported,
@@ -21,7 +22,7 @@ import {
   workerHandleOf,
   workerStateOf,
 } from '../lib/workers';
-import type { DelegationLink, Session } from '../types';
+import type { DelegationLink, PersistedState, Session } from '../types';
 
 const link: DelegationLink = { sessionId: 'a', task: 't', startedAt: 100 };
 const idle = { isBusy: false, isWaiting: false };
@@ -163,6 +164,13 @@ describe('toolsRoleOf', () => {
   test('a fork of a worker gets no tools', () => {
     expect(toolsRoleOf({ forkedFrom: 'w' }, [{ id: 'w', delegatedFrom: link }])).toBeNull();
   });
+  test('a fork of a fork of a session with no role stays without one', () => {
+    const sessions = [
+      { id: 'w', delegatedFrom: link },
+      { id: 'f1', forkedFrom: 'w' },
+    ];
+    expect(toolsRoleOf({ forkedFrom: 'f1' }, sessions)).toBeNull();
+  });
   test('a fork of a handoff or compare-run session gets no tools', () => {
     expect(toolsRoleOf({ forkedFrom: 'o' }, [{ id: 'o', openedBy: { sessionId: 'a', at: 1 } }])).toBeNull();
     expect(toolsRoleOf({ forkedFrom: 'c' }, [{ id: 'c', compareRunId: 'r' }])).toBeNull();
@@ -279,5 +287,54 @@ describe('cleanFiles', () => {
     expect(cleanFiles([])).toBeUndefined();
     expect(cleanFiles(undefined)).toBeUndefined();
     expect(cleanFiles([' '])).toBeUndefined();
+  });
+});
+
+describe('withLinkChange', () => {
+  const stateOf = (sessions: Session[]): PersistedState => ({ sessions }) as unknown as PersistedState;
+  const worker = (id: string, own: DelegationLink | null = link) => session({ id, delegatedFrom: own });
+
+  test('the change sees the link the state holds now', () => {
+    const state = stateOf([worker('w', { ...link, task: 'now' })]);
+    let seen: DelegationLink | undefined;
+    withLinkChange(state, 'w', (current) => {
+      seen = current;
+      return current;
+    });
+    expect(seen?.task).toBe('now');
+  });
+
+  test('two changes in sequence compose', () => {
+    const first = withLinkChange(stateOf([worker('w')]), 'w', (current) => ({ ...current, endedAt: 7 }));
+    const second = withLinkChange(first, 'w', (current) => withOutcome(current, { result: 'failed', at: 8, summary: 's' }));
+    const result = second.sessions[0].delegatedFrom;
+    expect(result?.endedAt).toBe(7);
+    expect(result?.outcome?.result).toBe('failed');
+  });
+
+  test('a session with no link is untouched', () => {
+    const state = stateOf([worker('w', null), session({ id: 'x' })]);
+    expect(withLinkChange(state, 'w', (current) => ({ ...current, endedAt: 1 }))).toBe(state);
+    expect(withLinkChange(state, 'x', (current) => ({ ...current, endedAt: 1 }))).toBe(state);
+  });
+
+  test('an unknown id changes nothing and returns the same state', () => {
+    const state = stateOf([worker('w')]);
+    expect(withLinkChange(state, 'nope', (current) => ({ ...current, endedAt: 1 }))).toBe(state);
+  });
+
+  test('other sessions are returned unchanged', () => {
+    const other = worker('o');
+    const next = withLinkChange(stateOf([worker('w'), other]), 'w', (current) => ({ ...current, endedAt: 1 }));
+    expect(next.sessions[1]).toBe(other);
+  });
+});
+
+describe('withNewTask since', () => {
+  test('an outcome recorded since the task went out stays', () => {
+    const answered = { ...link, outcome: { result: 'succeeded' as const, at: 50, summary: 's' } };
+    expect(withNewTask(answered, 'next', 50).outcome).toEqual(answered.outcome);
+    expect(withNewTask(answered, 'next', 51).outcome).toBeNull();
+    expect(withNewTask(answered, 'next').outcome).toBeNull();
   });
 });

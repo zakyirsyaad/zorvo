@@ -1,6 +1,7 @@
 //! Draws a fixture artboard through `artifacts::render` in a real Tauri app and checks the
-//! pictures and the PDF. `harness = false`: libtest runs every test on a thread of its own, and
-//! Tauri's event loop can only be made on the process's main thread, which `main` is here.
+//! pictures, the PDF, and three PDFs joined into one (`join_pdfs`). `harness = false`: libtest
+//! runs every test on a thread of its own, and Tauri's event loop can only be made on the
+//! process's main thread, which `main` is here.
 //!
 //! It also shows the 40-artboard fixture through the canvas view (`view::show_canvas`) and checks
 //! the two wry facts the canvas rests on: the comment script runs inside the artboards' frames,
@@ -23,7 +24,9 @@ use tauri::{Listener, Manager};
 use zorvo_lib::artifacts::canvas_view::{ShownCanvas, CANVAS_PICK, CANVAS_VIEW};
 use zorvo_lib::artifacts::commands::{show_canvas, CanvasRead};
 use zorvo_lib::artifacts::protocol::{canvas_file_url, Served};
-use zorvo_lib::artifacts::render::{render_pdf, snapshot_png, RENDER_FAILED};
+use zorvo_lib::artifacts::render::{
+    join_pdfs, pdf_page_sizes, render_pdf, snapshot_png, RENDER_FAILED,
+};
 use zorvo_lib::artifacts::store::ArtifactStore;
 use zorvo_lib::artifacts::view::{self, Bounds};
 
@@ -95,13 +98,35 @@ fn check(app: &tauri::AppHandle, folder: &Path) {
             png.len()
         );
     }
-    let pdf = render_pdf(app, Arc::clone(&served), url, 1440, 900).expect("make the PDF");
+    let pdf = render_pdf(app, Arc::clone(&served), url.clone(), 1440, 900).expect("make the PDF");
     let (pages, media_box) = pdf_pages(&pdf);
     assert_eq!(pages, 1, "PDF pages");
     assert_eq!(media_box, "0 0 1440 900", "PDF page box");
     println!(
         "pdf: {pages} page, MediaBox [{media_box}], {} bytes",
         pdf.len()
+    );
+    let sizes = [(1440, 900), (390, 844), (800, 600)];
+    let pages = sizes
+        .iter()
+        .map(|&(width, height)| {
+            render_pdf(app, Arc::clone(&served), url.clone(), width, height).expect("make a page")
+        })
+        .collect();
+    let joined = join_pdfs(pages).expect("join the pages");
+    let joined_sizes = pdf_page_sizes(&joined).expect("read the joined PDF");
+    let expected: Vec<(f64, f64)> = sizes
+        .iter()
+        .map(|&(width, height)| (f64::from(width), f64::from(height)))
+        .collect();
+    assert_eq!(
+        joined_sizes, expected,
+        "joined pages, in order, at their sizes"
+    );
+    println!(
+        "joined pdf: {} pages {joined_sizes:?}, {} bytes",
+        joined_sizes.len(),
+        joined.len()
     );
     let refused = snapshot_png(app, served, "https://example.com/".into(), 1440, 900, 720);
     assert_eq!(

@@ -21,6 +21,8 @@ export interface ArtifactsPanelProps {
   isExpanded: boolean;
   onToggleExpanded: () => void;
   onError: (message: string) => void;
+  /** A notice that is not an error (a canvas export's count); absent, `onError` says it. */
+  onNotice?: (message: string, tone: "info" | "warning") => void;
   /** The session's artifact comments, main window only. */
   comments?: ArtifactCommentsState;
   addReview?: AddArtifactReview;
@@ -138,6 +140,7 @@ export function ArtifactsPanel({
   isExpanded,
   onToggleExpanded,
   onError,
+  onNotice,
   comments,
   addReview,
   cwd,
@@ -168,6 +171,7 @@ export function ArtifactsPanel({
         isExpanded={isExpanded}
         onToggleExpanded={onToggleExpanded}
         onError={onError}
+        onNotice={onNotice}
         comments={comments}
         addReview={addReview}
         cwd={cwd}

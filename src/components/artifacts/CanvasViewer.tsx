@@ -7,10 +7,11 @@ import type { ArtifactCommentsState } from "../../hooks/useArtifactComments";
 import type { AddArtifactReview } from "../../hooks/useReviewWiring";
 import { enqueueArtifactViewCall } from "../../hooks/useArtifactView";
 import { useLatest } from "../../hooks/useLatest";
-import { FOLDER_NOT_FOUND, artboardCount, buildMessage, buildSectionMessage, canvasShellState, pickMessage } from "../../lib/canvas";
+import { FOLDER_NOT_FOUND, artboardCount, buildMessage, buildSectionMessage, canvasShellState, exportNotice, parseExportOutcome, pickMessage } from "../../lib/canvas";
 import { ArtifactCommentStrip } from "./ArtifactCommentStrip";
 import { ArtifactPageBox } from "./ArtifactPageBox";
 import { CanvasHeader } from "./CanvasHeader";
+import type { ExportFormat, ExportScope } from "./CanvasExportMenu";
 
 export interface CanvasViewerProps {
   sessionId: string;
@@ -22,6 +23,8 @@ export interface CanvasViewerProps {
   isExpanded: boolean;
   onToggleExpanded: () => void;
   onError: (message: string) => void;
+  /** A notice that is not an error, such as how many artboards were exported; absent, `onError` says it. */
+  onNotice?: (message: string, tone: "info" | "warning") => void;
   /** Something of the viewer's parent is open over the canvas. */
   isCovered?: boolean;
   /** The session's artifact comments; absent (a popout), no Comment button and no strip. */
@@ -36,6 +39,7 @@ export interface CanvasViewerProps {
 }
 
 const COULD_NOT_SHOW = "Zorvo could not show that canvas.";
+const COULD_NOT_EXPORT = "Zorvo could not export those artboards.";
 
 /**
  * A canvas in the artifact view: Zorvo's wrapper page in the same native view a page uses, told what
@@ -50,6 +54,7 @@ export function CanvasViewer({
   isExpanded,
   onToggleExpanded,
   onError,
+  onNotice,
   isCovered = false,
   comments,
   addReview,
@@ -59,6 +64,7 @@ export function CanvasViewer({
 }: CanvasViewerProps) {
   const canvas = useCanvas(sessionId, canvasKey, turnsEnded);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const onErrorRef = useLatest(onError);
   const { shown, read, selected, lastGood, thumbs } = canvas;
   useCanvasMarks(sessionId, canvasKey, comments?.comments, shown?.boards, onError);
@@ -97,6 +103,21 @@ export function CanvasViewer({
           },
         }
       : undefined;
+  const exportArtboards = (scope: ExportScope, format: ExportFormat) => {
+    if (scope === "selected" && selected === null) return;
+    const artboardIds = scope === "selected" ? [selected] : null;
+    setIsExporting(true);
+    invoke("canvas_export", { sessionId, key: canvasKey, artboardIds, format })
+      .then((answer) => {
+        const outcome = parseExportOutcome(answer);
+        if (outcome === null) return;
+        const { message, tone } = exportNotice(outcome, lastGood);
+        if (onNotice) onNotice(message, tone);
+        else onError(message);
+      })
+      .catch((error: unknown) => onError(typeof error === "string" ? error : COULD_NOT_EXPORT))
+      .finally(() => setIsExporting(false));
+  };
   const isFolderGone = read?.error === FOLDER_NOT_FOUND;
   const error = read?.error && !isFolderGone ? read.error : null;
 
@@ -114,6 +135,7 @@ export function CanvasViewer({
         onCommand={command}
         onMenuOpen={setIsMenuOpen}
         handoff={handoff}
+        exporting={shown !== null && !isFolderGone ? { isExporting, onExport: exportArtboards } : undefined}
         commenting={
           comments && shown !== null
             ? {

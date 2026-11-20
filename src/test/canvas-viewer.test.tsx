@@ -176,6 +176,63 @@ describe("the canvas viewer", () => {
     await waitFor(() => expect(JSON.parse((calls("canvas_view_apply").at(-1) as { state: string }).state).selected).toBe("pay-b"));
   });
 
+  it("offers the export menu items for a selection and for the whole canvas", async () => {
+    show();
+    await waitFor(() => expect(calls("canvas_view_apply")).toHaveLength(1));
+
+    // No selection: only the whole canvas.
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["All artboards as PNG", "Whole canvas as PDF"]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Whole canvas as PDF" }));
+    await waitFor(() => expect(calls("canvas_export")).toEqual([{ sessionId: SESSION, key: KEY, artboardIds: null, format: "pdf" }]));
+
+    act(() => deliver("canvas-view", { sessionId: SESSION, key: KEY, kind: "select", artboardId: "pay-b" }));
+    expect(screen.getAllByRole("button", { name: "Export" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "This artboard as PNG",
+      "This artboard as PDF",
+      "All artboards as PNG",
+      "Whole canvas as PDF",
+    ]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "This artboard as PNG" }));
+    await waitFor(() => expect(calls("canvas_export").at(-1)).toEqual({ sessionId: SESSION, key: KEY, artboardIds: ["pay-b"], format: "png" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Export" }).hasAttribute("disabled")).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "All artboards as PNG" }));
+    await waitFor(() => expect(calls("canvas_export").at(-1)).toEqual({ sessionId: SESSION, key: KEY, artboardIds: null, format: "png" }));
+  });
+
+  it("says how many were exported and which could not be drawn", async () => {
+    let outcome: unknown = { written: 3, failed: [] };
+    invoke.mockImplementation((cmd) => (cmd === "canvas_export" ? Promise.resolve(outcome) : Promise.resolve(cmd === "canvas_read" ? answer : undefined)));
+    const onNotice = vi.fn();
+    const { props } = show({ onNotice });
+    await waitFor(() => expect(calls("canvas_view_apply")).toHaveLength(1));
+    const exportAll = async () => {
+      await waitFor(() => expect(screen.getByRole("button", { name: "Export" }).hasAttribute("disabled")).toBe(false));
+      fireEvent.click(screen.getByRole("button", { name: "Export" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "All artboards as PNG" }));
+    };
+
+    await exportAll();
+    await waitFor(() => expect(onNotice).toHaveBeenLastCalledWith("Exported 3 artboards.", "info"));
+
+    outcome = { written: 1, failed: ["pay-a", "pay-b"] };
+    await exportAll();
+    await waitFor(() => expect(onNotice).toHaveBeenLastCalledWith("Exported 1 artboard. 2 could not be drawn: Payment A, Payment B.", "warning"));
+
+    // Cancelled in the dialog: nothing to say.
+    outcome = null;
+    await exportAll();
+    await waitFor(() => expect(calls("canvas_export")).toHaveLength(3));
+    expect(onNotice).toHaveBeenCalledTimes(2);
+
+    invoke.mockImplementation((cmd) => (cmd === "canvas_export" ? Promise.reject("Zorvo could not save that file.") : Promise.resolve(cmd === "canvas_read" ? answer : undefined)));
+    await exportAll();
+    await waitFor(() => expect(props.onError).toHaveBeenCalledWith("Zorvo could not save that file."));
+  });
+
   it("keeps the last layout under a bar that says why canvas.json could not be read", async () => {
     show();
     await waitFor(() => expect(calls("canvas_view_apply")).toHaveLength(1));

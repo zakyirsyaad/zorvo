@@ -2,6 +2,7 @@
 //! Design: `docs/superpowers/specs/2026-11-16-artifacts-design.md`.
 
 pub mod canvas;
+pub mod canvas_export;
 pub mod canvas_shell;
 pub mod canvas_view;
 pub mod page_script;

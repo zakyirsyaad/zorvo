@@ -10,9 +10,11 @@ use std::sync::{mpsc, Arc};
 use std::time::{Duration, SystemTime};
 
 use block2::RcBlock;
-use objc2::MainThreadMarker;
+use objc2::rc::Retained;
+use objc2::{AllocAnyThread, MainThreadMarker};
 use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
 use objc2_foundation::{NSData, NSDictionary, NSError, NSNumber, NSPoint, NSRect, NSSize};
+use objc2_pdf_kit::{PDFDisplayBox, PDFDocument};
 use objc2_web_kit::{WKPDFConfiguration, WKSnapshotConfiguration};
 use tauri::{AppHandle, Manager};
 
@@ -439,6 +441,58 @@ fn png_bytes(image: &NSImage) -> Option<Vec<u8>> {
     Some(png.to_vec())
 }
 
+/// One PDF of `pages` (each the PDF of one artboard), the first page of each in order, at its
+/// own size. Any page that PDFKit cannot read fails the whole PDF.
+pub fn join_pdfs(pages: Vec<Vec<u8>>) -> Result<Vec<u8>, String> {
+    let failed = || RENDER_FAILED.to_string();
+    if pages.is_empty() {
+        return Err(failed());
+    }
+    // SAFETY: PDFKit's documents and pages may be used on any thread when each stays on one;
+    // every object here lives and dies in this call. The read documents are kept until the
+    // joined one is written, since their pages are inserted, not copied.
+    unsafe {
+        let joined = PDFDocument::new();
+        let mut sources = Vec::with_capacity(pages.len());
+        for (index, bytes) in pages.iter().enumerate() {
+            let source = read_pdf(bytes).ok_or_else(failed)?;
+            let page = source.pageAtIndex(0).ok_or_else(failed)?;
+            joined.insertPage_atIndex(&page, index);
+            sources.push(source);
+        }
+        if joined.pageCount() != pages.len() {
+            return Err(failed());
+        }
+        let data = joined.dataRepresentation().ok_or_else(failed)?;
+        drop(sources);
+        Ok(data.to_vec())
+    }
+}
+
+/// The media box size of every page of a PDF, in points; `None` when PDFKit cannot read it.
+pub fn pdf_page_sizes(pdf: &[u8]) -> Option<Vec<(f64, f64)>> {
+    let document = read_pdf(pdf)?;
+    // SAFETY: as in `join_pdfs`: one document, used and dropped on this thread.
+    unsafe {
+        (0..document.pageCount())
+            .map(|index| {
+                let bounds = document
+                    .pageAtIndex(index)?
+                    .boundsForBox(PDFDisplayBox::MediaBox);
+                Some((bounds.size.width, bounds.size.height))
+            })
+            .collect()
+    }
+}
+
+fn read_pdf(bytes: &[u8]) -> Option<Retained<PDFDocument>> {
+    let data = NSData::with_bytes(bytes);
+    // SAFETY: `initWithData:` copies what it needs from `data`, which outlives the call.
+    let document = unsafe { PDFDocument::initWithData(PDFDocument::alloc(), &data) }?;
+    // SAFETY: a document just read, on this thread.
+    (unsafe { document.pageCount() } > 0).then_some(document)
+}
+
 /// Ends a drawing's view and its page's process, if it is still there. Main thread only.
 fn end_drawing(id: u64) {
     if let Some(view) = DRAWINGS.with(|drawings| drawings.borrow_mut().remove(&id)) {
@@ -610,6 +664,42 @@ mod tests {
                 Err(RENDER_FAILED.to_string())
             );
         }
+    }
+
+    /// A one-page PDF of `width × height` points, written by hand; PDFKit rebuilds its table.
+    fn one_page_pdf(width: u32, height: u32) -> Vec<u8> {
+        format!(
+            "%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n\
+             2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n\
+             3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] >> endobj\n\
+             trailer << /Root 1 0 R >>\n%%EOF\n"
+        )
+        .into_bytes()
+    }
+
+    #[test]
+    fn join_pdfs_puts_each_page_in_order_at_its_own_size() {
+        let sizes = [(1440, 900), (390, 844), (800, 600)];
+        let joined =
+            join_pdfs(sizes.iter().map(|&(w, h)| one_page_pdf(w, h)).collect()).expect("joined");
+        assert_eq!(
+            pdf_page_sizes(&joined),
+            Some(
+                sizes
+                    .iter()
+                    .map(|&(w, h)| (f64::from(w), f64::from(h)))
+                    .collect()
+            )
+        );
+    }
+
+    #[test]
+    fn join_pdfs_refuses_nothing_and_what_is_not_a_pdf() {
+        assert_eq!(join_pdfs(Vec::new()), Err(RENDER_FAILED.to_string()));
+        assert_eq!(
+            join_pdfs(vec![one_page_pdf(400, 300), b"not a pdf".to_vec()]),
+            Err(RENDER_FAILED.to_string())
+        );
     }
 
     #[test]

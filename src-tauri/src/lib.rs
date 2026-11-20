@@ -705,6 +705,7 @@ pub fn run() {
             artifacts::commands::canvas_show,
             artifacts::commands::canvas_read,
             artifacts::commands::canvas_thumbs,
+            artifacts::commands::canvas_export,
             artifacts::commands::canvas_forget,
             artifacts::commands::artifact_rename,
             artifacts::commands::artifact_delete,

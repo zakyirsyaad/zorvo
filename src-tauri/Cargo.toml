@@ -77,6 +77,8 @@ objc2-foundation = { version = "0.3", features = ["NSData", "NSDictionary", "NSG
 objc2-web-kit = { version = "=0.3.2", default-features = false, features = ["std", "WKWebView", "WKSnapshotConfiguration", "WKPDFConfiguration", "block2", "objc2-app-kit", "objc2-core-foundation"] }
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSImage", "NSBitmapImageRep", "NSImageRep", "NSGraphics"] }
 block2 = "=0.6.2"
+# Joins exported artboards into one PDF (`artifacts/render.rs::join_pdfs`), same objc2 family.
+objc2-pdf-kit = { version = "=0.3.2", default-features = false, features = ["std", "PDFDocument", "PDFPage"] }
 
 # Line numbers for our own code, no debug info for dependencies: keeps
 # target/ small in every checkout and on CI. Leave `incremental` to each

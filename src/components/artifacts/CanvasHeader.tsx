@@ -5,6 +5,7 @@ import { Chip } from "../ui/Chip";
 import { IconButton } from "../ui/IconButton";
 import { Popover, PopoverOption } from "../ui/Popover";
 import type { CanvasSection } from "../../lib/canvas";
+import { CanvasExportMenu, type CanvasExporting } from "./CanvasExportMenu";
 
 export interface CanvasHeaderProps {
   title: string;
@@ -26,6 +27,8 @@ export interface CanvasHeaderProps {
   commenting?: CanvasCommenting;
   /** Pick, Build this and Build section; absent (a popout), none of them. */
   handoff?: CanvasHandoff;
+  /** The Export menu; absent (a popout), no Export. */
+  exporting?: CanvasExporting;
 }
 
 export interface CanvasHandoff {
@@ -53,11 +56,15 @@ function SelectionTools({
   onCommand,
   commenting,
   handoff,
+  exporting,
+  onMenuOpen,
 }: {
   title: string;
   onCommand: (name: string) => void;
   commenting?: CanvasCommenting;
   handoff?: CanvasHandoff;
+  exporting?: CanvasExporting;
+  onMenuOpen: (isOpen: boolean) => void;
 }) {
   return (
     <>
@@ -79,6 +86,7 @@ function SelectionTools({
           Build this
         </Button>
       )}
+      {exporting && <CanvasExportMenu exporting={exporting} hasSelection onMenuOpen={onMenuOpen} />}
       <IconButton label="Focus" size="row" onClick={() => onCommand("focus")}>
         <Scan size={14} />
       </IconButton>
@@ -96,8 +104,9 @@ function SelectionTools({
  * The canvas viewer's header: back, the title and artboard count, Fit, 100%, zoom out and in with the
  * zoom, the Sections menu and Expand. With an artboard selected it also shows that artboard's title
  * with Focus, Previous and Next: in the header when expanded, else in a row of its own under it.
+ * Export sits with the selection, or in the header when nothing is selected.
  */
-export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBack, isExpanded, onToggleExpanded, onCommand, onMenuOpen, commenting, handoff }: CanvasHeaderProps) {
+export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBack, isExpanded, onToggleExpanded, onCommand, onMenuOpen, commenting, handoff, exporting }: CanvasHeaderProps) {
   const [isSectionsOpen, setIsSectionsOpen] = useState(false);
   const percent = `${Math.round(zoom * 100)}%`;
   const setSectionsOpen = (isOpen: boolean) => {
@@ -180,9 +189,10 @@ export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBa
         {isExpanded && selectedTitle !== null && (
           <>
             {DIVIDER}
-            <SelectionTools title={selectedTitle} onCommand={onCommand} commenting={commenting} handoff={handoff} />
+            <SelectionTools title={selectedTitle} onCommand={onCommand} commenting={commenting} handoff={handoff} exporting={exporting} onMenuOpen={onMenuOpen} />
           </>
         )}
+        {exporting && selectedTitle === null && <CanvasExportMenu exporting={exporting} hasSelection={false} onMenuOpen={onMenuOpen} />}
         {DIVIDER}
         {commenting && (
           <IconButton
@@ -200,7 +210,7 @@ export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBa
       </div>
       {!isExpanded && selectedTitle !== null && (
         <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-2">
-          <SelectionTools title={selectedTitle} onCommand={onCommand} commenting={commenting} handoff={handoff} />
+          <SelectionTools title={selectedTitle} onCommand={onCommand} commenting={commenting} handoff={handoff} exporting={exporting} onMenuOpen={onMenuOpen} />
         </div>
       )}
     </>

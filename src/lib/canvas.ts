@@ -243,3 +243,27 @@ export function buildSectionMessage(canvas: Canvas, folder: string, section: Can
   const lines = section.artboards.map((board) => `- ${escapeVisible(board.title)}: ${boardPath(folder, board)} (${sizeOf(board)})`);
   return [head, ...lines].join('\n');
 }
+
+/** What `canvas_export` wrote: how many artboards, and the ids of those that could not be drawn. */
+export interface ExportOutcome {
+  written: number;
+  failed: string[];
+}
+
+/** A `canvas_export` answer: null when the dialog was cancelled or the answer does not fit. */
+export function parseExportOutcome(value: unknown): ExportOutcome | null {
+  if (!isObject(value)) return null;
+  const { written, failed } = value;
+  if (typeof written !== 'number' || !Number.isInteger(written) || written < 0) return null;
+  if (!Array.isArray(failed) || failed.some((id) => typeof id !== 'string')) return null;
+  return { written, failed: failed as string[] };
+}
+
+/** "Exported 3 artboards.", or with the artboards that could not be drawn named by title. */
+export function exportNotice(outcome: ExportOutcome, canvas: Canvas | null): { message: string; tone: 'info' | 'warning' } {
+  const exported = `Exported ${outcome.written} ${outcome.written === 1 ? 'artboard' : 'artboards'}.`;
+  if (outcome.failed.length === 0) return { message: exported, tone: 'info' };
+  const boards = canvas?.sections.flatMap((section) => section.artboards) ?? [];
+  const names = outcome.failed.map((id) => boards.find((board) => board.id === id)?.title ?? id);
+  return { message: `${exported} ${outcome.failed.length} could not be drawn: ${names.join(', ')}.`, tone: 'warning' };
+}

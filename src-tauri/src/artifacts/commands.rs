@@ -10,6 +10,10 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 use super::canvas::{canvas_file, file_sha256, read_canvas, resolve_canvas, Canvas};
+use super::canvas_export::{
+    export_boards, pdf_file_name, png_width, split_drawn, write_new_file, ExportBoard,
+    ExportFormat, ExportOutcome, COULD_NOT_EXPORT, COULD_NOT_SAVE,
+};
 use super::picks::{checked_marks, PageMark};
 use super::protocol::{canvas_file_url, page_url, Served};
 use super::render::{self, Ended, Pushed, ThumbJob, ThumbQueue};
@@ -26,7 +30,6 @@ pub const ARTIFACTS_CHANGED: &str = "artifacts-changed";
 /// Artifact folders of sessions that no longer exist are removed once this old.
 pub const SWEEP_MIN_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 const MAIN_WINDOW: &str = "main";
-const COULD_NOT_SAVE: &str = "Zorvo could not save that file.";
 const COULD_NOT_MARK: &str = "Zorvo could not mark that page.";
 const DEFAULT_EXPORT_NAME: &str = "Artifact";
 
@@ -388,20 +391,24 @@ pub fn list_sessions(artifacts: &ArtifactStore, session_ids: &[String]) -> Vec<S
         .collect()
 }
 
-/// A file name for an exported page: the title's letters, digits, spaces,
-/// `-` and `_`, or "Artifact" when nothing is left.
-pub fn export_file_name(title: &str) -> String {
+/// The title's letters, digits, spaces, `-` and `_` with white space collapsed, or `default`
+/// when nothing is left: a name that is safe as a file name.
+pub fn clean_file_stem(title: &str, default: &str) -> String {
     let kept: String = title
         .chars()
         .filter(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_'))
         .collect();
     let name = kept.split_whitespace().collect::<Vec<_>>().join(" ");
-    let name = if name.is_empty() {
-        DEFAULT_EXPORT_NAME
+    if name.is_empty() {
+        default.to_string()
     } else {
-        &name
-    };
-    format!("{name}.html")
+        name
+    }
+}
+
+/// A file name for an exported page: its cleaned title, or "Artifact" when nothing is left.
+pub fn export_file_name(title: &str) -> String {
+    format!("{}.html", clean_file_stem(title, DEFAULT_EXPORT_NAME))
 }
 
 /// The stored bytes of a version the index lists. Export writes exactly these.
@@ -628,6 +635,130 @@ pub fn artifact_export(
     let destination = chosen.into_path().map_err(|_| COULD_NOT_SAVE.to_string())?;
     std::fs::write(destination, page).map_err(|_| COULD_NOT_SAVE.to_string())?;
     Ok(true)
+}
+
+/// Where an export goes: one file, or a folder for one PNG per artboard.
+enum ExportPlace {
+    File(std::path::PathBuf),
+    Folder(std::path::PathBuf),
+}
+
+/// Asks where to save: a file for one PNG or a PDF, a folder for several PNGs. `None` when
+/// the user cancelled.
+fn choose_export_place(
+    app: &AppHandle,
+    format: ExportFormat,
+    boards: &[ExportBoard],
+    canvas_title: &str,
+) -> Result<Option<ExportPlace>, String> {
+    let dialog = app.dialog().file();
+    let chosen = match (format, boards) {
+        (ExportFormat::Png, [board]) => dialog
+            .set_file_name(format!("{}.png", board.stem))
+            .add_filter("PNG", &["png"])
+            .blocking_save_file()
+            .map(|path| path.into_path().map(ExportPlace::File)),
+        (ExportFormat::Png, _) => dialog
+            .blocking_pick_folder()
+            .map(|path| path.into_path().map(ExportPlace::Folder)),
+        (ExportFormat::Pdf, _) => dialog
+            .set_file_name(pdf_file_name(canvas_title))
+            .add_filter("PDF", &["pdf"])
+            .blocking_save_file()
+            .map(|path| path.into_path().map(ExportPlace::File)),
+    };
+    chosen.transpose().map_err(|_| COULD_NOT_SAVE.to_string())
+}
+
+/// Draws each artboard, one hidden view at a time, as a 2× PNG or a one-page PDF.
+fn draw_for_export(
+    app: &AppHandle,
+    served: &Arc<Served>,
+    session_id: &str,
+    key: &str,
+    format: ExportFormat,
+    boards: Vec<ExportBoard>,
+) -> Vec<(ExportBoard, Result<Vec<u8>, String>)> {
+    boards
+        .into_iter()
+        .map(|board| {
+            let url = canvas_file_url(session_id, key, &board.artboard.file);
+            let (width, height) = (board.artboard.width, board.artboard.height);
+            let served = Arc::clone(served);
+            let drawn = match format {
+                ExportFormat::Png => {
+                    render::snapshot_png(app, served, url, width, height, png_width(width))
+                }
+                ExportFormat::Pdf => render::render_pdf(app, served, url, width, height),
+            };
+            (board, drawn)
+        })
+        .collect()
+}
+
+/// Writes what was drawn to the place chosen and says how many artboards it holds.
+fn write_export(
+    place: ExportPlace,
+    format: ExportFormat,
+    ready: Vec<(ExportBoard, Vec<u8>)>,
+) -> Result<usize, String> {
+    let save = |path: &Path, bytes: &[u8]| {
+        std::fs::write(path, bytes).map_err(|_| COULD_NOT_SAVE.to_string())
+    };
+    if ready.is_empty() {
+        return Ok(0);
+    }
+    let written = ready.len();
+    match (place, format) {
+        (ExportPlace::Folder(folder), _) => {
+            for (board, png) in &ready {
+                write_new_file(&folder, &board.stem, "png", png)?;
+            }
+        }
+        (ExportPlace::File(path), ExportFormat::Png) => save(&path, &ready[0].1)?,
+        (ExportPlace::File(path), ExportFormat::Pdf) => {
+            let pages = ready.into_iter().map(|(_, pdf)| pdf).collect();
+            let joined = render::join_pdfs(pages).map_err(|_| COULD_NOT_EXPORT.to_string())?;
+            save(&path, &joined)?;
+        }
+    }
+    Ok(written)
+}
+
+/// Exports a canvas's artboards (`artboard_ids`, or all of them) as PNG or PDF: asks where,
+/// draws each in a hidden view under the canvas's rules, and writes. `None` when the user
+/// cancelled. An artboard that cannot be drawn is left out and named in `failed`.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn canvas_export(
+    app: AppHandle,
+    store: State<'_, AppStore>,
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    served: State<'_, Arc<Served>>,
+    session_id: String,
+    key: String,
+    artboard_ids: Option<Vec<String>>,
+    format: String,
+) -> Result<Option<ExportOutcome>, String> {
+    let format = ExportFormat::parse(&format)?;
+    let read = read_canvas_entry(
+        &artifacts,
+        |root| store.is_known_workspace(root).unwrap_or(false),
+        &session_id,
+        &key,
+    )?;
+    let canvas = read.canvas.ok_or_else(|| COULD_NOT_EXPORT.to_string())?;
+    let boards = export_boards(&canvas, artboard_ids.as_deref())?;
+    let Some(place) = choose_export_place(&app, format, &boards, &canvas.title)? else {
+        return Ok(None);
+    };
+    let drawn = draw_for_export(&app, &served, &session_id, &key, format, boards);
+    let (ready, failed) = split_drawn(drawn);
+    let written = write_export(place, format, ready)?;
+    Ok(Some(ExportOutcome {
+        written: super::canvas_export::count(written),
+        failed,
+    }))
 }
 
 /// The rectangle clipped to the main window, or `None` when it cannot be shown.

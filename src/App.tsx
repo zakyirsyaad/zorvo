@@ -2324,6 +2324,7 @@ export default function App() {
                     isExpanded
                     onToggleExpanded={() => inspector.setArtifactExpanded(false)}
                     onError={reportError}
+                    onNotice={setNotice}
                     canvases={sessionCanvases}
                     turnsEnded={turnsEnded}
                     comments={artifactComments}
@@ -2475,6 +2476,7 @@ export default function App() {
                     inspector.setArtifactExpanded(true);
                   }}
                   onError={reportError}
+                  onNotice={setNotice}
                   comments={artifactComments}
                   addReview={review.addArtifactReview}
                   cwd={activeSession.cwd}

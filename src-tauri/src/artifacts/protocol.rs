@@ -51,6 +51,11 @@ connect-src 'none'; frame-src 'none'; object-src 'none'; \
 form-action 'none'; base-uri 'none'; \
 sandbox allow-scripts";
 
+/// Sent with every canvas file that is not an artboard page. A file opened as a document (an
+/// `.svg` an artboard navigates to) must not run script or reach the network; the policy is
+/// ignored when the file is loaded as an image, font, style or script by an artboard.
+pub const FILE_CSP: &str = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox";
+
 /// What every view of the scheme serves from.
 pub struct Served {
     pub store: Arc<ArtifactStore>,
@@ -243,8 +248,12 @@ fn respond_canvas(served: &Served, url: CanvasUrl) -> Response<Vec<u8>> {
             let Ok(body) = super::source::read_bytes_checked(&path) else {
                 return not_found();
             };
-            let csp = kind.starts_with("text/html").then_some(BOARD_CSP);
-            canvas_response(kind, csp, body)
+            let csp = if kind.starts_with("text/html") {
+                BOARD_CSP
+            } else {
+                FILE_CSP
+            };
+            canvas_response(kind, Some(csp), body)
         }
         CanvasUrl::Thumb { sha256 } => {
             let path = served.thumbs.join(format!("{sha256}.png"));
@@ -660,12 +669,34 @@ mod tests {
         assert_eq!(image.status(), 200);
         assert_eq!(header(&image, "Content-Type"), "image/png");
         assert_eq!(header(&image, "X-Content-Type-Options"), "nosniff");
-        assert_eq!(header(&image, "Content-Security-Policy"), "");
+        assert_eq!(header(&image, "Content-Security-Policy"), FILE_CSP);
 
         for relative in ["notes.txt", "missing.png", "../x"] {
             let url = canvas_file_url(SESSION, &key, relative);
             assert_eq!(respond(&served, "GET", &url).status(), 404, "{relative}");
         }
+    }
+
+    #[test]
+    fn every_file_that_is_not_an_artboard_carries_file_csp() {
+        let temp = Temp::new("filecsp");
+        let (served, root, key) = canvas_fixture(&temp, Arc::new(AtomicBool::new(true)));
+        std::fs::write(
+            root.join("x.svg"),
+            "<svg onload=\"fetch('https://e.example')\"/>",
+        )
+        .unwrap();
+
+        for relative in ["x.svg", "logo.png", "app.js"] {
+            let response = respond(&served, "GET", &canvas_file_url(SESSION, &key, relative));
+            assert_eq!(response.status(), 200, "{relative}");
+            assert_eq!(header(&response, "Content-Security-Policy"), FILE_CSP);
+            assert_eq!(header(&response, "X-Content-Type-Options"), "nosniff");
+        }
+        assert_eq!(
+            FILE_CSP,
+            "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"
+        );
     }
 
     #[test]

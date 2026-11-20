@@ -1648,3 +1648,28 @@ describe("useDelegation further tasks and the limit", () => {
     expect(places.underWay("s-a")).toBe(0);
   });
 });
+
+describe("useDelegation handles after a restart", () => {
+  const startOne = (hook: ReturnType<typeof setup>) =>
+    act(async () => hook.result.current.delegation.startWorker("s-a", { agentId: "codex-acp", task: "T", byAgent: true }));
+
+  it("does not reissue the handle of a worker whose link ended", async () => {
+    const hook = setup({
+      sessions: [
+        sourceSession(),
+        worker("worker-1", "w1"),
+        worker("worker-2", "w2", { delegatedFrom: link({ handle: "worker-2", endedAt: 99 }) }),
+      ],
+      transcripts: { "s-a": A_MESSAGES },
+    });
+    expect(await startOne(hook)).toMatchObject({ ok: true, handle: "worker-3" });
+  });
+
+  it("does not reissue the handle of an archived worker", async () => {
+    const hook = setup({
+      sessions: [sourceSession(), worker("worker-1", "w1"), worker("worker-2", "w2", { archivedAt: 50 })],
+      transcripts: { "s-a": A_MESSAGES },
+    });
+    expect(await startOne(hook)).toMatchObject({ ok: true, handle: "worker-3" });
+  });
+});

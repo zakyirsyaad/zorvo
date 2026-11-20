@@ -6,6 +6,7 @@ import {
   WORKER_FILES_MAX,
   WORKER_SUMMARY_MAX,
   isReportOwed,
+  issuedWorkerHandles,
   nextWorkerHandle,
   owedWorkersOf,
   startRefusal,
@@ -202,5 +203,28 @@ describe('atWorkCount', () => {
       underWay: 0,
     });
     expect(count).toBe(1);
+  });
+});
+
+describe('issuedWorkerHandles', () => {
+  const owned = (id: string, handle: string | undefined, overrides: Partial<Session> = {}) =>
+    session({ id, delegatedFrom: { ...link, ...(handle !== undefined ? { handle } : {}) }, ...overrides });
+
+  test('lists the handles of open, ended and archived workers of the coordinator', () => {
+    const sessions = [
+      owned('w1', 'worker-1'),
+      owned('w2', 'worker-2', { delegatedFrom: { ...link, handle: 'worker-2', endedAt: 9 } }),
+      owned('w3', 'worker-3', { archivedAt: 5 }),
+    ];
+    expect(issuedWorkerHandles('a', sessions)).toEqual(['worker-1', 'worker-2', 'worker-3']);
+  });
+
+  test('leaves out other coordinators, links with no handle and sessions with no link', () => {
+    const sessions = [
+      owned('w1', 'worker-1', { delegatedFrom: { ...link, sessionId: 'other', handle: 'worker-1' } }),
+      owned('w2', undefined),
+      session({ id: 'plain' }),
+    ];
+    expect(issuedWorkerHandles('a', sessions)).toEqual([]);
   });
 });

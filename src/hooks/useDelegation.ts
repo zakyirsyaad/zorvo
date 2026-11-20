@@ -29,7 +29,7 @@ import { createId } from '../lib/ids';
 import { createSessionWorktree } from '../lib/session-worktree';
 import { isArchived } from '../lib/session-helpers';
 import type { StartPlaces } from '../lib/start-places';
-import { atWorkCount, nextWorkerHandle, startRefusal, withNewTask, workerHandleOf } from '../lib/workers';
+import { atWorkCount, issuedWorkerHandles, nextWorkerHandle, startRefusal, withNewTask, workerHandleOf } from '../lib/workers';
 import type { SessionSpec, StartSessionOptions } from '../lib/session-start';
 import type { AgentProfile, ChatMessage, Session, SessionWorktree } from '../types';
 import type { AttentionReason, FirstMessage } from './session-engine/useAcpEngine';
@@ -354,7 +354,8 @@ export function useDelegation(deps: DelegationDeps): {
     const handle = nextWorkerHandle([
       // The newest handle given in this run: an ended worker's handle must not pass to the next one.
       ...(lastHandle.current.has(coordinatorId) ? [lastHandle.current.get(coordinatorId) as string] : []),
-      ...openDelegatesOf(coordinatorId, current.sessions).flatMap((worker) => workerHandleOf(worker) ?? []),
+      // Every handle the coordinator's saved conversation may name, open or not, after a restart too.
+      ...issuedWorkerHandles(coordinatorId, current.sessions),
       ...[...starting.current.values()].filter((entry) => entry.coordinatorId === coordinatorId).map((entry) => entry.handle),
     ]);
     lastHandle.current.set(coordinatorId, handle);

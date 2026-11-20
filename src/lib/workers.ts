@@ -60,7 +60,9 @@ export function toolsRoleOf(
 /**
  * Where a worker stands. A turn in progress decides first; otherwise the last
  * turn's end does, and a finished turn is read by the outcome the worker
- * reported in it. No turn behind it means no state yet.
+ * reported in it. No turn behind it means no state yet. It trusts `withTurnEnd`
+ * to have cleared an outcome that does not belong to the last turn, so `lastTurn`
+ * must be written before the state is read.
  */
 export function workerStateOf(input: {
   link: DelegationLink;
@@ -89,7 +91,8 @@ export function workerStateOf(input: {
 export function nextWorkerHandle(taken: readonly string[]): string {
   const highest = taken.reduce((max, handle) => {
     const match = WORKER_HANDLE_PATTERN.exec(handle);
-    return match ? Math.max(max, Number(match[1])) : max;
+    const number = match ? Number(match[1]) : NaN;
+    return Number.isSafeInteger(number) ? Math.max(max, number) : max;
   }, 0);
   return `worker-${highest + 1}`;
 }

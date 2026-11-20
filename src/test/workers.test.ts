@@ -99,6 +99,7 @@ describe('handles', () => {
   test('handles count up and an old link is named by its agent', () => {
     expect(nextWorkerHandle(['worker-1', 'worker-3', 'codex'])).toBe('worker-4');
     expect(nextWorkerHandle([])).toBe('worker-1');
+    expect(nextWorkerHandle(['worker-9007199254740992', 'worker-2'])).toBe('worker-3');
     expect(workerHandleOf(session({ profileId: 'codex', delegatedFrom: link }))).toBe('codex');
     expect(workerHandleOf(session({ profileId: 'codex', delegatedFrom: { ...link, handle: 'worker-2' } }))).toBe('worker-2');
     expect(workerHandleOf(session({ profileId: 'codex', delegatedFrom: { ...link, endedAt: 9 } }))).toBeUndefined();
@@ -108,7 +109,7 @@ describe('handles', () => {
     const newer = session({ id: 'w1b', createdAt: 5, delegatedFrom: { ...link, handle: 'worker-1' } });
     const other = session({ id: 'w2', delegatedFrom: { ...link, sessionId: 'b', handle: 'worker-2' } });
     const archived = session({ id: 'w3', archivedAt: 9, delegatedFrom: { ...link, handle: 'worker-3' } });
-    const sessions = [mine, newer, other, archived];
+    const sessions = [newer, mine, other, archived];
     expect(workerByHandle('a', 'worker-1', sessions)?.id).toBe('w1b');
     expect(workerByHandle('a', 'worker-2', sessions)).toBeUndefined();
     expect(workerByHandle('a', 'worker-3', sessions)).toBeUndefined();

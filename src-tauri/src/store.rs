@@ -1443,6 +1443,26 @@ mod tests {
     }
 
     #[test]
+    fn a_multibyte_summary_is_cut_by_characters() {
+        let record: SessionRecord = serde_json::from_value(session_json(serde_json::json!({
+            "delegatedFrom": {
+                "sessionId": "s-a", "task": "x", "startedAt": 5,
+                "outcome": { "result": "failed", "at": 9, "summary": "é".repeat(2500) }
+            }
+        })))
+        .expect("deserialize");
+
+        let summary = record
+            .delegated_from
+            .expect("link")
+            .outcome
+            .expect("outcome")
+            .summary
+            .expect("summary");
+        assert_eq!(summary.chars().count(), 2000);
+    }
+
+    #[test]
     fn a_delegated_from_field_of_the_wrong_shape_loads_none() {
         for delegated_from in [serde_json::json!(5), serde_json::json!({ "task": "x" })] {
             let record: SessionRecord = serde_json::from_value(session_json(

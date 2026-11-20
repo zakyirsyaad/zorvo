@@ -112,7 +112,6 @@ export interface SessionWorktree {
   startCommit?: string;
 }
 
-/** A delegated task: the session that delegated it, the task, and when it ran. */
 /** Which session's agent opened a session, and when. */
 export interface OpenedByLink {
   sessionId: string;
@@ -138,6 +137,7 @@ export interface WorkerLastTurn {
   reason?: string;
 }
 
+/** A delegated task: the session that delegated it, the task, and when it ran. */
 export interface DelegationLink {
   /** A, the session that delegated. */
   sessionId: string;

@@ -17,6 +17,7 @@ import {
   type ToolDetail,
 } from '../types';
 import { markElicitationsUnanswered } from './acp-elicitation';
+import { firstChars } from './session-helpers';
 import { settlePermissionCards } from './acp-events';
 import { diffDetail } from './diff-rows';
 import { normalizeAppearance } from './appearance';
@@ -124,7 +125,7 @@ function validOutcome(value: unknown): WorkerOutcome | undefined {
   return {
     result: value.result,
     at: value.at,
-    ...(typeof value.summary === 'string' ? { summary: value.summary.slice(0, MAX_WORKER_SUMMARY) } : {}),
+    ...(typeof value.summary === 'string' ? { summary: firstChars(value.summary, MAX_WORKER_SUMMARY) } : {}),
     ...(Array.isArray(value.files) ? { files: value.files.filter((file): file is string => typeof file === 'string').slice(0, MAX_WORKER_FILES) } : {}),
   };
 }
@@ -136,7 +137,7 @@ function validLastTurn(value: unknown): WorkerLastTurn | undefined {
   return {
     endedAt: value.endedAt,
     how: value.how as WorkerTurnEnd,
-    ...(typeof value.reason === 'string' ? { reason: value.reason.slice(0, MAX_WORKER_REASON) } : {}),
+    ...(typeof value.reason === 'string' ? { reason: firstChars(value.reason, MAX_WORKER_REASON) } : {}),
   };
 }
 

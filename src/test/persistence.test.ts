@@ -663,6 +663,25 @@ describe("normalizePersistedState - delegation", () => {
     const state = normalizePersistedState({ sessions: [{ ...base, delegatedFrom }] });
 
     expect(state.sessions[0].delegatedFrom?.handle).toBeUndefined();
+    for (const handle of ["worker-0", "worker-x", "Worker-1"]) {
+      const other = normalizePersistedState({ sessions: [{ ...base, delegatedFrom: { ...delegatedFrom, handle } }] });
+      expect(other.sessions[0].delegatedFrom?.handle).toBeUndefined();
+    }
+  });
+
+  it("a summary and a reason are cut by code points, never inside an emoji", () => {
+    const delegatedFrom = {
+      sessionId: "s-a", task: "Do it", startedAt: 5,
+      outcome: { result: "failed", at: 9, summary: "x".repeat(1999) + "😀😀😀" },
+      lastTurn: { endedAt: 10, how: "failed", reason: "y".repeat(299) + "😀😀😀" },
+    };
+
+    const link = normalizePersistedState({ sessions: [{ ...base, delegatedFrom }] }).sessions[0].delegatedFrom;
+
+    expect([...(link?.outcome?.summary ?? "")].length).toBe(2000);
+    expect([...(link?.outcome?.summary ?? "")].pop()).toBe("😀");
+    expect([...(link?.lastTurn?.reason ?? "")].length).toBe(300);
+    expect([...(link?.lastTurn?.reason ?? "")].pop()).toBe("😀");
   });
 
   it("a link cuts a long summary, reason and file list on load", () => {

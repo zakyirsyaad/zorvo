@@ -920,6 +920,13 @@ export default function App() {
     places: startPlaces,
     startSession: (spec, first, options) => startSession(spec, first, options),
   });
+  const readMessages = async (sessionId: string) => {
+    const live = transcripts[sessionId] ?? [];
+    if (transcriptStatus[sessionId] === "ready") return live;
+    if (transcriptStatus[sessionId] === "failed") throw new Error("unreadable");
+    // Not opened in this run: read what was saved, then what arrived since.
+    return savedThenLive(await loadTranscript(sessionId), live);
+  };
   const agentTools = useAgentTools({
     sessions,
     // Only the agents the user has in use, as the @ list and the dialog offer: an agent
@@ -955,13 +962,7 @@ export default function App() {
     onAttention: (sessionId, reason) => notifyAttention(sessionId, reason),
     onNotice: (message) => setNotice(message),
     onArtifactShown,
-    messagesOf: async (sessionId) => {
-      const live = transcripts[sessionId] ?? [];
-      if (transcriptStatus[sessionId] === "ready") return live;
-      if (transcriptStatus[sessionId] === "failed") throw new Error("unreadable");
-      // Not opened in this run: read what was saved, then what arrived since.
-      return savedThenLive(await loadTranscript(sessionId), live);
-    },
+    messagesOf: readMessages,
     stateOf: (sessionId) =>
       isSessionWaiting(sessionId) ? "needs-answer" : isSessionBusy(sessionId) ? "working" : "idle",
     stopTurn: (sessionId) => handleInterrupt(sessionId),
@@ -1193,6 +1194,13 @@ export default function App() {
     startSession,
     selectSession: handleSelectSession,
     updateLink,
+    messagesOf: async (sessionId) => {
+      try {
+        return await readMessages(sessionId);
+      } catch {
+        return null;
+      }
+    },
     giveBack: giveBackMessage,
     onNotice: setNotice,
   });

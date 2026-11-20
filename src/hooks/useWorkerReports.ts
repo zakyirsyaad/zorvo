@@ -1,180 +1,211 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  answerOf,
-  isOpenLink,
-  reportMessage,
-  reportedFiles,
-  sourceOf,
-} from '../lib/delegation';
+import { useEffect, useRef, useState } from 'react';
+import { answerOf, isOpenLink, reportedFiles } from '../lib/delegation';
 import { agentNameIn, lastMessage } from '../lib/delegation-helpers';
 import { isArchived } from '../lib/session-helpers';
-import { workerHandleOf } from '../lib/workers';
+import {
+  MAX_REPORT_WORKERS,
+  isReportOwed,
+  owedWorkersOf,
+  withReported,
+  workerHandleOf,
+  workerStateOf,
+  workersReportMessage,
+  type WorkerReportEntry,
+} from '../lib/workers';
+import type { ChatMessage, DelegationLink, Session } from '../types';
 import type { DelegationDeps } from './useDelegation';
 import { useLatest } from './useLatest';
 
 export type ReportDeps = Pick<
   DelegationDeps,
-  'sessions' | 'agents' | 'transcripts' | 'isBusy' | 'isWaiting' | 'canPrompt' | 'send' | 'giveBack' | 'onNotice'
+  | 'sessions'
+  | 'agents'
+  | 'transcripts'
+  | 'isBusy'
+  | 'isWaiting'
+  | 'canPrompt'
+  | 'send'
+  | 'giveBack'
+  | 'onNotice'
+  | 'updateLink'
+  | 'messagesOf'
 >;
 
-interface DelegationOutcome {
-  kind: 'reported' | 'failed';
-  at: number;
-}
-
-/** A path as A sees it: relative to its folder when the tool named it inside. */
+/** A path as the worker's folder sees it: relative to it when the tool named it inside. */
 function relativeTo(cwd: string, path: string): string {
   const prefix = cwd.endsWith('/') ? cwd : `${cwd}/`;
   return path.startsWith(prefix) ? path.slice(prefix.length) : path;
 }
 
+/** The link as the state holds it now, marked reported; a worker that is gone also ends. */
+function reportedLink(link: DelegationLink, at: number, endedTurnAt: number | undefined): DelegationLink {
+  if (!isOpenLink(link)) return link;
+  const reported = withReported(link, at);
+  const isGone = link.lastTurn?.how === 'exited' && link.lastTurn.endedAt === endedTurnAt;
+  return isGone ? { ...reported, endedAt: at } : reported;
+}
+
 /**
- * The queue that sends a finished delegate's report back to its source. The
- * same-tick decisions read refs, so they hold before React renders; the
- * revision only triggers the drain.
+ * Sends each coordinator one message with what its workers owe it. What is owed is read from
+ * the sessions (a turn that ended after the last report), so it survives a reload; the refs only
+ * make same-tick decisions hold before React renders, and the revision only triggers the drain.
  */
 export function useWorkerReports(deps: ReportDeps): {
-  queue: (workerId: string, coordinatorId: string) => void;
   drop: (workerId: string) => void;
-  isQueued: (workerId: string) => boolean;
   isDelivering: (workerId: string) => boolean;
-  handoverSince: (workerId: string) => number | null;
-  outcomeOf: (workerId: string) => { kind: 'reported' | 'failed'; at: number } | undefined;
-  noteFailed: (workerId: string) => void;
-  /** A turn ended in `sessionId`: reports queued for it are looked at again. */
+  /** A turn ended in `sessionId`: reports owed to it are looked at again. */
   recheck: (sessionId: string) => void;
 } {
   const { sessions, transcripts } = deps;
   const latest = useLatest(deps);
-  // Each finished delegate whose report waits for its source, by delegate id, in arrival order.
-  const pending = useRef(new Map<string, string>());
-  // The delegates whose report is being sent right now.
+  // The workers whose report is being sent right now.
   const delivering = useRef(new Set<string>());
-  // What each delegate's last turn led to: a report, or a failed turn. Memory only.
-  const outcomes = useRef(new Map<string, DelegationOutcome>());
-  // When the hand-over began, for B's line while the report is still on its way.
-  const handoverSince = useRef(new Map<string, number>());
-  // Bumped when a turn ends or a hand-over settles, so the drain runs and the lines read again.
+  // Bumped when a coordinator's turn ends or a hand-over settles, so the drain runs and the lines read again.
   const [revision, setRevision] = useState(0);
-
-  const dropHandover = useCallback((delegateId: string) => {
-    delivering.current.delete(delegateId);
-    handoverSince.current.delete(delegateId);
-  }, []);
-
-  const queue = (workerId: string, coordinatorId: string): void => {
-    // Set before anything can await or render: Send in B is refused from now on.
-    pending.current.set(workerId, coordinatorId);
-    handoverSince.current.set(workerId, Date.now());
-    setRevision((current) => current + 1);
-  };
+  const bump = () => setRevision((current) => current + 1);
 
   const drop = (workerId: string): void => {
-    // A report still queued for A is dropped with the link.
-    pending.current.delete(workerId);
-    dropHandover(workerId);
-  };
-
-  const noteFailed = (workerId: string): void => {
-    outcomes.current.set(workerId, { kind: 'failed', at: Date.now() });
-    setRevision((current) => current + 1);
+    delivering.current.delete(workerId);
   };
 
   const recheck = (sessionId: string): void => {
-    // A source's turn ended: a report that waited for it may go out now.
-    if ([...pending.current.values()].includes(sessionId)) setRevision((current) => current + 1);
+    if (latest.current.sessions.some((session) => session.delegatedFrom?.sessionId === sessionId && isReportOwed(session.delegatedFrom))) {
+      bump();
+    }
   };
 
   useEffect(() => {
-    const deliver = async (delegateId: string): Promise<void> => {
+    /** One worker's part of the message, from its link, else from its transcript. */
+    const entryOf = async (worker: Session, coordinator: Session, link: DelegationLink): Promise<WorkerReportEntry | null> => {
       const current = latest.current;
+      // The last turn is what is owed: a worker that has since been busy again is still described by it.
+      const state = workerStateOf({ link, isBusy: false, isWaiting: false });
+      if (state === null) return null;
+      const handle = workerHandleOf(worker) ?? worker.profileId;
+      const base = {
+        handle,
+        agentName: agentNameIn(current.agents, worker.profileId),
+        agentId: worker.profileId,
+        task: link.task,
+        state,
+        files: [] as string[],
+        ...(worker.cwd !== coordinator.cwd ? { folder: worker.cwd } : {}),
+      };
+      if (state === 'succeeded' || state === 'failed') {
+        return { ...base, summary: link.outcome?.summary ?? '', files: link.outcome?.files ?? [] };
+      }
+      if (state === 'errored') return { ...base, ...(link.lastTurn?.reason ? { reason: link.lastTurn.reason } : {}) };
+      if (state !== 'did-not-report') return base;
+
+      let messages: ChatMessage[] | null | undefined = current.transcripts[worker.id];
+      if (messages === undefined) {
+        try {
+          messages = await current.messagesOf(worker.id);
+        } catch {
+          messages = null;
+        }
+      }
+      // Never the cause: it may hold a path.
+      if (messages === null) return { ...base, unreadable: true };
+      const last = lastMessage(messages);
+      if (last === undefined || last.role !== 'agent' || last.isComplete !== true) return base;
+      const files = [...new Set(reportedFiles(last).map((path) => relativeTo(worker.cwd, path)))];
+      return { ...base, answer: answerOf(last), files };
+    };
+
+    const endLinks = (workers: readonly Session[]): void => {
+      const at = Date.now();
+      for (const worker of workers) {
+        latest.current.updateLink(worker.id, (link) => (isOpenLink(link) ? { ...link, endedAt: at } : link));
+      }
+    };
+
+    const deliver = async (coordinator: Session, workers: readonly Session[]): Promise<void> => {
+      const current = latest.current;
+      const at = Date.now();
+      const endedTurns = new Map(workers.map((worker) => [worker.id, worker.delegatedFrom?.lastTurn?.endedAt]));
       try {
-        const session = current.sessions.find((candidate) => candidate.id === delegateId);
-        const link = session?.delegatedFrom;
-        // B is gone, archived, or its link is no longer open: nothing to send.
-        if (session === undefined || isArchived(session) || link === null || link === undefined || !isOpenLink(link)) return;
-
-        const messages = current.transcripts[delegateId] ?? [];
-        const last = lastMessage(messages);
-        // Only a whole reply is reported. One with no text (tool calls only) is reported too,
-        // as such: the agent that delegated was told an answer would arrive.
-        if (last === undefined || last.role !== 'agent' || last.isComplete !== true) return;
-        const answer = answerOf(last);
-
-        const source = sourceOf(session, current.sessions);
-        if (source === undefined) return;
-
-        const agentName = agentNameIn(current.agents, session.profileId);
-        const files = [
-          ...new Set(reportedFiles(last).map((path) => relativeTo(source.cwd, path))),
-        ];
-        // An older link has no stored handle: its report is worded and marked as before.
-        const handle = link.handle !== undefined ? workerHandleOf(session) : undefined;
-        const report = reportMessage({ agentName, task: link.task, answer, files, ...(handle !== undefined ? { handle } : {}) });
-
-        if (!current.canPrompt(source.id)) {
-          // Waiting in A's composer is delivery: A's line shows the report, not a running turn.
-          outcomes.current.set(delegateId, { kind: 'reported', at: Date.now() });
-          current.giveBack(source.id, report);
-          current.onNotice(`${agentName}'s report is in the composer of ${source.name}.`);
+        const settled = await Promise.all(
+          workers.map(async (worker) => {
+            const link = worker.delegatedFrom;
+            return link == null ? null : entryOf(worker, coordinator, link);
+          }),
+        );
+        const entries = settled.filter((entry): entry is WorkerReportEntry => entry !== null);
+        const markReported = (): void => {
+          for (const worker of workers) {
+            current.updateLink(worker.id, (link) => reportedLink(link, at, endedTurns.get(worker.id)));
+          }
+        };
+        if (entries.length === 0) {
+          markReported();
           return;
         }
-
-        const at = Date.now();
+        const text = workersReportMessage(entries);
+        const workerReport = {
+          workers: entries.map(({ agentName, agentId, handle, state }) => ({ agentName, agentId, handle, state })),
+        };
+        const toComposer = (): void => {
+          current.giveBack(coordinator.id, text);
+          current.onNotice(
+            entries.length === 1
+              ? `${entries[0].agentName}'s report is in the composer of ${coordinator.name}.`
+              : `${entries.length} workers' reports are in the composer of ${coordinator.name}.`,
+          );
+        };
+        if (!current.canPrompt(coordinator.id)) {
+          // Waiting in the coordinator's composer is delivery.
+          toComposer();
+          markReported();
+          return;
+        }
         let isSent: boolean;
         try {
-          isSent = await current.send(source.id, report, [], {
-            delegationReport: { agentName, agentId: session.profileId, ...(handle !== undefined ? { handle } : {}) },
-          });
+          isSent = await current.send(coordinator.id, text, [], { workerReport });
         } catch {
           isSent = false;
         }
-        if (isSent) {
-          outcomes.current.set(delegateId, { kind: 'reported', at });
-          return;
-        }
-        // The agent refused the prompt: the report waits in A's composer, as when A cannot take one.
-        outcomes.current.set(delegateId, { kind: 'reported', at: Date.now() });
-        current.giveBack(source.id, report);
-        current.onNotice(`${agentName}'s report is in the composer of ${source.name}.`);
+        // The agent refused the prompt: the report waits in the composer, which counts as reported.
+        if (!isSent) toComposer();
+        markReported();
       } finally {
-        dropHandover(delegateId);
-        // The hand-over is over either way: Send in B may be judged again.
-        setRevision((currentRevision) => currentRevision + 1);
+        for (const worker of workers) delivering.current.delete(worker.id);
+        // The hand-over is over either way: Send in a worker may be judged again.
+        bump();
       }
     };
 
-    const drain = async (): Promise<void> => {
-      // One report per source per pass: taking it starts the source's next turn.
-      const served = new Set<string>();
-      for (const [delegateId, sourceId] of [...pending.current]) {
-        if (served.has(sourceId)) continue;
-        const current = latest.current;
-        // The source is in a turn, or waits for the user: the report waits too. It goes
-        // out when that changes (the transcripts, the sessions or a turn end bring us back).
-        if (current.isBusy(sourceId) || current.isWaiting(sourceId)) continue;
-        // Deleted first: a second run (StrictMode) must not send the report again.
-        if (!pending.current.delete(delegateId)) continue;
-        delivering.current.add(delegateId);
-        served.add(sourceId);
-        await deliver(delegateId);
+    const drain = (): void => {
+      const current = latest.current;
+      const coordinatorIds = new Set(
+        current.sessions.flatMap((session) =>
+          session.delegatedFrom != null && isReportOwed(session.delegatedFrom) && !isArchived(session)
+            ? [session.delegatedFrom.sessionId]
+            : [],
+        ),
+      );
+      for (const coordinatorId of coordinatorIds) {
+        const coordinator = current.sessions.find((session) => session.id === coordinatorId);
+        const owed = owedWorkersOf(coordinatorId, current.sessions).filter((worker) => !delivering.current.has(worker.id));
+        if (owed.length === 0) continue;
+        // Nobody to tell: the workers' links end, and no notice, since nothing was lost the user can act on.
+        if (coordinator === undefined || isArchived(coordinator)) {
+          endLinks(owed);
+          continue;
+        }
+        // In a turn, or waiting on the user: the report waits. A turn end or a change of the
+        // sessions brings us back.
+        if (current.isBusy(coordinatorId) || current.isWaiting(coordinatorId)) continue;
+        const batch = owed.slice(0, MAX_REPORT_WORKERS);
+        // Marked before anything awaits: a second run (StrictMode) must not send it again.
+        for (const worker of batch) delivering.current.add(worker.id);
+        void deliver(coordinator, batch);
       }
     };
-    void drain();
-    // The triggers are the transcript, the sessions, and a turn that ended; `latest`
-    // and `dropHandover` never change. The deps themselves come through `latest`, so
-    // a queued report sends with the freshest functions rather than the render that
-    // queued it.
-  }, [transcripts, sessions, revision, latest, dropHandover]);
+    drain();
+    // The triggers are the transcripts, the sessions and a turn that ended; the deps themselves
+    // come through `latest`, so a report sends with the freshest functions.
+  }, [transcripts, sessions, revision, latest]);
 
-  return {
-    queue,
-    drop,
-    isQueued: (workerId) => pending.current.has(workerId),
-    isDelivering: (workerId) => delivering.current.has(workerId),
-    handoverSince: (workerId) => handoverSince.current.get(workerId) ?? null,
-    outcomeOf: (workerId) => outcomes.current.get(workerId),
-    noteFailed,
-    recheck,
-  };
+  return { drop, isDelivering: (workerId) => delivering.current.has(workerId), recheck };
 }

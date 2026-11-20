@@ -327,6 +327,8 @@ export interface WorkerReportEntry {
   files: readonly string[];
   reason?: string;
   folder?: string;
+  /** The worker's transcript could not be read, so there is no last answer to quote. */
+  unreadable?: boolean;
 }
 
 /** One message carries at most this many entries; the caller slices, the builder still accepts more. */
@@ -348,6 +350,7 @@ function wordsOf(entry: WorkerReportEntry): { words: string; label?: string; quo
     case 'failed':
       return { words: 'failed', quote: text(entry.summary) };
     case 'did-not-report': {
+      if (entry.unreadable) return { words: 'ended its turn without reporting. Its session could not be read.', quote: '' };
       const answer = text(entry.answer);
       return answer === ''
         ? { words: 'ended its turn without reporting, and left no written answer.', quote: '' }

@@ -369,7 +369,7 @@ describe("delegating from the app", () => {
       expect(callsTo(spy, "acp_prompt").filter(([, args]) => args?.sessionId === "s-a")).toHaveLength(1),
     );
     const report = callsTo(spy, "acp_prompt").find(([, args]) => args?.sessionId === "s-a");
-    expect(String(report?.[1]?.text)).toMatch(/^Report from Codex/);
+    expect(String(report?.[1]?.text)).toContain("Reports from your workers");
   });
 
   it("a config-mode agent starts in its safe mode when the dialog's mode is untouched", async () => {

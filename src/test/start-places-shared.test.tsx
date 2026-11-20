@@ -58,6 +58,7 @@ describe("one set of start places for both ways an agent starts a session", () =
         startSession,
         selectSession: () => undefined,
         updateLink: () => undefined,
+        messagesOf: async () => null,
         giveBack: () => undefined,
         onNotice: () => undefined,
       }),

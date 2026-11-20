@@ -96,9 +96,10 @@ pub fn file_sha256(path: &Path) -> Option<String> {
     Some(hex(Sha256::digest(bytes)))
 }
 
-/// How deep and how wide the folder digest of `board_key` walks; past either, the rest is left out.
+/// How deep the folder digest of `board_key` walks, and how many entries (of any kind, pages and
+/// folders included) it looks at; past either, the rest is left out.
 pub const MAX_DIGEST_DEPTH: usize = 8;
-pub const MAX_DIGEST_FILES: usize = 2000;
+pub const MAX_DIGEST_ENTRIES: usize = 5000;
 
 fn hex(digest: impl AsRef<[u8]>) -> String {
     digest
@@ -118,18 +119,29 @@ fn is_shared_file(relative: &str) -> bool {
 
 /// The servable files of the canvas folder that are no page (CSS, scripts, images, fonts), each
 /// as its relative path, size and modification time, in path order. No file is opened. Links
-/// are followed only to files inside the folder, never into folders.
+/// are followed only to files inside the folder, never into folders. Each folder is read in name
+/// order and every entry counts toward the limit, so a folder too big to walk whole always stops
+/// at the same entries and its digest stays the same while nothing changes.
 fn folder_digest(root: &Path) -> String {
+    folder_digest_within(root, MAX_DIGEST_ENTRIES)
+}
+
+fn folder_digest_within(root: &Path, max_entries: usize) -> String {
     let mut lines = Vec::new();
+    let mut seen = 0usize;
     let mut folders = vec![(root.to_path_buf(), String::new(), 0usize)];
     while let Some((folder, prefix, depth)) = folders.pop() {
         let Ok(entries) = fs::read_dir(&folder) else {
             continue;
         };
-        for entry in entries.flatten() {
-            if lines.len() >= MAX_DIGEST_FILES {
+        let mut entries: Vec<_> = entries.flatten().collect();
+        entries.sort_by_key(|entry| entry.file_name());
+        let mut subfolders = Vec::new();
+        for entry in entries {
+            if seen >= max_entries {
                 break;
             }
+            seen += 1;
             let Some(name) = entry.file_name().to_str().map(str::to_string) else {
                 continue;
             };
@@ -139,7 +151,7 @@ fn folder_digest(root: &Path) -> String {
             };
             if kind.is_dir() {
                 if depth + 1 < MAX_DIGEST_DEPTH {
-                    folders.push((entry.path(), format!("{relative}/"), depth + 1));
+                    subfolders.push((entry.path(), format!("{relative}/"), depth + 1));
                 }
                 continue;
             }
@@ -159,6 +171,8 @@ fn folder_digest(root: &Path) -> String {
                 .map_or(0, |since| since.as_nanos());
             lines.push(format!("{relative}\0{}\0{modified}", meta.len()));
         }
+        // A stack: push in reverse so the first subfolder by name is walked next.
+        folders.extend(subfolders.into_iter().rev());
     }
     lines.sort();
     hex(Sha256::digest(lines.join("\n")))
@@ -715,6 +729,22 @@ mod folder_tests {
         fs::write(root.0.join("cart.html"), b"<p>cart, changed</p>").unwrap();
         assert_ne!(key(1440, 900), resized, "its own page");
         assert!(board_key(&root.0, "missing.html", 1440, 900).is_none());
+    }
+
+    #[test]
+    fn the_folder_digest_stops_at_the_same_entries_whatever_their_kind() {
+        let root = Temp::new("canvas-digest-cut");
+        // In name order: a.html, b.html, c.css. Pages count toward the limit, so with
+        // room for two entries the stylesheet is past it.
+        fs::write(root.0.join("c.css"), b"p{}").unwrap();
+        fs::write(root.0.join("b.html"), b"<p>b</p>").unwrap();
+        fs::write(root.0.join("a.html"), b"<p>a</p>").unwrap();
+        let first = folder_digest_within(&root.0, 2);
+
+        fs::write(root.0.join("c.css"), b"p{color:red}").unwrap();
+
+        assert_eq!(folder_digest_within(&root.0, 2), first);
+        assert_ne!(folder_digest_within(&root.0, 3), first);
     }
 
     #[test]

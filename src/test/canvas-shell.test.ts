@@ -256,6 +256,17 @@ describe('the canvas wrapper', () => {
     ]);
   });
 
+  it("says when a live artboard's frame has loaded, so its marks can be sent", () => {
+    canvas().apply(stateOf([board('a')]));
+    canvas().command('actual');
+    const frame = document.querySelector('[data-id="a"] iframe') as HTMLIFrameElement;
+    posted = [];
+
+    frame.dispatchEvent(new Event('load'));
+
+    expect(posted).toContainEqual({ kind: 'canvas-board-loaded', artboardId: 'a' });
+  });
+
   it('cannot have its functions replaced', () => {
     const original = canvas().apply;
     try {

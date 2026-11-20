@@ -24,8 +24,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use super::canvas::Canvas;
 pub use super::canvas_view::ShownCanvas;
 use super::canvas_view::{
-    apply_script, canvas_intake, canvas_mode_script, command_script, pick_event, view_event,
-    CanvasIntake, CanvasNavigation, CANVAS_PICK, CANVAS_VIEW,
+    apply_script, canvas_intake, canvas_marks_script, canvas_mode_script, command_script,
+    pick_event, view_event, CanvasIntake, CanvasNavigation, CANVAS_PICK, CANVAS_VIEW,
 };
 use super::page_script::{marks_script, mode_script, PAGE_SCRIPT};
 use super::picks::{
@@ -106,6 +106,9 @@ thread_local! {
     /// The last state asked for, with its canvas, as the script that applies it. Kept across
     /// views of the same canvas, and run again once such a view has loaded.
     static CANVAS_STATE: RefCell<Option<(ShownCanvas, String)>> = const { RefCell::new(None) };
+    /// The generation canvas marks were last run in, so only that view may say which an
+    /// artboard could not find.
+    static CANVAS_MARKS_SENT: Cell<u64> = const { Cell::new(0) };
 }
 
 /// Changes what decides the view's visibility and applies it. Main thread only.
@@ -153,19 +156,30 @@ fn shown_canvas() -> Option<ShownCanvas> {
     }
 }
 
-/// Gives a loaded wrapper the last state asked for its canvas. Main thread only.
+/// What a wrapper is told once it has loaded: the last state asked for its canvas, then its
+/// comment mode, which may have been turned on while it loaded. The mode is sent on or off,
+/// so running these twice says the same thing twice.
+fn canvas_load_scripts(state: Option<String>, is_commenting: bool) -> Vec<String> {
+    state
+        .into_iter()
+        .chain(std::iter::once(canvas_mode_script(is_commenting)))
+        .collect()
+}
+
+/// Gives a loaded wrapper the last state asked for its canvas and its comment mode. Main
+/// thread only.
 fn apply_canvas_state() {
     let Some(canvas) = shown_canvas() else {
         return;
     };
-    let script = CANVAS_STATE.with(|state| {
+    let state = CANVAS_STATE.with(|state| {
         state
             .borrow()
             .as_ref()
             .filter(|(of, _)| *of == canvas)
             .map(|(_, script)| script.clone())
     });
-    if let Some(script) = script {
+    for script in canvas_load_scripts(state, COMMENTING.get()) {
         evaluate(&script);
     }
 }
@@ -237,7 +251,7 @@ fn on_canvas_message(app: &AppHandle, generation: u64, frame_url: &str, body: &s
     };
     let state = ViewState {
         is_commenting: COMMENTING.get(),
-        has_marks: false,
+        has_marks: CANVAS_MARKS_SENT.get() == generation,
     };
     let intake = CANVAS_BOARDS.with(|boards| {
         let boards = boards.borrow();
@@ -620,6 +634,28 @@ pub fn set_canvas_comment_mode(app: &AppHandle, canvas: ShownCanvas, on: bool) {
     });
 }
 
+const COULD_NOT_MARK_ARTBOARD: &str = "Zorvo could not mark that artboard.";
+
+/// Has the wrapper post `marks` to one artboard of `canvas`, only while that canvas is shown and
+/// loaded. Nothing is kept: the wrapper says when each live artboard loads, and the frontend
+/// sends that artboard's marks then.
+pub fn set_canvas_marks(
+    app: &AppHandle,
+    canvas: ShownCanvas,
+    artboard_id: String,
+    marks: Vec<PageMark>,
+) -> Result<(), String> {
+    let script = canvas_marks_script(&artboard_id, &marks)
+        .ok_or_else(|| COULD_NOT_MARK_ARTBOARD.to_string())?;
+    let _ = app.run_on_main_thread(move || {
+        if shown_canvas().as_ref() == Some(&canvas) && DISPLAY.get().is_loaded {
+            evaluate(&script);
+            CANVAS_MARKS_SENT.set(GENERATION.get());
+        }
+    });
+    Ok(())
+}
+
 /// Keeps `marks` for `page`, and runs them now when the view shows that page
 /// and it has loaded; a page still loading gets them once it has.
 pub fn set_marks(app: &AppHandle, page: ShownPage, marks: Vec<PageMark>) {
@@ -762,6 +798,29 @@ mod tests {
         assert!(!is_showing(Some(&page), "s-1", Some("a-ffffffffffffffff")));
         assert!(!is_showing(Some(&page), "s-2", Some("a-0123456789abcdef")));
         assert!(!is_showing(None, "s-1", None));
+    }
+
+    #[test]
+    fn a_loaded_wrapper_gets_its_state_and_the_comment_mode_asked_for_before() {
+        let state = Some("window.__zorvoCanvas.apply({});".to_string());
+
+        // Comment mode turned on while the wrapper loaded reaches it once it has.
+        assert_eq!(
+            canvas_load_scripts(state.clone(), true),
+            [
+                "window.__zorvoCanvas.apply({});".to_string(),
+                canvas_mode_script(true)
+            ]
+        );
+        // Off is sent too, so a second load (`mark_loaded` may run twice) says the same thing.
+        assert_eq!(
+            canvas_load_scripts(None, false),
+            [canvas_mode_script(false)]
+        );
+        assert_eq!(
+            canvas_load_scripts(state.clone(), true),
+            canvas_load_scripts(state, true)
+        );
     }
 
     #[test]

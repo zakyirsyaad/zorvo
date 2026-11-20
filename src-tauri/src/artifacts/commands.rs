@@ -813,6 +813,27 @@ pub fn artifact_view_marks(
     Ok(())
 }
 
+/// Turns comment mode on or off for the canvas on screen, when it is that canvas: the wrapper
+/// passes it on to every live artboard, and picks count only while it is on.
+#[tauri::command(async)]
+pub fn canvas_comment_mode(app: AppHandle, session_id: String, key: String, on: bool) {
+    view::set_canvas_comment_mode(&app, ShownCanvas { session_id, key }, on);
+}
+
+/// Numbered marks for one artboard of the canvas on screen. Each anchor is checked against
+/// the pick limits, as a page's are; a list that fails is refused whole.
+#[tauri::command(async)]
+pub fn canvas_view_marks(
+    app: AppHandle,
+    session_id: String,
+    key: String,
+    artboard_id: String,
+    marks: Vec<PageMark>,
+) -> Result<(), String> {
+    let marks = checked_marks(marks).ok_or_else(|| COULD_NOT_MARK.to_string())?;
+    view::set_canvas_marks(&app, ShownCanvas { session_id, key }, artboard_id, marks)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

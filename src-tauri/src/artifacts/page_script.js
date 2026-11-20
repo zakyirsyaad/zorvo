@@ -350,6 +350,16 @@
     post({ kind: "marks-missing", numbers: drawMarks() });
   }
 
+  // On a canvas the page is an artboard in a frame of Zorvo's wrapper, which relays comment mode
+  // and marks here: only from the parent frame, only in a frame, and only those two kinds.
+  window.addEventListener("message", function (event) {
+    if (window.parent === window || event.source !== window.parent) return;
+    var data = event.data;
+    if (!data || typeof data !== "object") return;
+    if (data.zorvo === "mode") setCommentMode(data.on === true);
+    else if (data.zorvo === "marks") setMarks(data.marks);
+  });
+
   Object.defineProperty(window, "__zorvoCommentMode", { value: setCommentMode });
   Object.defineProperty(window, "__zorvoMarks", { value: setMarks });
 })();

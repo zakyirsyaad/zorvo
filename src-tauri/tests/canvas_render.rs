@@ -124,15 +124,14 @@ const CANVAS_BOUNDS: Bounds = Bounds {
 /// How long a message that must not arrive is waited for.
 const QUIET: Duration = Duration::from_secs(2);
 
-/// Added to `overview-1.html`: when the wrapper relays comment mode, it turns the comment script's
-/// mode on in this frame (the relay listener the comment script does not have yet) and clicks a
-/// button, so the comment script itself reports the pick.
+/// Added to `overview-1.html`: when the wrapper relays comment mode, it clicks a button. The
+/// comment script's own relay listener, registered first, has turned its mode on by then, so the
+/// comment script itself reports the pick.
 const PICK_PROBE: &str = r#"<button id="probe-target" style="position:absolute;left:40px;top:40px">Probe</button>
 <script>
 window.addEventListener("message", function (event) {
   var data = event.data;
   if (!data || data.zorvo !== "mode" || data.on !== true) return;
-  window.__zorvoCommentMode(true);
   document.getElementById("probe-target").click();
 });
 </script>"#;

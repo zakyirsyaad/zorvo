@@ -333,6 +333,19 @@ pub struct ArtifactCommentRecord {
         skip_serializing_if = "Option::is_none"
     )]
     pub sent_at: Option<i64>,
+    /// Set for a comment on a canvas artboard, whose `artifact_id` is then the canvas key.
+    /// A comment whose `canvas` is not this shape is dropped, like one with a bad anchor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canvas: Option<CanvasCommentRecord>,
+}
+
+/// Which artboard a canvas comment is on, and the hash of its file when it was written.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CanvasCommentRecord {
+    pub key: String,
+    pub artboard_id: String,
+    pub file_hash: String,
 }
 
 /// One comment on a line of a session's diff. The UI checks the values of
@@ -1043,6 +1056,44 @@ mod tests {
             .map(|c| c.id.as_str())
             .collect();
         assert_eq!(ids, ["ac-1"]);
+    }
+
+    #[test]
+    fn keeps_a_canvas_comment_and_drops_a_bad_one() {
+        let mut canvas = artifact_comment_json("ac-1");
+        canvas["artifactId"] = serde_json::json!("c-0123456789abcdef");
+        canvas["version"] = serde_json::json!(0);
+        canvas["anchor"] = serde_json::json!({ "kind": "artboard" });
+        canvas["canvas"] = serde_json::json!({
+            "key": "c-0123456789abcdef",
+            "artboardId": "pay-b",
+            "fileHash": "ab".repeat(32),
+        });
+        let mut not_an_object = canvas.clone();
+        not_an_object["id"] = serde_json::json!("ac-2");
+        not_an_object["canvas"] = serde_json::json!("pay-b");
+        let mut missing_hash = canvas.clone();
+        missing_hash["id"] = serde_json::json!("ac-3");
+        missing_hash["canvas"]
+            .as_object_mut()
+            .expect("object")
+            .remove("fileHash");
+
+        let record: SessionRecord = serde_json::from_value(session_json(serde_json::json!({
+            "artifactComments": [canvas.clone(), not_an_object, missing_hash]
+        })))
+        .expect("deserialize");
+
+        assert_eq!(record.artifact_comments.len(), 1);
+        let value = serde_json::to_value(&record).expect("serialize");
+        assert_eq!(value["artifactComments"][0], canvas);
+        // A page comment writes no `canvas` field.
+        let page: SessionRecord = serde_json::from_value(session_json(serde_json::json!({
+            "artifactComments": [artifact_comment_json("ac-4")]
+        })))
+        .expect("deserialize");
+        let value = serde_json::to_value(&page).expect("serialize");
+        assert!(value["artifactComments"][0].get("canvas").is_none());
     }
 
     #[test]

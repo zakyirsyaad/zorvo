@@ -164,6 +164,7 @@
     iframe.addEventListener("load", function () {
       if (modeOn) postTo(iframe, { zorvo: "mode", on: true });
       if (marksById[board.id]) postTo(iframe, { zorvo: "marks", marks: marksById[board.id] });
+      post({ kind: "canvas-board-loaded", artboardId: board.id });
     });
     iframe.setAttribute("src", board.url);
     entry.frame.textContent = "";

@@ -35,7 +35,7 @@ mod tests {
         assert_eq!(hex, PINNED_SHA256);
     }
 
-    const PINNED_SHA256: &str = "945f11ebc589b8bac04cf9a933dafc1ea7b9135dd8f8700aa240e34953691cd7";
+    const PINNED_SHA256: &str = "3e4ca0f2a118520fc191ed83f3e28411ab4100d852b60cbf987137ffa4365564";
 
     #[test]
     fn page_script_names_no_tauri_internals() {

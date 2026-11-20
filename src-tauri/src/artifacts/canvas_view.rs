@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::time::Instant;
 
 use super::canvas::{is_id, Canvas};
-use super::picks::{is_accepted, parse_page_message, PageMessage, RateLimit, ViewState};
+use super::picks::{is_accepted, parse_page_message, PageMark, PageMessage, RateLimit, ViewState};
 use super::protocol::{
     canvas_shell_url, is_allowed_canvas_navigation, parse_canvas_url, CanvasUrl,
 };
@@ -52,11 +52,13 @@ pub fn canvas_message_source(frame_url: &str, canvas: &ShownCanvas) -> Source {
     }
 }
 
-/// What the wrapper says: a selection (none for a click on the background) or the zoom.
+/// What the wrapper says: a selection (none for a click on the background), the zoom, or that
+/// a live artboard's frame has loaded, so its marks can be sent.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ShellMessage {
     Select(Option<String>),
     Zoom(f64),
+    BoardLoaded(String),
 }
 
 /// The wrapper's message, or `None` for anything it never sends: another kind, a field more
@@ -69,6 +71,10 @@ pub fn parse_shell_message(body: &str) -> Option<ShellMessage> {
         ("canvas-select", 2) => match fields.get("artboardId")? {
             Value::Null => Some(ShellMessage::Select(None)),
             Value::String(id) if is_id(id) => Some(ShellMessage::Select(Some(id.clone()))),
+            _ => None,
+        },
+        ("canvas-board-loaded", 2) => match fields.get("artboardId")? {
+            Value::String(id) if is_id(id) => Some(ShellMessage::BoardLoaded(id.clone())),
             _ => None,
         },
         ("canvas-zoom", 2) => {
@@ -161,6 +167,10 @@ pub fn view_event(canvas: &ShownCanvas, message: &ShellMessage) -> Value {
             fields.insert("kind".into(), "zoom".into());
             fields.insert("zoom".into(), (*zoom).into());
         }
+        ShellMessage::BoardLoaded(id) => {
+            fields.insert("kind".into(), "board-loaded".into());
+            fields.insert("artboardId".into(), id.clone().into());
+        }
     }
     event
 }
@@ -187,6 +197,17 @@ pub fn command_script(name: &str) -> Option<String> {
 /// live artboard.
 pub fn canvas_mode_script(on: bool) -> String {
     format!("window.__zorvoCanvas.mode({on});")
+}
+
+/// The script that has the wrapper post `marks` to one artboard's frame, or `None` when
+/// `artboard_id` is not an artboard id. Both arguments are written by serde.
+pub fn canvas_marks_script(artboard_id: &str, marks: &[PageMark]) -> Option<String> {
+    if !is_id(artboard_id) {
+        return None;
+    }
+    let id = serde_json::to_string(artboard_id).ok()?;
+    let list = serde_json::to_string(marks).ok()?;
+    Some(format!("window.__zorvoCanvas.marks({id},{list});"))
 }
 
 /// The script that hands the wrapper a state, or `None` when it is not one JSON object of at
@@ -383,6 +404,56 @@ mod tests {
         assert!(boards
             .iter()
             .all(|b| std::path::Path::new(folder).join(&b.file).is_file()));
+    }
+
+    #[test]
+    fn the_shell_says_when_an_artboard_has_loaded() {
+        assert_eq!(
+            parse_shell_message(r#"{"kind":"canvas-board-loaded","artboardId":"pay-b"}"#),
+            Some(ShellMessage::BoardLoaded("pay-b".to_string()))
+        );
+        for bad in [
+            r#"{"kind":"canvas-board-loaded","artboardId":null}"#,
+            r#"{"kind":"canvas-board-loaded"}"#,
+            r#"{"kind":"canvas-board-loaded","artboardId":"Pay B"}"#,
+            r#"{"kind":"canvas-board-loaded","artboardId":"pay-b","x":1}"#,
+        ] {
+            assert_eq!(parse_shell_message(bad), None, "{bad}");
+        }
+        let event = view_event(&canvas(), &ShellMessage::BoardLoaded("pay-b".to_string()));
+        assert_eq!(
+            event,
+            serde_json::json!({ "sessionId": SESSION, "key": KEY, "kind": "board-loaded", "artboardId": "pay-b" })
+        );
+        // An artboard cannot say it on the wrapper's behalf.
+        let board = canvas_file_url(SESSION, KEY, "pay/a.html");
+        assert_eq!(
+            intake(
+                &board,
+                r#"{"kind":"canvas-board-loaded","artboardId":"pay-a"}"#,
+                &canvas()
+            ),
+            CanvasIntake::Refused
+        );
+    }
+
+    #[test]
+    fn marks_go_to_one_artboard_as_written_by_serde() {
+        let marks: Vec<PageMark> = serde_json::from_value(serde_json::json!([
+            { "n": 2, "anchor": { "kind": "text", "quote": "\");alert(1);//", "before": "", "after": "" } }
+        ]))
+        .unwrap();
+
+        let script = canvas_marks_script("pay-b", &marks).expect("an artboard id");
+
+        let prefix = r#"window.__zorvoCanvas.marks("pay-b","#;
+        assert!(script.starts_with(prefix), "{script}");
+        assert!(script.ends_with(");"));
+        let json = &script[prefix.len()..script.len() - 2];
+        let back: Vec<PageMark> = serde_json::from_str(json).expect("the argument is the JSON");
+        assert_eq!(back, marks);
+        assert_eq!(canvas_marks_script("Pay B", &marks), None);
+        assert_eq!(canvas_marks_script("x\");alert(1);(\"", &marks), None);
     }
 
     #[test]

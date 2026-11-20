@@ -2,7 +2,7 @@
 //! functions so it can be tested without Tauri.
 
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -11,7 +11,8 @@ use tauri_plugin_dialog::DialogExt;
 
 use super::canvas::{canvas_file, file_sha256, read_canvas, resolve_canvas, Canvas};
 use super::picks::{checked_marks, PageMark};
-use super::protocol::{page_url, Served};
+use super::protocol::{canvas_file_url, page_url, Served};
+use super::render::{self, Pushed, ThumbJob, ThumbQueue};
 use super::source::{read_source, temp_roots};
 use super::store::{
     is_artifact_id, is_session_id, ArtifactRecord, ArtifactStore, CanvasEntry, Shown, FAILED,
@@ -188,6 +189,98 @@ pub fn read_canvas_entry(
     })
 }
 
+/// Emitted with `{sessionId, key, artboardId, sha256}` once an artboard's picture is cached.
+pub const CANVAS_THUMB: &str = "canvas-thumb";
+
+/// An artboard's picture: `ready` when `<thumbs>/<sha256>.png` is there to show.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardThumb {
+    pub id: String,
+    pub sha256: String,
+    pub ready: bool,
+}
+
+/// The pictures of a canvas read now: the cached ones are ready (and touched, so the sweep keeps
+/// them), the rest come back as jobs. An artboard whose file is missing has no picture.
+pub fn list_thumbs(
+    session_id: &str,
+    read: &CanvasRead,
+    dir: &Path,
+    now: SystemTime,
+) -> (Vec<BoardThumb>, Vec<ThumbJob>) {
+    let hashes: std::collections::HashMap<&str, &str> = read
+        .boards
+        .iter()
+        .filter_map(|board| Some((board.id.as_str(), board.sha256.as_deref()?)))
+        .collect();
+    let mut thumbs = Vec::new();
+    let mut jobs = Vec::new();
+    let boards = read
+        .canvas
+        .iter()
+        .flat_map(|canvas| &canvas.sections)
+        .flat_map(|section| &section.artboards);
+    for board in boards {
+        let Some(&sha256) = hashes.get(board.id.as_str()) else {
+            continue;
+        };
+        let ready = render::touch(&render::thumb_path(dir, sha256), now).is_ok();
+        if !ready {
+            jobs.push(ThumbJob {
+                session_id: session_id.to_string(),
+                key: read.entry.key.clone(),
+                artboard_id: board.id.clone(),
+                sha256: sha256.to_string(),
+                root: std::path::PathBuf::from(&read.entry.folder),
+                file: board.file.clone(),
+                width: board.width,
+                height: board.height,
+            });
+        }
+        thumbs.push(BoardThumb {
+            id: board.id.clone(),
+            sha256: sha256.to_string(),
+            ready,
+        });
+    }
+    (thumbs, jobs)
+}
+
+/// The artboards waiting for a picture, shared by `canvas_thumbs` and its worker.
+pub type Thumbs = Arc<Mutex<ThumbQueue>>;
+
+/// Draws the queued pictures one at a time, until the queue is empty.
+fn draw_thumbs(app: &AppHandle, served: &Arc<Served>, queue: &Thumbs) {
+    let lock = || queue.lock().unwrap_or_else(PoisonError::into_inner);
+    let current_hash =
+        |job: &ThumbJob| canvas_file(&job.root, &job.file).and_then(|(path, _)| file_sha256(&path));
+    while let Some(job) = lock().next(current_hash) {
+        let url = canvas_file_url(&job.session_id, &job.key, &job.file);
+        let drawn = render::snapshot_png(
+            app,
+            Arc::clone(served),
+            url,
+            job.width,
+            job.height,
+            render::thumb_width(job.width),
+        )
+        .and_then(|png| render::save_thumb(&served.thumbs, &job.sha256, &png));
+        lock().finish(&job.sha256, drawn.is_ok());
+        if drawn.is_ok() {
+            let _ = app.emit(
+                CANVAS_THUMB,
+                serde_json::json!({
+                    "sessionId": job.session_id,
+                    "key": job.key,
+                    "artboardId": job.artboard_id,
+                    "sha256": job.sha256,
+                }),
+            );
+        }
+    }
+}
+
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -352,6 +445,42 @@ pub fn canvas_read(
         &session_id,
         &key,
     )
+}
+
+/// The canvas's pictures: those cached, and the missing ones queued to be drawn (one at a time,
+/// in a hidden view); `canvas-thumb` says when each is ready.
+#[tauri::command(async)]
+pub fn canvas_thumbs(
+    app: AppHandle,
+    store: State<'_, AppStore>,
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    served: State<'_, Arc<Served>>,
+    thumbs: State<'_, Thumbs>,
+    session_id: String,
+    key: String,
+) -> Result<Vec<BoardThumb>, String> {
+    let read = read_canvas_entry(
+        &artifacts,
+        |root| store.is_known_workspace(root).unwrap_or(false),
+        &session_id,
+        &key,
+    )?;
+    let (listed, jobs) = list_thumbs(&session_id, &read, &served.thumbs, SystemTime::now());
+    let queue = Arc::clone(&thumbs);
+    let starts_worker = {
+        let mut queued = queue.lock().unwrap_or_else(PoisonError::into_inner);
+        // Every job is pushed; only the first push into an idle queue starts the worker.
+        let pushed: Vec<Pushed> = jobs
+            .into_iter()
+            .map(|job| queued.push(job, false))
+            .collect();
+        pushed.contains(&Pushed::QueuedStartWorker)
+    };
+    if starts_worker {
+        let served = Arc::clone(&served);
+        std::thread::spawn(move || draw_thumbs(&app, &served, &queue));
+    }
+    Ok(listed)
 }
 
 #[tauri::command(async)]
@@ -687,6 +816,46 @@ mod tests {
 
         assert!(shown.is_err());
         assert!(artifacts.canvases(SESSION).unwrap().is_empty());
+    }
+
+    #[test]
+    fn thumbs_are_ready_when_cached_and_queued_when_not() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        let artifacts = ArtifactStore::new(data.0.clone());
+        let read =
+            show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 5).unwrap();
+        let hash = read.boards[0].sha256.clone().unwrap();
+        let dir = data.0.join("canvas-thumbs");
+
+        // Nothing cached: `a` is queued; `b` has no file, so no hash and no picture.
+        let now = SystemTime::now();
+        let (thumbs, jobs) = list_thumbs(SESSION, &read, &dir, now);
+        assert_eq!(
+            thumbs,
+            vec![BoardThumb {
+                id: "a".into(),
+                sha256: hash.clone(),
+                ready: false
+            }]
+        );
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(
+            (jobs[0].artboard_id.as_str(), jobs[0].file.as_str()),
+            ("a", "a.html")
+        );
+        assert_eq!((jobs[0].width, jobs[0].height), (400, 400));
+        assert_eq!(jobs[0].root, std::path::PathBuf::from(&read.entry.folder));
+
+        // Cached: ready, nothing queued, and its time is touched so the sweep keeps it.
+        std::fs::create_dir_all(&dir).unwrap();
+        let png = render::thumb_path(&dir, &hash);
+        std::fs::write(&png, b"png").unwrap();
+        let later = now + Duration::from_secs(3600);
+        let (thumbs, jobs) = list_thumbs(SESSION, &read, &dir, later);
+        assert!(thumbs[0].ready);
+        assert!(jobs.is_empty());
+        assert_eq!(std::fs::metadata(&png).unwrap().modified().unwrap(), later);
     }
 
     #[test]

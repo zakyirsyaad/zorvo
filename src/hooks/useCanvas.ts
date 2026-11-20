@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { parseCanvasRead, type Canvas, type CanvasRead } from '../lib/canvas';
+import { canvasThumbUrl, parseCanvasRead, type Canvas, type CanvasRead } from '../lib/canvas';
 
 /** Emitted by the backend with `{ sessionId }` after a session's artifacts changed. */
 const ARTIFACTS_CHANGED = 'artifacts-changed';
 /** What the canvas wrapper reported: `{ sessionId, key, kind: "select" | "zoom", artboardId?, zoom? }`. */
 const CANVAS_VIEW = 'canvas-view';
+/** An artboard's picture is in the cache: `{ sessionId, key, artboardId, sha256 }`. */
+const CANVAS_THUMB = 'canvas-thumb';
 const ARTBOARD_ID = /^[a-z0-9-]{1,64}$/;
+const SHA256 = /^[0-9a-f]{64}$/;
+const NO_PICTURES: ReadonlyMap<string, string> = new Map();
 
 interface ViewMemory {
   selected: string | null;
@@ -43,6 +47,26 @@ export interface CanvasState {
   refresh: () => void;
   selected: string | null;
   zoom: number;
+  /** Each artboard's cached picture, by artboard id: only for the hash its file has now. */
+  thumbs: ReadonlyMap<string, string>;
+}
+
+/** The hashes `canvas_thumbs` answers as ready; anything else in the answer is left out. */
+function readyHashes(answer: unknown): string[] {
+  if (!Array.isArray(answer)) return [];
+  return answer.flatMap((item: unknown) => {
+    if (typeof item !== 'object' || item === null) return [];
+    const { sha256, ready } = item as Record<string, unknown>;
+    return ready === true && typeof sha256 === 'string' && SHA256.test(sha256) ? [sha256] : [];
+  });
+}
+
+/** The hash of a `canvas-thumb` event for this canvas, or null. */
+function thumbEventHash(payload: unknown, sessionId: string, key: string): string | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const event = payload as Record<string, unknown>;
+  if (event.sessionId !== sessionId || event.key !== key) return null;
+  return typeof event.sha256 === 'string' && SHA256.test(event.sha256) ? event.sha256 : null;
 }
 
 function parseViewEvent(payload: unknown, sessionId: string, key: string): Partial<ViewMemory> | null {
@@ -68,6 +92,8 @@ export function useCanvas(sessionId: string, key: string | null, turnsEnded = 0)
   const memoryKey = key === null ? null : `${sessionId}/${key}`;
   const [{ read, shown }, setReads] = useState<ReadMemory>(() => (memoryKey === null ? NO_READ : (lastReads.get(memoryKey) ?? NO_READ)));
   const [view, setView] = useState<ViewMemory>(() => (memoryKey === null ? DEFAULT_VIEW : (memory.get(memoryKey) ?? DEFAULT_VIEW)));
+  // Pictures are known by hash, so one drawn for an older file never shows for the new one.
+  const [readyPictures, setReadyPictures] = useState<ReadonlySet<string>>(() => new Set());
   // Answers are numbered: one asked for earlier never replaces one asked for later.
   const lastRequest = useRef(0);
   const lastApplied = useRef(0);
@@ -96,7 +122,32 @@ export function useCanvas(sessionId: string, key: string | null, turnsEnded = 0)
     shownKey.current = memoryKey;
     setReads(memoryKey === null ? NO_READ : (lastReads.get(memoryKey) ?? NO_READ));
     setView(memoryKey === null ? DEFAULT_VIEW : (memory.get(memoryKey) ?? DEFAULT_VIEW));
+    setReadyPictures(new Set());
   }, [memoryKey]);
+
+  const addReady = useCallback((hashes: readonly string[]) => {
+    if (hashes.length === 0) return;
+    setReadyPictures((previous) => (hashes.every((hash) => previous.has(hash)) ? previous : new Set([...previous, ...hashes])));
+  }, []);
+
+  // The files' hashes, as one string: an equal read asks for nothing again.
+  const hashes = shown?.boards.map((board) => board.sha256 ?? '').join(',') ?? null;
+  useEffect(() => {
+    if (key === null || hashes === null) return;
+    // The backend queues the missing pictures and says through `canvas-thumb` when each is drawn.
+    invoke('canvas_thumbs', { sessionId, key })
+      .then((answer) => addReady(readyHashes(answer)))
+      .catch(() => undefined);
+  }, [sessionId, key, hashes, addReady]);
+
+  const thumbs = useMemo(() => {
+    if (shown === null || readyPictures.size === 0) return NO_PICTURES;
+    const pictures = new Map<string, string>();
+    for (const board of shown.boards) {
+      if (board.sha256 !== null && readyPictures.has(board.sha256)) pictures.set(board.id, canvasThumbUrl(board.sha256));
+    }
+    return pictures.size === 0 ? NO_PICTURES : pictures;
+  }, [shown, readyPictures]);
 
   useEffect(() => {
     refresh();
@@ -118,12 +169,17 @@ export function useCanvas(sessionId: string, key: string | null, turnsEnded = 0)
         return next;
       });
     });
+    const stopThumb = listen<unknown>(CANVAS_THUMB, (event) => {
+      const hash = thumbEventHash(event.payload, sessionId, key);
+      if (hash !== null) addReady([hash]);
+    });
     return () => {
       window.removeEventListener('focus', onFocus);
       void stopChanged.then((stop) => stop());
       void stopView.then((stop) => stop());
+      void stopThumb.then((stop) => stop());
     };
-  }, [sessionId, key, refresh]);
+  }, [sessionId, key, refresh, addReady]);
 
-  return { read, lastGood: shown?.canvas ?? null, shown, refresh, selected: view.selected, zoom: view.zoom };
+  return { read, lastGood: shown?.canvas ?? null, shown, refresh, selected: view.selected, zoom: view.zoom, thumbs };
 }

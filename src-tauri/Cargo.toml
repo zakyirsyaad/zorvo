@@ -65,7 +65,11 @@ objc2-web-kit = { version = "0.3", default-features = false, features = ["std", 
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSBitmapImageRep", "NSImageRep", "NSImage"] }
 # Keychain for the Zorvo Private device secret; the version the updater already compiles.
 security-framework = "=3.7.0"
-objc2-foundation = { version = "0.3", features = ["NSDictionary", "NSString", "NSUserDefaults", "NSValue"] }
+objc2-foundation = { version = "0.3", features = ["NSData", "NSDictionary", "NSGeometry", "NSString", "NSUserDefaults", "NSValue"] }
+# Pictures of canvas artboards (`artifacts/render.rs`): the versions wry already compiles.
+objc2-web-kit = { version = "=0.3.2", default-features = false, features = ["std", "WKWebView", "WKSnapshotConfiguration", "WKPDFConfiguration", "block2", "objc2-app-kit", "objc2-core-foundation"] }
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSImage", "NSBitmapImageRep", "NSImageRep", "NSGraphics"] }
+block2 = "=0.6.2"
 
 # Line numbers for our own code, no debug info for dependencies: keeps
 # target/ small in every checkout and on CI. Leave `incremental` to each

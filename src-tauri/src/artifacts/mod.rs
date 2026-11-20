@@ -7,6 +7,7 @@ pub mod canvas_view;
 pub mod page_script;
 pub mod picks;
 pub mod protocol;
+pub mod render;
 pub mod source;
 pub mod store;
 pub mod view;

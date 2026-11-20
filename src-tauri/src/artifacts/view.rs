@@ -359,7 +359,7 @@ pub fn is_showing(shown: Option<&ShownView>, session_id: &str, artifact_id: Opti
 /// that ends the process of a page that does not yield, so this asks for it by
 /// the name WebKit's own tools use, and only when the view answers to it; on a
 /// macOS where it does not, the page is merely hidden, as before.
-fn end(view: wry::WebView) {
+pub(crate) fn end(view: wry::WebView) {
     use objc2::{msg_send, sel};
     use wry::WebViewExtMacOS;
     let webview = view.webview();

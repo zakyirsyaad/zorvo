@@ -169,6 +169,11 @@ export function canvasFileUrl(sessionId: string, key: string, relative: string):
   return `${ORIGIN}canvas/${sessionId}/${key}/f/${relative.split('/').map(encodeSegment).join('/')}`;
 }
 
+/** The URL of an artboard's cached picture, the same as `protocol.rs`'s `thumb_url`. */
+export function canvasThumbUrl(sha256: string): string {
+  return `${ORIGIN}thumb/${sha256}.png`;
+}
+
 /** Hex characters of a file's hash in its URL: a changed artboard gets a new URL, so its frame loads once again. */
 const VERSION_CHARS = 12;
 

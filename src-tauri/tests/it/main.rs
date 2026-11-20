@@ -21,6 +21,7 @@ mod agent_tools_service_test;
 mod agent_tools_socket_test;
 mod background_processes_test;
 mod branches_test;
+mod canvas_render_test;
 mod changes_test;
 mod computer_use_driver_test;
 mod computer_use_e2e_test;

@@ -598,9 +598,17 @@ pub fn run() {
                 app.state::<store::AppStore>().root().join("artifacts"),
             ));
             let known_workspaces = app.handle().clone();
+            let thumbs_dir = app.state::<store::AppStore>().root().join("canvas-thumbs");
+            // Pictures of canvas artboards, and those no shown canvas listed for a month.
+            let swept = thumbs_dir.clone();
+            std::thread::spawn(move || {
+                let _ = std::fs::create_dir_all(&swept);
+                artifacts::render::sweep_thumbs(&swept, std::time::SystemTime::now());
+            });
+            app.manage(artifacts::commands::Thumbs::default());
             app.manage(Arc::new(artifacts::protocol::Served {
                 store: Arc::clone(&artifact_store),
-                thumbs: app.state::<store::AppStore>().root().join("canvas-thumbs"),
+                thumbs: thumbs_dir,
                 is_known: Arc::new(move |path| {
                     known_workspaces
                         .state::<store::AppStore>()
@@ -696,6 +704,7 @@ pub fn run() {
             artifacts::commands::artifact_list,
             artifacts::commands::canvas_show,
             artifacts::commands::canvas_read,
+            artifacts::commands::canvas_thumbs,
             artifacts::commands::canvas_forget,
             artifacts::commands::artifact_rename,
             artifacts::commands::artifact_delete,

@@ -130,16 +130,20 @@ fn decode_segment(segment: &str) -> Option<String> {
     (!text.contains('/')).then_some(text)
 }
 
+/// A SHA-256 as Zorvo writes it: 64 lower-case hex digits.
+pub fn is_sha256(text: &str) -> bool {
+    text.len() == 64
+        && text
+            .chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+}
+
 pub fn parse_canvas_url(uri: &str) -> Option<CanvasUrl> {
     let path = uri.strip_prefix(ORIGIN)?;
     let path = path.split(['?', '#']).next()?;
     if let Some(name) = path.strip_prefix(THUMB_PREFIX) {
         let sha256 = name.strip_suffix(".png")?;
-        let is_hash = sha256.len() == 64
-            && sha256
-                .chars()
-                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c));
-        return is_hash.then(|| CanvasUrl::Thumb {
+        return is_sha256(sha256).then(|| CanvasUrl::Thumb {
             sha256: sha256.to_string(),
         });
     }

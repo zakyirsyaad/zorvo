@@ -104,12 +104,15 @@ describe("the canvas viewer", () => {
     expect(JSON.parse(first.state).boards).toHaveLength(3);
 
     rerenderWith({ isCovered: false });
-    rerenderWith({ thumbs: new Map() });
+    // A picture for an old hash changes nothing.
+    act(() => deliver("canvas-thumb", { sessionId: SESSION, key: KEY, artboardId: "cart", sha256: "9".repeat(64) }));
     await act(async () => {});
     expect(calls("canvas_view_apply")).toHaveLength(1);
 
-    rerenderWith({ thumbs: new Map([["cart", "zorvo-artifact://localhost/thumb/x.png"]]) });
+    act(() => deliver("canvas-thumb", { sessionId: SESSION, key: KEY, artboardId: "cart", sha256: "a".repeat(64) }));
     await waitFor(() => expect(calls("canvas_view_apply")).toHaveLength(2));
+    const withPicture = JSON.parse((calls("canvas_view_apply")[1] as { state: string }).state);
+    expect(withPicture.boards.find((board: { id: string }) => board.id === "cart").thumb).toBe(`zorvo-artifact://localhost/thumb/${"a".repeat(64)}.png`);
 
     answer = readOf("b".repeat(64));
     act(() => deliver("artifacts-changed", { sessionId: SESSION }));

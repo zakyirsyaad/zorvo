@@ -13,8 +13,6 @@ export interface CanvasViewerProps {
   canvasKey: string;
   /** Moves when one of the session's turns ends, so the canvas is read again. */
   turnsEnded?: number;
-  /** Each artboard's picture, by artboard id, for the artboards not drawn live. */
-  thumbs?: ReadonlyMap<string, string>;
   /** Back to the Output list; absent when there is no list to go back to. */
   onBack?: () => void;
   isExpanded: boolean;
@@ -24,7 +22,6 @@ export interface CanvasViewerProps {
   isCovered?: boolean;
 }
 
-const NO_PICTURES: ReadonlyMap<string, string> = new Map();
 const COULD_NOT_SHOW = "Zorvo could not show that canvas.";
 
 /**
@@ -32,11 +29,11 @@ const COULD_NOT_SHOW = "Zorvo could not show that canvas.";
  * to show with `canvas_view_apply` whenever the canvas, its files or its pictures change, and driven by
  * the header's commands. A `canvas.json` that cannot be read keeps the last layout under a bar.
  */
-export function CanvasViewer({ sessionId, canvasKey, turnsEnded, thumbs = NO_PICTURES, onBack, isExpanded, onToggleExpanded, onError, isCovered = false }: CanvasViewerProps) {
+export function CanvasViewer({ sessionId, canvasKey, turnsEnded, onBack, isExpanded, onToggleExpanded, onError, isCovered = false }: CanvasViewerProps) {
   const canvas = useCanvas(sessionId, canvasKey, turnsEnded);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const onErrorRef = useLatest(onError);
-  const { shown, read, selected, lastGood } = canvas;
+  const { shown, read, selected, lastGood, thumbs } = canvas;
 
   // A string, so an equal state (a new but empty picture map, a render) sends nothing.
   const state = useMemo(() => (shown === null ? null : canvasShellState(shown, sessionId, thumbs, selected)), [shown, sessionId, thumbs, selected]);

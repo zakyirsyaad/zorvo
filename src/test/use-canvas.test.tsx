@@ -48,6 +48,8 @@ describe("useCanvas", () => {
   });
 
   it("keeps the last good canvas when a read cannot parse", async () => {
+    // canvas_thumbs answers nothing here.
+    invoke.mockResolvedValue(undefined);
     invoke.mockResolvedValueOnce(GOOD);
     const { result } = renderHook(() => useCanvas(SESSION, KEY));
     await waitFor(() => expect(result.current.lastGood).toEqual(CANVAS));
@@ -98,6 +100,37 @@ describe("useCanvas", () => {
     expect(result.current.zoom).toBe(0.38);
     act(() => deliver("canvas-view", { sessionId: SESSION, key: KEY, kind: "select", artboardId: null }));
     expect(result.current.selected).toBeNull();
+  });
+
+  it("shows a picture when canvas-thumb arrives for the current hash only", async () => {
+    const hash = "a".repeat(64);
+    const old = "9".repeat(64);
+    invoke.mockImplementation((cmd) =>
+      Promise.resolve(cmd === "canvas_thumbs" ? [{ id: "cart", sha256: hash, ready: false }] : { ...GOOD, entry: { ...ENTRY, key: "c-1111111111111111" } }),
+    );
+    const key = "c-1111111111111111";
+    const { result } = renderHook(() => useCanvas("s-thumbs", key));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("canvas_thumbs", { sessionId: "s-thumbs", key }));
+    expect(result.current.thumbs.size).toBe(0);
+
+    // An old hash, another canvas, another session: nothing.
+    act(() => deliver("canvas-thumb", { sessionId: "s-thumbs", key, artboardId: "cart", sha256: old }));
+    act(() => deliver("canvas-thumb", { sessionId: "s-thumbs", key: KEY, artboardId: "cart", sha256: hash }));
+    act(() => deliver("canvas-thumb", { sessionId: "s-other", key, artboardId: "cart", sha256: hash }));
+    expect(result.current.thumbs.size).toBe(0);
+
+    act(() => deliver("canvas-thumb", { sessionId: "s-thumbs", key, artboardId: "cart", sha256: hash }));
+    expect(result.current.thumbs.get("cart")).toBe(`zorvo-artifact://localhost/thumb/${hash}.png`);
+  });
+
+  it("shows the pictures canvas_thumbs says are ready", async () => {
+    const key = "c-2222222222222222";
+    invoke.mockImplementation((cmd) =>
+      Promise.resolve(cmd === "canvas_thumbs" ? [{ id: "cart", sha256: "a".repeat(64), ready: true }, { id: "x", sha256: "nope", ready: true }] : GOOD),
+    );
+    const { result } = renderHook(() => useCanvas("s-ready", key));
+    await waitFor(() => expect(result.current.thumbs.get("cart")).toBe(`zorvo-artifact://localhost/thumb/${"a".repeat(64)}.png`));
+    expect(result.current.thumbs.size).toBe(1);
   });
 });
 

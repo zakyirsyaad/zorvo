@@ -115,7 +115,7 @@ fn call(id: i64, tool: &str, args: Value) -> Value {
 fn delegate(id: i64) -> Value {
     call(
         id,
-        "delegate",
+        "start_worker",
         json!({"agent": "qwen-code", "task": "review it"}),
     )
 }
@@ -140,7 +140,7 @@ fn a_tool_call_is_emitted_with_its_session_and_answered_by_respond() {
     client.send(delegate(7));
     let emitted = rig.calls.recv_timeout(WAIT).unwrap();
     assert_eq!(emitted.session_id, "s1");
-    assert_eq!(emitted.tool, "delegate");
+    assert_eq!(emitted.tool, "start_worker");
     assert_eq!(
         emitted.args,
         json!({"agent": "qwen-code", "task": "review it"})
@@ -178,7 +178,7 @@ fn list_and_initialize_are_answered_without_an_event() {
     client.send(json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}));
     assert_eq!(
         client.read()["result"]["tools"].as_array().unwrap().len(),
-        7
+        8
     );
     client.send(json!({"jsonrpc":"2.0","id":3,"method":"prompts/list"}));
     assert_eq!(client.read()["error"]["code"], -32601);
@@ -191,7 +191,7 @@ fn an_invalid_call_is_answered_at_once_and_emits_nothing() {
     let mut client = Client::connect(&rig, "s1");
     client.send(call(
         4,
-        "delegate",
+        "start_worker",
         json!({"agent": "qwen-code", "task": ""}),
     ));
     let answer = client.read();
@@ -360,7 +360,11 @@ fn nothing_logs_the_token_or_the_task() {
         .spawn()
         .unwrap();
     let mut stdin = bridge.stdin.take().unwrap();
-    let request = call(1, "delegate", json!({"agent": "qwen-code", "task": task}));
+    let request = call(
+        1,
+        "start_worker",
+        json!({"agent": "qwen-code", "task": task}),
+    );
     writeln!(stdin, "{request}").unwrap();
     let emitted = rig.calls.recv_timeout(WAIT).unwrap();
     rig.tools.respond(&emitted.call_id, true, "done");

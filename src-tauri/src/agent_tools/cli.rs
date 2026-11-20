@@ -16,7 +16,7 @@ use super::tools::tool_list;
 const NOT_REACHABLE: &str = "Zorvo is not reachable from this shell.";
 const NO_ANSWER: &str = "Zorvo did not answer.";
 const QUOTING_HINT: &str = "Pass the arguments as one JSON object in single quotes, for example: \
-     zorvo tools delegate '{\"agent\":\"qwen-code\",\"task\":\"…\"}'";
+     zorvo tools start_worker '{\"agent\":\"qwen-code\",\"task\":\"…\"}'";
 /// Zorvo answers or closes within its own call timeout; this is slack on top.
 const ANSWER_SLACK: Duration = Duration::from_secs(15);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -104,7 +104,8 @@ fn usage() -> String {
 
 fn example_arguments(tool: &str) -> &'static str {
     match tool {
-        "delegate" => r#"'{"agent":"<id>","task":"<what to do>"}'"#,
+        "start_worker" => r#"'{"agent":"<id>","task":"<what to do>","worktree":"new"}'"#,
+        "send" => r#"'{"handle":"<handle>","message":"<the further task>"}'"#,
         "start_session" => r#"'{"agent":"<id>","brief":"<everything the new session must know>"}'"#,
         "read_session" | "stop_session" => r#"'{"handle":"<handle>"}'"#,
         "show_artifact" => r#"'{"path":"<file.html>","title":"<a short name>"}'"#,
@@ -211,7 +212,7 @@ mod tests {
         for tool in super::super::tools::TOOL_NAMES {
             assert!(text.contains(tool), "{tool}");
         }
-        assert!(text.contains("\"$ZORVO_TOOLS\" tools delegate"));
+        assert!(text.contains("\"$ZORVO_TOOLS\" tools start_worker"));
         assert!(text
             .contains(r#"tools show_artifact '{"path":"<file.html>","title":"<a short name>"}'"#));
     }

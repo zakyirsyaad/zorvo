@@ -1,12 +1,13 @@
-//! The seven tools an agent can call, their JSON schemas, and the checks on
+//! The eight tools an agent can call, their JSON schemas, and the checks on
 //! their arguments. Only shapes are checked here; what a folder or an agent
 //! name means is decided later, with the webview and the store.
 
 use serde_json::{json, Map, Value};
 
-pub const TOOL_NAMES: [&str; 7] = [
+pub const TOOL_NAMES: [&str; 8] = [
     "list_agents",
-    "delegate",
+    "start_worker",
+    "send",
     "start_session",
     "read_session",
     "stop_session",
@@ -15,6 +16,8 @@ pub const TOOL_NAMES: [&str; 7] = [
 ];
 pub const MAX_TEXT_CHARS: usize = 20_000;
 pub const MAX_TITLE_CHARS: usize = 60;
+pub const MAX_SUMMARY_CHARS: usize = 2_000;
+pub const MAX_FILES: usize = 50;
 const MAX_NAME_CHARS: usize = 200;
 const MAX_FOLDER_CHARS: usize = 4096;
 const MAX_PATH_CHARS: usize = 4096;
@@ -24,7 +27,7 @@ pub fn tool_list() -> Value {
     json!([
         {
             "name": "list_agents",
-            "description": "List the coding agents you can hand work to, the sessions you have opened, and the folders a new session may be opened in.",
+            "description": "List the coding agents you can start as workers, the workers and sessions you have started, and the folders a new session may be opened in.",
             "inputSchema": {
                 "type": "object",
                 "properties": {},
@@ -32,15 +35,30 @@ pub fn tool_list() -> Value {
             }
         },
         {
-            "name": "delegate",
-            "description": "Hand a task to another agent. It works in the same folder as you and its answer arrives later as a message, so this call returns at once. Calling it again for the same agent continues the same session. Say what you need and what you already know: the agent starts with a summary of this conversation, not all of it.",
+            "name": "start_worker",
+            "description": "Start another agent as a worker on a task. It returns at once. End your turn after starting your workers: each result arrives later as a message. Use worktree new when workers would edit the same files; a new worktree starts from the last commit, so changes that are not committed are not in it.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "agent": { "type": "string", "description": "An agent id from list_agents." },
-                    "task": { "type": "string", "maxLength": MAX_TEXT_CHARS, "description": "What the agent should do. Not a slash command." }
+                    "task": { "type": "string", "maxLength": MAX_TEXT_CHARS, "description": "What the worker should do. Not a slash command." },
+                    "title": { "type": "string", "maxLength": MAX_TITLE_CHARS, "description": "A short name for the session and its branch." },
+                    "worktree": { "type": "string", "enum": ["current", "new"], "description": "current (the default) works in your folder; new gives the worker a worktree of its own on a new branch." }
                 },
                 "required": ["agent", "task"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "send",
+            "description": "Give a worker you started a further task. It continues in the same session with what it already knows. Its result arrives later as a message.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "handle": { "type": "string", "description": "A worker's handle, from start_worker or list_agents." },
+                    "message": { "type": "string", "maxLength": MAX_TEXT_CHARS, "description": "The further task. Not a slash command." }
+                },
+                "required": ["handle", "message"],
                 "additionalProperties": false
             }
         },
@@ -66,7 +84,7 @@ pub fn tool_list() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "handle": { "type": "string", "description": "A handle returned by delegate, start_session or list_agents." },
+                    "handle": { "type": "string", "description": "A handle returned by start_worker, start_session or list_agents." },
                     "max_chars": { "type": "integer", "minimum": 1, "maximum": MAX_TEXT_CHARS, "description": "Cut the answer to this many characters." }
                 },
                 "required": ["handle"],
@@ -79,7 +97,7 @@ pub fn tool_list() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "handle": { "type": "string", "description": "A handle returned by delegate, start_session or list_agents." }
+                    "handle": { "type": "string", "description": "A handle returned by start_worker, start_session or list_agents." }
                 },
                 "required": ["handle"],
                 "additionalProperties": false
@@ -119,7 +137,8 @@ pub fn validate(tool: &str, args: &Value) -> Result<Value, String> {
     let allowed: &[&str] = match tool {
         "list_agents" | "artifact_guide" => &[],
         "show_artifact" => &["path", "title"],
-        "delegate" => &["agent", "task"],
+        "start_worker" => &["agent", "task", "title", "worktree"],
+        "send" => &["handle", "message"],
         "start_session" => &["agent", "brief", "title", "worktree", "folder"],
         "read_session" => &["handle", "max_chars"],
         "stop_session" => &["handle"],
@@ -137,9 +156,15 @@ pub fn validate(tool: &str, args: &Value) -> Result<Value, String> {
     }
     let mut clean = Map::new();
     match tool {
-        "delegate" => {
+        "start_worker" => {
             put_name(&mut clean, object, "agent", true)?;
             put_text(&mut clean, object, "task", true)?;
+            put_title(&mut clean, object)?;
+            put_worker_worktree(&mut clean, object)?;
+        }
+        "send" => {
+            put_name(&mut clean, object, "handle", true)?;
+            put_text(&mut clean, object, "message", true)?;
         }
         "start_session" => {
             put_name(&mut clean, object, "agent", true)?;
@@ -248,6 +273,20 @@ fn put_worktree(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Re
             Ok(())
         }
         Some(_) => Err("worktree must be true or false.".to_string()),
+    }
+}
+
+fn put_worker_worktree(
+    out: &mut Map<String, Value>,
+    object: &Map<String, Value>,
+) -> Result<(), String> {
+    match string_of(object, "worktree", false)? {
+        None => Ok(()),
+        Some(choice @ ("current" | "new")) => {
+            out.insert("worktree".to_string(), json!(choice));
+            Ok(())
+        }
+        Some(_) => Err("worktree must be current or new.".to_string()),
     }
 }
 
@@ -404,7 +443,7 @@ mod tests {
     }
 
     #[test]
-    fn lists_exactly_the_seven_tools() {
+    fn lists_exactly_the_eight_tools() {
         let list = tool_list();
         let tools = list.as_array().unwrap();
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
@@ -413,7 +452,8 @@ mod tests {
             names,
             [
                 "list_agents",
-                "delegate",
+                "start_worker",
+                "send",
                 "start_session",
                 "read_session",
                 "stop_session",
@@ -429,9 +469,9 @@ mod tests {
     }
 
     #[test]
-    fn accepts_a_delegate_call_and_trims_it() {
+    fn accepts_a_start_worker_call_and_trims_it() {
         let args = validate(
-            "delegate",
+            "start_worker",
             &json!({"agent": " qwen-code ", "task": " review it "}),
         )
         .unwrap();
@@ -441,27 +481,31 @@ mod tests {
     #[test]
     fn refuses_an_empty_a_slash_and_an_overlong_task() {
         for task in ["".to_string(), "  ".to_string(), "/review".to_string()] {
-            assert!(validate("delegate", &json!({"agent": "a", "task": task})).is_err());
+            assert!(validate("start_worker", &json!({"agent": "a", "task": task})).is_err());
         }
         let long = "x".repeat(MAX_TEXT_CHARS + 1);
-        assert!(validate("delegate", &json!({"agent": "a", "task": long})).is_err());
-        assert!(validate("delegate", &json!({"agent": "a"})).is_err());
+        assert!(validate("start_worker", &json!({"agent": "a", "task": long})).is_err());
+        assert!(validate("start_worker", &json!({"agent": "a"})).is_err());
     }
 
     #[test]
     fn counts_characters_not_bytes() {
         let ok = "é".repeat(MAX_TEXT_CHARS);
-        assert!(validate("delegate", &json!({"agent": "a", "task": ok})).is_ok());
+        assert!(validate("start_worker", &json!({"agent": "a", "task": ok})).is_ok());
         let bad = "é".repeat(MAX_TEXT_CHARS + 1);
-        assert!(validate("delegate", &json!({"agent": "a", "task": bad})).is_err());
+        assert!(validate("start_worker", &json!({"agent": "a", "task": bad})).is_err());
     }
 
     #[test]
     fn refuses_unknown_tools_keys_and_wrong_types() {
         assert!(validate("run", &json!({})).is_err());
-        assert!(validate("delegate", &json!({"agent": 1, "task": "t"})).is_err());
-        assert!(validate("delegate", &json!({"agent": "a", "task": "t", "cwd": "/"})).is_err());
-        assert!(validate("delegate", &json!("text")).is_err());
+        assert!(validate("start_worker", &json!({"agent": 1, "task": "t"})).is_err());
+        assert!(validate(
+            "start_worker",
+            &json!({"agent": "a", "task": "t", "cwd": "/"})
+        )
+        .is_err());
+        assert!(validate("start_worker", &json!("text")).is_err());
         assert!(validate("list_agents", &json!({"x": 1})).is_err());
         assert_eq!(validate("list_agents", &json!({})).unwrap(), json!({}));
     }
@@ -469,10 +513,10 @@ mod tests {
     #[test]
     fn an_error_never_repeats_the_task_text() {
         let task = format!("SECRET-{}", "y".repeat(MAX_TEXT_CHARS));
-        let error = validate("delegate", &json!({"agent": "a", "task": task})).unwrap_err();
+        let error = validate("start_worker", &json!({"agent": "a", "task": task})).unwrap_err();
         assert!(!error.contains(&task[..50]));
         let error = validate(
-            "delegate",
+            "start_worker",
             &json!({"agent": "a", "task": "t", "SECRET-key": 1}),
         )
         .unwrap_err();
@@ -515,5 +559,62 @@ mod tests {
         assert!(validate("stop_session", &json!({"handle": "a\nb"})).is_err());
         assert!(validate("stop_session", &json!({"handle": "a".repeat(201)})).is_err());
         assert!(validate("stop_session", &json!({"handle": "   "})).is_err());
+    }
+
+    #[test]
+    fn start_worker_takes_an_agent_a_task_and_a_worktree_choice() {
+        let ok = validate(
+            "start_worker",
+            &json!({"agent": "codex", "task": " Fix it ", "worktree": "new"}),
+        )
+        .unwrap();
+        assert_eq!(ok["task"], "Fix it");
+        assert_eq!(ok["worktree"], "new");
+        let main = json!({"agent": "codex", "task": "x", "worktree": "main"});
+        assert!(validate("start_worker", &main).is_err());
+        assert!(validate("start_worker", &json!({"agent": "codex"})).is_err());
+        assert!(validate("start_worker", &json!({"agent": "a", "task": "/review"})).is_err());
+        let titled = json!({"agent": "a", "task": "t", "title": " Name "});
+        assert_eq!(validate("start_worker", &titled).unwrap()["title"], "Name");
+        let extra = json!({"agent": "a", "task": "t", "folder": "/"});
+        assert!(validate("start_worker", &extra).is_err());
+    }
+
+    #[test]
+    fn send_takes_a_handle_and_a_message() {
+        let ok = validate(
+            "send",
+            &json!({"handle": "worker-1", "message": " Also fix the tests "}),
+        );
+        assert_eq!(ok.unwrap()["message"], "Also fix the tests");
+        assert!(validate("send", &json!({"handle": "worker-1"})).is_err());
+        let extra = json!({"handle": "worker-1", "message": "x", "extra": 1});
+        assert!(validate("send", &extra).is_err());
+        assert!(validate("send", &json!({"handle": "w", "message": "/compact"})).is_err());
+    }
+
+    #[test]
+    fn delegate_is_no_longer_a_tool() {
+        assert!(!TOOL_NAMES.contains(&"delegate"));
+        let list = tool_list();
+        assert!(list
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|tool| tool["name"] != "delegate"));
+        assert!(validate("delegate", &json!({"agent": "a", "task": "t"})).is_err());
+    }
+
+    #[test]
+    fn an_error_never_repeats_the_argument() {
+        let args = json!({"agent": "codex", "task": "x", "worktree": "SECRET-VALUE"});
+        let error = validate("start_worker", &args).unwrap_err();
+        assert!(!error.contains("SECRET-VALUE"));
+    }
+
+    #[test]
+    fn the_summary_limits_exist() {
+        assert_eq!(MAX_SUMMARY_CHARS, 2_000);
+        assert_eq!(MAX_FILES, 50);
     }
 }

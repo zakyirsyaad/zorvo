@@ -114,13 +114,14 @@ fn text(bytes: &[u8]) -> String {
 }
 
 #[test]
-fn without_a_tool_it_lists_the_seven_tools_and_needs_no_socket() {
+fn without_a_tool_it_lists_the_eight_tools_and_needs_no_socket() {
     let output = command(&[]).output().unwrap();
     assert_eq!(output.status.code(), Some(0));
     let listed = text(&output.stdout);
     for tool in [
         "list_agents",
-        "delegate",
+        "start_worker",
+        "send",
         "start_session",
         "read_session",
         "stop_session",
@@ -130,7 +131,7 @@ fn without_a_tool_it_lists_the_seven_tools_and_needs_no_socket() {
         assert!(listed.contains(tool), "{tool} is listed: {listed}");
     }
     assert!(
-        listed.contains("\"$ZORVO_TOOLS\" tools delegate"),
+        listed.contains("\"$ZORVO_TOOLS\" tools start_worker"),
         "{listed}"
     );
 }
@@ -140,12 +141,15 @@ fn a_call_reaches_the_service_with_its_session_and_prints_the_answer() {
     let rig = rig("call");
     let (call, output) = rig.run_answered(
         "s1",
-        &["delegate", r#"{"agent":"qwen-code","task":"review it"}"#],
+        &[
+            "start_worker",
+            r#"{"agent":"qwen-code","task":"review it"}"#,
+        ],
         true,
         "started",
     );
     assert_eq!(call.session_id, "s1");
-    assert_eq!(call.tool, "delegate");
+    assert_eq!(call.tool, "start_worker");
     assert_eq!(
         call.args,
         json!({"agent": "qwen-code", "task": "review it"})
@@ -169,7 +173,7 @@ fn json_split_across_words_is_joined() {
     let (call, output) = rig.run_answered(
         "s1",
         &[
-            "delegate",
+            "start_worker",
             "{\"agent\":",
             "\"qwen-code\",",
             "\"task\":",
@@ -191,7 +195,7 @@ fn a_task_with_quotes_and_newlines_arrives_intact() {
     let rig = rig("quotes");
     let task = "say 'hi' and \"bye\"\nthen stop";
     let arguments = json!({"agent": "qwen-code", "task": task}).to_string();
-    let (call, _) = rig.run_answered("s1", &["delegate", &arguments], true, "started");
+    let (call, _) = rig.run_answered("s1", &["start_worker", &arguments], true, "started");
     assert_eq!(call.args["task"], task);
 }
 
@@ -199,7 +203,7 @@ fn a_task_with_quotes_and_newlines_arrives_intact() {
 fn arguments_that_are_not_an_object_exit_2_with_the_quoting_hint() {
     let rig = rig("notobject");
     for arguments in ["review it", "[1]", "\"text\""] {
-        let (child, _) = rig.spawn("s1", &["delegate", arguments]);
+        let (child, _) = rig.spawn("s1", &["start_worker", arguments]);
         let output = child.wait_with_output().unwrap();
         assert_eq!(output.status.code(), Some(2), "{arguments}");
         assert!(
@@ -219,7 +223,10 @@ fn a_refused_call_prints_the_reason_on_stderr_and_exits_1() {
     let rig = rig("refused");
     let (_, output) = rig.run_answered(
         "s1",
-        &["delegate", r#"{"agent":"qwen-code","task":"review it"}"#],
+        &[
+            "start_worker",
+            r#"{"agent":"qwen-code","task":"review it"}"#,
+        ],
         false,
         "The user declined.",
     );
@@ -230,7 +237,7 @@ fn a_refused_call_prints_the_reason_on_stderr_and_exits_1() {
     // A call the backend's validation refuses never reaches the webview.
     let (child, _) = rig.spawn(
         "s1",
-        &["delegate", r#"{"agent":"qwen-code","task":"/review"}"#],
+        &["start_worker", r#"{"agent":"qwen-code","task":"/review"}"#],
     );
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(1));
@@ -294,7 +301,7 @@ fn killing_the_command_ends_the_waiting_call() {
 #[test]
 fn neither_stream_ever_holds_the_token() {
     let rig = rig("secret");
-    let (child, token) = rig.spawn("s1", &["delegate", "not json"]);
+    let (child, token) = rig.spawn("s1", &["start_worker", "not json"]);
     let output = child.wait_with_output().unwrap();
     assert!(!text(&output.stdout).contains(&token));
     assert!(!text(&output.stderr).contains(&token));
@@ -348,7 +355,7 @@ fn from_an_agents_environment_it_never_opens_the_app() {
                 .unwrap_or_else(|| panic!("{args:?} with {variable} opened the app"));
             assert_eq!(output.status.code(), Some(2), "{args:?} {variable}");
             assert!(
-                text(&output.stderr).contains("\"$ZORVO_TOOLS\" tools delegate"),
+                text(&output.stderr).contains("\"$ZORVO_TOOLS\" tools start_worker"),
                 "{args:?} {variable}: {}",
                 text(&output.stderr)
             );

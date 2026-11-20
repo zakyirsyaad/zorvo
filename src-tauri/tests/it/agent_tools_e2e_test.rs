@@ -53,7 +53,7 @@ fn rig(tag: &str) -> Rig {
 
 fn mcp_agent(rig: &Rig) -> (zorvo_lib::acp::manager::AcpLaunch, PathBuf) {
     let log = rig.dir.join("mcp.log");
-    let call = json!({ "tool": "delegate", "args": { "agent": "qwen", "task": "x" } });
+    let call = json!({ "tool": "start_worker", "args": { "agent": "qwen", "task": "x" } });
     let launch = fake_agent_with(&[
         ("FAKE_ACP_MCP_CALL", &call.to_string()),
         ("FAKE_ACP_MCP_LOG", log.to_str().unwrap()),
@@ -82,7 +82,7 @@ fn the_fake_agent_calls_a_tool_through_the_bridge_and_gets_the_answer() {
 
     let call = rig.calls.recv_timeout(WAIT).expect("a tool call");
     assert_eq!(call.session_id, "s1");
-    assert_eq!(call.tool, "delegate");
+    assert_eq!(call.tool, "start_worker");
     rig.tools.respond(&call.call_id, true, "started");
 
     wait_for(&rx, |e| agent_text(e).as_deref() == Some("mcp:started"));
@@ -93,7 +93,7 @@ fn the_fake_agent_calls_a_tool_through_the_bridge_and_gets_the_answer() {
         .iter()
         .filter_map(|t| t["name"].as_str())
         .collect();
-    assert_eq!(names.len(), 7, "tool names: {names:?}");
+    assert_eq!(names.len(), 8, "tool names: {names:?}");
     assert_eq!(entries[2]["result"]["content"][0]["text"], "started");
     manager.stop("s1");
     rig.tools.shutdown();
@@ -229,7 +229,7 @@ fn command_agent(
     let env_log = rig.dir.join("env.log");
     let params_log = rig.dir.join("params.log");
     let run_log = rig.dir.join("run.log");
-    let call = json!({ "tool": "delegate", "args": { "agent": "qwen", "task": "x" } });
+    let call = json!({ "tool": "start_worker", "args": { "agent": "qwen", "task": "x" } });
     let mut flags = vec![
         ("FAKE_ACP_ENV_LOG", env_log.to_str().unwrap().to_string()),
         (
@@ -337,7 +337,7 @@ fn the_fake_agent_runs_zorvo_tools_and_gets_the_answer() {
 
     let call = rig.calls.recv_timeout(WAIT).expect("a tool call");
     assert_eq!(call.session_id, "s1");
-    assert_eq!(call.tool, "delegate");
+    assert_eq!(call.tool, "start_worker");
     assert_eq!(call.args, json!({ "agent": "qwen", "task": "x" }));
     rig.tools.respond(&call.call_id, true, "started");
 

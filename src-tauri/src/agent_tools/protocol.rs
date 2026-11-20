@@ -310,9 +310,9 @@ mod tests {
     }
 
     #[test]
-    fn tools_list_returns_the_seven_tools() {
+    fn tools_list_returns_the_eight_tools() {
         let got = reply(r#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#);
-        assert_eq!(got["result"]["tools"].as_array().unwrap().len(), 7);
+        assert_eq!(got["result"]["tools"].as_array().unwrap().len(), 8);
         assert_eq!(
             reply(r#"{"jsonrpc":"2.0","id":4,"method":"ping"}"#)["result"],
             json!({})
@@ -321,12 +321,12 @@ mod tests {
 
     #[test]
     fn a_valid_call_becomes_a_call_step_with_cleaned_arguments() {
-        let line = r#"{"jsonrpc":"2.0","id":"c1","method":"tools/call","params":{"name":"delegate","arguments":{"agent":" pi ","task":" go "}}}"#;
+        let line = r#"{"jsonrpc":"2.0","id":"c1","method":"tools/call","params":{"name":"start_worker","arguments":{"agent":" pi ","task":" go "}}}"#;
         assert_eq!(
             handle_line(line),
             Step::Call {
                 id: json!("c1"),
-                tool: "delegate".to_string(),
+                tool: "start_worker".to_string(),
                 args: json!({"agent": "pi", "task": "go"}),
             }
         );
@@ -353,7 +353,7 @@ mod tests {
 
     #[test]
     fn an_invalid_call_is_a_tool_error_not_a_protocol_error() {
-        let line = r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"delegate","arguments":{"agent":"pi"}}}"#;
+        let line = r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"start_worker","arguments":{"agent":"pi"}}}"#;
         let got = reply(line);
         assert!(got.get("error").is_none());
         assert_eq!(got["result"]["isError"], true);

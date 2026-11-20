@@ -149,7 +149,7 @@ pub fn is_relative_file(file: &str) -> bool {
         .all(|part| !part.is_empty() && part != "." && part != "..")
 }
 
-fn is_id(text: &str) -> bool {
+pub(crate) fn is_id(text: &str) -> bool {
     (1..=MAX_ID_CHARS).contains(&text.chars().count())
         && text
             .chars()

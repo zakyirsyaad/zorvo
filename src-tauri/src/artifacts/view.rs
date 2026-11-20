@@ -9,6 +9,10 @@
 //! content process, so a page that never yields cannot stop Zorvo's interface
 //! (a frame inside the main webview does; see the spec's spike results).
 //! There is one at a time, and it lives on the main thread.
+//!
+//! A canvas shows in the same view, through Zorvo's wrapper (`canvas_shell.html`): the comment
+//! script then runs in every frame, so it reaches the artboards too, and a message is read as
+//! the wrapper's only when its frame's URL is the wrapper's (`canvas_view.rs`).
 
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
@@ -17,12 +21,17 @@ use std::time::Instant;
 
 use tauri::{AppHandle, Emitter, Manager};
 
+pub use super::canvas_view::ShownCanvas;
+use super::canvas_view::{
+    apply_script, canvas_message_source, command_script, parse_shell_message, view_event,
+    CanvasNavigation, Source, CANVAS_VIEW, MAX_SHELL_PER_SECOND,
+};
 use super::page_script::{marks_script, mode_script, PAGE_SCRIPT};
 use super::picks::{
     accepted_message, FloodGuard, Intake, PageMark, PagePickEvent, RateLimit, ViewState,
     ARTIFACT_PAGE_PICK,
 };
-use super::protocol::{is_allowed_navigation, respond, Served, SCHEME};
+use super::protocol::{canvas_shell_url, is_allowed_navigation, respond, Served, SCHEME};
 
 const MAIN_WINDOW: &str = "main";
 pub const COULD_NOT_SHOW: &str = "Zorvo could not show that page.";
@@ -33,6 +42,13 @@ pub struct ShownPage {
     pub session_id: String,
     pub artifact_id: String,
     pub version: u32,
+}
+
+/// What the one view shows: a stored page, or a canvas through Zorvo's wrapper.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ShownView {
+    Page(ShownPage),
+    Canvas(ShownCanvas),
 }
 
 /// What decides whether the view is drawn.
@@ -66,7 +82,7 @@ const SHOW_ANYWAY_AFTER: std::time::Duration = std::time::Duration::from_secs(3)
 
 thread_local! {
     /// The one child webview and what it shows. `wry::WebView` is not `Send`, so it stays here.
-    static VIEW: RefCell<Option<(wry::WebView, ShownPage)>> = const { RefCell::new(None) };
+    static VIEW: RefCell<Option<(wry::WebView, ShownView)>> = const { RefCell::new(None) };
     static DISPLAY: Cell<Display> = const { Cell::new(Display { is_loaded: false, is_hidden: false, is_outside: false }) };
     /// Counts the views made, so a late "loaded" for an earlier view changes nothing.
     static GENERATION: Cell<u64> = const { Cell::new(0) };
@@ -81,6 +97,9 @@ thread_local! {
     static RATE: RefCell<RateLimit> = RefCell::new(RateLimit::default());
     /// Every message the view on screen has sent, refused or not, to end a page that floods.
     static FLOOD: RefCell<FloodGuard> = RefCell::new(FloodGuard::default());
+    /// The last state asked for, with its canvas, as the script that applies it. Kept across
+    /// views of the same canvas, and run again once such a view has loaded.
+    static CANVAS_STATE: RefCell<Option<(ShownCanvas, String)>> = const { RefCell::new(None) };
 }
 
 /// Changes what decides the view's visibility and applies it. Main thread only.
@@ -103,12 +122,46 @@ fn mark_loaded(generation: u64) {
             ..display
         });
         apply_page_state();
+        apply_canvas_state();
     }
 }
 
-/// The page the view on screen shows. Main thread only.
+/// What the view on screen shows. Main thread only.
+fn shown_view() -> Option<ShownView> {
+    VIEW.with(|slot| slot.borrow().as_ref().map(|(_, shown)| shown.clone()))
+}
+
+/// The page the view on screen shows, when it shows a page. Main thread only.
 fn shown_page() -> Option<ShownPage> {
-    VIEW.with(|slot| slot.borrow().as_ref().map(|(_, page)| page.clone()))
+    match shown_view()? {
+        ShownView::Page(page) => Some(page),
+        ShownView::Canvas(_) => None,
+    }
+}
+
+/// The canvas the view on screen shows, when it shows one. Main thread only.
+fn shown_canvas() -> Option<ShownCanvas> {
+    match shown_view()? {
+        ShownView::Canvas(canvas) => Some(canvas),
+        ShownView::Page(_) => None,
+    }
+}
+
+/// Gives a loaded wrapper the last state asked for its canvas. Main thread only.
+fn apply_canvas_state() {
+    let Some(canvas) = shown_canvas() else {
+        return;
+    };
+    let script = CANVAS_STATE.with(|state| {
+        state
+            .borrow()
+            .as_ref()
+            .filter(|(of, _)| *of == canvas)
+            .map(|(_, script)| script.clone())
+    });
+    if let Some(script) = script {
+        evaluate(&script);
+    }
 }
 
 /// Runs one of `page_script.rs`'s fixed calls in the view on screen. Main thread only.
@@ -146,15 +199,15 @@ fn apply_page_state() {
     run_marks(&page);
 }
 
-/// What the page sent, once `picks.rs` accepts it, goes to the main webview with
-/// the page it came from. Main thread only (wry calls the handler there).
-fn on_page_message(app: &AppHandle, generation: u64, body: &str) {
+/// Counts a message of the view of `generation` and says whether to read it; a view that
+/// floods is ended. Main thread only.
+fn admits(app: &AppHandle, generation: u64, body: &str) -> bool {
     if GENERATION.get() != generation {
-        return;
+        return false;
     }
     match FLOOD.with(|flood| flood.borrow_mut().admit(body.len(), Instant::now())) {
-        Intake::Read => {}
-        Intake::Drop => return,
+        Intake::Read => true,
+        Intake::Drop => false,
         Intake::EndPage => {
             // Not from inside the view's own handler: the end runs once this call has returned.
             let _ = app.run_on_main_thread(move || {
@@ -162,8 +215,41 @@ fn on_page_message(app: &AppHandle, generation: u64, body: &str) {
                     end_current();
                 }
             });
-            return;
+            false
         }
+    }
+}
+
+/// What the canvas view sent. Only the wrapper's own frame may select or report the zoom; an
+/// artboard's messages (its comment picks) are not read yet. Main thread only.
+fn on_canvas_message(app: &AppHandle, generation: u64, frame_url: &str, body: &str) {
+    if !admits(app, generation, body) {
+        return;
+    }
+    let Some(canvas) = shown_canvas() else {
+        return;
+    };
+    match canvas_message_source(frame_url, &canvas) {
+        Source::Shell => {}
+        Source::Board(_) | Source::Other => return,
+    }
+    let Some(message) = parse_shell_message(body) else {
+        return;
+    };
+    let is_allowed = RATE.with(|rate| {
+        rate.borrow_mut()
+            .allow_up_to(Instant::now(), MAX_SHELL_PER_SECOND)
+    });
+    if is_allowed {
+        let _ = app.emit(CANVAS_VIEW, view_event(&canvas, &message));
+    }
+}
+
+/// What the page sent, once `picks.rs` accepts it, goes to the main webview with
+/// the page it came from. Main thread only (wry calls the handler there).
+fn on_page_message(app: &AppHandle, generation: u64, body: &str) {
+    if !admits(app, generation, body) {
+        return;
     }
     let Some(page) = shown_page() else {
         return;
@@ -221,11 +307,15 @@ fn focus_zorvo(app: &AppHandle) {
     });
 }
 
-/// Whether the view shows a page of `session_id` (and, when one is named, of that artifact).
-pub fn is_showing(shown: Option<&ShownPage>, session_id: &str, artifact_id: Option<&str>) -> bool {
-    shown.is_some_and(|page| {
-        page.session_id == session_id && artifact_id.is_none_or(|id| page.artifact_id == id)
-    })
+/// Whether the view shows something of `session_id` (and, when one is named, that artifact or
+/// canvas: artifact ids and canvas keys never look alike).
+pub fn is_showing(shown: Option<&ShownView>, session_id: &str, artifact_id: Option<&str>) -> bool {
+    let (session, id) = match shown {
+        Some(ShownView::Page(page)) => (&page.session_id, &page.artifact_id),
+        Some(ShownView::Canvas(canvas)) => (&canvas.session_id, &canvas.key),
+        None => return false,
+    };
+    session == session_id && artifact_id.is_none_or(|wanted| id == wanted)
 }
 
 /// Ends a view: its page's process first, then the view.
@@ -310,6 +400,61 @@ pub fn show(
     url: String,
     bounds: Bounds,
 ) -> Result<(), String> {
+    show_view(app, served, ShownView::Page(page), url, bounds)
+}
+
+/// Shows a canvas through Zorvo's wrapper in a new webview at `bounds`, ending any earlier one.
+/// The comment script runs in every frame, so it reaches the artboards; only the wrapper's
+/// URL, once, and the canvas's own files may be loaded.
+pub fn show_canvas(
+    app: &AppHandle,
+    served: Arc<Served>,
+    canvas: ShownCanvas,
+    bounds: Bounds,
+) -> Result<(), String> {
+    let url = canvas_shell_url(&canvas.session_id, &canvas.key);
+    show_view(app, served, ShownView::Canvas(canvas), url, bounds)
+}
+
+/// Hands the wrapper `state_json` (one JSON object of at most 1 MiB), only while that canvas is
+/// shown; a wrapper still loading gets the last one once it has.
+pub fn apply_canvas(
+    app: &AppHandle,
+    canvas: ShownCanvas,
+    state_json: String,
+) -> Result<(), String> {
+    let script = apply_script(&state_json).ok_or_else(|| COULD_NOT_SHOW.to_string())?;
+    let _ = app.run_on_main_thread(move || {
+        if shown_canvas().as_ref() != Some(&canvas) {
+            return;
+        }
+        CANVAS_STATE.with(|state| *state.borrow_mut() = Some((canvas, script.clone())));
+        if DISPLAY.get().is_loaded {
+            evaluate(&script);
+        }
+    });
+    Ok(())
+}
+
+/// Runs one of the wrapper's commands, only while that canvas is shown and loaded; a name
+/// outside the list is refused.
+pub fn canvas_command(app: &AppHandle, canvas: ShownCanvas, name: String) -> Result<(), String> {
+    let script = command_script(&name).ok_or_else(|| COULD_NOT_SHOW.to_string())?;
+    let _ = app.run_on_main_thread(move || {
+        if shown_canvas().as_ref() == Some(&canvas) && DISPLAY.get().is_loaded {
+            evaluate(&script);
+        }
+    });
+    Ok(())
+}
+
+fn show_view(
+    app: &AppHandle,
+    served: Arc<Served>,
+    shown: ShownView,
+    url: String,
+    bounds: Bounds,
+) -> Result<(), String> {
     let (sent, received) = std::sync::mpsc::channel();
     let handle = app.clone();
     app.run_on_main_thread(move || {
@@ -326,13 +471,30 @@ pub fn show(
             .get_webview_window(MAIN_WINDOW)
             .ok_or(())
             .and_then(|window| {
-                wry::WebViewBuilder::new()
+                let builder = match shown.clone() {
+                    ShownView::Page(_) => wry::WebViewBuilder::new()
+                        .with_initialization_script(PAGE_SCRIPT)
+                        .with_ipc_handler(move |request| {
+                            on_page_message(&messages, generation, request.body())
+                        })
+                        .with_navigation_handler(|url| is_allowed_navigation(&url)),
+                    ShownView::Canvas(canvas) => {
+                        let navigation = RefCell::new(CanvasNavigation::default());
+                        let rule = canvas.clone();
+                        wry::WebViewBuilder::new()
+                            .with_initialization_script_for_main_only(PAGE_SCRIPT, false)
+                            .with_ipc_handler(move |request| {
+                                let frame = request.uri().to_string();
+                                on_canvas_message(&messages, generation, &frame, request.body())
+                            })
+                            .with_navigation_handler(move |url| {
+                                navigation.borrow_mut().allows(&url, &rule)
+                            })
+                    }
+                };
+                builder
                     .with_incognito(true)
                     .with_visible(false)
-                    .with_initialization_script(PAGE_SCRIPT)
-                    .with_ipc_handler(move |request| {
-                        on_page_message(&messages, generation, request.body())
-                    })
                     .with_on_page_load_handler(move |event, _url| {
                         if matches!(event, wry::PageLoadEvent::Finished) {
                             mark_loaded(generation);
@@ -347,12 +509,11 @@ pub fn show(
                         )
                         .map(Cow::from)
                     })
-                    .with_navigation_handler(|url| is_allowed_navigation(&url))
                     .with_url(url)
                     .build_as_child(&window)
                     .map_err(|_| ())
             });
-        let shown = built.map(|view| VIEW.with(|slot| *slot.borrow_mut() = Some((view, page))));
+        let shown = built.map(|view| VIEW.with(|slot| *slot.borrow_mut() = Some((view, shown))));
         if shown.is_ok() {
             let later = handle.clone();
             std::thread::spawn(move || {
@@ -463,7 +624,7 @@ pub fn close_for(app: &AppHandle, session_id: String, artifact_id: Option<String
     let _ = app.run_on_main_thread(move || {
         let is_shown = VIEW.with(|slot| {
             is_showing(
-                slot.borrow().as_ref().map(|(_, page)| page),
+                slot.borrow().as_ref().map(|(_, shown)| shown),
                 &session_id,
                 artifact_id.as_deref(),
             )
@@ -542,6 +703,7 @@ mod tests {
             version: 1,
         };
 
+        let page = ShownView::Page(page);
         // Deleting the session it belongs to, or the artifact it shows, closes it.
         assert!(is_showing(Some(&page), "s-1", None));
         assert!(is_showing(Some(&page), "s-1", Some("a-0123456789abcdef")));
@@ -550,6 +712,30 @@ mod tests {
         assert!(!is_showing(Some(&page), "s-1", Some("a-ffffffffffffffff")));
         assert!(!is_showing(Some(&page), "s-2", Some("a-0123456789abcdef")));
         assert!(!is_showing(None, "s-1", None));
+    }
+
+    #[test]
+    fn close_for_closes_a_canvas_of_that_session_only() {
+        let canvas = ShownView::Canvas(ShownCanvas {
+            session_id: "s-1".to_string(),
+            key: "c-0123456789abcdef".to_string(),
+        });
+
+        // Deleting its session, or forgetting the canvas, closes it.
+        assert!(is_showing(Some(&canvas), "s-1", None));
+        assert!(is_showing(Some(&canvas), "s-1", Some("c-0123456789abcdef")));
+        // Another session, another canvas, or a page of the same session does not.
+        assert!(!is_showing(Some(&canvas), "s-2", None));
+        assert!(!is_showing(
+            Some(&canvas),
+            "s-1",
+            Some("c-ffffffffffffffff")
+        ));
+        assert!(!is_showing(
+            Some(&canvas),
+            "s-1",
+            Some("a-0123456789abcdef")
+        ));
     }
 
     #[test]

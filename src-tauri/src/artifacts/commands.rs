@@ -16,7 +16,7 @@ use super::source::{read_source, temp_roots};
 use super::store::{
     is_artifact_id, is_session_id, ArtifactRecord, ArtifactStore, CanvasEntry, Shown, FAILED,
 };
-use super::view::{self, checked_bounds, Bounds, ShownPage};
+use super::view::{self, checked_bounds, Bounds, ShownCanvas, ShownPage};
 use crate::files::{canonical_root, ensure_known_workspace};
 use crate::store::AppStore;
 
@@ -326,7 +326,10 @@ pub fn canvas_forget(
     session_id: String,
     key: String,
 ) -> Result<(), String> {
-    artifacts.forget_canvas(&session_id, &key)?;
+    delete_then_close(
+        || artifacts.forget_canvas(&session_id, &key),
+        || view::close_for(&app, session_id.clone(), Some(key.clone())),
+    )?;
     changed(&app, &session_id);
     Ok(())
 }
@@ -465,6 +468,66 @@ pub fn artifact_view_show(
             Err(view::COULD_NOT_SHOW.to_string())
         }
     }
+}
+
+/// Shows a remembered canvas at a rectangle of the main window, through Zorvo's wrapper.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn canvas_view_show(
+    app: AppHandle,
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    served: State<'_, Arc<Served>>,
+    session_id: String,
+    key: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    let is_known = artifacts.canvas(&session_id, &key).is_some();
+    let bounds = bounds_in_window(
+        &app,
+        Bounds {
+            x,
+            y,
+            width,
+            height,
+        },
+    );
+    match (is_known, bounds) {
+        (true, Some(bounds)) => view::show_canvas(
+            &app,
+            Arc::clone(&served),
+            ShownCanvas { session_id, key },
+            bounds,
+        ),
+        _ => {
+            view::close(&app);
+            Err(view::COULD_NOT_SHOW.to_string())
+        }
+    }
+}
+
+/// Hands the canvas on screen what to show: the parsed canvas, its file URLs and pictures.
+#[tauri::command(async)]
+pub fn canvas_view_apply(
+    app: AppHandle,
+    session_id: String,
+    key: String,
+    state: String,
+) -> Result<(), String> {
+    view::apply_canvas(&app, ShownCanvas { session_id, key }, state)
+}
+
+/// Runs one of the wrapper's commands (Fit, 100%, zoom, a section, Focus, Previous, Next).
+#[tauri::command(async)]
+pub fn canvas_view_command(
+    app: AppHandle,
+    session_id: String,
+    key: String,
+    name: String,
+) -> Result<(), String> {
+    view::canvas_command(&app, ShownCanvas { session_id, key }, name)
 }
 
 #[tauri::command(async)]

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Overview 9</title>
+<style>
+  html, body { margin: 0; height: 100%; font: 16px/1.4 -apple-system, sans-serif; background: #fff; color: #18181b; }
+  header { padding: 24px 32px; font-size: 24px; font-weight: 600; }
+  canvas { display: block; margin: 0 32px; width: calc(100% - 64px); height: 720px; }
+</style>
+</head>
+<body>
+<header>Overview 9</header>
+<canvas id="chart" width="1376" height="720"></canvas>
+<script>
+  var chart = document.getElementById("chart");
+  var context = chart.getContext("2d");
+  var phase = 9;
+  function draw(time) {
+    context.clearRect(0, 0, chart.width, chart.height);
+    context.strokeStyle = "#2563eb";
+    context.lineWidth = 4;
+    context.beginPath();
+    for (var x = 0; x <= chart.width; x += 8) {
+      var y = chart.height / 2 + Math.sin(x / 90 + time / 600 + phase) * (chart.height / 3);
+      if (x === 0) context.moveTo(x, y); else context.lineTo(x, y);
+    }
+    context.stroke();
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+</script>
+</body>
+</html>

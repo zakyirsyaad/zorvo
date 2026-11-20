@@ -290,6 +290,19 @@ describe("TopBar", () => {
       fireEvent.click(screen.getByRole("menuitem", { name: "Stop allowing delegation" }));
       expect(onStopAllowingDelegation).toHaveBeenCalledTimes(1);
     });
+
+    it("offers Stop computer use only while the session holds a grant", () => {
+      const onStopComputerUse = vi.fn();
+      renderTopBar({ sessionName: "Alpha", onArchive: vi.fn(), onStopComputerUse });
+
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+        "Stop computer use",
+        "Archive",
+      ]);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Stop computer use" }));
+      expect(onStopComputerUse).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("inspector toggle", () => {

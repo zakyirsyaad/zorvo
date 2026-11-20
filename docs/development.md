@@ -90,8 +90,11 @@ the one file taken from it.
 - Under `pnpm tauri dev`, macOS ties Screen Recording and Accessibility to the
   terminal or editor that started it, since that app is at the top of the
   launch chain. Allow them for that app to try computer use in development.
-- The Computer use group in Settings → Agents shows in development builds
-  only, until agents get the tools that use it.
+- The tools an agent gets are listed in `src-tauri/src/computer_use/gate.rs`
+  (`TOOLS`), each with its own field list. After `pnpm cua-driver:update`,
+  run `cargo test --lib computer_use::gate`: it fails when the pinned driver
+  no longer has a listed tool or field (the saved list is
+  `src-tauri/tests/fixtures/cua-driver-tools.json`).
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for how to propose a change,
 [SECURITY.md](../SECURITY.md) for how to report a vulnerability, and

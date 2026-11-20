@@ -214,7 +214,21 @@ fn start_screen_server(
     let events = app.clone();
     let names = app.clone();
     let mut hooks = computer_use::Hooks::system(move |event, payload| {
-        let _ = events.emit(event, payload);
+        use computer_use::server::{
+            ACTIVITY_EVENT, CHANGED_EVENT, NOTICE_EVENT, REQUEST_ENDED_EVENT, REQUEST_EVENT,
+        };
+        // Each event is emitted under its own name, never a name passed in.
+        let _ = match event {
+            REQUEST_EVENT => events.emit(REQUEST_EVENT, payload),
+            REQUEST_ENDED_EVENT => events.emit(REQUEST_ENDED_EVENT, payload),
+            CHANGED_EVENT => events.emit(CHANGED_EVENT, payload),
+            NOTICE_EVENT => events.emit(NOTICE_EVENT, payload),
+            ACTIVITY_EVENT => {
+                computer_use::pill::note(&events, payload.clone());
+                events.emit(ACTIVITY_EVENT, payload)
+            }
+            _ => Ok(()),
+        };
     });
     hooks.agent_name = Box::new(move |profile_id| {
         let versions = names
@@ -546,6 +560,7 @@ pub fn run() {
                 computer_use_on,
             ));
             app.manage(Arc::clone(&screen_state));
+            app.manage(computer_use::pill::Pill::default());
             app.manage(start_screen_server(app.handle(), screen_state));
             // Images left for command-path agents by sessions long gone.
             std::thread::spawn(move || computer_use::images::sweep_old(&computer_use_dir));
@@ -620,6 +635,7 @@ pub fn run() {
             computer_use::commands::computer_use_answer,
             computer_use::commands::computer_use_state,
             computer_use::commands::computer_use_revoke,
+            computer_use::commands::computer_use_pill_state,
             get_agent_profiles,
             refresh_login_env,
             get_agent_catalog,

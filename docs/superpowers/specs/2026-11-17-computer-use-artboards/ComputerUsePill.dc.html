@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Zorvo · Computer use, the pill</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.z{--ground:#0a0a0b;--sheet:#111113;--s2:#18181b;--s3:#1f1f23;--hover:#27272a;--chip:rgba(255,255,255,.06);--line:#27272a;--strong:#71717a;--fg:#fafafa;--fg2:#d4d4d8;--muted:#a1a1aa;--subtle:#8b8b94;--primary:#fafafa;--onp:#09090b;--run:#34d399;--att:#fbbf24;--unread:#38bdf8;--danger:#f87171;--atts:#1f1a0d;--attb:#6b5416;--add:rgba(52,211,153,.12);--rem:rgba(248,113,113,.12);--pop:0 16px 40px -8px rgba(0,0,0,.6);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.z.light{--ground:#f4f4f5;--sheet:#fafafa;--s2:#ffffff;--s3:#ffffff;--hover:#e4e4e7;--chip:rgba(9,9,11,.05);--line:#e4e4e7;--strong:#808088;--fg:#09090b;--fg2:#27272a;--muted:#52525b;--subtle:#67676f;--primary:#09090b;--onp:#fafafa;--run:#047353;--att:#a34b08;--unread:#0369a1;--danger:#b91c1c;--atts:#fffbeb;--attb:#e9c46a;--add:rgba(4,120,87,.08);--rem:rgba(185,28,28,.08);--pop:0 12px 32px -8px rgba(9,9,11,.18)}
+.z{--dangers:#2a1215}
+.z.light{--dangers:#fef2f2}
+.z button{font:inherit;cursor:pointer;margin:0}
+.z a{text-decoration:none;color:inherit}
+.mono{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.ico{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.ib{width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+.tile{width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;background:var(--chip);box-shadow:inset 0 0 0 1px var(--line);color:var(--fg2)}
+.tile.sm{width:16px;height:16px;border-radius:4px;font-size:9px}
+.av{position:relative;display:flex;flex:none;margin-top:1px}
+.badge{position:absolute;right:-3px;bottom:-3px;width:8px;height:8px;border-radius:9999px;box-shadow:0 0 0 2px var(--ground)}
+.row{display:flex;align-items:flex-start;gap:10px;padding:7px 8px;border-radius:8px}
+.row.on{background:var(--hover)}
+.row.on .badge{box-shadow:0 0 0 2px var(--hover)}
+.rt{flex:1;min-width:0;display:flex;flex-direction:column}
+.t1{color:var(--fg2);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.t2{color:var(--subtle);font-size:11px;line-height:16px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tm{flex:none;color:var(--subtle);font-size:11px;line-height:18px}
+.fold{display:flex;align-items:center;gap:6px;padding:12px 8px 4px;color:var(--muted);font-size:11px;font-weight:500}
+.seg{height:26px;display:flex;align-items:center;gap:6px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px}
+.seg.on{background:var(--hover);color:var(--fg)}
+.chip{height:26px;display:flex;align-items:center;gap:6px;padding:0 8px;border:0;border-radius:6px;background:var(--chip);color:var(--fg2);font-size:12px}
+.step{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px 0 14px;border-radius:6px;font-size:12px;color:var(--fg2)}
+.step .verb{width:44px;flex:none;color:var(--muted)}
+.frow{display:flex;align-items:center;gap:8px;padding:8px 10px}
+@media (max-width:900px){.z .side,.z .insp{display:none}.z .stage{padding-left:8px}}
+.lbl{margin:0;font-size:11px;line-height:16px;color:var(--subtle)}
+.grp{display:flex;flex-direction:column;gap:8px}
+.ghost{height:28px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--fg2);font-size:12px}
+.outline{height:28px;padding:0 12px;border:1px solid var(--strong);border-radius:8px;background:transparent;color:var(--fg);font-size:12px}
+.primary{height:28px;padding:0 12px;border:0;border-radius:8px;background:var(--primary);color:var(--onp);font-size:12px;font-weight:500}
+.note{display:flex;align-items:center;gap:8px;margin:0;color:var(--muted);font-size:12px;line-height:16px}
+.link{padding:0;border:0;background:transparent;color:var(--fg2);font-size:12px;text-decoration:underline;text-underline-offset:2px}
+.rule{height:1px;background:var(--line);margin:4px 0}
+.sgrp{display:flex;flex-direction:column;border-radius:12px;background:var(--s2);border:1px solid var(--line)}
+.r{display:flex;align-items:center;gap:16px;padding:12px 16px}
+.l{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.d{color:var(--muted);font-size:12px;line-height:16px}
+.gh{font-size:11px;font-weight:500;color:var(--muted);padding:0 4px 8px}
+.r+.r{border-top:1px solid var(--line)}
+.st{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;line-height:16px}
+.dot{width:6px;height:6px;border-radius:9999px;flex:none}
+.msg{display:flex;align-items:center;gap:12px;padding:12px 16px;border-top:1px solid var(--line);color:var(--fg2);font-size:12px;line-height:16px}
+.msg .l{flex:1}
+.btns{display:flex;align-items:center;gap:8px;flex:none}
+.z button:disabled{cursor:not-allowed;opacity:.5}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:start}
+.col{display:flex;flex-direction:column;gap:22px;min-width:0}
+
+.z{--desk:#3a3d44;--deskbar:rgba(0,0,0,.3);--cur1:var(--unread);--cur2:var(--att)}
+.z.light{--desk:#c6c9cf;--deskbar:rgba(255,255,255,.45)}
+.desk{position:relative;overflow:hidden;border-radius:10px;background:var(--desk);border:1px solid var(--line)}
+.mbar{height:24px;display:flex;align-items:center;gap:16px;padding:0 14px;background:var(--deskbar);color:var(--fg);font-size:12px}
+.win{position:absolute;display:flex;flex-direction:column;overflow:hidden;border-radius:10px;background:var(--s2);border:1px solid var(--line);box-shadow:var(--pop)}
+.wbar{height:32px;flex:none;display:flex;align-items:center;gap:6px;padding:0 12px;border-bottom:1px solid var(--line);color:var(--muted);font-size:12px}
+.wdot{width:10px;height:10px;border-radius:9999px;background:var(--hover);box-shadow:inset 0 0 0 1px var(--line)}
+.wbody{flex:1;min-height:0;display:flex}
+.wlist{width:150px;flex:none;display:flex;flex-direction:column;gap:2px;padding:8px;border-right:1px solid var(--line);font-size:12px;color:var(--fg2)}
+.wlist span{padding:4px 8px;border-radius:6px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.wlist .on{background:var(--hover);color:var(--fg)}
+.wnote{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;padding:14px 16px;color:var(--fg2);font-size:12px;line-height:18px}
+.wnote h3{margin:0;font-size:15px;line-height:20px;font-weight:600;color:var(--fg)}
+.wnote p{margin:0}
+
+.pill{position:absolute;top:34px;left:50%;transform:translateX(-50%);height:36px;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:0 6px 0 14px;border-radius:9999px;background:var(--s3);border:1px solid var(--line);box-shadow:var(--pop);color:var(--fg);font-size:12px;line-height:16px;white-space:nowrap}
+.pstop{height:24px;margin-left:4px;padding:0 12px;border:0;border-radius:9999px;background:var(--primary);color:var(--onp);font-size:12px;font-weight:500}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 1200px; height: 740px; box-sizing: border-box; overflow: hidden; background: var(--sheet); color: var(--fg); font-size: 13px; line-height: 18px; padding: 32px 40px;">
+<div class="col">
+    <div class="grp">
+      <p class="lbl">The pill: a small Zorvo window at the top centre of the main display, above every other window and on every Space. It shows while a session acts in the background, and for 5 seconds after its last action. It never takes focus.</p>
+      <div class="desk" style="height: 270px;">
+        <div class="mbar" aria-hidden="true"><span style="font-weight: 600;">Notes</span><span>File</span><span>Edit</span><span>View</span><span>Window</span><span>Help</span></div>
+        <div class="pill" role="status"><span class="dot" aria-hidden="true" style="background: var(--run);"></span><span>Qwen Code is using Notes</span><button class="pstop">Stop</button></div>
+        <div class="win" style="left: 260px; top: 96px; width: 620px; height: 240px;" aria-hidden="true">
+          <div class="wbar"><span class="wdot"></span><span class="wdot"></span><span class="wdot"></span><span style="margin-left: 8px;">Notes</span></div>
+          <div class="wbody">
+            <div class="wlist"><span class="on">Release notes 0.9</span><span>Shopping</span><span>Ideas for the site</span></div>
+            <div class="wnote"><h3>Release notes 0.9</h3><p>Sign-up now keeps what you typed when a field is wrong.</p><p>The retry button waits two seconds before it sends again.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="grp">
+      <p class="lbl">During full screen it stays and says so. Stop ends that session's computer use, as Stop computer use does.</p>
+      <div class="desk" style="height: 270px;">
+        <div class="mbar" aria-hidden="true"><span style="font-weight: 600;">Notes</span><span>File</span><span>Edit</span><span>View</span><span>Window</span><span>Help</span></div>
+        <div class="pill" role="status"><span class="dot" aria-hidden="true" style="background: var(--att);"></span><span>Qwen Code is controlling your screen</span><button class="pstop">Stop</button></div>
+        <div class="win" style="left: 260px; top: 96px; width: 620px; height: 240px;" aria-hidden="true">
+          <div class="wbar"><span class="wdot"></span><span class="wdot"></span><span class="wdot"></span><span style="margin-left: 8px;">Notes</span></div>
+          <div class="wbody">
+            <div class="wlist"><span class="on">Release notes 0.9</span><span>Shopping</span><span>Ideas for the site</span></div>
+            <div class="wnote"><h3>Release notes 0.9</h3><p>Sign-up now keeps what you typed when a field is wrong.</p><p>The retry button waits two seconds before it sends again.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="lbl">36 px tall, fully round, 12 px text. Its surface, border and shadow are the popover's, so it follows light and dark with the app. The round shape is kept for this window alone: it floats over other apps and must not read as one of their controls.</p>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"$preview":{"width":1200,"height":740}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const light = (this.props.theme ?? 'dark') === 'light';
+    return { themeClass: light ? 'z light' : 'z' };
+  }
+}
+</script>
+</body>
+</html>

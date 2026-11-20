@@ -14,6 +14,7 @@ pub mod grants;
 pub mod images;
 pub mod instructions;
 pub mod permissions;
+pub mod pill;
 pub mod requests;
 pub mod server;
 pub mod state;

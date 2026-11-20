@@ -45,6 +45,8 @@ export interface SidebarProps {
   pullRequestOf?: (session: Session) => PullRequestStatus | null;
   /** True while a session's agent waits for the user to answer a permission request. */
   isSessionWaiting?: (sessionId: string) => boolean;
+  /** The session's agent may use apps on this Mac: its row shows a mark. */
+  usesComputer?: (sessionId: string) => boolean;
   /** Stops the agent's current turn; offered only while it works. */
   onStopSession?: (sessionId: string) => void;
   onDeleteSession?: (sessionId: string) => void;
@@ -136,6 +138,7 @@ export function Sidebar({
   isSessionBusy = () => false,
   pullRequestOf,
   isSessionWaiting = () => false,
+  usesComputer,
   onStopSession,
   onDeleteSession,
   onRenameSession,
@@ -198,6 +201,7 @@ export function Sidebar({
     agentNameOf,
     isSessionBusy,
     isSessionWaiting,
+    usesComputer,
     onSelectSession,
     onOpenRun,
     onStopSession,

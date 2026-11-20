@@ -93,7 +93,19 @@ pub fn computer_use_state(server: State<'_, Arc<ScreenServer>>) -> ComputerUseVi
 }
 
 /// Stop computer use for a session: its grants end and the driver is killed.
+/// The pill goes with it.
 #[tauri::command(async)]
-pub fn computer_use_revoke(server: State<'_, Arc<ScreenServer>>, session_id: String) {
+pub fn computer_use_revoke(
+    app: AppHandle,
+    server: State<'_, Arc<ScreenServer>>,
+    session_id: String,
+) {
     server.revoke(&session_id);
+    super::pill::hide(&app);
+}
+
+/// What the pill shows when its page loads: the newest thing an agent did.
+#[tauri::command]
+pub fn computer_use_pill_state(pill: State<'_, super::pill::Pill>) -> Option<serde_json::Value> {
+    pill.latest()
 }

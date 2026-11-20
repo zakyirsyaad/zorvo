@@ -117,6 +117,8 @@ import { AppUpdateNotice } from "./components/AppUpdateNotice";
 import { restartWarning } from "./lib/app-update";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { useAgentTools } from "./hooks/useAgentTools";
+import { useComputerUse } from "./hooks/useComputerUse";
+import { ComputerUseStatusLine } from "./components/chat/ComputerUseStatusLine";
 import { useOpenedSessions } from "./hooks/useOpenedSessions";
 import { ProfileFooter } from "./components/ProfileFooter";
 import { AgentsMenu } from "./components/sidebar/AgentsMenu";
@@ -936,8 +938,18 @@ export default function App() {
       isSessionWaiting(sessionId) ? "needs-answer" : isSessionBusy(sessionId) ? "working" : "idle",
     stopTurn: (sessionId) => handleInterrupt(sessionId),
   });
+  const computerUse = useComputerUse({
+    agentNameOf: (sessionId) => {
+      const profileId = sessionById(sessionId)?.profileId;
+      return agents.find((agent) => agent.id === profileId)?.name ?? "The agent";
+    },
+    updateMessages,
+    onAttention: (sessionId, reason) => notifyAttention(sessionId, reason),
+    onNotice: (message) => setNotice(message),
+  });
   const isSessionWaiting = (sessionId: string) =>
     agentTools.isWaiting(sessionId) ||
+    computerUse.isWaiting(sessionId) ||
     isWaitingForAnswer(sessionById(sessionId), transcripts[sessionId] ?? [], () => isSessionBusy(sessionId));
 
   /** Records a new session and shows it, unless `focus` is false; the agent is started by its engine. */
@@ -1180,6 +1192,8 @@ export default function App() {
   const handleArchiveSession = async (sessionId: string, isArchived: boolean) => {
     await sessionActions.archiveSession(sessionId, isArchived);
     if (!isArchived) return;
+    // An archived session's agent keeps no leave to use apps on this Mac.
+    if (computerUse.grantOf(sessionId)) computerUse.stop(sessionId);
     const latestSessions = getState().sessions;
     const isArchivedNow = latestSessions.find((session) => session.id === sessionId)?.archivedAt != null;
     if (!isArchivedNow) return;
@@ -1560,6 +1574,11 @@ export default function App() {
     sessionOfItsOwn !== undefined && agentTools.hasGrant(sessionOfItsOwn.id)
       ? () => agentTools.revokeGrant(sessionOfItsOwn.id)
       : undefined;
+  const activeComputerUse = sessionOfItsOwn ? computerUse.grantOf(sessionOfItsOwn.id) : undefined;
+  const onStopComputerUse =
+    sessionOfItsOwn !== undefined && activeComputerUse !== undefined
+      ? () => computerUse.stop(sessionOfItsOwn.id)
+      : undefined;
   const onDelegate =
     sessionOfItsOwn !== undefined && sessionOfItsOwn.delegatedFrom == null
       ? () => delegateDialog.open({ clearsComposer: false, returnsFocusToMenu: true })
@@ -1588,6 +1607,8 @@ export default function App() {
   const chooseOption = (sessionId: string, cardId: string, optionId: string, answers?: Record<string, string>) => {
     // A card Zorvo made for an agent's tool call is answered by Zorvo's tools, not by the agent.
     if (agentTools.chooseCard(sessionId, cardId, optionId)) return;
+    // So is an agent's request to use apps: the ticks go to Zorvo's backend as row keys.
+    if (computerUse.chooseCard(sessionId, cardId, optionId, answers)) return;
     acp.chooseOption(sessionId, transcripts[sessionId], cardId, optionId, answers);
   };
 
@@ -1761,6 +1782,7 @@ export default function App() {
           isSessionBusy={isSessionBusy}
           pullRequestOf={pullRequestOf}
           isSessionWaiting={isSessionWaiting}
+          usesComputer={(sessionId) => computerUse.grantOf(sessionId) !== undefined}
           onStopSession={handleInterrupt}
           onDeleteSession={sessionActions.deleteSession}
           onRenameSession={sessionActions.renameSession}
@@ -1821,6 +1843,7 @@ export default function App() {
               delegateBlockedReason={activeDelegateBlockedReason}
               delegationEnds={delegationEnds}
               onStopAllowingDelegation={onStopAllowingDelegation}
+              onStopComputerUse={onStopComputerUse}
               moreButtonRef={moreOptionsButtonRef}
               workspaceName={activeSession ? folderNameOf(workspacePathOf(activeSession)) : activeWorkspace?.name}
               // A run takes its folder from its first session, never from the last folder chosen.
@@ -1924,6 +1947,9 @@ export default function App() {
                             canAct
                           />
                         ) : undefined
+                      }
+                      computerUseStatus={
+                        <ComputerUseStatusLine grant={activeComputerUse} onStop={onStopComputerUse} />
                       }
                       // Always mounted for a session, so the first line it draws is announced.
                       delegationStatus={
@@ -2448,7 +2474,7 @@ export default function App() {
         onOpenUrl={openLink}
         // Development builds only until agents get the computer-use tools (the plan's Tasks 9 to 12):
         // a release must not ship a switch that asks macOS for permissions and then does nothing.
-        computerUse={import.meta.env.DEV ? computerUseSetting : undefined}
+        computerUse={computerUseSetting}
       />
       <RecoveryCodeLayer
         credits={privateCredits}

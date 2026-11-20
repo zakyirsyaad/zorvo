@@ -1850,14 +1850,13 @@ describe("useDelegation recordDone", () => {
     expect([...summary].at(-1)).toBe("\u{1F600}");
   });
 
-  it("spells out a bidi control character", () => {
+  it("stores a bidi control character raw", () => {
     const { result, patches } = setup(base());
     act(() => {
       result.current.delegation.recordDone("w-1", { result: "succeeded", summary: "x\u202Ey" });
     });
     const summary = lastOutcome(patches)?.summary ?? "";
-    expect(summary).not.toContain("\u202E");
-    expect(summary.length).toBeGreaterThan(3);
+    expect(summary).toBe("x\u202Ey");
   });
 
   it("cuts 60 files to 50, drops empty ones and omits an empty list", () => {

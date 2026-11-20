@@ -753,6 +753,49 @@ describe("normalizeTranscript - delegation report", () => {
   });
 });
 
+describe("normalizeTranscript - worker report", () => {
+  const reply = { id: "m-1", role: "user", content: "Reports.", timestamp: 7 };
+  const withMark = (workerReport: unknown) => normalizeTranscript([{ ...reply, workerReport }])[0];
+  const worker = { agentName: "Codex", agentId: "codex-acp", handle: "worker-1", state: "succeeded" };
+
+  it("keeps a well-formed mark", () => {
+    expect(withMark({ workers: [worker] }).workerReport).toEqual({ workers: [worker] });
+  });
+
+  it("drops an entry without a name, a handle or a known state, and an agent id that is not a string", () => {
+    const kept = withMark({
+      workers: [
+        worker,
+        { ...worker, agentName: 3 },
+        { ...worker, handle: undefined },
+        { ...worker, state: "weird" },
+        { ...worker, agentId: 4, handle: "worker-2" },
+      ],
+    });
+    expect(kept.workerReport).toEqual({
+      workers: [worker, { agentName: "Codex", handle: "worker-2", state: "succeeded" }],
+    });
+  });
+
+  it("drops a mark that is not an object, has no workers or keeps none", () => {
+    for (const mark of ["x", null, {}, { workers: [] }, { workers: "a" }, { workers: [{ ...worker, state: "x" }] }]) {
+      const message = withMark(mark);
+      expect(message).not.toHaveProperty("workerReport");
+      expect(message.content).toBe("Reports.");
+    }
+  });
+
+  it("keeps at most 50 entries", () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({ ...worker, handle: `worker-${i + 1}` }));
+    expect(withMark({ workers: many }).workerReport?.workers).toHaveLength(50);
+  });
+
+  it("still loads the old delegationReport mark", () => {
+    const [message] = normalizeTranscript([{ ...reply, delegationReport: { agentName: "Codex", handle: "worker-2" } }]);
+    expect(message.delegationReport).toEqual({ agentName: "Codex", handle: "worker-2" });
+  });
+});
+
 describe("normalizeTranscript - delegation task", () => {
   const message = { id: "m-1", role: "user", content: "Review it.", timestamp: 7 };
 

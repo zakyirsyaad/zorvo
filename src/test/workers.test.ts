@@ -22,7 +22,12 @@ import {
   workerByHandle,
   workerHandleOf,
   workerStateOf,
+  workerStateWord,
+  workersReportMessage,
+  WORKERS_REPORT_FRAMING,
+  type WorkerReportEntry,
 } from '../lib/workers';
+import { MAX_REPORT_CHARS } from '../lib/delegation';
 import type { DelegationLink, PersistedState, Session } from '../types';
 
 const link: DelegationLink = { sessionId: 'a', task: 't', startedAt: 100 };
@@ -251,18 +256,18 @@ describe('cleanSummary', () => {
     expect(cleanSummary('a\r\nb\rc')).toBe('a\nb\nc');
   });
 
-  test('cuts the raw text before escaping and keeps a whole emoji last', () => {
+  test('cuts the raw text and keeps a whole emoji last', () => {
     const cleaned = cleanSummary('a'.repeat(1999) + '\u{1F600}\u{1F600}');
     expect([...cleaned]).toHaveLength(WORKER_SUMMARY_MAX);
     expect([...cleaned].at(-1)).toBe('\u{1F600}');
   });
 
-  test('escape codes do not eat the budget', () => {
-    expect(cleanSummary('\u0001'.repeat(WORKER_SUMMARY_MAX))).toBe('\\u0001'.repeat(WORKER_SUMMARY_MAX));
+  test('stores control characters raw and cuts by their count', () => {
+    expect(cleanSummary('\u0001'.repeat(WORKER_SUMMARY_MAX + 5))).toBe('\u0001'.repeat(WORKER_SUMMARY_MAX));
   });
 
-  test('spells out a bidi control character', () => {
-    expect(cleanSummary('x\u202Ey')).toBe('x\\u202Ey');
+  test('stores a bidi control character as itself', () => {
+    expect(cleanSummary('x\u202Ey')).toBe('x\u202Ey');
   });
 
   test('gives an empty string for only white space', () => {
@@ -271,8 +276,12 @@ describe('cleanSummary', () => {
 });
 
 describe('cleanFiles', () => {
-  test('escapes a control character, line breaks included', () => {
-    expect(cleanFiles(['a\u0007b.ts', 'c\nd.ts'])).toEqual(['a\\u0007b.ts', 'c\\u000Ad.ts']);
+  test('drops a path with a line break or another control character', () => {
+    expect(cleanFiles(['a\u0007b.ts', 'c\nd.ts', 'e\r.ts', 'ok.ts'])).toEqual(['ok.ts']);
+  });
+
+  test('stores a bidi path raw', () => {
+    expect(cleanFiles(['a\u202Eb.ts'])).toEqual(['a\u202Eb.ts']);
   });
 
   test('drops empty entries and trims', () => {
@@ -356,5 +365,111 @@ describe('cleanReason', () => {
   test('empty or white space gives an empty string', () => {
     expect(cleanReason('')).toBe('');
     expect(cleanReason(' \n\t ')).toBe('');
+  });
+});
+
+describe('workerStateWord', () => {
+  test.each([
+    ['succeeded', 'Succeeded'],
+    ['failed', 'Failed'],
+    ['did-not-report', 'Did not report'],
+    ['errored', 'Stopped on an error'],
+    ['stopped', 'Stopped'],
+    ['gone', 'Gone'],
+  ] as const)('%s reads %s', (state, word) => {
+    expect(workerStateWord(state)).toBe(word);
+  });
+});
+
+describe('workersReportMessage', () => {
+  const entry = (extra: Partial<WorkerReportEntry>): WorkerReportEntry => ({
+    handle: 'worker-1',
+    agentName: 'Qwen Code',
+    agentId: 'qwen',
+    task: 'Review the login fix',
+    state: 'succeeded',
+    files: [],
+    ...extra,
+  });
+
+  test('one message holds every report under one framing line', () => {
+    const text = workersReportMessage([
+      entry({ summary: 'Found one unhandled 401.', files: ['src/auth/refresh.ts'] }),
+      entry({ handle: 'worker-3', task: 'Update the docs', state: 'stopped' }),
+    ]);
+    expect(text.split('\n')[0]).toBe(WORKERS_REPORT_FRAMING);
+    expect(text.split('\n')[1]).toBe('');
+    expect(text).toContain(
+      'worker-1 (Qwen Code), "Review the login fix": succeeded\n> Found one unhandled 401.\nFiles: src/auth/refresh.ts',
+    );
+    expect(text).toContain('Files: src/auth/refresh.ts\n\nworker-3 (Qwen Code), "Update the docs": stopped before it finished');
+  });
+
+  test.each([
+    ['did-not-report', { answer: 'All done.' }, 'ended its turn without reporting. Its last answer:\n> All done.'],
+    ['did-not-report', {}, 'ended its turn without reporting, and left no written answer.'],
+    ['did-not-report', { answer: '' }, 'ended its turn without reporting, and left no written answer.'],
+    ['errored', { reason: 'The agent hit a rate limit.' }, 'stopped on an error: The agent hit a rate limit.'],
+    ['errored', {}, 'stopped on an error.'],
+    ['gone', {}, 'is gone: its agent exited. Start a new worker to continue.'],
+    ['failed', { summary: 'Tests still fail.' }, 'failed\n> Tests still fail.'],
+    ['failed', {}, 'failed'],
+  ] as const)('a %s worker reads as written', (state, extra, expected) => {
+    const text = workersReportMessage([entry({ state, ...extra })]);
+    expect(text).toBe(`${WORKERS_REPORT_FRAMING}\n\nworker-1 (Qwen Code), "Review the login fix": ${expected}`);
+  });
+
+  test('a working or waiting worker is skipped', () => {
+    const text = workersReportMessage([entry({ state: 'working' }), entry({ handle: 'worker-2', state: 'needs-you' })]);
+    expect(text).toBe(WORKERS_REPORT_FRAMING);
+  });
+
+  test('every line of a quote is prefixed', () => {
+    const text = workersReportMessage([entry({ summary: 'one\n\nthree' })]);
+    expect(text).toContain('succeeded\n> one\n> \n> three');
+  });
+
+  test('control and bidi characters are spelled out in every field', () => {
+    const text = workersReportMessage([
+      entry({
+        handle: 'w\u202E1',
+        agentName: 'Q\u0007',
+        task: 'a\u202Eb\nc',
+        summary: 'x\u202Ey',
+        files: ['f\u202E.ts'],
+        reason: 'r',
+      }),
+    ]);
+    expect(text.includes('\u202E') || text.includes('\u0007')).toBe(false);
+    expect(text).toContain('w\\u202E1 (Q\\u0007), "a\\u202Eb c": succeeded\n> x\\u202Ey\nFiles: f\\u202E.ts');
+  });
+
+  test('a long task is one line cut at 200 code points with an ellipsis', () => {
+    const text = workersReportMessage([entry({ task: 'a'.repeat(300) })]);
+    expect(text).toContain(`"${'a'.repeat(200)}…": succeeded`);
+  });
+
+  test('a worker in its own folder has a Folder line under its first line', () => {
+    const text = workersReportMessage([entry({ summary: 'ok', folder: '/w/tree', files: ['a.ts', 'b.ts'] })]);
+    expect(text).toContain(
+      'worker-1 (Qwen Code), "Review the login fix": succeeded\nFolder: /w/tree\n> ok\nFiles: a.ts, b.ts',
+    );
+  });
+
+  test('three long answers are each cut with a note and every worker stays in', () => {
+    const entries = [1, 2, 3].map((n) =>
+      entry({ handle: `worker-${n}`, state: 'did-not-report', answer: 'z'.repeat(15_000) }),
+    );
+    const text = workersReportMessage(entries);
+    expect([...text].length).toBeLessThanOrEqual(MAX_REPORT_CHARS);
+    for (const n of [1, 2, 3]) {
+      expect(text).toContain(`worker-${n} (Qwen Code), "Review the login fix": ended its turn without reporting. Its last answer:`);
+    }
+    expect(text.split('(cut; the full text is in that worker\'s session)')).toHaveLength(4);
+  });
+
+  test('an answer that fits is not cut', () => {
+    const text = workersReportMessage([entry({ state: 'did-not-report', answer: 'short' })]);
+    expect(text).not.toContain('(cut;');
   });
 });

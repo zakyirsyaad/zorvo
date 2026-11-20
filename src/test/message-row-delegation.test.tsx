@@ -42,6 +42,32 @@ describe("a delegation report in the chat", () => {
     expect(escaped.textContent).not.toContain("\u202e");
   });
 
+  it("a worker report reads Worker reports with one line per worker, the state as a word", () => {
+    const row = renderRow({
+      id: "u-9",
+      role: "user",
+      content: "Reports from your workers.",
+      timestamp: 1,
+      workerReport: {
+        workers: [
+          { agentName: "Codex", agentId: "codex-acp", handle: "worker-1", state: "succeeded" },
+          { agentName: "Qwen Code", handle: "worker-2", state: "errored" },
+          { agentName: "Pi", handle: "w\u202e3", state: "did-not-report" },
+          { agentName: "Pi", handle: "worker-4", state: "working" },
+        ],
+      },
+    });
+    expect(within(row).getByText("Worker reports")).toBeInTheDocument();
+    expect(within(row).getByText("worker-1")).toBeInTheDocument();
+    expect(within(row).getByText("Succeeded")).toBeInTheDocument();
+    expect(within(row).getByText("Stopped on an error")).toBeInTheDocument();
+    expect(within(row).getByText("Did not report")).toBeInTheDocument();
+    expect(within(row).getByText("Qwen Code")).toBeInTheDocument();
+    expect(row.textContent).not.toContain("\u202e");
+    expect(within(row).queryByText("worker-4")).toBeNull();
+    expect(within(row).getByText("Reports from your workers.")).toBeInTheDocument();
+  });
+
   it("a delegation report reads From Codex", () => {
     const row = renderRow(report);
     const label = within(row).getByText("From Codex");

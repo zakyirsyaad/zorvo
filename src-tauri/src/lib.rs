@@ -205,6 +205,30 @@ fn start_agent_tools(app: &AppHandle, data_dir: &std::path::Path) -> Arc<agent_t
     })
 }
 
+/// Starts what answers computer-use calls and joins it to the tool server.
+/// Its events go to the webview; an agent's name comes from the registry.
+fn start_screen_server(
+    app: &AppHandle,
+    state: Arc<computer_use::ComputerUse>,
+) -> Arc<computer_use::ScreenServer> {
+    let events = app.clone();
+    let names = app.clone();
+    let mut hooks = computer_use::Hooks::system(move |event, payload| {
+        let _ = events.emit(event, payload);
+    });
+    hooks.agent_name = Box::new(move |profile_id| {
+        let versions = names
+            .state::<store::AppStore>()
+            .load_state()
+            .map(|state| state.settings.agent_versions)
+            .unwrap_or_default();
+        profiles::agent_name(profile_id, &versions)
+    });
+    let server = computer_use::ScreenServer::new(state, hooks);
+    server.attach(&app.state::<Arc<agent_tools::AgentTools>>());
+    server
+}
+
 /// Ends every agent and terminal a previous UI left running. The UI calls this
 /// when it loads: a webview reload leaves the backend (and its agents) running,
 /// but the new UI knows none of them and shows their sessions as ended, so they
@@ -517,10 +541,14 @@ pub fn run() {
                 .state::<store::AppStore>()
                 .load_state()
                 .is_ok_and(|state| state.settings.computer_use && cfg!(target_os = "macos"));
-            app.manage(Arc::new(computer_use::ComputerUse::new(
-                computer_use_dir,
+            let screen_state = Arc::new(computer_use::ComputerUse::new(
+                computer_use_dir.clone(),
                 computer_use_on,
-            )));
+            ));
+            app.manage(Arc::clone(&screen_state));
+            app.manage(start_screen_server(app.handle(), screen_state));
+            // Images left for command-path agents by sessions long gone.
+            std::thread::spawn(move || computer_use::images::sweep_old(&computer_use_dir));
             app.manage(Arc::new(artifacts::store::ArtifactStore::new(
                 app.state::<store::AppStore>().root().join("artifacts"),
             )));
@@ -589,6 +617,9 @@ pub fn run() {
             computer_use::commands::computer_use_request_permissions,
             computer_use::commands::computer_use_open_pane,
             computer_use::commands::computer_use_reset_permissions,
+            computer_use::commands::computer_use_answer,
+            computer_use::commands::computer_use_state,
+            computer_use::commands::computer_use_revoke,
             get_agent_profiles,
             refresh_login_env,
             get_agent_catalog,

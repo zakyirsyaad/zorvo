@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 
 use super::socket::Caller;
 use super::tools::{tool_list, validate, TOOL_NAMES};
+use crate::computer_use::gate;
 
 /// Newest first. 2025-11-25 and 2025-06-18 are what the tested agents send.
 pub const SUPPORTED_VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -106,32 +107,68 @@ fn initialize_result(params: &Value, caller: &Caller) -> Value {
         "capabilities": { "tools": {} },
         "serverInfo": { "name": "zorvo", "version": env!("CARGO_PKG_VERSION") }
     });
-    if caller.capabilities.agent_tools {
-        result["instructions"] = json!(ARTIFACT_INSTRUCTIONS);
+    let instructions: Vec<&str> = [
+        caller
+            .capabilities
+            .agent_tools
+            .then_some(ARTIFACT_INSTRUCTIONS),
+        caller
+            .capabilities
+            .computer_use
+            .then_some(crate::computer_use::instructions::INSTRUCTIONS),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    if !instructions.is_empty() {
+        result["instructions"] = json!(instructions.join("\n\n"));
     }
     result
 }
 
+/// Whether `tool` is one computer use offers; such a call never goes to the
+/// webview.
+pub fn is_screen_tool(tool: &str) -> bool {
+    gate::is_offered(tool)
+}
+
 /// The tools `caller` may see and call.
 fn tools_for(caller: &Caller) -> Value {
+    let mut tools = Vec::new();
     if caller.capabilities.agent_tools {
-        tool_list()
-    } else {
-        json!([])
+        tools.extend(tool_list().as_array().cloned().unwrap_or_default());
     }
+    if caller.capabilities.computer_use {
+        tools.extend(gate::tool_list());
+    }
+    Value::Array(tools)
 }
 
 fn tools_call(id: Value, params: &Value, caller: &Caller) -> Step {
     let Some(name) = params.get("name").and_then(Value::as_str) else {
         return error_step(id, INVALID_PARAMS, "A tool name is required.");
     };
-    if !caller.capabilities.agent_tools || !TOOL_NAMES.contains(&name) {
-        return error_step(id, INVALID_PARAMS, "Unknown tool.");
-    }
     let args = match params.get("arguments") {
         None | Some(Value::Null) => json!({}),
         Some(args) => args.clone(),
     };
+    let is_agent_tool = caller.capabilities.agent_tools && TOOL_NAMES.contains(&name);
+    if !is_agent_tool && caller.capabilities.computer_use {
+        // The gate checks the arguments, on a thread of the call's own. Any
+        // other tool of the driver is refused by name.
+        return if gate::is_offered(name) {
+            Step::Call {
+                id,
+                tool: name.to_string(),
+                args,
+            }
+        } else {
+            Step::Reply(tool_result(&id, false, &gate::not_offered(name)))
+        };
+    }
+    if !is_agent_tool {
+        return error_step(id, INVALID_PARAMS, "Unknown tool.");
+    }
     match validate(name, &args) {
         Ok(args) => Step::Call {
             id,
@@ -148,6 +185,11 @@ pub fn tool_result(id: &Value, ok: bool, text: &str) -> Value {
         id,
         json!({ "content": [{ "type": "text", "text": text }], "isError": !ok }),
     )
+}
+
+/// A `tools/call` answer made of content blocks: text and images.
+pub fn tool_result_content(id: &Value, ok: bool, content: Vec<Value>) -> Value {
+    result_reply(id, json!({ "content": content, "isError": !ok }))
 }
 
 fn result_reply(id: &Value, result: Value) -> Value {
@@ -201,7 +243,16 @@ mod tests {
     #[test]
     fn tools_list_follows_the_callers_capabilities() {
         assert_eq!(tool_names(&caller(true, false)), TOOL_NAMES);
-        assert!(tool_names(&caller(false, true)).is_empty());
+        // Computer use alone lists its own tools and none of the agent tools.
+        let screen = tool_names(&caller(false, true));
+        assert!(screen.contains(&"request_access".to_string()));
+        assert!(!screen
+            .iter()
+            .any(|name| TOOL_NAMES.contains(&name.as_str())));
+        assert_eq!(
+            tool_names(&caller(true, true)).len(),
+            TOOL_NAMES.len() + screen.len()
+        );
         assert!(tool_names(&caller(false, false)).is_empty());
     }
 
@@ -209,10 +260,38 @@ mod tests {
     fn call_to_a_tool_the_session_lacks_is_unknown() {
         let line =
             r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"list_agents"}}"#;
-        let Step::Reply(value) = super::handle_line(line, &caller(false, true)) else {
+        let Step::Reply(value) = super::handle_line(line, &caller(false, false)) else {
             panic!("expected an error reply");
         };
         assert_eq!(value["error"]["code"], INVALID_PARAMS);
+        assert_eq!(value["error"]["message"], "Unknown tool.");
+
+        // With computer use it is a tool Zorvo does not offer that session.
+        let Step::Reply(value) = super::handle_line(line, &caller(false, true)) else {
+            panic!("expected a refusal");
+        };
+        assert_eq!(value["result"]["isError"], true);
+        assert_eq!(
+            value["result"]["content"][0]["text"],
+            "Zorvo does not offer list_agents."
+        );
+    }
+
+    #[test]
+    fn a_computer_use_call_goes_out_with_the_agents_arguments_for_the_gate() {
+        let line = r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"list_windows","arguments":{"pid":1}}}"#;
+        assert_eq!(
+            super::handle_line(line, &caller(false, true)),
+            Step::Call {
+                id: json!(7),
+                tool: "list_windows".to_string(),
+                args: json!({ "pid": 1 }),
+            }
+        );
+        // A session without computer use has no such tool.
+        let Step::Reply(value) = super::handle_line(line, &caller(true, false)) else {
+            panic!("expected an error reply");
+        };
         assert_eq!(value["error"]["message"], "Unknown tool.");
     }
 
@@ -264,7 +343,16 @@ mod tests {
             assert!(instructions.contains(words), "{words} in {instructions}");
         }
 
-        let Step::Reply(without) = super::handle_line(line, &caller(false, true)) else {
+        let Step::Reply(screen) = super::handle_line(line, &caller(false, true)) else {
+            panic!("initialize must reply");
+        };
+        let screen = screen["result"]["instructions"]
+            .as_str()
+            .unwrap_or_default();
+        assert!(screen.contains("request_access"));
+        assert!(!screen.contains("show_artifact"));
+
+        let Step::Reply(without) = super::handle_line(line, &caller(false, false)) else {
             panic!("initialize must reply");
         };
         assert!(without["result"].get("instructions").is_none());

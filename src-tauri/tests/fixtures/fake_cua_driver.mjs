@@ -24,7 +24,7 @@ if (process.env.FAKE_CUA_PID_FILE) writeFileSync(process.env.FAKE_CUA_PID_FILE, 
 
 // A 4×4 PNG, the screenshot of the fixture window.
 const PNG =
-  "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEUlEQVR4nGP8z4AATAxEcQCukgEHVUl5SQAAAABJRU5ErkJggg==";
+  "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEElEQVR4nGPQqDgBRwzEcQA/UhaB575xBAAAAABJRU5ErkJggg==";
 const TOOLS = ["list_apps", "list_windows", "get_window_state", "click", "type_text", "run_steps"];
 
 const sessions = new Map();

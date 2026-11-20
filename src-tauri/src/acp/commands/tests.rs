@@ -767,3 +767,42 @@ fn a_private_session_is_checked_against_the_workspaces_like_any_other() {
     }
     assert!(harness.api.calls().is_empty());
 }
+
+#[test]
+fn a_tool_update_reaches_the_webview_without_its_images() {
+    let payload = event_payload(&AcpEvent::Update {
+        session_id: "s-1".into(),
+        update: json!({
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "t-1",
+            "content": [
+                { "type": "content", "content": { "type": "text", "text": "AXButton" } },
+                { "type": "content", "content": { "type": "image", "data": "AAAA", "mimeType": "image/jpeg" } }
+            ],
+            "rawOutput": { "content": [
+                { "type": "text", "text": "AXButton" },
+                { "type": "image", "data": "AAAA", "mimeType": "image/jpeg" }
+            ] }
+        }),
+    });
+
+    let update = &payload["update"];
+    assert_eq!(update["toolCallId"], "t-1");
+    assert_eq!(update["content"].as_array().unwrap().len(), 1);
+    assert_eq!(update["content"][0]["content"]["text"], "AXButton");
+    assert_eq!(update["rawOutput"]["content"].as_array().unwrap().len(), 1);
+    assert!(!payload.to_string().contains("AAAA"));
+}
+
+#[test]
+fn an_update_that_is_not_a_tools_keeps_its_images() {
+    let update = json!({
+        "sessionUpdate": "user_message_chunk",
+        "content": { "type": "image", "data": "AAAA", "mimeType": "image/png" }
+    });
+    let payload = event_payload(&AcpEvent::Update {
+        session_id: "s-1".into(),
+        update: update.clone(),
+    });
+    assert_eq!(payload["update"], update);
+}

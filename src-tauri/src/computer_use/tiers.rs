@@ -14,11 +14,15 @@
 
 use super::apps::AppIdentity;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub enum Tier {
+    #[serde(rename = "never")]
     Never,
+    #[serde(rename = "view")]
     ViewOnly,
+    #[serde(rename = "click")]
     ClickOnly,
+    #[serde(rename = "full")]
     Full,
 }
 

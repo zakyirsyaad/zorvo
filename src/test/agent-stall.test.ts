@@ -39,6 +39,14 @@ function codexRetry(message: string, additionalDetails: string | null = null) {
   };
 }
 
+/** OpenCode V2 2.2.6's retry extension, including its clear-on-next-step update. */
+function opencodeRetry(attempt: number | null = 2, message = 'Streaming response failed: [500] Internal server error') {
+  return {
+    sessionUpdate: 'session_info_update',
+    _meta: { 'opencode/retry': attempt === null ? null : { attempt, nextRetryAt: '2026-11-20T14:59:05.476Z', error: { type: 'provider.internal', message } } },
+  };
+}
+
 function agentReply(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return { id: "a-1", role: "agent", content: "", timestamp: 1, ...overrides };
 }
@@ -84,6 +92,38 @@ describe("failureReportOf", () => {
     expect(failureReportOf({ sessionUpdate: "agent_message_chunk", _meta: { executionLifecycle: "ended" } })).toBeNull();
     expect(failureReportOf(null)).toBeNull();
   });
+
+  it('reads the actual OpenCode retry message and absolute attempt', () => {
+    expect(failureReportOf(opencodeRetry())).toEqual({
+      kind: 'failed', source: 'opencode', attempt: 2,
+      detail: 'Streaming response failed: [500] Internal server error',
+    });
+    expect(failureReportOf(opencodeRetry(null))).toEqual({ kind: 'recovered', source: 'opencode' });
+  });
+
+  it('ignores malformed OpenCode retries and unrelated update kinds', () => {
+    const retry = opencodeRetry()._meta['opencode/retry'];
+    for (const value of [
+      undefined, 'retry', {}, { ...retry, attempt: 0 }, { ...retry, attempt: -1 },
+      { ...retry, attempt: 1.5 }, { ...retry, attempt: Number.MAX_SAFE_INTEGER + 1 },
+      { ...retry, nextRetryAt: 'later' }, { ...retry, nextRetryAt: 1795186745476 },
+      { ...retry, nextRetryAt: '2026-02-30T14:59:05.476Z' },
+      { ...retry, error: 'failed' }, { ...retry, error: { message: '' } },
+    ]) {
+      expect(failureReportOf({ sessionUpdate: 'session_info_update', _meta: { 'opencode/retry': value } })).toBeNull();
+    }
+    expect(failureReportOf({ ...opencodeRetry(), sessionUpdate: 'tool_call_update' })).toBeNull();
+    expect(failureReportOf({ ...opencodeRetry(null), sessionUpdate: 'tool_call_update' })).toBeNull();
+  });
+
+  it('bounds and escapes the message without exposing the raw provider response', () => {
+    const update = opencodeRetry(2, `bad\u202E${'x'.repeat(900)}`);
+    Object.assign(update._meta['opencode/retry']!.error, { response: { body: 'private provider body' } });
+    const report = failureReportOf(update);
+    expect(report?.kind === 'failed' && 'detail' in report ? report.detail : '').toHaveLength(500);
+    expect(report?.kind === 'failed' && 'detail' in report ? report.detail : '').toContain('bad\\u202E');
+    expect(JSON.stringify(report)).not.toContain('private provider body');
+  });
 });
 
 describe("nextFailures", () => {
@@ -104,6 +144,25 @@ describe("nextFailures", () => {
   it("clears the count once a request goes through", () => {
     expect(nextFailures({ count: 3, source: "codex" }, { kind: "recovered" })).toBeUndefined();
   });
+
+  it('uses OpenCode absolute attempts and does not count duplicate or stale updates twice', () => {
+    const first = nextFailures(undefined, failureReportOf(opencodeRetry(1))!);
+    expect(first).toEqual({ count: 1, source: 'opencode', detail: 'Streaming response failed: [500] Internal server error' });
+    const second = nextFailures(first, failureReportOf(opencodeRetry(2))!);
+    expect(second?.count).toBe(2);
+    expect(nextFailures(second, failureReportOf(opencodeRetry(2))!)).toBe(second);
+    expect(nextFailures(second, failureReportOf(opencodeRetry(1, 'older error'))!)).toBe(second);
+    expect(nextFailures(second, failureReportOf(opencodeRetry(4))!)?.count).toBe(4);
+    expect(nextFailures(second, failureReportOf(opencodeRetry(null))!)).toBeUndefined();
+  });
+
+  it('does not clear or inherit another provider\'s failure state', () => {
+    const previous = { count: 4, source: 'qwen-lifecycle' as const, model: 'qwen', detail: 'Qwen error' };
+    expect(nextFailures(previous, failureReportOf(opencodeRetry(null))!)).toBe(previous);
+    const current = nextFailures(previous, failureReportOf(opencodeRetry(1))!);
+    expect(current).toEqual({ count: 1, source: 'opencode', detail: 'Streaming response failed: [500] Internal server error' });
+    expect(nextFailures(current, { kind: 'failed', source: 'codex', detail: 'Codex error' })).toEqual({ count: 1, source: 'codex', detail: 'Codex error' });
+  });
 });
 
 describe("isNewsUpdate", () => {
@@ -121,6 +180,12 @@ describe("stallNoticeText", () => {
     expect(
       stallNoticeText("Codex", { failures: { count: 2, source: "codex", detail: "stream disconnected" }, silentForMs: 0 }),
     ).toBe("Codex's requests failed 2 times in a row. Last error: stream disconnected.");
+  });
+
+  it('shows the reported OpenCode server error after repeated retries', () => {
+    const failures = nextFailures(undefined, failureReportOf(opencodeRetry())!);
+    expect(stallNoticeText('OpenCode V2', { failures, silentForMs: 0 })).toBe("OpenCode V2's requests failed 2 times in a row. Last error: Streaming response failed: [500] Internal server error.");
+    expect(stallNoticeText('OpenCode V2', { failures: nextFailures(undefined, failureReportOf(opencodeRetry(1))!), silentForMs: 0 })).toBeNull();
   });
 
   it("names the agent, the model, the count and the error it reported", () => {

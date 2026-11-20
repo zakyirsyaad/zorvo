@@ -159,6 +159,9 @@ fn sigpipe_is_back_to_its_default() {
     // With SIGPIPE ignored, `yes` gets EPIPE and complains on stderr instead of
     // dying quietly when `head` stops reading.
     let output = spawn::command("/bin/sh")
+        // Disclaimed children have no Documents grant. This signal test uses
+        // no workspace files, so keep unrelated TCC cwd errors out of stderr.
+        .current_dir(std::env::temp_dir())
         .args(["-c", "/usr/bin/yes | /usr/bin/head -n 1"])
         .output()
         .unwrap();

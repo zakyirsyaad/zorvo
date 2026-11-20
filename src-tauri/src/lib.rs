@@ -7,6 +7,9 @@ pub mod attachment_paths;
 pub mod attachments;
 pub mod background_processes;
 pub mod branches;
+pub mod browser;
+pub mod browser_commands;
+pub mod browser_debug;
 pub mod changes;
 pub mod computer_use;
 pub mod data_migration;
@@ -192,6 +195,7 @@ fn start_agent_tools(app: &AppHandle, data_dir: &std::path::Path) -> Arc<agent_t
                     let _ = calls.emit(AGENT_TOOL_CALL_EVENT, call);
                 },
                 move |call_id| {
+                    browser_commands::call_ended(&ended, &call_id);
                     let _ = ended.emit(
                         AGENT_TOOL_CALL_ENDED_EVENT,
                         serde_json::json!({ "callId": call_id }),
@@ -262,6 +266,10 @@ fn end_orphaned_sessions(
     private: State<'_, private_mode::service::PrivateMode>,
     tools: State<'_, Arc<agent_tools::AgentTools>>,
 ) -> usize {
+    browser::close_all(&app);
+    browser_debug::close(&app, None);
+    #[cfg(all(target_os = "macos", debug_assertions))]
+    browser::frontend_ready(&app);
     let terminals = pty.session_ids();
     // Agent sessions are taken off the routes here, not just listed: the new UI
     // reopens a saved session under the same app session id, and that one
@@ -275,7 +283,10 @@ fn end_orphaned_sessions(
         })
         .collect();
     // The new UI reopens these under the same ids and is issued fresh tokens.
-    agent_ids.iter().for_each(|id| tools.forget(id));
+    agent_ids.iter().for_each(|id| {
+        tools.forget(id);
+        browser_commands::forget(&app, id);
+    });
     let count = terminals.len() + agents.len();
     std::thread::spawn(move || {
         workspace_terminal::end_sessions(&app.state::<PtySessionManager>(), &terminals);
@@ -329,7 +340,12 @@ fn save_transcript(
 
 /// Deletes a session's chat transcript; an already-missing transcript succeeds.
 #[tauri::command(async)]
-fn delete_transcript(store: State<'_, AppStore>, session_id: String) -> Result<(), String> {
+fn delete_transcript(
+    app: AppHandle,
+    store: State<'_, AppStore>,
+    session_id: String,
+) -> Result<(), String> {
+    browser_commands::forget(&app, &session_id);
     store.delete_transcript(&session_id)
 }
 
@@ -480,6 +496,7 @@ pub fn run() {
                 if let Some(tools) = app.try_state::<Arc<agent_tools::AgentTools>>() {
                     tools.forget(session_id);
                 }
+                browser_commands::forget(&app, session_id);
             }
             let _ = app.emit(ACP_EVENT, event_payload(&event));
         }
@@ -550,6 +567,11 @@ pub fn run() {
             let computer_use_dir = data_dir.clone();
             let (store, migration) = data_migration::open_store(data_dir);
             app.manage(store);
+            app.manage(browser_commands::BrowserPermissions::default());
+            app.manage(Arc::new(browser::history::BrowserHistory::new(
+                app.state::<store::AppStore>().root(),
+            )));
+            app.manage(browser_debug::DebugBrowsers::default());
             // Off until the saved switch says otherwise; no driver starts here.
             let computer_use_on = app
                 .state::<store::AppStore>()
@@ -608,10 +630,48 @@ pub fn run() {
                 });
             }
 
+            #[cfg(debug_assertions)]
+            if std::env::var_os("ZORVO_BROWSER_SMOKE_URL").is_some() {
+                let app = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let result = tokio::time::timeout(
+                        std::time::Duration::from_secs(120),
+                        browser::smoke(&app),
+                    )
+                    .await
+                    .unwrap_or_else(|_| {
+                        Err("Native browser smoke exceeded its 120-second deadline.".into())
+                    });
+                    let passed = result.as_ref().is_ok_and(|value| value["status"] == "pass");
+                    if let Ok(path) = std::env::var("ZORVO_BROWSER_SMOKE_OUTPUT") {
+                        let _ = std::fs::write(
+                            path,
+                            serde_json::to_vec_pretty(&result).unwrap_or_default(),
+                        );
+                    }
+                    app.exit(if passed { 0 } else { 1 });
+                });
+            }
             refresh_catalog_in_background(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            browser_commands::browser_execute,
+            browser_commands::browser_pick,
+            browser_commands::browser_site_info,
+            browser_commands::browser_site_clear,
+            browser_commands::browser_new_tab,
+            browser_commands::browser_zoom,
+            browser_commands::browser_history,
+            browser_commands::browser_history_clear,
+            browser_commands::browser_agent_execute,
+            browser_commands::browser_permission,
+            browser_commands::browser_file_permission,
+            browser_commands::browser_manual_file_permission,
+            browser_commands::browser_catalog,
+            browser_debug::browser_runtime_install,
+            browser_debug::browser_runtime_status,
+            browser::browser_bounds,
             artifacts::commands::artifact_show,
             artifacts::commands::artifact_list,
             artifacts::commands::artifact_rename,
@@ -747,6 +807,8 @@ pub fn run() {
                 app.state::<Arc<agent_tools::AgentTools>>().shutdown();
                 app.state::<Arc<computer_use::ComputerUse>>().stop_driver();
                 artifacts::view::close(app);
+                browser::close_all(app);
+                browser_debug::close(app, None);
             }
         });
 }

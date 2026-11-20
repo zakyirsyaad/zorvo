@@ -6090,6 +6090,7 @@ name = "zorvo"
 version = "0.14.1"
 dependencies = [
  "base64 0.23.1",
+ "block2",
  "bzip2",
  "flate2",
  "futures-util",
@@ -6101,7 +6102,9 @@ dependencies = [
  "k256",
  "libc",
  "objc2",
+ "objc2-app-kit",
  "objc2-foundation",
+ "objc2-web-kit",
  "plist",
  "portable-pty",
  "regex",

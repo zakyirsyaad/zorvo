@@ -120,6 +120,10 @@ import { useAgentTools } from "./hooks/useAgentTools";
 import { useComputerUse } from "./hooks/useComputerUse";
 import { isComputerUseCardId } from "./lib/computer-use-card";
 import { ComputerUseStatusLine } from "./components/chat/ComputerUseStatusLine";
+import { useBrowserAgentTools } from "./hooks/useBrowserAgentTools";
+import { useBrowserOpening } from "./hooks/useBrowserOpening";
+import { BrowserPanel } from "./components/browser/BrowserPanel";
+import { BrowserPermissionLayer } from "./components/browser/BrowserPermissionLayer";
 import { useOpenedSessions } from "./hooks/useOpenedSessions";
 import { ProfileFooter } from "./components/ProfileFooter";
 import { AgentsMenu } from "./components/sidebar/AgentsMenu";
@@ -787,6 +791,7 @@ export default function App() {
     showTab: () => inspector.show("artifacts"),
     view: inspector.viewArtifact,
   });
+  useBrowserOpening({ sessionId: activeSession?.id ?? null, show: () => inspector.show("browser"), onError: reportError, onArtifactShown });
   const gallery = useMemo(
     () => galleryRows(sessions, artifacts.bySession, (profileId) => agentNameOr(agents.find((agent) => agent.id === profileId))),
     [sessions, artifacts.bySession, agents],
@@ -949,9 +954,11 @@ export default function App() {
     onNotice: (message) => setNotice(message),
   });
   const isSessionWaiting = (sessionId: string) =>
+    browserAgentTools.isWaiting(sessionId) ||
     agentTools.isWaiting(sessionId) ||
     computerUse.isWaiting(sessionId) ||
     isWaitingForAnswer(sessionById(sessionId), transcripts[sessionId] ?? [], () => isSessionBusy(sessionId));
+  const browserAgentTools = useBrowserAgentTools({ sessions, agents: agentsInUse, onAttention: (sessionId, reason) => notifyAttention(sessionId, reason), onError: reportError });
 
   /** Records a new session and shows it, unless `focus` is false; the agent is started by its engine. */
   const recordSession = (spec: SessionSpec, options?: { focus?: boolean }): Session => {
@@ -2439,6 +2446,16 @@ export default function App() {
                   onOpenUrl={openLink}
                 />
               )}
+              {inspectorTab === "browser" && activeSession && <BrowserPanel
+                key={activeSession.id}
+                sessionId={activeSession.id}
+                onError={reportError}
+                onAddContext={replyBlockedReason({ isComposerHidden, isComposerDisabled, isHeldElsewhere: review.isHeldFor(activeSessionId) })
+                  ? undefined
+                  : (text) => {
+                    if (activeSessionIdRef.current === activeSession.id) composerRef.current?.insertText(text);
+                  }}
+              />}
               {inspectorTab === "terminal" && filesFolder && (
                 <TerminalDrawer
                   folderPath={filesFolder.path}
@@ -2452,6 +2469,7 @@ export default function App() {
           )}
         </div>
       </section>
+      <BrowserPermissionLayer request={browserAgentTools.request} busy={browserAgentTools.answering} answer={browserAgentTools.answer} />
       <SettingsPage
         page={settingsPage}
         persisted={{ state, updateState }}

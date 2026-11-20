@@ -1,9 +1,10 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { Copy, ExternalLink } from "lucide-react";
+import { Copy, ExternalLink, PanelRight } from "lucide-react";
 import { linkAt, menuPlacement, openableLinkAt, shownAddress, type OpenableLink, type Point } from "../lib/link-menu";
 import { POPOVER_PANEL_STYLE, PopoverOption } from "./ui/Popover";
+import { requestBrowserOpen } from "../lib/browser";
 
 interface OpenMenu {
   link: OpenableLink;
@@ -129,6 +130,12 @@ function LinkMenu({ menu, onClose }: { menu: OpenMenu; onClose: () => void }) {
       style={{ left: place.left, top: place.top }}
       className={`fixed z-50 flex w-60 flex-col ${POPOVER_PANEL_STYLE}`}
     >
+      {/^https?:\/\//i.test(href) && <PopoverOption onSelect={() => { requestBrowserOpen(href); onClose(); }}>
+        <span className="inline-flex items-center gap-2">
+          <PanelRight aria-hidden="true" className="size-3.5 text-fg-muted" />
+          Open in Zorvo's browser
+        </span>
+      </PopoverOption>}
       <PopoverOption onSelect={open}>
         <span className="inline-flex items-center gap-2">
           <ExternalLink aria-hidden="true" className="size-3.5 text-fg-muted" />

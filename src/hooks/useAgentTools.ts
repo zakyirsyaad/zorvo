@@ -446,6 +446,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
     (payload: unknown) => {
       const call = parseToolCall(payload);
       if (call === null) return;
+      // Browser calls have an independent session grant and upload approval flow.
+      if (call.tool === 'browser' || call.tool === 'browser_guide') return;
       try {
         const current = latest.current;
         const session = current.sessions.find((candidate) => candidate.id === call.sessionId);

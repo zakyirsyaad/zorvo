@@ -425,7 +425,8 @@ before it edits files or runs commands. Pick another mode in the composer.
   this Mac and deleted with their session. A page you **Export** is an
   ordinary HTML file: opened in a browser, it has none of these limits.
 - **No telemetry.** Zorvo sends nothing about you or your work anywhere.
-- **Only a few hosts, all named.** Zorvo itself contacts only:
+- **Browser pages.** The Browser inspector loads the HTTP(S) pages you or your agent choose, and their subresources, in a separate WebKit view. Submitted address-bar search text goes to Google. The chat's own webview keeps its network restrictions. Each session has an in-memory browser store; different sessions do not share it. Agents need a browser session grant, and file uploads need a separate destination/files approval. Chromium debug opens an isolated Chrome or Brave window; its tabs and cookies are separate from WebKit. Optional Lighthouse tools are installed from npm with a pinned integrity lockfile after you click Install audit tools; an audit uses a fresh Chromium profile and a temporary loopback debugging endpoint.
+- **Other connections, all named.** Outside the browser pages, Zorvo itself contacts only:
   - the ACP registry (`cdn.agentclientprotocol.com`), to list agents, their
     versions and their logos;
   - an agent's download URLs from the registry, when you install a binary

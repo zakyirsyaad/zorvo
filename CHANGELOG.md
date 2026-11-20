@@ -7,6 +7,22 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 ### Added
 
 - **Agents can look at apps on your Mac, when you let them.** Turn it on in Settings, under Agents. An agent then asks before it uses an app, on a card that shows each app as it is on this Mac (its name, where it is and who signed it), and you tick the ones it may use in that session. For now an agent can only look: read a window's contents and take a picture of it. Zorvo itself, your passwords and System Settings are never offered; browsers are view only, terminals and code editors click only. A line under the chat and a mark in the sidebar show which sessions may use apps, a small bar stays on top of your screen while an agent is looking, and **Stop computer use** ends it at once. What an agent sees goes to its model provider.
+- **A browser beside the chat.** Open links or addresses in the Browser inspector tab, with session-isolated WebKit pages, navigation, console, snapshots and agent interactions. Browser tools ask for a session grant; sending files asks separately. Chromium debug opens an isolated installed Chrome or Brave window for full network, file, trace, CPU, heap and optional Lighthouse tools.
+
+### Changed
+
+- **A compact browser toolbar.** Navigation, the address and element selection share one row, with page tabs above it. Browser choices and debugging tools have their own menu.
+- **Site information in the browser.** See the connection, cookie count and agent access for the current page, and clear its cookies and origin storage. A menu keeps a still image of the page behind it instead of showing an empty panel.
+
+### Fixed
+
+- **Browser tools on sites with a strict content policy.** Native JavaScript expressions and console reads use WebKit's page-world compiler, so a site's ban on `eval` does not block the tools. The site's policy remains unchanged.
+- **Navigation past a page dialog.** Navigating, reloading or going back/forward dismisses a pending page dialog before WebKit starts the new document, so the dialog cannot keep the navigation waiting.
+- **Closing browser pages releases their process state.** Closed views cancel pending operations and ask WebKit to end and reset the page process, including a page running a script that never yields.
+- **Browser tabs and page controls.** A tab strip, blank new tabs and the page menu now follow the compact browser layout, with native page zoom, copying/opening links and a clearable list of recent pages. Diagnostic tools have their own menu.
+- **Responsive pages in the browser.** WebKit now includes its Safari compatibility token and Zorvo identity, so sites such as Google serve a layout that follows the panel width.
+- **Clearer browser commands for agents.** Browser tools now describe URLs, tab IDs and scroll distances directly, so agents can open and scroll a page without guessing the arguments.
+- **OpenCode retry errors in the chat.** Failed model requests now show the agent's retry status and error instead of leaving only a working indicator.
 
 ## [0.14.1] - 2026-11-21
 

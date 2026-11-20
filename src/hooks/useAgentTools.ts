@@ -16,7 +16,6 @@ import {
   NO_SESSION,
   NO_SUCH_HANDLE,
   UNREADABLE,
-  delegateResultText,
   listAgentsText,
   openedResultText,
   otherFolders,
@@ -28,11 +27,14 @@ import {
   resolveFolder,
   sessionGetsAgentTools,
   statusRefusal,
+  workerSentText,
+  workerStartedText,
   type AgentToolCall,
   type DelegateState,
   type KnownFolder,
   type ListedDelegate,
   type ListedOpened,
+  type ListedWorker,
 } from '../lib/agent-tools';
 import type { MentionAgentStatus } from '../lib/delegation';
 import { createId } from '../lib/ids';
@@ -41,6 +43,8 @@ import { withArtifactCard } from '../lib/artifact-card';
 import { escapeVisible } from '../lib/visible-text';
 import type { AgentProfile, ChatMessage, Session } from '../types';
 import type { GiveTaskResult } from './useDelegation';
+import type { StartWorkerInput, StartWorkerResult } from '../lib/delegation-helpers';
+import { workerByHandle } from '../lib/workers';
 import type { OpenRequest, OpenResult } from './useOpenedSessions';
 import { useLatest } from './useLatest';
 
@@ -54,7 +58,10 @@ export interface AgentToolsDeps {
   statusOf: (agentId: string) => MentionAgentStatus;
   /** The session's open delegates, for `list_agents`. */
   delegatesOf: (sessionId: string) => ListedDelegate[];
-  giveTask: (sourceId: string, agentId: string, task: string, options: { byAgent: true }) => Promise<GiveTaskResult>;
+  /** The session's open workers, oldest first, for `list_agents`. */
+  workersOf: (sessionId: string) => ListedWorker[];
+  startWorker: (coordinatorId: string, input: StartWorkerInput) => Promise<StartWorkerResult>;
+  sendToWorker: (coordinatorId: string, workerId: string, task: string) => Promise<GiveTaskResult>;
   /** The folders Zorvo knows: where else a session may be opened. */
   workspaces: readonly KnownFolder[];
   openSession: (openerId: string, request: OpenRequest) => Promise<OpenResult>;
@@ -73,13 +80,17 @@ export interface AgentToolsDeps {
   onArtifactShown: (sessionId: string, shown: ShownArtifact) => void;
 }
 
-/** A `delegate` or `start_session` call that waits for the user's answer on a card. */
+/** A `start_worker`, `send` or `start_session` call that waits for the user's answer on a card. */
 interface WaitingCall extends WaitingTask {
   callId: string;
   /** A new session's name, when the agent gave one. */
   title?: string;
   /** A new session in another folder Zorvo knows. */
   folderPath?: string;
+  /** For `send`: the worker's session. */
+  workerId?: string;
+  /** For `send`: the handle the agent used. */
+  handle?: string;
 }
 
 /** A session in another folder has a card of its own, asked every time. */
@@ -108,7 +119,7 @@ function respond(callId: string, ok: boolean, text: string): void {
 
 /**
  * Answers the tool calls agents make to Zorvo's tool server. `list_agents`
- * is answered at once; the first `delegate` of a session shows a card, and
+ * is answered at once; the first `start_worker` of a session shows a card, and
  * after Allow that session's calls run without one (memory only: a reload asks
  * again). Main window only: a popout would answer the same call a second time.
  * Decisions read refs, so they hold in the tick a call or an answer arrives.
@@ -137,23 +148,56 @@ export function useAgentTools(deps: AgentToolsDeps): {
   const [, setRevision] = useState(0);
   const bump = useCallback(() => setRevision((current) => current + 1), []);
 
-  const runDelegate = useCallback(
+  const runStartWorker = useCallback(
     async (sessionId: string, call: WaitingCall): Promise<void> => {
       try {
-        const result = await latest.current.giveTask(sessionId, call.targetId, call.task, { byAgent: true });
-        if (result.ok) {
-          const text = delegateResultText({
-            kind: result.kind,
-            sessionName: result.sessionName,
-            agentName: call.targetName,
-            // A delegate is named by its agent's id: a session holds one per agent.
-            handle: call.targetId,
-          });
-          respond(call.callId, true, text);
-        } else {
-          // A failure inside Zorvo is not explained to an agent: its cause could hold a path.
-          respond(call.callId, false, result.isInternal === true || result.reason === '' ? FAILED : result.reason);
+        const result = await latest.current.startWorker(sessionId, {
+          agentId: call.targetId,
+          task: call.task,
+          ...(call.title !== undefined ? { title: call.title } : {}),
+          hasOwnWorktree: call.hasOwnWorktree === true,
+          byAgent: true,
+          isCancelled: () => endedApproved.current.has(call.callId),
+        });
+        if (!result.ok && result.detail !== undefined) {
+          // The agent is told only that it did not work; the cause is the user's to see.
+          const current = latest.current;
+          const caller = current.sessions.find((candidate) => candidate.id === sessionId);
+          const callerName = current.agents.find((candidate) => candidate.id === caller?.profileId)?.name ?? 'The agent';
+          current.onNotice?.(`${callerName} could not start a ${call.targetName} worker: ${result.detail}`);
         }
+        respond(
+          call.callId,
+          result.ok,
+          result.ok
+            ? workerStartedText({ handle: result.handle, sessionName: result.sessionName, folder: result.folder })
+            : result.isInternal === true || result.reason === ''
+              ? FAILED
+              : result.reason,
+        );
+      } catch {
+        respond(call.callId, false, FAILED);
+      }
+    },
+    [latest],
+  );
+
+  const runSend = useCallback(
+    async (sessionId: string, call: WaitingCall): Promise<void> => {
+      try {
+        const result = await latest.current.sendToWorker(sessionId, call.workerId ?? '', call.task);
+        if (!result.ok && result.detail !== undefined) {
+          latest.current.onNotice?.(`${call.targetName} could not take a further task: ${result.detail}`);
+        }
+        respond(
+          call.callId,
+          result.ok,
+          result.ok
+            ? workerSentText({ handle: call.handle ?? '', sessionName: result.sessionName })
+            : result.isInternal === true || result.reason === ''
+              ? FAILED
+              : result.reason,
+        );
       } catch {
         respond(call.callId, false, FAILED);
       }
@@ -202,14 +246,16 @@ export function useAgentTools(deps: AgentToolsDeps): {
       try {
         if (endedApproved.current.has(call.callId)) return;
         begun.current.add(call.callId);
-        await (call.kind === 'delegate' ? runDelegate(sessionId, call) : runOpen(sessionId, call));
+        if (call.kind === 'start_worker') await runStartWorker(sessionId, call);
+        else if (call.kind === 'send') await runSend(sessionId, call);
+        else await runOpen(sessionId, call);
       } finally {
         approved.current.delete(call.callId);
         endedApproved.current.delete(call.callId);
         begun.current.delete(call.callId);
       }
     },
-    [runDelegate, runOpen],
+    [runStartWorker, runSend, runOpen],
   );
 
   /** The card for what waits now, on the session's reply or in the place of the one it had. */
@@ -259,11 +305,16 @@ export function useAgentTools(deps: AgentToolsDeps): {
     [latest, runCall, showCard, bump],
   );
 
-  const handleDelegate = useCallback(
+  const handleStartWorker = useCallback(
     (session: Session, call: AgentToolCall) => {
       const current = latest.current;
-      const { agent, task } = call.args as Record<string, unknown>;
-      if (typeof agent !== 'string' || typeof task !== 'string') {
+      const { agent, task, title, worktree } = call.args as Record<string, unknown>;
+      const isReadable =
+        typeof agent === 'string' &&
+        typeof task === 'string' &&
+        (title === undefined || typeof title === 'string') &&
+        (worktree === undefined || worktree === 'current' || worktree === 'new');
+      if (!isReadable) {
         respond(call.callId, false, FAILED);
         return;
       }
@@ -279,7 +330,42 @@ export function useAgentTools(deps: AgentToolsDeps): {
         respond(call.callId, false, refusal);
         return;
       }
-      enqueue(session, { callId: call.callId, kind: 'delegate', targetName, targetId: resolved.id, task });
+      enqueue(session, {
+        callId: call.callId,
+        kind: 'start_worker',
+        targetName,
+        targetId: resolved.id,
+        task,
+        ...(typeof title === 'string' ? { title } : {}),
+        ...(worktree === 'new' ? { hasOwnWorktree: true } : {}),
+      });
+    },
+    [latest, enqueue],
+  );
+
+  const handleSend = useCallback(
+    (session: Session, call: AgentToolCall) => {
+      const current = latest.current;
+      const { handle, message } = call.args as Record<string, unknown>;
+      if (typeof handle !== 'string' || typeof message !== 'string') {
+        respond(call.callId, false, FAILED);
+        return;
+      }
+      const worker = workerByHandle(session.id, handle, current.sessions);
+      if (worker === undefined) {
+        respond(call.callId, false, NO_SUCH_HANDLE);
+        return;
+      }
+      const targetName = current.agents.find((candidate) => candidate.id === worker.profileId)?.name ?? worker.profileId;
+      enqueue(session, {
+        callId: call.callId,
+        kind: 'send',
+        targetName,
+        targetId: worker.profileId,
+        task: message,
+        workerId: worker.id,
+        handle,
+      });
     },
     [latest, enqueue],
   );
@@ -467,14 +553,19 @@ export function useAgentTools(deps: AgentToolsDeps): {
             listAgentsText({
               agents,
               delegates: current.delegatesOf(session.id),
+              workers: current.workersOf(session.id),
               opened: current.openedOf(session.id),
               folders: otherFolders(current.workspaces, ownFolderOf(session)),
             }),
           );
           return;
         }
-        if (call.tool === 'delegate') {
-          handleDelegate(session, call);
+        if (call.tool === 'start_worker') {
+          handleStartWorker(session, call);
+          return;
+        }
+        if (call.tool === 'send') {
+          handleSend(session, call);
           return;
         }
         if (call.tool === 'start_session') {
@@ -498,7 +589,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
         respond(call.callId, false, FAILED);
       }
     },
-    [latest, handleDelegate, handleStartSession, handleOwned, handleShowArtifact],
+    [latest, handleStartWorker, handleSend, handleStartSession, handleOwned, handleShowArtifact],
   );
 
   /** A call ended without our answer (timeout, cancel, session stop): it no longer waits. */

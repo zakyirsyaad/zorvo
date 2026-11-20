@@ -13,9 +13,10 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 import { useAgentTools, type AgentToolsDeps } from "../hooks/useAgentTools";
 import type { GiveTaskResult } from "../hooks/useDelegation";
+import type { StartWorkerResult } from "../lib/delegation-helpers";
 import type { OpenRequest, OpenResult } from "../hooks/useOpenedSessions";
 import { ALLOW_ONCE, ALLOW_SESSION, DENY } from "../lib/agent-tool-card";
-import { DECLINED, NO_SESSION } from "../lib/agent-tools";
+import { DECLINED, NO_SESSION, NO_SUCH_HANDLE } from "../lib/agent-tools";
 import type { MentionAgentStatus } from "../lib/delegation";
 import { makeProfile } from "./fixtures/agents";
 import type { ChatMessage, Session } from "../types";
@@ -42,7 +43,9 @@ interface Env {
   given: Array<{ sourceId: string; agentId: string; task: string; options: unknown }>;
   attention: string[];
   statuses: Record<string, MentionAgentStatus>;
-  giveResult: (agentId: string) => GiveTaskResult | Promise<GiveTaskResult>;
+  giveResult: (agentId: string) => StartWorkerResult | Promise<StartWorkerResult>;
+  sent: Array<{ coordinatorId: string; workerId: string; task: string }>;
+  sendResult: () => GiveTaskResult;
   sessions: Session[];
   opens: Array<{ openerId: string; request: OpenRequest }>;
   notices: string[];
@@ -61,9 +64,17 @@ function setup(overrides: Partial<Env> = {}) {
   const env: Env = {
     messages: { "s-1": [{ id: "m-1", role: "user", content: "have Qwen review it", timestamp: 1 }] },
     given: [],
+    sent: [],
+    sendResult: () => ({ ok: true, kind: "sent", sessionId: "w-1", sessionName: "Qwen Code: Review" }),
     attention: [],
     statuses: {},
-    giveResult: (agentId) => ({ ok: true, kind: "started", sessionId: `d-${agentId}`, sessionName: `${agentId}: task` }),
+    giveResult: (agentId) => ({
+      ok: true,
+      sessionId: `d-${agentId}`,
+      sessionName: `${agentId}: task`,
+      handle: "worker-1",
+      folder: SESSION.cwd,
+    }),
     sessions: [SESSION],
     opens: [],
     notices: [],
@@ -87,9 +98,17 @@ function setup(overrides: Partial<Env> = {}) {
         agents: [PI, QWEN, CODEX],
         statusOf: (agentId) => env.statuses[agentId] ?? "ready",
         delegatesOf: () => [{ agentId: "codex-acp", state: "working", task: "Fix the parser" }],
-        giveTask: async (sourceId, agentId, task, options) => {
-          env.given.push({ sourceId, agentId, task, options });
-          return env.giveResult(agentId);
+        workersOf: () => [
+          { handle: "worker-1", agent: "qwen-code", title: "Qwen Code: Review", state: "working", outcome: null },
+          { handle: "worker-2", agent: "qwen-code", title: "Qwen Code: Lint", state: "succeeded", outcome: "succeeded" },
+        ],
+        startWorker: async (sourceId, input) => {
+          env.given.push({ sourceId, agentId: input.agentId, task: input.task, options: input });
+          return env.giveResult(input.agentId);
+        },
+        sendToWorker: async (coordinatorId, workerId, task) => {
+          env.sent.push({ coordinatorId, workerId, task });
+          return env.sendResult();
         },
         workspaces: WORKSPACES,
         openSession: async (openerId, request) => {
@@ -173,6 +192,10 @@ describe("useAgentTools", () => {
           delegate: { handle: "codex-acp", state: "working", task: "Fix the parser" },
         },
       ],
+      workers: [
+        { handle: "worker-1", agent: "qwen-code", title: "Qwen Code: Review", state: "working", outcome: null },
+        { handle: "worker-2", agent: "qwen-code", title: "Qwen Code: Lint", state: "succeeded", outcome: "succeeded" },
+      ],
       opened: [{ agent: "Codex", title: "Parser port", state: "idle", folder: SESSION.cwd }],
       folders: [{ name: "titan", path: "/Users/test/developer/titan" }],
     });
@@ -181,13 +204,13 @@ describe("useAgentTools", () => {
 
   it("shows one card for the first delegate call and answers nothing yet", async () => {
     const t = setup();
-    await t.call("1", "delegate", REVIEW);
+    await t.call("1", "start_worker", REVIEW);
 
     expect(t.answers()).toHaveLength(0);
     expect(t.env.given).toHaveLength(0);
     expect(t.cards()).toHaveLength(1);
     expect(t.cards()[0]).toMatchObject({
-      title: "pi ACP wants to give Qwen Code a task",
+      title: "pi ACP wants to start a Qwen Code worker",
       prompt: "Review the parser change.",
       status: "pending",
       zorvoTool: { callerName: "pi ACP", targetName: "Qwen Code", targetId: "qwen-code", folder: SESSION.cwd },
@@ -199,15 +222,15 @@ describe("useAgentTools", () => {
 
   it("on Allow, gives the task and answers that it started", async () => {
     const t = setup();
-    await t.call("1", "delegate", REVIEW);
+    await t.call("1", "start_worker", REVIEW);
     expect(await t.choose(ALLOW_SESSION)).toBe(true);
 
     expect(t.env.given).toEqual([
-      { sourceId: "s-1", agentId: "qwen-code", task: "Review the parser change.", options: { byAgent: true } },
+      { sourceId: "s-1", agentId: "qwen-code", task: "Review the parser change.", options: expect.objectContaining({ agentId: "qwen-code", byAgent: true, hasOwnWorktree: false }) },
     ]);
     await waitFor(() => expect(t.answers()).toHaveLength(1));
     expect(t.answers()[0]).toMatchObject({ callId: "1", ok: true });
-    expect(JSON.parse(t.answers()[0].text)).toMatchObject({ started: true, handle: "qwen-code", session: "qwen-code: task" });
+    expect(JSON.parse(t.answers()[0].text)).toMatchObject({ started: true, handle: "worker-1", session: "qwen-code: task" });
     expect(t.cards()[0]).toMatchObject({ status: "approved", chosenOptionId: ALLOW_SESSION });
     expect(t.result.current.isWaiting("s-1")).toBe(false);
     expect(t.result.current.hasGrant("s-1")).toBe(true);
@@ -215,9 +238,9 @@ describe("useAgentTools", () => {
 
   it("with a grant, the next call runs with no card", async () => {
     const t = setup();
-    await t.call("1", "delegate", REVIEW);
+    await t.call("1", "start_worker", REVIEW);
     await t.choose(ALLOW_SESSION);
-    await t.call("2", "delegate", { agent: "Codex", task: "Fix the lexer." });
+    await t.call("2", "start_worker", { agent: "Codex", task: "Fix the lexer." });
 
     await waitFor(() => expect(t.answers()).toHaveLength(2));
     expect(t.cards()).toHaveLength(1);
@@ -226,22 +249,22 @@ describe("useAgentTools", () => {
 
   it("on Deny, answers that the user declined and keeps no grant", async () => {
     const t = setup();
-    await t.call("1", "delegate", REVIEW);
+    await t.call("1", "start_worker", REVIEW);
     await t.choose(DENY);
 
     expect(t.answers()).toEqual([{ callId: "1", ok: false, text: DECLINED }]);
     expect(t.env.given).toHaveLength(0);
     expect(t.cards()[0]).toMatchObject({ status: "rejected", chosenOptionId: DENY });
 
-    await t.call("2", "delegate", REVIEW);
+    await t.call("2", "start_worker", REVIEW);
     expect(t.cards().filter((card) => card.status === "pending")).toHaveLength(1);
     expect(t.answers()).toHaveLength(1);
   });
 
   it("two calls before an answer share one card that shows both; Allow runs both in order", async () => {
     const t = setup();
-    await t.call("1", "delegate", REVIEW);
-    await t.call("2", "delegate", { agent: "codex-acp", task: "Fix the lexer." });
+    await t.call("1", "start_worker", REVIEW);
+    await t.call("2", "start_worker", { agent: "codex-acp", task: "Fix the lexer." });
 
     expect(t.cards()).toHaveLength(1);
     expect(t.cards()[0].title).toBe("pi ACP wants to give other agents 2 tasks");
@@ -256,8 +279,8 @@ describe("useAgentTools", () => {
 
   it("two calls before an answer; Deny declines both", async () => {
     const t = setup();
-    await t.call("1", "delegate", REVIEW);
-    await t.call("2", "delegate", { agent: "codex-acp", task: "Fix the lexer." });
+    await t.call("1", "start_worker", REVIEW);
+    await t.call("2", "start_worker", { agent: "codex-acp", task: "Fix the lexer." });
     await t.choose(DENY);
 
     expect(t.answers()).toEqual([
@@ -268,12 +291,12 @@ describe("useAgentTools", () => {
 
   it("withdraws the card when its only call ended, and keeps it while another waits", async () => {
     const t = setup();
-    await t.call("1", "delegate", REVIEW);
-    await t.call("2", "delegate", { agent: "codex-acp", task: "Fix the lexer." });
+    await t.call("1", "start_worker", REVIEW);
+    await t.call("2", "start_worker", { agent: "codex-acp", task: "Fix the lexer." });
 
     await t.ended("1");
     expect(t.cards()[0].status).toBe("pending");
-    expect(t.cards()[0].title).toBe("pi ACP wants to give Codex a task");
+    expect(t.cards()[0].title).toBe("pi ACP wants to start a Codex worker");
 
     await t.ended("2");
     expect(t.cards()[0].status).toBe("rejected");
@@ -286,7 +309,7 @@ describe("useAgentTools", () => {
 
   it("refuses an unknown agent with the list of ids, without a card", async () => {
     const t = setup();
-    await t.call("1", "delegate", { agent: "qwen", task: "Review it." });
+    await t.call("1", "start_worker", { agent: "qwen", task: "Review it." });
 
     expect(t.answers()).toEqual([
       { callId: "1", ok: false, text: 'No agent called "qwen". Use one of: pi-acp, qwen-code, codex-acp.' },
@@ -296,7 +319,7 @@ describe("useAgentTools", () => {
 
   it("refuses an agent that needs a sign-in, without a card", async () => {
     const t = setup({ statuses: { "qwen-code": "needs-sign-in" } });
-    await t.call("1", "delegate", REVIEW);
+    await t.call("1", "start_worker", REVIEW);
 
     expect(t.answers()).toEqual([
       { callId: "1", ok: false, text: "Qwen Code needs a sign-in first. Ask the user to sign in." },
@@ -306,7 +329,7 @@ describe("useAgentTools", () => {
 
   it("passes a refusal from giving the task back to the agent", async () => {
     const t = setup({ giveResult: () => ({ ok: false, reason: "Qwen Code is still working on the previous task." }) });
-    await t.call("1", "delegate", REVIEW);
+    await t.call("1", "start_worker", REVIEW);
     await t.choose(ALLOW_SESSION);
 
     await waitFor(() => expect(t.answers()).toHaveLength(1));
@@ -322,7 +345,7 @@ describe("useAgentTools", () => {
         detail: "Error: disk full at /Users/someone/secret",
       }),
     });
-    await t.call("1", "delegate", REVIEW);
+    await t.call("1", "start_worker", REVIEW);
     await t.choose(ALLOW_SESSION);
 
     await waitFor(() => expect(t.answers()).toHaveLength(1));
@@ -333,9 +356,9 @@ describe("useAgentTools", () => {
     const compared: Session = { ...SESSION, id: "s-c", compareRunId: "run-1" };
     const delegated: Session = { ...SESSION, id: "s-d", delegatedFrom: { sessionId: "s-1", task: "t", startedAt: 1 } };
     const t = setup({ sessions: [SESSION, compared, delegated] });
-    await t.call("1", "delegate", REVIEW, "s-c");
+    await t.call("1", "start_worker", REVIEW, "s-c");
     await t.call("2", "list_agents", {}, "s-d");
-    await t.call("3", "delegate", REVIEW, "s-gone");
+    await t.call("3", "start_worker", REVIEW, "s-gone");
 
     expect(t.answers().map((answer) => [answer.ok, answer.text])).toEqual([
       [false, NO_SESSION],
@@ -350,15 +373,117 @@ describe("useAgentTools", () => {
         throw new Error("boom with secret task text");
       },
     });
-    await t.call("1", "delegate", REVIEW);
+    await t.call("1", "start_worker", REVIEW);
     await t.choose(ALLOW_SESSION);
-    await t.call("2", "delegate", { agent: 3, task: "x" });
+    await t.call("2", "start_worker", { agent: 3, task: "x" });
 
     await waitFor(() => expect(t.answers()).toHaveLength(2));
     expect(t.answers().map((answer) => [answer.ok, answer.text])).toEqual([
       [false, "Zorvo could not do that."],
       [false, "Zorvo could not do that."],
     ]);
+  });
+
+  it("start_worker under a grant starts a worker with its own worktree and answers with its handle", async () => {
+    const t = setup();
+    await t.call("1", "start_worker", REVIEW);
+    await t.choose(ALLOW_SESSION);
+    await t.call("2", "start_worker", { agent: "qwen-code", task: "Part one", worktree: "new", title: "Part one" });
+
+    await waitFor(() => expect(t.answers()).toHaveLength(2));
+    expect(t.env.given[1].options).toEqual(
+      expect.objectContaining({ agentId: "qwen-code", task: "Part one", title: "Part one", hasOwnWorktree: true, byAgent: true }),
+    );
+    expect(JSON.parse(t.answers()[1].text)).toMatchObject({ started: true, handle: "worker-1", folder: SESSION.cwd });
+  });
+
+  it("start_worker without a grant waits on the card; Deny answers DECLINED and starts nothing", async () => {
+    const t = setup();
+    await t.call("1", "start_worker", { ...REVIEW, worktree: "new" });
+    expect(t.cards()[0].zorvoTool).toMatchObject({ targetId: "qwen-code" });
+    expect(t.cards()[0].prompt).toBe("Review the parser change.");
+    await t.choose(DENY);
+    expect(t.answers()).toEqual([{ callId: "1", ok: false, text: DECLINED }]);
+    expect(t.env.given).toHaveLength(0);
+  });
+
+  it("an internal failure is FAILED to the agent and its detail goes to the user's notice", async () => {
+    const t = setup({
+      giveResult: () => ({
+        ok: false,
+        reason: "A worktree could not be made for this worker.",
+        isInternal: true,
+        detail: "/Users/x locked",
+      }),
+    });
+    await t.call("1", "start_worker", REVIEW);
+    await t.choose(ALLOW_SESSION);
+    await waitFor(() => expect(t.answers()).toHaveLength(1));
+    expect(t.answers()[0]).toEqual({ callId: "1", ok: false, text: "Zorvo could not do that." });
+    expect(t.env.notices).toEqual(["pi ACP could not start a Qwen Code worker: /Users/x locked"]);
+  });
+
+  it("a cancelled start (empty reason) is answered FAILED", async () => {
+    const t = setup({ giveResult: () => ({ ok: false, reason: "" }) });
+    await t.call("1", "start_worker", REVIEW);
+    await t.choose(ALLOW_SESSION);
+    await waitFor(() => expect(t.answers()).toHaveLength(1));
+    expect(t.answers()[0]).toEqual({ callId: "1", ok: false, text: "Zorvo could not do that." });
+  });
+
+  const WORKER: Session = {
+    ...SESSION,
+    id: "w-1",
+    name: "Qwen Code: Review",
+    profileId: "qwen-code",
+    delegatedFrom: { sessionId: "s-1", task: "Review", startedAt: 5, handle: "worker-1" },
+  };
+
+  it("send reaches only the caller's own worker", async () => {
+    const t = setup({ sessions: [SESSION, WORKER] });
+    await t.call("c2", "send", { handle: "worker-9", message: "x" });
+    await waitFor(() => expect(t.answers()).toHaveLength(1));
+    expect(t.answers()[0]).toEqual({ callId: "c2", ok: false, text: NO_SUCH_HANDLE });
+    expect(t.cards()).toHaveLength(0);
+  });
+
+  it("send waits on the card, then gives the worker a further task and answers sent", async () => {
+    const t = setup({ sessions: [SESSION, WORKER] });
+    await t.call("c1", "send", { handle: "worker-1", message: "Now the lexer.\nThen stop." });
+    expect(t.cards()[0].prompt).toBe("Now the lexer.\nThen stop.");
+    await t.choose(ALLOW_SESSION);
+    await waitFor(() => expect(t.answers()).toHaveLength(1));
+    expect(t.env.sent).toEqual([{ coordinatorId: "s-1", workerId: "w-1", task: "Now the lexer.\nThen stop." }]);
+    expect(JSON.parse(t.answers()[0].text)).toEqual({ sent: true, handle: "worker-1", session: "Qwen Code: Review" });
+  });
+
+  it("send passes a refusal on, and answers FAILED for an unreadable call", async () => {
+    const t = setup({
+      sessions: [SESSION, WORKER],
+      sendResult: () => ({ ok: false, reason: "worker-1 is still working. Send this when it reports." }),
+    });
+    await t.call("1", "send", { handle: "worker-1", message: "again" });
+    await t.call("2", "send", { handle: 3, message: "x" });
+    await t.choose(ALLOW_SESSION);
+    await waitFor(() => expect(t.answers()).toHaveLength(2));
+    expect(t.answers().map((answer) => [answer.callId, answer.ok, answer.text])).toEqual([
+      ["2", false, "Zorvo could not do that."],
+      ["1", false, "worker-1 is still working. Send this when it reports."],
+    ]);
+  });
+
+  it("read_session and stop_session accept a worker's handle", async () => {
+    const t = setup({ sessions: [SESSION, WORKER], states: { "w-1": "working" } });
+    await t.call("1", "stop_session", { handle: "worker-1" });
+    await waitFor(() => expect(t.answers()).toHaveLength(1));
+    expect(t.env.stopped).toEqual(["w-1"]);
+  });
+
+  it("delegate is no longer a tool: it is answered and never left hanging", async () => {
+    const t = setup();
+    await t.call("1", "delegate", REVIEW);
+    expect(t.answers()).toEqual([{ callId: "1", ok: false, text: "Zorvo could not do that." }]);
+    expect(t.cards()).toHaveLength(0);
   });
 
   it("ignores a payload that is not a call", async () => {
@@ -372,13 +497,13 @@ describe("useAgentTools", () => {
 
   it("forgets the grant when the session is gone or revoked", async () => {
     const t = setup();
-    await t.call("1", "delegate", REVIEW);
+    await t.call("1", "start_worker", REVIEW);
     await t.choose(ALLOW_SESSION);
     expect(t.result.current.hasGrant("s-1")).toBe(true);
 
     act(() => t.result.current.revokeGrant("s-1"));
     expect(t.result.current.hasGrant("s-1")).toBe(false);
-    await t.call("2", "delegate", REVIEW);
+    await t.call("2", "start_worker", REVIEW);
     expect(t.cards().filter((card) => card.status === "pending")).toHaveLength(1);
     await t.choose(ALLOW_SESSION);
     expect(t.result.current.hasGrant("s-1")).toBe(true);
@@ -450,7 +575,7 @@ describe("useAgentTools", () => {
 
   it("shows a delegate call and a start_session call on one card and runs both on Allow", async () => {
     const t = setup();
-    await t.call("1", "delegate", REVIEW);
+    await t.call("1", "start_worker", REVIEW);
     await t.call("2", "start_session", OPEN);
 
     expect(t.cards()).toHaveLength(1);
@@ -465,7 +590,7 @@ describe("useAgentTools", () => {
 
   it("asks with Allow once for another folder even with a grant, and keeps no grant from it", async () => {
     const t = setup();
-    await t.call("1", "delegate", REVIEW);
+    await t.call("1", "start_worker", REVIEW);
     await t.choose(ALLOW_SESSION);
     expect(t.result.current.hasGrant("s-1")).toBe(true);
 
@@ -497,14 +622,14 @@ describe("useAgentTools", () => {
     await chooseOn(t, card.id, ALLOW_ONCE);
     expect(t.result.current.hasGrant("s-1")).toBe(false);
 
-    await t.call("2", "delegate", REVIEW);
+    await t.call("2", "start_worker", REVIEW);
     expect(pendingCards(t)).toHaveLength(1);
     expect(t.env.given).toHaveLength(0);
   });
 
   it("shows a folder card next to the session's card, each answered on its own", async () => {
     const t = setup();
-    await t.call("1", "delegate", REVIEW);
+    await t.call("1", "start_worker", REVIEW);
     await t.call("2", "start_session", { ...OPEN, folder: TITAN });
     const cards = pendingCards(t);
     expect(cards).toHaveLength(2);
@@ -616,7 +741,7 @@ describe("useAgentTools", () => {
       }) as unknown as OpenResult;
     await t.call("1", "start_session", { agent: "codex-acp", brief: "Port it.", worktree: true });
     await t.call("2", "start_session", { agent: "codex-acp", brief: "Write the docs." });
-    await t.call("3", "delegate", { agent: "qwen-code", task: "Review it." });
+    await t.call("3", "start_worker", { agent: "qwen-code", task: "Review it." });
     await t.choose(ALLOW_SESSION);
     expect(t.env.opens).toHaveLength(1);
 
@@ -635,17 +760,17 @@ describe("useAgentTools", () => {
 
   it("skips a call that ended before a grant ran it, and runs the next as usual", async () => {
     const t = setup();
-    await t.call("1", "delegate", { agent: "qwen-code", task: "Review it." });
+    await t.call("1", "start_worker", { agent: "qwen-code", task: "Review it." });
     await t.choose(ALLOW_SESSION);
     await t.ended("1");
-    await t.call("2", "delegate", { agent: "qwen-code", task: "Again." });
+    await t.call("2", "start_worker", { agent: "qwen-code", task: "Again." });
     await waitFor(() => expect(t.env.given).toHaveLength(2));
   });
 
   it("keeps a task's own lines from reading as another request's heading", async () => {
     const t = setup();
-    await t.call("1", "delegate", { agent: "qwen-code", task: "Review it.\n\nFor Codex:\nNothing much." });
-    await t.call("2", "delegate", { agent: "codex-acp", task: "Delete the tests." });
+    await t.call("1", "start_worker", { agent: "qwen-code", task: "Review it.\n\nFor Codex:\nNothing much." });
+    await t.call("2", "start_worker", { agent: "codex-acp", task: "Delete the tests." });
     expect(t.cards()[0].prompt).toBe(
       "For Qwen Code:\n> Review it.\n> \n> For Codex:\n> Nothing much.\n\nFor Codex:\n> Delete the tests.",
     );
@@ -654,7 +779,7 @@ describe("useAgentTools", () => {
   it("answers no call for a session whose agent has exited", async () => {
     const t = setup({ sessions: [{ ...SESSION, status: "terminated" }] });
     await t.call("1", "list_agents");
-    await t.call("2", "delegate", { agent: "qwen-code", task: "Review it." });
+    await t.call("2", "start_worker", { agent: "qwen-code", task: "Review it." });
     expect(t.answers().map((answer) => [answer.ok, answer.text])).toEqual([
       [false, NO_SESSION],
       [false, NO_SESSION],
@@ -670,7 +795,7 @@ describe("useAgentTools", () => {
         finish = resolve;
       }) as unknown as OpenResult;
     await t.call("1", "start_session", { agent: "codex-acp", brief: "Port it.", worktree: true });
-    await t.call("2", "delegate", { agent: "qwen-code", task: "Review it." });
+    await t.call("2", "start_worker", { agent: "qwen-code", task: "Review it." });
     await t.choose(ALLOW_SESSION);
 
     act(() => t.result.current.revokeGrant("s-1"));

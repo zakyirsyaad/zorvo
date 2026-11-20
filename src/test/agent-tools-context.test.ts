@@ -7,10 +7,13 @@ describe("the command path's context", () => {
     expect(COMMAND_PATH_CONTEXT).toContain("run artifact_guide first");
   });
 
-  it("still names the five agent tools and stays hidden", () => {
-    for (const tool of ["list_agents", "delegate", "start_session", "read_session", "stop_session"]) {
+  it("names the agent tools, start_worker and send instead of delegate, and stays hidden", () => {
+    for (const tool of ["list_agents", "start_worker", "send", "start_session", "read_session", "stop_session"]) {
       expect(COMMAND_PATH_CONTEXT).toContain(tool);
     }
+    expect(COMMAND_PATH_CONTEXT).toContain("start_worker {\"agent\": \"<id>\", \"task\": \"<text>\"}");
+    expect(COMMAND_PATH_CONTEXT).not.toContain("delegate");
+    expect(MCP_PATH_CONTEXT).not.toContain("delegate");
     expect(COMMAND_PATH_CONTEXT.endsWith("Do not mention this note.")).toBe(true);
   });
 
@@ -24,6 +27,12 @@ describe("the MCP path's context", () => {
     for (const words of ["without being asked", "show_artifact", "artifact_guide", "diagram", "tool_search"]) {
       expect(MCP_PATH_CONTEXT).toContain(words);
     }
+  });
+
+  it("names start_worker and send, and says to end the turn", () => {
+    expect(MCP_PATH_CONTEXT).toContain("start_worker");
+    expect(MCP_PATH_CONTEXT).toContain("send");
+    expect(MCP_PATH_CONTEXT).toContain("end your turn");
   });
 
   it("stays hidden and leaves short answers in the chat", () => {

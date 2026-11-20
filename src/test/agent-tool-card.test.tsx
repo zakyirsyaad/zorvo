@@ -152,7 +152,7 @@ describe("the card in the chat", () => {
 describe("cards for a session an agent wants to open", () => {
   const base = { cardId: "act-2", sessionId: "s-1", callerName: "pi ACP", folder: "/Users/test/developer/zorvo", now: 100 };
   const session = { kind: "start_session" as const, targetName: "Codex", targetId: "codex-acp", task: "Port the parser.\nKeep the tests." };
-  const delegation = { kind: "delegate" as const, targetName: "Qwen Code", targetId: "qwen-code", task: "Review it." };
+  const delegation = { kind: "start_worker" as const, targetName: "Qwen Code", targetId: "qwen-code", task: "Review it." };
 
   it("titles a single session request and shows the brief as text", () => {
     const card = toolCardFor(base, [session]);
@@ -171,6 +171,15 @@ describe("cards for a session an agent wants to open", () => {
     expect(mixed.prompt).toBe(
       "For Qwen Code:\n> Review it.\n\nNew Codex session, in its own worktree:\n> Port the parser.\n> Keep the tests.\n\nNew Codex session:\n> Port the parser.\n> Keep the tests.",
     );
+  });
+
+  it("titles a worker request as starting a worker, and a send as a task, both headed For {Agent}", () => {
+    expect(toolCardFor(base, [delegation]).title).toBe("pi ACP wants to start a Qwen Code worker");
+    const further = { ...delegation, kind: "send" as const, task: "Now the lexer." };
+    expect(toolCardFor(base, [further]).title).toBe("pi ACP wants to give Qwen Code a task");
+    const both = toolCardFor(base, [delegation, further]);
+    expect(both.title).toBe("pi ACP wants to give other agents 2 tasks");
+    expect(both.prompt).toBe("For Qwen Code:\n> Review it.\n\nFor Qwen Code:\n> Now the lexer.");
   });
 
   it("says when the session gets a worktree of its own", () => {

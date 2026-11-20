@@ -9,8 +9,9 @@ export const COMMAND_PATH_CONTEXT =
   'Run them with your shell tool, exactly as written: "$ZORVO_TOOLS" tools <tool> \'<json arguments>\'. ' +
   'Run "$ZORVO_TOOLS" tools alone to see every tool. ' +
   'list_agents shows the agents you can use. ' +
-  'delegate {"agent": "<id>", "task": "<text>"} gives another agent a task; ' +
-  'its answer arrives later as a message, so do not wait. ' +
+  'start_worker {"agent": "<id>", "task": "<text>"} starts another agent as a worker and returns at once, ' +
+  'so end your turn: its result arrives later as a message; ' +
+  'send {"handle": "<handle>", "message": "<text>"} gives a worker you started a further task. ' +
   'start_session {"agent": "<id>", "brief": "<text>"} opens a separate session that does not report back; ' +
   'read_session {"handle": "<handle>"} reads its last answer and stop_session stops it. ' +
   'show_artifact {"path": "<file.html>", "title": "<text>"} shows the user a web page you wrote; run artifact_guide first. ' +
@@ -29,7 +30,9 @@ export const MCP_PATH_CONTEXT =
   'a diagram, a dashboard, a mockup of a screen, or something the user can click through), show it as a page ' +
   'without being asked: call artifact_guide once, write one self-contained .html file, then call show_artifact ' +
   'with its path. Both are tools of the zorvo MCP server; if your tools are loaded on demand, find them with ' +
-  'tool_search first. Keep answers that are short text or code in the chat. Do not mention this note.';
+  'tool_search first. To have another agent work for you, call start_worker and end your turn: ' +
+  'its result arrives as a message; send gives a worker you started a further task. ' +
+  'Keep answers that are short text or code in the chat. Do not mention this note.';
 
 /** Which of Zorvo's ways in a session has, and so which note it is due. */
 export type ToolsPath = 'command' | 'mcp';

@@ -515,12 +515,12 @@ describe("delegating from the app", () => {
 
     await act(async () => {
       listeners.get("agent-tool-call")?.({
-        payload: { callId: "c-1", sessionId: "s-a", tool: "delegate", args: { agent: "Codex", task: "Review the parser split." } },
+        payload: { callId: "c-1", sessionId: "s-a", tool: "start_worker", args: { agent: "Codex", task: "Review the parser split." } },
       });
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
-    const heading = await screen.findByRole("heading", { name: "Qwen Code wants to give Codex a task" });
+    const heading = await screen.findByRole("heading", { name: "Qwen Code wants to start a Codex worker" });
     expect(heading).toBeDefined();
     expect(screen.getByTestId("zorvo-tool-task").textContent).toBe("Review the parser split.");
     expect(callsTo(spy, "agent_tool_respond")).toHaveLength(0);
@@ -542,10 +542,10 @@ describe("delegating from the app", () => {
     // The user is still in A.
     expect(screen.getByText("Refactor the parser")).toBeDefined();
 
-    // A second call in the same session runs with no card: the task goes to the same delegate or is refused while it works.
+    // A further task for that worker runs with no card and is refused while it works.
     await act(async () => {
       listeners.get("agent-tool-call")?.({
-        payload: { callId: "c-2", sessionId: "s-a", tool: "delegate", args: { agent: "codex-acp", task: "Also check the tests." } },
+        payload: { callId: "c-2", sessionId: "s-a", tool: "send", args: { handle: JSON.parse(String(answer?.text)).handle, message: "Also check the tests." } },
       });
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
@@ -632,7 +632,7 @@ describe("delegating from the app", () => {
     expect(screen.getByText("The session that opened this is gone.")).toBeDefined();
   });
 
-  it("list_agents and delegate reach only the agents the user has in use", async () => {
+  it("list_agents and start_worker reach only the agents the user has in use", async () => {
     seedSourceSession();
     // Codex is on this Mac, but the user took it out of use.
     Object.assign(fakeStore().state.settings, { enabledAgents: ["qwen-code"], removedAgents: ["codex-acp"] });
@@ -642,7 +642,7 @@ describe("delegating from the app", () => {
     await act(async () => {
       listeners.get("agent-tool-call")?.({ payload: { callId: "c-1", sessionId: "s-a", tool: "list_agents", args: {} } });
       listeners.get("agent-tool-call")?.({
-        payload: { callId: "c-2", sessionId: "s-a", tool: "delegate", args: { agent: "codex-acp", task: "Review it." } },
+        payload: { callId: "c-2", sessionId: "s-a", tool: "start_worker", args: { agent: "codex-acp", task: "Review it." } },
       });
       await new Promise((resolve) => setTimeout(resolve, 0));
     });

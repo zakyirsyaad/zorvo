@@ -117,6 +117,7 @@ import { AppUpdateNotice } from "./components/AppUpdateNotice";
 import { restartWarning } from "./lib/app-update";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { useAgentTools } from "./hooks/useAgentTools";
+import { workerHandleOf, workerStateOf } from "./lib/workers";
 import { useOpenedSessions } from "./hooks/useOpenedSessions";
 import { createStartPlaces } from "./lib/start-places";
 import { ProfileFooter } from "./components/ProfileFooter";
@@ -910,7 +911,24 @@ export default function App() {
         state: isSessionWaiting(delegate.id) ? "needs-answer" : isSessionBusy(delegate.id) ? "working" : "idle",
         task: delegate.delegatedFrom?.task ?? "",
       })),
-    giveTask: (sourceId, agentId, task, options) => delegation.giveTask(sourceId, agentId, task, options),
+    workersOf: (sessionId) =>
+      openDelegatesOf(sessionId, sessions).flatMap((worker) => {
+        const link = worker.delegatedFrom;
+        const handle = workerHandleOf(worker);
+        if (link === undefined || link === null || handle === undefined) return [];
+        return [
+          {
+            handle,
+            agent: worker.profileId,
+            title: worker.name,
+            state:
+              workerStateOf({ link, isBusy: isSessionBusy(worker.id), isWaiting: isSessionWaiting(worker.id) }) ?? "idle",
+            outcome: link.outcome?.result ?? null,
+          },
+        ];
+      }),
+    startWorker: (coordinatorId, input) => delegation.startWorker(coordinatorId, input),
+    sendToWorker: (coordinatorId, workerId, task) => delegation.sendToWorker(coordinatorId, workerId, task),
     workspaces,
     openSession: openedSessions.open,
     openedOf: openedSessions.openedOf,

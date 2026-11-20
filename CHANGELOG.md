@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- An agent can start several workers of the same agent, each in its own worktree.
+
 ## [0.14.1] - 2026-11-21
 
 ### Changed

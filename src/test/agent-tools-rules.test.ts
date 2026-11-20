@@ -4,8 +4,10 @@ import {
   NO_SUCH_HANDLE,
   UNREADABLE,
   NO_SESSION,
-  delegateResultText,
   listAgentsText,
+  type ListedWorker,
+  workerSentText,
+  workerStartedText,
   parseToolCall,
   resolveAgent,
   statusRefusal,
@@ -83,6 +85,7 @@ describe("listAgentsText", () => {
         { id: "codex-acp", name: "Codex", status: "not-checked" },
         { id: "claude-acp", name: "Claude Code", status: "needs-sign-in" },
       ],
+      workers: [],
       opened: [],
       folders: [],
     });
@@ -97,17 +100,36 @@ describe("listAgentsText", () => {
   });
 });
 
-describe("delegateResultText", () => {
-  it("says a delegate started, or that the task was sent to the one that exists", () => {
-    expect(JSON.parse(delegateResultText({ kind: "started", sessionName: "Qwen Code: Review", agentName: "Qwen Code" }))).toEqual({
+describe("workerStartedText and workerSentText", () => {
+  it("says a worker started, with its handle and where it works", () => {
+    expect(
+      JSON.parse(workerStartedText({ handle: "worker-2", sessionName: "Qwen Code: Review", folder: "/w/a" })),
+    ).toEqual({
       started: true,
+      handle: "worker-2",
       session: "Qwen Code: Review",
-      note: "The answer arrives as a message when Qwen Code finishes. Do not wait for it.",
+      folder: "/w/a",
+      note: "End your turn. Its result arrives as a message.",
     });
-    expect(JSON.parse(delegateResultText({ kind: "sent", sessionName: "Qwen Code: Review", agentName: "Qwen Code" }))).toMatchObject({
+  });
+
+  it("says a further task was sent", () => {
+    expect(JSON.parse(workerSentText({ handle: "worker-2", sessionName: "Qwen Code: Review" }))).toEqual({
       sent: true,
+      handle: "worker-2",
       session: "Qwen Code: Review",
     });
+  });
+});
+
+describe("listAgentsText workers", () => {
+  it("lists the workers oldest first with state and outcome", () => {
+    const workers: ListedWorker[] = [
+      { handle: "worker-1", agent: "qwen-code", title: "Qwen Code: A", state: "working", outcome: null },
+      { handle: "worker-2", agent: "qwen-code", title: "Qwen Code: B", state: "succeeded", outcome: "succeeded" },
+    ];
+    expect(JSON.parse(listAgentsText({ agents: [], delegates: [], workers })).workers).toEqual(workers);
+    expect(JSON.parse(listAgentsText({ agents: [], delegates: [] })).workers).toEqual([]);
   });
 });
 
@@ -256,7 +278,7 @@ describe("openedResultText", () => {
 describe("listAgentsText with opened sessions and folders", () => {
   it("always carries both lists", () => {
     const bare = JSON.parse(listAgentsText({ agents: [], delegates: [] }));
-    expect(bare).toEqual({ agents: [], opened: [], folders: [] });
+    expect(bare).toEqual({ agents: [], workers: [], opened: [], folders: [] });
 
     const full = JSON.parse(
       listAgentsText({
@@ -296,6 +318,7 @@ describe("handleOf and ownedByHandle", () => {
   it("gives an opened session its stored handle and an open delegate its agent's id", () => {
     expect(handleOf(opened)).toBe("session-1");
     expect(handleOf(delegate)).toBe("qwen-code");
+    expect(handleOf(sessionOf({ id: "w-1", profileId: "qwen-code", delegatedFrom: { ...link, handle: "worker-3" } }))).toBe("worker-3");
     // Opened before handles existed, or no longer a delegate: nothing to call it by.
     expect(handleOf(openedOld)).toBeUndefined();
     expect(handleOf(endedDelegate)).toBeUndefined();
@@ -318,9 +341,6 @@ describe("handleOf and ownedByHandle", () => {
 
 describe("answers carry handles", () => {
   it("names the delegate and the opened session", () => {
-    expect(
-      JSON.parse(delegateResultText({ kind: "started", sessionName: "Qwen Code: Review", agentName: "Qwen Code", handle: "qwen-code" })),
-    ).toMatchObject({ started: true, handle: "qwen-code" });
     expect(JSON.parse(openedResultText({ sessionName: "Parser port", folder: CALLER, handle: "session-1" }))).toMatchObject({
       opened: true,
       handle: "session-1",

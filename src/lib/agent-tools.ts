@@ -8,7 +8,7 @@ import {
   type MentionAgentStatus,
 } from './delegation';
 import { isArchived } from './session-helpers';
-import { toolsRoleOf, type ToolsSubject } from './workers';
+import { toolsRoleOf, workerHandleOf, type ToolsSubject, type WorkerState } from './workers';
 import { escapeVisible } from './visible-text';
 
 export type { ToolsSubject };
@@ -72,6 +72,17 @@ export interface KnownFolder {
   path: string;
 }
 
+/** One of the session's open workers, as `list_agents` reports it. */
+export interface ListedWorker {
+  handle: string;
+  /** The worker's agent id. */
+  agent: string;
+  title: string;
+  state: WorkerState | 'idle';
+  /** What the worker reported: its own say that it succeeded or failed, or null. */
+  outcome: 'succeeded' | 'failed' | null;
+}
+
 export interface ListedAgent {
   id: string;
   name: string;
@@ -83,6 +94,8 @@ export interface ListedAgent {
 export function listAgentsText(input: {
   agents: readonly { id: string; name: string; status: MentionAgentStatus }[];
   delegates: readonly ListedDelegate[];
+  /** The workers this session started, oldest first. */
+  workers?: readonly ListedWorker[];
   /** The independent sessions this session opened. */
   opened?: readonly ListedOpened[];
   /** The other folders a session may be opened in. */
@@ -102,7 +115,7 @@ export function listAgentsText(input: {
       },
     ];
   });
-  return JSON.stringify({ agents, opened: input.opened ?? [], folders: input.folders ?? [] });
+  return JSON.stringify({ agents, workers: input.workers ?? [], opened: input.opened ?? [], folders: input.folders ?? [] });
 }
 
 /**
@@ -131,20 +144,20 @@ export function statusRefusal(agentName: string, status: MentionAgentStatus): st
   return null;
 }
 
-/** `delegate`'s answer once the task is on its way. */
-export function delegateResultText(result: {
-  kind: 'started' | 'sent';
-  sessionName: string;
-  agentName: string;
-  /** The delegate's handle: its agent's id. */
-  handle?: string;
-}): string {
+/** `start_worker`'s answer once the worker is on its way. */
+export function workerStartedText(result: { handle: string; sessionName: string; folder: string }): string {
   return JSON.stringify({
-    [result.kind]: true,
-    ...(result.handle !== undefined ? { handle: result.handle } : {}),
+    started: true,
+    handle: result.handle,
     session: result.sessionName,
-    note: `The answer arrives as a message when ${result.agentName} finishes. Do not wait for it.`,
+    folder: result.folder,
+    note: 'End your turn. Its result arrives as a message.',
   });
+}
+
+/** `send`'s answer once the further task is on its way. */
+export function workerSentText(result: { handle: string; sessionName: string }): string {
+  return JSON.stringify({ sent: true, handle: result.handle, session: result.sessionName });
 }
 
 /** A valid `agent-tool-call` payload, or null. */
@@ -240,9 +253,7 @@ export function nextSessionHandle(taken: readonly string[]): string {
  */
 export function handleOf(session: Session): string | undefined {
   if (session.openedBy) return session.openedBy.handle;
-  const link = session.delegatedFrom;
-  if (link && (link.endedAt === null || link.endedAt === undefined)) return session.profileId;
-  return undefined;
+  return workerHandleOf(session);
 }
 
 /** The session `openerId` owns under `handle`: one it opened, or its open delegate. Not an archived one. */

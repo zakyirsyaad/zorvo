@@ -13,8 +13,9 @@ import {
   type PermissionRequestPayload,
 } from '../../lib/acp-events';
 import { changesToApply, NO_CHOICES, type AcpChange, type AcpChoices, type AgentOptions } from '../../lib/acp-draft';
-import { findCard, firstChars, titleFromPrompt, titleSourceFor, userMessage, withoutMessage } from '../../lib/session-helpers';
+import { findCard, titleFromPrompt, titleSourceFor, userMessage, withoutMessage } from '../../lib/session-helpers';
 import { createId } from '../../lib/ids';
+import { cleanReason } from '../../lib/workers';
 import { toCommands, useAcpSessions, type AcpOptions, type AcpSessionInfo, type TurnResult } from '../useAcpSessions';
 import { useLatest } from '../useLatest';
 import { useBatchedUpdates } from '../useBatchedUpdates';
@@ -42,10 +43,15 @@ export interface FirstMessage {
 
 export type AttentionReason = 'needs-answer' | 'finished' | 'failed';
 
-/** The longest reason a settled turn carries. */
-const TURN_REASON_MAX = 300;
 const SIGN_IN_REASON = 'It needs a sign-in.';
 
+/** How a turn that came back normally ended, with the agent's own words when it failed. */
+function settledEnd(stopReason: string | undefined, notice: string | null, error: string | undefined) {
+  if (stopReason === 'cancelled') return { how: 'cancelled' as const };
+  if (!notice) return { how: 'finished' as const };
+  const reason = error ? cleanReason(error) : '';
+  return reason === '' ? { how: 'failed' as const } : { how: 'failed' as const, reason };
+}
 
 export interface EngineDeps {
   sessions: readonly Session[];
@@ -245,18 +251,18 @@ export function useAcpEngine({
           )
         : null;
       if (refusal) {
+        onTurnSettled?.(sessionId, { how: 'failed' });
         // The panel above the composer says credits ran out; a failure notice would only repeat it.
         handBackRefused(sessionId);
         if ('creditsOut' in refusal) onPrivateCreditsOut?.(sessionId, refusal.creditsOut);
         else reportError(refusal.report);
-        onTurnSettled?.(sessionId, { how: 'failed' });
         onAttention?.(sessionId, 'failed');
         return;
       }
       const authMethods = parseAuthRequired(error);
       if (authMethods) {
-        handBackForSignIn(sessionId, authMethods);
         onTurnSettled?.(sessionId, { how: 'failed', reason: SIGN_IN_REASON });
+        handBackForSignIn(sessionId, authMethods);
         return;
       }
       const sent = lastPromptRef.current.get(sessionId);
@@ -268,16 +274,16 @@ export function useAcpEngine({
         if (sent.toolsContext) toolsContextDueRef.current.set(sessionId, sent.toolsContext);
       } else failedPromptRef.current.delete(sessionId);
       const notice = turnEndNotice(stopReason, error);
+      // Written before anything else reacts, so the end is recorded even if a reaction throws.
+      onTurnSettled?.(sessionId, settledEnd(stopReason, notice, error));
       if (error && onTurnFailed) onTurnFailed(sessionId, error);
       else if (notice) reportError(notice);
-      // Written before the notification, so what reacts to it sees how the turn ended.
-      if (stopReason === 'cancelled') onTurnSettled?.(sessionId, { how: 'cancelled' });
-      else if (notice) onTurnSettled?.(sessionId, { how: 'failed', reason: firstChars(notice, TURN_REASON_MAX) });
-      else onTurnSettled?.(sessionId, { how: 'finished' });
       // A turn the user cancelled needs no notification: they were there.
       if (stopReason !== 'cancelled') onAttention?.(sessionId, notice ? 'failed' : 'finished');
     }),
     onExit: unlessStopped((sessionId, code: number | null) => {
+      // Read before the turn closes: an exit ends a turn only when one was running.
+      const endedATurn = acp.isBusy(sessionId);
       agentFailures.clear(sessionId);
       forgetStopAsked(sessionId);
       updateNow(sessionId, closeTurn);
@@ -285,7 +291,7 @@ export function useAcpEngine({
       // The agent leaves no more updates: the cards it showed are the ones marked unanswered.
       elicitations.abandon(sessionId);
       patchSession(sessionId, { status: 'terminated', endedAt: Date.now(), exitCode: code });
-      onTurnSettled?.(sessionId, { how: 'exited' });
+      if (endedATurn) onTurnSettled?.(sessionId, { how: 'exited' });
     }),
     onError: reportError,
   });

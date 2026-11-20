@@ -51,6 +51,7 @@ function renderEngine(
   let messages: ChatMessage[] = [];
   const onTurnFailed = vi.fn();
   const onTurnSettled = vi.fn();
+  const onAttention = vi.fn();
   const reportError = vi.fn();
   const hook = renderHook(() =>
     useAcpEngine({
@@ -66,6 +67,7 @@ function renderEngine(
       rememberOptions: () => {},
       onAuthRequired: () => {},
       onTurnSettled,
+      onAttention,
       ...(withTurnFailed ? { onTurnFailed } : {}),
       ...(options.promptBlockedReason ? { promptBlockedReason: options.promptBlockedReason } : {}),
     }),
@@ -74,6 +76,7 @@ function renderEngine(
     ...hook,
     onTurnFailed,
     onTurnSettled,
+    onAttention,
     reportError,
     userMessages: () => messages.filter((m) => m.role === "user"),
     /** Renders again so the engine sees the sessions the test (or the engine) changed. */
@@ -323,30 +326,61 @@ describe("useAcpEngine reports how every turn ended", () => {
     expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", { how: "cancelled" });
   });
 
-  it("settles a failed turn as failed with the notice as its reason, once", async () => {
+  it("settles a failed turn as failed with the agent's own cleaned words, once", async () => {
     const engine = renderEngine();
     await startTurn(engine);
-    await emit({ kind: "turn-end", error: NETWORK_ERROR });
+    await emit({ kind: "turn-end", error: "fetch failed\n  sending   request\u202E" });
     expect(engine.onTurnSettled).toHaveBeenCalledTimes(1);
-    expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", { how: "failed", reason: expect.stringContaining("") });
-    const reason = engine.onTurnSettled.mock.calls[0]![1].reason as string;
-    expect(reason.length).toBeGreaterThan(0);
-    expect(reason.length).toBeLessThanOrEqual(300);
+    expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", { how: "failed", reason: "fetch failed sending request\\u202E" });
   });
 
-  it("cuts a long reason to 300 characters", async () => {
+  it("cuts a long non-ASCII reason to 300 code points", async () => {
     const engine = renderEngine();
     await startTurn(engine);
-    await emit({ kind: "turn-end", error: "x".repeat(2000) });
+    await emit({ kind: "turn-end", error: "é".repeat(299) + "😀".repeat(50) });
     const reason = engine.onTurnSettled.mock.calls[0]![1].reason as string;
-    expect(reason.length).toBeLessThanOrEqual(300);
+    expect(Array.from(reason)).toHaveLength(300);
+    expect(reason.endsWith("😀")).toBe(true);
   });
 
-  it("settles an exit as exited, once", async () => {
+  it("passes no reason when the error text is only white space", async () => {
+    const engine = renderEngine();
+    await startTurn(engine);
+    await emit({ kind: "turn-end", error: " \n " });
+    expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", { how: "failed" });
+  });
+
+  it("settles a finished turn before it notifies, and a failed one before its handler runs", async () => {
+    const order: string[] = [];
+    const engine = renderEngine();
+    engine.onTurnSettled.mockImplementation(() => order.push("settled"));
+    engine.onAttention.mockImplementation(() => order.push("attention"));
+    engine.onTurnFailed.mockImplementation(() => order.push("failed-handler"));
+    await startTurn(engine);
+    order.length = 0;
+    await emit({ kind: "turn-end", stopReason: "end_turn" });
+    expect(order).toEqual(["settled", "attention"]);
+
+    await startTurn(engine);
+    order.length = 0;
+    await emit({ kind: "turn-end", error: NETWORK_ERROR });
+    expect(order.slice(0, 2)).toEqual(["settled", "failed-handler"]);
+  });
+
+  it("settles an exit during a turn as exited, once", async () => {
     const engine = renderEngine();
     await startTurn(engine);
     await emit({ kind: "exit", code: 1 });
     expect(engine.onTurnSettled).toHaveBeenCalledTimes(1);
     expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", { how: "exited" });
+  });
+
+  it("settles nothing for an exit while idle", async () => {
+    const engine = renderEngine();
+    await startTurn(engine);
+    await emit({ kind: "turn-end", stopReason: "end_turn" });
+    engine.onTurnSettled.mockClear();
+    await emit({ kind: "exit", code: 0 });
+    expect(engine.onTurnSettled).not.toHaveBeenCalled();
   });
 });

@@ -1928,6 +1928,18 @@ describe("useDelegation onTurnSettled", () => {
     expect(lastLink(patches)?.lastTurn?.how).toBe("finished");
   });
 
+  it("a done, a finished end and nothing more keeps the outcome", () => {
+    const { result, patches } = setup(base());
+    act(() => {
+      result.current.delegation.recordDone("w-1", { result: "succeeded", summary: "Fixed" });
+    });
+    act(() => {
+      result.current.delegation.onTurnSettled("w-1", { how: "finished" });
+    });
+    expect(lastLink(patches)?.outcome).toMatchObject({ summary: "Fixed" });
+    expect(lastLink(patches)?.lastTurn?.how).toBe("finished");
+  });
+
   it("a done followed by a cancelled end leaves no outcome", () => {
     const { result, patches } = setup(base());
     act(() => {

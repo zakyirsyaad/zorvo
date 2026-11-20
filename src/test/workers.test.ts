@@ -14,6 +14,7 @@ import {
   startRefusal,
   toolsRoleOf,
   withLinkChange,
+  cleanReason,
   withNewTask,
   withOutcome,
   withReported,
@@ -336,5 +337,24 @@ describe('withNewTask since', () => {
     expect(withNewTask(answered, 'next', 49).outcome).toEqual(answered.outcome);
     expect(withNewTask(answered, 'next', 50).outcome).toBeNull();
     expect(withNewTask(answered, 'next').outcome).toBeNull();
+  });
+});
+
+describe('cleanReason', () => {
+  test('a multi-line error becomes one line', () => {
+    expect(cleanReason('  fetch failed\n\r\n   at  x\t y ')).toBe('fetch failed at x y');
+  });
+  test('a bidi override is spelled out', () => {
+    expect(cleanReason('a\u202Eb')).toBe('a\\u202Eb');
+  });
+  test('is cut to 300 code points with no lone surrogate', () => {
+    const cut = cleanReason('x'.repeat(290) + '😀'.repeat(110));
+    expect(Array.from(cut)).toHaveLength(300);
+    expect(cut.endsWith('😀')).toBe(true);
+    expect(cut).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+  test('empty or white space gives an empty string', () => {
+    expect(cleanReason('')).toBe('');
+    expect(cleanReason(' \n\t ')).toBe('');
   });
 });

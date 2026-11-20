@@ -261,3 +261,14 @@ export function withLinkChange(
     ),
   };
 }
+
+/** The longest reason a worker's failed turn carries, in code points. */
+export const TURN_REASON_MAX = 300;
+
+/**
+ * An agent's error text as it is stored on a link: one line, hidden or reordering characters
+ * spelled out, cut at `TURN_REASON_MAX` code points. Empty when nothing readable remains.
+ */
+export function cleanReason(text: string): string {
+  return firstChars(escapeVisible(text.replace(/\s+/g, ' ').trim()), TURN_REASON_MAX);
+}

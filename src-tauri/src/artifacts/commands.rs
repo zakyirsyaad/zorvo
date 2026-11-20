@@ -9,10 +9,13 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
+use super::canvas::{canvas_file, file_sha256, read_canvas, resolve_canvas, Canvas};
 use super::picks::{checked_marks, PageMark};
 use super::protocol::page_url;
 use super::source::{read_source, temp_roots};
-use super::store::{is_artifact_id, is_session_id, ArtifactRecord, ArtifactStore, Shown, FAILED};
+use super::store::{
+    is_artifact_id, is_session_id, ArtifactRecord, ArtifactStore, CanvasEntry, Shown, FAILED,
+};
 use super::view::{self, checked_bounds, Bounds, ShownPage};
 use crate::files::{canonical_root, ensure_known_workspace};
 use crate::store::AppStore;
@@ -34,6 +37,105 @@ pub struct SessionArtifacts {
     pub artifacts: Vec<ArtifactRecord>,
     /// The index exists but could not be read: `artifacts` is empty, not known to be.
     pub failed: bool,
+    pub canvases: Vec<CanvasEntry>,
+}
+
+/// One artboard's file hash; `None` when the file is missing or not servable.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardState {
+    pub id: String,
+    pub sha256: Option<String>,
+}
+
+/// A canvas as read now. `canvas` is `None` with `error` when it cannot be read.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasRead {
+    pub entry: CanvasEntry,
+    pub canvas: Option<Canvas>,
+    pub error: Option<String>,
+    pub boards: Vec<BoardState>,
+}
+
+const FOLDER_NOT_FOUND: &str = "Folder not found";
+
+fn board_states(root: &Path, canvas: &Canvas) -> Vec<BoardState> {
+    canvas
+        .sections
+        .iter()
+        .flat_map(|section| &section.artboards)
+        .map(|board| BoardState {
+            id: board.id.clone(),
+            sha256: canvas_file(root, &board.file).and_then(|(path, _)| file_sha256(&path)),
+        })
+        .collect()
+}
+
+/// Reads the canvas the agent names, keeps it in the session's list and hashes its boards.
+/// An unreadable canvas is an error the agent must fix.
+pub fn show_canvas(
+    artifacts: &ArtifactStore,
+    is_known: impl Fn(&Path) -> bool,
+    session_id: &str,
+    cwd: &str,
+    path: &str,
+    now_ms: u64,
+) -> Result<CanvasRead, String> {
+    if !is_session_id(session_id) {
+        return Err(FAILED.to_string());
+    }
+    let session_folder = canonical_root(cwd)?;
+    if !is_known(&session_folder) {
+        return Err(format!(
+            "{} is not one of your workspaces",
+            session_folder.display()
+        ));
+    }
+    let folder = resolve_canvas(&session_folder, path)?;
+    let canvas = read_canvas(&folder.root)?;
+    let entry = artifacts.remember_canvas(session_id, &folder, &canvas.title, now_ms)?;
+    let boards = board_states(&folder.root, &canvas);
+    Ok(CanvasRead {
+        entry,
+        canvas: Some(canvas),
+        error: None,
+        boards,
+    })
+}
+
+/// Reads a remembered canvas again. Its entry stays whatever the folder now holds.
+pub fn read_canvas_entry(
+    artifacts: &ArtifactStore,
+    is_known: impl Fn(&Path) -> bool,
+    session_id: &str,
+    key: &str,
+) -> Result<CanvasRead, String> {
+    let entry = artifacts
+        .canvas(session_id, key)
+        .ok_or_else(|| FAILED.to_string())?;
+    let root = std::path::PathBuf::from(&entry.folder);
+    let failed = |entry: CanvasEntry, error: &str| CanvasRead {
+        entry,
+        canvas: None,
+        error: Some(error.to_string()),
+        boards: Vec::new(),
+    };
+    if !root.is_dir() || !is_known(&root) {
+        return Ok(failed(entry, FOLDER_NOT_FOUND));
+    }
+    Ok(match read_canvas(&root) {
+        Ok(canvas) => {
+            let boards = board_states(&root, &canvas);
+            CanvasRead {
+                entry,
+                canvas: Some(canvas),
+                error: None,
+                boards,
+            }
+        }
+        Err(error) => failed(entry, &error),
+    })
 }
 
 fn now_ms() -> u64 {
@@ -81,6 +183,7 @@ pub fn list_sessions(artifacts: &ArtifactStore, session_ids: &[String]) -> Vec<S
                 session_id: session_id.clone(),
                 failed: listed.is_err(),
                 artifacts: listed.unwrap_or_default(),
+                canvases: artifacts.canvases(session_id).unwrap_or_default(),
             }
         })
         .collect()
@@ -155,6 +258,54 @@ pub fn artifact_show(
     )?;
     changed(&app, &session_id);
     Ok(shown)
+}
+
+#[tauri::command(async)]
+pub fn canvas_show(
+    app: AppHandle,
+    store: State<'_, AppStore>,
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    session_id: String,
+    cwd: String,
+    path: String,
+) -> Result<CanvasRead, String> {
+    let read = show_canvas(
+        &artifacts,
+        |root| store.is_known_workspace(root).unwrap_or(false),
+        &session_id,
+        &cwd,
+        &path,
+        now_ms(),
+    )?;
+    changed(&app, &session_id);
+    Ok(read)
+}
+
+#[tauri::command(async)]
+pub fn canvas_read(
+    store: State<'_, AppStore>,
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    session_id: String,
+    key: String,
+) -> Result<CanvasRead, String> {
+    read_canvas_entry(
+        &artifacts,
+        |root| store.is_known_workspace(root).unwrap_or(false),
+        &session_id,
+        &key,
+    )
+}
+
+#[tauri::command(async)]
+pub fn canvas_forget(
+    app: AppHandle,
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    session_id: String,
+    key: String,
+) -> Result<(), String> {
+    artifacts.forget_canvas(&session_id, &key)?;
+    changed(&app, &session_id);
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -384,6 +535,118 @@ mod tests {
 
         assert!(shown.is_err());
         assert!(artifacts.list(SESSION).unwrap().is_empty());
+    }
+
+    const CANVAS_JSON: &str = r#"{"version":1,"title":"Checkout","sections":[{"id":"s","title":"S","artboards":[
+        {"id":"a","title":"A","file":"a.html","width":400,"height":400},
+        {"id":"b","title":"B","file":"b.html","width":400,"height":400}]}]}"#;
+
+    fn canvas_work() -> Temp {
+        let work = Temp::new("canvas-work");
+        std::fs::create_dir_all(work.0.join("design/x")).unwrap();
+        std::fs::write(work.0.join("design/x/canvas.json"), CANVAS_JSON).unwrap();
+        std::fs::write(work.0.join("design/x/a.html"), b"<p>a</p>").unwrap();
+        work
+    }
+
+    #[test]
+    fn show_canvas_refuses_an_unknown_workspace() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        let artifacts = ArtifactStore::new(data.0.clone());
+
+        let shown = show_canvas(&artifacts, |_| false, SESSION, text(&work.0), "design/x", 1);
+
+        assert!(shown.is_err());
+        assert!(artifacts.canvases(SESSION).unwrap().is_empty());
+    }
+
+    #[test]
+    fn show_canvas_reads_hashes_and_remembers() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        let artifacts = ArtifactStore::new(data.0.clone());
+
+        let read =
+            show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 5).unwrap();
+
+        assert_eq!(read.canvas.as_ref().unwrap().title, "Checkout");
+        assert_eq!(read.error, None);
+        assert_eq!(read.boards.len(), 2);
+        assert_eq!(read.boards[0].id, "a");
+        assert_eq!(read.boards[0].sha256.as_ref().unwrap().len(), 64);
+        assert_eq!(read.boards[1].sha256, None);
+        let kept = artifacts.canvases(SESSION).unwrap();
+        assert_eq!(kept, vec![read.entry]);
+        assert_eq!(kept[0].relative, "design/x");
+    }
+
+    #[test]
+    fn show_canvas_returns_the_parse_error_to_the_agent() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        let broken = CANVAS_JSON.replacen("\"width\":400", "\"width\":1", 1);
+        std::fs::write(work.0.join("design/x/canvas.json"), broken).unwrap();
+        let artifacts = ArtifactStore::new(data.0.clone());
+
+        let refused =
+            show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 1).unwrap_err();
+
+        assert!(
+            refused.starts_with("sections[0].artboards[0].width: "),
+            "{refused}"
+        );
+        assert!(artifacts.canvases(SESSION).unwrap().is_empty());
+    }
+
+    #[test]
+    fn canvas_read_keeps_the_entry_when_the_json_breaks() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        let artifacts = ArtifactStore::new(data.0.clone());
+        let entry = show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 1)
+            .unwrap()
+            .entry;
+        std::fs::write(work.0.join("design/x/canvas.json"), "{").unwrap();
+
+        let read = read_canvas_entry(&artifacts, |_| true, SESSION, &entry.key).unwrap();
+
+        assert!(read.canvas.is_none());
+        assert!(read.error.is_some());
+        assert_eq!(read.entry, entry);
+    }
+
+    #[test]
+    fn canvas_read_says_folder_not_found() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        let artifacts = ArtifactStore::new(data.0.clone());
+        let entry = show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 1)
+            .unwrap()
+            .entry;
+        std::fs::remove_dir_all(work.0.join("design/x")).unwrap();
+
+        let read = read_canvas_entry(&artifacts, |_| true, SESSION, &entry.key).unwrap();
+
+        assert_eq!(read.error.as_deref(), Some("Folder not found"));
+        assert!(read.canvas.is_none() && read.boards.is_empty());
+        let unknown = read_canvas_entry(&artifacts, |_| true, SESSION, &entry.key).unwrap();
+        assert_eq!(unknown.entry, entry);
+        assert!(read_canvas_entry(&artifacts, |_| true, SESSION, "c-0000000000000000").is_err());
+    }
+
+    #[test]
+    fn canvas_read_says_folder_not_found_outside_a_known_workspace() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        let artifacts = ArtifactStore::new(data.0.clone());
+        let entry = show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 1)
+            .unwrap()
+            .entry;
+
+        let read = read_canvas_entry(&artifacts, |_| false, SESSION, &entry.key).unwrap();
+
+        assert_eq!(read.error.as_deref(), Some("Folder not found"));
     }
 
     #[test]

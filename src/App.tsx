@@ -785,12 +785,17 @@ export default function App() {
       if (tab === "terminal" && filesFolder) terminalDrawer.ensureShell(filesFolder.path);
     },
   });
-  const onArtifactShown = useArtifactOpening({
+  const openArtifact = useArtifactOpening({
     activeSessionId: activeSession?.id ?? null,
     viewed: inspector.viewedArtifact,
     showTab: () => inspector.show("artifacts"),
     view: inspector.viewArtifact,
   });
+  // A shown canvas needs nothing here yet: its viewer opens it.
+  const onArtifactShown = (sessionId: string, shown: Parameters<typeof openArtifact>[1] | { kind: "canvas"; key: string }) => {
+    if ("kind" in shown) return;
+    openArtifact(sessionId, shown);
+  };
   useBrowserOpening({ sessionId: activeSession?.id ?? null, show: () => inspector.show("browser"), onError: reportError, onArtifactShown });
   const gallery = useMemo(
     () => galleryRows(sessions, artifacts.bySession, (profileId) => agentNameOr(agents.find((agent) => agent.id === profileId))),

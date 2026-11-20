@@ -13,6 +13,8 @@ import {
 } from '../lib/agent-tool-card';
 import {
   DECLINED,
+  DONE_RECORDED,
+  NOT_A_WORKER,
   NO_SESSION,
   NO_SUCH_HANDLE,
   UNREADABLE,
@@ -59,6 +61,8 @@ export interface AgentToolsDeps {
   /** The session's open workers, oldest first, for `list_agents`. */
   workersOf: (sessionId: string) => ListedWorker[];
   startWorker: (coordinatorId: string, input: StartWorkerInput) => Promise<StartWorkerResult>;
+  /** Writes a worker's `done` on its link; false when it has no open task. */
+  recordDone: (workerId: string, done: { result: 'succeeded' | 'failed'; summary: string; files?: string[] }) => boolean;
   sendToWorker: (coordinatorId: string, workerId: string, task: string) => Promise<GiveTaskResult>;
   /** The folders Zorvo knows: where else a session may be opened. */
   workspaces: readonly KnownFolder[];
@@ -524,6 +528,33 @@ export function useAgentTools(deps: AgentToolsDeps): {
     [latest],
   );
 
+  const handleDone = useCallback(
+    (session: Session, role: ReturnType<typeof toolsRoleOf>, call: AgentToolCall) => {
+      if (role !== 'worker') {
+        respond(call.callId, false, NOT_A_WORKER);
+        return;
+      }
+      const args = (typeof call.args === 'object' && call.args !== null ? call.args : {}) as Record<string, unknown>;
+      const { outcome, summary, files } = args;
+      const isValid =
+        (outcome === 'succeeded' || outcome === 'failed') &&
+        typeof summary === 'string' &&
+        summary.trim() !== '' &&
+        (files === undefined || (Array.isArray(files) && files.every((file) => typeof file === 'string')));
+      if (!isValid) {
+        respond(call.callId, false, FAILED);
+        return;
+      }
+      const recorded = latest.current.recordDone(session.id, {
+        result: outcome as 'succeeded' | 'failed',
+        summary: summary as string,
+        ...(files !== undefined ? { files: files as string[] } : {}),
+      });
+      respond(call.callId, recorded, recorded ? DONE_RECORDED : NOT_A_WORKER);
+    },
+    [latest],
+  );
+
   const handleCall = useCallback(
     (payload: unknown) => {
       const call = parseToolCall(payload);
@@ -535,8 +566,17 @@ export function useAgentTools(deps: AgentToolsDeps): {
         const session = current.sessions.find((candidate) => candidate.id === call.sessionId);
         // A session whose agent has exited makes no calls: whatever still holds its token is not it.
         const isLive = session !== undefined && session.status !== 'terminated';
-        // A worker reports through `done` only, which is not answered here; a session with no role has no tools.
-        if (session === undefined || !isLive || toolsRoleOf(session, current.sessions) !== 'coordinator') {
+        const role = session === undefined || !isLive ? null : toolsRoleOf(session, current.sessions);
+        if (session === undefined || !isLive) {
+          respond(call.callId, false, NO_SESSION);
+          return;
+        }
+        // A worker may call `done` and nothing else; a session with another role or none has no task to report on.
+        if (call.tool === 'done') {
+          handleDone(session, role, call);
+          return;
+        }
+        if (role !== 'coordinator') {
           respond(call.callId, false, NO_SESSION);
           return;
         }
@@ -587,7 +627,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
         respond(call.callId, false, FAILED);
       }
     },
-    [latest, handleStartWorker, handleSend, handleStartSession, handleOwned, handleShowArtifact],
+    [latest, handleDone, handleStartWorker, handleSend, handleStartSession, handleOwned, handleShowArtifact],
   );
 
   /** A call ended without our answer (timeout, cancel, session stop): it no longer waits. */

@@ -1730,3 +1730,94 @@ describe("useDelegation reports name their worker", () => {
     expect(env.result.current.delegation.sendBlockedReason("w2")).toBe("Claude Code is working on Codex's report.");
   });
 });
+
+describe("useDelegation recordDone", () => {
+  const worker2 = () => delegateSession({ id: "w-1", delegatedFrom: link({ handle: "worker-1" }) });
+  const base = () => ({ sessions: [sourceSession(), worker2()] });
+  const lastOutcome = (patches: Array<{ sessionId: string; patch: Partial<Session> }>) =>
+    patches.at(-1)?.patch.delegatedFrom?.outcome;
+
+  it("writes the outcome on the worker's link", () => {
+    const { result, patches } = setup(base());
+    let ok = false;
+    act(() => {
+      ok = result.current.delegation.recordDone("w-1", { result: "succeeded", summary: " Fixed it ", files: ["a.ts"] });
+    });
+    expect(ok).toBe(true);
+    expect(patches).toHaveLength(1);
+    expect(lastOutcome(patches)).toMatchObject({ result: "succeeded", summary: "Fixed it", files: ["a.ts"] });
+  });
+
+  it("a second done replaces the first", () => {
+    const { result, patches } = setup(base());
+    act(() => {
+      result.current.delegation.recordDone("w-1", { result: "succeeded", summary: "One" });
+    });
+    act(() => {
+      result.current.delegation.recordDone("w-1", { result: "failed", summary: "Two" });
+    });
+    expect(lastOutcome(patches)).toMatchObject({ result: "failed", summary: "Two" });
+  });
+
+  it("writes nothing and returns false for an ended link, an archived or a missing session", () => {
+    const ended = delegateSession({ id: "w-1", delegatedFrom: link({ endedAt: 9 }) });
+    const { result, patches } = setup({ sessions: [sourceSession(), ended] });
+    let results: boolean[] = [];
+    act(() => {
+      results = [
+        result.current.delegation.recordDone("w-1", { result: "failed", summary: "x" }),
+        result.current.delegation.recordDone("nope", { result: "failed", summary: "x" }),
+      ];
+    });
+    expect(results).toEqual([false, false]);
+    expect(patches).toEqual([]);
+  });
+
+  it("is recorded even when the worker's turn is not running", () => {
+    const { result, patches } = setup(base());
+    act(() => {
+      result.current.delegation.recordDone("w-1", { result: "failed", summary: "late" });
+    });
+    expect(lastOutcome(patches)).toMatchObject({ result: "failed" });
+  });
+
+  it("keeps a whole emoji when the cut falls inside one", () => {
+    const { result, patches } = setup(base());
+    act(() => {
+      result.current.delegation.recordDone("w-1", { result: "succeeded", summary: "a".repeat(1999) + "\u{1F600}\u{1F600}" });
+    });
+    const summary = lastOutcome(patches)?.summary ?? "";
+    expect([...summary]).toHaveLength(2000);
+    expect([...summary].at(-1)).toBe("\u{1F600}");
+  });
+
+  it("spells out a bidi control character", () => {
+    const { result, patches } = setup(base());
+    act(() => {
+      result.current.delegation.recordDone("w-1", { result: "succeeded", summary: "x\u202Ey" });
+    });
+    const summary = lastOutcome(patches)?.summary ?? "";
+    expect(summary).not.toContain("\u202E");
+    expect(summary.length).toBeGreaterThan(3);
+  });
+
+  it("cuts 60 files to 50, drops empty ones and omits an empty list", () => {
+    const { result, patches } = setup(base());
+    act(() => {
+      result.current.delegation.recordDone("w-1", {
+        result: "succeeded",
+        summary: "s",
+        files: Array.from({ length: 60 }, (_, i) => `f${i}.ts`),
+      });
+    });
+    expect(lastOutcome(patches)?.files).toHaveLength(50);
+    act(() => {
+      result.current.delegation.recordDone("w-1", { result: "succeeded", summary: "s", files: [] });
+    });
+    expect(lastOutcome(patches)).not.toHaveProperty("files");
+    act(() => {
+      result.current.delegation.recordDone("w-1", { result: "succeeded", summary: "s", files: ["  ", ""] });
+    });
+    expect(lastOutcome(patches)).not.toHaveProperty("files");
+  });
+});

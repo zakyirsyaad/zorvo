@@ -939,6 +939,7 @@ export default function App() {
       }),
     startWorker: (coordinatorId, input) => delegation.startWorker(coordinatorId, input),
     sendToWorker: (coordinatorId, workerId, task) => delegation.sendToWorker(coordinatorId, workerId, task),
+    recordDone: (workerId, done) => delegation.recordDone(workerId, done),
     workspaces,
     openSession: openedSessions.open,
     openedOf: openedSessions.openedOf,

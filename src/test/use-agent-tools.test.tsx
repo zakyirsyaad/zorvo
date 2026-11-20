@@ -16,7 +16,7 @@ import type { GiveTaskResult } from "../hooks/useDelegation";
 import type { StartWorkerResult } from "../lib/delegation-helpers";
 import type { OpenRequest, OpenResult } from "../hooks/useOpenedSessions";
 import { ALLOW_ONCE, ALLOW_SESSION, DENY } from "../lib/agent-tool-card";
-import { DECLINED, NO_SESSION, NO_SUCH_HANDLE } from "../lib/agent-tools";
+import { DECLINED, DONE_RECORDED, NOT_A_WORKER, NO_SESSION, NO_SUCH_HANDLE } from "../lib/agent-tools";
 import type { MentionAgentStatus } from "../lib/delegation";
 import { makeProfile } from "./fixtures/agents";
 import type { ChatMessage, Session } from "../types";
@@ -53,6 +53,8 @@ interface Env {
   states: Record<string, "idle" | "working" | "needs-answer">;
   transcripts: Record<string, ChatMessage[] | "unreadable">;
   openResult: (request: OpenRequest) => OpenResult;
+  dones: Array<{ workerId: string; done: unknown }>;
+  doneResult: () => boolean;
 }
 
 const WORKSPACES = [
@@ -88,6 +90,8 @@ function setup(overrides: Partial<Env> = {}) {
       folder: request.folderPath ?? SESSION.cwd,
       handle: "session-1",
     }),
+    dones: [],
+    doneResult: () => true,
     ...overrides,
   };
   const spy = vi.spyOn(internals(), "invoke");
@@ -108,6 +112,10 @@ function setup(overrides: Partial<Env> = {}) {
         sendToWorker: async (coordinatorId, workerId, task) => {
           env.sent.push({ coordinatorId, workerId, task });
           return env.sendResult();
+        },
+        recordDone: (workerId, done) => {
+          env.dones.push({ workerId, done });
+          return env.doneResult();
         },
         workspaces: WORKSPACES,
         openSession: async (openerId, request) => {
@@ -361,19 +369,19 @@ describe("useAgentTools", () => {
     ]);
   });
 
-  it("tells a worker that every tool is out of its reach", async () => {
+  it("tells a worker that every tool but done is out of its reach", async () => {
     const worker: Session = { ...SESSION, id: "s-w", delegatedFrom: { sessionId: "s-1", task: "t", startedAt: 1 } };
     const t = setup({ sessions: [SESSION, worker] });
-    const tools = ["list_agents", "start_worker", "send", "start_session", "read_session", "stop_session", "show_artifact", "artifact_guide", "done"];
+    const tools = ["list_agents", "start_worker", "send", "start_session", "read_session", "stop_session", "show_artifact", "artifact_guide"];
     for (const [index, tool] of tools.entries()) await t.call(String(index), tool, {}, "s-w");
 
     expect(t.answers().map((answer) => [answer.ok, answer.text])).toEqual(tools.map(() => [false, NO_SESSION]));
   });
 
-  it("does not answer done for a coordinator with a handler, and says it could not", async () => {
+  it("answers done from a coordinator with NOT_A_WORKER", async () => {
     const t = setup();
     await t.call("1", "done", { outcome: "succeeded", summary: "x" });
-    expect(t.answers().map((answer) => [answer.ok, answer.text])).toEqual([[false, "Zorvo could not do that."]]);
+    expect(t.answers().map((answer) => [answer.ok, answer.text])).toEqual([[false, NOT_A_WORKER]]);
   });
 
   it("answers even when giving the task throws, and for arguments it cannot read", async () => {
@@ -942,5 +950,63 @@ describe("useAgentTools", () => {
       "Zorvo could not do that.",
       "Zorvo could not do that.",
     ]);
+  });
+});
+
+describe("useAgentTools done", () => {
+  const WORKER: Session = {
+    ...SESSION,
+    id: "w-1",
+    name: "Worker",
+    delegatedFrom: { sessionId: "s-1", task: "Fix it", startedAt: 5, endedAt: null },
+  };
+  const withWorker = () => setup({ sessions: [SESSION, WORKER] });
+
+  it("done records the outcome and answers at once, with no card", async () => {
+    const t = withWorker();
+    await t.call("c1", "done", { outcome: "succeeded", summary: "Fixed it", files: ["a.ts"] }, "w-1");
+    await waitFor(() => expect(t.answers()).toEqual([{ callId: "c1", ok: true, text: DONE_RECORDED }]));
+    expect(t.env.dones).toEqual([{ workerId: "w-1", done: { result: "succeeded", summary: "Fixed it", files: ["a.ts"] } }]);
+    expect(t.cards("w-1")).toEqual([]);
+  });
+
+  it("done from a session whose link has ended answers NOT_A_WORKER", async () => {
+    const t = withWorker();
+    t.env.doneResult = () => false;
+    await t.call("c2", "done", { outcome: "succeeded", summary: "x" }, "w-1");
+    await waitFor(() => expect(t.answers()).toEqual([{ callId: "c2", ok: false, text: NOT_A_WORKER }]));
+  });
+
+  it("done from a coordinator answers NOT_A_WORKER and writes nothing", async () => {
+    const t = withWorker();
+    await t.call("c3", "done", { outcome: "succeeded", summary: "x" }, "s-1");
+    await waitFor(() => expect(t.answers()).toEqual([{ callId: "c3", ok: false, text: NOT_A_WORKER }]));
+    expect(t.env.dones).toEqual([]);
+  });
+
+  it("done with a wrong outcome or a non-string summary fails and writes nothing", async () => {
+    const t = withWorker();
+    await t.call("c4", "done", { outcome: "great", summary: "x" }, "w-1");
+    await t.call("c5", "done", { outcome: "failed", summary: 7 }, "w-1");
+    await t.call("c6", "done", { outcome: "failed", summary: "" }, "w-1");
+    await t.call("c7", "done", { outcome: "failed", summary: "x", files: [1] }, "w-1");
+    await waitFor(() => expect(t.answers()).toHaveLength(4));
+    for (const answer of t.answers()) expect(answer).toMatchObject({ ok: false, text: "Zorvo could not do that." });
+    expect(t.env.dones).toEqual([]);
+  });
+
+  it("a worker calling any other tool is still NO_SESSION", async () => {
+    const t = withWorker();
+    await t.call("c8", "list_agents", {}, "w-1");
+    await t.call("c9", "start_worker", REVIEW, "w-1");
+    await waitFor(() => expect(t.answers()).toHaveLength(2));
+    for (const answer of t.answers()) expect(answer).toMatchObject({ ok: false, text: NO_SESSION });
+  });
+
+  it("the answer never repeats the summary", async () => {
+    const t = withWorker();
+    await t.call("c10", "done", { outcome: "succeeded", summary: "secret words" }, "w-1");
+    await waitFor(() => expect(t.answers()).toHaveLength(1));
+    expect(t.answers()[0].text).not.toContain("secret");
   });
 });

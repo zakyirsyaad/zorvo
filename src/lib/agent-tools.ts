@@ -31,6 +31,11 @@ export const UNREADABLE = 'That session could not be read.';
 /** Answered for a session that gets no tools, or that Zorvo does not know. */
 export const NO_SESSION = "This session cannot use Zorvo's tools.";
 
+/** Answered to a worker whose `done` was recorded. */
+export const DONE_RECORDED = 'Reported. End your turn.';
+/** Answered to a `done` from a session with no open task. */
+export const NOT_A_WORKER = 'This session has no task to report on.';
+
 const MAX_QUOTED_NAME_CHARS = 60;
 
 export type DelegateState = 'idle' | 'working' | 'needs-answer';

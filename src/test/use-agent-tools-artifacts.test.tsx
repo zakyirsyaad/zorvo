@@ -44,6 +44,7 @@ function setup(show: (args: Record<string, unknown>) => unknown | Promise<unknow
     workersOf: () => [],
     startWorker: async () => ({ ok: false, reason: "no" }),
     sendToWorker: async () => ({ ok: false, reason: "no" }),
+    recordDone: () => false,
     workspaces: [],
     openSession: async () => ({ ok: false, reason: "no" }),
     openedOf: () => [],

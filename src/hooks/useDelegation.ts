@@ -27,9 +27,10 @@ import {
 } from '../lib/delegation-helpers';
 import { createId } from '../lib/ids';
 import { createSessionWorktree } from '../lib/session-worktree';
-import { isArchived } from '../lib/session-helpers';
+import { firstChars, isArchived } from '../lib/session-helpers';
+import { escapeVisible } from '../lib/visible-text';
 import type { StartPlaces } from '../lib/start-places';
-import { atWorkCount, isReportOf, issuedWorkerHandles, nextWorkerHandle, startRefusal, withNewTask, workerHandleOf } from '../lib/workers';
+import { atWorkCount, isReportOf, issuedWorkerHandles, nextWorkerHandle, startRefusal, withNewTask, withOutcome, workerHandleOf, WORKER_FILES_MAX, WORKER_SUMMARY_MAX } from '../lib/workers';
 import type { SessionSpec, StartSessionOptions } from '../lib/session-start';
 import type { AgentProfile, ChatMessage, Session, SessionWorktree } from '../types';
 import type { AttentionReason, FirstMessage } from './session-engine/useAcpEngine';
@@ -134,6 +135,11 @@ export function useDelegation(deps: DelegationDeps): {
     task: string,
     options?: { attachments?: readonly string[] },
   ) => Promise<GiveTaskResult>;
+  /** Records a worker's `done` on its link; false when it has no open task. */
+  recordDone: (
+    workerId: string,
+    done: { result: 'succeeded' | 'failed'; summary: string; files?: string[] },
+  ) => boolean;
   end: (delegateId: string) => void;
   onTurnEnded: (sessionId: string, reason: AttentionReason) => void;
   sendBlockedReason: (sessionId: string) => string | null;
@@ -308,6 +314,33 @@ export function useDelegation(deps: DelegationDeps): {
     } else if (reason === 'failed') {
       reports.noteFailed(session.id);
     }
+  };
+
+  /** A worker's `done`: the outcome goes on its link, whether or not its turn still runs. */
+  const recordDone = (
+    workerId: string,
+    done: { result: 'succeeded' | 'failed'; summary: string; files?: string[] },
+  ): boolean => {
+    const current = latest.current;
+    const session = current.sessions.find((candidate) => candidate.id === workerId);
+    const link = session?.delegatedFrom;
+    if (session === undefined || isArchived(session) || link === null || link === undefined || !isOpenLink(link)) {
+      return false;
+    }
+    const files = (done.files ?? [])
+      .map((file) => escapeVisible(file).trim())
+      .filter((file) => file !== '')
+      .slice(0, WORKER_FILES_MAX);
+    const summary = firstChars(escapeVisible(done.summary).trim(), WORKER_SUMMARY_MAX);
+    current.patchSession(workerId, {
+      delegatedFrom: withOutcome(link, {
+        result: done.result,
+        at: Date.now(),
+        summary,
+        ...(files.length > 0 ? { files } : {}),
+      }),
+    });
+    return true;
   };
 
   const end = (delegateId: string): void => {
@@ -603,5 +636,5 @@ export function useDelegation(deps: DelegationDeps): {
     }
   }, [sessions]);
 
-  return { delegateBlockedReason, start, giveTask, startWorker, sendToWorker, end, onTurnEnded, sendBlockedReason, viewFor, viewsFor };
+  return { delegateBlockedReason, start, giveTask, startWorker, sendToWorker, recordDone, end, onTurnEnded, sendBlockedReason, viewFor, viewsFor };
 }

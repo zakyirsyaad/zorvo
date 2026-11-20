@@ -15,6 +15,7 @@ import {
 } from '../types';
 import { markElicitationsUnanswered } from './acp-elicitation';
 import { settlePermissionCards } from './acp-events';
+import { withoutSettledIcons } from './computer-use-card';
 import { diffDetail } from './diff-rows';
 import { normalizeAppearance } from './appearance';
 import type { AgentOptions } from './acp-draft';
@@ -524,7 +525,7 @@ export function normalizeTranscript(raw: unknown): ChatMessage[] {
 export async function loadTranscript(sessionId: string): Promise<ChatMessage[]> {
   const messages = await invoke<unknown>('load_transcript', { sessionId });
   // Nothing runs after a restart, so no request saved as waiting can be answered.
-  return settlePermissionCards(markElicitationsUnanswered(normalizeTranscript(messages)));
+  return withoutSettledIcons(settlePermissionCards(markElicitationsUnanswered(normalizeTranscript(messages))));
 }
 
 /** Resolves with the size the backend wrote, in bytes. */

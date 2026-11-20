@@ -3,6 +3,7 @@
 // reads the next, as the real worker does.
 //
 //   FAKE_CUA_HANG=<tool>      never answer a `call` of that tool
+//   FAKE_CUA_FAIL=<tool>      answer a `call` of that tool with an error result
 //   FAKE_CUA_HUGE=1           answer `get_window_state` with a line over 32 MiB
 //   FAKE_CUA_PROTOCOL=<n>     answer with another protocol version
 //   FAKE_CUA_VERSION=<v>      the driver version `initialize` reports (default 0.52.13)
@@ -96,6 +97,9 @@ async function handle(request) {
       const label = sessions.get(request.session_handle);
       if (!label) return refuse(request, "session_not_bound", "private worker session handle is not live on this channel");
       if (process.env.FAKE_CUA_HANG === request.name) return new Promise(() => {});
+      if (process.env.FAKE_CUA_FAIL === request.name) {
+        return answer(request, { content: [{ type: "text", text: `${request.name} failed in the fake driver` }], isError: true });
+      }
       if (slowMs) await sleep(slowMs);
       return answer(request, callResult(request.name, request.arguments ?? {}, label));
     }

@@ -29,11 +29,16 @@ const REQUEST = {
 };
 const CARD_ID = "computer-use-7";
 
-function rig(state: unknown = { grants: [], requests: [] }) {
+function rig(state: unknown = { grants: [], requests: [] }, answer: unknown = "echo") {
   const messages: Record<string, ChatMessage[]> = {};
   const onAttention = vi.fn();
   const onNotice = vi.fn();
-  invoke.mockImplementation((command: string) => Promise.resolve(command === "computer_use_state" ? state : undefined));
+  invoke.mockImplementation((command: string, args?: { allowed?: string[] }) => {
+    if (command === "computer_use_state") return Promise.resolve(state);
+    // The backend answers with the keys it granted.
+    if (command === "computer_use_answer") return Promise.resolve(answer === "echo" ? args?.allowed : answer);
+    return Promise.resolve(undefined);
+  });
   const hook = renderHook(() =>
     useComputerUse({
       agentNameOf: () => "Qwen Code",
@@ -88,8 +93,10 @@ describe("useComputerUse", () => {
 
     expect(taken).toBe(true);
     expect(invoke).toHaveBeenCalledWith("computer_use_answer", { callId: "7", allowed: ["app-1"] });
-    expect(cardOf("s-1")).toMatchObject({ status: "approved", computerUse: { allowed: ["Notes"] } });
     expect(hook.result.current.isWaiting("s-1")).toBe(false);
+    await waitFor(() =>
+      expect(cardOf("s-1")).toMatchObject({ status: "approved", computerUse: { allowed: ["Notes"] } }),
+    );
     // Answered once: a second answer is not this hook's.
     expect(hook.result.current.chooseCard("s-1", CARD_ID, COMPUTER_USE_ALLOW, { "app-1": "on" })).toBe(false);
   });
@@ -101,7 +108,30 @@ describe("useComputerUse", () => {
     act(() => void hook.result.current.chooseCard("s-1", CARD_ID, COMPUTER_USE_DENY));
 
     expect(invoke).toHaveBeenCalledWith("computer_use_answer", { callId: "7", allowed: [] });
-    expect(cardOf("s-1")).toMatchObject({ status: "rejected", chosenOptionId: COMPUTER_USE_DENY });
+    await waitFor(() =>
+      expect(cardOf("s-1")).toMatchObject({ status: "rejected", chosenOptionId: COMPUTER_USE_DENY }),
+    );
+  });
+
+  it("reads Not answered when the call had ended before the answer, whatever was ticked", async () => {
+    const { hook, emit, cardOf } = rig(undefined, null);
+    await ready();
+    emit("computer-use-request", REQUEST);
+    act(() => void hook.result.current.chooseCard("s-1", CARD_ID, COMPUTER_USE_ALLOW, { "app-1": "on" }));
+
+    await waitFor(() => expect(cardOf("s-1")?.status).toBe("rejected"));
+    expect(cardOf("s-1")?.chosenOptionId).toBeUndefined();
+    expect(cardOf("s-1")?.computerUse?.allowed).toBeUndefined();
+  });
+
+  it("shows only what the backend granted", async () => {
+    const { hook, emit, cardOf } = rig(undefined, []);
+    await ready();
+    emit("computer-use-request", REQUEST);
+    act(() => void hook.result.current.chooseCard("s-1", CARD_ID, COMPUTER_USE_ALLOW, { "app-1": "on" }));
+
+    await waitFor(() => expect(cardOf("s-1")?.status).toBe("rejected"));
+    expect(cardOf("s-1")?.chosenOptionId).toBe(COMPUTER_USE_DENY);
   });
 
   it("leaves another session's card, and any other card, alone", async () => {

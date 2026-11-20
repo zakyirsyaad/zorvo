@@ -651,3 +651,86 @@ fn an_answer_for_a_session_that_stopped_grants_nothing() {
 
     assert!(rig.server.views().is_empty());
 }
+
+#[test]
+fn an_answer_says_which_keys_were_granted_or_that_nobody_waits() {
+    let rig = rig("answers");
+    let mut client = Client::connect(&rig, "s-1");
+    client.start_call(
+        "request_access",
+        json!({ "apps": ["com.apple.Notes", "com.apple.keychainaccess"], "reason": "Read." }),
+    );
+    let request = rig.wait_for_event("computer-use-request");
+    let call_id = request["callId"].as_str().unwrap();
+    let ticks = ["app-1".to_string(), "app-2".to_string()];
+
+    assert_eq!(
+        rig.server.answer(call_id, &ticks),
+        Some(vec!["app-1".to_string()])
+    );
+    // Answered once; a card that no longer waits grants nothing and says so.
+    assert_eq!(rig.server.answer(call_id, &ticks), None);
+}
+
+#[test]
+fn switching_computer_use_off_ends_every_grant() {
+    let rig = rig("switch");
+    let mut client = Client::connect(&rig, "s-1");
+    allow_notes(&rig, &mut client);
+
+    rig.state.set_enabled(false);
+    rig.server.switched_off();
+    assert!(rig.server.views().is_empty());
+    assert_eq!(rig.events_named("computer-use-changed").len(), 1);
+
+    // On again: the session starts from nothing.
+    rig.state.set_enabled(true);
+    let refused = client.call("get_window_state", read_window());
+    assert_eq!(
+        text_of(&refused),
+        "Notes is not allowed in this session. Call request_access first."
+    );
+}
+
+#[test]
+fn stopping_a_session_starts_no_driver() {
+    let rig = rig_with(
+        "nostart",
+        Duration::from_secs(2),
+        &[("FAKE_CUA_HANG", "get_window_state")],
+    );
+    let mut client = Client::connect(&rig, "s-1");
+    allow_notes(&rig, &mut client);
+    // Bind a driver session, then lose the driver to a call that never answers.
+    client.call("list_windows", json!({ "pid": NOTES_PID }));
+    client.call("get_window_state", read_window());
+    let dead = rig.driver_pid();
+    let starts = |rig: &Rig| {
+        rig.driver_requests()
+            .iter()
+            .filter(|request| request["operation"] == "initialize")
+            .count()
+    };
+    assert_eq!(starts(&rig), 1);
+
+    rig.tools.forget("s-1");
+
+    assert_eq!(starts(&rig), 1);
+    assert_eq!(rig.driver_pid(), dead);
+}
+
+#[test]
+fn a_driver_error_reaches_the_agent_as_the_drivers_own_words() {
+    let rig = rig_with(
+        "drivererr",
+        AgentTools::CALL_TIMEOUT,
+        &[("FAKE_CUA_FAIL", "list_windows")],
+    );
+    let mut client = Client::connect(&rig, "s-1");
+    allow_notes(&rig, &mut client);
+
+    let read = client.call("get_window_state", read_window());
+
+    assert_eq!(read["isError"], json!(true));
+    assert_eq!(text_of(&read), "list_windows failed in the fake driver");
+}

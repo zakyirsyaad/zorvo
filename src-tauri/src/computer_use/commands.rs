@@ -78,8 +78,8 @@ pub fn computer_use_answer(
     server: State<'_, Arc<ScreenServer>>,
     call_id: String,
     allowed: Vec<String>,
-) {
-    server.answer(&call_id, &allowed);
+) -> Option<Vec<String>> {
+    server.answer(&call_id, &allowed)
 }
 
 /// Read when the webview loads, since a reload loses its copy, and after

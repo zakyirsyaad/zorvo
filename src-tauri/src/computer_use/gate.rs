@@ -569,7 +569,14 @@ pub fn check(tool: &str, args: &Value, ctx: &GateContext<'_>) -> Result<Checked,
 /// driver knows none of the old ids, so they are all forgotten when one ends.
 #[derive(Default)]
 pub struct Snapshots {
-    by_session: Mutex<HashMap<String, HashMap<String, Snapshot>>>,
+    by_session: Mutex<HashMap<String, SessionSnapshots>>,
+}
+
+#[derive(Default)]
+struct SessionSnapshots {
+    by_id: HashMap<String, Snapshot>,
+    /// The ids, oldest first.
+    order: std::collections::VecDeque<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -580,25 +587,37 @@ pub struct Snapshot {
     pub size: Option<(u32, u32)>,
 }
 
-/// Snapshots kept per session; the oldest ids go first.
+/// Snapshots kept per session; past it the oldest id is forgotten.
 const MAX_SNAPSHOTS: usize = 200;
 
 impl Snapshots {
-    fn sessions(&self) -> std::sync::MutexGuard<'_, HashMap<String, HashMap<String, Snapshot>>> {
+    fn sessions(&self) -> std::sync::MutexGuard<'_, HashMap<String, SessionSnapshots>> {
         self.by_session.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn record(&self, session: &str, snapshot_id: &str, snapshot: Snapshot) {
         let mut sessions = self.sessions();
         let held = sessions.entry(session.to_string()).or_default();
-        if held.len() >= MAX_SNAPSHOTS {
-            held.clear();
+        if held
+            .by_id
+            .insert(snapshot_id.to_string(), snapshot)
+            .is_none()
+        {
+            held.order.push_back(snapshot_id.to_string());
         }
-        held.insert(snapshot_id.to_string(), snapshot);
+        while held.order.len() > MAX_SNAPSHOTS {
+            if let Some(oldest) = held.order.pop_front() {
+                held.by_id.remove(&oldest);
+            }
+        }
     }
 
     pub fn owner(&self, session: &str, snapshot_id: &str) -> Option<Snapshot> {
-        self.sessions().get(session)?.get(snapshot_id).copied()
+        self.sessions()
+            .get(session)?
+            .by_id
+            .get(snapshot_id)
+            .copied()
     }
 
     pub fn forget(&self, session: &str) {
@@ -985,5 +1004,24 @@ mod tests {
         assert_eq!(snapshots.owner("s-2", "s00000001"), None);
         snapshots.forget("s-1");
         assert_eq!(snapshots.owner("s-1", "s00000001"), None);
+    }
+
+    #[test]
+    fn past_the_limit_only_the_oldest_snapshot_is_forgotten() {
+        let snapshots = Snapshots::default();
+        let snapshot = Snapshot {
+            process: process(NOTES_PID),
+            window_id: 7,
+            size: None,
+        };
+        for n in 0..=MAX_SNAPSHOTS {
+            snapshots.record("s-1", &format!("s{n}"), snapshot);
+        }
+        assert_eq!(snapshots.owner("s-1", "s0"), None);
+        assert_eq!(snapshots.owner("s-1", "s1"), Some(snapshot));
+        assert_eq!(
+            snapshots.owner("s-1", &format!("s{MAX_SNAPSHOTS}")),
+            Some(snapshot)
+        );
     }
 }

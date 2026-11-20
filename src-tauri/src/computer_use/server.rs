@@ -18,9 +18,8 @@ use super::driver::{self, DriverUnavailable};
 use super::gate::{self, GateContext, Group, Snapshot, Snapshots, Target};
 use super::grants::{GrantView, Grants};
 use super::images;
-use super::requests::{self, RequestView, Requests};
+use super::requests::{self, tier_words, RequestView, Requests};
 use super::state::{ComputerUse, NoDriver};
-use super::tiers::Tier;
 use super::worker::{CallId, DriverClient, DriverError, SessionHandle};
 use crate::agent_tools::path::ToolsPath;
 use crate::agent_tools::peer::ProcessId;
@@ -115,10 +114,34 @@ pub struct ScreenServer {
     /// grants are taken away: a grant never lands after its session ended.
     granting: Mutex<()>,
     in_flight: Mutex<HashMap<String, InFlight>>,
+    /// Agents' names by registry id: looking one up reads the state file.
+    names: Mutex<HashMap<String, String>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// What the driver said when it answered a call with an error.
+fn refusal_of(result: &Value) -> Result<(), String> {
+    if result["isError"].as_bool() != Some(true) {
+        return Ok(());
+    }
+    let said: Vec<&str> = result["content"]
+        .as_array()
+        .map(|blocks| {
+            blocks
+                .iter()
+                .filter(|block| block["type"] == "text")
+                .filter_map(|block| block["text"].as_str())
+                .collect()
+        })
+        .unwrap_or_default();
+    Err(if said.is_empty() {
+        NOT_AVAILABLE_TEXT.to_string()
+    } else {
+        said.join("\n")
+    })
 }
 
 fn text_block(text: impl Into<String>) -> Value {
@@ -139,6 +162,7 @@ impl ScreenServer {
             binding: Mutex::new(()),
             granting: Mutex::new(()),
             in_flight: Mutex::new(HashMap::new()),
+            names: Mutex::new(HashMap::new()),
         })
     }
 
@@ -167,10 +191,19 @@ impl ScreenServer {
     }
 
     fn agent_name(&self, call: &ScreenCall) -> String {
-        call.profile
-            .as_deref()
-            .and_then(|profile| (self.hooks.agent_name)(profile))
-            .unwrap_or_else(|| FALLBACK_AGENT_NAME.to_string())
+        let Some(profile) = call.profile.as_deref() else {
+            return FALLBACK_AGENT_NAME.to_string();
+        };
+        if let Some(name) = lock(&self.names).get(profile) {
+            return name.clone();
+        }
+        match (self.hooks.agent_name)(profile) {
+            Some(name) => {
+                lock(&self.names).insert(profile.to_string(), name.clone());
+                name
+            }
+            None => FALLBACK_AGENT_NAME.to_string(),
+        }
     }
 
     fn show(&self, view: &RequestView) {
@@ -188,7 +221,9 @@ impl ScreenServer {
     }
 
     /// The user answered a card: `allowed` holds the keys of the ticked rows.
-    pub fn answer(&self, call_id: &str, allowed: &[String]) {
+    /// Returns the keys that were granted, or `None` when the card no longer
+    /// waits (its call ended), so the webview shows what really happened.
+    pub fn answer(&self, call_id: &str, allowed: &[String]) -> Option<Vec<String>> {
         // A call that already ended (its time ran out, or its session
         // stopped) told the agent so: an answer that comes after must grant
         // nothing. `forget` ends a session's calls before it takes this lock
@@ -196,12 +231,16 @@ impl ScreenServer {
         let granting = lock(&self.granting);
         if self.tools().is_some_and(|tools| !tools.is_waiting(call_id)) {
             drop(granting);
-            return self.end_request(call_id);
+            self.end_request(call_id);
+            return None;
         }
-        let Some(answered) = self.requests.answer(call_id, allowed) else {
-            return;
-        };
-        let granted = !answered.grants.is_empty();
+        let answered = self.requests.answer(call_id, allowed)?;
+        let keys: Vec<String> = answered
+            .grants
+            .iter()
+            .map(|grant| grant.key.clone())
+            .collect();
+        let granted = !keys.is_empty();
         self.grants.grant(&answered.session, answered.grants);
         drop(granting);
         if let Some(tools) = self.tools() {
@@ -212,6 +251,22 @@ impl ScreenServer {
         }
         if let Some(next) = answered.next {
             self.show(&next);
+        }
+        Some(keys)
+    }
+
+    /// The switch went off: every session's grants end with it, so turning
+    /// it on again starts from nothing. The driver is already killed.
+    pub fn switched_off(&self) {
+        let held = {
+            let _granting = lock(&self.granting);
+            let held = !self.grants.views().is_empty();
+            self.grants.revoke_all();
+            held
+        };
+        self.forget_driver_sessions();
+        if held {
+            self.emit(CHANGED_EVENT, Value::Null);
         }
     }
 
@@ -247,17 +302,24 @@ impl ScreenServer {
         let shown = self
             .requests
             .arrive(&call.session_id, &call.call_id, reason, rows);
-        // The call may have ended while its apps were looked up, and then
-        // nothing would ever take it off the list.
+        let was_shown = shown.is_some();
+        if let Some(view) = shown {
+            self.show(&view);
+        }
+        // The call may have ended while its apps were looked up: before
+        // `arrive`, and nothing would ever take it off the list, or between
+        // `arrive` and the card, and the card would never be settled.
         if self
             .tools()
             .is_some_and(|tools| !tools.is_waiting(&call.call_id))
         {
-            self.end_request(&call.call_id);
-            return Ok(());
-        }
-        if let Some(view) = shown {
-            self.show(&view);
+            let ended = self.requests.end(&call.call_id);
+            if was_shown {
+                self.emit(REQUEST_ENDED_EVENT, json!({ "callId": call.call_id }));
+            }
+            if let Some(next) = ended.and_then(|ended| ended.next) {
+                self.show(&next);
+            }
         }
         Ok(())
     }
@@ -392,6 +454,7 @@ impl ScreenServer {
     ) -> Result<Vec<u32>, String> {
         let listed =
             self.call_driver(call, driver, handle, "list_windows", json!({ "pid": pid }))?;
+        refusal_of(&listed)?;
         Ok(listed
             .pointer("/structuredContent/windows")
             .and_then(Value::as_array)
@@ -453,22 +516,8 @@ impl ScreenServer {
     /// data, the text, and each image as a JPEG of the same size (a path on
     /// the command path).
     fn content_of(&self, call: &ScreenCall, result: &Value) -> Result<Vec<Value>, String> {
+        refusal_of(result)?;
         let blocks = result["content"].as_array().cloned().unwrap_or_default();
-        let texts = || -> Vec<&str> {
-            blocks
-                .iter()
-                .filter(|block| block["type"] == "text")
-                .filter_map(|block| block["text"].as_str())
-                .collect()
-        };
-        if result["isError"].as_bool() == Some(true) {
-            let said = texts().join("\n");
-            return Err(if said.is_empty() {
-                NOT_AVAILABLE_TEXT.to_string()
-            } else {
-                said
-            });
-        }
         let mut content = vec![text_block(SCREEN_NOTE)];
         for block in &blocks {
             match block["type"].as_str() {
@@ -542,6 +591,7 @@ impl ScreenServer {
         if spec.group == Group::Free {
             gate::rebuild(spec, &call.args)?;
             let listed = self.call_driver(call, &driver, &handle, "list_apps", json!({}))?;
+            refusal_of(&listed)?;
             return Ok(self.list_apps(call, &listed));
         }
         let checked = gate::check(
@@ -596,15 +646,6 @@ impl ScreenServer {
     }
 }
 
-fn tier_words(tier: Tier) -> &'static str {
-    match tier {
-        Tier::Full => "full use",
-        Tier::ClickOnly => "click only",
-        Tier::ViewOnly => "view only",
-        Tier::Never => "never",
-    }
-}
-
 impl ScreenTools for ScreenServer {
     fn call(&self, call: ScreenCall) {
         let Some(server) = self.me.upgrade() else {
@@ -636,7 +677,8 @@ impl ScreenTools for ScreenServer {
         };
         self.snapshots.forget(session);
         if let Some(entry) = lock(&self.bound).remove(session) {
-            if let Ok(driver) = self.state.driver() {
+            // Only a driver that runs now: stopping a session starts none.
+            if let Some(driver) = self.state.running_driver() {
                 if driver.pid() == entry.worker_pid {
                     driver.close_session(&entry.handle);
                 }

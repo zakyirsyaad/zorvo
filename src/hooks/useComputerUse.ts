@@ -137,12 +137,19 @@ export function useComputerUse(deps: ComputerUseDeps): {
     if (!entry || entry.sessionId !== sessionId) return false;
     const keys = optionId === COMPUTER_USE_ALLOW ? allowedKeys(entry.card, answers) : [];
     open.current.delete(cardId);
-    // An answer that cannot be delivered leaves the agent with the backend's own time limit.
-    void invoke('computer_use_answer', { callId: entry.callId, allowed: keys }).catch(() => undefined);
-    latest.current.updateMessages(sessionId, (prev) =>
-      settleComputerUseCard(prev, cardId, keys.length > 0 ? { kind: 'allowed', keys } : { kind: 'denied' }),
-    );
     bump();
+    // The card says what the backend did, not what was ticked: it answers with the keys it
+    // granted, or with nothing when the call had already ended (then nobody was asked).
+    void invoke('computer_use_answer', { callId: entry.callId, allowed: keys })
+      .catch(() => null)
+      .then((granted) => {
+        const outcome = !Array.isArray(granted)
+          ? ({ kind: 'withdrawn' } as const)
+          : keys.length === 0
+            ? ({ kind: 'denied' } as const)
+            : ({ kind: 'allowed', keys: granted.filter((key): key is string => typeof key === 'string') } as const);
+        latest.current.updateMessages(sessionId, (prev) => settleComputerUseCard(prev, cardId, outcome));
+      });
     return true;
   };
 

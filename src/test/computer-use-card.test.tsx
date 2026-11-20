@@ -11,6 +11,7 @@ import {
   parseComputerUseState,
   settleComputerUseCard,
   usingLine,
+  withoutSettledIcons,
 } from "../lib/computer-use-card";
 import type { ChatMessage } from "../types";
 
@@ -148,6 +149,23 @@ describe("the computer-use card", () => {
 
     rerender(<ActionCard card={settled({ kind: "allowed", keys: ["app-1", "app-3"] })} agentName="Qwen Code" />);
     expect(screen.getByText("Allowed for this session: Notes, Terminal")).toBeInTheDocument();
+  });
+});
+
+describe("a transcript as loaded", () => {
+  it("drops the icons of a card that no longer waits, and keeps a waiting card's", () => {
+    const event = parseComputerUseRequest({
+      ...PAYLOAD,
+      apps: [{ ...PAYLOAD.apps[0], icon: "data:image/png;base64,AAAA" }],
+    });
+    const waiting = computerUseCard(event!, "Qwen Code", 1);
+    const of = (status: "pending" | "rejected"): ChatMessage[] => [
+      { id: "m-1", role: "agent", content: "", timestamp: 1, actionCard: { ...waiting, status } } as ChatMessage,
+    ];
+
+    expect(withoutSettledIcons(of("rejected"))[0].actionCard?.computerUse?.apps[0].icon).toBeUndefined();
+    const open = of("pending");
+    expect(withoutSettledIcons(open)).toBe(open);
   });
 });
 

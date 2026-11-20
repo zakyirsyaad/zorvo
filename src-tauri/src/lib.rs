@@ -309,12 +309,17 @@ fn load_app_state(store: State<'_, AppStore>) -> Result<PersistedState, String> 
 fn save_app_state(
     store: State<'_, AppStore>,
     computer_use: State<'_, Arc<computer_use::ComputerUse>>,
+    screen: State<'_, Arc<computer_use::ScreenServer>>,
     state: PersistedState,
 ) -> Result<(), String> {
     store.save_state(&state)?;
     // The gate reads the switch on every call, so it follows each save. Off
-    // stops computer use at once.
-    computer_use.set_enabled(state.settings.computer_use && cfg!(target_os = "macos"));
+    // stops computer use at once, and ends what every session was allowed.
+    let is_on = state.settings.computer_use && cfg!(target_os = "macos");
+    computer_use.set_enabled(is_on);
+    if !is_on {
+        screen.switched_off();
+    }
     Ok(())
 }
 

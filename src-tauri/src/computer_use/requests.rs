@@ -94,16 +94,37 @@ pub fn validate(args: &Value) -> Result<(Vec<String>, String), String> {
 /// The card's rows for `bundle_ids`, each resolved with `resolve`.
 pub fn rows_for(
     bundle_ids: &[String],
-    resolve: impl Fn(&str) -> Option<AppIdentity>,
-    icon: impl Fn(&AppIdentity) -> Option<String>,
+    resolve: impl Fn(&str) -> Option<AppIdentity> + Sync,
+    icon: impl Fn(&AppIdentity) -> Option<String> + Sync,
 ) -> Vec<AppRow> {
+    // Reading an app runs `codesign` a few times: every app at once, each on
+    // a thread of its own, in the order asked.
+    let found: Vec<Option<(AppIdentity, Option<String>)>> = std::thread::scope(|scope| {
+        let reads: Vec<_> = bundle_ids
+            .iter()
+            .map(|bundle_id| {
+                let (resolve, icon) = (&resolve, &icon);
+                scope.spawn(move || {
+                    resolve(bundle_id).map(|app| {
+                        let icon = icon(&app);
+                        (app, icon)
+                    })
+                })
+            })
+            .collect();
+        reads
+            .into_iter()
+            .map(|read| read.join().ok().flatten())
+            .collect()
+    });
     bundle_ids
         .iter()
+        .zip(found)
         .enumerate()
-        .map(|(index, bundle_id)| {
+        .map(|(index, (bundle_id, found))| {
             let key = format!("app-{}", index + 1);
-            match resolve(bundle_id) {
-                Some(app) => {
+            match found {
+                Some((app, icon)) => {
                     let tier = tiers::tier_of(Some(&app));
                     AppRow {
                         key,
@@ -116,7 +137,7 @@ pub fn rows_for(
                             .then(|| tiers::warning_of(&app))
                             .flatten(),
                         installed: true,
-                        icon: icon(&app),
+                        icon,
                         app: Some(app),
                     }
                 }
@@ -186,7 +207,8 @@ fn view(session: &str, waiting: &Waiting) -> RequestView {
     }
 }
 
-fn tier_words(tier: Tier) -> &'static str {
+/// A tier as an agent reads it.
+pub(crate) fn tier_words(tier: Tier) -> &'static str {
     match tier {
         Tier::Full => "full use",
         Tier::ClickOnly => "click only",

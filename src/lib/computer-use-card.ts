@@ -145,6 +145,24 @@ export function settleComputerUseCard(messages: ChatMessage[], cardId: string, o
   });
 }
 
+/**
+ * A transcript as loaded, without the icons of cards that no longer wait: a card left open when
+ * Zorvo closed is settled by the loader, which knows nothing of its icons.
+ */
+export function withoutSettledIcons(messages: ChatMessage[]): ChatMessage[] {
+  const hasIcons = (message: ChatMessage) =>
+    message.actionCard?.status !== 'pending' &&
+    Array.isArray(message.actionCard?.computerUse?.apps) &&
+    message.actionCard.computerUse.apps.some((app) => app?.icon !== undefined);
+  if (!messages.some(hasIcons)) return messages;
+  return messages.map((message) => {
+    const card = message.actionCard;
+    if (!card?.computerUse || !hasIcons(message)) return message;
+    const apps = card.computerUse.apps.map(({ icon: _icon, ...app }) => app);
+    return { ...message, actionCard: { ...card, computerUse: { ...card.computerUse, apps } } };
+  });
+}
+
 /** The mark of a card read back from a transcript, when it is whole. */
 export function usableComputerUse(mark: unknown): ComputerUseRequest | undefined {
   if (typeof mark !== 'object' || mark === null) return undefined;

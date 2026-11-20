@@ -4,7 +4,7 @@
 //! can cover; the pill is the sign that shows whatever is in front, and its
 //! Stop works from there.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
@@ -26,8 +26,11 @@ pub const LINGER: Duration = Duration::from_secs(5);
 #[derive(Default)]
 pub struct Pill {
     latest: Mutex<Option<Value>>,
-    /// Counts actions, so a hide scheduled by an older one does nothing.
+    /// Counts actions and hides, so the one thread that waits to hide the
+    /// pill sees anything that happened while it slept.
     turn: AtomicU64,
+    /// A thread is waiting to hide the pill.
+    is_waiting: AtomicBool,
 }
 
 impl Pill {
@@ -89,13 +92,36 @@ pub fn note(app: &AppHandle, activity: Value) {
     let on_main = app.clone();
     // Windows are made on the main thread.
     let _ = app.run_on_main_thread(move || place_and_show(&on_main));
+    // One thread waits, however many actions arrive while it does.
+    if pill.is_waiting.swap(true, Ordering::AcqRel) {
+        return;
+    }
     let later = app.clone();
     thread::spawn(move || {
-        thread::sleep(LINGER);
-        let is_newest = later
-            .try_state::<Pill>()
-            .is_some_and(|pill| pill.turn.load(Ordering::Acquire) == turn);
-        if is_newest {
+        let Some(pill) = later.try_state::<Pill>() else {
+            return;
+        };
+        let mut seen = turn;
+        loop {
+            thread::sleep(LINGER);
+            let now = pill.turn.load(Ordering::Acquire);
+            if now != seen {
+                seen = now;
+                continue;
+            }
+            pill.is_waiting.store(false, Ordering::Release);
+            // An action that arrived just now saw a thread still waiting and
+            // started none: this one goes on waiting for it.
+            if pill.turn.load(Ordering::Acquire) != seen
+                && !pill.is_waiting.swap(true, Ordering::AcqRel)
+            {
+                seen = pill.turn.load(Ordering::Acquire);
+                continue;
+            }
+            break;
+        }
+        // Nothing to hide when a Stop already did.
+        if pill.latest().is_some() && pill.turn.load(Ordering::Acquire) == seen {
             hide(&later);
         }
     });

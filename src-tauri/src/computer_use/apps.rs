@@ -121,7 +121,13 @@ fn name_of(app: &Path, info: Option<&plist::Dictionary>) -> String {
             .map(|stem| stem.to_string_lossy().into_owned())
             .unwrap_or_default()
     });
-    name.chars().take(MAX_NAME_CHARS).collect()
+    let name: String = name.trim().chars().take(MAX_NAME_CHARS).collect();
+    // A bundle called ".app" with no name of its own: a row still needs one.
+    if name.is_empty() {
+        "App".to_string()
+    } else {
+        name
+    }
 }
 
 #[cfg(target_os = "macos")]

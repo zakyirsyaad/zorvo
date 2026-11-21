@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { MOTION_SCRIPT, scriptsOf, stripPage, stripRuntime } from "./strip-runtime.mjs";
+import { INSIGHT_SCRIPTS, MOTION_SCRIPT, scriptsOf, stripPage, stripRuntime } from "./strip-runtime.mjs";
 
 const MOTION_TAG = `<script src="${MOTION_SCRIPT}" defer=""></script>`;
 
@@ -70,5 +71,34 @@ describe("the motion script", () => {
   it("is reported by scriptsOf, so the build can fail on any other script that survives", () => {
     expect(scriptsOf(PAGE).filter((script) => !script.isKept)).toHaveLength(3);
     expect(scriptsOf(stripRuntime(PAGE)).every((script) => script.isKept)).toBe(true);
+  });
+});
+
+describe("Vercel's measuring scripts", () => {
+  const page = (tag) => stripRuntime(`<body>${tag}</body>`);
+
+  it("are kept by their exact addresses on the site's own origin", () => {
+    expect(INSIGHT_SCRIPTS).toEqual(["/_vercel/insights/script.js", "/_vercel/speed-insights/script.js"]);
+    for (const src of INSIGHT_SCRIPTS) expect(scriptsOf(page(`<script src="${src}" defer></script>`))).toEqual([{ isKept: true }]);
+  });
+
+  it("go like any other script when the address, the host or the form differs", () => {
+    for (const tag of [
+      '<script src="/_vercel/insights/script.debug.js"></script>',
+      '<script src="/_vercel/insights/script.js?x=1"></script>',
+      '<script src="https://va.vercel-scripts.com/v1/script.js"></script>',
+      '<script src="//evil.example/_vercel/insights/script.js"></script>',
+      '<script src="/_vercel/speed-insights/script.js" type="module"></script>',
+      '<script src="/_vercel/speed-insights/script.js">window.si = 1</script>',
+    ]) {
+      expect(scriptsOf(page(tag)), tag).toEqual([]);
+    }
+  });
+
+  it("are the two the layout writes, each once and with no inline code", () => {
+    const layout = readFileSync("site/app/layout.tsx", "utf8");
+    const written = [...layout.matchAll(/<script\b([^>]*)\/>/g)].map((match) => /src="([^"]+)"/.exec(match[1])?.[1]);
+    expect(written).toEqual(INSIGHT_SCRIPTS);
+    expect(layout).not.toMatch(/<script\b[^>]*[^/]>/);
   });
 });

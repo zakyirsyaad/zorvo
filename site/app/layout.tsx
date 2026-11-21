@@ -48,7 +48,12 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={instrumentSans.variable}>
-      <body className="flex min-h-dvh flex-col">{children}</body>
+      <body className="flex min-h-dvh flex-col">
+        {children}
+        {/* Vercel Web Analytics and Speed Insights, as plain tags: scripts/strip-runtime.mjs keeps exactly these. */}
+        <script src="/_vercel/insights/script.js" defer />
+        <script src="/_vercel/speed-insights/script.js" defer />
+      </body>
     </html>
   );
 }

@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import shell from '../../src-tauri/src/artifacts/canvas_shell.html?raw';
+import tokens from '../../docs/design-system/tokens.json';
 
 /**
  * The canvas wrapper page, run in jsdom. jsdom has no layout, so these tests drive `apply`,
@@ -281,5 +282,19 @@ describe('the canvas wrapper', () => {
 
   it('loads nothing from the network', () => {
     expect(shell).not.toMatch(/https?:\/\//);
+  });
+
+  it("uses only the design system's colours, with a light set for a light appearance", () => {
+    const literals = (text: string) =>
+      (text.match(/#[0-9a-f]{3,8}\b|rgba?\([^)]*\)/gi) ?? []).map((value) =>
+        value.replace(/\s+/g, '').toLowerCase(),
+      );
+    const known = new Set(literals(JSON.stringify(tokens)));
+
+    const used = literals(shell);
+
+    expect(used.length).toBeGreaterThan(0);
+    expect(used.filter((value) => !known.has(value))).toEqual([]);
+    expect(shell).toMatch(/@media \(prefers-color-scheme: light\)/);
   });
 });

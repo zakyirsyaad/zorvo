@@ -5,25 +5,51 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Canvas</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #f3f3f3; }
-  body { font: 13px/1.3 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; color: rgba(0, 0, 0, 0.55); }
+  /* The app's design tokens (src/styles/globals.css): dark values, then the light ones. */
+  :root {
+    --canvas-ground: #0a0a0b;
+    --canvas-text: #a1a1aa;
+    --canvas-text-strong: #d4d4d8;
+    --canvas-line: #71717a;
+    --canvas-box: #18181b;
+    --canvas-shadow: rgba(0, 0, 0, 0.6);
+    --canvas-mark: #2563eb;
+    --canvas-danger: #f87171;
+    --canvas-danger-surface: #2a1215;
+    /* An artboard is a web page, drawn on white as a browser draws one. */
+    --canvas-page: #ffffff;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --canvas-ground: #f4f4f5;
+      --canvas-text: #52525b;
+      --canvas-text-strong: #27272a;
+      --canvas-line: #808088;
+      --canvas-box: #ffffff;
+      --canvas-shadow: rgba(9, 9, 11, 0.18);
+      --canvas-danger: #b91c1c;
+      --canvas-danger-surface: #fef2f2;
+    }
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--canvas-ground); }
+  body { font: 13px/1.3 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; color: var(--canvas-text); }
   #viewport { position: fixed; inset: 0; overflow: hidden; cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; }
   #viewport.panning { cursor: grabbing; }
   #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; --inv: 1; }
-  .section-title { position: absolute; font-size: calc(20px * var(--inv)); font-weight: 600; white-space: nowrap; color: rgba(0, 0, 0, 0.7); }
-  .group-label { position: absolute; font-size: calc(13px * var(--inv)); white-space: nowrap; border-bottom: calc(1px * var(--inv)) solid rgba(0, 0, 0, 0.25); padding-bottom: calc(4px * var(--inv)); overflow: hidden; text-overflow: ellipsis; }
+  .section-title { position: absolute; font-size: calc(20px * var(--inv)); font-weight: 600; white-space: nowrap; color: var(--canvas-text-strong); }
+  .group-label { position: absolute; font-size: calc(13px * var(--inv)); white-space: nowrap; border-bottom: calc(1px * var(--inv)) solid var(--canvas-line); padding-bottom: calc(4px * var(--inv)); overflow: hidden; text-overflow: ellipsis; }
   .board { position: absolute; cursor: default; }
-  .frame { position: absolute; inset: 0; background: #fff; box-shadow: 0 calc(1px * var(--inv)) calc(4px * var(--inv)) rgba(0, 0, 0, 0.22); overflow: hidden; }
-  .board.selected .frame { outline: calc(2px * var(--inv)) solid #4a7cf7; outline-offset: calc(2px * var(--inv)); }
-  .frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
+  .frame { position: absolute; inset: 0; background: var(--canvas-page); box-shadow: 0 calc(1px * var(--inv)) calc(4px * var(--inv)) var(--canvas-shadow); overflow: hidden; }
+  .board.selected .frame { outline: calc(2px * var(--inv)) solid var(--canvas-mark); outline-offset: calc(2px * var(--inv)); }
+  .frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--canvas-page); }
   .frame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top left; pointer-events: none; }
   .hit { position: absolute; inset: 0; }
   .board.selected .hit { pointer-events: none; }
-  .box { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(6px * var(--inv)); font-size: calc(14px * var(--inv)); background: #fafafa; text-align: center; padding: 8px; box-sizing: border-box; }
-  .box strong { font-weight: 600; color: rgba(0, 0, 0, 0.7); }
+  .box { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(6px * var(--inv)); font-size: calc(14px * var(--inv)); background: var(--canvas-box); text-align: center; padding: 8px; box-sizing: border-box; }
+  .box strong { font-weight: 600; color: var(--canvas-text-strong); }
   .title { position: absolute; left: 0; top: 100%; margin-top: calc(8px * var(--inv)); font-size: calc(13px * var(--inv)); white-space: nowrap; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-  .board.selected .title { color: #2b5fd9; }
-  .error { position: fixed; left: 0; right: 0; top: 0; padding: 8px 12px; background: #fdecea; color: #8a1c14; border-bottom: 1px solid rgba(138, 28, 20, 0.3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 2; }
+  .board.selected .title { color: var(--canvas-mark); }
+  .error { position: fixed; left: 0; right: 0; top: 0; padding: 8px 12px; background: var(--canvas-danger-surface); color: var(--canvas-danger); border-bottom: 1px solid var(--canvas-danger); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 2; }
   .error[hidden] { display: none; }
 </style>
 </head>

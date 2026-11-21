@@ -2086,6 +2086,36 @@ describe("useDelegation owed reports", () => {
     expect(env.sends[1].marks?.workerReport?.workers.map((worker) => worker.handle)).toEqual(["worker-9"]);
   });
 
+  it("starts no second delivery to a coordinator while one is being built", async () => {
+    const releases: Array<(messages: ChatMessage[]) => void> = [];
+    const messagesOf = vi.fn<(id: string) => Promise<ChatMessage[] | null>>(
+      () => new Promise<ChatMessage[]>((resolve) => releases.push(resolve)),
+    );
+    const workers = Array.from({ length: 9 }, (_, index) => owedWorker(`w${index + 1}`, index + 1, { outcome: null }));
+    const env = setup({
+      sessions: [sourceSession(), ...workers],
+      transcripts: { "s-a": A_MESSAGES },
+      messagesOf,
+      strict: true,
+    });
+    await act(async () => {});
+    // The ninth worker waits for the first eight: a second pass must not open another delivery.
+    expect(messagesOf).toHaveBeenCalledTimes(8);
+    expect(env.sends).toHaveLength(0);
+
+    await act(async () => {
+      for (const release of releases.splice(0)) release(bMessages());
+    });
+    await waitFor(() => expect(env.sends).toHaveLength(1));
+    expect(env.sends[0].marks?.workerReport?.workers).toHaveLength(8);
+    // The reservation is released: the ninth goes out in the next pass.
+    await waitFor(() => expect(messagesOf).toHaveBeenCalledTimes(9));
+    await act(async () => {
+      for (const release of releases.splice(0)) release(bMessages());
+    });
+    await waitFor(() => expect(env.sends).toHaveLength(2));
+  });
+
   it("a worker whose report is owed takes no further task", async () => {
     const env = setup({
       sessions: [sourceSession(), owedWorker("w1", 1)],

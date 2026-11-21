@@ -62,6 +62,9 @@ export function useWorkerReports(deps: ReportDeps): {
   const latest = useLatest(deps);
   // The workers whose report is being sent right now.
   const delivering = useRef(new Set<string>());
+  // Coordinators with a report being built or sent. Its busy state is not rendered until the send
+  // is under way, so a second pass would otherwise start another delivery to it beside the first.
+  const reserved = useRef(new Set<string>());
   // Coordinators whose last send threw, with their status then: not retried on every render, only
   // after their next turn settles, their status changes (a resume) or they go away.
   const failed = useRef(new Map<string, Session['status']>());
@@ -175,6 +178,12 @@ export function useWorkerReports(deps: ReportDeps): {
     /** A worker in a turn is skipped: its report would be built from a conversation that is still moving. */
     const isWorking = (workerId: string): boolean => latest.current.isBusy(workerId) || latest.current.isWaiting(workerId);
 
+    /** Whether the coordinator has owed workers that were not part of the delivery that just ended. */
+    const hasMoreOwed = (coordinatorId: string, delivered: readonly Session[]): boolean =>
+      owedWorkersOf(coordinatorId, latest.current.sessions).some(
+        (worker) => !delivered.some((done) => done.id === worker.id),
+      );
+
     const deliver = async (coordinator: Session, workers: readonly Session[]): Promise<void> => {
       const at = Date.now();
       let isFailed = false;
@@ -236,8 +245,10 @@ export function useWorkerReports(deps: ReportDeps): {
         );
       } finally {
         for (const worker of workers) delivering.current.delete(worker.id);
-        // A failure must not rerun the drain by itself; a turn that moved on while we waited must.
-        if (!isFailed && isStale) bump();
+        const hadWaiting = reserved.current.delete(coordinator.id) && hasMoreOwed(coordinator.id, workers);
+        // A failure must not rerun the drain by itself; a turn that moved on while we waited must,
+        // and so must workers that waited behind this delivery.
+        if (!isFailed && (isStale || hadWaiting)) bump();
       }
     };
 
@@ -272,6 +283,9 @@ export function useWorkerReports(deps: ReportDeps): {
         // In a turn, waiting on the user, or not running (after a reload every session is
         // terminated): the report stays owed. A turn end, or resuming the session, brings us back.
         if (!isFree(coordinatorId) || failed.current.has(coordinatorId)) continue;
+        // One delivery per coordinator at a time; the rest go out when it is released.
+        if (reserved.current.has(coordinatorId)) continue;
+        reserved.current.add(coordinatorId);
         const batch = owed.slice(0, MAX_REPORT_WORKERS);
         // Marked before anything awaits: a second run (StrictMode) must not send it again.
         for (const worker of batch) delivering.current.add(worker.id);

@@ -56,7 +56,9 @@ describe("SessionRow", () => {
     // Midday, so "2 hours ago" never crosses midnight into a date.
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(2026, 10, 20, 12, 0, 0));
-    onTestFinished(() => vi.useRealTimers());
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const withPr = session({ id: "s-pr", name: "Fix transcript save interval", createdAt: Date.now() - 2 * 3_600_000 });
     const without = session({ id: "s-none", name: "Add GitHub connection", createdAt: Date.now() - 2 * 3_600_000 });
     const pullRequest = {

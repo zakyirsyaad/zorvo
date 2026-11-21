@@ -307,6 +307,7 @@ describe('useArtifactComments', () => {
 
 describe('useArtifactCommentSweep', () => {
   const artifact = (id: string): Artifact => ({ id, title: 'T', sourcePath: '/w/t.html', versions: [{ n: 3, at: 1, bytes: 1 }] });
+  const noCanvases = new Map([['s-1', []], ['s-2', []]]);
   const session = (id: string, artifactComments: ArtifactComment[]): Session =>
     ({ id, name: id, profileId: 'x', cwd: '/w', status: 'idle', createdAt: 1, artifactComments }) as Session;
 
@@ -319,7 +320,7 @@ describe('useArtifactCommentSweep', () => {
       ['s-2', []],
     ]);
 
-    renderHook(() => useArtifactCommentSweep(sessions, bySession, new Set(['s-1']), update, forget));
+    renderHook(() => useArtifactCommentSweep(sessions, bySession, noCanvases, new Set(['s-1']), update, forget));
 
     expect(forget).toHaveBeenCalledWith(['c2']);
     expect(update).toHaveBeenCalledTimes(1);
@@ -328,11 +329,38 @@ describe('useArtifactCommentSweep', () => {
     expect(change(sessions[0].artifactComments!).map((c) => c.id)).toEqual(['c1']);
   });
 
+  it("removes a forgotten canvas's comment and forgets it in the message, only for a session that was read", () => {
+    const KEY = 'c-0123456789abcdef';
+    const canvasComment = (id: string): ArtifactComment =>
+      pageComment(id, { artifactId: KEY, version: 0, canvas: { key: KEY, artboardId: 'pay-b', fileHash: 'b'.repeat(64) } });
+    const entry = { key: KEY, folder: '/w/d', relative: 'd', title: 'C', shownAt: 1, artboards: 1 };
+    const update = vi.fn();
+    const forget = vi.fn();
+    const sessions = [session('s-1', [canvasComment('k1')]), session('s-2', [canvasComment('k2')]), session('s-3', [canvasComment('k3')])];
+    const bySession = new Map([
+      ['s-1', []],
+      ['s-2', []],
+      ['s-3', []],
+    ]);
+    const canvases = new Map([
+      ['s-1', []],
+      ['s-2', []],
+      ['s-3', [entry]],
+    ]);
+
+    renderHook(() => useArtifactCommentSweep(sessions, bySession, canvases, new Set(['s-1', 's-3']), update, forget));
+
+    expect(forget).toHaveBeenCalledTimes(1);
+    expect(forget).toHaveBeenCalledWith(['k1']);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update.mock.calls[0][0]).toBe('s-1');
+  });
+
   it('does nothing when every artifact is still there', () => {
     const update = vi.fn();
     const sessions = [session('s-1', [pageComment('c1')])];
 
-    renderHook(() => useArtifactCommentSweep(sessions, new Map([['s-1', [artifact(A1)]]]), new Set(['s-1']), update, vi.fn()));
+    renderHook(() => useArtifactCommentSweep(sessions, new Map([['s-1', [artifact(A1)]]]), noCanvases, new Set(['s-1']), update, vi.fn()));
 
     expect(update).not.toHaveBeenCalled();
   });

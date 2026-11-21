@@ -396,12 +396,13 @@ pub fn list_sessions(artifacts: &ArtifactStore, session_ids: &[String]) -> Vec<S
         .iter()
         .map(|session_id| {
             let listed = artifacts.list_checked(session_id);
+            let canvases = artifacts.canvases(session_id);
             SessionArtifacts {
                 session_id: session_id.clone(),
-                failed: listed.is_err(),
+                // Either file unreadable: the answer says nothing about what is gone.
+                failed: listed.is_err() || canvases.is_err(),
                 artifacts: listed.unwrap_or_default(),
-                canvases: artifacts
-                    .canvases(session_id)
+                canvases: canvases
                     .unwrap_or_default()
                     .into_iter()
                     .map(|entry| ListedCanvas {
@@ -1371,6 +1372,10 @@ mod tests {
         assert!(!listed[0].failed);
         assert!(listed[1].failed);
         assert!(listed[1].artifacts.is_empty());
+        // An unreadable canvases.json fails the session too, so nothing is swept on a failed read.
+        std::fs::create_dir_all(data.0.join("badc-4")).unwrap();
+        std::fs::write(data.0.join("badc-4").join("canvases.json"), b"{").unwrap();
+        assert!(list_sessions(&artifacts, &["badc-4".to_string()])[0].failed);
         // No index at all is a session with no pages, not a failure.
         assert!(!listed[2].failed);
         assert_eq!(

@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { anchorOfPick, marksFor, MAX_ARTIFACT_COMMENTS, parseCanvasPick, parsePagePick, withoutMissingArtifacts } from '../lib/artifact-comments';
 import type { BoardState } from '../lib/canvas';
+import type { CanvasesBySession } from './useArtifacts';
 import { createId } from '../lib/ids';
 import { MAX_COMMENT_LENGTH } from '../lib/review-comments';
 import type { Artifact, ArtifactAnchor, ArtifactComment, PageMessage, PageRef, Session } from '../types';
@@ -310,12 +311,13 @@ export function useArtifactComments({
 }
 
 /**
- * Removes the comments of artifacts that are gone, for every session whose
+ * Removes the comments of artifacts and canvases that are gone, for every session whose
  * artifacts were read without failure, and takes them out of the message.
  */
 export function useArtifactCommentSweep(
   sessions: readonly Session[],
   bySession: ReadonlyMap<string, readonly Artifact[]>,
+  canvasesBySession: CanvasesBySession,
   readSessions: ReadonlySet<string>,
   update: (sessionId: string, change: ArtifactCommentsChange) => void,
   forget: (ids: readonly string[]) => void,
@@ -326,12 +328,13 @@ export function useArtifactCommentSweep(
     for (const session of sessions) {
       const comments = session.artifactComments;
       const artifacts = bySession.get(session.id);
-      if (!comments || comments.length === 0 || !artifacts || !readSessions.has(session.id)) continue;
-      const kept = withoutMissingArtifacts(comments, artifacts);
+      const canvases = canvasesBySession.get(session.id);
+      if (!comments || comments.length === 0 || !artifacts || !canvases || !readSessions.has(session.id)) continue;
+      const kept = withoutMissingArtifacts(comments, artifacts, canvases);
       if (kept === comments) continue;
       const keptIds = new Set(kept.map((comment) => comment.id));
       forgetRef.current(comments.filter((comment) => !keptIds.has(comment.id)).map((comment) => comment.id));
-      updateRef.current(session.id, (prev) => withoutMissingArtifacts(prev, artifacts));
+      updateRef.current(session.id, (prev) => withoutMissingArtifacts(prev, artifacts, canvases));
     }
-  }, [sessions, bySession, readSessions, updateRef, forgetRef]);
+  }, [sessions, bySession, canvasesBySession, readSessions, updateRef, forgetRef]);
 }

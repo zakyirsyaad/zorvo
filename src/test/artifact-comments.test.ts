@@ -232,8 +232,8 @@ describe('withoutMissingArtifacts', () => {
   it("removes only the gone artifact's comments and returns the same array when none are gone", () => {
     const comments = [comment('c1'), comment('c2', { artifactId: OTHER_ID })];
 
-    expect(withoutMissingArtifacts(comments, [artifact]).map((c) => c.id)).toEqual(['c1']);
-    expect(withoutMissingArtifacts(comments, [artifact, { ...artifact, id: OTHER_ID }])).toBe(comments);
+    expect(withoutMissingArtifacts(comments, [artifact], []).map((c) => c.id)).toEqual(['c1']);
+    expect(withoutMissingArtifacts(comments, [artifact, { ...artifact, id: OTHER_ID }], [])).toBe(comments);
   });
 });
 
@@ -359,8 +359,9 @@ describe('comments on canvas artboards', () => {
     expect(validArtifactComments([good, badHash, otherKey, pageVersion, wholeOnPage])).toEqual([good]);
   });
 
-  it('never sweeps a canvas comment with the artifacts', () => {
+  it('keeps a canvas comment while its canvas is listed and removes it when it is not', () => {
     const comments = [onBoard('c1', 'pay-b')];
-    expect(withoutMissingArtifacts(comments, [])).toBe(comments);
+    expect(withoutMissingArtifacts(comments, [], [entry])).toBe(comments);
+    expect(withoutMissingArtifacts(comments, [], [])).toEqual([]);
   });
 });

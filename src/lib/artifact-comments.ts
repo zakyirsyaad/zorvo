@@ -388,10 +388,17 @@ export function validArtifactComments(raw: unknown): ArtifactComment[] {
   return valid;
 }
 
-/** The comments whose artifact still exists; the same array when none is gone, so nothing redraws. */
-export function withoutMissingArtifacts(comments: ArtifactComment[], artifacts: readonly Artifact[]): ArtifactComment[] {
+/**
+ * The comments whose artifact (or, for a canvas comment, whose canvas) is still listed; the same array
+ * when none is gone, so nothing redraws.
+ */
+export function withoutMissingArtifacts(
+  comments: ArtifactComment[],
+  artifacts: readonly Artifact[],
+  canvases: readonly CanvasEntry[],
+): ArtifactComment[] {
   const ids = new Set(artifacts.map((artifact) => artifact.id));
-  // A canvas comment is not an artifact's: its canvas is listed apart, and it stays.
-  const kept = comments.filter((comment) => comment.canvas !== undefined || ids.has(comment.artifactId));
+  const keys = new Set(canvases.map((canvas) => canvas.key));
+  const kept = comments.filter((comment) => (comment.canvas ? keys.has(comment.canvas.key) : ids.has(comment.artifactId)));
   return kept.length === comments.length ? comments : kept;
 }

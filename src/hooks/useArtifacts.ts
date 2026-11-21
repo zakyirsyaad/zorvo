@@ -9,7 +9,7 @@ import { parseCanvasEntries, type CanvasEntry } from '../lib/canvas';
 const ARTIFACTS_CHANGED = 'artifacts-changed';
 
 type BySession = ReadonlyMap<string, readonly Artifact[]>;
-type CanvasesBySession = ReadonlyMap<string, readonly CanvasEntry[]>;
+export type CanvasesBySession = ReadonlyMap<string, readonly CanvasEntry[]>;
 
 /** One session's answer: its artifacts, whether its index could not be read (then they are not known), and its canvases. */
 type Entry = [sessionId: string, artifacts: Artifact[], failed: boolean, canvases: CanvasEntry[]];
@@ -65,7 +65,7 @@ export function useArtifacts(sessionIds: readonly string[]): {
     });
     setCanvasesBySession((previous) => {
       const next = new Map(previous);
-      for (const [sessionId, , , canvases] of entries) next.set(sessionId, canvases);
+      for (const [sessionId, , failed, canvases] of entries) if (!failed) next.set(sessionId, canvases);
       if (isFullList) for (const sessionId of next.keys()) if (!idsRef.current.includes(sessionId)) next.delete(sessionId);
       return next;
     });

@@ -875,7 +875,7 @@ export default function App() {
     onError: reportError,
   });
   useAgentWork(sessions, transcripts, patchSession);
-  useArtifactCommentSweep(sessions, artifacts.bySession, artifacts.readSessions, updateArtifactComments, forgetInMessage);
+  useArtifactCommentSweep(sessions, artifacts.bySession, artifacts.canvasesBySession, artifacts.readSessions, updateArtifactComments, forgetInMessage);
   /** Shows a subagent's or a shell command's task in the inspector, beside its session's chat. */
   const openTask = (sessionId: string, tab: TaskTab) => {
     taskTabs.open(sessionId, tab);

@@ -158,6 +158,7 @@ import { useCompareRun, useCompareRunRows } from "./hooks/useCompareRun";
 import { useCompareModelProbe } from "./hooks/useCompareModelProbe";
 import { useDelegation } from "./hooks/useDelegation";
 import { useWorkerAutoClose } from "./hooks/useWorkerAutoClose";
+import { useWorkerStops } from "./hooks/useWorkerStops";
 import { useNow } from "./hooks/useNow";
 import { DelegateDialog, type DelegateAgentChoice } from "./components/delegation/DelegateDialog";
 import { useDelegateDialog } from "./hooks/useDelegateDialog";
@@ -1183,44 +1184,21 @@ export default function App() {
     return agent !== undefined && isAgentReady(agent) && signInStatus.stateOf(agent.id) !== "needed";
   };
 
+  const workerStops = useWorkerStops({
+    sessions,
+    stop: acp.stop,
+    markTerminated: (sessionId) => patchSession(sessionId, { status: "terminated", endedAt: Date.now() }),
+  });
+
   /** Reopens a worker whose agent was closed after its turn; the session and its history stayed. */
   const resumeWorker = async (sessionId: string, message: FirstMessage): Promise<boolean> => {
     const session = sessions.find((candidate) => candidate.id === sessionId);
     if (session === undefined || !session.acpSessionId) return false;
-    pendingStops.current.delete(sessionId);
+    workerStops.forget(sessionId);
     patchSession(sessionId, { status: "running", endedAt: null, exitCode: null });
     // The model last picked for this agent is applied again, as for a user's resume; the draft's own picks are not this worker's.
     return acp.resume(session, session.acpSessionId, message, withPreferred(NO_CHOICES, state.agentOptions?.[session.profileId]));
   };
-
-  // The auto-close stops still in flight, by session: a task that arrives meanwhile waits for the stop and reopens.
-  const pendingStops = useRef(new Map<string, Promise<boolean>>());
-  const stopWorkerAgent = (sessionId: string): Promise<boolean> => {
-    const stopping = (async () => {
-      const isStopped = await acp.stop(sessionId);
-      // `stop` leaves the row to its caller; the session stays and reads ended until a task reopens it.
-      if (isStopped) patchSession(sessionId, { status: "terminated", endedAt: Date.now() });
-      return isStopped;
-    })();
-    pendingStops.current.set(sessionId, stopping);
-    // A stop that worked stays until the session renders terminated (the effect below): a task in that
-    // gap would otherwise see a running worker and go to the stopped agent. A failed one leaves no trace.
-    void stopping.then(
-      (isStopped) => {
-        if (!isStopped && pendingStops.current.get(sessionId) === stopping) pendingStops.current.delete(sessionId);
-      },
-      () => {
-        if (pendingStops.current.get(sessionId) === stopping) pendingStops.current.delete(sessionId);
-      },
-    );
-    return stopping;
-  };
-  useEffect(() => {
-    for (const id of [...pendingStops.current.keys()]) {
-      const status = sessions.find((candidate) => candidate.id === id)?.status;
-      if (status !== "running") pendingStops.current.delete(id);
-    }
-  });
 
   const delegation = useDelegation({
     sessions,
@@ -1233,7 +1211,8 @@ export default function App() {
     send: acp.send,
     resume: resumeWorker,
     canResume: (sessionId) => Boolean(sessions.find((candidate) => candidate.id === sessionId)?.acpSessionId),
-    pendingStop: (sessionId) => pendingStops.current.get(sessionId),
+    pendingStop: workerStops.pendingStop,
+    isTurnUnderWay: acp.isTurnUnderWay,
     startSession,
     selectSession: handleSelectSession,
     updateLink,
@@ -1257,7 +1236,8 @@ export default function App() {
     isSendingTo: delegation.isSendingTo,
     hasLiveTasks: (sessionId) =>
       backgroundTasks.tasks.some((task) => task.kind === "shell" && task.sessionId === sessionId),
-    stop: stopWorkerAgent,
+    hasFailedTurn: (sessionId) => Boolean(failedTurns[sessionId]),
+    stop: workerStops.stopWorker,
   });
   // The engine was built before this hook: its turn ends reach it through the ref.
   delegationTurnEndedRef.current = delegation.onTurnEnded;

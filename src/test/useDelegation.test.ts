@@ -110,6 +110,8 @@ interface HarnessInput {
   sendResult?: boolean;
   /** What the reopen answers: true, false, or a throw. */
   resumeResult?: boolean | "throws";
+  /** Sessions the engine knows a turn is under way for, before React renders busy. */
+  turnUnderWay?: readonly string[];
   /** Sessions whose agent has no session id to reopen. */
   cannotResume?: readonly string[];
   /** A stop that is still in flight for a session. */
@@ -158,6 +160,7 @@ function setup(input: HarnessInput) {
           sends.push({ sessionId, text, attachments, marks });
           return sendResult;
         },
+        isTurnUnderWay: (sessionId) => (input.turnUnderWay ?? []).includes(sessionId),
         canResume: (sessionId) => !(input.cannotResume ?? []).includes(sessionId),
         pendingStop: (sessionId) => input.pendingStop?.(sessionId),
         resume: async (sessionId, message) => {
@@ -1164,14 +1167,32 @@ describe("useDelegation workers", () => {
   });
 
   it.each([
-    [false, { ok: false, reason: "Codex did not take the task." }],
-    ["throws", { ok: false, reason: "Zorvo could not do that.", isInternal: true, detail: "Error: /secret/resume" }],
-  ] as const)("a reopen the agent refuses (%s) is not counted as sent", async (resumeResult, expected) => {
+    [false, { ok: false, reason: "worker-1 can't take more work. Start a new worker." }],
+    ["throws", { ok: false, reason: "worker-1 can't take more work. Start a new worker.", isInternal: true, detail: "Error: /secret/resume" }],
+  ] as const)("a reopen the agent refuses (%s) says the worker is gone, ends its link and is not counted as sent", async (resumeResult, expected) => {
     const env = setup({ sessions: [sourceSession(), closedWorker()], transcripts: { "s-a": A_MESSAGES }, resumeResult });
     const r = await act(async () => env.result.current.delegation.sendToWorker("s-a", "s-b", "Again"));
     expect(r).toEqual(expected);
     expect(env.result.current.sessions.find((s) => s.id === "s-b")?.delegatedFrom?.task).toBe("Fix the parser");
+    expect(env.result.current.sessions.find((s) => s.id === "s-b")?.delegatedFrom?.endedAt).toEqual(expect.any(Number));
     expect(env.places.underWay("s-a")).toBe(0);
+  });
+
+  it("a mention whose reopen fails ends the link and starts a new worker in the same call", async () => {
+    const env = setup({ sessions: [sourceSession(), closedWorker()], transcripts: { "s-a": A_MESSAGES }, resumeResult: false });
+    const r = await act(async () => env.result.current.delegation.giveTask("s-a", "codex-acp", "Again", { byAgent: true }));
+    expect(r).toMatchObject({ ok: true, kind: "started" });
+    expect(env.resumes).toHaveLength(1);
+    expect(env.starts).toHaveLength(1);
+    expect(env.result.current.sessions.find((s) => s.id === "s-b")?.delegatedFrom?.endedAt).toEqual(expect.any(Number));
+  });
+
+  it("a task for a worker the engine already prompts is refused as still working, with no reopen", async () => {
+    const env = setup({ sessions: [sourceSession(), closedWorker()], transcripts: { "s-a": A_MESSAGES }, turnUnderWay: ["s-b"] });
+    const r = await act(async () => env.result.current.delegation.sendToWorker("s-a", "s-b", "Again"));
+    expect(r).toEqual({ ok: false, reason: "worker-1 is still working. Send this when it reports." });
+    expect(env.resumes).toHaveLength(0);
+    expect(env.sends.filter((sent) => sent.sessionId === "s-b")).toHaveLength(0);
   });
 
   it("a terminated worker ends its link and is told to start a new one", async () => {

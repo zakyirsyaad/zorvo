@@ -55,6 +55,8 @@ export interface DelegationDeps {
   ) => Promise<boolean>;
   /** A session's messages, loaded or saved; null when they cannot be read. */
   messagesOf: (sessionId: string) => Promise<ChatMessage[] | null>;
+  /** From refs, true in the tick a prompt goes out: `isBusy` is React state and lags a render. */
+  isTurnUnderWay: (sessionId: string) => boolean;
   /** Whether a session has an agent session to reopen (an agent that failed to start has none). */
   canResume: (sessionId: string) => boolean;
   /** An auto-close stop still in flight for a session, if any. */
@@ -69,6 +71,9 @@ export interface DelegationDeps {
   giveBack: (sessionId: string, text: string) => void;
   onNotice: (message: string) => void;
 }
+
+/** What a coordinator is told about a worker that cannot take a task; shared by every path that finds it gone. */
+const cannotTakeMore = (handle: string): string => `${handle} can't take more work. Start a new worker.`;
 
 export type DelegationState =
   | 'working'
@@ -546,6 +551,7 @@ export function useDelegation(deps: DelegationDeps): {
     task: string,
     options: GiveTaskOptions,
     stillWorking: string,
+    onReopenFailed: () => void = () => undefined,
   ): Promise<GiveTaskResult> => {
     const current = latest.current;
     const link = delegate.delegatedFrom;
@@ -586,12 +592,18 @@ export function useDelegation(deps: DelegationDeps): {
       stopSending(delegate.id);
       // A failed reopen is Zorvo's, not the agent's: the user's notice gets the error, the agent a plain sentence.
       if (isClosed) {
-        return { ok: false, reason: 'Zorvo could not do that.', isInternal: true, detail: String(error) };
+        onReopenFailed();
+        return { ok: false, reason: cannotTakeMore(workerHandleOf(delegate) ?? delegate.profileId), isInternal: true, detail: String(error) };
       }
       isTaken = false;
     }
     if (!isTaken) {
       stopSending(delegate.id);
+      // A closed worker that does not reopen will never report: "still working" would be a lie.
+      if (isClosed) {
+        onReopenFailed();
+        return { ok: false, reason: cannotTakeMore(workerHandleOf(delegate) ?? delegate.profileId) };
+      }
       return refusal;
     }
     // The next report quotes the task it answers.
@@ -612,20 +624,26 @@ export function useDelegation(deps: DelegationDeps): {
     if (worker === undefined) return { ok: false, reason: NO_SUCH_HANDLE };
     const handle = workerHandleOf(worker) ?? worker.profileId;
     const stillWorking = `${handle} is still working. Send this when it reports.`;
-    if (current.isBusy(worker.id) || current.isWaiting(worker.id) || sendingTo.current.has(worker.id)) {
+    if (
+      current.isBusy(worker.id) ||
+      current.isTurnUnderWay(worker.id) ||
+      current.isWaiting(worker.id) ||
+      sendingTo.current.has(worker.id)
+    ) {
       return { ok: false, reason: stillWorking };
     }
     // Its agent died mid-turn: there is no session to continue, whatever is still owed.
     if (isGone(worker)) {
       end(worker.id);
-      return { ok: false, reason: `${handle} can't take more work. Start a new worker.` };
+      return { ok: false, reason: cannotTakeMore(handle) };
     }
     if (isHandingOver(worker.id)) {
       // A task sent now would become the worker's last message, and the answer that
       // still waits to be reported would be lost.
       return { ok: false, reason: `${handle}'s last result has not reached this session yet. Give it the next task after its report arrives.` };
     }
-    return sendFurtherTask(source, worker, task, options, stillWorking);
+    // A reopen that fails leaves a terminated worker that will never report: its link ends, as for a gone one.
+    return sendFurtherTask(source, worker, task, options, stillWorking, () => end(worker.id));
   };
 
   const giveTask = async (
@@ -644,7 +662,7 @@ export function useDelegation(deps: DelegationDeps): {
       source,
       agentId,
       sessions: current.sessions,
-      isBusy: current.isBusy,
+      isBusy: (sessionId) => current.isBusy(sessionId) || current.isTurnUnderWay(sessionId),
       isWaiting: current.isWaiting,
       hasMessages: (current.transcripts[source.id] ?? []).length > 0,
       isSourceBusyAllowed: options.byAgent === true,
@@ -658,11 +676,25 @@ export function useDelegation(deps: DelegationDeps): {
         if (isHandingOver(delegate.id)) {
           return { ok: false, reason: handoverPendingReason(agent.name) };
         }
-        // A worker whose agent was closed after its turn is reopened by the task.
-        return sendFurtherTask(source, delegate, task, options, `${agent.name} is still working on the previous task.`);
+        // A worker whose agent was closed after its turn is reopened by the task; one that does not reopen is replaced.
+        const reopen = { failed: false };
+        const result = await sendFurtherTask(
+          source,
+          delegate,
+          task,
+          options,
+          `${agent.name} is still working on the previous task.`,
+          () => {
+            reopen.failed = true;
+          },
+        );
+        if (!reopen.failed) return result;
+        if (!result.ok && result.detail !== undefined) current.onNotice(`The worker could not be reopened: ${result.detail}`);
+        end(delegate.id);
+      } else {
+        // Its agent died mid-turn: the old link ends and the task starts a new worker.
+        end(delegate.id);
       }
-      // Its agent died mid-turn: the old link ends and the task starts a new worker.
-      end(delegate.id);
     }
 
     const started = await startWorker(sourceId, {

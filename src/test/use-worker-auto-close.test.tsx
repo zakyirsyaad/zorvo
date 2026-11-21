@@ -28,6 +28,7 @@ interface Props {
   turnUnderWay?: boolean;
   sending?: boolean;
   liveTasks?: boolean;
+  failedTurn?: boolean;
   stop?: (id: string) => Promise<boolean>;
 }
 
@@ -43,6 +44,7 @@ function render(initial: Props) {
         isTurnUnderWay: () => props.turnUnderWay === true,
         isSendingTo: () => props.sending === true,
         hasLiveTasks: () => props.liveTasks === true,
+        hasFailedTurn: () => props.failedTurn === true,
         stop: props.stop ?? stop,
         now: () => props.now ?? 1_000,
       }),
@@ -166,6 +168,47 @@ describe("useWorkerAutoClose", () => {
     rerender({ sessions: [worker()], liveTasks: true });
     vi.advanceTimersByTime(600_000);
     expect(stop).not.toHaveBeenCalled();
+  });
+
+  it("leaves a worker with a failed turn's banner alone until it clears", () => {
+    const { stop, rerender } = render({ sessions: [worker()], failedTurn: true });
+    vi.advanceTimersByTime(600_000);
+    expect(stop).not.toHaveBeenCalled();
+    rerender({ sessions: [worker()], failedTurn: false, now: 700_000 });
+    vi.advanceTimersByTime(0);
+    expect(stop).toHaveBeenCalledWith("w1");
+  });
+
+  it("counts the two minutes from the delivered report", () => {
+    const reported = worker({
+      delegatedFrom: { sessionId: "s-a", task: "Fix", startedAt: 5, endedAt: null, handle: "worker-1", lastTurn: { endedAt: 1_000, how: "finished" }, reportedAt: 61_000 },
+    });
+    const { stop } = render({ sessions: [reported], now: 61_000 });
+    vi.advanceTimersByTime(119_999);
+    expect(stop).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts from the turn end while the report is still owed", () => {
+    const { stop } = render({ sessions: [worker()], now: 61_000 });
+    vi.advanceTimersByTime(59_999);
+    expect(stop).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-arms when the report is delivered after the turn end", () => {
+    const { stop, rerender } = render({ sessions: [worker()], now: 1_000 });
+    vi.advanceTimersByTime(60_000);
+    const reported = worker({
+      delegatedFrom: { sessionId: "s-a", task: "Fix", startedAt: 5, endedAt: null, handle: "worker-1", lastTurn: { endedAt: 1_000, how: "finished" }, reportedAt: 61_000 },
+    });
+    rerender({ sessions: [reported], now: 61_000 });
+    vi.advanceTimersByTime(60_000);
+    expect(stop).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(60_000);
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 
   it("clears its timers on unmount", () => {

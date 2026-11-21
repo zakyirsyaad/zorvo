@@ -1,6 +1,6 @@
 [package]
 name = "zorvo"
-version = "0.14.1"
+version = "0.15.0"
 description = "Every coding agent, one desktop."
 authors = ["zakyirsyaad <zkyxentertain@gmail.com>"]
 license = "Apache-2.0"

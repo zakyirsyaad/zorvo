@@ -1187,6 +1187,7 @@ export default function App() {
   const resumeWorker = async (sessionId: string, message: FirstMessage): Promise<boolean> => {
     const session = sessions.find((candidate) => candidate.id === sessionId);
     if (session === undefined || !session.acpSessionId) return false;
+    pendingStops.current.delete(sessionId);
     patchSession(sessionId, { status: "running", endedAt: null, exitCode: null });
     // The model last picked for this agent is applied again, as for a user's resume; the draft's own picks are not this worker's.
     return acp.resume(session, session.acpSessionId, message, withPreferred(NO_CHOICES, state.agentOptions?.[session.profileId]));
@@ -1202,11 +1203,24 @@ export default function App() {
       return isStopped;
     })();
     pendingStops.current.set(sessionId, stopping);
-    void stopping.finally(() => {
-      if (pendingStops.current.get(sessionId) === stopping) pendingStops.current.delete(sessionId);
-    });
+    // A stop that worked stays until the session renders terminated (the effect below): a task in that
+    // gap would otherwise see a running worker and go to the stopped agent. A failed one leaves no trace.
+    void stopping.then(
+      (isStopped) => {
+        if (!isStopped && pendingStops.current.get(sessionId) === stopping) pendingStops.current.delete(sessionId);
+      },
+      () => {
+        if (pendingStops.current.get(sessionId) === stopping) pendingStops.current.delete(sessionId);
+      },
+    );
     return stopping;
   };
+  useEffect(() => {
+    for (const id of [...pendingStops.current.keys()]) {
+      const status = sessions.find((candidate) => candidate.id === id)?.status;
+      if (status !== "running") pendingStops.current.delete(id);
+    }
+  });
 
   const delegation = useDelegation({
     sessions,

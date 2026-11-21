@@ -1128,6 +1128,19 @@ describe("useDelegation workers", () => {
     expect(env.sends.filter((sent) => sent.sessionId === "s-b")).toHaveLength(0);
   });
 
+  it("a task that arrives after the stop landed but before the session reads terminated reopens it", async () => {
+    // The stop is settled and its row has not rendered terminated yet.
+    const env = setup({
+      sessions: [sourceSession(), worker("worker-1", "s-b", { delegatedFrom: link({ handle: "worker-1", lastTurn: { endedAt: 300, how: "finished" }, reportedAt: 400 }) })],
+      transcripts: { "s-a": A_MESSAGES },
+      pendingStop: (id) => (id === "s-b" ? Promise.resolve(true) : undefined),
+    });
+    const r = await act(async () => env.result.current.delegation.sendToWorker("s-a", "s-b", "Also fix the tests"));
+    expect(r).toMatchObject({ ok: true, kind: "sent" });
+    expect(env.resumes).toHaveLength(1);
+    expect(env.sends.filter((sent) => sent.sessionId === "s-b")).toHaveLength(0);
+  });
+
   it("a worker that is gone gets no task, even before its report arrived", async () => {
     const env = setup({
       sessions: [sourceSession(), closedWorker({ delegatedFrom: link({ handle: "worker-1", lastTurn: { endedAt: 300, how: "exited" } }) })],

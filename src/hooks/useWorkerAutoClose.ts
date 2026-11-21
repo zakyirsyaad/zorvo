@@ -41,6 +41,24 @@ export function useWorkerAutoClose(deps: WorkerAutoCloseDeps): void {
     return link.lastTurn.endedAt;
   };
 
+  /** One timer per worker for the turn end `endedAt`; a skipped fire arms the same check again. */
+  const arm = (id: string, endedAt: number, delay: number): void => {
+    const timer = setTimeout(() => {
+      // The state may have moved since the timer was set.
+      const current = latest.current.sessions.find((candidate) => candidate.id === id);
+      if (current === undefined || closableAfter(current) !== endedAt) return;
+      // A prompt just sent is not rendered busy yet, and stopping now would leave its turn unrecorded.
+      // If that prompt is refused no new turn end comes, so the check is made again later.
+      if (latest.current.isTurnUnderWay(id) || latest.current.isSendingTo(id)) {
+        arm(id, endedAt, WORKER_CLOSE_MS);
+        return;
+      }
+      // The entry stays, so a render does not set it again; a failed stop is not retried.
+      latest.current.stop(id).catch(() => undefined);
+    }, delay);
+    timers.current.set(id, { endedAt, timer });
+  };
+
   // Every render: the timers follow the sessions, not a dependency list of their own.
   useEffect(() => {
     const live = new Set<string>();
@@ -51,17 +69,7 @@ export function useWorkerAutoClose(deps: WorkerAutoCloseDeps): void {
       if (timers.current.get(session.id)?.endedAt === endedAt) continue;
       clearTimeout(timers.current.get(session.id)?.timer);
       const now = (deps.now ?? Date.now)();
-      const timer = setTimeout(() => {
-        // The state may have moved since the timer was set.
-        const current = latest.current.sessions.find((candidate) => candidate.id === session.id);
-        if (current === undefined || closableAfter(current) !== endedAt) return;
-        // A prompt just sent is not rendered busy yet, and stopping now would leave its turn unrecorded.
-        // Nothing is rescheduled here: that turn's end brings a new `endedAt` and a new timer.
-        if (latest.current.isTurnUnderWay(session.id) || latest.current.isSendingTo(session.id)) return;
-        // The entry stays, so a render does not set it again; a failed stop is not retried.
-        latest.current.stop(session.id).catch(() => undefined);
-      }, Math.max(0, endedAt + WORKER_CLOSE_MS - now));
-      timers.current.set(session.id, { endedAt, timer });
+      arm(session.id, endedAt, Math.max(0, endedAt + WORKER_CLOSE_MS - now));
     }
     for (const [id, entry] of [...timers.current]) {
       if (live.has(id)) continue;

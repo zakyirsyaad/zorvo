@@ -186,6 +186,29 @@ describe("useAcpEngine turn checks and marks", () => {
     expect(engine.result.current.isTurnUnderWay("s-1")).toBe(false);
   });
 
+  it("says a turn is under way while a launch opens, before its prompt is written", async () => {
+    const real = tauriInternals().invoke.bind(tauriInternals());
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(tauriInternals(), "invoke").mockImplementation(async (cmd, args) => {
+      if (cmd === "acp_start_session") await held;
+      return real(cmd, args);
+    });
+    const engine = renderEngine();
+    let launching: Promise<boolean> = Promise.resolve(false);
+    await act(async () => {
+      launching = engine.result.current.start(SESSION, { text: "go" });
+      await Promise.resolve();
+    });
+    expect(engine.result.current.isTurnUnderWay("s-1")).toBe(true);
+    await act(async () => {
+      release();
+      await launching;
+    });
+  });
+
   it("puts the first message's marks on the user message a launch adds", async () => {
     const engine = renderEngine();
     await act(async () => {

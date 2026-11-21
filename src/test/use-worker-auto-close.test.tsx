@@ -137,6 +137,37 @@ describe("useWorkerAutoClose", () => {
     expect(stop).toHaveBeenCalledWith("w1");
   });
 
+  it("checks again after another two minutes when a fire was skipped, and stops once", () => {
+    const { stop, rerender } = render({ sessions: [worker()], sending: true });
+    vi.advanceTimersByTime(120_000);
+    expect(stop).not.toHaveBeenCalled();
+    // The prompt was refused: nothing is sending, and no new turn end will come.
+    rerender({ sessions: [worker()], sending: false });
+    vi.advanceTimersByTime(119_999);
+    expect(stop).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(stop).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(600_000);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps checking while the fire keeps being skipped", () => {
+    const { stop, rerender } = render({ sessions: [worker()], turnUnderWay: true });
+    vi.advanceTimersByTime(360_000);
+    expect(stop).not.toHaveBeenCalled();
+    rerender({ sessions: [worker()], turnUnderWay: false });
+    vi.advanceTimersByTime(120_000);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a worker alone whose background task started after the timer was set", () => {
+    const { stop, rerender } = render({ sessions: [worker()] });
+    vi.advanceTimersByTime(60_000);
+    rerender({ sessions: [worker()], liveTasks: true });
+    vi.advanceTimersByTime(600_000);
+    expect(stop).not.toHaveBeenCalled();
+  });
+
   it("clears its timers on unmount", () => {
     const { stop, unmount } = render({ sessions: [worker()] });
     unmount();

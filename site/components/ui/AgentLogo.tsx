@@ -12,6 +12,8 @@ export function AgentLogo({ agent, size, className = "rounded-[3px]" }: AgentLog
     <img
       src={AGENT_LOGOS[agent]}
       alt=""
+      loading="lazy"
+      decoding="async"
       width={size}
       height={size}
       style={{ width: size, height: size }}

@@ -713,14 +713,56 @@ describe("search engines", () => {
     const json = new DOMParser()
       .parseFromString(html, "text/html")
       .querySelector('script[type="application/ld+json"]')?.textContent;
-    expect(JSON.parse(json ?? "null")).toMatchObject({
+    const data = JSON.parse(json ?? "null");
+    expect(data["@context"]).toBe("https://schema.org");
+    const [application, questions] = data["@graph"];
+    expect(application).toMatchObject({
       "@type": "SoftwareApplication",
       name: "Zorvo",
       operatingSystem: "macOS",
       offers: { price: "0" },
       isAccessibleForFree: true,
-      publisher: { sameAs: [LINKS.repository] },
+      publisher: { sameAs: [LINKS.repository, LINKS.x, LINKS.discord] },
     });
+    // The questions on the page, word for word, so a search engine never shows an answer the page does not give.
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const rows = [...document.querySelectorAll("#faq details")];
+    expect(questions["@type"]).toBe("FAQPage");
+    expect(questions.mainEntity.map((entry: { name: string }) => entry.name)).toEqual(rows.map((row) => row.querySelector("h3")?.textContent));
+    for (const [index, entry] of questions.mainEntity.entries()) {
+      expect(rows[index].querySelector("p")?.textContent, entry.name).toContain(entry.acceptedAnswer.text);
+    }
+  });
+
+  it("gives every page a title and a description a search result can show whole", () => {
+    for (const page of DOCS_PAGES) {
+      expect(page.title.length, page.href).toBeGreaterThanOrEqual(30);
+      expect(page.title.length, page.href).toBeLessThanOrEqual(60);
+      expect(page.description.length, page.href).toBeGreaterThanOrEqual(140);
+      expect(page.description.length, page.href).toBeLessThanOrEqual(160);
+    }
+    expect(new Set(DOCS_PAGES.map((page) => page.title)).size).toBe(DOCS_PAGES.length);
+    expect(new Set(DOCS_PAGES.map((page) => page.description)).size).toBe(DOCS_PAGES.length);
+  });
+
+  it("dates the sitemap from git, loads logos lazily and lets static assets be cached", () => {
+    // Where the history is whole every page has a date. CI clones one commit, and there a page whose date
+    // git cannot know has none. No date is ever in the future.
+    const isShallow = spawnSync("git", ["rev-parse", "--is-shallow-repository"], { cwd: ROOT, encoding: "utf8" }).stdout.trim() === "true";
+    for (const entry of sitemap()) {
+      if (!isShallow) expect(entry.lastModified, entry.url).toBeInstanceOf(Date);
+      if (entry.lastModified) expect(new Date(entry.lastModified).getTime(), entry.url).toBeLessThanOrEqual(Date.now());
+    }
+    const document = new DOMParser().parseFromString(renderToStaticMarkup(<Home />), "text/html");
+    // Only the mark in the first screen loads at once: an eager image is one the browser preloads.
+    const eager = [...document.querySelectorAll("img")].filter((image) => image.getAttribute("loading") !== "lazy");
+    expect(eager.map((image) => image.getAttribute("src"))).toEqual(["/near-ai-tile-white.svg"]);
+    const { headers } = JSON.parse(readFileSync(join(ROOT, "site", "vercel.json"), "utf8"));
+    const cacheOf = (source: string) =>
+      headers.find((rule: { source: string }) => rule.source === source)?.headers.find((header: { key: string }) => header.key === "Cache-Control")?.value;
+    // The script keeps one name across deploys, so it is checked on every visit: a kept copy could meet a newer page.
+    expect(cacheOf("/motion.js")).toBeUndefined();
+    expect(cacheOf("/(media|agents)/(.*)")).toBe("public, max-age=86400, stale-while-revalidate=604800");
   });
 });
 

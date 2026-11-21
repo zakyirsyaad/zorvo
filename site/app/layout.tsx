@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import "@fontsource-variable/instrument-sans";
 import "@fontsource-variable/geist-mono";
 import "./globals.css";
-import { OG_IMAGE, SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, siteUrl } from "../lib/site";
+import { OG_IMAGE, SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, X_HANDLE, siteUrl } from "../lib/site";
 
 export const metadata: Metadata = {
   metadataBase: siteUrl(),
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
     locale: "en_US",
     images: [OG_IMAGE],
   },
-  twitter: { card: "summary_large_image", title: SITE_TITLE, description: SITE_DESCRIPTION, images: [OG_IMAGE.url] },
+  twitter: { card: "summary_large_image", site: X_HANDLE, title: SITE_TITLE, description: SITE_DESCRIPTION, images: [OG_IMAGE.url] },
 };
 
 // The headline font, preloaded with a metric-matched fallback, so the h1 keeps its size while it loads.

@@ -17,11 +17,13 @@ import { Sessions } from "../components/sections/Sessions";
 import { SiteFooter } from "../components/sections/SiteFooter";
 import { SiteHeader } from "../components/sections/SiteHeader";
 import { Voices } from "../components/sections/Voices";
+import { faqPage } from "../lib/faq";
 import { softwareApplication } from "../lib/site";
 
 export default function Home() {
-  // Static data from lib/site.ts; `<` is escaped so the JSON can never close the script tag.
-  const structuredData = JSON.stringify(softwareApplication()).replace(/</g, "\\u003c");
+  // Static data from lib/site.ts and lib/faq.ts; `<` is escaped so the JSON can never close the script tag.
+  const { "@context": context, ...application } = softwareApplication();
+  const structuredData = JSON.stringify({ "@context": context, "@graph": [application, faqPage()] }).replace(/</g, "\\u003c");
   return (
     <div className="lp-root flex-1" data-landing="">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: structuredData }} />

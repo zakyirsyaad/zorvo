@@ -2,6 +2,8 @@ import appPackage from "../../package.json";
 import { LINKS } from "./links";
 
 export const SITE_NAME = "Zorvo";
+/** Zorvo's account on X, named on the cards X draws for a shared link. */
+export const X_HANDLE = "@zorvolabs";
 /** The version the Download button fetches: the app's own package version. */
 export const APP_VERSION: string = appPackage.version;
 // The tab and search result name the app by what people search for; the tagline stays the h1.
@@ -51,6 +53,6 @@ export function softwareApplication(url: URL = siteUrl()) {
     isAccessibleForFree: true,
     license: "https://www.apache.org/licenses/LICENSE-2.0",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    publisher: { "@type": "Organization", name: SITE_NAME, url: url.href, sameAs: [LINKS.repository] },
+    publisher: { "@type": "Organization", name: SITE_NAME, url: url.href, sameAs: [LINKS.repository, LINKS.x, LINKS.discord] },
   };
 }

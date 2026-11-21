@@ -113,13 +113,27 @@ describe("useCanvas", () => {
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("canvas_thumbs", { sessionId: "s-thumbs", key }));
     expect(result.current.thumbs.size).toBe(0);
 
-    // An old hash, another canvas, another session: nothing.
+    // A hash this canvas does not show, or no hash at all: nothing.
     act(() => deliver("canvas-thumb", { sessionId: "s-thumbs", key, artboardId: "cart", sha256: old }));
-    act(() => deliver("canvas-thumb", { sessionId: "s-thumbs", key: KEY, artboardId: "cart", sha256: hash }));
-    act(() => deliver("canvas-thumb", { sessionId: "s-other", key, artboardId: "cart", sha256: hash }));
+    act(() => deliver("canvas-thumb", { sessionId: "s-thumbs", key, artboardId: "cart", sha256: "nope" }));
     expect(result.current.thumbs.size).toBe(0);
 
     act(() => deliver("canvas-thumb", { sessionId: "s-thumbs", key, artboardId: "cart", sha256: hash }));
+    expect(result.current.thumbs.get("cart")).toBe(`zorvo-artifact://localhost/thumb/${hash}.png`);
+  });
+
+  it("takes a picture queued by another session's viewer of the same folder", async () => {
+    const hash = "a".repeat(64);
+    const key = "c-3333333333333333";
+    invoke.mockImplementation((cmd) =>
+      Promise.resolve(cmd === "canvas_thumbs" ? [{ id: "cart", sha256: hash, ready: false }] : { ...GOOD, entry: { ...ENTRY, key } }),
+    );
+    const { result } = renderHook(() => useCanvas("s-second", key));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("canvas_thumbs", { sessionId: "s-second", key }));
+
+    // The backend drew the picture once, for the session whose job came first.
+    act(() => deliver("canvas-thumb", { sessionId: "s-first", key: "c-4444444444444444", artboardId: "cart", sha256: hash }));
+
     expect(result.current.thumbs.get("cart")).toBe(`zorvo-artifact://localhost/thumb/${hash}.png`);
   });
 

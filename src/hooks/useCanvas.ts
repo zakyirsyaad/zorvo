@@ -67,12 +67,15 @@ function readyHashes(answer: unknown): string[] {
   });
 }
 
-/** The hash of a `canvas-thumb` event for this canvas, or null. */
-function thumbEventHash(payload: unknown, sessionId: string, key: string): string | null {
+/**
+ * The hash of a `canvas-thumb` event when it is one this canvas shows, or null. Its session and key are
+ * not read: the backend draws a hash once, for the first job that queued it, so another session's viewer
+ * of the same folder hears of it under that job's names.
+ */
+function thumbEventHash(payload: unknown, wanted: ReadonlySet<string>): string | null {
   if (typeof payload !== 'object' || payload === null) return null;
-  const event = payload as Record<string, unknown>;
-  if (event.sessionId !== sessionId || event.key !== key) return null;
-  return typeof event.sha256 === 'string' && SHA256.test(event.sha256) ? event.sha256 : null;
+  const hash = (payload as Record<string, unknown>).sha256;
+  return typeof hash === 'string' && SHA256.test(hash) && wanted.has(hash) ? hash : null;
 }
 
 function parseViewEvent(payload: unknown, sessionId: string, key: string): Partial<ViewMemory> | null {
@@ -138,6 +141,11 @@ export function useCanvas(sessionId: string, key: string | null, turnsEnded = 0)
 
   // The files' hashes, as one string: an equal read asks for nothing again.
   const hashes = shown?.boards.map((board) => board.sha256 ?? '').join(',') ?? null;
+  // The hashes whose pictures this canvas waits for, read by the `canvas-thumb` listener.
+  const wantedHashes = useRef<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    wantedHashes.current = new Set(hashes === null ? [] : hashes.split(',').filter((hash) => hash !== ''));
+  }, [hashes]);
   useEffect(() => {
     if (key === null || hashes === null) return;
     // The backend queues the missing pictures and says through `canvas-thumb` when each is drawn.
@@ -176,7 +184,7 @@ export function useCanvas(sessionId: string, key: string | null, turnsEnded = 0)
       });
     });
     const stopThumb = listen<unknown>(CANVAS_THUMB, (event) => {
-      const hash = thumbEventHash(event.payload, sessionId, key);
+      const hash = thumbEventHash(event.payload, wantedHashes.current);
       if (hash !== null) addReady([hash]);
     });
     return () => {

@@ -87,14 +87,14 @@ git commit -m "docs: inline visuals spike report"
 #[test]
 fn drops_everything_that_could_run_or_navigate() {
     for bad in [
-        "<script>alert(1)</script>", "<p onclick=\"x()\">a</p>", "<a href=\"javascript:x()\">a</a>",
+        "<script>alert(1)</script>", "<p onclick=\"x()\">a</p>", "<a href=\"javascript:x()\">a</a>", "<a href=\"https://e.com\">a</a>",
         "<meta http-equiv=\"refresh\" content=\"0;url=https://e.com\">", "<base href=\"https://e.com\">",
         "<iframe src=\"https://e.com\"></iframe>", "<object data=\"x\"></object>", "<embed src=\"x\">",
         "<form action=\"https://e.com\"><button>go</button></form>", "<link rel=\"stylesheet\" href=\"x\">",
         "<svg><script>alert(1)</script></svg>", "<svg onload=\"x()\"></svg>",
     ] {
         let out = clean(bad).to_lowercase();
-        for gone in ["<script", "onclick", "onload", "javascript:", "http-equiv", "<base", "<iframe", "<object", "<embed", "<form", "<link"] {
+        for gone in ["href=\"http", "<script", "onclick", "onload", "javascript:", "http-equiv", "<base", "<iframe", "<object", "<embed", "<form", "<link"] {
             assert!(!out.contains(gone), "{gone} survived in {out}");
         }
     }
@@ -125,7 +125,7 @@ fn only_a_script_leaves_nothing() {
 ```
 
 - [ ] **Step 2:** Run `cargo test visual_clean::` from `src-tauri/`. Expected: FAIL, module not found.
-- [ ] **Step 3: Implement.** One `ammonia::Builder` built once (`OnceLock`): start from an empty tag set and add HTML layout and text tags (`div span p h1`-`h6 ul ol li table thead tbody tr th td br hr strong em b i code pre small sub sup blockquote figure figcaption img style`) and SVG tags (`svg g defs symbol use path rect circle ellipse line polyline polygon text tspan textPath marker linearGradient radialGradient stop clipPath mask pattern title desc`). Generic attributes: `class id style title role aria-label aria-hidden`. SVG presentation and geometry attributes per tag (include `viewBox`, `marker-end`, `marker-start`, `fill`, `stroke`, `transform`, `d`, `points`, `x y x1 y1 x2 y2 cx cy r rx ry width height`, `text-anchor`, `dominant-baseline`, `font-size`, `font-weight`, `opacity`, `stop-color`, `offset`, `gradientUnits`, `href` on `use` restricted to `#fragment`). `a` is allowed with `href` limited to schemes `http`, `https`, `mailto`. `img` `src` limited to `data:`. `clean_content_tags`: `script`. Keep `<style>` content.
+- [ ] **Step 3: Implement.** One `ammonia::Builder` built once (`OnceLock`): start from an empty tag set and add HTML layout and text tags (`div span p h1`-`h6 ul ol li table thead tbody tr th td br hr strong em b i code pre small sub sup blockquote figure figcaption img style`) and SVG tags (`svg g defs symbol use path rect circle ellipse line polyline polygon text tspan textPath marker linearGradient radialGradient stop clipPath mask pattern title desc`). Generic attributes: `class id style title role aria-label aria-hidden`. SVG presentation and geometry attributes per tag (include `viewBox`, `marker-end`, `marker-start`, `fill`, `stroke`, `transform`, `d`, `points`, `x y x1 y1 x2 y2 cx cy r rx ry width height`, `text-anchor`, `dominant-baseline`, `font-size`, `font-weight`, `opacity`, `stop-color`, `offset`, `gradientUnits`, `href` on `use` restricted to `#fragment`). `a` is allowed with no `href` (a visual has no links; the spike showed Zorvo cannot catch a click in the frame). `img` `src` limited to `data:`. `clean_content_tags`: `script`. Keep `<style>` content.
 - [ ] **Step 4:** Run `cargo test visual_clean::`. Expected: PASS.
 - [ ] **Step 5:** Commit.
 
@@ -380,7 +380,7 @@ test('both contexts say when to show a visual', () => { for (const c of [MCP_PAT
 - Consumes: `visual_read`, `parseVisualRead`, `VISUAL_REFUSALS`
 - Produces:
   - `useVisualDocument(sessionId: string, id: string, isNear: boolean): { status: 'idle' | 'loading' | 'ready' | 'gone' | 'failed'; document?: string; retry(): void }` (reads once when `isNear` first turns true; `gone` when the backend answers `VISUAL_GONE`)
-  - `VisualFrame({ document, title, maxHeight, onHeight })`: the iframe; measures height on `load` and on its own width change; a `click` listener on `contentDocument` that calls `preventDefault()` on every anchor and hands an `OPENABLE_URL` to `open_external_url`
+  - `VisualFrame({ document, title, maxHeight, onHeight })`: the iframe; measures height on `load` and on its own width change; it adds no listener inside the frame (none would fire)
   - `VisualBlock({ sessionId, part, agentName, isPopout, isArriving })`
   - `export const VISUAL_SANDBOX = 'allow-same-origin'`, `export const MAX_VISUAL_HEIGHT = 2000`
 
@@ -397,9 +397,7 @@ test('the sandbox allows same origin and never scripts', () => {
   expect(VISUAL_SANDBOX).not.toContain('allow-scripts');
 });
 test('markup that names a closing frame stays inside srcdoc', () => { /* document containing </iframe> and a double quote: one iframe in the DOM, its srcdoc equals the string */ });
-test('a link opens in the browser and never in the frame', () => { /* dispatch click on an <a href="https://e.com"> in contentDocument: defaultPrevented, invoke('open_external_url', { url }) */ });
-test('a link Zorvo cannot open does nothing', () => { /* href="file:///etc/passwd": defaultPrevented, no invoke */ });
-test('a right-click in the frame shows no WebKit menu', () => { /* contextmenu on contentDocument: defaultPrevented */ });
+test('measures the height again when the frame gets narrower', () => { /* ResizeObserver callback: a new scrollHeight becomes the height */ });
 test('a tall document is capped and scrolls inside', () => { /* scrollHeight 5000 → style height 2000px */ });
 // VisualBlock.test.tsx
 test('reads the visual only once it is near the screen', () => {});
@@ -491,5 +489,5 @@ test('unmounts the frame when it leaves and keeps its height', () => {});
 
 - [ ] From `src-tauri/`: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`.
 - [ ] `pnpm lint`.
-- [ ] In a release build, with the fake agent or Qwen Code: ask for a diagram and a mockup in one answer. Check, and write down what happened for each: both show in order between the text; the theme switch recolours them; a link in one opens the browser; Tab reaches Expand, the fold and the menu with a visible focus ring; each export action; fold; Expand and Escape; a rewind removes the visual and its file after a minute.
+- [ ] In a release build, with the fake agent or Qwen Code: ask for a diagram and a mockup in one answer. Check, and write down what happened for each: both show in order between the text; the theme switch recolours them; an `<a>` in one is plain text and a right-click in the frame offers nothing that navigates; Tab reaches Expand, the fold and the menu with a visible focus ring; each export action; fold; Expand and Escape; a rewind removes the visual and its file after a minute.
 - [ ] Review the diff (`/code-review --fix`), then push with SSH keepalive.

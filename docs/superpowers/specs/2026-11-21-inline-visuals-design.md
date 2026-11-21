@@ -113,7 +113,9 @@ Before a visual is stored, the backend passes it through an allowlist
 sanitizer. Tags and attributes it does not know are dropped. Among what never
 passes: `<script>`, every `on*` attribute, `javascript:` URLs,
 `<meta http-equiv>`, `<base>`, `<iframe>`, `<object>`, `<embed>`, `<form>`,
-`<link>`. `<style>` and the `style` attribute pass.
+`<link>`, and `href` on `<a>` (a visual has no links; `href` stays only on
+an SVG `<use>` that points at a `#fragment`). `<style>` and the `style`
+attribute pass.
 
 The library is chosen in the plan (the candidate is `ammonia`, configured for
 SVG). The stored file is the cleaned markup, so the screen, the export and a
@@ -199,12 +201,14 @@ Escape closes it and focus returns to the Expand button.
 
 ### Links
 
-A link in a visual never loads anything in the iframe. Zorvo catches the
-click from outside and hands the address to `open_external_url`, only for
-`http`, `https` and `mailto` (`OPENABLE_URL`). A right-click inside a visual
-shows no menu: WebKit's own is suppressed, since its "Open Link" would load
-the page in the frame, and Zorvo's link menu is not wired into the frame in
-this version.
+A visual has no links. The sanitizer drops `href`, so an `<a>` shows as plain
+text; a link belongs in the reply's text, where Zorvo's link handling works.
+The spike showed why: WebKit runs no event listener in a document whose
+sandbox forbids scripts, so Zorvo cannot catch a click inside the frame. It
+also means a visual cannot dress a link as a button.
+
+For the same reason Zorvo cannot suppress a right-click in the frame. The menu
+there is WebKit's own; with no links it offers no "Open Link".
 
 ### Popout
 
@@ -249,8 +253,7 @@ the repository. The boundaries, outermost first:
 3. **Cleaning at intake** (section 2), so the stored file holds nothing that
    could run even if it were opened elsewhere.
 4. **The frame and header**, drawn by Zorvo, against a visual that draws a
-   fake Zorvo button. Nothing inside a visual can be pressed except a link,
-   and a link only opens the browser.
+   fake Zorvo button. Nothing inside a visual can be pressed.
 5. **Ids only** from the webview.
 
 Not protected: an agent can draw something misleading inside the frame. The
@@ -270,8 +273,8 @@ Done on 2026-11-21. The full report is
 | Does heavy CSS (223 KB, 2,000 blurred, animated elements) block the main thread? | No (a 16 ms timer was at most 54 ms late) |
 | Can `render.rs` draw HTML to a PNG, and can Rust write a PNG to a pasteboard? | Yes to both |
 
-Approach A stands and the size limit stays. The "Links" part of section 3
-cannot be built as written; the decision is open (see the report's options).
+Approach A stands and the size limit stays. The user chose option 1 of the
+report: a visual has no links (section 3, "Links").
 
 ## 7. Testing
 

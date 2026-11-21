@@ -273,30 +273,53 @@ impl Drop for WorkerGuard<'_> {
 /// outside the lock, before drawing and again after it: a picture is saved only for the file
 /// it shows, and only while its canvas is remembered.
 fn draw_thumbs(app: &AppHandle, served: &Arc<Served>, queue: &Thumbs) {
-    let _guard = WorkerGuard(queue);
-    let lock = || queue.lock().unwrap_or_else(PoisonError::into_inner);
     let current_hash = |job: &ThumbJob| board_key(&job.root, &job.file, job.width, job.height);
     let is_known = |job: &ThumbJob| served.store.canvas(&job.session_id, &job.key).is_some();
-    while let Some(job) = lock().pop() {
-        // Changed or forgotten since it was queued: dropped before it is drawn.
-        let is_current = current_hash(&job).as_deref() == Some(job.sha256.as_str());
-        let ended = if is_current && is_known(&job) {
-            draw_thumb(app, served, &job, &current_hash, &is_known)
-        } else {
-            Ended::Stale
+    drain_thumbs(
+        queue,
+        |job| {
+            // Changed or forgotten since it was queued: dropped before it is drawn.
+            let is_current = current_hash(job).as_deref() == Some(job.sha256.as_str());
+            if is_current && is_known(job) {
+                draw_thumb(app, served, job, &current_hash, &is_known)
+            } else {
+                Ended::Stale
+            }
+        },
+        |job, ended| {
+            if ended == Ended::Drawn {
+                let _ = app.emit(
+                    CANVAS_THUMB,
+                    serde_json::json!({
+                        "sessionId": job.session_id,
+                        "key": job.key,
+                        "artboardId": job.artboard_id,
+                        "sha256": job.sha256,
+                    }),
+                );
+            }
+        },
+    );
+}
+
+/// Pops each job, draws it with the queue unlocked, records how it ended and then reports it.
+/// The pop is a statement of its own: in `while let` the guard would live through the body,
+/// and `finish` would wait on the lock it holds.
+fn drain_thumbs(
+    queue: &Thumbs,
+    mut draw: impl FnMut(&ThumbJob) -> Ended,
+    mut done: impl FnMut(&ThumbJob, Ended),
+) {
+    let _guard = WorkerGuard(queue);
+    let lock = || queue.lock().unwrap_or_else(PoisonError::into_inner);
+    loop {
+        let next = lock().pop();
+        let Some(job) = next else {
+            break;
         };
+        let ended = draw(&job);
         lock().finish(&job.sha256, ended);
-        if ended == Ended::Drawn {
-            let _ = app.emit(
-                CANVAS_THUMB,
-                serde_json::json!({
-                    "sessionId": job.session_id,
-                    "key": job.key,
-                    "artboardId": job.artboard_id,
-                    "sha256": job.sha256,
-                }),
-            );
-        }
+        done(&job, ended);
     }
 }
 
@@ -975,6 +998,53 @@ mod tests {
 
     fn text(path: &std::path::Path) -> &str {
         path.to_str().expect("utf-8 path")
+    }
+
+    #[test]
+    fn drain_thumbs_draws_and_finishes_every_queued_job() {
+        let queue: Thumbs = Arc::new(Mutex::new(ThumbQueue::default()));
+        for (id, hash) in [("cart", "a"), ("pay", "b")] {
+            let job = ThumbJob {
+                session_id: SESSION.into(),
+                key: format!("c-{}", "0".repeat(16)),
+                artboard_id: id.into(),
+                sha256: hash.repeat(64),
+                root: std::path::PathBuf::from("/nowhere"),
+                file: format!("{id}.html"),
+                width: 400,
+                height: 300,
+            };
+            queue.lock().unwrap().push(job, false);
+        }
+        let worker_queue = Arc::clone(&queue);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut drawn = Vec::new();
+            let mut finished = Vec::new();
+            drain_thumbs(
+                &worker_queue,
+                |job| {
+                    drawn.push(job.artboard_id.clone());
+                    Ended::Drawn
+                },
+                |job, ended| finished.push((job.artboard_id.clone(), ended)),
+            );
+            let _ = sender.send((drawn, finished));
+        });
+
+        let (drawn, finished) = receiver
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the worker drained the queue without deadlocking");
+
+        assert_eq!(drawn, ["cart", "pay"]);
+        assert_eq!(
+            finished,
+            [
+                ("cart".to_string(), Ended::Drawn),
+                ("pay".to_string(), Ended::Drawn)
+            ]
+        );
+        assert_eq!(queue.lock().unwrap().pop(), None);
     }
 
     #[test]

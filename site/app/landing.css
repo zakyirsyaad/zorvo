@@ -134,6 +134,19 @@
   @media (prefers-reduced-motion: reduce) {
     .lp-faq summary .lp-ico, .lp-faq details::details-content { transition: none; }
   }
+  /* A place to follow Zorvo: a row that answers the pointer. Its fill comes in, its mark turns to the page's
+     light colour, and an arrow slides in to say the link leaves the site. */
+  .lp-place { display: flex; align-items: flex-start; gap: 14px; min-height: 44px; margin: 0 -12px; padding: 10px 12px; border-radius: 12px; transition: background-color 160ms ease; }
+  .lp-place:hover, .lp-place:focus-visible { background: var(--color-surface-2); }
+  .lp-place-tile { display: inline-flex; width: 28px; height: 28px; flex: none; align-items: center; justify-content: center; border-radius: 7px; background: var(--color-surface-hover); color: var(--color-fg); transition: background-color 160ms ease, color 160ms ease, scale 220ms cubic-bezier(0.16, 1, 0.3, 1); }
+  .lp-place:hover .lp-place-tile, .lp-place:focus-visible .lp-place-tile { background: var(--color-fg); color: var(--color-on-primary); scale: 1.08; }
+  .lp-place-go { align-self: center; color: var(--color-fg-muted); opacity: 0; translate: -6px 6px; transition: opacity 160ms ease, translate 220ms cubic-bezier(0.16, 1, 0.3, 1); }
+  .lp-place:hover .lp-place-go, .lp-place:focus-visible .lp-place-go { opacity: 1; translate: 0 0; }
+  @media (prefers-reduced-motion: reduce) {
+    .lp-place, .lp-place-tile, .lp-place-go { transition: none; }
+    .lp-place:hover .lp-place-tile, .lp-place:focus-visible .lp-place-tile { scale: 1; }
+    .lp-place-go { translate: 0 0; }
+  }
   /* A link inside a post: quieter than the post's words, as on X. */
   .lp-root a.lp-tweet-link { color: var(--color-fg-muted); }
   .lp-root a.lp-tweet-link:hover { color: var(--color-fg); }

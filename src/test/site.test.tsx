@@ -322,6 +322,10 @@ describe("landing page", () => {
     ]);
     const places = [...document.querySelectorAll("#community ul a")].map((link) => link.getAttribute("href"));
     expect(places).toEqual([LINKS.discord, LINKS.x, LINKS.repository]);
+    // Each row answers the pointer and the keyboard alike.
+    const styles = readFileSync(join(ROOT, "site", "app", "landing.css"), "utf8");
+    expect(document.querySelectorAll("#community ul a.lp-place .lp-place-go")).toHaveLength(3);
+    expect(styles).toContain(".lp-place:hover .lp-place-go, .lp-place:focus-visible .lp-place-go { opacity: 1; translate: 0 0; }");
   });
 
   it("uncovers the footer instead of scrolling it in", () => {

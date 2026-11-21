@@ -19,20 +19,25 @@ export function Community() {
           <p className="lp-lead" data-r="">
             Zorvo is open source, and its work is public. Follow it, or take part.
           </p>
-          <ul className="lp-pts" data-r="">
+          <ul className="lp-pts gap-2" data-r="">
             {PLACES.map(({ brand, href, name, text }) => (
               <li key={brand}>
-                <a className="focus-ring flex items-start gap-3.5 min-h-11" href={href} target="_blank" rel="noopener noreferrer">
-                  <span className="inline-flex size-7 flex-none items-center justify-center rounded-[7px] bg-surface-hover text-fg" aria-hidden="true">
+                <a className="focus-ring lp-place" href={href} target="_blank" rel="noopener noreferrer">
+                  <span className="lp-place-tile" aria-hidden="true">
                     <BrandIcon brand={brand} size={16} />
                   </span>
-                  <span className="flex flex-col">
+                  <span className="flex flex-1 flex-col">
                     <span className="text-[16px] leading-6 font-semibold text-fg">
                       {name}
                       <span className="sr-only">, opens in a new tab</span>
                     </span>
                     <span className="text-[15px] leading-6 text-fg-muted">{text}</span>
                   </span>
+                  {/* Shows under the pointer: the link leaves for another site. */}
+                  <svg className="lp-ico lp-place-go" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M7 17L17 7" />
+                    <path d="M9 7h8v8" />
+                  </svg>
                 </a>
               </li>
             ))}

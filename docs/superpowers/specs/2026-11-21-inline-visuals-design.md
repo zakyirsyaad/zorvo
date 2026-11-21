@@ -201,8 +201,10 @@ Escape closes it and focus returns to the Expand button.
 
 A link in a visual never loads anything in the iframe. Zorvo catches the
 click from outside and hands the address to `open_external_url`, only for
-`http`, `https` and `mailto` (`OPENABLE_URL`). A right-click on a link gets
-Zorvo's own link menu.
+`http`, `https` and `mailto` (`OPENABLE_URL`). A right-click inside a visual
+shows no menu: WebKit's own is suppressed, since its "Open Link" would load
+the page in the frame, and Zorvo's link menu is not wired into the frame in
+this version.
 
 ### Popout
 

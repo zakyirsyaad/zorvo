@@ -9,7 +9,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
-use super::canvas::{board_key, read_canvas, resolve_canvas, Canvas};
+use super::canvas::{board_key, board_key_in, folder_digest, read_canvas, resolve_canvas, Canvas};
 use super::canvas_export::{
     export_boards, pdf_file_name, png_width, split_drawn, without_missing, write_new_file,
     ExportBoard, ExportFormat, ExportOutcome, COULD_NOT_EXPORT, COULD_NOT_SAVE,
@@ -77,13 +77,14 @@ pub struct CanvasRead {
 const FOLDER_NOT_FOUND: &str = "Folder not found";
 
 fn board_states(root: &Path, canvas: &Canvas) -> Vec<BoardState> {
+    let folder = folder_digest(root);
     canvas
         .sections
         .iter()
         .flat_map(|section| &section.artboards)
         .map(|board| BoardState {
             id: board.id.clone(),
-            sha256: board_key(root, &board.file, board.width, board.height),
+            sha256: board_key_in(root, &folder, &board.file, board.width, board.height),
         })
         .collect()
 }

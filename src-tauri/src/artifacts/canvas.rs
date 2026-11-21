@@ -122,7 +122,7 @@ fn is_shared_file(relative: &str) -> bool {
 /// are followed only to files inside the folder, never into folders. Each folder is read in name
 /// order and every entry counts toward the limit, so a folder too big to walk whole always stops
 /// at the same entries and its digest stays the same while nothing changes.
-fn folder_digest(root: &Path) -> String {
+pub fn folder_digest(root: &Path) -> String {
     folder_digest_within(root, MAX_DIGEST_ENTRIES)
 }
 
@@ -184,9 +184,20 @@ fn folder_digest_within(root: &Path, max_entries: usize) -> String {
 /// in it because one page in two folders loads its relative files from each. `None` when the
 /// page cannot be served.
 pub fn board_key(root: &Path, file: &str, width: u32, height: u32) -> Option<String> {
+    board_key_in(root, &folder_digest(root), file, width, height)
+}
+
+/// `board_key` with the folder digest already worked out, so reading a canvas walks its folder
+/// once for all of its artboards, not once for each.
+pub fn board_key_in(
+    root: &Path,
+    folder: &str,
+    file: &str,
+    width: u32,
+    height: u32,
+) -> Option<String> {
     let (path, _) = canvas_file(root, file)?;
     let page = file_sha256(&path)?;
-    let folder = folder_digest(root);
     Some(hex(Sha256::digest(format!(
         "{file}\0{page}\0{folder}\0{width}x{height}"
     ))))
@@ -737,6 +748,23 @@ mod folder_tests {
         fs::write(root.0.join("mobile/cart.html"), b"<p>cart, changed</p>").unwrap();
         let moved = board_key(&root.0, "mobile/cart.html", 1440, 900).unwrap();
         assert_ne!(moved, key(1440, 900), "its path");
+    }
+
+    #[test]
+    fn a_key_from_a_digest_worked_out_once_equals_the_key_on_its_own() {
+        let root = Temp::new("canvas-key-once");
+        fs::write(root.0.join("a.html"), b"<p>a</p>").unwrap();
+        fs::write(root.0.join("b.html"), b"<p>b</p>").unwrap();
+        fs::write(root.0.join("shared.css"), b"p{}").unwrap();
+        let folder = folder_digest(&root.0);
+
+        for file in ["a.html", "b.html"] {
+            assert_eq!(
+                board_key_in(&root.0, &folder, file, 1440, 900),
+                board_key(&root.0, file, 1440, 900)
+            );
+        }
+        assert!(board_key_in(&root.0, &folder, "missing.html", 1440, 900).is_none());
     }
 
     #[test]

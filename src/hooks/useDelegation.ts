@@ -55,6 +55,8 @@ export interface DelegationDeps {
   ) => Promise<boolean>;
   /** A session's messages, loaded or saved; null when they cannot be read. */
   messagesOf: (sessionId: string) => Promise<ChatMessage[] | null>;
+  /** Reopens a worker whose agent was closed and gives it the task; resolves to whether the agent took it. */
+  resume: (sessionId: string, message: FirstMessage) => Promise<boolean>;
   /** `options.choices` are the dialog's picks; `changesToApply` applies them before the first prompt. */
   startSession: (spec: SessionSpec, first?: FirstMessage, options?: StartSessionOptions) => void;
   selectSession: (sessionId: string) => void;
@@ -174,6 +176,10 @@ export function useDelegation(deps: DelegationDeps): {
   const lastHandle = useRef(new Map<string, string>());
 
   const agentNameOf = (profileId: string) => agentNameIn(agents, profileId);
+
+  /** A terminated worker whose agent died in its turn; one closed after a finished turn can be reopened. */
+  const isGone = (session: Session): boolean =>
+    session.status === 'terminated' && session.delegatedFrom?.lastTurn?.how === 'exited';
 
   /**
    * A worker whose turn just settled but whose link has not been rendered yet: the same tick
@@ -554,12 +560,20 @@ export function useDelegation(deps: DelegationDeps): {
     // and the send takes a place, so it counts against the limit until the delegate is at work.
     sendingTo.current.set(delegate.id, current.places.take(source.id));
     const sentAt = Date.now();
+    const marks = { delegationTask: { agentName: agentNameIn(current.agents, source.profileId), agentId: source.profileId } };
     let isTaken: boolean;
     try {
-      isTaken = await current.send(delegate.id, task, options.attachments ?? [], {
-        delegationTask: { agentName: agentNameIn(current.agents, source.profileId), agentId: source.profileId },
-      });
-    } catch {
+      // A worker whose agent was closed is reopened by the task, with the message marked the same way.
+      isTaken =
+        delegate.status === 'terminated'
+          ? await current.resume(delegate.id, { text: task, attachments: options.attachments ?? [], marks })
+          : await current.send(delegate.id, task, options.attachments ?? [], marks);
+    } catch (error) {
+      stopSending(delegate.id);
+      // A failed reopen is Zorvo's, not the agent's: the user's notice gets the error, the agent a plain sentence.
+      if (delegate.status === 'terminated') {
+        return { ok: false, reason: 'Zorvo could not do that.', isInternal: true, detail: String(error) };
+      }
       isTaken = false;
     }
     if (!isTaken) {
@@ -587,15 +601,15 @@ export function useDelegation(deps: DelegationDeps): {
     if (current.isBusy(worker.id) || current.isWaiting(worker.id) || sendingTo.current.has(worker.id)) {
       return { ok: false, reason: stillWorking };
     }
+    // Its agent died mid-turn: there is no session to continue, whatever is still owed.
+    if (isGone(worker)) {
+      end(worker.id);
+      return { ok: false, reason: `${handle} can't take more work. Start a new worker.` };
+    }
     if (isHandingOver(worker.id)) {
       // A task sent now would become the worker's last message, and the answer that
       // still waits to be reported would be lost.
       return { ok: false, reason: `${handle}'s last result has not reached this session yet. Give it the next task after its report arrives.` };
-    }
-    // Its agent is gone (the app restarted, the session ended): a task sent there reaches nobody.
-    if (worker.status === 'terminated') {
-      end(worker.id);
-      return { ok: false, reason: `${handle} can't take more work. Start a new worker.` };
     }
     return sendFurtherTask(source, worker, task, options, stillWorking);
   };
@@ -626,13 +640,14 @@ export function useDelegation(deps: DelegationDeps): {
 
     if (route.kind === 'follow-up') {
       const { delegate } = route;
-      if (delegate.status !== 'terminated') {
+      if (!isGone(delegate)) {
         if (isHandingOver(delegate.id)) {
           return { ok: false, reason: handoverPendingReason(agent.name) };
         }
+        // A worker whose agent was closed after its turn is reopened by the task.
         return sendFurtherTask(source, delegate, task, options, `${agent.name} is still working on the previous task.`);
       }
-      // The old link ends and the task starts a new worker.
+      // Its agent died mid-turn: the old link ends and the task starts a new worker.
       end(delegate.id);
     }
 

@@ -157,6 +157,7 @@ import { useCompareDraft } from "./hooks/useCompareDraft";
 import { useCompareRun, useCompareRunRows } from "./hooks/useCompareRun";
 import { useCompareModelProbe } from "./hooks/useCompareModelProbe";
 import { useDelegation } from "./hooks/useDelegation";
+import { useWorkerAutoClose } from "./hooks/useWorkerAutoClose";
 import { useNow } from "./hooks/useNow";
 import { DelegateDialog, type DelegateAgentChoice } from "./components/delegation/DelegateDialog";
 import { useDelegateDialog } from "./hooks/useDelegateDialog";
@@ -1182,6 +1183,14 @@ export default function App() {
     return agent !== undefined && isAgentReady(agent) && signInStatus.stateOf(agent.id) !== "needed";
   };
 
+  /** Reopens a worker whose agent was closed after its turn; the session and its history stayed. */
+  const resumeWorker = async (sessionId: string, message: FirstMessage): Promise<boolean> => {
+    const session = sessions.find((candidate) => candidate.id === sessionId);
+    if (session === undefined || !session.acpSessionId) return false;
+    patchSession(sessionId, { status: "running", endedAt: null, exitCode: null });
+    return acp.resume(session, session.acpSessionId, message);
+  };
+
   const delegation = useDelegation({
     sessions,
     agents,
@@ -1191,6 +1200,7 @@ export default function App() {
     isWaiting: isSessionWaiting,
     places: startPlaces,
     send: acp.send,
+    resume: resumeWorker,
     startSession,
     selectSession: handleSelectSession,
     updateLink,
@@ -1203,6 +1213,19 @@ export default function App() {
     },
     giveBack: giveBackMessage,
     onNotice: setNotice,
+  });
+  // Main window only: a popout must not stop agents.
+  useWorkerAutoClose({
+    sessions,
+    isBusy: isSessionBusy,
+    isWaiting: isSessionWaiting,
+    canReopen: (sessionId) => acp.info[sessionId]?.canReopen === true,
+    // `stop` leaves the row to its caller; the session stays and reads ended until a task reopens it.
+    stop: async (sessionId) => {
+      const isStopped = await acp.stop(sessionId);
+      if (isStopped) patchSession(sessionId, { status: "terminated", endedAt: Date.now() });
+      return isStopped;
+    },
   });
   // The engine was built before this hook: its turn ends reach it through the ref.
   delegationTurnEndedRef.current = delegation.onTurnEnded;

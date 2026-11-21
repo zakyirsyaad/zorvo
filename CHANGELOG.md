@@ -9,6 +9,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - A worker can record whether its task succeeded or failed.
 - Workers report back in one message, including one that stopped, failed or whose agent exited, and after Zorvo restarts.
 - An agent can start several workers, of one agent or several, in your folder or each in a worktree of its own, and give an idle worker a further task.
+- A worker's agent ends two minutes after its turn. The session stays, and a new task reopens it.
 - **A browser beside the chat.** Open links or addresses in the Browser inspector tab, with session-isolated WebKit pages, navigation, console, snapshots and agent interactions. Browser tools ask for a session grant; sending files asks separately. Chromium debug opens an isolated installed Chrome or Brave window for full network, file, trace, CPU, heap and optional Lighthouse tools.
 
 ### Changed

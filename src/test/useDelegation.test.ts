@@ -89,6 +89,11 @@ interface SendCall {
   marks?: Pick<ChatMessage, "delegationReport" | "delegationTask" | "workerReport">;
 }
 
+interface ResumeCall {
+  sessionId: string;
+  message: FirstMessage;
+}
+
 interface StartCall {
   spec: SessionSpec;
   first?: FirstMessage;
@@ -103,6 +108,8 @@ interface HarnessInput {
   waiting?: readonly string[];
   cannotPrompt?: readonly string[];
   sendResult?: boolean;
+  /** What the reopen answers: true, false, or a throw. */
+  resumeResult?: boolean | "throws";
   strict?: boolean;
   messagesOf?: (sessionId: string) => Promise<ChatMessage[] | null>;
   giveBackThrows?: boolean;
@@ -114,6 +121,7 @@ function setup(input: HarnessInput) {
   const sends: SendCall[] = [];
   const givesBack: Array<{ sessionId: string; text: string }> = [];
   const starts: StartCall[] = [];
+  const resumes: ResumeCall[] = [];
   const selections: string[] = [];
   const patches: Array<{ sessionId: string; patch: Partial<Session> }> = [];
   const notices: string[] = [];
@@ -145,6 +153,11 @@ function setup(input: HarnessInput) {
         send: async (sessionId, text, attachments = [], marks) => {
           sends.push({ sessionId, text, attachments, marks });
           return sendResult;
+        },
+        resume: async (sessionId, message) => {
+          resumes.push({ sessionId, message });
+          if (input.resumeResult === "throws") throw new Error("/secret/resume");
+          return input.resumeResult ?? true;
         },
         startSession: (spec, first, options) => {
           starts.push({ spec, first, options });
@@ -185,6 +198,7 @@ function setup(input: HarnessInput) {
   return {
     ...hook,
     sends,
+    resumes,
     givesBack,
     starts,
     selections,
@@ -596,7 +610,7 @@ describe("useDelegation giveTask under pressure", () => {
 
   it("ends the link of a delegate whose session has ended and starts a new one", async () => {
     const env = setup({
-      sessions: [sourceSession(), delegateSession({ status: "terminated" })],
+      sessions: [sourceSession(), delegateSession({ status: "terminated", delegatedFrom: link({ lastTurn: { endedAt: 300, how: "exited" } }) })],
       transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
     });
 
@@ -606,7 +620,7 @@ describe("useDelegation giveTask under pressure", () => {
     });
 
     expect(result).toMatchObject({ ok: true, kind: "started" });
-    expect(env.sends).toHaveLength(0);
+    expect(env.sends.filter((sent) => sent.sessionId === "s-b")).toHaveLength(0);
     expect(env.patches[0]).toEqual({
       sessionId: "s-b",
       patch: { delegatedFrom: expect.objectContaining({ endedAt: expect.any(Number) }) },
@@ -1023,9 +1037,75 @@ describe("useDelegation workers", () => {
     });
   });
 
+  const closedWorker = (overrides: Partial<Session> = {}) =>
+    worker("worker-1", "s-b", {
+      status: "terminated",
+      delegatedFrom: link({ handle: "worker-1", lastTurn: { endedAt: 300, how: "finished" }, reportedAt: 400 }),
+      ...overrides,
+    });
+
+  it("a task for a worker whose agent was closed reopens it", async () => {
+    const env = setup({ sessions: [sourceSession(), closedWorker()], transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() } });
+    const r = await act(async () => env.result.current.delegation.sendToWorker("s-a", "s-b", "Also fix the tests"));
+    expect(env.resumes).toEqual([
+      {
+        sessionId: "s-b",
+        message: {
+          text: "Also fix the tests",
+          attachments: [],
+          marks: { delegationTask: { agentName: "Claude Code", agentId: "claude-acp" } },
+        },
+      },
+    ]);
+    expect(env.sends).toHaveLength(0);
+    expect(r).toMatchObject({ ok: true, kind: "sent", sessionId: "s-b" });
+    expect(env.result.current.sessions.find((s) => s.id === "s-b")?.delegatedFrom?.task).toBe("Also fix the tests");
+  });
+
+  it("after a restart a worker that finished and reported takes a further task through the reopen", async () => {
+    const env = setup({ sessions: [sourceSession(), closedWorker()], transcripts: { "s-a": A_MESSAGES } });
+    const r = await act(async () => env.result.current.delegation.giveTask("s-a", "codex-acp", "Next", { byAgent: true }));
+    expect(r).toMatchObject({ ok: true, kind: "sent", sessionId: "s-b" });
+    expect(env.resumes).toHaveLength(1);
+    expect(env.starts).toHaveLength(0);
+  });
+
+  it("a worker that is gone gets no task, even before its report arrived", async () => {
+    const env = setup({
+      sessions: [sourceSession(), closedWorker({ delegatedFrom: link({ handle: "worker-1", lastTurn: { endedAt: 300, how: "exited" } }) })],
+      transcripts: { "s-a": A_MESSAGES },
+    });
+    expect(await act(async () => env.result.current.delegation.sendToWorker("s-a", "s-b", "x"))).toEqual({
+      ok: false,
+      reason: "worker-1 can't take more work. Start a new worker.",
+    });
+    expect(env.resumes).toHaveLength(0);
+  });
+
+  it("a closed worker whose report is still owed is refused", async () => {
+    const env = setup({
+      sessions: [sourceSession(), closedWorker({ delegatedFrom: link({ handle: "worker-1", lastTurn: { endedAt: 300, how: "finished" } }) })],
+      transcripts: { "s-a": A_MESSAGES },
+    });
+    const r = await act(async () => env.result.current.delegation.sendToWorker("s-a", "s-b", "x"));
+    expect(r).toMatchObject({ ok: false, reason: expect.stringContaining("has not reached this session yet") });
+    expect(env.resumes).toHaveLength(0);
+  });
+
+  it.each([
+    [false, { ok: false, reason: "Codex did not take the task." }],
+    ["throws", { ok: false, reason: "Zorvo could not do that.", isInternal: true, detail: "Error: /secret/resume" }],
+  ] as const)("a reopen the agent refuses (%s) is not counted as sent", async (resumeResult, expected) => {
+    const env = setup({ sessions: [sourceSession(), closedWorker()], transcripts: { "s-a": A_MESSAGES }, resumeResult });
+    const r = await act(async () => env.result.current.delegation.sendToWorker("s-a", "s-b", "Again"));
+    expect(r).toEqual(expected);
+    expect(env.result.current.sessions.find((s) => s.id === "s-b")?.delegatedFrom?.task).toBe("Fix the parser");
+    expect(env.places.underWay("s-a")).toBe(0);
+  });
+
   it("a terminated worker ends its link and is told to start a new one", async () => {
     const { result, patches } = setup({
-      sessions: [sourceSession(), worker("worker-1", "s-b", { status: "terminated" })],
+      sessions: [sourceSession(), worker("worker-1", "s-b", { status: "terminated", delegatedFrom: link({ handle: "worker-1", lastTurn: { endedAt: 300, how: "exited" } }) })],
       transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
     });
     expect(await act(async () => result.current.delegation.sendToWorker("s-a", "s-b", "x"))).toEqual({

@@ -39,6 +39,8 @@ export interface FirstMessage {
   attachments?: readonly string[];
   /** Sent to the agent ahead of the text but not shown: what a rewound session's fresh agent is handed. */
   context?: string;
+  /** Marks the user message that is added, as a task sent to a running worker is marked. */
+  marks?: Pick<ChatMessage, 'delegationTask'>;
 }
 
 export type AttentionReason = 'needs-answer' | 'finished' | 'failed';
@@ -510,7 +512,7 @@ export function useAcpEngine({
     // Taken before the open starts: a later launch or stop supersedes this one.
     const gen = bumpLaunchGen(session.id);
     const isPrivate = privateModelIdOf(session) !== undefined;
-    const message = options.first ? userMessage(options.first.text, options.first.attachments) : null;
+    const message = options.first ? { ...userMessage(options.first.text, options.first.attachments), ...options.first.marks } : null;
     if (message) updateNow(session.id, (prev) => [...prev, message]);
     // Busy until the first prompt is out: a message sent meanwhile would race it.
     markStarting(session.id, true);

@@ -11,8 +11,8 @@ use tauri_plugin_dialog::DialogExt;
 
 use super::canvas::{board_key, read_canvas, resolve_canvas, Canvas};
 use super::canvas_export::{
-    export_boards, pdf_file_name, png_width, split_drawn, write_new_file, ExportBoard,
-    ExportFormat, ExportOutcome, COULD_NOT_EXPORT, COULD_NOT_SAVE,
+    export_boards, pdf_file_name, png_width, split_drawn, without_missing, write_new_file,
+    ExportBoard, ExportFormat, ExportOutcome, COULD_NOT_EXPORT, COULD_NOT_SAVE,
 };
 use super::picks::{checked_marks, PageMark};
 use super::protocol::{canvas_file_url, page_url, Served};
@@ -773,11 +773,26 @@ pub fn canvas_export(
     )?;
     let canvas = read.canvas.ok_or_else(|| COULD_NOT_EXPORT.to_string())?;
     let boards = export_boards(&canvas, artboard_ids.as_deref())?;
+    // An artboard whose file is gone would be drawn as a blank page and counted as written.
+    let missing: Vec<String> = read
+        .boards
+        .iter()
+        .filter(|board| board.sha256.is_none())
+        .map(|board| board.id.clone())
+        .collect();
+    let (boards, absent) = without_missing(boards, &missing);
+    if boards.is_empty() {
+        return Ok(Some(ExportOutcome {
+            written: 0,
+            failed: absent,
+        }));
+    }
     let Some(place) = choose_export_place(&app, format, &boards, &canvas.title)? else {
         return Ok(None);
     };
     let drawn = draw_for_export(&app, &served, &session_id, &key, format, boards);
-    let (ready, failed) = split_drawn(drawn);
+    let (ready, mut failed) = split_drawn(drawn);
+    failed.extend(absent);
     let written = write_export(place, format, ready)?;
     Ok(Some(ExportOutcome {
         written: super::canvas_export::count(written),

@@ -84,6 +84,21 @@ pub fn export_boards(canvas: &Canvas, ids: Option<&[String]>) -> Result<Vec<Expo
     Ok(boards)
 }
 
+/// Leaves out the artboards whose file is missing (`missing`, the ids the canvas read reports without
+/// a file hash) and names them, so they are never drawn as a blank page.
+pub fn without_missing(
+    boards: Vec<ExportBoard>,
+    missing: &[String],
+) -> (Vec<ExportBoard>, Vec<String>) {
+    let (absent, present): (Vec<ExportBoard>, Vec<ExportBoard>) = boards
+        .into_iter()
+        .partition(|board| missing.contains(&board.artboard.id));
+    (
+        present,
+        absent.into_iter().map(|board| board.artboard.id).collect(),
+    )
+}
+
 /// Writes `bytes` as `<stem>.<extension>` in `folder`, or `<stem> 2.<extension>` and so on when
 /// that name is taken: an existing file, folder or link is never replaced or written through.
 pub fn write_new_file(
@@ -169,6 +184,18 @@ mod tests {
         assert_eq!(boards[0].stem, "pay-pay-b");
         assert_eq!(pdf_file_name("Checkout / v2"), "Checkout v2.pdf");
         assert_eq!(pdf_file_name("…"), "Canvas.pdf");
+    }
+
+    #[test]
+    fn an_artboard_with_a_missing_file_is_not_drawn_and_is_named() {
+        let canvas = parse_canvas(EXPORT_CANVAS.as_bytes()).unwrap();
+        let boards = export_boards(&canvas, None).unwrap();
+
+        let (present, absent) =
+            without_missing(boards, &["pay-a".to_string(), "other".to_string()]);
+
+        assert_eq!(ids(&present), ["cart", "pay-b"]);
+        assert_eq!(absent, ["pay-a"]);
     }
 
     #[test]

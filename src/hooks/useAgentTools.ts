@@ -42,6 +42,8 @@ import { CANVAS_GUIDE, CANVAS_REFUSALS, canvasResultText, parseCanvasRead } from
 import { toolsRoleOf } from '../lib/workers';
 import { ARTIFACT_GUIDE, ARTIFACT_REFUSALS, parseShown, shownResultText, type ShownArtifact } from '../lib/artifacts';
 import { withArtifactCard, withCanvasCard } from '../lib/artifact-card';
+import { VISUAL_GUIDE, VISUAL_REFUSALS, VISUAL_SHOWN_TEXT, parseVisualEntry } from '../lib/visuals';
+import { withVisualPart } from '../lib/visual-part';
 import { escapeVisible } from '../lib/visible-text';
 import type { AgentProfile, ChatMessage, Session } from '../types';
 import type { GiveTaskResult } from './useDelegation';
@@ -517,6 +519,39 @@ export function useAgentTools(deps: AgentToolsDeps): {
     [latest, handleShowCanvas],
   );
 
+  /**
+   * `show_visual`: the backend cleans and keeps the markup, and the reply gets a part that names
+   * it. No card and no grant, like a page: nothing in a visual runs, and it only reaches the user
+   * who is already here.
+   */
+  const handleShowVisual = useCallback(
+    async (session: Session, call: AgentToolCall) => {
+      const args = (typeof call.args === 'object' && call.args !== null ? call.args : {}) as Record<string, unknown>;
+      // A title is shown in Zorvo's own interface, so its control and bidi characters are spelled out.
+      const title = typeof args.title === 'string' ? escapeVisible(args.title).trim() : '';
+      const source = typeof args.code === 'string' ? { code: args.code } : typeof args.path === 'string' ? { path: args.path } : {};
+      try {
+        const entry = parseVisualEntry(await invoke('visual_show', { sessionId: session.id, cwd: session.cwd, title, ...source }));
+        if (entry === null) {
+          respond(call.callId, false, FAILED);
+          return;
+        }
+        latest.current.updateMessages(session.id, (prev) => withVisualPart(prev, entry, { sessionId: session.id, now: Date.now(), createId }));
+        respond(call.callId, true, VISUAL_SHOWN_TEXT);
+      } catch (error) {
+        const text = typeof error === 'string' ? error : '';
+        if (VISUAL_REFUSALS.has(text)) {
+          respond(call.callId, false, text);
+          return;
+        }
+        // Never the error itself: it can name a folder the agent was not told about.
+        respond(call.callId, false, FAILED);
+        latest.current.onNotice?.('Zorvo could not show the visual an agent made.');
+      }
+    },
+    [latest],
+  );
+
   /** `read_session` and `stop_session`: only the caller's own sessions, by handle; no card and no grant. */
   const handleOwned = useCallback(
     (session: Session, call: AgentToolCall) => {
@@ -648,11 +683,15 @@ export function useAgentTools(deps: AgentToolsDeps): {
         }
         if (call.tool === 'artifact_guide') {
           const kind = (call.args as Record<string, unknown> | null)?.kind;
-          respond(call.callId, true, kind === 'canvas' ? CANVAS_GUIDE : ARTIFACT_GUIDE);
+          respond(call.callId, true, kind === 'canvas' ? CANVAS_GUIDE : kind === 'visual' ? VISUAL_GUIDE : ARTIFACT_GUIDE);
           return;
         }
         if (call.tool === 'show_artifact') {
           void handleShowArtifact(session, call);
+          return;
+        }
+        if (call.tool === 'show_visual') {
+          void handleShowVisual(session, call);
           return;
         }
         respond(call.callId, false, FAILED);
@@ -660,7 +699,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
         respond(call.callId, false, FAILED);
       }
     },
-    [latest, handleDone, handleStartWorker, handleSend, handleStartSession, handleOwned, handleShowArtifact],
+    [latest, handleDone, handleStartWorker, handleSend, handleStartSession, handleOwned, handleShowArtifact, handleShowVisual],
   );
 
   /** A call ended without our answer (timeout, cancel, session stop): it no longer waits. */

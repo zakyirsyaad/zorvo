@@ -93,4 +93,8 @@ describe("a title an agent cut from Zorvo's hidden note", () => {
     expect(isToolsContextTitle("Zorvo, the app this session runs in, crashes on start")).toBe(false);
     expect(isToolsContextTitle("")).toBe(false);
   });
+
+  it("says in both contexts when to show a visual", () => {
+    for (const context of [MCP_PATH_CONTEXT, COMMAND_PATH_CONTEXT]) expect(context).toContain("show_visual");
+  });
 });

@@ -319,4 +319,18 @@ describe('the canvas wrapper', () => {
     canvas().apply({ ...state, selected: 'constructor' });
     expect(drawn.classList.contains('selected')).toBe(true);
   });
+
+  it('never makes a live frame of a missing artboard, at any zoom', () => {
+    const gone = board('gone', { missing: true, url: undefined as unknown as string });
+    const state = stateOf([gone, board('b')]);
+
+    const live = canvas().liveIds(state, { x: 0, y: 0, zoom: 1 }, { width: 2000, height: 1000 }, 8);
+    canvas().apply(state);
+    canvas().command('actual');
+
+    expect(live).toEqual(['b']);
+    const drawn = document.querySelector('[data-id="gone"]')!;
+    expect(drawn.querySelector('iframe')).toBeNull();
+    expect(drawn.textContent).toContain('File not found');
+  });
 });

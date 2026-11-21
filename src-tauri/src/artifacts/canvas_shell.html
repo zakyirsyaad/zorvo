@@ -132,7 +132,11 @@
     var left = v.x, top = v.y;
     var right = v.x + viewport.width / v.zoom, bottom = v.y + viewport.height / v.zoom;
     var cx = (left + right) / 2, cy = (top + bottom) / 2;
+    // A missing artboard has no file to load: it keeps its "File not found" box.
+    var missing = table();
+    ((state && state.boards) || []).forEach(function (board) { if (board.missing) missing[board.id] = true; });
     return layout(state).boards
+      .filter(function (b) { return !missing[b.id]; })
       .filter(function (b) { return b.x < right && b.x + b.width > left && b.y < bottom && b.y + b.height > top; })
       .map(function (b) {
         return { id: b.id, d: Math.abs(b.x + b.width / 2 - cx) + Math.abs(b.y + b.height / 2 - cy) };

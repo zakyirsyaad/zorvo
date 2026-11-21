@@ -738,6 +738,61 @@ describe("delegating from the app", () => {
     expect(callsTo(spy, "acp_start_session")).toHaveLength(0);
   });
 
+  it("a task for a closed worker whose chat was not opened keeps its saved conversation", async () => {
+    seedSourceSession();
+    // The source is the newest session, so the worker's chat is never on screen in this run.
+    fakeStore().state.sessions = [
+      {
+        id: "s-a",
+        name: "Fix login bug",
+        profileId: "qwen-code",
+        cwd: "/Users/test/developer/ai-perpetual-trading",
+        status: "running",
+        createdAt: 9,
+        transport: "acp",
+      },
+      {
+        id: "s-b",
+        name: "Codex: Implement step 2",
+        profileId: "codex-acp",
+        cwd: "/Users/test/developer/ai-perpetual-trading",
+        status: "terminated",
+        createdAt: 3,
+        endedAt: 5,
+        transport: "acp",
+        acpSessionId: "acp-b",
+        delegatedFrom: {
+          sessionId: "s-a",
+          task: "Implement step 2",
+          startedAt: 3,
+          handle: "worker-1",
+          lastTurn: { endedAt: 4, how: "finished" },
+          reportedAt: 5,
+        },
+      },
+    ];
+    fakeStore().transcripts["s-b"] = [
+      { id: "m-b1", role: "user", content: "Implement step 2", timestamp: 3 },
+      { id: "m-b2", role: "agent", content: "Done.", timestamp: 4, isComplete: true },
+    ];
+    const spy = await renderApp();
+    await screen.findByText("Refactor the parser");
+
+    await type("@Codex now add tests for it");
+    await act(async () => {
+      fireEvent.keyDown(prompt(), { key: "Enter" });
+    });
+
+    await waitFor(() => expect(callsTo(spy, "acp_reopen_session")).toHaveLength(1));
+    const savesOfWorker = () => callsTo(spy, "save_transcript").filter(([, args]) => args?.sessionId === "s-b");
+    await waitFor(() => expect(savesOfWorker().length).toBeGreaterThan(0), { timeout: 4000 });
+    for (const [, args] of savesOfWorker()) {
+      const ids = (args?.messages as Array<{ id: string }>).map((message) => message.id);
+      expect(ids.slice(0, 2)).toEqual(["m-b1", "m-b2"]);
+    }
+    expect(fakeStore().transcripts["s-b"]).toHaveLength(3);
+  });
+
   it("Change carries the composer's attachments to the delegated task", async () => {
     seedSourceSession();
     realInvoke = tauriInternals().invoke;

@@ -1195,6 +1195,9 @@ export default function App() {
     const session = sessions.find((candidate) => candidate.id === sessionId);
     if (session === undefined || !session.acpSessionId) return false;
     workerStops.forget(sessionId);
+    // Its chat may not have been opened in this run: without the load registered first, the task
+    // would be saved as the whole conversation, over the history on disk.
+    ensureLoaded(sessionId);
     patchSession(sessionId, { status: "running", endedAt: null, exitCode: null });
     // The model last picked for this agent is applied again, as for a user's resume; the draft's own picks are not this worker's.
     return acp.resume(session, session.acpSessionId, message, withPreferred(NO_CHOICES, state.agentOptions?.[session.profileId]));

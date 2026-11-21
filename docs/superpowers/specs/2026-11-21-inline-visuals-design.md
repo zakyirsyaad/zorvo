@@ -256,17 +256,22 @@ the repository. The boundaries, outermost first:
 Not protected: an agent can draw something misleading inside the frame. The
 same agent can write misleading text in its reply.
 
-## 6. Spike before the plan
+## 6. Spike
 
-Throwaway code. Its results are written into this spec before the plan is
-made.
+Done on 2026-11-21. The full report is
+`2026-11-21-inline-visuals-spike-report.md`.
 
-| Question | If it fails |
+| Question | Result |
 | --- | --- |
-| In a release build (the only build that applies the CSP), do `<script>`, `on*` handlers, `javascript:` URLs, meta refresh and form submission all stay dead in this iframe? | Fall back to the PNG approach for display |
-| Can the parent read the document's height and catch link clicks, and does the navigation guard see a navigation inside the frame? | Fall back to the PNG approach |
-| Does heavy CSS (256 KiB, filters, animation) freeze the interface? | Lower the size limit, or strip filters and animation at intake |
-| Can `render.rs` draw an HTML fragment to a PNG on a theme background, and can Rust put it on the clipboard? | PNG export waits; the rest ships |
+| Do scripts, `on*`, `javascript:`, meta refresh and form submission stay dead in the frame, with the CSP applied? | Yes |
+| Can the parent read the document's height? | Yes |
+| Can the parent catch a click inside the frame? | **No.** WebKit runs no listener in a document whose sandbox forbids scripts |
+| Does a link navigate the frame when nothing stops it? | No, the CSP's `frame-src` refuses it |
+| Does heavy CSS (223 KB, 2,000 blurred, animated elements) block the main thread? | No (a 16 ms timer was at most 54 ms late) |
+| Can `render.rs` draw HTML to a PNG, and can Rust write a PNG to a pasteboard? | Yes to both |
+
+Approach A stands and the size limit stays. The "Links" part of section 3
+cannot be built as written; the decision is open (see the report's options).
 
 ## 7. Testing
 

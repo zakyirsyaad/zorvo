@@ -11,7 +11,7 @@ const PLACES: ReadonlyArray<{ brand: Brand; href: string; name: string; text: st
 
 export function Community() {
   return (
-    <section className="lp-sec" id="community" aria-labelledby="community-title">
+    <section className="lp-sec border-t-0" id="community" aria-labelledby="community-title">
       <div className="lp-wrap lp-row">
         <div className="lp-col" data-reveal="">
           <p className="lp-eyebrow" data-r="">Community</p>

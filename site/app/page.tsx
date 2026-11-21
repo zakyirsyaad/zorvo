@@ -36,6 +36,8 @@ export default function Home() {
       <main id="main">
         <Hero />
         <Agents />
+        {/* Right under the strip of agents: who makes Zorvo, and where to follow it. */}
+        <Community />
         <Sessions />
         <Compare />
         <Delegate />
@@ -50,7 +52,6 @@ export default function Home() {
         {/* The optional paid extra comes after everything Zorvo does for free, right before privacy. */}
         <PrivateMode />
         <Privacy />
-        <Community />
         <Download />
       </main>
       <SiteFooter />

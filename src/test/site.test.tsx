@@ -115,6 +115,7 @@ describe("landing page", () => {
     expect(names).toEqual([
       "top",
       "Agents",
+      "community",
       "sessions",
       "compare",
       "delegate",
@@ -125,7 +126,6 @@ describe("landing page", () => {
       "features",
       "private",
       "privacy",
-      "community",
       "download",
     ]);
     // A session called "Review the pricing copy" is in a picture; the page's own words name no price.
@@ -271,7 +271,7 @@ describe("landing page", () => {
     const strip = document.querySelector('section[aria-label="Agents"]')!;
     expect(strip.querySelectorAll("input, button, label")).toHaveLength(0);
     expect(strip.className).not.toMatch(/border|bg-/);
-    expect(document.querySelector("#sessions")?.className.split(" ")).toContain("border-t-0");
+    expect(document.querySelector("#community")?.className.split(" ")).toContain("border-t-0");
   });
 
   it("puts the download count on the hero's button and in the Download section", () => {

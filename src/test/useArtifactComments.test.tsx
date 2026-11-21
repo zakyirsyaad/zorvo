@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 
 type Listener = (event: { payload: unknown }) => void;
@@ -18,7 +18,9 @@ vi.mock('@tauri-apps/api/event', () => ({
 const invoke = vi.fn<(cmd: string, args?: Record<string, unknown>) => Promise<unknown>>(() => Promise.resolve(undefined));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (cmd: string, args?: Record<string, unknown>) => invoke(cmd, args) }));
 
-import { useArtifactComments, useArtifactCommentSweep } from '../hooks/useArtifactComments';
+import { useArtifactComments, useArtifactCommentSweep, type ShownCanvasRef } from '../hooks/useArtifactComments';
+import type { BoardState } from '../lib/canvas';
+import { canvasCommentStatus } from '../lib/artifact-comments';
 import type { Artifact, ArtifactComment, PageRef, Session } from '../types';
 
 const A1 = 'a-0123456789abcdef';
@@ -37,6 +39,7 @@ const pageComment = (id: string, overrides: Partial<ArtifactComment> = {}): Arti
 
 interface Props {
   shownPage: PageRef | null;
+  shownCanvas?: ShownCanvasRef | null;
   initial?: ArtifactComment[];
 }
 
@@ -44,13 +47,14 @@ function renderComments(props: Props) {
   const forget = vi.fn();
   const onError = vi.fn();
   const view = renderHook(
-    ({ shownPage }: Props) => {
+    ({ shownPage, shownCanvas = null }: Props) => {
       const [comments, setComments] = useState<ArtifactComment[]>(props.initial ?? []);
       const state = useArtifactComments({
         sessionId: 's-1',
         comments,
         update: (_sessionId, change) => setComments(change),
         shownPage,
+        shownCanvas,
         forget,
         onError,
       });
@@ -303,6 +307,7 @@ describe('useArtifactComments', () => {
 
 describe('useArtifactCommentSweep', () => {
   const artifact = (id: string): Artifact => ({ id, title: 'T', sourcePath: '/w/t.html', versions: [{ n: 3, at: 1, bytes: 1 }] });
+  const noCanvases = new Map([['s-1', []], ['s-2', []]]);
   const session = (id: string, artifactComments: ArtifactComment[]): Session =>
     ({ id, name: id, profileId: 'x', cwd: '/w', status: 'idle', createdAt: 1, artifactComments }) as Session;
 
@@ -315,7 +320,7 @@ describe('useArtifactCommentSweep', () => {
       ['s-2', []],
     ]);
 
-    renderHook(() => useArtifactCommentSweep(sessions, bySession, new Set(['s-1']), update, forget));
+    renderHook(() => useArtifactCommentSweep(sessions, bySession, noCanvases, new Set(['s-1']), update, forget));
 
     expect(forget).toHaveBeenCalledWith(['c2']);
     expect(update).toHaveBeenCalledTimes(1);
@@ -324,12 +329,149 @@ describe('useArtifactCommentSweep', () => {
     expect(change(sessions[0].artifactComments!).map((c) => c.id)).toEqual(['c1']);
   });
 
+  it("removes a forgotten canvas's comment and forgets it in the message, only for a session that was read", () => {
+    const KEY = 'c-0123456789abcdef';
+    const canvasComment = (id: string): ArtifactComment =>
+      pageComment(id, { artifactId: KEY, version: 0, canvas: { key: KEY, artboardId: 'pay-b', fileHash: 'b'.repeat(64) } });
+    const entry = { key: KEY, folder: '/w/d', relative: 'd', title: 'C', shownAt: 1, artboards: 1 };
+    const update = vi.fn();
+    const forget = vi.fn();
+    const sessions = [session('s-1', [canvasComment('k1')]), session('s-2', [canvasComment('k2')]), session('s-3', [canvasComment('k3')])];
+    const bySession = new Map([
+      ['s-1', []],
+      ['s-2', []],
+      ['s-3', []],
+    ]);
+    const canvases = new Map([
+      ['s-1', []],
+      ['s-2', []],
+      ['s-3', [entry]],
+    ]);
+
+    renderHook(() => useArtifactCommentSweep(sessions, bySession, canvases, new Set(['s-1', 's-3']), update, forget));
+
+    expect(forget).toHaveBeenCalledTimes(1);
+    expect(forget).toHaveBeenCalledWith(['k1']);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update.mock.calls[0][0]).toBe('s-1');
+  });
+
   it('does nothing when every artifact is still there', () => {
     const update = vi.fn();
     const sessions = [session('s-1', [pageComment('c1')])];
 
-    renderHook(() => useArtifactCommentSweep(sessions, new Map([['s-1', [artifact(A1)]]]), new Set(['s-1']), update, vi.fn()));
+    renderHook(() => useArtifactCommentSweep(sessions, new Map([['s-1', [artifact(A1)]]]), noCanvases, new Set(['s-1']), update, vi.fn()));
 
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe('useArtifactComments on a canvas', () => {
+  const KEY = 'c-0123456789abcdef';
+  const HASH = 'b'.repeat(64);
+  const OTHER_HASH = 'c'.repeat(64);
+  // What the backend read last of the canvas's files; a test changes it as the agent would.
+  let boards: BoardState[] = [];
+  const CANVAS: ShownCanvasRef = { sessionId: 's-1', key: KEY, boardsNow: () => boards };
+  beforeEach(() => {
+    boards = [{ id: 'pay-b', sha256: HASH }];
+  });
+  const canvasPick = (overrides: Record<string, unknown> = {}) => ({
+    sessionId: 's-1',
+    key: KEY,
+    artboardId: 'pay-b',
+    message: { kind: 'pick-text', quote: 'Pay now', before: '', after: '' },
+    ...overrides,
+  });
+  const deliverCanvas = (payload: unknown) => act(() => (listeners.get('canvas-pick') ?? []).forEach((cb) => cb({ payload })));
+
+  it('turns a canvas-pick into a candidate on that artboard', async () => {
+    const { result } = renderComments({ shownPage: null, shownCanvas: CANVAS });
+    act(() => result.current.state.setCommenting(true));
+
+    deliverCanvas(canvasPick({ key: 'c-ffffffffffffffff' }));
+    deliverCanvas(canvasPick({ artboardId: 'Pay B' }));
+    expect(result.current.state.candidate).toBeNull();
+    deliverCanvas(canvasPick());
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('canvas_comment_mode', { sessionId: 's-1', key: KEY, on: true }));
+    expect(result.current.state.candidate).toEqual({
+      page: { sessionId: 's-1', artifactId: KEY, version: 0 },
+      artboardId: 'pay-b',
+      fileHash: HASH,
+      anchor: { kind: 'text', quote: 'Pay now', before: '', after: '' },
+      isPickHeld: false,
+    });
+
+    act(() => result.current.state.setCandidateBody('Make it wider.'));
+    let outcome = '';
+    act(() => {
+      outcome = result.current.state.saveCandidate();
+    });
+
+    expect(outcome).toBe('saved');
+    expect(result.current.comments).toEqual([
+      expect.objectContaining({
+        artifactId: KEY,
+        version: 0,
+        body: 'Make it wider.',
+        canvas: { key: KEY, artboardId: 'pay-b', fileHash: HASH },
+      }),
+    ]);
+  });
+
+  it('drops a canvas-pick while comment mode is off, and a page pick on a canvas', () => {
+    const { result } = renderComments({ shownPage: null, shownCanvas: CANVAS });
+
+    deliverCanvas(canvasPick());
+    expect(result.current.state.candidate).toBeNull();
+  });
+
+  it('keeps the file a pick was made on when the agent rewrites it before Save', () => {
+    const { result } = renderComments({ shownPage: null, shownCanvas: CANVAS });
+    act(() => result.current.state.setCommenting(true));
+    deliverCanvas(canvasPick());
+
+    boards = [{ id: 'pay-b', sha256: OTHER_HASH }];
+    act(() => result.current.state.setCandidateBody('Make it wider.'));
+    act(() => void result.current.state.saveCandidate());
+
+    const [saved] = result.current.comments;
+    expect(saved.canvas).toEqual({ key: KEY, artboardId: 'pay-b', fileHash: HASH });
+    expect(canvasCommentStatus(saved, boards)).toBe('outdated');
+  });
+
+  it('writes on the whole artboard without comment mode, on the file shown then', () => {
+    const { result } = renderComments({ shownPage: null, shownCanvas: CANVAS });
+
+    act(() => result.current.state.startArtboardComment('pay-b'));
+
+    expect(result.current.state.candidate).toEqual({
+      page: { sessionId: 's-1', artifactId: KEY, version: 0 },
+      artboardId: 'pay-b',
+      fileHash: HASH,
+      anchor: { kind: 'artboard' },
+      isPickHeld: false,
+    });
+  });
+
+  it('starts no comment on an artboard whose file is missing', () => {
+    boards = [{ id: 'pay-b', sha256: null }];
+    const { result } = renderComments({ shownPage: null, shownCanvas: CANVAS });
+    act(() => result.current.state.setCommenting(true));
+
+    act(() => result.current.state.startArtboardComment('pay-b'));
+    deliverCanvas(canvasPick());
+    deliverCanvas(canvasPick({ artboardId: 'pay-z' }));
+
+    expect(result.current.state.candidate).toBeNull();
+  });
+
+  it('keeps the numbers an artboard could not find, by artboard', () => {
+    const { result } = renderComments({ shownPage: null, shownCanvas: CANVAS });
+
+    deliverCanvas(canvasPick({ message: { kind: 'marks-missing', numbers: [2] } }));
+
+    expect([...(result.current.state.canvasMissing.get('pay-b') ?? [])]).toEqual([2]);
   });
 });

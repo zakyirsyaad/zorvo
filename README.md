@@ -165,6 +165,12 @@ Private mode is off until you turn it on, and works with Qwen Code.
   one HTML file, and **Output** in the sidebar lists the pages of every
   session. Press **Comment** above a page to mark text or a part of it, write
   what should change, and add your comments to your next message.
+- **Several screens on one canvas.** For a flow or variants of a screen, an
+  agent can lay out artboards in sections on a canvas you pan and zoom.
+  Comment on an artboard, **Pick** a variant, ask the agent to **Build this**
+  screen in your repository, or **Export** artboards as PNG or PDF. The canvas
+  is a folder in your project (`canvas.json` and one HTML file per artboard),
+  so git keeps it and deleting the session keeps it.
 - **Reply to part of a reply.** Select text in the chat to copy it, or press
   **Reply** to quote it in your next message.
 - **A session overview beside the chat.** A card at the top right of the chat
@@ -424,6 +430,13 @@ before it edits files or runs commands. Pick another mode in the composer.
   Zorvo's own interface still makes no request at all. Pages are stored on
   this Mac and deleted with their session. A page you **Export** is an
   ordinary HTML file: opened in a browser, it has none of these limits.
+- **A canvas reaches no new host.** Each artboard of a canvas runs under the
+  same limits as a page, and may load the same script and font hosts, plus
+  the files in its own canvas folder. Zorvo's frame around the artboards
+  loads nothing from the network. The canvas stays in your project folder;
+  Zorvo keeps only a list of the canvases a session showed and pictures of
+  the artboards on this Mac, and removes a picture no canvas has used for 30
+  days.
 - **No telemetry.** Zorvo sends nothing about you or your work anywhere.
 - **Browser pages.** The Browser inspector loads the HTTP(S) pages you or your agent choose, and their subresources, in a separate WebKit view. Submitted address-bar search text goes to Google. The chat's own webview keeps its network restrictions. Each session has an in-memory browser store; different sessions do not share it. Agents need a browser session grant, and file uploads need a separate destination/files approval. Chromium debug opens an isolated Chrome or Brave window; its tabs and cookies are separate from WebKit. Optional Lighthouse tools are installed from npm with a pinned integrity lockfile after you click Install audit tools; an audit uses a fresh Chromium profile and a temporary loopback debugging endpoint.
 - **Other connections, all named.** Outside the browser pages, Zorvo itself contacts only:

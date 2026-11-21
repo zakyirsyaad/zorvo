@@ -275,6 +275,11 @@ pub struct RateLimit {
 
 impl RateLimit {
     pub fn allow(&mut self, now: Instant) -> bool {
+        self.allow_up_to(now, MAX_PER_SECOND)
+    }
+
+    /// `allow` with another number a second, for a sender that may say more than a page.
+    pub fn allow_up_to(&mut self, now: Instant, limit: u32) -> bool {
         let is_new_window = self
             .window_start
             .is_none_or(|start| now.saturating_duration_since(start) >= RATE_WINDOW);
@@ -283,7 +288,7 @@ impl RateLimit {
             self.count = 1;
             return true;
         }
-        if self.count < MAX_PER_SECOND {
+        if self.count < limit {
             self.count += 1;
             return true;
         }

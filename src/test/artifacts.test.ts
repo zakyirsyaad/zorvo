@@ -5,11 +5,13 @@ import {
   galleryRows,
   hasVersion,
   newestVersion,
+  canvasOpeningFor,
   openingFor,
   parseArtifacts,
   parseShown,
   shownArtifactOf,
   shownResultText,
+  rowTitle,
   versionLabel,
   type ShownArtifact,
 } from "../lib/artifacts";
@@ -106,6 +108,19 @@ describe("openingFor", () => {
   });
 });
 
+describe("canvasOpeningFor", () => {
+  const KEY = "c-0123456789abcdef";
+  it("opens a canvas of the session on screen in the tab", () => {
+    expect(canvasOpeningFor({ isOnScreen: true, key: KEY, viewed: null })).toBe("show-tab");
+    expect(canvasOpeningFor({ isOnScreen: true, key: KEY, viewed: { artifactId: ID, version: null } })).toBe("show-tab");
+  });
+
+  it("moves nothing for another session, or when the canvas already shows", () => {
+    expect(canvasOpeningFor({ isOnScreen: false, key: KEY, viewed: null })).toBe("none");
+    expect(canvasOpeningFor({ isOnScreen: true, key: KEY, viewed: { canvasKey: KEY } })).toBe("none");
+  });
+});
+
 describe("cardState", () => {
   it("is open while the artifact exists, whatever became of the version", () => {
     expect(cardState({ artifactId: ID, title: "Report", version: 1 }, [artifactOf()])).toBe("open");
@@ -126,9 +141,18 @@ describe("galleryRows", () => {
 
     const rows = galleryRows(sessions, bySession, names);
 
-    expect(rows.map((row) => row.artifact.title)).toEqual(["Report", "Older"]);
+    expect(rows.map((row) => rowTitle(row))).toEqual(["Report", "Older"]);
     expect(rows[0]).toMatchObject({ sessionId: "s-1", sessionName: "One", agentName: "Codex", isArchived: false, at: 200 });
     expect(rows[1].isArchived).toBe(true);
+  });
+
+  it("lists canvases beside pages, by when they were shown", () => {
+    const canvas = { key: "c-0123456789abcdef", folder: "/work/design/x", relative: "design/x", title: "Checkout", shownAt: 150, artboards: 12 };
+    const rows = galleryRows([sessionOf({ name: "One" })], new Map([["s-1", [artifactOf()]]]), names, new Map([["s-1", [canvas]]]));
+
+    expect(rows.map((row) => rowTitle(row))).toEqual(["Report", "Checkout"]);
+    expect(rows[1]).toMatchObject({ kind: "canvas", canvas, at: 150, sessionName: "One" });
+    expect(filterGallery(rows, "check").map((row) => rowTitle(row))).toEqual(["Checkout"]);
   });
 
   it("gives no row for a session that is not listed", () => {
@@ -137,7 +161,7 @@ describe("galleryRows", () => {
 
   it("filters by title, whatever the case", () => {
     const rows = galleryRows([sessionOf({})], new Map([["s-1", [artifactOf(), artifactOf({ id: "a-2222222222222222", title: "Diagram" })]]]), names);
-    expect(filterGallery(rows, " DIAG ").map((row) => row.artifact.title)).toEqual(["Diagram"]);
+    expect(filterGallery(rows, " DIAG ").map((row) => rowTitle(row))).toEqual(["Diagram"]);
     expect(filterGallery(rows, "  ")).toHaveLength(2);
     expect(filterGallery(rows, "nothing")).toEqual([]);
   });
@@ -149,6 +173,13 @@ describe("a saved transcript", () => {
   it("keeps a well-formed artifact card", () => {
     const card = { artifactId: ID, title: "Report", version: 2 };
     expect(normalizeTranscript([{ ...message, artifactCard: card }])[0].artifactCard).toEqual(card);
+  });
+
+  it("keeps a canvas card", () => {
+    const card = { kind: "canvas", canvasKey: "c-0123456789abcdef", title: "Checkout", artboards: 12 };
+    expect(normalizeTranscript([{ ...message, artifactCard: card }])[0].artifactCard).toEqual(card);
+    const [bad] = normalizeTranscript([{ ...message, artifactCard: { ...card, canvasKey: "../x" } }]);
+    expect("artifactCard" in bad).toBe(false);
   });
 
   it("drops a malformed one and keeps the message", () => {

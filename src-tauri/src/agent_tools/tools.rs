@@ -89,11 +89,12 @@ pub fn tool_list() -> Value {
         },
         {
             "name": "show_artifact",
-            "description": "Show the user a web page you wrote, beside the chat. Use it without being asked whenever your answer is better seen than read: a report, a summary of what changed, a comparison, a chart, a diagram, a dashboard, a mockup of a screen, or something the user can click through. Do not use it for an answer that is short text or code. Write one self-contained .html file in this folder or the temporary folder, then call this with its path. Calling it again for the same path shows a new version. Scripts may come only from cdnjs.cloudflare.com, cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com and code.jquery.com, with an exact version; fonts from Google Fonts; images as data URIs. The page cannot fetch anything or keep data. Call artifact_guide before your first page.",
+            "description": "Show the user a web page you wrote, beside the chat. Use it without being asked whenever your answer is better seen than read: a report, a summary of what changed, a comparison, a chart, a diagram, a dashboard, a mockup of a screen, or something the user can click through. Do not use it for an answer that is short text or code. Write one self-contained .html file in this folder or the temporary folder, then call this with its path. Calling it again for the same path shows a new version. Scripts may come only from cdnjs.cloudflare.com, cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com and code.jquery.com, with an exact version; fonts from Google Fonts; images as data URIs. The page cannot fetch anything or keep data. Call artifact_guide before your first page. For several screens, a flow or variants, make a canvas: call artifact_guide with kind canvas first.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "maxLength": MAX_PATH_CHARS, "description": "The .html file, absolute or relative to this folder." },
+                    "path": { "type": "string", "maxLength": MAX_PATH_CHARS, "description": "The .html file, absolute or relative to this folder. For a canvas, the folder or its canvas.json." },
+                    "kind": { "type": "string", "enum": ["page", "canvas"], "description": "page (default): one .html file. canvas: a folder with canvas.json and one .html file per artboard; path names the folder or its canvas.json." },
                     "title": { "type": "string", "maxLength": MAX_TITLE_CHARS, "description": "A short name for the page. Needed the first time a path is shown; later it renames." }
                 },
                 "required": ["path"],
@@ -102,10 +103,12 @@ pub fn tool_list() -> Value {
         },
         {
             "name": "artifact_guide",
-            "description": "How to design a page for show_artifact: colours for light and dark, layout, charts. Read it once before your first page.",
+            "description": "How to design a page for show_artifact: colours for light and dark, layout, charts. Read it once before your first page. With kind canvas, how to lay out several screens.",
             "inputSchema": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "kind": { "type": "string", "enum": ["page", "canvas"], "description": "page (default) or canvas." }
+                },
                 "additionalProperties": false
             }
         }
@@ -175,8 +178,9 @@ pub fn validate(tool: &str, args: &Value) -> Result<Value, String> {
         return crate::browser_commands::validate_args(args);
     }
     let allowed: &[&str] = match tool {
-        "list_agents" | "artifact_guide" | "browser_guide" => &[],
-        "show_artifact" => &["path", "title"],
+        "list_agents" | "browser_guide" => &[],
+        "artifact_guide" => &["kind"],
+        "show_artifact" => &["path", "title", "kind"],
         "delegate" => &["agent", "task"],
         "start_session" => &["agent", "brief", "title", "worktree", "folder"],
         "read_session" => &["handle", "max_chars"],
@@ -214,7 +218,9 @@ pub fn validate(tool: &str, args: &Value) -> Result<Value, String> {
         "show_artifact" => {
             put_path(&mut clean, object)?;
             put_title(&mut clean, object)?;
+            put_kind(&mut clean, object)?;
         }
+        "artifact_guide" => put_kind(&mut clean, object)?,
         _ => {}
     }
     Ok(Value::Object(clean))
@@ -296,6 +302,17 @@ fn put_title(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Resul
         out.insert("title".to_string(), json!(text));
     }
     Ok(())
+}
+
+fn put_kind(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result<(), String> {
+    match object.get("kind") {
+        None | Some(Value::Null) => Ok(()),
+        Some(Value::String(kind)) if kind == "page" || kind == "canvas" => {
+            out.insert("kind".to_string(), json!(kind));
+            Ok(())
+        }
+        Some(_) => Err("kind must be page or canvas.".to_string()),
+    }
 }
 
 fn put_worktree(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result<(), String> {
@@ -431,9 +448,30 @@ mod tests {
     }
 
     #[test]
-    fn artifact_guide_takes_no_arguments() {
+    fn artifact_guide_takes_a_kind() {
         assert_eq!(validate("artifact_guide", &json!({})).unwrap(), json!({}));
+        assert_eq!(
+            validate("artifact_guide", &json!({"kind": "canvas"})).unwrap(),
+            json!({"kind": "canvas"})
+        );
+        assert_eq!(
+            validate("artifact_guide", &json!({"kind": "sheet"})).unwrap_err(),
+            "kind must be page or canvas."
+        );
         assert!(validate("artifact_guide", &json!({"topic": "charts"})).is_err());
+    }
+
+    #[test]
+    fn show_artifact_takes_a_kind() {
+        let ok = validate("show_artifact", &json!({"path": "d", "kind": "canvas"})).unwrap();
+        assert_eq!(ok, json!({"path": "d", "kind": "canvas"}));
+        assert_eq!(
+            validate("show_artifact", &json!({"path": "d", "kind": "sheet"})).unwrap_err(),
+            "kind must be page or canvas."
+        );
+        assert!(validate("show_artifact", &json!({"path": "d", "kind": 3})).is_err());
+        let description = description_of("show_artifact");
+        assert!(description.contains("call artifact_guide with kind canvas first"));
     }
 
     #[test]

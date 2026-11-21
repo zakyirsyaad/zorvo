@@ -58,6 +58,8 @@ mod worktrees_test;
 
 /// Test files that are binaries of their own, directly in `tests/`.
 const OWN_BINARIES: &[&str] = &[
+    // harness = false: its `main` must run on the process's main thread.
+    "canvas_render.rs",
     "installer_state_test.rs",
     "private_proxy_test.rs",
     "spawn_test.rs",

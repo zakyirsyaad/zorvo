@@ -1,0 +1,312 @@
+{
+  "version": 1,
+  "title": "Forty charts",
+  "sections": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "artboards": [
+        {
+          "id": "overview-1",
+          "title": "Overview 1",
+          "file": "overview-1.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "overview-2",
+          "title": "Overview 2",
+          "file": "overview-2.html",
+          "width": 1440,
+          "height": 900,
+          "group": "overview-variants"
+        },
+        {
+          "id": "overview-3",
+          "title": "Overview 3",
+          "file": "overview-3.html",
+          "width": 1440,
+          "height": 900,
+          "group": "overview-variants"
+        },
+        {
+          "id": "overview-4",
+          "title": "Overview 4",
+          "file": "overview-4.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "overview-5",
+          "title": "Overview 5",
+          "file": "overview-5.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "overview-6",
+          "title": "Overview 6",
+          "file": "overview-6.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "overview-7",
+          "title": "Overview 7",
+          "file": "overview-7.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "overview-8",
+          "title": "Overview 8",
+          "file": "overview-8.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "overview-9",
+          "title": "Overview 9",
+          "file": "overview-9.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "overview-10",
+          "title": "Overview 10",
+          "file": "overview-10.html",
+          "width": 1440,
+          "height": 900
+        }
+      ]
+    },
+    {
+      "id": "revenue",
+      "title": "Revenue",
+      "artboards": [
+        {
+          "id": "revenue-1",
+          "title": "Revenue 1",
+          "file": "revenue-1.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "revenue-2",
+          "title": "Revenue 2",
+          "file": "revenue-2.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "revenue-3",
+          "title": "Revenue 3",
+          "file": "revenue-3.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "revenue-4",
+          "title": "Revenue 4",
+          "file": "revenue-4.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "revenue-5",
+          "title": "Revenue 5",
+          "file": "revenue-5.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "revenue-6",
+          "title": "Revenue 6",
+          "file": "revenue-6.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "revenue-7",
+          "title": "Revenue 7",
+          "file": "revenue-7.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "revenue-8",
+          "title": "Revenue 8",
+          "file": "revenue-8.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "revenue-9",
+          "title": "Revenue 9",
+          "file": "revenue-9.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "revenue-10",
+          "title": "Revenue 10",
+          "file": "revenue-10.html",
+          "width": 1440,
+          "height": 900
+        }
+      ]
+    },
+    {
+      "id": "latency",
+      "title": "Latency",
+      "artboards": [
+        {
+          "id": "latency-1",
+          "title": "Latency 1",
+          "file": "latency-1.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "latency-2",
+          "title": "Latency 2",
+          "file": "latency-2.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "latency-3",
+          "title": "Latency 3",
+          "file": "latency-3.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "latency-4",
+          "title": "Latency 4",
+          "file": "latency-4.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "latency-5",
+          "title": "Latency 5",
+          "file": "latency-5.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "latency-6",
+          "title": "Latency 6",
+          "file": "latency-6.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "latency-7",
+          "title": "Latency 7",
+          "file": "latency-7.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "latency-8",
+          "title": "Latency 8",
+          "file": "latency-8.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "latency-9",
+          "title": "Latency 9",
+          "file": "latency-9.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "latency-10",
+          "title": "Latency 10",
+          "file": "latency-10.html",
+          "width": 1440,
+          "height": 900
+        }
+      ]
+    },
+    {
+      "id": "errors",
+      "title": "Errors",
+      "artboards": [
+        {
+          "id": "errors-1",
+          "title": "Errors 1",
+          "file": "errors-1.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "errors-2",
+          "title": "Errors 2",
+          "file": "errors-2.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "errors-3",
+          "title": "Errors 3",
+          "file": "errors-3.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "errors-4",
+          "title": "Errors 4",
+          "file": "errors-4.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "errors-5",
+          "title": "Errors 5",
+          "file": "errors-5.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "errors-6",
+          "title": "Errors 6",
+          "file": "errors-6.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "errors-7",
+          "title": "Errors 7",
+          "file": "errors-7.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "errors-8",
+          "title": "Errors 8",
+          "file": "errors-8.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "errors-9",
+          "title": "Errors 9",
+          "file": "errors-9.html",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "id": "errors-10",
+          "title": "Errors 10",
+          "file": "errors-10.html",
+          "width": 1440,
+          "height": 900
+        }
+      ]
+    }
+  ]
+}

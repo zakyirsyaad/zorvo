@@ -47,6 +47,29 @@ describe("useArtifacts", () => {
     expect(result.current.error).toBe(false);
   });
 
+  it("carries each session's canvases", async () => {
+    const canvas = { key: "c-0123456789abcdef", folder: "/w/d", relative: "d", title: "Checkout", shownAt: 1, artboards: 4 };
+    invoke.mockResolvedValue([{ sessionId: "s-1", artifacts: [], canvases: [canvas, { key: "bad" }] }]);
+
+    const { result } = renderHook(() => useArtifacts(["s-1"]));
+
+    await waitFor(() => expect(result.current.canvasesBySession.get("s-1")).toEqual([canvas]));
+  });
+
+  it("keeps a failed session's canvases instead of emptying them", async () => {
+    const canvas = { key: "c-0123456789abcdef", folder: "/w/d", relative: "d", title: "Checkout", shownAt: 1, artboards: 4 };
+    invoke.mockResolvedValueOnce([{ sessionId: "s-1", artifacts: [], failed: false, canvases: [canvas] }]);
+    const { result } = renderHook(() => useArtifacts(["s-1"]));
+    await waitFor(() => expect(result.current.canvasesBySession.get("s-1")).toEqual([canvas]));
+    invoke.mockResolvedValueOnce([{ sessionId: "s-1", artifacts: [], failed: true, canvases: [] }]);
+
+    act(() => deliver("s-1"));
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
+    await act(async () => undefined);
+    expect(result.current.canvasesBySession.get("s-1")).toEqual([canvas]);
+  });
+
   it("asks nothing for no sessions", () => {
     renderHook(() => useArtifacts([]));
     expect(invoke).not.toHaveBeenCalled();

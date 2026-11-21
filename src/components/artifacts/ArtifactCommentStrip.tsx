@@ -4,28 +4,99 @@ import { Button } from "../ui/Button";
 import {
   anchorSummary,
   artifactCommentStatus,
+  canvasCommentStatus,
   commentNumbers,
   isCountedArtifact,
+  type ArtifactCommentStatus,
   type CheckedArtifactComment,
 } from "../../lib/artifact-comments";
 import { newestVersion } from "../../lib/artifacts";
+import type { BoardState, Canvas, CanvasEntry } from "../../lib/canvas";
 import { MAX_COMMENT_LENGTH } from "../../lib/review-comments";
 import type { ArtifactCommentsState } from "../../hooks/useArtifactComments";
 import type { AddArtifactReview } from "../../hooks/useReviewWiring";
 import type { Artifact, ArtifactComment } from "../../types";
 
-export interface ArtifactCommentStripProps {
-  artifact: Artifact;
-  /** The version the viewer shows. */
-  shownVersion: number;
+/** A canvas on screen, with its files' hashes as read now. */
+export interface CanvasCommentSource {
+  entry: CanvasEntry;
+  canvas: Canvas;
+  boards: readonly BoardState[];
+}
+
+interface StripCommon {
   /** The session's folder, for the source path in the message. */
   cwd: string;
   comments: ArtifactCommentsState;
   addReview: AddArtifactReview;
 }
 
+export type ArtifactCommentStripProps = StripCommon &
+  (
+    | {
+        artifact: Artifact;
+        /** The version the viewer shows. */
+        shownVersion: number;
+        canvasSource?: undefined;
+      }
+    | { canvasSource: CanvasCommentSource; artifact?: undefined; shownVersion?: undefined }
+  );
+
 const FULL = "This session has 200 artifact comments. Delete some, or clear the sent ones.";
 const HELD = "Finish or cancel this comment first.";
+const FILE_CHANGED = "The artboard's file changed after this was written.";
+
+/** What the strip needs of what it is under: a page of an artifact, or a canvas. */
+interface StripSubject {
+  id: string;
+  label: string;
+  statusOf: (comment: ArtifactComment) => ArtifactCommentStatus;
+  /** Where a comment is, with the artboard's title on a canvas. */
+  summaryOf: (comment: Pick<ArtifactComment, "anchor"> & { artboardId?: string }) => string;
+  noteOf: (comment: ArtifactComment) => string;
+  isMissing: (comment: ArtifactComment, number: number) => boolean;
+  add: (picked: CheckedArtifactComment[]) => void;
+  /** How a row says its mark was not found where it was written. */
+  notFound: string;
+}
+
+function subjectOf(props: ArtifactCommentStripProps): StripSubject {
+  const { comments, addReview, cwd } = props;
+  if (props.canvasSource) {
+    const { entry, canvas, boards } = props.canvasSource;
+    const titles = new Map(canvas.sections.flatMap((section) => section.artboards).map((board) => [board.id, board.title]));
+    const boardTitle = (id: string | undefined) => (id === undefined ? undefined : (titles.get(id) ?? id));
+    return {
+      id: entry.key,
+      label: "Comments on this canvas",
+      statusOf: (comment) => canvasCommentStatus(comment, boards),
+      summaryOf: ({ anchor, artboardId }) => {
+        const title = boardTitle(artboardId);
+        return title === undefined ? anchorSummary(anchor) : `${title} · ${anchorSummary(anchor)}`;
+      },
+      noteOf: () => FILE_CHANGED,
+      // Only a Current comment is marked on the artboard, so only it can be missing there.
+      isMissing: (comment, number) =>
+        comment.canvas !== undefined &&
+        canvasCommentStatus(comment, boards) === "current" &&
+        comments.canvasMissing.get(comment.canvas.artboardId)?.has(number) === true,
+      add: (picked) => addReview.addCanvas(picked, entry, canvas, cwd),
+      notFound: "Not found on the artboard",
+    };
+  }
+  const { artifact, shownVersion } = props;
+  const newest = newestVersion(artifact);
+  return {
+    id: artifact.id,
+    label: "Comments on this page",
+    statusOf: (comment) => artifactCommentStatus(comment, artifact),
+    summaryOf: ({ anchor }) => anchorSummary(anchor),
+    noteOf: (comment) => `Written on Version ${comment.version}; the page is now Version ${newest}.`,
+    isMissing: (comment, number) => comment.version === shownVersion && comments.missing.has(number),
+    add: (picked) => addReview.add(picked, artifact, cwd),
+    notFound: "Not found on the page",
+  };
+}
 
 function NumberBadge({ n, isOutline }: { n: number; isOutline?: boolean }) {
   const look = isOutline ? "text-mark ring-1 ring-mark ring-inset" : "bg-mark text-on-mark";
@@ -43,12 +114,12 @@ function statusWord(comment: ArtifactComment, isCurrent: boolean, isInMessage: b
 }
 
 /** What a pick made: where it is, the text box, Save comment and Cancel. */
-function CandidateBox({ comments, number }: { comments: ArtifactCommentsState; number: number }) {
+function CandidateBox({ comments, number, subject }: { comments: ArtifactCommentsState; number: number; subject: StripSubject }) {
   const candidate = comments.candidate!;
   const [body, setBody] = useState(comments.candidateBody);
-  const [isFull, setIsFull] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
-  const summary = anchorSummary(candidate.anchor);
+  const summary = subject.summaryOf({ anchor: candidate.anchor, artboardId: candidate.artboardId });
   // The page had the keyboard while the user picked: take it, on a new pick and on a refused one,
   // so what they type next is the comment and never reaches the page.
   useEffect(() => {
@@ -56,7 +127,7 @@ function CandidateBox({ comments, number }: { comments: ArtifactCommentsState; n
   }, [candidate.isPickHeld]);
   const save = () => {
     const outcome = comments.saveCandidate();
-    setIsFull(outcome === "full");
+    setRefusal(outcome === "full" ? FULL : null);
   };
   return (
     <div className="mx-2 mt-2 flex flex-col gap-2 rounded-lg border border-border bg-surface-2 p-2.5">
@@ -80,7 +151,7 @@ function CandidateBox({ comments, number }: { comments: ArtifactCommentsState; n
         />
       </label>
       {candidate.isPickHeld && <span role="status" className="text-caption text-status-attention">{HELD}</span>}
-      {isFull && <span role="status" className="text-caption text-fg-muted">{FULL}</span>}
+      {refusal !== null && <span role="status" className="text-caption text-fg-muted">{refusal}</span>}
       <div className="flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={comments.cancelCandidate}>
           Cancel
@@ -95,6 +166,8 @@ function CandidateBox({ comments, number }: { comments: ArtifactCommentsState; n
 
 interface RowProps {
   checked: CheckedArtifactComment;
+  summary: string;
+  notFound: string;
   word: string;
   note?: string;
   isMissing: boolean;
@@ -106,7 +179,7 @@ interface RowProps {
 }
 
 /** One saved comment: its number, where it is, its status, its text, and what can be done with it. */
-function CommentRow({ checked, word, note, isMissing, canAdd, blockedReason, onAdd, onEdit, onDelete }: RowProps) {
+function CommentRow({ checked, summary, notFound, word, note, isMissing, canAdd, blockedReason, onAdd, onEdit, onDelete }: RowProps) {
   const { comment, number } = checked;
   const [draft, setDraft] = useState<string | null>(null);
   const [isAsking, setIsAsking] = useState(false);
@@ -116,8 +189,8 @@ function CommentRow({ checked, word, note, isMissing, canAdd, blockedReason, onA
     <li className="flex flex-col gap-1.5 rounded-lg border border-border bg-surface-2 p-2.5">
       <div className="flex min-w-0 items-center gap-1.5 text-caption">
         <NumberBadge n={number} isOutline={isOutdated} />
-        <span className="truncate font-medium text-fg-secondary">{anchorSummary(comment.anchor)}</span>
-        <span className="shrink-0 text-fg-subtle">{`· ${word}${isMissing ? " · Not found on the page" : ""}`}</span>
+        <span className="truncate font-medium text-fg-secondary">{summary}</span>
+        <span className="shrink-0 text-fg-subtle">{`· ${word}${isMissing ? ` · ${notFound}` : ""}`}</span>
       </div>
       {note && <span className="text-caption text-status-attention">{note}</span>}
       {draft === null ? (
@@ -179,30 +252,35 @@ function CommentRow({ checked, word, note, isMissing, canAdd, blockedReason, onA
 }
 
 /**
- * The comments of one artifact, under its page: the comment being written, the
- * saved ones by number (the same numbers the page draws), and Add N to message.
- * It sits under the page's box, never over it, so the page never has to hide.
+ * The comments of one artifact or canvas, under its page: the comment being written, the saved
+ * ones by number (the same numbers the page draws), and Add N to message. It sits under the
+ * page's box, never over it, so the page never has to hide.
  */
-export function ArtifactCommentStrip({ artifact, shownVersion, cwd, comments, addReview }: ArtifactCommentStripProps) {
-  const numbers = commentNumbers(comments.comments, artifact.id);
-  const newest = newestVersion(artifact);
+export function ArtifactCommentStrip(props: ArtifactCommentStripProps) {
+  const { comments, addReview } = props;
+  const subject = subjectOf(props);
+  const numbers = commentNumbers(comments.comments, subject.id);
   const checked: CheckedArtifactComment[] = comments.comments
-    .filter((comment) => comment.artifactId === artifact.id)
-    .map((comment) => ({ comment, number: numbers.get(comment.id) ?? 0, status: artifactCommentStatus(comment, artifact) }))
+    .filter((comment) => comment.artifactId === subject.id)
+    .map((comment) => ({ comment, number: numbers.get(comment.id) ?? 0, status: subject.statusOf(comment) }))
     .sort((a, b) => a.number - b.number);
-  const candidate = comments.candidate?.page.artifactId === artifact.id ? comments.candidate : null;
+  const candidate = comments.candidate?.page.artifactId === subject.id ? comments.candidate : null;
   if (!comments.isCommenting && checked.length === 0 && candidate === null) return null;
 
   const counted = checked.filter(({ comment, status }) => isCountedArtifact(comment, status, addReview.inMessage));
   const hasSent = checked.some(({ comment }) => comment.sentAt !== undefined);
   const nextNumber = checked.reduce((top, { number }) => Math.max(top, number), 0) + 1;
-  const add = (picked: CheckedArtifactComment[]) => addReview.add(picked, artifact, cwd);
   const word = counted.length === 1 ? "comment" : "comments";
 
   return (
-    <section aria-label="Comments on this page" className="flex max-h-[40%] min-h-0 shrink-0 flex-col border-t border-border bg-sheet">
+    <section aria-label={subject.label} className="flex max-h-[40%] min-h-0 shrink-0 flex-col border-t border-border bg-sheet">
       {candidate && (
-        <CandidateBox key={`${candidate.page.version}:${JSON.stringify(candidate.anchor)}`} comments={comments} number={nextNumber} />
+        <CandidateBox
+          key={`${candidate.page.version}:${candidate.artboardId ?? ""}:${JSON.stringify(candidate.anchor)}`}
+          comments={comments}
+          number={nextNumber}
+          subject={subject}
+        />
       )}
       <ol aria-label="Comments" className="flex min-h-0 flex-col gap-1.5 overflow-y-auto p-2">
         {checked.map((entry) => {
@@ -212,12 +290,14 @@ export function ArtifactCommentStrip({ artifact, shownVersion, cwd, comments, ad
             <CommentRow
               key={entry.comment.id}
               checked={entry}
+              notFound={subject.notFound}
+              summary={subject.summaryOf({ anchor: entry.comment.anchor, artboardId: entry.comment.canvas?.artboardId })}
               word={statusWord(entry.comment, isCurrent, isInMessage)}
-              note={isCurrent ? undefined : `Written on Version ${entry.comment.version}; the page is now Version ${newest}.`}
-              isMissing={entry.comment.version === shownVersion && comments.missing.has(entry.number)}
+              note={isCurrent ? undefined : subject.noteOf(entry.comment)}
+              isMissing={subject.isMissing(entry.comment, entry.number)}
               canAdd={!isInMessage}
               blockedReason={addReview.blockedReason}
-              onAdd={() => add([entry])}
+              onAdd={() => subject.add([entry])}
               onEdit={(body) => comments.editComment(entry.comment.id, body)}
               onDelete={() => comments.deleteComment(entry.comment.id)}
             />
@@ -230,12 +310,12 @@ export function ArtifactCommentStrip({ artifact, shownVersion, cwd, comments, ad
             <MessageSquare size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
             <span className="flex-1 text-ui text-fg-secondary">{`${counted.length} ${word} not in a message`}</span>
             {hasSent && (
-              <Button variant="ghost" size="sm" tone="muted" onClick={() => comments.clearSent(artifact.id)}>
+              <Button variant="ghost" size="sm" tone="muted" onClick={() => comments.clearSent(subject.id)}>
                 Clear sent
               </Button>
             )}
             {counted.length > 0 && (
-              <Button variant="outline" size="sm" disabled={addReview.blockedReason !== undefined} onClick={() => add(counted)}>
+              <Button variant="outline" size="sm" disabled={addReview.blockedReason !== undefined} onClick={() => subject.add(counted)}>
                 {`Add ${counted.length} to message`}
               </Button>
             )}

@@ -2,6 +2,8 @@
 
 The page is shown beside the chat in Zorvo, in a panel about 540 px wide that the user can widen to the whole window. They read it there, ask you to change it, and may save it as a file. Make it worth reading: one clear subject, the main point first, no filler and no invented numbers.
 
+For several screens, a flow or variants of one screen, make a canvas instead: call `artifact_guide` with `kind: "canvas"` for how.
+
 ## What a page is
 
 - One self-contained `.html` file with a `<title>` and `<meta name="viewport" content="width=device-width, initial-scale=1">`.

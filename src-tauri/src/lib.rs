@@ -594,9 +594,29 @@ pub fn run() {
             app.manage(start_screen_server(app.handle(), screen_state));
             // Images left for command-path agents by sessions long gone.
             std::thread::spawn(move || computer_use::images::sweep_old(&computer_use_dir));
-            app.manage(Arc::new(artifacts::store::ArtifactStore::new(
+            let artifact_store = Arc::new(artifacts::store::ArtifactStore::new(
                 app.state::<store::AppStore>().root().join("artifacts"),
-            )));
+            ));
+            let known_workspaces = app.handle().clone();
+            let thumbs_dir = app.state::<store::AppStore>().root().join("canvas-thumbs");
+            // Pictures of canvas artboards, and those no shown canvas listed for a month.
+            let swept = thumbs_dir.clone();
+            std::thread::spawn(move || {
+                let _ = std::fs::create_dir_all(&swept);
+                artifacts::render::sweep_thumbs(&swept, std::time::SystemTime::now());
+            });
+            app.manage(artifacts::commands::Thumbs::default());
+            app.manage(Arc::new(artifacts::protocol::Served {
+                store: Arc::clone(&artifact_store),
+                thumbs: thumbs_dir,
+                is_known: Arc::new(move |path| {
+                    known_workspaces
+                        .state::<store::AppStore>()
+                        .is_known_workspace(path)
+                        .unwrap_or(false)
+                }),
+            }));
+            app.manage(artifact_store);
             if let Err(error) = migration {
                 report_migration_failure(app.handle(), &error);
             }
@@ -682,16 +702,26 @@ pub fn run() {
             browser::browser_bounds,
             artifacts::commands::artifact_show,
             artifacts::commands::artifact_list,
+            artifacts::commands::canvas_show,
+            artifacts::commands::canvas_read,
+            artifacts::commands::canvas_thumbs,
+            artifacts::commands::canvas_export,
+            artifacts::commands::canvas_forget,
             artifacts::commands::artifact_rename,
             artifacts::commands::artifact_delete,
             artifacts::commands::artifact_delete_session,
             artifacts::commands::artifact_export,
             artifacts::commands::artifact_view_show,
+            artifacts::commands::canvas_view_show,
+            artifacts::commands::canvas_view_apply,
+            artifacts::commands::canvas_view_command,
             artifacts::commands::artifact_view_bounds,
             artifacts::commands::artifact_view_hide,
             artifacts::commands::artifact_view_close,
             artifacts::commands::artifact_comment_mode,
             artifacts::commands::artifact_view_marks,
+            artifacts::commands::canvas_comment_mode,
+            artifacts::commands::canvas_view_marks,
             app_update::app_update_check,
             app_update::app_update_install,
             app_update::app_update_restart,

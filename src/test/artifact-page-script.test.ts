@@ -279,4 +279,56 @@ describe('the artifact page script', () => {
 
     expect(posted).toEqual([{ kind: 'marks-missing', numbers: [1] }]);
   });
+
+  describe('in an artboard frame', () => {
+    const parent = {} as Window;
+    const relay = (data: unknown, source: unknown = parent) =>
+      window.dispatchEvent(new MessageEvent('message', { data, source: source as Window }));
+
+    beforeEach(() => {
+      Object.defineProperty(window, 'parent', { value: parent, configurable: true });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(window, 'parent', { value: window, configurable: true });
+    });
+
+    it("takes comment mode and marks relayed by the wrapper, the frame's parent", () => {
+      load('<p>Hello</p><button id="go">Go</button>');
+
+      relay({ zorvo: 'marks', marks: [{ n: 1, anchor: { kind: 'text', quote: 'Hello', before: '', after: '' } }] });
+      relay({ zorvo: 'mode', on: true });
+      click(document.querySelector('#go')!);
+
+      expect(posted).toEqual([
+        { kind: 'marks-missing', numbers: [] },
+        expect.objectContaining({ kind: 'pick-element', elementId: 'go' }),
+      ]);
+      relay({ zorvo: 'mode', on: false });
+      posted = [];
+      click(document.querySelector('#go')!);
+      expect(posted).toEqual([]);
+    });
+
+    it('ignores what any other window posts, and kinds it does not know', () => {
+      load('<button id="go">Go</button>');
+
+      relay({ zorvo: 'mode', on: true }, window);
+      relay({ zorvo: 'mode', on: true }, null);
+      relay({ zorvo: 'eval', code: '1' });
+      relay('mode');
+      click(document.querySelector('#go')!);
+
+      expect(posted).toEqual([]);
+    });
+  });
+
+  it('ignores a relayed message in a page that is not in a frame', () => {
+    load('<button id="go">Go</button>');
+
+    window.dispatchEvent(new MessageEvent('message', { data: { zorvo: 'mode', on: true }, source: window }));
+    click(document.querySelector('#go')!);
+
+    expect(posted).toEqual([]);
+  });
 });

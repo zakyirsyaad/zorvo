@@ -26,7 +26,13 @@ pub const TOO_MANY: &str = "This session already has 50 pages. The user can dele
 pub const FAILED: &str = "Zorvo could not keep that page.";
 const NO_SUCH_ARTIFACT: &str = "That artifact does not exist.";
 
+pub const MAX_CANVASES: usize = 50;
+pub const TOO_MANY_CANVASES: &str =
+    "This session already has 50 canvases. The user can remove one in Zorvo.";
+
 const INDEX_FILE: &str = "index.json";
+const CANVASES_FILE: &str = "canvases.json";
+const CANVAS_KEY_PREFIX: &str = "c-";
 const MAX_SESSION_ID_CHARS: usize = 80;
 const ARTIFACT_ID_PREFIX: &str = "a-";
 const ARTIFACT_ID_HEX_CHARS: usize = 16;
@@ -58,6 +64,20 @@ pub struct Shown {
     pub is_new_version: bool,
 }
 
+/// A canvas Zorvo showed in a session, found again by its folder.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasEntry {
+    pub key: String,
+    pub folder: String,
+    pub relative: String,
+    pub title: String,
+    pub shown_at: u64,
+    /// How many artboards the canvas had when it was last shown; 0 in an index from before.
+    #[serde(default)]
+    pub artboards: u32,
+}
+
 pub fn is_session_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= MAX_SESSION_ID_CHARS
@@ -68,6 +88,15 @@ pub fn is_session_id(id: &str) -> bool {
 
 pub fn is_artifact_id(id: &str) -> bool {
     id.strip_prefix(ARTIFACT_ID_PREFIX).is_some_and(|hex| {
+        hex.len() == ARTIFACT_ID_HEX_CHARS
+            && hex
+                .chars()
+                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+    })
+}
+
+pub fn is_canvas_key(id: &str) -> bool {
+    id.strip_prefix(CANVAS_KEY_PREFIX).is_some_and(|hex| {
         hex.len() == ARTIFACT_ID_HEX_CHARS
             && hex
                 .chars()
@@ -108,13 +137,18 @@ fn draws_nothing(c: char) -> bool {
 /// A title as it is stored: without what reorders or breaks its line, trimmed,
 /// at most 60 characters; `None` when nothing of it could be read.
 fn clean_title(title: &str) -> Option<String> {
+    clean_title_within(title, MAX_TITLE_CHARS)
+}
+
+/// `clean_title` with a limit of the caller's choosing.
+pub(crate) fn clean_title_within(title: &str, max_chars: usize) -> Option<String> {
     let kept: String = title
         .chars()
         // A break between words stays a gap, so the words do not run together.
         .map(|c| if c.is_whitespace() { ' ' } else { c })
         .filter(|c| !reshapes_a_line(*c))
         .collect();
-    let cut: String = kept.trim().chars().take(MAX_TITLE_CHARS).collect();
+    let cut: String = kept.trim().chars().take(max_chars).collect();
     let cut = cut.trim_end().to_string();
     cut.chars().any(|c| !draws_nothing(c)).then_some(cut)
 }
@@ -126,6 +160,15 @@ fn new_artifact_id() -> Result<String, String> {
         .map_err(|_| FAILED.to_string())?;
     let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
     Ok(format!("{ARTIFACT_ID_PREFIX}{hex}"))
+}
+
+fn new_canvas_key() -> Result<String, String> {
+    let mut bytes = [0u8; ARTIFACT_ID_HEX_CHARS / 2];
+    fs::File::open("/dev/urandom")
+        .and_then(|mut file| file.read_exact(&mut bytes))
+        .map_err(|_| FAILED.to_string())?;
+    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    Ok(format!("{CANVAS_KEY_PREFIX}{hex}"))
 }
 
 /// Writes a page only its owner can read, then renames it into place.
@@ -203,6 +246,104 @@ impl ArtifactStore {
         let bytes = serde_json::to_vec_pretty(records).map_err(|_| FAILED.to_string())?;
         let tmp = dir.join(format!("{INDEX_FILE}.{}.tmp", std::process::id()));
         atomic_write(&dir.join(INDEX_FILE), &tmp, &bytes).map_err(|_| FAILED.to_string())
+    }
+
+    /// The session's remembered canvases in stored order; empty when it has none.
+    fn read_canvases(&self, session_id: &str) -> Result<Vec<CanvasEntry>, String> {
+        let path = self.session_dir(session_id).join(CANVASES_FILE);
+        match fs::read(&path) {
+            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|_| FAILED.to_string()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+            Err(_) => Err(FAILED.to_string()),
+        }
+    }
+
+    fn write_canvases(&self, session_id: &str, entries: &[CanvasEntry]) -> Result<(), String> {
+        let dir = self.session_dir(session_id);
+        fs::create_dir_all(&dir).map_err(|_| FAILED.to_string())?;
+        let bytes = serde_json::to_vec_pretty(entries).map_err(|_| FAILED.to_string())?;
+        let tmp = dir.join(format!("{CANVASES_FILE}.{}.tmp", std::process::id()));
+        atomic_write(&dir.join(CANVASES_FILE), &tmp, &bytes).map_err(|_| FAILED.to_string())
+    }
+
+    /// Remembers a shown canvas: the same canonical folder keeps its key and
+    /// takes the new title and time.
+    pub fn remember_canvas(
+        &self,
+        session_id: &str,
+        folder: &super::canvas::CanvasFolder,
+        title: &str,
+        artboards: u32,
+        now: u64,
+    ) -> Result<CanvasEntry, String> {
+        if !is_session_id(session_id) {
+            return Err(FAILED.to_string());
+        }
+        let root = folder.root.to_string_lossy().into_owned();
+        let lock = self.lock_for(session_id);
+        let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        let mut entries = self.read_canvases(session_id)?;
+        let entry = if let Some(existing) = entries.iter_mut().find(|e| e.folder == root) {
+            existing.title = title.to_string();
+            existing.relative = folder.relative.clone();
+            existing.shown_at = now;
+            existing.artboards = artboards;
+            existing.clone()
+        } else {
+            if entries.len() >= MAX_CANVASES {
+                return Err(TOO_MANY_CANVASES.to_string());
+            }
+            let entry = CanvasEntry {
+                key: new_canvas_key()?,
+                folder: root,
+                relative: folder.relative.clone(),
+                title: title.to_string(),
+                shown_at: now,
+                artboards,
+            };
+            entries.push(entry.clone());
+            entry
+        };
+        self.write_canvases(session_id, &entries)?;
+        Ok(entry)
+    }
+
+    /// Newest shown first.
+    pub fn canvases(&self, session_id: &str) -> Result<Vec<CanvasEntry>, String> {
+        if !is_session_id(session_id) {
+            return Err(FAILED.to_string());
+        }
+        let lock = self.lock_for(session_id);
+        let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        let mut entries = self.read_canvases(session_id)?;
+        entries.sort_by_key(|entry| std::cmp::Reverse(entry.shown_at));
+        Ok(entries)
+    }
+
+    pub fn canvas(&self, session_id: &str, key: &str) -> Option<CanvasEntry> {
+        if !is_session_id(session_id) || !is_canvas_key(key) {
+            return None;
+        }
+        let lock = self.lock_for(session_id);
+        let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        self.read_canvases(session_id)
+            .ok()?
+            .into_iter()
+            .find(|entry| entry.key == key)
+    }
+
+    pub fn forget_canvas(&self, session_id: &str, key: &str) -> Result<(), String> {
+        if !is_session_id(session_id) || !is_canvas_key(key) {
+            return Err(FAILED.to_string());
+        }
+        let lock = self.lock_for(session_id);
+        let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        let entries: Vec<CanvasEntry> = self
+            .read_canvases(session_id)?
+            .into_iter()
+            .filter(|entry| entry.key != key)
+            .collect();
+        self.write_canvases(session_id, &entries)
     }
 
     /// Takes the oldest versions past the limits off the record and returns
@@ -882,5 +1023,125 @@ mod tests {
 
         assert!(store.list(SESSION).unwrap().is_empty());
         assert!(store.show(SESSION, PATH, Some("A"), b"a", 1).is_err());
+    }
+
+    fn folder(name: &str) -> super::super::canvas::CanvasFolder {
+        super::super::canvas::CanvasFolder {
+            root: PathBuf::from(format!("/work/{name}")),
+            relative: name.to_string(),
+        }
+    }
+
+    #[test]
+    fn the_same_folder_keeps_its_key() {
+        let temp = Temp::new("canvas-key");
+        let store = temp.store();
+        let first = store
+            .remember_canvas(SESSION, &folder("a"), "One", 1, 10)
+            .unwrap();
+        let second = store
+            .remember_canvas(SESSION, &folder("a"), "Two", 12, 20)
+            .unwrap();
+        assert!(is_canvas_key(&first.key));
+        assert_eq!(first.key, second.key);
+        assert_eq!(second.title, "Two");
+        assert_eq!(second.shown_at, 20);
+        assert_eq!(second.artboards, 12);
+        assert_eq!(store.canvases(SESSION).unwrap().len(), 1);
+        assert_eq!(store.canvas(SESSION, &first.key), Some(second));
+    }
+
+    #[test]
+    fn an_index_written_before_counts_reads_as_no_artboards() {
+        let entries: Vec<CanvasEntry> = serde_json::from_str(
+            r#"[{"key":"c-0123456789abcdef","folder":"/w/d","relative":"d","title":"T","shownAt":1}]"#,
+        )
+        .unwrap();
+        assert_eq!(entries[0].artboards, 0);
+    }
+
+    #[test]
+    fn lists_newest_first_and_forgets() {
+        let temp = Temp::new("canvas-list");
+        let store = temp.store();
+        let old = store
+            .remember_canvas(SESSION, &folder("a"), "A", 1, 10)
+            .unwrap();
+        let new = store
+            .remember_canvas(SESSION, &folder("b"), "B", 1, 20)
+            .unwrap();
+        let keys: Vec<_> = store
+            .canvases(SESSION)
+            .unwrap()
+            .into_iter()
+            .map(|c| c.key)
+            .collect();
+        assert_eq!(keys, vec![new.key.clone(), old.key.clone()]);
+        store.forget_canvas(SESSION, &new.key).unwrap();
+        let keys: Vec<_> = store
+            .canvases(SESSION)
+            .unwrap()
+            .into_iter()
+            .map(|c| c.key)
+            .collect();
+        assert_eq!(keys, vec![old.key]);
+        assert_eq!(store.canvas(SESSION, &new.key), None);
+    }
+
+    #[test]
+    fn refuses_a_51st_canvas() {
+        let temp = Temp::new("canvas-cap");
+        let store = temp.store();
+        for n in 0..MAX_CANVASES {
+            store
+                .remember_canvas(SESSION, &folder(&n.to_string()), "T", 1, n as u64)
+                .unwrap();
+        }
+        assert_eq!(
+            store.remember_canvas(SESSION, &folder("extra"), "T", 1, 99),
+            Err(TOO_MANY_CANVASES.to_string())
+        );
+        // A folder already remembered still updates at the limit.
+        assert!(store
+            .remember_canvas(SESSION, &folder("0"), "New", 1, 100)
+            .is_ok());
+    }
+
+    #[test]
+    fn delete_session_removes_canvases() {
+        let temp = Temp::new("canvas-delete");
+        let store = temp.store();
+        store
+            .remember_canvas(SESSION, &folder("a"), "A", 1, 1)
+            .unwrap();
+        store.delete_session(SESSION).unwrap();
+        assert_eq!(store.canvases(SESSION).unwrap(), vec![]);
+    }
+
+    #[test]
+    fn an_unreadable_canvases_file_is_an_error_not_empty() {
+        let temp = Temp::new("canvas-bad");
+        let store = temp.store();
+        store
+            .remember_canvas(SESSION, &folder("a"), "A", 1, 1)
+            .unwrap();
+        fs::write(temp.0.join(SESSION).join("canvases.json"), "{").unwrap();
+        assert!(store.canvases(SESSION).is_err());
+        assert!(store
+            .remember_canvas(SESSION, &folder("b"), "B", 1, 2)
+            .is_err());
+    }
+
+    #[test]
+    fn canvas_keys_have_one_shape() {
+        assert!(is_canvas_key("c-0123456789abcdef"));
+        assert!(!is_canvas_key("a-0123456789abcdef"));
+        assert!(!is_canvas_key("c-0123456789ABCDEF"));
+        assert!(!is_canvas_key("c-0123"));
+        let temp = Temp::new("canvas-shape");
+        let store = temp.store();
+        assert_eq!(store.canvas("bad/session", "c-0123456789abcdef"), None);
+        assert!(store.canvases("bad/session").is_err());
+        assert!(store.forget_canvas(SESSION, "nope").is_err());
     }
 }

@@ -15,6 +15,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 import App from "../App";
+import { MCP_PATH_CONTEXT } from "../lib/agent-tools-context";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
 type InvokeCall = [string, Record<string, unknown> | undefined, ...unknown[]];
@@ -935,6 +936,22 @@ describe("ACP sessions in the app", () => {
     });
 
     expect(sidebar.getByText("Parser walkthrough")).toBeDefined();
+  });
+
+  it("keeps the first message as the name when the agent's title is cut from Zorvo's hidden note", async () => {
+    const spy = await renderWithQwen();
+    await send("explain the parser");
+    const sidebar = within(screen.getByRole("complementary"));
+    const [, startArgs] = callsTo(spy, "acp_start_session")[0];
+
+    await acpEvent({
+      sessionId: String(startArgs?.sessionId),
+      kind: "update",
+      update: { sessionUpdate: "session_info_update", title: `${MCP_PATH_CONTEXT.slice(0, 120)}…` },
+    });
+
+    expect(sidebar.getByText("explain the parser")).toBeDefined();
+    expect(sidebar.queryByText(/the app this session runs in/)).toBeNull();
   });
 
   it("names a new session after its first message and keeps that name", async () => {

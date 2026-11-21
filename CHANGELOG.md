@@ -25,6 +25,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Fixed
 
+- A new session keeps the name from your first message. With Claude Agent it could be named after a note Zorvo sends the agent, which you never wrote.
 - **Browser tools on sites with a strict content policy.** Native JavaScript expressions and console reads use WebKit's page-world compiler, so a site's ban on `eval` does not block the tools. The site's policy remains unchanged.
 - **Navigation past a page dialog.** Navigating, reloading or going back/forward dismisses a pending page dialog before WebKit starts the new document, so the dialog cannot keep the navigation waiting.
 - **Closing browser pages releases their process state.** Closed views cancel pending operations and ask WebKit to end and reset the page process, including a page running a script that never yields.

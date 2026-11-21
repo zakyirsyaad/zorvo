@@ -58,12 +58,17 @@ export const DOCS_NAV: DocsGroup[] = [
       {
         href: "/docs/delegate",
         label: "Delegate a task",
-        summary: "Hand a task from one session to another agent with an @ mention or the session menu, and get its answer back.",
+        summary: "Hand a task to another agent with an @ mention or the session menu, or let an agent start workers, and get the reports back.",
       },
       {
         href: "/docs/review",
         label: "Review changes",
         summary: "Read what an agent changed, comment on lines, and send the comments in your next message.",
+      },
+      {
+        href: "/docs/output",
+        label: "Pages and canvases",
+        summary: "An agent shows you a page or several screens beside the chat, and you comment on what you see.",
       },
       {
         href: "/docs/terminal",

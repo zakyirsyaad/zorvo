@@ -1,7 +1,9 @@
+import { downloadCount, formatCount } from "../../lib/downloads";
 import { LINKS } from "../../lib/links";
 import { AgentTile } from "../ui/AgentTile";
 
 export function Hero() {
+  const downloads = formatCount(downloadCount());
   return (
     <section className="p-[88px_0_112px]" id="top" data-hero="" aria-labelledby="hero-title">
       <div className="lp-wrap flex flex-col items-center gap-7 text-center">
@@ -25,16 +27,22 @@ export function Hero() {
           </span>
         </h1>
         <p className="max-w-160 text-[19px] leading-7.5 text-fg-muted" data-hero-fade="">
-          Claude Code, Codex, Qwen Code and the agents of the ACP registry in one native Mac app. Put them on one project, send one prompt to four, or hand a task from one to another. No lock-in, no API keys.
+          Claude Code, Codex, Qwen Code and dozens more coding agents in one native Mac app. Put them on one project, send one prompt to four, or hand a task from one to another. No lock-in, no API keys.
         </p>
         <div className="flex flex-wrap justify-center gap-3" data-hero-fade="">
-          <a className="focus-ring lp-btn lp-btn-primary" data-press="" href={LINKS.download}>
-            <svg className="lp-ico" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 4v11" />
-              <path d="M7 11l5 5 5-5" />
-              <path d="M5 20h14" />
-            </svg>
-            Download for Mac
+          {/* The count sits on the button, the way a star count sits on a GitHub button. */}
+          <a className="focus-ring lp-btn lp-btn-primary gap-0 pr-0" data-press="" href={LINKS.download} aria-label={`Download for Mac. Downloaded ${downloads} times.`}>
+            <span className="inline-flex items-center gap-2">
+              <svg className="lp-ico" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 4v11" />
+                <path d="M7 11l5 5 5-5" />
+                <path d="M5 20h14" />
+              </svg>
+              Download for Mac
+            </span>
+            <span className="font-mono self-stretch inline-flex items-center ml-4 px-3.5 border-l border-on-primary/20 text-[13px] font-medium" data-downloads="">
+              {downloads}
+            </span>
           </a>
           <a className="focus-ring lp-btn lp-btn-outline" data-press="" href={LINKS.docs}>
             Read the docs
@@ -45,16 +53,12 @@ export function Hero() {
           </a>
         </div>
         <p className="max-w-130 text-[14px] leading-5.5 text-fg-subtle" data-hero-fade="">
-          Free and open source under Apache 2.0, for Macs with Apple silicon or Intel. The build is not signed yet, so
-          macOS blocks the first launch.
-          {" "}
-          <a className="focus-ring whitespace-nowrap text-fg-secondary underline decoration-(--lp-strong) underline-offset-3" href={LINKS.firstOpen}>
-            How to open it
-          </a>
+          Free and open source under Apache 2.0, for Macs with Apple silicon or Intel. Signed with a Developer ID and
+          notarized by Apple.
         </p>
       </div>
       <div className="lp-wrap mt-16">
-        <div className="lp-win lp-ui" data-win="" role="img" aria-label="Zorvo's window. The sidebar lists one project, acme-shop, with a compare run and sessions run by Codex, Qwen Code and Claude Code. The chat shows Codex fixing a login redirect loop, with the file it read and its edit.">
+        <div className="lp-win lp-ui" data-win="" role="img" aria-label="Zorvo's window. The sidebar lists one project, acme-shop, with a compare run and sessions run by Codex, Qwen Code and Claude Code. The chat shows Codex fixing a login redirect loop, with the file it read and its edit. A card beside the chat gives the session's changes, branch and folder, and the command that is running.">
           <div className="lp-sb">
             <span className="flex gap-2 p-[6px_8px_14px]">
               <span className="lp-dot w-3 h-3 bg-[#3f3f46]" />
@@ -106,23 +110,14 @@ export function Hero() {
               <b>Document the checkout flow</b>
               <span>
                 <AgentTile agent="Claude Code" size="small" logo={12} />
-                Claude Code · 3 hours ago
+                Claude Code ·
+                <span className="font-mono text-status-running">#128 open</span>
               </span>
             </span>
           </div>
           <div className="flex-1 min-w-0 flex flex-col">
             <div className="lp-tb">
               <b className="font-semibold text-fg">Fix login redirect loop</b>
-              <span className="font-mono inline-flex items-center gap-1.5 text-[11px] text-fg-muted">
-                <svg className="lp-ico w-3 h-3" viewBox="0 0 24 24" aria-hidden="true">
-                  <circle cx="6" cy="6" r="2" />
-                  <circle cx="6" cy="18" r="2" />
-                  <circle cx="18" cy="8" r="2" />
-                  <path d="M6 8v8" />
-                  <path d="M18 10c0 4-6 3-6 6" />
-                </svg>
-                main
-              </span>
               <span className="flex-1" />
               <span className="lp-chip">Plan 2/4</span>
               <span className="lp-chip font-mono">
@@ -130,7 +125,8 @@ export function Hero() {
                 <span className="text-danger">−1</span>
               </span>
             </div>
-            <div className="flex-1 min-h-0 flex flex-col gap-4.5 w-full max-w-160 mx-auto p-[24px_20px_0]">
+            <div className="flex-1 min-h-0 flex">
+            <div className="flex-1 min-w-0 min-h-0 flex flex-col gap-4.5 w-full max-w-160 mx-auto p-[24px_20px_0]">
               <span className="lp-bub" data-chat="">
                 Signing in from /login sends me back to /login?next=/login forever. Find the loop and fix it.
               </span>
@@ -189,6 +185,36 @@ export function Hero() {
                 <span className="lp-dot lp-pulse bg-status-running" />
                 Running the auth tests
               </span>
+            </div>
+            {/* The session's overview card. Below 1140px the window has no room for it, as in the app,
+                where it folds to a pill. */}
+            <div className="lp-card self-start flex-none w-56 m-[24px_16px_0_0] flex flex-col max-[1140px]:hidden" data-chat="">
+              <span className="flex flex-col gap-1.5 p-[10px_12px_12px]">
+                <span className="lp-sub">Environment</span>
+                <span className="flex items-center gap-2 font-mono text-[12px]">
+                  <span className="text-status-running">+2</span>
+                  <span className="text-danger">−1</span>
+                  <span className="flex-1" />
+                  <svg className="lp-ico w-3 h-3" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="6" cy="6" r="2" />
+                    <circle cx="6" cy="18" r="2" />
+                    <circle cx="18" cy="8" r="2" />
+                    <path d="M6 8v8" />
+                    <path d="M18 10c0 4-6 3-6 6" />
+                  </svg>
+                  main
+                </span>
+                <span className="text-[12px] text-fg-muted">acme-shop</span>
+              </span>
+              <span className="flex flex-col gap-1.5 p-[10px_12px_12px] border-t border-border">
+                <span className="lp-sub">Running</span>
+                <span className="flex items-center gap-2 text-[12px]">
+                  <span className="font-mono text-fg truncate">pnpm test auth</span>
+                  <span className="flex-1" />
+                  <span className="lp-sub">Shell</span>
+                </span>
+              </span>
+            </div>
             </div>
             <div className="w-full max-w-160 mx-auto p-[16px_20px_20px]">
               <span className="lp-comp">

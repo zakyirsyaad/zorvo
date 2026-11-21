@@ -1,17 +1,22 @@
 import { Agents } from "../components/sections/Agents";
+import { Canvas } from "../components/sections/Canvas";
+import { Community } from "../components/sections/Community";
 import { Compare } from "../components/sections/Compare";
 import { Control } from "../components/sections/Control";
 import { Delegate } from "../components/sections/Delegate";
 import { Download } from "../components/sections/Download";
+import { Faq } from "../components/sections/Faq";
 import { Features } from "../components/sections/Features";
 import { Hero } from "../components/sections/Hero";
 import { LongSessions } from "../components/sections/LongSessions";
+import { Output } from "../components/sections/Output";
 import { Privacy } from "../components/sections/Privacy";
 import { PrivateMode } from "../components/sections/PrivateMode";
 import { Review } from "../components/sections/Review";
 import { Sessions } from "../components/sections/Sessions";
 import { SiteFooter } from "../components/sections/SiteFooter";
 import { SiteHeader } from "../components/sections/SiteHeader";
+import { Voices } from "../components/sections/Voices";
 import { softwareApplication } from "../lib/site";
 
 export default function Home() {
@@ -26,23 +31,36 @@ export default function Home() {
       >
         Skip to content
       </a>
+      {/* The two wrappers GSAP's ScrollSmoother moves; without the script they are plain blocks. */}
+      <div id="smooth-wrapper">
+      <div id="smooth-content">
       <SiteHeader />
       <main id="main">
         <Hero />
         <Agents />
+        {/* Right under the strip of agents: who makes Zorvo, and where to follow it. */}
+        <Community />
         <Sessions />
         <Compare />
         <Delegate />
         <Review />
+        {/* After Review: a comment on a line of a diff, then a comment on a page. */}
+        <Output />
+        <Canvas />
         <Control />
         <LongSessions />
         <Features />
+        {/* Renders nothing until lib/voices.ts holds real quotes. */}
+        <Voices />
         {/* The optional paid extra comes after everything Zorvo does for free, right before privacy. */}
         <PrivateMode />
         <Privacy />
+        <Faq />
         <Download />
       </main>
       <SiteFooter />
+      </div>
+      </div>
       {/* The motion: one small script, nothing renders from it. See scripts/motion/. */}
       <script src="/motion.js" defer />
     </div>

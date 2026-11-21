@@ -8,6 +8,7 @@ export const metadata = docsMetadata("/docs/privacy");
 const TOC: TocEntry[] = [
   { id: "sign-in", label: "Sign-in stays with the agents" },
   { id: "hosts", label: "A few hosts, all named" },
+  { id: "pages", label: "Pages, the browser and apps" },
   { id: "private-mode", label: "Private mode's hosts" },
   { id: "data", label: "Where your data lives" },
   { id: "folders", label: "Folder limits" },
@@ -35,8 +36,9 @@ export default function PrivacyPage() {
 
       <H2 id="hosts">A few hosts, all named</H2>
       <P>
-        Zorvo&apos;s backend contacts these hosts, and only these, until you open private mode (see{" "}
-        <DocLink href="#private-mode">Private mode&apos;s hosts</DocLink>):
+        For its own work, Zorvo&apos;s backend contacts these hosts, and only these, until you open private mode (see{" "}
+        <DocLink href="#private-mode">Private mode&apos;s hosts</DocLink>). What a page or the browser loads is under{" "}
+        <DocLink href="#pages">Pages, the browser and apps</DocLink>:
       </P>
       <UL>
         <li>the ACP registry (<Chip isCode>cdn.agentclientprotocol.com</Chip>), to list agents and their versions, and to fetch their logos;</li>
@@ -51,8 +53,10 @@ export default function PrivacyPage() {
         </li>
       </UL>
       <P>
-        Every agent and runtime download is checked against a SHA-256 hash that was pinned before the download, and none
-        starts until you click <B>Install</B>. A Zorvo update starts only when you click <B>Update &amp; restart</B>, must
+        Every runtime and binary agent download is checked against a SHA-256 hash that was pinned before the download,
+        and an agent that comes as an npm package is installed at the exact version the registry pins. None starts
+        until you click <B>Install</B>, with one exception: when Zorvo opens, an agent you have already used whose
+        package is not in Zorvo&apos;s folder yet is installed once, without a click. A Zorvo update starts only when you click <B>Update &amp; restart</B>, must
         come from Zorvo&apos;s releases, and is installed only if its signature matches the key built into the app. The
         window itself makes no network requests: its Content Security Policy only allows the local IPC bridge.
       </P>
@@ -61,6 +65,27 @@ export default function PrivacyPage() {
         packages from the npm registry, and <Chip isCode>uvx</Chip> can download Python and PyPI packages. Your agents
         talk to their own services as they always do.
       </P>
+
+      <H2 id="pages">Pages, the browser and apps</H2>
+      <UL>
+        <li>
+          <B>A page an agent shows you</B> runs in a part of the window of its own. It cannot call Zorvo or read your
+          files. It may load scripts and fonts from a short list of public hosts, and can send a request nowhere else.{" "}
+          <DocLink href="/docs/output#reach">What a page can reach</DocLink> names the hosts. They see that a file was
+          asked for, as any website&apos;s would.
+        </li>
+        <li>
+          <B>The Browser tab</B> (in versions after 0.14.1) loads the pages you or your agent open, and what those
+          pages load, in a view apart from the chat. Search text you submit in the address bar goes to Google. Each
+          session has its own browser store, kept in memory and not shared with other sessions. An agent needs your
+          grant for the session before it uses the browser, and sending a file asks again.
+        </li>
+        <li>
+          <B>Apps on your Mac</B> (in versions after 0.14.1) are off until you turn computer use on in Settings,
+          Agents. An agent then asks which apps it may use in a session, and for now it can only read a window and
+          take a picture of it. What an agent sees in an app goes to its model provider.
+        </li>
+      </UL>
 
       <H2 id="private-mode">Private mode&apos;s hosts</H2>
       <P>

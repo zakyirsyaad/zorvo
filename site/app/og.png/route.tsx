@@ -51,7 +51,7 @@ export async function GET() {
             <span>One desktop.</span>
           </div>
           <span style={{ fontSize: 30, fontWeight: 500, color: COLOR["fg-muted"] }}>
-            A Mac app for Claude Code, Codex, Qwen Code and every ACP agent.
+            A Mac app for Claude Code, Codex, Qwen Code and dozens more agents.
           </span>
         </div>
         <div

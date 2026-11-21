@@ -32,3 +32,5 @@ src-tauri/binaries/
 
 # Built by site/scripts/build-motion.mjs
 site/public/motion.js
+# Built by site/scripts/build-agent-icons.mjs
+site/public/agents/

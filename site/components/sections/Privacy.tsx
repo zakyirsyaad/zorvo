@@ -28,7 +28,7 @@ export function Privacy() {
             <li>
               <h3>Few requests, all named</h3>
               <p>
-                The ACP registry, a daily check for a newer Zorvo, and an agent's download when you click Install.
+                Zorvo itself asks for the list of agents, a daily check for a newer Zorvo, and an agent's download when you click Install. The Browser tab loads the pages you or an agent open, and a page an agent shows you may load scripts and fonts from a short list of hosts.
               </p>
             </li>
           </ul>

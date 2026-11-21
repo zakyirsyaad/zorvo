@@ -29,6 +29,12 @@ export function Control() {
                 Activity lists the files, commands and permissions the agent reported, and the files it did not.
               </p>
             </li>
+            <li>
+              <h3>Apps on your Mac, only the ones you tick</h3>
+              <p>
+                Off until you turn it on in Settings. An agent then asks which apps it may use in a session, and for now it can only look at them. What it sees goes to its model provider.
+              </p>
+            </li>
           </ul>
         </div>
         <div className="lp-col basis-110 items-center">

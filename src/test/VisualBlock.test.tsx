@@ -116,4 +116,40 @@ describe("VisualBlock", () => {
     comeNear();
     expect((await screen.findByTitle<HTMLIFrameElement>("Path of a visual")).style.height).toBe("300px");
   });
+
+  it("expands into a dialog named by the title, with the same sandbox", async () => {
+    mockRead(() => READ);
+    render(<VisualBlock sessionId="s-1" part={PART} agentName="Claude Code" />);
+    comeNear();
+    await screen.findByTitle("Path of a visual");
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    const dialog = screen.getByRole("dialog", { name: "Path of a visual" });
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    const frame = dialog.querySelector("iframe");
+    expect(frame?.getAttribute("sandbox")).toBe("allow-same-origin");
+    expect(frame?.getAttribute("srcdoc")).toBe(READ.document);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
+  });
+
+  it("closes the dialog on Escape and gives focus back to Expand", async () => {
+    mockRead(() => READ);
+    render(<VisualBlock sessionId="s-1" part={PART} agentName="Claude Code" />);
+    comeNear();
+    await screen.findByTitle("Path of a visual");
+    const expand = screen.getByRole("button", { name: "Expand" });
+    fireEvent.click(expand);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(expand);
+  });
+
+  it("closes the dialog from its Close button", async () => {
+    mockRead(() => READ);
+    render(<VisualBlock sessionId="s-1" part={PART} agentName="Claude Code" />);
+    comeNear();
+    await screen.findByTitle("Path of a visual");
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 });

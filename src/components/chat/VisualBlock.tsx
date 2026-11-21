@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Maximize2 } from "lucide-react";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
+import { VisualDialog } from "./VisualDialog";
 import { VisualFrame } from "./VisualFrame";
 import { useNearScreen } from "../../hooks/useNearScreen";
 import { useVisualDocument } from "../../hooks/useVisualDocument";
@@ -30,6 +31,12 @@ export function VisualBlock({ sessionId, part, agentName, isArriving = false }: 
   const visual = useVisualDocument(sessionId, part.id, isNear);
   const [isFolded, setIsFolded] = useState(false);
   const [height, setHeight] = useState(0);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const expandRef = useRef<HTMLButtonElement>(null);
+  const closeDialog = () => {
+    setIsExpanded(false);
+    expandRef.current?.focus();
+  };
   const title = escapeVisible(part.title);
   const isMainWindow = sessionId !== undefined;
   const isShown = visual.status === "ready";
@@ -40,6 +47,11 @@ export function VisualBlock({ sessionId, part, agentName, isArriving = false }: 
         <span className="min-w-0 truncate text-ui-sm font-medium text-fg">{title}</span>
         <span className="shrink-0 text-caption text-fg-subtle">{isMainWindow ? `${agentName} made this visual` : "Shown in the main window."}</span>
         <span className="flex-1" />
+        {isShown && (
+          <IconButton ref={expandRef} size="sm" label="Expand" aria-haspopup="dialog" onClick={() => setIsExpanded(true)}>
+            <Maximize2 size={14} aria-hidden="true" />
+          </IconButton>
+        )}
         {isShown && (
           <IconButton size="sm" label={isFolded ? "Unfold visual" : "Fold visual"} aria-expanded={!isFolded} onClick={() => setIsFolded((folded) => !folded)}>
             {isFolded ? <ChevronRight size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
@@ -75,6 +87,7 @@ export function VisualBlock({ sessionId, part, agentName, isArriving = false }: 
             ))}
         </>
       )}
+      {isExpanded && visual.status === "ready" && <VisualDialog title={title} document={visual.document} onClose={closeDialog} />}
     </div>
   );
 }

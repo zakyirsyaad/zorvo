@@ -294,8 +294,14 @@ describe("landing page", () => {
     expect(card.textContent).toContain("Claude Code, Codex, Qwen Code and 40 more");
     expect(card.querySelector("time")?.getAttribute("datetime")).toBe("2026-11-14");
     expect(card.querySelector("time")?.textContent).toBe("14 Nov 2026");
-    // A copy of the post: no picture, video or script comes from X.
-    expect(card.querySelectorAll("img, video, iframe, script")).toHaveLength(0);
+    // A copy of the post: its video is served by the site itself, and no picture, frame or script comes from X.
+    expect(card.querySelectorAll("img, iframe, script")).toHaveLength(0);
+    const video = card.querySelector("video")!;
+    expect([video.getAttribute("poster"), video.querySelector("source")?.getAttribute("src")]).toEqual(["/media/zorvo-launch.jpg", "/media/zorvo-launch.mp4"]);
+    for (const file of ["zorvo-launch.jpg", "zorvo-launch.mp4"]) expect(existsSync(join(ROOT, "site", "public", "media", file)), file).toBe(true);
+    // Silent, with the browser's controls to pause it, sized so the page does not jump, and not fetched until it plays.
+    for (const attribute of ["muted", "loop", "playsinline", "controls", "data-autoplay", "aria-label"]) expect(video.hasAttribute(attribute), attribute).toBe(true);
+    expect([video.getAttribute("width"), video.getAttribute("height"), video.getAttribute("preload")]).toEqual(["960", "540", "none"]);
     // The card as a whole leads to the profile: the name's link is stretched over it, and it lifts on hover.
     expect(card.querySelector("a.lp-tweet-main")?.getAttribute("href")).toBe("https://x.com/zorvolabs");
     expect(card.hasAttribute("data-hover")).toBe(true);
@@ -305,7 +311,6 @@ describe("landing page", () => {
       "https://x.com/zorvolabs",
       "https://x.com/zorvolabs/status/2121583312947007728",
       "https://zorvolabs.xyz",
-      "https://x.com/zorvolabs/status/2121583312947007728",
     ]);
     const places = [...document.querySelectorAll("#community ul a")].map((link) => link.getAttribute("href"));
     expect(places).toEqual([LINKS.discord, LINKS.x, LINKS.repository]);

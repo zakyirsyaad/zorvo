@@ -275,6 +275,21 @@ function start(root: HTMLElement) {
     before.style.visibility = "";
   });
 
+  // The launch video plays, without sound, while its card is in view, and stops when it leaves. It has the
+  // browser's own controls, so it can be paused at any time.
+  q<HTMLVideoElement>("[data-autoplay]").forEach((video) =>
+    stops.push(
+      inView(
+        video,
+        () => {
+          void video.play().catch(() => undefined);
+          return () => video.pause();
+        },
+        { amount: 0.5 },
+      ),
+    ),
+  );
+
   // Motion: gestures. Cards lift, buttons press, feature cells light up.
   const lift = { type: "spring", stiffness: 380, damping: 24 } as const;
   q("[data-hover]").forEach((el) =>

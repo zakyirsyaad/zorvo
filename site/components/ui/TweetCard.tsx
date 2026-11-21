@@ -58,17 +58,27 @@ export function TweetCard({ tweet }: { tweet: Tweet }) {
           ),
         )}
       </p>
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] leading-5 text-fg-subtle">
+      {tweet.video && (
+        // Muted, and started by the page's script only while the card is in view and motion is welcome.
+        // The browser's own controls pause it. Above the card's link, so they can be reached.
+        <video
+          className="lp-tweet-over w-full h-auto rounded-xl border border-border bg-bg"
+          width={tweet.video.width}
+          height={tweet.video.height}
+          poster={tweet.video.poster}
+          aria-label={tweet.video.label}
+          muted
+          loop
+          playsInline
+          controls
+          preload="none"
+          data-autoplay=""
+        >
+          <source src={tweet.video.src} type="video/mp4" />
+        </video>
+      )}
+      <p className="text-[13px] leading-5 text-fg-subtle">
         <time dateTime={tweet.postedOn}>{DAY.format(new Date(`${tweet.postedOn}T00:00:00Z`))}</time>
-        {tweet.hasVideo && (
-          <>
-            <span aria-hidden="true">·</span>
-            <a className="focus-ring lp-tweet-link lp-tweet-over" href={tweet.url} target="_blank" rel="noopener noreferrer">
-              Watch the video on X
-              <span className="sr-only">, opens in a new tab</span>
-            </a>
-          </>
-        )}
       </p>
     </article>
   );

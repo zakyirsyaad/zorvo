@@ -505,3 +505,32 @@ fn bind_processes(
         }
     }));
 }
+
+#[test]
+fn the_fake_agent_shows_a_visual_through_the_bridge() {
+    let rig = rig("visual");
+    let (manager, rx) = manager();
+    bind_processes(&manager, &rig.tools);
+    let call =
+        json!({ "tool": "show_visual", "args": { "title": "Flow", "code": "<svg><rect/></svg>" } });
+    let (launch, log) = mcp_agent_calling(&rig, &call);
+    manager
+        .start("v1", &cwd(), &launch, rig.tools.servers_for("v1", true))
+        .expect("start");
+    manager.prompt("v1", "mcp", &[]).unwrap();
+
+    let emitted = rig.calls.recv_timeout(WAIT).expect("a tool call");
+    assert_eq!(emitted.tool, "show_visual");
+    assert_eq!(emitted.args["title"], "Flow");
+    assert_eq!(emitted.args["code"], "<svg><rect/></svg>");
+    rig.tools
+        .respond(&emitted.call_id, true, "{\"shown\":true}");
+
+    wait_for(&rx, |e| {
+        agent_text(e).as_deref() == Some("mcp:{\"shown\":true}")
+    });
+    let entries = logged(&log);
+    assert!(tool_names_in(&entries[1]).contains(&"show_visual".to_string()));
+    manager.stop("v1");
+    rig.tools.shutdown();
+}

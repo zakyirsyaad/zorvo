@@ -4,7 +4,11 @@
 
 use serde_json::{json, Map, Value};
 
-pub const TOOL_NAMES: [&str; 10] = [
+use crate::artifacts::visuals::{
+    MAX_VISUAL_BYTES, NEEDS_TITLE_VISUAL, VISUAL_EMPTY, VISUAL_ONE_SOURCE, VISUAL_TOO_LARGE,
+};
+
+pub const TOOL_NAMES: [&str; 11] = [
     "list_agents",
     "start_worker",
     "send",
@@ -13,6 +17,7 @@ pub const TOOL_NAMES: [&str; 10] = [
     "stop_session",
     "show_artifact",
     "artifact_guide",
+    "show_visual",
     "browser",
     "browser_guide",
 ];
@@ -123,12 +128,26 @@ pub fn tool_list() -> Value {
         },
         {
             "name": "artifact_guide",
-            "description": "How to design a page for show_artifact: colours for light and dark, layout, charts. Read it once before your first page. With kind canvas, how to lay out several screens.",
+            "description": "How to design a page for show_artifact: colours for light and dark, layout, charts. Read it once before your first page. With kind canvas, how to lay out several screens. With kind visual, how to draw a picture for show_visual.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "kind": { "type": "string", "enum": ["page", "canvas"], "description": "page (default) or canvas." }
+                    "kind": { "type": "string", "enum": ["page", "canvas", "visual"], "description": "page (default), canvas or visual." }
                 },
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "show_visual",
+            "description": "Show the user a picture inside your reply: a flow or architecture diagram, or a mockup of a card or screen. Use it without being asked when a picture explains the answer better than a list. Pass an SVG document or an HTML fragment with its CSS as code, or write a .svg or .html file in this folder or the temporary folder and pass its path. No script runs and nothing loads from the network. For a page the user keeps and reopens, use show_artifact. Call artifact_guide with kind visual before your first visual.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string", "maxLength": MAX_TITLE_CHARS, "description": "A short name for the picture." },
+                    "code": { "type": "string", "description": "An SVG document, or an HTML fragment with its CSS, at most 256 KB. Give this or path." },
+                    "path": { "type": "string", "maxLength": MAX_PATH_CHARS, "description": "A .svg or .html file, absolute or relative to this folder. Give this or code." }
+                },
+                "required": ["title"],
                 "additionalProperties": false
             }
         }
@@ -221,6 +240,7 @@ pub fn validate(tool: &str, args: &Value) -> Result<Value, String> {
         "list_agents" | "browser_guide" => &[],
         "artifact_guide" => &["kind"],
         "show_artifact" => &["path", "title", "kind"],
+        "show_visual" => &["title", "code", "path"],
         "start_worker" => &["agent", "task", "title", "worktree"],
         "send" => &["handle", "message"],
         "start_session" => &["agent", "brief", "title", "worktree", "folder"],
@@ -271,9 +291,16 @@ pub fn validate(tool: &str, args: &Value) -> Result<Value, String> {
         "show_artifact" => {
             put_path(&mut clean, object)?;
             put_title(&mut clean, object)?;
-            put_kind(&mut clean, object)?;
+            put_kind(&mut clean, object, false)?;
         }
-        "artifact_guide" => put_kind(&mut clean, object)?,
+        "artifact_guide" => put_kind(&mut clean, object, true)?,
+        "show_visual" => {
+            put_visual_source(&mut clean, object)?;
+            put_title(&mut clean, object)?;
+            if !clean.contains_key("title") {
+                return Err(NEEDS_TITLE_VISUAL.to_string());
+            }
+        }
         _ => {}
     }
     Ok(Value::Object(clean))
@@ -410,14 +437,47 @@ fn put_files(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Resul
     Ok(())
 }
 
-fn put_kind(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result<(), String> {
+/// `visual` is a kind of guide only: a visual is shown with `show_visual`, not `show_artifact`.
+fn put_kind(
+    out: &mut Map<String, Value>,
+    object: &Map<String, Value>,
+    allow_visual: bool,
+) -> Result<(), String> {
     match object.get("kind") {
         None | Some(Value::Null) => Ok(()),
-        Some(Value::String(kind)) if kind == "page" || kind == "canvas" => {
+        Some(Value::String(kind))
+            if kind == "page" || kind == "canvas" || (allow_visual && kind == "visual") =>
+        {
             out.insert("kind".to_string(), json!(kind));
             Ok(())
         }
+        Some(_) if allow_visual => Err("kind must be page, canvas or visual.".to_string()),
         Some(_) => Err("kind must be page or canvas.".to_string()),
+    }
+}
+
+/// Exactly one of `code` (markup, capped by bytes) and `path`. No error repeats the markup.
+fn put_visual_source(
+    out: &mut Map<String, Value>,
+    object: &Map<String, Value>,
+) -> Result<(), String> {
+    let has = |key: &str| !matches!(object.get(key), None | Some(Value::Null));
+    match (has("code"), has("path")) {
+        (true, false) => {
+            let Some(Value::String(code)) = object.get("code") else {
+                return Err("code must be text.".to_string());
+            };
+            if code.len() > MAX_VISUAL_BYTES {
+                return Err(VISUAL_TOO_LARGE.to_string());
+            }
+            if code.trim().is_empty() {
+                return Err(VISUAL_EMPTY.to_string());
+            }
+            out.insert("code".to_string(), json!(code));
+            Ok(())
+        }
+        (false, true) => put_path(out, object),
+        _ => Err(VISUAL_ONE_SOURCE.to_string()),
     }
 }
 
@@ -576,7 +636,7 @@ mod tests {
         );
         assert_eq!(
             validate("artifact_guide", &json!({"kind": "sheet"})).unwrap_err(),
-            "kind must be page or canvas."
+            "kind must be page, canvas or visual."
         );
         assert!(validate("artifact_guide", &json!({"topic": "charts"})).is_err());
     }
@@ -636,6 +696,7 @@ mod tests {
                 "stop_session",
                 "show_artifact",
                 "artifact_guide",
+                "show_visual",
                 "browser",
                 "browser_guide"
             ]
@@ -939,5 +1000,54 @@ mod tests {
     fn the_summary_limits_exist() {
         assert_eq!(MAX_SUMMARY_CHARS, 2_000);
         assert_eq!(MAX_FILES, 50);
+    }
+
+    #[test]
+    fn there_are_eleven_tools_and_show_visual_is_one() {
+        assert_eq!(TOOL_NAMES.len(), 11);
+        assert!(TOOL_NAMES.contains(&"show_visual"));
+    }
+    #[test]
+    fn show_visual_takes_exactly_one_source() {
+        assert!(validate("show_visual", &json!({"title": "A", "code": "<p>a</p>"})).is_ok());
+        assert!(validate("show_visual", &json!({"title": "A", "path": "a.svg"})).is_ok());
+        assert_eq!(
+            validate("show_visual", &json!({"title": "A"})).unwrap_err(),
+            VISUAL_ONE_SOURCE
+        );
+        assert_eq!(
+            validate(
+                "show_visual",
+                &json!({"title": "A", "code": "<p>", "path": "a.svg"})
+            )
+            .unwrap_err(),
+            VISUAL_ONE_SOURCE
+        );
+        assert!(validate("show_visual", &json!({"code": "<p>a</p>"})).is_err());
+    }
+    #[test]
+    fn show_visual_caps_code_by_bytes_without_repeating_it() {
+        let big = "a".repeat(256 * 1024 + 1);
+        let refused = validate("show_visual", &json!({"title": "A", "code": big})).unwrap_err();
+        assert_eq!(refused, "The visual is over 256 KB.");
+    }
+    #[test]
+    fn artifact_guide_takes_kind_visual_and_show_artifact_does_not() {
+        assert_eq!(
+            validate("artifact_guide", &json!({"kind": "visual"})).unwrap(),
+            json!({"kind": "visual"})
+        );
+        assert!(validate("show_artifact", &json!({"path": "d", "kind": "visual"})).is_err());
+    }
+    #[test]
+    fn show_visual_says_nothing_runs_and_names_the_guide() {
+        let d = description_of("show_visual");
+        for part in [
+            "inside your reply",
+            "No script runs",
+            "artifact_guide with kind visual",
+        ] {
+            assert!(d.contains(part), "{part}");
+        }
     }
 }

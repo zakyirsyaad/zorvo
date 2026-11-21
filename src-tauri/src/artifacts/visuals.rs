@@ -22,6 +22,8 @@ pub const VISUAL_NOT_TEXT: &str = "The visual is not valid UTF-8 text.";
 pub const VISUAL_EMPTY: &str = "There is nothing to show in that visual.";
 pub const TOO_MANY_VISUALS: &str = "This session already has 100 visuals.";
 pub const NEEDS_TITLE_VISUAL: &str = "Give the visual a title.";
+/// `show_visual` takes its markup one way.
+pub const VISUAL_ONE_SOURCE: &str = "Give show_visual either code or path, not both.";
 pub const VISUAL_FAILED: &str = "Zorvo could not keep that visual.";
 /// For the webview only: an agent never asks for a visual by id.
 pub const VISUAL_GONE: &str = "That visual is no longer available.";

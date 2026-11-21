@@ -13,6 +13,7 @@ pub mod source;
 pub mod store;
 pub mod view;
 pub mod visual_clean;
+pub mod visual_commands;
 pub mod visual_wrapper;
 pub mod visuals;
 

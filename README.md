@@ -1,14 +1,3 @@
-> **NEAR HACKATHON: Zorvo Private.** Private mode is in this repository: Qwen Code runs only on NEAR AI
-> Cloud models inside a TEE, each answer's signature is checked on your Mac, and credits are bought with
-> USDC on NEAR. Start with [docs/hackathon/README.md](docs/hackathon/README.md): it has the role of NEAR,
-> the steps to reproduce (with or without a Mac), a judge code, and what existed before the hackathon.
-> The submitted state is the tag
-> [`hackathon-submission`](https://github.com/zakyirsyaad/zorvo/tree/hackathon-submission).
->
-> **Other submission by the author.** One other submission to this hackathon, independent of this one:
-> [Foundling](https://github.com/zakyirsyaad/foundling), a USDC vault on NEAR whose strategy runs sealed
-> in an OutLayer TEE. It shares no code, contract or service with Zorvo Private.
-
 <p align="center">
   <img src="docs/assets/zorvo-icon.png" alt="" width="112" height="112">
 </p>
@@ -50,6 +39,12 @@ beside the chat says what the session is doing and what it changed, and a
 Context tab shows what fills the agent's context. From 0.14.1, Zorvo is signed
 and notarized by Apple, so macOS opens it like any other app you download. The
 [changelog](CHANGELOG.md) has the rest.
+
+> **NEAR hackathon judges:** start with [docs/hackathon/README.md](docs/hackathon/README.md). The
+> submitted state is the tag
+> [`hackathon-submission`](https://github.com/zakyirsyaad/zorvo/tree/hackathon-submission). The author's
+> one other submission, [Foundling](https://github.com/zakyirsyaad/foundling), shares no code, contract
+> or service with Zorvo Private.
 
 ## Contents
 
@@ -287,6 +282,12 @@ Download [**Zorvo-mac.dmg**](https://github.com/zakyirsyaad/zorvo/releases/lates
 from the latest release. One file works on both Apple Silicon and Intel Macs.
 Open it and drag **Zorvo** into **Applications**.
 
+Or install it with [Homebrew](https://brew.sh):
+
+```bash
+brew install --cask zakyirsyaad/tap/zorvo
+```
+
 ### Open Zorvo the first time
 
 From 0.14.1, Zorvo is signed with a Developer ID and notarized by Apple. The
@@ -294,19 +295,10 @@ first time you open it from Applications, macOS asks whether to open an app you
 downloaded from the internet. Click **Open**; from then on it opens without
 asking.
 
-Versions before 0.14.1 are not signed, and macOS blocks them the first time:
-
-1. Open Zorvo from Applications. macOS says it cannot be opened; click **Done**.
-2. Open **System Settings → Privacy & Security**, scroll down, and click
-   **Open Anyway** next to the message about Zorvo.
-3. Confirm, and Zorvo opens. From then on it opens normally.
-
-macOS 15 and later no longer offer right-click → Open for this. If you prefer
-the terminal, this does the same for an older version:
-
-```bash
-xattr -dr com.apple.quarantine "/Applications/Zorvo.app"
-```
+Versions before 0.14.1 are not signed, and macOS blocks them. Install the
+latest release instead. If you need an older one, open it once, then go to
+**System Settings → Privacy & Security** and click **Open Anyway** next to the
+message about Zorvo.
 
 ### Check your download
 

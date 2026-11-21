@@ -57,6 +57,7 @@ flate2 = "1"
 tar = { version = "0.4", default-features = false }
 bzip2 = { version = "0.5", default-features = false, features = ["libbz2-rs-sys"] }
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
+ammonia = "=4.2.5"
 
 # Draws a real artboard; its own `main` runs on the process's main thread, which Tauri's
 # event loop needs and libtest never gives a test. Skips unless ZORVO_RENDER_TEST=1.

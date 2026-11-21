@@ -8,6 +8,7 @@ import "@fontsource-variable/instrument-sans";
 import "@fontsource-variable/geist-mono";
 import "./globals.css";
 import { OG_IMAGE, SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, siteUrl } from "../lib/site";
+import { Analytics } from "@vercel/analytics/next";
 
 export const metadata: Metadata = {
   metadataBase: siteUrl(),
@@ -48,7 +49,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={instrumentSans.variable}>
-      <body className="flex min-h-dvh flex-col">{children}</body>
+      <body className="flex min-h-dvh flex-col">
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }

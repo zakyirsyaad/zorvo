@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COMMAND_PATH_CONTEXT, MCP_PATH_CONTEXT, workerContext } from "../lib/agent-tools-context";
+import { COMMAND_PATH_CONTEXT, MCP_PATH_CONTEXT, isToolsContextTitle, workerContext } from "../lib/agent-tools-context";
 
 describe("the command path's context", () => {
   it("names the artifact tools with their arguments", () => {
@@ -65,5 +65,32 @@ describe("a worker's note", () => {
 
   it("makes a name from the registry visible text", () => {
     expect(workerContext("mcp", "Bad\u202eName")).not.toContain("\u202e");
+  });
+});
+
+describe("a title an agent cut from Zorvo's hidden note", () => {
+  it("is recognised when it is the start of a note, with or without an ellipsis", () => {
+    expect(isToolsContextTitle(MCP_PATH_CONTEXT.slice(0, 60))).toBe(true);
+    expect(isToolsContextTitle(`${MCP_PATH_CONTEXT.slice(0, 120)}…`)).toBe(true);
+    expect(isToolsContextTitle(`${COMMAND_PATH_CONTEXT.slice(0, 80)}...`)).toBe(true);
+    expect(isToolsContextTitle(workerContext("mcp", "Codex").slice(0, 70))).toBe(true);
+    expect(isToolsContextTitle("You are a worker.")).toBe(true);
+  });
+
+  it("is recognised when the whole note is followed by the user's message", () => {
+    expect(isToolsContextTitle(`${MCP_PATH_CONTEXT} explain the parser`)).toBe(true);
+    expect(isToolsContextTitle(`${COMMAND_PATH_CONTEXT} explain the parser`)).toBe(true);
+  });
+
+  it("is recognised whatever the agent did to its spacing", () => {
+    expect(isToolsContextTitle(`  ${MCP_PATH_CONTEXT.slice(0, 60).replace(/ /g, "  ")}\n`)).toBe(true);
+  });
+
+  it("leaves an agent's own title alone, even one that starts like a note", () => {
+    expect(isToolsContextTitle("Parser walkthrough")).toBe(false);
+    expect(isToolsContextTitle("Zorvo")).toBe(false);
+    expect(isToolsContextTitle("Zorvo, the app")).toBe(false);
+    expect(isToolsContextTitle("Zorvo, the app this session runs in, crashes on start")).toBe(false);
+    expect(isToolsContextTitle("")).toBe(false);
   });
 });

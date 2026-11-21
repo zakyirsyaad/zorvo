@@ -49,6 +49,9 @@ export interface WorkerNote {
 /** What a session is due: its coordinator's note for a path, or a worker's own. */
 export type ToolsNote = ToolsPath | WorkerNote;
 
+/** How every worker's note starts; the coordinator's name follows. */
+const WORKER_OPENING = 'You are a worker. ';
+
 /**
  * What a worker is told: who gave it the task, to do only that, and to end with `done`. Its agent's
  * name comes from the registry, so it goes through `escapeVisible` before it is part of a sentence.
@@ -59,7 +62,7 @@ export function workerContext(path: ToolsPath, coordinatorAgentName: string): st
       ? 'call the done tool once with outcome succeeded or failed and a short summary: what you did, what you found, what is left.'
       : 'run "$ZORVO_TOOLS" tools done \'{"outcome":"succeeded","summary":"<what you did, what you found, what is left>"}\' once, with outcome succeeded or failed and a short summary.';
   return (
-    `You are a worker. ${escapeVisible(coordinatorAgentName)}, in another Zorvo session, gave you this task and cannot see this chat. ` +
+    `${WORKER_OPENING}${escapeVisible(coordinatorAgentName)}, in another Zorvo session, gave you this task and cannot see this chat. ` +
     `Do only this task. When you finish, ${report} ` +
     'Use failed when the work is not done. Then end your turn.'
   );
@@ -74,4 +77,26 @@ export function withToolsContext(context: string | undefined, note: ToolsNote): 
         ? MCP_PATH_CONTEXT
         : COMMAND_PATH_CONTEXT;
   return context ? `${text}\n\n${context}` : text;
+}
+
+/**
+ * A title shorter than this can be an agent's own even when a note starts with it ("Zorvo"). Both
+ * fixed notes share their first 37 characters, so a real cut of one is longer.
+ */
+const MIN_NOTE_TITLE_CHARS = 40;
+
+/**
+ * Whether an agent's title for a session is cut from Zorvo's own hidden note. The note goes first
+ * in the first prompt, and an agent that names a session after the start of that prompt (Claude
+ * Code's adapter does, before any answer) would show the user text they never wrote.
+ */
+export function isToolsContextTitle(title: string): boolean {
+  const cut = title
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/(…|\.{3})$/, '')
+    .trimEnd();
+  if (cut.startsWith(WORKER_OPENING.trimEnd())) return true;
+  if (cut.length < MIN_NOTE_TITLE_CHARS) return false;
+  return [MCP_PATH_CONTEXT, COMMAND_PATH_CONTEXT].some((note) => note.startsWith(cut) || cut.startsWith(note));
 }

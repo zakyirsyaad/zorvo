@@ -25,7 +25,7 @@ import type { AgentProfile, ChatMessage, ElicitationCard, Session, WorkerTurnEnd
 import { parseAuthRequired, type AuthMethod } from '../../lib/acp-auth';
 import { isSessionGoneError, isUnknownSessionError } from '../../lib/acp-load-error';
 import { toolsRoleOf } from '../../lib/workers';
-import { withToolsContext, type ToolsNote } from '../../lib/agent-tools-context';
+import { isToolsContextTitle, withToolsContext, type ToolsNote } from '../../lib/agent-tools-context';
 import { writeConversationHandoff } from '../../lib/session-handoff';
 import { applyElicitation, completeElicitation, dismissPendingElicitations } from '../../lib/acp-elicitation';
 import { elicitationActions, type InFlightAnswer } from './elicitation-actions';
@@ -207,6 +207,8 @@ export function useAcpEngine({
     onUpdate: unlessStopped((sessionId, update: unknown) => {
       const title = sessionTitleOf(update);
       if (title) {
+        // A title cut from Zorvo's hidden note is not the agent's summary: the name from the first message stays.
+        if (isToolsContextTitle(title)) return;
         // The agent's own title (e.g. a summary) beats one cut from the first
         // prompt, but never a name the user gave; it is held to the same
         // one-line, bounded shape.

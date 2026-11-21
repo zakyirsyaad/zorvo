@@ -4,6 +4,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-21
+
 ### Added
 
 - **Agents can look at apps on your Mac, when you let them.** Turn it on in Settings, under Agents. An agent then asks before it uses an app, on a card that shows each app as it is on this Mac (its name, where it is and who signed it), and you tick the ones it may use in that session. For now an agent can only look: read a window's contents and take a picture of it. Zorvo itself, your passwords and System Settings are never offered; browsers are view only, terminals and code editors click only. A line under the chat and a mark in the sidebar show which sessions may use apps, a small bar stays on top of your screen while an agent is looking, and **Stop computer use** ends it at once. What an agent sees goes to its model provider.
@@ -467,7 +469,8 @@ Tagged but never published; its fix shipped in 0.11.2.
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.14.1...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.13.0...v0.13.1

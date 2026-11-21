@@ -55,6 +55,8 @@ export interface DelegationDeps {
   ) => Promise<boolean>;
   /** A session's messages, loaded or saved; null when they cannot be read. */
   messagesOf: (sessionId: string) => Promise<ChatMessage[] | null>;
+  /** Ends a worker's agent the way the auto-close does (and marks the session terminated). */
+  stopWorker: (sessionId: string) => Promise<boolean>;
   /** From refs, true in the tick a prompt goes out: `isBusy` is React state and lags a render. */
   isTurnUnderWay: (sessionId: string) => boolean;
   /** Whether a session has an agent session to reopen (an agent that failed to start has none). */
@@ -545,6 +547,18 @@ export function useDelegation(deps: DelegationDeps): {
     return { ok: true, sessionId: id, sessionName: name, handle, folder: cwd };
   };
 
+  /**
+   * A reopen that was not taken: the link ends, and an agent the reopen may have left running (it opened,
+   * then refused the message) is stopped, since the auto-close no longer sees a worker without a link.
+   * Best effort, once. The session is read as last rendered: a stale "running" only stops a dead agent.
+   */
+  const abandonReopen = (workerId: string): void => {
+    end(workerId);
+    const session = latest.current.sessions.find((candidate) => candidate.id === workerId);
+    if (session === undefined || session.status === 'terminated') return;
+    latest.current.stopWorker(workerId).catch(() => undefined);
+  };
+
   const sendFurtherTask = async (
     source: Session,
     delegate: Session,
@@ -643,7 +657,7 @@ export function useDelegation(deps: DelegationDeps): {
       return { ok: false, reason: `${handle}'s last result has not reached this session yet. Give it the next task after its report arrives.` };
     }
     // A reopen that fails leaves a terminated worker that will never report: its link ends, as for a gone one.
-    return sendFurtherTask(source, worker, task, options, stillWorking, () => end(worker.id));
+    return sendFurtherTask(source, worker, task, options, stillWorking, () => abandonReopen(worker.id));
   };
 
   const giveTask = async (
@@ -690,7 +704,7 @@ export function useDelegation(deps: DelegationDeps): {
         );
         if (!reopen.failed) return result;
         if (!result.ok && result.detail !== undefined) current.onNotice(`The worker could not be reopened: ${result.detail}`);
-        end(delegate.id);
+        abandonReopen(delegate.id);
       } else {
         // Its agent died mid-turn: the old link ends and the task starts a new worker.
         end(delegate.id);

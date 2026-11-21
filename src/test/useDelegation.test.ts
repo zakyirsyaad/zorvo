@@ -110,6 +110,8 @@ interface HarnessInput {
   sendResult?: boolean;
   /** What the reopen answers: true, false, or a throw. */
   resumeResult?: boolean | "throws";
+  /** Where the stops of the worker stop go. */
+  stops?: string[];
   /** Sessions the engine knows a turn is under way for, before React renders busy. */
   turnUnderWay?: readonly string[];
   /** Sessions whose agent has no session id to reopen. */
@@ -159,6 +161,10 @@ function setup(input: HarnessInput) {
         send: async (sessionId, text, attachments = [], marks) => {
           sends.push({ sessionId, text, attachments, marks });
           return sendResult;
+        },
+        stopWorker: async (sessionId) => {
+          input.stops?.push(sessionId);
+          return true;
         },
         isTurnUnderWay: (sessionId) => (input.turnUnderWay ?? []).includes(sessionId),
         canResume: (sessionId) => !(input.cannotResume ?? []).includes(sessionId),
@@ -1176,6 +1182,29 @@ describe("useDelegation workers", () => {
     expect(env.result.current.sessions.find((s) => s.id === "s-b")?.delegatedFrom?.task).toBe("Fix the parser");
     expect(env.result.current.sessions.find((s) => s.id === "s-b")?.delegatedFrom?.endedAt).toEqual(expect.any(Number));
     expect(env.places.underWay("s-a")).toBe(0);
+  });
+
+  it("a reopen that fails while the session still reads running also stops its agent, once", async () => {
+    const stops: string[] = [];
+    // The agent opened and then refused the message: the session reads running.
+    const env = setup({
+      sessions: [sourceSession(), worker("worker-1", "s-b", { delegatedFrom: link({ handle: "worker-1", lastTurn: { endedAt: 300, how: "finished" }, reportedAt: 400 }) })],
+      transcripts: { "s-a": A_MESSAGES },
+      pendingStop: (id) => (id === "s-b" ? Promise.resolve(true) : undefined),
+      resumeResult: false,
+      stops,
+    });
+    const r = await act(async () => env.result.current.delegation.sendToWorker("s-a", "s-b", "Again"));
+    expect(r).toMatchObject({ ok: false, reason: "worker-1 can't take more work. Start a new worker." });
+    expect(env.result.current.sessions.find((s) => s.id === "s-b")?.delegatedFrom?.endedAt).toEqual(expect.any(Number));
+    expect(stops).toEqual(["s-b"]);
+  });
+
+  it("a reopen that fails while the session reads terminated stops nothing", async () => {
+    const stops: string[] = [];
+    const env = setup({ sessions: [sourceSession(), closedWorker()], transcripts: { "s-a": A_MESSAGES }, resumeResult: false, stops });
+    await act(async () => env.result.current.delegation.sendToWorker("s-a", "s-b", "Again"));
+    expect(stops).toEqual([]);
   });
 
   it("a mention whose reopen fails ends the link and starts a new worker in the same call", async () => {

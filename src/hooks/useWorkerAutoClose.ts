@@ -31,6 +31,8 @@ export interface WorkerAutoCloseDeps {
 export function useWorkerAutoClose(deps: WorkerAutoCloseDeps): void {
   const latest = useLatest(deps);
   const timers = useRef(new Map<string, { endedAt: number; timer: ReturnType<typeof setTimeout> }>());
+  // The turn (`lastTurn.endedAt`) a stop was tried for: a delivered report moves the timer key, not the turn.
+  const attempted = useRef(new Map<string, number>());
 
   /** The turn end a worker's agent is waiting to close after, or null when it must stay open. */
   const closableAfter = (session: Session): number | null => {
@@ -59,6 +61,8 @@ export function useWorkerAutoClose(deps: WorkerAutoCloseDeps): void {
         return;
       }
       // The entry stays, so a render does not set it again; a failed stop is not retried.
+      const turnEnd = current.delegatedFrom?.lastTurn?.endedAt;
+      if (turnEnd !== undefined) attempted.current.set(id, turnEnd);
       latest.current.stop(id).catch(() => undefined);
     }, delay);
     timers.current.set(id, { endedAt, timer });
@@ -72,6 +76,8 @@ export function useWorkerAutoClose(deps: WorkerAutoCloseDeps): void {
       if (endedAt === null) continue;
       live.add(session.id);
       if (timers.current.get(session.id)?.endedAt === endedAt) continue;
+      // One attempt per turn: only the report time moved.
+      if (attempted.current.get(session.id) === session.delegatedFrom?.lastTurn?.endedAt) continue;
       clearTimeout(timers.current.get(session.id)?.timer);
       const now = (deps.now ?? Date.now)();
       arm(session.id, endedAt, Math.max(0, endedAt + WORKER_CLOSE_MS - now));

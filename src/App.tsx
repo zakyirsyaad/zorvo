@@ -1212,6 +1212,7 @@ export default function App() {
     resume: resumeWorker,
     canResume: (sessionId) => Boolean(sessions.find((candidate) => candidate.id === sessionId)?.acpSessionId),
     pendingStop: workerStops.pendingStop,
+    stopWorker: workerStops.stopWorker,
     isTurnUnderWay: acp.isTurnUnderWay,
     startSession,
     selectSession: handleSelectSession,

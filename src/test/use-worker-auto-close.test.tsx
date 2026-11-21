@@ -211,6 +211,19 @@ describe("useWorkerAutoClose", () => {
     expect(stop).toHaveBeenCalledTimes(1);
   });
 
+  it("does not try a second stop when only the report time moves the key", async () => {
+    const stop = vi.fn<(id: string) => Promise<boolean>>().mockResolvedValue(false);
+    const { rerender } = render({ sessions: [worker()], stop });
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(stop).toHaveBeenCalledTimes(1);
+    const reported = worker({
+      delegatedFrom: { sessionId: "s-a", task: "Fix", startedAt: 5, endedAt: null, handle: "worker-1", lastTurn: { endedAt: 1_000, how: "finished" }, reportedAt: 61_000 },
+    });
+    rerender({ sessions: [reported], stop });
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
   it("clears its timers on unmount", () => {
     const { stop, unmount } = render({ sessions: [worker()] });
     unmount();

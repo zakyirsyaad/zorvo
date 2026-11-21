@@ -52,7 +52,9 @@ function buildActivityLines(message: ChatMessage): string[] {
       ...(tool.steps ?? []).flatMap((step) =>
         step.kind === "text"
           ? step.text.split("\n").map((line) => `  > ${line}`)
-          : step.toolIds.flatMap((id) => (byId.has(id) ? [`  - Tool: ${byId.get(id)?.name}`] : [])),
+          : step.kind === "tools"
+            ? step.toolIds.flatMap((id) => (byId.has(id) ? [`  - Tool: ${byId.get(id)?.name}`] : []))
+            : [],
       ),
     ]);
   const card = message.actionCard;

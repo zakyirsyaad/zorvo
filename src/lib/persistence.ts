@@ -1,3 +1,4 @@
+import { isVisualId, isVisualKind } from './visuals';
 import { invoke } from '@tauri-apps/api/core';
 import {
   TRANSPORT_ACP,
@@ -371,6 +372,7 @@ export function saveAppState(state: PersistedState): Promise<void> {
 function isMessagePart(value: unknown): value is ChatMessagePart {
   if (!isObject(value)) return false;
   if (value.kind === 'text') return typeof value.text === 'string';
+  if (value.kind === 'visual') return isVisualId(value.id) && typeof value.title === 'string' && isVisualKind(value.visualKind);
   return (
     value.kind === 'tools' &&
     Array.isArray(value.toolIds) &&

@@ -78,9 +78,9 @@ function SubagentSteps({ tool, message, isTurnOver }: { tool: ToolExecution; mes
       {parts.map((part, index) =>
         part.kind === "text" ? (
           <MarkdownRenderer key={index} content={part.text} />
-        ) : (
+        ) : part.kind === "tools" ? (
           <ToolsPart key={index} tools={part.toolIds.flatMap((id) => byId.get(id) ?? [])} isCurrentTurn={false} isTurnOver={isTurnOver} />
-        ),
+        ) : null,
       )}
       {/* What its own tool call returned, which the task tab shows as its result. */}
       {tool.details && tool.details.length > 0 && <ToolDetails details={tool.details} />}
@@ -155,6 +155,7 @@ export const MessageRow = memo(function MessageRow({
         <div className="space-y-4">
           {parts.map((part, index) => {
             if (part.kind === "text") return <MarkdownRenderer key={index} content={part.text} />;
+            if (part.kind === "visual") return null;
             const listed = shownTools(part.toolIds.flatMap((id) => toolsById.get(id) ?? []));
             if (listed.length === 0) return null;
             // Every tool, a subagent included, is a plain row here, so what it returned can still be read in

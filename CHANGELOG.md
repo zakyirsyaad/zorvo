@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- **An agent can show a diagram or a mockup inside its reply.** The picture sits between the paragraphs of the answer and follows the light and dark theme. Nothing in it runs and it has no links. From its menu you can copy it as an image or save it as SVG, HTML or PNG, and Expand shows it larger.
+
 ## [0.15.0] - 2026-11-21
 
 ### Added

@@ -15,7 +15,7 @@ import {
 import { changesToApply, NO_CHOICES, type AcpChange, type AcpChoices, type AgentOptions } from '../../lib/acp-draft';
 import { findCard, titleFromPrompt, titleSourceFor, userMessage, withoutMessage } from '../../lib/session-helpers';
 import { createId } from '../../lib/ids';
-import { cleanReason } from '../../lib/workers';
+import { AGENT_EXITED_REASON, cleanReason } from '../../lib/workers';
 import { toCommands, useAcpSessions, type AcpOptions, type AcpSessionInfo, type TurnResult } from '../useAcpSessions';
 import { useLatest } from '../useLatest';
 import { useBatchedUpdates } from '../useBatchedUpdates';
@@ -43,13 +43,13 @@ export interface FirstMessage {
 
 export type AttentionReason = 'needs-answer' | 'finished' | 'failed';
 
-const SIGN_IN_REASON = 'It needs a sign-in.';
-
 /** How a turn that came back normally ended, with the agent's own words when it failed. */
 function settledEnd(stopReason: string | undefined, notice: string | null, error: string | undefined) {
   if (stopReason === 'cancelled') return { how: 'cancelled' as const };
   if (!notice) return { how: 'finished' as const };
   const reason = error ? cleanReason(error) : '';
+  // The backend's own sentence for an agent that died mid-turn: its exit event comes after the turn is closed.
+  if (reason === AGENT_EXITED_REASON) return { how: 'exited' as const };
   return reason === '' ? { how: 'failed' as const } : { how: 'failed' as const, reason };
 }
 
@@ -153,6 +153,8 @@ export function useAcpEngine({
   // When the user pressed Stop in each session's current turn, until the turn ends: an
   // agent waiting on a stuck tool may never end it, and the chat then offers End agent.
   const [stopAsked, setStopAsked] = useState<Record<string, number>>({});
+  // Sessions whose running turn the user ended with End agent, until that turn settles, the agent exits or the session stops.
+  const endAgentAsked = useRef(new Set<string>());
   const forgetStopAsked = (sessionId: string) =>
     setStopAsked((prev) => {
       if (!(sessionId in prev)) return prev;
@@ -238,6 +240,8 @@ export function useAcpEngine({
       updateNow(sessionId, (prev) => completeElicitation(prev, key));
     }),
     onTurnEnd: unlessStopped((sessionId, { stopReason, error }: TurnResult) => {
+      // End agent is the user's own stop: its turn end reads cancelled, not failed or exited.
+      const wasEnded = endAgentAsked.current.delete(sessionId);
       agentFailures.clear(sessionId);
       forgetStopAsked(sessionId);
       updateNow(sessionId, closeTurn);
@@ -261,7 +265,7 @@ export function useAcpEngine({
       }
       const authMethods = parseAuthRequired(error);
       if (authMethods) {
-        onTurnSettled?.(sessionId, { how: 'failed', reason: SIGN_IN_REASON });
+        onTurnSettled?.(sessionId, { how: 'failed' });
         handBackForSignIn(sessionId, authMethods);
         return;
       }
@@ -275,7 +279,7 @@ export function useAcpEngine({
       } else failedPromptRef.current.delete(sessionId);
       const notice = turnEndNotice(stopReason, error);
       // Written before anything else reacts, so the end is recorded even if a reaction throws.
-      onTurnSettled?.(sessionId, settledEnd(stopReason, notice, error));
+      onTurnSettled?.(sessionId, wasEnded ? { how: 'cancelled' } : settledEnd(stopReason, notice, error));
       if (error && onTurnFailed) onTurnFailed(sessionId, error);
       else if (notice) reportError(notice);
       // A turn the user cancelled needs no notification: they were there.
@@ -284,6 +288,7 @@ export function useAcpEngine({
     onExit: unlessStopped((sessionId, code: number | null) => {
       // Read before the turn closes: an exit ends a turn only when one was running.
       const endedATurn = acp.isBusy(sessionId);
+      const wasEnded = endAgentAsked.current.delete(sessionId);
       agentFailures.clear(sessionId);
       forgetStopAsked(sessionId);
       updateNow(sessionId, closeTurn);
@@ -291,7 +296,7 @@ export function useAcpEngine({
       // The agent leaves no more updates: the cards it showed are the ones marked unanswered.
       elicitations.abandon(sessionId);
       patchSession(sessionId, { status: 'terminated', endedAt: Date.now(), exitCode: code });
-      if (endedATurn) onTurnSettled?.(sessionId, { how: 'exited' });
+      if (endedATurn) onTurnSettled?.(sessionId, { how: wasEnded ? 'cancelled' : 'exited' });
     }),
     onError: reportError,
   });
@@ -787,6 +792,7 @@ export function useAcpEngine({
     queued.flush();
     agentFailures.clear(sessionId);
     forgetStopAsked(sessionId);
+    endAgentAsked.current.delete(sessionId);
     // The backend cancels the open requests, and the agent's later events (its exit) are ignored.
     elicitations.abandon(sessionId);
     stoppedRef.current.add(sessionId);
@@ -858,16 +864,20 @@ export function useAcpEngine({
    * gets the agent's `exit`, so it reads ended and is continued the usual way.
    * Resolves with whether the process was ended.
    */
-  const endAgent = (sessionId: string): Promise<boolean> =>
-    acp.endAgent(sessionId).then(
+  const endAgent = (sessionId: string): Promise<boolean> => {
+    // Only a running turn is ended by it: the turn end that follows is the user's own stop.
+    if (acp.isBusy(sessionId)) endAgentAsked.current.add(sessionId);
+    return acp.endAgent(sessionId).then(
       () => true,
       (error: unknown) => {
+        endAgentAsked.current.delete(sessionId);
         // Already gone (a second click, or it died meanwhile): what End agent was for is done.
         if (isSessionGoneError(error)) return true;
         reportFailure('Could not end the agent')(error);
         return false;
       },
     );
+  };
 
   const setMode = (sessionId: string, modeId: string) => {
     // Read now, not once the change lands: a request asked meanwhile is in the new mode.

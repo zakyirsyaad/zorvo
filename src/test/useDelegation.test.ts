@@ -1373,7 +1373,7 @@ describe("useDelegation reports that wait", () => {
     expect(env.givesBack).toHaveLength(1);
   });
 
-  it("blocks Send in the delegate while its report is queued, and not in the source", async () => {
+  it("blocks Send in the delegate while its report is owed, and not in the source", async () => {
     const env = setup({
       sessions: [sourceSession(), delegateSession()],
       transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
@@ -1388,7 +1388,7 @@ describe("useDelegation reports that wait", () => {
     expect(env.result.current.delegation.sendBlockedReason("s-a")).toBeNull();
   });
 
-  it("drops a queued report when the delegation ends", async () => {
+  it("drops an owed report when the delegation ends", async () => {
     const env = setup({
       sessions: [sourceSession(), delegateSession()],
       transcripts: { "s-a": A_MESSAGES, "s-b": bMessages() },
@@ -2337,5 +2337,27 @@ describe("useDelegation owed reports", () => {
     expect(env.sends[0].text).toContain("> New answer.");
     await act(async () => {});
     expect(env.sends).toHaveLength(1);
+  });
+
+  it("never leaves a report owed after the clock stepped back", async () => {
+    const future = Date.now() + 1_000_000;
+    const env = setup({
+      sessions: [sourceSession(), owedWorker("w1", 1, { lastTurn: { endedAt: future, how: "finished" } })],
+      transcripts: { "s-a": A_MESSAGES },
+    });
+    await waitFor(() => expect(linkOf(env, "w1")?.reportedAt).toBeGreaterThanOrEqual(future));
+    await act(async () => {});
+    expect(env.sends).toHaveLength(1);
+  });
+
+  it("reports a worker whose agent exited and then ends its link, from the settle on", async () => {
+    const env = setup({
+      sessions: [sourceSession(), delegateSession({ id: "w1", delegatedFrom: link({ handle: "worker-1" }) })],
+      transcripts: { "s-a": A_MESSAGES },
+    });
+    await settle(env, "w1", { how: "exited" });
+    await waitFor(() => expect(env.sends).toHaveLength(1));
+    expect(env.sends[0].text).toContain("is gone");
+    await waitFor(() => expect(linkOf(env, "w1")?.endedAt).toEqual(expect.any(Number)));
   });
 });

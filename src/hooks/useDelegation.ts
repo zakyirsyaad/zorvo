@@ -112,10 +112,10 @@ export type { StartWorkerInput, StartWorkerResult };
 
 /**
  * The side effects of delegating: starts B from a fork-style handoff of A's
- * conversation, ends the link, and sends a finished B turn back to A. The
- * same-tick decisions (Send refused while a report is on its way) read refs,
- * so they hold before React renders; the report queue's revision (in
- * `useWorkerReports`) only triggers its drain.
+ * conversation, ends the link, and (through `useWorkerReports`) sends what B's
+ * turns left owed back to A. The same-tick decisions (Send refused while a report
+ * is on its way) read refs, so they hold before React renders; the drain's
+ * revision only triggers it.
  */
 export function useDelegation(deps: DelegationDeps): {
   /** Why `sourceId` cannot give a task; with `agentId`, why it cannot give that agent one. */

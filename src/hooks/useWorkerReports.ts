@@ -41,7 +41,8 @@ function relativeTo(cwd: string, path: string): string {
 function reportedLink(link: DelegationLink, at: number, endedTurnAt: number | undefined): DelegationLink {
   // A newer turn end is never covered by an older report: it stays owed.
   if (!isOpenLink(link) || link.lastTurn?.endedAt !== endedTurnAt) return link;
-  const reported = withReported(link, at);
+  // Never earlier than the turn end it covers: a clock that stepped back must not leave it owed.
+  const reported = withReported(link, Math.max(at, link.lastTurn?.endedAt ?? at));
   const isGone = link.lastTurn?.how === 'exited';
   return isGone ? { ...reported, endedAt: at } : reported;
 }

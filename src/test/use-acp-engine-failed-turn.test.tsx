@@ -367,6 +367,47 @@ describe("useAcpEngine reports how every turn ended", () => {
     expect(order.slice(0, 2)).toEqual(["settled", "failed-handler"]);
   });
 
+  it("settles the real order of an agent that dies mid-turn as exited, once", async () => {
+    const engine = renderEngine();
+    await startTurn(engine);
+    // The backend fails the waiting prompt first; the exit follows once the turn is closed.
+    await emit({ kind: "turn-end", error: "The agent exited before answering" });
+    await emit({ kind: "exit", code: 1 });
+    expect(engine.onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", { how: "exited" });
+  });
+
+  it("does not take the agent's own words for its exit", async () => {
+    const engine = renderEngine();
+    await startTurn(engine);
+    await emit({ kind: "turn-end", error: "It said: The agent exited before answering" });
+    expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", {
+      how: "failed",
+      reason: "It said: The agent exited before answering",
+    });
+  });
+
+  it("settles a sign-in refusal as failed without putting Zorvo's own words under the agent's error", async () => {
+    const engine = renderEngine();
+    await startTurn(engine);
+    const authRequired = `ACP_AUTH_REQUIRED:${JSON.stringify([{ id: "qwen-oauth", name: "Qwen OAuth", type: "terminal" }])}`;
+    await emit({ kind: "turn-end", error: authRequired });
+    expect(engine.onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", { how: "failed" });
+  });
+
+  it("settles End agent on a working session as cancelled, once", async () => {
+    const engine = renderEngine();
+    await startTurn(engine);
+    await act(async () => {
+      await engine.result.current.endAgent("s-1");
+    });
+    await emit({ kind: "turn-end", error: "The agent exited before answering" });
+    await emit({ kind: "exit", code: null });
+    expect(engine.onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", { how: "cancelled" });
+  });
+
   it("settles an exit during a turn as exited, once", async () => {
     const engine = renderEngine();
     await startTurn(engine);

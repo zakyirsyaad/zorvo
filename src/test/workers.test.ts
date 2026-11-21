@@ -81,10 +81,42 @@ describe('link updates', () => {
       ...link,
       lastTurn: { endedAt: 300, how: 'finished' as const },
       outcome: { result: 'succeeded' as const, at: 250 },
+      reportedAt: 350,
     };
     expect(withTurnEnd(reported, { how: 'finished', at: 500 }).outcome).toBeNull();
     expect(withTurnEnd({ ...link, outcome: { result: 'failed', at: 150 } }, { how: 'finished', at: 200 }).outcome?.result).toBe('failed');
     expect(withTurnEnd({ ...link, outcome: { result: 'succeeded', at: 150 } }, { how: 'cancelled', at: 200 }).outcome).toBeNull();
+  });
+  test('an outcome that was never reported survives a later finished turn', () => {
+    const unreported = {
+      ...link,
+      lastTurn: { endedAt: 300, how: 'finished' as const },
+      outcome: { result: 'succeeded' as const, at: 250, summary: 'Fixed' },
+    };
+    const next = withTurnEnd(unreported, { how: 'finished', at: 500 });
+    expect(next.outcome).toMatchObject({ summary: 'Fixed' });
+    expect(workerStateOf({ link: next, isBusy: false, isWaiting: false })).toBe('succeeded');
+  });
+  test('a reported outcome is dropped by a later turn end without a new done', () => {
+    const reported = {
+      ...link,
+      lastTurn: { endedAt: 300, how: 'finished' as const },
+      outcome: { result: 'succeeded' as const, at: 250 },
+      reportedAt: 320,
+    };
+    const next = withTurnEnd(reported, { how: 'finished', at: 500 });
+    expect(next.outcome).toBeNull();
+    expect(workerStateOf({ link: next, isBusy: false, isWaiting: false })).toBe('did-not-report');
+  });
+  test('reported, a follow-up task and a new done keep the new outcome', () => {
+    const reported = {
+      ...link,
+      lastTurn: { endedAt: 300, how: 'finished' as const },
+      outcome: { result: 'succeeded' as const, at: 250 },
+      reportedAt: 320,
+    };
+    const again = withOutcome(withNewTask(reported, 'next', 400), { result: 'failed', at: 450, summary: 'No' });
+    expect(withTurnEnd(again, { how: 'finished', at: 500 }).outcome).toMatchObject({ result: 'failed', summary: 'No' });
   });
   test('a turn end records how it ended and does not change the link it was given', () => {
     const next = withTurnEnd(link, { how: 'failed', at: 200, reason: 'boom' });

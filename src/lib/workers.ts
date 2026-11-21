@@ -33,6 +33,13 @@ export const WORKER_STATES = [
 /** Which tools a session gets: a coordinator starts workers, a worker reports back. */
 export type ToolsRole = 'coordinator' | 'worker';
 
+/**
+ * What the backend fails a waiting request with when the agent's output closes
+ * (`src-tauri/src/acp/connection.rs`; a test pins the two together). It reaches the
+ * turn end as the turn's error, before the exit event, so it means the agent died.
+ */
+export const AGENT_EXITED_REASON = 'The agent exited before answering';
+
 /** How many workers one coordinator may have in a turn at once. */
 export const MAX_AT_WORK = 4;
 /** The most characters of a worker's own summary that reach its coordinator. */
@@ -73,9 +80,9 @@ export function toolsRoleOf(
 /**
  * Where a worker stands. A turn in progress decides first; otherwise the last
  * turn's end does, and a finished turn is read by the outcome the worker
- * reported in it. No turn behind it means no state yet. It trusts `withTurnEnd`
- * to have cleared an outcome that does not belong to the last turn, so `lastTurn`
- * must be written before the state is read.
+ * reported. No turn behind it means no state yet. It trusts `withTurnEnd` to have
+ * cleared an outcome that was already reported, so `lastTurn` must be written
+ * before the state is read.
  */
 export function workerStateOf(input: {
   link: DelegationLink;
@@ -198,16 +205,16 @@ export function atWorkCount(input: {
 }
 
 /**
- * Records how a turn ended. An outcome stays only when the turn finished and
- * the worker reported it after the turn before; any other outcome belongs to
- * an earlier task and is dropped.
+ * Records how a turn ended. An outcome stays only when the turn finished and it has
+ * not been reported yet (it is newer than the last report, else than the link); a
+ * reported outcome belongs to a task already told, and any other is dropped.
  */
 export function withTurnEnd(
   link: DelegationLink,
   end: { how: WorkerTurnEnd; at: number; reason?: string },
 ): DelegationLink {
-  const previousEnd = link.lastTurn?.endedAt ?? link.startedAt;
-  const keeps = end.how === 'finished' && link.outcome != null && link.outcome.at > previousEnd;
+  const since = link.reportedAt ?? link.startedAt;
+  const keeps = end.how === 'finished' && link.outcome != null && link.outcome.at > since;
   return {
     ...link,
     lastTurn: { endedAt: end.at, how: end.how, ...(end.reason !== undefined ? { reason: end.reason } : {}) },

@@ -58,7 +58,14 @@ function start(root: HTMLElement) {
   gsap.registerPlugin(ScrollTrigger, ScrollSmoother);
   // Smooth scrolling for the wheel and the trackpad. Touch keeps the system's own scrolling.
   smoother = ScrollSmoother.create({ wrapper: "#smooth-wrapper", content: "#smooth-content", smooth: 1, smoothTouch: false });
-  const sectionOf = (hash: string) => (hash.length > 1 ? document.getElementById(decodeURIComponent(hash.slice(1))) : null);
+  // A hash that cannot be decoded names no section: without the catch, such an address would undo all motion.
+  const sectionOf = (hash: string) => {
+    try {
+      return hash.length > 1 ? document.getElementById(decodeURIComponent(hash.slice(1))) : null;
+    } catch {
+      return null;
+    }
+  };
   // A link to a section glides there through the smoother, then hands the section the focus as a jump would.
   const glide = (event: MouseEvent) => {
     const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href^="#"]') : null;
@@ -66,7 +73,8 @@ function start(root: HTMLElement) {
     if (!link || !target || !smoother || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     smoother.scrollTo(target, true, "top 16px");
-    history.pushState(null, "", link.hash);
+    if (location.hash === link.hash) history.replaceState(null, "", link.hash);
+    else history.pushState(null, "", link.hash);
     if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
     target.focus({ preventScroll: true });
   };
@@ -341,11 +349,20 @@ function wireMenus() {
       item.setAttribute("data-shut", "");
     };
     button.addEventListener("click", () => {
-      const isOpening = item.hasAttribute("data-shut") || !item.hasAttribute("data-open");
-      item.removeAttribute("data-shut");
-      set(isOpening);
+      // The first click keeps a menu the pointer opened. The next one shuts it, although the pointer and the
+      // focus are still on it.
+      if (item.hasAttribute("data-shut") || !item.hasAttribute("data-open")) {
+        item.removeAttribute("data-shut");
+        set(true);
+      } else {
+        shut();
+      }
     });
-    item.addEventListener("mouseenter", () => button.setAttribute("aria-expanded", "true"));
+    item.addEventListener("mouseenter", () => {
+      // The pointer coming back opens a menu that Escape had shut.
+      item.removeAttribute("data-shut");
+      button.setAttribute("aria-expanded", "true");
+    });
     item.addEventListener("mouseleave", () => {
       item.removeAttribute("data-shut");
       set(false);

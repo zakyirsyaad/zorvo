@@ -20,14 +20,24 @@ const nextConfig: NextConfig = {
 const RELEASE_REPOSITORIES = ["zakyirsyaad/zorvo", "zakyirsyaad/zorvo-releases"];
 
 interface Release {
+  tag_name: string;
+  draft: boolean;
+  prerelease: boolean;
   assets: Array<{ name: string; download_count: number }>;
 }
 
+interface Published {
+  downloads: string;
+  /** The newest published release of this repository, without the "v". */
+  version?: string;
+}
+
 /**
- * How often the .dmg was downloaded, from GitHub's public API. Update packages are not counted.
- * Any failure gives undefined, and the page then shows the count in lib/downloads.ts.
+ * How often the .dmg was downloaded and which version is the newest published one, from GitHub's public
+ * API. Update packages are not counted. Any failure gives undefined, and the page then shows the count in
+ * lib/downloads.ts and the app's own package version.
  */
-async function readDownloads(): Promise<string | undefined> {
+async function readReleases(): Promise<Published | undefined> {
   // Without a token GitHub allows 60 requests an hour per address, which a shared build machine can use up.
   const token = process.env.GITHUB_TOKEN;
   const headers: Record<string, string> = { accept: "application/vnd.github+json" };
@@ -38,6 +48,7 @@ async function readDownloads(): Promise<string | undefined> {
   };
   try {
     let total = 0;
+    let version: string | undefined;
     for (const repository of RELEASE_REPOSITORIES) {
       for (let page = 1; page <= 5; page += 1) {
         const response = await fetch(`https://api.github.com/repos/${repository}/releases?per_page=100&page=${page}`, {
@@ -47,6 +58,10 @@ async function readDownloads(): Promise<string | undefined> {
         // A total without one of the repositories would be too low, so one failure drops it all.
         if (!response.ok) return fallback(`GitHub answered ${response.status} for ${repository}`);
         const releases = (await response.json()) as Release[];
+        // GitHub lists the newest first. The first repository is the one the Download button reads.
+        if (repository === RELEASE_REPOSITORIES[0] && version === undefined) {
+          version = releases.find((release) => !release.draft && !release.prerelease)?.tag_name.replace(/^v/, "");
+        }
         for (const release of releases) {
           for (const asset of release.assets) {
             if (asset.name.endsWith(".dmg")) total += asset.download_count;
@@ -55,13 +70,16 @@ async function readDownloads(): Promise<string | undefined> {
         if (releases.length < 100) break;
       }
     }
-    return String(total);
+    return { downloads: String(total), version };
   } catch (error) {
     return fallback(error instanceof Error ? error.name : "request failed");
   }
 }
 
 export default async function config(): Promise<NextConfig> {
-  const downloads = await readDownloads();
-  return { ...nextConfig, env: downloads === undefined ? {} : { ZORVO_DOWNLOADS: downloads } };
+  const published = await readReleases();
+  const env: Record<string, string> = {};
+  if (published) env.ZORVO_DOWNLOADS = published.downloads;
+  if (published?.version) env.ZORVO_VERSION = published.version;
+  return { ...nextConfig, env };
 }

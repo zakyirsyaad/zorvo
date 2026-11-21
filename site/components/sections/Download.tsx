@@ -1,6 +1,5 @@
-import { downloadCount, formatCount } from "../../lib/downloads";
+import { downloadCount, formatCount, latestVersion } from "../../lib/downloads";
 import { LINKS } from "../../lib/links";
-import { APP_VERSION } from "../../lib/site";
 
 export function Download() {
   const downloads = formatCount(downloadCount());
@@ -39,7 +38,7 @@ export function Download() {
           <span>
             Version
             {" "}
-            <span className="font-mono text-fg-secondary">{APP_VERSION}</span>
+            <span className="font-mono text-fg-secondary">{latestVersion()}</span>
           </span>
           <span aria-hidden="true">·</span>
           <span>Signed with a Developer ID and notarized by Apple</span>

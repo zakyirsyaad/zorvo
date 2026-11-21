@@ -19,7 +19,7 @@ import TerminalDocs from "../../site/app/docs/terminal/page";
 import TroubleshootingDocs from "../../site/app/docs/troubleshooting/page";
 import { DOCS_PAGES } from "../../site/lib/docs-nav";
 import { AGENT_LOGOS } from "../../site/lib/agent-logos";
-import { DOWNLOADS_FALLBACK, downloadCount, formatCount } from "../../site/lib/downloads";
+import { DOWNLOADS_FALLBACK, downloadCount, formatCount, latestVersion } from "../../site/lib/downloads";
 import { STRIP_AGENTS } from "../../site/lib/strip-agents";
 import { Voices } from "../../site/components/sections/Voices";
 import { LINKS } from "../../site/lib/links";
@@ -287,6 +287,12 @@ describe("landing page", () => {
     expect(downloadCount("abc")).toBe(DOWNLOADS_FALLBACK);
     expect(downloadCount("1480")).toBe(1480);
     expect(formatCount(1480)).toBe("1,480");
+    // The version beside it is the newest published release's, and the package's own only as a stand-in.
+    const packageVersion = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version;
+    expect(document.querySelector("#download")?.textContent).toContain(`Version ${packageVersion}`);
+    expect(latestVersion("0.14.1")).toBe("0.14.1");
+    expect(latestVersion(undefined)).toBe(packageVersion);
+    expect(latestVersion("latest")).toBe(packageVersion);
   });
 
   it("shows Zorvo's launch post as a card that loads nothing from X", () => {
@@ -460,6 +466,8 @@ describe("landing page", () => {
       "Compare", "Delegate", "Review", "Output", "Control", "All features", "Private mode", "Privacy", "Docs",
       "Discord, opens in a new tab", "X, opens in a new tab", "GitHub, opens in a new tab",
     ]);
+    // A browser without popovers hides the button with the menu it cannot open.
+    expect(readFileSync(join(ROOT, "site", "app", "landing.css"), "utf8")).toContain(".lp-sheet, [popovertarget] { display: none; }");
     // The script closes a menu when one of its links is followed.
     const script = readFileSync(join(ROOT, "site", "scripts", "motion", "landing.ts"), "utf8");
     expect(script).toMatch(/function boot\(\) \{\s+wireMenus\(\);/);

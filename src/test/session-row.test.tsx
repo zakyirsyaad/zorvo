@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, onTestFinished } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { SessionTree, type SessionListContext } from "../components/sidebar/SessionList";
 import { CONFIRM_DELETE_MS } from "../components/sidebar/SessionMenu";
@@ -53,6 +53,10 @@ afterEach(() => vi.useRealTimers());
 
 describe("SessionRow", () => {
   it("shows a pull request's state and number in the time's place, and the time when there is none", () => {
+    // Midday, so "2 hours ago" never crosses midnight into a date.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 20, 12, 0, 0));
+    onTestFinished(() => vi.useRealTimers());
     const withPr = session({ id: "s-pr", name: "Fix transcript save interval", createdAt: Date.now() - 2 * 3_600_000 });
     const without = session({ id: "s-none", name: "Add GitHub connection", createdAt: Date.now() - 2 * 3_600_000 });
     const pullRequest = {

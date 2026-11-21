@@ -56,6 +56,8 @@ describe("one set of start places for both ways an agent starts a session", () =
         isWaiting: () => false,
         send: async () => true,
         resume: async () => true,
+        canResume: () => true,
+        pendingStop: () => undefined,
         startSession,
         selectSession: () => undefined,
         updateLink: () => undefined,

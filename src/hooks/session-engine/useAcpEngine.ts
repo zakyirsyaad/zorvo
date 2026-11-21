@@ -325,7 +325,11 @@ export function useAcpEngine({
     inFlight: elicitationsInFlightRef.current,
   });
 
+  // `starting` as a ref, for checks that must be true in the tick a launch begins.
+  const startingRef = useRef(new Set<string>());
   const markStarting = useCallback((sessionId: string, isStarting: boolean) => {
+    if (isStarting) startingRef.current.add(sessionId);
+    else startingRef.current.delete(sessionId);
     setStarting((prev) => {
       const next = new Set(prev);
       if (isStarting) next.add(sessionId);
@@ -927,6 +931,8 @@ export function useAcpEngine({
     });
 
   const isBusy = (sessionId: string) => starting.has(sessionId) || acp.isBusy(sessionId);
+  /** Whether a turn is under way or a launch is opening, from refs: true in the tick a prompt goes out, before any render. */
+  const isTurnUnderWay = (sessionId: string) => unsettledTurn.current.has(sessionId) || startingRef.current.has(sessionId);
 
   /** Whether the session's last turn failed with a prompt that can be sent again. */
   const hasFailedPrompt = (sessionId: string) => failedPromptRef.current.has(sessionId);
@@ -990,6 +996,7 @@ export function useAcpEngine({
     /** Drops a removed session's queued transcript changes before its transcript is deleted. */
     forgetQueued: queued.forget,
     isBusy,
+    isTurnUnderWay,
     busySinceOf: acp.busySinceOf,
     /** The failed requests in a row the session's agent reported, if any. */
     failuresOf: (sessionId: string) => agentFailures.failures[sessionId],

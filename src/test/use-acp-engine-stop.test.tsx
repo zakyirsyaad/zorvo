@@ -173,3 +173,31 @@ describe("useAcpEngine when Stop is pressed", () => {
     expect(onTurnSettled).not.toHaveBeenCalled();
   });
 });
+
+describe("useAcpEngine turn checks and marks", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("says a turn is under way from the moment a prompt is out until it ends", async () => {
+    const engine = renderEngine();
+    expect(engine.result.current.isTurnUnderWay("s-1")).toBe(false);
+    await startTurn(engine);
+    expect(engine.result.current.isTurnUnderWay("s-1")).toBe(true);
+    await emit({ kind: "turn-end", stopReason: "end_turn" });
+    expect(engine.result.current.isTurnUnderWay("s-1")).toBe(false);
+  });
+
+  it("puts the first message's marks on the user message a launch adds", async () => {
+    const engine = renderEngine();
+    await act(async () => {
+      await engine.result.current.start(SESSION, {
+        text: "Also fix the tests",
+        marks: { delegationTask: { agentName: "Claude Code", agentId: "claude-acp" } },
+      });
+    });
+    expect(engine.messages().at(0)).toMatchObject({
+      role: "user",
+      content: "Also fix the tests",
+      delegationTask: { agentName: "Claude Code", agentId: "claude-acp" },
+    });
+  });
+});

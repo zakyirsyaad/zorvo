@@ -110,6 +110,10 @@ interface HarnessInput {
   sendResult?: boolean;
   /** What the reopen answers: true, false, or a throw. */
   resumeResult?: boolean | "throws";
+  /** Sessions whose agent has no session id to reopen. */
+  cannotResume?: readonly string[];
+  /** A stop that is still in flight for a session. */
+  pendingStop?: (sessionId: string) => Promise<unknown> | undefined;
   strict?: boolean;
   messagesOf?: (sessionId: string) => Promise<ChatMessage[] | null>;
   giveBackThrows?: boolean;
@@ -154,6 +158,8 @@ function setup(input: HarnessInput) {
           sends.push({ sessionId, text, attachments, marks });
           return sendResult;
         },
+        canResume: (sessionId) => !(input.cannotResume ?? []).includes(sessionId),
+        pendingStop: (sessionId) => input.pendingStop?.(sessionId),
         resume: async (sessionId, message) => {
           resumes.push({ sessionId, message });
           if (input.resumeResult === "throws") throw new Error("/secret/resume");
@@ -1068,6 +1074,58 @@ describe("useDelegation workers", () => {
     expect(r).toMatchObject({ ok: true, kind: "sent", sessionId: "s-b" });
     expect(env.resumes).toHaveLength(1);
     expect(env.starts).toHaveLength(0);
+  });
+
+  it("a worker that cannot be resumed is gone: it gets no task and its link ends", async () => {
+    const env = setup({
+      sessions: [sourceSession(), worker("worker-1", "s-b", { status: "terminated", delegatedFrom: link({ handle: "worker-1" }) })],
+      transcripts: { "s-a": A_MESSAGES },
+      cannotResume: ["s-b"],
+    });
+    expect(await act(async () => env.result.current.delegation.sendToWorker("s-a", "s-b", "x"))).toEqual({
+      ok: false,
+      reason: "worker-1 can't take more work. Start a new worker.",
+    });
+    expect(env.resumes).toHaveLength(0);
+    expect(env.patches[0].patch.delegatedFrom?.endedAt).toEqual(expect.any(Number));
+  });
+
+  it("a mention for a worker that cannot be resumed ends its link and starts a new worker", async () => {
+    const env = setup({
+      sessions: [sourceSession(), worker("worker-1", "s-b", { status: "terminated", delegatedFrom: link({ handle: "worker-1" }) })],
+      transcripts: { "s-a": A_MESSAGES },
+      cannotResume: ["s-b"],
+    });
+    const r = await act(async () => env.result.current.delegation.giveTask("s-a", "codex-acp", "Again", { byAgent: true }));
+    expect(r).toMatchObject({ ok: true, kind: "started" });
+    expect(env.patches[0].patch.delegatedFrom?.endedAt).toEqual(expect.any(Number));
+    expect(env.starts).toHaveLength(1);
+  });
+
+  it("a task that arrives while an auto-close stop is in flight waits for it and then reopens", async () => {
+    let finishStop: () => void = () => undefined;
+    const stopping = new Promise<void>((resolve) => {
+      finishStop = resolve;
+    });
+    // The session still reads running: the stop has not landed.
+    const env = setup({
+      sessions: [sourceSession(), worker("worker-1", "s-b", { delegatedFrom: link({ handle: "worker-1", lastTurn: { endedAt: 300, how: "finished" }, reportedAt: 400 }) })],
+      transcripts: { "s-a": A_MESSAGES },
+      pendingStop: (id) => (id === "s-b" ? stopping : undefined),
+    });
+    let pending: Promise<unknown> = Promise.resolve();
+    await act(async () => {
+      pending = env.result.current.delegation.sendToWorker("s-a", "s-b", "Also fix the tests");
+      await Promise.resolve();
+    });
+    expect(env.resumes).toHaveLength(0);
+    expect(env.sends.filter((sent) => sent.sessionId === "s-b")).toHaveLength(0);
+    await act(async () => {
+      finishStop();
+      await pending;
+    });
+    expect(env.resumes).toHaveLength(1);
+    expect(env.sends.filter((sent) => sent.sessionId === "s-b")).toHaveLength(0);
   });
 
   it("a worker that is gone gets no task, even before its report arrived", async () => {

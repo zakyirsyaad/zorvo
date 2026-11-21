@@ -1188,7 +1188,24 @@ export default function App() {
     const session = sessions.find((candidate) => candidate.id === sessionId);
     if (session === undefined || !session.acpSessionId) return false;
     patchSession(sessionId, { status: "running", endedAt: null, exitCode: null });
-    return acp.resume(session, session.acpSessionId, message);
+    // The model last picked for this agent is applied again, as for a user's resume; the draft's own picks are not this worker's.
+    return acp.resume(session, session.acpSessionId, message, withPreferred(NO_CHOICES, state.agentOptions?.[session.profileId]));
+  };
+
+  // The auto-close stops still in flight, by session: a task that arrives meanwhile waits for the stop and reopens.
+  const pendingStops = useRef(new Map<string, Promise<boolean>>());
+  const stopWorkerAgent = (sessionId: string): Promise<boolean> => {
+    const stopping = (async () => {
+      const isStopped = await acp.stop(sessionId);
+      // `stop` leaves the row to its caller; the session stays and reads ended until a task reopens it.
+      if (isStopped) patchSession(sessionId, { status: "terminated", endedAt: Date.now() });
+      return isStopped;
+    })();
+    pendingStops.current.set(sessionId, stopping);
+    void stopping.finally(() => {
+      if (pendingStops.current.get(sessionId) === stopping) pendingStops.current.delete(sessionId);
+    });
+    return stopping;
   };
 
   const delegation = useDelegation({
@@ -1201,6 +1218,8 @@ export default function App() {
     places: startPlaces,
     send: acp.send,
     resume: resumeWorker,
+    canResume: (sessionId) => Boolean(sessions.find((candidate) => candidate.id === sessionId)?.acpSessionId),
+    pendingStop: (sessionId) => pendingStops.current.get(sessionId),
     startSession,
     selectSession: handleSelectSession,
     updateLink,
@@ -1220,12 +1239,11 @@ export default function App() {
     isBusy: isSessionBusy,
     isWaiting: isSessionWaiting,
     canReopen: (sessionId) => acp.info[sessionId]?.canReopen === true,
-    // `stop` leaves the row to its caller; the session stays and reads ended until a task reopens it.
-    stop: async (sessionId) => {
-      const isStopped = await acp.stop(sessionId);
-      if (isStopped) patchSession(sessionId, { status: "terminated", endedAt: Date.now() });
-      return isStopped;
-    },
+    isTurnUnderWay: acp.isTurnUnderWay,
+    isSendingTo: delegation.isSendingTo,
+    hasLiveTasks: (sessionId) =>
+      backgroundTasks.tasks.some((task) => task.kind === "shell" && task.sessionId === sessionId),
+    stop: stopWorkerAgent,
   });
   // The engine was built before this hook: its turn ends reach it through the ref.
   delegationTurnEndedRef.current = delegation.onTurnEnded;

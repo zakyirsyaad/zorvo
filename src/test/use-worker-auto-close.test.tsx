@@ -25,6 +25,9 @@ interface Props {
   waiting?: boolean;
   canReopen?: boolean;
   now?: number;
+  turnUnderWay?: boolean;
+  sending?: boolean;
+  liveTasks?: boolean;
   stop?: (id: string) => Promise<boolean>;
 }
 
@@ -37,6 +40,9 @@ function render(initial: Props) {
         isBusy: () => props.busy === true,
         isWaiting: () => props.waiting === true,
         canReopen: () => props.canReopen !== false,
+        isTurnUnderWay: () => props.turnUnderWay === true,
+        isSendingTo: () => props.sending === true,
+        hasLiveTasks: () => props.liveTasks === true,
         stop: props.stop ?? stop,
         now: () => props.now ?? 1_000,
       }),
@@ -103,6 +109,32 @@ describe("useWorkerAutoClose", () => {
     rerender({ sessions: [worker()], stop });
     await vi.advanceTimersByTimeAsync(600_000);
     expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing when the timer fires under a turn the engine already knows of", () => {
+    const { stop, rerender } = render({ sessions: [worker()] });
+    vi.advanceTimersByTime(60_000);
+    // The prompt is out, but React has not rendered busy: the engine's ref knows.
+    rerender({ sessions: [worker()], turnUnderWay: true });
+    vi.advanceTimersByTime(120_000);
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the timer fires while a task is being sent to the worker", () => {
+    const { stop, rerender } = render({ sessions: [worker()] });
+    rerender({ sessions: [worker()], sending: true });
+    vi.advanceTimersByTime(120_000);
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it("leaves a worker with a live background task alone and closes it when the task ends", () => {
+    const { stop, rerender } = render({ sessions: [worker()], liveTasks: true });
+    vi.advanceTimersByTime(600_000);
+    expect(stop).not.toHaveBeenCalled();
+    // More than two minutes have passed: it closes at once.
+    rerender({ sessions: [worker()], liveTasks: false, now: 700_000 });
+    vi.advanceTimersByTime(0);
+    expect(stop).toHaveBeenCalledWith("w1");
   });
 
   it("clears its timers on unmount", () => {

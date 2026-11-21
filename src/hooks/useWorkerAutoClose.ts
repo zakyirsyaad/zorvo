@@ -11,6 +11,12 @@ export interface WorkerAutoCloseDeps {
   isWaiting: (id: string) => boolean;
   /** Stopping an agent that cannot be reopened would lose the session. */
   canReopen: (id: string) => boolean;
+  /** From refs, true in the tick a prompt goes out: `isBusy` is React state and lags a render. */
+  isTurnUnderWay: (id: string) => boolean;
+  /** True while a task is being sent to the worker (a send or a reopen that has not landed). */
+  isSendingTo: (id: string) => boolean;
+  /** The worker has a shell command Zorvo knows of; closing would end it with the agent's process tree. */
+  hasLiveTasks: (id: string) => boolean;
   stop: (id: string) => Promise<boolean>;
   now?: () => number;
 }
@@ -26,12 +32,12 @@ export function useWorkerAutoClose(deps: WorkerAutoCloseDeps): void {
 
   /** The turn end a worker's agent is waiting to close after, or null when it must stay open. */
   const closableAfter = (session: Session): number | null => {
-    const { isBusy, isWaiting, canReopen } = latest.current;
+    const { isBusy, isWaiting, canReopen, hasLiveTasks } = latest.current;
     const link = session.delegatedFrom;
     if (session.status !== 'running' || isArchived(session) || !link || !isOpenLink(link)) return null;
     // A worker whose agent died has nothing left to close.
     if (!link.lastTurn || link.lastTurn.how === 'exited') return null;
-    if (isBusy(session.id) || isWaiting(session.id) || !canReopen(session.id)) return null;
+    if (isBusy(session.id) || isWaiting(session.id) || !canReopen(session.id) || hasLiveTasks(session.id)) return null;
     return link.lastTurn.endedAt;
   };
 
@@ -49,6 +55,9 @@ export function useWorkerAutoClose(deps: WorkerAutoCloseDeps): void {
         // The state may have moved since the timer was set.
         const current = latest.current.sessions.find((candidate) => candidate.id === session.id);
         if (current === undefined || closableAfter(current) !== endedAt) return;
+        // A prompt just sent is not rendered busy yet, and stopping now would leave its turn unrecorded.
+        // Nothing is rescheduled here: that turn's end brings a new `endedAt` and a new timer.
+        if (latest.current.isTurnUnderWay(session.id) || latest.current.isSendingTo(session.id)) return;
         // The entry stays, so a render does not set it again; a failed stop is not retried.
         latest.current.stop(session.id).catch(() => undefined);
       }, Math.max(0, endedAt + WORKER_CLOSE_MS - now));

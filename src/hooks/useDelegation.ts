@@ -55,6 +55,10 @@ export interface DelegationDeps {
   ) => Promise<boolean>;
   /** A session's messages, loaded or saved; null when they cannot be read. */
   messagesOf: (sessionId: string) => Promise<ChatMessage[] | null>;
+  /** Whether a session has an agent session to reopen (an agent that failed to start has none). */
+  canResume: (sessionId: string) => boolean;
+  /** An auto-close stop still in flight for a session, if any. */
+  pendingStop: (sessionId: string) => Promise<unknown> | undefined;
   /** Reopens a worker whose agent was closed and gives it the task; resolves to whether the agent took it. */
   resume: (sessionId: string, message: FirstMessage) => Promise<boolean>;
   /** `options.choices` are the dialog's picks; `changesToApply` applies them before the first prompt. */
@@ -148,6 +152,8 @@ export function useDelegation(deps: DelegationDeps): {
   onTurnEnded: (sessionId: string, reason: AttentionReason) => void;
   /** How a worker's turn ended, written on its open link. */
   onTurnSettled: (sessionId: string, end: { how: WorkerTurnEnd; reason?: string }) => void;
+  /** A task is on its way to this worker (a send or a reopen not yet landed): from a ref, true in the same tick. */
+  isSendingTo: (workerId: string) => boolean;
   sendBlockedReason: (sessionId: string) => string | null;
   viewFor: (sessionId: string) => DelegationView | null;
   /** A source's lines, one per open delegate, oldest first; a delegate's own line. */
@@ -179,7 +185,8 @@ export function useDelegation(deps: DelegationDeps): {
 
   /** A terminated worker whose agent died in its turn; one closed after a finished turn can be reopened. */
   const isGone = (session: Session): boolean =>
-    session.status === 'terminated' && session.delegatedFrom?.lastTurn?.how === 'exited';
+    session.status === 'terminated' &&
+    (session.delegatedFrom?.lastTurn?.how === 'exited' || !latest.current.canResume(session.id));
 
   /**
    * A worker whose turn just settled but whose link has not been rendered yet: the same tick
@@ -560,18 +567,25 @@ export function useDelegation(deps: DelegationDeps): {
     // and the send takes a place, so it counts against the limit until the delegate is at work.
     sendingTo.current.set(delegate.id, current.places.take(source.id));
     const sentAt = Date.now();
+    // An auto-close stop that has not landed: the agent is being killed, so the task reopens it.
+    const stopping = current.pendingStop(delegate.id);
     const marks = { delegationTask: { agentName: agentNameIn(current.agents, source.profileId), agentId: source.profileId } };
     let isTaken: boolean;
+    let isClosed = delegate.status === 'terminated';
     try {
+      if (stopping !== undefined) {
+        await stopping.catch(() => undefined);
+        isClosed = true;
+      }
       // A worker whose agent was closed is reopened by the task, with the message marked the same way.
       isTaken =
-        delegate.status === 'terminated'
+        isClosed
           ? await current.resume(delegate.id, { text: task, attachments: options.attachments ?? [], marks })
           : await current.send(delegate.id, task, options.attachments ?? [], marks);
     } catch (error) {
       stopSending(delegate.id);
       // A failed reopen is Zorvo's, not the agent's: the user's notice gets the error, the agent a plain sentence.
-      if (delegate.status === 'terminated') {
+      if (isClosed) {
         return { ok: false, reason: 'Zorvo could not do that.', isInternal: true, detail: String(error) };
       }
       isTaken = false;
@@ -695,5 +709,5 @@ export function useDelegation(deps: DelegationDeps): {
     }
   }, [sessions]);
 
-  return { delegateBlockedReason, start, giveTask, startWorker, sendToWorker, recordDone, end, onTurnEnded, onTurnSettled, sendBlockedReason, viewFor, viewsFor };
+  return { delegateBlockedReason, start, giveTask, startWorker, sendToWorker, recordDone, end, onTurnEnded, onTurnSettled, isSendingTo: (workerId) => sendingTo.current.has(workerId), sendBlockedReason, viewFor, viewsFor };
 }

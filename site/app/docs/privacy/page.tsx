@@ -12,6 +12,7 @@ const TOC: TocEntry[] = [
   { id: "private-mode", label: "Private mode's hosts" },
   { id: "data", label: "Where your data lives" },
   { id: "folders", label: "Folder limits" },
+  { id: "website", label: "This website" },
 ];
 
 export default function PrivacyPage() {
@@ -129,6 +130,18 @@ export default function PrivacyPage() {
 
       <H2 id="folders">Folder limits</H2>
       <P>The backend only reads and runs in folders you opened in the app.</P>
+
+      <H2 id="website">This website</H2>
+      <P>
+        Everything above is about the app. This website is hosted on Vercel and uses two of its services: Web Analytics
+        counts page views, and Speed Insights measures how fast pages load. Both are scripts served from this
+        site&apos;s own address, and they send what they measure to Vercel.
+      </P>
+      <P>
+        They set no cookies. Vercel receives the address of the page, the page you came from, your browser and
+        operating system, the kind of device and your country. It tells one visit from another with a hash of the
+        request, which it discards after a day. The app has no such script and sends none of this.
+      </P>
     </DocsShell>
   );
 }

@@ -1,4 +1,5 @@
 import { Agents } from "../components/sections/Agents";
+import { Canvas } from "../components/sections/Canvas";
 import { Community } from "../components/sections/Community";
 import { Compare } from "../components/sections/Compare";
 import { Control } from "../components/sections/Control";
@@ -45,6 +46,7 @@ export default function Home() {
         <Review />
         {/* After Review: a comment on a line of a diff, then a comment on a page. */}
         <Output />
+        <Canvas />
         <Control />
         <LongSessions />
         <Features />

@@ -185,15 +185,24 @@ function start(root: HTMLElement) {
       .to("[data-dlg-status]", { autoAlpha: 0, duration: 0.2 }, "<")
       .from("[data-dlg-report]", { y: 14, autoAlpha: 0, scale: 0.97, duration: 0.5, ease: "back.out(1.5)" }, "<");
 
-    // Output: the artboards arrive, one is selected, a comment lands on it and the strip offers to add it.
+    // Output: the page arrives step by step, a comment lands on one of them and the strip offers to add it.
     const shown = gsap.timeline({ scrollTrigger: scene(one("[data-out]")), defaults: { ease: "power3.out" } });
     shown
-      .from(q("[data-out-pane]"), { y: 28, autoAlpha: 0, duration: 0.6, stagger: 0.12 })
-      .from(q("[data-out-board]"), { y: 16, autoAlpha: 0, duration: 0.45, stagger: 0.12 }, "-=0.2")
-      .fromTo("[data-out-pick]", { borderColor: "#27272a" }, { borderColor: "#2563eb", duration: 0.3 }, "+=0.3")
+      .from("[data-out]", { y: 28, autoAlpha: 0, duration: 0.6 })
+      .from(q("[data-out-node]"), { y: 12, autoAlpha: 0, duration: 0.4, stagger: 0.14 }, "-=0.2")
       .from("[data-out-mark]", { scale: 0, autoAlpha: 0, duration: 0.35, ease: "back.out(2)" }, "+=0.2")
       .from("[data-out-comment]", { y: 10, autoAlpha: 0, duration: 0.4 })
       .from("[data-out-bar]", { y: 10, autoAlpha: 0, duration: 0.4 }, "+=0.2");
+
+    // Canvas: the artboards arrive, one is selected, a comment lands on it and the strip offers to add it.
+    const laid = gsap.timeline({ scrollTrigger: scene(one("[data-cv]")), defaults: { ease: "power3.out" } });
+    laid
+      .from(q("[data-cv-pane]"), { y: 28, autoAlpha: 0, duration: 0.6, stagger: 0.12 })
+      .from(q("[data-cv-board]"), { y: 16, autoAlpha: 0, duration: 0.45, stagger: 0.12 }, "-=0.2")
+      .fromTo("[data-cv-pick]", { borderColor: "#27272a" }, { borderColor: "#2563eb", duration: 0.3 }, "+=0.3")
+      .from("[data-cv-mark]", { scale: 0, autoAlpha: 0, duration: 0.35, ease: "back.out(2)" }, "+=0.2")
+      .from("[data-cv-comment]", { y: 10, autoAlpha: 0, duration: 0.4 })
+      .from("[data-cv-bar]", { y: 10, autoAlpha: 0, duration: 0.4 }, "+=0.2");
 
     // Private: the session arrives, its answer is verified, the balance ticks down.
     const prv = gsap.timeline({ scrollTrigger: scene(one("[data-prv]")), defaults: { ease: "power3.out" } });

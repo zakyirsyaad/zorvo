@@ -3,10 +3,12 @@ import { BrandIcon, type Brand } from "../ui/BrandIcon";
 
 /** The sections of the page that say what Zorvo does, as the Product menu lists them. */
 const PRODUCT = [
+  { id: "sessions", title: "Sessions", text: "One project, many agents, each in a session of its own." },
   { id: "compare", title: "Compare", text: "One prompt, up to four agents, each in its own worktree." },
   { id: "delegate", title: "Delegate", text: "Hand a task to another agent, or let an agent start workers." },
   { id: "review", title: "Review", text: "Comment on a line of a diff and send it back." },
-  { id: "output", title: "Output", text: "Pages and canvases an agent shows beside the chat." },
+  { id: "output", title: "Output", text: "A report, a diagram or a mockup, shown as a page beside the chat." },
+  { id: "canvas", title: "Canvas", text: "Several screens as artboards, to compare, pick and build." },
   { id: "control", title: "Control", text: "Approvals, the plan, and what the agent did." },
   { id: "features", title: "All features", text: "The inspector, the browser, files, fork and rewind." },
 ] as const;

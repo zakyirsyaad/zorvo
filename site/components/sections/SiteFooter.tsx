@@ -19,6 +19,7 @@ export function SiteFooter({ anchorBase = "" }: { anchorBase?: "" | "/" }) {
           <a className="focus-ring min-h-8" href={`${anchorBase}#delegate`}>Delegate</a>
           <a className="focus-ring min-h-8" href={`${anchorBase}#review`}>Review</a>
           <a className="focus-ring min-h-8" href={`${anchorBase}#output`}>Output</a>
+          <a className="focus-ring min-h-8" href={`${anchorBase}#canvas`}>Canvas</a>
           <a className="focus-ring min-h-8" href={`${anchorBase}#features`}>Features</a>
           <a className="focus-ring min-h-8" href={`${anchorBase}#private`}>Private mode</a>
           <a className="focus-ring min-h-8" href={`${anchorBase}#faq`}>Questions</a>

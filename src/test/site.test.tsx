@@ -108,7 +108,7 @@ describe("landing page", () => {
     return body.textContent ?? "";
   })();
 
-  it("has the fifteen sections in order, the paid extra after the free app, and no pricing", () => {
+  it("has the sixteen sections in order, the paid extra after the free app, and no pricing", () => {
     const names = [...document.querySelectorAll("main > section")].map(
       (section) => section.id || section.getAttribute("aria-label"),
     );
@@ -121,6 +121,7 @@ describe("landing page", () => {
       "delegate",
       "review",
       "output",
+      "canvas",
       "control",
       "Long sessions",
       "features",
@@ -203,6 +204,7 @@ describe("landing page", () => {
     expect(document.querySelector(`#delegate a[href="${LINKS.delegateGuide}"]`)).not.toBeNull();
     expect(document.querySelector(`#review a[href="${LINKS.reviewGuide}"]`)).not.toBeNull();
     expect(document.querySelector(`#output a[href="${LINKS.outputGuide}"]`)).not.toBeNull();
+    expect(document.querySelector(`#canvas a[href="${LINKS.canvasGuide}"]`)).not.toBeNull();
     // The page says what Zorvo runs in plain words: the protocol's name is for the docs.
     expect(copy).toContain("dozens more coding agents");
     expect(copy).not.toMatch(/\bACP\b|Agent Client Protocol/);
@@ -438,10 +440,12 @@ describe("landing page", () => {
     expect(css).toContain(".lp-nav-item:not([data-shut]):is(:hover, :focus-within, [data-open]) > .lp-menu { opacity: 1; visibility: visible;");
     expect(blockAfter(css, ".lp-menu {")).toMatch(/transition: opacity 160ms/);
     expect([...menu.querySelectorAll("a")].map((link) => [link.querySelector("b")?.textContent, link.getAttribute("href")])).toEqual([
+      ["Sessions", "#sessions"],
       ["Compare", "#compare"],
       ["Delegate", "#delegate"],
       ["Review", "#review"],
       ["Output", "#output"],
+      ["Canvas", "#canvas"],
       ["Control", "#control"],
       ["All features", "#features"],
     ]);
@@ -467,7 +471,7 @@ describe("landing page", () => {
     expect(opener.textContent).toBe("Menu");
     const sheet = header.querySelector("#site-menu")!;
     expect([...sheet.querySelectorAll("a")].map((link) => link.textContent)).toEqual([
-      "Compare", "Delegate", "Review", "Output", "Control", "All features", "Private mode", "Privacy", "Docs",
+      "Sessions", "Compare", "Delegate", "Review", "Output", "Canvas", "Control", "All features", "Private mode", "Privacy", "Docs",
       "Discord, opens in a new tab", "X, opens in a new tab", "GitHub, opens in a new tab",
     ]);
     // A browser without popovers hides the button with the menu it cannot open.
@@ -519,22 +523,43 @@ describe("landing page", () => {
     expect(document.querySelector("#delegate")?.textContent).toContain("Type @ in the message box");
   });
 
-  it("shows a canvas in the Output tab with a numbered comment, and says what a page can reach", () => {
-    const scene = document.querySelector("#output [role=img]");
-    expect([...scene!.querySelectorAll("[data-out-board] > .lp-sub")].map((label) => label.textContent)).toEqual([
+  it("shows a page in the Output tab with a numbered comment, and says what a page can reach", () => {
+    const scene = document.querySelector("#output [role=img]")!;
+    expect(scene.textContent).toMatch(/Login redirect flow.*Version 2.*Comment.*Export/s);
+    expect([...scene.querySelectorAll("[data-out-node]")].map((step) => step.querySelector(".font-mono")?.textContent)).toEqual([
+      "/checkout",
+      "requireUser1",
+      "/login?next=",
+    ]);
+    // The number on the page is the number in the list under it.
+    expect(scene.querySelectorAll("[data-out-mark]")).toHaveLength(1);
+    expect(scene.querySelector("[data-out-comment]")?.textContent).toMatch(/^1requireUser · Current/);
+    expect(scene.querySelector("[data-out-bar]")?.textContent).toBe("Add 1 to message");
+    const section = document.querySelector("#output")?.textContent ?? "";
+    expect(section).toContain("It cannot call Zorvo or read your files");
+    expect(section).toContain("you can go back to an older one");
+    expect(document.querySelector("#control")?.textContent).toContain("for now it can only look at them");
+  });
+
+  it("gives the design canvas a section of its own: artboards side by side, one picked and commented", () => {
+    const scene = document.querySelector("#canvas [role=img]")!;
+    expect([...scene.querySelectorAll("[data-cv-board] > .lp-sub")].map((label) => label.textContent)).toEqual([
       "Cart",
       "Payment A",
       "Payment B",
     ]);
-    expect(scene?.textContent).toMatch(/Checkout redesign.*3 artboards.*Open/s);
-    expect(scene?.textContent).toMatch(/Pick.*Build this/s);
-    // The number on the artboard is the number in the list under it.
-    expect(scene?.querySelector("[data-out-pick]")?.textContent).toContain("Total1");
-    expect(scene?.querySelector("[data-out-comment]")?.textContent).toMatch(/^1Payment B · Current/);
-    expect(scene?.querySelector("[data-out-bar]")?.textContent).toBe("Add 1 to message");
-    const section = document.querySelector("#output")?.textContent ?? "";
-    expect(section).toContain("It cannot call Zorvo or read your files");
-    expect(document.querySelector("#control")?.textContent).toContain("for now it can only look at them");
+    expect(scene.textContent).toMatch(/Checkout redesign.*3 artboards.*Open/s);
+    expect(scene.textContent).toMatch(/Pick.*Build this/s);
+    expect(scene.querySelector("[data-cv-pick]")?.textContent).toContain("Total1");
+    expect(scene.querySelector("[data-cv-comment]")?.textContent).toMatch(/^1Payment B · Current/);
+    expect(scene.querySelector("[data-cv-bar]")?.textContent).toBe("Add 1 to message");
+    const section = document.querySelector("#canvas")!;
+    expect(section.querySelector("h2")?.textContent).toBe("Several screens, side by side.");
+    // What the changelog says the canvas does, in the section's own points.
+    for (const words of ["Pick keeps one variant", "Build this and Build section", "canvas.json and one HTML file per artboard", "PNG or PDF"]) {
+      expect(section.textContent, words).toContain(words);
+    }
+    expect(LINKS.canvasGuide).toBe(`${LINKS.outputGuide}#canvas`);
   });
 
   it("points every in-page link at an element that exists", () => {
@@ -587,8 +612,8 @@ describe("landing page", () => {
         "[data-hero-fade]", "[data-win]", "[data-srow]", "[data-chat]", "[data-cmp-prompt]", "[data-cmp-type]", "[data-cmp-chip]",
         "[data-cmp-start]", "[data-cmp-card]", "[data-cmp-confirm]", "[data-dlg-pane]", "[data-dlg-card]", "[data-dlg-ask]",
         "[data-dlg-allow]", "[data-dlg-allowed]", "[data-dlg-status]", "[data-dlg-dot]", "[data-dlg-b]",
-        "[data-dlg-report]", "[data-foot-inner]", "[data-out-pane]", "[data-out-board]", "[data-out-pick]", "[data-out-mark]", "[data-out-comment]",
-        "[data-out-bar]", "[data-prv]", "[data-prv-chip]", "[data-prv-item]", "[data-prv-check]", "[data-prv-badge]",
+        "[data-dlg-report]", "[data-foot-inner]", "[data-out]", "[data-out-node]", "[data-out-mark]", "[data-out-comment]", "[data-out-bar]",
+        "[data-cv-pane]", "[data-cv-board]", "[data-cv-pick]", "[data-cv-mark]", "[data-cv-comment]", "[data-cv-bar]", "[data-prv]", "[data-prv-chip]", "[data-prv-item]", "[data-prv-check]", "[data-prv-badge]",
         "[data-flow-step]", "[data-flow-end]", "[data-term-type]", "[data-term-out]", ".lp-ln > span", ".lp-pulse", ".lp-bar i",
         ".lp-st-a", ".lp-st-b", ".lp-cursor",
       ].join(",");

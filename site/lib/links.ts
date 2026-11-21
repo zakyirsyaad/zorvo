@@ -18,6 +18,7 @@ export const LINKS = {
   reviewGuide: "/docs/review",
   delegateGuide: "/docs/delegate",
   outputGuide: "/docs/output",
+  canvasGuide: "/docs/output#canvas",
   signingIn: "/docs/signing-in",
   agentsGuide: "/docs/agents",
   troubleshooting: "/docs/troubleshooting",

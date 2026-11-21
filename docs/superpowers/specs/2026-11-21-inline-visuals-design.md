@@ -222,7 +222,7 @@ The ⋯ menu:
 | Action | What happens |
 | --- | --- |
 | **Copy as image** | The backend draws a PNG and puts it on the macOS clipboard (`NSPasteboard`). |
-| **Download as SVG** | The save dialog picks a place; the stored bytes are written. Offered for an SVG visual. |
+| **Download as SVG** | The save dialog picks a place; the stored markup is written as a file other programs open: its namespace added and Zorvo's colour variables turned into the theme's values. Offered for an SVG visual. |
 | **Download as HTML** | The same, for an HTML visual. The file is the wrapper plus the markup, so it opens the same in a browser. |
 | **Download as PNG** | The save dialog picks a place; the backend writes the PNG. |
 

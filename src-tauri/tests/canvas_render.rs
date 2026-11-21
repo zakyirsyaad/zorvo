@@ -246,7 +246,7 @@ fn shell_state(read: &CanvasRead) -> String {
                 "title": board.title,
                 "width": board.width,
                 "height": board.height,
-                "url": format!("{url}?v={}", &sha256[..12]),
+                "url": format!("{url}?v={}&b={}", &sha256[..12], board.id),
             })
         })
         .collect();

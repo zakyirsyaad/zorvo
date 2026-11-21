@@ -52,6 +52,16 @@ pub fn canvas_message_source(frame_url: &str, canvas: &ShownCanvas) -> Source {
     }
 }
 
+/// The artboard id a frame's URL carries in its `b=` query parameter, when it is one. Two
+/// artboards may show one file, so the file alone cannot say which one a pick came from.
+fn board_query(frame_url: &str) -> Option<&str> {
+    let (_, query) = frame_url.split('#').next()?.split_once('?')?;
+    query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("b="))
+        .filter(|id| is_id(id))
+}
+
 /// What the wrapper says: a selection (none for a click on the background), the zoom, or that
 /// a live artboard's frame has loaded, so its marks can be sent.
 #[derive(Clone, Debug, PartialEq)]
@@ -101,7 +111,8 @@ pub enum CanvasIntake {
 }
 
 /// The wrapper's kinds are read only from the wrapper's frame, and a page's kinds only from an
-/// artboard of this canvas (a file `canvas.json` lists); an artboard saying what the wrapper
+/// artboard of this canvas (a file `canvas.json` lists: the one the URL's `b=` names when it shows
+/// that file, else the first that does); an artboard saying what the wrapper
 /// says, or the wrapper saying a pick, is refused. Board picks share `rate` (5 a second);
 /// the wrapper's kinds share `shell_rate` (20 a second). Without a canvas read, only
 /// board messages are refused.
@@ -121,11 +132,17 @@ pub fn canvas_intake(
             .filter(|_| shell_rate.allow_up_to(now, MAX_SHELL_PER_SECOND))
             .map_or(CanvasIntake::Refused, CanvasIntake::Shell),
         Source::Board(file) => {
-            let Some(artboard) = canvas
-                .into_iter()
-                .flat_map(|canvas| &canvas.sections)
-                .flat_map(|section| &section.artboards)
-                .find(|artboard| artboard.file == file)
+            let named = board_query(frame_url);
+            let with_file = || {
+                canvas
+                    .into_iter()
+                    .flat_map(|canvas| &canvas.sections)
+                    .flat_map(|section| &section.artboards)
+                    .filter(|artboard| artboard.file == file)
+            };
+            let Some(artboard) = with_file()
+                .find(|artboard| Some(artboard.id.as_str()) == named)
+                .or_else(|| with_file().next())
             else {
                 return CanvasIntake::Refused;
             };
@@ -613,5 +630,53 @@ mod tests {
             .take(20)
             .all(|r| r != CanvasIntake::Refused));
         assert_eq!(results.next(), Some(CanvasIntake::Refused));
+    }
+
+    #[test]
+    fn two_artboards_of_one_file_are_told_apart_by_the_frame_url() {
+        let mut shared = two_boards();
+        shared.sections[0].artboards[1].file = "pay/a.html".to_string();
+        let file = canvas_file_url(SESSION, KEY, "pay/a.html");
+        let run = |frame: &str| match canvas_intake(
+            frame,
+            PICK,
+            &canvas(),
+            Some(&shared),
+            ViewState {
+                is_commenting: true,
+                has_marks: false,
+            },
+            &mut RateLimit::default(),
+            &mut RateLimit::default(),
+            Instant::now(),
+        ) {
+            CanvasIntake::Board { artboard_id, .. } => artboard_id,
+            other => panic!("{other:?}"),
+        };
+
+        assert_eq!(run(&format!("{file}?v=0123456789ab&b=pay-b")), "pay-b");
+        assert_eq!(run(&format!("{file}?b=pay-b&v=0123456789ab")), "pay-b");
+        // No id, an unknown one, or one whose file is another: the first with that file.
+        assert_eq!(run(&format!("{file}?v=0123456789ab")), "pay-a");
+        assert_eq!(run(&format!("{file}?v=0123456789ab&b=pay-z")), "pay-a");
+        let mut other = shared.clone();
+        other.sections[0].artboards[1].file = "pay/b.html".to_string();
+        let id = canvas_intake(
+            &format!("{file}?b=pay-b"),
+            PICK,
+            &canvas(),
+            Some(&other),
+            ViewState {
+                is_commenting: true,
+                has_marks: false,
+            },
+            &mut RateLimit::default(),
+            &mut RateLimit::default(),
+            Instant::now(),
+        );
+        assert!(
+            matches!(id, CanvasIntake::Board { ref artboard_id, .. } if artboard_id == "pay-a"),
+            "{id:?}"
+        );
     }
 }

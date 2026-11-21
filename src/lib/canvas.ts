@@ -180,7 +180,8 @@ export function canvasThumbUrl(sha256: string): string {
 const VERSION_CHARS = 12;
 
 /**
- * What the wrapper's `apply` takes, as JSON: the sections, each artboard with its file's URL (none, and
+ * What the wrapper's `apply` takes, as JSON: the sections, each artboard with its file's URL (`v=` its
+ * version, `b=` its id, since two artboards may show one file and a pick names the frame's; none, and
  * `missing`, when the file is gone), its picture when it has one, and the selection. The wrapper gets
  * keys and relative names only, never a path.
  */
@@ -200,7 +201,7 @@ export function canvasShellState(read: CanvasRead, sessionId: string, thumbs: Re
         height: board.height,
         ...(sha256 === null
           ? { missing: true }
-          : { url: `${canvasFileUrl(sessionId, read.entry.key, board.file)}?v=${sha256.slice(0, VERSION_CHARS)}` }),
+          : { url: `${canvasFileUrl(sessionId, read.entry.key, board.file)}?v=${sha256.slice(0, VERSION_CHARS)}&b=${board.id}` }),
         ...(thumb === undefined ? {} : { thumb }),
       };
     }),

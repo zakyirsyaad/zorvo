@@ -90,12 +90,12 @@ describe("the wrapper's state", () => {
       title: "Cart",
       width: 1440,
       height: 900,
-      url: `${canvasFileUrl(SESSION, KEY, "cart.html")}?v=aaaaaaaaaaaa`,
+      url: `${canvasFileUrl(SESSION, KEY, "cart.html")}?v=aaaaaaaaaaaa&b=cart`,
       thumb: "zorvo-artifact://localhost/thumb/x.png",
     });
     // A file that is gone has no URL and says so.
     expect(state.boards[1]).toEqual({ id: "pay", section: "flow", group: "p", title: "Pay", width: 390, height: 844, missing: true });
-    expect(state.boards[2].url).toBe(`${canvasFileUrl(SESSION, KEY, "pay2.html")}?v=bbbbbbbbbbbb`);
+    expect(state.boards[2].url).toBe(`${canvasFileUrl(SESSION, KEY, "pay2.html")}?v=bbbbbbbbbbbb&b=pay2`);
   });
 
   it("gives a changed artboard a new URL and an unchanged one the same", () => {

@@ -102,7 +102,7 @@ describe('the canvas wrapper', () => {
     const section2 = out.sections.find((s) => s.id === 's2')!;
     const rowBottom = at('a').y + 500;
     expect(section2.y - rowBottom).toBe(160);
-    expect(at('c').y - section2.y).toBe(48);
+    expect(at('c').y - section2.y).toBe(80);
     expect(out.sections[0].y).toBeLessThan(section2.y);
   });
 
@@ -318,6 +318,33 @@ describe('the canvas wrapper', () => {
     expect(document.querySelector('.section-title')!.textContent).toBe('Constructor');
     canvas().apply({ ...state, selected: 'constructor' });
     expect(drawn.classList.contains('selected')).toBe(true);
+  });
+
+  it('leaves room for the section title and group label at the smallest zoom', () => {
+    // Labels keep their screen size, up to 3x the world size when zoomed out: the title is
+    // 20px (60px, about 72px with its line), the group label 13px plus padding and border (about 62px),
+    // hanging from just above its artboards.
+    const state: State = {
+      sections: [
+        { id: 'plain', title: 'Plain' },
+        { id: 'grouped', title: 'Grouped' },
+      ],
+      boards: [
+        board('p1', { section: 'plain' }),
+        board('g1', { section: 'grouped', group: 'pay' }),
+        board('g2', { section: 'grouped', group: 'pay' }),
+      ],
+    };
+
+    const out = canvas().layout(state);
+    const top = (id: string) => out.boards.find((b) => b.id === id)!.y;
+    const sectionY = (id: string) => out.sections.find((s) => s.id === id)!.y;
+
+    expect(top('p1') - sectionY('plain')).toBeGreaterThanOrEqual(72);
+    const group = out.groups[0];
+    // The group label hangs from `group.y` (its bottom), just above its artboards.
+    expect(group.y).toBeLessThanOrEqual(top('g1'));
+    expect(group.y - 62 - sectionY('grouped')).toBeGreaterThanOrEqual(72);
   });
 
   it('never makes a live frame of a missing artboard, at any zoom', () => {

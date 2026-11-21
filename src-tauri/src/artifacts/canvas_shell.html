@@ -37,7 +37,7 @@
   #viewport.panning { cursor: grabbing; }
   #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; --inv: 1; }
   .section-title { position: absolute; font-size: calc(20px * var(--inv)); font-weight: 600; white-space: nowrap; color: var(--canvas-text-strong); }
-  .group-label { position: absolute; font-size: calc(13px * var(--inv)); white-space: nowrap; border-bottom: calc(1px * var(--inv)) solid var(--canvas-line); padding-bottom: calc(4px * var(--inv)); overflow: hidden; text-overflow: ellipsis; }
+  .group-label { position: absolute; transform: translateY(-100%); font-size: calc(13px * var(--inv)); white-space: nowrap; border-bottom: calc(1px * var(--inv)) solid var(--canvas-line); padding-bottom: calc(4px * var(--inv)); overflow: hidden; text-overflow: ellipsis; }
   .board { position: absolute; cursor: default; }
   .frame { position: absolute; inset: 0; background: var(--canvas-page); box-shadow: 0 calc(1px * var(--inv)) calc(4px * var(--inv)) var(--canvas-shadow); overflow: hidden; }
   .board.selected .frame { outline: calc(2px * var(--inv)) solid var(--canvas-mark); outline-offset: calc(2px * var(--inv)); }
@@ -60,7 +60,10 @@
 (function () {
   "use strict";
 
-  var TITLE_BAND = 48, GROUP_BAND = 32, GAP_X = 80, GAP_Y = 160;
+  // Labels keep their screen size up to MAX_INV times their world size, so each band holds its
+  // label at the smallest zoom: the 20px title (60px, about 72 with its line) and the 13px group
+  // label with its padding and rule (about 62), which hangs from just above its artboards.
+  var TITLE_BAND = 80, GROUP_BAND = 64, GROUP_GAP = 8, GAP_X = 80, GAP_Y = 160;
   var MIN_ZOOM = 0.05, MAX_ZOOM = 2, LIVE_MIN_ZOOM = 0.25, LIVE_BUDGET = 8;
   var STEP = 1.25, FIT_PAD = 48, MAX_INV = 3, ZOOM_REPORT_MS = 100, DRAG_PX = 4;
 
@@ -119,7 +122,7 @@
         rowHeight = Math.max(rowHeight, board.height);
       });
       order.forEach(function (id) {
-        groups.push({ id: id, x: spans[id].x, y: top - 28, width: spans[id].end - spans[id].x });
+        groups.push({ id: id, x: spans[id].x, y: top - GROUP_GAP, width: spans[id].end - spans[id].x });
       });
       width = Math.max(width, ordered.length ? x - GAP_X : 0);
       y = top + rowHeight + GAP_Y;

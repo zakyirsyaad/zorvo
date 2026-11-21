@@ -20,5 +20,5 @@ mod tests {
         assert!(!CANVAS_SHELL.contains("http://") && !CANVAS_SHELL.contains("https://"));
     }
 
-    const PINNED_SHA256: &str = "379f50e6031e3581e98fa8aaef246f1dc8c3754c9e647f28d2d8c16798bbb7ce";
+    const PINNED_SHA256: &str = "0434eb562c02150c2f8a2210fa43f4fae0cef2d161270ebecbee0be1e257cee6";
 }

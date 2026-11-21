@@ -704,6 +704,7 @@ pub fn run() {
             artifacts::visual_commands::visual_show,
             artifacts::visual_commands::visual_read,
             artifacts::visual_commands::visual_sweep,
+            artifacts::visual_commands::visual_copy_session,
             artifacts::visual_commands::visual_export,
             artifacts::visual_commands::visual_copy_image,
             artifacts::commands::artifact_list,

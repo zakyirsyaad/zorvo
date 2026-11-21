@@ -9,6 +9,7 @@ use tauri::AppHandle;
 
 use super::commands::clean_file_stem;
 pub use super::visual_clean::VisualKind;
+use super::visual_wrapper::token_value;
 pub use super::visual_wrapper::Theme;
 
 pub const VISUAL_EXPORT_FAILED: &str = "Zorvo could not save that visual.";
@@ -67,6 +68,40 @@ pub fn theme_of(name: &str) -> Option<Theme> {
         "dark" => Some(Theme::Dark),
         "light" => Some(Theme::Light),
         _ => None,
+    }
+}
+
+/// An SVG visual as a file other programs open: with its namespace, with Zorvo's colour
+/// variables turned into the theme's values (a standalone file defines none), and without the
+/// one named entity HTML writes that XML does not know.
+pub fn standalone_svg(markup: &str, theme: Theme) -> String {
+    let mut out = String::with_capacity(markup.len() + 64);
+    let mut rest = markup;
+    while let Some(at) = rest.find("var(") {
+        let (before, from) = rest.split_at(at);
+        out.push_str(before);
+        let Some(close) = from.find(')') else {
+            break;
+        };
+        let name = from[4..close].trim();
+        match name
+            .strip_prefix("--")
+            .and_then(|name| token_value(name, theme))
+        {
+            Some(value) => out.push_str(value),
+            None => out.push_str(&from[..=close]),
+        }
+        rest = &from[close + 1..];
+    }
+    out.push_str(rest);
+    let out = out.replace("&nbsp;", "&#160;");
+    let opening = out.find('>').map_or(out.as_str(), |end| &out[..end]);
+    match out.find("<svg") {
+        Some(at) if !opening.contains("xmlns=") => {
+            let (head, tail) = out.split_at(at + 4);
+            format!("{head} xmlns=\"http://www.w3.org/2000/svg\"{tail}")
+        }
+        _ => out,
     }
 }
 
@@ -138,5 +173,23 @@ mod tests {
         assert_eq!(theme_of("dark"), Some(Theme::Dark));
         assert_eq!(theme_of("light"), Some(Theme::Light));
         assert_eq!(theme_of("sepia"), None);
+    }
+
+    #[test]
+    fn a_saved_svg_stands_alone() {
+        let stored = "<svg viewBox=\"0 0 4 4\"><rect fill=\"var(--chip)\" stroke=\"var(--border)\"></rect><text style=\"fill: var( --fg )\">a&nbsp;b</text></svg>";
+        let dark = standalone_svg(stored, Theme::Dark);
+        assert!(dark.starts_with("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox"));
+        assert!(!dark.contains("var(") && !dark.contains("&nbsp;") && dark.contains("a&#160;b"));
+        assert_ne!(dark, standalone_svg(stored, Theme::Light));
+    }
+
+    #[test]
+    fn a_saved_svg_keeps_its_own_namespace_and_unknown_variables() {
+        let own =
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect fill=\"var(--mine)\"></rect></svg>";
+        let out = standalone_svg(own, Theme::Dark);
+        assert_eq!(out.matches("xmlns=").count(), 1);
+        assert!(out.contains("var(--mine)"));
     }
 }

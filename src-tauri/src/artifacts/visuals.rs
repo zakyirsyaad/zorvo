@@ -174,6 +174,39 @@ impl ArtifactStore {
         Ok((entry, markup))
     }
 
+    /// Gives `to` its own copy of the visuals of `from` that `ids` names and it does not hold yet,
+    /// and says how many. A fork starts with its source's messages, and so needs their visuals.
+    pub fn copy_visuals(&self, from: &str, to: &str, ids: &[String]) -> Result<usize, String> {
+        if !is_session_id(from) || !is_session_id(to) || from == to {
+            return Err(VISUAL_FAILED.to_string());
+        }
+        let wanted: Vec<VisualEntry> = self
+            .read_visuals(from)?
+            .into_iter()
+            .filter(|entry| ids.contains(&entry.id))
+            .collect();
+        let lock = self.lock_for(to);
+        let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        let mut entries = self.read_visuals(to)?;
+        let mut copied = 0;
+        for entry in wanted {
+            if entries.len() >= MAX_VISUALS || entries.iter().any(|held| held.id == entry.id) {
+                continue;
+            }
+            let Ok(markup) = fs::read(self.visual_path(from, &entry)) else {
+                continue;
+            };
+            fs::create_dir_all(self.visuals_dir(to)).map_err(|_| VISUAL_FAILED.to_string())?;
+            write_private(&self.visual_path(to, &entry), &markup)?;
+            entries.push(entry);
+            copied += 1;
+        }
+        if copied > 0 {
+            self.write_visuals(to, &entries)?;
+        }
+        Ok(copied)
+    }
+
     /// Removes the visuals `keep` does not name that were shown at least `SWEEP_GRACE` ago, and
     /// says how many.
     pub fn keep_visuals(
@@ -319,5 +352,33 @@ mod tests {
             .mode();
         assert_eq!(mode & 0o777, 0o600);
         assert!(dir.join(format!("{}.html", html.id)).exists());
+    }
+
+    #[test]
+    fn a_fork_gets_a_copy_of_the_visuals_it_names() {
+        const FORK: &str = "session-1794800000001-f0rk1";
+        let (_temp, store) = store();
+        let a = store.put_visual(S, "A", b"<p>a</p>", 0).unwrap();
+        let b = store.put_visual(S, "B", b"<svg><rect/></svg>", 0).unwrap();
+        assert_eq!(
+            store
+                .copy_visuals(S, FORK, std::slice::from_ref(&a.id))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            store.visual(FORK, &a.id).unwrap().1,
+            store.visual(S, &a.id).unwrap().1
+        );
+        assert_eq!(store.visual(FORK, &b.id).unwrap_err(), VISUAL_GONE);
+        // Again is harmless, and the source keeps its own.
+        assert_eq!(
+            store
+                .copy_visuals(S, FORK, &[a.id.clone(), b.id.clone()])
+                .unwrap(),
+            1
+        );
+        assert!(store.visual(S, &a.id).is_ok() && store.visual(FORK, &b.id).is_ok());
+        assert!(store.copy_visuals(S, "../x", &[a.id]).is_err());
     }
 }

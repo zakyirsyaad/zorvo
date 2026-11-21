@@ -213,9 +213,56 @@ pub fn kind_of(markup: &str) -> VisualKind {
     }
 }
 
-/// Whether cleaned markup holds nothing to show: no element and no text.
+/// Tags that draw something by themselves, with no text inside them.
+const DRAWN_TAGS: [&str; 10] = [
+    "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "img", "use", "hr",
+];
+/// Tags whose text is never shown.
+const UNSHOWN_TEXT: [&str; 3] = ["style", "title", "desc"];
+
+fn without_unshown_text(cleaned: &str) -> String {
+    let mut out = cleaned.to_string();
+    for tag in UNSHOWN_TEXT {
+        let (open, close) = (format!("<{tag}"), format!("</{tag}>"));
+        while let Some(start) = out.find(&open) {
+            let end = out[start..]
+                .find(&close)
+                .map_or(out.len(), |at| start + at + close.len());
+            out.replace_range(start..end, "");
+        }
+    }
+    out
+}
+
+fn has_tag(markup: &str, tag: &str) -> bool {
+    let open = format!("<{tag}");
+    markup.match_indices(&open).any(|(at, _)| {
+        markup[at + open.len()..]
+            .chars()
+            .next()
+            .is_some_and(|next| next.is_whitespace() || next == '>' || next == '/')
+    })
+}
+
+/// Whether cleaned markup would show nothing: no text, no shape or picture, and no element that
+/// could be drawn by its own style. `<div id="chart"></div>` waiting for a script is the usual
+/// case, and the agent should be told rather than the user shown an empty frame.
 pub fn is_empty_visual(cleaned: &str) -> bool {
-    !cleaned.contains('<') && cleaned.trim().is_empty()
+    let shown = without_unshown_text(cleaned);
+    let mut text = String::new();
+    let mut is_in_tag = false;
+    for c in shown.chars() {
+        match c {
+            '<' => is_in_tag = true,
+            '>' => is_in_tag = false,
+            _ if !is_in_tag => text.push(c),
+            _ => {}
+        }
+    }
+    let has_text = !text.trim().is_empty();
+    let has_shape = DRAWN_TAGS.iter().any(|tag| has_tag(&shown, tag));
+    let has_styled_box = shown.contains(" style=\"") || shown.contains(" class=\"");
+    !(has_text || has_shape || has_styled_box)
 }
 
 #[cfg(test)]
@@ -308,5 +355,36 @@ mod tests {
         );
         assert!(!out.contains("</iframe>") && !out.contains("</body>") && !out.contains("<script"));
         assert!(out.contains("<p") && out.contains("&quot;"));
+    }
+
+    #[test]
+    fn markup_that_draws_nothing_is_empty() {
+        for nothing in [
+            "<div></div>",
+            "<div id=\"chart\"></div><script>draw()</script>",
+            "<svg></svg>",
+            "<style>p{}</style>",
+            "<svg><foreignObject><div>x</div></foreignObject></svg>",
+            "<svg><desc>about</desc><title>t</title></svg>",
+            "<p>   </p>",
+            "<svg><g></g><defs></defs></svg>",
+        ] {
+            assert!(is_empty_visual(&clean(nothing)), "{nothing}");
+        }
+    }
+
+    #[test]
+    fn text_a_shape_or_a_styled_box_is_something() {
+        for something in [
+            "<p>a</p>",
+            "<svg><rect width=\"2\" height=\"2\"/></svg>",
+            "<svg><text>a</text></svg>",
+            "<div style=\"width:40px;height:40px;background:var(--chip)\"></div>",
+            "<style>.b{height:20px}</style><div class=\"b\"></div>",
+            "<hr>",
+            "<img src=\"data:image/png;base64,AAAA\" alt=\"\">",
+        ] {
+            assert!(!is_empty_visual(&clean(something)), "{something}");
+        }
     }
 }

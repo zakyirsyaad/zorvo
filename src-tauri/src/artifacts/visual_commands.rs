@@ -15,8 +15,8 @@ use super::render::snapshot_visual_png;
 use super::source::{read_visual_source, temp_roots};
 use super::store::{is_session_id, ArtifactStore};
 use super::visual_export::{
-    checked_size, copy_png, export_name, offered, theme_of, Format, VISUAL_COPY_FAILED,
-    VISUAL_EXPORT_FAILED,
+    checked_size, copy_png, export_name, offered, standalone_svg, theme_of, Format, Theme,
+    VISUAL_COPY_FAILED, VISUAL_EXPORT_FAILED,
 };
 use super::visual_wrapper::document;
 use super::visuals::{
@@ -124,6 +124,17 @@ pub fn visual_sweep(
     artifacts.keep_visuals(&session_id, &keep, now_ms())
 }
 
+/// Gives a fork its own copies of the visuals its messages name.
+#[tauri::command(async)]
+pub fn visual_copy_session(
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    from_session_id: String,
+    to_session_id: String,
+    ids: Vec<String>,
+) -> Result<usize, String> {
+    artifacts.copy_visuals(&from_session_id, &to_session_id, &ids)
+}
+
 /// What a save or a copy needs: the visual, and for a picture its size and theme.
 fn picture(
     app: &AppHandle,
@@ -178,7 +189,9 @@ pub fn visual_export(
         return Ok(false);
     };
     let bytes = match format {
-        Format::Svg => markup.into_bytes(),
+        Format::Svg => {
+            standalone_svg(&markup, theme_of(&theme).unwrap_or(Theme::Dark)).into_bytes()
+        }
         Format::Html => document(&markup, None).into_bytes(),
         Format::Png => {
             picture(&app, &served, &session_id, &id, width, height, &theme).ok_or_else(failed)?

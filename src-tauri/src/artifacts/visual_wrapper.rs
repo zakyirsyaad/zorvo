@@ -44,6 +44,21 @@ fn tokens() -> &'static [Token] {
     })
 }
 
+/// The document's own policy, so a saved copy opened in a browser loads nothing either: the
+/// chat's frame also inherits Zorvo's CSP, but an exported file has only this.
+const POLICY: &str = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data:\">";
+
+/// A colour token's value in one theme.
+pub fn token_value(name: &str, theme: Theme) -> Option<&'static str> {
+    tokens()
+        .iter()
+        .find(|token| token.name == name)
+        .map(|token| match theme {
+            Theme::Dark => token.dark.as_str(),
+            Theme::Light => token.light.as_str(),
+        })
+}
+
 pub fn token_names() -> Vec<String> {
     tokens().iter().map(|token| token.name.clone()).collect()
 }
@@ -85,10 +100,10 @@ pub fn document(markup: &str, fixed: Option<Theme>) -> String {
         ),
     };
     format!(
-        "<!doctype html><html><head><meta charset=\"utf-8\"><style>\
+        "<!doctype html><html><head><meta charset=\"utf-8\">{POLICY}<style>\
 :root{{color-scheme: {scheme}}}{colours}\
 html,body{{margin:0}}\
-body{{font: 14px/1.5 -apple-system, system-ui, sans-serif; color: var(--fg); {background}; overflow-x: hidden}}\
+body{{display: flow-root; font: 14px/1.5 -apple-system, system-ui, sans-serif; color: var(--fg); {background}; overflow-x: hidden}}\
 svg, img {{ max-width: 100%; height: auto; }}\
 @media (prefers-reduced-motion: reduce){{*{{animation:none!important;transition:none!important}}}}\
 </style></head><body>{markup}</body></html>"
@@ -131,5 +146,21 @@ mod tests {
     fn has_no_script_and_starts_as_a_document() {
         let doc = document("<p>a</p>", None);
         assert!(doc.starts_with("<!doctype html>") && !doc.to_lowercase().contains("<script"));
+    }
+
+    #[test]
+    fn every_reader_gets_a_policy_that_loads_nothing() {
+        for fixed in [None, Some(Theme::Dark)] {
+            let doc = document("<p style=\"background:url(https://e.com/p)\">a</p>", fixed);
+            assert!(doc.contains(
+                "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data:\">"
+            ));
+            assert!(doc.find("Content-Security-Policy").unwrap() < doc.find("<style>").unwrap());
+        }
+    }
+
+    #[test]
+    fn a_first_margin_stays_inside_the_body() {
+        assert!(document("<h3>a</h3>", None).contains("display: flow-root"));
     }
 }

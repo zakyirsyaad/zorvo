@@ -178,15 +178,17 @@ fn folder_digest_within(root: &Path, max_entries: usize) -> String {
     hex(Sha256::digest(lines.join("\n")))
 }
 
-/// What an artboard's picture and live frame are keyed by: the SHA-256 of its page's hash, the
-/// folder digest and its width and height. A change to any of them, a shared stylesheet's
-/// included, draws a new picture and reloads the frame. `None` when the page cannot be served.
+/// What an artboard's picture and live frame are keyed by: the SHA-256 of its page's path in
+/// the folder, its page's hash, the folder digest and its width and height. A change to any of
+/// them, a shared stylesheet's included, draws a new picture and reloads the frame; the path is
+/// in it because one page in two folders loads its relative files from each. `None` when the
+/// page cannot be served.
 pub fn board_key(root: &Path, file: &str, width: u32, height: u32) -> Option<String> {
     let (path, _) = canvas_file(root, file)?;
     let page = file_sha256(&path)?;
     let folder = folder_digest(root);
     Some(hex(Sha256::digest(format!(
-        "{page}\0{folder}\0{width}x{height}"
+        "{file}\0{page}\0{folder}\0{width}x{height}"
     ))))
 }
 
@@ -729,6 +731,12 @@ mod folder_tests {
         fs::write(root.0.join("cart.html"), b"<p>cart, changed</p>").unwrap();
         assert_ne!(key(1440, 900), resized, "its own page");
         assert!(board_key(&root.0, "missing.html", 1440, 900).is_none());
+
+        // The same page in another folder resolves its relative files from there.
+        fs::create_dir_all(root.0.join("mobile")).unwrap();
+        fs::write(root.0.join("mobile/cart.html"), b"<p>cart, changed</p>").unwrap();
+        let moved = board_key(&root.0, "mobile/cart.html", 1440, 900).unwrap();
+        assert_ne!(moved, key(1440, 900), "its path");
     }
 
     #[test]

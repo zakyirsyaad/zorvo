@@ -72,13 +72,17 @@ describe("POST /v1/devices", () => {
   });
 
   it("counts requests without a CF-Connecting-IP header in one shared bucket", async () => {
-    for (let i = 0; i < REGISTRATIONS_PER_HOUR; i += 1) {
-      const res = await call("/v1/devices", {
-        method: "POST",
-        body: JSON.stringify({ secretHash: await sha256Hex(`unknown-${i}`) }),
-      });
-      expect(res.status).toBe(201);
-    }
+    const first = await call("/v1/devices", {
+      method: "POST",
+      body: JSON.stringify({ secretHash: await sha256Hex("unknown-first") }),
+    });
+    expect(first.status).toBe(201);
+    // Fill the window that request opened, instead of sending the other ninety-nine. A request
+    // without the header that used another bucket would leave this row alone and get 201 below.
+    const stub = ledgerEnv.LEDGER.get(ledgerEnv.LEDGER.idFromName("ledger"));
+    await runInDurableObject(stub, (_ledger, state) => {
+      state.storage.sql.exec("UPDATE ratelimits SET count = ? WHERE key = ?", REGISTRATIONS_PER_HOUR, "devices:unknown");
+    });
     const res = await call("/v1/devices", {
       method: "POST",
       body: JSON.stringify({ secretHash: await sha256Hex("unknown-over") }),
@@ -88,10 +92,15 @@ describe("POST /v1/devices", () => {
 
   it("opens a new window once the hour is over", async () => {
     const ip = "192.0.2.30";
-    for (let i = 0; i < REGISTRATIONS_PER_HOUR; i += 1) await register(await sha256Hex(`window-${i}`), ip);
+    const stub = ledgerEnv.LEDGER.get(ledgerEnv.LEDGER.idFromName("ledger"));
+    // One registration opens the window; the counter is then set to a full hour's worth. The test
+    // above sends all hundred, so this one only needs a window that is full.
+    expect((await register(await sha256Hex("window-first"), ip)).status).toBe(201);
+    await runInDurableObject(stub, (_ledger, state) => {
+      state.storage.sql.exec("UPDATE ratelimits SET count = ? WHERE key = ?", REGISTRATIONS_PER_HOUR, `devices:${ip}`);
+    });
     expect((await register(await sha256Hex("window-over"), ip)).status).toBe(429);
 
-    const stub = ledgerEnv.LEDGER.get(ledgerEnv.LEDGER.idFromName("ledger"));
     await runInDurableObject(stub, (_ledger, state) => {
       state.storage.sql.exec(
         "UPDATE ratelimits SET window_start = window_start - 3600001 WHERE key = ?",

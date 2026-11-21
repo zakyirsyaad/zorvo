@@ -35,6 +35,11 @@ describe("the MCP path's context", () => {
     expect(MCP_PATH_CONTEXT).toContain("end your turn");
   });
 
+  it("names the canvas in the MCP note", () => {
+    expect(MCP_PATH_CONTEXT).toContain("call artifact_guide with kind canvas, then show_artifact with kind canvas");
+    expect(COMMAND_PATH_CONTEXT).toContain('"kind":"canvas"');
+  });
+
   it("stays hidden and leaves short answers in the chat", () => {
     expect(MCP_PATH_CONTEXT).toContain("short text or code");
     expect(MCP_PATH_CONTEXT.endsWith("Do not mention this note.")).toBe(true);

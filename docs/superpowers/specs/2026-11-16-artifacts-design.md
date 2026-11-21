@@ -27,7 +27,8 @@ typed artifacts (a design canvas) on the same foundation.
 
 ## Out of scope
 
-Typed artifacts and the design canvas, publishing to a URL, comments on an
+Typed artifacts and the design canvas (the canvas now has its own spec,
+`2026-11-21-design-canvas-design.md`), publishing to a URL, comments on an
 artifact, a database or storage for pages, supporting files next to the page,
 Markdown artifacts, artifacts in a popout window, artifacts for sessions that
 get no Zorvo tools (compare runs, delegated sessions, sessions an agent

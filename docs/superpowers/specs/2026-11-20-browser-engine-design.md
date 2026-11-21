@@ -1,12 +1,19 @@
 # In-app browser: which engine
 
 Date: 2026-11-20. Status: direction approved on 2026-11-20, after an
-independent review whose findings are folded in below. No spike in section 6
-has been accepted as passed, and no feature code follows until the gate spikes
-are. PR 256 now carries a WKWebView probe that is measured against this note
-(section 7). Two decisions taken after its first results are in section 8,
-numbers 4 and 5, with a limit on decision 4's first layer found later the
-same day.
+independent review whose findings are folded in below. PR 256 carries a
+WKWebView probe that is measured against this note (section 7). Two decisions
+taken after its first results are in section 8, numbers 4 and 5, with a limit
+on decision 4's first layer found later the same day.
+
+On 2026-11-21 the browser itself was merged as PR 273, built by the
+contributor of PR 256, before any spike in section 6 had been accepted as
+passed. The note said no feature code would follow until the gate spikes
+were; that did not hold, and the gates in section 6 still stand as what has
+not been shown. PR 273 also shipped the installed-Chrome engine (C). Its
+review, the correction in PR 281 (open when this was written, so what is said
+of it below holds once it is merged) and three more decisions are in section
+8, numbers 10 to 12.
 
 ## Why this note exists
 
@@ -331,10 +338,49 @@ reversed the same way:
    agent operations and the panel are input for the feature spec. They agree
    with section 5.
 
-Still open:
+Taken on 2026-11-21, after PR 273 was merged and reviewed. The maintainer
+asked for the open points to be reviewed and decided, so these three can be
+reversed the same way:
 
-6. **Who builds it, and when.** The contributor of PR 256, or in-house, and
-   before or after computer use.
+10. **The installed-Chrome engine (C) is not built now.** PR 273 shipped it
+    with 45 operations; PR 281 takes it out again, back to the 19 operations
+    of section 5, and the draft that kept it as code nothing could start
+    (PR 282) was closed. Decision 1 stands, for these reasons:
+    - Nothing has shown that job 3 is more than rare. No user has asked for
+      response bodies, traces, heap snapshots or Lighthouse.
+    - Computer use, whose driver landed in PR 276, will reach the user's own
+      Chrome, DevTools included.
+    - Code that cannot run still costs: about 5,200 lines, a 1,730-line
+      lockfile the dependency audit reads, a sweep at every start, hooks in
+      `lib.rs` and CI time.
+    - Turning it on needs decisions of its own: uploads from the workspace, a
+      loopback debugging port for Lighthouse, and an npm install. Each
+      touches the network boundary in `CLAUDE.md`.
+
+    What reopens it: users asking for job 3. The first slice is then reading
+    network and console over the pipe, with no uploads, no downloads and no
+    Lighthouse, and it starts as a section here.
+11. **Archiving a session closes its browser views**, as deleting it does.
+    An agent's exit does not: the grant goes, the user's tabs and their
+    in-memory store stay (PR 281). The limit of 8 browser sessions stays, and
+    its message names the sessions that still hold tabs, so there is a way
+    out without restarting Zorvo. Nothing is closed for the session used
+    longest ago, since that would discard a half-filled form without asking.
+12. **A refused popup is announced, and stays refused.** Only a trusted
+    click on a link that asks for a new tab opens one, in the background
+    (PR 281). For anything else the panel shows one line per tab until that
+    tab navigates, with the host as plain text at most and no way to open it
+    anyway, and an agent's `click` answer says a popup was blocked.
+
+Decisions 11 and 12 are not built yet. Both can follow PR 281.
+
+Answered since:
+
+6. **Who builds it, and when.** The contributor of PR 256 built it, and it
+   was merged as PR 273 on 2026-11-21, the same day as the computer use
+   driver's groundwork (PR 276).
+
+Still open:
 7. **Whether the browser may need macOS 14.** Decision 4 sets the browser's
    minimum at 12 and leaves the app's alone. If spike 1 has to fall back to a
    store by identifier, the browser's minimum becomes 14, and that is a
@@ -345,8 +391,10 @@ Still open:
    `NSAllowsArbitraryLoadsInWebContent`, which applies to every web view in
    the app.
 9. **Address-bar text that is not a URL.** PR 256's document sends it to
-   Google search, which hands what the user typed to a third party. Decided
-   with the panel, not here.
+   Google search, which hands what the user typed to a third party, and
+   PR 273 was merged doing that. PR 281 stops it: text that is not an address
+   is refused with a hint, and nothing is sent anywhere. Whether there is a
+   search provider at all, and which, is still to be decided with the panel.
 
 ### Decision 4 in detail
 

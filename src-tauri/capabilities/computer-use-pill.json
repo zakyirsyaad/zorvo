@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "computer-use-pill",
+  "description": "The always-on-top pill shown while an agent uses an app: it only listens for what the agent is doing and calls Zorvo's own command that stops it. No dialogs, notifications, window dragging or other core APIs.",
+  "windows": ["computer-use-pill"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}

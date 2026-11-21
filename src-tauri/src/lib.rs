@@ -209,6 +209,47 @@ fn start_agent_tools(app: &AppHandle, data_dir: &std::path::Path) -> Arc<agent_t
     })
 }
 
+/// Starts what answers computer-use calls and joins it to the tool server.
+/// Its events go to the webview; an agent's name comes from the registry.
+fn start_screen_server(
+    app: &AppHandle,
+    state: Arc<computer_use::ComputerUse>,
+) -> Arc<computer_use::ScreenServer> {
+    let events = app.clone();
+    let names = app.clone();
+    let mut hooks = computer_use::Hooks::system(move |event, payload| {
+        use computer_use::server::{
+            ACTIVITY_EVENT, CHANGED_EVENT, NOTICE_EVENT, REQUEST_ENDED_EVENT, REQUEST_EVENT,
+        };
+        // Each event is emitted under its own name, never a name passed in.
+        let _ = match event {
+            REQUEST_EVENT => events.emit(REQUEST_EVENT, payload),
+            REQUEST_ENDED_EVENT => events.emit(REQUEST_ENDED_EVENT, payload),
+            CHANGED_EVENT => events.emit(CHANGED_EVENT, payload),
+            NOTICE_EVENT => events.emit(NOTICE_EVENT, payload),
+            ACTIVITY_EVENT => {
+                computer_use::pill::note(&events, payload.clone());
+                events.emit(ACTIVITY_EVENT, payload)
+            }
+            _ => Ok(()),
+        };
+    });
+    // The pill stays while a read runs, and counts down from its end.
+    let pill_owner = app.clone();
+    hooks.read_ended = Box::new(move || computer_use::pill::ended(&pill_owner));
+    hooks.agent_name = Box::new(move |profile_id| {
+        let versions = names
+            .state::<store::AppStore>()
+            .load_state()
+            .map(|state| state.settings.agent_versions)
+            .unwrap_or_default();
+        profiles::agent_name(profile_id, &versions)
+    });
+    let server = computer_use::ScreenServer::new(state, hooks);
+    server.attach(&app.state::<Arc<agent_tools::AgentTools>>());
+    server
+}
+
 /// Ends every agent and terminal a previous UI left running. The UI calls this
 /// when it loads: a webview reload leaves the backend (and its agents) running,
 /// but the new UI knows none of them and shows their sessions as ended, so they
@@ -271,12 +312,17 @@ fn load_app_state(store: State<'_, AppStore>) -> Result<PersistedState, String> 
 fn save_app_state(
     store: State<'_, AppStore>,
     computer_use: State<'_, Arc<computer_use::ComputerUse>>,
+    screen: State<'_, Arc<computer_use::ScreenServer>>,
     state: PersistedState,
 ) -> Result<(), String> {
     store.save_state(&state)?;
     // The gate reads the switch on every call, so it follows each save. Off
-    // stops computer use at once.
-    computer_use.set_enabled(state.settings.computer_use && cfg!(target_os = "macos"));
+    // stops computer use at once, and ends what every session was allowed.
+    let is_on = state.settings.computer_use && cfg!(target_os = "macos");
+    computer_use.set_enabled(is_on);
+    if !is_on {
+        screen.switched_off();
+    }
     Ok(())
 }
 
@@ -539,13 +585,38 @@ pub fn run() {
                 .state::<store::AppStore>()
                 .load_state()
                 .is_ok_and(|state| state.settings.computer_use && cfg!(target_os = "macos"));
-            app.manage(Arc::new(computer_use::ComputerUse::new(
-                computer_use_dir,
+            let screen_state = Arc::new(computer_use::ComputerUse::new(
+                computer_use_dir.clone(),
                 computer_use_on,
-            )));
-            app.manage(Arc::new(artifacts::store::ArtifactStore::new(
+            ));
+            app.manage(Arc::clone(&screen_state));
+            app.manage(computer_use::pill::Pill::default());
+            app.manage(start_screen_server(app.handle(), screen_state));
+            // Images left for command-path agents by sessions long gone.
+            std::thread::spawn(move || computer_use::images::sweep_old(&computer_use_dir));
+            let artifact_store = Arc::new(artifacts::store::ArtifactStore::new(
                 app.state::<store::AppStore>().root().join("artifacts"),
-            )));
+            ));
+            let known_workspaces = app.handle().clone();
+            let thumbs_dir = app.state::<store::AppStore>().root().join("canvas-thumbs");
+            // Pictures of canvas artboards, and those no shown canvas listed for a month.
+            let swept = thumbs_dir.clone();
+            std::thread::spawn(move || {
+                let _ = std::fs::create_dir_all(&swept);
+                artifacts::render::sweep_thumbs(&swept, std::time::SystemTime::now());
+            });
+            app.manage(artifacts::commands::Thumbs::default());
+            app.manage(Arc::new(artifacts::protocol::Served {
+                store: Arc::clone(&artifact_store),
+                thumbs: thumbs_dir,
+                is_known: Arc::new(move |path| {
+                    known_workspaces
+                        .state::<store::AppStore>()
+                        .is_known_workspace(path)
+                        .unwrap_or(false)
+                }),
+            }));
+            app.manage(artifact_store);
             if let Err(error) = migration {
                 report_migration_failure(app.handle(), &error);
             }
@@ -631,16 +702,26 @@ pub fn run() {
             browser::browser_bounds,
             artifacts::commands::artifact_show,
             artifacts::commands::artifact_list,
+            artifacts::commands::canvas_show,
+            artifacts::commands::canvas_read,
+            artifacts::commands::canvas_thumbs,
+            artifacts::commands::canvas_export,
+            artifacts::commands::canvas_forget,
             artifacts::commands::artifact_rename,
             artifacts::commands::artifact_delete,
             artifacts::commands::artifact_delete_session,
             artifacts::commands::artifact_export,
             artifacts::commands::artifact_view_show,
+            artifacts::commands::canvas_view_show,
+            artifacts::commands::canvas_view_apply,
+            artifacts::commands::canvas_view_command,
             artifacts::commands::artifact_view_bounds,
             artifacts::commands::artifact_view_hide,
             artifacts::commands::artifact_view_close,
             artifacts::commands::artifact_comment_mode,
             artifacts::commands::artifact_view_marks,
+            artifacts::commands::canvas_comment_mode,
+            artifacts::commands::canvas_view_marks,
             app_update::app_update_check,
             app_update::app_update_install,
             app_update::app_update_restart,
@@ -649,6 +730,10 @@ pub fn run() {
             computer_use::commands::computer_use_request_permissions,
             computer_use::commands::computer_use_open_pane,
             computer_use::commands::computer_use_reset_permissions,
+            computer_use::commands::computer_use_answer,
+            computer_use::commands::computer_use_state,
+            computer_use::commands::computer_use_revoke,
+            computer_use::commands::computer_use_pill_state,
             get_agent_profiles,
             refresh_login_env,
             get_agent_catalog,

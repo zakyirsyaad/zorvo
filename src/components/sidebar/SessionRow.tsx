@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, ShieldCheck, Square } from "lucide-react";
+import { GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, MousePointer2, ShieldCheck, Square } from "lucide-react";
 import type { Session } from "../../types";
 import { SHOW_IN_ROW, rowSubtitle, rowTime, statusOf } from "../../lib/sidebar-status";
 import { AgentTile } from "../ui/AgentTile";
@@ -76,7 +76,8 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
   // A run member's title is its agent and every member has a worktree (the run's panel says so),
   // so with nothing else to say its second line is left out and the row is one centred line.
   const showWorktreeMark = Boolean(session.worktree) && (!isInRun || Boolean(words));
-  const hasSecondLine = showWorktreeMark || Boolean(lineAgent) || Boolean(words);
+  const usesComputer = context.usesComputer?.(session.id) ?? false;
+  const hasSecondLine = showWorktreeMark || usesComputer || Boolean(lineAgent) || Boolean(words);
   const tile = (
     <AgentTile
       profileId={session.profileId}
@@ -172,6 +173,11 @@ export function SessionRow({ session, context, isInRun = false }: SessionRowProp
               {session.privateMode && (
                 <span role="img" aria-label="Private session" className="flex shrink-0">
                   <ShieldCheck size={11} aria-hidden="true" />
+                </span>
+              )}
+              {usesComputer && (
+                <span role="img" aria-label="Can use apps on your Mac" className="flex shrink-0">
+                  <MousePointer2 size={11} aria-hidden="true" />
                 </span>
               )}
               {lineAgent && <span className="truncate">{lineAgent}</span>}

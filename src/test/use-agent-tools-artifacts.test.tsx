@@ -15,6 +15,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 import { useAgentTools, type AgentToolsDeps } from "../hooks/useAgentTools";
 import { NO_SESSION } from "../lib/agent-tools";
 import { ARTIFACT_GUIDE, ARTIFACT_REFUSALS, type ShownArtifact } from "../lib/artifacts";
+import { CANVAS_GUIDE } from "../lib/canvas";
 import { fakeTauriInvoke } from "./setup";
 import { makeProfile } from "./fixtures/agents";
 import type { ChatMessage, Session } from "../types";
@@ -26,15 +27,23 @@ const SESSION: Session = { id: "s-1", name: "Parser work", profileId: "pi-acp", 
 const ARTIFACT = { id: "a-0123456789abcdef", title: "Report", sourcePath: "/Users/test/developer/zorvo/r.html", versions: [{ n: 1, at: 5, bytes: 9 }] };
 const SHOWN: ShownArtifact = { artifact: ARTIFACT, version: 1, isNewArtifact: true, isNewVersion: true };
 
+const CANVAS_READ = {
+  entry: { key: "c-0123456789abcdef", folder: "/w/d", relative: "d", title: "T", shownAt: 1 },
+  canvas: { title: "T", sections: [{ id: "s", title: "S", artboards: [{ id: "a", title: "A", file: "a.html", width: 400, height: 400, group: null }] }] },
+  error: null,
+  boards: [{ id: "a", sha256: null }],
+};
+
 function setup(show: (args: Record<string, unknown>) => unknown | Promise<unknown>, sessions: Session[] = [SESSION]) {
   const messages: Record<string, ChatMessage[]> = { "s-1": [{ id: "m-1", role: "user", content: "show me", timestamp: 1 }] };
-  const shown: Array<{ sessionId: string; shown: ShownArtifact }> = [];
+  const shown: Array<{ sessionId: string; shown: ShownArtifact | { kind: "canvas"; key: string } }> = [];
   const notices: string[] = [];
   const spy = vi.spyOn(internals(), "invoke");
   // The same spy comes back on every call in one test: forget what an earlier setup saw.
   spy.mockClear();
   spy.mockImplementation((cmd, args) => {
     if (cmd === "artifact_show") return Promise.resolve().then(() => show(args ?? {}));
+    if (cmd === "canvas_show") return Promise.resolve(CANVAS_READ);
     return fakeTauriInvoke(cmd, args);
   });
   const deps: AgentToolsDeps = {
@@ -82,6 +91,35 @@ describe("artifact_guide", () => {
     const env = setup(() => SHOWN);
     await env.call("c-1", "artifact_guide");
     expect(env.answers()).toEqual([{ callId: "c-1", ok: true, text: ARTIFACT_GUIDE }]);
+  });
+});
+
+describe("canvases", () => {
+  it("routes show_artifact kind canvas to canvas_show and answers with the key", async () => {
+    const env = setup(() => SHOWN);
+    await env.call("c-1", "show_artifact", { path: "d", kind: "canvas" });
+    expect(env.shows()).toEqual([]);
+    const spy = vi.spyOn(internals(), "invoke");
+    expect(spy.mock.calls.filter(([cmd]) => cmd === "canvas_show").map(([, args]) => args)).toEqual([{ sessionId: "s-1", cwd: SESSION.cwd, path: "d" }]);
+    expect(env.answers()[0].ok).toBe(true);
+    expect(JSON.parse(env.answers()[0].text)).toEqual({ shown: true, canvas: "c-0123456789abcdef", artboards: 1 });
+    expect(env.shown).toEqual([{ sessionId: "s-1", shown: { kind: "canvas", key: "c-0123456789abcdef" } }]);
+    expect(env.cards()).toEqual([{ kind: "canvas", canvasKey: "c-0123456789abcdef", title: "T", artboards: 1 }]);
+  });
+
+  it("answers artifact_guide kind canvas with the canvas guide", async () => {
+    const env = setup(() => SHOWN);
+    await env.call("c-1", "artifact_guide", { kind: "canvas" });
+    await env.call("c-2", "artifact_guide", { kind: "page" });
+    expect(env.answers().map((a) => a.text)).toEqual([CANVAS_GUIDE, ARTIFACT_GUIDE]);
+  });
+
+  it("passes a canvas refusal or parse error on to the agent", async () => {
+    const env = setup(() => SHOWN);
+    const spy = vi.spyOn(internals(), "invoke");
+    spy.mockImplementation((cmd) => (cmd === "canvas_show" ? Promise.reject("sections[0].title: must not be empty") : Promise.resolve(null)));
+    await env.call("c-1", "show_artifact", { path: "d", kind: "canvas" });
+    expect(env.answers()).toEqual([{ callId: "c-1", ok: false, text: "sections[0].title: must not be empty" }]);
   });
 });
 
@@ -133,7 +171,7 @@ describe("show_artifact", () => {
     });
     await env.call("c-1", "show_artifact", { path: "r.html", title: "Report" });
     await env.call("c-2", "show_artifact", { path: "r.html" });
-    expect(env.cards().map((card) => card.version)).toEqual([1, 2]);
+    expect(env.cards().map((card) => ("version" in card ? card.version : null))).toEqual([1, 2]);
   });
 
   it("passes the backend's own refusals to the agent as they are", async () => {

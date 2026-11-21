@@ -141,6 +141,17 @@ impl ComputerUse {
         Ok(client)
     }
 
+    /// The driver that runs now, without starting one. `None` also while one
+    /// is being started: nothing here waits for that.
+    pub fn running_driver(&self) -> Option<Arc<DriverClient>> {
+        let slot = match self.driver.try_lock() {
+            Ok(slot) => slot,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return None,
+        };
+        slot.as_ref().filter(|client| client.is_alive()).cloned()
+    }
+
     /// Kills the driver, if one runs. The next `driver()` starts a new one.
     pub fn stop_driver(&self) {
         if let Some(client) = self.slot().take() {

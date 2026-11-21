@@ -313,6 +313,39 @@ export interface ActionCard {
    * decides. It has no `requestId`; its answer goes to Zorvo's tool server.
    */
   zorvoTool?: ZorvoToolRequest;
+  /**
+   * A card Zorvo made for an agent's `request_access`: the apps the agent asks to use.
+   * Its answer goes to `computer_use_answer`, never to the agent.
+   */
+  computerUse?: ComputerUseRequest;
+}
+
+/** How far an agent may go in an app: everything, look and click, look, or nothing. */
+export type ComputerUseTier = 'full' | 'click' | 'view' | 'never';
+
+/** One app on a computer-use card, as Zorvo read it from this Mac. */
+export interface ComputerUseApp {
+  /** What goes back for a ticked row; Rust gave it, and it names nothing outside its card. */
+  key: string;
+  name: string;
+  path?: string;
+  signer?: string;
+  tier: ComputerUseTier;
+  /** "Full use", "Click only", "View only", "Never allowed" or "Not on this Mac". */
+  label: string;
+  warning?: string;
+  installed: boolean;
+  /** A PNG data URL; dropped once the card is answered. */
+  icon?: string;
+}
+
+export interface ComputerUseRequest {
+  kind: 'apps';
+  /** The agent's reason, already made safe to show. */
+  reason: string;
+  apps: ComputerUseApp[];
+  /** The names of the apps the user allowed, once answered. */
+  allowed?: string[];
 }
 
 /** What an agent asked Zorvo's tools for, as the approval card shows it. */
@@ -490,7 +523,8 @@ export interface Artifact {
 }
 
 /** Where a comment is on an artifact page: selected text with its context, or a clicked element. */
-export type ArtifactAnchor =
+/** Where on a page a comment is: text or an element, which the page can mark. */
+export type PageAnchor =
   | { kind: 'text'; quote: string; before: string; after: string }
   | {
       kind: 'element';
@@ -501,6 +535,16 @@ export type ArtifactAnchor =
       text: string;
       path: string;
     };
+
+/** A page anchor, or (on a canvas artboard only) the whole artboard, which has no mark. */
+export type ArtifactAnchor = PageAnchor | { kind: 'artboard' };
+
+/** Which canvas artboard a comment is on, and the SHA-256 of its file when it was written. */
+export interface CanvasCommentRef {
+  key: string;
+  artboardId: string;
+  fileHash: string;
+}
 
 /** A comment on an artifact page, for the agent. It never moves to another version. */
 export interface ArtifactComment {
@@ -513,6 +557,8 @@ export interface ArtifactComment {
   createdAt: number;
   /** Send was pressed with it in the message, not that the agent acted. */
   sentAt?: number;
+  /** Set on a canvas comment: `artifactId` is then the canvas key and `version` is 0. */
+  canvas?: CanvasCommentRef;
 }
 
 /** One version of one artifact, as the page view shows it. */
@@ -525,7 +571,7 @@ export interface PageRef {
 /** A comment's number and where it is, for the page to draw. */
 export interface PageMark {
   n: number;
-  anchor: ArtifactAnchor;
+  anchor: PageAnchor;
 }
 
 /** What an artifact page reported through Zorvo's script. */
@@ -543,11 +589,10 @@ export type PageMessage =
   | { kind: 'cancel' }
   | { kind: 'marks-missing'; numbers: number[] };
 
-export interface ArtifactCard {
-  artifactId: string;
-  title: string;
-  version: number;
-}
+/** Where the agent showed a page (with the version shown then) or a canvas (with its artboard count then). */
+export type ArtifactCard =
+  | { kind?: undefined; artifactId: string; title: string; version: number }
+  | { kind: 'canvas'; canvasKey: string; title: string; artboards: number };
 
 export interface ElicitationChoice {
   value: string;

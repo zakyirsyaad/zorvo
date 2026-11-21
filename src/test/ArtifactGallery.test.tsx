@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ArtifactGallery } from "../components/artifacts/ArtifactGallery";
 import type { GalleryRow } from "../lib/artifacts";
 
 const NOW = 1_800_000_000_000;
-const row = (overrides: Partial<GalleryRow> & { title: string; id: string }): GalleryRow => ({
+const row = (overrides: Partial<Extract<GalleryRow, { artifact: unknown }>> & { title: string; id: string }): GalleryRow => ({
   sessionId: "s-1",
   sessionName: "Session list performance",
   profileId: "claude-code",
@@ -78,3 +78,29 @@ describe("the gallery", () => {
     expect(screen.getByText("Pages stay on this Mac. Deleting a session deletes its pages.")).toBeTruthy();
   });
 });
+
+describe("a canvas in the gallery", () => {
+  type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+  const CANVAS = { key: "c-0123456789abcdef", folder: "/w/design/checkout", relative: "design/checkout", title: "Checkout", shownAt: NOW, artboards: 12 };
+  const CANVAS_ROW: GalleryRow = { sessionId: "s-9", sessionName: "Checkout flow", profileId: "claude-code", agentName: "Claude Code", isArchived: false, at: NOW, kind: "canvas", canvas: CANVAS };
+
+  it("opens a canvas and removes it from its menu", async () => {
+    const internals = (window as unknown as { __TAURI_INTERNALS__: TauriInternals }).__TAURI_INTERNALS__;
+    const original = internals.invoke.bind(internals);
+    const spy = vi
+      .spyOn(internals, "invoke")
+      .mockImplementation((cmd, args) => (cmd === "canvas_forget" ? Promise.resolve(undefined) : original(cmd, args)));
+    const onOpenCanvas = vi.fn();
+    render(<ArtifactGallery rows={[CANVAS_ROW]} onOpen={vi.fn()} onOpenCanvas={onOpenCanvas} />);
+
+    expect(screen.getByRole("button", { name: "Checkout, in Checkout flow" }).textContent).toContain("Canvas · 12 artboards");
+    fireEvent.click(screen.getByRole("button", { name: "Checkout, in Checkout flow" }));
+    expect(onOpenCanvas).toHaveBeenCalledWith("s-9", CANVAS.key);
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Checkout" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Remove/ }));
+    await waitFor(() => expect(spy.mock.calls.filter(([cmd]) => cmd === "canvas_forget").map(([, args]) => args)).toEqual([{ sessionId: "s-9", key: CANVAS.key }]));
+    spy.mockRestore();
+  });
+});
+

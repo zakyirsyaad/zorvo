@@ -38,9 +38,10 @@ import {
 } from '../lib/agent-tools';
 import type { MentionAgentStatus } from '../lib/delegation';
 import { createId } from '../lib/ids';
+import { CANVAS_GUIDE, CANVAS_REFUSALS, canvasResultText, parseCanvasRead } from '../lib/canvas';
 import { toolsRoleOf } from '../lib/workers';
 import { ARTIFACT_GUIDE, ARTIFACT_REFUSALS, parseShown, shownResultText, type ShownArtifact } from '../lib/artifacts';
-import { withArtifactCard } from '../lib/artifact-card';
+import { withArtifactCard, withCanvasCard } from '../lib/artifact-card';
 import { escapeVisible } from '../lib/visible-text';
 import type { AgentProfile, ChatMessage, Session } from '../types';
 import type { GiveTaskResult } from './useDelegation';
@@ -51,6 +52,8 @@ import { useLatest } from './useLatest';
 
 /** Answered when something went wrong on Zorvo's side; never the error itself, which could hold the task. */
 const FAILED = 'Zorvo could not do that.';
+/** A canvas.json refusal: `<field path>: <rule>`; it names a field and repeats nothing the agent wrote. */
+const CANVAS_PARSE_ERROR = /^[A-Za-z0-9_.[\]]*: [^\n]{1,300}$/;
 
 export interface AgentToolsDeps {
   sessions: readonly Session[];
@@ -79,7 +82,7 @@ export interface AgentToolsDeps {
   /** Tells the user what an agent is not told: why Zorvo itself failed. */
   onNotice?: (message: string) => void;
   /** An agent showed a page: the window decides whether anything opens. */
-  onArtifactShown: (sessionId: string, shown: ShownArtifact) => void;
+  onArtifactShown: (sessionId: string, shown: ShownArtifact | { kind: 'canvas'; key: string }) => void;
 }
 
 /** A `start_worker`, `send` or `start_session` call that waits for the user's answer on a card. */
@@ -439,6 +442,31 @@ export function useAgentTools(deps: AgentToolsDeps): {
     [latest, enqueue, bump],
   );
 
+  /** `show_artifact` with `kind: "canvas"`: the backend reads the folder and its files; a parse error is the agent's to fix. */
+  const handleShowCanvas = useCallback(
+    async (session: Session, call: AgentToolCall, path: string) => {
+      try {
+        const read = parseCanvasRead(await invoke('canvas_show', { sessionId: session.id, cwd: session.cwd, path }));
+        if (read === null) {
+          respond(call.callId, false, FAILED);
+          return;
+        }
+        latest.current.updateMessages(session.id, (prev) => withCanvasCard(prev, read, { sessionId: session.id, now: Date.now(), createId }));
+        latest.current.onArtifactShown(session.id, { kind: 'canvas', key: read.entry.key });
+        respond(call.callId, true, canvasResultText(read));
+      } catch (error) {
+        const text = typeof error === 'string' ? error : '';
+        if (CANVAS_REFUSALS.has(text) || CANVAS_PARSE_ERROR.test(text)) {
+          respond(call.callId, false, text);
+          return;
+        }
+        respond(call.callId, false, FAILED);
+        latest.current.onNotice?.('Zorvo could not show the canvas an agent made.');
+      }
+    },
+    [latest],
+  );
+
   /**
    * `show_artifact`: the backend reads the agent's file under its path rules and keeps a version;
    * no card to answer and no grant, since the page only reaches the user who is already here.
@@ -448,6 +476,10 @@ export function useAgentTools(deps: AgentToolsDeps): {
       const args = (typeof call.args === 'object' && call.args !== null ? call.args : {}) as Record<string, unknown>;
       if (typeof args.path !== 'string' || args.path.trim() === '') {
         respond(call.callId, false, 'path is required.');
+        return;
+      }
+      if (args.kind === 'canvas') {
+        await handleShowCanvas(session, call, args.path);
         return;
       }
       // A title is shown in Zorvo's own interface, so its control and bidi characters are spelled out.
@@ -482,7 +514,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
         latest.current.onNotice?.('Zorvo could not show the page an agent made.');
       }
     },
-    [latest],
+    [latest, handleShowCanvas],
   );
 
   /** `read_session` and `stop_session`: only the caller's own sessions, by handle; no card and no grant. */
@@ -615,7 +647,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
           return;
         }
         if (call.tool === 'artifact_guide') {
-          respond(call.callId, true, ARTIFACT_GUIDE);
+          const kind = (call.args as Record<string, unknown> | null)?.kind;
+          respond(call.callId, true, kind === 'canvas' ? CANVAS_GUIDE : ARTIFACT_GUIDE);
           return;
         }
         if (call.tool === 'show_artifact') {

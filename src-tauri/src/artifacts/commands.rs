@@ -2,18 +2,26 @@
 //! functions so it can be tested without Tauri.
 
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
+use super::canvas::{board_key, board_key_in, folder_digest, read_canvas, resolve_canvas, Canvas};
+use super::canvas_export::{
+    export_boards, pdf_file_name, png_width, split_drawn, without_missing, write_new_file,
+    ExportBoard, ExportFormat, ExportOutcome, COULD_NOT_EXPORT, COULD_NOT_SAVE,
+};
 use super::picks::{checked_marks, PageMark};
-use super::protocol::page_url;
+use super::protocol::{canvas_file_url, page_url, Served};
+use super::render::{self, Ended, Pushed, ThumbJob, ThumbQueue};
 use super::source::{read_source, temp_roots};
-use super::store::{is_artifact_id, is_session_id, ArtifactRecord, ArtifactStore, Shown, FAILED};
-use super::view::{self, checked_bounds, Bounds, ShownPage};
+use super::store::{
+    is_artifact_id, is_session_id, ArtifactRecord, ArtifactStore, CanvasEntry, Shown, FAILED,
+};
+use super::view::{self, checked_bounds, Bounds, ShownCanvas, ShownPage};
 use crate::files::{canonical_root, ensure_known_workspace};
 use crate::store::AppStore;
 
@@ -22,7 +30,6 @@ pub const ARTIFACTS_CHANGED: &str = "artifacts-changed";
 /// Artifact folders of sessions that no longer exist are removed once this old.
 pub const SWEEP_MIN_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 const MAIN_WINDOW: &str = "main";
-const COULD_NOT_SAVE: &str = "Zorvo could not save that file.";
 const COULD_NOT_MARK: &str = "Zorvo could not mark that page.";
 const DEFAULT_EXPORT_NAME: &str = "Artifact";
 
@@ -34,6 +41,319 @@ pub struct SessionArtifacts {
     pub artifacts: Vec<ArtifactRecord>,
     /// The index exists but could not be read: `artifacts` is empty, not known to be.
     pub failed: bool,
+    pub canvases: Vec<ListedCanvas>,
+}
+
+/// A canvas in `artifact_list`: its entry, and whether its folder is gone. Only the folder is
+/// looked at, never `canvas.json`, so listing stays one `is_dir` per canvas.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ListedCanvas {
+    #[serde(flatten)]
+    pub entry: CanvasEntry,
+    #[serde(default)]
+    pub folder_gone: bool,
+}
+
+/// One artboard's key (`canvas::board_key`): its page, the folder's other files and its size.
+/// `None` when the file is missing or not servable.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardState {
+    pub id: String,
+    pub sha256: Option<String>,
+}
+
+/// A canvas as read now. `canvas` is `None` with `error` when it cannot be read.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasRead {
+    pub entry: CanvasEntry,
+    pub canvas: Option<Canvas>,
+    pub error: Option<String>,
+    pub boards: Vec<BoardState>,
+}
+
+const FOLDER_NOT_FOUND: &str = "Folder not found";
+
+fn board_states(root: &Path, canvas: &Canvas) -> Vec<BoardState> {
+    let folder = folder_digest(root);
+    canvas
+        .sections
+        .iter()
+        .flat_map(|section| &section.artboards)
+        .map(|board| BoardState {
+            id: board.id.clone(),
+            sha256: board_key_in(root, &folder, &board.file, board.width, board.height),
+        })
+        .collect()
+}
+
+fn artboard_count(canvas: &Canvas) -> u32 {
+    let count: usize = canvas.sections.iter().map(|s| s.artboards.len()).sum();
+    u32::try_from(count).unwrap_or(u32::MAX)
+}
+
+/// Reads the canvas the agent names, keeps it in the session's list and hashes its boards.
+/// An unreadable canvas is an error the agent must fix.
+pub fn show_canvas(
+    artifacts: &ArtifactStore,
+    is_known: impl Fn(&Path) -> bool,
+    session_id: &str,
+    cwd: &str,
+    path: &str,
+    now_ms: u64,
+) -> Result<CanvasRead, String> {
+    if !is_session_id(session_id) {
+        return Err(FAILED.to_string());
+    }
+    let session_folder = canonical_root(cwd)?;
+    if !is_known(&session_folder) {
+        return Err(format!(
+            "{} is not one of your workspaces",
+            session_folder.display()
+        ));
+    }
+    let folder = resolve_canvas(&session_folder, path)?;
+    let canvas = read_canvas(&folder.root)?;
+    let entry = artifacts.remember_canvas(
+        session_id,
+        &folder,
+        &canvas.title,
+        artboard_count(&canvas),
+        now_ms,
+    )?;
+    let boards = board_states(&folder.root, &canvas);
+    Ok(CanvasRead {
+        entry,
+        canvas: Some(canvas),
+        error: None,
+        boards,
+    })
+}
+
+/// The canvas folder still exists, and the session folder it was shown from (its path minus
+/// `relative`) is a known workspace that still holds it. Workspaces are known by exact path,
+/// so the canvas folder itself is never asked about.
+pub(crate) fn is_inside_known_session_folder(
+    root: &Path,
+    relative: &str,
+    is_known: &impl Fn(&Path) -> bool,
+) -> bool {
+    let Ok(root) = std::fs::canonicalize(root) else {
+        return false;
+    };
+    let mut session = root.clone();
+    for _ in relative.split('/').filter(|part| !part.is_empty()) {
+        if !session.pop() {
+            return false;
+        }
+    }
+    let Ok(session) = std::fs::canonicalize(session) else {
+        return false;
+    };
+    root.is_dir() && root.starts_with(&session) && is_known(&session)
+}
+
+/// Reads a remembered canvas again. Its entry stays whatever the folder now holds.
+pub fn read_canvas_entry(
+    artifacts: &ArtifactStore,
+    is_known: impl Fn(&Path) -> bool,
+    session_id: &str,
+    key: &str,
+) -> Result<CanvasRead, String> {
+    let entry = artifacts
+        .canvas(session_id, key)
+        .ok_or_else(|| FAILED.to_string())?;
+    let root = std::path::PathBuf::from(&entry.folder);
+    let failed = |entry: CanvasEntry, error: &str| CanvasRead {
+        entry,
+        canvas: None,
+        error: Some(error.to_string()),
+        boards: Vec::new(),
+    };
+    if !is_inside_known_session_folder(&root, &entry.relative, &is_known) {
+        return Ok(failed(entry, FOLDER_NOT_FOUND));
+    }
+    Ok(match read_canvas(&root) {
+        Ok(canvas) => {
+            let boards = board_states(&root, &canvas);
+            // The count as the folder holds it now; the index keeps the one from the last show.
+            let entry = CanvasEntry {
+                artboards: artboard_count(&canvas),
+                ..entry
+            };
+            CanvasRead {
+                entry,
+                canvas: Some(canvas),
+                error: None,
+                boards,
+            }
+        }
+        Err(error) => failed(entry, &error),
+    })
+}
+
+/// Emitted with `{sessionId, key, artboardId, sha256}` once an artboard's picture is cached.
+pub const CANVAS_THUMB: &str = "canvas-thumb";
+
+/// An artboard's picture: `ready` when `<thumbs>/<sha256>.png` is there to show.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardThumb {
+    pub id: String,
+    pub sha256: String,
+    pub ready: bool,
+}
+
+/// The pictures of a canvas read now: the cached ones are ready (and touched, so the sweep keeps
+/// them), the rest come back as jobs. An artboard whose file is missing has no picture.
+pub fn list_thumbs(
+    session_id: &str,
+    read: &CanvasRead,
+    dir: &Path,
+    now: SystemTime,
+) -> (Vec<BoardThumb>, Vec<ThumbJob>) {
+    let hashes: std::collections::HashMap<&str, &str> = read
+        .boards
+        .iter()
+        .filter_map(|board| Some((board.id.as_str(), board.sha256.as_deref()?)))
+        .collect();
+    let mut thumbs = Vec::new();
+    let mut jobs = Vec::new();
+    let boards = read
+        .canvas
+        .iter()
+        .flat_map(|canvas| &canvas.sections)
+        .flat_map(|section| &section.artboards);
+    for board in boards {
+        let Some(&sha256) = hashes.get(board.id.as_str()) else {
+            continue;
+        };
+        let ready = render::touch(&render::thumb_path(dir, sha256), now).is_ok();
+        if !ready {
+            jobs.push(ThumbJob {
+                session_id: session_id.to_string(),
+                key: read.entry.key.clone(),
+                artboard_id: board.id.clone(),
+                sha256: sha256.to_string(),
+                root: std::path::PathBuf::from(&read.entry.folder),
+                file: board.file.clone(),
+                width: board.width,
+                height: board.height,
+            });
+        }
+        thumbs.push(BoardThumb {
+            id: board.id.clone(),
+            sha256: sha256.to_string(),
+            ready,
+        });
+    }
+    (thumbs, jobs)
+}
+
+/// The artboards waiting for a picture, shared by `canvas_thumbs` and its worker.
+pub type Thumbs = Arc<Mutex<ThumbQueue>>;
+
+/// Ends the worker in the queue if it panics, so the next `canvas_thumbs` starts another.
+/// Only on a panic: a worker that ran out of jobs already ended, and another may run since.
+struct WorkerGuard<'a>(&'a Thumbs);
+
+impl Drop for WorkerGuard<'_> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .end_worker();
+        }
+    }
+}
+
+/// Draws the queued pictures one at a time, until the queue is empty. An artboard's key is read
+/// outside the lock, before drawing and again after it: a picture is saved only for the file
+/// it shows, and only while its canvas is remembered.
+fn draw_thumbs(app: &AppHandle, served: &Arc<Served>, queue: &Thumbs) {
+    let current_hash = |job: &ThumbJob| board_key(&job.root, &job.file, job.width, job.height);
+    let is_known = |job: &ThumbJob| served.store.canvas(&job.session_id, &job.key).is_some();
+    drain_thumbs(
+        queue,
+        |job| {
+            // Changed or forgotten since it was queued: dropped before it is drawn.
+            let is_current = current_hash(job).as_deref() == Some(job.sha256.as_str());
+            if is_current && is_known(job) {
+                draw_thumb(app, served, job, &current_hash, &is_known)
+            } else {
+                Ended::Stale
+            }
+        },
+        |job, ended| {
+            if ended == Ended::Drawn {
+                let _ = app.emit(
+                    CANVAS_THUMB,
+                    serde_json::json!({
+                        "sessionId": job.session_id,
+                        "key": job.key,
+                        "artboardId": job.artboard_id,
+                        "sha256": job.sha256,
+                    }),
+                );
+            }
+        },
+    );
+}
+
+/// Pops each job, draws it with the queue unlocked, records how it ended and then reports it.
+/// The pop is a statement of its own: in `while let` the guard would live through the body,
+/// and `finish` would wait on the lock it holds.
+fn drain_thumbs(
+    queue: &Thumbs,
+    mut draw: impl FnMut(&ThumbJob) -> Ended,
+    mut done: impl FnMut(&ThumbJob, Ended),
+) {
+    let _guard = WorkerGuard(queue);
+    let lock = || queue.lock().unwrap_or_else(PoisonError::into_inner);
+    loop {
+        let next = lock().pop();
+        let Some(job) = next else {
+            break;
+        };
+        let ended = draw(&job);
+        lock().finish(&job.sha256, ended);
+        done(&job, ended);
+    }
+}
+
+/// Draws one job and saves its picture when the file and its canvas are still the same.
+fn draw_thumb(
+    app: &AppHandle,
+    served: &Arc<Served>,
+    job: &ThumbJob,
+    current_hash: &impl Fn(&ThumbJob) -> Option<String>,
+    is_known: &impl Fn(&ThumbJob) -> bool,
+) -> Ended {
+    let url = canvas_file_url(&job.session_id, &job.key, &job.file);
+    let png = render::snapshot_png(
+        app,
+        Arc::clone(served),
+        url,
+        job.width,
+        job.height,
+        render::thumb_width(job.width),
+    );
+    let ended = render::outcome(
+        png.is_ok(),
+        job,
+        current_hash(job).as_deref(),
+        is_known(job),
+    );
+    match (ended, png) {
+        (Ended::Drawn, Ok(png)) => match render::save_thumb(&served.thumbs, &job.sha256, &png) {
+            Ok(()) => Ended::Drawn,
+            Err(_) => Ended::Failed,
+        },
+        (ended, _) => ended,
+    }
 }
 
 fn now_ms() -> u64 {
@@ -77,29 +397,43 @@ pub fn list_sessions(artifacts: &ArtifactStore, session_ids: &[String]) -> Vec<S
         .iter()
         .map(|session_id| {
             let listed = artifacts.list_checked(session_id);
+            let canvases = artifacts.canvases(session_id);
             SessionArtifacts {
                 session_id: session_id.clone(),
-                failed: listed.is_err(),
+                // Either file unreadable: the answer says nothing about what is gone.
+                failed: listed.is_err() || canvases.is_err(),
                 artifacts: listed.unwrap_or_default(),
+                canvases: canvases
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|entry| ListedCanvas {
+                        folder_gone: !Path::new(&entry.folder).is_dir(),
+                        entry,
+                    })
+                    .collect(),
             }
         })
         .collect()
 }
 
-/// A file name for an exported page: the title's letters, digits, spaces,
-/// `-` and `_`, or "Artifact" when nothing is left.
-pub fn export_file_name(title: &str) -> String {
+/// The title's letters, digits, spaces, `-` and `_` with white space collapsed, or `default`
+/// when nothing is left: a name that is safe as a file name.
+pub fn clean_file_stem(title: &str, default: &str) -> String {
     let kept: String = title
         .chars()
         .filter(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_'))
         .collect();
     let name = kept.split_whitespace().collect::<Vec<_>>().join(" ");
-    let name = if name.is_empty() {
-        DEFAULT_EXPORT_NAME
+    if name.is_empty() {
+        default.to_string()
     } else {
-        &name
-    };
-    format!("{name}.html")
+        name
+    }
+}
+
+/// A file name for an exported page: its cleaned title, or "Artifact" when nothing is left.
+pub fn export_file_name(title: &str) -> String {
+    format!("{}.html", clean_file_stem(title, DEFAULT_EXPORT_NAME))
 }
 
 /// The stored bytes of a version the index lists. Export writes exactly these.
@@ -155,6 +489,97 @@ pub fn artifact_show(
     )?;
     changed(&app, &session_id);
     Ok(shown)
+}
+
+#[tauri::command(async)]
+pub fn canvas_show(
+    app: AppHandle,
+    store: State<'_, AppStore>,
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    session_id: String,
+    cwd: String,
+    path: String,
+) -> Result<CanvasRead, String> {
+    let read = show_canvas(
+        &artifacts,
+        |root| store.is_known_workspace(root).unwrap_or(false),
+        &session_id,
+        &cwd,
+        &path,
+        now_ms(),
+    )?;
+    changed(&app, &session_id);
+    Ok(read)
+}
+
+#[tauri::command(async)]
+pub fn canvas_read(
+    store: State<'_, AppStore>,
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    session_id: String,
+    key: String,
+) -> Result<CanvasRead, String> {
+    read_canvas_entry(
+        &artifacts,
+        |root| store.is_known_workspace(root).unwrap_or(false),
+        &session_id,
+        &key,
+    )
+}
+
+/// The canvas's pictures: those cached, and the missing ones queued to be drawn (one at a time,
+/// in a hidden view); `canvas-thumb` says when each is ready.
+#[tauri::command(async)]
+pub fn canvas_thumbs(
+    app: AppHandle,
+    store: State<'_, AppStore>,
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    served: State<'_, Arc<Served>>,
+    thumbs: State<'_, Thumbs>,
+    session_id: String,
+    key: String,
+) -> Result<Vec<BoardThumb>, String> {
+    let read = read_canvas_entry(
+        &artifacts,
+        |root| store.is_known_workspace(root).unwrap_or(false),
+        &session_id,
+        &key,
+    )?;
+    let (listed, jobs) = list_thumbs(&session_id, &read, &served.thumbs, SystemTime::now());
+    let queue = Arc::clone(&thumbs);
+    let starts_worker = {
+        let mut queued = queue.lock().unwrap_or_else(PoisonError::into_inner);
+        // Every job is pushed; only the first push into an idle queue starts the worker.
+        let pushed: Vec<Pushed> = jobs
+            .into_iter()
+            .map(|job| {
+                // Drawn since it was listed: not drawn twice.
+                let is_cached = render::thumb_path(&served.thumbs, &job.sha256).is_file();
+                queued.push(job, is_cached)
+            })
+            .collect();
+        pushed.contains(&Pushed::QueuedStartWorker)
+    };
+    if starts_worker {
+        let served = Arc::clone(&served);
+        std::thread::spawn(move || draw_thumbs(&app, &served, &queue));
+    }
+    Ok(listed)
+}
+
+#[tauri::command(async)]
+pub fn canvas_forget(
+    app: AppHandle,
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    session_id: String,
+    key: String,
+) -> Result<(), String> {
+    delete_then_close(
+        || artifacts.forget_canvas(&session_id, &key),
+        || view::close_for(&app, session_id.clone(), Some(key.clone())),
+    )?;
+    changed(&app, &session_id);
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -237,6 +662,145 @@ pub fn artifact_export(
     Ok(true)
 }
 
+/// Where an export goes: one file, or a folder for one PNG per artboard.
+enum ExportPlace {
+    File(std::path::PathBuf),
+    Folder(std::path::PathBuf),
+}
+
+/// Asks where to save: a file for one PNG or a PDF, a folder for several PNGs. `None` when
+/// the user cancelled.
+fn choose_export_place(
+    app: &AppHandle,
+    format: ExportFormat,
+    boards: &[ExportBoard],
+    canvas_title: &str,
+) -> Result<Option<ExportPlace>, String> {
+    let dialog = app.dialog().file();
+    let chosen = match (format, boards) {
+        (ExportFormat::Png, [board]) => dialog
+            .set_file_name(format!("{}.png", board.stem))
+            .add_filter("PNG", &["png"])
+            .blocking_save_file()
+            .map(|path| path.into_path().map(ExportPlace::File)),
+        (ExportFormat::Png, _) => dialog
+            .blocking_pick_folder()
+            .map(|path| path.into_path().map(ExportPlace::Folder)),
+        (ExportFormat::Pdf, _) => dialog
+            .set_file_name(pdf_file_name(canvas_title))
+            .add_filter("PDF", &["pdf"])
+            .blocking_save_file()
+            .map(|path| path.into_path().map(ExportPlace::File)),
+    };
+    chosen.transpose().map_err(|_| COULD_NOT_SAVE.to_string())
+}
+
+/// Draws each artboard, one hidden view at a time, as a 2× PNG or a one-page PDF.
+fn draw_for_export(
+    app: &AppHandle,
+    served: &Arc<Served>,
+    session_id: &str,
+    key: &str,
+    format: ExportFormat,
+    boards: Vec<ExportBoard>,
+) -> Vec<(ExportBoard, Result<Vec<u8>, String>)> {
+    boards
+        .into_iter()
+        .map(|board| {
+            let url = canvas_file_url(session_id, key, &board.artboard.file);
+            let (width, height) = (board.artboard.width, board.artboard.height);
+            let served = Arc::clone(served);
+            let drawn = match format {
+                ExportFormat::Png => {
+                    render::snapshot_png(app, served, url, width, height, png_width(width))
+                }
+                ExportFormat::Pdf => render::render_pdf(app, served, url, width, height),
+            };
+            (board, drawn)
+        })
+        .collect()
+}
+
+/// Writes what was drawn to the place chosen and says how many artboards it holds.
+fn write_export(
+    place: ExportPlace,
+    format: ExportFormat,
+    ready: Vec<(ExportBoard, Vec<u8>)>,
+) -> Result<usize, String> {
+    let save = |path: &Path, bytes: &[u8]| {
+        std::fs::write(path, bytes).map_err(|_| COULD_NOT_SAVE.to_string())
+    };
+    if ready.is_empty() {
+        return Ok(0);
+    }
+    let written = ready.len();
+    match (place, format) {
+        (ExportPlace::Folder(folder), _) => {
+            for (board, png) in &ready {
+                write_new_file(&folder, &board.stem, "png", png)?;
+            }
+        }
+        (ExportPlace::File(path), ExportFormat::Png) => save(&path, &ready[0].1)?,
+        (ExportPlace::File(path), ExportFormat::Pdf) => {
+            let pages = ready.into_iter().map(|(_, pdf)| pdf).collect();
+            let joined = render::join_pdfs(pages).map_err(|_| COULD_NOT_EXPORT.to_string())?;
+            save(&path, &joined)?;
+        }
+    }
+    Ok(written)
+}
+
+/// Exports a canvas's artboards (`artboard_ids`, or all of them) as PNG or PDF: asks where,
+/// draws each in a hidden view under the canvas's rules, and writes. `None` when the user
+/// cancelled. An artboard that cannot be drawn is left out and named in `failed`.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn canvas_export(
+    app: AppHandle,
+    store: State<'_, AppStore>,
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    served: State<'_, Arc<Served>>,
+    session_id: String,
+    key: String,
+    artboard_ids: Option<Vec<String>>,
+    format: String,
+) -> Result<Option<ExportOutcome>, String> {
+    let format = ExportFormat::parse(&format)?;
+    let read = read_canvas_entry(
+        &artifacts,
+        |root| store.is_known_workspace(root).unwrap_or(false),
+        &session_id,
+        &key,
+    )?;
+    let canvas = read.canvas.ok_or_else(|| COULD_NOT_EXPORT.to_string())?;
+    let boards = export_boards(&canvas, artboard_ids.as_deref())?;
+    // An artboard whose file is gone would be drawn as a blank page and counted as written.
+    let missing: Vec<String> = read
+        .boards
+        .iter()
+        .filter(|board| board.sha256.is_none())
+        .map(|board| board.id.clone())
+        .collect();
+    let (boards, absent) = without_missing(boards, &missing);
+    if boards.is_empty() {
+        return Ok(Some(ExportOutcome {
+            written: 0,
+            failed: absent,
+        }));
+    }
+    let Some(place) = choose_export_place(&app, format, &boards, &canvas.title)? else {
+        return Ok(None);
+    };
+    let drawn = draw_for_export(&app, &served, &session_id, &key, format, boards);
+    let (ready, mut failed) = split_drawn(drawn);
+    failed.extend(absent);
+    let written = write_export(place, format, ready)?;
+    Ok(Some(ExportOutcome {
+        written: super::canvas_export::count(written),
+        failed,
+    }))
+}
+
 /// The rectangle clipped to the main window, or `None` when it cannot be shown.
 fn bounds_in_window(app: &AppHandle, bounds: Bounds) -> Option<Bounds> {
     let window = app.get_webview_window(MAIN_WINDOW)?;
@@ -251,6 +815,7 @@ fn bounds_in_window(app: &AppHandle, bounds: Bounds) -> Option<Bounds> {
 pub fn artifact_view_show(
     app: AppHandle,
     artifacts: State<'_, Arc<ArtifactStore>>,
+    served: State<'_, Arc<Served>>,
     session_id: String,
     artifact_id: String,
     version: u32,
@@ -276,7 +841,7 @@ pub fn artifact_view_show(
     match (is_stored, bounds) {
         (true, Some(bounds)) => view::show(
             &app,
-            Arc::clone(&artifacts),
+            Arc::clone(&served),
             ShownPage {
                 session_id: session_id.clone(),
                 artifact_id: artifact_id.clone(),
@@ -290,6 +855,72 @@ pub fn artifact_view_show(
             Err(view::COULD_NOT_SHOW.to_string())
         }
     }
+}
+
+/// Shows a remembered canvas at a rectangle of the main window, through Zorvo's wrapper.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn canvas_view_show(
+    app: AppHandle,
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    served: State<'_, Arc<Served>>,
+    session_id: String,
+    key: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    let is_known = artifacts.canvas(&session_id, &key).is_some();
+    let bounds = bounds_in_window(
+        &app,
+        Bounds {
+            x,
+            y,
+            width,
+            height,
+        },
+    );
+    match (is_known, bounds) {
+        (true, Some(bounds)) => view::show_canvas(
+            &app,
+            Arc::clone(&served),
+            ShownCanvas { session_id, key },
+            bounds,
+        ),
+        _ => {
+            view::close(&app);
+            Err(view::COULD_NOT_SHOW.to_string())
+        }
+    }
+}
+
+/// Hands the canvas on screen what to show: the parsed canvas, its file URLs and pictures.
+#[tauri::command(async)]
+pub fn canvas_view_apply(
+    app: AppHandle,
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    session_id: String,
+    key: String,
+    state: String,
+) -> Result<(), String> {
+    // The artboards as the folder holds them now; none (so every artboard message is refused)
+    // when the canvas is forgotten or unreadable.
+    let boards = artifacts
+        .canvas(&session_id, &key)
+        .and_then(|entry| read_canvas(Path::new(&entry.folder)).ok());
+    view::apply_canvas(&app, ShownCanvas { session_id, key }, boards, state)
+}
+
+/// Runs one of the wrapper's commands (Fit, 100%, zoom, a section, Focus, Previous, Next).
+#[tauri::command(async)]
+pub fn canvas_view_command(
+    app: AppHandle,
+    session_id: String,
+    key: String,
+    name: String,
+) -> Result<(), String> {
+    view::canvas_command(&app, ShownCanvas { session_id, key }, name)
 }
 
 #[tauri::command(async)]
@@ -353,6 +984,27 @@ pub fn artifact_view_marks(
     Ok(())
 }
 
+/// Turns comment mode on or off for the canvas on screen, when it is that canvas: the wrapper
+/// passes it on to every live artboard, and picks count only while it is on.
+#[tauri::command(async)]
+pub fn canvas_comment_mode(app: AppHandle, session_id: String, key: String, on: bool) {
+    view::set_canvas_comment_mode(&app, ShownCanvas { session_id, key }, on);
+}
+
+/// Numbered marks for one artboard of the canvas on screen. Each anchor is checked against
+/// the pick limits, as a page's are; a list that fails is refused whole.
+#[tauri::command(async)]
+pub fn canvas_view_marks(
+    app: AppHandle,
+    session_id: String,
+    key: String,
+    artboard_id: String,
+    marks: Vec<PageMark>,
+) -> Result<(), String> {
+    let marks = checked_marks(marks).ok_or_else(|| COULD_NOT_MARK.to_string())?;
+    view::set_canvas_marks(&app, ShownCanvas { session_id, key }, artboard_id, marks)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -363,6 +1015,53 @@ mod tests {
 
     fn text(path: &std::path::Path) -> &str {
         path.to_str().expect("utf-8 path")
+    }
+
+    #[test]
+    fn drain_thumbs_draws_and_finishes_every_queued_job() {
+        let queue: Thumbs = Arc::new(Mutex::new(ThumbQueue::default()));
+        for (id, hash) in [("cart", "a"), ("pay", "b")] {
+            let job = ThumbJob {
+                session_id: SESSION.into(),
+                key: format!("c-{}", "0".repeat(16)),
+                artboard_id: id.into(),
+                sha256: hash.repeat(64),
+                root: std::path::PathBuf::from("/nowhere"),
+                file: format!("{id}.html"),
+                width: 400,
+                height: 300,
+            };
+            queue.lock().unwrap().push(job, false);
+        }
+        let worker_queue = Arc::clone(&queue);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut drawn = Vec::new();
+            let mut finished = Vec::new();
+            drain_thumbs(
+                &worker_queue,
+                |job| {
+                    drawn.push(job.artboard_id.clone());
+                    Ended::Drawn
+                },
+                |job, ended| finished.push((job.artboard_id.clone(), ended)),
+            );
+            let _ = sender.send((drawn, finished));
+        });
+
+        let (drawn, finished) = receiver
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the worker drained the queue without deadlocking");
+
+        assert_eq!(drawn, ["cart", "pay"]);
+        assert_eq!(
+            finished,
+            [
+                ("cart".to_string(), Ended::Drawn),
+                ("pay".to_string(), Ended::Drawn)
+            ]
+        );
+        assert_eq!(queue.lock().unwrap().pop(), None);
     }
 
     #[test]
@@ -384,6 +1083,198 @@ mod tests {
 
         assert!(shown.is_err());
         assert!(artifacts.list(SESSION).unwrap().is_empty());
+    }
+
+    const CANVAS_JSON: &str = r#"{"version":1,"title":"Checkout","sections":[{"id":"s","title":"S","artboards":[
+        {"id":"a","title":"A","file":"a.html","width":400,"height":400},
+        {"id":"b","title":"B","file":"b.html","width":400,"height":400}]}]}"#;
+
+    fn canvas_work() -> Temp {
+        let work = Temp::new("canvas-work");
+        std::fs::create_dir_all(work.0.join("design/x")).unwrap();
+        std::fs::write(work.0.join("design/x/canvas.json"), CANVAS_JSON).unwrap();
+        std::fs::write(work.0.join("design/x/a.html"), b"<p>a</p>").unwrap();
+        work
+    }
+
+    #[test]
+    fn show_canvas_refuses_an_unknown_workspace() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        let artifacts = ArtifactStore::new(data.0.clone());
+
+        let shown = show_canvas(&artifacts, |_| false, SESSION, text(&work.0), "design/x", 1);
+
+        assert!(shown.is_err());
+        assert!(artifacts.canvases(SESSION).unwrap().is_empty());
+    }
+
+    #[test]
+    fn thumbs_are_ready_when_cached_and_queued_when_not() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        let artifacts = ArtifactStore::new(data.0.clone());
+        let read =
+            show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 5).unwrap();
+        let hash = read.boards[0].sha256.clone().unwrap();
+        let dir = data.0.join("canvas-thumbs");
+
+        // Nothing cached: `a` is queued; `b` has no file, so no hash and no picture.
+        let now = SystemTime::now();
+        let (thumbs, jobs) = list_thumbs(SESSION, &read, &dir, now);
+        assert_eq!(
+            thumbs,
+            vec![BoardThumb {
+                id: "a".into(),
+                sha256: hash.clone(),
+                ready: false
+            }]
+        );
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(
+            (jobs[0].artboard_id.as_str(), jobs[0].file.as_str()),
+            ("a", "a.html")
+        );
+        assert_eq!((jobs[0].width, jobs[0].height), (400, 400));
+        assert_eq!(jobs[0].root, std::path::PathBuf::from(&read.entry.folder));
+
+        // Cached: ready, nothing queued, and its time is touched so the sweep keeps it.
+        std::fs::create_dir_all(&dir).unwrap();
+        let png = render::thumb_path(&dir, &hash);
+        std::fs::write(&png, b"png").unwrap();
+        let later = now + Duration::from_secs(3600);
+        let (thumbs, jobs) = list_thumbs(SESSION, &read, &dir, later);
+        assert!(thumbs[0].ready);
+        assert!(jobs.is_empty());
+        assert_eq!(std::fs::metadata(&png).unwrap().modified().unwrap(), later);
+    }
+
+    #[test]
+    fn show_canvas_reads_hashes_and_remembers() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        let artifacts = ArtifactStore::new(data.0.clone());
+
+        let read =
+            show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 5).unwrap();
+
+        assert_eq!(read.canvas.as_ref().unwrap().title, "Checkout");
+        assert_eq!(read.error, None);
+        assert_eq!(read.boards.len(), 2);
+        assert_eq!(read.boards[0].id, "a");
+        assert_eq!(read.boards[0].sha256.as_ref().unwrap().len(), 64);
+        assert_eq!(read.boards[1].sha256, None);
+        let kept = artifacts.canvases(SESSION).unwrap();
+        assert_eq!(kept, vec![read.entry]);
+        assert_eq!(kept[0].relative, "design/x");
+    }
+
+    #[test]
+    fn the_list_says_which_canvas_folders_are_gone() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        std::fs::create_dir_all(work.0.join("design/y")).unwrap();
+        std::fs::write(work.0.join("design/y/canvas.json"), CANVAS_JSON).unwrap();
+        let artifacts = ArtifactStore::new(data.0.clone());
+        show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 1).unwrap();
+        show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/y", 2).unwrap();
+        std::fs::remove_dir_all(work.0.join("design/y")).unwrap();
+
+        let listed = list_sessions(&artifacts, &[SESSION.to_string()]);
+        let gone: Vec<(&str, bool)> = listed[0]
+            .canvases
+            .iter()
+            .map(|canvas| (canvas.entry.relative.as_str(), canvas.folder_gone))
+            .collect();
+
+        assert_eq!(gone, vec![("design/y", true), ("design/x", false)]);
+        let json = serde_json::to_value(&listed[0].canvases[0]).unwrap();
+        assert_eq!(json["folderGone"], true);
+        assert_eq!(json["relative"], "design/y");
+    }
+
+    #[test]
+    fn show_canvas_returns_the_parse_error_to_the_agent() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        let broken = CANVAS_JSON.replacen("\"width\":400", "\"width\":1", 1);
+        std::fs::write(work.0.join("design/x/canvas.json"), broken).unwrap();
+        let artifacts = ArtifactStore::new(data.0.clone());
+
+        let refused =
+            show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 1).unwrap_err();
+
+        assert!(
+            refused.starts_with("sections[0].artboards[0].width: "),
+            "{refused}"
+        );
+        assert!(artifacts.canvases(SESSION).unwrap().is_empty());
+    }
+
+    #[test]
+    fn canvas_read_keeps_the_entry_when_the_json_breaks() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        let artifacts = ArtifactStore::new(data.0.clone());
+        let entry = show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 1)
+            .unwrap()
+            .entry;
+        std::fs::write(work.0.join("design/x/canvas.json"), "{").unwrap();
+
+        let read = read_canvas_entry(&artifacts, |_| true, SESSION, &entry.key).unwrap();
+
+        assert!(read.canvas.is_none());
+        assert!(read.error.is_some());
+        assert_eq!(read.entry, entry);
+    }
+
+    #[test]
+    fn canvas_read_says_folder_not_found() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        let artifacts = ArtifactStore::new(data.0.clone());
+        let entry = show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 1)
+            .unwrap()
+            .entry;
+        std::fs::remove_dir_all(work.0.join("design/x")).unwrap();
+
+        let read = read_canvas_entry(&artifacts, |_| true, SESSION, &entry.key).unwrap();
+
+        assert_eq!(read.error.as_deref(), Some("Folder not found"));
+        assert!(read.canvas.is_none() && read.boards.is_empty());
+        let unknown = read_canvas_entry(&artifacts, |_| true, SESSION, &entry.key).unwrap();
+        assert_eq!(unknown.entry, entry);
+        assert!(read_canvas_entry(&artifacts, |_| true, SESSION, "c-0000000000000000").is_err());
+    }
+
+    #[test]
+    fn canvas_read_asks_about_the_session_folder_not_the_canvas_folder() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        let artifacts = ArtifactStore::new(data.0.clone());
+        let entry = show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 1)
+            .unwrap()
+            .entry;
+
+        let read =
+            read_canvas_entry(&artifacts, |root| root == work.0, SESSION, &entry.key).unwrap();
+
+        assert_eq!(read.error, None);
+        assert!(read.canvas.is_some());
+    }
+
+    #[test]
+    fn canvas_read_says_folder_not_found_outside_a_known_workspace() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        let artifacts = ArtifactStore::new(data.0.clone());
+        let entry = show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 1)
+            .unwrap()
+            .entry;
+
+        let read = read_canvas_entry(&artifacts, |_| false, SESSION, &entry.key).unwrap();
+
+        assert_eq!(read.error.as_deref(), Some("Folder not found"));
     }
 
     #[test]
@@ -497,6 +1388,10 @@ mod tests {
         assert!(!listed[0].failed);
         assert!(listed[1].failed);
         assert!(listed[1].artifacts.is_empty());
+        // An unreadable canvases.json fails the session too, so nothing is swept on a failed read.
+        std::fs::create_dir_all(data.0.join("badc-4")).unwrap();
+        std::fs::write(data.0.join("badc-4").join("canvases.json"), b"{").unwrap();
+        assert!(list_sessions(&artifacts, &["badc-4".to_string()])[0].failed);
         // No index at all is a session with no pages, not a failure.
         assert!(!listed[2].failed);
         assert_eq!(

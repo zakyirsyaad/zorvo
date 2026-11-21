@@ -133,6 +133,7 @@ pub fn tools_for_session(
     if !capabilities.any() {
         return Ok(none);
     }
+    tools.note_profile(session_id, profile_id);
     Ok(match path {
         ToolsPath::Mcp => {
             let servers = tools.servers_with(session_id, capabilities);

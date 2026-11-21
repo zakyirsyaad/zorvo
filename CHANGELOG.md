@@ -6,11 +6,13 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Added
 
+- **Agents can look at apps on your Mac, when you let them.** Turn it on in Settings, under Agents. An agent then asks before it uses an app, on a card that shows each app as it is on this Mac (its name, where it is and who signed it), and you tick the ones it may use in that session. For now an agent can only look: read a window's contents and take a picture of it. Zorvo itself, your passwords and System Settings are never offered; browsers are view only, terminals and code editors click only. A line under the chat and a mark in the sidebar show which sessions may use apps, a small bar stays on top of your screen while an agent is looking, and **Stop computer use** ends it at once. What an agent sees goes to its model provider.
 - A worker can record whether its task succeeded or failed.
 - Workers report back in one message, including one that stopped, failed or whose agent exited, and after Zorvo restarts.
 - An agent can start several workers, of one agent or several, in your folder or each in a worktree of its own, and give an idle worker a further task.
 - A worker's agent ends two minutes after its turn. The session stays, and a new task reopens it.
 - **A browser beside the chat.** Open links or addresses in the Browser inspector tab, with session-isolated WebKit pages, navigation, console, snapshots and agent interactions. Browser tools ask for a session grant; sending files asks separately. Chromium debug opens an isolated installed Chrome or Brave window for full network, file, trace, CPU, heap and optional Lighthouse tools.
+- **Design canvas.** An agent can show several screens side by side: a flow, variants of one screen or a whole redesign, as artboards in labelled sections beside the chat. Pan with two fingers or by dragging, pinch to zoom, and jump to a section or fit the view from the header; select an artboard to focus on it and step to the previous or next one. Comment on text or an element inside an artboard, or on the whole artboard, and add the comments to your next message. **Pick** keeps one variant of a screen, and **Build this** and **Build section** ask the agent to build the screens in your repository; each puts a message in the box for you to edit and send. **Export** saves one artboard as PNG or PDF, every artboard as PNG files, or the whole canvas as one PDF; a PNG is drawn at 2×. The canvas is a folder in your project, `canvas.json` and one HTML file per artboard, so git keeps its history and any session can open it again; deleting a session keeps the files. Artboards out of view show as pictures, kept on this Mac.
 
 ### Changed
 

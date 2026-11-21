@@ -12,4 +12,4 @@ pub mod socket;
 pub mod tools;
 
 pub use path::{path_for, ToolsPath};
-pub use service::{AgentTools, ToolCall};
+pub use service::{AgentTools, ScreenCall, ScreenTools, ToolCall};

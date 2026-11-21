@@ -40,4 +40,20 @@ describe("when an agent shows a page", () => {
     env.onShown("s-1", shownOf());
     expect(env.showTab).not.toHaveBeenCalled();
   });
+
+  it("opens a canvas the agent of the session on screen showed", () => {
+    const env = setup("s-1", { artifactId: ARTIFACT.id, version: null });
+    env.onShown("s-1", { kind: "canvas", key: "c-0123456789abcdef" });
+    expect(env.view).toHaveBeenCalledWith({ canvasKey: "c-0123456789abcdef" });
+    expect(env.showTab).toHaveBeenCalledTimes(1);
+  });
+
+  it("moves nothing for a canvas of another session, or one already open", () => {
+    const other = setup("s-2");
+    other.onShown("s-1", { kind: "canvas", key: "c-0123456789abcdef" });
+    expect(other.view).not.toHaveBeenCalled();
+    const open = setup("s-1", { canvasKey: "c-0123456789abcdef" });
+    open.onShown("s-1", { kind: "canvas", key: "c-0123456789abcdef" });
+    expect(open.showTab).not.toHaveBeenCalled();
+  });
 });

@@ -1,6 +1,10 @@
 //! Opt-in integration of the actual artifact and browser child views.
 use super::{browser_bounds, close_session, execute, Bounds};
-use crate::artifacts::{protocol::page_url, store::ArtifactStore, view};
+use crate::artifacts::{
+    protocol::{page_url, Served},
+    store::ArtifactStore,
+    view,
+};
 use serde_json::{json, Value};
 use std::os::unix::fs::DirBuilderExt;
 use std::sync::Arc;
@@ -45,7 +49,8 @@ async fn assert_visible(
     Ok(json!({"browser":browser,"artifact":artifact}))
 }
 
-async fn run(app: &AppHandle, url: &str, store: Arc<ArtifactStore>) -> Result<Value, String> {
+async fn run(app: &AppHandle, url: &str, served: Arc<Served>) -> Result<Value, String> {
+    let store = Arc::clone(&served.store);
     let opened = execute(
         app,
         SESSION.into(),
@@ -64,7 +69,7 @@ async fn run(app: &AppHandle, url: &str, store: Arc<ArtifactStore>) -> Result<Va
     let artifact_url = page_url(SESSION, &shown.artifact.id, shown.version);
     view::show(
         app,
-        store,
+        served,
         view::ShownPage {
             session_id: SESSION.into(),
             artifact_id: shown.artifact.id,
@@ -182,7 +187,13 @@ pub(super) async fn smoke(app: &AppHandle, url: &str) -> Result<Value, String> {
         .mode(0o700)
         .create(&root)
         .map_err(|error| error.to_string())?;
-    let result = run(app, url, Arc::new(ArtifactStore::new(root.clone()))).await;
+    // Only an artifact page is shown, so no canvas folder is ever known.
+    let served = Arc::new(Served {
+        store: Arc::new(ArtifactStore::new(root.clone())),
+        thumbs: root.join("canvas-thumbs"),
+        is_known: Arc::new(|_| false),
+    });
+    let result = run(app, url, served).await;
     view::close(app);
     close_session(app, SESSION.into());
     let artifact = view::smoke_state(app).await;

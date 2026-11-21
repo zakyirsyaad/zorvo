@@ -86,7 +86,7 @@ export function PrivateMode() {
             </p>
             <p className="flex items-center gap-3 text-[13px] leading-5 text-fg-subtle" data-r="">
               Runs on
-              <img className="block w-32 h-auto" src="/near-ai-wordmark-white.svg" alt="NEAR AI" width="128" height="24" />
+              <img className="block w-32 h-auto" src="/near-ai-wordmark-white.svg" alt="NEAR AI" width="128" height="24" loading="lazy" decoding="async" />
             </p>
             <ul className="lp-pts" data-r="">
               <li>

@@ -39,7 +39,7 @@ sha2 = "0.11.1"
 plist = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 # The OS random source for the recovery code and proxy tokens; the version already in Cargo.lock.
-getrandom = "=0.3.4"
+getrandom = "=0.4.3"
 # The private-session loopback proxy: a hyper server in the backend and a streaming reqwest client
 # upstream. Pin the versions already in Cargo.lock. reqwest gets no TLS provider of its own; the
 # proxy builds its rustls config with ring (the provider ureq already uses), so aws-lc stays out.

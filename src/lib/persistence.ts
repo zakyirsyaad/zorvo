@@ -5,6 +5,9 @@ import {
   type ChatMessagePart,
   type ToolExecution,
   type DelegationLink,
+  type WorkerLastTurn,
+  type WorkerOutcome,
+  type WorkerTurnEnd,
   type OpenedByLink,
   type DiffRow,
   type MessageVerification,
@@ -14,6 +17,7 @@ import {
   type ToolDetail,
 } from '../types';
 import { markElicitationsUnanswered } from './acp-elicitation';
+import { firstChars } from './session-helpers';
 import { settlePermissionCards } from './acp-events';
 import { withoutSettledIcons } from './computer-use-card';
 import { diffDetail } from './diff-rows';
@@ -109,6 +113,49 @@ function isOpenedByLink(value: unknown): value is OpenedByLink {
   return isObject(value) && typeof value.sessionId === 'string' && value.sessionId !== '' && Number.isFinite(value.at);
 }
 
+const WORKER_HANDLE = /^worker-[1-9][0-9]*$/;
+const MAX_WORKER_SUMMARY = 2000;
+const MAX_WORKER_FILES = 50;
+const MAX_WORKER_REASON = 300;
+const TURN_ENDS: readonly string[] = ['finished', 'failed', 'cancelled', 'exited'];
+
+function validOutcome(value: unknown): WorkerOutcome | undefined {
+  if (!isObject(value) || (value.result !== 'succeeded' && value.result !== 'failed') || typeof value.at !== 'number' || !Number.isFinite(value.at)) {
+    return undefined;
+  }
+  return {
+    result: value.result,
+    at: value.at,
+    ...(typeof value.summary === 'string' ? { summary: firstChars(value.summary, MAX_WORKER_SUMMARY) } : {}),
+    ...(Array.isArray(value.files) ? { files: value.files.filter((file): file is string => typeof file === 'string').slice(0, MAX_WORKER_FILES) } : {}),
+  };
+}
+
+function validLastTurn(value: unknown): WorkerLastTurn | undefined {
+  if (!isObject(value) || typeof value.endedAt !== 'number' || !Number.isFinite(value.endedAt) || typeof value.how !== 'string' || !TURN_ENDS.includes(value.how)) {
+    return undefined;
+  }
+  return {
+    endedAt: value.endedAt,
+    how: value.how as WorkerTurnEnd,
+    ...(typeof value.reason === 'string' ? { reason: firstChars(value.reason, MAX_WORKER_REASON) } : {}),
+  };
+}
+
+/** The link with each worker field kept only when it is well formed. */
+function withValidWorkerFields(link: DelegationLink): DelegationLink {
+  const { handle, outcome, lastTurn, reportedAt, ...rest } = link;
+  const validOutcomeValue = validOutcome(outcome);
+  const validLastTurnValue = validLastTurn(lastTurn);
+  return {
+    ...rest,
+    ...(typeof handle === 'string' && WORKER_HANDLE.test(handle) ? { handle } : {}),
+    ...(validOutcomeValue ? { outcome: validOutcomeValue } : {}),
+    ...(validLastTurnValue ? { lastTurn: validLastTurnValue } : {}),
+    ...(typeof reportedAt === 'number' && Number.isFinite(reportedAt) ? { reportedAt } : {}),
+  };
+}
+
 /** A link to the session that delegated a task: both texts non-empty, its times numeric. */
 function isDelegationLink(value: unknown): value is DelegationLink {
   return (
@@ -146,7 +193,7 @@ function withValidFields(session: Session): Session {
     ...(typeof historyElsewhere === 'boolean' ? { historyElsewhere } : {}),
     ...(typeof titleSource === 'string' && titleSource !== '' ? { titleSource } : {}),
     ...(compareRunId == null || typeof compareRunId === 'string' ? { compareRunId } : {}),
-    ...(delegatedFrom === null || isDelegationLink(delegatedFrom) ? { delegatedFrom } : {}),
+    ...(delegatedFrom === null ? { delegatedFrom } : isDelegationLink(delegatedFrom) ? { delegatedFrom: withValidWorkerFields(delegatedFrom) } : {}),
     ...(isOpenedByLink(openedBy) ? { openedBy: withValidHandle(openedBy) } : {}),
     ...(comments.length > 0 ? { reviewComments: comments } : {}),
     ...(pageComments.length > 0 ? { artifactComments: pageComments } : {}),

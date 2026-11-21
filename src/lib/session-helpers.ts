@@ -74,7 +74,7 @@ function tidied(line: string): string {
  * The first `count` characters of `text`, counted as code points: a cut by UTF-16 units can split an emoji
  * into a lone surrogate, which serde_json refuses, and the whole state would then fail to save.
  */
-function firstChars(text: string, count: number): string {
+export function firstChars(text: string, count: number): string {
   return Array.from(text).slice(0, count).join('');
 }
 

@@ -8,7 +8,10 @@ import {
   type MentionAgentStatus,
 } from './delegation';
 import { isArchived } from './session-helpers';
+import { toolsRoleOf, type ToolsSubject } from './workers';
 import { escapeVisible } from './visible-text';
+
+export type { ToolsSubject };
 
 /** A tool call the backend hands the webview to answer (`agent-tool-call`). */
 export interface AgentToolCall {
@@ -28,24 +31,8 @@ export function sessionGetsAgentTools(
   session: ToolsSubject,
   sessions: readonly (ToolsSubject & Pick<Session, 'id'>)[] = [],
 ): boolean {
-  // A fork of a session without the tools has none either: forking a session an agent
-  // opened, or a delegate, must not be a way around the one level. A source that is gone
-  // cannot be judged, and the walk ends on a loop a hand-edited file could hold.
-  const seen = new Set<string>();
-  let current: ToolsSubject | undefined = session;
-  while (current !== undefined) {
-    if (current.compareRunId || current.delegatedFrom || current.openedBy) return false;
-    const sourceId: string | null | undefined = current.forkedFrom;
-    if (sourceId == null || seen.has(sourceId)) return true;
-    seen.add(sourceId);
-    current = sessions.find((candidate) => candidate.id === sourceId);
-  }
-  return true;
+  return toolsRoleOf(session, sessions) === 'coordinator';
 }
-
-/** What decides whether a session gets Zorvo's tools. */
-type ToolsSubject = Pick<Session, 'compareRunId' | 'delegatedFrom' | 'openedBy' | 'forkedFrom'> &
-  Partial<Pick<Session, 'id'>>;
 
 // --- What a tool call means. Pure: the hook that answers calls decides with these.
 

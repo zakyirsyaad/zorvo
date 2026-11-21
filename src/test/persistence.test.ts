@@ -646,6 +646,70 @@ describe("normalizePersistedState - delegation", () => {
     expect(state.sessions[0].delegatedFrom).toEqual(delegatedFrom);
   });
 
+  it("a link keeps a valid handle, outcome, last turn and report time", () => {
+    const link = {
+      sessionId: "s-a", task: "Do it", startedAt: 5, handle: "worker-2",
+      outcome: { result: "succeeded", at: 9, summary: "Done", files: ["a.ts"] },
+      lastTurn: { endedAt: 10, how: "finished" }, reportedAt: 11,
+    };
+
+    const state = normalizePersistedState({ sessions: [{ ...base, delegatedFrom: link }] });
+
+    expect(state.sessions[0].delegatedFrom).toEqual(link);
+  });
+
+  it("a malformed new field is dropped and the link is kept", () => {
+    const delegatedFrom = {
+      sessionId: "s-a", task: "Do it", startedAt: 5, handle: 7,
+      outcome: { result: "maybe", at: 9 }, lastTurn: { endedAt: "x", how: "finished" }, reportedAt: "soon",
+    };
+
+    const state = normalizePersistedState({ sessions: [{ ...base, delegatedFrom }] });
+
+    expect(state.sessions[0].delegatedFrom).toEqual({ sessionId: "s-a", task: "Do it", startedAt: 5 });
+  });
+
+  it("a handle of another shape is dropped", () => {
+    const delegatedFrom = { sessionId: "s-a", task: "Do it", startedAt: 5, handle: "session-1" };
+
+    const state = normalizePersistedState({ sessions: [{ ...base, delegatedFrom }] });
+
+    expect(state.sessions[0].delegatedFrom?.handle).toBeUndefined();
+    for (const handle of ["worker-0", "worker-x", "Worker-1"]) {
+      const other = normalizePersistedState({ sessions: [{ ...base, delegatedFrom: { ...delegatedFrom, handle } }] });
+      expect(other.sessions[0].delegatedFrom?.handle).toBeUndefined();
+    }
+  });
+
+  it("a summary and a reason are cut by code points, never inside an emoji", () => {
+    const delegatedFrom = {
+      sessionId: "s-a", task: "Do it", startedAt: 5,
+      outcome: { result: "failed", at: 9, summary: "x".repeat(1999) + "😀😀😀" },
+      lastTurn: { endedAt: 10, how: "failed", reason: "y".repeat(299) + "😀😀😀" },
+    };
+
+    const link = normalizePersistedState({ sessions: [{ ...base, delegatedFrom }] }).sessions[0].delegatedFrom;
+
+    expect([...(link?.outcome?.summary ?? "")].length).toBe(2000);
+    expect([...(link?.outcome?.summary ?? "")].pop()).toBe("😀");
+    expect([...(link?.lastTurn?.reason ?? "")].length).toBe(300);
+    expect([...(link?.lastTurn?.reason ?? "")].pop()).toBe("😀");
+  });
+
+  it("a link cuts a long summary, reason and file list on load", () => {
+    const delegatedFrom = {
+      sessionId: "s-a", task: "Do it", startedAt: 5,
+      outcome: { result: "failed", at: 9, summary: "x".repeat(2500), files: Array.from({ length: 60 }, (_, i) => `f${i}`) },
+      lastTurn: { endedAt: 10, how: "failed", reason: "y".repeat(400) },
+    };
+
+    const link = normalizePersistedState({ sessions: [{ ...base, delegatedFrom }] }).sessions[0].delegatedFrom;
+
+    expect(link?.outcome?.summary).toHaveLength(2000);
+    expect(link?.outcome?.files).toHaveLength(50);
+    expect(link?.lastTurn?.reason).toHaveLength(300);
+  });
+
   it("drops a malformed delegatedFrom and keeps the session", () => {
     const malformed = [
       5,

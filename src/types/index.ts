@@ -112,7 +112,6 @@ export interface SessionWorktree {
   startCommit?: string;
 }
 
-/** A delegated task: the session that delegated it, the task, and when it ran. */
 /** Which session's agent opened a session, and when. */
 export interface OpenedByLink {
   sessionId: string;
@@ -121,6 +120,24 @@ export interface OpenedByLink {
   handle?: string;
 }
 
+export type WorkerTurnEnd = 'finished' | 'failed' | 'cancelled' | 'exited';
+
+/** How a worker's task ended, with its own words and the files it reported changing. */
+export interface WorkerOutcome {
+  result: 'succeeded' | 'failed';
+  at: number;
+  summary?: string;
+  files?: string[];
+}
+
+/** How a worker's last turn ended. */
+export interface WorkerLastTurn {
+  endedAt: number;
+  how: WorkerTurnEnd;
+  reason?: string;
+}
+
+/** A delegated task: the session that delegated it, the task, and when it ran. */
 export interface DelegationLink {
   /** A, the session that delegated. */
   sessionId: string;
@@ -129,6 +146,12 @@ export interface DelegationLink {
   startedAt: number;
   /** Set by End delegation; no report is sent after it. */
   endedAt?: number | null;
+  /** What the opener's agent calls a worker (`worker-3`); absent on other links. */
+  handle?: string;
+  outcome?: WorkerOutcome | null;
+  lastTurn?: WorkerLastTurn | null;
+  /** When the worker's report reached the opener. */
+  reportedAt?: number | null;
 }
 
 export interface Session {

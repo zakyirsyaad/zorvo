@@ -297,4 +297,26 @@ describe('the canvas wrapper', () => {
     expect(used.filter((value) => !known.has(value))).toEqual([]);
     expect(shell).toMatch(/@media \(prefers-color-scheme: light\)/);
   });
+
+  it('lays out and draws an artboard, a group and a section named like an Object property', () => {
+    const state: State = {
+      sections: [{ id: 'constructor', title: 'Constructor' }],
+      boards: [
+        board('constructor', { section: 'constructor', group: 'constructor' }),
+        board('tostring', { section: 'constructor', group: 'constructor' }),
+      ],
+    };
+
+    const out = canvas().layout(state);
+    canvas().apply(state);
+    canvas().command('actual');
+
+    expect(out.boards.map((b) => b.id)).toEqual(['constructor', 'tostring']);
+    expect(out.groups).toEqual([expect.objectContaining({ id: 'constructor', width: 880 })]);
+    const drawn = document.querySelector('[data-id="constructor"]')!;
+    expect(drawn.querySelector('.title')!.textContent).toBe('CONSTRUCTOR');
+    expect(document.querySelector('.section-title')!.textContent).toBe('Constructor');
+    canvas().apply({ ...state, selected: 'constructor' });
+    expect(drawn.classList.contains('selected')).toBe(true);
+  });
 });

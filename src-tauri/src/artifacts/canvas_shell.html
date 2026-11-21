@@ -72,13 +72,16 @@
   var lay = layout(current);
   var view = { x: 0, y: 0, zoom: 1 };
   var fitted = false;
-  var entries = {};
+  var entries = table();
   var labels = [];
   var modeOn = false;
-  var marksById = {};
+  var marksById = table();
   var refreshQueued = false;
   var zoomTimer = null;
   var lastZoomPost = -Infinity;
+
+  // Keyed by artboard, group or section id, which may be any name, `constructor` included.
+  function table() { return Object.create(null); }
 
   function clamp(value, low, high) { return Math.min(high, Math.max(low, value)); }
 
@@ -95,7 +98,7 @@
     var all = (state && state.boards) || [];
     ((state && state.sections) || []).forEach(function (section) {
       var items = all.filter(function (board) { return board.section === section.id; });
-      var ordered = [], seen = {};
+      var ordered = [], seen = table();
       items.forEach(function (board) {
         if (!board.group) { ordered.push(board); return; }
         if (seen[board.group]) return;
@@ -104,7 +107,7 @@
       });
       var hasGroup = ordered.some(function (board) { return board.group; });
       var top = y + TITLE_BAND + (hasGroup ? GROUP_BAND : 0);
-      var x = 0, rowHeight = 0, spans = {}, order = [];
+      var x = 0, rowHeight = 0, spans = table(), order = [];
       sections.push({ id: section.id, x: 0, y: y });
       ordered.forEach(function (board) {
         boards.push({ id: board.id, x: x, y: top, width: board.width, height: board.height });
@@ -343,7 +346,7 @@
   }
 
   function sync() {
-    var wanted = {};
+    var wanted = table();
     lay.boards.forEach(function (placed) {
       var board = boardOf(placed.id);
       if (!board) return;
@@ -364,7 +367,7 @@
     });
     labels.forEach(function (node) { node.remove(); });
     labels = [];
-    var titles = {};
+    var titles = table();
     current.sections.forEach(function (section) { titles[section.id] = section.title; });
     lay.sections.forEach(function (placed) {
       var node = element("div", "section-title", titles[placed.id] || "");

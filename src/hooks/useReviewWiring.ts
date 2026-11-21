@@ -158,14 +158,14 @@ export function useReviewWiring({
     const first = canvas.sections
       .flatMap((section) => section.artboards)
       .find((board) => checked.some(({ comment }) => comment.canvas?.artboardId === board.id));
-    if (!first) return;
-    const heading = canvasHeading(entry, canvas, first, cwd) + CANVAS_QUOTE_RULE;
-    const isContinued = !message.needsArtifactHeading(session.id, `${entry.key}/${first.id}`, heading);
-    const { text, lastArtboardId } = canvasMessage(checked, entry, canvas, cwd, isContinued ? first.id : null);
+    // Comments of removed artboards have no artboard to continue; their group always gets its heading.
+    const heading = first ? canvasHeading(entry, canvas, first, cwd) + CANVAS_QUOTE_RULE : '';
+    const isContinued = first ? !message.needsArtifactHeading(session.id, `${entry.key}/${first.id}`, heading) : false;
+    const { text, lastArtboardId } = canvasMessage(checked, entry, canvas, cwd, first && isContinued ? first.id : null);
     composer.insertText(text);
     const ids = checked.map(({ comment }) => comment.id);
     changeArtifact(session.id, ids, unsent);
-    message.addArtifact(session.id, ids, `${entry.key}/${lastArtboardId ?? first.id}`);
+    message.addArtifact(session.id, ids, `${entry.key}/${lastArtboardId ?? first?.id ?? ''}`);
   };
 
   const insertCanvasText = (text: string) => {

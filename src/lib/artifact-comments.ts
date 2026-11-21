@@ -248,6 +248,11 @@ export function canvasHeading(entry: CanvasEntry, canvas: Canvas, board: CanvasA
   return `Comments on ${codeSpan(escapeVisible(file))} (${escapeVisible(canvas.title)}, artboard ${escapeVisible(board.title)})`;
 }
 
+/** The heading over the comments of an artboard that is no longer in the canvas. */
+export function removedHeading(canvas: Canvas, artboardId: string): string {
+  return `Comments on artboard ${codeSpan(escapeVisible(artboardId))} (${escapeVisible(canvas.title)}), which was removed from the canvas`;
+}
+
 /** `text` as one Markdown code span: a fence longer than any run of backticks in it, padded when it starts or ends with one. */
 export function codeSpan(text: string): string {
   const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
@@ -311,7 +316,8 @@ export function artifactMessage(
 /**
  * The text a send of canvas comments puts in the composer: for each artboard, in canvas order, its
  * heading and its comments. The heading is left out for `continuing`, the artboard the composer's
- * message already ends with. Comments on an artboard no longer listed are left out.
+ * message already ends with. Comments on an artboard no longer listed follow, one group per
+ * artboard id, under a heading that says it was removed from the canvas.
  */
 export function canvasMessage(
   checked: readonly CheckedArtifactComment[],
@@ -329,7 +335,19 @@ export function canvasMessage(
     const isContinued = index === 0 && board.id === continuing;
     return isContinued ? blocks : [canvasHeading(entry, canvas, board, cwd) + CANVAS_QUOTE_RULE, ...blocks];
   });
-  return { text: parts.join('\n\n'), lastArtboardId: groups.at(-1)?.board.id ?? null };
+  const listed = new Set(canvas.sections.flatMap((section) => section.artboards.map((board) => board.id)));
+  const removed = new Map<string, CheckedArtifactComment[]>();
+  for (const item of checked) {
+    const id = item.comment.canvas?.artboardId;
+    if (id === undefined || listed.has(id)) continue;
+    removed.set(id, [...(removed.get(id) ?? []), item]);
+  }
+  const removedParts = [...removed].flatMap(([id, items]) => [
+    removedHeading(canvas, id) + CANVAS_QUOTE_RULE,
+    ...[...items].sort((a, b) => a.number - b.number).map(block),
+  ]);
+  const lastRemoved = [...removed.keys()].at(-1);
+  return { text: [...parts, ...removedParts].join('\n\n'), lastArtboardId: lastRemoved ?? groups.at(-1)?.board.id ?? null };
 }
 
 /** Counted by Add N: written on the newest version, and neither in the message nor sent. */

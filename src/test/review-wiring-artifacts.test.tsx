@@ -216,6 +216,21 @@ describe('adding artifact comments to the message', () => {
     expect([...result.current.addArtifactReview.inMessage]).toEqual(['ac-1', 'ac-2']);
   });
 
+  it('Add on a comment whose artboard is gone from the canvas still puts it in the composer', () => {
+    const { result, text } = renderWiring();
+    const key = 'c-0123456789abcdef';
+    const entry = { key, folder: '/w/api/design/checkout', relative: 'design/checkout', title: 'Checkout', shownAt: 1, artboards: 1 };
+    const board = { id: 'pay-a', title: 'Payment A', file: 'pay-a.html', width: 1440, height: 900, group: null };
+    const canvas = { title: 'Checkout', sections: [{ id: 'pay', title: 'Payment', artboards: [board] }] };
+    const gone = pageComment('ac-1', { artifactId: key, version: 0, canvas: { key, artboardId: 'old-b', fileHash: 'b'.repeat(64) } });
+
+    act(() => result.current.addArtifactReview.addCanvas([checked(gone)], entry, canvas, '/w/api'));
+
+    expect(text()).toContain('`old-b`');
+    expect(text()).toContain('removed from the canvas');
+    expect([...result.current.addArtifactReview.inMessage]).toEqual(['ac-1']);
+  });
+
   it("add while the slot is another session's does nothing and blockedReason says so", () => {
     const { result, rerender, updateArtifactComments, text } = renderWiring();
     act(() => result.current.addArtifactReview.add([checked(pageComment('ac-1'))], artifact, '/w/api'));

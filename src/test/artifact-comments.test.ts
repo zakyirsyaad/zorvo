@@ -345,6 +345,20 @@ describe('comments on canvas artboards', () => {
     expect(canvasMessage(checked.slice(1), entry, canvas, '/w/api', 'pay-a').text.startsWith('1. On the text')).toBe(true);
   });
 
+  it('puts the comments of an artboard no longer in the canvas under a heading of their own', () => {
+    const checked = [
+      { comment: onBoard('a1', 'pay-a', { anchor: { kind: 'artboard' }, body: 'Shorter.' }), number: 1, status: 'current' as const },
+      { comment: onBoard('g1', 'gone`x', { anchor: { kind: 'artboard' }, body: 'Was too tall.' }), number: 2, status: 'outdated' as const },
+    ];
+
+    const { text, lastArtboardId } = canvasMessage(checked, entry, canvas, '/w/api', null);
+
+    expect(text).toContain('Comments on artboard ``gone`x`` (Checkout), which was removed from the canvas.');
+    expect(text.endsWith('2. On the whole artboard (written on an earlier file; it has changed since):\n   Was too tall.')).toBe(true);
+    expect(text.indexOf('artboard Payment A')).toBeLessThan(text.indexOf('which was removed'));
+    expect(lastArtboardId).toBe('gone`x');
+  });
+
   it('says Whole artboard for an artboard anchor', () => {
     expect(anchorSummary({ kind: 'artboard' })).toBe('Whole artboard');
   });

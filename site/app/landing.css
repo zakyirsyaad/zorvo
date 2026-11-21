@@ -88,7 +88,7 @@
   .lp-stack > * { grid-area: 1 / 1; }
   /* Where a scene starts, or a moment it passes through (.lp-brief): hidden until the motion shows it.
      Without the script they stay hidden, which is the finished state. */
-  .lp-st-a, .lp-pl-a, .lp-pop, .lp-wire-dot, .lp-typed, .lp-brief { opacity: 0; visibility: hidden; }
+  .lp-st-a, .lp-pl-a, .lp-wire-dot, .lp-brief { opacity: 0; visibility: hidden; }
   .lp-ln { display: block; overflow: hidden; padding-bottom: 0.08em; }
   .lp-ln > span { display: block; }
 
@@ -118,6 +118,57 @@
   .lp-term { border-radius: 12px; border: 1px solid var(--color-border); background: #050506; overflow: hidden; }
   .lp-cursor { display: inline-block; width: 8px; height: 14px; background: var(--color-fg); vertical-align: -2px; }
   .lp-nav { display: flex; }
+  /* A link inside a post: quieter than the post's words, as on X. */
+  .lp-root a.lp-tweet-link { color: var(--color-fg-muted); }
+  .lp-root a.lp-tweet-link:hover { color: var(--color-fg); }
+  /* The header's menus. A popover is hidden by the browser until it is open, so `display` is set only then. */
+  .lp-icon-link { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 10px; color: var(--color-fg-secondary); }
+  .lp-root a.lp-icon-link { color: var(--color-fg-secondary); }
+  .lp-root a.lp-icon-link:hover, button.lp-icon-link:hover { color: var(--color-fg); }
+  /* The Product menu: under the row of links, centred on it. It opens while the pointer is over its item or
+     the focus is inside, and fades and settles into place as it does. The transparent strip at its top
+     keeps the pointer inside the item on the way down. */
+  .lp-nav { position: relative; }
+  .lp-chev { transition: rotate 220ms cubic-bezier(0.16, 1, 0.3, 1); }
+  .lp-menu {
+    position: absolute; top: 100%; left: 50%; z-index: 20; width: min(620px, calc(100vw - 48px)); padding-top: 10px;
+    opacity: 0; visibility: hidden; translate: -50% -6px; scale: 0.97; transform-origin: top center;
+    transition: opacity 160ms ease 60ms, translate 220ms cubic-bezier(0.16, 1, 0.3, 1) 60ms, scale 220ms cubic-bezier(0.16, 1, 0.3, 1) 60ms, visibility 0s linear 220ms;
+  }
+  .lp-nav-item:not([data-shut]):is(:hover, :focus-within, [data-open]) > .lp-menu { opacity: 1; visibility: visible; translate: -50% 0; scale: 1; transition-delay: 0s; }
+  .lp-nav-item:not([data-shut]):is(:hover, :focus-within, [data-open]) .lp-chev { rotate: 180deg; }
+  .lp-menu-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 8px; border: 1px solid var(--color-border); border-radius: 14px; background: var(--color-surface-3); box-shadow: var(--shadow-popover); }
+  .lp-menu a { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 10px; transition: background-color 120ms ease; }
+  .lp-menu a:hover { background: var(--color-surface-hover); }
+  .lp-menu b { font-size: 15px; line-height: 22px; font-weight: 500; color: var(--color-fg); }
+  .lp-menu a span { font-size: 13px; line-height: 20px; color: var(--color-fg-muted); }
+  @media (prefers-reduced-motion: reduce) {
+    .lp-menu, .lp-chev { transition: none; }
+    .lp-menu { translate: -50% 0; scale: 1; }
+  }
+  /* The phone's menu is a native popover, which the browser hides until it is open: `display` is set only then. */
+  .lp-sheet { position: absolute; inset: auto; margin: 0; color: inherit; top: 64px; left: 0; width: 100%; max-width: none; padding: 8px 24px 16px; border: 0; border-bottom: 1px solid var(--color-border); background: var(--color-surface-1); }
+  .lp-sheet:popover-open { display: flex; flex-direction: column; }
+  .lp-sheet-link { display: flex; align-items: center; min-height: 44px; font-size: 16px; }
+  /* A browser without popovers would draw the phone's menu over the page, always open. There it stays hidden,
+     and the footer has every link. */
+  @supports not selector(:popover-open) {
+    .lp-sheet { display: none; }
+  }
+  /* The agents strip: two copies of the list, moved left by one copy's width, then again. The only motion
+     on the page that repeats. It stops under the pointer and does not run at all under reduced motion. */
+  .lp-mq { overflow: hidden; mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent); }
+  .lp-track { display: flex; gap: 12px; width: max-content; animation: lp-mq 90s linear infinite; }
+  .lp-track > ul { display: flex; gap: 12px; flex: none; }
+  .lp-mq:hover .lp-track { animation-play-state: paused; }
+  .lp-mark { width: 16px; height: 16px; background: var(--color-fg); mask: var(--lp-mark) center / contain no-repeat; }
+  @keyframes lp-mq { to { transform: translateX(calc(-50% - 6px)); } }
+  @media (prefers-reduced-motion: reduce) {
+    .lp-mq { mask-image: none; }
+    .lp-track { animation: none; width: auto; }
+    .lp-track > ul { flex: 1; flex-wrap: wrap; justify-content: center; }
+    .lp-track > ul[aria-hidden] { display: none; }
+  }
   .lp-wire { display: flex; }
 
   @media (max-width: 860px) {

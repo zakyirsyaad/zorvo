@@ -1,6 +1,9 @@
+import { downloadCount, formatCount } from "../../lib/downloads";
 import { LINKS } from "../../lib/links";
+import { APP_VERSION } from "../../lib/site";
 
 export function Download() {
+  const downloads = formatCount(downloadCount());
   return (
     <section className="border-t border-border py-24 px-0" id="download" aria-labelledby="download-title">
       <div className="lp-wrap flex flex-col items-center gap-5 text-center" data-reveal="">
@@ -26,8 +29,20 @@ export function Download() {
             Read the install guide
           </a>
         </div>
-        <p className="max-w-115 text-[14px] leading-5.5 text-fg-subtle" data-r="">
-          The build is not signed yet. The first time you open it, allow it in System Settings, Privacy and Security.
+        <p className="flex flex-wrap justify-center items-baseline gap-x-5 gap-y-1.5 text-[14px] leading-5.5 text-fg-subtle" data-r="">
+          <span>
+            <b className="font-mono text-[15px] font-medium text-fg" data-downloads="">{downloads}</b>
+            {" "}
+            downloads
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>
+            Version
+            {" "}
+            <span className="font-mono text-fg-secondary">{APP_VERSION}</span>
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>Signed with a Developer ID and notarized by Apple</span>
         </p>
       </div>
     </section>

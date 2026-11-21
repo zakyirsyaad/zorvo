@@ -2,7 +2,7 @@ import { AgentTile } from "../ui/AgentTile";
 
 export function Sessions() {
   return (
-    <section className="lp-sec" id="sessions" aria-labelledby="sessions-title">
+    <section className="lp-sec border-t-0" id="sessions" aria-labelledby="sessions-title">
       <div className="lp-wrap lp-row">
         <div className="lp-col" data-reveal="">
           <p className="lp-eyebrow" data-r="">Sessions</p>

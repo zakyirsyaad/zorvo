@@ -8,6 +8,7 @@
 //   2. Nothing runs under prefers-reduced-motion: reduce.
 //   3. GSAP and Motion never animate `transform` on the same element (a test pins the data hooks).
 import { gsap } from "gsap";
+import { ScrollSmoother } from "gsap/ScrollSmoother";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { animate, hover, inView, press, stagger } from "motion";
 
@@ -24,11 +25,15 @@ const prepped: HTMLElement[] = [];
 const counted: HTMLElement[] = [];
 const stops: Array<() => void> = [];
 let ctx: gsap.Context | null = null;
+let smoother: ScrollSmoother | null = null;
 
 // If anything throws while the scenes are set up, put the page back as the HTML has it.
 function teardown() {
   ctx?.revert();
   ctx = null;
+  smoother?.kill();
+  smoother = null;
+  document.documentElement.style.scrollBehavior = "";
   stops.forEach((stop) => {
     try {
       stop();
@@ -47,7 +52,28 @@ function teardown() {
 }
 
 function start(root: HTMLElement) {
-  gsap.registerPlugin(ScrollTrigger);
+  // The stylesheet's smooth scroll-behavior goes first: GSAP notes it when it first reads the page and would
+  // keep putting it back, and two kinds of smoothing fight each other.
+  document.documentElement.style.scrollBehavior = "auto";
+  gsap.registerPlugin(ScrollTrigger, ScrollSmoother);
+  // Smooth scrolling for the wheel and the trackpad. Touch keeps the system's own scrolling.
+  smoother = ScrollSmoother.create({ wrapper: "#smooth-wrapper", content: "#smooth-content", smooth: 1, smoothTouch: false });
+  const sectionOf = (hash: string) => (hash.length > 1 ? document.getElementById(decodeURIComponent(hash.slice(1))) : null);
+  // A link to a section glides there through the smoother, then hands the section the focus as a jump would.
+  const glide = (event: MouseEvent) => {
+    const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href^="#"]') : null;
+    const target = link ? sectionOf(link.hash) : null;
+    if (!link || !target || !smoother || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    smoother.scrollTo(target, true, "top 16px");
+    history.pushState(null, "", link.hash);
+    if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
+    target.focus({ preventScroll: true });
+  };
+  root.addEventListener("click", glide);
+  stops.push(() => root.removeEventListener("click", glide));
+  const first = sectionOf(location.hash);
+  if (first) smoother.scrollTo(first, false, "top 16px");
   const q = <T extends HTMLElement = HTMLElement>(sel: string, el?: Element): T[] =>
     Array.from((el ?? root).querySelectorAll<T>(sel));
   const one = <T extends HTMLElement = HTMLElement>(sel: string, el?: Element): T => {
@@ -101,12 +127,12 @@ function start(root: HTMLElement) {
       ease: "none",
       scrollTrigger: { trigger: "[data-hero]", start: "top top", end: "bottom top", scrub: 0.6 },
     });
-    // Each dot pulses when it scrolls into view; the delegate's status dot waits for its scene to show it.
-    const statusDot = one("[data-dlg-status] .lp-pulse");
+    // Each dot pulses when it scrolls into view; the workers' status dots wait for their scene to show them.
+    const statusDots = q("[data-dlg-status] .lp-pulse");
     q(".lp-pulse")
-      .filter((dot) => dot !== statusDot)
+      .filter((dot) => !statusDots.includes(dot))
       .forEach((dot) => gsap.to(dot, { ...PULSE, scrollTrigger: scene(dot) }));
-    const statusPulse = gsap.to(statusDot, { ...PULSE, paused: true });
+    const statusPulse = gsap.to(statusDots, { ...PULSE, paused: true });
 
     // Compare: the prompt is typed, three agents run at their own pace, one is picked.
     const cmp = one("[data-compare]");
@@ -130,26 +156,18 @@ function start(root: HTMLElement) {
       .fromTo("[data-cmp-win]", { borderColor: "#27272a" }, { borderColor: "#71717a", duration: 0.3 }, "run+=3.1")
       .from("[data-cmp-confirm]", { y: 24, autoAlpha: 0, duration: 0.5, ease: "back.out(1.4)" }, "run+=3.2");
 
-    // Delegate: the task goes from one session to the other, and the answer comes back.
+    // Delegate: the agent asks for two workers, the card is allowed, the tasks go out and one report comes back.
     const hand = gsap.timeline({ scrollTrigger: scene(one("[data-dlg]")), defaults: { ease: "power3.out" } });
     hand
       .from(q("[data-dlg-pane]"), { y: 28, autoAlpha: 0, duration: 0.6, stagger: 0.12 })
-      .to("[data-dlg-ph]", { autoAlpha: 0, duration: 0.1 })
-      .fromTo("[data-dlg-type]", { ...typing, autoAlpha: 1 }, { ...typed, duration: 1.3, ease: "steps(38)" })
-      // The send button is there only while the @ mention is in the box (hidden by CSS otherwise).
-      .to("[data-dlg-send]", { autoAlpha: 1, duration: 0.15 }, "<")
-      .fromTo(
-        "[data-dlg-pop]",
-        { autoAlpha: 0, y: 8, scale: 0.97 },
-        { autoAlpha: 1, y: 0, scale: 1, duration: 0.3, ease: "back.out(1.6)" },
-        "<0.15",
-      )
-      .to("[data-dlg-pop]", { autoAlpha: 0, y: 6, duration: 0.25 }, "+=0.5")
-      .to("[data-dlg-send]", { scale: 0.95, duration: 0.1, yoyo: true, repeat: 1, ease: "power1.inOut" })
-      .to("[data-dlg-type], [data-dlg-send]", { autoAlpha: 0, duration: 0.15 })
-      .to("[data-dlg-ph]", { autoAlpha: 1, duration: 0.15 }, "<")
-      .from("[data-dlg-msg]", { y: 12, autoAlpha: 0, duration: 0.4 }, "<")
-      // The status line is hidden by CSS: it shows only while Codex works, as in the app.
+      .from("[data-dlg-card]", { y: 14, autoAlpha: 0, scale: 0.97, duration: 0.5, ease: "back.out(1.5)" })
+      // The buttons are hidden by CSS: they show only until Allow is pressed, as in the app.
+      .to("[data-dlg-ask]", { autoAlpha: 1, duration: 0.01 }, "<")
+      .addLabel("answer", "+=0.9")
+      .to("[data-dlg-allow]", { scale: 0.95, duration: 0.1, yoyo: true, repeat: 1, ease: "power1.inOut" }, "answer")
+      .to("[data-dlg-ask]", { autoAlpha: 0, duration: 0.15 }, "answer+=0.2")
+      .from("[data-dlg-allowed]", { autoAlpha: 0, duration: 0.2 }, "answer+=0.3")
+      // The status lines are hidden by CSS too: they show only while the workers run.
       .fromTo("[data-dlg-status]", { y: 6, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.35 })
       .call(() => void statusPulse.restart())
       .fromTo("[data-dlg-dot]", { left: "0%", autoAlpha: 1 }, { left: "100%", duration: 0.8, ease: "power2.inOut" })
@@ -158,6 +176,16 @@ function start(root: HTMLElement) {
       .to("[data-dlg-dot]", { autoAlpha: 0, duration: 0.2 })
       .to("[data-dlg-status]", { autoAlpha: 0, duration: 0.2 }, "<")
       .from("[data-dlg-report]", { y: 14, autoAlpha: 0, scale: 0.97, duration: 0.5, ease: "back.out(1.5)" }, "<");
+
+    // Output: the artboards arrive, one is selected, a comment lands on it and the strip offers to add it.
+    const shown = gsap.timeline({ scrollTrigger: scene(one("[data-out]")), defaults: { ease: "power3.out" } });
+    shown
+      .from(q("[data-out-pane]"), { y: 28, autoAlpha: 0, duration: 0.6, stagger: 0.12 })
+      .from(q("[data-out-board]"), { y: 16, autoAlpha: 0, duration: 0.45, stagger: 0.12 }, "-=0.2")
+      .fromTo("[data-out-pick]", { borderColor: "#27272a" }, { borderColor: "#2563eb", duration: 0.3 }, "+=0.3")
+      .from("[data-out-mark]", { scale: 0, autoAlpha: 0, duration: 0.35, ease: "back.out(2)" }, "+=0.2")
+      .from("[data-out-comment]", { y: 10, autoAlpha: 0, duration: 0.4 })
+      .from("[data-out-bar]", { y: 10, autoAlpha: 0, duration: 0.4 }, "+=0.2");
 
     // Private: the session arrives, its answer is verified, the balance ticks down.
     const prv = gsap.timeline({ scrollTrigger: scene(one("[data-prv]")), defaults: { ease: "power3.out" } });
@@ -184,6 +212,13 @@ function start(root: HTMLElement) {
       .from(q("[data-term-out]"), { autoAlpha: 0, duration: 0.01, stagger: 0.09 }, "+=0.2")
       // The cursor blinks for about 4.5 s after the listing, then stays lit.
       .to(".lp-cursor", { opacity: 0, duration: 0.01, repeat: 7, yoyo: true, repeatDelay: 0.55 });
+    // Footer: uncovered, not scrolled in. Its content moves down exactly as fast as the page moves up, so it
+    // stays at the bottom of the window while the footer's own box, which clips it, comes into view.
+    gsap.fromTo(
+      "[data-foot-inner]",
+      { yPercent: -100 },
+      { yPercent: 0, ease: "none", scrollTrigger: { trigger: one("[data-foot]"), start: "top bottom", end: "bottom bottom", scrub: true } },
+    );
     gsap.fromTo(
       q("[data-draw] path"),
       { strokeDasharray: 1, strokeDashoffset: 1 },
@@ -267,7 +302,53 @@ function start(root: HTMLElement) {
   void document.fonts?.ready.then(() => ScrollTrigger.refresh());
 }
 
+// Not motion, but this is the page's one script, so the menus are finished here.
+function wireMenus() {
+  // The phone's menu: a link inside it closes it. The browser closes a popover only for Escape or a click outside.
+  document.querySelectorAll<HTMLAnchorElement>("[popover] a").forEach((link) =>
+    link.addEventListener("click", () => link.closest<HTMLElement>("[popover]")?.hidePopover?.()),
+  );
+  // The Product menu opens on hover and focus by CSS. This adds a click (touch, and Safari, where a click
+  // does not focus a button), Escape, and the expanded state for assistive technology.
+  document.querySelectorAll<HTMLElement>("[data-menu]").forEach((item) => {
+    const button = item.querySelector("button");
+    if (!button) return;
+    const set = (isOpen: boolean) => {
+      item.toggleAttribute("data-open", isOpen);
+      button.setAttribute("aria-expanded", String(isOpen));
+    };
+    // Shut holds the menu closed although the pointer or the focus is still on it.
+    const shut = () => {
+      set(false);
+      item.setAttribute("data-shut", "");
+    };
+    button.addEventListener("click", () => {
+      const isOpening = item.hasAttribute("data-shut") || !item.hasAttribute("data-open");
+      item.removeAttribute("data-shut");
+      set(isOpening);
+    });
+    item.addEventListener("mouseenter", () => button.setAttribute("aria-expanded", "true"));
+    item.addEventListener("mouseleave", () => {
+      item.removeAttribute("data-shut");
+      set(false);
+    });
+    item.addEventListener("focusin", () => button.setAttribute("aria-expanded", String(!item.hasAttribute("data-shut"))));
+    item.addEventListener("focusout", (event) => {
+      if (event.relatedTarget instanceof Node && item.contains(event.relatedTarget)) return;
+      item.removeAttribute("data-shut");
+      set(false);
+    });
+    item.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      shut();
+      button.focus();
+    });
+    item.querySelectorAll("a").forEach((link) => link.addEventListener("click", shut));
+  });
+}
+
 function boot() {
+  wireMenus();
   const root = document.querySelector<HTMLElement>(ROOT);
   if (!root || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   try {

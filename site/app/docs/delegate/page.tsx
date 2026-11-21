@@ -7,6 +7,7 @@ export const metadata = docsMetadata("/docs/delegate");
 const TOC: TocEntry[] = [
   { id: "mention", label: "Delegate with @" },
   { id: "menu", label: "Delegate from the session menu" },
+  { id: "workers", label: "When an agent starts workers" },
   { id: "report", label: "The answer comes back" },
   { id: "limits", label: "What blocks a delegation" },
   { id: "end", label: "End a delegation" },
@@ -64,6 +65,35 @@ export default function DelegatePage() {
         </li>
       </OL>
 
+      <H2 id="workers">When an agent starts workers</H2>
+      <P>
+        An agent can also ask for help itself. The first time in a session, a card in the chat shows who asks, which
+        agent each task is for and the task as the other agent will read it, with <B>Allow for this session</B> and{" "}
+        <B>Deny</B>. After you allow it, that session&apos;s agent can hand out further tasks without asking, until you
+        close Zorvo or choose <B>Stop allowing delegation</B> in the session&apos;s ⋯ menu.
+      </P>
+      <Callout>
+        <B>The list below is for versions after 0.14.1.</B> In 0.14.1 an agent can already give another agent a
+        task, on the same card.
+      </Callout>
+      <UL>
+        <li>
+          Workers can be of one agent or several. Each works in your folder, or in a worktree of its own when the
+          agent asks for one, and the card says which.
+        </li>
+        <li>At most four of a session&apos;s workers are at work at once.</li>
+        <li>
+          A worker&apos;s agent ends two minutes after its turn. The session and its history stay, and a new task
+          reopens it.
+        </li>
+        <li>
+          A private session does not delegate, since the handoff would send its conversation outside the TEE.
+        </li>
+        <li>
+          The switch for all of this is in Settings, Agents. It applies to sessions you start or reopen afterwards.
+        </li>
+      </UL>
+
       <H2 id="report">The answer comes back</H2>
       <UL>
         <li>
@@ -80,6 +110,11 @@ export default function DelegatePage() {
           <B>Report from Codex on the task you delegated</B>. It quotes the answer, up to 20,000 characters, and lists
           the files the agent reported changing in that turn. The first agent is told to treat the quote as
           information, not as instructions from you.
+        </li>
+        <li>
+          In versions after 0.14.1 the reports of every worker that ended come in one message headed{" "}
+          <B>Worker reports</B>. It names each worker and how its turn ended (Succeeded, Failed, Stopped, Gone), also
+          for a worker that failed or whose agent exited.
         </li>
         <li>
           If the first session is not running, the report waits in its composer until you send it.

@@ -214,10 +214,14 @@ function start(root: HTMLElement) {
       .to(".lp-cursor", { opacity: 0, duration: 0.01, repeat: 7, yoyo: true, repeatDelay: 0.55 });
     // Footer: uncovered, not scrolled in. Its content moves down exactly as fast as the page moves up, so it
     // stays at the bottom of the window while the footer's own box, which clips it, comes into view.
+    // A footer taller than the window (a phone, where its columns wrap) scrolls in as usual instead: held at
+    // the bottom, its top could never be reached. The start is read again whenever the window is resized.
+    const foot = one("[data-foot]");
+    const footStart = () => (foot.offsetHeight <= window.innerHeight ? -100 : 0);
     gsap.fromTo(
       "[data-foot-inner]",
-      { yPercent: -100 },
-      { yPercent: 0, ease: "none", scrollTrigger: { trigger: one("[data-foot]"), start: "top bottom", end: "bottom bottom", scrub: true } },
+      { yPercent: footStart },
+      { yPercent: 0, ease: "none", scrollTrigger: { trigger: foot, start: "top bottom", end: "bottom bottom", scrub: true, invalidateOnRefresh: true } },
     );
     gsap.fromTo(
       q("[data-draw] path"),

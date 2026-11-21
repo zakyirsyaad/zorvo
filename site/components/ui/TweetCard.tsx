@@ -6,11 +6,14 @@ const DAY = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", y
 /**
  * A post from X as a card, after Magic UI's Tweet Card: the author, the post's words and a link to it.
  * It draws a copy kept in lib/tweets.ts, so the page loads nothing from X. Every link opens a new tab.
+ *
+ * The whole card leads to the author's profile: the name is the link, stretched over the card by CSS, and
+ * the card lifts under the pointer (the page's `data-hover` motion). The other links sit above that one.
  */
 export function TweetCard({ tweet }: { tweet: Tweet }) {
   const profile = `https://x.com/${tweet.handle}`;
   return (
-    <article className="lp-card relative flex w-full max-w-lg flex-col gap-4 p-5 rounded-xl" data-tweet="">
+    <article className="lp-card lp-tweet relative flex w-full max-w-lg flex-col gap-4 p-5 rounded-xl" data-tweet="" data-hover="">
       <header className="flex items-start justify-between gap-3">
         <span className="flex min-w-0 items-center gap-3">
           {/* Zorvo's own mark stands for its account. */}
@@ -23,7 +26,10 @@ export function TweetCard({ tweet }: { tweet: Tweet }) {
           </span>
           <span className="flex min-w-0 flex-col">
             <span className="flex items-center gap-1 text-fg font-medium whitespace-nowrap">
-              {tweet.name}
+              <a className="focus-ring lp-tweet-main" href={profile} target="_blank" rel="noopener noreferrer">
+                {tweet.name}
+                <span className="sr-only"> on X, opens in a new tab</span>
+              </a>
               {tweet.isVerified && (
                 <svg className="size-4 flex-none text-mark" viewBox="0 0 24 24" role="img" aria-label="Verified account">
                   <path
@@ -33,13 +39,10 @@ export function TweetCard({ tweet }: { tweet: Tweet }) {
                 </svg>
               )}
             </span>
-            <a className="focus-ring lp-tweet-link text-[14px] leading-5" href={profile} target="_blank" rel="noopener noreferrer">
-              @{tweet.handle}
-              <span className="sr-only">, opens in a new tab</span>
-            </a>
+            <span className="text-[14px] leading-5 text-fg-muted">@{tweet.handle}</span>
           </span>
         </span>
-        <a className="focus-ring lp-icon-link -m-3" href={tweet.url} target="_blank" rel="noopener noreferrer">
+        <a className="focus-ring lp-icon-link lp-tweet-over -m-3" href={tweet.url} target="_blank" rel="noopener noreferrer">
           <BrandIcon brand="x" size={18} />
           <span className="sr-only">Open the post on X, in a new tab</span>
         </a>
@@ -47,7 +50,7 @@ export function TweetCard({ tweet }: { tweet: Tweet }) {
       <p className="text-[15px] leading-6.5 text-fg whitespace-pre-line break-words">
         {tweet.parts.map((part) =>
           part.href ? (
-            <a key={part.text} className="focus-ring lp-tweet-link" href={part.href} target="_blank" rel="noopener noreferrer">
+            <a key={part.text} className="focus-ring lp-tweet-link lp-tweet-over" href={part.href} target="_blank" rel="noopener noreferrer">
               {part.text}
             </a>
           ) : (
@@ -60,7 +63,7 @@ export function TweetCard({ tweet }: { tweet: Tweet }) {
         {tweet.hasVideo && (
           <>
             <span aria-hidden="true">·</span>
-            <a className="focus-ring lp-tweet-link" href={tweet.url} target="_blank" rel="noopener noreferrer">
+            <a className="focus-ring lp-tweet-link lp-tweet-over" href={tweet.url} target="_blank" rel="noopener noreferrer">
               Watch the video on X
               <span className="sr-only">, opens in a new tab</span>
             </a>

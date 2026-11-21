@@ -296,6 +296,11 @@ describe("landing page", () => {
     expect(card.querySelector("time")?.textContent).toBe("14 Nov 2026");
     // A copy of the post: no picture, video or script comes from X.
     expect(card.querySelectorAll("img, video, iframe, script")).toHaveLength(0);
+    // The card as a whole leads to the profile: the name's link is stretched over it, and it lifts on hover.
+    expect(card.querySelector("a.lp-tweet-main")?.getAttribute("href")).toBe("https://x.com/zorvolabs");
+    expect(card.hasAttribute("data-hover")).toBe(true);
+    const css = readFileSync(join(ROOT, "site", "app", "landing.css"), "utf8");
+    expect(css).toContain('.lp-tweet-main::after { content: ""; position: absolute; inset: 0;');
     expect([...card.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
       "https://x.com/zorvolabs",
       "https://x.com/zorvolabs/status/2121583312947007728",
@@ -311,7 +316,9 @@ describe("landing page", () => {
     expect(footer.className.split(" ")).toContain("overflow-hidden");
     expect(footer.querySelector(":scope > [data-foot-inner]")).not.toBeNull();
     const script = readFileSync(join(ROOT, "site", "scripts", "motion", "landing.ts"), "utf8");
-    expect(script).toMatch(/"\[data-foot-inner\]",\s+\{ yPercent: -100 \},\s+\{ yPercent: 0, ease: "none", scrollTrigger: \{ trigger: one\("\[data-foot\]"\), start: "top bottom", end: "bottom bottom", scrub: true \} \}/);
+    expect(script).toMatch(/"\[data-foot-inner\]",\s+\{ yPercent: footStart \},\s+\{ yPercent: 0, ease: "none", scrollTrigger: \{ trigger: foot, start: "top bottom", end: "bottom bottom", scrub: true, invalidateOnRefresh: true \} \}/);
+    // Held at the bottom of the window, a footer taller than the window would hide its own top for good.
+    expect(script).toContain("const footStart = () => (foot.offsetHeight <= window.innerHeight ? -100 : 0);");
   });
 
   it("shows no voices section without real quotes, and lays out the ones it is given", () => {

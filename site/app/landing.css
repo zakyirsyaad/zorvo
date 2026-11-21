@@ -121,6 +121,19 @@
   /* A link inside a post: quieter than the post's words, as on X. */
   .lp-root a.lp-tweet-link { color: var(--color-fg-muted); }
   .lp-root a.lp-tweet-link:hover { color: var(--color-fg); }
+  /* The card is one link to the author's profile: the name's link is stretched over it, and the card's
+     other links sit above that. Under the pointer the card's edge brightens and its X mark leans in. */
+  .lp-tweet { transition: border-color 160ms ease, background-color 160ms ease; }
+  .lp-tweet:hover { border-color: var(--color-border-strong); background: var(--color-surface-3); }
+  .lp-tweet-main::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+  .lp-root a.lp-tweet-main, .lp-root a.lp-tweet-main:hover { color: var(--color-fg); }
+  .lp-tweet-over { position: relative; z-index: 1; }
+  .lp-tweet .lp-icon-link svg { transition: scale 220ms cubic-bezier(0.16, 1, 0.3, 1), rotate 220ms cubic-bezier(0.16, 1, 0.3, 1); }
+  .lp-tweet:hover .lp-icon-link svg { scale: 1.15; rotate: -8deg; }
+  @media (prefers-reduced-motion: reduce) {
+    .lp-tweet, .lp-tweet .lp-icon-link svg { transition: none; }
+    .lp-tweet:hover .lp-icon-link svg { scale: 1; rotate: none; }
+  }
   /* The header's menus. A popover is hidden by the browser until it is open, so `display` is set only then. */
   .lp-icon-link { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 10px; color: var(--color-fg-secondary); }
   .lp-root a.lp-icon-link { color: var(--color-fg-secondary); }

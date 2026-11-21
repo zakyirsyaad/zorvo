@@ -746,10 +746,12 @@ describe("search engines", () => {
   });
 
   it("dates the sitemap from git, loads logos lazily and lets static assets be cached", () => {
-    // In this checkout the history is whole, so every page has a date, and none is in the future.
+    // Where the history is whole every page has a date. CI clones one commit, and there a page whose date
+    // git cannot know has none. No date is ever in the future.
+    const isShallow = spawnSync("git", ["rev-parse", "--is-shallow-repository"], { cwd: ROOT, encoding: "utf8" }).stdout.trim() === "true";
     for (const entry of sitemap()) {
-      expect(entry.lastModified, entry.url).toBeInstanceOf(Date);
-      expect((entry.lastModified as Date).getTime(), entry.url).toBeLessThanOrEqual(Date.now());
+      if (!isShallow) expect(entry.lastModified, entry.url).toBeInstanceOf(Date);
+      if (entry.lastModified) expect(new Date(entry.lastModified).getTime(), entry.url).toBeLessThanOrEqual(Date.now());
     }
     const document = new DOMParser().parseFromString(renderToStaticMarkup(<Home />), "text/html");
     // Only the mark in the first screen loads at once: an eager image is one the browser preloads.
@@ -758,7 +760,8 @@ describe("search engines", () => {
     const { headers } = JSON.parse(readFileSync(join(ROOT, "site", "vercel.json"), "utf8"));
     const cacheOf = (source: string) =>
       headers.find((rule: { source: string }) => rule.source === source)?.headers.find((header: { key: string }) => header.key === "Cache-Control")?.value;
-    expect(cacheOf("/motion.js")).toBe("public, max-age=3600, stale-while-revalidate=86400");
+    // The script keeps one name across deploys, so it is checked on every visit: a kept copy could meet a newer page.
+    expect(cacheOf("/motion.js")).toBeUndefined();
     expect(cacheOf("/(media|agents)/(.*)")).toBe("public, max-age=86400, stale-while-revalidate=604800");
   });
 });

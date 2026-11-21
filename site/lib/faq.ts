@@ -1,3 +1,5 @@
+import { LINKS } from "./links";
+
 export interface Question {
   question: string;
   /** Plain words, so the page and the structured data say exactly the same. */
@@ -19,7 +21,7 @@ export const QUESTIONS: readonly Question[] = [
   {
     question: "Does Zorvo need my API keys?",
     answer: "No. Each agent signs in with its own tools, and Zorvo never asks for or stores keys or tokens.",
-    more: { href: "/docs/signing-in", label: "How signing in works" },
+    more: { href: LINKS.signingIn, label: "How signing in works" },
   },
   {
     question: "Which agent should I start with?",
@@ -29,7 +31,7 @@ export const QUESTIONS: readonly Question[] = [
     question: "What do I need installed?",
     answer:
       "A Mac with Apple silicon or Intel, and an account with at least one agent. Agents that come as npm packages need Node.js 22 or newer. If yours is missing or older, Zorvo installs its own when you install such an agent.",
-    more: { href: "/docs/install", label: "The install guide" },
+    more: { href: LINKS.installGuide, label: "The install guide" },
   },
   {
     question: "Does it work on Windows or Linux?",
@@ -39,7 +41,7 @@ export const QUESTIONS: readonly Question[] = [
     question: "Does Zorvo send my code anywhere?",
     answer:
       "Zorvo sends no telemetry, and your sessions and transcripts stay in one folder on your Mac. Your agents talk to their own services, as they do in a terminal. The few hosts Zorvo itself contacts are all named.",
-    more: { href: "/docs/privacy", label: "Privacy and your data" },
+    more: { href: LINKS.privacyGuide, label: "Privacy and your data" },
   },
 ];
 

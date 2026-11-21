@@ -4,6 +4,7 @@ import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { VisualDialog } from "./VisualDialog";
 import { VisualFrame } from "./VisualFrame";
+import { VisualMenu } from "./VisualMenu";
 import { useNearScreen } from "../../hooks/useNearScreen";
 import { useVisualDocument } from "../../hooks/useVisualDocument";
 import { escapeVisible } from "../../lib/visible-text";
@@ -33,6 +34,10 @@ export function VisualBlock({ sessionId, part, agentName, isArriving = false }: 
   const [height, setHeight] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
   const expandRef = useRef<HTMLButtonElement>(null);
+  const frameBoxRef = useRef<HTMLDivElement>(null);
+  const [status, setStatus] = useState("");
+  // The frame box has 20px of padding on each side; the picture is drawn at the document's own width.
+  const sizeOf = () => ({ width: (frameBoxRef.current?.clientWidth ?? 0) - 40, height });
   const closeDialog = () => {
     setIsExpanded(false);
     expandRef.current?.focus();
@@ -46,7 +51,10 @@ export function VisualBlock({ sessionId, part, agentName, isArriving = false }: 
       <div className="flex h-7 items-center gap-2">
         <span className="min-w-0 truncate text-ui-sm font-medium text-fg">{title}</span>
         <span className="shrink-0 text-caption text-fg-subtle">{isMainWindow ? `${agentName} made this visual` : "Shown in the main window."}</span>
-        <span className="flex-1" />
+        {/* What a copy or a download did. Always mounted, so a screen reader hears it change. */}
+        <span aria-live="polite" data-testid="visual-status" className="min-w-0 flex-1 truncate text-right text-caption text-fg-muted">
+          {status}
+        </span>
         {isShown && (
           <IconButton ref={expandRef} size="sm" label="Expand" aria-haspopup="dialog" onClick={() => setIsExpanded(true)}>
             <Maximize2 size={14} aria-hidden="true" />
@@ -57,6 +65,7 @@ export function VisualBlock({ sessionId, part, agentName, isArriving = false }: 
             {isFolded ? <ChevronRight size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
           </IconButton>
         )}
+        {isShown && sessionId !== undefined && <VisualMenu sessionId={sessionId} id={part.id} kind={part.visualKind} sizeOf={sizeOf} onStatus={setStatus} />}
       </div>
       {isMainWindow && !isFolded && (
         <>
@@ -76,7 +85,7 @@ export function VisualBlock({ sessionId, part, agentName, isArriving = false }: 
           )}
           {visual.status === "ready" &&
             (isNear ? (
-              <div className={`${FRAME} overflow-hidden p-5`}>
+              <div ref={frameBoxRef} className={`${FRAME} overflow-hidden p-5`}>
                 <VisualFrame document={visual.document} title={title} initialHeight={height} onHeight={setHeight} />
               </div>
             ) : (

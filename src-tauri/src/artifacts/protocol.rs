@@ -13,6 +13,8 @@ use super::canvas::canvas_file;
 use super::canvas_shell::CANVAS_SHELL;
 use super::commands::is_inside_known_session_folder;
 use super::store::{is_artifact_id, is_canvas_key, is_session_id, ArtifactStore};
+use super::visual_wrapper::{document, Theme};
+use super::visuals::is_visual_id;
 
 pub const SCHEME: &str = "zorvo-artifact";
 const ORIGIN: &str = "zorvo-artifact://localhost/";
@@ -201,6 +203,57 @@ pub fn parse_url(uri: &str) -> Option<(String, String, u32)> {
 /// Zorvo's comment script here, and export must keep writing the stored bytes.
 pub fn served_body(stored: Vec<u8>) -> Vec<u8> {
     stored
+}
+
+/// What a visual's document may do while it is drawn for a PNG: style itself and show `data:`
+/// pictures. No `script-src`, so nothing runs, and `sandbox` with no allowance. Changing this
+/// changes a security boundary: `the_visual_csp_is_exactly` makes that a visible diff.
+pub const VISUAL_CSP: &str =
+    "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox";
+
+const VISUAL_PREFIX: &str = "visual/";
+
+/// Where the hidden drawing view finds a visual, in one theme: a PNG has no page behind it.
+pub fn visual_url(session_id: &str, id: &str, theme: Theme) -> String {
+    let theme = match theme {
+        Theme::Dark => "dark",
+        Theme::Light => "light",
+    };
+    format!("{ORIGIN}{VISUAL_PREFIX}{session_id}/{id}?theme={theme}")
+}
+
+pub fn parse_visual_url(uri: &str) -> Option<(String, String, Theme)> {
+    let rest = uri.strip_prefix(ORIGIN)?.strip_prefix(VISUAL_PREFIX)?;
+    let (path, query) = rest.split_once('?')?;
+    let (session_id, id) = path.split_once('/')?;
+    if !is_session_id(session_id) || !is_visual_id(id) {
+        return None;
+    }
+    let theme = match query {
+        "theme=dark" => Theme::Dark,
+        "theme=light" => Theme::Light,
+        _ => return None,
+    };
+    Some((session_id.to_string(), id.to_string(), theme))
+}
+
+/// Answers the drawing view's request for a visual. Only that view calls this: `respond`, which
+/// every other view of the scheme uses, never serves a visual.
+pub fn respond_visual(store: &ArtifactStore, method: &str, uri: &str) -> Response<Vec<u8>> {
+    if method != "GET" {
+        return not_found();
+    }
+    let Some((session_id, id, theme)) = parse_visual_url(uri) else {
+        return not_found();
+    };
+    let Ok((_, markup)) = store.visual(&session_id, &id) else {
+        return not_found();
+    };
+    canvas_response(
+        "text/html; charset=utf-8",
+        Some(VISUAL_CSP),
+        document(&markup, Some(theme)).into_bytes(),
+    )
 }
 
 fn not_found() -> Response<Vec<u8>> {
@@ -411,6 +464,71 @@ mod tests {
         assert!(PAGE_CSP.ends_with("; sandbox allow-scripts"));
         assert!(!PAGE_CSP.contains("allow-same-origin"));
         assert!(!PAGE_CSP.contains("unsafe-eval"));
+    }
+
+    const VISUAL_SESSION: &str = "session-1794800000000-k3x9a";
+
+    #[test]
+    fn the_visual_csp_is_exactly() {
+        assert_eq!(
+            VISUAL_CSP,
+            "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"
+        );
+        assert!(!VISUAL_CSP.contains("script-src"));
+    }
+
+    #[test]
+    fn a_visual_url_round_trips_and_a_malformed_one_does_not_parse() {
+        let url = visual_url(VISUAL_SESSION, "v-0123456789abcdef", Theme::Light);
+        assert_eq!(
+            parse_visual_url(&url),
+            Some((
+                VISUAL_SESSION.to_string(),
+                "v-0123456789abcdef".to_string(),
+                Theme::Light
+            ))
+        );
+        let base = format!("zorvo-artifact://localhost/visual/{VISUAL_SESSION}");
+        for bad in [
+            format!("{base}/v-0123456789abcdef"),
+            format!("{base}/v-0123456789abcdef?theme=blue"),
+            format!("{base}/nope?theme=dark"),
+            format!("{base}/v-0123456789abcdef/x?theme=dark"),
+            "zorvo-artifact://localhost/visual/../x/v-0123456789abcdef?theme=dark".to_string(),
+        ] {
+            assert_eq!(parse_visual_url(&bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_stored_visual_is_served_as_a_fixed_theme_document_that_cannot_run() {
+        let temp = Temp::new("visual-serve");
+        let store = Arc::new(ArtifactStore::new(temp.0.clone()));
+        let entry = store
+            .put_visual(VISUAL_SESSION, "Flow", b"<svg><rect/></svg>", 1)
+            .unwrap();
+        let url = visual_url(VISUAL_SESSION, &entry.id, Theme::Dark);
+        let response = respond_visual(&store, "GET", &url);
+        assert_eq!(response.status(), 200);
+        assert_eq!(header(&response, "Content-Security-Policy"), VISUAL_CSP);
+        let body = String::from_utf8(response.body().clone()).unwrap();
+        assert!(body.contains("<rect") && body.contains("background: var(--sheet)"));
+        assert!(!body.contains("prefers-color-scheme"));
+        assert_eq!(respond_visual(&store, "POST", &url).status(), 404);
+        let gone = visual_url(VISUAL_SESSION, "v-0000000000000000", Theme::Dark);
+        assert_eq!(respond_visual(&store, "GET", &gone).status(), 404);
+    }
+
+    #[test]
+    fn the_shared_views_never_serve_a_visual() {
+        let temp = Temp::new("visual-shared");
+        let store = Arc::new(ArtifactStore::new(temp.0.clone()));
+        let entry = store
+            .put_visual(VISUAL_SESSION, "Flow", b"<p>a</p>", 1)
+            .unwrap();
+        let url = visual_url(VISUAL_SESSION, &entry.id, Theme::Dark);
+        assert_eq!(respond(&served_from(&store), "GET", &url).status(), 404);
+        assert!(!is_allowed_navigation(&url));
     }
 
     #[test]

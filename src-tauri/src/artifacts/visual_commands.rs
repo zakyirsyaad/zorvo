@@ -7,9 +7,17 @@ use std::sync::Arc;
 use serde::Serialize;
 use tauri::{AppHandle, State};
 
+use tauri_plugin_dialog::DialogExt;
+
 use super::commands::{changed, now_ms};
+use super::protocol::Served;
+use super::render::snapshot_visual_png;
 use super::source::{read_visual_source, temp_roots};
 use super::store::{is_session_id, ArtifactStore};
+use super::visual_export::{
+    checked_size, copy_png, export_name, offered, theme_of, Format, VISUAL_COPY_FAILED,
+    VISUAL_EXPORT_FAILED,
+};
 use super::visual_wrapper::document;
 use super::visuals::{
     VisualEntry, MAX_VISUAL_BYTES, VISUAL_FAILED, VISUAL_ONE_SOURCE, VISUAL_TOO_LARGE,
@@ -114,6 +122,90 @@ pub fn visual_sweep(
     keep: Vec<String>,
 ) -> Result<usize, String> {
     artifacts.keep_visuals(&session_id, &keep, now_ms())
+}
+
+/// What a save or a copy needs: the visual, and for a picture its size and theme.
+fn picture(
+    app: &AppHandle,
+    served: &Arc<Served>,
+    session_id: &str,
+    id: &str,
+    width: u32,
+    height: u32,
+    theme: &str,
+) -> Option<Vec<u8>> {
+    let (width, height) = checked_size(width, height)?;
+    let theme = theme_of(theme)?;
+    snapshot_visual_png(
+        app,
+        Arc::clone(served),
+        session_id,
+        id,
+        theme,
+        width,
+        height,
+    )
+    .ok()
+}
+
+/// Saves a visual where the user chooses: its stored markup (`svg`), that markup in Zorvo's
+/// wrapper (`html`), or a picture (`png`). `false` when the dialog is cancelled.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn visual_export(
+    app: AppHandle,
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    served: State<'_, Arc<Served>>,
+    session_id: String,
+    id: String,
+    format: String,
+    width: u32,
+    height: u32,
+    theme: String,
+) -> Result<bool, String> {
+    let failed = || VISUAL_EXPORT_FAILED.to_string();
+    let (entry, markup) = artifacts.visual(&session_id, &id)?;
+    let format = Format::parse(&format)
+        .filter(|format| offered(entry.kind).contains(format))
+        .ok_or_else(failed)?;
+    let chosen = app
+        .dialog()
+        .file()
+        .set_file_name(export_name(&entry.title, format))
+        .add_filter(format.extension().to_uppercase(), &[format.extension()])
+        .blocking_save_file();
+    let Some(chosen) = chosen else {
+        return Ok(false);
+    };
+    let bytes = match format {
+        Format::Svg => markup.into_bytes(),
+        Format::Html => document(&markup, None).into_bytes(),
+        Format::Png => {
+            picture(&app, &served, &session_id, &id, width, height, &theme).ok_or_else(failed)?
+        }
+    };
+    let destination = chosen.into_path().map_err(|_| failed())?;
+    std::fs::write(destination, bytes).map_err(|_| failed())?;
+    Ok(true)
+}
+
+/// Puts a picture of a visual on the clipboard.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn visual_copy_image(
+    app: AppHandle,
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    served: State<'_, Arc<Served>>,
+    session_id: String,
+    id: String,
+    width: u32,
+    height: u32,
+    theme: String,
+) -> Result<(), String> {
+    artifacts.visual(&session_id, &id)?;
+    let png = picture(&app, &served, &session_id, &id, width, height, &theme)
+        .ok_or_else(|| VISUAL_COPY_FAILED.to_string())?;
+    copy_png(&app, png)
 }
 
 #[cfg(test)]

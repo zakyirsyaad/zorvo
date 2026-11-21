@@ -14,6 +14,7 @@ pub mod store;
 pub mod view;
 pub mod visual_clean;
 pub mod visual_commands;
+pub mod visual_export;
 pub mod visual_wrapper;
 pub mod visuals;
 

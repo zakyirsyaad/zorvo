@@ -78,7 +78,8 @@ describe("SessionRow", () => {
 
     const { row: plainRow } = renderRow(without, { pullRequestOf });
     expect(within(plainRow).queryByRole("img", { name: /^Pull request/ })).toBeNull();
-    expect(within(plainRow).getByText(/ago|h$/)).toBeInTheDocument();
+    // Two hours back is "Yesterday" when the test runs before 02:00.
+    expect(within(plainRow).getByText(/ago|h$|^Yesterday$/)).toBeInTheDocument();
   });
 
   it("shows the whole line a shortened name was cut from on hover, but a name you gave as you gave it", () => {

@@ -7,6 +7,7 @@ import { MessageActionBar } from "../MessageActionBar";
 import { UserMessageBar } from "./UserMessageBar";
 import { AttachmentChips } from "../composer/AttachmentChips";
 import { ToolsPart } from "./ToolsPart";
+import { VisualBlock } from "./VisualBlock";
 import { ToolDetails } from "./ToolDetails";
 import { shownTools, stepsOf } from "../../lib/task-view";
 import { PlanUpdatedRow, ThinkingBlock } from "./ReplyExtras";
@@ -64,6 +65,8 @@ export interface MessageRowProps {
   /** A window with no overview card (a popout) shows a subagent's steps under the reply's tools. */
   showSubagentSteps?: boolean;
   /** True when the message arrived while its chat was on screen: it fades in once. */
+  /** The session whose inline visuals this row may read. Absent in a popout, which shows their titles only. */
+  visualSessionId?: string;
   appears?: boolean;
   /** True when its permission or input card arrived on screen after the message itself: the card fades in once. */
   cardAppears?: boolean;
@@ -117,6 +120,7 @@ export const MessageRow = memo(function MessageRow({
   privateModelId,
   privateModel,
   showSubagentSteps = false,
+  visualSessionId,
   appears = false,
   cardAppears = false,
 }: MessageRowProps) {
@@ -155,7 +159,9 @@ export const MessageRow = memo(function MessageRow({
         <div className="space-y-4">
           {parts.map((part, index) => {
             if (part.kind === "text") return <MarkdownRenderer key={index} content={part.text} />;
-            if (part.kind === "visual") return null;
+            if (part.kind === "visual") {
+              return <VisualBlock key={part.id} sessionId={visualSessionId} part={part} agentName={agentName} isArriving={isCurrentTurn && !message.isComplete} />;
+            }
             const listed = shownTools(part.toolIds.flatMap((id) => toolsById.get(id) ?? []));
             if (listed.length === 0) return null;
             // Every tool, a subagent included, is a plain row here, so what it returned can still be read in

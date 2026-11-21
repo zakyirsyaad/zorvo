@@ -2037,6 +2037,7 @@ export default function App() {
                   ) : activeSession && (currentMessages.length > 0 || isSessionBusy(activeSessionId) || activeSession.historyElsewhere) ? (
                     <ChatCanvas
                       conversationId={activeSessionId}
+                      visualSessionId={activeSessionId ?? undefined}
                       messages={currentMessages}
                       jumpTo={chatJump}
                       onJumped={() => setChatJump(null)}

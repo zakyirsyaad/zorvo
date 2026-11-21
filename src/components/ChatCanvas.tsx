@@ -45,6 +45,8 @@ export interface ChatCanvasProps {
   onJumped?: () => void;
   /** Display name of the agent behind this conversation, e.g. "Claude Code". */
   agentName?: string;
+  /** The session on screen, so a reply can read its inline visuals. Absent in a popout. */
+  visualSessionId?: string;
   /** The agent's id, for its logo over each reply. */
   agentProfileId?: string;
   onForkBranch?: (messageId: string) => void;
@@ -113,6 +115,7 @@ export function ChatCanvas({
   jumpTo,
   onJumped,
   agentName = DEFAULT_AGENT_NAME,
+  visualSessionId,
   agentProfileId,
   onForkBranch,
   onChooseOption,
@@ -276,6 +279,7 @@ export function ChatCanvas({
           message={msg}
           agentName={agentName}
           agentProfileId={agentProfileId}
+          visualSessionId={visualSessionId}
           isLast={msg === lastMessage}
           isCurrentTurn={msg.role === "agent" && index >= currentTurnStartsAt}
           showActions={msg.role !== "user" && index < runningTurnStartsAt}

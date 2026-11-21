@@ -1,14 +1,20 @@
 import { describe, expect, test } from 'vitest';
 import {
   MAX_AT_WORK,
+  atWorkCount,
   WORKER_CLOSE_MS,
+  cleanFiles,
+  cleanSummary,
   WORKER_FILES_MAX,
   WORKER_SUMMARY_MAX,
   isReportOwed,
+  issuedWorkerHandles,
   nextWorkerHandle,
   owedWorkersOf,
   startRefusal,
   toolsRoleOf,
+  withLinkChange,
+  cleanReason,
   withNewTask,
   withOutcome,
   withReported,
@@ -16,8 +22,14 @@ import {
   workerByHandle,
   workerHandleOf,
   workerStateOf,
+  workerStateWord,
+  workersReportMessage,
+  WORKERS_REPORT_FRAMING,
+  MAX_REPORT_WORKERS,
+  type WorkerReportEntry,
 } from '../lib/workers';
-import type { DelegationLink, Session } from '../types';
+import { MAX_REPORT_CHARS } from '../lib/delegation';
+import type { DelegationLink, PersistedState, Session } from '../types';
 
 const link: DelegationLink = { sessionId: 'a', task: 't', startedAt: 100 };
 const idle = { isBusy: false, isWaiting: false };
@@ -64,15 +76,47 @@ describe('workerStateOf', () => {
 });
 
 describe('link updates', () => {
-  test('a turn end keeps an outcome reported inside that turn only', () => {
+  test('a turn end drops an outcome that was already reported, and keeps one that was not', () => {
     const reported = {
       ...link,
       lastTurn: { endedAt: 300, how: 'finished' as const },
       outcome: { result: 'succeeded' as const, at: 250 },
+      reportedAt: 350,
     };
     expect(withTurnEnd(reported, { how: 'finished', at: 500 }).outcome).toBeNull();
     expect(withTurnEnd({ ...link, outcome: { result: 'failed', at: 150 } }, { how: 'finished', at: 200 }).outcome?.result).toBe('failed');
     expect(withTurnEnd({ ...link, outcome: { result: 'succeeded', at: 150 } }, { how: 'cancelled', at: 200 }).outcome).toBeNull();
+  });
+  test('an outcome that was never reported survives a later finished turn', () => {
+    const unreported = {
+      ...link,
+      lastTurn: { endedAt: 300, how: 'finished' as const },
+      outcome: { result: 'succeeded' as const, at: 250, summary: 'Fixed' },
+    };
+    const next = withTurnEnd(unreported, { how: 'finished', at: 500 });
+    expect(next.outcome).toMatchObject({ summary: 'Fixed' });
+    expect(workerStateOf({ link: next, isBusy: false, isWaiting: false })).toBe('succeeded');
+  });
+  test('a reported outcome is dropped by a later turn end without a new done', () => {
+    const reported = {
+      ...link,
+      lastTurn: { endedAt: 300, how: 'finished' as const },
+      outcome: { result: 'succeeded' as const, at: 250 },
+      reportedAt: 320,
+    };
+    const next = withTurnEnd(reported, { how: 'finished', at: 500 });
+    expect(next.outcome).toBeNull();
+    expect(workerStateOf({ link: next, isBusy: false, isWaiting: false })).toBe('did-not-report');
+  });
+  test('reported, a follow-up task and a new done keep the new outcome', () => {
+    const reported = {
+      ...link,
+      lastTurn: { endedAt: 300, how: 'finished' as const },
+      outcome: { result: 'succeeded' as const, at: 250 },
+      reportedAt: 320,
+    };
+    const again = withOutcome(withNewTask(reported, 'next', 400), { result: 'failed', at: 450, summary: 'No' });
+    expect(withTurnEnd(again, { how: 'finished', at: 500 }).outcome).toMatchObject({ result: 'failed', summary: 'No' });
   });
   test('a turn end records how it ended and does not change the link it was given', () => {
     const next = withTurnEnd(link, { how: 'failed', at: 200, reason: 'boom' });
@@ -159,6 +203,13 @@ describe('toolsRoleOf', () => {
   test('a fork of a worker gets no tools', () => {
     expect(toolsRoleOf({ forkedFrom: 'w' }, [{ id: 'w', delegatedFrom: link }])).toBeNull();
   });
+  test('a fork of a fork of a session with no role stays without one', () => {
+    const sessions = [
+      { id: 'w', delegatedFrom: link },
+      { id: 'f1', forkedFrom: 'w' },
+    ];
+    expect(toolsRoleOf({ forkedFrom: 'f1' }, sessions)).toBeNull();
+  });
   test('a fork of a handoff or compare-run session gets no tools', () => {
     expect(toolsRoleOf({ forkedFrom: 'o' }, [{ id: 'o', openedBy: { sessionId: 'a', at: 1 } }])).toBeNull();
     expect(toolsRoleOf({ forkedFrom: 'c' }, [{ id: 'c', compareRunId: 'r' }])).toBeNull();
@@ -170,5 +221,367 @@ describe('toolsRoleOf', () => {
   test('a loop of forks ends', () => {
     const sessions = [{ id: 'x', forkedFrom: 'y' }, { id: 'y', forkedFrom: 'x' }];
     expect(toolsRoleOf({ forkedFrom: 'x' }, sessions)).toBe('coordinator');
+  });
+});
+
+describe('atWorkCount', () => {
+  const worker = (id: string, from: string) =>
+    session({ id, delegatedFrom: { sessionId: from, task: 't', startedAt: 100 } });
+  const opened = (id: string, from: string) => session({ id, openedBy: { sessionId: from, at: 2 } });
+
+  test('workers and opened sessions count together', () => {
+    const sessions = [worker('w1', 'a'), worker('w2', 'a'), opened('o1', 'a'), worker('w3', 'other')];
+    expect(
+      atWorkCount({
+        coordinatorId: 'a',
+        sessions,
+        isBusy: (id) => id !== 'w2',
+        isWaiting: () => false,
+        underWay: 1,
+      }),
+    ).toBe(3);
+  });
+
+  test('a session that waits counts, an archived opened one does not', () => {
+    const sessions = [opened('o1', 'a'), session({ id: 'o2', openedBy: { sessionId: 'a', at: 2 }, archivedAt: 5 })];
+    const count = atWorkCount({
+      coordinatorId: 'a',
+      sessions,
+      isBusy: () => true,
+      isWaiting: (id) => id === 'o1',
+      underWay: 0,
+    });
+    expect(count).toBe(1);
+  });
+});
+
+describe('issuedWorkerHandles', () => {
+  const owned = (id: string, handle: string | undefined, overrides: Partial<Session> = {}) =>
+    session({ id, delegatedFrom: { ...link, ...(handle !== undefined ? { handle } : {}) }, ...overrides });
+
+  test('lists the handles of open, ended and archived workers of the coordinator', () => {
+    const sessions = [
+      owned('w1', 'worker-1'),
+      owned('w2', 'worker-2', { delegatedFrom: { ...link, handle: 'worker-2', endedAt: 9 } }),
+      owned('w3', 'worker-3', { archivedAt: 5 }),
+    ];
+    expect(issuedWorkerHandles('a', sessions)).toEqual(['worker-1', 'worker-2', 'worker-3']);
+  });
+
+  test('leaves out other coordinators, links with no handle and sessions with no link', () => {
+    const sessions = [
+      owned('w1', 'worker-1', { delegatedFrom: { ...link, sessionId: 'other', handle: 'worker-1' } }),
+      owned('w2', undefined),
+      session({ id: 'plain' }),
+    ];
+    expect(issuedWorkerHandles('a', sessions)).toEqual([]);
+  });
+});
+
+describe('cleanSummary', () => {
+  test('keeps the line breaks of a summary of several lines', () => {
+    const cleaned = cleanSummary('one\ntwo\nthree');
+    expect(cleaned).toBe('one\ntwo\nthree');
+    expect(cleaned).not.toContain('\\u000A');
+  });
+
+  test('turns \\r\\n and \\r into \\n', () => {
+    expect(cleanSummary('a\r\nb\rc')).toBe('a\nb\nc');
+  });
+
+  test('cuts the raw text and keeps a whole emoji last', () => {
+    const cleaned = cleanSummary('a'.repeat(1999) + '\u{1F600}\u{1F600}');
+    expect([...cleaned]).toHaveLength(WORKER_SUMMARY_MAX);
+    expect([...cleaned].at(-1)).toBe('\u{1F600}');
+  });
+
+  test('stores control characters raw and cuts by their count', () => {
+    expect(cleanSummary('\u0001'.repeat(WORKER_SUMMARY_MAX + 5))).toBe('\u0001'.repeat(WORKER_SUMMARY_MAX));
+  });
+
+  test('stores a bidi control character as itself', () => {
+    expect(cleanSummary('x\u202Ey')).toBe('x\u202Ey');
+  });
+
+  test('gives an empty string for only white space', () => {
+    expect(cleanSummary(' \n\t \r\n ')).toBe('');
+  });
+});
+
+describe('cleanFiles', () => {
+  test('drops a path with a line break or another control character', () => {
+    expect(cleanFiles(['a\u0007b.ts', 'c\nd.ts', 'e\r.ts', 'ok.ts'])).toEqual(['ok.ts']);
+  });
+
+  test('stores a bidi path raw', () => {
+    expect(cleanFiles(['a\u202Eb.ts'])).toEqual(['a\u202Eb.ts']);
+  });
+
+  test('drops empty entries and trims', () => {
+    expect(cleanFiles([' a.ts ', '  ', ''])).toEqual(['a.ts']);
+  });
+
+  test('keeps at most WORKER_FILES_MAX', () => {
+    const files = Array.from({ length: 60 }, (_, i) => `f${i}.ts`);
+    expect(cleanFiles(files)).toHaveLength(WORKER_FILES_MAX);
+  });
+
+  test('gives undefined when none remain', () => {
+    expect(cleanFiles([])).toBeUndefined();
+    expect(cleanFiles(undefined)).toBeUndefined();
+    expect(cleanFiles([' '])).toBeUndefined();
+  });
+});
+
+describe('withLinkChange', () => {
+  const stateOf = (sessions: Session[]): PersistedState => ({ sessions }) as unknown as PersistedState;
+  const worker = (id: string, own: DelegationLink | null = link) => session({ id, delegatedFrom: own });
+
+  test('the change sees the link the state holds now', () => {
+    const state = stateOf([worker('w', { ...link, task: 'now' })]);
+    let seen: DelegationLink | undefined;
+    withLinkChange(state, 'w', (current) => {
+      seen = current;
+      return current;
+    });
+    expect(seen?.task).toBe('now');
+  });
+
+  test('two changes in sequence compose', () => {
+    const first = withLinkChange(stateOf([worker('w')]), 'w', (current) => ({ ...current, endedAt: 7 }));
+    const second = withLinkChange(first, 'w', (current) => withOutcome(current, { result: 'failed', at: 8, summary: 's' }));
+    const result = second.sessions[0].delegatedFrom;
+    expect(result?.endedAt).toBe(7);
+    expect(result?.outcome?.result).toBe('failed');
+  });
+
+  test('a session with no link is untouched', () => {
+    const state = stateOf([worker('w', null), session({ id: 'x' })]);
+    expect(withLinkChange(state, 'w', (current) => ({ ...current, endedAt: 1 }))).toBe(state);
+    expect(withLinkChange(state, 'x', (current) => ({ ...current, endedAt: 1 }))).toBe(state);
+  });
+
+  test('an unknown id changes nothing and returns the same state', () => {
+    const state = stateOf([worker('w')]);
+    expect(withLinkChange(state, 'nope', (current) => ({ ...current, endedAt: 1 }))).toBe(state);
+  });
+
+  test('other sessions are returned unchanged', () => {
+    const other = worker('o');
+    const next = withLinkChange(stateOf([worker('w'), other]), 'w', (current) => ({ ...current, endedAt: 1 }));
+    expect(next.sessions[1]).toBe(other);
+  });
+});
+
+describe('withNewTask since', () => {
+  test('an outcome recorded after the task went out stays, one in the same millisecond is the previous task\'s', () => {
+    const answered = { ...link, outcome: { result: 'succeeded' as const, at: 50, summary: 's' } };
+    expect(withNewTask(answered, 'next', 49).outcome).toEqual(answered.outcome);
+    expect(withNewTask(answered, 'next', 50).outcome).toBeNull();
+    expect(withNewTask(answered, 'next').outcome).toBeNull();
+  });
+});
+
+describe('cleanReason', () => {
+  test('a multi-line error becomes one line', () => {
+    expect(cleanReason('  fetch failed\n\r\n   at  x\t y ')).toBe('fetch failed at x y');
+  });
+  test('a bidi override is spelled out', () => {
+    expect(cleanReason('a\u202Eb')).toBe('a\\u202Eb');
+  });
+  test('is cut to 300 code points with no lone surrogate', () => {
+    const cut = cleanReason('x'.repeat(290) + '😀'.repeat(110));
+    expect(Array.from(cut)).toHaveLength(300);
+    expect(cut.endsWith('😀')).toBe(true);
+    expect(cut).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+  test('empty or white space gives an empty string', () => {
+    expect(cleanReason('')).toBe('');
+    expect(cleanReason(' \n\t ')).toBe('');
+  });
+});
+
+describe('workerStateWord', () => {
+  test.each([
+    ['succeeded', 'Succeeded'],
+    ['failed', 'Failed'],
+    ['did-not-report', 'Did not report'],
+    ['errored', 'Stopped on an error'],
+    ['stopped', 'Stopped'],
+    ['gone', 'Gone'],
+  ] as const)('%s reads %s', (state, word) => {
+    expect(workerStateWord(state)).toBe(word);
+  });
+});
+
+describe('workersReportMessage', () => {
+  const entry = (extra: Partial<WorkerReportEntry>): WorkerReportEntry => ({
+    handle: 'worker-1',
+    agentName: 'Qwen Code',
+    agentId: 'qwen',
+    task: 'Review the login fix',
+    state: 'succeeded',
+    files: [],
+    ...extra,
+  });
+
+  test('one message holds every report under one framing line', () => {
+    const text = workersReportMessage([
+      entry({ summary: 'Found one unhandled 401.', files: ['src/auth/refresh.ts'] }),
+      entry({ handle: 'worker-3', task: 'Update the docs', state: 'stopped' }),
+    ]);
+    expect(text.split('\n')[0]).toBe(WORKERS_REPORT_FRAMING);
+    expect(text.split('\n')[1]).toBe('');
+    expect(text).toContain(
+      'worker-1 (Qwen Code), "Review the login fix": succeeded\n> Found one unhandled 401.\nFiles: src/auth/refresh.ts',
+    );
+    expect(text).toContain('Files: src/auth/refresh.ts\n\nworker-3 (Qwen Code), "Update the docs": stopped before it finished');
+  });
+
+  test.each([
+    ['did-not-report', { answer: 'All done.' }, 'ended its turn without reporting. Its last answer:\n> All done.'],
+    ['did-not-report', {}, 'ended its turn without reporting, and left no written answer.'],
+    ['did-not-report', { answer: '' }, 'ended its turn without reporting, and left no written answer.'],
+    ['errored', { reason: 'The agent hit a rate limit.' }, 'stopped on an error.\nIts error:\n> The agent hit a rate limit.'],
+    ['errored', {}, 'stopped on an error.'],
+    ['gone', {}, 'is gone: its agent exited. Start a new worker to continue.'],
+    ['failed', { summary: 'Tests still fail.' }, 'failed\n> Tests still fail.'],
+    ['failed', {}, 'failed'],
+  ] as const)('a %s worker reads as written', (state, extra, expected) => {
+    const text = workersReportMessage([entry({ state, ...extra })]);
+    expect(text).toBe(`${WORKERS_REPORT_FRAMING}\n\nworker-1 (Qwen Code), "Review the login fix": ${expected}`);
+  });
+
+  test('a working or waiting worker is skipped', () => {
+    const text = workersReportMessage([entry({ state: 'working' }), entry({ handle: 'worker-2', state: 'needs-you' })]);
+    expect(text).toBe(WORKERS_REPORT_FRAMING);
+  });
+
+  test('every line of a quote is prefixed', () => {
+    const text = workersReportMessage([entry({ summary: 'one\n\nthree' })]);
+    expect(text).toContain('succeeded\n> one\n> \n> three');
+  });
+
+  test('control and bidi characters are spelled out in every field', () => {
+    const text = workersReportMessage([
+      entry({
+        handle: 'w\u202E1',
+        agentName: 'Q\u0007',
+        task: 'a\u202Eb\nc',
+        summary: 'x\u202Ey',
+        files: ['f\u202E.ts'],
+        reason: 'r',
+      }),
+    ]);
+    expect(text.includes('\u202E') || text.includes('\u0007')).toBe(false);
+    expect(text).toContain('w\\u202E1 (Q\\u0007), "a\\u202Eb c": succeeded\n> x\\u202Ey\nFiles: f\\u202E.ts');
+  });
+
+  test('a long task is one line cut at 200 code points with an ellipsis', () => {
+    const text = workersReportMessage([entry({ task: 'a'.repeat(300) })]);
+    expect(text).toContain(`"${'a'.repeat(200)}…": succeeded`);
+  });
+
+  test('a worker in its own folder has a Folder line under its first line', () => {
+    const text = workersReportMessage([entry({ summary: 'ok', folder: '/w/tree', files: ['a.ts', 'b.ts'] })]);
+    expect(text).toContain(
+      'worker-1 (Qwen Code), "Review the login fix": succeeded\nFolder: /w/tree\n> ok\nFiles: a.ts, b.ts',
+    );
+  });
+
+  test('three long answers are each cut with a note and every worker stays in', () => {
+    const entries = [1, 2, 3].map((n) =>
+      entry({ handle: `worker-${n}`, state: 'did-not-report', answer: 'z'.repeat(15_000) }),
+    );
+    const text = workersReportMessage(entries);
+    expect([...text].length).toBeLessThanOrEqual(MAX_REPORT_CHARS);
+    for (const n of [1, 2, 3]) {
+      expect(text).toContain(`worker-${n} (Qwen Code), "Review the login fix": ended its turn without reporting. Its last answer:`);
+    }
+    expect(text.split('(cut; the full text is in that worker\'s session)')).toHaveLength(4);
+  });
+
+  test('the cut note follows a cut quote on its own line, directly', () => {
+    const text = workersReportMessage([entry({ state: 'did-not-report', answer: 'q'.repeat(25_000) })]);
+    expect(text.endsWith(`\n(cut; the full text is in that worker's session)`)).toBe(true);
+    expect([...text].length).toBeLessThanOrEqual(MAX_REPORT_CHARS);
+  });
+
+  test('a cut never leaves a partial escape or a dangling backslash before the note', () => {
+    for (let pad = 0; pad < 10; pad += 1) {
+      const text = workersReportMessage([
+        entry({ state: 'did-not-report', answer: 'a'.repeat(pad) + '\u0001'.repeat(25_000) }),
+      ]);
+      const [, tail] = text.split('\n> ');
+      expect(text).toContain('(cut;');
+      expect(tail).toMatch(/(\\u[0-9A-F]{4})*\n\(cut;/);
+      expect(text).not.toMatch(/\\(u[0-9A-F]{0,3})?\n\(cut;/);
+    }
+  });
+
+  test('astral characters never leave a lone surrogate at any cut', () => {
+    for (let pad = 0; pad < 4; pad += 1) {
+      const text = workersReportMessage([
+        entry({ task: '\u{1F600}'.repeat(250), state: 'did-not-report', answer: 'a'.repeat(pad) + '\u{1F600}'.repeat(25_000), folder: '\u{1F600}'.repeat(400) }),
+      ]);
+      expect(text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+    }
+  });
+
+  test('a short quote keeps its length and a long one takes the rest', () => {
+    const text = workersReportMessage([
+      entry({ state: 'did-not-report', answer: 'x'.repeat(30_000) }),
+      entry({ handle: 'worker-2', summary: 'ok' }),
+    ]);
+    expect(text).toContain('succeeded\n> ok');
+    expect([...text].length).toBeGreaterThan(15_000);
+    expect([...text].length).toBeLessThanOrEqual(MAX_REPORT_CHARS);
+  });
+
+  test('a long file list keeps whole paths and says how many more', () => {
+    const files = Array.from({ length: 10 }, () => 'p'.repeat(400));
+    const line = workersReportMessage([entry({ files })]).split('\n').find((l) => l.startsWith('Files: ')) ?? '';
+    expect(line).toBe(`Files: ${[files[0], files[1]].join(', ')} and 8 more`);
+  });
+
+  test('a single path over the cap is cut and still named', () => {
+    const line = workersReportMessage([entry({ files: ['z'.repeat(5_000), 'b'] })]).split('\n').find((l) => l.startsWith('Files: ')) ?? '';
+    expect(line.endsWith(' and 1 more')).toBe(true);
+    expect([...line.slice(7)].length).toBe(1_000);
+  });
+
+  test('a folder is cut at 300 code points', () => {
+    const text = workersReportMessage([entry({ folder: 'f'.repeat(500) })]);
+    expect(text).toContain(`Folder: ${'f'.repeat(300)}…`);
+  });
+
+  test('a worker with ten long file lists no longer hides the next worker', () => {
+    const files = Array.from({ length: 10 }, () => 'p'.repeat(4_004));
+    const text = workersReportMessage([
+      entry({ summary: 'ok', files }),
+      entry({ handle: 'worker-2', state: 'failed', summary: 'BAD' }),
+    ]);
+    expect(text).toContain('worker-2 (Qwen Code), "Review the login fix": failed\n> BAD');
+  });
+
+  test('more than MAX_REPORT_WORKERS long entries drop whole trailing ones, with a last line', () => {
+    expect(MAX_REPORT_WORKERS).toBe(8);
+    const entries = Array.from({ length: 20 }, (_, i) =>
+      entry({ handle: `worker-${i + 1}`, task: 't'.repeat(200), folder: 'f'.repeat(300), files: Array.from({ length: 5 }, () => 'p'.repeat(250)), summary: 'ok' }),
+    );
+    const text = workersReportMessage(entries);
+    expect([...text].length).toBeLessThanOrEqual(MAX_REPORT_CHARS);
+    const match = /\n\n(\d+) more workers ended; their reports did not fit\.$/.exec(text);
+    expect(match).not.toBeNull();
+    const shown = 20 - Number(match?.[1]);
+    expect(shown).toBeGreaterThan(0);
+    expect(text).toContain(`worker-${shown} (`);
+    expect(text).not.toContain(`worker-${shown + 1} (`);
+    expect(text).toMatch(/Files: [^\n]*\n\n(worker-|\d+ more)/);
+  });
+
+  test('an answer that fits is not cut', () => {
+    const text = workersReportMessage([entry({ state: 'did-not-report', answer: 'short' })]);
+    expect(text).not.toContain('(cut;');
   });
 });

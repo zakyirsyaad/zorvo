@@ -8,6 +8,7 @@ import { toListedSessions, type ListedSessions } from '../lib/session-list';
 import { unavailableChoiceReason } from '../lib/qwen-workflow-mode';
 import type { ContextUsage, ElicitationAnswer, ElicitationCard, SlashCommand } from '../types';
 import { withTurnPoint } from '../lib/context-usage';
+import type { ToolsRole } from '../lib/workers';
 
 /** The one event channel the backend emits ACP traffic on. */
 export const ACP_EVENT = 'acp-event';
@@ -323,7 +324,7 @@ export function useAcpSessions(handlers: AcpHandlers) {
       sessionId: string,
       cwd: string,
       profileId: string,
-      agentTools: boolean,
+      tools: ToolsRole | null,
       privateModelId?: string,
       privateOwnKey = false,
       privateSessionCap?: number,
@@ -334,7 +335,8 @@ export function useAcpSessions(handlers: AcpHandlers) {
           sessionId,
           cwd,
           profileId,
-          agentTools,
+          agentTools: tools !== null,
+          workerTools: tools === 'worker',
           // An ordinary launch carries none of the private keys.
           ...(privateModelId !== undefined ? { privateModelId } : {}),
           ...(privateModelId !== undefined && privateOwnKey ? { privateOwnKey: true } : {}),
@@ -351,7 +353,7 @@ export function useAcpSessions(handlers: AcpHandlers) {
       cwd: string,
       profileId: string,
       acpSessionId: string,
-      agentTools: boolean,
+      tools: ToolsRole | null,
       privateModelId?: string,
       privateOwnKey = false,
       privateSessionCap?: number,
@@ -363,7 +365,8 @@ export function useAcpSessions(handlers: AcpHandlers) {
           cwd,
           profileId,
           acpSessionId,
-          agentTools,
+          agentTools: tools !== null,
+          workerTools: tools === 'worker',
           // An ordinary launch carries none of the private keys.
           ...(privateModelId !== undefined ? { privateModelId } : {}),
           ...(privateModelId !== undefined && privateOwnKey ? { privateOwnKey: true } : {}),

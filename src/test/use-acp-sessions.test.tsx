@@ -112,10 +112,10 @@ describe("useAcpSessions", () => {
 
     let started: unknown;
     await act(async () => {
-      started = await result.current.start("s-1", "/w", "qwen", true);
+      started = await result.current.start("s-1", "/w", "qwen", "coordinator");
     });
 
-    expect(spy).toHaveBeenCalledWith("acp_start_session", { sessionId: "s-1", cwd: "/w", profileId: "qwen", agentTools: true }, undefined);
+    expect(spy).toHaveBeenCalledWith("acp_start_session", { sessionId: "s-1", cwd: "/w", profileId: "qwen", agentTools: true, workerTools: false }, undefined);
     expect(started).toMatchObject({ acpSessionId: "acp-1" });
     expect(result.current.info["s-1"].modes?.currentModeId).toBe("yolo");
     expect(result.current.info["s-1"].configOptions?.[0].currentValue).toBe("qwen-max");
@@ -137,8 +137,8 @@ describe("useAcpSessions", () => {
 
     await act(async () => {
       await Promise.all([
-        result.current.start("s-1", "/w", "qwen", true),
-        result.current.reopen("s-2", "/w", "qwen", "acp-2", true),
+        result.current.start("s-1", "/w", "qwen", "coordinator"),
+        result.current.reopen("s-2", "/w", "qwen", "acp-2", "coordinator"),
         result.current.importSession("s-3", "/w", "qwen", "acp-3", true),
         result.current.fork("s-1", "s-4", "/w", true),
       ]);
@@ -160,7 +160,7 @@ describe("useAcpSessions", () => {
     const h = handlers();
     const { result } = renderHook(() => useAcpSessions(h));
     await act(async () => {
-      await result.current.start("s-1", "/w", "qwen", true);
+      await result.current.start("s-1", "/w", "qwen", "coordinator");
     });
 
     await act(async () => {
@@ -180,7 +180,7 @@ describe("useAcpSessions", () => {
     });
     const { result } = renderHook(() => useAcpSessions(handlers()));
     await act(async () => {
-      await result.current.start("s-1", "/w", "qwen", true);
+      await result.current.start("s-1", "/w", "qwen", "coordinator");
     });
     expect(result.current.busySinceOf("s-1")).toBeUndefined();
 
@@ -223,7 +223,7 @@ describe("useAcpSessions", () => {
     });
     const { result } = renderHook(() => useAcpSessions(handlers()));
     await act(async () => {
-      await result.current.start("s-1", "/w", "qwen", true);
+      await result.current.start("s-1", "/w", "qwen", "coordinator");
     });
 
     await act(async () => {
@@ -250,7 +250,7 @@ describe("useAcpSessions", () => {
     });
     const { result } = renderHook(() => useAcpSessions(handlers()));
     await act(async () => {
-      await result.current.start("s-1", "/work", "gemini", true);
+      await result.current.start("s-1", "/work", "gemini", "coordinator");
     });
     expect(result.current.info["s-1"].models?.currentModelId).toBe("auto");
 
@@ -270,7 +270,7 @@ describe("useAcpSessions", () => {
     });
     const { result } = renderHook(() => useAcpSessions(handlers()));
     await act(async () => {
-      await result.current.start("s-1", "/work", "gemini", true);
+      await result.current.start("s-1", "/work", "gemini", "coordinator");
     });
 
     await act(async () => {
@@ -288,7 +288,7 @@ describe("useAcpSessions", () => {
     });
     const { result } = renderHook(() => useAcpSessions(handlers()));
     await act(async () => {
-      await result.current.start("s-1", "/w", "qwen", true);
+      await result.current.start("s-1", "/w", "qwen", "coordinator");
     });
 
     await act(async () => {
@@ -306,7 +306,7 @@ describe("useAcpSessions", () => {
     const { result } = renderHook(() => useAcpSessions(handlers()));
 
     await act(async () => {
-      await result.current.start("s-1", "/w", "qwen", true);
+      await result.current.start("s-1", "/w", "qwen", "coordinator");
     });
 
     expect(result.current.info["s-1"].modes).toBeNull();
@@ -330,9 +330,9 @@ describe("useAcpSessions", () => {
     const { result } = renderHook(() => useAcpSessions(handlers()));
 
     await act(async () => {
-      await result.current.start("load", "/w", "qwen", true);
-      await result.current.start("resume", "/w", "qwen", true);
-      await result.current.start("none", "/w", "qwen", true);
+      await result.current.start("load", "/w", "qwen", "coordinator");
+      await result.current.start("resume", "/w", "qwen", "coordinator");
+      await result.current.start("none", "/w", "qwen", "coordinator");
     });
 
     expect(result.current.info["load"].canReopen).toBe(true);
@@ -352,7 +352,7 @@ describe("useAcpSessions", () => {
     const { result } = renderHook(() => useAcpSessions(handlers()));
 
     await act(async () => {
-      await result.current.reopen("s-1", "/w", "qwen", "acp-1", true);
+      await result.current.reopen("s-1", "/w", "qwen", "acp-1", "coordinator");
     });
 
     expect(result.current.info["s-1"].reopenedWith).toBe("resume");
@@ -366,14 +366,14 @@ describe("useAcpSessions", () => {
     const { result } = renderHook(() => useAcpSessions(handlers()));
 
     await act(async () => {
-      await result.current.start("s-1", "/w", "qwen-code", false, "Qwen/Qwen3.8-27B");
-      await result.current.reopen("s-2", "/w", "qwen-code", "acp-2", false, "Qwen/Qwen3.8-27B");
-      await result.current.start("s-3", "/w", "qwen-code", false);
-      await result.current.reopen("s-4", "/w", "qwen-code", "acp-4", false);
-      await result.current.start("s-5", "/w", "qwen-code", false, "Qwen/Qwen3.8-27B", true);
-      await result.current.reopen("s-6", "/w", "qwen-code", "acp-6", false, "Qwen/Qwen3.8-27B", true);
-      await result.current.start("s-7", "/w", "qwen-code", false, "Qwen/Qwen3.8-27B", false, 200);
-      await result.current.reopen("s-8", "/w", "qwen-code", "acp-8", false, "Qwen/Qwen3.8-27B", false, 200);
+      await result.current.start("s-1", "/w", "qwen-code", null, "Qwen/Qwen3.8-27B");
+      await result.current.reopen("s-2", "/w", "qwen-code", "acp-2", null, "Qwen/Qwen3.8-27B");
+      await result.current.start("s-3", "/w", "qwen-code", null);
+      await result.current.reopen("s-4", "/w", "qwen-code", "acp-4", null);
+      await result.current.start("s-5", "/w", "qwen-code", null, "Qwen/Qwen3.8-27B", true);
+      await result.current.reopen("s-6", "/w", "qwen-code", "acp-6", null, "Qwen/Qwen3.8-27B", true);
+      await result.current.start("s-7", "/w", "qwen-code", null, "Qwen/Qwen3.8-27B", false, 200);
+      await result.current.reopen("s-8", "/w", "qwen-code", "acp-8", null, "Qwen/Qwen3.8-27B", false, 200);
     });
 
     const argsOf = (cmd: string) =>
@@ -383,6 +383,7 @@ describe("useAcpSessions", () => {
       cwd: "/w",
       profileId: "qwen-code",
       agentTools: false,
+      workerTools: false,
       privateModelId: "Qwen/Qwen3.8-27B",
     });
     expect(argsOf("acp_reopen_session")[0]).toEqual({
@@ -391,6 +392,7 @@ describe("useAcpSessions", () => {
       profileId: "qwen-code",
       acpSessionId: "acp-2",
       agentTools: false,
+      workerTools: false,
       privateModelId: "Qwen/Qwen3.8-27B",
     });
     expect(Object.keys(argsOf("acp_start_session")[1])).not.toContain("privateModelId");
@@ -421,14 +423,14 @@ describe("useAcpSessions", () => {
 
     let listed: unknown;
     await act(async () => {
-      await result.current.reopen("s-1", "/w", "qwen", "acp-1", true);
+      await result.current.reopen("s-1", "/w", "qwen", "acp-1", "coordinator");
       await result.current.importSession("s-2", "/w", "qwen", "acp-2", true);
       listed = await result.current.listSessions("qwen", "/w");
     });
 
     expect(spy).toHaveBeenCalledWith(
       "acp_reopen_session",
-      { sessionId: "s-1", cwd: "/w", profileId: "qwen", acpSessionId: "acp-1", agentTools: true },
+      { sessionId: "s-1", cwd: "/w", profileId: "qwen", acpSessionId: "acp-1", agentTools: true, workerTools: false },
       undefined,
     );
     expect(spy).toHaveBeenCalledWith(

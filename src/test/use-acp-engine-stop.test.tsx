@@ -36,7 +36,7 @@ const emit = (payload: Record<string, unknown>) =>
     listeners.get("acp-event")?.({ payload: { sessionId: "s-1", ...payload } });
   });
 
-function renderEngine({ reportError = vi.fn() }: { reportError?: (message: string) => void } = {}) {
+function renderEngine({ reportError = vi.fn(), onTurnSettled = vi.fn() }: { reportError?: (message: string) => void; onTurnSettled?: (id: string, end: unknown) => void } = {}) {
   let sessions: Session[] = [SESSION];
   let messages: ChatMessage[] = [];
   const hook = renderHook(() =>
@@ -52,6 +52,7 @@ function renderEngine({ reportError = vi.fn() }: { reportError?: (message: strin
       reportError,
       rememberOptions: () => {},
       onAuthRequired: () => {},
+      onTurnSettled,
     }),
   );
   return { ...hook, session: () => sessions[0], messages: () => messages };
@@ -156,5 +157,70 @@ describe("useAcpEngine when Stop is pressed", () => {
 
     expect(ended).toBe(true);
     expect(reportError).not.toHaveBeenCalled();
+  });
+
+  it("settles nothing for an exit that follows Zorvo's own stop", async () => {
+    const onTurnSettled = vi.fn();
+    const engine = renderEngine({ onTurnSettled });
+    await startTurn(engine);
+    await act(async () => {
+      await engine.result.current.stop("s-1");
+    });
+
+    await emit({ kind: "exit", code: 0 });
+    await emit({ kind: "turn-end", stopReason: "cancelled" });
+
+    expect(onTurnSettled).not.toHaveBeenCalled();
+  });
+});
+
+describe("useAcpEngine turn checks and marks", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("says a turn is under way from the moment a prompt is out until it ends", async () => {
+    const engine = renderEngine();
+    expect(engine.result.current.isTurnUnderWay("s-1")).toBe(false);
+    await startTurn(engine);
+    expect(engine.result.current.isTurnUnderWay("s-1")).toBe(true);
+    await emit({ kind: "turn-end", stopReason: "end_turn" });
+    expect(engine.result.current.isTurnUnderWay("s-1")).toBe(false);
+  });
+
+  it("says a turn is under way while a launch opens, before its prompt is written", async () => {
+    const real = tauriInternals().invoke.bind(tauriInternals());
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(tauriInternals(), "invoke").mockImplementation(async (cmd, args) => {
+      if (cmd === "acp_start_session") await held;
+      return real(cmd, args);
+    });
+    const engine = renderEngine();
+    let launching: Promise<boolean> = Promise.resolve(false);
+    await act(async () => {
+      launching = engine.result.current.start(SESSION, { text: "go" });
+      await Promise.resolve();
+    });
+    expect(engine.result.current.isTurnUnderWay("s-1")).toBe(true);
+    await act(async () => {
+      release();
+      await launching;
+    });
+  });
+
+  it("puts the first message's marks on the user message a launch adds", async () => {
+    const engine = renderEngine();
+    await act(async () => {
+      await engine.result.current.start(SESSION, {
+        text: "Also fix the tests",
+        marks: { delegationTask: { agentName: "Claude Code", agentId: "claude-acp" } },
+      });
+    });
+    expect(engine.messages().at(0)).toMatchObject({
+      role: "user",
+      content: "Also fix the tests",
+      delegationTask: { agentName: "Claude Code", agentId: "claude-acp" },
+    });
   });
 });

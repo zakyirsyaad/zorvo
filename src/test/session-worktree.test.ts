@@ -26,6 +26,59 @@ describe("createSessionWorktree", () => {
   });
 });
 
+describe("createSessionWorktree queue", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const made = (title: string) => ({ path: `/w/${title}`, cwd: `/w/${title}`, branch: `agent/${title}`, startCommit: "abc" });
+  const pause = () => new Promise<void>((resolve) => setTimeout(resolve, 10));
+
+  it("makes two worktrees of one repository one after another", async () => {
+    const order: string[] = [];
+    vi.spyOn(tauriInternals(), "invoke").mockImplementation(async (_cmd, args) => {
+      const title = String(args?.title);
+      order.push(`start ${title}`);
+      await pause();
+      order.push(`end ${title}`);
+      return made(title);
+    });
+
+    await Promise.all([createSessionWorktree("/repo-order", "a"), createSessionWorktree("/repo-order", "b")]);
+
+    expect(order).toEqual(["start a", "end a", "start b", "end b"]);
+  });
+
+  it("does not let a failed worktree hold up the next, and gives the caller its own error", async () => {
+    const failure = new Error("locked");
+    vi.spyOn(tauriInternals(), "invoke").mockImplementation(async (_cmd, args) => {
+      if (args?.title === "a") throw failure;
+      return made("b");
+    });
+
+    const [first, second] = await Promise.allSettled([
+      createSessionWorktree("/repo-fail", "a"),
+      createSessionWorktree("/repo-fail", "b"),
+    ]);
+
+    expect(first).toEqual({ status: "rejected", reason: failure });
+    expect(second.status).toBe("fulfilled");
+  });
+
+  it("does not make two repositories wait for each other", async () => {
+    const order: string[] = [];
+    vi.spyOn(tauriInternals(), "invoke").mockImplementation(async (_cmd, args) => {
+      const title = String(args?.title);
+      order.push(`start ${title}`);
+      await pause();
+      order.push(`end ${title}`);
+      return made(title);
+    });
+
+    await Promise.all([createSessionWorktree("/repo-one", "a"), createSessionWorktree("/repo-two", "b")]);
+
+    expect(order.slice(0, 2)).toEqual(["start a", "start b"]);
+  });
+});
+
 describe("attachmentsFor", () => {
   afterEach(() => vi.restoreAllMocks());
 

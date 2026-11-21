@@ -18,7 +18,7 @@ use super::tools::tool_list;
 const NOT_REACHABLE: &str = "Zorvo is not reachable from this shell.";
 const NO_ANSWER: &str = "Zorvo did not answer.";
 const QUOTING_HINT: &str = "Pass the arguments as one JSON object in single quotes, for example: \
-     zorvo tools delegate '{\"agent\":\"qwen-code\",\"task\":\"…\"}'";
+     zorvo tools start_worker '{\"agent\":\"qwen-code\",\"task\":\"…\"}'";
 /// Zorvo answers or closes within its own call timeout; this is slack on top.
 const ANSWER_SLACK: Duration = Duration::from_secs(15);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -31,11 +31,11 @@ const EXIT_USAGE: i32 = 2;
 /// code. Never prints the token.
 pub fn run(args: &[String]) -> i32 {
     let Some((tool, rest)) = args.split_first() else {
-        println!("{}", usage());
+        println!("{}", usage(&served_tools()));
         return EXIT_OK;
     };
     if matches!(tool.as_str(), "--help" | "-h" | "help") {
-        println!("{}", usage());
+        println!("{}", usage(&served_tools()));
         return EXIT_OK;
     }
     let Some(arguments) = parse_arguments(rest) else {
@@ -67,7 +67,7 @@ pub fn is_agent_environment() -> bool {
 /// command is used and returns the exit code. The app must not open then: it
 /// would be a second Zorvo window, started by an agent, that never exits.
 pub fn refuse_app_start() -> i32 {
-    eprintln!("{}", usage());
+    eprintln!("{}", usage(&served_tools()));
     eprintln!(
         "This shell belongs to an agent session, so the app itself does not start here. \
          To start it anyway, unset {SOCKET_VARIABLE}, {TOKEN_VARIABLE} and {TOOLS_VARIABLE} first."
@@ -88,10 +88,22 @@ fn parse_arguments(words: &[String]) -> Option<Value> {
         .filter(Value::is_object)
 }
 
+/// The tools Zorvo lists for this token, or the fixed table when there is no
+/// token, no socket or no answer (so `--help` works outside an agent).
+fn served_tools() -> Value {
+    exchange("tools/list", json!({}))
+        .ok()
+        .and_then(|answer| {
+            let tools = answer["result"]["tools"].clone();
+            tools.is_array().then_some(tools)
+        })
+        .unwrap_or_else(tool_list)
+}
+
 /// The tool names with one example each.
-fn usage() -> String {
+fn usage(tools: &Value) -> String {
     let program = format!("\"${TOOLS_VARIABLE}\" tools");
-    let lines: Vec<String> = tool_list()
+    let lines: Vec<String> = tools
         .as_array()
         .map(|tools| {
             tools
@@ -106,10 +118,14 @@ fn usage() -> String {
 
 fn example_arguments(tool: &str) -> &'static str {
     match tool {
-        "delegate" => r#"'{"agent":"<id>","task":"<what to do>"}'"#,
+        "start_worker" => r#"'{"agent":"<id>","task":"<what to do>","worktree":"new"}'"#,
+        "send" => r#"'{"handle":"<handle>","message":"<the further task>"}'"#,
         "start_session" => r#"'{"agent":"<id>","brief":"<everything the new session must know>"}'"#,
         "read_session" | "stop_session" => r#"'{"handle":"<handle>"}'"#,
         "show_artifact" => r#"'{"path":"<file.html>","title":"<a short name>"}'"#,
+        "done" => {
+            r#"'{"outcome":"succeeded","summary":"<what you did, found and left>","files":["<path>"]}'"#
+        }
         "browser" => r#"'{"operation":"tabs.open","url":"https://example.com/"}'"#,
         _ => "",
     }
@@ -118,34 +134,10 @@ fn example_arguments(tool: &str) -> &'static str {
 /// Sends the call and returns the answer's text: `Ok` for a result that is
 /// not an error, `Err` with what to tell the agent otherwise.
 fn call(tool: &str, arguments: Value) -> Result<String, String> {
-    let (Some(path), Ok(token)) = (
-        std::env::var_os(SOCKET_VARIABLE),
-        std::env::var(TOKEN_VARIABLE),
-    ) else {
-        return Err(NOT_REACHABLE.to_string());
-    };
-    let mut socket = UnixStream::connect(&path).map_err(|_| NOT_REACHABLE.to_string())?;
-    socket
-        .set_write_timeout(Some(WRITE_TIMEOUT))
-        .and_then(|_| socket.set_read_timeout(Some(AgentTools::CALL_TIMEOUT + ANSWER_SLACK)))
-        .map_err(|_| NOT_REACHABLE.to_string())?;
-    let hello = json!({ "token": token });
-    let request = json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "tools/call",
-        "params": { "name": tool, "arguments": arguments }
-    });
-    writeln!(socket, "{hello}")
-        .and_then(|_| writeln!(socket, "{request}"))
-        .map_err(|_| NOT_REACHABLE.to_string())?;
-
-    let mut line = String::new();
-    let read = BufReader::new(socket).read_line(&mut line);
-    if !matches!(read, Ok(n) if n > 0) {
-        return Err(NO_ANSWER.to_string());
-    }
-    let mut answer: Value = serde_json::from_str(&line).map_err(|_| NO_ANSWER.to_string())?;
+    let mut answer = exchange(
+        "tools/call",
+        json!({ "name": tool, "arguments": arguments }),
+    )?;
     // Command-path agents read local image files; MCP agents receive the image
     // block directly. Never dump megabytes of base64 into a terminal answer.
     if let Some(blocks) = answer["result"]["content"].as_array_mut() {
@@ -189,6 +181,38 @@ fn call(tool: &str, arguments: Value) -> Result<String, String> {
         }
     }
     read_answer(&answer)
+}
+
+/// Sends the token line and one request, and returns the parsed answer.
+fn exchange(method: &str, params: Value) -> Result<Value, String> {
+    let (Some(path), Ok(token)) = (
+        std::env::var_os(SOCKET_VARIABLE),
+        std::env::var(TOKEN_VARIABLE),
+    ) else {
+        return Err(NOT_REACHABLE.to_string());
+    };
+    let mut socket = UnixStream::connect(&path).map_err(|_| NOT_REACHABLE.to_string())?;
+    socket
+        .set_write_timeout(Some(WRITE_TIMEOUT))
+        .and_then(|_| socket.set_read_timeout(Some(AgentTools::CALL_TIMEOUT + ANSWER_SLACK)))
+        .map_err(|_| NOT_REACHABLE.to_string())?;
+    let hello = json!({ "token": token });
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": method,
+        "params": params
+    });
+    writeln!(socket, "{hello}")
+        .and_then(|_| writeln!(socket, "{request}"))
+        .map_err(|_| NOT_REACHABLE.to_string())?;
+
+    let mut line = String::new();
+    let read = BufReader::new(socket).read_line(&mut line);
+    if !matches!(read, Ok(n) if n > 0) {
+        return Err(NO_ANSWER.to_string());
+    }
+    serde_json::from_str(&line).map_err(|_| NO_ANSWER.to_string())
 }
 
 fn read_answer(answer: &Value) -> Result<String, String> {
@@ -252,11 +276,11 @@ mod tests {
 
     #[test]
     fn usage_names_every_tool_with_the_quoted_variable() {
-        let text = usage();
+        let text = usage(&tool_list());
         for tool in super::super::tools::TOOL_NAMES {
             assert!(text.contains(tool), "{tool}");
         }
-        assert!(text.contains("\"$ZORVO_TOOLS\" tools delegate"));
+        assert!(text.contains("\"$ZORVO_TOOLS\" tools start_worker"));
         assert!(text
             .contains(r#"tools show_artifact '{"path":"<file.html>","title":"<a short name>"}'"#));
     }

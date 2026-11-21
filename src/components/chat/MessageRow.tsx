@@ -13,6 +13,8 @@ import { PlanUpdatedRow, ThinkingBlock } from "./ReplyExtras";
 import { VerificationBadge } from "../private/VerificationBadge";
 import type { ModelPrice } from "../../lib/private-credits";
 import { partsOf } from "../../lib/acp-events";
+import { escapeVisible } from "../../lib/visible-text";
+import { workerStateWord } from "../../lib/workers";
 import { formatRelativeTime } from "../../lib/relative-time";
 import type { ChatMessage, ElicitationAnswer, ToolExecution } from "../../types";
 import { SELECTABLE_TEXT_ATTRIBUTE } from "../../hooks/useChatSelection";
@@ -235,9 +237,32 @@ export const MessageRow = memo(function MessageRow({
               />
               <span className="min-w-0 truncate text-ui-sm font-medium text-fg">
                 {message.delegationReport
-                  ? `From ${message.delegationReport.agentName}`
+                  ? `From ${message.delegationReport.agentName}${
+                      message.delegationReport.handle !== undefined
+                        ? ` (${escapeVisible(message.delegationReport.handle)})`
+                        : ""
+                    }`
                   : `Task from ${message.delegationTask?.agentName ?? ""}`}
               </span>
+            </div>
+          )}
+          {message.workerReport && (
+            // One message about several workers: who they are and how each turn ended, as words.
+            <div data-worker-report="" className="mb-2 flex min-w-0 max-w-full flex-col gap-1">
+              <span className="text-ui-sm font-medium text-fg">Worker reports</span>
+              <ul className="flex flex-col gap-0.5">
+                {message.workerReport.workers.map((worker, index) => {
+                  const word = workerStateWord(worker.state);
+                  if (word === "") return null;
+                  return (
+                    <li key={`${worker.handle}-${index}`} className="flex min-w-0 items-center gap-2 text-ui-sm text-fg-muted">
+                      <span className="min-w-0 truncate text-fg">{escapeVisible(worker.handle)}</span>
+                      <span className="min-w-0 truncate">{escapeVisible(worker.agentName)}</span>
+                      <span className="shrink-0">{word}</span>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           )}
           {text}

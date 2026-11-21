@@ -8,7 +8,7 @@ import {
   type MentionAgentStatus,
 } from './delegation';
 import { isArchived } from './session-helpers';
-import { toolsRoleOf, type ToolsSubject } from './workers';
+import { workerHandleOf, type ToolsSubject, type WorkerState } from './workers';
 import { escapeVisible } from './visible-text';
 
 export type { ToolsSubject };
@@ -21,19 +21,6 @@ export interface AgentToolCall {
   args: unknown;
 }
 
-/**
- * Whether a session is opened with Zorvo's tools. A compare run's agents work
- * side by side, a delegated session is already somebody's helper, and a
- * session an agent opened must not open more (one level), so none of them
- * gets the tools; a plain session and a fork do.
- */
-export function sessionGetsAgentTools(
-  session: ToolsSubject,
-  sessions: readonly (ToolsSubject & Pick<Session, 'id'>)[] = [],
-): boolean {
-  return toolsRoleOf(session, sessions) === 'coordinator';
-}
-
 // --- What a tool call means. Pure: the hook that answers calls decides with these.
 
 /** Answered to the agent when the user pressed Deny. */
@@ -44,17 +31,14 @@ export const UNREADABLE = 'That session could not be read.';
 /** Answered for a session that gets no tools, or that Zorvo does not know. */
 export const NO_SESSION = "This session cannot use Zorvo's tools.";
 
-const MAX_LISTED_TASK_CHARS = 200;
+/** Answered to a worker whose `done` was recorded. */
+export const DONE_RECORDED = 'Reported. End your turn.';
+/** Answered to a `done` from a session with no open task. */
+export const NOT_A_WORKER = 'This session has no task to report on.';
+
 const MAX_QUOTED_NAME_CHARS = 60;
 
 export type DelegateState = 'idle' | 'working' | 'needs-answer';
-
-/** One of the session's open delegates, as `list_agents` reports it. */
-export interface ListedDelegate {
-  agentId: string;
-  state: DelegateState;
-  task: string;
-}
 
 /** A session this session opened, as `list_agents` reports it. */
 export interface ListedOpened {
@@ -72,17 +56,28 @@ export interface KnownFolder {
   path: string;
 }
 
+/** One of the session's open workers, as `list_agents` reports it. */
+export interface ListedWorker {
+  handle: string;
+  /** The worker's agent id. */
+  agent: string;
+  title: string;
+  state: WorkerState | 'idle';
+  /** What the worker reported: its own say that it succeeded or failed, or null. */
+  outcome: 'succeeded' | 'failed' | null;
+}
+
 export interface ListedAgent {
   id: string;
   name: string;
   status: Exclude<MentionAgentStatus, 'not-installed'>;
-  delegate?: { handle: string; state: DelegateState; task: string };
 }
 
-/** `list_agents`' answer: the agents a task can go to, each with this session's delegate of it. */
+/** `list_agents`' answer: the agents a task can go to, the session's own workers, sessions it opened and the other folders. */
 export function listAgentsText(input: {
   agents: readonly { id: string; name: string; status: MentionAgentStatus }[];
-  delegates: readonly ListedDelegate[];
+  /** The workers this session started, oldest first. */
+  workers?: readonly ListedWorker[];
   /** The independent sessions this session opened. */
   opened?: readonly ListedOpened[];
   /** The other folders a session may be opened in. */
@@ -90,19 +85,9 @@ export function listAgentsText(input: {
 }): string {
   const agents: ListedAgent[] = input.agents.flatMap((agent) => {
     if (agent.status === 'not-installed') return [];
-    const delegate = input.delegates.find((candidate) => candidate.agentId === agent.id);
-    return [
-      {
-        id: agent.id,
-        name: agent.name,
-        status: agent.status,
-        ...(delegate
-          ? { delegate: { handle: agent.id, state: delegate.state, task: delegate.task.slice(0, MAX_LISTED_TASK_CHARS) } }
-          : {}),
-      },
-    ];
+    return [{ id: agent.id, name: agent.name, status: agent.status }];
   });
-  return JSON.stringify({ agents, opened: input.opened ?? [], folders: input.folders ?? [] });
+  return JSON.stringify({ agents, workers: input.workers ?? [], opened: input.opened ?? [], folders: input.folders ?? [] });
 }
 
 /**
@@ -131,20 +116,20 @@ export function statusRefusal(agentName: string, status: MentionAgentStatus): st
   return null;
 }
 
-/** `delegate`'s answer once the task is on its way. */
-export function delegateResultText(result: {
-  kind: 'started' | 'sent';
-  sessionName: string;
-  agentName: string;
-  /** The delegate's handle: its agent's id. */
-  handle?: string;
-}): string {
+/** `start_worker`'s answer once the worker is on its way. */
+export function workerStartedText(result: { handle: string; sessionName: string; folder: string }): string {
   return JSON.stringify({
-    [result.kind]: true,
-    ...(result.handle !== undefined ? { handle: result.handle } : {}),
+    started: true,
+    handle: result.handle,
     session: result.sessionName,
-    note: `The answer arrives as a message when ${result.agentName} finishes. Do not wait for it.`,
+    folder: result.folder,
+    note: 'End your turn. Its result arrives as a message.',
   });
+}
+
+/** `send`'s answer once the further task is on its way. */
+export function workerSentText(result: { handle: string; sessionName: string }): string {
+  return JSON.stringify({ sent: true, handle: result.handle, session: result.sessionName });
 }
 
 /** A valid `agent-tool-call` payload, or null. */
@@ -157,9 +142,6 @@ export function parseToolCall(payload: unknown): AgentToolCall | null {
 }
 
 // --- Sessions an agent opens (`start_session`).
-
-/** How many sessions one session opened may be in a turn at once. */
-export const MAX_RUNNING_OPENED = 3;
 
 /** The listed sessions that `openerId`'s agent opened, oldest first. */
 export function openedSessionsOf(openerId: string, sessions: readonly Session[]): Session[] {
@@ -211,13 +193,6 @@ export function sessionTitleOf(agentName: string, brief: string, title?: string)
   return given !== '' ? given : delegateSessionName(agentName, brief);
 }
 
-/** Why another session cannot be opened now, or null. */
-export function openRefusal(input: { runningOpened: number }): string | null {
-  return input.runningOpened >= MAX_RUNNING_OPENED
-    ? 'Three sessions this session opened are still working. Wait for one to finish.'
-    : null;
-}
-
 /** `start_session`'s answer once the session is open. */
 export function openedResultText(result: { sessionName: string; folder: string; handle?: string }): string {
   return JSON.stringify({
@@ -245,17 +220,15 @@ export function nextSessionHandle(taken: readonly string[]): string {
 
 /**
  * What its owner's agent calls a session: the stored handle of a session it
- * opened, or the agent's id for a delegate while its link is open (a session
- * holds one open delegate per agent, so that needs no storing).
+ * opened, or a worker's handle (`worker-N` on its link; a link saved by an
+ * older version is named by its agent's id).
  */
 export function handleOf(session: Session): string | undefined {
   if (session.openedBy) return session.openedBy.handle;
-  const link = session.delegatedFrom;
-  if (link && (link.endedAt === null || link.endedAt === undefined)) return session.profileId;
-  return undefined;
+  return workerHandleOf(session);
 }
 
-/** The session `openerId` owns under `handle`: one it opened, or its open delegate. Not an archived one. */
+/** The session `openerId` owns under `handle`: one it opened, or one of its open workers. Not an archived one. */
 export function ownedByHandle(openerId: string, handle: string, sessions: readonly Session[]): Session | undefined {
   if (handle === '') return undefined;
   return sessions.find(

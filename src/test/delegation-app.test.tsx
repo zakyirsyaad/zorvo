@@ -369,7 +369,7 @@ describe("delegating from the app", () => {
       expect(callsTo(spy, "acp_prompt").filter(([, args]) => args?.sessionId === "s-a")).toHaveLength(1),
     );
     const report = callsTo(spy, "acp_prompt").find(([, args]) => args?.sessionId === "s-a");
-    expect(String(report?.[1]?.text)).toMatch(/^Report from Codex/);
+    expect(String(report?.[1]?.text)).toContain("Reports from your workers");
   });
 
   it("a config-mode agent starts in its safe mode when the dialog's mode is untouched", async () => {
@@ -520,12 +520,12 @@ describe("delegating from the app", () => {
 
     await act(async () => {
       listeners.get("agent-tool-call")?.({
-        payload: { callId: "c-1", sessionId: "s-a", tool: "delegate", args: { agent: "Codex", task: "Review the parser split." } },
+        payload: { callId: "c-1", sessionId: "s-a", tool: "start_worker", args: { agent: "Codex", task: "Review the parser split." } },
       });
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
-    const heading = await screen.findByRole("heading", { name: "Qwen Code wants to give Codex a task" });
+    const heading = await screen.findByRole("heading", { name: "Qwen Code wants to start a Codex worker" });
     expect(heading).toBeDefined();
     expect(screen.getByTestId("zorvo-tool-task").textContent).toBe("Review the parser split.");
     expect(callsTo(spy, "agent_tool_respond")).toHaveLength(0);
@@ -536,7 +536,7 @@ describe("delegating from the app", () => {
     });
 
     await waitFor(() => expect(callsTo(spy, "acp_start_session")).toHaveLength(1));
-    expect(callsTo(spy, "acp_start_session")[0][1]).toMatchObject({ profileId: "codex-acp", agentTools: false });
+    expect(callsTo(spy, "acp_start_session")[0][1]).toMatchObject({ profileId: "codex-acp", agentTools: true, workerTools: true });
     await waitFor(() => expect(callsTo(spy, "agent_tool_respond")).toHaveLength(1));
     const [, answer] = callsTo(spy, "agent_tool_respond")[0];
     expect(answer).toMatchObject({ callId: "c-1", ok: true });
@@ -547,10 +547,10 @@ describe("delegating from the app", () => {
     // The user is still in A.
     expect(screen.getByText("Refactor the parser")).toBeDefined();
 
-    // A second call in the same session runs with no card: the task goes to the same delegate or is refused while it works.
+    // A further task for that worker runs with no card and is refused while it works.
     await act(async () => {
       listeners.get("agent-tool-call")?.({
-        payload: { callId: "c-2", sessionId: "s-a", tool: "delegate", args: { agent: "codex-acp", task: "Also check the tests." } },
+        payload: { callId: "c-2", sessionId: "s-a", tool: "send", args: { handle: JSON.parse(String(answer?.text)).handle, message: "Also check the tests." } },
       });
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
@@ -588,6 +588,7 @@ describe("delegating from the app", () => {
       profileId: "codex-acp",
       cwd: "/Users/test/developer/ai-perpetual-trading",
       agentTools: false,
+      workerTools: false,
     });
     await waitFor(() => expect(callsTo(spy, "agent_tool_respond")).toHaveLength(1));
     const [, answer] = callsTo(spy, "agent_tool_respond")[0];
@@ -637,7 +638,7 @@ describe("delegating from the app", () => {
     expect(screen.getByText("The session that opened this is gone.")).toBeDefined();
   });
 
-  it("list_agents and delegate reach only the agents the user has in use", async () => {
+  it("list_agents and start_worker reach only the agents the user has in use", async () => {
     seedSourceSession();
     // Codex is on this Mac, but the user took it out of use.
     Object.assign(fakeStore().state.settings, { enabledAgents: ["qwen-code"], removedAgents: ["codex-acp"] });
@@ -647,7 +648,7 @@ describe("delegating from the app", () => {
     await act(async () => {
       listeners.get("agent-tool-call")?.({ payload: { callId: "c-1", sessionId: "s-a", tool: "list_agents", args: {} } });
       listeners.get("agent-tool-call")?.({
-        payload: { callId: "c-2", sessionId: "s-a", tool: "delegate", args: { agent: "codex-acp", task: "Review it." } },
+        payload: { callId: "c-2", sessionId: "s-a", tool: "start_worker", args: { agent: "codex-acp", task: "Review it." } },
       });
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
@@ -661,6 +662,39 @@ describe("delegating from the app", () => {
     expect(refused?.text).toContain('No agent called "codex-acp"');
     expect(screen.queryByRole("button", { name: "Allow for this session" })).toBeNull();
     expect(callsTo(spy, "acp_start_session")).toHaveLength(0);
+  });
+
+  it("with two workers of an agent the mention and the dialog describe a new session", async () => {
+    seedSourceSession();
+    const worker = (id: string, createdAt: number) => ({
+      id,
+      name: "Codex: Implement step 2",
+      profileId: "codex-acp",
+      cwd: "/Users/test/developer/ai-perpetual-trading",
+      status: "running" as const,
+      createdAt,
+      transport: "acp" as const,
+      delegatedFrom: { sessionId: "s-a", task: "Implement step 2", startedAt: createdAt },
+    });
+    fakeStore().state.sessions = [...fakeStore().state.sessions, worker("s-b", 3), worker("s-c", 4)];
+    await renderApp();
+    const sidebar = within(await screen.findByRole("complementary"));
+    await act(async () => {
+      fireEvent.click(await sidebar.findByText("Fix login bug"));
+    });
+    await screen.findByText("Refactor the parser");
+
+    await type("@Codex now add tests for it");
+    expect(await screen.findByText(/^Codex starts on/)).toBeDefined();
+    expect(screen.queryByText("Goes to the Codex session this session already delegated to.")).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    });
+    const dialog = screen.getByRole("dialog", { name: "Delegate to another agent" });
+    expect(within(dialog).getByRole("radio", { name: /Codex/ })).toBeChecked();
+    expect(within(dialog).getByText("Codex starts on")).toBeDefined();
+    expect(within(dialog).queryByText("Goes to the Codex session this session already delegated to.")).toBeNull();
   });
 
   it("an @mention of an agent that already has an idle delegate sends the task there", async () => {
@@ -702,6 +736,61 @@ describe("delegating from the app", () => {
     expect(callsTo(spy, "acp_prompt")[0][1]).toMatchObject({ sessionId: "s-b", text: "now add tests for it" });
     // No second delegate was started.
     expect(callsTo(spy, "acp_start_session")).toHaveLength(0);
+  });
+
+  it("a task for a closed worker whose chat was not opened keeps its saved conversation", async () => {
+    seedSourceSession();
+    // The source is the newest session, so the worker's chat is never on screen in this run.
+    fakeStore().state.sessions = [
+      {
+        id: "s-a",
+        name: "Fix login bug",
+        profileId: "qwen-code",
+        cwd: "/Users/test/developer/ai-perpetual-trading",
+        status: "running",
+        createdAt: 9,
+        transport: "acp",
+      },
+      {
+        id: "s-b",
+        name: "Codex: Implement step 2",
+        profileId: "codex-acp",
+        cwd: "/Users/test/developer/ai-perpetual-trading",
+        status: "terminated",
+        createdAt: 3,
+        endedAt: 5,
+        transport: "acp",
+        acpSessionId: "acp-b",
+        delegatedFrom: {
+          sessionId: "s-a",
+          task: "Implement step 2",
+          startedAt: 3,
+          handle: "worker-1",
+          lastTurn: { endedAt: 4, how: "finished" },
+          reportedAt: 5,
+        },
+      },
+    ];
+    fakeStore().transcripts["s-b"] = [
+      { id: "m-b1", role: "user", content: "Implement step 2", timestamp: 3 },
+      { id: "m-b2", role: "agent", content: "Done.", timestamp: 4, isComplete: true },
+    ];
+    const spy = await renderApp();
+    await screen.findByText("Refactor the parser");
+
+    await type("@Codex now add tests for it");
+    await act(async () => {
+      fireEvent.keyDown(prompt(), { key: "Enter" });
+    });
+
+    await waitFor(() => expect(callsTo(spy, "acp_reopen_session")).toHaveLength(1));
+    const savesOfWorker = () => callsTo(spy, "save_transcript").filter(([, args]) => args?.sessionId === "s-b");
+    await waitFor(() => expect(savesOfWorker().length).toBeGreaterThan(0), { timeout: 4000 });
+    for (const [, args] of savesOfWorker()) {
+      const ids = (args?.messages as Array<{ id: string }>).map((message) => message.id);
+      expect(ids.slice(0, 2)).toEqual(["m-b1", "m-b2"]);
+    }
+    expect(fakeStore().transcripts["s-b"]).toHaveLength(3);
   });
 
   it("Change carries the composer's attachments to the delegated task", async () => {

@@ -112,10 +112,10 @@ fn call(id: i64, tool: &str, args: Value) -> Value {
     json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":tool,"arguments":args}})
 }
 
-fn delegate(id: i64) -> Value {
+fn start_worker_call(id: i64) -> Value {
     call(
         id,
-        "delegate",
+        "start_worker",
         json!({"agent": "qwen-code", "task": "review it"}),
     )
 }
@@ -137,10 +137,10 @@ fn servers_for_is_empty_when_disabled_and_one_stdio_entry_when_enabled() {
 fn a_tool_call_is_emitted_with_its_session_and_answered_by_respond() {
     let rig = rig("call");
     let mut client = Client::connect(&rig, "s1");
-    client.send(delegate(7));
+    client.send(start_worker_call(7));
     let emitted = rig.calls.recv_timeout(WAIT).unwrap();
     assert_eq!(emitted.session_id, "s1");
-    assert_eq!(emitted.tool, "delegate");
+    assert_eq!(emitted.tool, "start_worker");
     assert_eq!(
         emitted.args,
         json!({"agent": "qwen-code", "task": "review it"})
@@ -161,7 +161,7 @@ fn a_tool_call_is_emitted_with_its_session_and_answered_by_respond() {
 fn a_failed_answer_carries_the_error_flag() {
     let rig = rig("fail");
     let mut client = Client::connect(&rig, "s1");
-    client.send(delegate(1));
+    client.send(start_worker_call(1));
     let emitted = rig.calls.recv_timeout(WAIT).unwrap();
     rig.tools.respond(&emitted.call_id, false, "no such agent");
     let answer = client.read();
@@ -196,7 +196,7 @@ fn an_invalid_call_is_answered_at_once_and_emits_nothing() {
     let mut client = Client::connect(&rig, "s1");
     client.send(call(
         4,
-        "delegate",
+        "start_worker",
         json!({"agent": "qwen-code", "task": ""}),
     ));
     let answer = client.read();
@@ -253,7 +253,7 @@ fn browser_screenshots_are_mcp_images_instead_of_base64_text() {
 fn an_unanswered_call_times_out_with_an_error_and_is_reported_ended() {
     let rig = rig_with("timeout", Duration::from_millis(200));
     let mut client = Client::connect(&rig, "s1");
-    client.send(delegate(9));
+    client.send(start_worker_call(9));
     let emitted = rig.calls.recv_timeout(WAIT).unwrap();
     let answer = client.read();
     assert_eq!(answer["id"], 9);
@@ -272,7 +272,7 @@ fn an_unanswered_call_times_out_with_an_error_and_is_reported_ended() {
 fn an_answered_call_does_not_time_out_later() {
     let rig = rig_with("answered", Duration::from_millis(300));
     let mut client = Client::connect(&rig, "s1");
-    client.send(delegate(1));
+    client.send(start_worker_call(1));
     let emitted = rig.calls.recv_timeout(WAIT).unwrap();
     rig.tools.respond(&emitted.call_id, true, "fast");
     assert_eq!(client.read()["result"]["content"][0]["text"], "fast");
@@ -283,7 +283,7 @@ fn an_answered_call_does_not_time_out_later() {
 fn forget_closes_the_connection_reports_ended_and_a_late_respond_is_ignored() {
     let rig = rig("forget");
     let mut client = Client::connect(&rig, "s1");
-    client.send(delegate(1));
+    client.send(start_worker_call(1));
     let emitted = rig.calls.recv_timeout(WAIT).unwrap();
     rig.tools.forget("s1");
     assert_eq!(rig.ended.recv_timeout(WAIT).unwrap(), emitted.call_id);
@@ -306,7 +306,7 @@ fn respond_to_an_unknown_call_does_nothing() {
 fn a_cancelled_notification_ends_the_waiting_call_and_a_late_respond_is_ignored() {
     let rig = rig("cancel");
     let mut client = Client::connect(&rig, "s1");
-    client.send(delegate(42));
+    client.send(start_worker_call(42));
     let emitted = rig.calls.recv_timeout(WAIT).unwrap();
     client.send(
         json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":42}}),
@@ -324,7 +324,7 @@ fn a_cancel_for_another_id_or_another_connection_leaves_the_call_waiting() {
     let rig = rig("cancel-other");
     let mut one = Client::connect(&rig, "s1");
     let mut two = Client::connect(&rig, "s2");
-    one.send(delegate(5));
+    one.send(start_worker_call(5));
     let emitted = rig.calls.recv_timeout(WAIT).unwrap();
     one.send(json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":6}}));
     two.send(json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":5}}));
@@ -337,7 +337,7 @@ fn a_cancel_for_another_id_or_another_connection_leaves_the_call_waiting() {
 fn a_closed_connection_ends_its_waiting_calls() {
     let rig = rig("hangup");
     let mut client = Client::connect(&rig, "s1");
-    client.send(delegate(1));
+    client.send(start_worker_call(1));
     let emitted = rig.calls.recv_timeout(WAIT).unwrap();
     drop(client);
     assert_eq!(rig.ended.recv_timeout(WAIT).unwrap(), emitted.call_id);
@@ -348,9 +348,9 @@ fn two_sessions_calls_do_not_cross() {
     let rig = rig("cross");
     let mut one = Client::connect(&rig, "s1");
     let mut two = Client::connect(&rig, "s2");
-    one.send(delegate(1));
+    one.send(start_worker_call(1));
     let first = rig.calls.recv_timeout(WAIT).unwrap();
-    two.send(delegate(1));
+    two.send(start_worker_call(1));
     let second = rig.calls.recv_timeout(WAIT).unwrap();
     assert_eq!(
         (first.session_id.as_str(), second.session_id.as_str()),
@@ -408,7 +408,11 @@ fn nothing_logs_the_token_or_the_task() {
         .spawn()
         .unwrap();
     let mut stdin = bridge.stdin.take().unwrap();
-    let request = call(1, "delegate", json!({"agent": "qwen-code", "task": task}));
+    let request = call(
+        1,
+        "start_worker",
+        json!({"agent": "qwen-code", "task": task}),
+    );
     writeln!(stdin, "{request}").unwrap();
     let emitted = rig.calls.recv_timeout(WAIT).unwrap();
     rig.tools.respond(&emitted.call_id, true, "done");
@@ -434,10 +438,10 @@ fn the_ninth_open_call_on_a_connection_is_refused_at_once_and_emits_nothing() {
     let rig = rig("cap");
     let mut client = Client::connect(&rig, "s1");
     for id in 1..=8 {
-        client.send(delegate(id));
+        client.send(start_worker_call(id));
         rig.calls.recv_timeout(WAIT).unwrap();
     }
-    client.send(delegate(9));
+    client.send(start_worker_call(9));
     let answer = client.read();
     assert_eq!(answer["id"], 9);
     assert_eq!(answer["result"]["isError"], true);
@@ -448,7 +452,7 @@ fn the_ninth_open_call_on_a_connection_is_refused_at_once_and_emits_nothing() {
     assert!(rig.calls.recv_timeout(QUIET).is_err());
     // Another connection has its own allowance.
     let mut other = Client::connect(&rig, "s2");
-    other.send(delegate(1));
+    other.send(start_worker_call(1));
     rig.calls.recv_timeout(WAIT).unwrap();
 }
 
@@ -481,7 +485,7 @@ fn an_end_during_emit_is_reported_after_the_call_event_exactly_once() {
     let mut stream = UnixStream::connect(env_value(&entry, "ZORVO_MCP_SOCKET")).unwrap();
     let token = env_value(&entry, "ZORVO_MCP_TOKEN");
     stream
-        .write_all(format!("{{\"token\":\"{token}\"}}\n{}\n", delegate(1)).as_bytes())
+        .write_all(format!("{{\"token\":\"{token}\"}}\n{}\n", start_worker_call(1)).as_bytes())
         .unwrap();
     in_emit.recv_timeout(WAIT).unwrap();
     // The call is waiting but its event has not gone out yet.

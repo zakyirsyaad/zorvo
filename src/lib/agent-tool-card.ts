@@ -70,15 +70,17 @@ export function toolCard(input: ToolCardInput): ActionCard {
   };
 }
 
-/** One thing an agent asked for, waiting for the user's answer: a task for an agent, or a new session. */
+/** One thing an agent asked for, waiting for the user's answer: a worker, a further task for one, or a new session. */
 export interface WaitingTask {
-  kind: 'delegate' | 'start_session';
+  kind: 'start_worker' | 'send' | 'start_session';
   targetName: string;
   targetId: string;
   /** The task, or the new session's brief. */
   task: string;
   /** A new session that gets a worktree of its own. */
   hasOwnWorktree?: boolean;
+  /** For `send`: the handle of the worker that gets the task, as the agent gave it. */
+  handle?: string;
 }
 
 /** The card for one new session in the caller's own folder. */
@@ -99,10 +101,15 @@ function sessionCard(input: Omit<ToolCardInput, 'targetName' | 'targetId' | 'tas
 }
 
 function blockHeading(task: WaitingTask): string {
-  if (task.kind === 'delegate') return `For ${task.targetName}:`;
-  return task.hasOwnWorktree
-    ? `New ${task.targetName} session, in its own worktree:`
-    : `New ${task.targetName} session:`;
+  if (task.kind === 'start_session') {
+    return task.hasOwnWorktree
+      ? `New ${task.targetName} session, in its own worktree:`
+      : `New ${task.targetName} session:`;
+  }
+  if (task.kind === 'send' && task.handle !== undefined) return `For ${task.targetName} (${escapeVisible(task.handle)}):`;
+  return task.kind === 'start_worker' && task.hasOwnWorktree
+    ? `For ${task.targetName}, in its own worktree:`
+    : `For ${task.targetName}:`;
 }
 
 /**
@@ -115,12 +122,25 @@ export function toolCardFor(
   tasks: readonly WaitingTask[],
 ): ActionCard {
   const [first] = tasks;
-  const single =
+  const built =
     first.kind === 'start_session'
       ? sessionCard(input, first)
       : toolCard({ ...input, targetName: first.targetName, targetId: first.targetId, task: first.task });
+  const single: ActionCard =
+    first.kind === 'start_worker'
+      ? {
+          ...built,
+          title: `${input.callerName} wants to start a ${first.targetName} worker`,
+          zorvoTool: {
+            ...(built.zorvoTool as NonNullable<ActionCard['zorvoTool']>),
+            ...(first.hasOwnWorktree ? { hasOwnWorktree: true as const } : {}),
+          },
+        }
+      : first.kind === 'send' && first.handle !== undefined
+        ? { ...built, title: `${input.callerName} wants to give ${first.targetName} (${escapeVisible(first.handle)}) a task` }
+        : built;
   if (tasks.length === 1) return single;
-  const areAllDelegations = tasks.every((task) => task.kind === 'delegate');
+  const areAllDelegations = tasks.every((task) => task.kind !== 'start_session');
   // What is true of one request is said in its own heading, not for the whole card.
   const { hasOwnWorktree: _ofTheFirst, ...shared } = single.zorvoTool ?? ({} as NonNullable<ActionCard['zorvoTool']>);
   return {

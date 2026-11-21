@@ -27,6 +27,7 @@ import { validArtifactComments } from './artifact-comments';
 import { validReviewComments } from './review-comments';
 import { validAgentWork } from './agent-work';
 import { parseArtifactCard } from './artifacts';
+import { WORKER_STATES, type WorkerState } from './workers';
 import { toCommands, toConfigOptions, toModels, toModes } from '../hooks/useAcpSessions';
 
 export const STATE_VERSION = 2;
@@ -427,16 +428,19 @@ function withValidVerification(message: ChatMessage): ChatMessage {
     : message;
 }
 
-/** A report or task mark keeps a non-empty agent name and, when it is a string, the agent's id. */
+/** A report or task mark keeps a non-empty agent name and, when they are strings, the agent's id and a report's worker handle. */
 function withValidAgentMark(message: ChatMessage, key: 'delegationReport' | 'delegationTask'): ChatMessage {
   if (!(key in message)) return message;
   const { [key]: mark, ...rest } = message;
   if (!isObject(mark)) return rest as ChatMessage;
-  const { agentName, agentId } = mark;
+  const { agentName, agentId, handle } = mark as { agentName?: unknown; agentId?: unknown; handle?: unknown };
   if (typeof agentName !== 'string' || agentName === '') return rest as ChatMessage;
-  return typeof agentId === 'string'
-    ? ({ ...rest, [key]: { agentName, agentId } } as ChatMessage)
-    : ({ ...rest, [key]: { agentName } } as ChatMessage);
+  const kept = {
+    agentName,
+    ...(typeof agentId === 'string' ? { agentId } : {}),
+    ...(key === 'delegationReport' && typeof handle === 'string' ? { handle } : {}),
+  };
+  return { ...rest, [key]: kept } as ChatMessage;
 }
 
 /** An artifact card keeps its three fields when they fit, else the message goes on without it. */
@@ -447,8 +451,29 @@ function withValidArtifactCard(message: ChatMessage): ChatMessage {
   return card === null ? (rest as ChatMessage) : { ...rest, artifactCard: card };
 }
 
+const MAX_REPORTED_WORKERS = 50;
+
+/** A worker report mark keeps its well-formed entries (the first of a repeated handle, at most 50); a mark left with none is dropped. */
+function withValidWorkerReport(message: ChatMessage): ChatMessage {
+  if (!('workerReport' in message)) return message;
+  const { workerReport, ...rest } = message;
+  const list = isObject(workerReport) ? (workerReport as { workers?: unknown }).workers : undefined;
+  if (!Array.isArray(list)) return rest as ChatMessage;
+  const workers = list
+    .flatMap((item): NonNullable<ChatMessage['workerReport']>['workers'] => {
+      if (!isObject(item)) return [];
+      const { agentName, agentId, handle, state } = item as Record<string, unknown>;
+      if (typeof agentName !== 'string' || typeof handle !== 'string') return [];
+      if (typeof state !== 'string' || !(WORKER_STATES as readonly string[]).includes(state)) return [];
+      return [{ agentName, ...(typeof agentId === 'string' ? { agentId } : {}), handle, state: state as WorkerState }];
+    })
+    .filter((worker, index, all) => all.findIndex((other) => other.handle === worker.handle) === index)
+    .slice(0, MAX_REPORTED_WORKERS);
+  return workers.length === 0 ? (rest as ChatMessage) : { ...rest, workerReport: { workers } };
+}
+
 function withValidDelegationReport(message: ChatMessage): ChatMessage {
-  return withValidAgentMark(withValidAgentMark(message, 'delegationReport'), 'delegationTask');
+  return withValidWorkerReport(withValidAgentMark(withValidAgentMark(message, 'delegationReport'), 'delegationTask'));
 }
 
 /**

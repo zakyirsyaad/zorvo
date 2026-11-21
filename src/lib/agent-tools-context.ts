@@ -1,3 +1,5 @@
+import { escapeVisible } from './visible-text';
+
 /**
  * What an agent on the command path is told about Zorvo's tools. It ignores
  * ACP's `mcpServers`, so it cannot see a tool list: it runs `zorvo tools` from
@@ -9,8 +11,9 @@ export const COMMAND_PATH_CONTEXT =
   'Run them with your shell tool, exactly as written: "$ZORVO_TOOLS" tools <tool> \'<json arguments>\'. ' +
   'Run "$ZORVO_TOOLS" tools alone to see every tool. ' +
   'list_agents shows the agents you can use. ' +
-  'delegate {"agent": "<id>", "task": "<text>"} gives another agent a task; ' +
-  'its answer arrives later as a message, so do not wait. ' +
+  'start_worker {"agent": "<id>", "task": "<text>"} starts another agent as a worker and returns at once, ' +
+  'so end your turn: its result arrives later as a message; ' +
+  'send {"handle": "<handle>", "message": "<text>"} gives a worker you started a further task. ' +
   'start_session {"agent": "<id>", "brief": "<text>"} opens a separate session that does not report back; ' +
   'read_session {"handle": "<handle>"} reads its last answer and stop_session stops it. ' +
   'show_artifact {"path": "<file.html>", "title": "<text>"} shows the user a web page you wrote; run artifact_guide first; add "kind":"canvas" with a folder path for several screens. ' +
@@ -30,13 +33,45 @@ export const MCP_PATH_CONTEXT =
   'a diagram, a dashboard, a mockup of a screen, or something the user can click through), show it as a page ' +
   'without being asked: call artifact_guide once, write one self-contained .html file, then call show_artifact ' +
   'with its path. Both are tools of the zorvo MCP server; if your tools are loaded on demand, find them with ' +
-  'your agent\'s tool discovery first. For browsing websites call browser from the same server directly: {"operation":"tabs.open","url":"https://example.com/"} opens the native Browser panel after its session grant; {"operation":"scroll","deltaY":800} scrolls its active WebKit tab down. A tabID is optional for the active WebKit tab. Use browser_guide for advanced parameters, rather than before every simple action. Do not start a local HTTP server just to open a remote page. Several screens, a flow or variants of one screen go on a canvas: call artifact_guide with kind canvas, then show_artifact with kind canvas. Keep answers that are short text or code in the chat. Do not mention this note.';
+  'your agent\'s tool discovery first. For browsing websites call browser from the same server directly: {"operation":"tabs.open","url":"https://example.com/"} opens the native Browser panel after its session grant; {"operation":"scroll","deltaY":800} scrolls its active WebKit tab down. A tabID is optional for the active WebKit tab. Use browser_guide for advanced parameters, rather than before every simple action. Do not start a local HTTP server just to open a remote page. Several screens, a flow or variants of one screen go on a canvas: call artifact_guide with kind canvas, then show_artifact with kind canvas. To have another agent work for you, call start_worker and end your turn: its result arrives as a message; send gives a worker you started a further task. Keep answers that are short text or code in the chat. Do not mention this note.';
 
 /** Which of Zorvo's ways in a session has, and so which note it is due. */
 export type ToolsPath = 'command' | 'mcp';
 
-/** The tools context for `path`, then the message's own hidden context when it has one. */
-export function withToolsContext(context: string | undefined, path: ToolsPath): string {
-  const note = path === 'mcp' ? MCP_PATH_CONTEXT : COMMAND_PATH_CONTEXT;
-  return context ? `${note}\n\n${context}` : note;
+/** A worker's note: which way in it has and the agent that gave it the task. */
+export interface WorkerNote {
+  role: 'worker';
+  path: ToolsPath;
+  /** The name of the coordinator's agent, as it goes into the note. */
+  coordinator: string;
+}
+
+/** What a session is due: its coordinator's note for a path, or a worker's own. */
+export type ToolsNote = ToolsPath | WorkerNote;
+
+/**
+ * What a worker is told: who gave it the task, to do only that, and to end with `done`. Its agent's
+ * name comes from the registry, so it goes through `escapeVisible` before it is part of a sentence.
+ */
+export function workerContext(path: ToolsPath, coordinatorAgentName: string): string {
+  const report =
+    path === 'mcp'
+      ? 'call the done tool once with outcome succeeded or failed and a short summary: what you did, what you found, what is left.'
+      : 'run "$ZORVO_TOOLS" tools done \'{"outcome":"succeeded","summary":"<what you did, what you found, what is left>"}\' once, with outcome succeeded or failed and a short summary.';
+  return (
+    `You are a worker. ${escapeVisible(coordinatorAgentName)}, in another Zorvo session, gave you this task and cannot see this chat. ` +
+    `Do only this task. When you finish, ${report} ` +
+    'Use failed when the work is not done. Then end your turn.'
+  );
+}
+
+/** The note due for `note`, then the message's own hidden context when it has one. */
+export function withToolsContext(context: string | undefined, note: ToolsNote): string {
+  const text =
+    typeof note !== 'string'
+      ? workerContext(note.path, note.coordinator)
+      : note === 'mcp'
+        ? MCP_PATH_CONTEXT
+        : COMMAND_PATH_CONTEXT;
+  return context ? `${text}\n\n${context}` : text;
 }

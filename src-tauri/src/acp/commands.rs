@@ -379,6 +379,7 @@ pub fn acp_start_session(
     cwd: String,
     profile_id: String,
     agent_tools: bool,
+    worker_tools: Option<bool>,
     private_model_id: Option<String>,
     private_own_key: Option<bool>,
     private_session_cap: Option<u64>,
@@ -395,7 +396,14 @@ pub fn acp_start_session(
     )?;
     // A private session gets no agent tools: its launch already carries the credits server.
     let wants_tools = agent_tools && private_model_id.is_none();
-    let session_tools = tools_for_session(&tools, &store, &session_id, &profile_id, wants_tools)?;
+    let session_tools = tools_for_session(
+        &tools,
+        &store,
+        &session_id,
+        &profile_id,
+        wants_tools,
+        worker_tools.unwrap_or(false),
+    )?;
     let launch = with_tools_env(launch, &session_tools.env);
     let opened = manager.start(&session_id, &cwd, &launch, session_tools.servers);
     note_if_private(
@@ -475,12 +483,20 @@ pub fn acp_reopen_session(
     profile_id: String,
     acp_session_id: String,
     agent_tools: bool,
+    worker_tools: Option<bool>,
     private_model_id: Option<String>,
     private_own_key: Option<bool>,
     private_session_cap: Option<u64>,
 ) -> Result<StartedSession, String> {
     let wants_tools = agent_tools && private_model_id.is_none();
-    let session_tools = tools_for_session(&tools, &store, &session_id, &profile_id, wants_tools)?;
+    let session_tools = tools_for_session(
+        &tools,
+        &store,
+        &session_id,
+        &profile_id,
+        wants_tools,
+        worker_tools.unwrap_or(false),
+    )?;
     let opened = open_session(
         &private,
         &acp_session_id,
@@ -535,7 +551,8 @@ pub fn acp_import_session(
     acp_session_id: String,
     agent_tools: bool,
 ) -> Result<StartedSession, String> {
-    let session_tools = tools_for_session(&tools, &store, &session_id, &profile_id, agent_tools)?;
+    let session_tools =
+        tools_for_session(&tools, &store, &session_id, &profile_id, agent_tools, false)?;
     let opened = open_session(
         &private,
         &acp_session_id,

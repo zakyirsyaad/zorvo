@@ -4,6 +4,7 @@
 
 import type { AgentOptions } from '../lib/acp-draft';
 import type { Appearance } from '../lib/appearance';
+import type { WorkerState } from '../lib/workers';
 
 /** Mirrors the Rust `AgentProfile` (snake_case on the wire). */
 export interface AgentProfile {
@@ -491,7 +492,9 @@ export interface ChatMessage {
   /** The agent's `messageId` for a user message replayed by `session/load`; its chunks share it. */
   replayId?: string;
   /** A report from a delegated session in A's transcript; the chat labels it From <agent>. */
-  delegationReport?: { agentName: string; agentId?: string };
+  delegationReport?: { agentName: string; agentId?: string; handle?: string };
+  /** One message that reports on several workers; the chat labels it Worker reports and lists them. */
+  workerReport?: { workers: Array<{ agentName: string; agentId?: string; handle: string; state: WorkerState }> };
   /** On the user message that carries a task into a delegate: the agent of the session that gave it. */
   delegationTask?: { agentName: string; agentId?: string };
   /** A question the agent asked the user (ACP elicitation); never holds the answer. */

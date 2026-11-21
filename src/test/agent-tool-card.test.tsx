@@ -152,7 +152,7 @@ describe("the card in the chat", () => {
 describe("cards for a session an agent wants to open", () => {
   const base = { cardId: "act-2", sessionId: "s-1", callerName: "pi ACP", folder: "/Users/test/developer/zorvo", now: 100 };
   const session = { kind: "start_session" as const, targetName: "Codex", targetId: "codex-acp", task: "Port the parser.\nKeep the tests." };
-  const delegation = { kind: "delegate" as const, targetName: "Qwen Code", targetId: "qwen-code", task: "Review it." };
+  const delegation = { kind: "start_worker" as const, targetName: "Qwen Code", targetId: "qwen-code", task: "Review it." };
 
   it("titles a single session request and shows the brief as text", () => {
     const card = toolCardFor(base, [session]);
@@ -170,6 +170,41 @@ describe("cards for a session an agent wants to open", () => {
     expect(mixed.title).toBe("pi ACP asks for 3 things");
     expect(mixed.prompt).toBe(
       "For Qwen Code:\n> Review it.\n\nNew Codex session, in its own worktree:\n> Port the parser.\n> Keep the tests.\n\nNew Codex session:\n> Port the parser.\n> Keep the tests.",
+    );
+  });
+
+  it("titles a worker request as starting a worker, and a send as a task, both headed For {Agent}", () => {
+    expect(toolCardFor(base, [delegation]).title).toBe("pi ACP wants to start a Qwen Code worker");
+    const further = { ...delegation, kind: "send" as const, task: "Now the lexer." };
+    expect(toolCardFor(base, [further]).title).toBe("pi ACP wants to give Qwen Code a task");
+    const both = toolCardFor(base, [delegation, further]);
+    expect(both.title).toBe("pi ACP wants to give other agents 2 tasks");
+    expect(both.prompt).toBe("For Qwen Code:\n> Review it.\n\nFor Qwen Code:\n> Now the lexer.");
+  });
+
+  it("names the worker that gets a send, on the single card and under its heading", () => {
+    const further = { ...delegation, kind: "send" as const, task: "Now the lexer.", handle: "worker-2" };
+    expect(toolCardFor(base, [further]).title).toBe("pi ACP wants to give Qwen Code (worker-2) a task");
+    const both = toolCardFor(base, [delegation, further]);
+    expect(both.prompt).toBe("For Qwen Code:\n> Review it.\n\nFor Qwen Code (worker-2):\n> Now the lexer.");
+    const odd = toolCardFor(base, [{ ...further, handle: "w\u202e1" }, delegation]);
+    expect(odd.prompt).not.toContain("\u202e");
+  });
+
+  it("says on a worker card when the worker gets a worktree of its own, and only then", () => {
+    const own = toolCardFor(base, [{ ...delegation, hasOwnWorktree: true }]);
+    expect(own.zorvoTool?.hasOwnWorktree).toBe(true);
+    render(<ActionCard card={own} agentName="pi ACP" onChoose={vi.fn()} />);
+    expect(screen.getByText("It gets a worktree of its own, on a new branch.")).toBeInTheDocument();
+    expect(toolCardFor(base, [delegation]).zorvoTool?.hasOwnWorktree).toBeUndefined();
+  });
+
+  it("heads a listed worker request with its worktree, and a send or plain worker without", () => {
+    const further = { ...delegation, kind: "send" as const, task: "Next." };
+    const card = toolCardFor(base, [{ ...delegation, hasOwnWorktree: true }, delegation, further]);
+    expect(card.zorvoTool?.hasOwnWorktree).toBeUndefined();
+    expect(card.prompt).toBe(
+      "For Qwen Code, in its own worktree:\n> Review it.\n\nFor Qwen Code:\n> Review it.\n\nFor Qwen Code:\n> Next.",
     );
   });
 

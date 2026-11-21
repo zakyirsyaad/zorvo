@@ -118,6 +118,7 @@ import { AppUpdateNotice } from "./components/AppUpdateNotice";
 import { restartWarning } from "./lib/app-update";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { useAgentTools } from "./hooks/useAgentTools";
+import { withLinkChange, workerHandleOf, workerStateOf } from "./lib/workers";
 import { useComputerUse } from "./hooks/useComputerUse";
 import { isComputerUseCardId } from "./lib/computer-use-card";
 import { ComputerUseStatusLine } from "./components/chat/ComputerUseStatusLine";
@@ -126,6 +127,7 @@ import { useBrowserOpening } from "./hooks/useBrowserOpening";
 import { BrowserPanel } from "./components/browser/BrowserPanel";
 import { BrowserPermissionLayer } from "./components/browser/BrowserPermissionLayer";
 import { useOpenedSessions } from "./hooks/useOpenedSessions";
+import { createStartPlaces } from "./lib/start-places";
 import { ProfileFooter } from "./components/ProfileFooter";
 import { AgentsMenu } from "./components/sidebar/AgentsMenu";
 import { useNavigationHistory } from "./hooks/useNavigationHistory";
@@ -159,6 +161,8 @@ import { useCompareDraft } from "./hooks/useCompareDraft";
 import { useCompareRun, useCompareRunRows } from "./hooks/useCompareRun";
 import { useCompareModelProbe } from "./hooks/useCompareModelProbe";
 import { useDelegation } from "./hooks/useDelegation";
+import { useWorkerAutoClose } from "./hooks/useWorkerAutoClose";
+import { useWorkerStops } from "./hooks/useWorkerStops";
 import { useNow } from "./hooks/useNow";
 import { DelegateDialog, type DelegateAgentChoice } from "./components/delegation/DelegateDialog";
 import { useDelegateDialog } from "./hooks/useDelegateDialog";
@@ -170,7 +174,7 @@ import {
   followUpSummary,
   isOpenLink,
   mentionBlockedReason,
-  openDelegateOf,
+  soleOpenDelegateOf,
   openDelegatesOf,
   startSummary,
   type MentionAgentStatus,
@@ -191,7 +195,7 @@ import {
   type AgentOptions,
   type ProbedOptions,
 } from "./lib/acp-draft";
-import type { AgentProfile, ArtifactCard, ArtifactComment, ReviewComment, Session, SessionWorktree, Settings } from "./types";
+import type { AgentProfile, ArtifactCard, ArtifactComment, ReviewComment, DelegationLink, Session, SessionWorktree, Settings, WorkerTurnEnd } from "./types";
 import { replyBlockedReason } from "./lib/reply-quote";
 
 const NO_FOLDER_NOTICE = "Open a project folder first: choose one from the folder chip by the message box.";
@@ -239,6 +243,7 @@ export default function App() {
   const [delegationMention, setDelegationMention] = useState<{ agentId: string; task: string } | null>(null);
   // Set once useDelegation is built: the engine's turns reach it through this, as it is built before the hook.
   const delegationTurnEndedRef = useRef<(sessionId: string, reason: AttentionReason) => void>(() => {});
+  const delegationTurnSettledRef = useRef<(sessionId: string, end: { how: WorkerTurnEnd; reason?: string }) => void>(() => {});
   // Set once useDelegation is built: the engine's retries read why the pair blocks them, as it is built before the hook.
   const delegationBlockedRef = useRef<(sessionId: string) => string | null>(() => null);
 
@@ -499,6 +504,12 @@ export default function App() {
     [updateState],
   );
 
+  const updateLink = useCallback(
+    (sessionId: string, change: (link: DelegationLink) => DelegationLink) =>
+      updateState((prev) => withLinkChange(prev, sessionId, change)),
+    [updateState],
+  );
+
   const updateReviewComments = useCallback(
     (sessionId: string, change: (prev: ReviewComment[]) => ReviewComment[]) =>
       updateState((prev) => ({
@@ -675,6 +686,7 @@ export default function App() {
       delegationTurnEndedRef.current(id, reason);
       if (reason !== "needs-answer") setRunVersion((n) => n + 1);
     },
+    onTurnSettled: (id, end) => delegationTurnSettledRef.current(id, end),
     onAuthRequired: (session, methods, unsent) => {
       if (!compareRun.isInRun(session.id)) {
         signIn.handBack(session, methods, unsent);
@@ -941,12 +953,22 @@ export default function App() {
   // defined further down and only called when a tool call or an answer arrives.
   // The independent sessions an agent opens through the tools. `startSession` is defined
   // further down and only called when a call is allowed.
+  const [startPlaces] = useState(createStartPlaces);
   const openedSessions = useOpenedSessions({
     sessions,
     agents: agentsInUse,
     isBusy: (sessionId) => isSessionBusy(sessionId),
+    isWaiting: (sessionId) => isSessionWaiting(sessionId),
+    places: startPlaces,
     startSession: (spec, first, options) => startSession(spec, first, options),
   });
+  const readMessages = async (sessionId: string) => {
+    const live = transcripts[sessionId] ?? [];
+    if (transcriptStatus[sessionId] === "ready") return live;
+    if (transcriptStatus[sessionId] === "failed") throw new Error("unreadable");
+    // Not opened in this run: read what was saved, then what arrived since.
+    return savedThenLive(await loadTranscript(sessionId), live);
+  };
   const agentTools = useAgentTools({
     sessions,
     // Only the agents the user has in use, as the @ list and the dialog offer: an agent
@@ -956,13 +978,25 @@ export default function App() {
       const agent = agentsInUse.find((candidate) => candidate.id === agentId);
       return agent === undefined ? "not-installed" : delegationStatusOf(agent);
     },
-    delegatesOf: (sessionId) =>
-      openDelegatesOf(sessionId, sessions).map((delegate) => ({
-        agentId: delegate.profileId,
-        state: isSessionWaiting(delegate.id) ? "needs-answer" : isSessionBusy(delegate.id) ? "working" : "idle",
-        task: delegate.delegatedFrom?.task ?? "",
-      })),
-    giveTask: (sourceId, agentId, task, options) => delegation.giveTask(sourceId, agentId, task, options),
+    workersOf: (sessionId) =>
+      openDelegatesOf(sessionId, sessions).flatMap((worker) => {
+        const link = worker.delegatedFrom;
+        const handle = workerHandleOf(worker);
+        if (link === undefined || link === null || handle === undefined) return [];
+        return [
+          {
+            handle,
+            agent: worker.profileId,
+            title: worker.name,
+            state:
+              workerStateOf({ link, isBusy: isSessionBusy(worker.id), isWaiting: isSessionWaiting(worker.id) }) ?? "idle",
+            outcome: link.outcome?.result ?? null,
+          },
+        ];
+      }),
+    startWorker: (coordinatorId, input) => delegation.startWorker(coordinatorId, input),
+    sendToWorker: (coordinatorId, workerId, task) => delegation.sendToWorker(coordinatorId, workerId, task),
+    recordDone: (workerId, done) => delegation.recordDone(workerId, done),
     workspaces,
     openSession: openedSessions.open,
     openedOf: openedSessions.openedOf,
@@ -970,13 +1004,7 @@ export default function App() {
     onAttention: (sessionId, reason) => notifyAttention(sessionId, reason),
     onNotice: (message) => setNotice(message),
     onArtifactShown,
-    messagesOf: async (sessionId) => {
-      const live = transcripts[sessionId] ?? [];
-      if (transcriptStatus[sessionId] === "ready") return live;
-      if (transcriptStatus[sessionId] === "failed") throw new Error("unreadable");
-      // Not opened in this run: read what was saved, then what arrived since.
-      return savedThenLive(await loadTranscript(sessionId), live);
-    },
+    messagesOf: readMessages,
     stateOf: (sessionId) =>
       isSessionWaiting(sessionId) ? "needs-answer" : isSessionBusy(sessionId) ? "working" : "idle",
     stopTurn: (sessionId) => handleInterrupt(sessionId),
@@ -1206,6 +1234,25 @@ export default function App() {
     return agent !== undefined && isAgentReady(agent) && signInStatus.stateOf(agent.id) !== "needed";
   };
 
+  const workerStops = useWorkerStops({
+    sessions,
+    stop: acp.stop,
+    markTerminated: (sessionId) => patchSession(sessionId, { status: "terminated", endedAt: Date.now() }),
+  });
+
+  /** Reopens a worker whose agent was closed after its turn; the session and its history stayed. */
+  const resumeWorker = async (sessionId: string, message: FirstMessage): Promise<boolean> => {
+    const session = sessions.find((candidate) => candidate.id === sessionId);
+    if (session === undefined || !session.acpSessionId) return false;
+    workerStops.forget(sessionId);
+    // Its chat may not have been opened in this run: without the load registered first, the task
+    // would be saved as the whole conversation, over the history on disk.
+    ensureLoaded(sessionId);
+    patchSession(sessionId, { status: "running", endedAt: null, exitCode: null });
+    // The model last picked for this agent is applied again, as for a user's resume; the draft's own picks are not this worker's.
+    return acp.resume(session, session.acpSessionId, message, withPreferred(NO_CHOICES, state.agentOptions?.[session.profileId]));
+  };
+
   const delegation = useDelegation({
     sessions,
     agents,
@@ -1213,15 +1260,42 @@ export default function App() {
     isBusy: isSessionBusy,
     canPrompt,
     isWaiting: isSessionWaiting,
+    places: startPlaces,
     send: acp.send,
+    resume: resumeWorker,
+    canResume: (sessionId) => Boolean(sessions.find((candidate) => candidate.id === sessionId)?.acpSessionId),
+    pendingStop: workerStops.pendingStop,
+    stopWorker: workerStops.stopWorker,
+    isTurnUnderWay: acp.isTurnUnderWay,
     startSession,
     selectSession: handleSelectSession,
-    patchSession,
+    updateLink,
+    messagesOf: async (sessionId) => {
+      try {
+        return await readMessages(sessionId);
+      } catch {
+        return null;
+      }
+    },
     giveBack: giveBackMessage,
     onNotice: setNotice,
   });
+  // Main window only: a popout must not stop agents.
+  useWorkerAutoClose({
+    sessions,
+    isBusy: isSessionBusy,
+    isWaiting: isSessionWaiting,
+    canReopen: (sessionId) => acp.info[sessionId]?.canReopen === true,
+    isTurnUnderWay: acp.isTurnUnderWay,
+    isSendingTo: delegation.isSendingTo,
+    hasLiveTasks: (sessionId) =>
+      backgroundTasks.tasks.some((task) => task.kind === "shell" && task.sessionId === sessionId),
+    hasFailedTurn: (sessionId) => Boolean(failedTurns[sessionId]),
+    stop: workerStops.stopWorker,
+  });
   // The engine was built before this hook: its turn ends reach it through the ref.
   delegationTurnEndedRef.current = delegation.onTurnEnded;
+  delegationTurnSettledRef.current = delegation.onTurnSettled;
   // A retry reads this when it runs: the hook's latest verdict, not the render that built the engine.
   useEffect(() => {
     delegationBlockedRef.current = delegation.sendBlockedReason;
@@ -1568,9 +1642,9 @@ export default function App() {
   const delegationSummary =
     delegationMention !== null && mentionedAgent !== undefined && mentionBlock === null
       ? {
-          // The agent already has a delegate here: the task goes to it, and nothing new starts.
+          // The agent has exactly one worker here: the task goes to it, and nothing new starts.
           text:
-            activeSession !== undefined && openDelegateOf(activeSession.id, mentionedAgent.id, sessions) !== undefined
+            activeSession !== undefined && soleOpenDelegateOf(activeSession.id, mentionedAgent.id, sessions) !== undefined
               ? followUpSummary(mentionedAgent.name)
               : startSummary({
                   agentName: mentionedAgent.name,
@@ -1592,8 +1666,8 @@ export default function App() {
   const delegateAgents: readonly DelegateAgentChoice[] = agentsInUse.map((agent) => ({
     profile: agent,
     status: delegationStatusOf(agent),
-    // Its task would go to the session it already has here, which keeps its own model and mode.
-    ...(activeSession !== undefined && openDelegateOf(activeSession.id, agent.id, sessions) !== undefined
+    // Its task would go to its one worker here, which keeps its own model and mode.
+    ...(activeSession !== undefined && soleOpenDelegateOf(activeSession.id, agent.id, sessions) !== undefined
       ? { hasDelegate: true }
       : {}),
   }));

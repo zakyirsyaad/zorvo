@@ -13,7 +13,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 use zorvo_lib::agent_tools::peer::ProcessId;
-use zorvo_lib::agent_tools::socket::Capabilities;
+use zorvo_lib::agent_tools::socket::{Capabilities, ToolsRole};
 use zorvo_lib::agent_tools::{AgentTools, ToolsPath};
 use zorvo_lib::computer_use::{
     AppIdentity, ComputerUse, DriverClient, Hooks, NoDriver, ScreenServer, StartOptions,
@@ -212,6 +212,7 @@ impl Client {
             agent_tools: false,
             computer_use: true,
             path,
+            role: ToolsRole::Coordinator,
         };
         let entry = rig.tools.servers_with(session, capabilities);
         rig.tools.note_profile(session, "qwen-code");

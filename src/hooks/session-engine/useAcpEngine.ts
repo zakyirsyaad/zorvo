@@ -155,6 +155,11 @@ export function useAcpEngine({
   const [stopAsked, setStopAsked] = useState<Record<string, number>>({});
   // Sessions whose running turn the user ended with End agent, until that turn settles, the agent exits or the session stops.
   const endAgentAsked = useRef(new Set<string>());
+  // Sessions with a turn running that no turn end or exit has settled yet. A ref, not state: both
+  // events can reach the page before React renders, and `acp.isBusy` would still read the old render.
+  const unsettledTurn = useRef(new Set<string>());
+  // Sessions whose turn an exit settled first: the turn end that follows settles nothing again.
+  const settledByExit = useRef(new Set<string>());
   const forgetStopAsked = (sessionId: string) =>
     setStopAsked((prev) => {
       if (!(sessionId in prev)) return prev;
@@ -242,6 +247,8 @@ export function useAcpEngine({
     onTurnEnd: unlessStopped((sessionId, { stopReason, error }: TurnResult) => {
       // End agent is the user's own stop: its turn end reads cancelled, not failed or exited.
       const wasEnded = endAgentAsked.current.delete(sessionId);
+      const alreadySettled = settledByExit.current.delete(sessionId);
+      unsettledTurn.current.delete(sessionId);
       agentFailures.clear(sessionId);
       forgetStopAsked(sessionId);
       updateNow(sessionId, closeTurn);
@@ -279,15 +286,15 @@ export function useAcpEngine({
       } else failedPromptRef.current.delete(sessionId);
       const notice = turnEndNotice(stopReason, error);
       // Written before anything else reacts, so the end is recorded even if a reaction throws.
-      onTurnSettled?.(sessionId, wasEnded ? { how: 'cancelled' } : settledEnd(stopReason, notice, error));
+      if (!alreadySettled) onTurnSettled?.(sessionId, wasEnded ? { how: 'cancelled' } : settledEnd(stopReason, notice, error));
       if (error && onTurnFailed) onTurnFailed(sessionId, error);
       else if (notice) reportError(notice);
       // A turn the user cancelled needs no notification: they were there.
       if (stopReason !== 'cancelled') onAttention?.(sessionId, notice ? 'failed' : 'finished');
     }),
     onExit: unlessStopped((sessionId, code: number | null) => {
-      // Read before the turn closes: an exit ends a turn only when one was running.
-      const endedATurn = acp.isBusy(sessionId);
+      // An exit ends a turn only when one is still unsettled; read from the ref, not the last render.
+      const endedATurn = unsettledTurn.current.delete(sessionId);
       const wasEnded = endAgentAsked.current.delete(sessionId);
       agentFailures.clear(sessionId);
       forgetStopAsked(sessionId);
@@ -296,7 +303,10 @@ export function useAcpEngine({
       // The agent leaves no more updates: the cards it showed are the ones marked unanswered.
       elicitations.abandon(sessionId);
       patchSession(sessionId, { status: 'terminated', endedAt: Date.now(), exitCode: code });
-      if (endedATurn) onTurnSettled?.(sessionId, { how: wasEnded ? 'cancelled' : 'exited' });
+      if (endedATurn) {
+        settledByExit.current.add(sessionId);
+        onTurnSettled?.(sessionId, { how: wasEnded ? 'cancelled' : 'exited' });
+      }
     }),
     onError: reportError,
   });
@@ -387,6 +397,8 @@ export function useAcpEngine({
   const prompt = async (sessionId: string, message: ChatMessage, context?: string): Promise<boolean> => {
     // An agent with Zorvo's tools hears of them with the first message it takes.
     const toolsDue = toolsContextDueRef.current.get(sessionId);
+    unsettledTurn.current.add(sessionId);
+    settledByExit.current.delete(sessionId);
     lastPromptRef.current.set(sessionId, { message, context, ...(toolsDue ? { toolsContext: toolsDue } : {}) });
     // A new turn starts: the failure of the last one no longer applies.
     failedPromptRef.current.delete(sessionId);
@@ -399,6 +411,7 @@ export function useAcpEngine({
       if (toolsDue) toolsContextDueRef.current.delete(sessionId);
       return true;
     } catch (error) {
+      unsettledTurn.current.delete(sessionId);
       lastPromptRef.current.delete(sessionId);
       if (context) unsentContextRef.current.set(sessionId, context);
       updateNow(sessionId, (prev) => withoutMessage(prev, message.id));
@@ -793,6 +806,8 @@ export function useAcpEngine({
     agentFailures.clear(sessionId);
     forgetStopAsked(sessionId);
     endAgentAsked.current.delete(sessionId);
+    unsettledTurn.current.delete(sessionId);
+    settledByExit.current.delete(sessionId);
     // The backend cancels the open requests, and the agent's later events (its exit) are ignored.
     elicitations.abandon(sessionId);
     stoppedRef.current.add(sessionId);

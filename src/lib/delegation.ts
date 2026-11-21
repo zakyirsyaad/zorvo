@@ -1,8 +1,8 @@
 /**
  * The rules for delegating a task from one session to another agent, and the
- * text a delegate's report carries back. Pure: every function takes what it
- * needs and returns a value, so the hook and the components read the link the
- * same way.
+ * helpers a report is read with (the message itself is built in `lib/workers`).
+ * Pure: every function takes what it needs and returns a value, so the hook and
+ * the components read the link the same way.
  */
 import type { ChatMessage, DelegationLink, Session } from '../types';
 import { activityOf } from './activity';

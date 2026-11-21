@@ -76,7 +76,7 @@ describe('workerStateOf', () => {
 });
 
 describe('link updates', () => {
-  test('a turn end keeps an outcome reported inside that turn only', () => {
+  test('a turn end drops an outcome that was already reported, and keeps one that was not', () => {
     const reported = {
       ...link,
       lastTurn: { endedAt: 300, how: 'finished' as const },

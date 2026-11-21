@@ -377,6 +377,38 @@ describe("useAcpEngine reports how every turn ended", () => {
     expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", { how: "exited" });
   });
 
+  const emitTogether = (...payloads: Record<string, unknown>[]) =>
+    act(async () => {
+      for (const payload of payloads) listeners.get("acp-event")?.({ payload: { sessionId: "s-1", ...payload } });
+    });
+
+  it("settles a plain death once when turn-end and exit arrive before React renders", async () => {
+    const engine = renderEngine();
+    await startTurn(engine);
+    await emitTogether({ kind: "turn-end", error: "The agent exited before answering" }, { kind: "exit", code: 1 });
+    expect(engine.onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", { how: "exited" });
+  });
+
+  it("settles End agent once, as cancelled, when both events arrive before React renders", async () => {
+    const engine = renderEngine();
+    await startTurn(engine);
+    await act(async () => {
+      await engine.result.current.endAgent("s-1");
+    });
+    await emitTogether({ kind: "turn-end", error: "The agent exited before answering" }, { kind: "exit", code: null });
+    expect(engine.onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", { how: "cancelled" });
+  });
+
+  it("settles an exit that comes first once, even when the turn end follows in the same tick", async () => {
+    const engine = renderEngine();
+    await startTurn(engine);
+    await emitTogether({ kind: "exit", code: 1 }, { kind: "turn-end", error: "The agent exited before answering" });
+    expect(engine.onTurnSettled).toHaveBeenCalledTimes(1);
+    expect(engine.onTurnSettled).toHaveBeenCalledWith("s-1", { how: "exited" });
+  });
+
   it("does not take the agent's own words for its exit", async () => {
     const engine = renderEngine();
     await startTurn(engine);

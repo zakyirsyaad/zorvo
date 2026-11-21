@@ -62,7 +62,7 @@ describe("useAcpEngine when the agent refuses a prompt for a sign-in", () => {
     });
 
     expect(onTurnSettled).toHaveBeenCalledTimes(1);
-    expect(onTurnSettled).toHaveBeenCalledWith("s-1", { how: "failed", reason: "It needs a sign-in." });
+    expect(onTurnSettled).toHaveBeenCalledWith("s-1", { how: "failed" });
   });
 
   it("hands the hidden context to the agent again with the message the user resends", async () => {

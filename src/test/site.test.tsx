@@ -108,7 +108,7 @@ describe("landing page", () => {
     return body.textContent ?? "";
   })();
 
-  it("has the fourteen sections in order, the paid extra after the free app, and no pricing", () => {
+  it("has the fifteen sections in order, the paid extra after the free app, and no pricing", () => {
     const names = [...document.querySelectorAll("main > section")].map(
       (section) => section.id || section.getAttribute("aria-label"),
     );
@@ -126,6 +126,7 @@ describe("landing page", () => {
       "features",
       "private",
       "privacy",
+      "faq",
       "download",
     ]);
     // A session called "Review the pricing copy" is in a picture; the page's own words name no price.
@@ -299,8 +300,9 @@ describe("landing page", () => {
     const video = card.querySelector("video")!;
     expect([video.getAttribute("poster"), video.querySelector("source")?.getAttribute("src")]).toEqual(["/media/zorvo-launch.jpg", "/media/zorvo-launch.mp4"]);
     for (const file of ["zorvo-launch.jpg", "zorvo-launch.mp4"]) expect(existsSync(join(ROOT, "site", "public", "media", file)), file).toBe(true);
-    // Silent, with the browser's controls to pause it, sized so the page does not jump, and not fetched until it plays.
-    for (const attribute of ["muted", "loop", "playsinline", "controls", "data-autoplay", "aria-label"]) expect(video.hasAttribute(attribute), attribute).toBe(true);
+    // Silent, sized so the page does not jump, and not fetched until it plays. No controls: the owner's choice.
+    for (const attribute of ["muted", "loop", "playsinline", "data-autoplay", "aria-label"]) expect(video.hasAttribute(attribute), attribute).toBe(true);
+    expect(video.hasAttribute("controls")).toBe(false);
     expect([video.getAttribute("width"), video.getAttribute("height"), video.getAttribute("preload")]).toEqual(["960", "540", "none"]);
     // The card as a whole leads to the profile: the name's link is stretched over it, and it lifts on hover.
     expect(card.querySelector("a.lp-tweet-main")?.getAttribute("href")).toBe("https://x.com/zorvolabs");
@@ -324,6 +326,33 @@ describe("landing page", () => {
     expect(script).toMatch(/"\[data-foot-inner\]",\s+\{ yPercent: footStart \},\s+\{ yPercent: 0, ease: "none", scrollTrigger: \{ trigger: foot, start: "top bottom", end: "bottom bottom", scrub: true, invalidateOnRefresh: true \} \}/);
     // Held at the bottom of the window, a footer taller than the window would hide its own top for good.
     expect(script).toContain("const footStart = () => (foot.offsetHeight <= window.innerHeight ? -100 : 0);");
+  });
+
+  it("answers the README's own questions, each in a row that opens without a script", () => {
+    const rows = [...document.querySelectorAll("#faq details")];
+    expect(rows.map((row) => row.querySelector("summary h3")?.textContent)).toEqual([
+      "Is Zorvo free?",
+      "Does Zorvo need my API keys?",
+      "Which agent should I start with?",
+      "What do I need installed?",
+      "Does it work on Windows or Linux?",
+      "Does Zorvo send my code anywhere?",
+    ]);
+    for (const row of rows) {
+      // One open at a time, and an answer of real length under every question.
+      expect(row.getAttribute("name")).toBe("faq");
+      expect(row.hasAttribute("open")).toBe(false);
+      expect(row.querySelector("p")?.textContent?.length, row.textContent ?? "").toBeGreaterThan(30);
+      expect(row.querySelector("summary")?.className).toContain("focus-ring");
+    }
+    // The answers repeat the README, which a change there must not leave behind.
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8").replace(/\s+/g, " ");
+    expect(readme).toContain("Each agent signs in with its own tools, and Zorvo never asks for or stores keys or tokens.");
+    expect(readme).toContain("Not yet. Zorvo is a Mac app for now.");
+    const answers = document.querySelector("#faq")?.textContent ?? "";
+    expect(answers).toContain("Each agent signs in with its own tools, and Zorvo never asks for or stores keys or tokens.");
+    expect(answers).toContain("Not yet. Zorvo is a Mac app for now.");
+    expect(document.querySelector('footer a[href="#faq"]')?.textContent).toBe("Questions");
   });
 
   it("shows no voices section without real quotes, and lays out the ones it is given", () => {

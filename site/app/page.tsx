@@ -4,6 +4,7 @@ import { Compare } from "../components/sections/Compare";
 import { Control } from "../components/sections/Control";
 import { Delegate } from "../components/sections/Delegate";
 import { Download } from "../components/sections/Download";
+import { Faq } from "../components/sections/Faq";
 import { Features } from "../components/sections/Features";
 import { Hero } from "../components/sections/Hero";
 import { LongSessions } from "../components/sections/LongSessions";
@@ -52,6 +53,7 @@ export default function Home() {
         {/* The optional paid extra comes after everything Zorvo does for free, right before privacy. */}
         <PrivateMode />
         <Privacy />
+        <Faq />
         <Download />
       </main>
       <SiteFooter />

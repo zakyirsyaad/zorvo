@@ -59,10 +59,10 @@ export function TweetCard({ tweet }: { tweet: Tweet }) {
         )}
       </p>
       {tweet.video && (
-        // Muted, and started by the page's script only while the card is in view and motion is welcome.
-        // The browser's own controls pause it. Above the card's link, so they can be reached.
+        // Muted, and started by the page's script only while the card is in view and motion is welcome. It has
+        // no controls, at the owner's request, so a click on it follows the card's link like the rest.
         <video
-          className="lp-tweet-over w-full h-auto rounded-xl border border-border bg-bg"
+          className="w-full h-auto rounded-xl border border-border bg-bg"
           width={tweet.video.width}
           height={tweet.video.height}
           poster={tweet.video.poster}
@@ -70,7 +70,6 @@ export function TweetCard({ tweet }: { tweet: Tweet }) {
           muted
           loop
           playsInline
-          controls
           preload="none"
           data-autoplay=""
         >

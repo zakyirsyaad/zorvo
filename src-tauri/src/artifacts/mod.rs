@@ -13,6 +13,7 @@ pub mod source;
 pub mod store;
 pub mod view;
 pub mod visual_clean;
+pub mod visual_wrapper;
 
 #[cfg(test)]
 pub(crate) mod test_support {

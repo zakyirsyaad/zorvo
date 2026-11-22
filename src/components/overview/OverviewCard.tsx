@@ -108,6 +108,8 @@ const TASK_ICON = { subagent: Users, shell: Terminal } as const;
 
 /** The mark at a task's start: work in progress spins, a question waits, the end says how it went. */
 function TaskState({ task }: { task: OverviewTask }) {
+  // A quiet agent is not working as far as anyone can tell: no spinner, the same mark as a task that waits.
+  if (task.status === "Quiet") return <CircleAlert aria-hidden="true" className="size-3.5 shrink-0 text-status-attention" />;
   if (task.state === "running") return <LoaderCircle aria-hidden="true" className="size-3.5 shrink-0 text-status-running motion-safe:animate-spin" />;
   if (task.state === "needs-you") return <CircleAlert aria-hidden="true" className="size-3.5 shrink-0 text-status-attention" />;
   if (task.state === "failed") return <X aria-hidden="true" className="size-3.5 shrink-0 text-danger" />;
@@ -119,14 +121,9 @@ function TaskRowOf({ task, onOpen }: { task: OverviewTask; onOpen: (tab: TaskTab
   const now = useNow(1000, isLive && task.startedAt !== undefined);
   const elapsed = isLive && task.startedAt !== undefined ? formatElapsed(now - task.startedAt) : undefined;
   const Kind = TASK_ICON[task.kind];
-  const statusWord = task.state === "failed" ? "Failed" : task.state === "needs-you" ? "Needs you" : undefined;
-  return (
-    <button
-      type="button"
-      aria-label={`Open ${task.title}. ${task.kind === "subagent" ? "Subagent" : "Shell command"}, ${task.status.toLowerCase()}.`}
-      onClick={() => onOpen(task.tab)}
-      className={ROW}
-    >
+  const statusWord = task.state === "failed" ? "Failed" : task.state === "needs-you" ? "Needs you" : task.status === "Quiet" ? "Quiet" : undefined;
+  const label = (
+    <>
       <TaskState task={task} />
       <Label name={task.title} detail={task.detail} isMono={task.kind === "shell"} />
       {statusWord ? (
@@ -136,6 +133,26 @@ function TaskRowOf({ task, onOpen }: { task: OverviewTask; onOpen: (tab: TaskTab
       ) : (
         <Kind aria-hidden="true" className={ICON} />
       )}
+    </>
+  );
+  const { tab } = task;
+  // A background agent has no tab to open, so its row is plain text, not a control that does nothing.
+  if (tab === undefined) {
+    return (
+      <div className={STILL_ROW} title={task.detail ? `${task.title}: ${task.detail}` : task.title}>
+        {label}
+        <span className="sr-only">{`Subagent, ${task.status.toLowerCase()}.`}</span>
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      aria-label={`Open ${task.title}. ${task.kind === "subagent" ? "Subagent" : "Shell command"}, ${task.status.toLowerCase()}.`}
+      onClick={() => onOpen(tab)}
+      className={ROW}
+    >
+      {label}
     </button>
   );
 }
@@ -395,7 +412,7 @@ export function OverviewCard({
             ))}
           </Section>
         )}
-        <Section id="overview-output" title="Output" count={outputRows.length}>
+        <Section id="overview-output" title="Artifacts" count={outputRows.length}>
           {outputRows.length > 0
             ? outputRows
             : [

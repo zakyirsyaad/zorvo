@@ -191,21 +191,60 @@ fn is_opencode_transport(parent: &str, child: &str) -> bool {
             == Some("acp")
 }
 
+/// Whether `child` runs a program that sits beside `parent`'s and is named
+/// after it with a `-suffix`. Codex's `codex
+/// app-server` starts `codex-code-mode-host` from its own folder that way, in
+/// a group of its own. A path may hold spaces ("Application Support") and `ps`
+/// does not quote it, so the folder is what both command lines start with, up
+/// to a slash, and neither name may hold another one.
+fn is_sibling_program(parent: &str, child: &str) -> bool {
+    let shared = parent
+        .bytes()
+        .zip(child.bytes())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let Some(folder_end) = parent.as_bytes()[..shared].iter().rposition(|b| *b == b'/') else {
+        return false;
+    };
+    // A bare `/` is every absolute path's start, not a folder two programs share.
+    if folder_end == 0 {
+        return false;
+    }
+    let name = |command: &str| {
+        command[folder_end + 1..]
+            .split_whitespace()
+            .next()
+            .filter(|name| !name.contains('/'))
+            .map(str::to_owned)
+    };
+    match (name(parent), name(child)) {
+        // The same file is not enough: an agent asked to run its own program
+        // (`opencode serve --port 8080`) starts a task.
+        (Some(parent), Some(child)) => child
+            .strip_prefix(parent.as_str())
+            .is_some_and(|rest| rest.starts_with('-')),
+        _ => false,
+    }
+}
+
 fn is_session_helper(row: &ProcessRow, by_pid: &HashMap<u32, &ProcessRow>) -> bool {
     let Some(parent) = by_pid.get(&row.ppid) else {
         return false;
     };
-    // The server also starts the MCP bridge supplied by Zorvo in its own group.
+    // A shell runs what the agent was asked to run: what it starts is never the agent's own.
+    if is_shell(&parent.command) {
+        return false;
+    }
+    // Zorvo's MCP bridge, which Codex and OpenCode start in a group of its own.
     if row
         .command
         .strip_suffix(" mcp-bridge")
         .is_some_and(|binary| Path::new(binary).ends_with("zorvo"))
     {
-        return by_pid
-            .get(&parent.ppid)
-            .is_some_and(|acp| is_opencode_transport(&acp.command, &parent.command));
+        return true;
     }
     is_opencode_transport(&parent.command, &row.command)
+        || is_sibling_program(&parent.command, &row.command)
 }
 
 /// The tasks under `root` with no other task between them and it, a shell

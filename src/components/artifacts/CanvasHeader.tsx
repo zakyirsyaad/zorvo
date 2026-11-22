@@ -15,7 +15,7 @@ export interface CanvasHeaderProps {
   zoom: number;
   /** The selected artboard's title, when one is selected. */
   selectedTitle: string | null;
-  /** Back to the Output list; absent when there is no list to go back to. */
+  /** Back to the Artifacts list; absent when there is no list to go back to. */
   onBack?: () => void;
   isExpanded: boolean;
   onToggleExpanded: () => void;
@@ -120,9 +120,9 @@ export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBa
     <>
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-2">
         {onBack && !isExpanded && (
-          <Button variant="ghost" size="sm" tone="secondary" aria-label="Back to output" onClick={onBack} className="gap-0.5 pl-1">
+          <Button variant="ghost" size="sm" tone="secondary" aria-label="Back to artifacts" onClick={onBack} className="gap-0.5 pl-1">
             <ChevronLeft size={14} aria-hidden="true" />
-            Output
+            Artifacts
           </Button>
         )}
         <h3 title={title} className="max-w-[40%] shrink-0 truncate pl-1 text-ui font-semibold text-fg">

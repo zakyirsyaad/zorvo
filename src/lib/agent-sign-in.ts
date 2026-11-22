@@ -52,6 +52,16 @@ export function unconfirmedMessage(agentName: string, variables: readonly string
 /** Said when a request to sign in to one agent is refused because another agent's sign-in is running. */
 export const SIGN_IN_RUNNING_NOTICE = "Another agent's sign-in is running. Finish it, then try again.";
 
+/** The row's live line while Sign in again reads which methods the agent offers. */
+export function readingMethodsLine(agentName: string): string {
+  return `Reading ${agentName}'s sign-in options…`;
+}
+
+/** Said under a row that was asked to sign in again when none of the agent's methods is one Zorvo can run. */
+export function noSignInOfferedLine(agentName: string): string {
+  return `${agentName} offers no sign-in Zorvo can start. Set it up in a terminal.`;
+}
+
 /** What a sign-in's failure says when the reason is not a plain sentence. */
 const SIGN_IN_FAILED_FALLBACK = 'Zorvo could not finish the sign-in. Try again.';
 

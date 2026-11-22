@@ -21,7 +21,7 @@ const ID_PREFIX = "inspector";
 
 export interface InspectorProps {
   tab: InspectorTab;
-  /** The tabs this session can show; the order is always Changes, Activity, Files, Output, Context, Tasks, Terminal, Private. */
+  /** The tabs this session can show; the order is always Changes, Activity, Files, Artifacts, Context, Tasks, Terminal, Private. */
   tabs: readonly InspectorTab[];
   /** The remembered width; the Terminal tab shows at least `INSPECTOR_WIDTH.wide`. */
   width: number;

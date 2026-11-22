@@ -34,7 +34,7 @@ const CANVAS_READ = {
   boards: [{ id: "a", sha256: null }],
 };
 
-function setup(show: (args: Record<string, unknown>) => unknown | Promise<unknown>, sessions: Session[] = [SESSION]) {
+function setup(show: (args: Record<string, unknown>) => unknown | Promise<unknown>, sessions: Session[] = [SESSION], queued?: (messages: Record<string, ChatMessage[]>) => void) {
   const messages: Record<string, ChatMessage[]> = { "s-1": [{ id: "m-1", role: "user", content: "show me", timestamp: 1 }] };
   const shown: Array<{ sessionId: string; shown: ShownArtifact | { kind: "canvas"; key: string } }> = [];
   const notices: string[] = [];
@@ -60,6 +60,7 @@ function setup(show: (args: Record<string, unknown>) => unknown | Promise<unknow
     updateMessages: (sessionId, update) => {
       messages[sessionId] = update(messages[sessionId] ?? []);
     },
+    flushUpdates: () => queued?.(messages),
     onAttention: () => undefined,
     onNotice: (message) => {
       notices.push(message);
@@ -224,5 +225,28 @@ describe("the refusals", () => {
       expect(oneLine).toContain(`"${refusal}"`);
     }
     expect(ARTIFACT_REFUSALS.size).toBe(5);
+  });
+});
+
+describe("a card after text the agent already sent", () => {
+  // Streamed text waits for a frame; the engine's flush lands it. Here that is one queued reply.
+  const queuedReply = (messages: Record<string, ChatMessage[]>) => {
+    if (messages["s-1"].some((message) => message.id === "m-2")) return;
+    messages["s-1"] = [...messages["s-1"], { id: "m-2", role: "agent", content: "Here it is:", timestamp: 2 }];
+  };
+  const order = (messages: ChatMessage[]) => messages.map((message) => (message.artifactCard ? "card" : message.id));
+
+  it("puts an artifact's card after that text", async () => {
+    const env = setup(() => SHOWN, [SESSION], queuedReply);
+    await env.call("c-1", "show_artifact", { path: "r.html", title: "Report" });
+    expect(order(env.messages["s-1"]).indexOf("m-2")).toBeGreaterThan(-1);
+    expect(order(env.messages["s-1"]).indexOf("m-2")).toBeLessThan(order(env.messages["s-1"]).lastIndexOf("card"));
+  });
+
+  it("puts a canvas's card after that text", async () => {
+    const env = setup(() => SHOWN, [SESSION], queuedReply);
+    await env.call("c-1", "show_artifact", { path: "d", kind: "canvas" });
+    expect(order(env.messages["s-1"]).indexOf("m-2")).toBeGreaterThan(-1);
+    expect(order(env.messages["s-1"]).indexOf("m-2")).toBeLessThan(order(env.messages["s-1"]).lastIndexOf("card"));
   });
 });

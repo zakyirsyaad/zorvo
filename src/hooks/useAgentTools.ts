@@ -455,6 +455,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
           respond(call.callId, false, FAILED);
           return;
         }
+        // As for a visual: the reply's text was sent before this call, so it lands before the card.
+        latest.current.flushUpdates?.();
         latest.current.updateMessages(session.id, (prev) => withCanvasCard(prev, read, { sessionId: session.id, now: Date.now(), createId }));
         latest.current.onArtifactShown(session.id, { kind: 'canvas', key: read.entry.key });
         respond(call.callId, true, canvasResultText(read));
@@ -501,6 +503,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
           return;
         }
         if (shown.isNewVersion) {
+          // As for a visual: the reply's text was sent before this call, so it lands before the card.
+          latest.current.flushUpdates?.();
           latest.current.updateMessages(session.id, (prev) =>
             withArtifactCard(prev, shown, { sessionId: session.id, now: Date.now(), createId }),
           );

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
-import { useVisualSweep } from "../hooks/useVisualSweep";
+import { VISUAL_SWEEP_RETRY_MS, useVisualSweep } from "../hooks/useVisualSweep";
 import { fakeTauriInvoke } from "./setup";
 import type { ChatMessage } from "../types";
 
@@ -63,5 +63,36 @@ describe("useVisualSweep", () => {
     const env = setup(() => Promise.reject("EIO"));
     env.rerender({ sessionId: "s-1", messages: [] });
     await waitFor(() => expect(env.sweeps()).toHaveLength(1));
+  });
+  it("sweeps once more after the grace period, with what the transcript names then", async () => {
+    vi.useFakeTimers();
+    try {
+      const env = setup();
+      env.rerender({ sessionId: "s-1", messages: [reply("m-1", [A])] });
+      env.rerender({ sessionId: "s-1", messages: [reply("m-1", [A]), reply("m-3", ["v-000000000000000c"])] });
+      expect(env.sweeps()).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(VISUAL_SWEEP_RETRY_MS);
+      expect(env.sweeps()).toEqual([
+        { sessionId: "s-1", keep: [A] },
+        { sessionId: "s-1", keep: [A, "v-000000000000000c"] },
+      ]);
+      await vi.advanceTimersByTimeAsync(VISUAL_SWEEP_RETRY_MS * 3);
+      expect(env.sweeps()).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops the later sweep when the session leaves the screen", async () => {
+    vi.useFakeTimers();
+    try {
+      const env = setup();
+      env.rerender({ sessionId: "s-1", messages: [reply("m-1", [A])] });
+      env.rerender({ sessionId: "s-2", messages: [] });
+      await vi.advanceTimersByTimeAsync(VISUAL_SWEEP_RETRY_MS * 2);
+      expect(env.sweeps()).toEqual([{ sessionId: "s-1", keep: [A] }]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -63,7 +63,16 @@ function buildActivityLines(message: ChatMessage): string[] {
     : [];
   // The files themselves are not copied: their paths let the new agent read them again.
   const attachmentLines = (message.attachments ?? []).map((path) => `- Attached: ${path}`);
-  return [...attachmentLines, ...toolLines, ...cardLines];
+  // A visual's markup stays in Zorvo's own store, so the new agent is told only that one was shown.
+  const visualLines = (message.parts ?? []).flatMap((part) =>
+    part.kind === "visual"
+      ? [
+          `- Visual shown: "${part.title.replace(LINE_BREAK_PATTERN, " ")}" ` +
+            `(${part.visualKind.toUpperCase()}, its markup is not in this file)`,
+        ]
+      : [],
+  );
+  return [...attachmentLines, ...toolLines, ...visualLines, ...cardLines];
 }
 
 function buildSection(message: ChatMessage): string {

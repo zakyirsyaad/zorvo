@@ -360,3 +360,26 @@ describe("buildRewindContext", () => {
     expect(context).toContain("answer my message below");
   });
 });
+
+describe("buildForkHandoff visuals", () => {
+  const withVisual: ChatMessage[] = [
+    { id: "u-1", role: "user", content: "Draw the flow", timestamp: 1 },
+    {
+      id: "a-1",
+      role: "agent",
+      content: "",
+      timestamp: 2,
+      parts: [{ kind: "visual", id: "v-000000000000000a", title: "Checkout\nflow", visualKind: "svg" }],
+    },
+  ];
+
+  it("names each visual a reply showed, on one line, and says its markup is not in the file", () => {
+    const handoff = buildForkHandoff(withVisual, "a-1", meta);
+    expect(handoff).toContain('- Visual shown: "Checkout flow" (SVG, its markup is not in this file)');
+  });
+
+  it("gives a visual-only reply a section that is not empty", () => {
+    const handoff = buildForkHandoff(withVisual, "a-1", meta);
+    expect(handoff.trimEnd().endsWith("### Agent")).toBe(false);
+  });
+});

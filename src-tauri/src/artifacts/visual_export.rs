@@ -71,12 +71,114 @@ pub fn theme_of(name: &str) -> Option<Theme> {
     }
 }
 
+/// What stands in for a CSS reference that would leave the file.
+const NO_REFERENCE: &str = "none";
+const CSS_REFERENCES: [&str; 3] = ["@import", "url(", "image-set("];
+const QUOTES: [&str; 5] = ["\"", "'", "&quot;", "&#34;", "&#39;"];
+
+fn is_local_reference(argument: &str) -> bool {
+    let mut inner = argument.trim();
+    while let Some(bare) = QUOTES.iter().find_map(|quote| inner.strip_prefix(quote)) {
+        inner = bare.trim_start();
+    }
+    inner.starts_with('#') || inner.to_ascii_lowercase().starts_with("data:image/")
+}
+
+/// The markup with every CSS reference that is not a fragment or an inline image taken out:
+/// `@import` rules go, and an outside `url()` or any `image-set()` becomes `none`.
+fn without_references(markup: &str) -> String {
+    let lower = markup.to_ascii_lowercase();
+    let mut out = String::with_capacity(markup.len());
+    let mut at = 0;
+    while let Some((start, found)) = CSS_REFERENCES
+        .iter()
+        .filter_map(|name| lower[at..].find(name).map(|offset| (at + offset, *name)))
+        .min_by_key(|(start, _)| *start)
+    {
+        out.push_str(&markup[at..start]);
+        let after = start + found.len();
+        let tail = &markup[after..];
+        if found == "@import" {
+            at = match tail.find([';', '<']) {
+                Some(end) if tail[end..].starts_with(';') => after + end + 1,
+                Some(end) => after + end,
+                None => markup.len(),
+            };
+            continue;
+        }
+        let (argument, next) = match tail.find(')') {
+            Some(close) => (&tail[..close], after + close + 1),
+            None => ("", after + tail.find('<').unwrap_or(tail.len())),
+        };
+        if found == "url(" && tail.contains(')') && is_local_reference(argument) {
+            out.push_str(&markup[start..next]);
+        } else {
+            out.push_str(NO_REFERENCE);
+        }
+        at = next;
+    }
+    out.push_str(&markup[at..]);
+    out
+}
+
+/// The text with CSS escapes read the way a style sheet reads them (`\75` and `\u` are both u).
+fn css_unescaped(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        let mut hex = String::new();
+        while hex.len() < 6 {
+            match chars.peek() {
+                Some(digit) if digit.is_ascii_hexdigit() => hex.push(*digit),
+                _ => break,
+            }
+            chars.next();
+        }
+        if hex.is_empty() {
+            out.extend(chars.next());
+            continue;
+        }
+        if chars.peek().is_some_and(|next| next.is_whitespace()) {
+            chars.next();
+        }
+        let code = u32::from_str_radix(&hex, 16).unwrap_or(0);
+        out.push(
+            char::from_u32(code)
+                .filter(|c| *c != '\0')
+                .unwrap_or('\u{fffd}'),
+        );
+    }
+    out
+}
+
+/// A saved file has no content policy around it, so nothing in it may name the network. An
+/// escaped spelling (`u\72l(`) is found by reading the escapes; markup whose escapes hide no
+/// reference keeps them as written.
+fn without_external_css(markup: &str) -> String {
+    let plain = without_references(markup);
+    if !plain.contains('\\') {
+        return plain;
+    }
+    let unescaped = css_unescaped(&plain);
+    let checked = without_references(&unescaped);
+    if checked == unescaped {
+        plain
+    } else {
+        checked
+    }
+}
+
 /// An SVG visual as a file other programs open: with its namespace, with Zorvo's colour
 /// variables turned into the theme's values (a standalone file defines none), and without the
 /// one named entity HTML writes that XML does not know.
 pub fn standalone_svg(markup: &str, theme: Theme) -> String {
-    let mut out = String::with_capacity(markup.len() + 64);
-    let mut rest = markup;
+    let local = without_external_css(markup);
+    let mut out = String::with_capacity(local.len() + 64);
+    let mut rest = local.as_str();
     while let Some(at) = rest.find("var(") {
         let (before, from) = rest.split_at(at);
         out.push_str(before);
@@ -191,5 +293,29 @@ mod tests {
         let out = standalone_svg(own, Theme::Dark);
         assert_eq!(out.matches("xmlns=").count(), 1);
         assert!(out.contains("var(--mine)"));
+    }
+
+    #[test]
+    fn a_saved_svg_loads_nothing_from_the_network() {
+        for hostile in [
+            "<svg><style>@import url(https://e.com/t.css);.a{fill:red}</style><rect class=\"a\"></rect></svg>",
+            "<svg><style>@IMPORT 'https://e.com/t.css';</style><rect></rect></svg>",
+            "<svg><style>.a{background:URL( \"//e.com/p.png\" )}</style><rect></rect></svg>",
+            "<svg><rect style=\"background:url(&quot;https://e.com/p.png&quot;)\"></rect></svg>",
+            "<svg><style>.a{background:image-set('https://e.com/p.png' 1x)}</style><rect></rect></svg>",
+            "<svg><style>@\\69mport 'https://e.com/t.css';</style><rect></rect></svg>",
+            "<svg><style>.a{background:u\\72l(https://e.com/p.png)}</style><rect></rect></svg>",
+            "<svg><rect fill=\"url(https://e.com/g.svg#g)\"></rect></svg>",
+        ] {
+            let out = standalone_svg(hostile, Theme::Dark).to_lowercase();
+            assert!(!out.contains("e.com"), "{out}");
+            assert!(!out.contains("@import"), "{out}");
+        }
+    }
+
+    #[test]
+    fn a_saved_svg_keeps_its_own_references_and_escapes() {
+        let own = "<svg xmlns=\"http://www.w3.org/2000/svg\"><style>.q::before{content:\"\\201C\"}.a{fill:red}</style><path marker-end=\"url(#m)\" fill=\"url( '#g' )\"></path><rect style=\"background:url(data:image/png;base64,AAAA)\"></rect><text>C:\\temp</text></svg>";
+        assert_eq!(standalone_svg(own, Theme::Dark), own);
     }
 }

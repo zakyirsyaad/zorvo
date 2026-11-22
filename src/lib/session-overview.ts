@@ -1,7 +1,7 @@
 import type { PullRequestStatus } from '../hooks/usePullRequest';
 import type { TaskTab } from '../hooks/useTaskTabs';
 import type { Artifact, ChatMessage } from '../types';
-import { isWorkingTask, type AgentTask } from './agent-tasks';
+import { isQuiet, isWorkingTask, quietMinutes, quietMs, quietShortText, type AgentTask } from './agent-tasks';
 import { isImagePath } from './attachments';
 import type { BackgroundTask } from './background-tasks';
 import type { CreatedFile } from './created-files';
@@ -21,7 +21,7 @@ export interface OverviewTask {
   /** Running and waiting tasks show above; failed ones stay in sight; done ones fold away. */
   state: 'running' | 'needs-you' | 'failed' | 'done';
   /** The word a screen reader hears and a failed row shows. */
-  status: TaskStatus | 'Running';
+  status: TaskStatus | 'Running' | 'Quiet';
   startedAt?: number;
   /** What a click opens; a task Zorvo has no tab for (a background agent) has none and shows as a plain row. */
   tab?: TaskTab;
@@ -38,6 +38,8 @@ export interface OverviewInputs {
   pullRequest: PullRequestStatus | null;
   /** The background agents Qwen Code reports, when it does. */
   agentTasks?: readonly AgentTask[];
+  /** The agent's clock in that answer, for how long a task has been quiet. */
+  agentTasksAsOf?: number;
 }
 
 /** What the card shows; a section is left out while it has nothing to show, Output aside. */
@@ -112,28 +114,36 @@ const TASK_STATUS_WORDS: Record<Exclude<AgentTask['status'], 'unknown'>, TaskSta
   stopped: 'Did not finish',
 };
 
-/** A background agent as a row. Everything the agent wrote is made visible text first. */
-function agentTaskRow(task: AgentTask): OverviewTask {
-  const status: TaskStatus = task.status === 'unknown' ? (isWorkingTask(task) ? 'Working' : 'Done') : TASK_STATUS_WORDS[task.status];
+/** What a background agent last did, as "name: description". */
+function lastActivityText(task: AgentTask): string | undefined {
   const activity = task.activities[task.activities.length - 1];
-  const detail = activity
-    ? activity.description ? `${activity.name}: ${activity.description}` : activity.name
-    : (task.agentType ?? 'Subagent');
+  if (!activity) return undefined;
+  return activity.description ? `${activity.name}: ${activity.description}` : activity.name;
+}
+
+/** A background agent as a row. Everything the agent wrote is made visible text first. */
+function agentTaskRow(task: AgentTask, asOf: number | undefined): OverviewTask {
+  const isQuietNow = isQuiet(task, asOf);
+  const status: TaskStatus = task.status === 'unknown' ? (isWorkingTask(task) ? 'Working' : 'Done') : TASK_STATUS_WORDS[task.status];
+  const last = lastActivityText(task);
+  const detail = isQuietNow
+    ? `No activity for ${quietShortText(quietMinutes(quietMs(task, asOf)))}${last ? `. Last: ${last}` : ''}`
+    : (last ?? task.agentType ?? 'Subagent');
   return {
     key: `agent-task:${task.id}`,
     kind: 'subagent',
     title: escapeVisible(task.label || task.description || 'Background agent'),
     detail: escapeVisible(detail),
     state: STATE_OF[status],
-    status,
+    status: isQuietNow ? 'Quiet' : status,
     ...(task.startedAt === undefined ? {} : { startedAt: task.startedAt }),
   };
 }
 
 /** Background agents, less those a foreground subagent with steps already shows under the tool call that launched them. */
-function agentTaskRows(tasks: readonly AgentTask[], messages: readonly ChatMessage[]): OverviewTask[] {
+function agentTaskRows(tasks: readonly AgentTask[], messages: readonly ChatMessage[], asOf: number | undefined): OverviewTask[] {
   const shown = new Set(messages.flatMap((message) => shownTools(message.tools ?? []).filter((tool) => tool.steps !== undefined).map((tool) => tool.id)));
-  return tasks.filter((task) => task.toolUseId === undefined || !shown.has(task.toolUseId)).map(agentTaskRow);
+  return tasks.filter((task) => task.toolUseId === undefined || !shown.has(task.toolUseId)).map((task) => agentTaskRow(task, asOf));
 }
 
 const newestFirst = (a: OverviewTask, b: OverviewTask) => (b.startedAt ?? 0) - (a.startedAt ?? 0);
@@ -158,7 +168,7 @@ function sourcesOf(messages: readonly ChatMessage[]): Overview['sources'] {
 export function overviewOf(inputs: OverviewInputs): Overview {
   const all = [
     ...subagentTasks(inputs.messages, inputs.isBusy),
-    ...agentTaskRows(inputs.agentTasks ?? [], inputs.messages),
+    ...agentTaskRows(inputs.agentTasks ?? [], inputs.messages, inputs.agentTasksAsOf),
     ...inputs.shellTasks.map(shellTask),
   ].sort(newestFirst);
   const tasks = all.filter((task) => task.state !== 'done');

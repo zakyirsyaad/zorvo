@@ -85,6 +85,22 @@ describe("OverviewCard", () => {
     expect(within(running).queryByRole("button", { name: /Task bg-3/ })).toBeNull();
   });
 
+  it("marks a quiet background agent in the warning tone, with how long, and still lists it as running", () => {
+    const quiet = task("bg-q", "running", {
+      tab: undefined,
+      title: "Explore auth",
+      detail: "No activity for 55 min. Last: run_shell_command",
+      status: "Quiet",
+    });
+    const { card } = show({ tasks: [quiet], runningCount: 1 });
+    const running = section(card, /^Running/);
+
+    expect(within(running).getByText("Quiet")).toHaveClass("text-status-attention");
+    expect(within(running).getByText("No activity for 55 min. Last: run_shell_command")).toBeTruthy();
+    expect(within(running).getByText("Subagent, quiet.")).toHaveClass("sr-only");
+    expect(within(running).queryByRole("button")).toBeNull();
+  });
+
   it("opens a task's tab, folds the finished ones, and keeps a failed one in sight", () => {
     const { card, onOpenTask } = show({
       tasks: [task("live", "running"), task("broke", "failed")],

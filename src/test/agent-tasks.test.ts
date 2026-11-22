@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { canAskAgentTasks, isWorkingTask, launchedAgentCount, parseAgentTasks, REPORTS_TASKS, type AgentTask } from "../lib/agent-tasks";
+import {
+  canAskAgentTasks,
+  isQuiet,
+  isWorkingTask,
+  launchedAgentCount,
+  parseAgentTasks,
+  quietMinutes,
+  quietMs,
+  quietNoticeParts,
+  quietSpanText,
+  QUIET_AFTER_MS,
+  REPORTS_TASKS,
+  type AgentTask,
+} from "../lib/agent-tasks";
 import type { ChatMessage, ToolExecution } from "../types";
 
 const rawTask = (over: Record<string, unknown> = {}) => ({
@@ -61,6 +74,20 @@ describe("parseAgentTasks", () => {
     expect(parsed?.tasks[0].activities[0].description).toHaveLength(200);
   });
 
+  it("refuses a time above the largest safe integer", () => {
+    const parsed = parseAgentTasks({ asOf: 2 ** 60, tasks: [rawTask({ startedAt: 2 ** 63, endedAt: Number.MAX_SAFE_INTEGER, lastActivityAt: 2 ** 55 })], more: 0 });
+    expect(parsed?.asOf).toBeUndefined();
+    expect(parsed?.tasks[0].startedAt).toBeUndefined();
+    expect(parsed?.tasks[0].lastActivityAt).toBeUndefined();
+    expect(parsed?.tasks[0].endedAt).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  it("keeps the answer's clock and a task's last activity", () => {
+    const parsed = parseAgentTasks({ asOf: 900, tasks: [rawTask({ lastActivityAt: 800 })], more: 0 });
+    expect(parsed?.asOf).toBe(900);
+    expect(parsed?.tasks[0].lastActivityAt).toBe(800);
+  });
+
   it("keeps a time only when it is a finite, non-negative number", () => {
     const parsed = parseAgentTasks({ tasks: [rawTask({ startedAt: -1, endedAt: "5" })], more: 0 });
     expect(parsed?.tasks[0].startedAt).toBeUndefined();
@@ -111,5 +138,49 @@ describe("canAskAgentTasks", () => {
     expect(canAskAgentTasks({ agentId: "qwen-code", isRunning: false, launched: 2 })).toBe(false);
     expect(canAskAgentTasks({ agentId: "claude-acp", isRunning: true, launched: 2 })).toBe(false);
     expect(canAskAgentTasks({ agentId: undefined, isRunning: true, launched: 2 })).toBe(false);
+  });
+});
+
+describe("quiet agents", () => {
+  const MIN = 60_000;
+  const working = (over: Partial<AgentTask> = {}): AgentTask => ({
+    id: "a", label: "A", description: "", status: "working", isBackground: true, activities: [], startedAt: 0, lastActivityAt: 0, ...over,
+  });
+
+  it("measures the silence against the answer's clock, and is 0 for what cannot be told", () => {
+    expect(QUIET_AFTER_MS).toBe(5 * MIN);
+    expect(quietMs(working({ lastActivityAt: 1000 }), 1000 + 7 * MIN)).toBe(7 * MIN);
+    expect(quietMs(working(), undefined)).toBe(0);
+    expect(quietMs(working({ lastActivityAt: undefined }), 10 * MIN)).toBe(0);
+    expect(quietMs(working({ lastActivityAt: 5 * MIN }), MIN)).toBe(0);
+    expect(quietMs(working({ status: "done" }), 99 * MIN)).toBe(0);
+  });
+
+  it("is quiet from five minutes, not before", () => {
+    expect(isQuiet(working(), 5 * MIN - 1)).toBe(false);
+    expect(isQuiet(working(), 5 * MIN)).toBe(true);
+    expect(isQuiet(working({ status: "failed" }), 60 * MIN)).toBe(false);
+  });
+
+  it("rounds minutes down and says hours past 90 minutes", () => {
+    expect(quietMinutes(5 * MIN + 59_000)).toBe(5);
+    expect(quietSpanText(5)).toBe("5 minutes");
+    expect(quietSpanText(55)).toBe("55 minutes");
+    expect(quietSpanText(90)).toBe("90 minutes");
+    expect(quietSpanText(95)).toBe("1 h 35 min");
+    expect(quietSpanText(120)).toBe("2 h");
+  });
+
+  it("words the notice for one agent and for several, with the longest time", () => {
+    const one = quietNoticeParts("Qwen Code", [working(), working({ id: "b", status: "done" })], 55 * MIN);
+    expect(one).toEqual({
+      title: "A background agent of Qwen Code has not reported anything for 55 minutes.",
+      body: "They may be waiting on the model. Send a message to check, or stop them from Qwen Code.",
+    });
+    const many = quietNoticeParts("Qwen Code", [working({ lastActivityAt: 10 * MIN }), working({ id: "b", lastActivityAt: 0 }), working({ id: "c", lastActivityAt: 59 * MIN })], 100 * MIN);
+    expect(many?.title).toBe("3 of Qwen Code's background agents have not reported anything for 1 h 40 min.");
+    expect(quietNoticeParts("Qwen Code", [working({ lastActivityAt: 58 * MIN })], 60 * MIN)).toBeNull();
+    expect(quietNoticeParts("Qwen Code", [], 60 * MIN)).toBeNull();
+    expect(quietNoticeParts("Qwen Code", [working()], undefined)).toBeNull();
   });
 });

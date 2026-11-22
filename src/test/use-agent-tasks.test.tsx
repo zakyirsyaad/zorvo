@@ -88,6 +88,68 @@ describe("useAgentTasks", () => {
     expect(asks()).toHaveLength(3);
   });
 
+  it("starts no interval for a list that holds only stopped and finished tasks", async () => {
+    invokeMock.mockResolvedValue(answer(task("stopped", "p"), task("done", "d")));
+    renderHook(() => useAgentTasks(input()));
+    await flush();
+    await tick(60_000);
+    expect(asks()).toHaveLength(1);
+  });
+
+  it("stops polling when the session stops running in the middle of a poll", async () => {
+    let resolveSecond: (value: unknown) => void = () => {};
+    invokeMock.mockResolvedValueOnce(answer(task("working")));
+    invokeMock.mockImplementationOnce(() => new Promise((resolve) => (resolveSecond = resolve)));
+    const { rerender } = renderHook((props: AgentTasksInput) => useAgentTasks(props), { initialProps: input() });
+    await flush();
+    await tick(10_000);
+    expect(asks()).toHaveLength(2);
+    rerender(input({ isRunning: false }));
+    await act(async () => resolveSecond(answer(task("working"))));
+    await tick(60_000);
+    expect(asks()).toHaveLength(2);
+  });
+
+  it("counts an answer it cannot read as a failure: three stop the asking", async () => {
+    invokeMock.mockResolvedValue({ nope: true });
+    renderHook(() => useAgentTasks(input()));
+    await flush();
+    await tick(10_000);
+    await tick(10_000);
+    await tick(60_000);
+    expect(asks()).toHaveLength(3);
+  });
+
+  it("gives nothing once a rewind took the agent call away", async () => {
+    invokeMock.mockResolvedValue(answer(task("done")));
+    const { result, rerender } = renderHook((props: AgentTasksInput) => useAgentTasks(props), { initialProps: input() });
+    await flush();
+    expect(result.current).not.toBeNull();
+    rerender(input({ messages: [] }));
+    expect(result.current).toBeNull();
+  });
+
+  it("drops the last run's answer when the agent process is a new one", async () => {
+    invokeMock.mockResolvedValueOnce(answer(task("working", "old")));
+    invokeMock.mockImplementation(() => new Promise(() => {}));
+    const { result, rerender } = renderHook((props: AgentTasksInput) => useAgentTasks(props), { initialProps: input({ acpSessionId: "acp-1" }) });
+    await flush();
+    expect(result.current?.tasks[0].id).toBe("old");
+    rerender(input({ acpSessionId: "acp-1", isRunning: false }));
+    rerender(input({ acpSessionId: "acp-1" }));
+    expect(result.current).toBeNull();
+  });
+
+  it("drops the answer when the session's acpSessionId changes", async () => {
+    invokeMock.mockResolvedValueOnce(answer(task("done", "old")));
+    invokeMock.mockImplementation(() => new Promise(() => {}));
+    const { result, rerender } = renderHook((props: AgentTasksInput) => useAgentTasks(props), { initialProps: input({ acpSessionId: "acp-1" }) });
+    await flush();
+    expect(result.current).not.toBeNull();
+    rerender(input({ acpSessionId: "acp-2" }));
+    expect(result.current).toBeNull();
+  });
+
   it("keeps the last answer through a failed read and stops after three in a row", async () => {
     invokeMock.mockResolvedValueOnce(answer(task("working"))).mockRejectedValue("no");
     const { result } = renderHook(() => useAgentTasks(input()));

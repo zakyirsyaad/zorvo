@@ -788,6 +788,7 @@ export default function App() {
   const agentTasks = useAgentTasks({
     sessionId: activeSession?.id ?? null,
     agentId: activeSession?.profileId,
+    acpSessionId: activeSession?.acpSessionId,
     isRunning: activeSession !== undefined && activeSession.status !== "terminated",
     messages: activeTranscript ?? [],
     turnKey: activeInfo?.turnsEnded ?? 0,
@@ -1802,6 +1803,7 @@ export default function App() {
             files: createdFiles,
             pullRequest,
             agentTasks: agentTasks?.tasks,
+            agentTasksAsOf: agentTasks?.asOf,
           })
         : null,
     [activeSession, activeTranscript, isActiveSessionBusy, sessionShellTasks, sessionArtifacts, createdFiles, pullRequest, agentTasks],
@@ -2142,6 +2144,7 @@ export default function App() {
                         (!isAwaitingUser(currentMessages) || acp.stopAskedAt(activeSessionId) !== undefined)
                       }
                       failures={acp.failuresOf(activeSessionId)}
+                      agentTasks={agentTasks}
                       onStop={() => handleInterrupt(activeSessionId)}
                       stopAskedAt={acp.stopAskedAt(activeSessionId)}
                       onEndAgent={() => void acp.endAgent(activeSessionId)}

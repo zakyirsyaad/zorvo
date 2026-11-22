@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { QWEN_CODE_ID } from "../lib/agent-ids";
 import { parseBreakdown, parseInstructionFiles, type ContextBreakdown, type InstructionFile } from "../lib/context-usage";
 
 /** Qwen Code is the one agent that reports what fills its window. */
-export const REPORTS_BREAKDOWN = "qwen-code";
+export const REPORTS_BREAKDOWN = QWEN_CODE_ID;
 
 export interface ContextBreakdownState {
   /** The agent's own breakdown; null for an agent that reports none, or when its answer failed. */

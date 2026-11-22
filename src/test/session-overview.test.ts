@@ -125,6 +125,33 @@ describe("overviewOf with Qwen Code's background agents", () => {
     expect(overview.tasks[0].tab).toBeUndefined();
   });
 
+  it("folds a paused agent with the finished rows and does not count it as running", () => {
+    const overview = overviewOf({ ...base, agentTasks: [bgTask("p", { status: "stopped", endedAt: 40 })] });
+    expect(overview.tasks).toEqual([]);
+    expect(overview.finished.map((task) => [task.key, task.status])).toEqual([["agent-task:p", "Did not finish"]]);
+    expect(overview.runningCount).toBe(0);
+  });
+
+  it("calls a working agent Quiet after five minutes without news, counted as running, with how long and its last activity", () => {
+    const MIN = 60_000;
+    const quiet = bgTask("q", { lastActivityAt: 0, activities: [{ name: "run_shell_command\n", description: "", at: 0 }] });
+    const fresh = bgTask("f", { startedAt: 60, lastActivityAt: 54 * MIN });
+    const overview = overviewOf({ ...base, agentTasksAsOf: 55 * MIN, agentTasks: [quiet, fresh] });
+    const row = (key: string) => overview.tasks.find((task) => task.key === key);
+    expect(row("agent-task:q")).toMatchObject({
+      status: "Quiet",
+      state: "running",
+      detail: "No activity for 55 min. Last: run_shell_command\\u000A",
+    });
+    expect(row("agent-task:f")).toMatchObject({ status: "Working" });
+    expect(overview.runningCount).toBe(2);
+  });
+
+  it("says hours and minutes past 90 minutes, and no Last when it did nothing yet", () => {
+    const overview = overviewOf({ ...base, agentTasksAsOf: 95 * 60_000, agentTasks: [bgTask("q", { lastActivityAt: 0 })] });
+    expect(overview.tasks[0].detail).toBe("No activity for 1 h 35 min");
+  });
+
   it("says Done, Failed and Did not finish, and folds the finished ones", () => {
     const overview = overviewOf({
       ...base,

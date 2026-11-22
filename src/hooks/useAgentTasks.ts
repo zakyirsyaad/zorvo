@@ -12,6 +12,8 @@ export interface AgentTasksInput {
   /** The session on screen; null when none is. */
   sessionId: string | null;
   agentId?: string;
+  /** The agent's own id for the session: another one means a new agent process. */
+  acpSessionId?: string | null;
   /** The session's agent is alive. */
   isRunning: boolean;
   messages: readonly ChatMessage[];
@@ -25,8 +27,15 @@ export interface AgentTasksInput {
  * when it comes on screen, when the launched count changes, at each turn end, and every 10 seconds
  * while the last answer holds a task at work. A failed read is silent and keeps the last answer.
  */
-export function useAgentTasks({ sessionId, agentId, isRunning, messages, turnKey }: AgentTasksInput): AgentTasks | null {
-  const [answer, setAnswer] = useState<{ sessionId: string; tasks: AgentTasks } | null>(null);
+export function useAgentTasks({ sessionId, agentId, acpSessionId, isRunning, messages, turnKey }: AgentTasksInput): AgentTasks | null {
+  const [answer, setAnswer] = useState<{ sessionId: string; epoch: number; tasks: AgentTasks } | null>(null);
+  // A new agent process (the session went from ended to running, or its ACP id changed) has its own agents:
+  // what the last one reported is not shown while the new answer is on its way.
+  const [process, setProcess] = useState({ isRunning, acpSessionId, epoch: 0 });
+  if (process.isRunning !== isRunning || process.acpSessionId !== acpSessionId) {
+    setProcess({ isRunning, acpSessionId, epoch: process.epoch + 1 });
+  }
+  const { epoch } = process;
   const failures = useRef({ key: "", count: 0 });
   const launched = useMemo(() => launchedAgentCount(messages), [messages]);
   const canAsk = sessionId !== null && canAskAgentTasks({ agentId, isRunning, launched });
@@ -43,7 +52,7 @@ export function useAgentTasks({ sessionId, agentId, isRunning, messages, turnKey
       // The session left the screen, or the asking was restarted: this answer is stale.
       if (isCancelled) return;
       failures.current = { key, count: parsed ? 0 : failures.current.count + 1 };
-      if (parsed) setAnswer({ sessionId, tasks: parsed });
+      if (parsed) setAnswer({ sessionId, epoch, tasks: parsed });
       const isAskingOn = parsed ? parsed.tasks.some(isWorkingTask) : failures.current.count < MAX_FAILURES;
       if (isAskingOn) timer = setTimeout(() => void ask(), POLL_MS);
     };
@@ -52,8 +61,8 @@ export function useAgentTasks({ sessionId, agentId, isRunning, messages, turnKey
       isCancelled = true;
       clearTimeout(timer);
     };
-  }, [canAsk, sessionId, launched, turnKey]);
+  }, [canAsk, sessionId, launched, turnKey, epoch]);
 
-  // An ended session's agent is gone with its tasks, and nothing can ask it again.
-  return isRunning && answer && answer.sessionId === sessionId ? answer.tasks : null;
+  // Shown only while asking is allowed: a rewind that took the agent call away, or an ended agent, leaves nothing to show.
+  return canAsk && answer && answer.sessionId === sessionId && answer.epoch === epoch ? answer.tasks : null;
 }

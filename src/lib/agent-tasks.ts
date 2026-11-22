@@ -1,8 +1,8 @@
-import { REPORTS_BREAKDOWN } from '../hooks/useContextBreakdown';
 import type { ChatMessage } from '../types';
+import { QWEN_CODE_ID } from './agent-ids';
 
 /** Qwen Code runs agents in the background inside its own process and lists them over ACP; no other agent is asked. */
-export const REPORTS_TASKS: ReadonlySet<string> = new Set([REPORTS_BREAKDOWN]);
+export const REPORTS_TASKS: ReadonlySet<string> = new Set([QWEN_CODE_ID]);
 
 /** Zorvo's own words for a task's state; the backend maps the agent's. */
 export type AgentTaskStatus = 'working' | 'done' | 'failed' | 'stopped' | 'unknown';
@@ -21,6 +21,8 @@ export interface AgentTask {
   status: AgentTaskStatus;
   startedAt?: number;
   endedAt?: number;
+  /** The newest activity's time, else the start. */
+  lastActivityAt?: number;
   agentType?: string;
   /** The tool call that launched it, when the agent says which. */
   toolUseId?: string;
@@ -30,6 +32,8 @@ export interface AgentTask {
 }
 
 export interface AgentTasks {
+  /** The agent's clock when it answered, in ms. */
+  asOf?: number;
   tasks: AgentTask[];
   /** How many the backend left out. */
   more: number;
@@ -46,7 +50,7 @@ function text(value: unknown, max: number): string | undefined {
 }
 
 function time(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER ? value : undefined;
 }
 
 function activityOf(value: unknown): AgentActivity | null {
@@ -64,6 +68,7 @@ function taskOf(value: unknown): AgentTask | null {
   if (idLength < 1 || idLength > 200) return null;
   const startedAt = time(value.startedAt);
   const endedAt = time(value.endedAt);
+  const lastActivityAt = time(value.lastActivityAt);
   const agentType = text(value.agentType, 80);
   const toolUseId = text(value.toolUseId, 200);
   const activities = (Array.isArray(value.activities) ? value.activities : [])
@@ -77,6 +82,7 @@ function taskOf(value: unknown): AgentTask | null {
     status: typeof value.status === 'string' && STATUSES.includes(value.status) ? (value.status as AgentTaskStatus) : 'unknown',
     ...(startedAt === undefined ? {} : { startedAt }),
     ...(endedAt === undefined ? {} : { endedAt }),
+    ...(lastActivityAt === undefined ? {} : { lastActivityAt }),
     ...(agentType ? { agentType } : {}),
     ...(toolUseId ? { toolUseId } : {}),
     isBackground: value.isBackground === true,
@@ -89,7 +95,8 @@ export function parseAgentTasks(value: unknown): AgentTasks | null {
   if (!isObject(value) || !Array.isArray(value.tasks)) return null;
   const more = value.more;
   if (typeof more !== 'number' || !Number.isInteger(more) || more < 0) return null;
-  return { tasks: value.tasks.flatMap((item) => taskOf(item) ?? []), more };
+  const asOf = time(value.asOf);
+  return { ...(asOf === undefined ? {} : { asOf }), tasks: value.tasks.flatMap((item) => taskOf(item) ?? []), more };
 }
 
 /** At work: reported working, or a status Zorvo does not know that has not ended. */
@@ -108,4 +115,53 @@ export function launchedAgentCount(messages: readonly ChatMessage[]): number {
 /** A session that never launched an agent is never asked, and neither is one whose agent is gone. */
 export function canAskAgentTasks(on: { agentId: string | undefined; isRunning: boolean; launched: number }): boolean {
   return on.agentId !== undefined && REPORTS_TASKS.has(on.agentId) && on.isRunning && on.launched > 0;
+}
+
+/** The patience the stalled-agent notice gives a running tool: an activity is recorded when a tool starts, and a build or a test run takes minutes. */
+export const QUIET_AFTER_MS = 5 * 60_000;
+const MS_PER_MINUTE = 60_000;
+/** Past this many minutes a time reads in hours and minutes. */
+const HOURS_FROM_MINUTES = 90;
+
+/** How long a task at work has reported nothing, by the agent's own clock; 0 when it cannot be told. */
+export function quietMs(task: AgentTask, asOf: number | undefined): number {
+  if (!isWorkingTask(task) || asOf === undefined || task.lastActivityAt === undefined) return 0;
+  return Math.max(0, asOf - task.lastActivityAt);
+}
+
+export function isQuiet(task: AgentTask, asOf: number | undefined): boolean {
+  return quietMs(task, asOf) >= QUIET_AFTER_MS;
+}
+
+export function quietMinutes(ms: number): number {
+  return Math.floor(ms / MS_PER_MINUTE);
+}
+
+/** "55 min", or "1 h 35 min" past 90 minutes. */
+export function quietShortText(minutes: number): string {
+  if (minutes <= HOURS_FROM_MINUTES) return `${minutes} min`;
+  const rest = minutes % 60;
+  return rest === 0 ? `${Math.floor(minutes / 60)} h` : `${Math.floor(minutes / 60)} h ${rest} min`;
+}
+
+/** "55 minutes", or "1 h 35 min" past 90 minutes. */
+export function quietSpanText(minutes: number): string {
+  return minutes <= HOURS_FROM_MINUTES ? `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}` : quietShortText(minutes);
+}
+
+export interface QuietNoticeParts {
+  title: string;
+  body: string;
+}
+
+/** The notice under the chat while background agents have gone quiet; null while none has. */
+export function quietNoticeParts(agentName: string, tasks: readonly AgentTask[], asOf: number | undefined): QuietNoticeParts | null {
+  const quiet = tasks.filter((task) => isQuiet(task, asOf));
+  if (quiet.length === 0) return null;
+  const span = quietSpanText(quietMinutes(Math.max(...quiet.map((task) => quietMs(task, asOf)))));
+  const title =
+    quiet.length === 1
+      ? `A background agent of ${agentName} has not reported anything for ${span}.`
+      : `${quiet.length} of ${agentName}'s background agents have not reported anything for ${span}.`;
+  return { title, body: `They may be waiting on the model. Send a message to check, or stop them from ${agentName}.` };
 }

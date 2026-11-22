@@ -6,7 +6,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Added
 
-- **Qwen Code's background agents show in the overview card.** While Qwen Code runs agents of its own in the background, the card lists each one with what it last did.
+- **Qwen Code's background agents show in the overview card.** While Qwen Code runs agents of its own in the background, the card lists each one with what it last did. An agent that has done nothing for five minutes is marked quiet, and the chat says so.
 
 ## [0.16.0] - 2026-11-22
 

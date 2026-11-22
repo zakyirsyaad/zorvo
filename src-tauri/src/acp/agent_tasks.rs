@@ -18,6 +18,8 @@ pub const MAX_ACTIVITIES: usize = 5;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentTasks {
+    /// The agent's clock when it answered, ms; the quiet times are measured against it.
+    pub as_of: Option<u64>,
     /// The newest first, at most [`MAX_TASKS`].
     pub tasks: Vec<AgentTask>,
     /// How many were left out.
@@ -33,6 +35,8 @@ pub struct AgentTask {
     pub status: &'static str,
     pub started_at: Option<u64>,
     pub ended_at: Option<u64>,
+    /// The newest activity's time, else the start.
+    pub last_activity_at: Option<u64>,
     pub agent_type: Option<String>,
     pub tool_use_id: Option<String>,
     pub is_background: bool,
@@ -68,7 +72,8 @@ pub fn parse(answer: &Value) -> Result<AgentTasks, String> {
     tasks.sort_by_key(|task| std::cmp::Reverse(task.started_at));
     let more = tasks.len().saturating_sub(MAX_TASKS);
     tasks.truncate(MAX_TASKS);
-    Ok(AgentTasks { tasks, more })
+    let as_of = answer.get("now").and_then(millis);
+    Ok(AgentTasks { as_of, tasks, more })
 }
 
 fn task_of(entry: &Value) -> Option<AgentTask> {
@@ -82,29 +87,34 @@ fn task_of(entry: &Value) -> Option<AgentTask> {
     }
     let text = |key: &str, max: usize| entry.get(key).and_then(Value::as_str).map(|s| cut(s, max));
     let ended_at = entry.get("endTime").and_then(millis);
+    let started_at = entry.get("startTime").and_then(millis);
+    let activities = activities_of(entry.get("recentActivities"));
+    let last_activity_at = activities.iter().filter_map(|a| a.at).max().or(started_at);
     Some(AgentTask {
         id: id.to_string(),
         label: text("label", MAX_LABEL_CHARS).unwrap_or_default(),
         description: text("description", MAX_DESCRIPTION_CHARS).unwrap_or_default(),
         status: status_of(entry),
-        started_at: entry.get("startTime").and_then(millis),
+        started_at,
         ended_at,
+        last_activity_at,
         agent_type: text("subagentType", MAX_TYPE_CHARS).filter(|s| !s.is_empty()),
         tool_use_id: text("toolUseId", MAX_ID_CHARS).filter(|s| !s.is_empty()),
         is_background: entry.get("isBackgrounded") == Some(&Value::Bool(true)),
-        activities: activities_of(entry.get("recentActivities")),
+        activities,
     })
 }
 
 /// Qwen Code's registry says running, paused, completed, failed or cancelled
-/// (read from its source). A paused agent resumes, so it still counts as at
-/// work. The error text is never kept: its presence only says the task failed.
+/// (read from its source). A resumed session turns every agent that was running
+/// in its last run into `paused`, and a failed resume leaves it so, so paused
+/// is not at work. The error text is never kept: its presence only says the task failed.
 fn status_of(entry: &Value) -> &'static str {
     match entry.get("status").and_then(Value::as_str) {
-        Some("running" | "paused") => "working",
+        Some("running") => "working",
         Some("completed") => "done",
         Some("failed") => "failed",
-        Some("cancelled") => "stopped",
+        Some("paused" | "cancelled") => "stopped",
         _ if entry.get("error").is_some_and(|e| !e.is_null()) => "failed",
         _ => "unknown",
     }
@@ -133,10 +143,13 @@ fn activities_of(list: Option<&Value>) -> Vec<AgentActivity> {
     activities.split_off(skip)
 }
 
-/// A time in milliseconds: a finite, non-negative number.
+/// The largest integer a JavaScript number holds exactly.
+const MAX_SAFE_MILLIS: f64 = 9_007_199_254_740_991.0;
+
+/// A time in milliseconds: a finite, non-negative number the webview can hold.
 fn millis(value: &Value) -> Option<u64> {
     let n = value.as_f64()?;
-    if !n.is_finite() || n < 0.0 || n > u64::MAX as f64 {
+    if !n.is_finite() || !(0.0..=MAX_SAFE_MILLIS).contains(&n) {
         return None;
     }
     Some(n.round() as u64)
@@ -189,6 +202,7 @@ mod tests {
         assert_eq!(
             parse(&empty).unwrap(),
             AgentTasks {
+                as_of: Some(1795325390347),
                 tasks: vec![],
                 more: 0
             }
@@ -300,7 +314,7 @@ mod tests {
             parse(&json!({ "tasks": [task] })).unwrap().tasks[0].status
         };
         assert_eq!(status(json!("running"), json!({})), "working");
-        assert_eq!(status(json!("paused"), json!({})), "working");
+        assert_eq!(status(json!("paused"), json!({})), "stopped");
         assert_eq!(status(json!("completed"), json!({})), "done");
         assert_eq!(status(json!("failed"), json!({})), "failed");
         assert_eq!(status(json!("cancelled"), json!({})), "stopped");
@@ -319,5 +333,35 @@ mod tests {
         let task = &parse(&answer).unwrap().tasks[0];
         let names: Vec<_> = task.activities.iter().map(|a| a.name.as_str()).collect();
         assert_eq!(names, ["t3", "t4", "t5", "t6", "t7"]);
+    }
+
+    #[test]
+    fn refuses_a_time_above_the_largest_safe_integer() {
+        let answer = json!({ "now": 9007199254740992u64, "tasks": [{
+            "kind": "agent", "id": "a", "startTime": 18446744073709549568u64, "endTime": 9007199254740992u64,
+            "recentActivities": [{ "name": "n", "description": "", "at": 9007199254740992u64 }],
+        }, { "kind": "agent", "id": "b", "startTime": 9007199254740991u64 }] });
+        let parsed = parse(&answer).unwrap();
+        assert_eq!(parsed.as_of, None);
+        let a = parsed.tasks.iter().find(|t| t.id == "a").unwrap();
+        assert_eq!(
+            (a.started_at, a.ended_at, a.activities[0].at),
+            (None, None, None)
+        );
+        let b = parsed.tasks.iter().find(|t| t.id == "b").unwrap();
+        assert_eq!(b.started_at, Some(9007199254740991));
+    }
+
+    #[test]
+    fn keeps_the_answers_clock_and_each_tasks_last_activity() {
+        let parsed = parse(&fixture()).unwrap();
+        assert_eq!(parsed.as_of, Some(1795325400000));
+        assert_eq!(parsed.tasks[0].last_activity_at, Some(1795325390000));
+        // No activity: the start.
+        assert_eq!(parsed.tasks[1].last_activity_at, Some(1795325100000));
+        let unusable = parse(&json!({ "now": "soon", "tasks": [] })).unwrap();
+        assert_eq!(unusable.as_of, None);
+        let none = parse(&json!({ "tasks": [{ "kind": "agent", "id": "a" }] })).unwrap();
+        assert_eq!(none.tasks[0].last_activity_at, None);
     }
 }

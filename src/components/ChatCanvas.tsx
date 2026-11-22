@@ -3,6 +3,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useArrivedKeys } from "../hooks/useArrivedKeys";
 import { MessageRow } from "./chat/MessageRow";
 import { WorkingIndicator } from "./chat/ReplyExtras";
+import { BackgroundAgentsNotice } from "./chat/BackgroundAgentsNotice";
+import type { AgentTasks } from "../lib/agent-tasks";
 import { AgentStallNotice } from "./chat/AgentStallNotice";
 import { SelectionToolbar } from "./chat/SelectionToolbar";
 import type { AgentFailures } from "../lib/agent-stall";
@@ -71,6 +73,8 @@ export interface ChatCanvasProps {
   isWorking?: boolean;
   /** Failed requests in a row the agent reported while it works. */
   failures?: AgentFailures;
+  /** Qwen Code's background agents, for the notice that says they have gone quiet; never while a turn runs. */
+  agentTasks?: AgentTasks | null;
   /** Stops the turn; offered in the notice shown when the agent seems stuck. */
   onStop?: () => void;
   /** When the user pressed Stop in this turn, until it ends. */
@@ -129,6 +133,7 @@ export function ChatCanvas({
   privateModel,
   isWorking = false,
   failures,
+  agentTasks,
   onStop,
   stopAskedAt,
   onEndAgent,
@@ -317,6 +322,7 @@ export function ChatCanvas({
           onEndAgent={onEndAgent}
         />
       )}
+      {!isWorking && agentTasks && <BackgroundAgentsNotice agentName={shownAgentName} tasks={agentTasks.tasks} asOf={agentTasks.asOf} />}
       {footer && <div className="mx-auto w-full max-w-chat">{footer}</div>}
       {chatSelection.selected && (
         <SelectionToolbar selection={chatSelection.selected} blockedReason={replyBlockedReason} onReply={replyToSelection} />

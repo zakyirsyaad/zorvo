@@ -11,7 +11,7 @@ export interface CanvasMenuProps {
   onError: (message: string) => void;
 }
 
-/** A canvas row's ⋯: Remove takes the canvas off the list (`canvas_forget`); its folder stays. The Output tab and the gallery share it. */
+/** A canvas row's ⋯: Remove takes the canvas off the list (`canvas_forget`); its folder stays. The Artifacts tab and the gallery share it. */
 export function CanvasMenu({ sessionId, canvasKey, title, onError }: CanvasMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const remove = () => {

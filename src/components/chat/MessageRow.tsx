@@ -54,7 +54,7 @@ export interface MessageRowProps {
   onReopenElicitationUrl?: (key: string) => void;
   /** The ids of the session's artifacts: a card whose artifact is not among them reads Removed. Absent where they are unknown. */
   artifactIds?: ReadonlySet<string>;
-  /** Shows an artifact card's version in the Output tab. */
+  /** Shows an artifact card's version in the Artifacts tab. */
   onOpenArtifact?: (card: ArtifactCard) => void;
   /** Opens NEAR AI's Verification Center from a private reply's badge. */
   onOpenUrl?: (url: string) => void;

@@ -46,10 +46,10 @@ function show(overview: Partial<Overview> = {}, props: Partial<OverviewCardProps
 const section = (card: HTMLElement, name: string | RegExp) => within(card).getByRole("region", { name });
 
 describe("OverviewCard", () => {
-  it("always shows Environment and Output, and the rest only when they hold something", () => {
+  it("always shows Environment and Artifacts, and the rest only when they hold something", () => {
     const { card } = show();
     expect(section(card, "Environment")).toBeTruthy();
-    expect(within(section(card, /^Output/)).getByText("Nothing yet. Pages and files Claude Code makes in this session show here.")).toBeTruthy();
+    expect(within(section(card, /^Artifacts/)).getByText("Nothing yet. Pages and files Claude Code makes in this session show here.")).toBeTruthy();
     expect(within(card).queryByRole("region", { name: /^Running/ })).toBeNull();
     expect(within(card).queryByRole("region", { name: /^Sources/ })).toBeNull();
     expect(within(card).queryByRole("region", { name: /^Pull request/ })).toBeNull();
@@ -113,8 +113,8 @@ describe("OverviewCard", () => {
       },
     });
 
-    fireEvent.click(within(section(card, /^Output/)).getByRole("button", { name: /Session row options/ }));
-    fireEvent.click(within(section(card, /^Output/)).getByRole("button", { name: /pr-chip\.ts/ }));
+    fireEvent.click(within(section(card, /^Artifacts/)).getByRole("button", { name: /Session row options/ }));
+    fireEvent.click(within(section(card, /^Artifacts/)).getByRole("button", { name: /pr-chip\.ts/ }));
     fireEvent.click(within(section(card, "Pull request")).getByRole("button", { name: /^Open pull request 250 in your browser/ }));
 
     expect(onOpenPage).toHaveBeenCalledWith("a-1");

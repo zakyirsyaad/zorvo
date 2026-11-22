@@ -811,6 +811,7 @@ pub fn run() {
             acp::commands::acp_set_config_option,
             acp::commands::acp_qwen_last_api_error,
             acp::commands::acp_context_usage,
+            acp::commands::acp_agent_tasks,
             instruction_files::instruction_files,
             acp::commands::acp_stop_session,
             agent_tools::commands::agent_tool_respond,

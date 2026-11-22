@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, within, fireEvent } from "@testing-library/react";
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
+import { BROWSER_OPEN } from "../lib/browser";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
 const internals = () => (window as unknown as { __TAURI_INTERNALS__: TauriInternals }).__TAURI_INTERNALS__;
@@ -25,12 +26,49 @@ describe("MarkdownRenderer", () => {
     expect(screen.getByText("gone").tagName).toBe("DEL");
   });
 
-  it("opens links in the browser instead of navigating the app away", () => {
+  it("opens a web link in Zorvo's browser, not in the app's own window and not outside it", () => {
     const spy = vi.spyOn(internals(), "invoke");
+    const opened: unknown[] = [];
+    const listen = (event: Event) => opened.push((event as CustomEvent).detail);
+    window.addEventListener(BROWSER_OPEN, listen);
     render(<MarkdownRenderer content={"See [the docs](https://example.com/docs)."} />);
 
     fireEvent.click(screen.getByRole("link", { name: "the docs" }));
+    window.removeEventListener(BROWSER_OPEN, listen);
 
+    expect(opened).toEqual([{ url: "https://example.com/docs" }]);
+    expect(spy.mock.calls.some(([cmd]) => cmd === "open_external_url")).toBe(false);
+  });
+
+  it("hands a mail link to the system, since Zorvo's browser shows pages only", () => {
+    const spy = vi.spyOn(internals(), "invoke");
+    const opened: unknown[] = [];
+    const listen = (event: Event) => opened.push((event as CustomEvent).detail);
+    window.addEventListener(BROWSER_OPEN, listen);
+    render(<MarkdownRenderer content={"Write to [us](mailto:hi@example.com)."} />);
+
+    fireEvent.click(screen.getByRole("link", { name: "us" }));
+    window.removeEventListener(BROWSER_OPEN, listen);
+
+    expect(opened).toEqual([]);
+    expect(spy).toHaveBeenCalledWith("open_external_url", { url: "mailto:hi@example.com" }, undefined);
+  });
+
+  it("opens a web link outside from a popout, which has no browser panel", () => {
+    const spy = vi.spyOn(internals(), "invoke");
+    const opened: unknown[] = [];
+    const listen = (event: Event) => opened.push((event as CustomEvent).detail);
+    window.addEventListener(BROWSER_OPEN, listen);
+    window.history.pushState({}, "", "?session=s-1&popout=1");
+    try {
+      render(<MarkdownRenderer content={"See [the docs](https://example.com/docs)."} />);
+      fireEvent.click(screen.getByRole("link", { name: "the docs" }));
+    } finally {
+      window.history.pushState({}, "", window.location.pathname);
+      window.removeEventListener(BROWSER_OPEN, listen);
+    }
+
+    expect(opened).toEqual([]);
     expect(spy).toHaveBeenCalledWith("open_external_url", { url: "https://example.com/docs" }, undefined);
   });
 

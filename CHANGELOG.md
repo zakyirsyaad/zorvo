@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- **Settings, Agents: the switches come first.** "Working together" and "Computer use" are above the list of agents, where the long list no longer hides them.
+
 ## [0.16.0] - 2026-11-22
 
 ### Added

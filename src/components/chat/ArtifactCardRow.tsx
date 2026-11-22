@@ -7,7 +7,7 @@ export interface ArtifactCardRowProps {
   card: ArtifactCard;
   /** Removed once the artifact was deleted: the row stays as a record, with nothing to open. */
   state: "open" | "removed";
-  /** Shows that version in the Output tab; absent where there is no tab (a popout). */
+  /** Shows that version in the Artifacts tab; absent where there is no tab (a popout). */
   onOpen?: (card: ArtifactCard) => void;
 }
 

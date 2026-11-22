@@ -30,6 +30,29 @@ const shell = (id: string, startedAt: number): BackgroundTask => ({
 
 const base: OverviewInputs = { messages: [], isBusy: false, shellTasks: [], pages: [], files: [], pullRequest: null };
 
+describe("a shell command's row", () => {
+  it("is titled by its program, keeps the whole command for a tooltip, and says its ports, not its session", () => {
+    const task: BackgroundTask = {
+      id: "p9",
+      kind: "shell",
+      name: "/Users/me/tools/node/bin/node /Users/me/app/server.js --port 1420",
+      detail: "Fix login bug · localhost:1420",
+      status: "Running",
+      startedAt: 5,
+      sessionId: "s-1",
+    };
+    const [row] = overviewOf({ ...base, shellTasks: [task] }).tasks;
+    expect(row).toMatchObject({
+      title: "node server.js --port 1420",
+      fullTitle: "/Users/me/tools/node/bin/node /Users/me/app/server.js --port 1420",
+      detail: "Shell · localhost:1420",
+    });
+    const [plain] = overviewOf({ ...base, shellTasks: [{ ...task, name: "pnpm dev", detail: "Fix login bug" }] }).tasks;
+    expect(plain).toMatchObject({ title: "pnpm dev", detail: "Shell" });
+    expect(plain.fullTitle).toBeUndefined();
+  });
+});
+
 describe("overviewOf", () => {
   it("lists running subagents and shell commands newest first, with the finished folded apart", () => {
     const overview = overviewOf({

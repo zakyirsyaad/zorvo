@@ -2,7 +2,7 @@ import type { PullRequestStatus } from '../hooks/usePullRequest';
 import type { TaskTab } from '../hooks/useTaskTabs';
 import type { Artifact, ChatMessage } from '../types';
 import { isImagePath } from './attachments';
-import type { BackgroundTask } from './background-tasks';
+import { portsOf, shortCommand, type BackgroundTask } from './background-tasks';
 import type { CreatedFile } from './created-files';
 import { secondLine, shownTools, subagentTaskOf, waitingToolCallIds, type TaskStatus } from './task-view';
 
@@ -14,6 +14,8 @@ export interface OverviewTask {
   key: string;
   kind: 'subagent' | 'shell';
   title: string;
+  /** The title in full when it was shortened: a shell command with its paths. */
+  fullTitle?: string;
   /** "Subagent · Explore · 8 steps", "Shell · localhost:1420". */
   detail: string;
   /** Running and waiting tasks show above; failed ones stay in sight; done ones fold away. */
@@ -88,11 +90,15 @@ function subagentTasks(messages: readonly ChatMessage[], isBusy: boolean): Overv
 }
 
 function shellTask(task: BackgroundTask): OverviewTask {
+  const title = shortCommand(task.name);
   return {
     key: `shell:${task.id}`,
     kind: 'shell',
-    title: task.name,
-    detail: task.detail ? `Shell · ${task.detail}` : 'Shell',
+    title,
+    // The whole command, for a tooltip, when the title is a shorter form of it.
+    ...(title !== task.name ? { fullTitle: task.name } : {}),
+    // The card is one session's own: its name would only repeat the page's title.
+    detail: ['Shell', ...portsOf(task)].join(' · '),
     state: 'running',
     status: 'Running',
     startedAt: task.startedAt,

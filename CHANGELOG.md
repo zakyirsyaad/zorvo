@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- **A running command is named by its program.** In the overview card a command reads `node server.js --port 1420`, not the start of a long path, and its second line says the ports it listens on, not the session's name. Hover it for the whole command.
+
 ## [0.16.0] - 2026-11-22
 
 ### Added

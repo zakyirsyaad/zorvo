@@ -34,11 +34,13 @@
   <img src="docs/assets/zorvo-reel.gif" alt="A short tour of Zorvo: one prompt sent to four agents, keeping the best result, handing a task to another agent, and reviewing a diff line by line." width="600">
 </p>
 
-**New in 0.14:** a calmer look. A new session starts from one card, a card
-beside the chat says what the session is doing and what it changed, and a
-Context tab shows what fills the agent's context. From 0.14.1, Zorvo is signed
-and notarized by Apple, so macOS opens it like any other app you download. The
-[changelog](CHANGELOG.md) has the rest.
+**New in 0.16:** an agent can put a diagram or a mockup inside its reply,
+between the paragraphs of its answer. You can copy it as an image or save it
+as SVG, HTML or PNG. 0.15 added a browser beside the chat, a canvas for
+several screens side by side, and agents that can look at apps on your Mac
+when you let them. From 0.14.1, Zorvo is signed and notarized by Apple, so
+macOS opens it like any other app you download. The [changelog](CHANGELOG.md)
+has the rest.
 
 > **NEAR hackathon judges:** start with [docs/hackathon/README.md](docs/hackathon/README.md). The
 > submitted state is the tag
@@ -160,6 +162,12 @@ Private mode is off until you turn it on, and works with Qwen Code.
   one HTML file, and **Output** in the sidebar lists the pages of every
   session. Press **Comment** above a page to mark text or a part of it, write
   what should change, and add your comments to your next message.
+- **A picture inside the reply.** For something small, such as a flow, a
+  comparison or a rough layout, an agent can draw it right in its answer. The
+  picture follows the light and dark theme. Fold it, **Expand** it, or use its
+  menu to copy it as an image or save it as SVG, HTML or PNG. Nothing in it
+  runs and it has no links; for a page you can click through, the agent shows
+  a page instead.
 - **Several screens on one canvas.** For a flow or variants of a screen, an
   agent can lay out artboards in sections on a canvas you pan and zoom.
   Comment on an artboard, **Pick** a variant, ask the agent to **Build this**
@@ -422,6 +430,12 @@ before it edits files or runs commands. Pick another mode in the composer.
   Zorvo's own interface still makes no request at all. Pages are stored on
   this Mac and deleted with their session. A page you **Export** is an
   ordinary HTML file: opened in a browser, it has none of these limits.
+- **A picture in a reply reaches no host.** Zorvo removes scripts and links from
+  a picture before it is shown, and draws it in a frame that cannot run code
+  or load anything from the network: an image in it must be part of the
+  picture itself. Pictures are stored on this Mac and deleted with their
+  session. A picture you save as HTML keeps these limits when opened in a
+  browser, and one you save as SVG has its outside addresses taken out.
 - **A canvas reaches no new host.** Each artboard of a canvas runs under the
   same limits as a page, and may load the same script and font hosts, plus
   the files in its own canvas folder. Zorvo's frame around the artboards

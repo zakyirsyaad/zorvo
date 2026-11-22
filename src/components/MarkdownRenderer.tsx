@@ -1,11 +1,11 @@
 import { memo, useState, type ReactNode } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { invoke } from "@tauri-apps/api/core";
 import { Copy, Check } from "lucide-react";
 import { OPENABLE_URL } from "../lib/link-menu";
 import { readWindowMode } from "../lib/window-mode";
-import { fileLinkPath, requestFileLinkOpen } from "../lib/file-links";
+import { fileLinkPath, isFileLink, requestFileLinkOpen } from "../lib/file-links";
 
 const COPIED_FEEDBACK_MS = 2000;
 const LANGUAGE_CLASS = /language-([\w-]+)/;
@@ -145,6 +145,12 @@ const COMPONENTS: Components = {
 const REMARK_PLUGINS = [remarkGfm];
 
 /**
+ * The parser's own rule empties a link with a scheme it does not know, `file://` and `README.md:12` among
+ * them. A file link is kept as written: it is drawn as a button or as text, never as an `href` to follow.
+ */
+const urlTransform: UrlTransform = (url, key) => (key === "href" && isFileLink(url) ? url : defaultUrlTransform(url));
+
+/**
  * Agent replies as GitHub-flavored Markdown (tables, task lists, links,
  * strikethrough). Raw HTML is not rendered. Memoized on `content`, so a
  * message that did not change is not parsed again while another one streams.
@@ -152,7 +158,7 @@ const REMARK_PLUGINS = [remarkGfm];
 export const MarkdownRenderer = memo(function MarkdownRenderer({ content }: { content: string }) {
   return (
     <div className="space-y-3 text-fg-secondary">
-      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={COMPONENTS}>
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={COMPONENTS} urlTransform={urlTransform}>
         {content}
       </ReactMarkdown>
     </div>

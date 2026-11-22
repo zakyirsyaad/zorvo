@@ -47,7 +47,8 @@ const limited = (text: string, max: number) => {
   return characters.length > max ? `${characters.slice(0, max - 1).join('')}…` : text;
 };
 
-function toAuthMethods(raw: unknown): AuthMethod[] {
+/** The methods of an `initialize` answer, validated as the ones a sign-in refusal carries. */
+export function toAuthMethods(raw: unknown): AuthMethod[] {
   if (!Array.isArray(raw)) return [];
   return raw.filter(isObject).flatMap((method) => {
     if (typeof method.id !== 'string' || typeof method.name !== 'string') return [];
@@ -88,6 +89,11 @@ export interface AuthCopy {
   cliHint: string | null;
   /** For methods that need a key or setting Zorvo never handles. */
   keysNote: string | null;
+}
+
+/** True when Zorvo can run one of the methods itself: inside the agent, its login in a terminal, or its own setup. */
+export function hasRunnableMethod(methods: readonly AuthMethod[]): boolean {
+  return methods.some((method) => method.kind !== 'explain');
 }
 
 /** True when the agent's only way in is its own setup: the draft shows the setup card. */

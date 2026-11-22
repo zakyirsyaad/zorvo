@@ -2330,6 +2330,37 @@ fn sign_in_probe_of_an_agent_that_cannot_report_it_opens_no_session_either() {
 }
 
 #[test]
+fn sign_in_probe_carries_the_methods_of_an_agent_that_reports_its_sign_in() {
+    let (manager, _rx) = manager();
+    let launch = with_env(fake_agent(), "FAKE_ACP_AUTH_STATUS", "account");
+
+    let probed = manager.probe_sign_in(&cwd(), &launch).expect("probe");
+
+    assert_eq!(probed.auth_methods[0]["id"], "browser");
+    assert_eq!(probed.auth_methods[1]["id"], "api-key");
+}
+
+#[test]
+fn sign_in_probe_carries_the_methods_of_an_agent_that_cannot_report_it_too() {
+    let (manager, _rx) = manager();
+
+    let probed = manager.probe_sign_in(&cwd(), &fake_agent()).expect("probe");
+
+    assert!(!probed.reports_status);
+    assert_eq!(probed.auth_methods[0]["id"], "browser");
+}
+
+#[test]
+fn sign_in_probe_carries_an_empty_list_for_an_agent_that_offers_no_method() {
+    let (manager, _rx) = manager();
+    let launch = with_env(fake_agent(), "FAKE_ACP_NO_AUTH_METHODS", "1");
+
+    let probed = manager.probe_sign_in(&cwd(), &launch).expect("probe");
+
+    assert_eq!(probed.auth_methods, serde_json::json!([]));
+}
+
+#[test]
 fn sign_in_probe_says_nothing_when_the_agent_reports_no_account() {
     let (manager, _rx) = manager();
     let launch = with_env(fake_agent(), "FAKE_ACP_AUTH_STATUS", "silent");

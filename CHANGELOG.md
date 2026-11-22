@@ -7,12 +7,14 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 ### Added
 
 - **Qwen Code's background agents show in the overview card.** While Qwen Code runs agents of its own in the background, the card lists each one with what it last did. An agent that has done nothing for five minutes is marked quiet, and the chat says so.
+- **Sign in again from Settings.** An agent that reads Ready has Sign in again in its menu, to switch account or run its setup again.
 
 ### Changed
 
 - An agent now starts workers by itself when you ask it to split work or run parts in parallel, where before it could run them as background tasks of its own that Zorvo cannot show.
 - **Output is called Artifacts again.** The tab, the sidebar entry, the gallery and the section of the overview card say Artifacts. They still list the pages an agent showed and the files it made.
 - **A link in a reply opens in Zorvo's browser.** A click shows the page in the Browser tab beside the chat. Right-click a link to open it in your own browser. Mail links, and links in a session's own window, still open outside.
+- **Settings, Agents: the switches come first.** "Working together" and "Computer use" are above the list of agents, where the long list no longer hides them.
 
 ### Fixed
 

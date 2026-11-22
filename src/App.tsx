@@ -87,6 +87,7 @@ import {
 } from "./lib/session-helpers";
 import { useAppearance } from "./hooks/useAppearance";
 import { usePersistedState } from "./hooks/usePersistedState";
+import { useAgentTasks } from "./hooks/useAgentTasks";
 import { useBackgroundTasks } from "./hooks/useBackgroundTasks";
 import { useSessionTaskTabs } from "./hooks/useSessionTaskTabs";
 import type { TaskTab } from "./hooks/useTaskTabs";
@@ -784,6 +785,14 @@ export default function App() {
   const overviewCollapse = useOverviewCollapse();
   const taskTabs = useSessionTaskTabs({ sessionId: activeSessionId ?? null, transcripts, tasks: backgroundTasks.tasks });
   const activeInfo = activeSession ? acp.info[activeSession.id] : undefined;
+  const agentTasks = useAgentTasks({
+    sessionId: activeSession?.id ?? null,
+    agentId: activeSession?.profileId,
+    acpSessionId: activeSession?.acpSessionId,
+    isRunning: activeSession !== undefined && activeSession.status !== "terminated",
+    messages: activeTranscript ?? [],
+    turnKey: activeInfo?.turnsEnded ?? 0,
+  });
   const inspectorTabs = offeredTabs({
     hasFolder: Boolean(filesFolder),
     isRepository,
@@ -1793,9 +1802,11 @@ export default function App() {
             pages: sessionArtifacts,
             files: createdFiles,
             pullRequest,
+            agentTasks: agentTasks?.tasks,
+            agentTasksAsOf: agentTasks?.asOf,
           })
         : null,
-    [activeSession, activeTranscript, isActiveSessionBusy, sessionShellTasks, sessionArtifacts, createdFiles, pullRequest],
+    [activeSession, activeTranscript, isActiveSessionBusy, sessionShellTasks, sessionArtifacts, createdFiles, pullRequest, agentTasks],
   );
   const sessionPlan = currentPlan(currentMessages);
   const composer = composerStateFor({
@@ -2133,6 +2144,7 @@ export default function App() {
                         (!isAwaitingUser(currentMessages) || acp.stopAskedAt(activeSessionId) !== undefined)
                       }
                       failures={acp.failuresOf(activeSessionId)}
+                      agentTasks={agentTasks}
                       onStop={() => handleInterrupt(activeSessionId)}
                       stopAskedAt={acp.stopAskedAt(activeSessionId)}
                       onEndAgent={() => void acp.endAgent(activeSessionId)}

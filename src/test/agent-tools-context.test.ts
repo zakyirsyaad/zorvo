@@ -38,6 +38,12 @@ describe("the MCP path's context", () => {
     expect(COMMAND_PATH_CONTEXT).not.toContain("only when the user asks for another agent");
   });
 
+  it("says the tools may carry the server's name, and to search for zorvo before falling back", () => {
+    expect(MCP_PATH_CONTEXT).toContain("mcp__zorvo__start_worker");
+    expect(MCP_PATH_CONTEXT).toContain("search for zorvo before you fall back to a tool of your own");
+    expect(MCP_PATH_CONTEXT).toContain("prefer show_visual in your reply to a page");
+  });
+
   it("names start_worker and send, and says to end the turn", () => {
     expect(MCP_PATH_CONTEXT).toContain("start_worker");
     expect(MCP_PATH_CONTEXT).toContain("send");

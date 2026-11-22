@@ -6,7 +6,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Added
 
-- **Sign in again from Settings.** An agent that reads Ready has Sign in again in its menu, to switch account or set it up again.
+- **Sign in again from Settings.** An agent that reads Ready has Sign in again in its menu, to switch account or run its setup again.
 
 ### Changed
 

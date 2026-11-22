@@ -161,6 +161,30 @@ describe("the row's Sign in again", () => {
   });
 });
 
+describe("an agent's own setup in the list", () => {
+  const setup: AuthMethod = { id: "openai", name: "Use OpenAI API key", description: "Pick a provider", kind: "setup" };
+
+  it("has a button that starts the setup with the agent and method ids only, and says what it opens", () => {
+    const signIn = fakeSignIn({ againOf: () => "open", methodsOf: () => [setup] });
+    render(rowFor(signIn));
+
+    const button = screen.getByRole("button", { name: "Open setup in terminal" });
+    expect(button).toHaveTextContent(/^Set up$/);
+    expect(screen.getByText("Pick a provider")).toBeInTheDocument();
+    expect(screen.getByText("Opens Codex's own setup in a terminal.")).toBeInTheDocument();
+    fireEvent.click(button);
+
+    expect(signIn.signInWith).toHaveBeenCalledWith("codex-acp", "openai");
+    expect(screen.queryByText("Codex offers no sign-in Zorvo can start. Set it up in a terminal.")).toBeNull();
+  });
+
+  it("is blocked while another agent's sign-in runs", () => {
+    render(rowFor(fakeSignIn({ againOf: () => "open", methodsOf: () => [setup], busyAgentId: "gemini-cli" })));
+
+    expect(screen.getByRole("button", { name: "Open setup in terminal" })).toBeDisabled();
+  });
+});
+
 const KNOWN_METHODS = [
   { id: "claude-ai-login", name: "Claude Subscription", type: "terminal" },
   { id: "api-key", name: "API Key", type: "env_var" },

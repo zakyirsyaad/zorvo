@@ -91,9 +91,9 @@ export interface AuthCopy {
   keysNote: string | null;
 }
 
-/** True when Zorvo can run one of the methods itself (inside the agent, or its login in a terminal). */
+/** True when Zorvo can run one of the methods itself: inside the agent, its login in a terminal, or its own setup. */
 export function hasRunnableMethod(methods: readonly AuthMethod[]): boolean {
-  return methods.some((method) => method.kind === 'agent' || method.kind === 'terminal');
+  return methods.some((method) => method.kind !== 'explain');
 }
 
 /** True when the agent's only way in is its own setup: the draft shows the setup card. */

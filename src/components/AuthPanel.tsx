@@ -70,7 +70,7 @@ function MethodRow({ method, isBusy, onSignIn }: { method: AuthMethod; isBusy: b
 }
 
 /** The button that opens an agent's own setup in the terminal dialog. */
-const OPEN_SETUP_LABEL = "Open setup in terminal";
+export const OPEN_SETUP_LABEL = "Open setup in terminal";
 
 /**
  * Shown when an agent needs a sign-in before it can start. Methods that run

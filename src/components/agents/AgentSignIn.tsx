@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { OPEN_SETUP_LABEL } from "../AuthPanel";
 import { Button } from "../ui/Button";
 import type { SettingsSignIn } from "../../hooks/useSettingsSignIn";
 import { authCopy, hasRunnableMethod, isSetupOnly, signInButtonLabel, type AuthMethod } from "../../lib/acp-auth";
@@ -70,6 +71,7 @@ function shortLabel(method: AuthMethod): string {
 function methodNote(method: AuthMethod): string | null {
   if (method.description) return method.description;
   if (method.kind === "terminal") return "Opens a sign-in terminal.";
+  // A setup keeps the agent's own description above; this says what the button opens.
   if (method.kind === "explain") return "Set the key in your shell, then check again.";
   return null;
 }
@@ -84,6 +86,7 @@ export function AgentSignIn({ agentId, agentName, signIn, isAgain = false }: Age
   const isBusy = isSignInBusy(signIn, agentId);
   const warning = sessionWarning(agentName, signIn.reportsStatusOf(agentId), signIn.cwd);
   const warningId = useId();
+  const canRunSetup = signIn.cwd !== undefined;
   const copy = authCopy(agentName, methods);
   // The status word already says a sign-in is needed: a lead line shows only when there is nothing to pick.
   const lead =
@@ -107,11 +110,19 @@ export function AgentSignIn({ agentId, agentName, signIn, isAgain = false }: Age
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-ui text-fg-secondary">{method.name}</span>
                   {note && <span className="text-ui-sm text-fg-muted">{note}</span>}
+                  {method.kind === "setup" && canRunSetup && (
+                    <span className="text-ui-sm text-fg-muted">Opens {agentName}'s own setup in a terminal.</span>
+                  )}
                 </span>
-                {method.kind === "agent" || method.kind === "terminal" ? (
-                  // Settings runs a sign-in, never an agent's own setup: that runs from the draft's card.
-                  <Button size="md" disabled={isBusy} aria-label={signInButtonLabel(method)} onClick={() => signIn.signInWith(agentId, method.id)}>
-                    <span className="text-fg">{shortLabel(method)}</span>
+                {method.kind === "agent" || method.kind === "terminal" || (method.kind === "setup" && canRunSetup) ? (
+                  // A setup needs a folder to run in, as every sign-in does; without one it stays text.
+                  <Button
+                    size="md"
+                    disabled={isBusy}
+                    aria-label={method.kind === "setup" ? OPEN_SETUP_LABEL : signInButtonLabel(method)}
+                    onClick={() => signIn.signInWith(agentId, method.id)}
+                  >
+                    <span className="text-fg">{method.kind === "setup" ? "Set up" : shortLabel(method)}</span>
                   </Button>
                 ) : method.kind === "explain" ? (
                   <Button

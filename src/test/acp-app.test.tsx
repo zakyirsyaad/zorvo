@@ -632,9 +632,10 @@ describe("ACP sessions in the app", () => {
 
     await send("second");
 
-    // The session's first message and "first"; "second" waits.
+    // The session's first message and "first"; "second" waits in the queue above the composer.
     expect(callsTo(spy, "acp_prompt")).toHaveLength(2);
-    expect((screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement).value).toBe("second");
+    expect((screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement).value).toBe("");
+    expect(within(screen.getByRole("list", { name: "Queued messages" })).getByText("second")).toBeDefined();
   });
 
   it("remembers the options an agent reported, for the composer before the next session", async () => {
@@ -1358,8 +1359,9 @@ describe("ACP sessions in the app", () => {
     await waitFor(() => expect(callsTo(spy, "acp_set_mode")).toHaveLength(1));
     await send("second");
 
+    // "second" waits in the queue, behind the turn that has not started yet.
     expect(callsTo(spy, "acp_prompt")).toHaveLength(0);
-    expect(prompt().value).toBe("second");
+    expect(within(screen.getByRole("list", { name: "Queued messages" })).getByText("second")).toBeDefined();
     await act(async () => {
       finishSetMode();
     });

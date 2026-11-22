@@ -64,6 +64,9 @@ import { useDraftAgentCheck } from "./hooks/useDraftAgentCheck";
 import { useSettingsSignIn } from "./hooks/useSettingsSignIn";
 import { useLatest } from "./hooks/useLatest";
 import { useUnsentMessages } from "./hooks/useUnsentMessages";
+import type { QueuedMessage } from "./lib/queued-messages";
+import { useQueuedMessages } from "./hooks/useQueuedMessages";
+import { QueuedMessages } from "./components/composer/QueuedMessages";
 import { attachmentsFor, createSessionWorktree } from "./lib/session-worktree";
 import { sweepOrphans } from "./lib/orphan-sweep";
 import {
@@ -244,6 +247,7 @@ export default function App() {
   const [delegationMention, setDelegationMention] = useState<{ agentId: string; task: string } | null>(null);
   // Set once useDelegation is built: the engine's turns reach it through this, as it is built before the hook.
   const delegationTurnEndedRef = useRef<(sessionId: string, reason: AttentionReason) => void>(() => {});
+  const queueTurnSettledRef = useRef<(sessionId: string, end: { how: WorkerTurnEnd }) => void>(() => {});
   const delegationTurnSettledRef = useRef<(sessionId: string, end: { how: WorkerTurnEnd; reason?: string }) => void>(() => {});
   // Set once useDelegation is built: the engine's retries read why the pair blocks them, as it is built before the hook.
   const delegationBlockedRef = useRef<(sessionId: string) => string | null>(() => null);
@@ -687,7 +691,11 @@ export default function App() {
       delegationTurnEndedRef.current(id, reason);
       if (reason !== "needs-answer") setRunVersion((n) => n + 1);
     },
-    onTurnSettled: (id, end) => delegationTurnSettledRef.current(id, end),
+    onTurnSettled: (id, end) => {
+      // The user's queued message goes first: the worker reports that wait for a free coordinator are drained from an effect.
+      queueTurnSettledRef.current(id, end);
+      delegationTurnSettledRef.current(id, end);
+    },
     onAuthRequired: (session, methods, unsent) => {
       if (!compareRun.isInRun(session.id)) {
         signIn.handBack(session, methods, unsent);
@@ -1294,6 +1302,7 @@ export default function App() {
     hasLiveTasks: (sessionId) =>
       backgroundTasks.tasks.some((task) => task.kind === "shell" && task.sessionId === sessionId),
     hasFailedTurn: (sessionId) => Boolean(failedTurns[sessionId]),
+    hasQueuedMessages: (sessionId) => queue.queueOf(sessionId).length > 0,
     stop: workerStops.stopWorker,
   });
   // The engine was built before this hook: its turn ends reach it through the ref.
@@ -1456,6 +1465,33 @@ export default function App() {
     setAcpChoices(NO_CHOICES);
   };
 
+  /** Sends one queued message the way the composer's Send does; false when the agent or the delegation pair refused it. */
+  const deliverQueued = async (sessionId: string, queued: QueuedMessage, mode: "send" | "resume") => {
+    const session = sessionById(sessionId);
+    if (!session) return false;
+    const message = { text: queued.text, attachments: [...queued.attachments] };
+    if (mode === "resume") {
+      // `resumeSession` gives the message back itself when the agent does not take it.
+      resumeSession(session, message);
+      return true;
+    }
+    if (delegation.sendBlockedReason(sessionId) !== null) return false;
+    return sendTo(sessionId, message);
+  };
+  const queue = useQueuedMessages({
+    sessionIds: sessions.map((s) => s.id),
+    deliver: deliverQueued,
+    stop: handleInterrupt,
+    giveBack: giveBackMessage,
+    focusComposer: () => composerRef.current?.focus(),
+    isWaiting: isSessionWaiting,
+    isTurnUnderWay: acp.isTurnUnderWay,
+    isEnded: (sessionId) => sessionById(sessionId)?.status !== "running",
+    agentNameOf: (sessionId) => agents.find((a) => a.id === sessionById(sessionId)?.profileId)?.name ?? "The agent",
+    onNotice: setNotice,
+  });
+  queueTurnSettledRef.current = queue.onTurnSettled;
+
   // Read when a run's worktrees are done, seconds after the click: an empty session id also means a run's panel.
   const isDraftRef = useLatest(isNewSessionDraft);
   // A rewound message names its session, and goes into no other session's box. A draft's message goes into the next composer shown.
@@ -1548,6 +1584,10 @@ export default function App() {
   const delegationChoicesFor = (agentId: string): AcpChoices =>
     delegationChoicesForOptions(state.agentOptions?.[agentId]);
 
+  /** True when a message sent now joins the session's queue: a turn is under way (read from refs) and no comments are held. */
+  const isQueueingNow = (sessionId: string) =>
+    isQueueingActive && sessionId === activeSessionId && acp.isTurnUnderWay(sessionId);
+
   /** Sends to the active session, continues it when it can be resumed, or starts a new one (or a run). */
   const handleSendMessage = (text: string, attachments?: string[]) => {
     const message = { text, attachments };
@@ -1563,6 +1603,26 @@ export default function App() {
         .then((isStarted) => {
           if (!isStarted) giveBackMessage(sourceId, text, attachments);
         });
+      return;
+    }
+    // While a turn runs, a message waits in the session's queue. The secret guard scans it now, with the user
+    // at the keyboard; the queue later sends it through `sendTo`, which scans nothing again.
+    if (activeSession !== undefined && isQueueingNow(activeSession.id)) {
+      const sessionId = activeSession.id;
+      secretGuard.check(
+        message,
+        () => {
+          // The turn may have ended during the scan: no turn end is left to send it.
+          if (!acp.isTurnUnderWay(sessionId)) sendFromComposer(sessionId, message);
+          else if (!queue.add(sessionId, text, attachments ?? [])) giveBackMessage(sessionId, text, attachments);
+        },
+        {
+          isEnabled: isPrivateLaunch && state.settings.secretGuard !== false,
+          root: activeSession.cwd ?? activeWorkspacePath,
+          agentName: activeAgent?.name ?? "The agent",
+          sessionId,
+        },
+      );
       return;
     }
     // The pair's report hand-over blocks both sides; nothing goes out, and held review comments stay held.
@@ -1817,7 +1877,12 @@ export default function App() {
   // A draft's message is still being checked for secrets: a second Send would start a second session.
   // Only Send waits; disabling the box would take the focus away from what the user types next.
   const isCheckingDraftSecrets = isNewSessionDraft && secretGuard.isCheckingDraft;
-  const isSendBlocked = isSendWaiting || isCheckingDraftSecrets || review.blocksSend || delegationBlock !== undefined;
+  // A message sent while the agent works waits in a queue, unless review comments are held: those are marked Sent at Send.
+  const canQueueActive =
+    activeSession !== undefined && isActiveRunning && acp.isBusy(activeSessionId) && !isRestarting(activeSessionId);
+  const isQueueingActive = canQueueActive && review.slot === null;
+  const isQueueFull = isQueueingActive && queue.isFull(activeSessionId);
+  const isSendBlocked = isSendWaiting || isCheckingDraftSecrets || review.blocksSend || delegationBlock !== undefined || isQueueFull;
   const privateModelId = activeSession?.privateMode?.modelId ?? privateDraft.privateMode?.modelId;
   const privateModel = privateCredits.models?.find((model) => model.id === privateModelId);
   const privateSessionCap = activeSession?.privateMode?.sessionCap;
@@ -1838,6 +1903,8 @@ export default function App() {
     agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
     privateNote: isPrivateLaunch ? privateDraft.note ?? creditsOutNote : undefined,
     delegationBlock,
+    queueFull: isQueueFull,
+    commentsWaitFor: canQueueActive && review.slot?.sessionId === activeSessionId ? activeAgent?.name ?? "The agent" : undefined,
     continuesSession: isResumable || Boolean(activeSession),
   });
   const composerCommands = composerCommandsFor({
@@ -2056,7 +2123,7 @@ export default function App() {
                         isComposerDisabled,
                         isHeldElsewhere: review.isHeldFor(activeSessionId),
                       })}
-                      onRewind={(messageId) => { compareRun.dropSignIn(activeSessionId); void rewind(activeSession, messageId); }}
+                      onRewind={(messageId) => { compareRun.dropSignIn(activeSessionId); queue.clearForRewind(activeSessionId); void rewind(activeSession, messageId); }}
                       // The sidebar and the top bar say where a session runs; only an imported
                       // session's note sits above its first message.
                       header={
@@ -2245,11 +2312,25 @@ export default function App() {
                   </div>
                   {/* 24px at the sides and 20px under it, as the canvas draws the composer's dock. */}
                   {/* A draft's composer sits inside its column, with the agent's sessions right under it. */}
+                  {activeSession && (
+                    <div hidden={isComposerHidden} className="flex justify-center px-6">
+                      <QueuedMessages
+                        messages={queue.queueOf(activeSessionId)}
+                        agentName={activeAgent?.name ?? "The agent"}
+                        hold={isActiveRunning ? queue.holdOf(activeSessionId) : queue.queueOf(activeSessionId).length > 0 ? "ended" : null}
+                        announcement={queue.announcement}
+                        onSendNow={(id) => queue.sendNow(activeSessionId, id)}
+                        onEdit={(id) => queue.edit(activeSessionId, id)}
+                        onRemove={(id) => queue.remove(activeSessionId, id)}
+                      />
+                    </div>
+                  )}
                   <div hidden={isComposerHidden} className={`flex justify-center px-6 ${isNewSessionDraft ? "" : "pb-5"}`}>
                     <ComposerDock
                       controls={compare.isCompare ? {} : composer.controls}
                       isThinking={Boolean(activeSession) && isSessionBusy(activeSessionId)}
                       onStop={activeSession ? () => handleInterrupt(activeSessionId) : undefined}
+                      queueing={isQueueingActive}
                       disabled={isComposerDisabled}
                       sendDisabled={isSendBlocked}
                       placeholder={composerPlaceholder({

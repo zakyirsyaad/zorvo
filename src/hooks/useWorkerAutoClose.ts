@@ -19,6 +19,8 @@ export interface WorkerAutoCloseDeps {
   hasLiveTasks: (id: string) => boolean;
   /** The worker's last turn failed and its banner (the error text, Try again) is still up; closing would clear it. */
   hasFailedTurn: (id: string) => boolean;
+  /** The user queued a message for the session: closing its agent would leave it with nothing to send it. */
+  hasQueuedMessages?: (id: string) => boolean;
   stop: (id: string) => Promise<boolean>;
   now?: () => number;
 }
@@ -36,12 +38,12 @@ export function useWorkerAutoClose(deps: WorkerAutoCloseDeps): void {
 
   /** The turn end a worker's agent is waiting to close after, or null when it must stay open. */
   const closableAfter = (session: Session): number | null => {
-    const { isBusy, isWaiting, canReopen, hasLiveTasks, hasFailedTurn } = latest.current;
+    const { isBusy, isWaiting, canReopen, hasLiveTasks, hasFailedTurn, hasQueuedMessages } = latest.current;
     const link = session.delegatedFrom;
     if (session.status !== 'running' || isArchived(session) || !link || !isOpenLink(link)) return null;
     // A worker whose agent died has nothing left to close.
     if (!link.lastTurn || link.lastTurn.how === 'exited') return null;
-    if (isBusy(session.id) || isWaiting(session.id) || !canReopen(session.id) || hasLiveTasks(session.id) || hasFailedTurn(session.id)) return null;
+    if (isBusy(session.id) || isWaiting(session.id) || !canReopen(session.id) || hasLiveTasks(session.id) || hasFailedTurn(session.id) || hasQueuedMessages?.(session.id)) return null;
     // The two minutes count from the delivered report, else from the turn end.
     const { endedAt } = link.lastTurn;
     const reportedAt = link.reportedAt ?? 0;
